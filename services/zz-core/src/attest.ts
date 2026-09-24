@@ -1,13 +1,11 @@
-/** Facts about the record that a SCRIPT decides, so no model has to.
+/** Facts about the record that a script decides, so no model has to.
  *
- * A skill is prose, and prose read by a model is not deterministic: it can be followed,
- * half-followed, or reasoned around, and nothing downstream can tell which happened. So
- * anything that can be settled by running a function is settled here instead, and the tool
- * reports the answer. The model chooses WHICH function to call; it does not re-derive what
- * the function knows.
+ * A skill is prose, and prose read by a model can be followed, half-followed or reasoned
+ * around with nothing downstream able to tell which. Anything settleable by running a function
+ * is settled here, and the tool reports the answer. The model chooses which function to call.
  *
- * This module holds no policy. It answers questions; `server.ts` decides what to say about
- * the answers, and nothing here refuses anything.
+ * This module holds no policy: it answers questions, `server.ts` decides what to say about the
+ * answers, and nothing here refuses anything.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -16,23 +14,19 @@ import { join } from "node:path";
  * current content; a `shown` before them is a fetch of something else. */
 const CHANGED = new Set(["document_write", "document_patch", "document_revise"]);
 
-/** Was this document FETCHED BACK since the last time its content changed?
+/** Was this document fetched back since the last time its content changed?
  *
- * `zz-platform` asks for `document_present` before a gate: a person approves bytes, and the
- * fetch is the only part of "I put it in front of them" the platform can see. It also says,
- * in as many words, that no approval is refused over it — the record makes the gap visible
- * and does not close it. That stays true: this returns a fact, `document_approve` reports the fact,
- * and nothing here refuses.
+ * Returns a fact; `document_approve` reports it. No approval is refused over it — the record
+ * makes the gap visible and does not close it.
  *
- * SINCE THE LAST CONTENT CHANGE, not "at this version". A `document_patch` does not bump
- * `version`, so a document can be shown at v1, patched eight times and approved while the
- * log still reads "shown v1" — version-matching would call that fetched. Filling a scaffold
- * is exactly that shape, so version-matching would have been silent on the common case and
- * loud on nothing.
+ * Since the last content change, not "at this version". A `document_patch` does not bump
+ * `version`, so a document can be shown at v1, patched eight times and approved while the log
+ * still reads "shown v1", which version-matching would call fetched. Filling a scaffold is
+ * exactly that shape.
  *
  * Returns null when the question cannot be answered — no log, unreadable, or no recorded
- * change to be "since". A warning invented from a missing record is worse than no warning:
- * it teaches the reader that this line does not mean anything.
+ * change to be "since". A warning invented from a missing record teaches the reader that this
+ * line does not mean anything.
  */
 export function shownSinceLastChange(root: string, relPath: string): boolean | null {
   try {

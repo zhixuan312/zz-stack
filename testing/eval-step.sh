@@ -1,51 +1,30 @@
 #!/usr/bin/env bash
-# Run every requirement in the corpus through ONE step, and keep what it produced.
+# Run every requirement in a flow's corpus through one step, and keep what it produced.
 #
-#   ZZ_URL=… ZZ_TOKEN=… ./testing/eval-step.sh --step ops-intent --out evals/intent-1.0
-#   ./testing/eval-step.sh --step ops-intent --out … --only r01,r02   # while iterating
+#   ZZ_URL=… ZZ_TOKEN=… ./testing/eval-step.sh --flow sdlc/sdlc-flow --step sdlc-explore --out evals/explore
+#   ./testing/eval-step.sh --flow … --step … --out … --only r01,r02   # while iterating
+#   ./testing/eval-step.sh --flow … --step sdlc-spec --out … --from evals/explore
 #
-# WHY A STEP AT A TIME. A full run scores one number after thirty minutes and gives no way to
-# tell which of six steps caused it — an integration test standing in for a unit one. Thirty
-# briefs through ops-intent gives that step thirty scored instances for a fraction of the cost,
-# and the number that comes out is about the SKILL rather than about the flow.
+# One step at a time, so the result is about the skill rather than the flow. Each requirement
+# gets its own initiative, as the step does in real use, and the platform records the run the
+# usual way; those events are the trace evidence a plugin evaluation reads. Nothing here keeps
+# its own telemetry.
 #
-# EACH REQUIREMENT GETS ITS OWN INITIATIVE, because that is how the step works and a step
-# measured in a shape it does not run in is measuring something else. It also means the
-# platform records everything the usual way: which step, which version, which block, what was
-# refused. Nothing here needs its own telemetry.
+# It leaves one initiative per requirement in the caller's team store, on purpose: they are the
+# artefacts being measured. Never point it at a team doing real work.
 #
-# NO STAKEHOLDER. There is nobody to ask and the step is told so. ops-intent is the right place
-# to start precisely because it has no interview — its own anti-pattern says ambiguity becomes
-# an open question rather than a conversation, so running it without a person to ask is running
-# it as designed rather than crippling it.
-#
-# WHAT CONSUMES THIS CHANGED; IT DID NOT GO AWAY. This fed eval-grade, eval-judge and
-# eval-store, all three deleted with the skill-level evaluation. What it produces now is
-# EVIDENCE rather than a corpus to be graded: real runs leave real events, and events are half
-# of what a plugin evaluation reads — the trace side, beside the ablation cases, which is the
-# half no case suite can supply. So this is still the only thing in the repository that puts a
-# whole corpus through one step. It reads like a harness with no consumer and it is not one.
-#
-# IT WILL LEAVE THIRTY INITIATIVES BEHIND, in the eval team's store, on purpose: they are the
-# artefacts being measured. Empty that store before a run, never during, and never point this at
-# a team doing real work.
-#
-# NEVER TWO OF THESE AT ONCE against the same deployment. The platform attributes a call to the
-# step whose skill was loaded most recently BY THAT CALLER, and a caller is the token plus the
-# client name — so two runs under one token share a single trace slot. Interleave them and
-# ops-spec's calls get filed under a block's usage skill and the block's under ops-spec, silently,
-# with both measurements looking entirely normal. Serialise them.
+# DELIBERATE: never two runs at once against one deployment. The platform attributes a call to
+# the step whose skill that caller loaded most recently, and a caller is the token plus the
+# client name, so two runs under one token interleave their attribution without any error.
 set -euo pipefail
 
-# READ WHOLE BEFORE RUN. bash reads a script incrementally by byte offset, so editing one while
-# it runs shifts the text under the running shell and it resumes mid-line.
+# DELIBERATE: the body is one brace group, so bash reads it whole before running. It otherwise
+# reads by byte offset, and editing the file mid-run resumes the shell mid-line.
 {
 
 STEP=""; OUT=""; ONLY=""; FROM=""; MAXTURNS=8; MODEL="${LADDER_MODEL:-sonnet}"
-# NO FLOW OF ITS OWN. These two were one flow's paths, hard-coded, which made the one script that
-# PRODUCES a run directory the last ops-flow-locked link in the component depth — so sdlc-flow
-# could be judged but never driven, and the corpus authored for it had nothing that could run it.
-# Derived from --flow below, after parsing, so --corpus can still override just the corpus.
+# The flow comes from --flow, and the paths are derived from it after parsing, so --corpus can
+# still override just the corpus.
 FLOW=""; CORPUS=""; STEPS=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -62,7 +41,7 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$FLOW" ] && [ -n "$STEP" ] && [ -n "$OUT" ] || {
   echo "usage: $0 --flow <owner>/<flow> --step <skill> --out <dir> [--from <dir>] [--only r01,r02]" >&2
-  echo "       --flow has no default: a defaulted flow is how this script stayed ops-flow's" >&2
+  echo "       --flow has no default" >&2
   echo "       --from continues each requirement in the initiative the previous step wrote" >&2
   exit 2; }
 [ -n "${ZZ_TOKEN:-}" ] || { echo "ZZ_TOKEN is required — the step calls the real platform" >&2; exit 2; }
@@ -70,7 +49,7 @@ done
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 : "${CORPUS:=catalog/$FLOW/tests/requirements.json}"
 STEPS="catalog/$FLOW/tests/steps.json"
-[ -f "$HERE/catalog/$FLOW/flow.json" ] || { echo "no flow at catalog/$FLOW — --flow is <owner>/<flow>, e.g. ops/ops-flow" >&2; exit 2; }
+[ -f "$HERE/catalog/$FLOW/flow.json" ] || { echo "no flow at catalog/$FLOW — --flow is <owner>/<flow>, e.g. sdlc/sdlc-flow" >&2; exit 2; }
 [ -f "$HERE/$CORPUS" ] || { echo "no corpus at $HERE/$CORPUS" >&2; exit 2; }
 [ -f "$HERE/$STEPS" ] || { echo "no steps file at $HERE/$STEPS" >&2; exit 2; }
 mkdir -p "$OUT"
@@ -82,10 +61,9 @@ IDS="$(node -e '
 ' "$HERE/$CORPUS" "$ONLY")"
 [ -n "$IDS" ] || { echo "no requirements selected" >&2; exit 2; }
 
-# The version the step is at RIGHT NOW, recorded before anything runs. A score filed against
-# the wrong version is worse than no score: it credits a change with results from before it
-# existed, which is the failure the whole versioning scheme was built to stop.
-SKILL_FILE="$(find "$HERE/catalog" "$HERE/skills" "$HERE/blocks" -name SKILL.md \
+# The version the step is at now, recorded before anything runs, so a result is never filed
+# against a version that did not produce it.
+SKILL_FILE="$(find "$HERE/catalog" "$HERE/skills" -name SKILL.md \
   -exec grep -l "^name: $STEP\$" {} + 2>/dev/null | head -1)"
 [ -n "$SKILL_FILE" ] || { echo "no skill named $STEP" >&2; exit 2; }
 VERSION="$(sed -n 's/^version: *//p' "$SKILL_FILE" | head -1)"
@@ -100,11 +78,8 @@ VERSION="$(sed -n 's/^version: *//p' "$SKILL_FILE" | head -1)"
   echo "---"
 } | tee "$OUT/run.txt"
 
-# WHETHER THIS STEP INTERVIEWS, from the one place that says so. ops-intent has no interview —
-# its own anti-pattern is that ambiguity becomes an open question rather than a conversation —
-# so running it with nobody to ask is running it as designed. ops-spec is the opposite: "the
-# interview exists to close the intent's open questions", and evaluating it without a
-# stakeholder would measure a crippled version of the step rather than the step.
+# Which document the step owes and whether it interviews, from the flow's tests/steps.json. A
+# step that interviews gets a stakeholder below; one that does not runs with nobody to ask.
 OWES="$(node -e '
   const s = require(process.argv[1]).steps[process.argv[2]];
   const m = require(process.argv[3]);
@@ -130,18 +105,17 @@ for id in $IDS; do
 
   printf '\n──── %s (%d)\n' "$id" "$n"
 
-  # WHERE TO CONTINUE. A later step does not start from a brief, it starts from the document the
-  # step before it left — so the initiative is carried forward from that run rather than guessed
-  # from a folder name the step chose for itself.
+  # With --from, a later step continues the initiative the previous run recorded for this
+  # requirement, rather than starting from the brief.
   CONTINUE=""
   if [ -n "$FROM" ]; then
     CONTINUE="$(sed -n "s|^$id \\([^/]*\\)/.*|\\1|p" "$FROM/produced.txt" 2>/dev/null | head -1)"
     [ -n "$CONTINUE" ] || { echo "  SKIPPED: $FROM recorded no initiative for $id"; continue; }
   fi
 
-  # THE STEP IS LOADED THE WAY THE FLOW LOADS IT, through skill_read — that is what makes the
-  # platform attribute everything after it to this step and this version. A prompt that pasted
-  # the skill's text would exercise the same words and record them against nothing.
+  # The step is loaded through skill_read, as the flow loads it: that is what makes the platform
+  # attribute everything after it to this step and version. Pasting the skill's text would record
+  # the run against nothing.
   if [ -n "$CONTINUE" ]; then
     PROMPT="Call the zz-core tool skill_read, passing zz-platform as its name argument, and then
 again passing ${STEP}. Follow those skills exactly — they are the method.
@@ -176,15 +150,11 @@ stage of the flow."
       --output-format stream-json --verbose \
       "$PROMPT" > "$OUT/$id.jsonl" 2>"$OUT/$id.err" < /dev/null || true
   else
-    # A STAKEHOLDER WHO ANSWERS FROM THE BRIEF, because the brief is what a stakeholder actually
-    # knows. Not a script: a script answers from a fixed list, and this repository has already
-    # been bitten by one that approved a 12,479-character plan having been shown 11% of it. This
-    # reads the question and answers it, and where the brief is silent it decides the way a
-    # sensible manager would and then stays consistent — which is also what a real one does.
+    # A stakeholder persona that answers each question from the brief, and where the brief is
+    # silent decides as a sensible manager would and stays consistent.
     #
-    # NO TOOLS AT ALL. A stakeholder cannot call the platform, cannot see a block, and does not
-    # know what MCP is. Handing the persona the agent's tools lets it do the agent's work, and
-    # the round then scores the pair rather than the step.
+    # DELIBERATE: no tools and no MCP servers. A persona with the agent's tools could do the
+    # agent's work, and the run would then score the pair rather than the step.
     SID="$(uuidgen | tr 'A-Z' 'a-z')"
     echo '{"mcpServers":{}}' > "$OUT/$id.nomcp.json"
     PERSONA="You are the manager at ${REQUESTER} who asked for this. In your own words, this is what
@@ -230,8 +200,7 @@ How you behave, without exception:
         }
         process.stdout.write(said);' "$OUT/$id.jsonl")"
       [ -n "$REPLY" ] || break
-      # An agent that has stopped asking has finished interviewing. Spending the rest of the
-      # budget on a conversation nobody is having is how a cheap evaluation stops being cheap.
+      # A reply with no question ends the interview.
       printf '%s' "$REPLY" | grep -q '?' || break
 
       SAY="$(claude -p --model "$MODEL" --permission-mode bypassPermissions \
@@ -247,10 +216,8 @@ Reply as yourself." < /dev/null 2>/dev/null || true)"
     done
   fi
 
-  # WHICH INITIATIVE THIS REQUIREMENT PRODUCED, taken from the document_write call itself. The step
-  # names its own folder from the title it wrote, so nothing about the name says which brief it
-  # came from — and matching documents to requirements by content afterwards mis-attributed two
-  # of them on the very first run, scoring requirements that had never been run at all.
+  # Which initiative this requirement produced, read from the document_write call itself: the
+  # step names its folder from its own title, so the name cannot say which brief it came from.
   node -e '
     const fs = require("fs");
     let path = "";
@@ -262,10 +229,8 @@ Reply as yourself." < /dev/null 2>/dev/null || true)"
         if (c.type === "tool_use" && /document_write$/.test(c.name ?? "")) {
           const p = c.input?.path;
           if (typeof p !== "string" || !p.includes("/")) continue;
-          // THE DOCUMENT THIS STEP OWES, not simply the last thing written. Two ops-plan runs
-          // carried on past their own stopping point and wrote ops-verify guide.md as well, and
-          // taking the last write recorded the wrong document for both. Preferring the owed one
-          // fixes the record; the crossing itself is a finding and is reported separately.
+          // The document this step owes, not simply the last one written: a run that carries on
+          // past its stopping point writes the document of a later stage too.
           if (p.endsWith("/" + process.argv[4])) path = p;
           else if (!path) path = p;
         }

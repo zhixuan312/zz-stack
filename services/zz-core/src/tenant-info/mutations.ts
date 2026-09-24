@@ -1,33 +1,24 @@
 /**
- * mutations.ts — the coordinating kernel: the cross-process owner lock, the etag comparison
- * it protects, the idempotency receipt that survives a lost response, and the mapping from
+ * mutations.ts — the coordinating kernel: the cross-process owner lock, the etag comparison it
+ * protects, the idempotency receipt that survives a lost response, and the mapping from
  * `record.ts`'s durable `CommitReceipt` to the public per-artifact `MutationResult`.
  *
- * WHAT THIS MODULE DOES NOT DO. `record.ts` (I-7) trusts `sequence` and `previous_commit_hash`
- * because only a lock-holder can compute them correctly — this module IS that lock-holder.
- * Deciding WHAT a mutation writes — which fields change, which revision/event objects and blob
- * bytes a request produces — is `Policy`'s job (I-9 binds native semantic/provenance policy for
- * real; this module only defines the interface and accepts an injected, already-validated
- * result). Supersession's two-participant check, cause resolution, gate/knowledge rules and
+ * `record.ts` trusts `sequence` and `previous_commit_hash` because only a lock-holder can
+ * compute them, and this module is that lock-holder. What a mutation writes is `Policy`'s job;
+ * supersession's two-participant check, cause resolution, gate/knowledge rules and
  * payload-to-content-hash derivation all live on the far side of that interface.
  *
- * THE ETAG IS OWNER-STORE STATE, NOT A DATABASE ROW. `zz.artifact.head_event_sequence` is a
- * projection I-10/I-11 build later; today the only durable record is the commit log itself.
- * `readOwnerState` derives the same fact by replaying `.zz/commits/*.json` in sequence order —
- * correct, and O(commit count) until a projection replaces it. That trade is deliberate: this
- * task may not touch a database, and the commit log is the one truth that already exists.
+ * The etag is owner-store state, not a database row: `zz.artifact.head_event_sequence` is a
+ * projection built later, so `readOwnerState` derives the same fact by replaying
+ * `.zz/commits/*.json` in sequence order — O(commit count) until a projection replaces it.
  *
- * THE LOCK IS A REAL FILE, NOT A MAP. `acquireOwnerLock` uses `open(path, "wx")`, which POSIX
- * guarantees is atomic across processes on the same filesystem — the only primitive here that
- * actually rules out two writers computing the same `sequence`. A `Map`-keyed in-process mutex
- * would leave every separate process with its own empty map and rule out nothing; the
- * coordination suite's two-real-process case exists to make exactly that swap fail loudly.
+ * DELIBERATE: the lock is a real file, not a map. `acquireOwnerLock` uses `open(path, "wx")`,
+ * atomic across processes on the same filesystem. An in-process mutex would leave every process
+ * with its own empty map; the coordination suite's two-real-process case makes that swap fail.
  *
- * IDEMPOTENCY RIDES ON THE COMMIT LOG TOO. A receipt key is `owner+operation+idempotency_key`;
- * this module qualifies the raw key with the operation before handing it to `record.ts` as
- * `manifest.idempotency_key`, then strips that qualifier back off on every path a caller can
- * observe it (`MutationIndeterminate.idempotency_key`, a replayed result) — the qualifier is
- * this module's own bookkeeping, never part of the public contract.
+ * A receipt key is `owner+operation+idempotency_key`. This module qualifies the raw key with the
+ * operation before handing it to `record.ts` as `manifest.idempotency_key`, then strips the
+ * qualifier off on every path a caller can observe it.
  */
 import { randomUUID, createHash } from "node:crypto";
 import { open, readdir, rename, unlink } from "node:fs/promises";
@@ -48,9 +39,8 @@ const STORE_DIR = ".zz";
 const COMMITS_SUBDIR = "commits";
 const KEY_SEPARATOR = "::"; // not a character any MutationOp contains
 
-// ── canonical hashing, independent of record.ts's (different undefined semantics: a caller's
-//    JSON request drops undefined-valued keys the way JSON.stringify does; a manifest never has
-//    any) ───────────────────────────────────────────────────────────────────────────────────
+// Canonical hashing, independent of record.ts's: a caller's JSON request drops
+// undefined-valued keys the way JSON.stringify does, and a manifest never has any.
 
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value === "number" || typeof value === "boolean" || typeof value === "string") {
@@ -86,7 +76,7 @@ export function classifyCommitOutcome(
   return "unknown";
 }
 
-// ── the OS-backed, per-owner-store cross-process lock ───────────────────────────────────────
+// The OS-backed, per-owner-store cross-process lock
 
 const LOCK_STALE_MS = 30_000;
 const LOCK_POLL_MS = 20;
@@ -103,7 +93,7 @@ function pidAlive(pid: number): boolean {
   }
 }
 
-/** Breaks a lock file that names a dead pid or has outlived `LOCK_STALE_MS`, by RENAMING it
+/** Breaks a lock file that names a dead pid or has outlived `LOCK_STALE_MS`, by renaming it
  *  aside rather than unlinking it directly. Two waiters can both decide a lock is stale at the
  *  same instant; only one `rename` of the same source path can succeed, so only one of them
  *  ever removes a lock — the other's rename fails ENOENT and it simply loops back to retry.
@@ -142,7 +132,7 @@ interface LockHandle {
 }
 
 /** Acquires the one lock file for this owner-store root, atomically (`open(..., "wx")`),
- *  across however many processes race for it. NOT an in-process primitive — a `Map` keyed by
+ *  across however many processes race for it. Not an in-process primitive — a `Map` keyed by
  *  `root` would coordinate nothing between two Node processes, which is exactly the failure
  *  mode the two-real-process coordination case exists to catch. */
 async function acquireOwnerLock(root: string): Promise<LockHandle> {
@@ -172,11 +162,11 @@ async function acquireOwnerLock(root: string): Promise<LockHandle> {
   }
 }
 
-// ── owner-store state, replayed from the commit log ─────────────────────────────────────────
+// Owner-store state, replayed from the commit log
 
 /** `revision` is `null` for a SourceArtifact (never revised); `etagOf` renders that as the
  *  spec's "0" revision component. `head_event_sequence` is the `sequence` of the most recent
- *  commit that recorded ANY event or revision for this artifact — a state-only operation (e.g.
+ *  commit that recorded any event or revision for this artifact — a state-only operation (e.g.
  *  `approve`) advances it without touching `revision`, exactly as the spec requires. */
 export interface ArtifactHead {
   readonly artifact_id: string;
@@ -185,7 +175,7 @@ export interface ArtifactHead {
   readonly content_hash: string;
 }
 
-/** Exported at I-22: the search response carries an `etag` per result, and a second spelling of
+/** Exported because the search response carries an `etag` per result, and a second spelling of
  *  "revision, colon, head sequence" in the retrieval path would be a second thing to keep in
  *  step with this one. */
 export function etagOf(head: ArtifactHead): string {
@@ -259,17 +249,14 @@ async function readOwnerState(root: string): Promise<OwnerState> {
 /**
  * One artifact's current head and the etag that goes with it, replayed off the commit log.
  *
- * WHY THIS IS EXPORTED. `readOwnerState` is this module's own bookkeeping and stays private,
- * but an adapter routing a registered tool through `mutate()` genuinely needs one fact from
- * it: whether this store holds the artifact at all, and at which etag. Without it, persist.ts
- * said so itself — "Revision, content_hash, record_digest and etag are NOT derivable here
- * without mutations.ts's owner-state replay" — and an adapter had to make the caller carry an
- * etag it could not have for a document it has never written through this kernel. That is the
- * lookup the adoption path is built on: no head means adopt, a head means revise at its etag.
+ * Exported because an adapter routing a registered tool through `mutate()` needs one fact from
+ * the otherwise-private `readOwnerState`: whether this store holds the artifact at all, and at
+ * which etag. That is what the adoption path turns on — no head means adopt, a head means
+ * revise at its etag.
  *
- * NO LOCK. This is a read of already-durable files; a caller that intends to WRITE what it
- * read still goes through `mutate()`, which takes the lock and re-reads state under it, so
- * nothing here can be used to skip the etag comparison that lock protects.
+ * No lock: this reads already-durable files. A caller that intends to write what it read still
+ * goes through `mutate()`, which takes the lock and re-reads state under it, so nothing here
+ * can be used to skip the etag comparison that lock protects.
  */
 export async function readArtifactHead(
   root: string, artifactId: string,
@@ -278,7 +265,7 @@ export async function readArtifactHead(
   return head ? { ...head, etag: etagOf(head) } : null;
 }
 
-// ── the policy boundary ──────────────────────────────────────────────────────────────────────
+// The policy boundary
 
 export interface AuthContext {
   readonly owner_id: string;
@@ -299,8 +286,8 @@ export interface PolicyContext {
   readonly getHead: (artifactId: string) => ArtifactHead | null;
 }
 
-/** The prepared change a policy hands back — I-9's real semantic/provenance decisions,
- *  reduced to exactly what this kernel needs to build a commit and a `MutationResult`.
+/** The prepared change a policy hands back — its semantic and provenance decisions, reduced
+ *  to exactly what this kernel needs to build a commit and a `MutationResult`.
  *  `changed:false` with empty `revisions` is a valid, durable no-op receipt; it must never
  *  carry a `revisions` entry that was not actually a new content revision. */
 export interface PreparedPolicyResult {
@@ -323,13 +310,13 @@ export type Policy = (
   request: MutationRequest, ctx: PolicyContext,
 ) => Promise<PolicyOutcome> | PolicyOutcome;
 
-// ── replaying a public result back out of a durable manifest ───────────────────────────────
+// Replaying a public result back out of a durable manifest
 
 /** Reconstructs the `MutationResult` a manifest already on disk represents — used for an
  *  idempotent replay and for recovery's resumed-commit path alike. `projection`/
  *  `history_export` are not manifest fields (`record.ts`'s receipt carries them, not the
- *  commit itself), so a replay reports them `"pending"` — honest, since nothing downstream of
- *  the commit log exists to have confirmed them current before I-11. */
+ *  commit itself), so a replay reports them `"pending"`: nothing here has confirmed them
+ *  current. */
 export function replayFromManifest(
   manifest: PreparedManifestInput, sequence: number,
 ): MutationResult {
@@ -358,7 +345,7 @@ function toIndeterminate(outcome: MutationIndeterminate, originalKey: string): M
   return { ...outcome, idempotency_key: originalKey };
 }
 
-// ── the coordinating entry point ────────────────────────────────────────────────────────────
+// The coordinating entry point
 
 export interface MutateOptions {
   readonly root: string;
@@ -409,21 +396,15 @@ export async function mutate(options: MutateOptions): Promise<MutationResult | M
       return replayFromManifest(existing.manifest, existing.sequence);
     }
 
-    // ADOPTION IS THE ONE OPERATION THAT NAMES AN ARTIFACT THIS STORE HAS NO COMMIT FOR.
+    // Adoption is the one operation that names an artifact this store has no commit for.
     //
     // Every other operation naming an `artifact_id` is editing something this store already
-    // holds, so it must present the etag it saw and it must resolve to a head. `import_legacy`
-    // is neither: it is the first commit an artifact that predates this store ever gets, and
-    // its identity is DETERMINED BY THE LEGACY LOCATOR rather than minted (which is why it
-    // names an id at all, where `create` may not). There is no etag to present, because there
-    // is nothing here yet to have read.
+    // holds, so it must present the etag it saw and must resolve to a head. `import_legacy` is
+    // neither: it is the first commit an artifact that predates this store ever gets, and its
+    // identity is determined by the legacy locator rather than minted, which is why it names
+    // an id at all where `create` may not. There is no etag to present.
     //
-    // This is the defect I-11 found and could not fix from its own edit surface: with these
-    // two rules applied to `import_legacy` as well, every write to each of the 527 documents
-    // already on a live deployment would answer NOT_FOUND_OR_FORBIDDEN the moment the
-    // registered tools routed through this kernel, because none of them has a commit here.
-    // The fix is not to loosen the identity rule for edits — it is to let the adoption path
-    // exist. A store that already holds the artifact refuses a second import as a duplicate
+    // COUPLED: a store that already holds the artifact refuses a second import as a duplicate
     // identity, in `legacyImportPolicy`, where the locator is in scope to say so.
     const adopting = request.operation === "import_legacy";
     if (request.artifact_id !== undefined && request.expected_etag === undefined && !adopting) {
@@ -508,7 +489,7 @@ function toMutationResult(receipt: CommitReceipt, prepared: PreparedPolicyResult
   };
 }
 
-// ── shared with recovery.ts: resolving one transaction directly, by its own commit path ────
+// Shared with recovery.ts: resolving one transaction directly, by its own commit path
 
 export interface DirectResolution {
   readonly publication: "absent" | "published" | "uncertain";
@@ -516,8 +497,8 @@ export interface DirectResolution {
   readonly manifest?: PreparedManifestInput & { readonly manifest_hash: string };
 }
 
-/** Checks the ONE exact path a `(sequence, transaction_id)` pair would publish to — no
- *  directory scan. `durable` re-confirms with a FRESH `fsyncDir`, never one recalled from
+/** Checks the one exact path a `(sequence, transaction_id)` pair would publish to — no
+ *  directory scan. `durable` re-confirms with a fresh `fsyncDir`, never one recalled from
  *  write time, which is what lets this turn a genuine `unknown` into a confident `true`. */
 export async function resolveDirect(
   root: string, io: RecordIO, sequence: number, transactionId: string,

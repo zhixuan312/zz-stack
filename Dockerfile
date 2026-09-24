@@ -1,37 +1,23 @@
 # The image every zz-stack service runs, and the only place that says how it is built.
 #
-# This existed for a while as a heredoc piped into `docker build -f -` from the PARENT
-# directory, which had two consequences. The artifact running in production could not be
-# rebuilt from a checkout — `docker history` was the only surviving record of the recipe.
-# And building from one level up put .dockerignore out of scope, so the image was assembled
-# by copying the host's node_modules and dist/ straight in: precisely the failure that file
-# exists to prevent, and that it describes in its own comment.
+# The build installs and compiles here, from the lockfile, with this directory as the context,
+# so .dockerignore applies: a build is reproducible from a clean clone and never picks up a
+# working tree's node_modules or dist/.
 #
-# So the build installs and compiles HERE, from the lockfile, exactly as .dockerignore
-# assumes. A build is now reproducible from a clean clone and cannot pick up whatever
-# compiled output happened to be lying in a working tree.
-#
-# ONE image, many services. SERVICE picks which entrypoint runs, so zz-core and the gateway
-# are the same bytes with a different environment variable — they share every package in
-# `packages/`, and building them separately is how two services end up on two versions of a
-# contract they are supposed to agree on.
+# DELIBERATE: one image, many services. SERVICE picks which entrypoint runs, so zz-core and the
+# gateway are the same bytes with a different environment variable and cannot end up on two
+# versions of the `packages/` contracts they share.
 
 FROM node:22.23.2-alpine AS build
 WORKDIR /repo
 
-# THE MANIFESTS ALONE, so editing a source file does not re-run the install.
+# The manifests alone, so editing a source file does not re-run the install.
 #
-# This copied `packages` and `services` whole, immediately above `npm ci`, while the comment
-# here claimed the opposite — "so a change to source does not invalidate the install layer".
-# It did invalidate it, on every edit: a release build reinstalled the entire dependency tree
-# in order to compile one changed line.
-#
-# The workspace globs in package.json mean npm needs every member's package.json present
-# before it will resolve the tree, which is why each one is copied and not just the root's.
-# Listed file by file because Docker has no glob for "every package.json two levels down" —
-# and a member left out of this list does NOT fail loudly: npm's glob simply matches fewer
-# directories and installs less. The gate holds this list against manifestPaths(), the same
-# source tsconfig.json's references and set-version.mjs are held to.
+# npm resolves the workspace globs in package.json against every member's package.json, so each
+# one is copied, file by file because Docker has no glob for "every package.json two levels
+# down". A member left out does not fail: npm installs less.
+# COUPLED: the gate holds this list against manifestPaths(), as it does tsconfig.json's
+# references and set-version's list.
 COPY package.json package-lock.json tsconfig.json tsconfig.base.json ./
 COPY packages/catalog/package.json    packages/catalog/
 COPY packages/contracts/package.json  packages/contracts/
@@ -52,11 +38,8 @@ COPY services services
 
 RUN npx tsc -b
 
-# Pruned HERE, in the build stage, so the sources never enter the runtime image at all.
-# Deleting them in a later RUN does not do it: layers are additive, the files stay in the
-# earlier layer, `docker save` gets them back, and the image gets BIGGER for the extra
-# layer. The image is pulled by every deploy host, so the
-# difference between hidden and absent is the whole point.
+# DELIBERATE: pruned in the build stage, so the sources never enter the runtime image. A later
+# RUN would only hide them: layers are additive and `docker save` gets them back.
 RUN find /repo/packages /repo/services \
       \( -name '*.ts' -o -name '*.tsbuildinfo' \) -delete
 
@@ -64,21 +47,14 @@ RUN find /repo/packages /repo/services \
 FROM node:22.23.2-alpine
 WORKDIR /repo
 
-# git, because a team's knowledge store IS a git repository: every document write is a
-# commit authored by the person who made it, so a team that walks away with its repository
-# walks away with the attribution too, readable by `git log` with nothing of ours installed.
-#
-# node:alpine does not ship it, and the failure would have been silent — commitDocument
-# never throws, so every write would have succeeded, logged `git_failed`, and left a store
-# with no history that nobody would notice until they went looking for one.
+# git, because a team's knowledge store is a git repository: every document write is a commit
+# authored by the person who made it. node:alpine does not ship it, and without it
+# commitDocument does not throw — every write succeeds, logs `git_failed` and records no history.
 RUN apk add --no-cache git
 
-# Runtime dependencies only — the build stage's toolchain and dev dependencies stay behind.
-#
-# From the BUILD stage and not from the context, which is what keeps the sources out. npm
-# still gets what it needs: the workspace globs in package.json resolve against each member's
-# package.json, and those survive the prune. Nothing at runtime reads a .ts — every service
-# starts from services/<name>/dist/server.js, as the CMD below spells out.
+# Runtime dependencies only. Copied from the build stage, not the context, so no source comes
+# with them; each member's package.json survives the prune, so the workspace globs still resolve.
+# Every service starts from services/<name>/dist/server.js.
 COPY package.json package-lock.json ./
 COPY --from=build /repo/packages ./packages
 COPY --from=build /repo/services ./services
@@ -88,18 +64,12 @@ RUN npm ci --omit=dev && npm cache clean --force
 # with change on their own cadence, and neither is code.
 COPY catalog /catalog
 COPY skills /skills
-# NO `COPY blocks /blocks`. That directory held the building-block contract and two prose
-# documents and never held a single usage skill, so the image carried documentation and
-# skill-roots.ts walked it for skills that were never there. It is removed from the repository;
-# the walker already treats an absent /blocks as "no blocks connected", which is what a
-# deployment without one is. A block's usage skill, when there is one, arrives with the block.
 
 ENV SERVICE=
 EXPOSE 8000
 
-# An unset or misspelled SERVICE used to start node against a path that did not exist, and
-# the container died with a stack trace about a missing module — which reads like a broken
-# build rather than a typo in a compose file. Say which names are actually available.
+# An unset or misspelled SERVICE exits naming the services that exist, rather than dying on a
+# missing module that reads like a broken build.
 CMD ["sh", "-c", "\
   if [ -z \"$SERVICE\" ]; then \
     echo 'FATAL: SERVICE is unset. Set it to one of:' >&2; \

@@ -2,17 +2,7 @@
 /**
  * Does `shownSinceLastChange` actually answer the question it claims to?
  *
- * A PREPARED SCRIPT, deliberately, and this file is the argument for the idea. The behaviour
- * below was first verified by pulling the compiled function out of `dist/server.js` with a
- * regular expression and running it through `new Function` — composed on the spot, correct
- * that once, and gone. Nothing could re-run it, so nothing would notice the day the function
- * changed. Choosing a prepared check and running it beats writing one live: same answer,
- * repeatable, and it fails when the thing it guards moves.
- *
  * Fixtures rather than a live store: the answer must not depend on a machine or a network.
- * The first four cases are the real shapes out of 2026-09-10-progressive-sdlc-deck, which is
- * where the gap was found — four of that initiative's six approvals had no fetch since the
- * content last moved.
  *
  * Run: node checks/attest-shown.ts   (also run by scripts/gate.ts)
  */
@@ -74,17 +64,13 @@ for (const [name, arg, want] of [
   console.log(`  ${ok ? "ok  " : "FAIL"} ${name}  (got ${got})`);
 }
 
-// ── AND THE APPROVAL PATH ACTUALLY ASKS ───────────────────────────────────────────────────
+// And the approval path actually asks
 //
-// Everything above drives `shownSinceLastChange` directly against a temporary store, which
-// proves the function is right and proves NOTHING about whether anything calls it. Task I-20
-// measured the consequence: unwire the call from `document_approve`, leave the import in place,
-// and this file still printed "8 cases passed" against an approval that had stopped asking.
-// `checks/eval-tools-moved.ts` does not close it either — it asserts initiative-acts IMPORTS
-// attest, and an unused import is still an import.
-//
-// A function that works and a path that uses it are two claims, and a check that drives the
-// function can only ever make the first.
+// Everything above drives `shownSinceLastChange` against a temporary store, which proves the
+// function is right and nothing about whether anything calls it: unwire the call from
+// `document_approve`, leave the import in place, and every case above still passes.
+// `checks/eval-tools-moved.ts` asserts initiative-acts imports attest, and an unused import is
+// still an import.
 const HANDLER = "services/zz-core/src/tools/initiative-acts.ts";
 const src = readFileSync(HANDLER, "utf8");
 const approve = src.slice(src.indexOf('"document_approve"'));

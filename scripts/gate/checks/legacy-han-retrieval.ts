@@ -9,11 +9,10 @@ function execStderr(err: unknown): string {
 }
 
 check("the legacy handler builds a predicate that can match a term inside an unspaced Han run", () => {
-  // RUNS the builder rather than reading it. A service's source cannot be imported from here:
-  // its own relative imports carry the `.js` suffix NodeNext wants, which resolve only in
-  // `dist`. Every other check that needs a service — catalog-manifest, console,
-  // security-identity — spawns a probe against `dist` for exactly this reason, and a probe
-  // that cannot RUN is reported as that, never as a failure of the thing it was probing.
+  // DELIBERATE: runs the builder in a spawned probe rather than importing it. A service's
+  // source cannot be imported from here — its relative imports carry the `.js` suffix
+  // NodeNext wants, which resolves only in `dist`. A probe that cannot run is reported as
+  // that, never as a failure of the thing it was probing.
   const probe = `
     import { buildSearchPredicate } from ${JSON.stringify(join(root, "services/zz-core/dist/tools/search-predicate.js"))};
     const bad = [];

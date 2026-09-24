@@ -1,13 +1,13 @@
 /**
- * LAYER 2 — is what the registry holds what this checkout builds?
+ * Layer 2 — is what the registry holds what this checkout builds?
  *
- * Asked of the REGISTRY, never answered from a local tag: a local tag is this checkout's
+ * Asked of the registry, never answered from a local tag: a local tag is this checkout's
  * opinion about somebody else's server. It catches the two things a tag cannot — a version
  * whose push failed halfway, and a number nobody ever built.
  *
- * What it deliberately does NOT do is rebuild and compare digests. A rebuild here would take
- * minutes and would answer a question the gate's `tsc -b` and the release's own build already
- * answer; the doctor exists to be run often, and a diagnostic nobody runs diagnoses nothing.
+ * DELIBERATE: it does not rebuild and compare digests. A rebuild takes minutes and answers a
+ * question the gate's `tsc -b` and the release's own build already answer, and the doctor is
+ * meant to be run often.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

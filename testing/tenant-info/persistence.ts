@@ -1,28 +1,22 @@
 /**
- * persistence.ts — I-7's "record-commit" case group: `record.ts`'s durable commit engine,
+ * persistence.ts — the "record-commit" case group: `record.ts`'s durable commit engine,
  * exercised against real temporary POSIX files with an injectable I/O layer that can both
  * record what actually happened and fail one named operation on demand.
  *
- * `run` below is this file's other job: `scripts/tenant-info/suites.ts` reserves the name
- * "persistence" at exactly this path, so `verify --suite persistence` and `--finalize`
- * dynamic-import it and call `run`. `"record-commit"` and I-8's `"coordination"` (below) are
- * the only case groups so far — I-9's policy cases are a later addition to this same file.
+ * COUPLED: `scripts/tenant-info/suites.ts` reserves the name "persistence" at exactly this
+ * path, so `verify --suite persistence` and `--finalize` dynamic-import it and call `run`.
  *
- * EVERY FIXTURE LIVES UNDER A FRESH `mkdtemp` OUTSIDE THIS CHECKOUT, removed in every case's
- * `finally`. Nothing here ever touches `ZZ_TENANT_INFO_WORKSPACE`, a deployment volume, or
- * this repository as a record root — the platform holds real tenant data, and a file-commit
- * engine's own tests are exactly the code that must never be pointed at it.
+ * DELIBERATE: every fixture lives under a fresh `mkdtemp` outside this checkout, removed in
+ * every case's `finally`. Nothing here touches `ZZ_TENANT_INFO_WORKSPACE`, a deployment
+ * volume, or this repository as a record root.
  *
- * WHAT THE FAULT CASES DO AND DO NOT PROVE. `fault_before_rename` and `fault_at_rename`
- * inject a thrown error at the wrapped I/O call itself, before it ever reaches the real
- * syscall — that proves the classification logic (a fault here must never report `false` for
- * `fault_at_rename`, since the syscall may have already linked the entry), not a genuine
- * kernel-level partial rename, which no userspace harness can reproduce on demand.
- * `fault_at_commits_fsync` is the more realistic case: the real `rename` DOES execute, only
- * the following `fsyncDir` is intercepted, so the manifest is genuinely on disk while its
- * durability is (correctly) reported unconfirmed. `fault_after_durability` intercepts the
- * materialization write only after both the real rename and the real commits-directory fsync
- * have completed for real, so it proves a post-durability fault never changes `committed`.
+ * What the fault cases prove: `fault_before_rename` and `fault_at_rename` inject a thrown
+ * error at the wrapped I/O call, before the real syscall, so they exercise the classification
+ * logic rather than a kernel-level partial rename. In `fault_at_commits_fsync` the real
+ * `rename` executes and only the following `fsyncDir` is intercepted, so the manifest is on
+ * disk with its durability unconfirmed. `fault_after_durability` intercepts the
+ * materialization write after both the rename and the commits-directory fsync have really
+ * completed.
  */
 import assert from "node:assert/strict";
 
@@ -49,7 +43,7 @@ import {
   type RecordIO,
 } from "../../services/zz-core/dist/tenant-info/record.js";
 
-// ── a fresh, disposable owner-store root per case ───────────────────────────────────────────
+// A fresh, disposable owner-store root per case
 
 export function makeStoreRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "zz-tenant-record-"));
@@ -81,13 +75,12 @@ function fixture(overrides: Partial<PreparedManifestInput> = {}): { manifest: Pr
   return { manifest, blobs: [{ hash, bytes: content }] };
 }
 
-// ── the injectable, observing I/O wrapper ───────────────────────────────────────────────────
+// The injectable, observing I/O wrapper
 
 interface Recorded { readonly op: string; readonly path: string }
 
 /** Fires when a call to `op` is made with a path `matchPath` accepts. `rename` is matched on
- *  its DESTINATION, since that is the name that tells a blob promotion from a manifest
- *  publication apart. */
+ *  its destination, which is what tells a blob promotion from a manifest publication. */
 interface Fault {
   readonly op: "mkdir" | "writeFile" | "fsyncFile" | "fsyncDir" | "rename" | "remove";
   readonly matchPath: (path: string) => boolean;
@@ -117,7 +110,7 @@ export function instrument(fault?: Fault): { io: RecordIO; log: Recorded[] } {
 
 export const isManifestRenameTarget = (to: string): boolean => /\d+-[0-9a-f-]{36}\.json$/i.test(to);
 
-// ── the case group ───────────────────────────────────────────────────────────────────────────
+// The case group
 
 async function caseHappyPathOrder(): Promise<void> {
   const root = makeStoreRoot();
@@ -282,9 +275,8 @@ async function caseFaultAtCommitsFsync(): Promise<void> {
     const outcome: CommitOutcome = await commitTransaction({ root, manifest, blobs, io });
     assert.equal(outcome.committed, "unknown", `a fault at the commits-directory fsync must be indeterminate, got ${JSON.stringify(outcome)}`);
 
-    // The rename itself was real and untouched by the fault: the manifest genuinely landed on
-    // disk even though its durability was never confirmed — exactly the ambiguity
-    // `committed:"unknown"` exists to report honestly rather than guess past.
+    // The rename itself was real and untouched by the fault: the manifest landed on disk with
+    // its durability never confirmed, which is what `committed:"unknown"` reports.
     const commitPath = join(root, ".zz", "commits", commitFilename(manifest.sequence, manifest.transaction_id));
     assert.equal(existsSync(commitPath), true, "the manifest was actually renamed into place before the fsync fault fired");
     const onDisk = JSON.parse(readFileSync(commitPath, "utf8")) as Record<string, unknown>;
@@ -341,7 +333,7 @@ async function caseExportHooksPendingOrCurrent(): Promise<void> {
     if (ok.committed === true) {
       assert.equal(ok.projection, "current");
       assert.equal(ok.history_export, "current");
-      // The hooks were handed the ACTUAL published manifest — its hash, not a placeholder.
+      // The hooks were handed the published manifest — its hash, not a placeholder.
       assert.equal(seenByHooks.length, 2);
       for (const seen of seenByHooks) {
         assert.equal(seen.manifest_hash, ok.manifest_hash);

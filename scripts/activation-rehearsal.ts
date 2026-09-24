@@ -2,44 +2,37 @@
 /**
  * Rehearse the activation procedure on copied fixtures, and derive whether it may run at all.
  *
- * WHAT A REHEARSAL IS HERE, AND WHAT IT IS NOT. `deploy/activation-runbook.json` is a written
- * procedure for switching production. This script exercises the parts of it that can be
- * exercised on copies, reports what that established and what it did not, and writes that
- * report back into the runbook's `rehearsal` block. It never performs the procedure. The
- * distinction is kept by name rather than by intent: there is no `executed` field anywhere in
- * this delivery, and this script does not create one.
+ * `deploy/activation-runbook.json` is a written procedure for switching production. This script
+ * exercises the parts of it that can be exercised on copies, reports what that established and what
+ * it did not, and writes that report back into the runbook's `rehearsal` block. It never performs
+ * the procedure, and the runbook has no `executed` field.
  *
- * NO DATABASE, EVER. It refuses outright if any database connection variable is set, because
- * the one way a rehearsal turns into an execution is by finding a real connection lying around
- * in the environment. `deploy/RESTORE-AND-CUTOVER.md` section 0 makes the same point about the
- * machine — at least one laptop in this project runs a local container pointed at the
- * production database — and a refusal is cheaper than a convention.
+ * DELIBERATE: it refuses outright if any database connection variable is set. The one way a
+ * rehearsal turns into an execution is by finding a real connection lying around in the
+ * environment, and at least one laptop in this project runs a local container pointed at the
+ * production database.
  *
- * ACTIVATION IS DERIVED, NEVER READ. {@link blockers} computes the list of preconditions that
- * are not met, from their eight `state` values and from nothing else, and "may activate" is the
- * emptiness of that list. The assessor protocol argued this for the
- * assessor protocol and is where the shape comes from: a field somebody could set to true is a
- * field somebody will set to true. So there is no field. {@link waiveImmunity} is the
- * behavioural proof rather than the promise — it re-derives against a copy of the document
- * carrying `waivePreconditions: true` and an `activation_allowed: true` beside it, and requires
- * the answer not to move.
+ * Activation is derived, never read. {@link blockers} computes the preconditions that are not met,
+ * from their eight `state` values and from nothing else, and "may activate" is the emptiness of
+ * that list — there is no field somebody could set to true. {@link waiveImmunity} is the
+ * behavioural proof rather than the promise: it re-derives against a copy of the document carrying
+ * `waivePreconditions: true` and an `activation_allowed: true` beside it, and requires the answer
+ * not to move.
  *
  *   node scripts/activation-rehearsal.ts             # rehearse and report; writes nothing
  *   node scripts/activation-rehearsal.ts --record    # the same, and write the rehearsal block
  *
- * EXIT CODES, AND WHY THE GATE HAS ITS OWN. A clean rehearsal and a permitted activation are
- * different facts, and collapsing them into one zero is how a refusing gate gets read as green
- * by anything checking `$?`. `deploy/BENCHMARK-MEASUREMENT.md` reaches the same conclusion about
- * its own report: "a structurally valid report is not a passing one".
+ * A clean rehearsal and a permitted activation are different facts, so they have different exit
+ * codes rather than one zero:
  *
  *   0  rehearsed clean, and no precondition is blocked — activation may proceed to step 2
  *   1  the rehearsal itself found a problem: a malformed runbook, or a step that misbehaved
  *   2  refused to start, because the environment names a database this must never reach
- *   3  rehearsed clean, and activation is REFUSED because a precondition is blocked
+ *   3  rehearsed clean, and activation is refused because a precondition is blocked
  *
  * `--record` may write the `rehearsal` block and nothing else. It re-reads the runbook, replaces
- * that one key, and refuses if the preconditions it read at the start differ from the ones on
- * disk at the end — a rehearsal that could edit a precondition could mark its own gate met.
+ * that one key, and refuses if the preconditions it read at the start differ from the ones on disk
+ * at the end — a rehearsal that could edit a precondition could mark its own gate met.
  */
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -53,23 +46,20 @@ const RUNBOOK = "deploy/activation-runbook.json";
 const LAYOUT = "deploy/init-record-layout.sh";
 
 /** The eight the procedure's own gate check requires. Listed here because this script must
- *  notice one going MISSING as loudly as it notices one being blocked — an absent precondition
+ *  notice one going missing as loudly as it notices one being blocked — an absent precondition
  *  is not an unblocked one, and reading `Object.keys` would make a deletion look like progress. */
 const REQUIRED = ["operator", "runbook", "app_version", "store_version", "database_version",
                   "restore_evidence", "parity_evidence", "switch_authorization"] as const;
 
 /**
- * Every variable that could name a real database, and which of them this environment sets.
- * Presence of any one is a refusal rather than a warning: this script has no business
- * connecting to anything, so the safe reading of a connection string in the environment is that
- * somebody expects it to be used.
+ * Every variable that could name a real database, and which of them this environment sets. Presence
+ * of any one is a refusal rather than a warning: this script has no business connecting to
+ * anything, so a connection string in the environment reads as somebody expecting it to be used.
  *
- * EACH ONE IS READ BY ITS LITERAL NAME, and the list-and-loop this replaced is the reason. A
- * variable reached as `process.env[name]` is invisible to the two things that keep environment
- * configuration honest here — `zz-tool`'s forwarding list and `deploy/.env.example` — because
- * both find a variable by locating its literal name in the source. A computed read silently
- * stops being forwarded and stops being documented, and nothing says so. So the names are
- * spelled out, once each, where a search can find them.
+ * Each one is read by its literal name. A variable reached as `process.env[name]` is invisible to
+ * `zz-tool`'s forwarding list and to `deploy/.env.example`, which both find a variable by locating
+ * its literal name in the source, so a computed read silently stops being forwarded and stops being
+ * documented.
  */
 function databaseNamesInEnvironment(): string[] {
   const named: readonly (readonly [string, string | undefined])[] = [
@@ -94,7 +84,7 @@ function record(v: unknown, label: string): Json {
   return v;
 }
 
-// ── deriving the gate ──────────────────────────────────────────────────────────────────────
+// Deriving the gate
 
 /**
  * Every precondition that does not permit activation, with why. A missing key and a key whose
@@ -195,10 +185,10 @@ function stepShape(rb: Json): string[] {
   return bad;
 }
 
-// ── rehearsing step 7 on copied fixtures ───────────────────────────────────────────────────
+// Rehearsing step 7 on copied fixtures
 
 /** Every file under `dir` whose path does not start with `.zz`, as one digest. This is what
- *  "the script rewrites no document byte" is measured against: the store's CONTENT, with the
+ *  "the script rewrites no document byte" is measured against: the store's content, with the
  *  layout the script creates deliberately excluded, hashed over sorted paths so the walk order
  *  cannot change the answer. */
 function contentDigest(dir: string): string {
@@ -244,12 +234,12 @@ interface Rehearsed {
 }
 
 /**
- * Step 7, on a store copied into a temporary directory. Three states are exercised, because
- * three is how many `record.ts` distinguishes: a store with no layout, a store with a complete
- * one, and a store left half-initialised by an interrupted attempt — which refuses every write
- * exactly as a missing one does while looking initialised to anybody who lists it.
+ * Step 7, on a store copied into a temporary directory. Three states are exercised, because three
+ * is how many `record.ts` distinguishes: a store with no layout, a store with a complete one, and a
+ * store left half-initialised by an interrupted attempt — which refuses every write exactly as a
+ * missing one does while looking initialised to anybody who lists it.
  *
- * The fixtures are COPIES of real files from this repository. A synthetic empty directory would
+ * The fixtures are copies of real files from this repository: a synthetic empty directory would
  * exercise the mkdir and not the promise that matters, which is that a store's documents come
  * through the step untouched.
  */
@@ -320,7 +310,7 @@ function rehearseLayout(): Rehearsed {
   return { established, failures };
 }
 
-// ── the run ────────────────────────────────────────────────────────────────────────────────
+// The run
 
 function main(): number {
   const reachable = databaseNamesInEnvironment();
@@ -404,9 +394,9 @@ function main(): number {
     console.log("\nReport only. Re-run with --record to write the rehearsal block.");
   }
 
-  // THE REHEARSAL PASSING AND THE ACTIVATION BEING PERMITTED ARE DIFFERENT FACTS. Everything
-  // above can be clean while every precondition is blocked — which is exactly the state today —
-  // and returning zero there would hand a green exit code to anybody checking for one.
+  // The rehearsal passing and the activation being permitted are different facts. Everything above
+  // can be clean while every precondition is blocked, and returning zero there hands a green exit
+  // code to anybody checking for one.
   if (gate.length) {
     console.log(`\nACTIVATION REFUSED — ${gate.length} of ${REQUIRED.length} preconditions are ` +
                 "blocked. The rehearsal itself is clean; exit 3 is \"rehearsed, and may not run\".");

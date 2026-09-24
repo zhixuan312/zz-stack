@@ -2,14 +2,12 @@
  * The shelf, walked against a live deployment: which skills a caller can reach, the knowledge
  * store's subject vocabulary and supersession, and the evaluation door's own refusals.
  *
- * SPLIT OUT OF chain-check.ts BY SUBJECT, the way chain-bugs.ts was. That file is about the
- * document chain — write, gate, approve, close, and the refusals that hold the sequence
- * together. What a caller may READ and what the platform already KNOWS are different questions,
- * asked of different doors, and keeping all three in one file is what pushed it past the
- * 700-line ceiling.
+ * chain-check.ts holds the document chain — write, gate, approve, close, and the refusals that
+ * hold the sequence together. What a caller may read and what the platform already knows are
+ * asked of different doors and live here.
  *
- * `checks/chain-check-wiring.ts` follows this import, so a tool exercised here counts as
- * exercised — the walk is what matters, not which file it is written in.
+ * COUPLED: `checks/chain-check-wiring.ts` follows this import, so a tool exercised here counts
+ * as exercised.
  */
 
 /** The pieces chain-check owns: its live client and its recorders. Handed in rather than
@@ -18,7 +16,7 @@ interface ShelfDeps {
   call: (tool: string, args: unknown) => Promise<string>;
   check: (name: string, got: string, wantError: boolean, because?: RegExp) => void;
   record: (ok: boolean, name: string, got: string) => void;
-  /** For the tools that degrade with a NAMED refusal when a deployment has no platform
+  /** For the tools that degrade with a named refusal when a deployment has no platform
    *  database: a refusal that says which one is an answer, not a failure. */
   eitherOr: (name: string, got: string, acceptableRefusal: RegExp) => void;
   INIT: string;
@@ -30,38 +28,26 @@ export async function walkShelf({ call, check, record, eitherOr, INIT }: ShelfDe
   // as ordinary above, and these two tools document the identical fallback.
   eitherOr("skill_list lists what this caller can reach",
     await call("skill_list", {}), /platform database is unreachable/);
-  // zz-platform ships with the `zz` plugin, which every account carries — session_whoami points
+  // zz-platform ships with the `zz-core` plugin, which every account carries — session_whoami points
   // here itself ("skill_read(\"zz-platform\")"), so this is the one skill name the door can
   // promise exists without reading this deployment's own catalog first.
   check("skill_read reads the platform's own spine skill",
     await call("skill_read", { name: "zz-platform" }), false);
-  // THE MERGE, asserted on the half that has a right answer whatever this deployment holds.
-  // Which owners exist depends on which flows are installed and which blocks are routed, so
-  // the shelf itself can only be checked for shape (above). The refusal cannot: an owner id
-  // nothing answers to must be refused by name, listing the ones that do, and that is the
-  // behaviour skill_list took over from block_skills.
-  check("skill_list refuses an owner no plugin or block answers to",
+  // Asserted on the half that has a right answer whatever this deployment holds: which owners
+  // exist depends on which flows are installed, so the shelf is checked for shape above, while
+  // an owner id nothing answers to must be refused by name, listing the ones that do.
+  check("skill_list refuses an owner no plugin answers to",
     await call("skill_list", { owner: "no-such-owner-chain-check" }), true,
     /is not a plugin you can reach/);
 
-  // A subject tag says WHAT KIND of thing a piece of knowledge is about, and the kinds are a
+  // A subject tag says what kind of thing a piece of knowledge is about, and the kinds are a
   // closed set. Open, it becomes a free-text field that agrees with nothing.
   //
-  // Every OTHER argument is filled in, and there is a positive control below. Without both,
-  // a call missing a required argument is refused by the schema, the assertion sees an ERROR
-  // and prints `ok` — a check that passes without ever reaching the rule it names.
-  // Evidence names the INITIATIVE FOLDER, not a document inside it — knowledge_add checks the
-  // shape (one plain segment) and then that a folder by that name exists in a store this
-  // caller belongs to. `${INIT}/${docs[0]}` fails both, so the positive control below could
-  // never have passed, and the negative control above passed for a reason that was not the
-  // one it names: subjectTagError runs before the evidence loop, so the unknown kind was
-  // refused first and the fixture's own invalidity never showed.
-  // `scope` has no default — knowledge_add's own schema refuses a call that omits it, before
-  // the handler runs at all. This was missing here, so both calls below threw a schema error
-  // rather than reaching subjectTagError: the negative control passed on the WRONG refusal
-  // ("`scope` says which shelf ..." never matches /is not a kind/) and would have been caught
-  // by `because`, except the throw never let it get that far. `scope: "team"` is what makes
-  // this the case the comments below actually describe.
+  // Every other argument has to be valid, or a call refused by the schema is read as the rule
+  // firing and the check passes without reaching it. Three things make this fixture reach
+  // subjectTagError: `evidence` names an initiative folder, one plain segment, that exists in
+  // a store this caller belongs to; `scope` is given, because knowledge_add's schema refuses a
+  // call that omits it; and the positive control below shares the fixture.
   const node = {
     title: "chain-check subject probe",
     type: "knowledge",
@@ -74,20 +60,17 @@ export async function walkShelf({ call, check, record, eitherOr, INIT }: ShelfDe
   const added = await call("knowledge_add", { ...node, tags: ["plugin:zz-core"] });
   check("a known kind is accepted", added, false);
 
-  // knowledge_supersede needs two nodes that actually exist, on the same shelf. The id is
-  // this tool's own account of what it just did — "journal node 0007 created (...)" — read
-  // back rather than guessed, because a fixture id increments differently on every store.
+  // knowledge_supersede needs two nodes that exist, on the same shelf. The id is read back out
+  // of the tool's own reply, because a fixture id increments differently on every store.
   const oldId = /journal node (\d+) created/.exec(added)?.[1];
   if (oldId) {
     const superseding = await call("knowledge_add",
       { ...node, title: "chain-check subject probe (superseding)", tags: ["plugin:zz-core"] });
     const newId = /journal node (\d+) created/.exec(superseding)?.[1];
     if (newId) {
-      // NAMING THE SHELF, because both shelves allocate from 0001 and a bare id meaning a
-      // node on each is the ordinary case rather than an edge one. The fixture above is minted
-      // with `scope: "team"`, so that is the shelf these two ids are on; without saying so this
-      // step failed the moment the platform's shelf happened to hold the same number, which is
-      // an accident of how many nodes each shelf has and not a fact about supersession.
+      // Naming the shelf, because both shelves allocate from 0001 and a bare id can mean a node
+      // on each. The fixture above is minted with `scope: "team"`, so that is the shelf these
+      // two ids are on.
       check("knowledge_supersede marks a node superseded by one that exists",
         await call("knowledge_supersede", { old_id: oldId, new_id: newId, shelf: node.scope }), false);
     } else {
@@ -99,29 +82,25 @@ export async function walkShelf({ call, check, record, eitherOr, INIT }: ShelfDe
       `could not read an id back from knowledge_add: ${added}`);
   }
 
-  // knowledge_search refuses the identical way session_whoami's team lookup and knowledge_add's
-  // own team-scope guard do — no platform database, or no team — and that is ordinary on a
-  // deployment run without either, not a broken tool.
+  // knowledge_search refuses the same way session_whoami's team lookup does — no platform
+  // database, or no team — which is ordinary on a deployment run without either.
   eitherOr("knowledge_search finds the node this run just wrote",
     await call("knowledge_search", { query: "chain-check subject probe" }),
     /no platform database|no platform db|not in a team/);
 
-  /* AND FOUND NOTHING, SO THE OR PASS RUNS — AND THE ANSWER SAYS IT DID.
+  /* The AND pass finds nothing, so the OR pass runs, and the answer says it did.
    *
    * `websearch_to_tsquery` joins unquoted terms with AND, so a long question demands one
-   * document containing every word. Measured on real use before this was written: 16% of one
-   * person's 269 searches came back empty, and three of them returned 33, 7 and 58 candidates
-   * when the same terms were joined by `|` against the same corpus and the same index. The
-   * documents were there; the conjunction hid them, and the store answered "nothing is known".
+   * document containing every word. The query below is empty under AND by construction — the
+   * last token appears in no document anywhere — while every other word is in the probe node
+   * this walk just wrote.
    *
-   * The query below is empty under AND by construction — the last token appears in no document
-   * anywhere — while every other word is in the probe node this walk just wrote. So the
-   * broadened pass has to fire, and BOTH halves of its contract are asserted: the note that
-   * tells a reader these match only SOME of the terms, and `via: ["lexical-broad"]` on the rows.
-   * Asserting only that something came back would pass on a plain match and prove nothing.
+   * Both halves of the broadened pass's contract are asserted: the note telling a reader these
+   * match only some of the terms, and `via: ["lexical-broad"]` on the rows. Asserting only that
+   * something came back would pass on a plain match.
    *
-   * Refusals are tolerated exactly as the sibling case above tolerates them, and for the same
-   * reason: a deployment with no platform database or no team is ordinary, not broken.
+   * Refusals are tolerated as above: a deployment with no platform database or no team is
+   * ordinary.
    */
   const broadened = await call("knowledge_search",
     { query: "chain-check subject probe zqxwvnotokeninanydocument" });

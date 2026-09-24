@@ -1,6 +1,6 @@
 ---
 name: zz-admin
-version: 2.7
+version: 2.8
 description: "Running the platform itself: who exists, which teams they are in, and the tokens and enrolment links that let anyone in at all. Everything here acts on OTHER people — which is what makes it the one package that is not about the person in front of you."
 when_to_use: "Someone needs a principal created or deactivated, a team made or retired, a person added to or removed from a team, a PAT issued or revoked, or a passkey enrolment link minted. Also for an access review — who has what, and who gave it to them."
 ---
@@ -81,13 +81,10 @@ Resolving is how this platform records **what it has fixed**, and it keeps every
 nothing happened. Never delete a report a person filed. If its resolution was wrong, file what you
 now know as a new report naming the old id.
 
-Deleting is for rows that were **never anybody's report**. `chain-check` walks this tracker end to
-end against the live deployment on its way through a release, and each run used to leave a real row
-behind reading "Safe to close; it reports nothing real." Five collected beside two genuine reports
-before anyone looked. Resolving those would have written a fake decision into the record of what
-this platform has fixed, so they are deleted instead — logged, attributed, and irreversible.
-
-In practice you will rarely call it: the walk now removes its own row.
+Deleting is for rows that were **never anybody's report** — a probe row `chain-check` leaves when
+it walks this tracker against the live deployment. Resolving one would write a fake decision into
+the record of what this platform has fixed, so it is deleted instead — logged, attributed, and
+irreversible. You will rarely call it: the walk removes its own row.
 
 ## Rebuilding a knowledge index
 

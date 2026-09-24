@@ -213,32 +213,10 @@ unexpected, a review record whose pinned runtime has moved since.
 
 ## 6. What is outstanding
 
-Read this section as of the commit that carries it; the report recomputes it.
-
-**No PostgreSQL 17 with `pg_textsearch` exists anywhere in this delivery.** Migration 070 is
-deferred on every cluster by construction, no BM25 index has ever been created, and the
-lexical lane's ranking has never executed. Four suites — `rebuild`, `isolation`, `migration`,
-`deployment` — carry cases that need an isolated database and report them `not_run`, which at
-the acceptance profile is a block.
-
-**`deploy/postgres/versions.lock.json` carries nine unverified pins.** Every one is a
-deliberate placeholder written with repeated digits so it is visually unmistakable from a real
-digest, by a task that had no docker, no network and no registry access. `runtime_image_digest`
-in the binding is one of them. No image has been built from this lock.
-
-**Every benchmark release target is blocked**, for the same reason: the numbers come from a
-workload that has never run against the real engine.
-
-To discharge them, in order:
-
-- [ ] Resolve the nine `unverified_fields` in `deploy/postgres/versions.lock.json` against a
-      reachable registry and upstream repository, then `docker build` and read the real
-      digests back out of the built image.
-- [ ] Stand up an isolated PostgreSQL 17 with `pg_textsearch` and export
-      `ZZ_TENANT_INFO_ISOLATED_DB_URL` pointing at it — never at a live deployment; the
-      deployment suite refuses a URL that also appears as a live database.
-- [ ] Re-run the four blocked suites and the benchmark with `tenant-info`, at the acceptance profile.
-- [ ] Re-run `tenant-info verify --finalize --profile acceptance` and read `ready`.
+`tenant-info verify --finalize --profile acceptance` computes it; this document keeps no copy.
+Cases that need an isolated database run only when `ZZ_TENANT_INFO_ISOLATED_DB_URL` points at
+one — never at a live deployment; the deployment suite refuses a URL that also appears as a live
+database — and report `not_run` otherwise, which at the acceptance profile is a block.
 
 Only after `ready` is true does the normal release review begin. **A ready result is not
 permission to cut over.** The production freeze and cutover are a separate decision by the

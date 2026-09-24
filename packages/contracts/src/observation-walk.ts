@@ -1,28 +1,22 @@
 /**
- * observation-walk.ts — the bounded filesystem walk a manifest capture is built from, and the
- * only place in this package that reads a directory.
+ * observation-walk.ts — the bounded filesystem walk a manifest capture is built from, and the only
+ * place in this package that reads a directory.
  *
- * WHY `node:fs` APPEARS IN `packages/contracts` AT ALL, when nothing else here has ever needed
- * it. A manifest of what a piece of work wrote is a statement about the filesystem, and there is
- * no way to make that statement without looking. The alternative — a caller hands in a list of
- * paths and this module hashes them — moves the interesting failure (a file nobody remembered to
- * list) out of the record and into the caller, which is precisely the silent incompleteness the
- * capture exists to refuse. `node:crypto` is already imported by `adapters/port.ts`, so node
- * builtins are typed here; this file adds `node:fs` and `node:path` on purpose. Do not "fix" it.
+ * DELIBERATE: `node:fs` and `node:path` are imported in `packages/contracts`. A manifest of what a
+ * piece of work wrote is a statement about the filesystem, and the alternative — a caller hands in
+ * a list of paths and this module hashes them — moves the interesting failure, a file nobody
+ * remembered to list, out of the record and into the caller.
  *
- * GIT IS NOT CONSULTED, ANYWHERE IN THIS FILE. There is no ignore-rule parser, no `.gitignore`
- * reader and no shelling out to git. An ignored output is still an output: a compiled bundle, a
- * generated report or a build artifact is part of what the work did, and a walk that asked git
- * first would leave exactly those out of the record while reporting a full manifest. The one
- * exclusion this module ships by default is `.git` itself, which is not an output at all but the
- * store the outputs would be recorded IN — and it is named in the record rather than assumed.
+ * DELIBERATE: git is not consulted anywhere in this file. There is no ignore-rule parser, no
+ * `.gitignore` reader and no shelling out to git. An ignored output is still an output — a
+ * compiled bundle, a generated report — and a walk that asked git first would leave exactly those
+ * out while reporting a full manifest. The one default exclusion is `.git` itself, which is the
+ * store the outputs would be recorded in, and it is named in the record rather than assumed.
  *
- * EVERY BOUND IS A FUNCTION OF THE PATH, NEVER OF WALK ORDER. This is the rule that makes a
- * baseline comparable to a final manifest. A cumulative budget — "hash content until 16 MiB is
- * spent, then stamp the rest" — spends itself in walk order, so adding one early file pushes a
- * later untouched file from a content hash to a stamp and the comparison reports it `modified`.
- * The hashing scheme here depends only on the file's own size, so an untouched file hashes the
- * same way in both manifests whatever else changed around it.
+ * Every bound is a function of the path, never of walk order. A cumulative budget spends itself in
+ * walk order, so adding one early file pushes a later untouched file from a content hash to a
+ * stamp and the comparison reports it `modified`. The hashing scheme here depends only on the
+ * file's own size.
  */
 import { createHash } from "node:crypto";
 import { readdirSync, lstatSync, readFileSync, readlinkSync, type Stats } from "node:fs";
@@ -31,17 +25,16 @@ import { posix } from "node:path";
 /**
  * Where an exclusion came from, and the reason the field exists rather than a boolean.
  *
- * `git_ignore` is representable and nothing in this module produces it. That is deliberate: the
- * capture computes `includesIgnored` by asking whether any exclusion or any recorded skip came
- * from this source, so the flag is a reduction over real data rather than a `true` somebody
- * typed. A future edit that does add ignore filtering flips the flag by existing, instead of
- * leaving a stale literal claiming the opposite.
+ * `git_ignore` is representable and nothing in this module produces it. The capture computes
+ * `includesIgnored` by asking whether any exclusion or recorded skip came from this source, so the
+ * flag is a reduction over real data rather than a `true` somebody typed. An edit that does add
+ * ignore filtering flips the flag by existing.
  */
 type ExclusionSource = "declared_exclusion" | "cost_cap" | "git_ignore";
 
-/** A directory name the walk does not descend into, with the reason it does not. Matched by
- *  exact name at any depth — there is no pattern language here, because a pattern language is
- *  how an exclusion list quietly becomes an ignore-rule engine. */
+/** A directory name the walk does not descend into, with the reason it does not. Matched by exact
+ *  name at any depth — there is no pattern language here, because a pattern language is how an
+ *  exclusion list quietly becomes an ignore-rule engine. */
 export interface ManifestExclusion {
   readonly directoryName: string;
   readonly source: ExclusionSource;
@@ -51,14 +44,13 @@ export interface ManifestExclusion {
 /**
  * The bounds on one walk. All three are path-deterministic (see the file header).
  *
- * `contentHashBytes` is the size at or below which a file is hashed over its content. Above it
- * the entry carries a `stamp:` hash over size and modification time, which is weaker and says
- * so: a same-size edit that preserves mtime is invisible to a stamp. Measured on this repository
- * at 256 KiB, a full walk of the root hashes 7328 of 7367 files by content in about 140 ms.
+ * `contentHashBytes` is the size at or below which a file is hashed over its content. Above it the
+ * entry carries a `stamp:` hash over size and modification time, which is weaker and says so: a
+ * same-size edit that preserves mtime is invisible to a stamp.
  *
- * `maxFiles` is a safety valve against a tree nobody meant to walk, not a working bound — when
- * it fires the record is INCOMPLETE, because a walk that stopped part way cannot say what it
- * did not reach. `maxDepth` is the same kind of valve, and fires the same way.
+ * `maxFiles` and `maxDepth` are safety valves against a tree nobody meant to walk, not working
+ * bounds — when either fires the record is incomplete, because a walk that stopped part way cannot
+ * say what it did not reach.
  */
 export interface CaptureLimits {
   readonly contentHashBytes: number;
@@ -75,20 +67,17 @@ export const DEFAULT_CAPTURE_LIMITS: CaptureLimits = Object.freeze({
 /**
  * One manifest: a stamp, the roots it covers, and path to hash for every entry found.
  *
- * `entries` is exactly the mapping the contract asks for — a path against the hash of what was
- * at that path at that moment — and the hash string names its own scheme so a reader can never
- * mistake a stamp for a content hash:
+ * The hash string names its own scheme, so a reader can never mistake a stamp for a content hash:
  *
  *   sha256:<hex>                 the file's bytes
  *   stamp:<hex>                  size and modification time, for a file above `contentHashBytes`
  *   link:<hex>                   a symbolic link's target text, that entry's whole content
  *   special:not-a-regular-file   a socket, device or pipe, which has no content to hash
  *
- * `scheme` is the digest of the TERMS this manifest was taken under — its roots, its bounds and
+ * `scheme` is the digest of the terms this manifest was taken under — its roots, its bounds and
  * its exclusions. Two manifests are only comparable when it matches, and the capture refuses to
  * present a change set across a mismatch: a baseline taken with a different `contentHashBytes`
- * flips every large file between `sha256:` and `stamp:` and would report the whole tree
- * `modified`, which is a wrong answer that reads exactly like an established one.
+ * flips every large file between `sha256:` and `stamp:` and reports the whole tree `modified`.
  */
 export interface FileManifest {
   readonly at: string;
@@ -113,9 +102,9 @@ interface WalkFailure {
 /**
  * What one walk found, kept separate from what a capture makes of it.
  *
- * The three loss channels are separated because they mean different things to a reader:
- * `stamped` is hash strength lost on entries that ARE in the manifest, while `depthCapped` and
- * `fileCapHit` are coverage lost on entries that are not in it and cannot be enumerated.
+ * The three loss channels mean different things to a reader: `stamped` is hash strength lost on
+ * entries that are in the manifest, while `depthCapped` and `fileCapHit` are coverage lost on
+ * entries that are not in it and cannot be enumerated.
  */
 interface WalkResult {
   readonly entries: Record<string, string>;
@@ -134,9 +123,9 @@ function digestOf(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
-/** The hash for one non-directory entry, chosen by what the entry IS and how big it is — never
- *  by how much budget an earlier entry left behind. Returns null when the entry could not be
- *  read, so the caller records a failure rather than inventing a hash. */
+/** The hash for one non-directory entry, chosen by what the entry is and how big it is — never by
+ *  how much budget an earlier entry left behind. Returns null when the entry could not be read, so
+ *  the caller records a failure rather than inventing a hash. */
 function hashEntry(
   path: string,
   stats: Stats,
@@ -169,16 +158,16 @@ function reasonText(error: unknown): string {
 /**
  * Walk the declared roots and hash everything under them.
  *
- * DETERMINISTIC ORDER, by sorted entry name at every level, so two captures of an unchanged tree
- * produce byte-identical manifests and a safety valve that fires fires at the same place twice.
+ * Deterministic order, by sorted entry name at every level, so two captures of an unchanged tree
+ * produce byte-identical manifests and a safety valve fires at the same place twice.
  *
- * NO SYMLINK CYCLES ARE POSSIBLE. `Dirent.isDirectory()` reports on the link itself, not its
+ * No symlink cycles are possible: `Dirent.isDirectory()` reports on the link itself, not its
  * target, so a symbolic link to a directory is recorded as a `link:` entry and never descended
- * into. The walk therefore terminates on any tree, with or without the depth cap.
+ * into. The walk terminates on any tree, with or without the depth cap.
  *
- * Keys are `posix.join(root, relative)` with the root spelled as the caller declared it, so a
- * root of `.` yields repository-relative keys and an absolute root yields absolute ones. Two
- * overlapping roots that name the same file produce the same key and collapse to one entry.
+ * Keys are `posix.join(root, relative)` with the root spelled as the caller declared it, so a root
+ * of `.` yields repository-relative keys and an absolute root yields absolute ones. Two
+ * overlapping roots naming the same file produce the same key and collapse to one entry.
  */
 export function walkRoots(
   roots: readonly string[],

@@ -108,15 +108,6 @@ restored deployment serves the same content as the old one, which is what a cuto
 evidence has to mean. Citing it here would be citing the right-sounding words over the wrong
 measurement.
 
-**And the assessor protocol that used to sit here is gone.** A reader of an earlier version of
-this document was warned not to reach for `packages/contracts/src/eval-protocol*.ts` as parity
-evidence, because it was a drafted, unactivated protocol — no arm run, tolerances null, owner
-approval null, inventory digest null. It has since been **deleted**, and the reason is the same
-fact stated more plainly: its inputs do not exist and this schema has nowhere to put them. No
-slice columns, no rate card, no second reviewer in 614 judged rows, and an inventory pinned to
-a directory that was never created. A design nothing can run is not evidence of anything, and
-keeping it only gave the next reader something to mistake for a measurement.
-
 The measurements that *would* be parity are absent, in three different ways.
 `RESTORE-AND-CUTOVER.md` section 7 records that `projection_parity_against_the_isolated_database`
 and `copied_multi_owner_store_projection_replay` are a hardcoded `NOT_RUN` map reading no
@@ -133,13 +124,6 @@ a real registry, a real upstream repository and a real built image. The ninth,
 `okf_reference_digest`, is still a placeholder, and its own `unverified_fields` entry argues it
 should be struck from the specification rather than filled, because this repository vendors no
 OKF reference to digest.
-
-> **A stale document, since corrected.** `RESTORE-AND-CUTOVER.md` section 3 used to say that lock
-> "still carries placeholder pins — every `*_verified` flag is `false`", and section 7's table
-> inherited the premise. Both were corrected at `fa975c4`: section 3 now records eight of nine
-> flags true, names the ninth as unresolvable by design rather than outstanding, and tells a
-> reader to prefer the lock file if the two ever disagree again. Kept rather than deleted, because
-> the pattern it caught is the one that then caught the passage above.
 
 ---
 

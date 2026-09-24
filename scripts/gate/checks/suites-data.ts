@@ -5,10 +5,6 @@
  * maps against the code that resolves through them, and the telemetry a call leaves behind.
  * A defect in any of these is silent by construction — a row is written, a query returns, and
  * the number is simply wrong — which is why they are checks and not tests.
- *
- * Split out of `suites.ts`, which registered ninety-six checks in one file — so any edit to
- * it drifted ninety-four mutation rows, because `check_sha256` is computed per FILE. Grouping
- * by subject keeps that blast radius to the group somebody is actually working on.
  */
 import { check } from "../run.ts";
 import { runsCheck } from "../suite-runner.ts";

@@ -1,29 +1,21 @@
 /**
- * Prove that a door which says NO ends the request.
+ * Prove that a door which says no ends the request.
  *
  *   npm run check:identity      # exits non-zero on failure, like every engine here
  *
- * `resolveThrough` carries this sentence: "Exported so the ORDERING can be tested, because
- * the property that matters is not visible by reading." It was exported, and nothing tested
- * it — the export existed for a check that was never written, which is the same shape as the
- * markdown renderer beside this file: two real holes found by reading, fixed by reading, and
- * never once run.
+ * COUPLED: `resolveThrough` is exported from identity.js so this can test its ordering. The
+ * property is an authentication bypass: a refusing adapter that fell through would let the
+ * forwarded-header adapter answer, turning a revoked token into an unauthenticated header
+ * claim. The bug is a missing early return, and the code reads identically with and without
+ * it.
  *
- * The property is an authentication bypass, not a tidiness concern. A revoked PAT must 401
- * immediately. If a refusing adapter fell through to the next door instead, the forwarded
- * -header adapter would answer — and a revoked token would become an unauthenticated header
- * claim, which is the exact opposite of having revoked it. Nothing about that is visible in
- * `for (const adapter of adapters)`: the bug is a missing early return, and the code reads
- * identically with and without it.
+ * DELIBERATE: run against the real `resolveThrough`, never a copy of its rules. The adapters
+ * are stubs because the production two need a database and a compose network, and what is
+ * under test is the walk — to which a stub door that refuses is indistinguishable from a
+ * revoked PAT.
  *
- * Against the REAL resolveThrough, never a copy of its rules. The adapters are stubs because
- * the production two need a database and a compose network, and neither is the subject here:
- * what is under test is the WALK, and a stub door that refuses is indistinguishable to it
- * from a revoked PAT.
- *
- * BOTH DIRECTIONS, for the reason the markdown corpus has both. A walk that returned the
- * first adapter's answer unconditionally would pass every refusal case above and be useless,
- * and that failure looks exactly like success — so falling through on `null` is a case too.
+ * Both directions are cases: a walk returning the first adapter's answer unconditionally
+ * passes every refusal case and is useless, so falling through on `null` is asserted too.
  */
 import type { Request } from "express";
 
@@ -53,7 +45,7 @@ interface Case {
   name: string;
   /** What each door in order answers. */
   doors: (Awaited<ReturnType<IdentityAdapter["resolve"]>>)[];
-  /** The doors that must have been ASKED — the ordering property lives here. */
+  /** The doors that must have been asked — the ordering property lives here. */
   asked: string[];
   expect: "identity" | "refuse" | "null";
   why: string;

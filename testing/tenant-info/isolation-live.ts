@@ -1,37 +1,22 @@
 /**
- * isolation-live.ts — the two cases that ask PostgreSQL instead of modelling it.
+ * The two cases that ask PostgreSQL instead of modelling it. `isolation.ts`'s offline group
+ * computes idf in TypeScript over a fake index, which proves the comparator and the query
+ * shape; these compute nothing and ask the database for the number a user's search would be
+ * ranked by.
  *
- * SPLIT OUT OF isolation.ts AT THE 700-LINE CEILING, and which half moved was decided the way
- * every split in this delivery has been: `checks/tenant-isolation-statistics.ts` imports
- * `validateIsolationObservation` from `isolation.ts` by name, and a frozen check's bytes cannot
- * be edited to follow a symbol elsewhere. Nothing pins these two, so they are what could go.
- *
- * WHAT THEY REPLACED. Both were gates with no body, reporting `not_run` with a reason that was
- * true when it was written — "this checkout carries no verified pg_textsearch bm25 index or
- * score expression" — and stopped being true the day the image was built, migration 070 ran
- * against 813 restored documents, `ensureCorpus` created a BM25 index on a concrete partition,
- * and the lane query returned a real score. A gate whose reason has expired reports an absence
- * that is no longer there, which is worse than either running or refusing.
- *
- * `isolation.ts`'s offline group computes idf in TypeScript over a fake index, which proves the
- * comparator and the query shape. These compute nothing: they ask the database, and the number
- * that comes back is the one a user's search would be ranked by.
+ * COUPLED: `checks/tenant-isolation-statistics.ts` imports `validateIsolationObservation`
+ * from `isolation.ts` by name, and a frozen check's bytes cannot follow a symbol elsewhere.
+ * Nothing pins these two, which is why they are the half that lives here.
  */
 import assert from "node:assert/strict";
 
 export const LIVE_DB_ENV = "ZZ_TENANT_INFO_ISOLATED_DB_URL";
 
 /**
- * THESE TWO USED TO BE GATES WITH NO BODY. They reported `not_run` with a reason that was true
- * when it was written — "this checkout carries no verified pg_textsearch bm25 index or score
- * expression" — and stopped being true the day the image was built, migration 070 ran against
- * real data, `ensureCorpus` created a BM25 index on a concrete partition and the lane query
- * returned a real score. A gate whose reason has expired reports an absence that is no longer
- * there, which is a worse answer than either running or refusing.
+ * A client on the isolated database, or a refusal naming what is missing.
  *
- * What they measure is the one property every offline case in this file can only model: that
- * another tenant's writes do not move this tenant's BM25 statistics. The fake index above
- * computes idf in TypeScript; this computes nothing — it asks PostgreSQL.
+ * What these two cases measure is the one property the offline cases can only model: another
+ * tenant's writes do not move this tenant's BM25 statistics.
  */
 async function liveClient(): Promise<{ query: (t: string, p?: readonly unknown[]) => Promise<{ rows: Record<string, unknown>[] }>; close: () => Promise<void> }> {
   const { connectIsolated } = await import("../../packages/indexing/dist/tenant-projections.js");
@@ -57,15 +42,14 @@ async function seedLive(
   }
 }
 
-/** Top-k for owner A, through the REAL lane query builder, against the REAL bm25 index. */
+/** Top-k for owner A, through the real lane query builder, against the real bm25 index. */
 async function observeLive(
   client: { query: (t: string, p?: readonly unknown[]) => Promise<{ rows: Record<string, unknown>[] }> },
   corpus: string, owner: string, term: string,
 ): Promise<{ id: string; score: number }[]> {
-  // THE PARTITION AND THE INDEX BOTH COME FROM THE PRODUCTION HELPERS, never spelled again
-  // here. A second copy of the naming rule is how the registry came to hand `to_bm25query` a
-  // partition name in the first place — and a table name built inline reads to the gate's
-  // static scan as `zz.search_current_`, a relation no migration creates.
+  // COUPLED: the partition and the index both come from the production helpers, never
+  // spelled again here. A table name built inline also reads to the gate's static scan as a
+  // relation no migration creates.
   const { corpusBm25Index, corpusPartition } = await import("../../services/zz-core/dist/tenant-info/lanes.js");
   const index = corpusBm25Index("current", corpus);
   const partition = corpusPartition("current", corpus);
@@ -92,8 +76,8 @@ async function caseRealPg17StatisticalIsolation(): Promise<void> {
     assert.ok(before.length > 0, "owner A must have real matches before anything is compared");
     assert.ok(before.some((r) => r.score < 0), "a real BM25 match scores negative; nothing matched");
 
-    // Owner B, its own corpus, its own partition, its own index — and every document names the
-    // term, which is the maximum statistical pressure one tenant can put on another.
+    // Owner B, its own corpus, partition and index, with every document naming the term:
+    // the maximum statistical pressure one tenant can put on another.
     await seedLive(client, b, LIVE_B, 500, term, 1);
     const after = await observeLive(client, a, LIVE_A, term);
 

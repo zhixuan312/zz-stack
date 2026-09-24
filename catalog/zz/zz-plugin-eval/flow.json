@@ -2,8 +2,8 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "zz-plugin-eval",
   "agentName": "ZZ Plugin Evaluation",
-  "description": "Measure a whole plugin: what its real runs did, and whether installing it beats not installing it. Two kinds of evidence, one ruler you agree, evidence and never a change.",
-  "purpose": "To answer whether a plugin is worth having, from evidence the platform already holds — what its real runs did, and what a recorded ablation says installing it is worth — against a ruler somebody agreed before the scoring started. It measures and never changes what it measures.",
+  "description": "Measure a whole plugin by what its real runs did. One ruler you agree, evidence and never a change.",
+  "purpose": "To answer whether a plugin is worth having, from evidence the platform already holds — what its real runs did — against a ruler somebody agreed before the scoring started. It measures and never changes what it measures.",
   "entry": "zz-plugin-eval",
   "commands": {
     "eval": "zz-plugin-eval"

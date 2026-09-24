@@ -1,13 +1,12 @@
 /**
  * Defects planted in the platform's own code — services, packages, scripts, deploy.
  *
- * TWO KINDS OF SUBJECT, AND THE DIFFERENCE IS STATED RATHER THAN BLURRED. Some checks here
- * RUN something (the monitor's exit status, the scope resolver through its own probe) and the
- * defect changes what it does. Others READ source text for a shape that has hurt this
- * repository before — a null parameter standing in for "every team", a second psql transport,
- * an envelope line rendered by hand — and for those the planted defect IS that shape, put
- * into the file the check examines. In both cases the check's own name and its comments are
- * untouched: nothing in this directory can write to `scripts/gate/`.
+ * Two kinds of subject. Some checks here run something (the monitor's exit status, the scope
+ * resolver through its own probe) and the defect changes what it does. Others read source text for
+ * a shape the platform forbids — a null parameter standing in for "every team", a
+ * second psql transport, an envelope line rendered by hand — and for those the planted defect is
+ * that shape, put into the file the check examines. In both cases the check's own name and comments
+ * are untouched: nothing in this directory can write to `scripts/gate/`.
  */
 import type { MutationSpec } from "./plant.ts";
 
@@ -63,10 +62,9 @@ export const PLATFORM_SPECS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/data-telemetry.ts",
     target: "a tool that changes something records that it did",
     subject: "services/zz-core/src/tools/artifacts.ts",
-    // BOTH RECORDERS. Removing `logActivity` alone left `commitStore` in the same body, which
-    // the check also accepts as a record — correctly, since a commit IS one — so the first
-    // attempt planted a defect the check does not claim to detect and it survived, as it
-    // should have. The defect this check is about is a mutation with NO record at all.
+    // Both recorders. Removing `logActivity` alone leaves `commitStore` in the same body, which the
+    // check also accepts as a record — correctly, since a commit is one. The defect this check is
+    // about is a mutation with no record at all.
     find: '      logActivity(root, rel, { user: who.email, action: "source_add", path: rel, supports: list.join(",") });\n      commitStore(root, who.email, "source", rel);',
     replace: "      void [logActivity, commitStore, who];",
     planted: "a tool that writes the store stops recording that it did, so the change can " +
@@ -76,12 +74,9 @@ export const PLATFORM_SPECS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/deploy-compose.ts",
     target: "the compose file names this release's images",
     subject: "deploy/docker-compose.yml",
-    // THE TAG, NOT THE REPOSITORY. A first attempt renamed the image repository and this
-    // check did not notice, because it reads only the `ZZ_VERSION:-…` literal and compares it
-    // to package.json — so a repository that drifted is outside what it measures, whatever its
-    // name suggests. Recorded as a finding about the check's reach; the mutation moved to what
-    // it does measure. The tag itself is never written out here, only prefixed, so this file
-    // carries no version literal of its own.
+    // The tag, not the repository. This check reads only the `ZZ_VERSION:-…` literal and compares it
+    // to package.json, so a repository name that drifted is outside what it measures. The tag itself
+    // is never written out here, only prefixed, so this file carries no version literal of its own.
     find: "ZZ_VERSION:-",
     replace: "ZZ_VERSION:-stale-",
     all: true,
@@ -120,8 +115,8 @@ export const PLATFORM_SPECS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/hygiene.ts",
     target: "no statement is written twice in a row",
     subject: "services/gateway/src/scope.ts",
-    // NOT the final `return { kind: "team", slug }`: duplicating THAT one puts the copy in
-    // unreachable code, where TypeScript drops the narrowing that made `slug` a string, and the
+    // Not the final `return { kind: "team", slug }`: duplicating that one puts the copy in
+    // unreachable code, where TypeScript drops the narrowing that made `slug` a string and the
     // planted defect arrives with a type error beside it. A refusal carries nothing narrowed.
     find: '    return { kind: "refused", status: 400, error: "team must be a slug" };',
     replace: '    return { kind: "refused", status: 400, error: "team must be a slug" };\n' +

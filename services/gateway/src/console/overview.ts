@@ -1,10 +1,9 @@
 /**
  * Who is looking, what the platform has been doing, and who is on it.
  *
- * `/me` is the ONE route here not behind `ok()`: it answers 200 even to a caller the console
+ * `/me` is the one route here not behind `ok()`: it answers 200 even to a caller the console
  * will refuse everywhere else, with `mayRead: false`, so the front end can render "you are
- * signed in and this view is not for you" rather than a bare 403 that reads as a broken
- * login.
+ * signed in and this view is not for you" rather than a bare 403 that reads as a broken login.
  */
 import type { Express } from "express";
 
@@ -14,29 +13,22 @@ import { readMetrics } from "./overview-metrics.js";
 import { ZZ_TZ, grainForSpan, handler, mayReadConsole, periodCutoff } from "./shared.js";
 
 export function mountOverview(app: Express): void {
-  /** Who is looking, and whether the console will answer them at all.
-   *
-   * Answers 200 even for a caller it will refuse everywhere else, with
-   * `mayRead: false`, so the front end can render "you are signed in, and this
-   * view is not for you" instead of a bare 403 that looks like a broken login.
-   * It is the ONE endpoint here that is not behind `ok()` — and it returns
-   * nothing but the caller's own identity. */
+  /** Who is looking, and whether the console will answer them at all. Returns nothing but the
+   *  caller's own identity. */
   app.get("/api/console/me", (req, res) => {
     const id = req.zzIdentity;
     if (!id) { res.status(401).json({ error: "authentication required" }); return; }
     res.json({
       email: id.email, name: id.displayName, role: id.platformRole,
       mayRead: mayReadConsole(id), superadmin: isSuper(id), via: id.via,
-      // THE SENTENCE, not just the verdict. `ok()` names its refusals — "the console needs
-      // a browser sign-in — x@y authenticated by pat" — and that sentence is the whole
-      // diagnosis; it is what stops somebody checking a password that was already correct.
-      // This route answers 200, so the browser saw only `mayRead: false` and wrote its own
-      // generic line instead. Same wording as `ok()`, from the same two facts.
+      // The sentence, not just the verdict: `ok()` names its refusals — "the console needs a
+      // browser sign-in — x@y authenticated by pat" — and that sentence is the diagnosis. This
+      // route answers 200, so it carries the same wording from the same two facts.
       ...(mayReadConsole(id) ? {} : {
         why: `the console needs a browser sign-in — ${id.email} authenticated by ${id.via}`,
       }),
-      // `id.teams` already carries `{ slug, role }` — mapping it down to slugs threw the
-      // role away, so the browser could not tell a team admin from a member. Pass it through.
+      // `id.teams` already carries `{ slug, role }`; mapping it down to slugs would throw the
+      // role away and the browser could not tell a team admin from a member.
       teams: id.teams, activeTeam: id.activeTeam,
     });
   });
@@ -44,44 +36,35 @@ export function mountOverview(app: Express): void {
   /** The landing page in one shape: the counts it leads with, the daily event series
    * behind its chart, and the refusals worth acting on — for the fleet, or for one team.
    *
-   * IT USED TO BE `teamless`, AND THAT WAS WRONG. The header here claimed "a team scope
-   * and a platform scope see the identical response", which was true and was the bug: a
-   * member signing in got the whole fleet's census on the first screen of the console —
-   * how many teams exist, every team's documents, 43,318 events across every team — on a
-   * route that never resolved a scope, so the mode switch could not touch it. `teamless`
-   * is for a catalog with no team dimension at all (blocks, the skills library); a census
-   * of the platform's work has a team dimension in every row, and answering it the same
-   * way for everybody is the "null means every team" wildcard that scope.ts exists to rule
-   * out, just spelled as a missing predicate rather than a permissive one.
+   * DELIBERATE: `handler`, not `teamless`. `teamless` is for a catalog with no team dimension
+   * at all; a census of the platform's work has a team dimension in every row, and answering it
+   * the same way for everybody is the "null means every team" wildcard scope.ts exists to rule
+   * out, spelled as a missing predicate rather than a permissive one.
    *
-   * TWO COMPLETE STATEMENTS PER QUERY, not one assembled from `scope` — see /activity;
+   * Two complete statements per query, not one assembled from `scope` — see /activity;
    * `check:sql` can only PREPARE a literal it can read whole.
    *
-   * WHAT A TEAM SCOPE'S NUMBERS MEAN. `teams` is 1 and `superadmins` counts only those in
-   * the team, because both are answers about the team rather than about the platform, and
-   * the console drops the tiles that carry them in team mode rather than showing a person
-   * a "Teams: 1" that tells them nothing. `unattributedEvents` is 0 by construction: the
-   * team branch reaches zz.event through `team_id`, so an event with no team cannot be in
-   * the set being counted — it is not a suppressed number, it is an empty one.
+   * In team mode `teams` is 1 and `superadmins` counts only those in the team, because both are
+   * answers about the team; the console drops the tiles that carry them. `unattributedEvents`
+   * is 0 by construction — the team branch reaches zz.event through `team_id`, so an event with
+   * no team cannot be in the set being counted.
    *
-   * EVENTS ARE JOINED THROUGH team_id, never the denormalised `team_slug` beside it —
-   * same reasoning as /activity's own note: the copy is written only by acts that belong
-   * to a team, so filtering on it silently changes what "the team's events" means.
+   * Events are joined through team_id, never the denormalised `team_slug` beside it: the copy
+   * is written only by acts that belong to a team, so filtering on it silently changes what
+   * "the team's events" means.
    */
   app.get("/api/console/overview", handler("the overview", async (req, res, scope) => {
-    // ONE cutoff for all five statements — see periodCutoff for why it is not five
+    // One cutoff for all five statements — see periodCutoff for why it is not five
     // separate `now()`s.
     const db = platformDb();
     const since = periodCutoff(req);
-    // THE WINDOW BEFORE THIS ONE, of equal length, so every tile can say what it was
-    // rather than only what it is. Null for all time — there is no previous all time, and
-    // a tile with nothing to compare against draws no arrow at all.
+    // The window before this one, of equal length, so every tile can say what it was rather
+    // than only what it is. Null for all time — a tile with nothing to compare against draws
+    // no arrow.
     const prevSince = since ? new Date(since.getTime() - (Date.now() - since.getTime())) : null;
-    // MEASURED BEFORE THE REST, because it decides the shape of one of them. One indexed
-    // min/max over the same rows the trend will group, so the grain is chosen from the
-    // series that is about to be drawn rather than from the window somebody asked for —
-    // see grainForSpan. Two statements for the same reason every other query here has
-    // two: check:sql PREPAREs literals, and the team branch must name its scope.
+    // Measured before the rest, because it decides the shape of one of them: one indexed
+    // min/max over the same rows the trend will group, so the grain is chosen from the series
+    // about to be drawn rather than from the window somebody asked for — see grainForSpan.
     const spanQ = scope.kind === "platform"
       ? await db.query<{ days: string | null }>(
         `select extract(epoch from (max(ts) - min(ts))) / 86400 as days
@@ -104,12 +87,10 @@ export function mountOverview(app: Express): void {
     // tuple would be the same key written twice.
     const [counts, totals, toolTrend, kinds, byTool, byMessage] = scope.kind === "platform"
       ? await Promise.all([
-      // One statement, and deliberately NOT joined to zz.event: an initiative is
-      // counted by (team_slug, initiative) over zz.doc, and mixing that into a
-      // statement that also reads the event log puts a team column and the event
-      // table in one query — which is the shape that has produced per-team counts
-      // built from rows that carry no team. The event totals are their own query
-      // below, keyed by nothing.
+      // One statement, and deliberately not joined to zz.event: an initiative is counted by
+      // (team_slug, initiative) over zz.doc, and mixing that into a statement that also reads
+      // the event log puts a team column and the event table in one query — the shape that
+      // produces per-team counts built from rows that carry no team.
       db.query<{ teams: string; active: string; people: string; supers: string;
                  docs: string; initiatives: string }>(
         `select (select count(*) from zz.team)                                as teams,
@@ -123,46 +104,35 @@ export function mountOverview(app: Express): void {
                      and ($1::timestamptz is null or updated_at >= $1))       as initiatives`,
         [since]),
       db.query<{ events: string; failures: string; unattributed: string }>(
-        // `unattributed` because the per-team rows CANNOT sum to this total and a
-        // reader who adds them up should be told why rather than left to find the
-        // gap. Turns, tool calls made outside a team, and admin acts that belong to
-        // a person are all teamless by design — see the activity endpoint.
+        // `unattributed` because the per-team rows cannot sum to this total. Turns, tool
+        // calls made outside a team, and admin acts that belong to a person are all teamless
+        // by design — see the activity endpoint.
         `select count(*) as events,
-                -- TOOL CALLS, because that is the word the reader is shown. This counted a
-                -- failure of ANY event kind and the sidebar rail labels it "Failing calls",
-                -- an inch from an Overview tile reading "191 of 2,050 calls refused" for the
-                -- selected window -- two labels, one word, different populations.
+                -- Tool calls only: that is the word the reader is shown, and the refusal
+                -- tile counts the same population.
                 count(*) filter (where kind = 'tool_call' and ok = false) as failures,
                 count(*) filter (where team_id is null) as unattributed
            from zz.event
           where ($1::timestamptz is null or ts >= $1)`,
         [since]),
       db.query<{ bucket: string; inside: string; outside: string; refused: string }>(
-        /* TOOL CALLS, SPLIT THREE WAYS THAT ARE DISJOINT AND SUM TO THE TOTAL — so the
-         * chart can stack them and the stack height is the real number of calls.
-         *
-         * This used to be every EVENT with a failure line over it, which put bulk imports
-         * and admin acts in the same series as somebody working and made the chart's
-         * biggest feature an archive load. Tool calls are the thing an operator acts on.
+        /* Tool calls, split three ways that are disjoint and sum to the total, so the chart
+         * can stack them and the stack height is the real number of calls.
          *
          * `ok is not false`, not `ok = true`: a tool call whose `ok` was never written
-         * recorded no refusal, and calling it refused would invent one. It is placed by
-         * its run instead, like any other call that did not fail.
+         * recorded no refusal, and calling it refused would invent one. It is placed by its
+         * run instead, like any other call that did not fail.
          *
-         * AN INSTANT, not a pre-formatted local string — the rule this file states above
-         * and which an HOUR bucket is the first thing here to actually depend on. A bare
-         * `15:00` rendered from the database's own timezone is 23:00 to the reader in
-         * Singapore this platform is deployed for: eight hours wrong, on every bucket,
-         * with nothing on screen saying which zone it is. The browser formats it. */
-        /* EVERY BUCKET IN THE WINDOW, INCLUDING THE EMPTY ONES. Grouping the events alone
-         * emits no row for a quiet hour, and a chart that draws thirteen unevenly spaced
-         * buckets at even intervals states a shape the data does not have. Measured here:
-         * a 24-hour window returned 13 rows, and eleven hours of silence would have been
-         * drawn as no time at all. An hour with no tool calls is a real zero. */
-        /* CUT ON THE DEPLOYMENT'S CALENDAR, not on UTC's — see `ZZ_TZ`. `slot.b` is a local
-         * wall-clock timestamp, so it is turned back into an INSTANT before it is written
-         * out: the browser still receives an instant and still formats it, which is the
-         * rule this file states above. Only the boundary moved. */
+         * An instant, not a pre-formatted local string. A bare `15:00` rendered from the
+         * database's own timezone is 23:00 to a reader in Singapore, on every bucket, with
+         * nothing on screen saying which zone it is. The browser formats it. */
+        /* Every bucket in the window, including the empty ones. Grouping the events alone
+         * emits no row for a quiet hour, and a chart that draws unevenly spaced buckets at
+         * even intervals states a shape the data does not have. An hour with no tool calls is
+         * a real zero. */
+        /* Cut on the deployment's calendar, not on UTC's — see `ZZ_TZ`. `slot.b` is a local
+         * wall-clock timestamp, so it is turned back into an instant before it is written out:
+         * the browser still receives an instant and still formats it. */
         `with bounds as (
            select coalesce($1::timestamptz, min(ts)) as lo, max(ts) as hi
              from zz.event where kind='tool_call'),
@@ -177,15 +147,9 @@ export function mountOverview(app: Express): void {
                 count(*) filter (where e.ok = false)                                                   as refused
            from slot left join zz.event e
              on date_trunc($2::text, e.ts at time zone $3::text) = slot.b and e.kind='tool_call'
-             -- AND INSIDE THE WINDOW, which the join condition never said.
-             --
-             -- generate_series starts at date_trunc(grain, since), which is EARLIER than
-             -- since -- that is what truncating does -- so the first bucket matched every
-             -- event in the part of that day, hour or week that falls before the window
-             -- opens. The panel this draws sits under a tile counting the same population,
-             -- and the two disagreed: measured on a 7-day window at day grain, the tile said
-             -- 269 refused and this summed to 272. The comment two hundred lines down says
-             -- the panel total "has to equal the tile's", and it could not.
+             -- And inside the window: generate_series starts at date_trunc(grain, since), earlier
+             -- than since, so without this the first bucket would count events from before the window
+             -- opens and the panel would not sum to the tile beside it.
              and ($1::timestamptz is null or e.ts >= $1)
           group by 1 order by 1`,
         [since, grain, ZZ_TZ]),
@@ -195,24 +159,15 @@ export function mountOverview(app: Express): void {
           where ($1::timestamptz is null or ts >= $1)
           group by 1 order by count(*) desc`,
         [since]),
-      /* REFUSALS, ON TWO AXES, OVER THE SAME POPULATION THE REFUSAL RATE TILE COUNTS.
+      /* Refusals, on two axes, over the same population the refusal rate tile counts:
+       * `kind='tool_call'`, so the panel's total and the tile's total are the same number.
        *
-       * `kind='tool_call'`, which the old statement did not say — it took every failed
-       * event of any kind, so this panel's total and the tile's total were two different
-       * numbers wearing one word. If the panel says 191 and the tile says 191 they have
-       * to be the same 191.
-       *
-       * WHICH TOOL and WHICH MESSAGE are different questions and neither answers the
-       * other: one tool refusing for nine reasons is a surface problem, and nine tools
-       * refusing with one message is a single bug. The panel offers both. */
+       * Which tool and which message are different questions and neither answers the other:
+       * one tool refusing for nine reasons is a surface problem, nine tools refusing with one
+       * message is a single bug. The panel offers both. */
       db.query<{ tool: string; n: string }>(
-        `-- THROUGH tool_key, NOT subject. The subject column is what the caller literally
-        -- invoked; tool_key is the alias-resolved name, and it exists so a RENAME folds onto
-        -- one series instead of drawing the same tool as two unrelated rows. Read raw, this
-        -- table showed core:patch_file 815 and core:document_patch 162 -- one tool,
-        -- split 83/17 -- and every "busiest tool" and refusal ranking built on it was wrong
-        -- by that much. coalesce covers rows written before migration 050 added the column;
-        -- those are backfilled, and the fallback keeps a fresh deployment honest.
+        `-- Through tool_key, not subject: tool_key is the alias-resolved name, so a renamed
+        -- tool folds onto one series. coalesce covers a row with no tool_key.
         select coalesce(tool_key, subject) as tool, count(*) as n
            from zz.event
           where kind='tool_call' and ok = false and coalesce(tool_key, subject) <> ''
@@ -251,7 +206,7 @@ export function mountOverview(app: Express): void {
                     and ($2::timestamptz is null or updated_at >= $2))        as initiatives`,
         [scope.slug, since]),
       db.query<{ events: string; failures: string; unattributed: string }>(
-        // `0 as unattributed` is arithmetic, not a decision: this set is reached THROUGH
+        // `0 as unattributed` is arithmetic, not a decision: this set is reached through
         // team_id, so every row in it has a team and none can be unattributed.
         `select count(*) as events,
                 count(*) filter (where e.ok = false) as failures,
@@ -317,19 +272,16 @@ export function mountOverview(app: Express): void {
         unattributedEvents: +t.unattributed,
       },
       grain,
-      /* THE ZONE THE BUCKETS WERE CUT IN, so the browser renders them on the same calendar
-       * rather than on the viewer's. A laptop in another country would otherwise label a
-       * Singapore day with its own, and the bars and their labels would disagree. */
+      /* The zone the buckets were cut in, so the browser renders them on the same calendar
+       * rather than on the viewer's. */
       timezone: ZZ_TZ,
       toolTrend: toolTrend.rows.map((r) => ({
         bucket: r.bucket, inside: +r.inside, outside: +r.outside, refused: +r.refused,
       })),
       eventKinds: kinds.rows.map((r) => ({ kind: r.kind, n: +r.n })),
       refusals: {
-        /* THE TOTAL IS SUMMED FROM THE TREND, not counted a third time. It is the same
-         * predicate as the trend's `refused` over the same window, so a separate
-         * statement could only ever agree with it or reveal a bug in one of them —
-         * and the panel's total has to equal the tile's. */
+        /* The total is summed from the trend, not counted a third time: it is the same
+         * predicate over the same window, and the panel's total has to equal the tile's. */
         total: toolTrend.rows.reduce((n, r) => n + +r.refused, 0),
         byTool: byTool.rows.map((r) => ({ tool: r.tool, n: +r.n })),
         byMessage: byMessage.rows.map((r) => ({
@@ -344,32 +296,27 @@ export function mountOverview(app: Express): void {
     const db = platformDb();
     const limit = Math.min(Number(req.query.limit) || 100, 500);
     const kind = typeof req.query.kind === "string" ? req.query.kind : null;
-    // `failed=1` rather than a tri-state string: the only question anybody asks
-    // of this log is "show me what broke", and a param that can also mean
-    // "show me what worked" is one nobody has needed.
+    // `failed=1` rather than a tri-state string: the only question asked of this log is
+    // "show me what broke".
     const failedOnly = req.query.failed === "1";
-    // THROUGH team_id, not the team_slug column beside it. zz.event carries both,
-    // and the denormalised copy is written only by the acts that belong to a team —
-    // so reading it makes every person-level act (a token issued, a package
-    // downloaded) look like a row whose team went missing, rather than one that
-    // never had a team. The join says the true thing: `team` is null because there
-    // is no team, and the console renders that as "—" rather than as a gap.
+    // Through team_id, not the team_slug column beside it. zz.event carries both, and the
+    // denormalised copy is written only by acts that belong to a team — reading it makes every
+    // person-level act (a token issued, a package downloaded) look like a row whose team went
+    // missing rather than one that never had a team. The join says the true thing: `team` is
+    // null because there is no team, and the console renders that as "—".
     //
-    // DELETED, not guarded: `($2::text is null or t.slug = $2)` treated an absent
-    // `?team=` as "match every team's events" — the same wildcard shape as /initiatives.
-    // A team scope always names its own slug; only a platform scope may see every team's
-    // activity, which is what an unfiltered request actually returned before this.
+    // DELIBERATE: there is no `($2::text is null or t.slug = $2)` guard. That treated an absent
+    // `?team=` as "match every team's events". A team scope always names its own slug; only a
+    // platform scope may see every team's activity.
     //
-    // TWO COMPLETE STATEMENTS, not one assembled from `scope` — see the note in
-    // /api/console/initiatives above; `check:sql` can only PREPARE a literal it can read
-    // whole. The team branch's predicate is numbered `$4`, after the three fixed
-    // parameters both branches share, rather than renumbering the shared ones.
+    // Two complete statements, not one assembled from `scope` — see the note in
+    // /api/console/initiatives above; `check:sql` can only PREPARE a literal it can read whole.
+    // The team branch's predicate is numbered `$4`, after the three fixed parameters both
+    // branches share.
     const { rows } = scope.kind === "platform"
       ? await db.query(
       `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts, e.actor, t.slug as team, e.kind,
-              -- THE RESOLVED NAME, so one tool is one name in the feed. A rename put the
-              -- same tool in this list twice under two spellings, and a reader scanning
-              -- activity for "what did it call" read them as two different things.
+              -- The resolved name, so a renamed tool is one name in the feed.
               coalesce(e.tool_key, e.subject) as subject,
               e.initiative, e.step, e.ok, e.refusal
          from zz.event e
@@ -380,9 +327,7 @@ export function mountOverview(app: Express): void {
       [kind, failedOnly, limit])
       : await db.query(
       `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts, e.actor, t.slug as team, e.kind,
-              -- THE RESOLVED NAME, so one tool is one name in the feed. A rename put the
-              -- same tool in this list twice under two spellings, and a reader scanning
-              -- activity for "what did it call" read them as two different things.
+              -- The resolved name, so a renamed tool is one name in the feed.
               coalesce(e.tool_key, e.subject) as subject,
               e.initiative, e.step, e.ok, e.refusal
          from zz.event e
@@ -402,14 +347,12 @@ export function mountOverview(app: Express): void {
    * nothing that could be replayed. */
   app.get("/api/console/people", handler("people", async (_req, res, scope) => {
     const db = platformDb();
-    // EVERY PERSON ON THE PLATFORM — their team memberships, their token state, their
-    // — is exactly the directory-wide view a team scope must not see
-    // whole: two colleagues in one department have no standing to read another
-    // department's roster just because both signed in through the same the identity provider gateway.
-    // A team scope narrows this to people who are members of the caller's own team;
-    // only a platform scope keeps today's whole-platform directory.
+    // A team scope narrows this to people who are members of the caller's own team; only a
+    // platform scope sees the whole-platform directory. Two colleagues in one department have
+    // no standing to read another department's roster just because both can sign in to the
+    // console.
     //
-    // TWO COMPLETE STATEMENTS, not one assembled from `scope` — see the note in
+    // Two complete statements, not one assembled from `scope` — see the note in
     // /api/console/initiatives above; `check:sql` can only PREPARE a literal it can read
     // whole.
     const { rows } = scope.kind === "platform"

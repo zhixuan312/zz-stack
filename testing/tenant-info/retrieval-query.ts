@@ -1,8 +1,7 @@
 /**
- * retrieval-query.ts — I-18's "query" case group: `parseQuery`, `serializeResults` and
- * `matchesArtifact`. `retrieval.ts` (`testing/tenant-info/`) reserves the suite name
- * "retrieval" at exactly that file — this module's `QUERY_CASES` is merged into that file's
- * `CASE_GROUPS`, the same pattern `retrieval-lanes.ts` (I-17) already established.
+ * The "query" case group: `parseQuery`, `serializeResults` and `matchesArtifact`.
+ * COUPLED: `retrieval.ts` (`testing/tenant-info/`) reserves the suite name "retrieval", and
+ * this module's `QUERY_CASES` is merged into that file's `CASE_GROUPS`.
  */
 import assert from "node:assert/strict";
 
@@ -17,19 +16,13 @@ function parse(text: string, mode: QueryMode): QueryAst {
   return parseQuery(text, mode);
 }
 
-// ── grammar recognition precedes identifier normalization ──────────────────────────────────
+// Grammar recognition precedes identifier normalization
 
-/** THE CASE THE WHOLE LEXER-ORDERING CLAIM RESTS ON. `plugin-judge`'s internal hyphen and
- *  `zz.eval_finding`'s dot must survive as ONE unsplit term each — a lexer that ran
- *  `zz-lexical-v1`-style identifier splitting (dot/underscore/slash/hyphen/colon boundaries)
- *  before recognizing quotes/OR/exclusions would fragment both into multiple pieces and
- *  would misread `-draft`'s hyphen no differently than `plugin-judge`'s own internal one.
- *  Mutation-tested by hand: normalizing (`.toLowerCase().split(/[-._]/)`-shaped) this same raw
- *  text BEFORE recognizing operators turns `plugin`, `judge`, `zz`, `eval_finding` into four
- *  separate tokens and no longer isolates `-draft` from a mid-string hyphen the same way —
- *  exactly the fault this case exists to catch, run once directly against `retrieval.ts` (with
- *  the real ordering swapped, observed red on the assertions below, then reverted from a
- *  scratch copy — never `git checkout` — per this task's own report). */
+/** The case the lexer-ordering claim rests on. `plugin-judge`'s internal hyphen and
+ *  `zz.eval_finding`'s dot must each survive as one unsplit term. A lexer that ran
+ *  identifier splitting on dot/underscore/slash/hyphen/colon boundaries before recognizing
+ *  quotes, OR and exclusions fragments both, and misreads `-draft`'s leading hyphen no
+ *  differently from a mid-string one. */
 async function caseLexerOrderingPreservesUnsplitIdentifiers(): Promise<void> {
   const ast: QueryAst = parse("plugin-judge OR zz.eval_finding -draft", "natural");
   assert.deepEqual(ast.exclusions, ["draft"]);
@@ -41,16 +34,16 @@ async function caseLexerOrderingPreservesUnsplitIdentifiers(): Promise<void> {
     "a hyphen inside plugin-judge and a dot inside zz.eval_finding must never split the token");
 }
 
-/** A relative path is a single word, unsplit and unmarked — no leading `-`, no quote, no
- *  embedded `OR`. The frozen check already proves `original_text`/`exclusions`; this proves
- *  the path also survives as exactly one term clause, never fragmented on its own slashes. */
+/** A relative path is a single word, unsplit and unmarked. The frozen check proves
+ *  `original_text`/`exclusions`; this proves the path survives as exactly one term clause,
+ *  never fragmented on its own slashes. */
 async function casePathIsOneUnsplitTerm(): Promise<void> {
   const ast = parse("services/zz-core/src/tenant-info/retrieval.ts", "natural");
   assert.equal(ast.clauses.length, 1);
   assert.deepEqual(ast.clauses[0], { kind: "term", value: "services/zz-core/src/tenant-info/retrieval.ts", required: false });
 }
 
-// ── natural vs websearch: quotes, OR case, length limits ───────────────────────────────────
+// Natural vs websearch: quotes, OR case, length limits
 
 async function caseUnterminatedQuoteNamesItsOwnPosition(): Promise<void> {
   assert.throws(
@@ -108,9 +101,9 @@ async function casePhraseLengthLimitRefusesOversizedPhrase(): Promise<void> {
     (e: unknown) => e instanceof Error && "code" in e && (e as { code: unknown }).code === "INVALID_INPUT");
 }
 
-/** Emoji and CJK are counted as Unicode SCALAR values, not UTF-16 code units — an astral
- *  emoji is two code units but one scalar, so a query built from 2048 emoji scalars must be
- *  accepted and 2049 refused, never the code-unit count (4096/4098) sneaking through. */
+/** Emoji and CJK are counted as Unicode scalar values, not UTF-16 code units: an astral emoji
+ *  is two code units and one scalar, so 2048 emoji scalars must be accepted and 2049 refused,
+ *  never the code-unit count. */
 async function caseLengthLimitCountsScalarsNotCodeUnits(): Promise<void> {
   assert.doesNotThrow(() => parse("😀".repeat(2048), "natural"));
   assert.throws(() => parse("😀".repeat(2049), "natural"),
@@ -123,10 +116,10 @@ async function caseEmptyAndWhitespaceOnlyQueriesBrowse(): Promise<void> {
   assert.equal(parse("alpha", "natural").browse, false);
 }
 
-// ── matchesArtifact: artifact-level AND/OR/NOT across passages/fields ──────────────────────
+// matchesArtifact: artifact-level AND/OR/NOT across passages/fields
 
 async function caseMatchesArtifactEvaluatesAndOrNotAcrossPassages(): Promise<void> {
-  // "alpha" required-AND-satisfiable only by joining terms from TWO SEPARATE passages of the
+  // "alpha" required and satisfiable only by joining terms from two separate passages of the
   // same field — "terms can occur in different passages of the same artifact" (spec).
   const ast = parse('alpha "beta gamma" -delta', "websearch");
   const fieldsMatch = { body: ["alpha appears in the first passage", "an unrelated second passage naming beta gamma together"] };
@@ -151,7 +144,7 @@ async function caseNaturalUnquotedWordsAreRankingHintsNotHardConditions(): Promi
     "an unquoted natural-mode word is a ranking hint, not a hard AND condition");
 }
 
-// ── serializeResults: byte-budget truncation, exact key set, no mid-record cut ─────────────
+// serializeResults: byte-budget truncation, exact key set, no mid-record cut
 
 const OWNER = "11111111-1111-4111-8111-111111111111";
 
@@ -173,15 +166,14 @@ const ENVELOPE: ResultEnvelope = {
   candidate_total: 0, mode_used: "natural", incomplete: false, reasons: [],
 };
 
-/** No helper-only bounded/omitted wrapper — the emitted top-level key set is EXACTLY
- *  `SearchResponseSchema`'s own, no more and no fewer, so a stray internal field could never
- *  silently ride along past `safeParse`'s own non-strict tolerance. */
+/** The emitted top-level key set is exactly `SearchResponseSchema`'s own, no more and no
+ *  fewer, so a stray internal field cannot ride along past `safeParse`'s non-strict
+ *  tolerance. */
 async function caseWireKeysAreExactlyThePublicSchema(): Promise<void> {
   const rows = Array.from({ length: 3 }, (_, i) => fixtureRow(i, 20));
   const wire = serializeResults(rows, { ...ENVELOPE, candidate_total: 3 });
-  // Read the RAW parsed keys, never `SearchResponseSchema.parse`'s own output — a non-strict
-  // zod object silently strips unknown keys on `.parse`, which would hide exactly the
-  // helper-only-field leak this case exists to catch.
+  // Read the raw parsed keys, never `SearchResponseSchema.parse`'s output — a non-strict zod
+  // object strips unknown keys on `.parse`, hiding the leak this case exists to catch.
   const parsed: unknown = JSON.parse(wire);
   assert.ok(parsed !== null && typeof parsed === "object");
   const actualKeys = Object.keys(parsed as Record<string, unknown>).sort();
@@ -189,9 +181,9 @@ async function caseWireKeysAreExactlyThePublicSchema(): Promise<void> {
   assert.deepEqual(actualKeys, expectedKeys);
 }
 
-/** Every emitted result is one of `candidateResults`' own elements, byte-for-byte — truncation
+/** Every emitted result is one of `candidateResults`' own elements, byte-for-byte: truncation
  *  never stops mid-record. Sized so the byte budget lands strictly between 0 and the full
- *  count, and each surviving result deep-equals its source row exactly. */
+ *  count. */
 async function caseTruncationNeverStopsMidRecordAndDisclosesOmission(): Promise<void> {
   const rows = Array.from({ length: 40 }, (_, i) => fixtureRow(i, 1000));
   const wire = serializeResults(rows, { ...ENVELOPE, candidate_total: 40 });
@@ -204,10 +196,9 @@ async function caseTruncationNeverStopsMidRecordAndDisclosesOmission(): Promise<
   assert.ok(response.reasons.includes("response_budget"));
 }
 
-/** THE MUTATION THIS CASE NAMES: slicing the already-stringified JSON at the byte budget,
- *  instead of dropping whole candidates and re-measuring, breaks the document. Proven directly
- *  — the naive slice on the SAME oversized wire this file's real `serializeResults` call
- *  produces is not itself valid JSON, which is exactly the defect never reaching a real caller. */
+/** The mutation this case names: slicing the already-stringified JSON at the byte budget,
+ *  instead of dropping whole candidates and re-measuring, breaks the document. The naive slice
+ *  on the same oversized wire is not itself valid JSON. */
 async function caseNaiveByteSliceWouldBreakTheDocument(): Promise<void> {
   const rows = Array.from({ length: 40 }, (_, i) => fixtureRow(i, 1000));
   const full = JSON.stringify({ schema_version: 2, results: rows, ...ENVELOPE, returned: 40, withheld_candidates: 0 });

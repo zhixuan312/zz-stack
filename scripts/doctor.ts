@@ -2,11 +2,9 @@
 /**
  * doctor — where does the deployment stop matching what this checkout declares?
  *
- * NOT "is it healthy". Health is a question with one bit of answer, and the bit is almost
- * always yes right up until somebody is already looking. This asks a question with a LOCATION
- * in the answer: six layers, each with one source of truth on the repository side and one on
- * the deployment side, reported in the order that makes a diagnosis — because the first layer
- * that disagrees usually explains every layer after it.
+ * Not "is it healthy": the answer carries a location. Six layers, each with one source of
+ * truth on the repository side and one on the deployment side, reported in the order that
+ * makes a diagnosis, because the first layer that disagrees usually explains the rest.
  *
  *   repo      does this checkout agree with itself
  *   image     is what the registry holds what this checkout declares
@@ -15,13 +13,12 @@
  *   contract  is the live surface the one the source declares
  *   data      are the migrations and the registry the shape this checkout expects
  *
- * THIS FILE IS AN ORDER, NOT A LIST — the same rule as scripts/gate.ts. A layer missing from
- * the imports below is a layer that does not run, and the order of the imports is the order of
- * the diagnosis. `repo` is first because every later comparison is against what it settles.
+ * This file is an order, not a list: a layer missing from the imports below does not run, and
+ * the import order is the diagnosis order. `repo` is first because every later comparison is
+ * against what it settles.
  *
- * IT CHANGES NOTHING. No flag deploys, restarts, migrates or writes. That is not a courtesy —
- * it is what makes it safe to run while something is broken, which is the only time anybody
- * will.
+ * DELIBERATE: it changes nothing. No flag deploys, restarts, migrates or writes, which is
+ * what makes it safe to run while something is broken.
  *
  *   node scripts/doctor.ts                      every layer
  *   node scripts/doctor.ts --layer repo,image   offline only; no host needed
@@ -44,9 +41,9 @@ const flag = (name: string): string | null => {
   const hit = args.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
   if (!hit) return null;
   if (hit.includes("=")) return hit.split("=").slice(1).join("=");
-  // A FLAG GIVEN WITH NOTHING AFTER IT IS REFUSED, never read as absent: `--layer` followed by
+  // A flag given with nothing after it is refused, never read as absent: `--layer` followed by
   // nothing would otherwise run every layer and report a clean bill for a question nobody
-  // asked. The gate holds this rule for the release script too.
+  // asked.
   const next = args[args.indexOf(hit) + 1];
   if (!next || next.startsWith("--")) {
     console.error(`\n\x1b[31m--${name} was given with no value.\x1b[0m`);

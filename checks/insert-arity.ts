@@ -1,20 +1,15 @@
-// AN INSERT NAMES AS MANY VALUES AS IT NAMES COLUMNS.
+// An insert names as many values as it names columns.
 //
-// `insert into t (a, b, c) values ($1, $2)` is a runtime error and nothing offline sees it:
-// TypeScript does not read SQL in a template literal, and `check:sql` — which PREPAREs every
-// statement and would catch it instantly — needs a migrated database, so it does not run in
-// the gate and does not run on a laptop without one.
+// `insert into t (a, b, c) values ($1, $2)` is a runtime error nothing offline sees: TypeScript does
+// not read SQL in a template literal, and `check:sql`, which PREPAREs every statement, needs a
+// migrated database and so does not run in the gate.
 //
-// This is not hypothetical. Removing the `blocks` column from zz.doc took the parameter out of
-// the values ARRAY and left `$19::text[]` standing in the statement, so the insert named 19
-// columns and 20 expressions. Every document write would have failed — and on the write path
-// it fails inside a catch, so the service starts, the store keeps working, and only the index
-// stops being written.
+// On the write path such a failure happens inside a catch, so the service starts, the store keeps
+// working, and only the index stops being written.
 //
-// COUNTED, NOT PARSED. This does not try to understand SQL: it finds `insert into <t> (...)`,
-// counts the comma-separated names in the column list, then counts the top-level commas in the
-// matching `values (...)`, which is the one property that can be checked without a database
-// and the one that was wrong.
+// Counted, not parsed. This does not try to understand SQL: it finds `insert into <t> (...)`, counts
+// the comma-separated names in the column list, then counts the top-level commas in the matching
+// `values (...)`.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
@@ -52,8 +47,8 @@ function walk(dir: string): void {
     const p = join(dir, e);
     if (statSync(p).isDirectory()) { walk(p); continue; }
     if (!p.endsWith(".ts")) continue;
-    // SQL comments removed first: a `--` line inside the statement carries commas and
-    // parentheses of its own, and counting them is how a correct statement reads as broken.
+    // SQL comments removed first: a `--` line inside the statement carries commas and parentheses
+    // of its own, and counting them makes a correct statement read as broken.
     const src = readFileSync(p, "utf8").split("\n")
       .map((l) => (/^\s*--/.test(l) ? "" : l)).join("\n");
     for (const m of src.matchAll(/insert\s+into\s+([a-z_.]+)\s*\(/gi)) {

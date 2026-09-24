@@ -1,39 +1,24 @@
 /**
- * The plant: break the stage/document contract four ways, prove THAT check goes red by name,
+ * The plant: break the stage/document contract four ways, prove that check goes red by name,
  * and prove the three shapes that are legitimate stay green. Restore, prove it stops.
  *
- * WHY IT READS CHECK NAMES AND NOT THE EXIT STATUS. The plan's sketch for this task asked
- * `gate() === 0`, and in this repository that measures nothing. Touching any catalog manifest
- * turns the gate red several times over ON THE EDIT ITSELF — what plugins.lock.json says the
- * catalog ships, whether the committed marketplace is what the catalog renders, the package
- * digest. A neighbouring task measured it: its real case failed seven checks and BOTH of its
- * controls failed five, so an exit-status plant records its own controls as failures against a
- * rule that is behaving perfectly. Red for unrelated reasons is the exact failure a break-test
- * exists to rule out. The question here is "did THIS check fail, by name", which is falsifiable
- * in both directions and independent of whatever else the tree is in the middle of.
+ * DELIBERATE: it reads check names, not the exit status. Touching any catalog manifest turns
+ * the gate red several times over on the edit itself — the plugins lock, the rendered
+ * marketplace, the package digest — so an exit-status plant would record its own controls as
+ * failures against a rule behaving perfectly. "Did this check fail, by name" is falsifiable in
+ * both directions.
  *
- * THE GATE IS RUN WITHOUT --quiet ON PURPOSE. A passing check prints a line too, and that is
- * the only way to tell "this check passed" from "the gate died before reaching it".
+ * DELIBERATE: the gate runs without --quiet. A passing check prints a line too, which is the
+ * only way to tell "this check passed" from "the gate died before reaching it".
  *
- * WHY THE MUTATIONS ARE IN zz-plugin-eval AND NOT IN sdlc-flow. When this plant was written,
- * `checks/sdlc-documents.ts` asserted all three properties — presence, forward resolution,
- * reciprocity — for `catalog/sdlc/sdlc-flow/flow.json`, named as a literal. A plant that broke
- * sdlc-flow would have turned two checks red and proved nothing about the new one: every case
- * would have been satisfiable by the rule that was already there. So each case below mutates
- * the manifest that copy could not see, and asserts it stays GREEN while the new check fires.
+ * The mutations are in zz-plugin-eval, a flow whose stages use all three kinds of `produces`.
+ * SDLC_DOCS staying quiet through them asserts that what remains in that file is about sdlc
+ * alone and does not fire on another flow's manifest.
  *
- * THAT COPY IS NOW GONE — the generic check made it redundant and it was deleted, which is what
- * the measurement below was evidence for. The cases stay where they are: zz-plugin-eval exercises
- * a flow whose stages use all three kinds of `produces`, and SDLC_DOCS staying quiet through them
- * now says something slightly different but still worth asserting — that what remains in that
- * file is about sdlc alone and does not fire on another flow's manifest.
- *
- * CASE 4 IS THE ONE THE TASK IS ABOUT. A one-way check — resolve `produces` forward, confirm
- * the document exists — passes a manifest where a document points at a stage that points
- * somewhere else. Case 4 is exactly that manifest: every stage's `produces` resolves, every
- * document is produced by some stage, and only the reciprocity fails. It also asserts
- * `catalog-stages.ts`'s "a document's declared stage is a stage its flow has" stays QUIET,
- * because the stage it names is real — which is the difference between the two rules, measured.
+ * Case 4 is the one this file is about: a one-way check — resolve `produces` forward, confirm
+ * the document exists — passes a manifest where a document points at a stage that produces
+ * something else. Only reciprocity fails there, and `catalog-stages.ts`'s "a document's
+ * declared stage is a stage its flow has" stays quiet, because the stage it names is real.
  */
 import { execFileSync } from "node:child_process";
 import { cpSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -58,8 +43,8 @@ const EVAL = "catalog/zz/zz-plugin-eval/flow.json";
 const SDLC = "catalog/sdlc/sdlc-flow/flow.json";
 const ACCESS = "catalog/zz/zz-access/flow.json";
 
-// Exact paths, one file each, outside the repository. A directory copy into a stale path is
-// how an agent on this initiative destroyed two source trees.
+// Exact paths, one file each, outside the repository: a directory copy into a stale path can
+// overwrite a source tree.
 const KEEP = {
   [EVAL]: "/tmp/zz-plugin-eval-flow.stage-produces.keep",
   [SDLC]: "/tmp/sdlc-flow-flow.stage-produces.keep",
@@ -87,7 +72,7 @@ const mutate = (path: string, fn: (m: Manifest) => void) => {
   writeFileSync(path, `${JSON.stringify(m, null, 2)}\n`);
 };
 
-/** One gate run, as two maps: every check that RAN, and the sentence each failing one gave. */
+/** One gate run, as two maps: every check that ran, and the sentence each failing one gave. */
 function run() {
   let out: string;
   try {
@@ -109,10 +94,9 @@ function run() {
 
 const fail: string[] = [];
 
-/** Assert, for one mutation: the named checks ran, the ones that should fire did, the ones
- *  that should not did not. Everything else the gate says is deliberately not its business —
- *  STATE.md's declared check count goes stale the moment a check is added, and the lock and
- *  the marketplace go red on any manifest edit at all. */
+/** Assert, for one mutation: the named checks ran, the ones that should fire did, the ones that
+ *  should not did not. DELIBERATE: everything else the gate says is ignored — the lock and the
+ *  marketplace go red on any manifest edit at all. */
 function measure(what: string, { fires = [], quiet = [] }: { fires?: string[]; quiet?: string[] }) {
   const { ran, failed } = run();
   for (const name of [...fires, ...quiet]) {
@@ -128,8 +112,8 @@ function measure(what: string, { fires = [], quiet = [] }: { fires?: string[]; q
 }
 
 // Nothing below separates a planted defect from one already on the tree unless all four names
-// start green. OUTSIDE the try, because process.exit skips a finally and a refusal that ran a
-// cleanup it did not need reads as a cleanup somebody can rely on. Nothing is planted yet.
+// start green. DELIBERATE: outside the try — process.exit skips a finally, and nothing is
+// planted yet, so there is nothing to clean up.
 {
   const { ran, failed } = run();
   for (const name of [MINE, SDLC_DOCS, CONFORM, DOC_STAGE]) {
@@ -156,44 +140,39 @@ function measure(what: string, { fires = [], quiet = [] }: { fires?: string[]; q
 }
 
 try {
-  // 1. A STAGE WITH NO produces. Planted on zz-plugin-locate, whose produces is "nothing", so
-  //    removing it orphans no document and this case tests presence and nothing else.
-  //    `manifests-conform.ts` fires too — it hardcodes zz-plugin-eval in a list of four — and
-  //    that is named here rather than hidden: presence is the one property already covered for
-  //    today's four packages, and the fifth flow anybody adds is covered only by MINE.
+  // 1. A stage with no produces. Planted on zz-plugin-locate, whose produces is "nothing", so
+  //    removing it orphans no document and this tests presence alone. `manifests-conform.ts`
+  //    fires too, because it names zz-plugin-eval in a list of four; a fifth flow would be
+  //    covered only by MINE.
   mutate(EVAL, (m) => { delete (m.stages ?? []).find((s) => s.name === "zz-plugin-locate")!.produces; });
   measure("a stage with no produces", { fires: [MINE, CONFORM], quiet: [SDLC_DOCS, DOC_STAGE] });
   restore();
 
-  // 2. produces NAMING A DOCUMENT THE MANIFEST DOES NOT DECLARE. On the same "nothing" stage,
+  // 2. `produces` naming a document the manifest does not declare. On the same "nothing" stage,
   //    for the same reason: nothing is orphaned, so the only thing broken is the forward claim.
   mutate(EVAL, (m) => { (m.stages ?? []).find((s) => s.name === "zz-plugin-locate")!.produces = "invented.md"; });
   measure("produces naming a document the flow does not declare",
           { fires: [MINE], quiet: [SDLC_DOCS, CONFORM, DOC_STAGE] });
   restore();
 
-  // 3. A DECLARED DOCUMENT PRODUCED BY NO STAGE. No `stage` field on it, which is what makes it
-  //    invisible to catalog-stages.ts — that check skips a document with no stage — and the
-  //    reason this is a separate loop in the check rather than the mirror of the first one.
+  // 3. A declared document produced by no stage, with no `stage` field, which is what makes it
+  //    invisible to catalog-stages.ts — that check skips a document with no stage.
   mutate(EVAL, (m) => { m.documents!.push({ name: "orphan.md", role: "ground" }); });
   measure("a declared document produced by no stage",
           { fires: [MINE], quiet: [SDLC_DOCS, CONFORM, DOC_STAGE] });
   restore();
 
-  // 4. THE ONE-WAY CASE. findings.md keeps pointing at a REAL stage — zz-plugin-judge, which
-  //    produces "record" — while zz-plugin-report goes on producing findings.md. Forward
-  //    resolution passes, no document is orphaned, and catalog-stages.ts's "a document's
-  //    declared stage is a stage its flow has" passes because the stage exists. Only reciprocity
-  //    breaks, and only a two-way check can see it.
+  // 4. The one-way case. findings.md points at a real stage — zz-plugin-judge, which produces
+  //    "record" — while zz-plugin-report goes on producing findings.md. Forward resolution
+  //    passes and no document is orphaned; only reciprocity breaks.
   mutate(EVAL, (m) => { (m.documents ?? []).find((d) => d.name === "findings.md")!.stage = "zz-plugin-judge"; });
   measure("a document naming a stage that produces something else",
           { fires: [MINE], quiet: [SDLC_DOCS, CONFORM, DOC_STAGE] });
   restore();
 
-  // 5. CONTROL — "record" and "nothing" are ANSWERS. Swapped between the two non-document
-  //    values only: changing a document-producing stage would orphan its document and redden
-  //    the gate for a different and correct reason. Not vacuous — under a rule demanding a
-  //    document name from every stage, both of these fire.
+  // 5. Control: "record" and "nothing" are answers. Swapped between the two non-document
+  //    values only, because changing a document-producing stage would orphan its document. Not
+  //    vacuous — a rule demanding a document name from every stage fires on both.
   mutate(EVAL, (m) => {
     (m.stages ?? []).find((s) => s.name === "zz-plugin-locate")!.produces = "record";
     (m.stages ?? []).find((s) => s.name === "zz-plugin-profile")!.produces = "nothing";
@@ -202,23 +181,20 @@ try {
           { quiet: [MINE, SDLC_DOCS, CONFORM, DOC_STAGE] });
   restore();
 
-  // 6. CONTROL — the same, in the flow whose output is the REPOSITORY. sdlc-execute produces
-  //    "nothing"; a check that demanded a document here would force a fake build.md into
-  //    existence. SDLC_DOCS is deliberately NOT in `quiet`: it asserts sdlc-execute declares
-  //    "nothing" by name, so it fires on this edit, correctly, and that is its rule and not
-  //    this one's.
+  // 6. Control: the same, in the flow whose output is the repository. sdlc-execute produces
+  //    "nothing", and a check demanding a document here would force a fake build.md into
+  //    existence. SDLC_DOCS is not in `quiet`: it asserts sdlc-execute declares "nothing" by
+  //    name, so it fires on this edit, correctly.
   mutate(SDLC, (m) => { (m.stages ?? []).find((s) => s.name === "sdlc-execute")!.produces = "record"; });
   measure('CONTROL: sdlc-execute, whose output is the repository, declares "record"',
           { quiet: [MINE, DOC_STAGE] });
   restore();
 
-  // 7. CONTROL — A NON-FLOW PACKAGE IS NOT THIS CHECK'S SUBJECT. zz-access declares no
-  //    documents, so it is not a flow, so a stage of it is not asked what it produces. The
-  //    stage names a skill zz-access really ships and is not its entry skill, so neither
-  //    "stages names a skill it ships" nor the phantom-stage rule fires on the shape itself.
-  //    CONFORM is not in `quiet`: it hardcodes zz-access and demands produces of every stage of
-  //    it whether or not it is a flow, so it fires — which is the point, since a check that
-  //    iterated every package rather than every FLOW would do the same, and MINE must not.
+  // 7. Control: a non-flow package is not this check's subject. zz-access declares no
+  //    documents, so a stage of it is not asked what it produces. The stage names a skill
+  //    zz-access ships and is not its entry skill, so neither "stages names a skill it ships"
+  //    nor the phantom-stage rule fires. CONFORM is not in `quiet`: it names zz-access and
+  //    demands produces of every stage whether or not it is a flow, and MINE must not.
   mutate(ACCESS, (m) => { m.stages = [{ name: "zz-doctor" }]; });
   measure("CONTROL: a non-flow package with a stage that declares no produces",
           { quiet: [MINE, SDLC_DOCS, DOC_STAGE] });

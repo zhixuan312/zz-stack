@@ -95,14 +95,12 @@ out a config with the token typed into it.
 
 Three things to be clear about when they ask:
 
-- **A FIX NEVER REACHES THEM BY ITSELF.** Every flow travels as FILES — with the
-  browser front end gone and Claude Code the only client, there is no served half
-  left — so a fix reaches them when they update the plugin and not before, and
-  nothing warns them, because the old files go on working. `client_setup` prints
-  the update command. Say that plainly rather than promising anything live: the
-  pointer-versus-file distinction this used to describe no longer exists.
-- **`CLAUDE.md`, `AGENTS.md` and `SOUL.md` are not touched.** Those change
-  how their engine behaves for every task they ever do. Outside the flow
+- **A FIX NEVER REACHES THEM BY ITSELF.** Every flow travels as FILES, so a fix
+  reaches them when they update the plugin and not before, and nothing warns them,
+  because the old files go on working. `client_setup` prints the update command. Say
+  that plainly rather than promising anything live.
+- **`CLAUDE.md` is not touched.** It changes how their engine behaves for every task
+  they ever do. Outside the flow
   they keep exactly the assistant they had.
 - **Installing a plugin is how a NEW flow arrives.** Updating a plugin is
   how a CHANGED one does, for the file-borne flows above.

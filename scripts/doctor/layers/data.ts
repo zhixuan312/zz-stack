@@ -1,14 +1,13 @@
 /**
- * LAYER 6 — is the data behind the platform the shape this checkout expects?
+ * Layer 6 — is the data behind the platform the shape this checkout expects?
  *
- * Last, because it is the layer whose disagreements are least likely to be the CAUSE of
- * anything else and most likely to be the consequence. A migration that never applied does not
- * take a door down; it takes one query down, weeks later, for one caller.
+ * Last, because its disagreements are least likely to be the cause of anything else and most likely
+ * to be the consequence: a migration that never applied does not take a door down, it takes one
+ * query down weeks later, for one caller.
  *
- * Both probes read through the host's own configuration. `-U zz -d zz` was written here as a
- * literal while .env.example documents POSTGRES_USER and POSTGRES_DB as settable — on a
- * deployment that sets either, the probe fails, and this probe is what a release rolls back
- * on: a good version undone by a name the script guessed.
+ * Both probes read the database user and name through the host's own configuration rather than as
+ * literals — .env.example documents POSTGRES_USER and POSTGRES_DB as settable, and this probe is
+ * what a release rolls back on.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -30,28 +29,22 @@ probe("every migration is applied, and every applied migration still exists", ()
     .split("\n").filter(Boolean);
   const applied = psql("select name from zz.schema_migration").split("\n").map((x) => x.trim()).filter(Boolean);
   if (!applied.length) throw new Error("could not read zz.schema_migration on the host");
-  // BY NAME, BOTH DIRECTIONS — which the sentence above always claimed and a count comparison
-  // never did. `applied >= files` passed a deleted migration (its row still counted), passed a
-  // renamed one (old row plus new file, totals unchanged), and could only ever notice a file
-  // nobody had run yet.
+  // By name, both directions. `applied >= files` passes a deleted migration (its row still counts)
+  // and a renamed one (old row plus new file, totals unchanged), and can only ever notice a file
+  // nobody has run yet.
   const inDb = new Set(applied), onDisk = new Set(files);
   const unapplied = files.filter((f) => !inDb.has(f));
   const orphaned = applied.filter((a) => !onDisk.has(a));
 
-  // A MIGRATION MAY BE UNAPPLIED ON PURPOSE, and this probe used to call that a disagreement.
+  // A migration may be unapplied on purpose. `services/gateway/src/db.ts` defers a migration
+  // declaring `-- requires-extension: X` when this cluster cannot supply X, and deliberately does
+  // not record it as applied: a migration attempted where its extension is absent throws, rolls
+  // back, un-sets the pool and rethrows, and the gateway starts anyway — the platform serving with
+  // no database while reporting itself healthy.
   //
-  // `services/gateway/src/db.ts` DEFERS a migration declaring `-- requires-extension: X` when
-  // this cluster cannot supply X — skipped, and deliberately NOT recorded as applied, because
-  // a migration attempted where its extension is absent throws, rolls back, un-sets the pool
-  // and rethrows, and the gateway starts anyway: the platform serving with no database while
-  // reporting itself healthy. Migration 070 needs pg_textsearch, which arrives with a
-  // PostgreSQL 17 image this project has not built yet.
-  //
-  // THIS PROBE IS STRICTER THAN AN EXEMPTION, because unlike the release's offline checks it
-  // is talking to the actual database. It does not take the directive's word for anything: it
-  // ASKS the cluster what it offers, and a migration whose declared extension IS available and
-  // which still has not run is a real disagreement — exactly the case where the deferral has
-  // stopped being a deferral and become a migration nobody noticed failing.
+  // This probe is stricter than an exemption, because it is talking to the actual database: it asks
+  // the cluster what it offers rather than taking the directive's word, so a migration whose
+  // declared extension is available and which still has not run is a real disagreement.
   const stillUnapplied: string[] = [];
   const deferredHere: string[] = [];
   const available = new Set(psql("select name from pg_available_extensions")
@@ -65,9 +58,9 @@ probe("every migration is applied, and every applied migration still exists", ()
   }
   if (stillUnapplied.length) return `on disk but never applied: ${stillUnapplied.join(", ")}`;
   if (orphaned.length) return `applied but no longer in this checkout: ${orphaned.join(", ")}`;
-  // Reported, never silent: an unapplied migration is a fact an operator should be told, even
-  // when it is the correct one. It is the difference between this platform's schema and the
-  // schema this checkout describes.
+  // Reported, never silent: an unapplied migration is a fact an operator should be told, even when
+  // it is the correct one. It is the difference between this platform's schema and the schema this
+  // checkout describes.
   if (deferredHere.length) {
     console.log(`      deferred, correctly — this cluster offers no such extension: ${deferredHere.join(", ")}`);
   }
@@ -88,25 +81,18 @@ probe("the skill registry is not behind the catalog", () => {
       `registry update has not run for what is on disk`;
 });
 
-// EVERY RUN NAMES A VERSION, or the evaluation track is reading noise.
+// Every run names a version, or the evaluation track is reading noise.
 //
-// zz.run is DERIVED from zz.event by reconcileRuns() on a timer, and it keyed the version on
-// zz.event.step_version — a column stamped only when a skill is served whole through
-// skill_read, which an installed skill read off disk never is. So every row the
-// initiative-bearing insert wrote carried skill_version_id NULL; a NULL cannot match that
-// insert's conflict target, because Postgres treats NULLs as distinct; `do update` therefore
-// never fired and each pass of the timer appended another copy. The table reached 1791 rows of
-// which 1787 were duplicates of two, growing by roughly 950 a day, every one of them with
-// events attached by a linkback that matched NULLs deliberately.
+// zz.run is derived from zz.event by reconcileRuns() on a timer, keyed on the version. A null
+// skill_version_id cannot match that insert's conflict target, because Postgres treats NULLs as
+// distinct, so `do update` never fires and each pass of the timer appends another copy — and a table
+// full of rows that look like runs reads, in every query, as a healthy table.
 //
-// Nothing offline could see it. The gate is static and cannot reach a database; tsc cannot see
-// inside a template literal; and a table full of rows that look like runs reads, in every
-// query, as a healthy table. This is the probe that would have said so on day one, and it is
-// here rather than in the gate for exactly that reason.
+// Nothing offline can see it: the gate is static and cannot reach a database, and tsc cannot see
+// inside a template literal.
 //
-// READ-ONLY, like everything in this file. A null row is reported, never deleted: the cleanup
-// is an operator's decision made once, and a doctor that fixed what it found would be a doctor
-// nobody could safely run while something was broken.
+// Read-only, like everything in this file. A null row is reported, never deleted: a doctor that
+// fixed what it found would be one nobody could safely run while something was broken.
 probe("every run names the skill version it ran", () => {
   const total = Number((psql("select count(*) from zz.run").trim() || "0"));
   const orphan = psql("select count(*) from zz.run where skill_version_id is null").trim();
@@ -120,16 +106,14 @@ probe("every run names the skill version it ran", () => {
          `and check that the version is resolved by released_at rather than by step_version`;
 });
 
-// R13 · A PROBE DELETES WHAT IT CREATES, and the store is where you find out it did not.
+// R13 · A probe deletes what it creates, and the store is where you find out it did not.
 //
 // `chain-check` opens a fresh initiative on every run and closes it; closing is not deleting.
-// Three days of release runs left 58 probe initiatives, 463 documents, 1,882 events and 240 of
-// the platform's 350 runs in this store — 54 on the platform's own team and 4 on a real
-// person's. `release.ts` sweeps after itself now, and this is what says whether the sweep is
-// working, on the one deployment where it matters.
+// `release.ts` sweeps after itself, and this is what says whether the sweep is working, on the one
+// deployment where it matters.
 //
-// IT IS NOT A GATE CHECK because the gate is offline and this is a fact about DATA. The source
-// can be perfect while the store fills up, which is exactly what happened.
+// Not a gate check: the gate is offline and this is a fact about data. The source can be perfect
+// while the store fills up.
 probe("no initiative in the store was left behind by a probe", () => {
   const n = psql("select count(*) from zz.initiative where slug like '%chain-check-%'").trim();
   if (n === "") throw new Error("could not count zz.initiative on the host");
@@ -140,14 +124,14 @@ probe("no initiative in the store was left behind by a probe", () => {
          `being taken over test traffic. scripts/ops/purge-probes.ts removes them.`;
 });
 
-// R5 · A STATUS IS A GATE VERDICT, so only a document its flow GATES may carry one.
+// R5 · A status is a gate verdict, so only a document its flow gates may carry one.
 //
-// Whether a document is adjudicated is decided per flow and per document by that flow's
-// manifest. The manifests are in this checkout and the documents are on the deployment, so
-// this is the one place the two can be compared — and neither half can answer it alone.
+// Whether a document is adjudicated is decided per flow and per document by that flow's manifest.
+// The manifests are in this checkout and the documents are on the deployment, so this is the one
+// place the two can be compared — and neither half can answer it alone.
 //
-// `handover.md` is the platform's own, appended gated to every flow that gates anything, so it
-// is expected to carry one wherever it appears.
+// `handover.md` is the platform's own, appended gated to every flow that gates anything, so it is
+// expected to carry one wherever it appears.
 probe("no document carries a status its flow does not gate", () => {
   const gated = new Map<string, boolean>();
   for (const f of run("bash", ["-c", `ls ${root}/catalog/*/*/flow.json`]).split("\n").filter(Boolean)) {
@@ -176,28 +160,14 @@ probe("no document carries a status its flow does not gate", () => {
          `team reindexed.`;
 });
 
-// R11 · ATTRIBUTION IS LOOKED UP — AND THE GATE CAN ONLY SEE THAT IT IS.
-//
-// The gate asserts telemetry resolves the plugin from the door and never from the caller's
-// step trace. That is the mechanism, and a spec audit was right that it is not the property: a
-// rewrite can satisfy the grep and leave every row null. Measured before this landed, 194 of
-// 3,996 tool calls carried a plugin — 4.9% — while the code that produced them looked correct
-// on every reading.
-//
-// A door IS a plugin's declared server, so a call that arrived on one is attributable by
-// construction; the only honest null is a surface no manifest claims, which today is `admin`.
-// So this counts what is NOT attributed and excludes that one.
 probe("no event names an initiative that does not exist in that event's own team", () => {
-  // NOT COUNT-BOUNDED, unlike the probe below, because the history behind this one was
-  // cleaned rather than left to age out. 11 rows named an initiative belonging to the
-  // caller's OTHER team — a cross-team `initiative_status` succeeds, and the trace kept the
-  // slug it learned from the answer — and they were corrected on 2026-09-23, so zero is
-  // reachable and anything above it is new.
+  // DELIBERATE: not count-bounded, unlike the probe below. The history behind this one was cleaned
+  // rather than left to age out, so zero is reachable and anything above it is new.
   //
-  // THE TEAM IS PART OF THE QUESTION. `zz.initiative` is unique on `(team_id, slug)`, not on
-  // slug, so "the slug exists" is not the same as "the slug exists here": on 2026-09-23 one
-  // slug lived in two teams, and a team-blind version of this query called both attributions
-  // valid while calling neither wrong.
+  // COUPLED: the team is part of the question. `zz.initiative` is unique on `(team_id, slug)`, not
+  // on slug, so "the slug exists" is not "the slug exists here" — one slug can live in two teams,
+  // and a team-blind version of this query calls both attributions valid while calling neither
+  // wrong.
   const bad = psql(
     "select count(*) from zz.event e where e.initiative is not null" +
     " and not exists (select 1 from zz.initiative i join zz.team t on t.id = i.team_id" +
@@ -212,22 +182,24 @@ probe("no event names an initiative that does not exist in that event's own team
          `withhold it when the team changes.`;
 });
 
+// R11 · Attribution is looked up, and the gate can only see that it is. The gate asserts telemetry
+// resolves the plugin from the door and never from the caller's step trace; that is the mechanism
+// rather than the property, and a rewrite can satisfy the grep and leave every row null.
+//
+// A door is a plugin's declared server, so a call that arrived on one is attributable by
+// construction; the only honest null is a surface no manifest claims, which is `admin`. So this
+// counts what is not attributed and excludes that one.
 probe("recent tool calls name the plugin whose door they arrived on", () => {
-  // THE LAST 200 CALLS, NOT ALL OF THEM, and the bound is the whole design of this probe.
+  // The last 200 calls, not all of them. Attribution is a property of the code that wrote a row, and
+  // rows written before pluginForDoor landed carry nulls no deploy can fill; counting them forever
+  // is a check that cannot pass, which people learn to scroll past. `plugin_version is not null` is
+  // not a usable boundary either — the old path set that column too whenever its guess resolved.
   //
-  // Attribution is a property of the code that WROTE a row. Rows written before pluginForDoor
-  // landed carry nulls no deploy can fill, and counting them forever reported 94.7% on a
-  // deployment where the new path was working perfectly — a check that cannot pass is a check
-  // people learn to scroll past. Nor is `plugin_version is not null` a usable boundary: the
-  // OLD path set that column too whenever its guess resolved, so it does not mark the change.
+  // A count-bounded window needs no timestamp and no marker, and corrects itself as the platform is
+  // used. Expect it red for a short while after a release that changes the write path, while the
+  // window still holds rows the old code wrote.
   //
-  // A count-bounded window needs no timestamp and no marker. It answers the question that
-  // matters — is what is running now attributing what it handles — and it corrects itself as
-  // the platform is used. Expect it red for a short while after the release that introduced
-  // this, while the window still holds rows the old code wrote. That is honest, not a defect.
-  //
-  // `admin` is excluded: it was a door and is not one now, so no manifest claims it and
-  // nothing should invent a plugin for it. That is the one null this platform is entitled to.
+  // `admin` is excluded: no manifest claims it, so it is the one null this platform is entitled to.
   const row = psql(
     "select count(*) || '|' || count(plugin) from (" +
     "  select plugin from zz.event where kind = 'tool_call'" +

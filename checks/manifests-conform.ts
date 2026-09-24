@@ -32,26 +32,22 @@ for (const [name, dir] of plugins) {
   const undeclared = shipped.filter((s) => !declared.has(s));
   if (undeclared.length) fail.push(`${name} ships undeclared skills: ${undeclared.join(", ")}`);
 
-  // NO HAND-WRITTEN `produces` LOOP HERE. `CatalogManifest.safeParse` above is the same rule
-  // applied by the contract that defines it — `produces` is required on FlowStage — so a
-  // second copy fifteen lines down could only ever agree with it or be wrong. The generic
-  // form, over every flow rather than these four names, is scripts/gate/checks/stage-produces.ts.
+  // DELIBERATE: no hand-written `produces` loop here. `CatalogManifest.safeParse` above is
+  // the same rule applied by the contract that defines it — `produces` is required on
+  // FlowStage. The generic form, over every flow, is scripts/gate/checks/stage-produces.ts.
 }
-// Control: zz-core must declare NO documents, or it has been wrongly made a flow.
+// Control: zz-core must declare no documents, or it has been wrongly made a flow.
 //
-// GUARDED, because the file may not be there. This read was unconditional and ran BEFORE the
-// `zz-core has no catalog entry` line forty lines down, so with no manifest on disk the check
-// died on an ENOENT stack trace and the sentence written for exactly that case never printed.
-// Measured, not argued: moving the manifest away reported `node:fs:436` through the gate's
-// 400-character stderr window. Red for the right reason and unreadable is still a check an
-// operator has to go and read the source of.
+// DELIBERATE: the read is guarded because the file may not be there. Unguarded, a missing
+// manifest dies on an ENOENT stack trace before the `zz-core has no catalog entry` line
+// below can print.
 const CORE = "catalog/zz/zz-core/flow.json";
 const core = existsSync(CORE) ? JSON.parse(readFileSync(CORE, "utf8")) : {};
 if ((core.documents || []).length) fail.push("zz-core declares documents; it is not a flow");
 
-// AC-2.11a: the rename landed at every site, not just in the manifest. A tree-walk, because
-// the sites are scattered across build output, a lock file, three source files and prose —
-// and a check that only read flow.json would pass a half-done rename.
+// The baseline plugin is zz-core at every site, not just in the manifest: no plugin is named
+// zz, so the old name anywhere points at nothing. The sites are build output, a lock file,
+// source files and prose.
 if (existsSync("marketplace/zz")) fail.push("marketplace/zz still exists; it is marketplace/zz-core now");
 if (!existsSync(CORE)) fail.push("zz-core has no catalog entry");
 const lock = JSON.parse(readFileSync("plugins.lock.json", "utf8"));
@@ -66,7 +62,7 @@ const NAME_SITES: [string, RegExp][] = [
 for (const [f, pat] of NAME_SITES) {
   if (pat.test(readFileSync(f, "utf8"))) fail.push(`${f} still names the baseline plugin "zz"`);
 }
-// The command prefix moved in prose too — this is the half that fails silently.
+// The command prefix in prose too — a `/zz:` command in a skill is one no client can run.
 for (const dir of ["skills", "catalog", "marketplace"]) {
   if (!existsSync(dir)) continue;
   for (const p of walk(dir)) {
@@ -74,7 +70,7 @@ for (const dir of ["skills", "catalog", "marketplace"]) {
     if (/\/zz:[a-z]/.test(readFileSync(p, "utf8"))) fail.push(`${p} still uses the /zz: command prefix`);
   }
 }
-// Control: the two OTHER zz's must survive. A blind rename would have taken them too.
+// Control: the Postgres schema keeps the name zz.
 if (!/schema|"zz"/.test(readFileSync("services/gateway/src/db.ts", "utf8"))) {
   fail.push("the Postgres schema name zz was renamed; it must not change");
 }

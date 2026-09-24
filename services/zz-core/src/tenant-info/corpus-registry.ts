@@ -1,60 +1,43 @@
 /**
- * corpus-registry.ts — which corpora this deployment actually holds, who owns each one, and
- * what audience it carries.
+ * Which corpora this deployment holds, who owns each one, and what audience it carries — the
+ * registry `resolveCorpora` (retrieval.ts) takes and does not load for itself.
  *
- * ITS OWN FILE, AND ITS OWN SUBJECT. `resolveCorpora` (retrieval.ts, I-16) takes
- * `registry: readonly CorpusRegistryEntry[]` and its own comment says the caller owns loading
- * it; nothing did, which is why the retrieval stack had no reachable entry point at all. This
- * is that loader. It moved out of `services/zz-core/src/tools/knowledge-search.ts` — the
- * integration target the specification declares — when that file, carrying the whole composed
- * request path as well, reached 766 lines against a measured 700-line ceiling.
- *
- * WHICH HALF MOVED was decided the way it was for `lanes.ts` and `pinned-read.ts` before it.
- * No frozen check pins a symbol to either path, so the seam is what the two halves are ABOUT:
- * this one answers a question about the deployment's CONFIGURATION — which partitions exist and
- * what each one may be shown to — and is read once per request before any authorization
- * decision; the other serves one request. They fail differently too: a registry fault is a
- * misconfigured deployment a caller can do nothing about (`REGISTRY_MISCONFIGURED`), and a
- * request fault is the caller's.
+ * Separate from the composed request path in `knowledge-search.ts`: this answers a question
+ * about the deployment's configuration, read once per request before any authorization
+ * decision, and it fails differently — a registry fault is a misconfigured deployment a
+ * caller can do nothing about (`REGISTRY_MISCONFIGURED`), where a request fault is the
+ * caller's.
  */
 import {
   RetrievalError, type CorpusDescriptor, type RetrievalClient,
 } from "./retrieval.js";
 import { corpusBm25Index } from "./lanes.js";
 
-// ── the corpus registry, loaded rather than assumed ────────────────────────────────────────
+// The corpus registry, loaded rather than assumed
 
 /**
- * `resolveCorpora` takes `registry: readonly CorpusRegistryEntry[]` and its own comment says
- * the caller owns loading it. Nothing loaded one — which is why the integration waited: four
- * recall lanes behind an authorization gate whose input did not exist.
- *
- * WHERE AN ENTRY COMES FROM. There is no registry table, and inventing one would be a schema
- * this delivery never declared. A corpus is a RUNTIME fact — `ensureCorpus`
- * (`packages/indexing/src/tenant-projections.ts`) attaches one list partition per corpus key to
- * each of the three `zz.search_*` parents the first time that corpus holds a row — so the
+ * There is no registry table. A corpus is a runtime fact — `ensureCorpus`
+ * (`packages/indexing/src/tenant-projections.ts`) attaches one list partition per corpus key
+ * to each of the three `zz.search_*` parents the first time that corpus holds a row — so the
  * corpora that exist are exactly the (corpus_key, owner_id, scope) combinations those tables
  * carry, and this query asks them.
  *
- * `index_name` IS THE PARTITION, spelled the way `ensureCorpus` spells it (`<parent>_<key>`).
- * That is the physical index whose term statistics a corpus's rows share, which is the thing
- * `assertOneOwnerPerIndex` is about — not a name invented for the registry to have a field.
+ * COUPLED: `index_name` is the BM25 index on the corpus partition, spelled by
+ * `corpusBm25Index` (lanes.ts) the way `ensureCorpus` (tenant-projections.ts) creates it. That
+ * is the physical index whose term statistics a corpus's rows share, which is what
+ * the one-owner-per-index rule is about.
  *
- * `audience` IS DERIVED FROM THE LIFECYCLE EVENTS, not from `zz.artifact.audience`. That column
- * exists and is null on every row: nothing writes it, and migration 070's search tables carry
- * no audience column at all, so a loader reading it would hand `resolveCorpora` a value that is
- * structurally always absent — and `resolveCorpora` admits an entry through exactly two named
- * branches, so "always absent" means "no corpus ever resolves". What DOES get written is the
- * event `policies.ts` names: `publish` → a `published` event, `unpublish` → an `unpublished`
- * one (`LIFECYCLE_EVENT_KIND`). The latest of those two for an artifact is its publication
- * state, and a corpus's audience is the aggregate below.
+ * DELIBERATE: `audience` is derived from the lifecycle events, not from
+ * `zz.artifact.audience`. Nothing writes that column and the search tables carry
+ * no audience column at all, so a loader reading it would hand `resolveCorpora` a value that
+ * is always absent — and `resolveCorpora` admits an entry through two named branches, so no
+ * corpus would ever resolve. `policies.ts` writes a `published` event on publish and an
+ * `unpublished` one on unpublish; the latest of the two is an artifact's publication state.
  *
- * ALL, NOT ANY, AND FAIL-CLOSED. A corpus is `published` only when EVERY artifact in it is
- * currently published; an artifact that was never published, or whose latest transition is
- * `unpublished`, makes the whole corpus `private`. `search()` authorizes once per corpus and
- * never rechecks a single artifact's publication state, so "any published artifact publishes
- * the corpus" would disclose every unpublished neighbour sharing it to a shared reader. A
- * corpus holding no artifacts is `private` for the same reason — an empty grant is not a grant.
+ * DELIBERATE: all, not any, and fail-closed. A corpus is `published` only when every artifact
+ * in it is currently published, and a corpus holding no artifacts is `private`. `search()`
+ * authorizes once per corpus and never rechecks a single artifact, so publishing a corpus on
+ * any one published artifact would disclose every unpublished neighbour to a shared reader.
  */
 const CORPUS_REGISTRY_SQL = `
 select c.corpus_key, c.owner_id, c.scope,
@@ -87,13 +70,12 @@ interface RegistryRow {
 /**
  * Every corpus this deployment actually holds, as `resolveCorpora`'s registry.
  *
- * REFUSES A TWO-OWNER CORPUS HERE, naming both owners and the corpus, rather than emitting
- * entries and letting `assertOneOwnerPerIndex` refuse them at every later call. Both refusals
- * are `REGISTRY_MISCONFIGURED` and both are correct; this one can say WHICH corpus_key is
- * misconfigured, because it is holding the rows that prove it, and it fails at load rather than
- * once per request. The invariant is the same one `testing/tenant-info/isolation.ts` measures:
- * two owners sharing one physical index share its term and document frequencies, so each one's
- * writes move the other's bm25 scores while every returned row stays perfectly correct.
+ * DELIBERATE: a two-owner corpus is refused here, naming both owners and the corpus, rather
+ * than emitted for a later caller to refuse on. Both refusals are
+ * `REGISTRY_MISCONFIGURED`; this one holds the rows that prove which corpus_key is at fault,
+ * and it fails at load rather than once per request. Two owners sharing one physical index
+ * share its term and document frequencies, so each one's writes move the other's bm25 scores
+ * while every returned row stays correct — `testing/tenant-info/isolation.ts` measures it.
  */
 export async function loadCorpusRegistry(client: RetrievalClient): Promise<CorpusDescriptor[]> {
   const { rows } = await client.query<RegistryRow>(CORPUS_REGISTRY_SQL, []);
@@ -102,9 +84,8 @@ export async function loadCorpusRegistry(client: RetrievalClient): Promise<Corpu
   for (const row of rows) {
     const total = Number(row.artifacts);
     const published = Number(row.published_artifacts);
-    // THE BM25 INDEX NAME, not the partition's. `to_bm25query`'s second argument is an INDEX,
-    // and this computed a partition name — one field standing for two different objects, which
-    // a real PostgreSQL 17 refused the first time the lane ran: "index ... is not on column
+    // The BM25 index name, not the partition's: `to_bm25query`'s second argument is an index,
+    // and PostgreSQL refuses a partition name there with "index ... is not on column
     // raw_body". `corpusBm25Index` spells it the way `ensureCorpus` creates it.
     const index_name = corpusBm25Index(row.scope, row.corpus_key);
     const seen = ownerByIndex.get(index_name);

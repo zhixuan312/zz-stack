@@ -1,71 +1,43 @@
 /**
  * zz.run, kept in step with the event log.
  *
- * THE TABLE HAD NO MAINTAINER. Migration 017 created `zz.run` and backfilled it from
- * `zz.event.detail->>'run'`, which was right — "the platform has been emitting a run
- * identifier per call all along" — and then nothing ever inserted another row. Every run on
- * this deployment was dated 08-30 or 08-31, the two days before that migration ran, and every
- * skill's measured reach froze there. Five days of delivery, four evaluation rounds and a
- * whole block evaluation left no run at all.
+ * `zz.run.skill_version_id` attributes work to a version of a skill, `zz.doc.produced_by_run_id`
+ * hangs off it, and the evaluation track judges a skill from the documents and traces its runs
+ * point at. A skill whose runs stop being recorded is indistinguishable, in every query, from
+ * one nobody used.
  *
- * That is not a cosmetic gap. `zz.run.skill_version_id` is what attributes work to a version
- * of a skill, `zz.doc.produced_by_run_id` hangs off it, and the evaluation track judges a
- * skill from the documents and traces its runs point at. A skill whose runs stopped being
- * recorded reads as a skill nobody used — indistinguishable, in every query, from one that is
- * genuinely unreached.
+ * Derived, not written at the door. Every fact here is already in zz.event and a run is a
+ * grouping of it, so writing rows per call would put a second write in the hot path of every
+ * tool call and race with itself to store something recomputable exactly. This recomputes it
+ * idempotently, on the unique key the migration declares, on start and on a timer.
  *
- * DERIVED, NOT WRITTEN AT THE DOOR. Every fact here is already in zz.event; the run is a
- * grouping of it. Writing rows per call would put a second write in the hot path of every
- * tool call and race with itself, to store something that can be recomputed exactly. So this
- * recomputes it — idempotently, on the unique key the migration already declared — on start
- * and on a timer.
- *
- * THE GRAIN IS THE MIGRATION'S, unchanged: one run per (initiative, skill version, caller
- * session). 017's own comment says why it is not keyed on the session alone — "a caller
- * session spans eight different steps inside a single initiative; keying runs on it collapsed
- * every step of an initiative into one row and left 29 of 71 runs attached to no skill at
- * all."
+ * The grain is one run per (initiative, skill version, caller session). Keying on the session
+ * alone collapses every step of an initiative into one row: a caller session spans several
+ * steps inside a single initiative.
  */
 import { catalogEntries } from "@zz/catalog";
 import { platformDb, platformDbReady } from "./db.js";
 
 /** Events that cannot be placed in a run stay unplaced. An event with no initiative belongs
- *  to work that had not yet opened one — the whole measure stage of a block evaluation is
- *  like this — and inventing an initiative for it would put calls in a piece of work that
- *  never happened. It is a limit of the grain, not something to paper over. */
+ *  to work that had not yet opened one, and inventing an initiative for it would put calls in a
+ *  piece of work that never happened. It is a limit of the grain, not something to paper over. */
 const PLACEABLE = "e.detail ? 'run' and e.initiative is not null and e.initiative <> ''";
 
-/** WHICH VERSION OF A SKILL WAS RUNNING WHEN AN EVENT FIRED — answered by TIME, because the
- * column that used to answer it is almost never set.
+/** Which version of a skill was running when an event fired — answered by time.
  *
- * Every one of these joins read `sv.version = e.step_version`, and `step_version` is stamped
- * only when a skill is served WHOLE through skill_read (step-trace.ts). Claude Code reads an
- * installed skill off disk, so in normal operation nothing stamps it at all. Measured twice, a
- * day apart, and the pair is the proof:
+ * `e.step_version` is stamped only when a skill is served whole through skill_read
+ * (step-trace.ts), and Claude Code reads an installed skill off disk, so in normal operation
+ * nothing stamps it. Nothing is both placeable and version-resolvable through that column, and
+ * a null `skill_version_id` cannot match the insert's conflict target — Postgres treats NULLs
+ * as distinct — so `do update` never fires and every pass of the timer appends a duplicate.
  *
- *                        2026-09-12   2026-09-13
- *   zz.event                    381          510
- *   ... with a step             157          198   <- all of them resolve to a zz.skill
- *   ... with a step_version      39           39   <- FROZEN. 129 new events, none stamped.
- *   zz.run                      847         1791
- *   ... skill_version_id null   843         1787   <- +944 in one day
+ * COUPLED: making the joins inner without changing this binding deletes the duplicates and then
+ * writes nothing, for all time. Both halves are one change.
  *
- * step_version is not sparse, it is dead: it did not move while the event log grew by a third.
- * Nothing was BOTH placeable and version-resolvable on either day, so every row the first
- * insert below has ever written was unresolvable — and a NULL skill_version_id cannot match
- * that insert's conflict target (Postgres treats NULLs as distinct, the same trap 031
- * documented one column over), so `do update` never fired and it appended a fresh duplicate on
- * every pass of the timer. The linkback matched those NULLs deliberately, so each phantom had
- * events hanging off it, which is why a table that was 99.8% junk looked entirely plausible.
- *
- * Making the joins inner without changing the binding does NOT fix that — it deletes the
- * duplicates and then writes nothing, for all time. Both halves are one change.
- *
- * A release is the moment a version's content is fixed, and `released_at` is written then. So
- * "which version was running" is a question about time, and this is the honest answer to it:
- * the latest version of that skill released at or before the event. It resolves the 157 events
- * that carry a step rather than the 23 that carry a version, and it answers for history already
- * recorded rather than only for data collected from now on.
+ * A release is the moment a version's content is fixed, and `released_at` is written then, so
+ * "which version was running" is a question about time: the latest version of that skill
+ * released at or before the event. It answers for history already recorded rather than only
+ * for data collected from now on.
  *
  * `s` and `e` must both be in scope. In an UPDATE this cannot be a LATERAL — Postgres rejects a
  * LATERAL in an UPDATE's FROM that references the update target — so the two linkbacks below
@@ -81,42 +53,25 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
   if (!platformDbReady()) return { initiatives: 0, runs: 0, linked: 0, docs: 0 };
   const db = platformDb();
 
-  // The initiatives first, because a run points at one. This is the same insert 017 made and
-  // the same reason: zz.run.initiative_id is a foreign key, so a run cannot be recorded for
-  // an initiative the table has never heard of.
+  // The initiatives first, because a run points at one: zz.run.initiative_id is a foreign key,
+  // so a run cannot be recorded for an initiative the table has never heard of.
   const i = await db.query(`
     insert into zz.initiative (team_id, slug, created_at)
     select t.id, e.initiative, min(e.ts)
       from zz.event e join zz.team t on t.slug = e.team_slug
-     -- _knowledge IS NOT AN INITIATIVE. It is the reserved directory the knowledge store
-     -- lives in, and the UPDATE thirteen lines down already excludes it -- this INSERT did
-     -- not, so every deployment grew a _knowledge initiative row and runs were filed under
-     -- it: 299 of them on production, attributed to a thing nobody can open.
-     -- (No backticks in here: this is inside a template literal, and a backtick in a SQL
-     -- comment closes it. That has broken this repository twice already.)
-     -- AN INITIATIVE IS A FOLDER SOMETHING WAS WRITTEN INTO.
-     --
-     -- This minted a row from any string a call passed in its initiative argument,
-     -- recorded verbatim BEFORE the platform had answered. So a bad argument on a REFUSED
-     -- call became a real initiative, and so did an initiative belonging to another team
-     -- that this caller merely READ. Measured on production: 8 of 22 rows were never
-     -- opened by anybody -- two document PATHS (a slash in the name, first seen on a
-     -- failed document_read), one free-text sentence with spaces and a comma, and two
-     -- cross-team echoes from a successful initiative_status. Runs were then filed against
-     -- them, the progress tile counted them as active work, and two were duplicates of the
-     -- very initiative whose document path they were.
-     --
-     -- Three conditions, each dropping a different kind of ghost:
+     -- An initiative is a folder something was written into, and _knowledge is not one: it is
+     -- the reserved directory the knowledge store lives in. Three conditions, each dropping a
+     -- different kind of ghost:
      --   ok          -- nobody accepted this argument, so it says nothing
-     --   the shape   -- initiative_open composes <YYYY-MM-DD>-<slug> from the platform's
-     --                  own clock and safeName refuses a separator, so anything else was
-     --                  never a name this platform created
-     --   a WRITE     -- reading an initiative is not evidence it is yours. Only the acts
-     --                  that put something in the folder count, which is also what makes
-     --                  the row true of the TEAM it is filed under.
-     -- Through coalesce(tool_key, subject) and both spellings, because tool_key is written
-     -- only since migration 050 and the pre-rename history is the half that most needs
-     -- resolving -- see @zz/contracts' TOOL_ALIAS, which is where those names come from.
+     --   the shape   -- initiative_open composes <YYYY-MM-DD>-<slug> from the platform's own
+     --                  clock and safeName refuses a separator, so anything else was never a
+     --                  name this platform created
+     --   a write     -- reading an initiative is not evidence it is yours; only an act that put
+     --                  something in the folder counts, which is also what makes the row true
+     --                  of the team it is filed under
+     -- Through coalesce(tool_key, subject) and both spellings, because older rows carry no
+     -- tool_key -- see @zz/contracts' TOOL_ALIAS.
+     -- DELIBERATE: no backticks in these comments; they sit inside a template literal.
      where e.initiative is not null and e.initiative not in ('', '_knowledge')
        and e.ok
        and e.initiative ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9][a-z0-9-]*$'
@@ -129,18 +84,13 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
              'core:source_add', 'core:add_source')
      group by t.id, e.initiative
     on conflict (team_id, slug) do nothing`);
-  // AND FROM THE DOCUMENTS, which are the record of what actually exists.
+  // And from the documents, which are the record of what actually exists.
   //
-  // The insert above derives an initiative from EVENTS, and events are telemetry: they can be
-  // absent, they can predate a column, and on this deployment one real initiative with
-  // documents -- quan/2026-09-12-btc-daily-probability-above-climatology -- had no row at all
-  // and was therefore invisible to the progress tile and the stage bar for good. Meanwhile
-  // the console carried two different initiative counts in one payload, 15 and 22, because
-  // one was taken over zz.doc and the other over this table.
-  //
-  // A folder holding a document is not a claim about an initiative; it IS one. So the two
-  // sources are unioned rather than argued about, and the count stops depending on which
-  // table a reader happened to ask.
+  // The insert above derives an initiative from events, and events are telemetry: they can be
+  // absent and they can predate a column, so a real initiative with documents can have no row
+  // at all and be invisible to the progress tile and the stage bar. A folder holding a
+  // document is an initiative, so the two sources are unioned and the count stops depending on
+  // which table a reader happened to ask.
   const d = await db.query(`
     insert into zz.initiative (team_id, slug, created_at)
     select t.id, d.initiative, min(d.updated_at)
@@ -149,18 +99,12 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
      group by t.id, d.initiative
     on conflict (team_id, slug) do nothing`);
   // The flow, from the documents rather than from the events. zz.doc carries the flow the
-  // platform resolved and stamped, and zz.event's own `flow` column is thinner: 409 of 510
-  // rows on 2026-09-13. It said "far fewer rows" until this was measured, which was true when
-  // written and had drifted into implying the column is unusable — it is 80%, and the gap is
-  // the calls made before any flow was resolved. An initiative row whose flow is blank is one
-  // the console cannot group.
+  // platform resolved and stamped; zz.event's own `flow` column is thinner, because the calls
+  // made before any flow was resolved carry none. An initiative row
+  // whose flow is blank is one the console cannot group.
   await db.query(`
     update zz.initiative i set flow = d.flow
       from (select distinct on (team_slug, initiative) team_slug, initiative, flow
-              -- No exclusion of the knowledge shelf any more: a node is its own subject
-              -- in its own table, so zz.doc holds documents and sources and nothing else. A
-              -- predicate that can no longer exclude anything reads as a rule still being
-              -- enforced, which is worse than absent.
               from zz.doc where flow is not null and flow <> ''
              order by team_slug, initiative, created_at) d
       join zz.team t on t.slug = d.team_slug
@@ -173,9 +117,8 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
   const r = await db.query(`
     insert into zz.run (initiative_id, skill_version_id, caller_session,
                         calls, refusals, bytes_total, started_at, ended_at)
-    -- sum() over all-null is null, and 051 made the column accept that: a run nobody measured
-    -- has no total, which is a different fact from a run that transferred nothing. It is NOT
-    -- coalesced to 0 — that is what made the two indistinguishable before.
+    -- sum() over all-null is null, and deliberately not coalesced to 0: a run nobody measured
+    -- has no total, which is a different fact from a run that transferred nothing.
     select i.id, sv.id, e.detail->>'run',
            count(*), count(*) filter (where e.ok is false),
            sum(e.response_bytes),
@@ -192,11 +135,9 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
           started_at = least(zz.run.started_at, excluded.started_at),
           ended_at = greatest(coalesce(zz.run.ended_at, excluded.ended_at), excluded.ended_at)`);
 
-  // Runs that never opened an initiative. A block usage skill's whole working life is here:
-  // the agent loads the skill, works the block, and opens an initiative later or not at all.
-  // Requiring an initiative left `using-casebox` with 22 stamped calls across 3
-  // sessions and zero runs — indistinguishable, in every query the evaluation track makes,
-  // from a skill nobody has ever opened.
+  // Runs that never opened an initiative. A skill can be loaded and used without one ever being
+  // opened. Requiring an initiative leaves such a skill with stamped calls and zero runs —
+  // indistinguishable, in every query the evaluation track makes, from a skill nobody used.
   const r2 = await db.query(`
     insert into zz.run (initiative_id, skill_version_id, caller_session,
                         calls, refusals, bytes_total, started_at, ended_at)
@@ -214,10 +155,9 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
           started_at = least(zz.run.started_at, excluded.started_at),
           ended_at = greatest(coalesce(zz.run.ended_at, excluded.ended_at), excluded.ended_at)`);
 
-  // And the link back, which is what makes a run's TRACE readable. zz.event.run_id was set by
-  // nothing after 017 either, so even a rebuilt run had no events to show a judge: the
-  // evaluation track reads a run's ordered events as the artifact it scores, and every one of
-  // them came back empty.
+  // And the link back, which is what makes a run's trace readable. The evaluation track reads
+  // a run's ordered events as the artifact it scores, so a run with no events on it shows a
+  // judge nothing.
   const l2 = await db.query(`
     update zz.event e set run_id = run.id
       from zz.run run
@@ -239,37 +179,26 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
      where e.run_id is null and ${PLACEABLE}
        and e.team_slug = t.slug and e.initiative = i.slug
        and e.detail->>'run' = run.caller_session
-       -- Plain equality, not IS NOT DISTINCT FROM. (No backticks in this comment: it is inside
-       -- a template literal and one would close it -- the trap this file already documents.)
-       -- The NULL tolerance was only ever needed because the insert above was writing NULLs;
-       -- now that it cannot, matching NULL to NULL would attach events to a run that does not
-       -- identify a skill at all.
+       -- Plain equality, not IS NOT DISTINCT FROM: the insert above never writes a null skill, and
+       -- matching null to null would attach events to a run that identifies no skill.
        and run.skill_version_id = (
              select v.id from zz.skill s
               join zz.skill_version v on v.skill_id = s.id and v.released_at <= e.ts
              where s.name = e.step
              order by v.released_at desc limit 1)`);
 
-  // AND THE DOCUMENT SIDE, which had exactly the same hole and a worse blast radius.
+  // And the document side.
   //
-  // `zz.doc.produced_by_run_id` is how a document is attributed to the VERSION of the skill
-  // that wrote it — the join the whole evaluation track stands on. It was written once, by
-  // migration 018's backfill, and by nothing ever since. Every document written after that
-  // migration carried NULL, so the track could only ever see the corpus as it stood on
-  // 2026-08-31: ops-select's installed version reported zero subjects, ops-verify reported nine
-  // judged against seven available, and six specs written this morning under a version
-  // released to fix a measured weakness were invisible to the round that would measure it.
+  // `zz.doc.produced_by_run_id` is how a document is attributed to the version of the skill
+  // that wrote it — the join the whole evaluation track stands on. A document carrying NULL is
+  // invisible to every round.
   //
-  // FROM THE MANIFEST, not from a table of flow names. 018 hardcoded ops-flow's five
-  // step-to-role pairs into the SQL, which is the per-flow table this codebase keeps finding
-  // and removing — a second flow attributes nothing, and ops-flow attributes wrongly the day it
-  // renames a document. `stage` on a declared document already says which step writes it and
-  // `role` says what the document is, so the pairs are read off the catalog and passed as
-  // data.
-  // FIRST THE DOCUMENT'S OWN INITIATIVE, because the attribution below joins on it and it was
-  // NULL on every document written since 018 — the same one-time backfill, one layer up. Two
-  // columns, both filled once by a migration, both never maintained, and the second is
-  // useless without the first.
+  // From the manifest, not from a table of flow names: hardcoding one flow's step-to-role
+  // pairs into the SQL attributes nothing for a second flow and attributes wrongly the day the
+  // first renames a document. `stage` on a declared document says which step writes it and
+  // `role` says what the document is, so the pairs are read off the catalog and passed as data.
+  //
+  // First the document's own initiative, because the attribution below joins on it.
   const di = await db.query(`
     update zz.doc d set initiative_id = i.id
       from zz.team t join zz.initiative i on i.team_id = t.id
@@ -289,11 +218,9 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
         join zz.skill_version sv on sv.id = run.skill_version_id
         join zz.skill s on s.id = sv.skill_id,
              unnest($1::text[], $2::text[]) as m(skill, role)
-       -- THE TARGET TABLE IS NOT JOINABLE FROM INSIDE THE FROM CLAUSE. Written as a join
-       -- whose ON touches d.type, this is "invalid reference to FROM-clause entry for table
-       -- d" at runtime: Postgres does not admit the UPDATE target there. An UPDATE that
-       -- throws inside a reconcile that swallows its errors is a repair that silently never
-       -- runs, so every condition touching the target belongs in WHERE.
+       -- DELIBERATE: every condition touching the update target is in WHERE. Postgres does not admit
+       -- the target inside a FROM-clause join, and this reconcile swallows its errors, so such a
+       -- repair would silently never run.
        where d.produced_by_run_id is null
          and run.initiative_id = d.initiative_id
          and m.skill = s.name and m.role = d.type

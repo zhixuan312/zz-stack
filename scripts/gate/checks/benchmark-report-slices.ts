@@ -10,21 +10,13 @@ check("a benchmark report proves each language slice separately or leaves its ta
 
   const p = join(root, "testing/tenant-info/benchmark-report.json");
   if (!existsSync(p)) {
-    // NOT A FAILURE, AND NOT SILENT EITHER. This check's own title is "proves each language
-    // slice separately OR LEAVES ITS TARGET BLOCKED", and on absence the second half is the
-    // satisfied one — the clause above has just proved that an empty measurement set does not
-    // evaluate to a pass. Failing here would contradict the name.
+    // DELIBERATE: absence notes rather than fails. The title's second half — "or leaves its
+    // target blocked" — is the satisfied one here, and the clause above has already proved
+    // that an empty measurement set does not evaluate to a pass. The note is what tells a
+    // reader of a green gate that the eleven clauses below did not run.
     //
-    // What was wrong was that the absence was reported NOWHERE, so a reader of a green gate
-    // could not tell that eleven clauses below had not run. It cannot be produced in this
-    // checkout: benchmark-measure-run.ts needs a live database, a workspace, and two runtime
-    // facts only the serving process can supply.
-    //
-    // THAT LIST USED TO CARRY A FOURTH REASON AND IT IS NO LONGER TRUE: "migration 072 is
-    // unapplied with the analyzer_version columns absent". 072 is applied on the deployment and
-    // `analyzer_version` stands on nine relations there, so the migration is not what is
-    // stopping this. Left in, that sentence would send whoever tries to produce the report to
-    // apply a migration that is already applied and conclude the problem is elsewhere.
+    // The report cannot be produced in this checkout: benchmark-measure-run.ts needs a live
+    // database, a workspace, and two runtime facts only the serving process can supply.
     note("    benchmark-report-slices: no benchmark report on disk, so the per-slice clauses " +
          "below did not run. Their target stays blocked, which is not a pass.");
     return;

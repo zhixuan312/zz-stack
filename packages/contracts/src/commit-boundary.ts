@@ -1,31 +1,26 @@
 /**
  * The commit boundary: the protocol a predicate check and the effect it authorises must share,
- * described as steps and READ BACK rather than asserted.
+ * described as steps and read back rather than asserted.
  *
- * WHY A DESCRIBED PROTOCOL AND NOT THREE BOOLEANS. "The check and the publish are serialized"
- * is exactly the kind of claim that is true in the paragraph and false in the code. So the
- * protocol is data — an ordered list of steps, each naming the store it fences or touches —
- * and every field of {@link CommitBoundary} is COMPUTED by walking it. A boundary that stops
- * being serialized stops reporting that it is, without anybody remembering to edit a flag.
+ * DELIBERATE: the protocol is data — an ordered list of steps, each naming the store it fences
+ * or touches — and every field of {@link CommitBoundary} is computed by walking it, never
+ * declared. A boundary that stops being serialized stops reporting that it is.
  *
- * THE THREE THINGS THAT GO WRONG, and what each looks like here:
+ * The three failures the walk detects:
  *
- *   · The check and the publish sit in different transactions. Between them another writer
- *     commits, and the publish lands on a world the predicate was never evaluated against.
- *     Walking the steps, no fence interval contains both indices — `serialized` is false.
- *   · The permission store is a SEPARATE store and the document fence says nothing about it.
- *     A grant checked against epoch p1 publishes while a revocation moves the epoch to p2, and
- *     the document lock was held throughout — honestly held, and irrelevant. So `covers` is
- *     computed per store: a store is covered only when a fence on THAT store spans both the
- *     check and the publish. A document lock never buys permission coverage.
- *   · A model call, or a backoff between attempts, happens with a lock held. The lock's
- *     duration becomes the model's latency, every other writer queues behind a network call,
- *     and a retry loop holds it for as long as it keeps failing. `holdsLockAcrossModelCall` is
- *     true whenever any fence is open across either kind of step.
+ *   · The check and the publish sit in different transactions, so another writer can commit
+ *     between them and the publish lands on a world the predicate was never evaluated
+ *     against. No fence interval contains both indices, and `serialized` is false.
+ *   · The permission store is a separate store and the document fence says nothing about it.
+ *     A grant checked against one epoch publishes while a revocation moves it, with the
+ *     document lock honestly held throughout. `covers` is computed per store: a store is
+ *     covered only when a fence on that store spans both the check and the publish.
+ *   · A model call, or a backoff between attempts, happens with a lock held, so the lock's
+ *     duration becomes the model's latency and a retry loop holds it as long as it keeps
+ *     failing. `holdsLockAcrossModelCall` is true whenever any fence is open across either.
  *
- * THE ORDER THE CONTRACT ASKS FOR — snapshot first, assess outside the locks, then recheck and
- * commit inside the boundary — is two more computed flags rather than prose, for the same
- * reason as the first three.
+ * The order the contract asks for — snapshot first, assess outside the locks, then recheck
+ * and commit inside the boundary — is two more computed flags.
  */
 
 // ---------------------------------------------------------------------------------------
@@ -69,7 +64,7 @@ export interface CommitBoundary {
   /** A protocol exists for this operation. An undescribed operation is not a safe one. */
   readonly described: boolean;
   /** The store the effect lands in is fenced across both the governing predicate check and the
-   *  publication. A fence on some OTHER store spanning both is not serialization of this
+   *  publication. A fence on some other store spanning both is not serialization of this
    *  effect: two writers can still publish to an unfenced target concurrently. */
   readonly serialized: boolean;
   /** The stores whose own fence spans both of those steps — and only those. */
@@ -106,8 +101,8 @@ const fencesOf = (steps: readonly ProtocolStep[]): readonly Fence[] => {
       open.delete(step.store);
     }
   });
-  // A fence never released still spans everything after it — the defect that would be is a
-  // leak, not a gap, and this module is not the thing that catches leaks.
+  // DELIBERATE: a fence never released still spans everything after it. That defect is a
+  // leak, not a gap in coverage, and this module does not catch leaks.
   for (const [store, from] of open) closed.push({ store, from, to: steps.length });
   return closed;
 };
@@ -115,14 +110,15 @@ const fencesOf = (steps: readonly ProtocolStep[]): readonly Fence[] => {
 /**
  * Read a protocol back.
  *
- * TAKES THE PROTOCOL, so a probe can walk a deliberately broken one and show each field come
- * back the bad way. {@link boundaryOf} is this function applied to the described protocols and
- * nothing more; if the computation were inlined there, every field would be unfalsifiable.
+ * DELIBERATE: takes a protocol rather than an operation name, so a probe can walk a broken one
+ * and show each field come back the bad way. {@link boundaryOf} is this function applied to
+ * the described protocols; inlining the computation there would make every field
+ * unfalsifiable.
  */
 function describeBoundary(protocol: CommitProtocol): CommitBoundary {
   const steps = protocol.steps;
   const publishIdx = steps.findIndex((s) => s.kind === "publish_effect");
-  // The GOVERNING check is the last one before the publish. An earlier check that a model call
+  // The governing check is the last one before the publish. An earlier check that a model call
   // or a release came after is not what the effect was authorised by.
   let checkIdx = -1;
   for (let i = 0; i < (publishIdx === -1 ? steps.length : publishIdx); i += 1) {
@@ -138,10 +134,9 @@ function describeBoundary(protocol: CommitProtocol): CommitBoundary {
       : [...new Set(
           fences
             .filter((f) => spans(f, checkIdx) && spans(f, publishIdx))
-            // A fence buys coverage of its store only if that store's version was actually
-            // read under it. An open lock nobody read anything through fences a store the
-            // decision never observed, which is a claim about consistency with no observation
-            // behind it.
+            // A fence buys coverage of its store only if that store's version was read under
+            // it. An open lock nobody read anything through fences a store the decision never
+            // observed.
             .filter((f) => f.store === publishStore ||
               steps.some((s, i) => s.kind === "read_fenced" && s.store === f.store &&
                 spans(f, i) && i <= checkIdx))
@@ -163,9 +158,9 @@ function describeBoundary(protocol: CommitProtocol): CommitBoundary {
   return {
     operation: protocol.operation,
     described: steps.length > 0,
-    // NOT `covers.length > 0`. A fence on some other store spanning the check and the publish
-    // covers that store honestly and leaves the target wide open, which is a boundary that
-    // reports serialized while two writers race the effect.
+    // DELIBERATE: not `covers.length > 0`. A fence on some other store spanning the check and
+    // the publish covers that store honestly and leaves the target open, so the boundary
+    // would report serialized while two writers race the effect.
     serialized: publishStore !== null && covers.includes(publishStore),
     covers,
     holdsLockAcrossModelCall,
@@ -182,15 +177,13 @@ const DOCUMENT_STORE = "document_store";
 const PERMISSION_STORE = "permission_store";
 
 /**
- * The one operation described here, and one is the right number: this is the commit that
- * publishes an effect against a checked predicate, and a second entry nobody commits through
- * would be a protocol nothing keeps honest.
+ * The one operation described here: the commit that publishes an effect against a checked
+ * predicate. An entry nobody commits through would be a protocol nothing keeps honest.
  *
- * READ IT IN ORDER. Pin the world; assess, and wait between attempts, with nothing held; then
- * take both fences, read the permission epoch under its own fence, recheck, publish, and let
- * go in the reverse order. The permission read is the step that makes `covers` include the
- * separate store — delete it and the document lock is all that is left, which is the false
- * claim this file was written against.
+ * In order: pin the world; assess, and wait between attempts, with nothing held; then take
+ * both fences, read the permission epoch under its own fence, recheck, publish, and release in
+ * reverse. The permission read is what makes `covers` include the separate store — without it
+ * only the document lock is left.
  */
 const PROTOCOLS: readonly CommitProtocol[] = [
   {
@@ -215,9 +208,9 @@ const PROTOCOLS: readonly CommitProtocol[] = [
 /**
  * The boundary an operation commits through.
  *
- * AN OPERATION WITH NO DESCRIBED PROTOCOL COMES BACK `described: false` AND SERIALIZED FALSE,
- * rather than as a clean boundary with an empty step list. Nothing is known about it, and the
- * honest report of nothing known is not a pass.
+ * DELIBERATE: an operation with no described protocol comes back `described: false` and
+ * `serialized: false`, not as a clean boundary with an empty step list. Nothing is known about
+ * it, and the report of nothing known is not a pass.
  */
 export function boundaryOf(operation: string): CommitBoundary {
   const protocol = PROTOCOLS.find((p) => p.operation === operation);
@@ -246,19 +239,17 @@ const withSteps = (label: string, steps: readonly ProtocolStep[]): CommitProtoco
  * Four variants through {@link describeBoundary}: the real protocol, and one planted defect
  * per field.
  *
- * WHAT THE TABLE IS FOR. Three booleans that are always true are indistinguishable from three
- * constants, and a reader has no way to tell which they are looking at. Each row below is a
- * protocol that genuinely has the defect its name gives, walked by the same function the real
- * one is walked by.
+ * Three booleans that are always true are indistinguishable from three constants. Each row
+ * below is a protocol that genuinely has the defect its name gives, walked by the same
+ * function the real one is walked by.
  *
- * ROWS 4 AND 5 SLICE THE REAL PROTOCOL BY INDEX, so reordering it changes what they test.
- * They are written that way on purpose — the lock they move an assessment inside is the real
- * one, not a hand-built imitation that could drift from it.
+ * DELIBERATE: the model-call and backoff rows slice the real protocol by index, so reordering
+ * it changes what they test. The lock they move an assessment inside is the real one, not an
+ * imitation that could drift from it.
  *
- * ROW 2 MOVES TWO FIELDS, HONESTLY. Splitting the transaction drops `serialized` and empties
- * `covers`, because coverage is defined through the same spanning fence serialization is —
- * there is no arrangement where a check and a publish are in different transactions and some
- * store is still fenced across both. Rows 3 and 4 move one field each.
+ * `split_transaction` moves two fields: splitting the transaction drops `serialized` and
+ * empties `covers`, because coverage is defined through the same spanning fence serialization
+ * is. The other rows move one field each.
  */
 export function boundaryDetectorProbe(): readonly BoundaryProbeRow[] {
   const real = described();
@@ -275,8 +266,7 @@ export function boundaryDetectorProbe(): readonly BoundaryProbeRow[] {
     { kind: "release", store: DOCUMENT_STORE },
   ]);
 
-  // The permission epoch is read before the document lock is taken and nothing fences it —
-  // the classic shape, and the one that looks correct in review because a lock IS held.
+  // The permission epoch is read before the document lock is taken and nothing fences it.
   const permissionUnfenced = withSteps("permission_read_outside_the_fence", [
     { kind: "snapshot", store: null },
     { kind: "model_call", store: null },
@@ -287,7 +277,7 @@ export function boundaryDetectorProbe(): readonly BoundaryProbeRow[] {
     { kind: "release", store: DOCUMENT_STORE },
   ]);
 
-  // The target of the publish is never fenced; a fence on the OTHER store spans the check and
+  // The target of the publish is never fenced; a fence on the other store spans the check and
   // the publish, so `covers` is non-empty and two writers can still race the document. This is
   // why `serialized` is read off the publish store rather than off `covers.length`.
   const publishUnfenced = withSteps("publish_store_unfenced", [
@@ -300,8 +290,7 @@ export function boundaryDetectorProbe(): readonly BoundaryProbeRow[] {
     { kind: "release", store: PERMISSION_STORE },
   ]);
 
-  // The assessment moved inside the fence, which is what happens the first time somebody wants
-  // the model to see the locked row.
+  // The assessment moved inside the fence.
   const assessInside = withSteps("model_call_inside_the_fence", [
     { kind: "snapshot", store: null },
     ...steps.slice(4, 6),
@@ -309,8 +298,7 @@ export function boundaryDetectorProbe(): readonly BoundaryProbeRow[] {
     ...steps.slice(6),
   ]);
 
-  // Same lock, held across a retry wait instead of a request. Counted the same, because it is
-  // the same lock held for the same reason and usually for longer.
+  // Same lock, held across a retry wait instead of a request. Counted the same.
   const backoffInside = withSteps("backoff_inside_the_fence", [
     { kind: "snapshot", store: null },
     ...steps.slice(4, 6),

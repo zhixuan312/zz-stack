@@ -1,80 +1,45 @@
 /**
- * THE FIRST PROVIDER ADAPTER: one supplier's three answer primitives, read into the shared
+ * The first provider adapter: one supplier's three answer primitives, read into the shared
  * assessment record and into nothing else.
  *
- * THE PROVIDER'S VOCABULARY STOPS AT THIS FILE. `choice`, `score` and `noul` are its words for
+ * The provider's vocabulary stops at this file. `choice`, `score` and `noul` are its words for
  * its own primitives; the platform's words are the question families and the answer shapes in
- * `../assessment.js`. The whole mapping between the two lives in `PRIMITIVES` and the three
- * payload builders below, so a second supplier is a second file rather than a condition
- * threaded through the port — and so nothing downstream of `interpret` has ever heard of a
- * primitive. Nothing here builds a `SemanticAssessment` for an answer either: the port does
- * that, from a payload this adapter translates and validates first.
+ * `../assessment.js`. The whole mapping lives in `PRIMITIVES` and the three payload builders
+ * below, so nothing downstream of `interpret` has heard of a primitive. Nothing here builds a
+ * `SemanticAssessment`: the port does that, from a payload this adapter translates first.
  *
- * WHAT IT IS ACTUALLY GUARDING. Two specific ways a judgement nobody made gets written down as
- * one that was:
+ * Two rules the guards below enforce: no default is substituted for a field that was present
+ * and unreadable — every primitive is read by a guard that answers only for the exact
+ * JavaScript type the supplier documents — and no figure is clamped into range, so a 7 on a
+ * two-level scale is `invalid_response` rather than the nearest legal value.
  *
- *   · AN ABSENT FIELD COERCED INTO A VALUE. `score` present and carrying `undefined` is not a
- *     score of zero, and it is emphatically not a score of one — which is what it becomes the
- *     moment anything reaches for `Number(v)`, `v ?? 1`, or a level index plus one. Every
- *     primitive is read by its own typed guard, a guard that answers only for the exact
- *     JavaScript type the supplier documents, and a field that fails one stops the parse. No
- *     default is ever substituted for a field that was present and unreadable.
- *   · AN OUT-OF-RANGE FIGURE CLAMPED INTO RANGE. A 7 on a two-level scale is not a 1. It is a
- *     reply that broke the contract, and the port records it as `invalid_response` rather than
- *     as the nearest legal value, because a clamped figure is indistinguishable one table later
- *     from a figure the assessor actually produced.
+ * Identity is an assertion and is recorded as one: a reply matching an exactly pinned version
+ * is `provider_reported` and never anything stronger, and one naming a different version is
+ * `invalid_response`. An alias pin is not an identity to compare against — the supplier
+ * resolves `jev-latest` server side and reports the concrete version it ran — so the comparison
+ * is made only when the pin is an exact version. Under an alias the reported version is
+ * recorded as the resolved identity, the assurance is `unverified`, and the alias is not handed
+ * to the port as an expected identity, because the port would make the same
+ * guaranteed-to-fail comparison. Under either pin a reply naming no version at all is refused.
  *
- * IDENTITY IS AN ASSERTION, AND IS RECORDED AS ONE. A hosted supplier saying which version
- * served a request is that supplier's word for it: there is no signature, no attestation, and
- * nothing this adapter could check the claim against. So a reply matching an exactly pinned
- * version is `provider_reported` and never anything stronger. A reply naming a DIFFERENT
- * version is `invalid_response` — not a warning, not a substitution — because the qualification
- * that made the pinned version eligible was measured against that version and no other.
+ * `{ true: p, false: 1 - p }` is the only value in this file the supplier did not send: its
+ * yes/no primitive returns a single probability, and the port's predicate path needs a
+ * distribution over the question's declared keys summing to one.
  *
- * AN ALIAS PIN IS NOT AN IDENTITY TO COMPARE AGAINST, and this is the correction that made the
- * adapter usable. `jev-latest` is a name for whatever the supplier is serving today; the
- * supplier resolves it server side and reports the CONCRETE version it ran. Requiring the
- * reported version to equal the alias therefore refuses every real reply on any deployment that
- * pins one — which is what this file did while nothing called it. So the comparison is made
- * only when the pin is an exact version. Under an alias the reported version is recorded as the
- * resolved identity, the assurance is `unverified`, and the alias is NOT handed to the port as
- * an expected identity, because the port would make the same guaranteed-to-fail comparison. An
- * alias confers no eligibility and now says so by recording nothing rather than by refusing
- * everything. What is refused under either pin is a reply naming NO version at all: the
- * supplier documents an identity on every response body, so its absence is a malformed reply.
+ * `readings` carries the supplier's own numbers beside the record — the per-level
+ * `probabilities` of a score and the `legend`, which the port has no column for and this
+ * adapter validates itself, together with the numbers read back out of the port's signals. It
+ * decides nothing: `status` and `value` remain the port's, and `authorizesSemanticAdvance`
+ * reads the status alone.
  *
- * ONE DERIVED NUMBER, DECLARED HERE. The supplier's yes/no primitive returns a single
- * probability, and the port's predicate path needs a distribution over the question's declared
- * keys that sums to one. So `{ true: p, false: 1 - p }` is built here. It is the Bernoulli
- * complement of a number the supplier did emit, not a shape invented around a label, and it is
- * the only value in this file the supplier did not send.
+ * DELIBERATE: the score distribution does not go through the port's native channel, which
+ * requires a distribution to sum to one within 1e-3. The supplier rounds each level to two
+ * decimals without renormalising, so a well-formed reply summing to 0.99 would be refused. The
+ * shape is checked here instead — every key a level this question declared, every value a
+ * probability — and the map is carried verbatim, unsummed and unnormalised.
  *
- * WHAT `readings` IS FOR, AND WHY IT IS NOT A SECOND ANSWER SHAPE. The port keeps what it can
- * validate against a question: a value, a confidence, a distribution over declared keys, a
- * score on a declared range. The supplier also sends two companions the port has no column for
- * — the per-level `probabilities` of a score, and the `legend` echoing what each level meant.
- * A caller that needs those otherwise reads them off an untrusted body itself, which is the
- * casting this module exists to replace. So they are validated HERE and carried in `readings`
- * beside the record, together with the numbers the port already validated, read back out of its
- * own signals rather than re-derived. `readings` decides nothing: `status` and `value` remain
- * the port's, and `authorizesSemanticAdvance` still reads the status alone.
- *
- * THE SCORE DISTRIBUTION IS NOT PUT THROUGH THE PORT'S NATIVE CHANNEL, deliberately, and the
- * reason is measured rather than assumed. That channel requires a distribution to sum to one
- * within 1e-3. Of 556 real score replies this platform has stored, 7 sum to 0.99 — the
- * supplier rounds each level to two decimals and does not renormalise. Routing them through
- * the port would make a well-formed reply `invalid_response` about once in eighty, discarding
- * a score that is itself valid because a companion field was rounded. So the shape is checked
- * here — every key a level this question declared, every value a probability — and the map is
- * carried verbatim, unsummed and unnormalised. Anyone tempted to "fix" this by adding the sum
- * rule should re-run that count first.
- *
- * WHY A REJECTION IS BUILT HERE RATHER THAN BY THE PORT. `interpret` refuses a reply from the
- * wrong model, but only when the reply named one: a reply with NO model field, against an
- * exactly pinned version, reaches its answer branches and is accepted. That is a gap in the
- * port worth closing there; this adapter cannot close it from outside, so it rejects the
- * unidentified reply itself, through `rejected` below. `rejected` builds the port's own
- * exported record type — there is no second assessment shape in this file.
+ * `rejected` below builds the port's own record type for a reply this adapter refuses:
+ * `interpret` accepts a reply with no model field against an exactly pinned version.
  */
 import type {
   AnswerOption, AnswerSpec, AskedQuestion, AssessmentCall, AssessmentStatus,
@@ -83,15 +48,14 @@ import type {
 import { interpret } from "../assessment.js";
 import { stableDigest } from "../profiles.js";
 
-// ── the supplier's three primitives, and what each one answers here ────────────────────────
+// The supplier's three primitives, and what each one answers here
 
 type Primitive = "choice" | "score" | "noul";
 
 /** Which shared answer shape each primitive may answer, and the default question the adapter
- *  renders it for. THE DEFAULT IS A REQUEST SHAPE, NOT A CLAIM ABOUT WHAT WAS ASKED: a caller
+ *  renders it for. The default is a request shape, not a claim about what was asked: a caller
  *  that asked something else passes its own question and the reply is validated against that
- *  instead. What the default buys is that a key is always checked against a declared set —
- *  there is no path here on which an arbitrary string becomes an answer. */
+ *  instead. What the default buys is that a key is always checked against a declared set. */
 const PRIMITIVES: Readonly<Record<Primitive, { readonly kind: AnswerSpec["kind"]; readonly question: string }>> =
   Object.freeze({
     choice: Object.freeze({ kind: "category" as const, question: "evidence_relation" }),
@@ -120,7 +84,7 @@ const EXACT_VERSION = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*-\d+\.\d+\.\d+$/;
  *  are numbered from zero, so this is the key its `probabilities` and `legend` maps carry. */
 const LEVEL_INDEX = /^\d+$/;
 
-// ── reading an untrusted reply ─────────────────────────────────────────────────────────────
+// Reading an untrusted reply
 
 export function asRecord(raw: unknown): Readonly<Record<string, unknown>> | null {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
@@ -136,9 +100,9 @@ export const present = (rec: Readonly<Record<string, unknown>>, key: string): bo
 export const describe = (value: unknown): string =>
   value === undefined ? "undefined" : JSON.stringify(value) ?? String(value);
 
-/** A real number, and only that. NOT a numeric string: the supplier documents these primitives
- *  as JSON numbers, so a string here is a different reply than the one this adapter knows how
- *  to read, and guessing at it is how a malformed body becomes a measurement. */
+/** A real number, and only that. Not a numeric string: the supplier documents these primitives
+ *  as JSON numbers, so a string here is a different reply than this adapter knows how to
+ *  read. */
 const realNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 
@@ -146,10 +110,10 @@ const realNumber = (value: unknown): value is number =>
 export const identityOf = (rec: Readonly<Record<string, unknown>>): string | null =>
   typeof rec.model === "string" && rec.model.trim() !== "" ? rec.model : null;
 
-// ── what a caller supplies ─────────────────────────────────────────────────────────────────
+// What a caller supplies
 
 export interface JevParseOptions {
-  /** The version the approved profile pinned. An EXACT version is compared against the reply;
+  /** The version the approved profile pinned. An exact version is compared against the reply;
    *  an alias is not — see the header for what an alias can and cannot establish. */
   readonly expect: string;
   /** The shared question this reply answers. Omitted, the adapter validates against its own
@@ -176,13 +140,13 @@ export interface JevParseOptions {
 }
 
 /**
- * THE SUPPLIER'S OWN NUMBERS, VALIDATED, beside the record rather than inside it.
+ * The supplier's own numbers, validated, beside the record rather than inside it.
  *
- * Four of these are read back out of the port's signals, so they are the very numbers it
- * validated and not a second reading of the body. Two — `distribution` and `legend` — are the
- * companions the port has no column for and this adapter checks itself. Every field is null
- * when the supplier did not send it or when the reply was refused: null here means "not
- * established", never zero and never a default.
+ * Four are read back out of the port's signals, so they are the numbers it validated rather
+ * than a second reading of the body. `distribution` and `legend` are the companions the port
+ * has no column for and this adapter checks itself. Every field is null when the supplier did
+ * not send it or when the reply was refused: null means "not established", never zero and never
+ * a default.
  */
 interface JevReadings {
   /** The score's position on its declared `0 .. N - 1` scale. Null unless a scale was declared,
@@ -193,7 +157,7 @@ interface JevReadings {
   /** The supplier's own confidence, when it sent one. */
   readonly confidence: number | null;
   /** The supplier's per-level `probabilities`, keyed as it keys them and carried unsummed —
-   *  see the header for the 7-in-556 measurement behind that. */
+   *  see the header for why. */
   readonly distribution: Readonly<Record<string, number>> | null;
   /** The supplier's echoed `legend`: what it understood each level to mean. */
   readonly legend: Readonly<Record<string, string>> | null;
@@ -204,17 +168,16 @@ const NO_READINGS: JevReadings = Object.freeze({
 });
 
 /** The port's record, plus the reply it was read from. The raw body is kept verbatim so that
- *  everything this adapter DISCARDED — the supplier's own field names, anything it sends that
- *  the port has no column for — is still recoverable from the one place it was preserved,
- *  rather than existing only as whatever survived the translation. `raw_response_ref` on the
- *  record is this body's content digest. */
+ *  everything this adapter discarded — the supplier's own field names, anything it sends that
+ *  the port has no column for — is still recoverable. `raw_response_ref` on the record is this
+ *  body's content digest. */
 export interface JevParseResult extends SemanticAssessment {
   readonly raw_response: Readonly<Record<string, unknown>> | null;
   readonly readings: JevReadings;
 }
-// ── refusing, without inventing a record to refuse in ──────────────────────────────────────
+// Refusing, without inventing a record to refuse in
 
-/** A REFUSAL IS STILL THE PORT'S RECORD. Every envelope field the caller supplied is carried
+/** A refusal is still the port's record. Every envelope field the caller supplied is carried
  *  so a rejected reply is as traceable as an accepted one; `value` is null, `signals` empty and
  *  every reading null because nothing was measured; and the status is never `answered`, which
  *  is what `authorizesSemanticAdvance` reads. */
@@ -243,12 +206,12 @@ export function rejected(
   });
 }
 
-// ── the question a reply is validated against ──────────────────────────────────────────────
+// The question a reply is validated against
 
 /** The caller's question, or the default rendering for the primitive that came back. An
  *  ordinal default takes its levels from the declared legend when there is one, because the
- *  legend IS the scale the caller asked on and validating against a different level count
- *  would refuse a good answer for the wrong reason. */
+ *  legend is the scale the caller asked on and validating against a different level count
+ *  would refuse a good answer. */
 function questionFor(primitive: Primitive, opts: JevParseOptions): AskedQuestion {
   if (opts.question) return opts.question;
   const question_id = opts.question_id ?? PRIMITIVES[primitive].question;
@@ -269,7 +232,7 @@ function questionFor(primitive: Primitive, opts: JevParseOptions): AskedQuestion
 const levelCount = (spec: AnswerSpec): number | null =>
   spec.kind === "ordinal" ? spec.levels.length : null;
 
-// ── the primitives, translated ─────────────────────────────────────────────────────────────
+// The primitives, translated
 
 interface Translated {
   readonly payload: Record<string, unknown>;
@@ -277,9 +240,9 @@ interface Translated {
   readonly legend: Readonly<Record<string, string>> | null;
 }
 
-/** THE SUPPLIER'S PER-LEVEL DISTRIBUTION. Every key must be a level this question declared and
+/** The supplier's per-level distribution. Every key must be a level this question declared and
  *  every value a probability; nothing is summed, renormalised or filled in. See the header for
- *  why the sum is not checked here and why it must not be added. */
+ *  why the sum is not checked here. */
 function levelDistribution(
   raw: unknown, declared: number | null,
 ): { values: Readonly<Record<string, number>> } | { reason: string } {
@@ -301,10 +264,10 @@ function levelDistribution(
   return { values: Object.freeze(values) };
 }
 
-/** THE ECHOED SCALE. It must be the scale that was asked for, and it must be readable as one:
- *  a level index against the words that level meant. A reply scoring on five levels when four
- *  were declared is answering a question nobody asked, and its figure would be read against the
- *  wrong scale by everything downstream. */
+/** The echoed scale. It must be the scale that was asked for and readable as one: a level
+ *  index against the words that level meant. A reply scoring on five levels when four were
+ *  declared is answering a different question, and its figure would be read against the wrong
+ *  scale downstream. */
 function echoedLegend(
   raw: unknown, declared: number | null,
 ): { values: Readonly<Record<string, string>> } | { reason: string } {
@@ -336,10 +299,9 @@ function translate(
 ): Translated | { reason: string } {
   const payload: Record<string, unknown> = { model };
   // `confidence` travels as the port's own confidence field, which records it `self_reported`.
-  // The supplier computes it from its distribution rather than writing it as prose, so this is
-  // an UNDERSTATEMENT of where the number came from — and understating provenance is the only
-  // direction that is safe, since the port has one channel for it and overstating would make a
-  // derived scalar read as a measured one.
+  // The supplier computes it from its distribution, so this understates where the number came
+  // from — the port has one channel for it, and overstating would make a derived scalar read as
+  // a measured one.
   if (present(rec, "confidence") && rec.confidence !== null) payload.confidence = rec.confidence;
 
   if (primitive === "choice") {
@@ -348,12 +310,11 @@ function translate(
       return { reason: `the choice field is ${describe(key)}, not one of this question's declared keys` };
     }
     payload.category = key;
-    // THE SUPPLIER'S OWN DISTRIBUTION, COPIED. The port checks every key against the question
+    // The supplier's own distribution, copied. The port checks every key against the question
     // and the sum against one; a key nobody declared makes the whole reply invalid there, which
-    // is the right outcome — a distribution over options the question never offered describes a
-    // different question. A choice names one of a declared set, so its keys are those names and
-    // the port can read them; only the ordinal scale is numbered, and only that one is read
-    // below instead.
+    // is right — a distribution over options the question never offered describes a different
+    // question. A choice names one of a declared set, so its keys are those names and the port
+    // can read them; only the ordinal scale is numbered, and only that one is read below.
     if (present(rec, "probabilities") && rec.probabilities !== null) {
       payload.native = { distribution: rec.probabilities };
     }
@@ -392,7 +353,7 @@ function translate(
   return { payload, distribution: null, legend: null };
 }
 
-// ── parsing ────────────────────────────────────────────────────────────────────────────────
+// Parsing
 
 /** One number the port validated, read back out of its own signals. Reading it back rather
  *  than re-deriving it is the point: a reading and the record can never disagree. */
@@ -403,16 +364,15 @@ function signalValue(assessed: SemanticAssessment, name: string, key: string): n
 }
 
 /**
- * READ ONE REPLY. The order is the contract's: a body that is not a reply at all, then the
+ * Read one reply. The order is the contract's: a body that is not a reply at all, then the
  * identity, then which primitive came back and whether the question admits it, then the
  * primitive's own type, and only then the port — which owns range validation, key membership,
  * distribution arithmetic and the decision about what may become a value.
  *
- * The identity is checked here AND handed to the port as the pinned identity, but only when the
- * pin is an exact version. The duplication is deliberate: this adapter refuses an unidentified
+ * The identity is checked here and handed to the port as the pinned identity, but only when the
+ * pin is an exact version. DELIBERATE: the duplication — this adapter refuses an unidentified
  * reply, which the port cannot, and the port refuses a misidentified one independently of
- * whether this function was correct. Under an alias neither comparison is made, for the reason
- * the header gives.
+ * whether this function was correct. Under an alias neither comparison is made.
  */
 export function parse(raw: unknown, opts: JevParseOptions): JevParseResult {
   const rec = asRecord(raw);
@@ -425,7 +385,7 @@ export function parse(raw: unknown, opts: JevParseOptions): JevParseResult {
     return refuse("invalid_response", "no version was pinned for this call, so no reply to it can be eligible");
   }
   if (rec === null) {
-    // NOTHING AT ALL IS TRANSPORT, A NON-OBJECT IS A BROKEN REPLY, and the port draws the same
+    // Nothing at all is transport, a non-object is a broken reply, and the port draws the same
     // line: the first is `unavailable` because nobody assessed anything, the second is
     // `invalid_response` because something answered and what it said cannot be read.
     return raw === undefined || raw === null
@@ -438,7 +398,7 @@ export function parse(raw: unknown, opts: JevParseOptions): JevParseResult {
     return refuse("invalid_response",
       `the reply names no model, so the pinned ${opts.expect} cannot be the version that served it`);
   }
-  // AN EXACT PIN IS EXACT; AN ALIAS IS NOT A VERSION TO MATCH. See the header.
+  // An exact pin is exact; an alias is not a version to match. See the header.
   const pinned = EXACT_VERSION.test(opts.expect);
   if (pinned && reported !== opts.expect) {
     return refuse("invalid_response",
@@ -470,10 +430,9 @@ export function parse(raw: unknown, opts: JevParseOptions): JevParseResult {
       reported, assurance);
   }
 
-  // TWO DECLARATIONS OF ONE SCALE HAVE TO AGREE. A caller passing both a question and a legend
+  // Two declarations of one scale have to agree. A caller passing both a question and a legend
   // has said the same thing twice; if the two disagree the figure would be range-validated
-  // against one scale and mapped against the other, which is the quietest way a valid-looking
-  // level comes out of an invalid comparison.
+  // against one scale and mapped against the other.
   if (opts.question && opts.legend && levelCount(question.answer_spec) !== opts.legend.length) {
     return refuse("invalid_response",
       `the question declares ${levelCount(question.answer_spec)} levels and the call declares a legend of ` +
@@ -483,13 +442,11 @@ export function parse(raw: unknown, opts: JevParseOptions): JevParseResult {
   const translated = translate(primitive, rec, reported, question);
   if ("reason" in translated) return refuse("invalid_response", translated.reason, reported, assurance);
 
-  // THE SCALE, DECLARED OR NOT DECLARED. N ordered levels are the range `0 .. N - 1`, and they
+  // The scale, declared or not declared. N ordered levels are the range `0 .. N - 1`, and they
   // come from whichever of the two the caller supplied — the question's own levels, or the
-  // legend the default question was built from. NOTHING IS DECLARED WHEN THE CALLER DECLARED
-  // NOTHING: the adapter's default level set is a request shape, not a scale somebody agreed
-  // to, and validating a figure against it would put a number with no declared scale beside
-  // numbers that have one. The port answers that with `unsupported`, keeping the figure and
-  // refusing the level, which is the smaller and truer claim.
+  // legend the default question was built from. Nothing is declared when the caller declared
+  // nothing: the adapter's default level set is a request shape, not a scale somebody agreed
+  // to. The port answers that with `unsupported`, keeping the figure and refusing the level.
   const declared = opts.question || opts.legend ? levelCount(question.answer_spec) : null;
   const scale = declared !== null && declared >= 2 ? { min: 0, max: declared - 1 } : undefined;
   const call: AssessmentCall = {
@@ -500,8 +457,8 @@ export function parse(raw: unknown, opts: JevParseOptions): JevParseResult {
     interpretation_profile_ref: opts.interpretation_profile_ref,
     raw_response_ref: ref ?? undefined,
     requested_model: opts.expect,
-    // AN ALIAS IS NOT HANDED OVER AS AN EXPECTED IDENTITY. The port compares it literally, so
-    // passing one would refuse the concrete version the alias resolved to — see the header.
+    // An alias is not handed over as an expected identity: the port compares it literally, so
+    // passing one would refuse the concrete version the alias resolved to.
     expected_identity: pinned ? opts.expect : null,
     resolved_identity: reported,
     identity_assurance: assurance,

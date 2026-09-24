@@ -1,9 +1,8 @@
 /**
  * Teams: the list a caller may see, and one team's own page.
  *
- * A team is the platform's unit of scope, so what these two return is already narrowed by
- * the scope `handler` resolved — a person sees the teams they are in, and a superadmin sees
- * the platform. Neither route decides that for itself.
+ * What these two return is already narrowed by the scope `handler` resolved — a person sees the
+ * teams they are in, a superadmin sees the platform. Neither route decides that for itself.
  */
 import type { Express } from "express";
 
@@ -14,15 +13,13 @@ export function mountTeams(app: Express): void {
   /** Every team: who is in it and what it holds. */
   app.get("/api/console/teams", handler("teams", async (_req, res, scope) => {
     const db = platformDb();
-    // A ROSTER OF EVERY TEAM is per-team data by definition, so a team scope narrows the
-    // query to the caller's own row and only a platform scope sees the fleet.
+    // A roster of every team is per-team data, so a team scope narrows the query to the caller's
+    // own row and only a platform scope sees the fleet. Documents and sources are counted apart:
+    // both live in zz.doc, and one number for the two counts registered sources as documents.
     //
-    // TWO COMPLETE STATEMENTS, not one assembled from `scope`: `check:sql` PREPAREs every
-    // query in this file against a live schema before release, and a predicate built from
+    // DELIBERATE: two complete statements, not one assembled from `scope`. `check:sql` PREPAREs
+    // every query in this file against a live schema before release, and a predicate built from
     // `scope.kind` at request time is invisible to it.
-    //
-    // DOCUMENTS AND SOURCES ARE COUNTED APART. Both live in zz.doc, and one number for the
-    // two read 240 documents for a team that had written 31 and registered 209 sources.
     const teams = scope.kind === "platform"
       ? await db.query(
       `select t.slug, t.name, t.status, to_char(t.created_at,'YYYY-MM-DD') as created,
@@ -59,9 +56,9 @@ export function mountTeams(app: Express): void {
   app.get("/api/console/teams/:slug", handler("the team", async (req, res, scope) => {
     const db = platformDb();
     const slug = req.params.slug;
-    // A team-scoped caller naming a slug that is not their own gets the SAME "no team"
-    // response a caller naming a slug that does not exist gets — never a 403, which would
-    // confirm the other team is real. Only a platform scope may look up an arbitrary team.
+    // A team-scoped caller naming a slug that is not their own gets the same "no team" response
+    // a caller naming a slug that does not exist gets — never a 403, which would confirm the
+    // other team is real. Only a platform scope may look up an arbitrary team.
     if (scope.kind === "team" && slug !== scope.slug) {
       res.status(404).json({ error: `no team ${slug}` });
       return;

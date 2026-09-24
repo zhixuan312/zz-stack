@@ -1,13 +1,12 @@
 /**
  * Every path this store will accept, and the refusals that teach the ones it will not.
  *
- * ONE PLACE, because a path rule spelled at each call site is a rule that holds at most of
- * them. `safePath` resolves a caller's path against the store they may write to and refuses
- * anything that leaves it; `pathShapeRefusal` is the sentence that teaches the shape, and it
- * teaches nothing from behind a guard — which is why every tool resolves before it judges.
+ * `safePath` resolves a caller's path against the store they may write to and refuses
+ * anything that leaves it; `pathShapeRefusal` is the sentence that teaches the shape, and
+ * every tool resolves before it judges so the sentence is reached.
  *
- * The token patterns are here rather than beside their callers for the same reason: a name,
- * a tag and a document reference each have exactly one shape on this platform.
+ * The token patterns live here rather than beside their callers: a name, a tag and a
+ * document reference each have exactly one shape on this platform.
  */
 import { mkdirSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
@@ -20,43 +19,27 @@ import { Refusal } from "./refusal.js";
 import { teamFor } from "./platform-db.js";
 
 export const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9@._-]/g, "_");
-/** A filename-safe slug from a human title, with a fallback for when nothing survives.
- *
- * Written out three times — for a source file, a journal node and a captured revision —
- * which is three chances to fix one of them and leave the others. And all three produced
- * the EMPTY STRING for a title written in any script without ASCII letters, so a node
- * landed as `0014-.md` and a source as `2026-08-24-.md`. The id and the date still made
- * those unique; what they lost is the only reason a slug is in the name at all, which is a
- * person reading the directory. */
+/** A filename-safe slug from a human title, with a fallback for when nothing survives — a
+ * title written in a script with no ASCII letters slugs to the empty string. Used for a
+ * source file, a journal node and a captured revision. */
 export function titleSlug(title: string, fallback: string): string {
-  // Trimmed AFTER the cut, not before it. Trimming first and then slicing leaves a hyphen on
-  // the end whenever the 60th character is where a word broke — `…-collection-.md` — which
-  // is the one thing a slug in a filename is there to avoid.
+  // DELIBERATE: trimmed after the cut, not before. Trimming first and then slicing leaves a
+  // trailing hyphen whenever the 60th character is where a word broke.
   return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 60).replace(/^-+|-+$/g, "")
     || fallback;
 }
-/** A lesson like "a success response is never evidence" is true for every team on
- * the deployment. Filed only in the store of the team that hit it, the next team
- * to hit the same wall could not find it, and each team numbered its own nodes
- * from 0001, which made two teams' node 1 indistinguishable in any view that
- * showed both. That is what `scope: "platform"` is for.
+/** The team that owns platform-scoped knowledge — what `scope: "platform"` files under.
+ * team_create refuses this slug, so no tenant can claim it.
  *
- * The team that owns platform-scoped knowledge is the platform's own team, which
- * already exists and is already reserved: team_create refuses this slug precisely
- * so no tenant can claim it.
- *
- * Team-level knowledge is no longer a later decision: `scope: "team"` files a
- * node under the caller's own team shelf instead, resolved by userRoot(). Each
- * shelf — the platform's and every team's — keeps its own index.md, log.md and
- * id sequence; nothing is shared across them but the tool that writes to both.
- *
- * Documents, initiatives and OKRs stay with their team regardless of scope. */
+ * `scope: "team"` files a node under the caller's own shelf instead, resolved by userRoot().
+ * Each shelf keeps its own index.md, log.md and id sequence; nothing is shared across them
+ * but the tool that writes to both. Documents and initiatives stay with their team whatever
+ * the scope. */
 export const KNOWLEDGE_TEAM = "zz-platform";
 /** The store a platform-scoped journal node is written to and read from.
  *
- * Deliberately NOT userRoot(): every platform-scoped writer has to land in the
- * same place or the shelf fragments again, one team at a time, exactly as it
- * did before `scope` existed. A team-scoped node instead resolves userRoot(). */
+ * DELIBERATE: not userRoot(). Every platform-scoped writer has to land in the same place or
+ * the shelf fragments one team at a time. A team-scoped node resolves userRoot() instead. */
 export function knowledgeRoot(): string {
   const root = join(ARTIFACTS_DIR, "teams", KNOWLEDGE_TEAM);
   mkdirSync(root, { recursive: true });
@@ -74,21 +57,13 @@ export async function userRoot(): Promise<string> {
 }
 /** A caller-supplied name that will be joined into a path: one segment, nothing else.
  *
- * safePath() guards the tools that build a full path with it. Several tools instead did
- * `join(root, initiative, ...)` directly, and an initiative of "../other-team/x" resolved
- * outside the caller's store — proven on the live gateway, where a member of one team
- * listed the sources of a directory belonging to another.
+ * A tool that builds a path with `join(root, initiative, …)` rather than through safePath()
+ * needs this: an initiative of "../other-team/x" resolves outside the caller's store.
  *
  * A segment cannot contain a separator, cannot be a traversal, cannot be empty, and cannot
- * begin with a dot. That is the whole rule, and it is cheaper to apply than to reason about
- * per call site.
- *
- * THE DOT IS NOT COSMETIC. `walk()` skips every dot-entry — it has to, because the store is
- * a git repository and a lister that did not report `.git/COMMIT_EDITMSG` as the team's
- * first document. So a name like `.hidden` was accepted here and then invisible to
- * document_list and to the index: written, and gone. And `.git` itself was accepted, which
- * writes documents into the repository's own directory — the history a team keeps when they
- * walk away from this platform. */
+ * begin with a dot. `walk()` skips every dot-entry because the store is a git repository, so
+ * a name like `.hidden` would be written and then invisible to document_list and to the
+ * index, and `.git` itself is the history a team keeps when they leave the platform. */
 export function safeName(value: string, what: string): string | null {
   const v = value.trim();
   if (!v) return `ERROR: ${what} is required`;
@@ -102,13 +77,13 @@ export function safeName(value: string, what: string): string | null {
   }
   return null;
 }
-/** A path RELATIVE to a directory the platform already resolved.
+/** A path relative to a directory the platform already resolved.
  *
  * safeName above refuses every path; this one permits exactly the shape a skill's own
  * supporting file has — `references/verified-traps.md` — and refuses everything that could
- * leave the directory. Segment by segment rather than by scanning the whole string, because
- * "contains no `..`" is a substring test and `..%2f`, `a/../../b` and a leading `/` are the
- * three ways that test has historically been passed by a path that escapes anyway.
+ * leave the directory. DELIBERATE: checked segment by segment rather than by scanning the
+ * whole string, because `..%2f`, `a/../../b` and a leading `/` all pass a "contains no `..`"
+ * substring test and still escape.
  */
 export function safeRelPath(value: string, what: string): string | null {
   const v = value.trim();
@@ -127,43 +102,27 @@ export function safeRelPath(value: string, what: string): string | null {
   }
   return null;
 }
-/** What may appear inside a frontmatter LIST, which is written by interpolation and read
+/** What may appear inside a frontmatter list, which is written by interpolation and read
  * back by a comma-splitter: no separator, no bracket, no newline, no quote. */
 export const PLAIN_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-/** A journal TAG, which is a plain token or a subject key — `block:casebox`, `flow:ops-flow`.
+/** A journal tag: a plain token, or a subject key — `plugin:sdlc`, `flow:sdlc-flow`.
  *
- * The subject key is the whole point of the tag argument. knowledge_add's own description asks
- * for one in capitals, subjectTagError exists to check its kind against a closed set, five
- * skills teach the form, and the platform's own db.ts calls it out as what makes the journal
- * queryable. Every one of those calls was refused, because the loop immediately after
- * subjectTagError tested the tag against PLAIN_TOKEN, which has no colon in it — so
- * `block:casebox` passed the rule written for it and was then rejected as not "a plain word".
- *
- * A validated, documented, taught feature that could not be used once. Complete and
- * unreachable is the shape: every piece of it exists except a character class.
- *
- * The colon is safe everywhere the value travels. parseEnvelope splits a frontmatter line on
- * its FIRST colon, so a colon in the value is ordinary; the list reader splits on commas and
- * knows nothing about colons. What PLAIN_TOKEN is actually guarding against — a comma, a
- * bracket, a newline, a quote — is still guarded, on both halves of the key. */
+ * DELIBERATE: this admits a colon where PLAIN_TOKEN does not. parseEnvelope splits a
+ * frontmatter line on its first colon, so a colon in the value is ordinary, and the list
+ * reader splits on commas. The comma, bracket, newline and quote PLAIN_TOKEN guards against
+ * are still guarded, on both halves of the key. */
 const TAG_TOKEN = /^[a-z0-9][a-z0-9._-]*(?::[a-z0-9][a-z0-9._-]*)?$/;
 /** A tag this document or node may not carry, or null.
  *
- * ONE RULE, THREE WRITE PATHS. knowledge_add checked its tags and document_write and
- * document_revise checked nothing — the same column, zz.doc.tags, filled by three tools
- * under two different rules, one of which was no rule.
+ * One rule for all three write paths into zz.doc.tags: knowledge_add, document_write and
+ * document_revise.
  *
- * LOWERCASE, because a tag is matched by EQUALITY and nothing else. knowledge_search's tag
- * leg lowercases the words a person typed and intersects them with the stored array, so a
- * tag written `Booking` can never be reached by anyone searching for booking — it is stored,
- * indexed, and unfindable. subjectTagError's own docblock names this exact failure two
- * paragraphs in: "`casebox`, `block:casebox`, `CaseBox` — each variant silently removes nodes from the
- * answer without removing them from the store, which is the worst shape a knowledge base can
- * fail in". Half of that was checked and half was not.
+ * Lowercase, because a tag is matched by equality: knowledge_search's tag leg lowercases the
+ * words a person typed and intersects them with the stored array, so a tag written `Booking`
+ * is stored, indexed and unreachable.
  *
- * Refused rather than folded. A silent rewrite of somebody's tag is the same trade safePath
- * refuses for a path: the call succeeds, the value stored is not the value sent, and nothing
- * says so. */
+ * DELIBERATE: refused rather than folded to lowercase. A silent rewrite would succeed while
+ * storing a value the caller did not send. */
 export function tagRefusal(tags: string[] | undefined): string | null {
   const bad = (tags ?? []).map((t) => t.trim()).filter((t) => t && !TAG_TOKEN.test(t));
   return bad.length
@@ -188,35 +147,22 @@ export function yamlValue(v: string): string {
 }
 /** What a caller-supplied path may not look like, or null.
  *
- * Its own function, and synchronous, because the shape of a path is decidable without
- * resolving anybody's store — safePath used to await the root before saying a path was
- * malformed, which put a rule about strings behind an I/O call and behind an `async`.
- * It is also the only way this rule can be tested by running it. */
+ * Its own function, and synchronous: the shape of a path is decidable without resolving
+ * anybody's store, so the rule is not behind an I/O call or an `async`, and it can be tested
+ * by running it. */
 export function pathShapeRefusal(path: string): string | null {
-  // A `.zz/` prefix is REFUSED, not stripped.
-  //
-  // It stripped `~/.zz/` and `.zz/` silently, which dates from when the store was a
-  // directory on someone's disk. Nothing writes that any more — the skills were corrected —
-  // and a silent rewrite is the worst of the three options: the write succeeds, the file
-  // lands somewhere other than the path the model named, and nothing in the conversation
-  // says so. Refusing teaches the form once; stripping hides it forever.
+  // DELIBERATE: a `.zz/` or home-relative prefix is refused, not stripped. Stripping would
+  // succeed while landing the file somewhere other than the path the model named.
   if (/(^|\/)\.zz\//.test(path) || path.includes("~/")) {
     return "paths are relative to your team's store — write `<initiative>/spec.md`, " +
       "never `.zz/<initiative>/spec.md` and never a home-relative path";
   }
-  // NO DOT SEGMENT ANYWHERE IN THE PATH.
+  // No dot segment anywhere in the path. safeName applies the same rule to an `initiative`
+  // argument; document_write takes a `path`, which is what this covers.
   //
-  // safeName has refused a dot-prefixed name since walk() learned to skip dot-entries, and
-  // its own message says why: "the store skips dot-entries, so it would be written and then
-  // invisible to document_list and to search, and `.git` is the store's own history". But
-  // safeName guards an `initiative` ARGUMENT, and document_write takes a `path` — so the rule
-  // was stated in one place and applied nowhere near the tool that needed it.
-  //
-  // The store became a git repository this release, so `.git` now sits at the root of every
-  // team's store and nothing refused a write into it. `.git/hooks/pre-commit` is the sharp
-  // end: commitStore runs `git commit` after every single write, so a file the model chose
-  // becomes an executable the service runs. The quiet end is that the repository is what a
-  // team keeps when they leave this platform, and it is the one thing here with no other copy.
+  // `.git` sits at the root of every team's store. `.git/hooks/pre-commit` is the sharp end:
+  // commitStore runs `git commit` after every write, so a file the model chose would become
+  // an executable the service runs.
   if (/(^|\/)\.[^/]/.test(path.replace(/^\/+/, ""))) {
     return "no part of a path may begin with a dot. The store skips dot-entries, so a file " +
       "written there is invisible to document_list and to search — and `.git` is the store's " +
@@ -227,17 +173,16 @@ export function pathShapeRefusal(path: string): string | null {
 }
 export async function safePath(path: string): Promise<string> {
   const shape = pathShapeRefusal(path);
-  // `Refusal`, not a plain `Error` — safePath is called bare from nine tools with nothing
-  // between it and the tool boundary, so a plain throw here used to reach the caller as
-  // whatever the SDK's default `isError` handling produced rather than this file's own
-  // "ERROR: …" style. The registerTool wrapper turns a `Refusal` into `text(message)`.
+  // DELIBERATE: `Refusal`, not a plain `Error`. safePath is called bare from tools with
+  // nothing between it and the tool boundary, and the registerTool wrapper turns a `Refusal`
+  // into `text(message)`; a plain throw reaches the caller as the SDK's default `isError`
+  // handling instead of this file's "ERROR: …" style.
   if (shape) throw new Refusal(`ERROR: ${shape}`);
   const base = await userRoot();
   const target = resolve(base, path.replace(/^\/+/, ""));
   if (target !== base && !target.startsWith(base + sep)) {
-    // NAMES THE OFFENDING SEGMENT AND THE VALID SHAPE, same as every other refusal in
-    // pathShapeRefusal above — "path escapes the artifact store" said WHAT was wrong and
-    // nothing about which part of `path` caused it or what to write instead.
+    // Names the offending segment and the valid shape, like every refusal in
+    // pathShapeRefusal above.
     throw new Refusal(
       `ERROR: \`${path}\` escapes your team's store — a \`..\` segment in it walks back out ` +
       "of the root every path is resolved against (a leading `/` is already stripped, so " +
@@ -249,13 +194,10 @@ export async function safePath(path: string): Promise<string> {
 /** The same containment as safePath, against the shared journal's root instead of the
  * caller's team.
  *
- * Not a `scope` parameter on safePath: every OTHER caller of safePath is a mutation or a
- * listing that must stay inside the caller's own team, and a shelf argument threaded through
- * all of them is nine chances to pass the wrong one. Reading is the only thing that crosses,
- * so the crossing is its own function.
- *
- * pathShapeRefusal and the escape check are duplicated in shape and not in code — both call
- * the same helpers safePath does, so a `..` cannot walk out of the journal either. */
+ * DELIBERATE: a separate function rather than a `scope` parameter on safePath. Every other
+ * caller of safePath must stay inside the caller's own team, and a shelf argument threaded
+ * through all of them is one more chance to pass the wrong one. It calls the same helpers,
+ * so a `..` cannot walk out of the journal either. */
 export function platformPath(path: string): string {
   const shape = pathShapeRefusal(path);
   if (shape) throw new Refusal(`ERROR: ${shape}`);
@@ -268,88 +210,52 @@ export function platformPath(path: string): string {
   }
   return target;
 }
-/** Every record this server writes MECHANICALLY, and therefore the model never may.
+/** Every record this server writes mechanically, and therefore the model never may:
  *
- * It matched activity.jsonl alone, while two more grew beside it and neither was guarded:
- *
- *   _ledger.md          appended by ledgerOnClose from the activity log when an initiative
- *                       closes — the outcome, the elapsed hours, the write counts. Reporting
- *                       grades key results FROM this table, so a model that can rewrite it
- *                       can grade its own work.
- *   _knowledge/log.md   appended by journalLog on every journal action.
- *
- * zz-kb-usage already told people all three were "system-written, and the platform refuses
- * anyway". One of the three was true. */
+ *   activity.jsonl      the write log
+ *   _ledger.md          appended by ledgerOnClose when an initiative closes — the outcome,
+ *                       the elapsed hours, the write counts. A model that could rewrite it
+ *                       would write its own record.
+ *   _knowledge/log.md   appended by journalLog on every journal action. */
 const SYSTEM_FILES = /(^|\/)(_?activity\.jsonl|_ledger\.md|_knowledge\/log\.md)$/;
 
-/** Guards EVERY mutation of the artifact store passes, whichever tool asks.
+/** Guards every mutation of the artifact store passes, whichever tool asks.
  *
- * These lived inline in document_write, and document_patch had only the first of them — so a patch
- * could rewrite anything under _versions/, which is the frozen copy of what was approved.
- * snapshotOnApproval exists to make that record un-writable by the model, and one of the
- * two write paths simply did not know. Provenance the platform cannot vouch for is worse
- * than none, because it is still presented as evidence.
- *
- * One function, called by both, so a guard added later cannot land on one path only. */
+ * COUPLED: document_write and document_patch both call this. One function, so a guard added
+ * later cannot land on one path only. */
 export function writeGuard(rawPath: string, via: "source_add" | null = null): string | null {
-  // NORMALISED FIRST. Every pattern below was matched against the path as the caller wrote
-  // it, and one of them anchors at the start — so `a/../_knowledge/nodes/0001-x.md` slipped
-  // past the journal guard, and safePath then resolved it to exactly the file the guard
-  // exists to protect. document_write could mint a journal node with no evidence, no index.md
-  // row and no line in the append-only log, which are the things this guard's own comment
-  // says knowledge_add is there to guarantee, and could rewrite a node that the log
-  // averages.
-  //
-  // The other two patterns survived traversal by accident: they match anywhere in the path
-  // or at its end. Resolving once here means none of them depends on that luck. Clamping at
-  // the root is safe — safePath separately refuses anything that leaves the store.
+  // Normalised first: the journal pattern below anchors at the start, so
+  // `a/../_knowledge/nodes/0001-x.md` would slip past it and safePath would then resolve it
+  // to exactly the file the guard protects. Clamping at the root is safe — safePath
+  // separately refuses anything that leaves the store.
   const relPath = resolve("/", rawPath).slice(1);
   if (SYSTEM_FILES.test(relPath)) {
     // Names the class, not one member of it: this guard covers the activity log, the
-    // outcome ledger and the journal log, and a message about "activity logs" reads as a
-    // mismatch when what you tried to write was _ledger.md.
+    // outcome ledger and the journal log.
     return "ERROR: that file is a mechanical record — the platform writes it, nothing else may";
   }
   if (/(^|\/)_versions\//.test(relPath)) {
     return "ERROR: _versions/ holds the frozen copy of each approval — written mechanically, never by hand";
   }
-  // The whole of _knowledge/, not just its log.
-  //
-  // log.md was guarded and the nodes beside it were not, so document_write could rewrite a
-  // journal node — around knowledge_supersede, which is what makes "knowledge evolves,
-  // nothing is deleted" true rather than aspirational — or mint one outright at any id it
-  // liked. That node would be indexed and returned by knowledge_search carrying no
-  // evidence, no index.md row and no line in the append-only log, which are the four things
-  // knowledge_add exists to guarantee.
-  //
-  // Every legitimate writer here — knowledge_add and knowledge_supersede — writes the file
-  // directly and never through this path. (OKR sheets used to live under _knowledge/okrs/
-  // and are gone: okr_set and okr_grade were never called once, by anybody, and an opt-in
-  // mechanism nobody opted into is a surface to remove rather than a feature to keep.)
+  // The whole of _knowledge/, not just its log: a node written through this path would be
+  // indexed and returned by knowledge_search carrying no evidence, no index.md row and no
+  // line in the append-only log. The legitimate writers, knowledge_add and
+  // knowledge_supersede, write the file directly and never through here.
   if (/^_knowledge(\/|$)/.test(relPath)) {
     return "ERROR: _knowledge/ is the team's knowledge base, minted by knowledge_add and " +
       "knowledge_supersede — they number the nodes, require the evidence, and write the index " +
       "and the append-only log. A node written by hand has none of that.";
   }
-  // AND sources/, WHICH WAS IMMUTABLE ONLY INSIDE THE TOOL THAT WRITES IT.
-  //
-  // `source_add` says so in its own description — "Ungated and immutable; add a new file
-  // rather than editing one" — and enforced it by being the only door anybody thought to
-  // use. `document_write("<initiative>/sources/<file>.md", …)` walked straight past it:
-  // three path segments, so `chainFor` returns an empty chain and every guard in
-  // documentGuards short-circuits on `parts.length !== 2`. The overwrite then lands with a
-  // fresh envelope carrying no `contributed_by`, no `supports` and no `added_at`, which
-  // takes the source out of `source_list`'s attribution, out of
+  // sources/ is immutable. `document_write("<initiative>/sources/<file>.md", …)` reaches it
+  // with three path segments, so `chainFor` returns an empty chain and every guard in
+  // documentGuards short-circuits on `parts.length !== 2`. The overwrite would land with a
+  // fresh envelope carrying no `contributed_by`, no `supports` and no `added_at`, taking the
+  // source out of `source_list`'s attribution, out of
   // `initiative_status.sources_after_approval`, and out of `document_revise`'s owed-sources
-  // check — so the evidence a revision is obliged to cite stops obliging.
+  // check.
   //
-  // Evidence is the one thing on this platform that must be what it was when it arrived: a
-  // document changes BECAUSE OF a source, and a source that can be edited afterwards makes
-  // every revision it justifies unauditable.
-  //
-  // `via` is how source_add reaches its own directory, the same shape ownershipCheck already
-  // uses for the acts that own their writes — the tool that mints a source is the one caller
-  // that may, and it passes the name rather than being recognised by the path it built.
+  // `via` is how source_add reaches its own directory: the tool that mints a source passes
+  // its name rather than being recognised by the path it built.
   if (!via && /(^|\/)sources\//.test(relPath)) {
     return "ERROR: sources/ holds the material a document cites, and it is immutable — " +
       "register one with source_add(initiative, title, content|path, supports), which stamps " +

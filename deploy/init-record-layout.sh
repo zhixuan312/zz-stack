@@ -3,30 +3,16 @@
 #
 #   ./deploy/init-record-layout.sh /path/to/one/owner/store
 #
-# WHAT THIS IS FOR. `services/zz-core/src/tenant-info/record.ts:271` refuses `STORE_UNAVAILABLE`
-# when `.zz/`, `.zz/blobs` or `.zz/commits` is absent, in its own words: "a missing mount is
-# refused, never read as an empty tenant". That refusal is correct and deliberate — a store
-# whose volume failed to mount must never be read as a tenant who has no documents, because the
-# next thing that happens to an empty tenant is that something helpfully reconstructs them.
+# `record.ts`'s `preflightRefusal` refuses `STORE_UNAVAILABLE` when `.zz/`, `.zz/blobs` or
+# `.zz/commits` is absent — a missing mount is never read as an empty tenant — and nothing in the
+# platform creates that layout. This script is the one thing that does.
 #
-# The consequence is that nothing in the platform ever creates that layout. `record.ts` refuses;
-# I-20's adoption path turns a document with no commit into one that has a commit, but it runs
-# INSIDE the kernel, behind that same refusal. So a store with no `.zz/` cannot be adopted, and
-# the live owner stores have no `.zz/`. Somebody has to create it once, deliberately, and that
-# is this script and nothing else.
+# DELIBERATE: one explicit path, never a search. It takes exactly one existing directory and
+# acts on it alone: no volume walk, no default, no recursive mode, so what it can touch is what
+# an operator typed. RESTORE-AND-CUTOVER.md step 5a shows the loop.
 #
-# ONE EXPLICIT PATH, NEVER A SEARCH. This script takes exactly one directory, which must
-# already exist, and acts on that directory alone. It does not walk a volume, does not discover
-# stores, has no default and has no recursive mode. That is the whole safety design: the set of
-# things it can touch is the set of paths an operator typed. `deploy/RESTORE-AND-CUTOVER.md`
-# step 5a shows the loop, where the operator can see which stores are in it before it runs.
-#
-# IDEMPOTENT, AND IT REPAIRS RATHER THAN REFUSES. Run it twice and the second run does nothing.
-# Run it on a store left half-initialised by an interrupted attempt — `.zz/` present but
-# `.zz/commits` missing — and it completes the layout. That partial state is not hypothetical
-# and it is not harmless: `preflightRefusal` requires all THREE directories, so a store with
-# `.zz/` and `.zz/blobs` but no `.zz/commits` refuses every write exactly as a store with
-# nothing does, while looking initialised to anybody who lists it.
+# Idempotent, and it completes a half-initialised layout rather than refusing it: a store with
+# some but not all three directories refuses every write while looking initialised.
 set -euo pipefail
 
 ROOT="${1:-}"
@@ -62,11 +48,10 @@ esac
 
 mkdir -p "$blobs" "$commits"
 
-# Verify what was asked for, rather than trusting that mkdir returned 0. A store this script
-# reported as ready and which still refuses writes is the one outcome worth a second syscall.
+# Verify the directories exist rather than trusting mkdir's status.
 for d in "$zz" "$blobs" "$commits"; do
   [ -d "$d" ] || { echo "FAIL: $d was not created" >&2; exit 1; }
 done
 echo "ready: $ROOT now carries .zz/blobs and .zz/commits"
 echo "NOTE: this creates EMPTY directories and no record. The first write to each document is"
-echo "  what adopts it (I-20). Nothing here writes, moves or rewrites a single document byte."
+echo "  what adopts it. Nothing here writes, moves or rewrites a single document byte."

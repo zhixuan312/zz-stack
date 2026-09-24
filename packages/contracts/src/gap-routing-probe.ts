@@ -1,35 +1,25 @@
 /**
- * PLANTING A FAULT UNDER EVERY FLAG THAT IS ASSERTED FALSE, AND WATCHING IT FIRE.
+ * Planting a fault under every flag that is asserted false, and watching it fire.
  *
- * Three flags in this subject area are checked by asserting they are FALSE — nothing was
- * collapsed, nothing was invented, nothing deadlocks — and a false is the cheapest thing in
- * software to fake. `return false` satisfies every one of them forever, and so does a detector
- * computed from the same table as the decision it audits, which goes quiet at exactly the
- * moment that table breaks. Neither is distinguishable from a working detector by looking at a
- * green run.
+ * Three flags in this subject area are checked by asserting they are false — nothing was
+ * collapsed, nothing was invented, nothing deadlocks — and `return false` satisfies all three
+ * forever, as does a detector computed from the same table as the decision it audits. So each
+ * flag is exercised twice: once on a healthy subject, where it must stay silent, and once with
+ * a fault planted, where it must fire. A row whose `fires` is false is a finding about the
+ * detector, never about its subject.
  *
- * So each flag is exercised TWICE: once on a healthy subject, where it must stay SILENT, and
- * once with a specific fault planted, where it must FIRE. A row whose `fires` is false is a
- * finding about the detector, never about its subject.
+ * The healthy column carries weight: most answers here are refusals, and a router that refused
+ * everything would satisfy every faulted column. It is what shows the six gap kinds reach work,
+ * that a gap with a permitted action gets that action rather than a pause, and that a
+ * correction with an ordinary precondition is not called a deadlock.
  *
- * THE SILENT HALF IS NOT A FORMALITY HERE. Most of this subject area's answers are refusals —
- * a pause, an unmet condition, a missing resolver — and a router that refused everything would
- * satisfy every faulted column below while being useless. The healthy column is what shows the
- * six gap kinds actually reach work, that a gap with a permitted action gets that action
- * rather than a pause, and that a correction with an ordinary precondition is not called a
- * deadlock.
+ * Where a fault cannot be planted through the front door it is planted at the audit: the router
+ * copies the gap's own authority ref and cannot mint one, so the mint detector is shown firing
+ * on a hand-built plan carrying a ref its gap never held. The coverage rows are the same — the
+ * collapse the flag catches is a plan missing a unit, so the faulted plans are built by hand.
  *
- * WHERE A FAULT CANNOT BE PLANTED THROUGH THE FRONT DOOR, IT IS PLANTED AT THE AUDIT. The
- * router cannot mint an authority ref: it copies the gap's own, so no input makes it invent
- * one, and that is a property worth having rather than a gap in the probe. The mint detector
- * is therefore shown firing on a hand-built plan carrying a ref its gap never held — which is
- * the shape the audit would meet if a future edit gave the router a ref of its own. The same
- * applies to the coverage rows: the collapse the flag exists to catch is a plan MISSING a
- * unit, so the faulted plans below are built by hand and audited, rather than coaxed out of a
- * router that currently does not collapse.
- *
- * NOTHING HERE IS A MEASUREMENT. Every ref, target and precondition below is invented for the
- * table; the table says what the detectors do, and says nothing about any real objective.
+ * Nothing here is a measurement. Every ref, target and precondition below is invented for the
+ * table.
  */
 import {
   authorityMintAudit,
@@ -69,7 +59,7 @@ const row = (
   fires: healthy[0] && faulted[0],
 });
 
-// ── fixtures ───────────────────────────────────────────────────────────────────────────────
+// Fixtures
 
 const ALPHA = "target://alpha";
 const BETA = "target://beta";
@@ -85,20 +75,19 @@ const TWO_KINDS: Gap = Object.freeze({
 const coveredOf = (kinds: readonly string[], ids: readonly string[]): Covered =>
   Object.freeze({ kinds: Object.freeze([...kinds]), ids: Object.freeze([...ids]) });
 
-// ── rows ───────────────────────────────────────────────────────────────────────────────────
+// Rows
 
 /** The two ways a plan collapses, and the two independent signals that catch them. */
 function collapseRows(): GapRoutingProbeRow[] {
   const healthy = routeGap(TWO_KINDS);
   const demand = { kinds: TWO_KINDS.kinds, ids: TWO_KINDS.gapIds ?? [] };
 
-  // FAULT 1: a unit dropped. The plan answers the fact and forgets the authority.
+  // Fault 1: a unit dropped. The plan answers the fact and forgets the authority.
   const dropped = coverageAudit(demand, [coveredOf(["fact"], ["gap://f", "gap://a"])]);
 
-  // FAULT 2: nothing dropped as far as the LABELS go — one unit stamped with both kinds, which
+  // Fault 2: nothing dropped as far as the labels go — one unit stamped with both kinds, which
   // is what a planner that collapsed to a single action would produce if it labelled honestly.
-  // A label-only audit passes this; the count comparison does not, and that is rule 3 in one
-  // row: the audit must not share the mechanism's way of describing itself.
+  // A label-only audit passes this; the count comparison does not.
   const relabelled = coverageAudit(demand, [coveredOf(["fact", "authority"], ["gap://f", "gap://a"])]);
 
   return [
@@ -118,7 +107,7 @@ function collapseRows(): GapRoutingProbeRow[] {
 function inventionRows(): GapRoutingProbeRow[] {
   const healthy = bootstrap();
   const citedFault = bootstrap({ citedPriorOutcomes: [INVENTED_PRIOR] });
-  // The realistic bug: nothing CITES a prior outcome, the first action is simply pointed at an
+  // The realistic bug: nothing cites a prior outcome, the first action is simply pointed at an
   // artifact nobody produced. An audit reading only `citedPriorOutcomes` never sees it.
   const targetFault = bootstrap({
     openingGap: { kinds: ["fact"], gapIds: ["gap://opening"], blockedTargets: [INVENTED_PRIOR] },
@@ -189,7 +178,7 @@ function deadlockRows(): GapRoutingProbeRow[] {
 /** Readiness computed on ground a correction moved, and whether it was actually invalidated. */
 function invalidationRows(): GapRoutingProbeRow[] {
   const healthy = correctiveReturn();
-  // FAULT: the grant edits the upstream target and invalidates nothing, leaving a readiness
+  // Fault: the grant edits the upstream target and invalidates nothing, leaving a readiness
   // verdict standing on material that has changed underneath it.
   const fault = correctiveReturn({ invalidates: [] });
   return [row("invalidatesDependentReadiness — a verdict left standing on moved ground",
@@ -276,7 +265,7 @@ function resolverRows(): GapRoutingProbeRow[] {
   ];
   const wrong = expected.filter(([, want, gap]) => routeGap(gap).kind !== want);
 
-  // ONE PREDICATE, APPLIED TO BOTH HALVES. A faulted column asserting a property of a subject
+  // One predicate, applied to both halves. A faulted column asserting a property of a subject
   // built to have it proves nothing; the detector has to be the same question asked twice.
   const namesDecision = (a: { readonly kind: ActionKind; readonly blockedDecision: string | null }): boolean =>
     a.kind !== "ask-person" || (a.blockedDecision ?? "").length > 0;
@@ -293,7 +282,7 @@ function resolverRows(): GapRoutingProbeRow[] {
       "the same predicate over an ask-person action whose blocked decision was removed"])];
 }
 
-/** The audits' own boundaries: each is shown REFUSING to speak about a healthy subject it has
+/** The audits' own boundaries: each is shown refusing to speak about a healthy subject it has
  *  every opportunity to misreport, which is the half a detector hardcoded to true would fail.
  *  An audit that fired on everything would pass every faulted column above. */
 function auditBoundaryRows(): GapRoutingProbeRow[] {
@@ -317,20 +306,18 @@ function auditBoundaryRows(): GapRoutingProbeRow[] {
 }
 
 /**
- * THE TEXT THIS MODULE GENERATES, WHICH NOTHING USED TO ASSERT ON.
+ * The text this module generates.
  *
- * A `completionCondition` is assembled from the contract and the gap, and for the pause it was
- * assembled by the same template as the other eight — so it ended `Closes <gap>` while the
- * `resumptionCondition` beside it in the same object said the gap stays open. The prose was
- * right and the generated field said the opposite, which is how a defect survives a review of
- * the code that produced it: nobody reads the output of a string template, and no detector
- * looked at one. These two rows look at one.
+ * A `completionCondition` is assembled from the contract and the gap. Assembled by the same
+ * template as the other eight, the pause's ended `Closes <gap>` while the `resumptionCondition`
+ * beside it in the same object said the gap stays open. These two rows look at the emitted
+ * string rather than at the code that produces it.
  */
 function completionTextRows(): GapRoutingProbeRow[] {
   const pause = routeGap({ kinds: [], noPermittedAction: true }).actions[0];
   const ordinary = routeGap({ kinds: ["fact"], gapIds: ["gap://f"] }).actions[0];
 
-  // ONE PREDICATE OVER THE EMITTED TEXT, applied to every column below: an action claims
+  // One predicate over the emitted text, applied to every column below: an action claims
   // closure when it says it closes something other than nothing.
   const claimsClosure = (t: string): boolean =>
     /\bcloses\b/i.test(t) && !/\bcloses nothing\b/i.test(t);
@@ -338,7 +325,7 @@ function completionTextRows(): GapRoutingProbeRow[] {
   // the pause's target — which is already a sentence — wrapped as though it were a noun phrase.
   const seam = (t: string): boolean => t.includes("  ") || t.includes("Pointed at nothing");
 
-  // THE REGRESSION, rebuilt exactly as the one template assembled it before the pause was given
+  // The regression, rebuilt exactly as the one template assembled it before the pause was given
   // text of its own. Kept here rather than described, so the faulted column is the real string.
   const spec = ACTION_CONTRACTS["pause"];
   const reinstated =

@@ -1,18 +1,13 @@
-// A check that WORKS and is not wired is a check nobody runs.
+// A check that works and is not wired is a check nobody runs. COUPLED: suites.ts enforces the
+// other direction — every registered check is a file git will carry — which cannot see a check
+// that was written, passes, and was never registered.
 //
-// This has happened three times in this initiative, and the gate was green each time. The
-// existing guard in suites.ts enforces the other direction — every REGISTERED check is a file
-// git will carry — which cannot see a check that was written, passes, and was never registered.
-// Both directions are needed: unwired is inert, unregistered-but-working is worse, because the
-// author has evidence it passes and reasonably believes the gate is holding it.
+// No exemption list is needed. A check materialised for a task that has not run yet fails, so
+// it exempts itself; the moment its task lands and it starts passing, this goes red until
+// somebody registers it.
 //
-// THE RULE IS MECHANICAL AND NEEDS NO LIST. A check materialised for a task that has not run yet
-// FAILS — that is what makes it a stub — so it exempts itself. The moment its task lands and it
-// starts passing, this goes red until somebody registers it. That is exactly when the reminder
-// is useful.
-//
-// Only UNREGISTERED files are executed here: the registered ones are already being run by the
-// gate around this check, so re-running them would double the gate's cost to learn nothing.
+// DELIBERATE: only unregistered files are executed here. The registered ones are already run
+// by the gate around this check.
 import { readFileSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
@@ -20,46 +15,26 @@ import { isGateLaunchSource } from "../scripts/gate/read.ts";
 import { suiteSources } from "../scripts/gate/suite-runner.ts";
 
 const fail = [];
-// EVERY GATE MODULE, not suites.ts alone. The registrations were split across `suites-*.ts`
-// because `check_sha256` is per file; a rule that kept reading the one file would have called
-// all eighty-five of the moved checks unregistered and told a reader to register each of them a
-// second time.
+// Every gate module, not suites.ts alone: registrations are split across `suites-*.ts` because
+// `check_sha256` is per file.
 const suites = suiteSources();
-// TWO SPELLINGS OF "REGISTERED", both live. Newer checks go through the `runsCheck` helper;
-// three older ones (attest-shown, write-guards, document-rules) are registered by an inline
-// execFileSync naming `checks/<file>` directly. Reading only the helper form reported all three
-// as unwired — a false positive that would have taught the next reader to distrust this check,
-// which is worse than not having it.
+// Two spellings of "registered", both live: the `runsCheck` helper, and an inline execFileSync
+// naming `checks/<file>` directly, which attest-shown, write-guards and document-rules use.
 const registered = new Set([
   ...[...suites.matchAll(/runsCheck\("([^"]+)"\)/g)].map((m) => m[1]),
   ...[...suites.matchAll(/["'`]checks\/([A-Za-z0-9._-]+\.ts)["'`]/g)].map((m) => m[1]),
 ]);
 
-// A BREAK-TEST SPAWNS scripts/gate.ts to prove a planted defect turns it red. Running one here
+// A break-test spawns scripts/gate.ts to prove a planted defect turns it red. Running one here
 // would run the whole gate inside the gate, and registering one would make the gate invoke
-// itself forever. The `gate-` prefix used to be the marker for that class and is no longer
-// consulted: it is carried by six files and was missing from a seventh, and `isGateLaunchSource`
-// below answers the question the prefix was standing in for. suites.ts holds the convention to
-// its meaning from the other side — a file named for a break-test that launches nothing.
+// itself forever. `isGateLaunchSource` below identifies them; the `gate-` prefix is not
+// consulted, and suites.ts holds that convention to its meaning from the other side.
 const SELF = "working-checks-registered.ts";
 
-// A DECLARED EXEMPTION COUNTS AS REGISTRATION, and reading it from suites.ts rather than
-// keeping a second list here is the whole point. Task I-34 added `notRegistered` — a map of
-// check file to the reason it is deliberately not wired — and this file did not know it
-// existed, so the two checks came to disagree about one rule: I-34's accepted a declared
-// exemption, this one still demanded a registration line, and a check that is honestly
-// declared was reported as green-by-absence.
-//
-// `eval-readable.ts` is the case that surfaced it. It reads `evals/results/latest/`, which
-// costs real money to produce and which `.gitignore` deliberately excludes — a suite's output
-// is not part of what a checkout carries, which is the rule `lock-reproducible.ts` enforces
-// one layer down. Registering it would turn the gate red for everyone who has not just paid
-// for a run. Leaving it undeclared would make it dormant. Declaring it is the third answer,
-// and both checks have to honour the declaration or the declaration is decoration.
-//
-// PARSED, NOT DUPLICATED. A copy of the map here would drift from the real one the first time
-// somebody added an entry, which is the defect this initiative removed from two hand-kept
-// rosters already.
+// A declared exemption counts as registration. COUPLED: `notRegistered` in the suites modules
+// maps a check file to the reason it is deliberately not wired, and both this check and the
+// registration side must honour it. Parsed from there rather than copied, so the two cannot
+// drift.
 const declared = new Set(
   [...suiteSources()
     .matchAll(/\[\s*"([A-Za-z0-9._-]+\.(?:ts|sh))"\s*,\s*\n?\s*"/g)].map((m) => m[1]));
@@ -67,13 +42,10 @@ const declared = new Set(
 for (const f of readdirSync("checks").filter((f) => f.endsWith(".ts"))) {
   if (f === SELF || registered.has(f) || declared.has(f)) continue;
   const src = readFileSync(`checks/${f}`, "utf8");
-  // THE SAME CLASSIFIER REGISTRATION USES, not a second one that agrees with it today.
-  //
-  // This line read `/scripts\/gate\.ts/.test(src) && /spawnSync|execFileSync/.test(src)` — a
-  // looser rule than the one suites.ts applied, and both were text. Two rules for one question
-  // is two answers waiting to diverge, and the spellings they diverge on are the ones a
-  // break-test is most likely to use: `execFileSync("npm", ["run", "gate"])`, an aliased
-  // import, a namespace import. Running one of those here runs the whole gate inside the gate.
+  // COUPLED: the same classifier registration uses, `isGateLaunchSource` in
+  // scripts/gate/read.ts. A second text rule diverges on the spellings a break-test is most
+  // likely to use — `execFileSync("npm", ["run", "gate"])`, an aliased import, a namespace
+  // import — and running one of those here runs the whole gate inside the gate.
   if (isGateLaunchSource(src)) continue;
   // A host-dependent check cannot pass offline, so it fails and exempts itself — but skip it
   // explicitly rather than waiting 30s for ssh to time out inside the gate.

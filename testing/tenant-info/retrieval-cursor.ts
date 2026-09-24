@@ -1,7 +1,9 @@
 /**
- * retrieval-cursor.ts — I-18's "cursor" case group: provenance cursors, pinned dereference and
- * read-your-write freshness (`pinned-read.ts`). Merged into `retrieval.ts`'s `CASE_GROUPS`, the
- * same pattern `retrieval-lanes.ts`/`retrieval-query.ts` already establish.
+ * The "cursor" case group: provenance cursors, pinned dereference and read-your-write
+ * freshness (`pinned-read.ts`).
+ *
+ * COUPLED: merged into `retrieval.ts`'s `CASE_GROUPS`, alongside `retrieval-lanes.ts` and
+ * `retrieval-query.ts`.
  */
 import assert from "node:assert/strict";
 
@@ -19,7 +21,7 @@ const PAYLOAD: CursorPayload = {
   record_digest: "c".repeat(64),
 };
 
-// ── provenance cursors: round trip, tamper, malformed ───────────────────────────────────────
+// Provenance cursors: round trip, tamper, malformed
 
 async function caseCursorRoundTripsExactly(): Promise<void> {
   const cursor = encodeCursor(KEY, PAYLOAD);
@@ -48,7 +50,7 @@ async function caseMalformedCursorRefusesRatherThanCrashing(): Promise<void> {
   }
 }
 
-// ── pinned dereference: reauthorize every call, never fall back to latest ──────────────────
+// Pinned dereference: reauthorize every call, never fall back to latest
 
 interface Row { readonly corpus_key: string; readonly owner_id: string; readonly artifact_id: string; readonly revision: number; readonly content_hash: string }
 
@@ -97,7 +99,7 @@ async function caseHistoryDereferenceRequiresAnExplicitRevision(): Promise<void>
   );
 }
 
-// ── read-your-write freshness: min_commit_sequence versus indexed_through ──────────────────
+// Read-your-write freshness: min_commit_sequence versus indexed_through
 
 async function caseNoMinCommitSequenceIsImmediatelyReady(): Promise<void> {
   let calls = 0;

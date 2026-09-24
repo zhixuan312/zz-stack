@@ -1,18 +1,15 @@
 /**
- * Defects planted in what a skill SAYS — its claims, its arithmetic, the tools it names and
+ * Defects planted in what a skill says — its claims, its arithmetic, the tools it names and
  * the shape it ships in.
  *
- * These four check files read prose, and prose is the one part of this platform nothing else
- * verifies: a skill is served to an agent verbatim, so a sentence that is wrong is an
- * instruction that is wrong. The defects below are therefore lies rather than damage — a
- * skill naming a tool no door registers, a roster claiming the wrong door, a count that
- * disagrees with the list under it, an instruction to load something that was merged away.
- * A misspelling would prove only that a check can see noise; what is worth measuring is
- * whether it can see a confident, well-formed, false statement.
+ * A skill is served to an agent verbatim, so a sentence that is wrong is an instruction that
+ * is wrong. Each defect below is therefore a confident, well-formed, false statement rather
+ * than damage: a tool no door registers, a roster claiming the wrong door, a count that
+ * disagrees with the list under it.
  *
- * NOTHING HERE IS PLANTED UNDER `marketplace/`. The gate rewrites that tree from `catalog/`
- * and `skills/` while it runs, so a defect planted there is overwritten mid-measurement and
- * the row means nothing. Every subject below is the source the shelf is rendered FROM.
+ * DELIBERATE: nothing is planted under `marketplace/`. The gate rewrites that tree from
+ * `catalog/` and `skills/` while it runs, so a defect planted there is overwritten
+ * mid-measurement. Every subject below is the source the shelf is rendered from.
  */
 import type { MutationSpec } from "./plant.ts";
 
@@ -117,8 +114,8 @@ export const COV_SKILLS: readonly MutationSpec[] = [
     assertion: "a skill names the wrong string for a command that does exist",
     subject: `${ACCESS}/zz-migrate/SKILL.md`,
     find: "/zz-access:migrate",
-    // SEAMED: this file is swept, and a slash command spelled out here reads as this
-    // repository typing one its own manifest does not declare. plant() concatenates it back.
+    // SEAMED: this file is swept, and a slash command spelled out here reads as one this
+    // repository's own manifest does not declare. plant() concatenates it back.
     replace: "/zz-access" + ":zz-migrate",
     planted: "the migrate skill names its command by the skill's name instead of the " +
       "manifest's key, so the string a person is told to type is one the packager never " +

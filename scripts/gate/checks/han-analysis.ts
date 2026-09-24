@@ -2,10 +2,9 @@ import { analyze, ANALYZER_NAME } from "@zz/indexing";
 import { check } from "../run.ts";
 
 check("an unspaced Han run is analysed into the terms a reader would search for", () => {
-  // `as string` is load-bearing: ANALYZER_NAME is a const, so TypeScript narrows it to its
-  // literal type. Compared directly, this line only typechecks while the identity is still
-  // v1 — that is, only while this task has FAILED. Widening keeps the runtime guard and
-  // lets the file compile once the task succeeds.
+  // DELIBERATE: `as string` is load-bearing. ANALYZER_NAME is a const, so TypeScript narrows
+  // it to its literal type and a direct comparison stops typechecking the moment the identity
+  // is no longer v1. Widening keeps the runtime guard and lets the file compile either way.
   if ((ANALYZER_NAME as string) === "zz-lexical-v1") return "the analyzer identity was not bumped, so every derived row still reads as current";
   const a = analyze("这个迁移会破坏旧的模式");
   const base = a.base.map((t) => t.term);

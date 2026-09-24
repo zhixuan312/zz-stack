@@ -1,12 +1,8 @@
 # What must NOT enter the build context.
 #
-# The image is built with `COPY packages ./packages` and `COPY services ./services`, and
-# `npm run build` is `tsc -b` — which is INCREMENTAL. Without this file, a build run on a
-# machine that has ever built locally copies that machine's dist/ and .tsbuildinfo into the
-# context, and tsc can then decide there is nothing to recompile. The image ships whatever
-# the developer's tree happened to hold, with no error and no way to tell from the outside.
-#
-# Everything below is either regenerated inside the build or has no business in an image.
+# The build runs `tsc -b`, which is incremental: a local dist/ or .tsbuildinfo in the context
+# would let tsc decide there is nothing to recompile. Everything below is either regenerated
+# inside the build or has no business in an image.
 node_modules
 **/node_modules
 dist
@@ -25,10 +21,8 @@ docs
 testing
 scripts
 
-# Fixtures. `COPY catalog /catalog` takes the whole tree, and the `runs` line above matches
-# the context ROOT only — so the flow's tests directory (requirements, steps and
-# expectations) was shipping in every image. Nothing at runtime reads it: eval-judge
-# and eval-grade read it from the repository, at test time. See ARCHITECTURE.md.
+# Fixtures. `COPY catalog /catalog` takes the whole tree, and nothing at runtime reads a flow's
+# tests directory.
 catalog/**/tests
 
 # Local environment and build output.

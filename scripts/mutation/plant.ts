@@ -2,17 +2,14 @@
  * What a planted defect is, how it is applied, and why the count of substitutions is the
  * measurement rather than a detail.
  *
- * A MUTATION THAT DID NOT LAND PROVES NOTHING. If the text a spec hunts for is not in the
- * file — it moved, it was reworded, the subject was rewritten — the replacement silently
- * does nothing, the gate passes, and the row reads exactly like a check that survived a real
- * defect. The two are indistinguishable from the outside, so the count is carried into the
- * report and a zero is a failed experiment to be fixed rather than a result to be recorded.
+ * A mutation that did not land proves nothing: when the text a spec hunts for is not in the
+ * file, the replacement does nothing, the gate passes, and the row reads exactly like a check
+ * that survived a real defect. So the count is carried into the report, and a zero is a failed
+ * experiment to be fixed rather than a result to be recorded.
  *
- * THE DEFECT GOES IN THE SUBJECT, NEVER IN THE CHECK. A check that only passes because the
- * thing it examines still READS correctly is the failure mode this whole run exists to find,
- * so every spec here names a file the check reads and changes what that file DOES. Comments
- * and the check's own name are left alone by construction: nothing here can write to
- * `scripts/gate/checks/` or to `scripts/gate.ts`.
+ * The defect goes in the subject, never in the check: every spec names a file the check reads
+ * and changes what that file does. Nothing here can write to `scripts/gate/checks/` or to
+ * `scripts/gate.ts`.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -32,9 +29,7 @@ export interface MutationSpec {
   readonly all?: boolean;
   /**
    * Which of the check's independent assertions this row establishes, where it has more than
-   * one. A registered check may make several claims that fail for different reasons, and a
-   * mutation to one says nothing about the others — so two rows can share a `target` and be
-   * about different things, and this is what tells them apart.
+   * one. Two rows can share a `target` and be about different claims; this tells them apart.
    */
   readonly assertion?: string;
   /** The defect, in the words a reader of the report needs. */
@@ -44,12 +39,10 @@ export interface MutationSpec {
   /**
    * Keep this mutation's text out of the report in plain form.
    *
-   * THE REPORT IS A TRACKED FILE AND THE REPOSITORY SWEEPS ITSELF. One check here refuses any
-   * tracked file that carries a routable address, an email or a credential shape — so the only
-   * defect that can prove that check works is one whose payload, written verbatim into the
-   * report, makes the repository fail its own sweep. It did: the artifact turned the gate red
-   * on its next run. Redacted rows carry the same text base64-encoded, so the experiment is
-   * still exactly reproducible and the report is not itself the disclosure.
+   * The report is a tracked file and the repository sweeps itself: one check refuses any
+   * tracked file carrying a routable address, an email or a credential shape, so a payload
+   * written verbatim into the report turns the gate red on its next run. Redacted rows carry
+   * the same text base64-encoded, so the experiment stays reproducible.
    */
   readonly redact?: boolean;
 }

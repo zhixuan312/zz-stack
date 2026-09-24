@@ -1,23 +1,11 @@
 // New artifact text over 8 MiB is refused by the kernel, with the code the contract declares.
 //
-// WHY THIS CHECK EXISTS AND NOT JUST THE LIMIT. Both halves of this rule shipped with no
-// behaviour behind them, in opposite directions, and both were green the whole time:
+// This check goes through the real registered adapter and the real kernel, and asserts on the
+// refusal a caller would actually receive: a check that imports the thing it tests can never
+// discover that no write path reaches it.
 //
-//   `assertWithinInputLimit`/`MAX_INPUT_BYTES` (packages/indexing) were built, exported and
-//   mutation-tested — and every reference to either one in the entire checkout belonged to
-//   `checks/tenant-passage-analysis.ts`, the check that tests them. No commit path called
-//   either.
-//
-//   `PAYLOAD_TOO_LARGE` has been one of the twelve declared mutation error codes since the
-//   contracts task. Nothing emitted it.
-//
-// So the spec promised a kernel gate, a frozen check proved the gate function worked, and no
-// write ever passed through it. A check that imports the thing it tests can never discover
-// that nothing else imports it — which is why this one goes through the REAL registered
-// adapter and the REAL kernel, and asserts on the refusal a caller would actually receive.
-//
-// The limit is measured on the canonical payload, so a body under the ceiling still commits:
-// a guard that refuses everything would satisfy the negative case and break the product.
+// The limit is measured on the canonical payload, so a body under the ceiling still commits: a
+// guard that refuses everything would satisfy the negative case and break the product.
 import assert from "node:assert/strict";
 
 import { MAX_INPUT_BYTES } from "@zz/indexing";
@@ -41,7 +29,7 @@ try {
     `the contract declares PAYLOAD_TOO_LARGE for exactly this; got ${JSON.stringify(refused.code)}. ` +
     "INVALID_INPUT would tell a caller its request was malformed, which it was not");
 
-  // The refusal is BEFORE commit, so nothing moved: same revision, same bytes.
+  // The refusal is before commit, so nothing moved: same revision, same bytes.
   const after = await f.read(seeded.ref.artifact_id);
   assert.equal(after.body, "small enough\n",
     "a refused oversized write must leave the stored content exactly as it was");

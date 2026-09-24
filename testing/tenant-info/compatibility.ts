@@ -1,22 +1,16 @@
 /**
- * compatibility.ts — the tenth suite: `verify --suite compatibility`.
- *
- * AC-8.1's question, which is not "does the new code work" but "is anything that already
- * worked now broken, and is every declared integration path accounted for by somebody". Four
- * case groups answer it:
+ * `verify --suite compatibility`: is anything that already worked now broken, and is every
+ * declared integration path accounted for. Four case groups:
  *
  *   readers       every declared direct reader still reads tables this delivery never touched
  *   clients       the generated client package advertises no tool schema to drift from a handler
  *   registration  every check is classified, and no break-test is registered into the gate
  *   wiring/registry (compatibility-retrieval.ts) the composed request path and its corpus registry
  *
- * "EXERCISED IMPLEMENTATION COVERAGE OR A TESTED UNCHANGED JUSTIFICATION" is the criterion, and
- * the second half is the one that is usually faked. A sentence saying "we did not change this
- * file" is not a test. What IS testable, offline, about a reader nobody changed: that every
- * table its SQL names is created by a migration older than this delivery's, and that this
- * delivery's own migration neither creates, alters nor drops any of them. That is mechanical,
- * it re-derives from the real migration directory rather than from a list, and it goes red if
- * somebody later points migration 070 at `zz.doc`.
+ * The criterion is exercised implementation coverage or a tested unchanged justification. What
+ * is testable offline about a reader nobody changed: every table its SQL names is created by a
+ * migration older than this delivery's, and this delivery's migration neither creates, alters
+ * nor drops any of them. Re-derived from the real migration directory rather than from a list.
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -30,13 +24,14 @@ import { REGISTRY_CASES, WIRING_CASES } from "./compatibility-retrieval.ts";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 
-// ── readers ────────────────────────────────────────────────────────────────────────────────
+// Readers
 
 /**
- * The direct readers the approved plan's ownership ledger assigns to this task, one row each.
- * Written out rather than derived from `ledger.ts`: this list is the thing under test, and a
- * test that reads its subject's own declaration of itself proves the declaration is
- * self-consistent and nothing else.
+ * The direct readers this task owns, one row each.
+ *
+ * DELIBERATE: written out rather than derived from `ledger.ts`. This list is the thing under
+ * test, and a test that read its subject's own declaration of itself would prove only that the
+ * declaration is self-consistent.
  */
 const DECLARED_READERS = [
   "services/gateway/src/server.ts",
@@ -51,9 +46,8 @@ const DECLARED_READERS = [
   "services/zz-core/src/eval/plugin-judge.ts",
 ] as const;
 
-/** This delivery's own migration, by slug rather than by number — the number is assigned at
- *  merge (the spec's `<NNN>`), and a check that hardcoded 070 would stop being about anything
- *  the day it was renumbered. */
+/** This delivery's own migration, by slug rather than by number: the number is assigned at
+ *  merge, so a hardcoded one stops matching the day it is renumbered. */
 const TENANT_MIGRATION_SLUG = "artifacts_revisions_events_and_scoped_search";
 
 function migrationFiles(): string[] {
@@ -81,10 +75,9 @@ function creatingMigration(): Map<string, string> {
 }
 
 /**
- * THE UNCHANGED JUSTIFICATION, TESTED. Every table every declared reader reads is created by a
- * migration older than this delivery's, so this delivery cannot have changed what those
- * statements return. A reader that starts reading a tenant-information table would fail here
- * and would need implementation coverage instead — which is exactly the choice AC-8.1 offers.
+ * Every table every declared reader reads is created by a migration older than this
+ * delivery's, so this delivery cannot have changed what those statements return. A reader that
+ * starts reading a tenant-information table fails here and needs implementation coverage.
  */
 async function caseEveryDeclaredReaderReadsOnlyPreExistingTables(): Promise<void> {
   const creator = creatingMigration();
@@ -106,9 +99,9 @@ async function caseEveryDeclaredReaderReadsOnlyPreExistingTables(): Promise<void
 }
 
 /**
- * AND THE DELIVERY'S OWN MIGRATION LEAVES THEM ALONE. "Every object below is NEW; nothing
- * existing is dropped, renamed, altered or moved" is that migration's own first sentence, and
- * this is that sentence as an assertion — the readers above are compatible BECAUSE of it.
+ * And this delivery's migration leaves those tables alone: every object it creates is new, and
+ * nothing existing is dropped, renamed, altered or moved. That is what makes the readers above
+ * compatible.
  */
 async function caseTheTenantMigrationAltersNothingAReaderReads(): Promise<void> {
   const file = migrationFiles().find((f) => f.includes(TENANT_MIGRATION_SLUG));
@@ -129,16 +122,13 @@ const READER_CASES: Readonly<Record<string, () => Promise<void>>> = {
   the_tenant_migration_alters_nothing_a_reader_reads: caseTheTenantMigrationAltersNothingAReaderReads,
 };
 
-// ── clients ────────────────────────────────────────────────────────────────────────────────
+// Clients
 
 /**
- * "ADVERTISED SCHEMAS MATCH ACTUAL HANDLERS" HOLDS BECAUSE NOTHING IS ADVERTISED, and that is
- * a property worth pinning rather than a technicality to lean on. `client-package.ts`'s own
- * rule is that "a client is told where the tools are and what the entry skill is called, and
- * nothing else": the generated package carries an MCP server URL, and every tool's schema is
- * fetched from the live door. There is therefore no second copy of a tool's parameters that
- * could drift from the handler — and this case fails the day somebody renders one into the
- * package, which is exactly when the drift becomes possible.
+ * Advertised schemas match actual handlers because nothing is advertised: the generated
+ * package carries an MCP server URL and every tool's schema is fetched from the live door, so
+ * there is no second copy of a tool's parameters to drift. This case fails the day somebody
+ * renders one into the package.
  */
 async function caseTheGeneratedClientAdvertisesNoToolSchema(): Promise<void> {
   const marketplace = join(repoRoot, "marketplace");
@@ -165,11 +155,12 @@ async function caseTheGeneratedClientAdvertisesNoToolSchema(): Promise<void> {
 }
 
 /**
- * The generated mirrors are re-rendered and compared by a REGISTERED gate check ("the committed
- * marketplace is what the catalog renders"), against the real renderer. This case asserts that
- * owner exists and runs, rather than re-rendering the marketplace from a verification suite —
- * a suite that regenerated the tree it is verifying would be mutating the checkout under the
- * run, and a second, weaker copy of a rule is how two rules come to disagree.
+ * The generated mirrors are re-rendered and compared by the registered gate check "the
+ * committed marketplace is what the catalog renders".
+ *
+ * DELIBERATE: this case asserts that owner exists and runs rather than re-rendering the
+ * marketplace itself. A suite that regenerated the tree it is verifying would mutate the
+ * checkout under the run.
  */
 async function caseTheMirrorRuleHasARunningOwner(): Promise<void> {
   const suites = read("scripts/gate/checks/suites.ts");
@@ -186,7 +177,7 @@ const CLIENT_CASES: Readonly<Record<string, () => Promise<void>>> = {
   the_mirror_rule_has_a_running_owner: caseTheMirrorRuleHasARunningOwner,
 };
 
-// ── registration ───────────────────────────────────────────────────────────────────────────
+// Registration
 
 /** The two spellings a check is registered by, read off the gate's own suites module. */
 function registeredChecks(): Set<string> {
@@ -198,16 +189,11 @@ function registeredChecks(): Set<string> {
 }
 
 /**
- * EVERY CHECK IS CLASSIFIED, AND NO BREAK-TEST IS REGISTERED. Classification is `isGateLaunchSource`
- * — the same function registration itself uses, over the same directory — so this case and the
- * gate cannot come to disagree about what a break-test is.
+ * Every check is classified and no break-test is registered: a break-test registered as an
+ * ordinary check makes the gate spawn the gate, which does not terminate.
  *
- * The failure it exists to prevent: a break-test registered as an ordinary check makes the gate
- * spawn the gate, which does not terminate. Before this function existed the rule was a regular
- * expression that recognised only `execFileSync(… "scripts/gate.ts")`, and answered "not a
- * break-test" for `execFileSync("npm", ["run", "gate"])`, for `spawnSync as launch` and for
- * `cp.execSync("npm run gate")` — three of the four spellings this repository's own frozen
- * fixture lists.
+ * COUPLED: classification is `isGateLaunchSource` from scripts/gate/read.ts, the same function
+ * registration uses, so this case and the gate cannot disagree about what a break-test is.
  */
 async function caseEveryCheckIsClassifiedAndNoBreakTestIsRegistered(): Promise<void> {
   const registered = registeredChecks();
@@ -226,9 +212,8 @@ async function caseEveryCheckIsClassifiedAndNoBreakTestIsRegistered(): Promise<v
   assert.deepEqual(problems, [], problems.join("; "));
 }
 
-/** A word in a comment, a string or a regex literal is data, not a launch — the three places
- *  the text-matching rule this replaced could not tell apart, driven here over real source
- *  rather than over the frozen fixture, so the two are independent evidence. */
+/** A word in a comment, a string or a regex literal is data, not a launch. Driven over real
+ *  source rather than over the frozen fixture, so the two are independent evidence. */
 async function caseAWordIsNotALaunch(): Promise<void> {
   assert.equal(isGateLaunchSource('const help = "run npm run gate yourself";'), false);
   assert.equal(isGateLaunchSource("// execFileSync('npm', ['run', 'gate'])"), false);
@@ -244,13 +229,12 @@ async function caseAWordIsNotALaunch(): Promise<void> {
 }
 
 /**
- * THE GATE REFUSES A GATE INSIDE A GATE, AND REFUSES A REPORT PATH INSIDE THE REPOSITORY —
- * both measured by running the real entry point, and both refusals land before a single check
- * runs, so neither costs this suite a full gate.
+ * The gate refuses a gate inside a gate, and refuses a report path inside the repository. Both
+ * are measured by running the real entry point, and both refusals land before a single check
+ * runs.
  *
- * This suite deliberately does NOT run the gate to completion: that would regenerate the
- * marketplace under a verification run, and producing and parsing a full report is an external
- * step the plan assigns to the finalizer rather than to a case.
+ * DELIBERATE: this suite never runs the gate to completion, which would regenerate the
+ * marketplace under a verification run.
  */
 async function caseTheGateRefusesNestingAndAnInsideReportPath(): Promise<void> {
   const run = (args: string[], env: Record<string, string>) => {
@@ -282,7 +266,7 @@ const REGISTRATION_CASES: Readonly<Record<string, () => Promise<void>>> = {
   the_gate_refuses_nesting_and_an_inside_report_path: caseTheGateRefusesNestingAndAnInsideReportPath,
 };
 
-// ── the suite ──────────────────────────────────────────────────────────────────────────────
+// The suite
 
 const CASE_GROUPS: Readonly<Record<string, Readonly<Record<string, () => Promise<void>>>>> = {
   readers: READER_CASES,

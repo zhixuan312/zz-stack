@@ -3,31 +3,22 @@
  * mutation-run.ts — plant a defect in what each gate check examines, and record whether the
  * check noticed.
  *
- * WHY THIS EXISTS. A gate check that cannot fail is decoration with a green tick on it, and
- * nothing in a passing gate run distinguishes the two. This repository has had both kinds:
- * a check whose one input took an early-return branch so its loop iterated empty arrays and
- * it reported green on every run this repository had ever done, and a guard whose window was
- * widened for a moved call and quietly started passing for a builder nobody called. Neither
- * was found by reading. Both are found by planting a defect and watching what happens.
- *
  *   node scripts/mutation-run.ts                       # every declared check
  *   node scripts/mutation-run.ts --only scripts/gate/checks/hygiene.ts
  *   node scripts/mutation-run.ts --work /tmp/zz-mut --keep
  *
- * It writes `testing/mutation-report.json`, which `scripts/gate/checks/mutation-coverage.ts`
- * reads: a check with no row, a row whose mutation never landed, and a row whose check
- * survived its defect are all release-blocking, and the middle one is the reason the
- * substitution count is measured rather than assumed.
+ * It writes `testing/mutation-report.json`: per row, whether the defect landed and whether the
+ * check went red. Run on demand, when a check's strength is in question; the gate does not read
+ * the report.
  *
- * EVERY RUN IS A REAL `node scripts/gate.ts`, in a copy of this checkout, over a tree that is
- * byte-identical to the snapshot except for the one planted defect. Nothing is run in a
- * cut-down harness: same entry file, same import order, same `ZZ_GATE_RUNNING` guard, same
- * exit codes. It costs about half an hour for the full set and buys an answer that is about
- * the gate rather than about a simulation of it.
+ * Every run is a real `node scripts/gate.ts`, in a copy of this checkout, over a tree that is
+ * byte-identical to the snapshot except for the one planted defect: same entry file, same import
+ * order, same `ZZ_GATE_RUNNING` guard, same exit codes.
  *
- * IT MUST NOT BE REGISTERED AS A GATE CHECK. It spawns gates; a gate that ran it would spawn
- * itself. It lives outside `scripts/gate/` so registration cannot reach it, and it refuses to
- * start inside a gate as well, because a static rule cannot see every way a launch is built.
+ * DELIBERATE: it must not be registered as a gate check. It spawns gates, so a gate that ran it
+ * would spawn itself. It lives outside `scripts/gate/` so registration cannot reach it, and it
+ * refuses to start inside a gate as well, because a static rule cannot see every way a launch is
+ * built.
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -46,17 +37,16 @@ import { DECLARED_BY, declaredChecks, makeWorkspace, provenanceOf, restore } fro
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-// SPELLED OUT, NEVER COMPUTED. This repository finds an environment variable by looking for
-// its literal name in the source, and a name assembled at runtime is a variable no audit of
-// the configuration surface can see — which has its own check two files away.
+// Spelled out, never computed. This repository finds an environment variable by looking for its
+// literal name in the source, so a name assembled at runtime is invisible to the check that
+// audits the configuration surface.
 if (process.env.ZZ_GATE_RUNNING === "1") {
   console.error("  REFUSED — ZZ_GATE_RUNNING=1: this launches gates, so running it inside one " +
     "is the recursion scripts/gate/run.ts refuses. Run it from a shell, never as a check.");
   process.exit(1);
 }
 
-/** A flag given with nothing after it is refused rather than read as absent — this
- *  repository's own rule, and it has a gate check of its own. */
+/** A flag given with nothing after it is refused rather than read as absent. */
 function flag(name: string): string | null {
   const argv = process.argv;
   const inline = argv.find((a) => a.startsWith(`--${name}=`));
@@ -83,19 +73,17 @@ function valueOrDie(name: string, raw: string | undefined): string {
 
 const only = process.argv.filter((_, i) => process.argv[i - 1] === "--only");
 const keep = process.argv.includes("--keep");
-// `--dry` PLANTS AND RESTORES WITHOUT RUNNING A GATE. It answers one question and no other:
-// did the substitution land. A spec whose text has moved reports zero replacements, and this
-// is how that is found in seconds rather than in the half-hour it would otherwise hide inside.
+// `--dry` plants and restores without running a gate. It answers one question: did the
+// substitution land. A spec whose text has moved reports zero replacements.
 const dry = process.argv.includes("--dry");
-// `--guards` drives the gate's OWN refusals — the two it can only be shown from outside itself
-// — and merges their receipts into the report the mutation rows already live in, without
-// redoing those rows. They are about the gate as a process rather than about any one check.
+// `--guards` drives the gate's own refusals — the two it can only be shown from outside itself —
+// and merges their receipts into the report the mutation rows live in, without redoing those rows.
 const guardsOnly = process.argv.includes("--guards");
 const workAt = flag("work") ?? join(tmpdir(), "zz-mutation");
-// HOW MANY CHECKOUTS AT ONCE. One by default, because that is what every invocation in every
-// runbook already means. Above one, this process runs no rows itself: it shards the check files
-// and spawns THIS SAME SCRIPT once per shard, each with a work directory of its own, then merges
-// what they wrote. See mutation/parallel.ts for why that is the shape rather than an async loop.
+// How many checkouts at once. One by default. Above one this process runs no rows itself: it
+// shards the check files, spawns this same script once per shard with a work directory of its own,
+// then merges what they wrote. See mutation/parallel.ts for why that shape rather than an async
+// loop.
 const workers = Math.max(1, Number(flag("workers") ?? 1));
 const out = resolve(flag("out") ?? join(root, "testing/mutation-report.json"));
 
@@ -107,25 +95,18 @@ interface GateRun {
 }
 
 /**
- * HOW LONG A CHILD MAY TAKE BEFORE IT IS A HANG RATHER THAN A SLOW RUN.
+ * How long a child may take before it is a hang rather than a slow run. A gate run takes well under
+ * a minute and a build is faster, so five minutes is a diagnosis rather than a budget, and
+ * `spawnSync` without a timeout waits for ever in silence.
  *
- * `spawnSync` WITHOUT A TIMEOUT WAITS FOR EVER, AND SAYS NOTHING WHILE IT DOES. This cost
- * three and a half hours on row 173 of a 417-row run: `npm run build` in the copy blocked
- * inside `tsc -b` — state `S`, 0% CPU, not spinning — and the runner sat behind it with no
- * output, no error and no way for a reader to tell a hang from a long build. The log's last
- * line was a row that had already finished, so nothing on screen was wrong; there was just
- * never another line.
- *
- * A measured gate run here is 27-31 seconds and a build is faster, so five minutes is not a
- * budget, it is a diagnosis: past it the child is not working. Killed with SIGKILL rather
- * than SIGTERM because the thing that hung was a grandchild — npm's `tsc` — and a polite
- * signal to npm leaves it running.
+ * SIGKILL rather than SIGTERM: what hangs is a grandchild — npm's `tsc` — and a polite signal to
+ * npm leaves it running.
  */
 const CHILD_TIMEOUT_MS = 300_000;
 
 /** Kill anything the timed-out child left behind. `spawnSync`'s timeout kills the process it
- *  started, not the tree below it, and an orphaned `tsc` holding the workspace is what makes
- *  the NEXT row hang too — one stall becoming every stall after it. */
+ *  started, not the tree below it, and an orphaned `tsc` holding the workspace is what makes the
+ *  next row hang too. */
 function reapUnder(repo: string): void {
   try {
     execFileSync("pkill", ["-9", "-f", repo.replace(/[.[\]*+?^${}()|\\]/g, "\\$&")],
@@ -134,22 +115,13 @@ function reapUnder(repo: string): void {
 }
 
 /**
- * THE BUILD IS RUN BEFORE THE GATE, AND THIS IS NOT AN OPTIMISATION.
+ * The build runs before the gate, and this is not an optimisation.
  *
- * `scripts/gate.ts` statically imports every check module, and a check that reads a shared
- * package imports `@zz/contracts`, which resolves to `dist/`. An ES module graph is INSTANTIATED
- * in full — every file read, parsed and linked — before any module body is evaluated, so
- * `dist/index.js` is already in the module registry by the time `check("tsc -b")` runs and
- * rebuilds it. The rebuilt output cannot reach the process that produced it.
- *
- * MEASURED, not reasoned: with a pristine `packages/contracts/src` and a deliberately stale
- * `dist`, one gate run rebuilt `dist` correctly AND failed "the assessment port never invents a
- * probability or an answer" — the check judged the bytes that were on disk when the process
- * started, not the ones the gate had just produced.
- *
- * So a defect planted in one of those packages reaches its check only if the build happens in
- * a process that ends before the gate's begins. Without this the experiment measures nothing:
- * every such check would "survive" a defect it never saw.
+ * `scripts/gate.ts` statically imports every check module, and an ES module graph is instantiated
+ * in full before any module body is evaluated — so `packages/contracts/dist` is already in the
+ * module registry by the time `check("tsc -b")` rebuilds it, and the rebuilt output cannot reach
+ * the process that produced it. A defect planted in a shared package therefore reaches its check
+ * only if the build happens in a process that ends before the gate's begins.
  */
 function prebuild(repo: string): string | null {
   const r = spawnSync("npm", ["run", "-s", "build"],
@@ -163,17 +135,17 @@ function prebuild(repo: string): string | null {
   return String(r.stdout || r.stderr || "").slice(-400);
 }
 
-/** One real gate run in the copy, read back from its own machine-readable report rather than
- *  from stdout — "did THIS check fail" has to be exact, and a name scraped out of a console
- *  line is not. */
+/** One real gate run in the copy, read back from its own machine-readable report rather than from
+ *  stdout — "did this check fail" has to be exact, and a name scraped out of a console line is
+ *  not. */
 function runGate(repo: string, reportPath: string): GateRun {
   const began = Date.now();
   const r = spawnSync("node", ["scripts/gate.ts", "--quiet", "--report", reportPath],
     { cwd: repo, encoding: "utf8", env: { ...process.env, ZZ_GATE_RUNNING: "" },
       timeout: CHILD_TIMEOUT_MS, killSignal: "SIGKILL" });
   const ms = Date.now() - began;
-  // A TIMED-OUT GATE IS NOT A PASSING GATE AND NOT A FAILING ONE. It is a run that did not
-  // happen, and it has to read that way or the row records an answer nobody got.
+  // A timed-out gate is not a passing gate and not a failing one. It is a run that did not
+  // happen, and the row has to read that way.
   if (r.error && (r.error as NodeJS.ErrnoException).code === "ETIMEDOUT") {
     reapUnder(repo);
     return { verdict: "TIMED OUT", exit: -1, failed: [], ms };
@@ -193,9 +165,9 @@ function fileDigest(path: string): string | null {
   catch { return null; }
 }
 
-/** How many checks the gate actually registers across the declared FILES, counted the way
- *  `gateCheckNames()` counts them. Rows here are per check; this is the number a reader needs
- *  to see that the declared files carry many more checks than this plan added. */
+/** How many checks the gate registers across the declared files, counted the way
+ *  `gateCheckNames()` counts them. Rows here are per check, and the declared files carry many more
+ *  checks than there are rows. */
 function registeredCheckCount(repo: string, declared: readonly string[]): number {
   let n = 0;
   for (const f of declared) {
@@ -205,12 +177,10 @@ function registeredCheckCount(repo: string, declared: readonly string[]): number
 }
 
 /**
- * What a check's subject IS, from its path, so a reader can tell the row kinds apart.
- *
- * A defect in `.ts` changes what the platform DOES. A defect in a `.md` changes shipped
- * content — which for a check whose whole subject is shipped prose is the only defect there
- * is, and is exactly the regression each of those checks was written after somebody shipped.
- * A defect in a manifest or a configuration file changes what the platform DECLARES.
+ * What a check's subject is, from its path, so a reader can tell the row kinds apart. A defect in
+ * a `.ts` changes what the platform does; in a `.md`, shipped content, which for a check whose
+ * subject is shipped prose is the only defect there is; in a manifest or configuration file, what
+ * the platform declares.
  */
 function subjectKind(subject: string): string {
   if (subject.endsWith(".ts")) return "source";
@@ -219,18 +189,11 @@ function subjectKind(subject: string): string {
 }
 
 /**
- * The report as text: the envelope pretty-printed, ONE RESULT ROW PER LINE.
+ * The report as text: the envelope pretty-printed, one result row per line, so a run that moved
+ * two rows produces a diff naming those rows rather than 17,000 lines.
  *
- * `JSON.stringify(doc, null, 2)` gave all thirty-one fields of all four hundred-odd rows a line
- * each and made this artifact 17,053 lines, so a run that moved two rows produced a diff nobody
- * could read. One line per row is about five hundred, and the diff names the rows that changed.
- *
- * IT IS THE SAME JSON. Only whitespace between tokens differs, so every reader — the coverage
- * check, `seedProvisional`, the `--guards` merge — goes on calling `JSON.parse` and sees
- * identical values. Nothing here may change what a field says.
- *
- * A key whose value does not survive `JSON.stringify` is DROPPED, which is what stringifying
- * the whole object did with it, so both forms agree on which keys exist.
+ * It is the same JSON — only whitespace between tokens differs — and a key whose value does not
+ * survive `JSON.stringify` is dropped, exactly as stringifying the whole object drops it.
  */
 function reportText(doc: Record<string, unknown>): string {
   const rows = Array.isArray(doc.results) ? doc.results as unknown[] : null;
@@ -250,88 +213,33 @@ function reportText(doc: Record<string, unknown>): string {
   return `{\n${parts.join(",\n")}\n}\n`;
 }
 
-/**
- * Give the coverage check a row for every check it will ask about, IN THE COPY ONLY.
- *
- * `scripts/gate/checks/mutation-coverage.ts` reads this report and fails when a declared check
- * has no row — including, once it is planted, its own. So the FIRST run that covers a new check
- * would find the gate already red at baseline on the very check it is about to test, and every
- * row it produced would read "the target was already failing" instead of an answer.
- *
- * A provisional row settles that and is marked as one. It is written into the disposable copy,
- * never into the repository's report: this run's real result replaces it a few minutes later,
- * and a provisional row that reached the artifact would be a claim nothing measured.
- */
-function seedProvisional(repo: string, wanted: readonly string[]): void {
-  const p = join(repo, "testing/mutation-report.json");
-  const doc = existsSync(p)
-    ? JSON.parse(readFileSync(p, "utf8")) as { results: { check: string }[] }
-    : { results: [] };
-  const have = new Set(doc.results.map((r) => r.check));
-  const missing = wanted.filter((w) => !have.has(w));
-  for (const check of missing) {
-    doc.results.push({
-      check, provisional: true, replacements: 1, failed: true,
-      planted: "provisional, written into this run's disposable copy so the coverage check is " +
-        "answerable at baseline — this run's measured row replaces it",
-    } as { check: string });
-  }
-  // AND A ROW WHOSE CHECK HAS SINCE CHANGED IS AS UNANSWERABLE AS A MISSING ONE.
-  //
-  // `mutation-coverage.ts` binds each row to its check's sha256 AT GATE TIME rather than
-  // trusting the `stale` the runner froze into the artifact. That closed a real hole — the
-  // report on disk claimed `stale: false` on 418 rows while thirteen commits had touched
-  // `scripts/gate/checks/` — and it defeated this function, which only ever seeded rows that
-  // were absent.
-  //
-  // The consequence was circular and would have been permanent: editing
-  // `mutation-coverage.ts` drifts its own rows, the gate goes red, and a run to refresh them
-  // refuses because the baseline is red on the very check it is about to test. A check that
-  // cannot be satisfied is what this repository deletes; this is that shape, reached by
-  // adding a check rather than by leaving one behind.
-  //
-  // So the same provisional treatment extends to the sha: a wanted file's rows are stamped
-  // with what it hashes to NOW, in the disposable copy only. The real run rewrites them
-  // minutes later with a measured verdict and the same digest.
-  const want = new Set(wanted);
-  for (const r of doc.results as Array<{ check: string; check_sha256?: string }>) {
-    if (!want.has(r.check)) continue;
-    const full = join(repo, r.check);
-    if (existsSync(full)) r.check_sha256 = createHash("sha256").update(readFileSync(full)).digest("hex");
-  }
-  mkdirSync(dirname(p), { recursive: true });
-  writeFileSync(p, reportText(doc));
-}
-
 function main(): void {
   const provenance = provenanceOf(root);
   console.log(`  building a disposable copy under ${workAt}`);
   const declaredNow = declaredChecks(root);
-  // BEFORE the copy and before the baseline. A mistyped `--only` used to be caught after a
-  // gate run had already been spent on it, which is a refusal arriving too late to be useful —
-  // the same argument the gate itself makes for refusing a bad `--report` path at import.
+  // Before the copy and before the baseline: a mistyped `--only` caught after a gate run has been
+  // spent on it is a refusal arriving too late to be useful.
   const unknown = only.filter((o) => !declaredNow.includes(o));
   if (unknown.length) die(`--only names ${unknown.join(", ")}, which the declared set does not contain`);
-  const seedFor = only.length ? declaredNow.filter((d) => only.includes(d)) : declaredNow;
+  const selected = only.length ? declaredNow.filter((d) => only.includes(d)) : declaredNow;
 
-  // SHARDED, AND THIS PROCESS THEN MEASURES NOTHING. Everything above is cheap and has to happen
-  // in either case — the declared set is what gets split, and a mistyped `--only` is still
-  // refused before a single copy is made. Below this line the work is per-row, so a sharded run
-  // hands it to children and becomes a merger. `--dry` and `--guards` are deliberately excluded:
-  // one plants without running a gate and finishes in seconds, the other is two probes, and
-  // neither is what anybody is waiting on.
+  // Sharded, and this process then measures nothing. Everything above is cheap and happens in
+  // either case — the declared set is what gets split, and a mistyped `--only` is still refused
+  // before a single copy is made. Below this line the work is per-row, so a sharded run hands it to
+  // children and becomes a merger. `--dry` and `--guards` are excluded: one plants without running
+  // a gate and finishes in seconds, the other is two probes.
   if (workers > 1 && !dry && !guardsOnly) {
     const counts = new Map<string, number>();
     for (const sp of SPECS) counts.set(sp.check, (counts.get(sp.check) ?? 0) + 1);
     void runSharded({
-      runner: join(root, "scripts/mutation-run.ts"), source: root, workAt, out, wanted: seedFor,
+      runner: join(root, "scripts/mutation-run.ts"), source: root, workAt, out, wanted: selected,
       rowsFor: (f) => counts.get(f) ?? 1, workers, extras: keep ? ["--keep"] : [],
       reportText,
     }).then(() => process.exit(0));
     return;
   }
 
-  const ws = makeWorkspace(root, workAt, (repo) => seedProvisional(repo, seedFor));
+  const ws = makeWorkspace(root, workAt);
 
   if (guardsOnly) {
     const probes = probeGuards(ws.repo, join(ws.reports, "control.json"));
@@ -354,11 +262,10 @@ function main(): void {
   const alreadyRed = new Set(baseline.failed);
 
   const declared = declaredChecks(ws.repo);
-  // ONE ROW PER REGISTERED CHECK, NOT PER FILE. Thirty-two of the declared files register
-  // more than one check, and a file-shaped roster lets a single mutation stand in for all of
-  // them — which is how a report can satisfy a coverage check whose name promises per-check
-  // evidence while providing per-file evidence. Rows may therefore share a `check` path; each
-  // carries its own `target`, and the mutation for one must fail THAT one.
+  // One row per registered check, not per file. Many of the declared files register more than
+  // one check, and a file-shaped roster lets a single mutation stand in for all of them. Rows
+  // may therefore share a `check` path; each carries its own `target`, and the mutation for one
+  // must fail that one.
   const specsFor = new Map<string, MutationSpec[]>();
   for (const s of SPECS) specsFor.set(s.check, [...(specsFor.get(s.check) ?? []), s]);
   const wanted = only.length ? declared.filter((d) => only.includes(d)) : declared;
@@ -380,10 +287,9 @@ function main(): void {
       });
       continue;
     }
-    // A SPEC THAT CANNOT BE APPLIED IS RECORDED, NEVER THROWN. A run that died on row 24
-    // would lose the twenty-three answers it already had, and what went wrong is a fact about
-    // this spec — an anchor that moved, a subject renamed — which the report is the right
-    // place for. It is still a failed experiment and it still has to be fixed.
+    // A spec that cannot be applied is recorded, never thrown: a run that died on row 24 would
+    // lose the twenty-three answers it already had, and what went wrong — an anchor that moved, a
+    // subject renamed — is a fact about the spec. It is still a failed experiment.
     let landed = { replacements: 0, before: "" };
     let applyError: string | null = null;
     try {
@@ -429,21 +335,17 @@ function main(): void {
     }
   }
 
-  // A `--only` run TOPS UP the report it finds rather than replacing it. The coverage check
-  // demands a row for every declared check, so a narrow re-run that wrote only its own rows
-  // would turn a green report into a report claiming sixty-four checks were never covered.
+  // A `--only` run tops up the report it finds rather than replacing it: a narrow re-run writing
+  // only its own rows would drop every other check's row.
   let carried: { check: string }[] = [];
-  // CARRIED FORWARD BY EVERY RUN, not only a top-up. A full run rebuilds the report object
-  // from scratch, so guard receipts it did not read would vanish from the artifact without
-  // anything saying they had — the same silent shortening a `--only` run is refused for.
+  // Carried forward by every run, not only a top-up. A full run rebuilds the report object from
+  // scratch, so guard receipts it did not read would vanish from the artifact without anything
+  // saying they had.
   let priorGuards: unknown = existsSync(out)
     ? (JSON.parse(readFileSync(out, "utf8")) as { guards?: unknown }).guards ?? null
     : null;
   if (only.length) {
-    // A TOP-UP ADDS; IT NEVER SHORTENS. The coverage check demands a row for every declared
-    // check, so a narrow re-run that dropped rows would turn a green report into one claiming
-    // sixty-odd checks were never covered — and it would do it silently, which is the shape
-    // this whole task exists to refuse. Every one of these is a refusal, not a warning.
+    // A top-up adds; it never shortens. Every one of these is a refusal, not a warning.
     if (!existsSync(out)) die(`--only tops up an existing report and ${out} does not exist`);
     const prior = JSON.parse(readFileSync(out, "utf8")) as
       { results: { check: string }[]; guards?: unknown };
@@ -455,12 +357,10 @@ function main(): void {
 
   if (dry) {
     const missed = results.filter((r) => r.replacements === 0);
-    // TWO REASONS A SPEC DOES NOT LAND, AND THEY NEED DIFFERENT WORK. An anchor that moved is
-    // a spec to repair against the current text; a REFUSED subject is a spec that should never
-    // have been written, because `plant()` freezes the checks and the gate's own entry — a run
-    // that edited those would be measuring itself. The rows carry `apply_error` either way, so
-    // the artifact has always distinguished them; this line did not, and a spec forbidden by
-    // construction read here exactly like one whose text had drifted.
+    // Two reasons a spec does not land, and they need different work. An anchor that moved is a
+    // spec to repair against the current text; a refused subject is a spec that should never have
+    // been written, because `plant()` freezes the checks and the gate's own entry. The rows carry
+    // `apply_error` either way, and this line says which kind it was.
     const refused = missed.filter((r) => r.apply_error !== null);
     console.log(`\n  ${results.length} spec(s) applied, ${missed.length} did not land` +
       (refused.length ? ` (${refused.length} REFUSED by plant(), not a moved anchor)` : ""));
@@ -471,14 +371,11 @@ function main(): void {
     process.exit(missed.length ? 4 : 0);
   }
 
-  // IS EACH ROW STILL ABOUT THIS TREE? A row certifies that a named check, as those bytes,
-  // failed on a planted defect. Nothing in the frozen coverage check reads a commit or a
-  // digest, so a report produced against any tree at any time satisfies it forever. The
-  // binding therefore lives here: every row carries the check file's sha256 as it was when the
-  // row was measured, and each is compared against the live checkout before anything is
-  // written. A row THIS RUN produced that has already drifted means the tree moved underneath
-  // the run, and that is refused rather than recorded. A carried row that has drifted is
-  // marked, because the fix is to re-run that one row rather than to discard sixty others.
+  // Is each row still about this tree? A row certifies that a named check, as those bytes, failed
+  // on a planted defect. So every row carries the check file's sha256 as it was when the row was measured, and each is
+  // compared against the live checkout before anything is written. A row this run produced that
+  // has already drifted is refused; a carried row that has drifted is marked, because the fix is
+  // to re-run that one row rather than discard sixty others.
   const rows = [...carried, ...results] as Record<string, unknown>[];
   const drifted: string[] = [];
   for (const row of rows) {
@@ -488,14 +385,11 @@ function main(): void {
     row.stale = was !== null && live !== was;
     if (row.stale) drifted.push(`${row.check} (${row.target ?? "no target"})`);
   }
-  // THE SAME TREATMENT FOR THE ENTRIES THAT CANNOT BE ROWS. An unexercisable entry names a
-  // check and makes a claim about it, and one of them pastes an OBSERVED OUTPUT from a real
-  // run — fifty routes from a sibling-less gate. That is stronger evidence than a planted
-  // mutation and weaker provenance, because nothing re-derives it: if the check's message
-  // changes the entry goes on asserting what it saw, with nothing comparing the two. So each
-  // entry carries the check's sha256 as its author read it, and gets `live`/`stale` stamped
-  // beside it here exactly as a row does. Found by a reader who checked the artifact's fields
-  // rather than assuming the two kinds of record were treated alike; they were not.
+  // The same treatment for the entries that cannot be rows. An unexercisable entry names a check
+  // and makes a claim about it, and one pastes an observed output from a real run — stronger
+  // evidence than a planted mutation and weaker provenance, because nothing re-derives it. So each
+  // entry carries the check's sha256 as its author read it, and gets `live`/`stale` stamped beside
+  // it here exactly as a row does.
   const entries = UNEXERCISABLE.map((u) => {
     const live = fileDigest(join(root, u.check));
     return { ...u, live_check_sha256: live, stale: live !== u.observed_check_sha256 };
@@ -507,18 +401,13 @@ function main(): void {
       staleEntries.map((e) => `${e.check} (${e.assertion.slice(0, 60)}…)`).join("\n      "));
   }
 
-  // A ROW WHOSE OWN TARGET WAS ALREADY RED MEASURED NOTHING, AND IS REFUSED RATHER THAN
-  // RECORDED. `newly` cannot contain a check that was failing before anything was planted, so
-  // such a row comes back `failed: false` and reads exactly like a check that shrugged off a
-  // defect. Writing it would put a wrong conclusion in the artifact wearing the flattering
-  // column, and the wrong diagnosis — "this check is weak" — sends a reader to rewrite a check
-  // that is probably fine.
+  // A row whose own target was already red measured nothing, and is refused rather than recorded.
+  // `newly` cannot contain a check that was failing before anything was planted, so such a row
+  // comes back `failed: false` and reads exactly like a check that shrugged off a defect.
   //
-  // The usual cause is a spec's OWN payload. These spec files are tracked TypeScript and this
-  // repository sweeps tracked files, so a literal import line, a credential shape, or a
-  // sentence counting the platform's own tools turns the gate red at baseline and takes every
-  // row in the batch with it. That has happened three times here. Refusing costs one run;
-  // recording it costs somebody a day chasing the wrong file.
+  // The usual cause is a spec's own payload: these spec files are tracked TypeScript and the gate
+  // sweeps tracked files, so a literal import line, a credential shape, or a sentence counting the
+  // platform's own tools turns the gate red at baseline and takes every row in the batch with it.
   const measuredNothing = results.filter((r) => r.baseline_red);
   if (measuredNothing.length) {
     die(`${measuredNothing.length} row(s) had their own target already failing at baseline, so ` +
@@ -554,8 +443,8 @@ function main(): void {
     method: {
       per_row: [
         "restore the copy from the pristine snapshot and verify its sha256",
-        "apply one exact substitution and COUNT it — a zero is a failed experiment, not a result",
-        "npm run -s build, as its own process, BEFORE the gate",
+        "apply one exact substitution and count it — a zero is a failed experiment, not a result",
+        "npm run -s build, as its own process, before the gate",
         "node scripts/gate.ts --quiet --report <a path outside the repository>",
         "read the verdict from that report's failed_ids, restore, verify the sha256 again",
       ],
@@ -563,85 +452,41 @@ function main(): void {
         "scripts/gate.ts statically imports every check module, and an ES module graph is " +
         "instantiated in full before any module body is evaluated — so packages/contracts/dist " +
         "is already linked when check(\"tsc -b\") rebuilds it, and the rebuilt output cannot " +
-        "reach the process that produced it. Measured: a pristine src with a stale dist rebuilt " +
-        "dist correctly AND failed the check that reads it. Without a separate build step a " +
-        "defect planted in a shared package never reaches the check that imports it.",
+        "reach the process that produced it. Without a separate build step a defect planted " +
+        "in a shared package never reaches the check that imports it.",
       failed_means:
-        "the target check is in this run's failed_ids and was NOT in the baseline's",
+        "the target check is in this run's failed_ids and was not in the baseline's",
       rows_are_per_registered_check:
-        "One row per registered check(), not per check FILE. That distinction is load-bearing: " +
-        `the ${declared.length} declared files register ${registeredCheckCount(ws.repo, declared)} ` +
-        "checks between them, and thirty-odd files register more than one — so a file-shaped " +
-        "roster would let one mutation stand in for every check in its file. Rows may share a " +
-        "`check` path; each names its own `target`, and a mutation that only trips a SIBLING " +
-        "check in the same file is a failed experiment, not evidence about the target.",
+        "One row per registered check(), not per check file. " +
+        `The ${declared.length} declared files register ${registeredCheckCount(ws.repo, declared)} ` +
+        "checks between them, and a file-shaped roster would let one mutation stand in for " +
+        "every check in its file. Rows may share a `check` path; each names its own `target`, " +
+        "and a mutation that only trips a sibling check in the same file is a failed " +
+        "experiment, not evidence about the target.",
       a_green_row_establishes_one_assertion:
-        "Rows are per registered check, and a registered check may carry SEVERAL INDEPENDENT " +
+        "Rows are per registered check, and a registered check may carry several independent " +
         "assertions. A green row therefore establishes that one named assertion of that check " +
         "can fail — not the check entire. Where a row is about one of several, it says which " +
         "in `assertion`; two rows may share a `target` and be about different claims.",
-      the_class_nobody_has_counted:
-        "Per-file was fixed by going per-registered-check. Per-ASSERTION is the same problem " +
-        "one level further down: a check with two independent assertions needs two mutations " +
-        "to be fully established. `trial-analyzer-agreement.ts` has two and now has two rows. " +
-        "`rederivation-generation.ts` — the precedent that check was modelled on — has the " +
-        "same shape, an import assertion and a vector-agreement assertion, with one row " +
-        "against it. NOBODY HAS COUNTED HOW MANY OTHERS THERE ARE, and this task deliberately " +
-        "did not sweep for them: it is work for whoever writes the next set of checks, " +
-        "alongside the dormant regions this run found (a clause guarded by a condition the " +
-        "data never takes, invisible to a mutation run as much as to a reader).",
-      a_subject_too_simple_to_fail:
-        "The third shape, and the one that hid a real kernel defect the longest. `evaluate` " +
-        "checked only the step immediately before, so a seven-step procedure was verified one " +
-        "link deep and a rule-free step became a permanent hole. Two fixtures watched it and " +
-        "neither could disagree with it: the second-flow fixture is two steps, so it has no " +
-        "\"three steps back\" to get wrong, and the negative control gives every step a " +
-        "sign-off rule, so it has no rule-free step in the middle. A test whose SUBJECT cannot " +
-        "express the failure passes for the same reason an unreachable clause does, and a " +
-        "mutation run cannot tell the two apart from the outside — in both cases the defect " +
-        "is planted and nothing goes red. What caught it was giving the check a subject that " +
-        "could fail: the procedure the release actually registers.",
-      a_check_that_reads_instead_of_exercising:
-        "The fourth shape, and the most expensive one found. At fa975c4 `knowledge_search` " +
-        "could not serve a single plain ASCII query: a parameter was bound as a side effect " +
-        "and then never referenced, so the statement numbered $1 and $3 while binding three, " +
-        "and PostgreSQL refuses to parse a statement whose numbering skips one. 534 of the 535 " +
-        "searches this platform has ever received are ASCII. Two checks already read that " +
-        "predicate — one asks whether its text contains a substring, the other which " +
-        "configuration it names — and both passed. THIS SHAPE IS UNLIKE THE OTHER THREE: the " +
-        "subject is reachable, the assertion is exercised, the fixture is real. What is wrong " +
-        "is the QUESTION. Reading what a thing says is not running it, and a statement can " +
-        "satisfy every assertion about its text while being unparseable. A mutation run cannot " +
-        "find this one either — plant a defect that changes only what the text DOES and every " +
-        "text-reading check stays green, which from the outside is indistinguishable from a " +
-        "check that works. What caught it asks about the relationship between two halves the " +
-        "text cannot express: the numbers the SQL references must be exactly 1..args.length, " +
-        "and no database is needed to ask it.",
       what_this_artifact_is_not_evidence_about:
-        "Every check this PLAN adds. The declared files also carry pre-existing checks that " +
-        "predate this plan and have no row here, so a reader must not read a green report as " +
-        "evidence that every check the gate registers has been shown able to fail.",
+        "Checks with no row here. A green report is not evidence that every check the gate " +
+        "registers has been shown able to fail.",
       binding_to_the_tree:
         "Each row carries `check_sha256` — the check file's bytes when the row was measured — " +
-        "and `live_check_sha256`/`stale` from the moment the report was written. THE FIRST OF " +
-        "THOSE IS ENFORCED AT GATE TIME: mutation-coverage.ts recomputes each check file's " +
-        "digest against the tree in front of it and fails on any row whose check has moved, " +
-        "naming the files to re-run with --only. It does NOT read `live_check_sha256`/`stale`, " +
-        "and deliberately: those were frozen when this file was written and answer about a tree " +
-        "that may no longer exist. This paragraph used to say nothing enforced any of it, which " +
-        "was true of an earlier coverage check and has not been true since. The runner enforces " +
-        "its own half too: it refuses to write at all if a check file moved while this run was " +
-        "measuring it, and it names any carried row whose check has changed since. The entries " +
-        "in `unexercisable_assertions` carry the same three fields for the same reason: " +
-        "one of them records an observation from a real run rather than a planted " +
-        "mutation, which is stronger evidence and weaker provenance, since nothing " +
-        "re-derives it.",
+        "and `live_check_sha256`/`stale` from the moment the report was written. Compare " +
+        "`check_sha256` with the file on disk to know whether a row still describes today's " +
+        "check; nothing in the gate does this for you. The runner refuses to write at all if a " +
+        "check file moved while this run was measuring it, and it names any carried row whose " +
+        "check has changed since. The entries in `unexercisable_assertions` carry the same " +
+        "three fields for the same reason: one of them records an observation from a real run " +
+        "rather than a planted mutation, which is stronger evidence and weaker provenance, " +
+        "since nothing re-derives it.",
     },
     results: [...carried, ...results].sort((a, b) => a.check < b.check ? -1 : 1),
     guards: guardsBlock(priorGuards, null),
-    // OUTSIDE `results` DELIBERATELY — see mutation/unexercisable.ts. An assertion nothing
-    // could plant against is a finding, and a finding that turned the gate red would be a
-    // finding nobody keeps.
+    // DELIBERATE: outside `results` — see mutation/unexercisable.ts. An assertion nothing could
+    // plant against is a finding, and a finding that turned the gate red would be a finding nobody
+    // keeps.
     unexercisable_assertions: entries,
   }));
   console.log(`\n  ${results.length} row(s) written to ${out}` +

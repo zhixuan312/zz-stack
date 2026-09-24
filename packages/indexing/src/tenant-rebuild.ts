@@ -1,52 +1,33 @@
 /**
- * tenant-rebuild.ts — I-15's rebuild walk: turns one owner's canonical `.zz/` commit log into
- * a complete, verified generation of the migration-070 derived database, in an isolated target
- * a caller supplies. Never the serving database, never activated by this file — see below.
+ * Turns one owner's canonical `.zz/` commit log into a complete, verified generation of the
+ * derived search database, in an isolated target the caller supplies. Never the serving
+ * database, and nothing here activates the result.
  *
- * READS ONLY WHAT I-7's COMMIT ENGINE MADE DURABLE. `RebuildIO` has no `stat` — deliberately.
- * The one property this whole file exists to guarantee is "a copied store with changed mtimes
- * reconstructs the same semantic projections", and a caller cannot violate that by accident if
- * the interface offers no operation that could ever read an mtime in the first place. Every
- * decision below comes from `.zz/commits/*.json` (the manifest, its own `manifest_hash`, its
- * `previous_commit_hash` chain) and `.zz/blobs/<hash>` (content-addressed, so "the blob exists
- * and hashes to its own name" is the only freshness check a blob needs).
+ * Every decision comes from `.zz/commits/*.json` (the manifest, its `manifest_hash`, its
+ * `previous_commit_hash` chain) and `.zz/blobs/<hash>`. DELIBERATE: `RebuildIO` has no `stat` —
+ * with no operation that can read an mtime, a caller cannot break "a copied store with changed
+ * mtimes reconstructs the same semantic projections".
  *
- * THREE FAILURE CLASSES, THREE OUTCOMES — this task's own contract, verbatim:
+ * Three failure classes, three outcomes:
  *   - a missing mount, an unreadable owner root, or a corrupt chain/blob:        "blocked"
  *   - the isolated target database throwing (an outage, mid-replay):            "unavailable"
  *   - everything read clean and every commit replayed:                         "ready"
- * "blocked" and "unavailable" are kept apart on purpose. A missing mount reported the same way
- * as a database outage would tempt a caller to retry both the same way, and retrying a missing
- * mount teaches nothing — it must be refused, loudly, forever, until the mount is fixed. Never,
- * under any outcome, does this file touch the SERVING generation or flip anything live: that
- * decision belongs to whatever caller reads this outcome and chooses to activate the isolated
- * database it just verified — an operational cutover, not a runtime concept this schema has a
- * column for.
+ * "blocked" and "unavailable" stay apart because a missing mount must not be retried the way an
+ * outage is.
  *
- * WHY THE CHAIN WALK, THE MANIFEST-HASH CHECK AND THE BLOB-HASH CHECK ARE REIMPLEMENTED HERE
- * rather than imported from `services/zz-core/src/tenant-info/{record,recovery}.ts`, which
- * already do almost exactly this. `packages/indexing`'s own `tsconfig.json` references only
- * `../contracts` — a package importing a service would invert the dependency direction
- * `index.ts`'s own header states plainly ("a service cannot import another service", and a
- * package is what a service imports, never the reverse). The duplication is small (one hash
- * function, one directory walk) and each half is exercised against a REAL commit this suite's
- * own fixtures produce via the real `mutate()`/`commitTransaction` pipeline, not a hand-built
- * manifest — so a drift between the two copies is exactly what those fixtures would catch.
+ * DELIBERATE: the chain walk, the manifest-hash check and the blob-hash check are reimplemented
+ * here rather than imported from `services/zz-core/src/tenant-info/{record,recovery}.ts`.
+ * `packages/indexing`'s own tsconfig references only `../contracts`, and a package importing a
+ * service inverts the dependency direction.
  *
- * THE ONE PROJECTION POLICY, SHARED. `classifyArtifact` and `toProjectionManifest` below are
- * exported so that whichever task eventually wires `record.ts`'s `CommitExports.
- * projectToDatabase` for the LIVE path calls the same two functions this rebuild calls — "same
- * projection policy" by construction, not by two implementations kept in sync by hand.
+ * COUPLED: `classifyArtifact` and `toProjectionManifest` are exported so a live-replay wiring of
+ * `record.ts`'s `CommitExports.projectToDatabase` calls these same two functions.
  *
- * A REAL, NAMED GAP THIS FILE DOES NOT PAPER OVER: `applyCommit` (`tenant-projections.ts`,
- * I-13, outside this task's edit surface) issues ONE `zz.artifact` insert per call, keyed by
- * the manifest's own single `artifact_id`. A commit that mints a document and same-batch
- * SourceArtifacts alongside it produces events for every one of them (which land, correctly,
- * in `zz.artifact_event`) but a `zz.artifact` row only for the document — the sources it staged
- * never get their own row. This rebuild calls `applyCommit` exactly once per commit, the same
- * way live replay will, so both exhibit the identical gap rather than disagreeing about it;
- * `RebuildStats.unprojectedSourceArtifacts` counts it so it is visible, not silent. Fixing it
- * means changing `applyCommit`'s own contract, which is I-13's file, not this task's.
+ * `applyCommit` (`tenant-projections.ts`) issues one `zz.artifact` insert per call, keyed by the
+ * manifest's single `artifact_id`, so a commit that mints a document and same-batch
+ * SourceArtifacts produces events for all of them but a `zz.artifact` row only for the document.
+ * This rebuild calls `applyCommit` once per commit, the same way live replay will, so both
+ * exhibit the same gap; `RebuildStats.unprojectedSourceArtifacts` counts it.
  */
 import { createHash } from "node:crypto";
 import { access, readdir, readFile } from "node:fs/promises";
@@ -65,28 +46,19 @@ import {
   type ProjectionClient, type ProjectionManifest,
 } from "./tenant-projections.js";
 
-// ── Task I-13's rederivation pass: this file's second rebuild concept ──────────────────────
+// `rebuildGeneration` above replays one owner's `.zz/` commit log into the derived search
+// database. `rebuildRowVector` below is unrelated to that walk: it is what
+// `rederivation.ts`'s generation-aware backfill calls per existing `zz.doc`/`zz.knowledge_node`
+// row to get the same weighted term vector the write path (`index.ts`'s `indexDoc`) produces.
 //
-// `rebuildGeneration` above (I-15, an earlier initiative) replays one owner's `.zz/` commit
-// log into the migration-070 derived database. `rebuildRowVector` below is unrelated to that
-// walk — it is the entry point `rederivation.ts`'s generation-aware backfill over EXISTING
-// `zz.doc`/`zz.knowledge_node` rows calls, per row, to get the SAME weighted term vector the
-// write path (`index.ts`'s `indexDoc`) would produce for that row today. Both live in this
-// file because the frozen gate check `rederivation-generation.ts` reads THIS file's own source
-// for an `import { buildRowVector … }` line — the property it is checking is that the rebuild
-// path and the write path share one weighting implementation rather than growing a second one
-// that drifts, and grepping the import is how it verifies that without executing a database.
+// COUPLED: the gate check `rederivation-generation.ts` reads this file's own source for an
+// `import { buildRowVector … }` line — that import is how it verifies the rebuild path and the
+// write path share one weighting implementation.
 //
-// NOT AN ALIAS. An earlier form of the frozen check demanded `rebuildRowVector ===
-// buildRowVector` by reference, which forced exactly `export const rebuildRowVector =
-// buildRowVector` — a pointless export and a dead assertion, corrected once already (the
-// check's own comment says so). What earns this its own name is the normalization a raw
-// database row needs and a freshly-parsed envelope never does: `title`/`body` are `not null
-// default ''` on both tables and `tags` is `not null default '{}'`, so in practice every field
-// arrives a real string/array already — but the column types themselves do not promise that
-// for every future caller of this function, and `buildRowVector`'s own contract takes exactly
-// `{title, tags, body}` with no room for `null`. Defaulting a nullable field here, once, is
-// what keeps that adaptation out of the rederivation loop itself.
+// DELIBERATE: not an alias of `buildRowVector`. What earns it its own name is the normalization
+// a raw database row needs: `title`/`body` are `not null default ''` and `tags` is `not null
+// default '{}'`, but the column types do not promise that for every future caller, and
+// `buildRowVector`'s contract takes `{title, tags, body}` with no room for `null`.
 export interface RebuildRowInput {
   readonly title: string | null;
   readonly tags: readonly string[] | null;
@@ -105,7 +77,7 @@ const STORE_DIR = ".zz";
 const COMMITS_SUBDIR = "commits";
 const BLOBS_SUBDIR = "blobs";
 
-// ── the read-only I/O this walk needs, and nothing more ────────────────────────────────────
+// The read-only I/O this walk needs, and nothing more
 
 export interface RebuildIO {
   exists(path: string): Promise<boolean>;
@@ -121,31 +93,27 @@ const nodeRebuildIO: RebuildIO = {
   readFile: (path) => readFile(path),
 };
 
-// ── the pure cache decision: the frozen check's own subject ────────────────────────────────
+// The pure cache decision: the frozen check's own subject
 
 /** Whether a row derived under `oldFingerprint` must be re-derived to match `newFingerprint`.
- *  `null` — no prior attempt reached this artifact at all — always needs derivation; any two
- *  distinct fingerprints do too, by construction, since `derivationFingerprint` (I-14) changes
- *  on every one of the versions it hashes. The progress cache this feeds is disposable: losing
- *  it entirely just means every artifact re-derives, never that one is skipped that should not
- *  have been. */
+ *  `null` — no prior attempt reached this artifact — always needs derivation; any two distinct
+ *  fingerprints do too, since `derivationFingerprint` changes on every version it hashes. The
+ *  progress cache this feeds is disposable: losing it re-derives everything, never skips one. */
 export function needsRederive(oldFingerprint: string | null, newFingerprint: string): boolean {
   return oldFingerprint === null || oldFingerprint !== newFingerprint;
 }
 
-// ── mount/readiness validation, before anything else runs ──────────────────────────────────
+// mount/readiness validation, before anything else runs
 
 interface StoreAvailability {
   readonly available: boolean;
   readonly reason?: string;
 }
 
-/** Everything that must be true of `root` before this walk is allowed to reason about how
- *  many commits an owner has. A missing `.zz/` layout — the volume never mounted, or mounted
- *  over an empty directory — is refused HERE, before a single commit is read, so it can never
- *  be misread three functions later as "an owner with zero commits". Both shapes of missing
- *  are named explicitly, because "the whole root is gone" and "the root exists but lost its
- *  commits/blobs subdirectories" are different failures an operator needs told apart. */
+/** Everything that must be true of `root` before this walk reasons about how many commits an
+ *  owner has. A missing `.zz/` layout is refused here, before a commit is read, so it cannot be
+ *  misread later as "an owner with zero commits". Both shapes of missing are named: the whole
+ *  root gone, and the root present but without its commits/blobs subdirectories. */
 export async function checkStoreAvailability(root: string, io: RebuildIO = nodeRebuildIO): Promise<StoreAvailability> {
   const zzDir = join(root, STORE_DIR);
   if (!(await io.exists(zzDir))) {
@@ -159,13 +127,12 @@ export async function checkStoreAvailability(root: string, io: RebuildIO = nodeR
   return { available: true };
 }
 
-// ── the canonical commit hash, matching record.ts's own algorithm exactly ──────────────────
+// The canonical commit hash, matching record.ts's own algorithm exactly
 
 /** SHA-256 of every manifest field except `manifest_hash`, over canonical UTF-8 JSON with
- *  recursively sorted keys — byte-for-byte the same algorithm `services/zz-core/src/
- *  tenant-info/record.ts`'s `manifestHash` computes (see this file's header for why it is a
- *  second copy rather than a shared import). A manifest this disagrees with was not written by
- *  that engine, or was corrupted after it was. */
+ *  recursively sorted keys — byte-for-byte the algorithm `services/zz-core/src/tenant-info/
+ *  record.ts`'s `manifestHash` computes. A manifest this disagrees with was not written by that
+ *  engine, or was corrupted after it was. */
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value === "number" || typeof value === "boolean" || typeof value === "string") {
     return JSON.stringify(value);
@@ -189,7 +156,7 @@ function sha256Hex(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-// ── reading the commit log, chain and blobs verified ────────────────────────────────────────
+// Reading the commit log, chain and blobs verified
 
 interface RawFileChange {
   readonly path: string;
@@ -212,10 +179,9 @@ export interface RawCommitManifest {
 interface OrderedCommitsResult {
   readonly ok: boolean;
   readonly problems: readonly string[];
-  /** Only commits with `sequence > afterSequence`, in order — what a replay actually needs.
-   *  The WALK itself still reads every commit from sequence 1: chain integrity is a property
-   *  of the whole log, and the baseline watermark is a replay cursor, not a reason to skip
-   *  verifying what came before it. */
+  /** Only commits with `sequence > afterSequence`, in order. The walk itself still reads every
+   *  commit from sequence 1: chain integrity is a property of the whole log, and the baseline
+   *  watermark is a replay cursor. */
   readonly commits: readonly RawCommitManifest[];
 }
 
@@ -223,10 +189,9 @@ function shapeProblem(file: string, reason: string): string {
   return `${file}: ${reason}`;
 }
 
-/** Parses and validates one commit file's typed arrays against the SAME zod schemas the
- *  kernel validated them against on the way in (`@zz/contracts`) — a manifest that no longer
- *  parses as its own declared shape is exactly the "corrupt predecessor" this task's contract
- *  names, and is reported as such rather than read past with an `as` cast. */
+/** Parses and validates one commit file's typed arrays against the same zod schemas the kernel
+ *  validated them against on the way in (`@zz/contracts`). A manifest that no longer parses as
+ *  its own declared shape is reported as corrupt rather than read past with an `as` cast. */
 function parseTypedArrays(file: string, manifest: Record<string, unknown>, problems: string[]): {
   revisions: ContentRevision[]; events: ArtifactEvent[]; source_captures: SourceCapture[];
 } {
@@ -251,13 +216,12 @@ function parseTypedArrays(file: string, manifest: Record<string, unknown>, probl
   return { revisions, events, source_captures };
 }
 
-/** Walks `root/.zz/commits/` in sequence order, verifying every link this task's contract
- *  names: no two files claim one sequence, every `previous_commit_hash` chains from the prior
- *  commit's own `manifest_hash`, every manifest's recomputed hash matches the one it carries,
- *  and every blob a `file_changes`/`source_captures` entry references exists AND hashes to its
- *  own claimed name. Any single problem anywhere in the log makes `ok:false` — a rebuild that
- *  replayed everything except the one corrupt commit would produce an INCOMPLETE generation
- *  that reports as nearly ready, which is worse than refusing outright. */
+/** Walks `root/.zz/commits/` in sequence order, verifying: no two files claim one sequence,
+ *  every `previous_commit_hash` chains from the prior commit's `manifest_hash`, every manifest's
+ *  recomputed hash matches the one it carries, and every blob a `file_changes`/`source_captures`
+ *  entry references exists and hashes to its own claimed name. Any single problem makes
+ *  `ok:false` — a replay of everything except the corrupt commit would produce an incomplete
+ *  generation that reports as nearly ready. */
 export async function readOrderedCommits(
   root: string, afterSequence: number, io: RebuildIO = nodeRebuildIO,
 ): Promise<OrderedCommitsResult> {
@@ -334,7 +298,7 @@ export async function readOrderedCommits(
   return { ok: problems.length === 0, problems, commits };
 }
 
-// ── the shared projection policy: one commit, one ProjectionManifest ───────────────────────
+// The shared projection policy: one commit, one ProjectionManifest
 
 class RebuildDataError extends Error {}
 
@@ -347,28 +311,20 @@ function primaryArtifactId(manifest: RawCommitManifest): string | null {
   return null;
 }
 
-/** `artifact_class` IS NOT DURABLY RECORDED IN ANY COMMIT FIELD TODAY — see this file's own
- *  contract-defect note in the header and the fuller one in this task's report. This derives
- *  it from what IS durable: an artifact with no `ContentRevision` at all is a `SourceArtifact`
- *  (it only ever gets `source_captures` + a `revision: null` event); one whose latest revision
- *  payload names a `KnowledgeTypeSchema` value (`@zz/contracts`'s own four-member vocabulary —
- *  Decision/Rule/Fact/Defect) is a knowledge concept; anything else with a revision is a work
- *  document. Exported so a future live-replay wiring calls this exact function, never a second
- *  guess at the same rule. */
+/** Derives `artifact_class`, which no commit field records durably. An artifact with no
+ *  `ContentRevision` is a `SourceArtifact` (it only gets `source_captures` plus a
+ *  `revision: null` event); one whose latest revision payload names a `KnowledgeTypeSchema`
+ *  value is a knowledge concept; anything else with a revision is a work document. Exported so
+ *  a future live-replay wiring calls this function rather than a second guess at the rule. */
 export function classifyArtifact(
   manifest: RawCommitManifest, artifactId: string, knownClasses: Map<string, ArtifactClass> = new Map(),
 ): ArtifactClass {
-  // READ FROM THE RECORD, NEVER INFERRED FROM CONTENT. The `created` event carries
-  // `data.artifact_class`, written once by the policy that decided it and immutable after —
-  // the class is a fact about the artifact, not a property of the text inside it.
+  // Read from the record, never inferred from content. The `created` event carries
+  // `data.artifact_class`, written once by the policy that decided it and immutable after.
   //
-  // THIS WAS A GUESS UNTIL THIS FILE WAS WRITTEN, and the guess was demonstrably wrong. The
-  // first draft read `payload.type` and called anything matching the four native knowledge
-  // types a knowledge_concept — which misclassifies every work document whose type happens to
-  // be one of those words. This repository's own fixture is exactly that case:
-  // `testing/tenant-info/model.ts` builds a `work_document` with `type: "Decision"`. A rebuild
-  // that guesses wrong writes a wrong `zz.artifact.artifact_class`, and AC-4.1 asks a replay to
-  // restore identical semantic identity — a class it may get wrong is not identity.
+  // Reading `payload.type` instead misclassifies any work document whose type happens to be one
+  // of the four native knowledge types — `testing/tenant-info/model.ts` builds a
+  // `work_document` with `type: "Decision"`.
   const created = manifest.events.find((e) => e.artifact_id === artifactId && e.kind === "created");
   const declared = created?.data?.["artifact_class"];
   if (typeof declared === "string") {
@@ -376,25 +332,24 @@ export function classifyArtifact(
     knownClasses.set(artifactId, parsed);
     return parsed;
   }
-  // CARRIED BY THE WALK, the same way `currentPathFor` carries a path. A `created` event appears
-  // in exactly one commit; every later commit touching that artifact — an approval, a revision,
-  // a move — names it without restating what it is. Reading only the manifest in hand would make
-  // classification work for the first commit and fail for every one after it.
+  // Carried by the walk, the way `currentPathFor` carries a path. A `created` event appears in
+  // exactly one commit; every later commit touching that artifact names it without restating
+  // what it is, so reading only the manifest in hand would classify the first commit and fail
+  // for every one after it.
   const remembered = knownClasses.get(artifactId);
   if (remembered !== undefined) return remembered;
-  // A `created` event without the class is an incomplete record, not an invitation to guess.
-  // Blocking here is the same refusal a corrupt chain gets: a rebuild that fills a NOT NULL
-  // column with its best idea has silently decided something only the writer knew.
+  // A `created` event without the class is an incomplete record, not an invitation to guess:
+  // filling a NOT NULL column with a best idea decides something only the writer knew.
   throw new RebuildDataError(
     `commit ${manifest.sequence} has no recorded artifact_class for ${artifactId} — the created ` +
     `event must carry data.artifact_class, and a rebuild does not infer a class from content`,
   );
 }
 
-/** One commit's materialized path for `artifactId` — from this commit's own `file_changes`
- *  (a document create/revise), else its own `source_captures` (a source creation), else the
- *  last path this walk has already seen for the same artifact. Never guessed: a commit that
- *  touches an artifact with no path anywhere in this history is refused, not defaulted. */
+/** One commit's materialized path for `artifactId` — from this commit's own `file_changes` (a
+ *  document create/revise), else its `source_captures` (a source creation), else the last path
+ *  this walk saw for the same artifact. A commit touching an artifact with no path anywhere in
+ *  this history is refused, not defaulted. */
 function currentPathFor(manifest: RawCommitManifest, artifactId: string, knownPaths: Map<string, string>): string {
   const change = manifest.file_changes.find((c) => c.after_hash !== null);
   if (change) { knownPaths.set(artifactId, change.path); return change.path; }
@@ -405,10 +360,9 @@ function currentPathFor(manifest: RawCommitManifest, artifactId: string, knownPa
   throw new RebuildDataError(`commit ${manifest.sequence} projects artifact ${artifactId} with no known materialized path in this history`);
 }
 
-/** Adapts one canonical commit into the ONE `ProjectionManifest` `applyCommit` accepts —
- *  `null` only for a commit that names no artifact at all (never produced by the current
- *  kernel, guarded rather than assumed impossible). Exported alongside `classifyArtifact` as
- *  the shared policy this task's contract asks rebuild and live replay to use identically. */
+/** Adapts one canonical commit into the one `ProjectionManifest` `applyCommit` accepts. `null`
+ *  only for a commit that names no artifact at all. COUPLED: exported alongside
+ *  `classifyArtifact` as the projection policy rebuild and live replay both use. */
 export function toProjectionManifest(
   manifest: RawCommitManifest, knownPaths: Map<string, string>,
   knownClasses: Map<string, ArtifactClass> = new Map(),
@@ -425,14 +379,13 @@ export function toProjectionManifest(
   };
 }
 
-// ── replay ───────────────────────────────────────────────────────────────────────────────
+// Replay
 
 interface RebuildStats {
   readonly applied: number;
   readonly skipped: number;
-  /** Same-batch `SourceArtifact`s whose `created` event landed in `zz.artifact_event` but who
-   *  never got their own `zz.artifact` row — the gap this file's header names. Counted, not
-   *  hidden, so a caller reading "ready" still sees it. */
+  /** Same-batch `SourceArtifact`s whose `created` event landed in `zz.artifact_event` but that
+   *  never got their own `zz.artifact` row — counted, so a caller reading "ready" still sees it. */
   readonly unprojectedSourceArtifacts: number;
 }
 
@@ -441,11 +394,10 @@ function countUnprojectedSources(manifest: RawCommitManifest, primaryId: string)
 }
 
 /** Replays `commits` (already ordered and verified by `readOrderedCommits`) into `client`, one
- *  `applyCommit` call per commit — never per artifact a commit happens to also mention, which
- *  would collide with `applyCommit`'s own transaction_id-keyed idempotency (see header). A
- *  thrown error from `applyCommit`/`ensureCorpus` (a database outage mid-replay) is NOT caught
- *  here — it propagates to `rebuildGeneration`, which is the one place that decides "blocked"
- *  versus "unavailable" actually means. */
+ *  `applyCommit` call per commit — never per artifact a commit also mentions, which would
+ *  collide with `applyCommit`'s transaction_id-keyed idempotency. A thrown error from
+ *  `applyCommit`/`ensureCorpus` propagates to `rebuildGeneration`, the one place that decides
+ *  "blocked" versus "unavailable". */
 async function replayCommits(
   client: ProjectionClient, ownerId: string, commits: readonly RawCommitManifest[],
 ): Promise<RebuildStats> {
@@ -465,7 +417,7 @@ async function replayCommits(
   return { applied, skipped, unprojectedSourceArtifacts };
 }
 
-// ── search/passage projection: the scope this migration named I-15 as the populator for ───
+// search/passage projection
 
 interface SearchStats {
   readonly passages: number;
@@ -474,15 +426,11 @@ interface SearchStats {
 }
 
 /** Populates `zz.artifact_passage`/`zz.artifact_identifier`/`zz.search_current` for a
- *  work_document or knowledge_concept's LATEST revision (`scope: "current"`), and
- *  `zz.search_evidence` for a source (immutable, always evidence — it never moves scope).
- *  `zz.search_history` (deprecated/superseded content, and non-latest revisions moving out of
- *  "current") is event-driven and NOT built here — declared, not silently skipped; see this
- *  task's report. `analyzed_text` equals `raw_text`: `zz-lexical-v1`'s CJK n-gram tokenization
- *  is I-14's other named, declined gap, and this is the honest v1 in its absence — passages are
- *  still correctly bounded and byte-safe, only the extra recall a real analysis pass would add
- *  is missing. `raw_body` carries the FULL body, never truncated — the one property this
- *  function must hold for a document whose unique terms live past any fixed cutoff. */
+ *  work_document or knowledge_concept's latest revision (`scope: "current"`), and
+ *  `zz.search_evidence` for a source, which is immutable and never moves scope.
+ *  `zz.search_history` is event-driven and not built here. `analyzed_text` equals `raw_text`:
+ *  no analysis pass is stored here, so passages are correctly bounded and byte-safe but carry no
+ *  analyzed form. `raw_body` carries the full body, never truncated. */
 async function projectSearchAndPassages(
   client: ProjectionClient, corpusKey: string, manifest: ProjectionManifest,
 ): Promise<SearchStats> {
@@ -547,16 +495,15 @@ async function projectSearchAndPassages(
   return { passages: passageCount, identifiers: identifierCount, searchRows: 1 };
 }
 
-// ── orchestration: never activates anything, only verdicts one ─────────────────────────────
+// Orchestration: never activates anything, only verdicts one
 
 interface RebuildRequest {
   readonly root: string;
   readonly ownerId: string;
-  /** The corpus this owner's search rows partition under. A runtime fact about WHICH tenant
-   *  or shelf this is — the same reason `applyCommit`'s `docBridge`/`knowledgeBridge` are
-   *  caller-supplied rather than derived: "only the caller knows that mapping" (tenant-
-   *  projections.ts's own words). Validated by `ensureCorpus`'s existing safe-partition-name
-   *  check before any statement runs. */
+  /** The corpus this owner's search rows partition under — which tenant or shelf this is, known
+   *  only to the caller, the same reason `applyCommit`'s `docBridge`/`knowledgeBridge` are
+   *  caller-supplied. Validated by `ensureCorpus`'s safe-partition-name check before any
+   *  statement runs. */
   readonly corpusKey: string;
   readonly baselineWatermark: number;
   readonly client: ProjectionClient;
@@ -569,10 +516,9 @@ type RebuildOutcome =
   | { readonly status: "ready"; readonly stats: RebuildStats; readonly search: SearchStats };
 
 /** The one entry point: availability, then chain integrity, then corpus provisioning, then
- *  replay, then search/passage projection — in that order, each gating the next, exactly the
- *  order this task's contract states ("mount/readiness validation is performed before deletion
- *  or generation changes"). Returns a VERDICT on the isolated `client` it was handed; it never
- *  writes to, reads from, or knows about whatever generation is currently serving. */
+ *  replay, then search/passage projection, each gating the next. Returns a verdict on the
+ *  isolated `client` it was handed; it never writes to, reads from, or knows about whatever
+ *  generation is currently serving. */
 export async function rebuildGeneration(request: RebuildRequest): Promise<RebuildOutcome> {
   const io = request.io ?? nodeRebuildIO;
   const availability = await checkStoreAvailability(request.root, io);
@@ -600,12 +546,11 @@ export async function rebuildGeneration(request: RebuildRequest): Promise<Rebuil
   }
 }
 
-// ── parity: proves the same canonical source reconstructs the same semantic projections ────
+// Parity: proves the same canonical source reconstructs the same semantic projections
 
 /** Every artifact's semantic hash in one generation, for comparing two independent rebuilds of
- *  the SAME canonical source (a copied store, changed mtimes) — never two different sources.
- *  Reads `zz.artifact`/`zz.artifact_revision` back rather than trusting `replayCommits`'s own
- *  bookkeeping, so a bug that wrote the wrong row and reported success would still be caught. */
+ *  the same canonical source — never two different sources. Reads `zz.artifact`/
+ *  `zz.artifact_revision` back rather than trusting `replayCommits`'s own bookkeeping. */
 export async function collectSemanticState(client: ProjectionClient, ownerId: string): Promise<Map<string, string>> {
   const rows = await client.query<{
     artifact_id: string; artifact_class: ArtifactClass; revision: number; content_hash: string; payload: unknown;
@@ -632,9 +577,9 @@ interface ParityReport {
   readonly mismatched: readonly string[];
 }
 
-/** Two full builds of the SAME canonical source must agree on every artifact's semantic hash —
- *  "operational fields reported separately, never folded into semantic parity" holds by
- *  construction here too, since `semanticProjectionHash`'s own input type has no slot for one. */
+/** Two full builds of the same canonical source must agree on every artifact's semantic hash.
+ *  `semanticProjectionHash`'s input type has no slot for an operational field, so one cannot be
+ *  folded into semantic parity. */
 export function compareGenerations(before: ReadonlyMap<string, string>, after: ReadonlyMap<string, string>): ParityReport {
   const mismatched = new Set<string>();
   for (const [id, hash] of before) if (after.get(id) !== hash) mismatched.add(id);

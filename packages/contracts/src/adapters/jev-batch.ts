@@ -1,27 +1,20 @@
 /**
- * ONE RESPONSE BODY, READ AS THE SET OF ANSWERS IT CARRIES.
+ * One response body, read as the set of answers it carries.
  *
- * ITS OWN MODULE BECAUSE IT IS ITS OWN SUBJECT. `./jev-reply.js` answers "what did this
- * assessor say about one question"; this answers "what did one round trip establish". They
- * fail differently and they are read differently: a reply is refused for what it says, a body
- * is refused for what it left out, and the second is the failure that used to leave a round
- * one mark short while looking complete.
+ * `./jev-reply.js` answers "what did this assessor say about one question"; this answers "what did
+ * one round trip establish". A reply is refused for what it says, a body for what it left out.
  *
- * THE IDENTITY IS ON THE ENVELOPE AND IS CARRIED ONTO EACH ANSWER. The supplier names the
- * version once per body rather than once per answer, so an answer read on its own carries no
- * identity and `parse` would refuse it as unidentified. Copying the body's own `model` onto
- * each answer is therefore reading the reply, not inventing a field: it is the supplier's
- * assertion about the very answers it is attached to. What is never done is filling it from the
- * REQUEST — an identity taken from what we asked for would make the version comparison compare
- * a value to itself, a guard wired to always pass, which is worse than no guard at all. An
- * answer carrying its own `model` keeps it, and a body with none leaves every answer
- * unidentified and therefore refused.
+ * The identity is on the envelope and is carried onto each answer. The supplier names the version
+ * once per body rather than once per answer, so an answer read on its own carries no identity and
+ * `parse` would refuse it as unidentified; copying the body's own `model` onto each answer is the
+ * supplier's assertion about the very answers it is attached to. DELIBERATE: it is never filled from
+ * the request — an identity taken from what we asked for would make the version comparison compare a
+ * value to itself. An answer carrying its own `model` keeps it, and a body with none leaves every
+ * answer unidentified and therefore refused.
  *
- * A QUESTION NOTHING CAME BACK FOR GETS A RECORD, never a gap. The count of records always
- * equals the count of questions ASKED, so no caller can read a short map as agreement. THIS IS
- * THE ONLY PLACE THAT RULE IS WRITTEN. The port next door used to state it a second time over
- * its own answer shape, for no caller — two statements of one rule, and the one with a caller
- * is this one, because a missing answer is a fact about the body that arrived.
+ * A question nothing came back for gets a record, never a gap: the count of records always equals
+ * the count of questions asked, so no caller can read a short map as agreement. This is the only
+ * place that rule is written.
  */
 import {
   asRecord, describe, identityOf, parse, present, rejected,
@@ -31,7 +24,7 @@ import {
 /** Per-question options in a batch: everything about one answer that is not about the call. */
 export type JevAnswerOptions = Pick<JevParseOptions, "question" | "legend" | "bounds" | "mapping">;
 
-/** One request's worth. The envelope fields describe the CALL and are recorded on every answer
+/** One request's worth. The envelope fields describe the call and are recorded on every answer
  *  it carried; `answers` names each question asked and how its reply is to be validated. */
 export interface JevBatchOptions {
   readonly expect: string;
@@ -47,7 +40,7 @@ export interface JevBatchResult {
   /** The version the supplier says served the whole request, from the body's own field. */
   readonly model: string | null;
   readonly usage: { readonly input_tokens: number | null; readonly output_tokens: number | null };
-  /** One record per question ASKED — never per answer received, so a caller cannot read a short
+  /** One record per question asked — never per answer received, so a caller cannot read a short
    *  map as agreement. A question nothing came back for gets an `unavailable` record. */
   readonly answers: Readonly<Record<string, JevParseResult>>;
   readonly missing: readonly string[];
@@ -55,7 +48,7 @@ export interface JevBatchResult {
   readonly failure_reason: string | null;
 }
 
-/** A usage figure, or nothing. NOT `Number(v)`: a blank field would become a zero, and a zero
+/** A usage figure, or nothing. Not `Number(v)`: a blank field would become a zero, and a zero
  *  token count is a measurement rather than the absence of one. */
 const numberOrNull = (v: unknown): number | null =>
   (typeof v === "number" && Number.isFinite(v) ? v : null);

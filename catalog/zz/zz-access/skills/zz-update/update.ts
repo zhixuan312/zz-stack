@@ -2,14 +2,12 @@
 /**
  * zz-update — bring every ZZ plugin on this machine up to date, in one command.
  *
- * Updating used to be two commands in an order nobody was told: refresh the marketplace, THEN
- * update each plugin you happen to have installed. Getting the order wrong updates nothing and
- * says so in neither command's output, and `marketplace update` alone — which is what the
- * docs suggested — leaves every plugin exactly where it was while looking like success.
+ * Two acts in one order: refresh the marketplace, then update each plugin that is installed.
+ * `marketplace update` alone leaves every plugin exactly where it was while looking like
+ * success, and the wrong order updates nothing and says so in neither command's output.
  *
- * So this does both, in order, for whatever is actually installed, and PRINTS THE VERSIONS ON
- * BOTH SIDES. "already at 0.29.0+1e7d702a" is a result. A bare tick is the bug: it is what a
- * person reads for days while running a plugin several releases behind.
+ * Prints the versions on both sides: "already at 0.29.0+1e7d702a" is a result, and a bare tick
+ * is what a person reads for days while running a plugin several releases behind.
  *
  * Exit 0 = this machine is level with the shelf. 1 = something did not update.
  */
@@ -21,8 +19,8 @@ import { join } from "node:path";
 const MARKETPLACE = "zz-stack";
 const CLIENT = "zz-update";
 
-/** A caught value is never typed as an Error — narrow the shape actually being read rather
- *  than assume it. */
+/** A caught value is never typed as an Error — narrow the shape actually being read rather than
+ *  assume it. */
 function errName(e: unknown): string {
   return typeof e === "object" && e !== null && "name" in e
     ? String((e as { name: unknown }).name) : "Error";
@@ -32,15 +30,12 @@ type ConfirmResult = { ok: true; email: string; team?: string } | { ok: false; w
 
 /** Confirm the platform still answers, and say who as.
  *
- * AN UPDATE THAT LEAVES YOU UNABLE TO CONNECT IS NOT A SUCCESS, and until this ran the last
- * word was about files on disk — every plugin at the new number, and no evidence any of them
- * could reach anything. So the run ends by actually using one.
+ * An update that leaves you unable to connect is not a success, and every other check here is
+ * about files on disk. So the run ends by actually using one.
  *
- * It is also what puts the run in the platform's telemetry, and it is worth being exact about
- * how: this is not a beacon and there is no reporting step. Every tool call is recorded AT THE
- * DOOR, by the gateway, as a by-product of being made — so a real call made for a real reason,
- * tagged with who is calling, is the whole of the instrumentation. A separate "record that
- * update ran" call would be a second thing to keep true, and the first thing to rot. */
+ * It is also what puts the run in the platform's telemetry: every tool call is recorded at the
+ * door, by the gateway, as a by-product of being made. There is no reporting step, and a
+ * separate "record that update ran" call would be a second thing to keep true. */
 async function confirm(url: string): Promise<ConfirmResult> {
   const read = (p: string): string | null => { try { return readFileSync(p, "utf8"); } catch { return null; } };
   const token = (process.env.ZZ_TOKEN
@@ -60,12 +55,10 @@ async function confirm(url: string): Promise<ConfirmResult> {
     if (res.status === 401 || res.status === 403) return { ok: false, why: `the platform refused the token (${res.status})` };
     if (!res.ok) return { ok: false, why: `the platform answered ${res.status}` };
     const body = await res.text();
-    // A 200 IS NOT AN ANSWER UNTIL IT PARSES. This returned ok on any 200 and left `email`
-    // undefined when the regex missed, so the caller printed "you are undefined" — a sentence
-    // that reads as an identity rather than as a failure, which is the direction this
-    // repository distrusts most. A door answering 200 with a body this cannot read is a real
-    // condition: it is what a renamed tool looks like from a script one release behind, and it
-    // is exactly what happened when 0.34.0 renamed get_my_info to session_whoami.
+    // A 200 is not an answer until it parses. Returning ok on any 200 leaves `email` undefined
+    // and the caller prints "you are undefined", which reads as an identity rather than as a
+    // failure. A door answering 200 with a body this cannot read is what a renamed tool looks
+    // like from a script one release behind.
     const email = /\\"email\\":\\"([^\\"]*)/.exec(body)?.[1];
     if (!email) {
       return { ok: false, why: `the platform answered 200 but nothing in its reply named a person — ` +
@@ -146,18 +139,16 @@ if (!shelf.ok) {
 }
 console.log("done.");
 
-// 1b. A PLUGIN THAT WAS RENAMED IS NOT A PLUGIN THAT LEFT.
+// 1b. A plugin that was renamed is not a plugin that left.
 //
-// `claude plugin update zz@zz-stack` fails once `zz` is no longer on the shelf, and the
-// failure says only that it failed — so somebody on 0.31.0 running this after the 0.34.0
-// rename is told their update broke, with nothing pointing at the plugin that replaced it.
-// Every existing installation hits that, once, on the release that renames something.
+// `claude plugin update zz@zz-stack` fails once `zz` is no longer on the shelf, and the failure
+// says only that it failed, with nothing pointing at the plugin that replaced it. Every existing
+// installation hits that once, on the release that renames something.
 //
-// This platform already answers this question for tools and skills: `packages/contracts/src/
-// alias.ts` holds a frozen map per surface so an old name still RESOLVES. A plugin is the one
-// installable thing that had no such map, and this is it. Written here rather than imported
-// because this script runs on somebody else's machine, from inside the plugin directory, with
-// no workspace around it; `checks/plugin-alias.mjs` holds the two copies to each other.
+// COUPLED: `packages/contracts/src/alias.ts` holds the same kind of frozen map for tools and
+// skills. This one is written here rather than imported because the script runs on somebody
+// else's machine, from inside the plugin directory, with no workspace around it;
+// `checks/plugin-alias.ts` holds the two copies to each other.
 const PLUGIN_ALIAS: Record<string, string> = { zz: "zz-core" };
 
 const renamed = before.filter((p) => PLUGIN_ALIAS[p.id.split("@")[0]]);
@@ -178,9 +169,9 @@ for (const p of renamed) {
 }
 const current = renamed.length ? (installed() ?? before) : before;
 
-// 2. Then each plugin THIS person has. Not a list written here: someone with only the
-// baseline must not be told to install the flows, and someone with a flow we have never
-// heard of must still get it updated.
+// 2. Then each plugin this person has. Not a list written here: someone with only the baseline
+// must not be told to install the flows, and someone with a flow we have never heard of must
+// still get it updated.
 let failed = 0;
 for (const p of current) {
   process.stdout.write(`  ${p.id}... `);
@@ -189,8 +180,8 @@ for (const p of current) {
   if (!r.ok) { failed++; console.error(`    ${r.out.split("\n").join("\n    ")}`); }
 }
 
-// 3. Say what actually moved. This is the part the two commands never had: the only evidence
-// that an update updated anything is the number being different afterwards.
+// 3. Say what actually moved. The only evidence that an update updated anything is the number
+// being different afterwards.
 const after = installed() ?? [];
 const now = new Map(after.map((p) => [p.id, p.version]));
 console.log("");
@@ -210,8 +201,8 @@ if (failed) {
   console.log(`${failed} plugin(s) did not update. Nothing else on this machine was changed.`);
   process.exit(1);
 }
-// One version across the shelf, because one build stamps them all as `<version>+<digest>`.
-// Two numbers after a successful update means one plugin resolved against something else.
+// One version across the shelf, because one build stamps them all as `<version>+<digest>`. Two
+// numbers after a successful update means one plugin resolved against something else.
 const versions = [...new Set(after.map((p) => p.version))];
 if (versions.length > 1) {
   console.log(`These are not all on one version: ${versions.join(", ")}. That should not ` +
@@ -223,7 +214,7 @@ console.log(moved
   : `Already up to date at ${versions[0]}. Nothing changed.`);
 
 // The URL comes from the plugin that was just updated, so this exercises what the update
-// actually produced rather than a address written down here.
+// actually produced rather than an address written down here.
 const url = after.flatMap((p) => Object.values(p.mcpServers ?? {}).map((sv) => sv?.url))
   .find((u): u is string => typeof u === "string" && u.includes("/core/mcp"));
 if (url) {

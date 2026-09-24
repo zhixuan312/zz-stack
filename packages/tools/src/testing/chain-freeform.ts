@@ -1,20 +1,17 @@
 /**
- * CLOSING WITHOUT A DECLARED CLOSING DOCUMENT, walked against a live deployment.
+ * Closing without a declared closing document, walked against a live deployment.
  *
- * Two shapes, one subject. A FREEFORM initiative has no manifest, so it has no closing
- * document at all; a GOVERNED initiative that is ABANDONED has one and does not reach it,
- * because stopping short is what abandoning means. Both are closes the platform records
- * somewhere other than where a manifest said it would, and both were unasserted.
+ * Two shapes, one subject. A freeform initiative has no manifest, so no closing document at all;
+ * a governed initiative that is abandoned has one and does not reach it. Both are closes the
+ * platform records somewhere other than where a manifest said it would.
  *
- * SPLIT OUT OF chain-check.ts BY SUBJECT, the way chain-bugs.ts and chain-shelf.ts were. That
- * file walks a GOVERNED initiative: a manifest declares the documents, the order and the gates,
- * and every assertion there is about that discipline holding. Freeform is the opposite case and
- * a supported one — a person opens an initiative without naming a flow, the platform enforces
- * no order, and what still has to work is every act that does not depend on a manifest:
- * writing, approving, and closing on a document the caller names.
+ * Split out of chain-check.ts by subject: that file walks a governed initiative, where a
+ * manifest declares the documents, the order and the gates. Freeform is the supported opposite —
+ * no flow named, no order enforced — and what still has to work is writing, approving and
+ * closing on a document the caller names.
  *
- * `checks/chain-check-wiring.ts` follows this import, so a tool exercised here counts as
- * exercised — the walk is what matters, not which file it is written in.
+ * COUPLED: `checks/chain-check-wiring.ts` follows this import, so a tool exercised here counts
+ * as exercised.
  */
 import { parseEnvelope } from "@zz/contracts";
 
@@ -34,9 +31,8 @@ interface FreeformDeps {
 }
 
 export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, OPENS_ON }: FreeformDeps): Promise<void> {
-    // FREEFORM IS ACCEPTED. A missing flow is a choice the platform supports, and a door that
-    // refused it would make every freeform initiative unreachable — with nothing here to say
-    // so, because every other assertion in this probe declares a flow.
+    // Freeform is accepted: a missing flow is a choice the platform supports, and a door that
+    // refused it would make every freeform initiative unreachable.
     const freeSlug = `${SLUG}-freeform`;
     const free = await call("initiative_open", { slug: freeSlug });
     check("opening without a flow is accepted", free, false);
@@ -52,12 +48,10 @@ export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, 
       check("a freeform initiative still records a gate",
         await call("document_approve", { path: `${freeName}/notes.md`, on_behalf_of: "Chain Check" }),
         false);
-      // AND AN APPROVED FREEFORM DOCUMENT IS NOT PATCHED AFTERWARDS. `document_approve`
-      // accepts any document in a freeform folder on purpose — a gate is a person saying
-      // yes, not a manifest — but `approvedDocumentGuard` asked the manifest whether the
-      // document was gated and, finding none, abstained. So the approver's name could be
-      // left standing on bytes they never read, by the one path where the platform had
-      // already recorded a real signature.
+      // And an approved freeform document is not patched afterwards. `document_approve` accepts
+      // any document in a freeform folder — a gate is a person saying yes, not a manifest — so
+      // a guard that asked the manifest whether the document was gated would abstain and leave
+      // the approver's name standing on bytes they never read.
       check("an approved freeform document is not patched afterwards",
         await call("document_patch", {
           path: `${freeName}/notes.md`, find: "hand-assembled", replace: "quietly changed",
@@ -67,18 +61,16 @@ export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, 
           initiative: freeName, disposition: "finished", accepted_by: "Chain Check",
           document: "notes.md",
         }), false);
-      // AND A CLOSE THAT NAMES NOBODY RECORDS THE CALLER, because the call carries a person's
-      // authority: closing IS the sign-off. Asserted on the document rather than on the
-      // response — "not refused" is a claim about the call, this is a claim about the record.
+      // And a close that names nobody records the caller: the call carries a person's
+      // authority, so closing is the sign-off. Asserted on the document, not on the response.
       const freeDoc = await call("document_read", { path: `${freeName}/notes.md` });
       const freeEnv = parseEnvelope(freeDoc);
       record(freeEnv.outcome === "accepted" && !!freeEnv.accepted_by,
              "a finished close records an acceptor", freeDoc);
 
-      // AND AN ABANDON RECORDS NONE. `abandoned` says the work stopped before it was done, so
-      // nobody got what they wanted — a close that stamped the caller as the acceptor put
-      // `accepted_by` on a record whose outcome says the opposite, and it reached a real
-      // initiative before anything noticed.
+      // And an abandon records none: `abandoned` says the work stopped before it was done, so
+      // stamping the caller as the acceptor would put `accepted_by` on a record whose outcome
+      // says the opposite.
       const stopped = await call("initiative_open", { slug: `${SLUG}-stopped` });
       const stoppedName = (JSON.parse(stopped) as { initiative?: string }).initiative;
       if (stoppedName) {
@@ -92,33 +84,26 @@ export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, 
         const stoppedEnv = parseEnvelope(stoppedDoc);
         record(stoppedEnv.outcome === "abandoned" && stoppedEnv.accepted_by === undefined,
                "an abandoned close records no acceptor", stoppedDoc);
-        // AND THE CLOSED RECORD IS NOT QUIETLY OVERWRITTEN. A closed document may be
-        // CORRECTED — document_revise freezes the signed text, bumps the version and makes
-        // you say what caused the change — but document_write does none of that, and the
-        // only thing that used to refuse it here was an accident: the fresh envelope
-        // dropped `outcome`, and removing a platform-owned field is refused. The envelope
-        // is carried forward now, so that accident is gone and the rule needs its own
-        // guard. Asserted on an ABANDONED close because that is the case no other guard
-        // covers: it lands on the furthest document that exists, which nobody approved.
+        // And the closed record is not quietly overwritten. A closed document may be corrected
+        // — document_revise freezes the signed text, bumps the version and requires a cause —
+        // but document_write does none of that. Asserted on an abandoned close, which lands on
+        // the furthest document that exists and which nobody approved, because no other guard
+        // covers that case.
         check("a closed document is not overwritten by document_write",
           await writeDoc(`${stoppedName}/notes.md`, "rewritten after the close"),
           true, /document_revise/);
     }
   }
 
-  // AN INITIATIVE ABANDONED PART-WAY REACHES THE LEDGER, on a GOVERNED flow.
+  // An initiative abandoned part-way reaches the ledger, on a governed flow.
   //
-  // Abandoning is the close that does not land on the closing document — the work stopped
-  // before that document was written, which is what abandoning means — so
-  // `initiative_close` records it on the furthest document that exists. `ledgerOnClose`
-  // then returned without appending, because the document it was stamped on was not the
-  // manifest's `closing` one, while the tool's own reply said "a ledger row was appended".
-  // The ledger is what the team's counts are totalled from, and the abandoned close is the
-  // outcome those counts most need.
+  // Abandoning is the close that does not land on the closing document, so `initiative_close`
+  // records it on the furthest document that exists. `ledgerOnClose` must still append: the
+  // ledger is what the team's counts are totalled from, and the abandoned close is the outcome
+  // those counts most need.
   //
-  // It cannot be asserted from the freeform walk beside it: a freeform chain has no
-  // closing document, so that branch was never taken and every freeform abandon appended
-  // its row correctly. Only a flow that names one reaches the bug.
+  // It cannot be asserted from the freeform walk beside it: a freeform chain has no closing
+  // document, so only a flow that names one reaches this branch.
   const stopSlug = `${SLUG}-stopped-gov`;
   const stopOpen = await call("initiative_open", { slug: stopSlug, flow: FLOW });
   check("a governed initiative opens for the abandon walk", stopOpen, false);

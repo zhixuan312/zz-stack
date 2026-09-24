@@ -1,8 +1,8 @@
 {
   "note": [
     "Which document each step owes, and whether it can be evaluated without a person in the",
-    "room. Same join as ops-flow's copy of this file, for the same reason: flow.json names",
-    "documents by ROLE and stages by NAME, and nothing in it joins the two.",
+    "room. flow.json names documents by role and stages by name, and nothing in it joins the",
+    "two.",
     "",
     "sdlc-flow has seven stages but only three documents. sdlc-spec-audit, sdlc-plan-audit,",
     "sdlc-execute and sdlc-review own no document of their own — an audit reports findings",
@@ -11,7 +11,7 @@
     "are keys here. Giving them an entry would be inventing an artefact so the grader has",
     "something to read.",
     "",
-    "`interviews` is the harder fact, same as it was for ops-flow. sdlc-explore's own skill has",
+    "`interviews` is the harder fact. sdlc-explore's own skill has",
     "the person describe the idea once and then dispatches a fan-out — the shape of the",
     "gate afterwards is 'anything to add before I dispatch', not a back-and-forth closing open",
     "questions, so evaluating it without a stakeholder in the room is running it as designed.",
@@ -21,9 +21,8 @@
     "a worker, it is approved by a person before sdlc-execute may start — so a plan produced",
     "with nobody to approve it would be measuring a stage that never actually finished.",
     "",
-    "Where a stakeholder is needed, they answer FROM THE BRIEF - what the stakeholder actually",
-    "knows - and are given no tools. A script approving from a fixed list is not this; reading",
-    "the question and answering from what is in the brief is."
+    "Where a stakeholder is needed, they answer from the brief - what the stakeholder actually",
+    "knows - and are given no tools."
   ],
   "steps": {
     "sdlc-explore": {

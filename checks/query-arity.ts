@@ -1,33 +1,19 @@
-// A QUERY BINDS AS MANY PARAMETERS AS ITS STATEMENT NAMES.
+// A query binds as many parameters as its statement names.
 //
 // `pool.query(sql, [a, b])` against a statement whose highest placeholder is `$1` is rejected by
-// the SERVER, not ignored: "bind message supplies 2 parameters, but prepared statement requires
-// 1". Nothing offline sees it — TypeScript does not read SQL inside a template literal, and
-// `check:sql` PREPAREs statements, which is a different moment: a prepare succeeds and the BIND
-// is what fails, so even a migrated database would not catch this one.
+// the server: "bind message supplies 2 parameters, but prepared statement requires 1". Nothing
+// offline sees it — TypeScript does not read SQL inside a template literal, and `check:sql`
+// PREPAREs statements, where the prepare succeeds and the bind is what would fail.
 //
-// It is not hypothetical. A tool-use query was changed to count across every version of a
-// plugin, which dropped its reference to `$2` while the caller still passed `[plugin, version]`.
-// `tsc` was clean, the gate was green, the dry run was green, and `plugin_profile` threw for
-// every plugin that serves a door — on the live deployment, minutes after release.
+// What this covers is the statements written out whole. A statement assembled from a `${...}`
+// fragment has placeholders outside the literal and lands in the skipped count below; resolving
+// those fragments (consts, ternaries, cross-module imports) or issuing a live BIND is
+// `check:sql`'s territory and needs a migrated database.
 //
-// AND THIS CHECK WOULD NOT HAVE CAUGHT THAT ONE. Said plainly, because a check whose stated
-// motivation it cannot detect is worse than no check: it makes the next reader believe the
-// class is covered. That statement is assembled from a `${...}` fragment, so its placeholders
-// are not in the literal and it lands in the SKIPPED count below — where 34 statements
-// currently sit. What this does cover is the 113 that are written out whole, which is the
-// majority and the cheap half.
+// COUPLED: `insert-arity.ts` counts columns against values inside one statement. This counts the
+// statement against its caller, which is the other half of the same class.
 //
-// The remaining third needs something this cannot be: either the fragments resolved (they are
-// consts, ternaries and cross-module imports), or a live BIND, which is `check:sql`'s territory
-// and needs a migrated database. The honest state is that the whole-literal half is guarded
-// offline and the assembled half is guarded by the dry run reaching the statement — which for
-// plugin_profile it does not, because a throwaway stack has no released plugin version.
-//
-// The sibling rule, `insert-arity.ts`, counts columns against values inside one statement. This
-// counts the statement against its CALLER, which is the other half of the same class.
-//
-// COUNTED, NOT PARSED. It finds a `.query(` whose first argument is a template literal and whose
+// Counted, not parsed. It finds a `.query(` whose first argument is a template literal and whose
 // second is an array literal, takes the highest `$N` in the statement, and compares. Anything it
 // cannot read cleanly — a variable holding the SQL, a spread, a computed array — is skipped
 // rather than guessed at, and the skip count is printed so a rule that stops reaching anything
@@ -119,8 +105,8 @@ for (const file of walk("services")) {
   }
 }
 
-// A rule that reaches nothing passes for the wrong reason. This gate has been caught by that
-// before, so the counts are printed and an empty walk is a failure.
+// A rule that reaches nothing passes for the wrong reason, so the counts are printed and an
+// empty walk is a failure.
 if (!checked) {
   fail.push(`no readable .query(\`…\`, [...]) call was found under services/ — this check read ` +
             `nothing (${skipped} skipped)`);

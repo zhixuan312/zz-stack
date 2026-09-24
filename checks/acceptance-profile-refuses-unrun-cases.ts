@@ -1,23 +1,17 @@
 // `--profile acceptance` does not pass a suite on cases that never ran.
 //
-// WHAT THIS PREVENTS IS A GREEN TICK NOBODY EARNED. All thirteen acceptance criteria name
-// `npm run tenant-info -- verify --suite <name> --profile acceptance` as the command that
-// produces their evidence, and the spec's CLI contract says of that profile: "forbids case
-// restrictions and runs the complete required suite. Partial cases never pass a whole
-// business AC."
+// All thirteen acceptance criteria name `npm run tenant-info -- verify --suite <name> --profile
+// acceptance` as the command that produces their evidence, and the CLI contract says that profile
+// "forbids case restrictions and runs the complete required suite".
 //
-// MEASURED WHILE WRITING THE ISOLATION SUITE. `--profile` was parsed and validated and then
-// threaded nowhere — `runReadySuite` called `mod.run({ cases })` identically for both
-// profiles. Suites deliberately treat a `not_run` case as non-blocking, which is right at the
-// integration profile (an unreachable PostgreSQL 17 must not drag down the offline cases a
-// checkout CAN prove) and exactly wrong at the acceptance one. The isolation suite reported
-// `passed` at `--profile acceptance` with its two live-database cases never executed.
+// Suites treat a `not_run` case as non-blocking, which is right at the integration profile — an
+// unreachable PostgreSQL 17 must not drag down the offline cases a checkout can prove — and wrong
+// at the acceptance one.
 //
-// THREE PROPERTIES, ALL REQUIRED. A suite with an unrun case is `blocked` at acceptance and
-// unchanged at integration; a receipt whose per-case status cannot be read is `blocked` too,
-// because a suite that cannot show what it ran cannot show it ran everything; and `blocked`
-// stays distinct from `failed`, so a reader of acceptance.json never mistakes "we never stood
-// up the database" for "isolation is broken".
+// Three properties, all required: a suite with an unrun case is `blocked` at acceptance and
+// unchanged at integration; a receipt whose per-case status cannot be read is `blocked` too; and
+// `blocked` stays distinct from `failed`, so a reader of acceptance.json never mistakes "we never
+// stood up the database" for "isolation is broken".
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

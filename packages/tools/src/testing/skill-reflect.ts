@@ -1,26 +1,21 @@
 /**
- * skill-reflect — read the evidence, propose ONE change to ONE skill, in the skill's own words
+ * skill-reflect — read the evidence, propose one change to one skill, in the skill's own words
  *
- *   zz-tool skill-reflect --skill ops-select --file catalog/.../SKILL.md [--since '7 days']
- *   zz-tool skill-reflect --file skills/casebox-stg-usage/SKILL.md --json
+ *   zz-tool skill-reflect --skill sdlc-spec --file catalog/.../SKILL.md [--since '7 days']
+ *   zz-tool skill-reflect --file skills/zz-platform/SKILL.md --json
  *   zz-tool skill-reflect --file … --psql '<command>'    # a database somewhere else
  *
- * WHAT THIS IS. The reflect half of reflective prompt evolution: a system whose components are
- * text, an evaluation that produces a score, and — the part most setups cannot produce —
- * natural-language feedback saying WHY something failed. The platform's refusals are exactly
- * that. `expected "zhixuan" at app_code` is not a count, it is a sentence naming the rule that
- * was broken, written by the system that broke on it.
+ * The reflect half of reflective prompt evolution: the platform's refusals are natural-language
+ * feedback saying why something failed — `expected "zhixuan" at app_code` names the rule that
+ * was broken, not a count.
  *
- * WHAT IT DELIBERATELY IS NOT. It does not rewrite a skill. It proposes ONE addition, bounded,
- * quoting the evidence that earned it — because the loop's own rule is one change per round,
- * and a rewrite makes the next measurement unattributable to anything.
+ * DELIBERATE: it does not rewrite a skill. It proposes one addition, bounded, quoting the
+ * evidence that earned it, because the loop's rule is one change per round and a rewrite makes
+ * the next measurement unattributable.
  *
- * THE HONEST LIMIT, PRINTED ON EVERY RUN. A proposal derived from a scenario's refusals and
- * then measured on that same scenario is fitted to it, not an improvement to the skill. That
- * is not a flaw in this tool and no amount of code fixes it: it needs a second scenario the
- * proposal was not derived from. Until there is one, every result here is provisional and says
- * so, because a loop that cannot tell fitting from learning will report the first as the second
- * indefinitely.
+ * The limit, printed on every run: a proposal derived from a scenario's refusals and then
+ * measured on that same scenario is fitted to it. It needs a second scenario the proposal was
+ * not derived from, so until there is one every result here is provisional and says so.
  */
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -36,7 +31,7 @@ const SYSTEM = [
   "You improve one skill file for an agent platform, from evidence.",
   "",
   "You are given: the skill's current text, and the refusals its calls actually produced.",
-  "Those refusals are the platform's or a building block's own sentences saying which rule was",
+  "Those refusals are the platform's or another server's own sentences saying which rule was",
   "broken. They are the only evidence there is. Do not invent others.",
   "",
   "Propose EXACTLY ONE addition to the skill: a short passage, in the same voice as the file,",
@@ -45,7 +40,7 @@ const SYSTEM = [
   "- Quote the refusal that earned it, verbatim, so a later reader can check the reasoning.",
   "- Say what to DO, not what to avoid. 'Read the schema before the first call' beats",
   "  'do not guess arguments'.",
-  "- If the refusals are the block's own defect (a bare HTTP status, an HTML page, a missing",
+  "- If the refusals are another server's own defect (a bare HTTP status, an HTML page, a missing",
   "  tool), say so and propose NOTHING for the skill. A skill cannot fix somebody else's server,",
   "  and pretending otherwise adds words that will never help.",
   "- If nothing in the evidence warrants a change, say so plainly. A round with no change is a",
@@ -64,15 +59,11 @@ interface Proposal {
 }
 
 async function ask(prompt: string): Promise<Proposal> {
-  // THROUGH THE LOCAL CLI, for the same two reasons as eval-judge. The platform's own cheap model
-  // behind LLM_BASE_URL is the right home for a loop that runs in production, but that key
-  // answers 401 today — which means this tool, the reflect half of the whole improvement loop,
-  // has been unusable for as long as that has been true and said nothing about it. And reading
-  // refusals to work out which rule a skill is missing is not a flash-tier task.
+  // Through the local CLI: the platform's own model behind LLM_BASE_URL answers 401, and working
+  // out from refusals which rule a skill is missing is not a flash-tier task.
   //
-  // NO TOOLS. Given a filesystem the reflector reads the repository and proposes changes from
-  // what it finds there, which is a different and much weaker thing than proposing them from the
-  // evidence it was handed.
+  // DELIBERATE: no tools. Given a filesystem the reflector reads the repository and proposes
+  // changes from what it finds there, rather than from the evidence it was handed.
   const said = await new Promise<string>((resolve, reject) => {
     const child = execFile("claude",
       ["-p", "--model", MODEL, "--output-format", "json", "--disallowed-tools", "*"],
@@ -88,7 +79,7 @@ async function ask(prompt: string): Promise<Proposal> {
     text = frame.result ?? said;
   } catch { /* not the wrapper frame — treat the whole reply as the answer */ }
 
-  // The model's answer is READ, never trusted to be shaped right. A reflection step that
+  // The model's answer is read, never trusted to be shaped right. A reflection step that
   // crashes on its own output is a loop that stops the first time a model adds a code fence.
   const json = /\{[\s\S]*\}/.exec(text);
   if (!json) die(`the reflection model did not answer with JSON:\n${text.slice(0, 400)}`);
@@ -132,9 +123,8 @@ async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
-  // The step with the most refusals THE FLOW COULD HAVE AVOIDED. Not the busiest step, and not
-  // the one with the most refusals overall — a step that met a broken tool all day is not the
-  // step to edit.
+  // The step with the most refusals the flow could have avoided — not the busiest step, and
+  // not the one with the most refusals overall.
   const wanted = optional(args, "skill", "which step to reflect on, instead of the worst");
   const target = wanted ? steps.find((s) => s.step === wanted) : steps.find((s) => s.ours > 0);
   if (!target) {

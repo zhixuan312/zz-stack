@@ -1,12 +1,9 @@
 /**
  * Operational CLI errors for tenant-info.
  *
- * WORKSPACE_REQUIRED, WORKSPACE_INVALID, WORKSPACE_UNSAFE, UNKNOWN_SUITE and
- * INVALID_ARGUMENTS are all failures of the INVOCATION — a caller asked this CLI to do
- * something it cannot safely attempt. They are deliberately a separate type from whatever
- * error union the tenant-info artifact mutations themselves use: a bad `--profile` is not a
- * new kind of domain failure, and folding it into that union would grow it for a reason that
- * has nothing to do with the domain.
+ * Every code here is a failure of the invocation — a caller asked this CLI to do something it
+ * cannot safely attempt. DELIBERATE: a separate type from the error union the tenant-info artifact
+ * mutations use. A bad `--profile` is not a new kind of domain failure.
  */
 
 export type CliErrorCode =
@@ -15,19 +12,14 @@ export type CliErrorCode =
   | "WORKSPACE_UNSAFE"
   | "UNKNOWN_SUITE"
   | "INVALID_ARGUMENTS"
-  // A SCALE THE FIXTURE PLAN CANNOT HONOUR, and it is here rather than left to the catch-all
-  // because the contract names this refusal specifically. `planCorpora` throws its own error
-  // with this code when a scale would demand a fraction of a 1-MiB fixture, which the frozen
-  // check for I-3 asserts on. `cli.ts`'s catch-all relabels every unrecognised throw as
-  // INVALID_ARGUMENTS, so before this line the named refusal was correct where it was tested
-  // and invisible where it was used — a contract that holds only inside the process is a
-  // contract nobody at a command line can rely on.
+  // A scale the fixture plan cannot honour, named rather than left to the catch-all because the
+  // contract names this refusal. `planCorpora` throws with this code when a scale would demand a
+  // fraction of a 1-MiB fixture. `cli.ts`'s catch-all relabels every unrecognised throw as
+  // INVALID_ARGUMENTS, so without this line the named refusal is invisible at a command line.
   | "FRACTIONAL_FIXTURE_COUNT"
-  // THE TWO REFUSALS THAT STAND BETWEEN `migrate --apply` AND A LIVE STORE. Both are named
-  // rather than folded into INVALID_ARGUMENTS because the contract names them: "apply ...
-  // refuses live-source or ambiguous targets". A caller scripting a cutover has to be able to
-  // tell "you pointed me at a store something is writing" from "you spelled a flag wrong",
-  // and a shared code for both would make that distinction unreadable at the command line.
+  // The two refusals that stand between `migrate --apply` and a live store, named rather than
+  // folded into INVALID_ARGUMENTS because the contract names them. A caller scripting a cutover
+  // has to tell "you pointed me at a store something is writing" from "you spelled a flag wrong".
   | "LIVE_SOURCE_REFUSED"
   | "AMBIGUOUS_TARGET";
 
@@ -52,9 +44,9 @@ export function failInvocation(err: CliError): never {
   process.exit(2);
 }
 
-/** The codes this CLI owns, as a runtime set, so the entry point can recognise a thrown value
- *  that already names itself instead of relabelling it. Kept beside the union it mirrors: two
- *  lists that can disagree is how the union grew a member nothing could ever report. */
+/** The codes this CLI owns, as a runtime set, so the entry point can recognise a thrown value that
+ *  already names itself instead of relabelling it. COUPLED: kept beside the union it mirrors —
+ *  two lists that can disagree let the union carry a member nothing can report. */
 const CLI_ERROR_CODES = new Set<string>([
   "WORKSPACE_REQUIRED", "WORKSPACE_INVALID", "WORKSPACE_UNSAFE",
   "UNKNOWN_SUITE", "INVALID_ARGUMENTS", "FRACTIONAL_FIXTURE_COUNT",

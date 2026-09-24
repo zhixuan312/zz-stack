@@ -1,8 +1,7 @@
 // Break-test for the two plugin-lock gate checks.
 //
-// Plants each defect the checks exist to catch, asserts RED, restores, asserts GREEN. A check
-// that has only ever been observed passing is a check nobody has evidence for -- and this
-// repository has shipped that mistake before, which is why every new check here gets one.
+// Plants each defect the checks exist to catch, asserts red, restores, asserts green. A check
+// that has only ever been observed passing is a check nobody has evidence for.
 import { readFileSync, writeFileSync, existsSync, cpSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,21 +19,13 @@ const VICTIM = "catalog/sdlc/sdlc-flow/skills/sdlc-method/SKILL.md";
 if (!existsSync(VICTIM)) fail(`${VICTIM} is gone — repoint this break-test`);
 if (gate().status !== 0) fail("the gate is already red before planting anything");
 
-// THE GATE REWRITES DERIVED FILES FROM WHATEVER IT FINDS, AND THIS TEST PLANTS INTO THE SOURCE
-// THEY ARE DERIVED FROM. Every `gate()` below regenerates `marketplace/`, `plugins.lock.json`
-// and `skills.lock.json` out of `catalog/` — so a run against a planted defect leaves those
-// three carrying the defect, and restoring only the catalog file is not restoring everything.
+// Every `gate()` below regenerates `marketplace/` out of `catalog/`, and the planted cases write
+// the lock files directly, so a run against a planted defect leaves those three carrying it.
+// Restoring only the catalog file leaves the gate red on a stale lock or shelf that this file
+// planted, not one the tree has.
 //
-// This test used to do exactly that, and then assert the gate was green. It could not be: the
-// catalog was clean, the derived files still held the plant, and the gate reported "the
-// committed lock is stale", which was TRUE. The next run regenerated them and went green, so
-// the failure healed itself one run later and the assertion that caught it looked flaky
-// rather than right. Measured: plant -> red, restore source -> STILL RED, run again -> green.
-//
-// Snapshotted rather than restored with `git checkout`, deliberately. These paths are
-// regenerated constantly and somebody may legitimately have uncommitted work in them; a
-// break-test that repairs itself by discarding a working tree is a worse bug than the one it
-// was written to catch.
+// DELIBERATE: snapshotted rather than restored with `git checkout`. These paths are regenerated
+// constantly and somebody may have uncommitted work in them.
 const DERIVED = ["marketplace", "plugins.lock.json", "skills.lock.json"];
 const snapshot = mkdtempSync(join(tmpdir(), "zz-plugin-lock-derived-"));
 for (const path of DERIVED) cpSync(path, join(snapshot, path), { recursive: true });
@@ -77,13 +68,9 @@ if (!redMissing) {
 
 // 4 — a plugin the lock records and the enumeration no longer finds.
 //
-// This is the failure an audit predicted would be SILENT: if a directory override were wrong,
-// zz would be hashed over an empty file list, computed and recorded would agree forever, and no
-// zz content change would ever move the digest. It is not silent, for two independent reasons,
-// and this asserts the second. First, plugin-lock omits a plugin whose tree it cannot read
-// rather than hashing nothing -- verified directly: with ZZ_SKILLS_DIR pointing nowhere the
-// enumeration returns five plugins and zz is absent, not present-and-empty. Second, an absence
-// is exactly what this branch catches.
+// A wrong directory override would hash a plugin over an empty file list, and computed and
+// recorded would then agree forever. Two things stop that: plugin-lock omits a plugin whose
+// tree it cannot read rather than hashing nothing, and an absence is what this branch catches.
 const parsed3: Lock = JSON.parse(lock);
 parsed3["a-plugin-the-catalog-does-not-ship"] = { version: "9.9.9", digest: "deadbeef", skills: {} };
 writeFileSync(LOCK, JSON.stringify(parsed3, null, 2) + "\n");
@@ -97,14 +84,12 @@ if (!redGhost) {
 
 // 5 — the lock is a whole release behind the catalog.
 //
-// THIS ONE SHIPPED. The check read `was.digest !== p.digest && was.version === p.version`, so
-// it could only fire when content moved and the version did NOT -- the moment a version moved,
-// the conjunction collapsed and a lock a release out of date passed silently. 0.33.0 went out
-// that way: plugins.lock.json still said sdlc 0.1.0 while the catalog declared 0.2.0, and
-// because release.ts registers zz.plugin_version FROM that file and never regenerates it, the
-// database ended up describing 0.32.3. Every one of the release's 17 live probes was green,
-// because each asks whether the deployment matches the CHECKOUT and the stale lock was part of
-// the checkout. It agreed with itself.
+// A check written `was.digest !== p.digest && was.version === p.version` fires only when
+// content moves and the version does not, so a lock a whole release out of date passes.
+//
+// COUPLED: release.ts registers zz.plugin_version from plugins.lock.json and never regenerates
+// it, and the live probes ask whether the deployment matches the checkout, so a stale lock
+// agrees with itself all the way to the database.
 const parsed4: Lock = JSON.parse(lock);
 const victim4 = Object.keys(parsed4)[0];
 const realVersion = parsed4[victim4].version;

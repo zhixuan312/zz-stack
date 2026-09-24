@@ -1,19 +1,15 @@
 /**
- * migration.ts — I-20's migration suite, and `createMigrationFixture`, which
+ * The migration suite, and `createMigrationFixture`, which
  * `checks/tenant-migration-losslessness.ts` (frozen) imports by name.
  *
- * THE FIXTURE IS THE REAL IMPORTER AND THE REAL KERNEL. `apply()` calls `mutate()` from
+ * The fixture drives the real importer and the real kernel: `apply()` calls `mutate()` from
  * `services/zz-core/dist/tenant-info/mutations.js` with `legacyImportPolicy` from
- * `legacy-import.js`, against a real owner store with a real `.zz/commits/` log, and
- * `inspect()` answers by READING THAT LOG BACK — not from anything this file remembered.
- * An in-memory replacement converter would make the whole task vacuous: the contract is about
- * what survives in a durable record, and a fake store has no durable record to survive in.
+ * `legacy-import.js`, against a real owner store with a real `.zz/commits/` log, and `inspect()`
+ * reads that log back rather than anything this file remembered.
  *
- * NOTHING HERE TOUCHES A LIVE STORE OR A DATABASE. Every fixture is a `mkdtemp` directory
- * created by this file and removed by its own `close()`. The two cases that would need the
- * isolated projection database report `not_run` with the reason, because this task may not
- * open a database connection — see `CASES` at the bottom for exactly which, and why that is
- * an honest gap rather than a missing pass.
+ * Every fixture is a `mkdtemp` directory removed by its own `close()`; nothing here touches a
+ * live store or a database. The two cases needing the isolated projection database report
+ * `not_run` — see `CASES` at the bottom.
  */
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -38,7 +34,7 @@ import { makeStoreRoot } from "./persistence.ts";
 const OWNER = "77777777-7777-4777-8777-777777777777";
 const ACTOR = "migration-suite";
 
-// ── the fixture the frozen check drives ─────────────────────────────────────────────────────
+// The fixture the frozen check drives
 
 /** What `inspect()` reports, replayed off the target store's own commit log. `identities` is a
  *  sorted array rather than a count, because "no extra identity" has to mean the same SET and
@@ -56,8 +52,8 @@ interface MigrationFixture {
   apply(manifest: LegacyConversionManifest): Promise<void>;
   inspect(): Promise<MigrationInspection>;
   originalBytes(path: string): Promise<Buffer>;
-  // NOT A TOOL: this removes the fixture's own two temporary directories — no door registers
-  // a `close`, and the initiative verb is `initiative_close`.
+  // NOT A TOOL: this removes the fixture's own two temporary directories — no door registers a
+  // `close`, and the initiative verb is `initiative_close`.
   close(): Promise<void>;
 }
 
@@ -74,7 +70,7 @@ function readCommits(root: string): CommitManifest[] {
     .map((f) => JSON.parse(readFileSync(join(dir, f), "utf8")) as CommitManifest);
 }
 
-/** The manifest row a committed revision carries. The row is recorded INSIDE the durable
+/** The manifest row a committed revision carries. The row is recorded inside the durable
  *  record (`content_fields.zz_legacy`), so reading it back is reading the migration's own
  *  account of what it did — not this fixture's memory of what it was told to do. */
 function committedRow(revision: ContentRevision): LegacyManifestRow | null {
@@ -84,13 +80,11 @@ function committedRow(revision: ContentRevision): LegacyManifestRow | null {
 }
 
 /**
- * WHERE EACH FIXTURE'S TARGET STORE IS, for the cases below that need to drive `mutate()`
- * directly — a refused import writes no commit, so `inspect()` cannot show one, and the case
- * that proves an altered source hash is refused has to call the kernel itself.
+ * Where each fixture's target store is, for the cases that drive `mutate()` directly — a refused
+ * import writes no commit, so `inspect()` cannot show one.
  *
- * A WeakMap rather than a `root` field on the fixture: `createMigrationFixture`'s shape is
- * pinned by the frozen check, and a suite's convenience is not a reason to widen a contract a
- * check was written against.
+ * DELIBERATE: a WeakMap rather than a `root` field on the fixture. `createMigrationFixture`'s
+ * shape is pinned by the frozen check.
  */
 const FIXTURE_ROOTS = new WeakMap<MigrationFixture, string>();
 
@@ -169,10 +163,9 @@ export async function createMigrationFixture(): Promise<MigrationFixture> {
       };
     },
 
-    /** The archived original, read back CONTENT-ADDRESSED: the hash comes off the committed
-     *  row and the bytes come out of `.zz/blobs/<hash>`. Reading the materialized copy instead
-     *  would prove only that a file exists at a path; this proves the bytes the record claims
-     *  are the bytes the store holds — and asserts the materialized copy agrees. */
+    /** The archived original, read back content-addressed: the hash comes off the committed row
+     *  and the bytes out of `.zz/blobs/<hash>`, so this proves the bytes the record claims are
+     *  the bytes the store holds. Asserts the materialized copy agrees. */
     async originalBytes(path) {
       const row = (await this.inspect()).manifest.find((r) => r.path === path);
       if (!row) throw new Error(`no committed migration row for ${path}`);
@@ -193,7 +186,7 @@ export async function createMigrationFixture(): Promise<MigrationFixture> {
   return fixture;
 }
 
-// ── cases ───────────────────────────────────────────────────────────────────────────────────
+// Cases
 
 async function withFixture(body: (f: MigrationFixture) => Promise<void>): Promise<void> {
   const f = await createMigrationFixture();
@@ -262,12 +255,9 @@ async function caseOriginalBytesSurviveEveryProfile(): Promise<void> {
 }
 
 /**
- * "PLAIN MARKDOWN WITH NO FRONTMATTER IS NOT AUTOMATICALLY MALFORMED YAML", which is the
- * contract's own sentence and a rule that is easy to get wrong: the OKF parser answers "no
- * frontmatter" and "broken YAML" with the same `legacy-raw` wrapper, because for a knowledge
- * document frontmatter is mandatory. Most of a real team's store is not a knowledge document.
- * A README carried across as malformed would be a whole store filed behind Reference wrappers
- * for a defect none of it has.
+ * Plain markdown with no frontmatter is not malformed YAML. The OKF parser answers "no
+ * frontmatter" and "broken YAML" with the same `legacy-raw` wrapper, because frontmatter is
+ * mandatory for a knowledge document — and most of a real team's store is not one.
  */
 async function casePlainMarkdownIsNotMalformed(): Promise<void> {
   const plain = "# Notes\n\nNo frontmatter here at all.\n";
@@ -307,7 +297,7 @@ function caseOneInputClassifiesOnItsOwn(): void {
 }
 
 /** A foreign type is carried across as itself. The whole point of the legacy profile is that
- *  this platform's four native types are NOT imposed on another team's vocabulary. */
+ *  this platform's four native types are not imposed on another team's vocabulary. */
 async function caseForeignTypeIsNotReclassified(): Promise<void> {
   await withFixture(async (f) => {
     await f.addInput("a.md", Buffer.from(CRLF_DOC));
@@ -334,7 +324,7 @@ async function caseUnknownTimesStayUnknown(): Promise<void> {
     assert.equal(row("dated.md").original_time, "2021-03-04T00:00:00.000Z");
     assert.equal(row("dated.md").original_time_precision, "date", "a bare date must not be recorded as an exact instant");
     assert.equal(row("exact.md").original_time_precision, "exact");
-    // AND THE IMPORT NEVER BECOMES THE AUTHOR. `generated.by` stays null whatever the source
+    // And the import never becomes the author. `generated.by` stays null whatever the source
     // said; a source author never becomes this platform's generator or verifier.
     const revisions = readCommitsOf(f).flatMap((c) => c.revisions);
     for (const revision of revisions) assert.equal(revision.generated.by, null);
@@ -373,7 +363,7 @@ async function caseUnresolvedReferencesStayLabelled(): Promise<void> {
 
 /** Text already larger than the kernel's 8-MiB new-write ceiling is preserved and fully
  *  indexed under the migration exception. The case also proves the exception is not vacuous:
- *  the same byte count is over the limit for a NEW write. */
+ *  the same byte count is over the limit for a new write. */
 async function caseOversizedLegacyTextIsPreserved(): Promise<void> {
   const body = "x".repeat(MAX_INPUT_BYTES + 1024);
   const doc = `---\ntype: Note\n---\n${body}`;
@@ -398,7 +388,7 @@ function caseMultiOwnerStoresStaySeparate(): void {
 }
 
 /** Every way a row blocks the cutover, refused rather than skipped. A migration that dropped a
- *  file with a warning would be exactly the loss this whole task exists to prevent. */
+ *  file with a warning would lose it. */
 function caseBlockingErrorsRefuseRatherThanSkip(): void {
   const bytes = Buffer.from("---\ntype: Note\n---\nb\n");
   const duplicate = prepareLegacyManifest([{ path: "a.md", bytes }, { path: "a.md", bytes }]);
@@ -449,10 +439,8 @@ async function caseSecondManifestMayNotReimportTheSameLocator(): Promise<void> {
  *  records `selected_count: 0` / `review_required: false`. That is a complete answer, not
  *  missing evidence, and it does not block the mechanical rows.
  *
- *  AND IT SAYS WHAT IT COUNTED OVER. `source_root` is asserted here because without it those
- *  two numbers are the same bytes whether they describe a production corpus or three invented
- *  files in a temp directory — which is exactly the shape the contract accepts as resolving a
- *  human gate. A `selected_count: 0` that cannot name its corpus resolves nothing. */
+ *  `source_root` is asserted too: without it those two numbers are the same bytes whether they
+ *  describe a production corpus or three invented files in a temp directory. */
 async function caseNoSelectedConversionsIsNotMissingEvidence(): Promise<void> {
   const { classifyMigration } = await import("../../scripts/tenant-info/migrate.ts");
   const bytes = Buffer.from(CRLF_DOC);
@@ -465,7 +453,7 @@ async function caseNoSelectedConversionsIsNotMissingEvidence(): Promise<void> {
     "the inventory must record the corpus it counted over — a bare zero resolves no gate");
 }
 
-// ── the suite entry point ───────────────────────────────────────────────────────────────────
+// The suite entry point
 
 type CaseFn = () => void | Promise<void>;
 
@@ -489,13 +477,10 @@ const CASES: Readonly<Record<string, CaseFn>> = {
 };
 
 /**
- * THE TWO CASES THIS CHECKOUT CANNOT RUN, named rather than quietly dropped.
- *
- * Both need the isolated projection database the contract's integration suite calls for, and
- * this task is forbidden any database connection at all — the tenant's 527 live documents are
- * one careless connection string away, and no migration evidence is worth that risk. At
- * `--profile acceptance` a `not_run` case BLOCKS the suite, and that is the correct verdict
- * here: the evidence does not exist, so the suite must not report that it does.
+ * The two cases this checkout cannot run, named rather than quietly dropped. Both need the
+ * isolated projection database, and this suite opens no database connection. At
+ * `--profile acceptance` a `not_run` case blocks the suite, which is the correct verdict: the
+ * evidence does not exist, so the suite must not report that it does.
  */
 const NOT_RUN: Readonly<Record<string, string>> = {
   projection_parity_against_the_isolated_database:

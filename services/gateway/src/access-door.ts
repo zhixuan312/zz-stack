@@ -1,11 +1,10 @@
 /**
  * The access door: the tools a person uses on their own account.
  *
- * Their keys, their access tokens, which team they act for, and the client package that
- * installs the platform into their terminal. It is a door of its own rather than part of
- * /core because every tool here acts on the CALLER rather than on a team's work — and
- * because an agent that never needs to change anybody's credentials should not be carrying
- * tools that can.
+ * Their access tokens, which team they act for, and the client package that installs the
+ * platform into their terminal. It is a door of its own rather than part of /core because
+ * every tool here acts on the caller rather than on a team's work — and because an agent that
+ * never needs to change anybody's credentials should not be carrying tools that can.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { serviceVersion, text } from "@zz/mcp-http";
@@ -23,21 +22,20 @@ import { registerShelf, renderClientSetup } from "./admin/flows.js";
  *
  * The same field, and the same reasoning, as services/zz-core/src/orientation.ts: one
  * paragraph handed to a client at connect time, for the client that reads nothing else. It is
- * an ADDITION and never a replacement — Claude Desktop parses the field without showing it to
+ * an addition and never a replacement — Claude Desktop parses the field without showing it to
  * the model — so nothing load-bearing lives only here.
  *
  * Two lengths are real and checks/orientation.ts asserts both: Claude Code truncates near
  * 2KB, and Codex advises the first 512 characters be self-contained, so the purpose and the
  * skill to read come first.
  *
- * NO TOOL NAMES BELOW, deliberately, and it is the one place this text differs in shape from
- * zz-core's. That door is noun-first and its paragraph names every prefix it serves, checked
- * both ways. This one is not, and the reason survived the rename that gave it noun-first
- * names: this door's list is CUT BY ROLE, so a member and a superadmin read the same
- * paragraph against different lists. A paragraph naming every prefix would name several this
- * reader has not been offered — which reads as a missing feature rather than as a fact about
- * their access. So this says what the door is FOR, a capability to a line, and lets the tool
- * list speak for itself. `whoami` is named because it is the tool that explains the cut. */
+ * DELIBERATE: no tool names below, the one place this text differs in shape from zz-core's.
+ * That door's paragraph names every prefix it serves, checked both ways. This door's list is
+ * cut by role, so a member and a superadmin read the same paragraph against different lists,
+ * and a paragraph naming every prefix would name several this reader has not been offered —
+ * which reads as a missing feature rather than as a fact about their access. So this says
+ * what the door is for, a capability to a line, and lets the tool list speak for itself.
+ * `whoami` is named because it is the tool that explains the cut. */
 const ACCESS_INSTRUCTIONS =
   "This is /manage: your own access to the ZZ platform — and, if your role carries them, the " +
   "people and teams behind it. Every tool here acts on YOU, the caller, rather " +
@@ -56,31 +54,22 @@ const ACCESS_INSTRUCTIONS =
   "NOT FOR: doing any work. Documents, the knowledge store, the skills library and today's " +
   "date are the /core door. This one changes who may do things, not what gets done.";
 
-/** /manage/mcp — the ONE door a person speaks to, built per request for the person speaking.
+/** /manage/mcp — the one door a person speaks to, built per request for the person speaking.
  *
- * There were two: /manage for your own access and /admin for administering the platform.
- * The second authorised nothing — its own entry in the door index said "any member; each
- * tool authorises per call" — so a member could open it, list every tool on it, and be
- * refused by every one. The split bought a shorter tool list and nothing else, and it leaked:
- * `credential_admin_set` is an operator tool and it lives here, on the member door, because
- * that is where the credential store is.
- *
- * So there is one door, and the list is shortened by the thing that was doing the work all
- * along — the caller's role. `registerAdminTools` reads it once and registers what that role
- * can execute: a member is offered only tools a member can use, and every extra tool a lead
- * or a superadmin sees is one their role can actually execute. No count is written here —
- * checks/manage-surface.ts holds the numbers, where they are measured rather than restated.
+ * Its tool list is cut by the caller's role. `registerAdminTools` reads it once and registers
+ * what that role can execute: a member is offered only tools a member can use, and every extra
+ * tool a lead or a superadmin sees is one their role can actually execute. No count is written
+ * here — checks/manage-surface.ts holds the numbers.
  *
  * This is why the builder is async, and why `serveMcp` awaits it: resolving who is calling
  * is a database read, and it has to finish before the first tool is registered.
  *
- * WHAT A MEMBER LOSES, stated plainly: calling `person_list` used to answer "ERROR:
- * superadmin required", and now answers "tool not found", which explains less. Two things
- * carry that explanation instead — `whoami`, registered for everyone precisely so the
- * question "why can I not see it" has a tool, and the zz-access skill, which says a tool
- * missing from your list is a fact about your role. */
+ * A member calling a tool their role lacks gets "tool not found", which explains less than a
+ * refusal would. Two things carry that explanation instead — `whoami`, registered for everyone
+ * so the question "why can I not see it" has a tool, and the zz-access skill, which says a
+ * tool missing from your list is a fact about your role. */
 export async function buildAccessServer(): Promise<McpServer> {
-  // SECOND ARGUMENT. `instructions` is `ServerOptions`; the first argument is
+  // `instructions` goes in the second argument, `ServerOptions`; the first argument is
   // `Implementation` and carries only name/version/title.
   const server = new McpServer({ name: "zz-access", version: serviceVersion(import.meta.url) },
                                { instructions: ACCESS_INSTRUCTIONS });
@@ -94,20 +83,16 @@ export async function buildAccessServer(): Promise<McpServer> {
   // is a question about that, not about administering anybody.
   registerShelf(server);
 
-
-
-
   server.registerTool(
     "team_mine",
     {
-      // What ONLY this tool says. Three tools answer some form of "who am I" and they are
-      // deliberately not merged — see the note over `whoami` in admin.ts, which was written
-      // first and is the model this follows. This one described itself as "the teams you
-      // belong to, and which one you are acting for", which `session_whoami` also returns:
-      // read that way it is a third copy, and a model choosing between the three had no
-      // reason to prefer any.
+      // What only this tool says. Three tools answer some form of "who am I" and they are
+      // deliberately not merged — see the note over `whoami` in admin.ts. Described as "the
+      // teams you belong to, and which one you are acting for", it would read as a copy of
+      // `session_whoami`, and a model choosing between them would have no reason to prefer
+      // either.
       //
-      // It is the only one that lists the teams you are NOT acting for, which is the answer
+      // It is the only one that lists the teams you are not acting for, which is the answer
       // to "why can I not see that team's documents" and the call that has to come before
       // team_switch.
       description:
@@ -124,10 +109,9 @@ export async function buildAccessServer(): Promise<McpServer> {
       inputSchema: {},
     },
     async () => {
-      // THE SAME RULE THAT DECIDES IT, not a second query that agrees most of the time.
-      // `myTeamsSummary` (settings.ts, shared with Task I-13's browser route) applies
-      // `actingTeam`'s own fallback — admin-role first, then alphabetically — rather than a
-      // second `order by t.slug` that agrees with it most of the time. It is also the one
+      // The same rule that decides it, not a second query that agrees most of the time.
+      // `myTeamsSummary` (settings.ts, shared with the browser route) applies `actingTeam`'s
+      // own fallback — admin-role first, then alphabetically. It is also the one
       // place that reads a bound token naming a team its owner is not in as "acts for no
       // team", which a fallback here would quietly paper over.
       if (!id) return text("ERROR: no user identity on this request");
@@ -145,8 +129,8 @@ export async function buildAccessServer(): Promise<McpServer> {
     {
       description:
         "WHEN the work belongs to a different team than the one you are acting for. RETURNS " +
-        "confirmation that you now act for that team: your documents, knowledge store and " +
-        "agents are that team's everywhere from here, and work you left unfinished stays " +
+        "confirmation that you now act for that team: your documents and knowledge store are " +
+        "that team's everywhere from here, and work you left unfinished stays " +
         "with the team you left it in, where its members can pick it up. REFUSES any team " +
         "you are not a member of and any archived team, and names the ones you do have " +
         "instead — call team_mine first if you are not sure.",
@@ -155,12 +139,11 @@ export async function buildAccessServer(): Promise<McpServer> {
     async ({ team }) => {
       const email = caller().email;
       if (!email) return text("ERROR: no user identity on this request");
-      // A BOUND TOKEN CANNOT MOVE ANYBODY, INCLUDING ITSELF. `actingTeam` reads a bound token's
-      // own team whatever this column says, so the caller saw "you are now acting for X" and
-      // nothing changed for it — while `active_team_id` is where every OTHER credential that
-      // person holds reads their team from. A left-running automation could silently move its
-      // owner's browser session and every unbound agent token to a different team. The console
-      // route beside this one has refused it since it was written.
+      // A bound token cannot move anybody, including itself. `actingTeam` reads a bound token's
+      // own team whatever this column says, so the switch would change nothing for it — while
+      // `active_team_id` is where every other credential that person holds reads their team
+      // from, so a left-running automation could silently move its owner's browser session and
+      // every unbound agent token to a different team. The console route refuses it too.
       const bound = (await callerIdentity())?.patTeam;
       if (bound) {
         return text(
@@ -193,31 +176,23 @@ export async function buildAccessServer(): Promise<McpServer> {
                     (mine.length ? `Yours: ${mine.join(", ")}.` : "You are not in any team yet."));
       }
       // Recorded like any other act. For a platform whose whole point is who approved what
-      // and when, who was ACTING FOR WHICH TEAM and when belongs in the same record.
+      // and when, who was acting for which team and when belongs in the same record.
       logEvent({ actor: email, kind: "team.switch", subject: slug, teamSlug: slug });
       return text(
         `you are now acting for ${slug}.\n` +
-        `Everything follows this: your documents, your knowledge store, and the agents you ` +
-        `see. A client that is already open may take a few seconds to catch up, and one ` +
-        `holding a stale agent list needs a refresh.`);
+        `Everything follows this: your documents and your knowledge store, on every client.`);
     },
   );
-
-
-
 
   server.registerTool(
     "client_setup",
     {
-      // `email` came from render_harness_config, which was this tool on the other door and
-      // existed only because there was another door. Onboarding somebody means rendering
-      // THEIR setup, so the capability had to survive the merge; it is the same superadmin
-      // check that tool made.
+      // `email` exists for onboarding: onboarding somebody means rendering their setup, which
+      // needs superadmin.
       description:
         "WHEN somebody is connecting Claude Code to this platform for the first time, or " +
         "being onboarded. RETURNS their setup: which marketplace to add, which plugins to " +
-        "install, and where the token goes — carrying only the blocks their team's installed " +
-        "flows declare. Yours by default; pair it with pat_issue, since the setup needs a " +
+        "install, and where the token goes. Yours by default; pair it with pat_issue, since the setup needs a " +
         "token and that token is shown once. REFUSES another person's setup unless you are " +
         "superadmin, and refuses a request it cannot identify.",
       inputSchema: {
@@ -238,16 +213,6 @@ export async function buildAccessServer(): Promise<McpServer> {
       return text(await renderClientSetup(target));
     },
   );
-
-
-
-  // ── the bugs people report ─────────────────────────────────────────────────────────────
-  //
-  // Moved to ./admin/bugs.ts when `bug_delete` joined them and this file reached the 700-line
-  // ceiling. A tracker is its own subject: filing is everyone's and lives on /core, while
-  // reading, closing and removing a report are operator acts and live here.
-
-
 
   // People, teams, tokens, the registry and the projections — registered by role, guarded
   // per call. admin.ts owns both halves of that; this is the only place it is mounted.

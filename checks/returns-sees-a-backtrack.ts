@@ -1,15 +1,9 @@
-// Does the returns derivation see a return AT ALL?
+// Does the returns derivation see a return at all? A derivation that groups by
+// (initiative, step) and takes min(ts) collapses every visit into one row and is monotonic by
+// construction, so it reports zero however many returns there are.
 //
-// It shipped saying zero, against live data, and zero looked like an answer. It was not: the
-// query grouped by (initiative, step) and took min(ts), which collapses every visit to a step
-// into one row at its first entry. The sequence was then monotonic by construction and a return
-// could not be detected however many there were.
-//
-// The spec's own risk table named this and named the fix -- "a metric whose only observation is
-// zero has not been tested" -- and the fixture it asked for was never written. This is it.
-//
-// It plants a backtrack in a rolled-back transaction on the live database, because the shape
-// being tested is SQL and the gate cannot reach a database. Read-only in effect.
+// DELIBERATE: it plants a backtrack in a rolled-back transaction on the live database, because
+// the shape being tested is SQL and the gate cannot reach a database. Read-only in effect.
 import { execFileSync } from "node:child_process";
 
 function fail(m: string): never { console.error("FAIL: " + m); process.exit(1); }
@@ -17,8 +11,8 @@ const psql = (sql: string) => execFileSync("ssh", ["-o", "ConnectTimeout=30", "z
   `docker exec -i $(docker ps -qf name=postgres|head -1) psql -U zz -d zz -v ON_ERROR_STOP=1 -tAq`],
   { input: sql, encoding: "utf8" });
 
-// spec -> audit -> spec. One backtrack, deliberately with the repeat NOT adjacent, because
-// adjacent repeats are what a naive DISTINCT would already collapse correctly.
+// spec -> audit -> spec. DELIBERATE: the repeat is not adjacent, because a naive DISTINCT
+// would already collapse adjacent repeats correctly.
 const ISLANDS = `
   select step from (
     select e.initiative, e.step, e.ts,

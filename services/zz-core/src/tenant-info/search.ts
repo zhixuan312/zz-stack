@@ -1,32 +1,15 @@
 /**
  * search.ts — one tenant-information search, composed end to end: what a caller typed in, the
- * spec's `SearchResponse` out, and every decision in between made by somebody else's tested
- * code rather than reimplemented here.
+ * spec's `SearchResponse` out, and every decision in between made by somebody else's tested code
+ * rather than reimplemented here.
  *
- * WHY THIS FILE EXISTS AT ALL. `search()` (lanes.ts), `resolveCorpora` (retrieval.ts),
+ * `searchTenantInformation` is the one path through `search()` (lanes.ts), `resolveCorpora` and
  * `parseQuery`/`serializeResults` (retrieval.ts), `matchesArtifact`/`encodeCursor`
- * (pinned-read.ts) and `loadCorpusRegistry` (corpus-registry.ts) were built by I-16 through
- * I-19 and by this task, and NOTHING PUT THEM IN A LINE. Four recall lanes, RRF fusion, the
- * query grammar, cursors and the isolation guarantee were each exercised by a case that called
- * them directly and by nothing else — a stack of correct parts with no path through it.
- * `searchTenantInformation` below is that path, and `testing/tenant-info/compatibility.ts`
- * drives it as one call.
+ * (pinned-read.ts) and `loadCorpusRegistry` (corpus-registry.ts).
+ * COUPLED: `testing/tenant-info/compatibility.ts` drives it as one call.
  *
- * ITS OWN FILE, AND THE SEAM IS THE ONE `tools/knowledge-search.ts` ALREADY NAMED. This began
- * inside that file — the integration target the approved specification declares — and moved
- * when it reached 703 lines against a measured, unexemptable 700-line ceiling. The two halves
- * of that file were two subjects and said so in their own banner: everything above it reads
- * `zz.doc`/`zz.knowledge_node` for the live `knowledge_search` tool, and everything below read
- * the migration-070 derived database. This is the second half, now beside the rest of the
- * stack it composes rather than beside a directory of MCP registrations.
- *
- * NO MCP HANDLER CALLS IT YET, DELIBERATELY, and that is a cutover decision rather than an
- * omission — `tools/knowledge-search.ts`'s header carries the reason in full: migration 070
- * declares `requires-extension: pg_textsearch` and `pg_trgm`, `services/gateway/src/db.ts`
- * DEFERS a migration whose extension the cluster cannot supply ("skipped, and deliberately NOT
- * recorded as applied"), and so none of the tables queried below exists on the deployment that
- * holds this team's documents. Repointing the live tool at them would answer `relation
- * "zz.search_current" does not exist` to every caller.
+ * No MCP handler calls it: `knowledge_search` still reads `zz.doc`/`zz.knowledge_node`, and
+ * moving it onto this path is the cutover.
  */
 import { search, type AnalyzedQuery, type HardPredicates } from "./lanes.js";
 import { loadCorpusRegistry } from "./corpus-registry.js";
@@ -39,7 +22,7 @@ import {
 } from "./retrieval.js";
 
 
-// ── the query adapter: a parsed AST is not yet a set of lane terms ─────────────────────────
+// The query adapter: a parsed AST is not yet a set of lane terms
 
 /** Identifier-shaped: a token a caller would type to name a thing rather than to describe it —
  *  a path, a dotted or underscored name, a uuid. The exact lane matches these against
@@ -48,15 +31,13 @@ const IDENTIFIER_SHAPED = /[./_\-:]|^[0-9a-f-]{8,}$/i;
 const FUZZY_MIN_LENGTH = 4;
 
 /**
- * `QueryAst` (what the grammar produced) → `AnalyzedQuery` (what the lanes consume). The two
- * are deliberately different shapes and nothing joined them: `parseQuery` reports clauses,
- * phrases and exclusions; `search()` wants exact candidates, ONE fuzzy candidate and a lexical
- * string. This is that adapter, and it is pure so a case can drive it on its own.
+ * `QueryAst` (what the grammar produced) → `AnalyzedQuery` (what the lanes consume). `parseQuery`
+ * reports clauses, phrases and exclusions; `search()` wants exact candidates, one fuzzy candidate
+ * and a lexical string. Pure, so a case can drive it on its own.
  *
- * `fuzzyCandidate` IS SINGULAR because the GiST lane is a distance-ordered top-k over one term
- * (`lanes.ts`'s own note). The longest identifier-shaped term wins — the most specific thing
- * the caller typed, and the one a typo is most likely to be in. An excluded term is never a
- * fuzzy candidate: recalling what the caller asked not to see is the opposite of the request.
+ * `fuzzyCandidate` is singular because the GiST lane is a distance-ordered top-k over one term.
+ * The longest identifier-shaped term wins — the most specific thing the caller typed. An excluded
+ * term is never a fuzzy candidate.
  */
 export function analyzeForLanes(ast: QueryAst): AnalyzedQuery {
   const terms: string[] = [];
@@ -79,7 +60,7 @@ export function analyzeForLanes(ast: QueryAst): AnalyzedQuery {
   };
 }
 
-// ── the request, the context a deployment supplies, and the hard predicates ────────────────
+// The request, the context a deployment supplies, and the hard predicates
 
 export interface TenantSearchRequest {
   readonly query: string;
@@ -90,14 +71,14 @@ export interface TenantSearchRequest {
 }
 
 /**
- * What the AUTHENTICATED CALLER is, plus the two facts only the serving process knows.
+ * What the authenticated caller is, plus the two facts only the serving process knows.
  *
  * `index_generation` is not a column. `tenant-rebuild.ts` builds a generation into an isolated
- * target and never flips anything live, so nothing in migration 070 records which generation is
- * currently serving — the process that mounted it is the only thing that can say, and it says
- * so here rather than this module inventing a value for a disclosed response field.
+ * target and never flips anything live, so nothing in the schema records which generation is
+ * currently serving; the process that mounted it is the only thing that can say, and it says so
+ * here.
  *
- * `cursor_key` is the HMAC key `encodeCursor` signs provenance cursors with; a deployment's
+ * `cursor_key` is the HMAC key `encodeCursor` signs provenance cursors with — a deployment's
  * secret, never a caller's input.
  */
 export interface TenantSearchContext extends RetrievalContext {
@@ -112,39 +93,35 @@ const SOURCE_REF_CAP = 20;
 const SNIPPET_BYTES = 600;
 
 /**
- * The query grammar's `filters` are validated by `resolveCorpora` and pushed down by nobody —
- * a named gap this closes for the two it CAN close, and refuses for the two it cannot.
+ * The query grammar's `filters`, pushed down for the two that can be and refused for the two that
+ * cannot.
  *
- * `type` and `tags` are columns on all three `zz.search_*` tables, so they become
- * `HardPredicates` and `lanes.ts` pushes them into every lane's own WHERE clause. `initiative`
- * and `flow` have no column there — migration 070 never gave the search projections one — so
- * there is nothing to filter on, and this REFUSES rather than dropping them. A filter silently
- * ignored is the defect this very file's legacy path carries a paragraph about: a caller who
- * scoped a search to one initiative got rows from every other one, with nothing saying the
- * scope had been discarded. "A filter the caller asked for is not a hint to the ranker."
+ * `type` and `tags` are columns on all three `zz.search_*` tables, so they become `HardPredicates`
+ * and `lanes.ts` pushes them into every lane's own WHERE clause. `initiative` and `flow` have no
+ * column there, so this refuses rather than dropping them: a filter silently ignored returns
+ * another initiative's rows inside a scoped search.
  */
 function hardPredicatesFrom(filters: Readonly<Record<string, unknown>> | undefined): HardPredicates {
   if (!filters) return {};
   for (const name of ["initiative", "flow"]) {
     if (filters[name] !== undefined) {
       throw new RetrievalError("INVALID_INPUT",
-        `the ${name} filter cannot be honoured: migration 070's search projections carry no ` +
+        `the ${name} filter cannot be honoured: the search projections carry no ` +
         `${name} column for a lane to filter on, and answering as if it had been applied would ` +
         "return another initiative's documents inside a scoped search");
     }
   }
-  // TAGS ARE COMPARED AS AUTHORED, and this deliberately differs from the legacy path above,
-  // which lowercases a tag filter on the way in. It does that because ITS stored side is
-  // lowercase. This one's is not: `tenant-rebuild.ts` writes `latest.payload.tags` into the
-  // search row verbatim, and `SemanticPayloadSchema` neither lowercases nor transforms them —
-  // so lowercasing here would turn `plugin:CaseBox` into a filter that matches nothing, which
-  // is the same defect that paragraph records, arrived at from the other direction.
+  // DELIBERATE: tags are compared as authored, unlike the legacy path, which lowercases a tag
+  // filter because its stored side is lowercase. This one's is not — `tenant-rebuild.ts` writes
+  // `latest.payload.tags` into the search row verbatim and `SemanticPayloadSchema` neither
+  // lowercases nor transforms them — so lowercasing here would make `plugin:Sdlc` match
+  // nothing.
   const type = typeof filters.type === "string" ? filters.type : undefined;
   const tags = Array.isArray(filters.tags) ? filters.tags.filter((t): t is string => typeof t === "string") : undefined;
   return { ...(type !== undefined ? { type } : {}), ...(tags && tags.length > 0 ? { tags } : {}) };
 }
 
-// ── hydration: a ranked identity is not yet a result a reader can use ──────────────────────
+// Hydration: a ranked identity is not yet a result a reader can use
 
 interface HydratedRow {
   readonly corpus_key: string; readonly owner_id: string; readonly artifact_id: string;
@@ -160,18 +137,16 @@ interface WantedRow { readonly corpus: string; readonly artifact: string; readon
 /**
  * The projection row and the artifact head behind one scope's worth of ranked candidates.
  *
- * `s.owner_id = $1` IS CARRIED IN THIS STATEMENT TOO, once per owner, for the reason every lane
- * builder carries it: a partial index's WHERE clause is an optimisation, not a permission
- * filter, and the corpora having already been authorized is not the row-level predicate.
+ * `s.owner_id = $1` is carried in this statement too, once per owner: a partial index's WHERE
+ * clause is an optimisation, not a permission filter, and the corpora having already been
+ * authorized is not the row-level predicate.
  *
- * HISTORY BINDS THE REVISION AS PART OF THE WANTED KEY, the other two scopes do not — the same
- * split `resultKey` makes ("current/evidence identity is owner+artifact; history additionally
- * includes revision"), because `zz.search_history` is keyed by revision and holds several rows
- * per artifact. Matching on corpus and artifact alone there returns EVERY revision, and the
- * ranked candidate would then be described by whichever row arrived last: a result ranked at
- * revision 3 handed back with revision 7's body, hash, digest and etag. Current and evidence
- * hold one row per artifact, so binding a revision there would only make a page fail to
- * hydrate the moment a projection advanced between the lane query and this one.
+ * COUPLED: history binds the revision as part of the wanted key and the other two scopes do not —
+ * the same split `resultKey` makes. `zz.search_history` is keyed by revision and holds several
+ * rows per artifact, so matching on corpus and artifact alone returns every revision and the
+ * ranked candidate is then described by whichever row arrived last. Current and evidence hold one
+ * row per artifact, where binding a revision would only fail to hydrate when a projection
+ * advanced between the lane query and this one.
  */
 function buildHydrationQuery(scope: string, ownerId: string, wanted: readonly WantedRow[]) {
   const byRevision = scope === "history";
@@ -218,7 +193,7 @@ function buildSourceRefQuery(ownerId: string, artifactIds: readonly string[]) {
   };
 }
 
-// ── the composition ────────────────────────────────────────────────────────────────────────
+// The composition
 
 /** One UTF-8-safe excerpt, with the byte offsets the response contract asks for. The passage
  *  analyzer's real offsets belong to `zz.artifact_passage`, which nothing projects yet; this is
@@ -233,40 +208,36 @@ function excerpt(body: string): { snippet: string; start: number; end: number } 
 }
 
 /** One map key for a hydrated row, scoped the way `resultKey` scopes a ranked one: history
- *  identity carries the revision, current and evidence do not. Keying history without it would
- *  let several revisions of one artifact collapse onto each other in the map, which is the same
- *  defect as fetching them all — see `buildHydrationQuery`. `|` is a safe separator: a scope is
- *  one of three words, the middle two are uuids, and the last is an integer. */
+ *  identity carries the revision, current and evidence do not. Keying history without it would let
+ *  several revisions of one artifact collapse onto each other in the map — see
+ *  `buildHydrationQuery`. `|` is a safe separator: a scope is one of three words, the middle two
+ *  are uuids, and the last is an integer. */
 const hydrationKey = (scope: string, owner: string, artifact: string, revision: number): string =>
   scope === "history" ? `${scope}|${owner}|${artifact}|${revision}` : `${scope}|${owner}|${artifact}`;
 
 /**
- * A tenant-information search, end to end: the ONE function that takes what a caller typed and
- * returns the wire response, and the only thing between an MCP handler and `search()`.
+ * A tenant-information search, end to end: the one function between an MCP handler and `search()`.
  *
  * In order, and each step is somebody else's tested code rather than a reimplementation of it:
- *   `parseQuery`          (retrieval.ts, I-18)  the grammar — phrases, OR, exclusions, mode
- *   `loadCorpusRegistry`  (above,        I-22)  which corpora exist, and each one's audience
- *   `resolveCorpora`      (retrieval.ts, I-16)  which of them THIS context may query
- *   `analyzeForLanes`     (above,        I-22)  the AST as exact/fuzzy/lexical lane terms
- *   `search`              (lanes.ts,     I-17)  four lanes, dedup-before-cap, RRF fusion
- *   hydration             (above,        I-22)  the projection row and artifact head behind an id
- *   `matchesArtifact`     (pinned-read,  I-18)  the boolean structure SQL could not express
- *   `recordDigestOf`      (policies.ts,  I-9)   the digest a later pinned read binds to
- *   `encodeCursor`        (pinned-read,  I-18)  the provenance cursor for truncated source_refs
- *   `serializeResults`    (retrieval.ts, I-18)  the 24000-byte response budget, disclosed
+ *   `parseQuery`          (retrieval.ts)  the grammar — phrases, OR, exclusions, mode
+ *   `loadCorpusRegistry`  (above)         which corpora exist, and each one's audience
+ *   `resolveCorpora`      (retrieval.ts)  which of them this context may query
+ *   `analyzeForLanes`     (above)         the AST as exact/fuzzy/lexical lane terms
+ *   `search`              (lanes.ts)      four lanes, dedup-before-cap, RRF fusion
+ *   hydration             (above)         the projection row and artifact head behind an id
+ *   `matchesArtifact`     (pinned-read)   the boolean structure SQL could not express
+ *   `recordDigestOf`      (policies.ts)   the digest a later pinned read binds to
+ *   `encodeCursor`        (pinned-read)   the provenance cursor for truncated source_refs
+ *   `serializeResults`    (retrieval.ts)  the 24000-byte response budget, disclosed
  *
- * `matchesArtifact` RUNS AFTER RANKING AND BEFORE THE BUDGET, deliberately. The lanes push down
- * what the schema has a column for; a phrase, an OR group and an exclusion are artifact-level
- * boolean structure no single lane's predicate carries, and `lanes.ts` never called this
- * function — so a result failing an exclusion the caller typed could be ranked and returned. It
- * cannot filter before ranking either: a candidate has no text until it is hydrated.
+ * DELIBERATE: `matchesArtifact` runs after ranking and before the budget. The lanes push down what
+ * the schema has a column for; a phrase, an OR group and an exclusion are artifact-level boolean
+ * structure no single lane's predicate carries. It cannot filter before ranking either — a
+ * candidate has no text until it is hydrated.
  *
- * METADATA BROWSING IS REFUSED, NOT FAKED. "No query performs metadata browsing" (spec) and
- * `parseQuery` reports it as `browse`, but `search()` issues no statement at all when every
- * lane term is empty — so a browse request would come back as a complete, empty, entirely
- * believable answer. There is no browse lane in this checkout; until one exists this refuses by
- * name rather than answering "nothing matched" to a question nothing ever asked the database.
+ * Metadata browsing is refused, not faked. `parseQuery` reports it as `browse`, and `search()`
+ * issues no statement at all when every lane term is empty, so a browse request would come back as
+ * a complete, empty, believable answer. There is no browse lane in this checkout.
  */
 export async function searchTenantInformation(
   client: RetrievalClient,
@@ -323,21 +294,18 @@ export async function searchTenantInformation(
     }
   }
 
-  // THE REQUESTED LIMIT BOUNDS THE PAGE, and this loop is the only thing that applies it.
-  // `budgets(limit)` caps each LANE, not their union, so `search()` returns as many fused
-  // candidates as every lane in every authorized corpus contributed — a `limit: 10` request
-  // routinely fuses several times that. `serializeResults` cuts on BYTES alone, and its own
-  // comment says "the request's own limit (1–50) bounds candidateResults.length in production":
-  // that was an assumption about a caller which, until this line, nothing in the path enforced.
-  // The cap is applied AFTER `matchesArtifact`, never before — slicing first would let an
-  // artifact the caller excluded consume a slot and shorten the page it was removed from.
+  // The requested limit bounds the page, and this loop is the only thing that applies it.
+  // `budgets(limit)` caps each lane, not their union, so `search()` returns as many fused
+  // candidates as every lane in every authorized corpus contributed, and `serializeResults` cuts
+  // on bytes alone. The cap is applied after `matchesArtifact`, never before: slicing first would
+  // let an artifact the caller excluded consume a slot and shorten the page it was removed from.
   const wire = [];
   for (const candidate of outcome.candidates) {
     if (wire.length >= limit) break;
     const row = hydrated.get(hydrationKey(candidate.identity.scope, candidate.identity.owner_id, candidate.identity.artifact_id, candidate.identity.revision));
-    // A RANKED CANDIDATE WITH NO ROW IS DROPPED, NEVER FILLED IN. It means the projection moved
-    // between the lane query and this one; inventing a title for it would put a result in front
-    // of a reader that no row supports.
+    // A ranked candidate with no row is dropped, never filled in. The projection moved between
+    // the lane query and this one, and inventing a title would put a result in front of a reader
+    // that no row supports.
     if (!row) continue;
     const tags = row.tags ?? [];
     if (!matchesArtifact(ast, { title: [row.title], path: [row.path], tags: [...tags], body: [row.raw_body] })) continue;
@@ -386,9 +354,8 @@ export async function searchTenantInformation(
   return serializeResults(wire, {
     index_generation: context.index_generation,
     indexed_through: Object.fromEntries(watermarks.map((w) => [w.owner_id, Number(w.head_sequence)])),
-    // WHAT RANKING CONSIDERED, not what survived hydration and the boolean filter. `returned`
-    // and `withheld_candidates` are `serializeResults`'s own, computed from the list it is
-    // handed; conflating the two would report a page as the whole answer.
+    // What ranking considered, not what survived hydration and the boolean filter. `returned` and
+    // `withheld_candidates` are `serializeResults`'s own, computed from the list it is handed.
     candidate_total: outcome.candidates.length,
     mode_used: mode,
     incomplete: outcome.incomplete,

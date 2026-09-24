@@ -2,25 +2,20 @@
  * The public claim handler re-derives, and refuses a record that no longer describes its
  * decision — proved by producing each condition rather than by reading for it.
  *
- * WHY THIS IS A SECOND CHECK, beside `issuer-unreachable.ts`. That one asks whether issuance
- * is reachable and whether a fabricated id redeems. Both are questions about the ISSUING side
- * and about a name. This one is about the REDEEMING side: a grant that was validly issued,
- * against a world that then moved under it. No amount of issuance-side checking demonstrates
- * it, which is the argument `ProbeableGrantStore` is declared with — `tamper`, `advance` and
- * `withdrawApproval` exist for exactly this and for nothing else.
+ * COUPLED: `issuer-unreachable.ts` covers the issuing side — whether issuance is reachable
+ * and whether a fabricated id redeems. This covers the redeeming side: a validly issued grant
+ * against a world that moved under it. `ProbeableGrantStore`'s `tamper`, `advance` and
+ * `withdrawApproval` exist for this and nothing else.
  *
- * EVERY CASE CARRIES ITS CONTROL. A refusal is evidence only if the same claim redeems in an
- * unperturbed world, so each case issues twice: once clean, which must succeed, and once
- * perturbed, which must refuse. A handler that refused everything would otherwise pass every
- * line below, and that is the failure this shape is written against.
+ * Every case carries its control: each issues twice, once clean which must succeed and once
+ * perturbed which must refuse, so a handler that refused everything fails here.
  *
- * THE REASON IS ASSERTED, NOT JUST THE REFUSAL. Seven conditions all deny, and a handler that
- * denied all seven at the first guard would look identical from `ok: false` alone. Matching a
- * fragment of each reason is what makes them seven results rather than one.
+ * The reason is asserted, not just the refusal. Seven conditions all deny, and a handler
+ * denying all seven at the first guard looks identical from `ok: false` alone.
  *
- * THE WORLD IS RESET AT BOTH ENDS. `control-grant-fixture.ts` holds one module-scope world on
- * purpose, so a check that advanced an epoch and walked away would hand the next check a world
- * its own assertions were not written against.
+ * DELIBERATE: the world is reset at both ends. `control-grant-fixture.ts` holds one
+ * module-scope world, so a check that advanced an epoch and walked away would hand the next
+ * check a world its assertions were not written against.
  */
 import {
   callTool, grantFixtureWorld, issueForTest, resetGrantFixture, type FixtureWorld,
@@ -28,8 +23,7 @@ import {
 import { check } from "../run.ts";
 
 /** A fresh world with one valid repair grant filed in it. The id and the issuing digest come
- *  back because two of the perturbations below need them and neither is a constant a caller
- *  is given. */
+ *  back because two of the perturbations below need them. */
 function freshGrant(): { world: FixtureWorld; id: string; digest: string } | string {
   resetGrantFixture();
   const world = grantFixtureWorld();
@@ -96,11 +90,10 @@ check("a grant stops redeeming when the world it was decided over moves", () => 
     }
   }
 
-  // A LEASE IS NOT A MUTATION GRANT, and this is the one case with nothing to perturb: the
-  // decision itself says `holds: "lease"`, so a validly issued, entirely fresh grant against
-  // it must still refuse. It sits here rather than in CASES because its control is the repair
-  // grant already redeemed above — d1 and d2 name the same target and differ only in what
-  // they hold.
+  // A lease is not a mutation grant: the decision itself says `holds: "lease"`, so a validly
+  // issued, entirely fresh grant against it must still refuse — nothing to perturb. It sits
+  // outside CASES because its control is the repair grant already redeemed above, which names
+  // the same target and differs only in what it holds.
   if (!bad.length) {
     resetGrantFixture();
     const lease = issueForTest({ trustedHost: true, decisionId: "d2" });

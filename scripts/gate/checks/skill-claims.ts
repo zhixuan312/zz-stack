@@ -1,10 +1,9 @@
 /**
- * A skill that COUNTS something, counting it right.
+ * A skill that counts something, counting it right.
  *
  * "Three gates", "eight components", "fifty-three slides" — a number written in prose beside
- * the thing it counts, which drifts the moment anybody adds a ninth. The number is not
- * decoration: an agent reads it and stops there, so a stale count silently shortens the work.
- * Every check here recomputes the number from the thing itself.
+ * the thing it counts drifts the moment anybody adds a ninth, and an agent that reads the
+ * number stops there. Every check here recomputes the number from the thing itself.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -25,11 +24,6 @@ function errMessage(err: unknown): string {
 }
 
 check("a flow's skills state its gate count as the manifest declares it", () => {
-  // Written as prose, this number drifts and nothing notices. It was wrong in three places
-  // at once: ops-flow's defining sentence said "three gates" and then listed spec, plan and
-  // the acceptance — leaving out the intent gate the platform enforces — ops-spec called the
-  // spec gate "the first gate", and state.md (then direction.md) said the Operations flow declares four.
-  //
   // The manifest is the only thing that decides: a document with `gate: true` is a gate.
   const WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7 };
   const bad: string[] = [];
@@ -56,10 +50,9 @@ check("a flow's skills state its gate count as the manifest declares it", () => 
 });
 
 check("a stage skill's ordinal for its own gate matches the manifest", () => {
-  // "N gates" is checked above; the ORDINAL form is the same claim and slips past it.
-  // ops-plan's description said it holds "the second approval gate" — plan.md is the third
-  // gated document, after intent and spec, and it is the last one before anything is built,
-  // which is the fact that makes the sentence worth writing at all.
+  // "N gates" is checked above; the ordinal form is the same claim and slips past it — a
+  // description saying a document holds "the second approval gate" is counting the gated
+  // documents before it.
   const ORD: Record<string, number> = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5 };
   const bad: string[] = [];
   for (const f of flows) {
@@ -78,7 +71,7 @@ check("a stage skill's ordinal for its own gate matches the manifest", () => {
       const txt = readFileSync(md, "utf8");
       for (const m of txt.matchAll(/\b(first|second|third|fourth|fifth) (?:approval )?gate\b/gi)) {
         const said = ORD[m[1].toLowerCase()];
-        // Only when the sentence is about ITS OWN gate: "this is the second gate".
+        // Only when the sentence is about its own gate: "this is the second gate".
         if (!/\b(this is|hold(?:s|ing)? the|carries the)\b/i.test(
               txt.slice(Math.max(0, m.index - 40), m.index))) continue;
         if (said !== pos) {
@@ -92,14 +85,10 @@ check("a stage skill's ordinal for its own gate matches the manifest", () => {
 });
 
 check("a skill counting the platform's vocabulary counts it right", () => {
-  // zz-platform teaches the outcome words and then says "so a fifth word invents a row nobody
-  // can total". There are three, so a new one is the fourth. The sentence was written when
-  // there were four and stayed when `superseded` went — the identical drift the platform's own
-  // refusal carried, in the skill every agent loads before anything else.
-  //
-  // The check above this one counts a skill's OWN contents under a heading. This counts a
-  // vocabulary defined in @zz/contracts, so the number is derived from the definition rather
-  // than from anything in the file.
+  // The check above counts a skill's own contents under a heading. This counts the outcome
+  // vocabulary, which is defined in @zz/contracts, so the number is derived from the
+  // definition rather than from anything in the file. A skill saying "a fifth word invents a
+  // row nobody can total" is claiming there are four.
   const nothingToRun = unbuilt();
   if (nothingToRun) return nothingToRun;
   const outcomes = JSON.parse(execFileSync("node", ["--input-type=module", "-e",
@@ -130,27 +119,21 @@ check("a skill counting the platform's vocabulary counts it right", () => {
 });
 
 check("a skill that counts its own contents counts them right", () => {
-  // casebox-stg-usage's description said "its six verified traps" over a heading reading "The
-  // seven verified traps", above seven of them. A seventh was added and the description was
-  // not, which is the ordinary way a number in prose goes wrong.
+  // A count in a skill's description matters more than one in its body: that sentence sits in
+  // context for everyone on the team whether or not they load the skill, and it is what the
+  // model matches on.
   //
-  // It matters more in a description than anywhere else: that sentence sits in context for
-  // everyone on the team whether or not they load the skill, and it is what the model
-  // matches on. A skill that miscounts itself in the one line everybody sees is not
-  // trustworthy about the things nobody checks.
-  //
-  // Only headings that COUNT something, matched against the numbered items beneath them.
+  // Only headings that count something, matched against the numbered items beneath them.
   const bad: string[] = [];
   const WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8,
                   nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13 };
   for (const rel of sourceFiles(["catalog", "skills"], ["SKILL.md"])) {
     const lines = readFileSync(join(root, rel), "utf8").split("\n");
     for (const [i, line] of lines.entries()) {
-      // A COUNT of what follows ("The seven verified traps"), not an ORDINAL naming this
-      // section ("## 2. Find the argument", "## Twelve: the spec's own contract"). The
-      // first version of this check could not tell them apart and called five correct
-      // headings defects — the number leading the heading and followed by punctuation is
-      // the tell, and a count is always followed by the thing being counted.
+      // A count of what follows ("The seven verified traps"), not an ordinal naming this
+      // section ("## 2. Find the argument", "## Twelve: the spec's own contract"). The number
+      // leading the heading and followed by punctuation is the tell; a count is always
+      // followed by the thing being counted.
       if (/^##+\s*(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|\d+)\s*[.:)]/i.test(line)) continue;
       const m = /^##+ .*?\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|\d+)\s+[a-z]/i.exec(line);
       if (!m) continue;
@@ -173,18 +156,13 @@ check("a skill that counts its own contents counts them right", () => {
 });
 
 check("the audit criteria count themselves the way they tell auditors to", () => {
-  // sdlc-audit-criteria's own Criterion 8 is DRIFT / STALENESS: "Count items the doc claims to
-  // discuss (e.g. 'across all three sessions', 'the four highest-impact items') and verify the
-  // count against the actual list. If the count is wrong, that's drift."
+  // sdlc-audit-criteria's Criterion 8 is drift and staleness: count the items a document
+  // claims to discuss and verify the count against the actual list.
   //
-  // The number eleven is written out TEN times across three files — the criteria skill's
-  // frontmatter and five places in its body, and both auditors' frontmatter and body — and is
-  // derivable from two more: the `Criterion N —` step headings, and the length of
-  // criteriaCovered in the JSON a round must return. Twelve statements of one number, held in
-  // agreement by hand. Adding a twelfth criterion means editing ten lines, and missing one
-  // fails nothing: the auditor still runs, and returns a criteriaCovered that does not match
-  // what it did.
-  //
+  // The criteria count is written out in the criteria skill's frontmatter and body and in both
+  // auditors' frontmatter and body, and is derivable from the `Criterion N —` step headings.
+  // Missing one of those edits fails nothing on its own: the auditor still runs and returns a
+  // criteriaCovered that does not match what it did.
   const dir = join(catalogRoot, "sdlc/sdlc-flow/skills");
   const f = join(dir, "sdlc-audit-criteria/SKILL.md");
   if (!existsSync(f)) return "sdlc-audit-criteria is missing";
@@ -194,7 +172,7 @@ check("the audit criteria count themselves the way they tell auditors to", () =>
   const bad: string[] = [];
   // criteriaCovered's correspondence with these headings is the general rule and lives in
   // "a skill's coverage contract matches the list it enumerates". What is peculiar to this
-  // trio is the COUNT, spelled ten times across three files — including in two skills that
+  // trio is the count, spelled ten times across three files — including in two skills that
   // only load these criteria and can go stale without touching this one.
   const WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
                  "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen"];
@@ -214,16 +192,13 @@ check("the audit criteria count themselves the way they tell auditors to", () =>
 });
 
 check("a skill that lists a document's sections lists all of them", () => {
-  // The eight components a spec owes are written FIVE times: sdlc-flow's manifest declares
-  // them, sdlc-spec-audit enumerates them `·`-separated and says "the platform refuses the
-  // approval of a spec missing any of them", and sdlc-spec carries three more — a component
-  // catalog table, the skeleton it tells the writer to emit, and a canonical numbered list
-  // under "all eight, every time". Forty statements of one list, agreeing by hand.
+  // The components a spec owes are declared by sdlc-flow's manifest and enumerated again in
+  // sdlc-spec-audit (`·`-separated) and sdlc-spec (a component table, the skeleton it tells the
+  // writer to emit, and a numbered list).
   //
-  // The existing check that every declared section is named by SOME skill does not catch a
-  // drift in any of them: sdlc-spec writes those headings in four places, so a ninth section
-  // would be "named" while every enumeration went on showing eight — and those enumerations
-  // are what the writer emits and the auditor checks.
+  // The check that every declared section is named by some skill does not catch a drift in any
+  // of them: a new section named once would pass while every enumeration went on omitting it,
+  // and those enumerations are what the writer emits and the auditor checks.
   //
   // Four shapes, because that is how the list is actually written. Anything that enumerates
   // declared names must enumerate all of them, in the manifest's order.
@@ -279,23 +254,20 @@ check("a skill that lists a document's sections lists all of them", () => {
 });
 
 check("a skill's coverage contract matches the list it enumerates", () => {
-  // Four dispatched skills end by returning `criteriaCovered` — the caller's only evidence
-  // that a worker applied everything it was supposed to. Each one enumerates its criteria as a
-  // numbered list in its own text, and the array is a second copy of that list: eleven prose
-  // failure modes in sdlc-audit-criteria, five investigation perspectives, five research
-  // perspectives, ten review lenses. Adding, removing or renaming an item without editing the
-  // array leaves a worker reporting coverage that does not describe what it did, and nothing
-  // downstream can tell — the caller reads slugs, not headings.
+  // Dispatched skills end by returning `criteriaCovered`, the caller's only evidence that a
+  // worker applied everything it was supposed to. Each enumerates its criteria as a numbered
+  // list in its own text, and the array is a second copy of that list. A rename that misses the array leaves a worker reporting
+  // coverage that does not describe what it did, and the caller reads slugs, not headings.
   //
-  // CONTAINMENT, not equality, because the slugs are deliberately shortened:
-  // `pre-existing-defect-vs-new-regression` is written `pre-existing-vs-regression`, and four
-  // of sdlc-review's ten are abbreviated that way. The slug's words must all appear in the
-  // heading, which allows a shorter name and refuses a different one.
+  // Containment, not equality, because the slugs are deliberately shortened:
+  // `pre-existing-defect-vs-new-regression` is written `pre-existing-vs-regression`. The slug's
+  // words must all appear in the heading, which allows a shorter name and refuses a different
+  // one.
   //
-  // Matched against ONE numbered list, found by correspondence rather than by position:
-  // sdlc-research carries two (four constraints, then the five perspectives) and the array
-  // describes the second. sdlc-recall's array is the journal's own `type` vocabulary rather
-  // than an enumeration of its own text, so it is excluded by name.
+  // Matched against one numbered list, found by correspondence rather than by position:
+  // sdlc-research carries two and the array describes the second. sdlc-recall's array is the
+  // journal's own `type` vocabulary rather than an enumeration of its own text, so it is
+  // excluded by name.
   const TYPES = new Set(["decision", "design", "behavior", "process", "knowledge", "style"]);
   const words = (x: string): Set<string> => new Set(x.toLowerCase().match(/[a-z0-9]+/g) ?? []);
   const bad: string[] = [];
@@ -325,25 +297,22 @@ check("a skill's coverage contract matches the list it enumerates", () => {
 });
 
 check("the deck skill counts the template's slides correctly", () => {
-  // zz-deck tells the writer to replace "the 53 guidebook `<section>` elements carrying the
-  // `slide` class". That number is a fact about deck-guidebook.html — a 172KB file shipped
-  // beside the skill — and nothing tied the two together, so editing the guidebook silently
-  // makes the instruction wrong.
+  // zz-deck tells the writer how many guidebook `<section>` elements carry the `slide` class.
+  // That number is a fact about deck-guidebook.html, shipped beside the skill.
   //
-  // It also nearly cost the cover slide. Fifty-two sections carry `class="slide"` and the
-  // cover carries `class="slide active slide--cover"`, so an agent searching for that string
-  // finds 52 of the 53 and leaves the guidebook's own title page as the first thing a reader
-  // sees. The count and the matching rule are one fact, which is why both are checked here.
-  // `skills/zz-deck`, NOT a catalog path. The deck moved to the baseline on 2026-09-14, and the
-  // baseline's skills are the tree beside the catalog rather than inside it — a catalog path
-  // here would resolve to nothing, and the two `existsSync` guards below return a STRING, so
-  // the whole check would report "zz-deck is missing" for ever instead of counting anything.
+  // The matching rule is part of the same fact: the cover carries
+  // `class="slide active slide--cover"`, so an agent searching for the exact string
+  // `class="slide"` misses the guidebook's title page.
+  //
+  // DELIBERATE: `skills/zz-deck`, not a catalog path. The baseline's skills are the tree beside
+  // the catalog rather than inside it, and the two `existsSync` guards below return a string,
+  // so a catalog path would make this report "zz-deck is missing" for ever.
   const dir = join(root, "skills/zz-deck");
   const skill = join(dir, "SKILL.md"), tpl = join(dir, "deck-guidebook.html");
   if (!existsSync(skill)) return "zz-deck is missing";
   if (!existsSync(tpl)) return "deck-guidebook.html is missing — the skill tells the writer to read it";
   const html = readFileSync(tpl, "utf8");
-  // A class TOKEN, the way a browser matches it, not a literal attribute value.
+  // A class token, the way a browser matches it, not a literal attribute value.
   const slides = [...html.matchAll(/<section\b[^>]*\bclass="([^"]*)"/g)]
     .filter((m) => m[1].split(/\s+/).includes("slide")).length;
   const said = /\b(\d+) guidebook `<section>` elements/.exec(readFileSync(skill, "utf8"))?.[1];
@@ -352,12 +321,10 @@ check("the deck skill counts the template's slides correctly", () => {
   if (Number(said) !== slides) {
     bad.push(`zz-deck says the template has ${said} guidebook slides and it has ${slides}`);
   }
-  // A THIRD STATEMENT OF THE SAME LIST, inside the template itself. `#housebook-manifest`
-  // is JSON the page parses at runtime: renderVersion reports "N reference pages across M
-  // chapter labels" from it, and it is the only description of the deck a reader gets that
-  // is not the deck. Nothing tied the two together, so adding, removing or reordering a
-  // slide leaves the page telling its reader a count that is not its own — the same shape as
-  // the skill's number above, one file further in and with no reader who could notice.
+  // A third statement of the same list, inside the template itself. `#housebook-manifest` is
+  // JSON the page parses at runtime: renderVersion reports "N reference pages across M chapter
+  // labels" from it, and it is the only description of the deck a reader gets that is not the
+  // deck.
   const man = /<script id="housebook-manifest" type="application\/json">([\s\S]*?)<\/script>/.exec(html);
   if (!man) {
     bad.push("deck-guidebook.html no longer carries #housebook-manifest, and renderVersion parses it at run time");
@@ -371,7 +338,7 @@ check("the deck skill counts the template's slides correctly", () => {
       listed = null;
     }
     if (listed) {
-      // In ORDER, and by id: the library lists sections and the version panel counts the
+      // In order, and by id: the library lists sections and the version panel counts the
       // manifest, so a reordering that keeps the count is a disagreement neither would show.
       const ids = [...html.matchAll(/<section\b[^>]*\bdata-slide-id="([^"]+)"/g)].map((m) => m[1]);
       const named: string[] = listed.map((x: { id: string }) => x.id);
@@ -386,12 +353,10 @@ check("the deck skill counts the template's slides correctly", () => {
       }
     }
   }
-  // AND THE VERSION THE SKILL TELLS AN AUTHOR TO STAMP. The template states its edition in 55
-  // places: once in #housebook-manifest and once on each of the 53 slides, which is one file
-  // and one edit — plus once more in zz-deck's worked example, which is a different file and
-  // the only copy that can drift alone. Every slide a deck emits carries `data-version`, so a
-  // stale example mislabels the provenance of every deck built from it, and nothing downstream
-  // would contradict it.
+  // And the version the skill tells an author to stamp. The template states its edition once
+  // in #housebook-manifest and once on each slide, plus once more in zz-deck's worked example, which is a different file and the only copy that can drift alone.
+  // Every slide a deck emits carries `data-version`, so a stale example mislabels the
+  // provenance of every deck built from it.
   const version = /"version"\s*:\s*"([^"]+)"/.exec(man?.[1] ?? "")?.[1];
   if (!version) {
     bad.push("#housebook-manifest states no version — the slides stamp `data-version` from it");
@@ -414,14 +379,9 @@ check("the deck skill counts the template's slides correctly", () => {
 });
 
 check("a heading that counts its own list counts it right", () => {
-  // Four headings state how many items follow: "Five Investigation Perspectives", "The five
-  // perspectives", "Failure-Mode Taxonomy (10 Categories)", "The seven verified traps". Each
-  // is a number a person maintains by hand against a list right underneath it.
-  //
-  // casebox-stg-usage grew a seventh trap on 2026-08-28 and its own heading was updated; ops-select,
-  // which cited "the six verified traps in `casebox-stg-usage`", was not — so one document counted
-  // another's list and went stale the day that list grew. The count in ops-select carried no
-  // information and is gone; these four do carry it, and are checked instead.
+  // A heading that states how many items follow ("Five Investigation Perspectives",
+  // "Failure-Mode Taxonomy (10 Categories)") carries a number maintained by hand against the
+  // list right underneath it.
   //
   // Counted to the next heading of the same or higher level, which is the section the number
   // is about.

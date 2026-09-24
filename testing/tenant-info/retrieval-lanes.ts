@@ -1,27 +1,23 @@
 /**
- * retrieval-lanes.ts — I-17's "lanes" case group, following the split `persistence.ts` /
- * `persistence-coordination.ts` set: `scripts/tenant-info/suites.ts` reserves the suite name
- * "retrieval" at exactly `retrieval.ts`, so this file's `LANE_CASES` is imported and merged
- * into that file's `CASE_GROUPS` rather than registering a suite of its own.
+ * retrieval-lanes.ts — the "lanes" case group.
+ * COUPLED: `scripts/tenant-info/suites.ts` reserves the suite name "retrieval" at `retrieval.ts`,
+ * so this file's `LANE_CASES` is imported and merged into that file's `CASE_GROUPS` rather than
+ * registering a suite of its own.
  *
- * A FAKE STORE, NOT A DATABASE. The data-safety constraint on this delivery forbids
- * connecting to any database from a fixture; every case here drives the real query builders
- * (`buildExactLaneQuery`, `buildLexicalLaneQuery`, `buildFuzzyLaneQuery`,
- * `buildGraphNeighborQuery`, `search`) against an in-memory client that EVALUATES the
- * predicates each query's TEXT actually carries — extending I-16's own `recordingClient`
- * (`col = $n`) to the shapes this task's lanes use: `col = any($n::t[])`, `col && $n::t[]`,
+ * A fake store, not a database: no fixture here connects to one. Every case drives the real query
+ * builders (`buildExactLaneQuery`, `buildLexicalLaneQuery`, `buildFuzzyLaneQuery`,
+ * `buildGraphNeighborQuery`, `search`) against an in-memory client that evaluates the predicates
+ * each query's text actually carries — `col = $n`, `col = any($n::t[])`, `col && $n::t[]`,
  * `col <> all($n::t[])` and the graph lane's `exists (select 1 from unnest(...) as seed(...))`
- * seed-pair match. A checker that greps the query text for "owner_id" passes on a predicate
- * that selects the column and filters on nothing; this evaluator does not.
+ * seed-pair match. Grepping the query text for "owner_id" would pass on a predicate that selects
+ * the column and filters on nothing; this evaluator does not.
  *
- * THE FUZZY MOCK DOES NOT COMPUTE TRIGRAM SIMILARITY. `pg_trgm`'s `similarity()`/`<->` are
- * real PostgreSQL, not invented here (see `lanes.ts`'s own header) — but reimplementing the
- * actual trigram algorithm in a test double would be a second, unverified guess about
- * behavior this checkout cannot run. The fuzzy fake instead returns fixture rows filtered by
- * the SAME owner/corpus/scope conjuncts every lane carries, in the order the fixture declares
- * them — enough to prove owner separation, dedup-before-cap and cross-lane fusion, which is
- * what this task owns; GiST ranking quality against a real corpus is I-19/I-23's evidence, not
- * a property a mock can honestly assert.
+ * The fuzzy mock does not compute trigram similarity. `pg_trgm`'s `similarity()`/`<->` are real
+ * PostgreSQL, and reimplementing the algorithm in a double would be a second unverified guess
+ * about behaviour this checkout cannot run. The fuzzy fake returns fixture rows filtered by the
+ * same owner/corpus/scope conjuncts every lane carries, in the order the fixture declares them —
+ * enough to prove owner separation, dedup-before-cap and cross-lane fusion. GiST ranking quality
+ * against a real corpus is not a property a mock can honestly assert.
  */
 import assert from "node:assert/strict";
 
@@ -39,7 +35,7 @@ const ARTIFACT_B = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 const DESCRIPTOR_P = { corpus_key: "p-current", owner_id: OWNER_P, scope: "current", audience: "private", index_name: "p_idx" };
 
-// ── the extended predicate evaluator ─────────────────────────────────────────────────────────
+// The extended predicate evaluator
 
 type Conjunct =
   | { readonly kind: "eq"; readonly col: string; readonly paramIndex: number }
@@ -127,9 +123,9 @@ function fakeStore(fixtures: {
 
 const EMPTY_PREDICATES: HardPredicates = {};
 
-// ── per-lane owner-predicate cases: one collision fixture per builder ──────────────────────
+// Per-lane owner-predicate cases: one collision fixture per builder
 
-/** THE PATTERN I-16 SET, applied once per lane. Two rows share every identifying field except
+/** The owner-collision pattern, applied once per lane. Two rows share every identifying field except
  *  owner; only a real `owner_id = $n` conjunct in the executed text keeps them apart. */
 async function caseExactLaneOwnerPredicateSeparatesCollidingRows(): Promise<void> {
   const rowP = { owner_id: OWNER_P, artifact_id: ARTIFACT_A, revision: 1, content_hash: "p".repeat(64), tags: [], corpus_key: DESCRIPTOR_P.corpus_key, scope: "current", normalized_text: "widget" };
@@ -171,7 +167,7 @@ async function caseGraphLaneOwnerPredicateSeparatesCollidingRows(): Promise<void
     source_owner_id: OWNER_Q, source_artifact_id: ARTIFACT_B, source_revision: 1, kind: "cites",
     target_owner_id: OWNER_P, target_artifact_id: ARTIFACT_A, target_revision: 1, target_hash: "p".repeat(64), retracted_event_id: null,
   };
-  // Same seed, same target artifact id, but the OWNER on the target side is Q, not P — a
+  // Same seed, same target artifact id, but the owner on the target side is Q, not P — a
   // partial index or an artifact_id-only join would let this through; the owner predicate
   // in the query text must not.
   const edgeToQ = { ...edgeToP, target_owner_id: OWNER_Q, target_hash: "q".repeat(64) };
@@ -183,7 +179,7 @@ async function caseGraphLaneOwnerPredicateSeparatesCollidingRows(): Promise<void
   assert.equal(rows[0]!.target_hash, "p".repeat(64));
 }
 
-// ── hard exclusion, carried into every lane's own text ──────────────────────────────────────
+// Hard exclusion, carried into every lane's own text
 
 async function caseHardExclusionAppliesToEveryLane(): Promise<void> {
   const predicates: HardPredicates = { excludeArtifactIds: [ARTIFACT_B] };
@@ -195,10 +191,10 @@ async function caseHardExclusionAppliesToEveryLane(): Promise<void> {
   }
 }
 
-// ── search(): dedup-before-cap, tag tie-break and disclosure, through the real pipeline ────
+// Search(): dedup-before-cap, tag tie-break and disclosure, through the real pipeline
 
 /** Three aliases of the same artifact plus two other artifacts, run through the exact lane of
- *  a real `search()` call: the final candidate list has FOUR distinct keys, not five rows and
+ *  a real `search()` call: the final candidate list has four distinct keys, not five rows and
  *  not the first three (which would all be the same artifact if capped before collapse). */
 async function caseSearchDedupsPassagesBeforeTheExactCap(): Promise<void> {
   const alias = (n: string) => ({ owner_id: OWNER_P, artifact_id: ARTIFACT_A, revision: 1, content_hash: "a".repeat(64), tags: [], corpus_key: DESCRIPTOR_P.corpus_key, scope: "current", normalized_text: n });
@@ -217,7 +213,7 @@ async function caseSearchDedupsPassagesBeforeTheExactCap(): Promise<void> {
 /** Two artifacts tied on fused score — exact ranks A first and B second, fuzzy ranks them the
  *  other way round, so their summed RRF contributions are equal. `predicates.tags` is a
  *  filter ("&&", at least one shared tag) AND the tie-break signal, so both A and B must
- *  overlap it to survive at all: A shares BOTH query tags, B shares only one. "Equal scores
+ *  overlap it to survive at all: A shares both query tags, B shares only one. "Equal scores
  *  use explicit tag overlap ... descending" (contract): A, the fuller overlap, must precede B. */
 async function caseSearchBreaksTiesByExplicitTagOverlap(): Promise<void> {
   const rowA = { owner_id: OWNER_P, artifact_id: ARTIFACT_A, revision: 1, content_hash: "a".repeat(64), tags: ["urgent", "security"], corpus_key: DESCRIPTOR_P.corpus_key, scope: "current" };
@@ -257,20 +253,17 @@ async function caseSearchDisclosesInspectionBudgetExhaustion(): Promise<void> {
 }
 
 /**
- * THE CONSEQUENCE RRF EXISTS FOR, asserted in the composed function rather than in the
- * arithmetic. `checks/tenant-fusion-arithmetic.ts` proves `rrf()` computes reciprocal-rank
- * sums correctly over lane lists it is handed directly. These three cases prove `search()`
- * issues the lane queries. Between the two sat an untested join: that `search()` hands the
- * lane lists to `rrf()` in a way that preserves which lane found what.
+ * The consequence RRF exists for, asserted in the composed function rather than in the arithmetic.
+ * `checks/tenant-fusion-arithmetic.ts` proves `rrf()` computes reciprocal-rank sums over lane
+ * lists it is handed directly; the other cases prove `search()` issues the lane queries. Between
+ * them sits the join: that `search()` hands the lane lists to `rrf()` in a way that preserves which
+ * lane found what. Label every list with the same lane name, or build one list per corpus instead
+ * of per lane, and the arithmetic is still correct and the queries still issued while multi-lane
+ * agreement stops counting for anything.
  *
- * A wiring bug there is invisible to both existing layers — label every list with the same
- * lane name, or build one list per corpus instead of per lane, and the arithmetic is still
- * correct and the queries are still issued, while multi-lane agreement stops counting for
- * anything. What would be lost is the whole reason there are four lanes.
- *
- * So: B is the TOP result of the lexical lane and is found by nothing else. A is second in
- * that same lane, and is also found by exact and by fuzzy. A must outrank B — three lanes at
- * middling rank beat one lane at rank 1, which is the trade RRF is chosen to make.
+ * So: B is the top result of the lexical lane and is found by nothing else. A is second in that
+ * same lane, and is also found by exact and by fuzzy. A must outrank B — three lanes at middling
+ * rank beat one lane at rank 1, which is the trade RRF is chosen to make.
  *
  * `via` is asserted too, because the score alone could come out right by accident while the
  * provenance a caller reads is wrong.
@@ -303,18 +296,14 @@ async function caseSearchRanksMultiLaneAgreementAboveOneLaneTopHit(): Promise<vo
 }
 
 /**
- * THE LEXICAL LANE USES THE OPERATOR THE EXTENSION ACTUALLY HAS.
+ * The lexical lane uses the operator the extension actually has.
  *
- * This lane was built against an extrapolation — `raw_body @@ to_bm25query(...)`, reasoned
- * from PostgreSQL's own `to_tsquery`/`@@` convention and honestly labelled as unverified. It
- * was wrong: in pg_textsearch v1.4.0 `@@` takes a `tsquery`, and a `bm25query` is consumed by
- * `<@>` in ORDER BY. The old form would have been refused the first time it ran against the
- * real extension, and every case in this suite passed both before and after the correction,
- * because they all assert on which rows come back from a fake store rather than on the SQL
- * the lane emits.
+ * In pg_textsearch v1.4.0 `@@` takes a `tsquery`, and a `bm25query` is consumed by `<@>` in ORDER
+ * BY. Every other case in this suite asserts on which rows come back from a fake store rather than
+ * on the SQL the lane emits, so a wrong operator passes all of them.
  *
- * So this one asserts the emitted text. It is the only thing standing between a future edit
- * and a lane that cannot execute — there is no PostgreSQL 17 here to refuse it for us.
+ * So this one asserts the emitted text. It is the only thing standing between a future edit and a
+ * lane that cannot execute — this offline suite has no PostgreSQL 17 to refuse it.
  */
 async function caseLexicalLaneUsesTheBm25RankingOperator(): Promise<void> {
   const q: LaneQuery = buildLexicalLaneQuery(DESCRIPTOR_P, "widget", EMPTY_PREDICATES, 10);

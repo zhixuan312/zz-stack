@@ -1,17 +1,14 @@
 /**
  * The platform, over HTTP, from a script.
  *
- * WHY A SCRIPT CALLS THE TOOLS AT ALL. Everything else on this platform reaches zz-core
- * through the model's own MCP connection, and that is right for work that needs judgement.
- * An import needs none: the mapping from an mma journal node to a knowledge node is
- * mechanical, and there are several hundred of them. Pushing several hundred documents
- * through a conversation would cost more than the corpus is worth and would fail halfway
- * through, at a different place every time. So the judgement stays in the skill and the
- * moving stays here.
+ * Everything else on this platform reaches zz-core through the model's own MCP connection,
+ * which is right for work that needs judgement. An import needs none: the mapping from an mma
+ * journal node to a knowledge node is mechanical and there are several hundred of them. The
+ * judgement stays in the skill and the moving stays here.
  *
- * The token is read the same way the MCP header helper reads it, in the same order, for the
- * same reason: two answers to "where is the token" is how a tool works in one place and 401s
- * in the other.
+ * COUPLED: the token is read in the same order as `packages/tools/src/lib/cli.ts` — $ZZ_TOKEN,
+ * then $ZZ_TOKEN_FILE, then ~/.zz/token. Two answers to "where is the token" is how a tool
+ * works in one place and 401s in the other.
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -57,22 +54,18 @@ export function gateway() {
         throw new Error("Could not ask the claude CLI what is installed, so there is no way to " +
             "know which gateway to import into. Is `claude` on PATH?");
     }
-    // ONLY THIS MARKETPLACE'S PLUGINS, and the reason is a credential rather than a hostname.
+    // Only this marketplace's plugins, and the reason is a credential rather than a hostname.
+    // Walking every installed plugin and returning the first that names any MCP server hands back
+    // another marketplace's host — and `Door` puts the platform token in an
+    // `Authorization: Bearer` header on the very first request, so that sends somebody's platform
+    // credential to a third party.
     //
-    // This walked EVERY installed plugin and returned the first one that named any MCP server at
-    // all. A person with `context7@<some other marketplace>` installed got `mcp.context7.com` —
-    // and `Door` puts the platform token in an `Authorization: Bearer` header on the very first
-    // request, so the bug did not merely point the import at the wrong host, it SENT SOMEBODY'S
-    // PLATFORM CREDENTIAL TO A THIRD PARTY. It surfaced as a 404 and looked like the platform
-    // being down.
-    //
-    // zz-doctor already filtered to this marketplace and so passed on the same machine, which is
-    // why nothing caught it: two files deciding one thing, and only one of them was right. The
-    // filter here is written to be the same rule, in the same words.
+    // COUPLED: `catalog/zz/zz-access/skills/zz-doctor/doctor.ts` filters to this marketplace by
+    // the same rule, in the same words.
     const mine = listed.filter((p) => typeof p?.id === "string" && p.id.endsWith(`@${MARKETPLACE}`));
-    // The core door by preference, then any door this marketplace's plugins declare. A flow
-    // plugin names block doors on the same gateway, so either answers the question "which
-    // deployment" — but preferring the one we are about to call keeps the answer obvious.
+    // The core door by preference, then any door this marketplace's plugins declare. Every door
+    // is on the same gateway, so either answers the question "which deployment" — but preferring
+    // the one we are about to call keeps the answer obvious.
     const urls = mine.flatMap((p) => Object.values(p?.mcpServers ?? {}).map((sv) => sv?.url))
         .filter((u) => typeof u === "string");
     const host = (u) => /^(https?:\/\/[^/]+)/.exec(u)?.[1];
@@ -100,12 +93,10 @@ function asCallResult(v) {
 }
 /** One MCP door, as a callable.
  *
- * NO HANDSHAKE. The doors are stateless — no session id, nothing to keep alive — and a
- * `tools/call` on a cold connection is answered. So this never builds an `initialize`, which
- * means it never names a protocol version: that string is written once, in
- * `packages/mcp-client`, and a copy of it here would be a second answer to drift away from
- * it the day the gateway stops accepting the older one. Each call is one POST, and a retry
- * is safe. */
+ * DELIBERATE: no handshake. The doors are stateless — no session id, nothing to keep alive —
+ * and a `tools/call` on a cold connection is answered. So this never builds an `initialize`
+ * and never names a protocol version; that string is written once, in `packages/mcp-client`.
+ * Each call is one POST, and a retry is safe. */
 export class Door {
     url;
     token;
@@ -124,12 +115,10 @@ export class Door {
                 "Content-Type": "application/json",
                 "Accept": "application/json, text/event-stream",
                 "Authorization": `Bearer ${this.token}`,
-                // WHO IS CALLING. The gateway correlates a skill load with the calls that follow it
-                // on `x-zz-user-email` + `x-zz-client`, so a caller that omits this does not become
-                // anonymous — it JOINS the trace of every other process acting as the same person,
-                // including that person's own chat session. An import of several hundred writes
-                // landing in somebody's skill telemetry is exactly the corruption that key exists to
-                // prevent, and it is silent: the numbers stay plausible.
+                // Who is calling. The gateway correlates a skill load with the calls that follow it on
+                // `x-zz-user-email` + `x-zz-client`, so a caller that omits this is not anonymous — it
+                // joins the trace of every other process acting as the same person, silently, with the
+                // numbers staying plausible.
                 "X-ZZ-Client": this.client,
             },
             body: JSON.stringify({ jsonrpc: "2.0", id: ++this.id, method, params }),
@@ -156,12 +145,11 @@ export class Door {
             throw new Error(`${method}: ${msg.error.message ?? JSON.stringify(msg.error)}`);
         return msg.result;
     }
-    /** A tool call, with the platform's REFUSALS surfaced as failures.
+    /** A tool call, with the platform's refusals surfaced as failures.
      *
-     * zz-core answers a refusal as a normal result whose text begins `ERROR:` — that is
-     * deliberate, so a model reads the sentence and fixes the call. A script that only checked
-     * the JSON-RPC envelope would count every refusal as a success and report a clean import
-     * over a store that received nothing. */
+     * zz-core answers a refusal as a normal result whose text begins `ERROR:`, so a script that
+     * only checked the JSON-RPC envelope would count every refusal as a success and report a
+     * clean import over a store that received nothing. */
     async call(name, args) {
         const r = asCallResult(await this.#post("tools/call", { name, arguments: args }));
         const text = (r.content ?? []).map((c) => c.text ?? "").join("\n").trim();

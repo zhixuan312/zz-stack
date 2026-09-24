@@ -1,4 +1,4 @@
-// Every rename the spec froze resolves, every deletion does not, and the counts hold.
+// Every rename in the alias maps resolves, every deletion does not, and the counts hold.
 import { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS, SKILL_ALIAS } from "../packages/contracts/dist/index.js";
 
 const fail: string[] = [];
@@ -6,23 +6,16 @@ const size = (name: string, map: Record<string, string>, want: number) => {
   const n = Object.keys(map).length;
   if (n !== want) fail.push(`${name} has ${n} entries, expected ${want}`);
 };
-// 17, not 16. Sixteen is the RENAME count for /core — the tools that rename and stay, plus
-// reindex_knowledge, which is renamed as it moves. block_skills is a MERGE, counted
-// separately from renames in the spec's own table, but it still needs an alias entry so
-// its history resolves. Renames and entries are different quantities and the plan's
-// AC-1.3a conflated them.
+// 17 entries, not the 16 renames: block_skills is a merge rather than a rename, and still
+// needs an entry so its history resolves.
 size("TOOL_ALIAS", TOOL_ALIAS, 17);
-// 19, was 29. The ten that left are the third-party-server tools — `grant_tool`,
-// `revoke_tool`, `connect_block`, `disconnect_block`, `list_platforms`, and the five
-// credential ones. A rename map resolves a tool's HISTORY, so an entry normally outlives the
-// rename; these outlive nothing, because the tool they resolve TO no longer exists on any
-// door. An alias pointing at a name that 404s is worse than an absent one: it turns "no such
-// tool" into a tool the client accepts and the gateway refuses.
+// A rename map resolves a tool's history, so an entry normally outlives the rename. The
+// third-party-server tools carry none: the name they would resolve to is on no door, and an
+// alias pointing at a 404 turns "no such tool" into a call the client accepts and the
+// gateway refuses.
 size("MANAGE_ALIAS", MANAGE_ALIAS, 16);
-// 7, was 6. `round_recommend` -> `round_score` joined in 0.60.0, when the tool stopped
-// choosing a recommendation: the question it asked — keep, keep-and-change, retire — has one
-// permanent answer, because somebody installs a plugin for a reason and keeps it. The entry
-// exists so a caller working from the old name still reaches the tool that replaced it.
+// Includes `round_recommend` -> `round_score`, so a caller working from the old name still
+// reaches the tool that replaced it.
 size("EVAL_ALIAS", EVAL_ALIAS, 7);
 size("SKILL_ALIAS", SKILL_ALIAS, 2);
 
@@ -43,11 +36,11 @@ for (const [map, from, to] of resolves) {
   if (map[from] !== to) fail.push(`${from} resolves to ${map[from]}, expected ${to}`);
 }
 
-// A deleted tool must NOT resolve: aliasing it would merge two distinct series.
+// A deleted tool must not resolve: aliasing it would merge two distinct series.
 for (const gone of ["issue_my_access_token", "my_access_tokens", "revoke_my_access_token"]) {
   if (MANAGE_ALIAS[gone]) fail.push(`${gone} was deleted and must have no alias`);
 }
-// An unchanged tool must NOT resolve either.
+// An unchanged tool must not resolve either.
 for (const same of ["initiative_status", "knowledge_add", "knowledge_supersede"]) {
   if (TOOL_ALIAS[same]) fail.push(`${same} is unchanged and must have no alias`);
 }

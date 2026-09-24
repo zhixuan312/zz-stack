@@ -1,36 +1,22 @@
 /**
- * THE PROBE RUNNER, AND ITS ONE RULE: a probe that could not RUN did not FAIL.
+ * The probe runner, and its one rule: a probe that could not run did not fail.
  *
- * This exists because of an hour on 2026-09-11. Release 0.26.1 deployed, and the release's own
- * verification reported six failures — "gateway /health: PUBLIC is not defined", "MCP
- * initialize /core/mcp: envToken is not defined" — so the release rolled a perfectly healthy
- * platform back to 0.26.0. Those messages are ReferenceErrors from INSIDE the verifier: the
- * split of release.ts had left verify.ts using three names it never imported. The platform
- * was serving correctly the entire time. The thing checking it was not.
+ * A checker that cannot tell its own breakage from its subject's will eventually report the
+ * subject as broken, at the moment somebody is most likely to act on it.
  *
- * The old runner had one `catch`, and everything it caught became a problem attributed to the
- * deployment. That is the defect, not the missing import: a checker that cannot tell its own
- * breakage from its subject's will eventually report the subject as broken, and it will do it
- * at the moment somebody is most likely to act on it.
- *
- * SO THERE ARE THREE VERDICTS, NOT TWO:
+ * Three verdicts, not two:
  *
  *   ok           the probe ran and the deployment agrees with what this repository declares
- *   wrong        the probe ran and they disagree. THIS is the only one that means "broken",
- *                and the only one a release may roll back on
- *   unknown      the probe did not run. Its own bug, an unreachable host, a missing token.
- *                Never a verdict about the deployment, never a rollback — and never silently
- *                green either: an unknown is reported, and it makes the run non-zero
+ *   wrong        the probe ran and they disagree. The only one that means "broken", and the
+ *                only one a release may roll back on
+ *   unknown      the probe did not run: its own bug, an unreachable host, a missing token.
+ *                Never a verdict about the deployment and never a rollback — and never
+ *                silently green either: an unknown is reported, and it makes the run non-zero
  *
- * How the runner tells them apart, deterministically rather than by reading the message: a
- * ReferenceError, a TypeError or a SyntaxError thrown out of a probe is a defect in the probe
- * — no amount of platform misbehaviour produces one — so it is `unknown`, tagged as the
- * doctor's own bug. Anything else thrown is `unknown` too, tagged as the environment. Only a
- * probe that RETURNS a description of a disagreement is `wrong`.
- *
- * That rule is the house rule already written in sdlc-execute, applied to ourselves: "a check
- * that dies on a denied port bind, a missing binary or a bare timeout did not fail — it did
- * not run", and conflating the two throws away finished work.
+ * The runner tells them apart deterministically rather than by reading the message: a
+ * ReferenceError thrown out of a probe is a defect in the probe, so it is `unknown`, tagged as
+ * the doctor's own bug. Anything else thrown is `unknown` too, tagged as the environment. Only
+ * a probe that returns a description of a disagreement is `wrong`.
  */
 import { errMessage, log, redact } from "../deployment.ts";
 
@@ -51,7 +37,6 @@ interface Layer {
   probes: ProbeEntry[];
 }
 
-// Not exported: the one importer was `refresh-block-tools`, which is gone.
 type Verdict = "ok" | "wrong" | "unknown";
 
 /** One probe's outcome. `detail` is set for `wrong` and `unknown`; `mine` only for `unknown`
@@ -71,7 +56,7 @@ const layers: Layer[] = [];
 let current: Layer | null = null;
 export const findings: Finding[] = [];
 
-/** Declare a layer: a question with ONE source of truth on each side.
+/** Declare a layer: a question with one source of truth on each side.
  *
  * `owns` is the repository paths this layer's claim is made of, and it is not decoration —
  * `--since` reads it to say which commits since a known-good version touched the layer that
@@ -90,16 +75,13 @@ export function probe(name: string, fn: ProbeFn): void {
 }
 
 
-/* ReferenceError ALONE, and the two that were here with it are the point.
+/* DELIBERATE: ReferenceError alone. A SyntaxError or a TypeError raised inside a probe is often
+ * the platform's doing — a Caddy 502 hands back an HTML page and JSON.parse throws SyntaxError
+ * — and calling that a bug in the doctor is the same misattribution aimed the other way. Only
+ * a ReferenceError is unambiguously our own code.
  *
- * A SyntaxError or a TypeError raised inside a probe is very often the PLATFORM's doing, not
- * the doctor's: a Caddy 502 hands back an HTML page, JSON.parse throws SyntaxError, and calling
- * that "a bug in the doctor" is the same misattribution this file exists to prevent, aimed the
- * other way — at a platform that really is broken. Only a ReferenceError is unambiguously our
- * own code, because no amount of platform misbehaviour produces one.
- *
- * This is a backstop, not the fix. The fix is that a probe never lets live data throw at all:
- * a precondition may throw, an answer must be returned. See doors.ts and contract.ts. */
+ * A backstop, not the fix: a probe never lets live data throw at all — a precondition may
+ * throw, an answer must be returned. See doors.ts and contract.ts. */
 const MINE = new Set(["ReferenceError"]);
 
 /** Run one layer's probes and record what each of them turned out to be. */
@@ -139,10 +121,9 @@ export function diagnose({ only = null, ctx = {} }:
       continue;
     }
     for (const r of runLayer(l, ctx)) {
-      // DOWNSTREAM, NOT INDEPENDENT. If the host is running last release's image, the contract
-      // layer will disagree with the source — correctly, and it is not a bug in the contract.
-      // Later layers still RUN, because knowing HOW they disagree is most of a diagnosis; they
-      // are just tagged with what already explains them.
+      // Downstream, not independent. If the host is running last release's image, the contract
+      // layer will disagree with the source, correctly. Later layers still run, because knowing
+      // how they disagree is most of a diagnosis; they are tagged with what explains them.
       if (firstWrong && r.verdict === "wrong") r.downstream = firstWrong;
       findings.push(r);
       if (!firstWrong && r.verdict === "wrong") firstWrong = l.name;

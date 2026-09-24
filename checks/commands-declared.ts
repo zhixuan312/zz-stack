@@ -1,4 +1,4 @@
-// Commands come from the map. The deriver is gone, not merely unused.
+// Commands come from the manifest's declaration, never derived from a skill's name.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 const fail: string[] = [];
@@ -14,12 +14,10 @@ for (const p of [...walk("services"), ...walk("packages"), ...walk("scripts")]) 
   }
 }
 
-// CODE, NOT PROSE. Everything below asks what client-package.ts DOES, so it reads the file
-// with its comments stripped. The first version of this check asked whether the word
-// `commands` appeared anywhere in it, and that is true of a docstring, of an unrelated
-// sentence about `claude plugin` commands, and of the string `commands/${cmd}.md` — so the
-// whole platform-plugin branch could stop reading the manifest and this still said ok. That
-// was measured, not guessed: the branch was replaced with an empty list and the check passed.
+// DELIBERATE: code, not prose. Everything below asks what client-package.ts does, so it reads
+// the file with its comments stripped. The word `commands` also appears in a docstring and in
+// the path string `commands/<cmd>.md`, so a grep of the raw file stays green on a branch that
+// has stopped reading the manifest.
 const pkg = readFileSync("services/gateway/src/client-package.ts", "utf8")
   .split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
 
@@ -33,7 +31,7 @@ for (const [fn, what] of [["promoteCommands", "promote the skills the manifest d
               "commands map, not derive a name from a skill");
   }
 }
-// The literal fallback must be gone — here and in the packager it lived in.
+// Neither file falls back to a literal "flow" type.
 for (const f of ["services/gateway/src/client-package.ts", "services/gateway/src/package/skills.ts"]) {
   const src = readFileSync(f, "utf8").split("\n")
     .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
@@ -41,7 +39,7 @@ for (const f of ["services/gateway/src/client-package.ts", "services/gateway/src
     fail.push(`the "flow" fallback survives in ${f}`);
   }
 }
-// Control: `entry` must still exist. It answers a different question and zz-router needs it.
+// DELIBERATE: `entry` must still exist. It answers a different question and zz-router needs it.
 if (!/\bentry\b/.test(pkg)) fail.push("entry was removed; zz-router needs it to name the front door");
 
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }

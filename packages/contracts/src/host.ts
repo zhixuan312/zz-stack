@@ -2,28 +2,21 @@
  * The generic control-loop host: what a reviewed module is, the five operations a host serves,
  * and a second flow's controller that drives all five.
  *
- * WHY THE ENGINE IS HERE AND NOT IN THE SERVICE. `@zz/contracts` is the leaf of this
- * repository's dependency graph — every service depends on it and it depends on nothing but
- * zod — so a host built in `services/zz-core` cannot be driven from here, and a fixture that
- * drove a second copy of the engine would demonstrate nothing about the one that ships. The
- * engine is therefore the contract: the types and the behaviour they imply, in one place both
- * the service and the fixture reach. `services/zz-core/src/host/` owns what genuinely belongs
- * to the service — which modules the release packages, the allowlist and digest that decide
- * whether one may be registered at all, and the evaluation job that walks a run's steps.
+ * The engine lives here, not in the service: `@zz/contracts` is the leaf of this repository's
+ * dependency graph, so a host built in `services/zz-core` could not be driven from here.
+ * `services/zz-core/src/host/` owns the service's half — which modules the release packages,
+ * the allowlist and digest that gate registration, and the job that walks a run's steps.
  *
- * WHAT THIS MODULE DOES NOT KNOW, stated because it is the whole point: it has no idea what
- * any particular flow's steps mean. It knows a step has a method somebody reads, evidence
- * kinds it accepts, completion rules over that evidence, and actions it grants once those
- * rules are met. Whether a step is a draft, an audit, a purchase or a sign-off is content the
- * module carries, never a branch in here — and the only way to be sure of that is to drive
- * the same engine with a flow whose steps mean something else entirely, which is what
- * {@link runSecondFlowFixture} does.
+ * This module knows nothing about what any flow's steps mean. A step has a method somebody
+ * reads, evidence kinds it accepts, completion rules over that evidence, and actions it grants
+ * once those rules are met; whether it is a draft, an audit, a purchase or a sign-off is
+ * content the module carries, never a branch here. {@link runSecondFlowFixture} drives the same
+ * engine with a flow whose steps mean something else entirely.
  *
- * MATERIAL AND JUDGEMENT are the one distinction the engine draws, and it is deliberately not
- * a vocabulary: an evidence kind either carries new facts about the subject or rates what is
- * already recorded. That is enough to describe the SHAPE of a long, linear, approval-gated
- * document pipeline without naming a single one of its stages — which is what
- * {@link procedureSignature} computes and {@link reusesGatedDocumentPipeline} judges.
+ * Material and judgement are the one distinction the engine draws: an evidence kind either
+ * carries new facts about the subject or rates what is already recorded. That is enough for
+ * {@link procedureSignature} to describe the shape of a long, linear, approval-gated document
+ * pipeline without naming a stage, and for {@link reusesGatedDocumentPipeline} to judge it.
  */
 import { createHash } from "node:crypto";
 
@@ -32,9 +25,7 @@ import { createHash } from "node:crypto";
  *
  * `carries` is the only classification the engine makes, and it is structural rather than
  * lexical: `material` adds facts about the run's subject, `judgement` rates material already
- * recorded. A flow that moves one material artifact through every step and closes each with a
- * judgement has a recognisable shape; a flow that records three different material kinds and
- * no judgement at all does not. Neither fact requires knowing what any of them are called.
+ * recorded.
  */
 export interface EvidenceKind {
   readonly name: string;
@@ -45,7 +36,7 @@ export interface EvidenceKind {
  * One condition a step must satisfy before it grants anything.
  *
  * `atLeast` counts entries of `kind` recorded against the step. `about`, when set, names the
- * kind an entry must POINT AT to be counted — so "one award decision, about a quote that was
+ * kind an entry must point at to be counted — so "one award decision, about a quote that was
  * actually recorded" is expressible without the engine knowing what an award or a quote is.
  */
 export interface CompletionRule {
@@ -57,7 +48,7 @@ export interface CompletionRule {
 /** One step of a procedure: the method somebody reads, what it accepts, what completes it,
  *  and what completing it makes claimable. `after` names the steps that must have completed
  *  first — a list, so a procedure that fans out is expressible and a procedure that does not
- *  is visibly linear. It names the IMMEDIATE predecessors and binds the whole chain behind
+ *  is visibly linear. It names the immediate predecessors and binds the whole chain behind
  *  them: a step has not completed while anything it follows is outstanding, however far back,
  *  so a procedure states each link once and gets the order it wrote down. */
 export interface ProcedureStep {
@@ -72,10 +63,9 @@ export interface ProcedureStep {
 /**
  * Who may start a run of this module.
  *
- * A PROFILE RULE THE HOST CHECKS, never a behaviour the host hardcodes. `requires` lists the
- * attributes a caller's profile must carry; the engine compares two lists of opaque strings
- * and refuses the difference. Which attributes exist, and who has them, is the deployment's
- * business — this is the mechanism, and there is no second one for any particular flow.
+ * `requires` lists the attributes a caller's profile must carry; the engine compares two lists
+ * of opaque strings and refuses the difference. Which attributes exist, and who has them, is
+ * the deployment's business.
  */
 export interface EnrolmentRule {
   readonly requires: readonly string[];
@@ -111,22 +101,13 @@ export interface EvidenceEntry {
   readonly kind: string;
   readonly about: string;
   readonly note: string;
-  /** The id of an earlier entry this one WITHDRAWS, if any.
+  /** The id of an earlier entry this one withdraws, if any.
    *
-   *  THE LOG STAYS APPEND-ONLY AND A FACT STAYS A FACT. Something happens that makes an
-   *  earlier fact no longer stand — a gated document is revised, and the platform clears the
-   *  approval it carried and returns it to draft. The approval really was given, so deleting
-   *  the entry would falsify the history; but counting it would answer a question about the
-   *  run's CURRENT state with a fact that has been withdrawn.
+   *  The log stays append-only: the earlier fact really happened, so deleting the entry would
+   *  falsify the history, but counting it would answer a question about the run's current
+   *  state with a fact that has been withdrawn.
    *
-   *  Measured before this field existed, by driving sdlc-flow's whole declared procedure and
-   *  then revising its spec: `close:initiative` was granted, and granted again after the
-   *  revision had cleared the approval the spec step is counted by. Nothing leaked, because
-   *  `documentGuards` still refuses a draft gated document — which is the duplication this
-   *  control loop exists to replace, so the loop being wrong is the whole problem rather than
-   *  a harmless one.
-   *
-   *  GENERIC BY CONSTRUCTION: an id, not a kind and not a document. The kernel does not know
+   *  Generic by construction: an id, not a kind and not a document. The kernel does not know
    *  what a revision is; it knows that a later entry said an earlier one no longer stands. */
   readonly supersedes?: string;
 }
@@ -154,10 +135,8 @@ export interface ActionGrant {
 /**
  * The generic host: registration, the five operations, and the record of what was invoked.
  *
- * `trace` exists so that a caller can prove the host was actually driven rather than assert
- * it. The fixture below returns this array, not a list of its own — a fixture that appended
- * five strings to a list of its own would pass any check that reads it and demonstrate
- * nothing.
+ * `trace` lets a caller prove the host was actually driven rather than assert it. The fixture
+ * below returns this array, not a list of its own.
  */
 export interface Host {
   readonly trace: readonly string[];
@@ -170,9 +149,8 @@ export interface Host {
   actionClaim(runId: string, stepId: string, action: string): ActionGrant;
 }
 
-// The five operation names, spelled once. They are what `trace` records and what any door
-// that ever fronts this host would be named after, so a second spelling anywhere is a second
-// answer to "which operation ran".
+// The five operation names, spelled once. They are what `trace` records, so a second spelling
+// anywhere is a second answer to "which operation ran".
 const RUN_START = "run_start";
 const METHOD_READ = "method_read";
 const EVIDENCE_RECORD = "evidence_record";
@@ -190,11 +168,9 @@ interface HostRun {
  *  step they were recorded on; `about` follows the back-reference into the whole run, because
  *  the thing an entry points at was usually recorded at an earlier step. */
 function met(rule: CompletionRule, evidence: readonly EvidenceEntry[], stepId: string): boolean {
-  // WHAT A LATER ENTRY WITHDREW IS NOT COUNTED, on either side of the back-reference.
-  //
-  // Both sides, because withdrawing only the entry being counted would leave an approval
-  // standing on a document entry that had itself been withdrawn — a reference into history
-  // rather than into the run's current state. One set, applied twice.
+  // What a later entry withdrew is not counted, on either side of the back-reference: an
+  // approval standing on a withdrawn document entry would be a reference into history rather
+  // than into the run's current state. One set, applied twice.
   const withdrawn = new Set(
     evidence.map((e) => e.supersedes).filter((s): s is string => s !== undefined && s !== ""));
   const here = evidence.filter(
@@ -215,15 +191,13 @@ function unmetSentence(rule: CompletionRule, stepId: string): string {
 /**
  * Refuse a procedure whose `after` graph closes on itself.
  *
- * AT REGISTRATION, WHICH HAPPENS ONCE, rather than inside the evaluation that runs on every
- * claim. A registration is the platform accepting a body whose digest somebody reviewed; that
- * is where a defect in the body belongs, and refusing there makes the recursive predecessor
- * check terminating by construction instead of guarded per call — a guard that would otherwise
- * have to answer "this procedure cannot be evaluated" to a caller who cannot act on it.
+ * DELIBERATE: this runs at registration, which happens once, rather than inside the evaluation
+ * that runs on every claim. Refusing here makes the recursive predecessor check terminating by
+ * construction instead of guarded per call.
  *
- * AN UNKNOWN PREDECESSOR IS NOT THIS FUNCTION'S BUSINESS. A step naming an `after` the module
+ * An unknown predecessor is not this function's business: a step naming an `after` the module
  * does not declare is already refused by name, with the id in the message, the first time
- * anything asks about that step. Folding it in here would give one fault two answers.
+ * anything asks about that step.
  */
 function refuseCycle(module: ReviewedModule): void {
   const steps = new Map(module.steps.map((s) => [s.id, s]));
@@ -248,8 +222,7 @@ function refuseCycle(module: ReviewedModule): void {
  * A host with nothing registered.
  *
  * Every instance is independent — no module-scope registry, no process-wide state — so a
- * service composing one at boot and a fixture composing one in a test cannot interfere, and
- * neither depends on the order the other ran in.
+ * service composing one at boot and a fixture composing one in a test cannot interfere.
  */
 export function createHost(): Host {
   const modules = new Map<string, ReviewedModule>();
@@ -268,27 +241,22 @@ export function createHost(): Host {
     return step;
   };
   // Shared by `control_evaluate` and `action_claim`, and untraced, so that claiming an action
-  // records one operation rather than two — a claim is not an evaluation the caller asked for.
+  // records one operation rather than two.
   //
-  // A PREDECESSOR IS SATISFIED, NOT MERELY COUNTED, and the difference is the whole chain.
-  // This asked whether the step before had met its own completion rules, which says nothing
-  // about the steps before THAT — so the check was one level deep and a seven-step procedure
-  // was six steps of decoration. Two consequences, both observed on the first real module
-  // registered against this engine: a step whose completion rules are empty is vacuously met,
-  // so it was a permanent hole every later step was measured through; and an action could be
-  // claimed at step five with steps one and two visibly unsatisfied. `after` means the steps
-  // that must have completed first, and a step has not completed while anything behind it is
-  // outstanding — so the answer for a predecessor is the same answer this function gives,
-  // which is why it asks itself for it.
+  // A predecessor is satisfied, not merely counted. `after` names the immediate predecessors,
+  // and a step has not completed while anything behind it is outstanding, however far back — so
+  // the answer for a predecessor is the same answer this function gives, which is why it asks
+  // itself for it. Asking only whether the step before met its own completion rules is one
+  // level deep, and a step whose completion rules are empty is vacuously met: a permanent hole
+  // every later step would be measured through.
   //
-  // `settled` MEMOISES ONE TOP-LEVEL ANSWER. A procedure that fans out and rejoins reaches the
+  // `settled` memoises one top-level answer: a procedure that fans out and rejoins reaches the
   // same ancestor down several paths, and re-deriving it each time is exponential in the depth
-  // of the fan. It is scoped to the call, never to the host: evidence arrives between calls,
-  // and a verdict cached across them would be an answer about a run that has since moved on.
+  // of the fan. It is scoped to the call, never to the host — evidence arrives between calls,
+  // and a verdict cached across them would describe a run that has since moved on.
   //
-  // TERMINATION IS ESTABLISHED AT REGISTRATION, not here. `refuseCycle` turns a body whose
-  // `after` graph closes on itself away at the door, so this recursion is safe by construction
-  // rather than defended on every claim.
+  // COUPLED: termination is established at registration by `refuseCycle`, so this recursion is
+  // safe by construction rather than defended on every claim.
   const evaluate = (run: HostRun, step: ProcedureStep,
                     settled: Map<string, ControlVerdict> = new Map()): ControlVerdict => {
     const unmet: string[] = [];
@@ -299,13 +267,11 @@ export function createHost(): Host {
         verdict = evaluate(run, earlier, settled);
         settled.set(before, verdict);
       }
-      // WHY THE PREDECESSOR IS NOT DONE COMES WITH IT. "the step before has not completed" is
-      // true and useless when that step is itself waiting on something three links back: the
-      // reader is told to go and look, having asked the one question that would have told
-      // them. Carrying the earlier verdict's own sentences up makes the answer a trail that
-      // ends at the thing somebody has to record. Deduplicated because a procedure that fans
-      // out and rejoins reaches one ancestor down two paths, and a reason stated twice reads
-      // as two reasons.
+      // Why the predecessor is not done comes with it: "the step before has not completed" is
+      // useless when that step is itself waiting on something three links back. Carrying the
+      // earlier verdict's own sentences up makes the answer a trail ending at the thing
+      // somebody has to record. Deduplicated, because a procedure that fans out and rejoins
+      // reaches one ancestor down two paths and a reason stated twice reads as two reasons.
       if (!verdict.satisfied) {
         unmet.push(`${before} has not completed, and ${step.id} follows it`, ...verdict.unmet);
       }
@@ -379,11 +345,11 @@ export function createHost(): Host {
 /**
  * A module's digest: sha-256 over its canonical form.
  *
- * DECLARED HERE, BESIDE THE TYPE, because the release writes a digest into an allowlist and a
- * host recomputes one at registration, and those two numbers have to be produced by the same
- * function or the comparison is theatre. Canonical means object keys in sorted order — a body
- * that is reformatted, or whose fields are written in another order, hashes the same; a body
- * whose CONTENT changed does not.
+ * COUPLED: `services/zz-core/src/reviewed-modules.ts` records a digest beside each body and
+ * `services/zz-core/src/host/registry.ts` recomputes one at registration — both numbers come
+ * from this function. Canonical means object keys in sorted order, so a body that is
+ * reformatted, or whose fields are written in another order, hashes the same; a body whose
+ * content changed does not.
  */
 export function moduleDigest(module: ReviewedModule): string {
   return createHash("sha256").update(canonical(module)).digest("hex");
@@ -403,11 +369,10 @@ function canonical(value: unknown): string {
 /**
  * A procedure's shape, in properties the engine can observe.
  *
- * This is how a flow is compared to another flow without comparing their vocabulary. A ban on
- * words proves nothing — the same seven stages under seven new names would pass it — so what
- * is measured here is what the steps DO: how many there are, whether they move one material
- * kind or several, whether every step is closed by a judgement, whether they run in a single
- * line, and whether judgement-only steps sit behind the material steps they judge.
+ * This compares a flow to another flow without comparing their vocabulary: how many steps
+ * there are, whether they move one material kind or several, whether every step is closed by a
+ * judgement, whether they run in a single line, and whether judgement-only steps sit behind
+ * the material steps they judge.
  */
 export interface ProcedureSignature {
   readonly stepCount: number;
@@ -434,12 +399,9 @@ function procedureSignature(module: ReviewedModule): ProcedureSignature {
     strictlyLinear:
       steps.every((s, i) => s.after.length === (i === 0 ? 0 : 1))
       && new Set(predecessors).size === Math.max(steps.length - 1, 0),
-    // NOT A STRICT ALTERNATION, and the difference matters. "Judgement-only steps at odd
-    // positions" describes one arrangement of authored and audited work; a pipeline that
-    // audits its second artifact but not its first does not have it, and would slip the
-    // detector entirely. What every such pipeline DOES have is judgement-only steps that sit
-    // behind material ones — at least two of them, each immediately after a step that
-    // actually produced something, never two in a row judging each other.
+    // DELIBERATE: not a strict alternation. A pipeline that audits its second artifact but not
+    // its first would slip that detector. What every such pipeline has is at least two
+    // judgement-only steps sitting behind material ones, never two in a row judging each other.
     judgementStepsFollowMaterial:
       judgementOnly.filter(Boolean).length >= 2
       && judgementOnly.every((j, i) => !j || (i > 0 && !judgementOnly[i - 1])),
@@ -450,13 +412,11 @@ function procedureSignature(module: ReviewedModule): ProcedureSignature {
  * Whether a module is the platform's own authored-and-audited document pipeline wearing
  * another set of names.
  *
- * THE FIVE-STEP FLOOR IS NOT DECORATION. A judgement following a material step is a
- * coincidence across two or three steps — any short procedure that ends by checking its own
- * output satisfies it — so below five steps the shape has not actually repeated and claiming
- * a pipeline would be reading a pattern into noise. At five or more, one material kind
- * carried the whole way, every step closed by a judgement, a single line of steps and
- * judgement-only steps behind the material ones is that pipeline whatever its steps are
- * called.
+ * DELIBERATE: five steps is the floor. Below it a judgement following a material step is a
+ * coincidence — any short procedure that ends by checking its own output satisfies it. At five
+ * or more, one material kind carried the whole way, every step closed by a judgement, a single
+ * line of steps and judgement-only steps behind the material ones is that pipeline whatever
+ * its steps are called.
  */
 function reusesGatedDocumentPipeline(module: ReviewedModule): boolean {
   const shape = procedureSignature(module);
@@ -467,13 +427,12 @@ function reusesGatedDocumentPipeline(module: ReviewedModule): boolean {
     && shape.judgementStepsFollowMaterial;
 }
 
-// ── the second flow, and the negative control that proves the detector fires ────────────────
+// The second flow, and the negative control that proves the detector fires
 //
-// A two-step procurement award. It is not the platform's own flow with the nouns changed: it
-// has two steps rather than seven, three material kinds rather than one, no judgement kind at
-// all, and a completion rule that COUNTS evidence and follows a back-reference rather than
-// waiting for somebody to approve a document. Everything the engine does for it, it does from
-// the module's data.
+// A two-step procurement award: two steps rather than seven, three material kinds rather than
+// one, no judgement kind at all, and a completion rule that counts evidence and follows a
+// back-reference rather than waiting for an approval. Everything the engine does for it, it
+// does from the module's data.
 
 const procurementAward = (): ReviewedModule => ({
   id: "procurement-award",
@@ -508,17 +467,16 @@ const procurementAward = (): ReviewedModule => ({
   ],
 });
 
-// THE NEGATIVE CONTROL. Seven linear steps, one material kind carried throughout, every step
+// The negative control: seven linear steps, one material kind carried throughout, every step
 // closed by a sign-off, and judgement-only steps behind the material ones — the shape of the
-// platform's own pipeline, with steps named after nothing at all. It exists so that
-// `reusedSdlcSemantics` can be shown to be computed: a detector that answered false for
-// everything would answer false for this too, and the fixture reports both answers.
+// platform's own pipeline, with steps named after nothing at all. It shows
+// `reusedSdlcSemantics` is computed rather than always false, and the fixture reports both
+// answers.
 //
-// THE PATTERN IS THE REAL ONE, NOT A TIDY ONE. The platform's own pipeline does not audit
-// every artifact — its first two steps are authored back to back and only some of what
-// follows is judged — so a control built as a neat alternation would have been a control the
-// detector passes and the thing it is standing in for does not. `JUDGED` is that irregular
-// pattern: the third, fifth and seventh steps judge, the rest produce.
+// DELIBERATE: `JUDGED` is irregular, not a neat alternation. The platform's own pipeline
+// authors its first two steps back to back and judges only some of what follows, so a tidy
+// control would be one the detector passes and the thing it stands in for does not: the third,
+// fifth and seventh steps judge, the rest produce.
 
 const JUDGED = [false, false, true, false, true, false, true];
 
@@ -552,14 +510,12 @@ export interface SecondFlowRun {
 /**
  * Drive the generic host through all five operations as a procurement award.
  *
- * SYNCHRONOUS, ALL THE WAY DOWN, because the engine is: there is nothing to wait for in a
- * registry, a list of evidence and a count, and a caller reading `invoked` off the result has
- * no promise to unwrap.
+ * Synchronous all the way down, because the engine is: there is nothing to wait for in a
+ * registry, a list of evidence and a count.
  *
- * The claim in the middle is deliberate. `shortlist` is claimed after one quote and refused —
- * not because the action is unknown, but because the step's own completion rule says two — and
- * claimed again once the second quote and the budget line are in. That is the control loop
- * doing its job on a rule this engine has never heard of.
+ * DELIBERATE: the claim in the middle is refused. `shortlist` is claimed after one quote and
+ * refused — the step's own completion rule says two — then claimed again once the second quote
+ * and the budget line are in.
  */
 export function runSecondFlowFixture(): SecondFlowRun {
   const host = createHost();

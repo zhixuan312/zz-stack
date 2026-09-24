@@ -1,26 +1,18 @@
 /**
- * recovery.ts — what a caller does with a `MutationIndeterminate`, and what a freshly
- * restarted reader does with an owner-store nobody has looked at since the last crash.
+ * What a caller does with a `MutationIndeterminate`, and what a freshly restarted reader does
+ * with an owner-store nobody has looked at since the last crash.
  *
- * TWO SEPARATE JOBS, because they run at different times for different reasons:
- *   - `resolveIndeterminate` answers one specific question — "did THIS transaction actually
- *     land?" — for a caller holding a `MutationIndeterminate` `mutate()` handed back. It never
- *     mutates anything; it only ever reads, and (per `classifyCommitOutcome`) only a definite
- *     absence licenses telling the caller it is safe to resubmit the identical request.
- *   - `verifyStore` is the "restarted recovery reader": no specific transaction in hand, just
- *     an owner-store root that may have been left mid-write by a crash. It walks the whole
- *     commit chain, confirms each link's `previous_commit_hash` and every referenced blob, and
- *     repairs a materialized path that does not yet match its commit — the "incomplete
- *     materialization" `record.ts`'s own header says a later reader must fix, since nothing in
- *     `commitTransaction` itself may retry that step once the commit is durable.
+ *   - `resolveIndeterminate` answers "did this transaction actually land?" for a caller holding
+ *     a `MutationIndeterminate` `mutate()` handed back. It only reads, and (per
+ *     `classifyCommitOutcome`) only a definite absence licenses telling the caller it is safe to
+ *     resubmit the identical request.
+ *   - `verifyStore` is the restarted recovery reader: no specific transaction in hand, just an
+ *     owner-store root that may have been left mid-write. It walks the commit chain, confirms
+ *     each link's `previous_commit_hash` and every referenced blob, and repairs a materialized
+ *     path that does not yet match its commit.
  *
- * NEITHER FUNCTION MINTS A NEW TRANSACTION. Resuming a lost write is `mutate()`'s job (it
- * already knows the manifest to retry, in place, under the lock it is still holding) — this
- * module only ever reports what the disk says, or repairs a READABLE projection of a commit
- * that already exists. A caller who wants the original mutation actually retried resubmits the
- * same `MutationRequest` (same `idempotency_key`) through `mutate()`, whose idempotency lookup
- * is what actually resumes it — safely, because "absent" here is what licenses that resubmit
- * rather than refusing it as a conflict.
+ * Neither function mints a new transaction. Resuming a lost write is `mutate()`'s job, through
+ * an idempotency lookup on a resubmitted `MutationRequest` with the same `idempotency_key`.
  */
 import { createHash } from "node:crypto";
 import { readdir } from "node:fs/promises";
@@ -35,14 +27,14 @@ const STORE_DIR = ".zz";
 const COMMITS_SUBDIR = "commits";
 const BLOBS_SUBDIR = "blobs";
 
-// ── resolving one transaction a caller is holding an indeterminate result for ──────────────
+// Resolving one transaction a caller is holding an indeterminate result for
 
 export type RecoveryOutcome =
   | { readonly committed: true; readonly result: MutationResult }
   | { readonly committed: false; readonly safe_to_resume: true }
   | { readonly committed: "unknown" };
 
-/** Finds the ONE commit file `transactionId` could have published to, by scanning
+/** Finds the one commit file `transactionId` could have published to, by scanning
  *  `.zz/commits/` for the suffix `commitFilename` always gives it — `MutationIndeterminate`
  *  carries no `sequence`, only the transaction id, so a direct-path check
  *  (`resolveDirect`, which `mutate()`'s own in-place resume uses) is not available here. */
@@ -83,7 +75,7 @@ export async function resolveIndeterminate(
   return { committed: "unknown" };
 }
 
-// ── the restarted recovery reader ───────────────────────────────────────────────────────────
+// The restarted recovery reader
 
 export interface StoreVerification {
   readonly ok: boolean;

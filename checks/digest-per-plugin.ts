@@ -1,10 +1,9 @@
-// digestOfPlugin: stable, sensitive to every content field, blind to the server URL, and a
-// different identity from the shelf-wide digestOf.
+// digestOfPlugin: stable, sensitive to every content field, blind to the server URL.
 //
-// The two answer different questions and must not be collapsed. digestOf says "what did THIS
-// PERSON receive" -- the URL is part of that, and it is the runtime's per-person cache key.
-// digestOfPlugin says "what IS this plugin" -- a content identity, which two deployments
-// running byte-identical code have to agree on.
+// DELIBERATE: it is a different identity from the shelf-wide digestOf and the two must not be
+// collapsed. digestOf answers "what did this person receive", so the URL is part of it and it
+// serves as the runtime's per-person cache key. digestOfPlugin answers "what is this plugin" —
+// a content identity two deployments running byte-identical code have to agree on.
 import { digestOf, digestOfPlugin } from "../services/gateway/dist/package/describe.js";
 
 // SYNTHETIC: these two paths are fields of an in-memory package, never opened — the digest is

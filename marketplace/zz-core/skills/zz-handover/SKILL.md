@@ -1,6 +1,6 @@
 ---
 name: zz-handover
-version: 2.9
+version: 2.10
 description: The handover every flow ends with. Read one closed initiative — its documents, its telemetry, its refusals — decide what generalises beyond the team that hit it and what matters only to this team, mint the first kind immediately, and propose the second in one gated handover document.
 when_to_use: "An initiative has closed — its closing document carries an `outcome` and the platform has appended its row to `_ledger.md`. Runs at the end of EVERY flow, whatever the flow was. Not a delivery stage: the stakeholder never sees this run."
 ---
@@ -238,13 +238,9 @@ machine-readable form of the promise, which is what makes it checkable by anybod
 Zero is correct when you proposed none, and must still be written: `fields:
 {proposed_team_nodes: "0"}`.
 
-**NOTHING READS IT BACK, AND THIS SKILL USED TO CLAIM OTHERWISE.** It said this field was
-what `initiative_status` reads to decide whether Pass 2 kept the promise Pass 1 made. That is
-not true. A check of exactly that shape existed and was **deliberately removed**, for a reason
-`initiative_status` records in its own source: it held an initiative open until the handover
-was written, approved, and its promised count met, which made an abandoned initiative
-unclosable — its own gate demanded a document that work could never produce. What changed, in
-that file's words, is only that the promise "is no longer owed."
+**Nothing reads it back.** `initiative_status` does not use this field to decide whether
+Pass 2 kept the promise Pass 1 made: a check of that shape would hold an abandoned initiative
+open, because its gate would demand a document that work could never produce.
 
 **So Pass 2 completion is self-reported and platform-unverified.** Write the count because a
 later reader can compare it against `knowledge_search(scope: "team")` and see for themselves,

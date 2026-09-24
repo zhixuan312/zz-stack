@@ -86,7 +86,7 @@ When the person says it is done:
    it: a breakout runs mid-flow, before any close, so what it produces is almost always
    `scope: "team"` — a lesson about how this team works, not yet the platform's read-back of
    a finished cycle. Send `scope: "platform"` only for the rare insight that is itself a fact
-   about a registry entry (a block, a flow, a provider, an interface) rather than about this
+   about a registry entry (a plugin, a flow, a provider, an interface) rather than about this
    team, and tag it accordingly. The platform checks the evidence name against the team's
    store and refuses one that is not there, so a breakout run outside any initiative has
    nothing to cite: name the initiative it was called to inform, or keep the insights in the

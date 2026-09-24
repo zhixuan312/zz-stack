@@ -3,44 +3,26 @@
  * them, the release and doctor scripts, the host's unattended jobs, and the one file that
  * tells an operator what they may set.
  *
- * NOTHING HERE IS EXERCISED BEFORE PRODUCTION. A compose file is only ever run on the host,
- * a backup only ever runs at 3am, and a Caddyfile is only ever parsed by the reload that
- * either works or leaves the previous config serving a URL nobody is watching. So the checks
- * these rows aim at are the last reader of these files before a person is, and a row that
- * SURVIVES here is a defect this repository would ship.
+ * Nothing here is exercised before production: a compose file only runs on the host, a backup
+ * only runs at 3am, and a Caddyfile is only parsed by a reload that either works or leaves the
+ * previous config serving a URL nobody is watching. A row that survives here is a defect this
+ * repository would ship.
  *
- * TWO OF THESE ARE NOT INVENTED. `the Caddyfile puts global options where Caddy accepts
- * them` records a global option written inside a site block on production: Caddy rejected the
- * whole file, the reload failed, the previous config stayed loaded, and the public URL
- * answered 502 while every container read as healthy. That one is planted exactly as it
- * arrived. `an environment variable's default is one value, wherever it is spelled` records
- * ZZ_DEPLOY_HOST retyped between sync.sh and release.ts; sync.sh is gone, so the variable
- * that incident names has only one site left — the same shape is planted on ZZ_DEPLOY_PATH,
- * which is still spelled in two files with the same default.
+ * Seams go in `replace` and nowhere else. This file is a tracked .ts under scripts/, so the
+ * gate sweeps it as it sweeps the platform and cannot tell a spec quoting a defect from the
+ * defect. `replace` is written into the subject and never has to match anything, so a seam
+ * there costs nothing; a seam in `find` would stop matching, land zero replacements, and read
+ * exactly like a check that survived a real defect.
  *
- * FIVE `replace` PAYLOADS ARE SEAMED, AND NONE OF THE `find` STRINGS IS. This file is a
- * tracked .ts under scripts/, so the gate sweeps it exactly as it sweeps the platform — and
- * it cannot tell a spec QUOTING a defect from the defect. Five payloads here were read as
- * real: a container addressed by a name we built, a dotless hostname, an environment read by
- * a computed name, and two variables that appeared to declare one default in the `find` and a
- * different one in the `replace` — which is precisely the disagreement that check exists to
- * catch, seen on a pair of quotations. So the payload is written as a concatenation and
- * `plant()` puts the string back together at run time.
- *
- * THE SEAM GOES IN `replace` AND NOWHERE ELSE. `replace` is written INTO the subject and
- * never has to match anything, so a seam there cannot cost an experiment. A seam in `find`
- * can: it would stop matching, land zero replacements, and come back indistinguishable from a
- * check that survived a real defect.
- *
- * VERSION LITERALS ARE NOT ANCHORED ON. `deploy/docker-compose.yml` carries this release's
- * version as a literal and the release rewrites it, so a spec that hunted for `0.62.4` would
- * land zero replacements on the next release and read exactly like a check that survived.
- * The anchors here stop at `${ZZ_VERSION:-` and at the service names above the image lines.
+ * DELIBERATE: no anchor names a version literal. `deploy/docker-compose.yml` carries the
+ * release version and the release rewrites it, so such a spec would land zero replacements on
+ * the next release. The anchors stop at `${ZZ_VERSION:-` and at the service names above the
+ * image lines.
  */
 import type { MutationSpec } from "./plant.ts";
 
 export const COV_DEPLOY: readonly MutationSpec[] = [
-  /* ── deploy/docker-compose.yml, deploy/Caddyfile and what they describe ──────────── */
+  /* deploy/docker-compose.yml, deploy/Caddyfile and what they describe */
   {
     check: "scripts/gate/checks/deploy-compose.ts",
     target: "compose resolves with NO environment at all",
@@ -142,13 +124,9 @@ export const COV_DEPLOY: readonly MutationSpec[] = [
     find: "#   --gateway http://cred-proxy:8000",
     // SEAMED: the dotless host here is the defect being planted, not one this file commits.
     replace: "#   --gateway http://gate" + "way:8000",
-    // REDACTED, BECAUSE THE REPORT IS A TRACKED FILE THIS REPOSITORY SWEEPS TOO. The payload
-    // above is seamed so it never exists whole in this source — but `plant()` writes the
-    // RECONSTRUCTED string into testing/mutation-report.json, and that file is swept like any
-    // other. Seaming the spec without redacting the row just moves the finding from one
-    // tracked file to another, which is what the gate caught. `redact` base64-encodes it in
-    // the artifact, so the experiment stays exactly reproducible and the report is not the
-    // disclosure.
+    // REDACTED, because the report is a tracked file this repository sweeps too. The payload
+    // above is seamed so it never exists whole in this source, but `plant()` writes the
+    // reconstructed string into testing/mutation-report.json. `redact` base64-encodes it there.
     redact: true,
     planted: "the header of the script that runs every day-2 command tells an operator to " +
       "pass an address for a service that has never existed, so the first thing deploy/README " +
@@ -175,7 +153,7 @@ export const COV_DEPLOY: readonly MutationSpec[] = [
       "Dockerfile is validated against another",
   },
 
-  /* ── the release script, the doctor, and the documents a release writes ──────────── */
+  /* The release script, the doctor, and the documents a release writes */
   {
     check: "scripts/gate/checks/deploy-release.ts",
     target: "the release verifies through the doctor's probes, not a second list",
@@ -287,7 +265,7 @@ export const COV_DEPLOY: readonly MutationSpec[] = [
       "whether to upgrade finds a list that looks complete, stops, and never sees the rest",
   },
 
-  /* ── what runs on the host between releases ──────────────────────────────────────── */
+  /* What runs on the host between releases */
   {
     check: "scripts/gate/checks/deploy-ops.ts",
     target: "every archived volume is verified against a range, not one snapshot",
@@ -330,7 +308,7 @@ export const COV_DEPLOY: readonly MutationSpec[] = [
       "every night, from a cron entry that installed cleanly",
   },
 
-  /* ── the configuration surface ───────────────────────────────────────────────────── */
+  /* The configuration surface */
   {
     check: "scripts/gate/checks/config-env.ts",
     target: "the configuration surface is documented",
@@ -378,8 +356,8 @@ export const COV_DEPLOY: readonly MutationSpec[] = [
     check: "scripts/gate/checks/config-env.ts",
     target: "zz-tool forwards every variable the tools it runs actually read",
     subject: "deploy/zz-tool",
-    find: "ZZ_BLOCK_KEY CHAIN_FLOW \\",
-    replace: "ZZ_BLOCK_KEY \\",
+    find: "ZZ_GATEWAY CHAIN_FLOW \\",
+    replace: "ZZ_GATEWAY \\",
     planted: "chain-check's flow selector stops being forwarded into the container, so " +
       "`CHAIN_FLOW=ops-flow zz-tool chain-check` silently checks a different flow — a wrong " +
       "answer that looks exactly like a right one",

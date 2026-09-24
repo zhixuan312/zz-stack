@@ -1,8 +1,8 @@
-// A renamed plugin still resolves, and the updater's copy of the map is the contract's.
+// A renamed plugin still resolves, and the updater's copy of the map matches the contract's.
 //
-// `zz-update` runs on somebody else's machine, from inside a plugin directory, with no
-// workspace around it — so it cannot import @zz/contracts and carries the rename map inline.
-// A second copy of a rule is only honest if something holds it to the first; this is that.
+// COUPLED: `zz-update` carries the rename map inline because it runs on somebody else's
+// machine, from inside a plugin directory with no workspace around it, and cannot import
+// @zz/contracts. This holds that copy to `PLUGIN_ALIAS` in packages/contracts.
 import { readFileSync } from "node:fs";
 
 import { PLUGIN_ALIAS } from "../packages/contracts/dist/index.js";
@@ -11,9 +11,8 @@ const fail = [];
 const SCRIPT = "catalog/zz/zz-access/skills/zz-update/update.ts";
 const src = readFileSync(SCRIPT, "utf8");
 
-// AN OPTIONAL TYPE ANNOTATION, because the source this reads is TypeScript now and
-// `const PLUGIN_ALIAS: Record<string, string> = {` is the same declaration this check
-// has always been about. A reader of source text has to tolerate the type it carries.
+// DELIBERATE: the type annotation is optional in the pattern. The source this reads is
+// TypeScript, so `const PLUGIN_ALIAS: Record<string, string> = {` is the same declaration.
 const m = /const PLUGIN_ALIAS(?:\s*:[^=]+)?\s*=\s*\{([^}]*)\}/.exec(src);
 if (!m) {
   fail.push(`${SCRIPT} no longer declares PLUGIN_ALIAS where this can read it — the updater ` +
@@ -37,7 +36,7 @@ if (!m) {
 }
 
 // The rename must point at a plugin the shelf actually carries, or the updater installs a name
-// that does not resolve and leaves the person worse off than the failure it replaced.
+// that does not resolve.
 const shelf = JSON.parse(readFileSync(".claude-plugin/marketplace.json", "utf8"));
 const ships = new Set((shelf.plugins ?? []).map((p: { name: string }) => p.name));
 if (!ships.size) fail.push("the rendered marketplace lists no plugin — this check is reading nothing");

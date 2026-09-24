@@ -1,29 +1,18 @@
-// Skills move to the plugin that owns them, their commands follow, and none is left behind
-// or duplicated. The count that opened this line said seven; `gone` below is the list, and a
-// list a reader can count is worth more than a number they have to trust.
+// Skills move to the plugin that owns them, their commands follow, and none is left behind or
+// duplicated. `gone` below is the list.
 //
-// THE PLAN'S VERSION OF THIS CHECK COULD NOT DISCRIMINATE, and the reason is worth writing
-// down because it is the same reason twice. It asserted the skills arriving at the
-// baseline were at `catalog/zz/zz-core/skills/` — a path client-package.ts never reads. The
-// baseline is the ONE plugin whose files are not resolved from the catalog: `baselineFiles`
+// The baseline is the one plugin whose files are not resolved from the catalog: `baselineFiles`
 // walks `ZZ_SKILLS_DIR` (this repository's `skills/`) and synthesises `zz-router` on top,
-// because the router is generated per person from the flows they installed. `residentFiles`,
-// which does read a catalog entry's `skills/`, is never called for it. So a `zz-deck`
-// directory created under the catalog would have satisfied the plan's check exactly while
-// shipping in no plugin at all — measured 2026-09-14 against untouched code, where the check
-// reported nineteen failures, of which nine named a destination that would not have worked.
+// because the router is generated from the shelf's flows when a package is built. `residentFiles`,
+// which reads a catalog entry's `skills/`, is never called for it — so a directory created
+// under `catalog/zz/zz-core/skills/` ships in no plugin at all.
 //
-// Hence the two halves below: the four are asserted at `skills/`, AND asserted absent from
-// the catalog path, so an implementation that hedged by writing both is red.
-//
-// zz-platform and zz-handover are named here at their CURRENT names. They were zz-backbone
-// and zz-knowledge until task I-26 renamed them, and this list was edited in that same
-// change — a list naming a skill before its rename lands registers a check that is red until
-// an unrelated task fixes it, which is how a gate teaches people to read past it.
+// Hence the two halves below: the four are asserted at `skills/` and asserted absent from the
+// catalog path, so an implementation that hedged by writing both is red.
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 const fail: string[] = [];
 
-/** Where each plugin's skills ACTUALLY come from, in the packager's terms. */
+/** Where each plugin's skills actually come from, in the packager's terms. */
 const SOURCE: Record<string, string> = {
   "zz-core":   "skills",                     // baselineFiles(), over ZZ_SKILLS_DIR
   "zz-access": "catalog/zz/zz-access/skills", // residentFiles()
@@ -52,7 +41,7 @@ for (const [p, want] of Object.entries(expect)) {
 for (const [p, must] of Object.entries(gone)) {
   for (const s of must) if (ships(p).includes(s)) fail.push(`${p} still ships ${s} at ${SOURCE[p]}/${s}`);
 }
-// THE DEAD PATH. A skill here is invisible to the packager, so it is worse than absent: the
+// The dead path. A skill here is invisible to the packager, so it is worse than absent: the
 // tree looks right and the plugin ships nothing.
 for (const s of existsSync("catalog/zz/zz-core/skills") ? readdirSync("catalog/zz/zz-core/skills") : []) {
   fail.push(`catalog/zz/zz-core/skills/${s} — the baseline's skills are read from skills/, ` +
@@ -67,12 +56,12 @@ for (const p of Object.keys(SOURCE)) {
   }
 }
 
-/* ── the commands follow the skills ───────────────────────────────── */
+/* The commands follow the skills */
 
 const manifest = (p: string) => JSON.parse(readFileSync(MANIFEST[p], "utf8"));
 const wantCommands = {
-  // zz-core gains commands, which it had none of before this initiative: a person typing
-  // "make this a deck" is doing a core operation, not a delivery one.
+  // zz-core carries commands: a person typing "make this a deck" is doing a core operation,
+  // not a delivery one.
   "zz-core":   { deck: "zz-deck", tldr: "zz-tldr", breakout: "zz-breakout" },
   "zz-access": { connect: "zz-access", admin: "zz-admin", doctor: "zz-doctor",
                  update: "zz-update", migrate: "zz-migrate" },
@@ -80,9 +69,9 @@ const wantCommands = {
 };
 for (const [p, want] of Object.entries(wantCommands)) {
   const have = manifest(p).commands ?? {};
-  // EXACTLY, both directions. A stale `doctor: zz-doctor` left in zz-core names a skill it no
-  // longer ships, and promoteCommands FILTERS those out silently — the command simply does not
-  // exist in the built package and nothing says why.
+  // Exactly, both directions: a stale `doctor: zz-doctor` names a skill the plugin no longer
+  // ships, and promoteCommands filters those out silently, so the command is simply absent from
+  // the built package.
   for (const [cmd, skill] of Object.entries(want)) {
     if (have[cmd] !== skill) fail.push(`${p} declares command ${cmd} -> ${have[cmd] ?? "nothing"}, expected ${skill}`);
   }
@@ -98,7 +87,7 @@ for (const p of Object.keys(SOURCE)) {
     }
   }
 }
-// zz-authoring is a LIBRARY, not a command: loaded by zz-deck and zz-tldr, never run alone.
+// zz-authoring is a library, not a command: loaded by zz-deck and zz-tldr, never run alone.
 const core = manifest("zz-core");
 if (core.commands?.authoring) fail.push("zz-authoring is a library and must not be a command");
 if (!(core.libraries || []).includes("zz-authoring")) fail.push("zz-authoring is not declared a library");
@@ -106,10 +95,10 @@ if ((manifest("sdlc-flow").libraries || []).includes("sdlc-authoring")) {
   fail.push("sdlc-flow still declares sdlc-authoring a library");
 }
 
-/* ── the supporting files travelled ───────────────────────────────── */
+/* The supporting files travelled */
 
-// A skill promoted to a command ships as `commands/<cmd>.md` and leaves its ASSETS in
-// `skills/<name>/`. Those assets are the whole of what three of these seven do, so a move
+// A skill promoted to a command ships as `commands/<cmd>.md` and leaves its assets in
+// `skills/<name>/`. Those assets are the whole of what some of these commands do, so a move
 // that took only SKILL.md is a command that runs nothing.
 for (const [rel, why] of [
   ["skills/zz-deck/deck-chassis.html", "the deck's chassis"],
@@ -123,7 +112,7 @@ for (const [rel, why] of [
   if (!existsSync(rel)) fail.push(`${why} did not travel: ${rel} is missing`);
 }
 
-/* ── the four say what they are ───────────────────────────────────── */
+/* The four say what they are */
 
 // None of the four leaving sdlc is about software delivery, and each says so in its own
 // frontmatter — the sentence a model reads when deciding whether this belongs to a sequence.

@@ -13,10 +13,8 @@ import { PLATFORM_VERSION, type ShelfFlow, type PackageFile } from "../client-pa
 
 /** Every optional plugin on the shelf, from the catalog.
  *
- * ONE SHELF FOR EVERYONE. This was each person's team installs, read from a table the platform
- * kept of what a team had "installed" — a record of choices made on machines it cannot see, so
- * it was a claim it could not back and a restriction it could not enforce. A person installs
- * what they want from the marketplace; every catalog flow is offered to everyone. */
+ * One shelf for everyone: every catalog flow is offered to every person, because the platform
+ * cannot see what anybody has installed on their own machine. */
 export function shelfFlows(): ShelfFlow[] {
   return installableFlows()
     .map((qualified) => qualified.split("/")[1] ?? qualified)
@@ -36,58 +34,43 @@ export function shelfFlows(): ShelfFlow[] {
  * the flow's words rather than ours. Falls back to `description`. */
 export function whenToUse(flow: string, entry: string): string {
   const md = skillText(flow, entry);
-  // Through fmField, which is the same read. This carried its own copy of that regex fifteen
-  // lines above the function that is now the only one — two parsers for one frontmatter, in
-  // one file, which is the shape this repository removes everywhere else it finds it.
+  // Through fmField, so there is one frontmatter parser in this file.
   const v = md ? fmField(md, "when_to_use") || fmField(md, "description") : undefined;
   if (v) return v.length > 300 ? v.slice(0, 297) + "..." : v;
   return `work that belongs to the ${flow} flow`;
 }
 /** One field out of a skill's own frontmatter, from markdown already in hand.
  *
- * whenToUse above reads the same shape but goes to the catalog by (flow, entry). The command
- * builders already hold the file's text, and re-reading it from disk to get one line would
- * be a second way of answering the same question. */
+ * whenToUse above reads the same shape but goes to the catalog by (flow, entry); the command
+ * builders already hold the file's text. */
 export function fmField(md: string, key: string): string | undefined {
-  // ENVELOPE_BLOCK, not a fourth spelling. A skill's frontmatter and a document's envelope are
-  // different vocabularies inside the same syntax, and where that block STARTS and ENDS is one
-  // fact — this copy required `---\n` exactly, so a fence written `--- ` parsed here and not
-  // in the gate, or the other way about.
+  // COUPLED: where a frontmatter block starts and ends is ENVELOPE_BLOCK's to say, shared with
+  // the document envelope. A second spelling here parses a fence the gate does not.
   const fm = md.match(ENVELOPE_BLOCK);
   return fm?.[1].match(new RegExp(`^${key}:\\s*"?([^"\\n]+)"?`, "m"))?.[1]?.trim();
 }
 /** Platform plugins, read from the catalog rather than written here.
  *
- * A platform plugin is a capability EVERY person gets, as opposed to a flow, which a team
- * installs. They differ in who receives them and in whether their entry becomes a typed
- * command — but their description and their skills are catalog content either way, and
- * keeping that prose in TypeScript meant the shelf said one thing and the catalog another.
+ * A platform plugin is a capability every person gets, as opposed to a flow, which a team
+ * installs. Their description and their skills are catalog content either way.
  *
- * `zz-core` IS SHELVED AND IS DELIBERATELY NOT ONE OF THESE, and the exclusion is now explicit
- * rather than incidental. It used to fall out of having no catalog entry at all; it has one at
- * `catalog/zz/zz-core/flow.json`, so `shelved === true` alone would return the baseline here and
- * buildClientPackage would emit it TWICE — once synthesised and once from the catalog, two
- * plugins of one name writing over each other's files, which is the collision
- * catalog-manifest.ts already refuses for a catalog package that steals the baseline's name.
- * Its manifest is read for what it DECLARES — the commands map, above all; its FILES are
- * synthesised, because the router among them is generated per person. */
+ * DELIBERATE: `zz-core` is shelved and is excluded here by name. Its manifest is read for what
+ * it declares — the commands map above all — but its files are synthesised, because the router
+ * among them is generated at build time; returning it here too would emit the plugin twice. */
 interface PlatformPlugin {
   name: string;
-  /** The catalog DIRECTORY, which is where its skills are. Separate from `name` because
-   * they answer different questions: `name` is what the plugin is called on the shelf, and
-   * this is where to read it from. One value did both, so a manifest whose `name` differed
-   * from its folder would have shipped a plugin with no skills in it and said nothing. */
+  /** The catalog directory, which is where its skills are. Separate from `name`: `name` is
+   * what the plugin is called on the shelf, this is where to read it from, and a manifest
+   * whose `name` differs from its folder needs both. */
   dir: string;
   description: string;
   servers: { name: string; path: string }[];
 }
 /** The baseline plugin's name, which is also its catalog directory and its MCP server's name.
  *
- * Named once because three questions turn on it and each used to answer with its own literal:
- * which catalog entry is the baseline's own manifest, which plugin the packager synthesises,
- * and which skills tree that plugin ships. It was `zz` until the baseline was renamed to match
- * the door it opens — the rule DESIGN-platform states as "a plugin's name is its server's
- * name", which held for no plugin while the one that ships `zz-core` was called `zz`. */
+ * Named once because three questions turn on it: which catalog entry is the baseline's own
+ * manifest, which plugin the packager synthesises, and which skills tree that plugin ships.
+ * A plugin's name is its server's name. */
 export const BASELINE = "zz-core";
 
 export function platformPlugins(): PlatformPlugin[] {
@@ -104,26 +87,16 @@ export function platformPlugins(): PlatformPlugin[] {
 }
 /** The flow's own one-line description, for the marketplace card.
  *
- * NOT `when_to_use`: that is written for a model deciding whether to load a skill, and it
- * reads as a list of trigger phrases. A person scanning six plugins wants to know what the
- * thing IS. flow.json's `description` is authored for exactly that and was going unused.
- *
- * Trimmed at a sentence boundary rather than a character count, because a card cut
- * mid-word — "...an initiative is at. This i" — reads as a bug in the shelf. */
+ * Not `when_to_use`, which is written for a model deciding whether to load a skill and reads
+ * as trigger phrases. Trimmed at a sentence boundary rather than a character count. */
 export function cardDescription(flow: string, fallback: string): string {
   return trimTo(catalogEntry(flow, true)?.manifest.description?.trim() || fallback, 180);
 }
 /** Trim prose to a length a card can hold, at a boundary a reader recognises.
  *
  * A sentence if one ends late enough to be worth keeping, else a word with an ellipsis. The
- * threshold is a third of the budget: below that the sentence is so short it says less than
- * the truncation would.
- *
- * Its own function because there were two answers to one question. The Claude Code shelf
- * trimmed this way and Codex's `shortDescription` was `pl.description.slice(0, 100)` — a raw
- * cut that severed all five plugin cards mid-word ("...and where ea", "...Only insta"), in
- * the one field a person reads while choosing what to install. cardDescription's own comment
- * had already named that failure: a card cut mid-word "reads as a bug in the shelf". */
+ * threshold is a third of the budget: below that the sentence says less than the truncation
+ * would. COUPLED: every shelf card trims through here, so none cuts mid-word. */
 function trimTo(text: string, max: number): string {
   if (text.length <= max) return text;
   const cut = text.slice(0, max);
@@ -133,29 +106,24 @@ function trimTo(text: string, max: number): string {
 /** The commands a package declares: the name a person types, mapped to the skill that
  * carries the method.
  *
- * Read from the manifest rather than ShelfFlow because it is a property of the package
- * as authored, not of how a team installed it. NOT `tools`: that field already names the
- * package's building blocks, and the installer grants MCP access from it. */
+ * Read from the manifest rather than ShelfFlow because it is a property of the package as
+ * authored, not of how a team installed it. */
 function declaredCommands(flow: string): Record<string, string> {
   const v = catalogEntry(flow, true)?.manifest.commands;
   return v && typeof v === "object" ? v : {};
 }
-/** What a package's entry skill is TYPED AS, or undefined when it declares no command for it.
+/** What a package's entry skill is typed as, or undefined when it declares no command for it.
  *
- * Two different questions, and a package may answer one without the other. `entry` is which
- * skill is the front door, which is what zz-router needs; this is the string a person types
- * to reach it, which only exists if the manifest says so. A package that names no command for
- * its entry ships the method as a skill to be loaded rather than typed, and the absence is the
- * answer rather than a gap to fill in with a default. Every package in the catalog does name
- * one today — zz-access was the last that did not, and its entry is `/zz-access:connect`. */
+ * `entry` is which skill is the front door, which is what zz-router needs; this is the string
+ * a person types to reach it, and it exists only if the manifest says so. The absence is the
+ * answer: that package ships the method as a skill to be loaded rather than typed. */
 export function entryCommand(flow: string, entry: string): string | undefined {
   return Object.entries(declaredCommands(flow)).find(([, skill]) => skill === entry)?.[0];
 }
-/** The ONLY skill we ship. Everything it names is fetched at run time.
+/** The only skill we ship. Everything it names is fetched at run time.
  *
- * Its description is the entire door on Codex and Hermes, which have no
- * commands — so it has to match delivery work and nothing else. Too broad and
- * it fires on ordinary coding; too narrow and those two clients have no way in.
+ * Its description is what makes the client load it, so it has to match delivery work and
+ * nothing else: too broad and it fires on ordinary coding, too narrow and it never loads.
  */
 export function routerSkill(flows: ShelfFlow[]): string {
   const names = flows.map((f) => f.flow).join(", ") || "none yet";
@@ -167,10 +135,8 @@ export function routerSkill(flows: ShelfFlow[]): string {
       "— a new capability, a change to a service someone operates, or continuing work already " +
       `under way. Picks the right installed flow (${names}) and loads it. Not for ordinary ` +
       "coding, debugging or questions about this repository.")}`,
-    // The router's own version is the PLATFORM's: its text is generated from this
-    // person's installed flows by this build of the gateway, so "which version of the
-    // router is this" and "which version of the platform generated it" are the same
-    // question. A literal here answers neither, and never moves.
+    // The router's own version is the platform's: its text is generated from this person's
+    // installed flows by this build of the gateway.
     `version: ${JSON.stringify(PLATFORM_VERSION)}`,
   ];
   fm.push("---");
@@ -207,15 +173,9 @@ export function routerSkill(flows: ShelfFlow[]): string {
         "",
         `**When:** ${f.whenToUse}`,
         "",
-          // NAMED ARGUMENT, AND THE SERVER SAID OUT LOUD. This told the agent to "load
-          // skill_read(...)", and on a client with a Skill mechanism of its own that is
-          // ambiguous twice over. Measured on the first turn of a round: the agent called
-          // the CLIENT's Skill tool with the platform's tool name ("Unknown skill:
-          // zz:skill_read"), then called the right tool positionally with the argument
-          // dropped ("Invalid arguments for tool skill_read: Required at name"). Four
-          // wasted calls and four refusals before the flow had begun, every round, on that
-          // client. Codex and Hermes have no Skill tool, which is why this stayed invisible
-          // until there was a Claude Code harness to see it.
+          // The argument is named and the server said out loud, because a client with a Skill
+          // mechanism of its own otherwise routes `skill_read(...)` to that instead and drops
+          // the argument.
           "**Then:** call the `zz-core` tool **skill_read**, passing `zz-platform` as its",
           `\`name\` argument; then call it again passing \`${f.entry}\`. Both are MCP tools`,
           "on the zz-core server, not this client's own skills. Follow those skills",
@@ -235,8 +195,7 @@ export function routerSkill(flows: ShelfFlow[]): string {
     "  conversation is not an approval, and you cannot write one by hand — the",
     "  platform stamps who approved and when, and refuses the fields if you try.",
     "- An approved document changes through `document_revise`, never by writing over it.",
-    "- Keys for the building blocks and tokens belong to the **ZZ Access** agent.",
-    "  Never ask anyone to paste a key here.",
+    "- Tokens belong to the **ZZ Access** agent. Never ask anyone to paste one here.",
     "",
     "Outside a flow you are yourself. This skill is not a personality.",
     "",
@@ -246,44 +205,33 @@ export function routerSkill(flows: ShelfFlow[]): string {
 }
 /** The flow's front door.
  *
- * A pointer command is deliberately about five lines. If it grows, method has leaked into
- * the package and the whole design has quietly stopped holding.
+ * DELIBERATE: a pointer command is about five lines. If it grows, method has leaked into the
+ * package.
  *
  * Two forms, because a flow reaches its user differently depending on where its
  * method lives:
  *
  *   pointer flow — the method is on the platform, so the command fetches it.
- *   local flow   — the method shipped as files, so the command IS the method.
+ *   local flow   — the method shipped as files, so the command is the method.
  *
  * `entryBody` is the entry skill's markdown with its own frontmatter removed. When
  * it is present the command carries it verbatim, and the caller ships no separate
  * skill for the entry: on Claude Code a flow's front door is a command, and having
- * both means the same router arrives twice under two names. Codex has no commands
- * and keeps the skill — same text, the door its runtime actually has. */
+ * both means the same router arrives twice under two names. */
 export function commandFile(f: ShelfFlow, cmd: string, entryBody?: string): string {
   const plugin = pluginName(f.flow);
   const head = [
     "---",
-    // QUOTED, like the two fields under it. `cmd` is now a key a flow author TYPED into
-    // flow.json rather than a name derived from a catalog directory, so the case for quoting
-    // it is stronger than it was: the schema requires a non-empty string and nothing else.
-    // The comment below records what happened the last time a field here trusted its input —
-    // a value with a quote in it closed the string early and the command silently did not
-    // exist. Quoting the generator's output is the fix that does not depend on anybody
-    // validating the input.
+    // Quoted, like the two fields under it: `cmd` is a key a flow author typed into flow.json,
+    // and the schema requires only a non-empty string. A value with a quote in it would close
+    // a hand-quoted YAML string early and the command would silently not exist.
     `name: ${JSON.stringify(cmd)}`,
-    // QUOTED WITH JSON.stringify, like the standalone command forty lines down. `agentName`
-    // is free text from a manifest, and it went into a hand-quoted YAML string. An agent called `My "Special" Agent` closed the quote early
-    // and produced frontmatter the client cannot parse, so the command silently does not
-    // exist and nothing says why.
+    // Quoted for the same reason: `agentName` is free text from a manifest.
     `description: ${JSON.stringify(`Run the ${f.agentName || f.flow} flow for your team.`)}`,
-    // The plugin is named for the flow, so the command is /<flow>:<flow>. This said /zz:
-    // — the namespace from when every flow shipped inside one `zz` plugin — which sends
-    // anyone who reads it looking for a command that does not exist.
+    // The plugin is named for the flow, so the command is /<flow>:<flow>.
     `when_to_use: ${JSON.stringify(`The person typed /${plugin}:${cmd}. This is a command, not an auto-matched skill.`)}`,
-    // Omitted when the install recorded no version, rather than filled in with "1.0.0".
-    // An invented number is the exact failure the version rules here exist to prevent: it
-    // tells a client a release that never happened, and it never moves afterwards.
+    // Omitted when the install recorded no version, rather than filled in with "1.0.0": an
+    // invented number tells a client a release that never happened and never moves after.
     ...(f.version ? [`version: ${JSON.stringify(f.version)}`] : []),
     "disable-model-invocation: true",
     "---",
@@ -302,17 +250,13 @@ export function commandFile(f: ShelfFlow, cmd: string, entryBody?: string): stri
 }
 /** Promote the skills a manifest declares as commands, and say which files moved.
  *
- * A command is one a PERSON types on purpose, and that is a property of the skill, not of
- * the kind of plugin carrying it. This was inline on the flow branch only, so the same
- * manifest field was honoured for a delivery flow and silently ignored for a platform one —
- * zz-handover could declare zz-okr a command, the JSON would validate, the package would build,
- * and no command would exist. A field that means something in one branch and nothing in the
- * other is not one field.
+ * A command is one a person types on purpose, which is a property of the skill rather than of
+ * the kind of plugin carrying it, so both branches promote through here.
  *
- * `except` is the entry skill on the flow branch, which is promoted THERE: it needs the
- * ShelfFlow to build a pointer command for the case where the skill did not ship, and a
- * platform plugin has no front door of that kind. Excluded by SKILL name rather than by
- * command name, because the entry's command is whatever the manifest chose to call it. */
+ * `except` is the entry skill on the flow branch, promoted there because it needs the
+ * ShelfFlow to build a pointer command when the skill did not ship. Excluded by skill name
+ * rather than by command name, because the entry's command is whatever the manifest called
+ * it. */
 export function promoteCommands(flow: string, skills: PackageFile[], except: string[] = []):
     { commands: PackageFile[]; promoted: Set<PackageFile> } {
   const picked = Object.entries(declaredCommands(flow))
@@ -331,16 +275,14 @@ export function promoteCommands(flow: string, skills: PackageFile[], except: str
 }
 /** A standalone skill, as a Claude Code command.
  *
- * Same rule as the flow's front door: Claude Code has commands and Codex does not, so a
- * skill a person invokes on purpose becomes `/sdlc:deck` there and stays a skill here. The
- * body is the skill's own text, so there is one method however it is reached. */
+ * Same rule as the flow's front door: a skill a person invokes on purpose becomes a command
+ * such as `/sdlc:deck`. The body is the skill's own text, so there is one method however it is
+ * reached. */
 function standaloneCommandFile(flow: string, cmd: string, name: string, md: string): string {
   const plugin = pluginName(flow);
   const body = withoutFrontmatter(md);
-  // The skill's OWN description, not "Run the <name> skill." That sentence is what a person
-  // reads in the command list to decide whether this is the thing they want, and it told
-  // them only the name they had already typed. The skill states what it does in one line;
-  // this is that line.
+  // The skill's own description: it is what a person reads in the command list to decide
+  // whether this is the thing they want.
   const says = fmField(md, "description") || `Run the ${name} skill.`;
   return [
     "---",
@@ -358,7 +300,7 @@ function standaloneCommandFile(flow: string, cmd: string, name: string, md: stri
 export function withoutFrontmatter(md: string): string {
   return documentBody(md).replace(/^\n+/, "");
 }
-/** Reads the token at CONNECT time so it never enters a file the person might
+/** Reads the token at connect time so it never enters a file the person might
  * commit. Rotating the token file is picked up on the next connection. */
 export function headersHelper(): string {
   return [

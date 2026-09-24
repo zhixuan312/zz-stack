@@ -2,27 +2,17 @@
 /**
  * Arrays, versions, a discoverable history — and the attestation still counts per document.
  *
- * WHY THIS IS NOT THE FILE THE PLAN AUTHORED. That one was six regular expressions over the
- * text of `artifacts.ts`, and FOUR OF THE SIX WERE ALREADY GREEN against the untouched code
- * before this task began: `/version/` matched the word in document_present's description and
- * again in the activity payload it already wrote; `/shown/` matched that same payload;
- * `/_versions/` matched a comment in `paths.ts`; and the negative `/shown[^\n]*once|single
- * shown/` is satisfied by any file that happens not to contain those two phrases. A check
- * that is two-thirds green before the work starts is measuring prose — every one of those
- * assertions could have been made true by a sentence in a comment.
- *
- * So this one RUNS the code, the way `checks/attest-shown.ts` does:
+ * This runs the code rather than matching its text, the way `checks/attest-shown.ts` does:
  *   - the real zod schemas, harvested by handing `registerArtifactTools` a stub server and
- *     parsing values through them. `path` accepting `["a","b"]` is a fact about a schema, not
- *     a word in a file;
+ *     parsing values through them;
  *   - `documentVersions`, `versionRefusal` and `presentDocument` driven over a fixture store,
  *     which is why they take `root` explicitly and touch no request;
  *   - `writeGuard` itself, asked whether `_versions/` is still unwritable;
- *   - `shownSinceLastChange` as the ORACLE for the per-document record — the same function an
- *     approval leans on is the one that has to answer "fetched" for both documents of a batch
- *     and for neither of them when history was what got opened.
+ *   - `shownSinceLastChange` as the oracle for the per-document record — the same function an
+ *     approval leans on has to answer "fetched" for both documents of a batch and for neither
+ *     of them when history was what got opened.
  *
- * The two assertions that stay source-level are named as such below, with what each catches.
+ * Two assertions stay source-level and are named as such below, with what each catches.
  *
  * Run: node checks/document-reads.ts   (also run by scripts/gate.ts)
  */
@@ -41,11 +31,11 @@ const { shownSinceLastChange } = await load("services/zz-core/dist/attest.js");
 const fail: string[] = [];
 const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
 
-// ── 1. The real schemas, not the words around them ───────────────────────────────────────
+// 1. The real schemas, not the words around them
 //
-// `registerTool(name, def, handler)` on a stub: the definitions that reach the MCP SDK are
-// the definitions a client is offered, so parsing a value through one answers what the tool
-// accepts. `z.string()` refuses `["a","b"]`, and no comment can change that.
+// `registerTool(name, def, handler)` on a stub: the definitions that reach the MCP SDK are the
+// definitions a client is offered, so parsing a value through one answers what the tool
+// accepts.
 interface ZodLike { safeParse: (v: unknown) => { success: boolean } }
 interface ToolDef { inputSchema?: Record<string, ZodLike>; [key: string]: unknown }
 
@@ -67,12 +57,12 @@ for (const name of ["document_read", "document_present"]) {
   is(version.safeParse(3).success, `${name}'s \`version\` refuses a version number`);
   is(version.safeParse(undefined).success, `${name}'s \`version\` is not optional`);
 }
-// The shelf argument is document_read's alone and this task does not touch it. Asserted
-// because an inputSchema rewritten around `path` is exactly where it would be dropped.
+// The shelf argument is document_read's alone. Asserted because an inputSchema rewritten
+// around `path` is exactly where it would be dropped.
 is(tools.get("document_read")?.inputSchema?.scope?.safeParse("platform").success,
    "document_read lost `scope` — the platform journal became unreadable again");
 
-// ── 2. A fixture store, and the history read out of it ───────────────────────────────────
+// 2. A fixture store, and the history read out of it
 const root = mkdtempSync(join(tmpdir(), "zz-docreads-"));
 const INIT = "2026-01-01-fixture";
 mkdirSync(join(root, INIT, "_versions"), { recursive: true });
@@ -86,7 +76,7 @@ writeFileSync(join(root, INIT, "plan.md"),
   doc({ title: "Plan", version: "1", status: "draft" }, "# Plan\n\nThe current plan."));
 writeFileSync(join(root, INIT, "spec-review.md"),
   doc({ title: "Review", version: "1", status: "draft" }, "# Review"));
-// Three approvals of spec.md, one of its NEIGHBOUR. v10 is there so the ordering is a real
+// Three approvals of spec.md, one of its neighbour. v10 is there so the ordering is a real
 // question: readdirSync hands back v1, v10, v2.
 writeFileSync(join(root, INIT, "_versions", "spec.v1.md"),
   doc({ title: "Spec", version: "1", status: "approved", approved_by: "ada@zz.test",
@@ -108,11 +98,11 @@ const rows: VersionRow[] = documentVersions(root, `${INIT}/spec.md`);
 is(rows.map((v) => v.version).join(",") === "1,2,10",
    `the version list is ${JSON.stringify(rows.map((v) => v.version))}, expected [1,2,10] — a ` +
    "history sorted by filename puts v10 between v1 and v2 and reads as a history with gaps");
-// A shared PREFIX is not a shared document: spec-review.v1.md must not be filed under spec.md.
+// A shared prefix is not a shared document: spec-review.v1.md must not be filed under spec.md.
 is(!rows.some((v) => v.rel.includes("spec-review")),
    "spec-review.v1.md is listed as a version of spec.md — a prefix match files one document's " +
    "approvals under its neighbour's history");
-// Each row's approval comes off THAT SNAPSHOT's envelope. Read off the live document instead
+// Each row's approval comes off that snapshot's envelope. Read off the live document instead
 // and every row would say "draft", with no approver and no date.
 is(rows[0]?.approved_by === "ada@zz.test" && rows[0]?.approved_at === "2026-01-05"
    && rows[1]?.approved_by === "bo@zz.test" && rows[2]?.approved_by === "cy@zz.test",
@@ -136,7 +126,7 @@ is(versionRefusal(root, `${INIT}/spec.md`, 2) === null,
 is(typeof versionRefusal(root, `${INIT}/plan.md`, 1) === "string",
    "a version of a document with no filed versions is not refused");
 
-// ── 3. The record, per document, with shownSinceLastChange as the oracle ─────────────────
+// 3. The record, per document, with shownSinceLastChange as the oracle
 const log = join(root, INIT, "activity.jsonl");
 const seedWrites = () => writeFileSync(log,
   ["spec.md", "plan.md"].map((d) => JSON.stringify({
@@ -161,7 +151,7 @@ is(/v1 approved by ada@zz\.test on 2026-01-05/.test(presented)
 is(shownRows().length === 1 && shownRows()[0].path === `${INIT}/spec.md`,
    "presenting one document did not append exactly one `shown` row naming it");
 
-// TWO DOCUMENTS, TWO ROWS. One row for a batch would let an approval on the document nobody
+// Two documents, two rows. One row for a batch would let an approval on the document nobody
 // opened read as attested, because shownSinceLastChange answers per document.
 seedWrites();
 presentDocument(root, `${INIT}/spec.md`, undefined, "u@zz.test");
@@ -171,9 +161,9 @@ is(shownSinceLastChange(root, `${INIT}/spec.md`) === true
    && shownSinceLastChange(root, `${INIT}/plan.md`) === true,
    "after presenting both documents the record still says one of them was never fetched");
 
-// OPENING HISTORY MUST NOT VOUCH FOR THE PRESENT. shownSinceLastChange matches on path and
-// ignores version by design, so a `shown` written against the live path when v1 was what came
-// back would make "somebody read the first approval" answer for the current draft.
+// Opening history must not vouch for the present. shownSinceLastChange matches on path and
+// ignores version, so a `shown` written against the live path when v1 was what came back would
+// make "somebody read the first approval" answer for the current draft.
 seedWrites();
 const historical = presentDocument(root, `${INIT}/spec.md`, 1, "u@zz.test");
 is(/The first approval/.test(historical) && !/The current draft/.test(historical),
@@ -190,7 +180,7 @@ const refused = presentDocument(root, `${INIT}/spec.md`, 9, "u@zz.test");
 is(/^ERROR:/.test(refused), "presenting a version that does not exist is not refused");
 is(shownRows().length === 0, "a refused present still wrote a `shown` row");
 
-// ── 4. `_versions/` stays unwritable, asked of the guard itself ──────────────────────────
+// 4. `_versions/` stays unwritable, asked of the guard itself
 is(typeof writeGuard(`${INIT}/_versions/spec.v1.md`) === "string",
    "writeGuard no longer refuses a write to _versions/ — the frozen copy an approval signed " +
    "became editable, and provenance the platform cannot vouch for is worse than none");
@@ -199,21 +189,21 @@ is(typeof writeGuard(`${INIT}/x/../_versions/spec.v1.md`) === "string",
 is(writeGuard(`${INIT}/spec.md`) === null,
    "writeGuard now refuses an ordinary document — the guard is too wide, not too narrow");
 
-// ── 5. Two source-level assertions, and what each catches ────────────────────────────────
+// 5. Two source-level assertions, and what each catches
 //
 // Neither can be run: both handlers resolve through `safePath`, which resolves through
-// `userRoot`, which is rooted at the hard-coded `/artifacts`. So the loops themselves are read
-// rather than executed, and each assertion is written to fail on the specific defect the
-// contract names rather than on the absence of a word.
+// `userRoot`, rooted at the hard-coded `/artifacts`. The loops are read rather than executed,
+// and each assertion fails on the specific defect the contract names rather than on the
+// absence of a word.
 const src = readFileSync("services/zz-core/src/tools/artifacts.ts", "utf8");
 const slice = (tool: string) => {
   const at = src.indexOf(`registerTool(\n    "${tool}"`);
   return at < 0 ? null : src.slice(at, src.indexOf("\n  );", at));
 };
 
-// document_present must record NOTHING of its own. The per-document helper owns the `shown`
-// row and section 3 proves the helper writes one per call, so the only way a batch collapses
-// to a single row is a log hoisted back into the registration. This is that assertion.
+// document_present must record nothing of its own. The per-document helper owns the `shown`
+// row and section 3 proves it writes one per call, so a batch collapsing to a single row means
+// a log hoisted back into the registration.
 const present = slice("document_present");
 if (!present) fail.push("document_present is not registered");
 else {
@@ -227,8 +217,8 @@ else {
 
 // document_read must not return from inside its loop: an array where one path is unreadable
 // returns the readable ones and names the failure for that entry. Everything between the loop
-// and the handler's final `return text(` is loop body, so a `return` in that window is an
-// entry that ends the whole call.
+// and the handler's final `return text(` is loop body, so a `return` in that window ends the
+// whole call.
 const read = slice("document_read");
 if (!read) fail.push("document_read is not registered");
 else {

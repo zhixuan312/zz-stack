@@ -1,15 +1,12 @@
 /**
- * LAYER 5 — is the live surface the one the source declares?
+ * Layer 5 — is the live surface the one the source declares?
  *
- * The layer the 0.26.1 restructure needed and did not have. Sixty-nine files moved, and the
- * proof that no door had silently lost its tools was a manual diff of one captured tools/list
- * against a rebuilt binary — done once, by hand, because nothing could do it. A door that
- * fails to mount does not 500: it answers 200 with a shorter list, and every probe in the
- * `doors` layer stays green.
+ * A door that fails to mount does not 500: it answers 200 with a shorter list, and every probe in
+ * the `doors` layer stays green.
  *
- * SOURCE IS THE DECLARATION, THE DEPLOYMENT IS THE FACT, and this compares them by NAME rather
+ * Source is the declaration, the deployment is the fact, and this compares them by name rather
  * than by count. A count passes a tool that was renamed, passes one deleted while another was
- * added, and can only ever notice the single case of a door that lost one and gained nothing.
+ * added, and can only ever notice a door that lost one and gained nothing.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -47,17 +44,14 @@ function token() {
 /** One MCP call, parsed. The transport may answer as SSE or as plain JSON, so the last
  *  non-empty line is taken and the `data: ` prefix dropped if it is there. */
 function mcp(path: string, body: string): McpFrame {
-  // THE PRECONDITIONS ARE RESOLVED OUTSIDE THE try, and that placement is the whole rule.
-  //
-  // With them inside it, a `url()` that could not find an address was caught by the catch
-  // below and returned as "the door could not be reached" — a DISAGREEMENT — so an unreachable
-  // host produced two verdicts saying the platform's contract was wrong when nothing had
-  // looked at the platform at all. A catch wide enough to cover not knowing where to look will
-  // eventually report what you were looking for as broken.
+  // The preconditions are resolved outside the try, and that placement is the whole rule. Inside
+  // it, a `url()` that could not find an address is caught by the catch below and returned as "the
+  // door could not be reached" — a disagreement — so an unreachable host produces verdicts saying
+  // the platform's contract is wrong when nothing looked at the platform at all.
   const addr = url(), bearer = token();
   let out: string;
   // From here on a throw is the platform's answer, not a missing precondition, so it is
-  // RETURNED. A door that is down, or a Caddy 502 in front of it, must not become `unknown` —
+  // returned. A door that is down, or a Caddy 502 in front of it, must not become `unknown` —
   // a release does not roll back on `unknown`.
   try {
     out = run("curl", ["-s", "-m", "30",
@@ -69,10 +63,9 @@ function mcp(path: string, body: string): McpFrame {
     return { unreachable: `the door could not be reached: ${(e.stderr ?? e.message).trim().slice(0, 160)}` };
   }
   const line = out.split("\n").map((l) => l.trim()).filter(Boolean).pop() ?? "";
-  // AND THE PARSE IS DEFENSIVE, for the same reason one layer down. A 502 hands back an HTML
-  // error page; JSON.parse throws SyntaxError on it, the runner would call that the doctor's
-  // own bug, and the misattribution this whole design exists to eliminate would be pointing
-  // the other way — at a platform that really was broken.
+  // The parse is defensive for the same reason one layer down: a 502 hands back an HTML error
+  // page, JSON.parse throws SyntaxError on it, and the runner would call that the doctor's own bug
+  // while the platform really was broken.
   try {
     const parsed: unknown = JSON.parse(line.replace(/^data:\s*/, ""));
     return parsed && typeof parsed === "object" ? (parsed as McpFrame)
@@ -84,15 +77,13 @@ function mcp(path: string, body: string): McpFrame {
 
 probe("every tool the source registers is on the live door", () => {
   // The initialize handshake first: the doors are stateless, but a server that throws at
-  // construction answers the handshake with an error rather than a tool list, and "0 tools"
-  // and "the server would not start" are different diagnoses.
-  // BOTH OF ZZ-CORE'S DOORS, AND THE UNION OF WHAT THEY SERVE. The service mounts two MCP
-  // endpoints — the gateway publishes them as /core/mcp and /eval/mcp — and `zzCoreTools()`
-  // below reads the whole of services/zz-core/src, so it declares the tools of both. Asking
-  // only the core door would therefore report the ten `plugin_*` tools as missing on every
-  // healthy deployment: three whole files at once, which is exactly the shape this probe
-  // treats as a dropped register call. A monitor that cries wolf on a correct release is worse
-  // than no monitor, because the next real one is read past.
+  // construction answers the handshake with an error rather than a tool list, and "0 tools" and
+  // "the server would not start" are different diagnoses.
+  //
+  // COUPLED: both of zz-core's doors, and the union of what they serve. The service mounts two MCP
+  // endpoints — published as /core/mcp and /eval/mcp — and `zzCoreTools()` below reads the whole of
+  // services/zz-core/src, so it declares the tools of both. Asking only the core door would report
+  // every `plugin_*` tool as missing on a healthy deployment.
   const DOORS = ["/core/mcp", "/eval/mcp"];
   const names: string[] = [];
   for (const door of DOORS) {
@@ -109,7 +100,7 @@ probe("every tool the source registers is on the live door", () => {
     names.push(...served);
   }
 
-  // The source side, file by file, so the ANSWER names the module a missing tool came from —
+  // The source side, file by file, so the answer names the module a missing tool came from —
   // which is the whole diagnosis when a register<Door>Tools call is dropped from a builder.
   const declared = zzCoreTools();
   const coreDoor = new Set(names);
@@ -118,18 +109,16 @@ probe("every tool the source registers is on the live door", () => {
   const missing = declared.filter((t) => !coreDoor.has(t.name));
   const byFile = new Map();
   for (const t of missing) byFile.set(t.file, [...(byFile.get(t.file) ?? []), t.name]);
-  // A tool declared in source and absent from BOTH zz-core doors is normal — it may be a
-  // /manage door tool. What is NOT normal is a whole file's worth going missing at once, which is what a
-  // dropped register call looks like and what a per-tool comparison would drown in noise.
+  // A tool declared in source and absent from both zz-core doors is normal — it may be a /manage
+  // door tool. A whole file's worth going missing at once is not, and that is what a dropped
+  // register call looks like.
   //
-  // WHAT THIS CANNOT SEE, said plainly because a proxy presented as a judge is the failure the
-  // gate exists to refuse: `ns.length > 1` means a door module holding exactly ONE tool could
-  // be dropped from buildServer and pass here. Every door module today holds several, so the
-  // blind spot is empty rather than merely unlikely — but it is a property of the code, not of
-  // the check, and the day somebody writes a one-tool door is the day this stops covering it.
-  // Nor can it see WHICH of zz-core's two doors a tool is on: the lists are unioned, so a tool
-  // that moved from one to the other reads as present. checks/eval-door.ts holds that offline,
-  // against the builders themselves.
+  // What this cannot see: `ns.length > 1` means a door module holding exactly one tool could be
+  // dropped from buildServer and pass here. Every door module today holds several, so the blind
+  // spot is empty rather than merely unlikely — but it is a property of the code, not of the
+  // check. Nor can it see which of zz-core's two doors a tool is on: the lists are unioned, so a
+  // tool that moved from one to the other reads as present. checks/eval-door.ts holds that
+  // offline, against the builders themselves.
   const wholeFiles = [...byFile].filter(([file, ns]) =>
     ns.length === declared.filter((t) => t.file === file).length && ns.length > 1);
   return wholeFiles.length
@@ -143,11 +132,8 @@ probe("every tool the source registers is on the live door", () => {
 
 probe("the live door is running this version", () => {
   const want = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
-  // THE HANDSHAKE, not a package download. This used to `curl /pkg/claude-code.tgz | tar xzO`
-  // a plugin.json out of the archive and read its version prefix — the only way to ask the
-  // running image what it thought it was, back when the package was the thing it served.
-  // `/pkg` went with Codex and Hermes on 2026-09-12; `serverInfo.version` answers the same
-  // question in one frame, from the same `serviceVersion` read, with no archive in the middle.
+  // The handshake, not a package download. `serverInfo.version` answers what the running image
+  // thinks it is in one frame, from the same `serviceVersion` read, with no archive in the middle.
   const hello = mcp("/core/mcp", initFrame("doctor"));
   if (hello.unreachable) return hello.unreachable;
   if (hello.error) return `the door refused initialize: ${JSON.stringify(hello.error).slice(0, 200)}`;

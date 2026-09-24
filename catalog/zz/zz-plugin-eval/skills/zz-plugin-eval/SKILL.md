@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-eval
-version: 1.0
+version: 1.1
 description: "The front door to plugin evaluation, and the place a judgement about a plugin is settled rather than offered. Five stages — locate, profile, define, judge, report — over one plugin at one released version, against a ruler somebody agreed BEFORE any scoring. Load it whenever somebody wants a plugin graded, scored, marked down, or confirmed as good or bad, including when they have already reached a conclusion and want it checked: an opinion given straight back is the thing this exists to replace. Evidence about whether a plugin does the job it claims; never a change to the plugin."
 when_to_use: "Someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?'. Answering either from your own read is the failure this flow exists to prevent, so load it before agreeing or disagreeing. Also whenever a plugin is up for keeping, changing or retiring, or somebody asks whether installing it beats not installing it. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code)."
 ---
@@ -28,39 +28,24 @@ flow and the measurement bends toward the intervention somebody already wanted.
 shipping something does not stop and evaluate the plugin it is shipping with — that is a
 separate piece of work with its own initiative.
 
-**A PERSON OPENS THIS FLOW. NOTHING OPENS IT FOR THEM, and that is worth knowing before you
-write a case about it.** This skill is a flow's `entry`, so the shelf renders it as the command
+**A PERSON OPENS THIS FLOW. NOTHING OPENS IT FOR THEM.** This skill is a flow's `entry`, so the shelf renders it as the command
 `/zz-plugin-eval:eval` carrying `disable-model-invocation: true` — a model cannot invoke it at
 all, whatever its `when_to_use` says. The five stage skills beside it each say "never on its
 own", which is right: a stage that fires out of order is worse than one that does not fire.
 
-The consequence, measured on 2026-09-13 over nine runs: asked the three questions this flow
-exists to answer, in ordinary words, with the plugin installed, nothing in it engaged and the
-delta against a bare agent was zero on all three cases. That is a true measurement and it is
-not a defect in any of them — it is what "a person invokes this on purpose" costs, stated as a
-number. A case written for this plugin has to name the flow, the way a person does, or it
-measures the shelf's routing rather than this flow's content.
+The consequence: asked the questions this flow exists to answer in ordinary words, with the
+plugin installed, nothing in it engages. That is not a defect — it is what "a person invokes
+this on purpose" costs.
 
 Load `zz-platform` first, as with every flow on this platform.
 
-## One kind of evidence, and where the second one went
+## One kind of evidence
 
 | | where it comes from | needs | answers |
 |---|---|---|---|
 | **traces** | the event log, via `plugin_profile` | five usable runs | what did it actually do in real use? |
 
-**There were two.** `cases` came from a `claude plugin eval` suite recorded by `case_record`,
-and reported a with-plugin against no-plugin delta — a counterfactual, which is a stronger
-claim than any score. It is removed, and what it actually measured is why.
-
-No case ever declared a mock, so under the CLI's default `--mocks record` no plugin server
-started and **the plugin's tools were not callable in either arm**. Every grader was a regex
-over tool NAMES or a judgement about an answer's shape. A delta therefore established that the
-method's TEXT had reached the agent and that it used the right words — never that the plugin
-worked. The strongest result the suite ever produced came from a prompt that typed the plugin's
-own command, which is a way of asking whether text helps once you have already handed it over.
-
-**So a thin trace block is now a real constraint, not a fact to report and route around.** A
+**A thin trace block is a real constraint, not a fact to report and route around.** A
 plugin nobody has used cannot be judged on its runs. That is an honest `not measured`, and the
 enum carries that word for exactly this. Two things soften it: a ruler whose subject is the
 **document** or the **initiative** reads artifacts rather than runs, and may have subjects when

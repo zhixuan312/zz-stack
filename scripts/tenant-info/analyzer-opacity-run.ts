@@ -1,43 +1,29 @@
 #!/usr/bin/env node
 /**
- * analyzer-opacity-run.ts — Task I-8's generator. Proves, against a REAL PostgreSQL at the
- * pinned image, that every term `zz-lexical-v2` currently emits for `OPACITY_CASES`
- * (`@zz/indexing`) survives PostgreSQL's own text-search tokenizer byte-identical, and writes
- * that proof to `testing/tenant-info/analyzer-opacity.golden.json`.
+ * analyzer-opacity-run.ts — proves, against a real PostgreSQL at the pinned image, that every
+ * term the analyzer currently emits for `OPACITY_CASES` (`@zz/indexing`) survives
+ * PostgreSQL's own text-search tokenizer byte-identical, and writes that proof to
+ * `testing/tenant-info/analyzer-opacity.golden.json`.
  *
- * WHY `to_tsvector('simple', ...)`, NOT A `bm25` INDEX. `services/zz-core/src/tenant-info/
- * lanes.ts` and migration 070 both record, in their own words, that pg_textsearch's real index
- * DDL "exists nowhere in this checkout" and decline to invent it. This generator holds the
- * same line: it creates the `pg_textsearch` EXTENSION (070 already does exactly that, real,
- * shipped DDL) so `pg_textsearch_version` in the provenance block is a genuine value read back
- * from `pg_extension`, but it builds no `bm25` index and runs no `to_bm25query` — inventing
- * either here would be exactly the fabrication this platform's data-safety rules forbid.
- * `to_tsvector('simple', term)` is stock, documented PostgreSQL, needs no extension and no
- * index, and is a faithful test of the actual property Task I-8's Contract names: does the
- * database's OWN text-search tokenizer split, stem or drop a term the analyzer emits. The
- * `simple` dictionary lowercases and does not stem — which is why `OPACITY_SEEDS`
- * (`tenant-analysis.ts`) is deliberately all-lowercase: a case-preserving term run into a
- * case-FOLDING dictionary would report a "mangled" term for a reason that has nothing to do
- * with opacity, and this fixture isolates the property under test from that orthogonal,
- * already-understood behavior.
+ * DELIBERATE: `to_tsvector('simple', ...)`, not a `bm25` index. This creates the `pg_textsearch`
+ * extension and reads `pg_textsearch_version` back from `pg_extension` for the provenance block,
+ * but builds no `bm25` index and runs no `to_bm25query`. `to_tsvector('simple', term)` is stock
+ * PostgreSQL, needs no extension and no index, and tests the property the contract names: does
+ * the database's own tokenizer split, stem or drop a term the analyzer emits. The `simple`
+ * dictionary lowercases and does not stem, which is why `OPACITY_SEEDS` (`tenant-analysis.ts`)
+ * is all-lowercase — a case-preserving term run into a case-folding dictionary would report a
+ * mangled term for a reason that has nothing to do with opacity.
  *
- * A THROWAWAY CONTAINER, NEVER THE PRODUCTION CLUSTER. Started from the exact image
- * `deploy/docker-compose.yml` pins (`postgresService`, the same reader `scripts/release/
- * build.ts`'s own throwaway-postgres step uses), named distinctively and reaped both on exit
- * and, for anything a previous crashed run left behind, on start — `reapLeaked`, the same
- * safeguard `build.ts` carries for exactly this failure mode.
+ * A throwaway container, never the production cluster. Started from the exact image
+ * `deploy/docker-compose.yml` pins (`postgresService`), named distinctively, and reaped both on
+ * exit and on start via `reapLeaked`, for anything a crashed run left behind.
  *
- * NO `pg` CLIENT LIBRARY. Every query in this file runs through `docker exec ... psql`, the
- * same mechanism `scripts/release/build.ts`'s own throwaway-postgres step uses — this
- * repository's root `package.json` declares no `pg` dependency (only `@zz/indexing` does, for
- * the services that own a live pool), and every existing `scripts/` caller reaches a throwaway
- * Postgres by shelling out to `psql` rather than adding one. `-v term=...` plus `:'term'` in
- * the query text is psql's own self-quoting substitution — it escapes whatever the term
- * contains as a SQL string literal, so no manual quote-escaping is needed here.
+ * No `pg` client library: every query runs through `docker exec ... psql`, the same mechanism
+ * `scripts/release/build.ts` uses. This repository's root `package.json` declares no `pg`
+ * dependency.
  *
- * A GENERATOR RUN WITH NO REACHABLE DATABASE FAILS. `die()` below exits non-zero before a
- * single byte of `testing/tenant-info/analyzer-opacity.golden.json` is written — the Contract's
- * own words are "it never writes a fixture from nothing."
+ * A generator run with no reachable database fails: `die()` exits non-zero before a single byte
+ * of the fixture is written.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -61,30 +47,27 @@ interface OpacityCase {
 }
 
 /** Runs one statement inside the throwaway container via `psql`, tuples-only and unaligned so
- *  the output is exactly the rows, one field per line, nothing else to parse around.
+ *  the output is exactly the rows, one field per line.
  *
- *  THE SQL GOES IN ON STDIN, NEVER ON `-c`. `-v name=value` plus `:'name'` in the SQL text is
- *  psql's own self-quoting substitution — psql interpolates it BEFORE sending the statement to
- *  the server, so whatever `value` contains (including a term with a quote or a backslash in
- *  it) arrives at the server already escaped as a proper SQL literal, with no manual
- *  quote-escaping needed here. Measured directly against this pinned image: that substitution
- *  runs on psql's normal script/stdin input, but NOT inside a `-c "..."` argument, where a bare
+ *  DELIBERATE: the SQL goes in on stdin, never on `-c`. `-v name=value` plus `:'name'` in the
+ *  SQL text is psql's own self-quoting substitution, interpolated before the statement is sent,
+ *  so a term containing a quote or a backslash arrives already escaped as a SQL literal. That
+ *  substitution runs on psql's stdin input but not inside a `-c "..."` argument, where a bare
  *  `:'name'` reaches the server unexpanded and is refused as a syntax error at `:`. `-i` on
  *  `docker exec` keeps the container's stdin open for it. */
 function psql(sql: string, vars: Record<string, string> = {}): string {
   const args = ["exec", "-i", CONTAINER, "psql", "-U", PG_USER, "-d", PG_DB, "-v", "ON_ERROR_STOP=1"];
   for (const [name, value] of Object.entries(vars)) args.push("-v", `${name}=${value}`);
   args.push("-tA");
-  // `run`'s own default `stdio` fixes stdin to `"ignore"`, which silently wins over `input`
-  // rather than being overridden by it — measured directly: with the default left in place,
-  // `docker exec -i` reads EOF immediately and every query returns empty output with no error.
-  // Passing `stdio` explicitly here replaces that default rather than merging with it.
+  // `run`'s own default `stdio` fixes stdin to `"ignore"`, which wins over `input` rather than
+  // being overridden by it: `docker exec -i` then reads EOF immediately and every query returns
+  // empty output with no error. Passing `stdio` explicitly replaces that default.
   return run("docker", args, { input: `${sql}\n`, stdio: ["pipe", "pipe", "pipe"] });
 }
 
 /** Every lexeme PostgreSQL's own `simple` tokenizer produces for one submitted term — zero
- *  lexemes means the term was DROPPED, more than one means it was SPLIT, and one lexeme that
- *  does not equal the term means it was REWRITTEN (stemmed or case-folded). All three are the
+ *  lexemes means the term was dropped, more than one means it was split, and one lexeme that
+ *  does not equal the term means it was rewritten (stemmed or case-folded). All three are the
  *  "database rewrites, stems, splits or drops" the Contract's Errors bullet names. */
 function lexemesFor(term: string): string[] {
   const out = psql(
@@ -97,7 +80,7 @@ function lexemesFor(term: string): string[] {
 async function main(): Promise<void> {
   step("I-8", "analyzer opacity fixture — a real PostgreSQL run");
 
-  // Registered BEFORE anything starts, same as build.ts's own throwaway-postgres step: a die()
+  // Registered before anything starts, same as build.ts's own throwaway-postgres step: a die()
   // between here and the teardown at the end must not leave a container running.
   const drop = (): void => {
     try { run("docker", ["rm", "-f", CONTAINER]); } catch { /* already gone, or never started */ }
@@ -121,11 +104,9 @@ async function main(): Promise<void> {
           + "no fixture written — a generator run with no reachable database writes nothing.");
     }
 
-    // `pg_isready` alone is not enough: the official postgres image runs a TEMPORARY server
-    // during initdb, which answers `pg_isready` before the final restart that actually creates
-    // `POSTGRES_DB` and starts listening for real. Probing `select 1` against the named
-    // database is what actually proves the fixture database is reachable, not just that some
-    // postmaster somewhere is up.
+    // `pg_isready` alone is not enough: the postgres image runs a temporary server during
+    // initdb which answers it before the final restart that creates `POSTGRES_DB`. Probing
+    // `select 1` against the named database is what proves the fixture database is reachable.
     let ready = false;
     for (let i = 0; i < 90; i++) {
       try {
@@ -141,8 +122,8 @@ async function main(): Promise<void> {
           + "no fixture written — a generator run with no reachable database writes nothing.");
     }
 
-    // Real, shipped DDL only — the same `create extension if not exists pg_textsearch;`
-    // migration 070 runs. No index, no `to_bm25query`: see the header for why.
+    // Real, shipped DDL only: the same `create extension if not exists pg_textsearch;` the
+    // search projections are created under. No index, no `to_bm25query`: see the header for why.
     try {
       psql("create extension if not exists pg_textsearch");
     } catch (e) {
@@ -182,11 +163,9 @@ async function main(): Promise<void> {
     log(`  wrote ${FIXTURE_PATH.slice(root.length + 1)} (${cases.length} case(s))`);
 
     if (mangled.length > 0) {
-      // The fixture above is written first and is honest about what happened — this generator
-      // does not suppress a genuine result. It still fails loudly: the Contract's own words are
-      // "a term the database rewrites, stems, splits or drops fails the generator and names the
-      // term in both forms," and the gate's frozen check will independently reach the same
-      // failure by reading the fixture back.
+      // The fixture above is written first and is honest about what happened. It still fails
+      // loudly, and the gate's frozen check reaches the same failure independently by reading
+      // the fixture back.
       die(`the database rewrote ${mangled.length} analyzer term(s) — a real finding, not a bug `
           + `in this generator:\n${mangled.map((m) => `    ${m}`).join("\n")}`);
     }

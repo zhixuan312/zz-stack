@@ -8,22 +8,19 @@ import { consoleImage } from "./dashboard.ts";
 
 /** DDL that cannot be undone by putting the old image back.
  *
- * A dropped column is gone; the previous release's code still SELECTs it, and every request
- * that resolves an identity then answers 500. That is not a theory — it happened on 0.34.0:
- * migration 053 dropped `pat.scope`, verification failed for an unrelated reason, this
- * function put 0.33.1 back, and PAT authentication returned "identity resolution failed" for
- * every caller on the platform while `/health` stayed green, because /health resolves nobody.
+ * A dropped column is gone; the previous release's code still SELECTs it, and every request that
+ * resolves an identity then answers 500 while `/health` stays green, because /health resolves
+ * nobody.
  *
- * The whole argument for deploying before verifying is that this step can undo it. For a
- * release carrying destructive DDL that argument is simply false, and the honest thing is to
- * say so and stop rather than to perform a rollback that makes the outage worse. */
+ * Deploying before verifying rests on this step being able to undo it. For a release carrying
+ * destructive DDL that is false, so this says so and stops rather than performing a rollback that
+ * makes the outage worse. */
 const IRREVERSIBLE = /\b(drop\s+(column|table|type|schema)|alter\s+column\s+\S+\s+type)\b/i;
 
-/** Migrations applied by THIS release — present now, absent from the tag being rolled back to.
+/** Migrations applied by this release — present now, absent from the tag being rolled back to.
  *
- * Asked of git rather than of the database: the question is what the target version's CODE
- * knows about, and the tag is what that code was. A migration this release added is one that
- * tag never carried. */
+ * Asked of git rather than of the database: the question is what the target version's code knows
+ * about, and the tag is what that code was. */
 function migrationsSince(tag: string): string[] {
   const dir = join(root, "services/gateway/migrations");
   const now = readdirSync(dir).filter((f) => f.endsWith(".sql"));
@@ -32,9 +29,9 @@ function migrationsSince(tag: string): string[] {
     thenList = execFileSync("git", ["ls-tree", "--name-only", `v${tag}:services/gateway/migrations`],
                             { cwd: root, encoding: "utf8" }).split("\n").map((l) => l.trim()).filter(Boolean);
   } catch {
-    // No such tag, or no such path in it. Unknown is not "none": returning an empty list here
-    // would report every destructive release as safe to roll back, which is the failure this
-    // guard exists for. Treat every migration as new and let the caller decide.
+    // No such tag, or no such path in it. Unknown is not "none": an empty list here reports every
+    // destructive release as safe to roll back. Treat every migration as new and let the caller
+    // decide.
     return now;
   }
   const had = new Set(thenList);
@@ -42,13 +39,11 @@ function migrationsSince(tag: string): string[] {
 }
 
 export function rollback(to: string): void {
-  // NOTHING TO GO BACK TO is not a failure, and it must be said before the guard below speaks.
+  // Nothing to go back to is not a failure, and it must be said before the guard below speaks.
   //
-  // `previous` is read off the host's own .env, so a redeploy of the version already running
-  // asks this function to roll back to the version it just deployed. That is a no-op, and it
-  // arrived as a wall of red text naming eleven destructive migrations — which reads as "your
-  // release broke something" when what happened is that there was no earlier version recorded
-  // to return to.
+  // `previous` is read off the host's own .env, so a redeploy of the version already running asks
+  // this function to roll back to the version it just deployed. That is a no-op, and without this
+  // it arrives as a wall of red naming every destructive migration.
   const current = ssh(`cd ${REMOTE}/deploy && grep -oP '(?<=^ZZ_VERSION=).*' .env || echo ''`).trim();
   if (!to || to === current) {
     log(`  · nothing to roll back to — the host was already on ${to || "(unset)"} before this ` +
@@ -56,7 +51,7 @@ export function rollback(to: string): void {
     return;
   }
 
-  // REFUSED BEFORE ANYTHING MOVES, when going back would break what is currently working.
+  // Refused before anything moves, when going back would break what is currently working.
   const added = migrationsSince(to);
   const destructive = added.filter((f) => {
     try { return IRREVERSIBLE.test(readFileSync(join(root, "services/gateway/migrations", f), "utf8")); }
@@ -73,26 +68,22 @@ export function rollback(to: string): void {
         `        decide what its values should be — which is a decision, not a rollback.`);
   }
 
-  // WHICH DEPLOYMENT, said out loud. This is the mode most likely to be run in a hurry, and
-  // it is the one where aiming at the wrong host moves a deployment nobody asked about.
+  // Which deployment, said out loud. This is the mode most likely to be run in a hurry, and the one
+  // where aiming at the wrong host moves a deployment nobody asked about.
   step("↩", `rolling ${HOST} back to ${to}`);
-  // Set OR APPEND, and then read it back.
+  // Set or append, and then read it back.
   //
-  // This was a bare `sed -i 's/^ZZ_VERSION=.*/…/'`, which edits a line that has to already
-  // be there. It is not: the compose file carries the version as a literal precisely so a
-  // host needs no .env entry, and this host has none — `--verify-only` prints
-  // "host ZZ_VERSION=(unset — compose literal applies)" every time it runs. So the sed
-  // matched nothing, compose restarted on the SAME version, and this function reported
-  // "redeployed at <to>". The rollback is what makes deploy-then-verify a safe order rather
-  // than a reckless one, and it was the step that could quietly do nothing.
+  // A bare `sed -i 's/^ZZ_VERSION=.*/…/'` edits a line that has to already be there, and it is not:
+  // the compose file carries the version as a literal precisely so a host needs no .env entry. The
+  // sed then matches nothing, compose restarts on the same version, and the rollback reports
+  // success having done nothing.
   ssh(`cd ${REMOTE}/deploy && ` +
       `(grep -q '^ZZ_VERSION=' .env && sed -i 's/^ZZ_VERSION=.*/ZZ_VERSION=${to}/' .env ` +
       `|| echo 'ZZ_VERSION=${to}' >> .env) && ` +
-      // …and it could still, one line below its own explanation: `up -d | tail` reports
-      // tail's status. The read-back underneath proves the .env line was written, which is
-      // not the same claim as "the old version is running again" — if the outgoing image
-      // had been pruned, compose would fail to start it and this would still say
-      // "redeployed at <to>, confirmed on the host".
+      // `up -d | tail` reports tail's status, so the failure is caught explicitly. The read-back
+      // underneath proves the .env line was written, which is not the same claim as "the old
+      // version is running again": if the outgoing image had been pruned, compose would fail to
+      // start it.
       `{ docker compose up -d --remove-orphans >/tmp/zz-rollback.log 2>&1 || ` +
       `{ echo "ROLLBACK UP FAILED"; tail -8 /tmp/zz-rollback.log; exit 1; }; }; tail -3 /tmp/zz-rollback.log`);
   const now = ssh(`cd ${REMOTE}/deploy && grep -oP '(?<=^ZZ_VERSION=).*' .env || echo ''`);
@@ -102,12 +93,11 @@ export function rollback(to: string): void {
   }
   log(`  redeployed at ${to}, confirmed on the host`);
 
-  // AND THE CONSOLE, because half a rollback is the mismatch this whole order exists to
-  // prevent: a new console talking to a gateway that just went backwards. Its previous
-  // version is recorded on the host at deploy time for exactly this moment.
+  // And the console, because half a rollback is a new console talking to a gateway that just went
+  // backwards. Its previous version is recorded on the host at deploy time.
   //
-  // `local` is the honest answer for a host that was last deployed by building from source,
-  // and there is no image to go back to — say so rather than sed a tag that does not exist.
+  // `local` is the honest answer for a host last deployed by building from source, and there is no
+  // image to go back to — say so rather than sed a tag that does not exist.
   const prevDash = ssh(`grep -oP '(?<=^ZZ_DASHBOARD_PREVIOUS_VERSION=).*' ${DASH_REMOTE}/.env 2>/dev/null || echo ''`).trim();
   if (!prevDash) {
     log(`  · console left alone — nothing recorded at ${DASH_REMOTE}/.env to go back to`);

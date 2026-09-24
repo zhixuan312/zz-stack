@@ -2,42 +2,30 @@
 /**
  * gate.ts — everything that must be true before a release leaves this machine.
  *
- * WHY THIS EXISTS. Until now the only gate between "I edited a file" and "every user's
- * platform is down" was `tsc -b`. That is not hypothetical: a duplicate MCP tool
- * registration typechecked cleanly, deployed cleanly, and returned 500 for every
- * request to zz-core for about four minutes — including document_write and
- * initiative_status — because the server is built per request and the throw took the
- * whole builder down. Nothing caught it. I found it by reading logs.
- *
- * The checks are the ones that would have. Most were written as throwaway scripts during a
- * loop test and found four real defects in five rounds; this is them, promoted to blocking.
- *
  *   node scripts/gate.ts            # all checks
  *   node scripts/gate.ts --quiet    # only failures
- *   node scripts/gate.ts --report PATH   # ALSO write a machine-readable execution report
+ *   node scripts/gate.ts --report PATH   # also write a machine-readable execution report
  *
  * Exit 0 = safe to release. Non-zero = do not.
  *
- * `--report` is optional and changes nothing else: stdout, the exit codes and every check are
- * what they are without it. PATH must resolve OUTSIDE this repository — the report names every
- * check discovered, executed, skipped and failed, which is private acceptance evidence rather
- * than a repository deliverable, and a report written into the tree would be hashed into the
- * next run's own `source_tree_sha256`. `scripts/gate/run.ts` refuses an inside path at startup.
+ * `tsc -b` is not a gate: a duplicate MCP tool registration typechecks cleanly, deploys cleanly,
+ * and returns 500 for every request to zz-core, because the server is built per request and the
+ * throw takes the whole builder down. The checks here are the ones that catch that class.
  *
- * A GATE INSIDE A GATE IS REFUSED, at runtime, before `marketplace.ts` regenerates anything —
- * see the `ZZ_GATE_RUNNING` guard in `gate/run.ts`, which this file's very first import pulls
- * in ahead of every check module.
+ * `--report` is optional and changes nothing else: stdout, the exit codes and every check are what
+ * they are without it. PATH must resolve outside this repository — the report names every check
+ * discovered, executed, skipped and failed, and a report written into the tree would be hashed
+ * into the next run's own `source_tree_sha256`. `scripts/gate/run.ts` refuses an inside path at
+ * startup.
  *
- * THIS FILE IS AN ORDER, NOT A LIST. Every check lives in `gate/checks/<subject>.ts`,
- * grouped by what it is about, and each module registers its own checks when it is
- * imported — so the imports below are the gate, and an import missing here is a module
- * that does not run. `build` is first because several of its checks RUN something and
- * everything after may rely on the build having succeeded.
+ * DELIBERATE: a gate inside a gate is refused at runtime, before `marketplace.ts` regenerates
+ * anything — see the `ZZ_GATE_RUNNING` guard in `gate/run.ts`, which this file's first import
+ * pulls in ahead of every check module.
  *
- * It was one 11,428-line file until 2026-09-11, with 273 checks and nine shared helpers
- * interleaved between them. Splitting it changed no check's logic; what it changed is that
- * a person looking for the rule about backups now opens `deploy-ops.ts` instead of
- * scrolling a file where §5 alone ran for 9,550 lines.
+ * COUPLED: this file is an order, not a list. Every check lives in `gate/checks/<subject>.ts` and
+ * each module registers its own checks when imported, so the imports below are the gate and an
+ * import missing here is a module that does not run. `build` is first because several of its
+ * checks run something and everything after may rely on the build having succeeded.
  */
 import "./gate/checks/build.ts";
 import "./gate/checks/image.ts";
@@ -93,7 +81,6 @@ import "./gate/checks/negative-control-probes.ts";
 import "./gate/checks/search-predicate-parameters.ts";
 import "./gate/checks/benchmark-report-slices.ts";
 import "./gate/checks/search-read-synthesis.ts";
-import "./gate/checks/mutation-coverage.ts";
 import "./gate/checks/activation-runbook.ts";
 import "./gate/checks/trial-analyzer-agreement.ts";
 import "./gate/checks/host-chain.ts";

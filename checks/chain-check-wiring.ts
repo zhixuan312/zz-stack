@@ -1,41 +1,26 @@
-// chain-check covers every registered core tool, is invoked by release, and is NOT in the gate.
+// chain-check covers every registered core tool, is invoked by release, and is not in the gate.
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 const fail = [];
 
-// 1. Every tool each door registers is exercised THROUGH THAT DOOR'S CLIENT.
-//
-// This used to scan one directory and ask only "is this name mentioned". When Task I-19 moved
-// the ten plugin_* tools to /eval/mcp and Task I-20 moved their modules out of tools/, the
-// check went QUIETER RATHER THAN REDDER: the names left the directory it scanned, so it
-// stopped requiring them at all, while chain-check went on calling them on the core door — ten
-// "tool not found"s waiting at release, which is the only place this runs.
-//
-// A check that relaxes as the thing it guards changes is worse than one that is merely narrow,
-// because its silence reads as coverage. So the door is part of the assertion now: a tool is
-// covered when it is called through the client for the door that serves it, and moving a tool
+// 1. Every tool each door registers is exercised through that door's client. A tool is
+// covered when it is called through the client for the door that serves it, so moving a tool
 // between doors without moving its call is a failure rather than a silence.
 //
-// AND THE DOOR IS DERIVED, NOT THE DIRECTORY. The first fix for the above — a working-tree
-// edit during Task I-20, never committed in that form — keyed the two doors to `src/tools` and
-// `src/eval`, which is the SAME root cause one layer along: a check that
-// scans a DIRECTORY when the question is about a DOOR. It would have gone quiet again the next
-// time a module moved. What actually decides which door serves a tool is which factory
-// registers it, so that is what this reads — `eval-door.ts` is the function the service mounts
-// on the evaluation path, the modules it imports are that door's by construction, and every
-// other tool zz-core registers is on the core door wherever its file happens to sit.
+// DELIBERATE: the door is derived from which factory registers a tool, never from which
+// directory the module sits in. `eval-door.ts` is the function the service mounts on the
+// evaluation path, the modules it imports are that door's by construction, and every other
+// tool zz-core registers is on the core door wherever its file sits. A directory-keyed
+// version goes quiet the next time a module moves.
 const SRC = "services/zz-core/src";
 const EVAL_DOOR = `${SRC}/eval-door.ts`;
-/** chain-check AND WHAT IT WALKS THROUGH.
+/** chain-check and what it walks through. The probe is one walk written across more than one
+ * file, and this rule is about whether a live door gets called, not which file the call is
+ * written in.
  *
- * The probe is one walk written across more than one file: the bug tracker moved into
- * `chain-bugs.ts` because it is a different subject from the document chain, and reading only
- * the entry point would have reported three tools as unexercised the moment they moved. What
- * this rule is about is whether a live door gets called, not which file the call is written in.
- *
- * Followed by IMPORT rather than by reading the directory: a file sitting beside chain-check
- * that nothing imports is not part of the walk, and counting it would let a tool look exercised
- * by a module that never runs. */
+ * DELIBERATE: followed by import rather than by reading the directory. A file beside
+ * chain-check that nothing imports is not part of the walk, and counting it would let a tool
+ * look exercised by a module that never runs. */
 const CHAIN_DIR = "packages/tools/src/testing";
 const chain = (() => {
   const entry = join(CHAIN_DIR, "chain-check.ts");
@@ -49,7 +34,7 @@ const chain = (() => {
 
 /** Every .ts under zz-core, so a registration in a module no door imports directly still
  *  counts — `initiative_open` is registered from `tools/initiative-open.ts`, which server.ts
- *  does not import, and a scan of the door files alone would not have seen it. */
+ *  does not import. */
 const walk = (d: string, out: string[] = []) => {
   for (const e of readdirSync(d)) {
     const full = join(d, e);
@@ -87,8 +72,8 @@ for (const m of chain.matchAll(/const (\w+)\s*=\s*\(tool: string[\s\S]{0,80}?=>\
 }
 
 for (const [door, tools] of [["/core/mcp", coreTools], ["/eval/mcp", [...evalTools]]]) {
-  // THE CONTROL ON EACH HALF. An empty set is a door whose every assertion below is satisfied
-  // by a chain-check that calls nothing at all, which is what a broken derivation produces.
+  // The control on each half: an empty set satisfies every assertion below, which is what a
+  // broken derivation produces.
   if (!tools.length) {
     fail.push(`not one tool was attributed to ${door} — the derivation is broken, and every ` +
               "clause about what chain-check must exercise there passed on an empty set");
@@ -112,19 +97,14 @@ for (const [door, tools] of [["/core/mcp", coreTools], ["/eval/mcp", [...evalToo
 const rel = readFileSync("scripts/release.ts", "utf8");
 if (!/chain-check/.test(rel)) fail.push("release.ts does not invoke chain-check");
 
-// 3. Control: the OFFLINE gate must NOT invoke it. This check fails in both directions.
+// 3. Control: the offline gate must not invoke it. This check fails in both directions.
 const gate = readFileSync("scripts/gate.ts", "utf8");
 const gateChecks = readdirSync("scripts/gate/checks")
   .map((f) => readFileSync(join("scripts/gate/checks", f), "utf8")).join("\n");
-// WHAT THIS FORBIDS IS EXECUTION, not mention. Two earlier spellings of this control were
-// both wrong in the same direction — too coarse — and each was found only by being wired:
-//   `run.*chain-check`      matched `runsCheck("chain-check-wiring.ts")`, the registration of
-//                           THIS check, so the check accused the gate of running the very tool
-//                           it exists to keep out.
-//   `chain-check(?![-\w])`  matched `build.ts` READING `chain-check.ts` to lint its source —
-//                           a static analysis, which is exactly what the gate should be doing.
-// So: the runnable artifact by name, or a chain-check argument inside a process-spawning call.
-// Prose about chain-check is free, and five gate checks legitimately carry it.
+// DELIBERATE: what this forbids is execution, not mention. It matches the runnable artifact
+// by name, or a chain-check argument inside a process-spawning call. Prose about chain-check
+// is free, and several gate checks legitimately carry it — as does `build.ts`, which reads
+// `chain-check.ts` to lint its source.
 const RUNNABLE = /chain-check\.(?:js|mjs)\b/;
 const SPAWNED = /(?:execFileSync|execSync|spawnSync|exec|spawn)\s*\([^)]*chain-check/;
 if (RUNNABLE.test(gate + gateChecks) || SPAWNED.test(gate + gateChecks)) {

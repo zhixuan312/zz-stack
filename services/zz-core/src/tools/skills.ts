@@ -3,7 +3,7 @@
  *
  * `session_whoami` answers the two facts every flow asks for before anything else — today's
  * date and the team this person acts for — and the rest of the door is the skill library:
- * what is installed, what a skill says, and what a connected block teaches about itself.
+ * what is installed and what a skill says.
  *
  * A team's own overlay is resolved here rather than at each call, because a skill of one
  * name can exist in three places and only the order between them decides which answers.
@@ -27,21 +27,15 @@ export function registerSkillTools(server: McpServer): void {
   server.registerTool(
     "session_whoami",
     {
-      // WHAT ONLY THIS TOOL ANSWERS. Three tools answer some form of "who am I" and they are
-      // deliberately not merged — see the same note over `whoami` in the gateway's admin.ts,
-      // which was sharpened first. Each names the other two, because a model choosing between
-      // three overlapping identity tools picks by description and there is no other signal.
+      // Three tools answer some form of "who am I" and they are deliberately not merged — see
+      // the same note over `whoami` in the gateway's admin.ts. Each names the other two,
+      // because a model choosing between three overlapping identity tools picks by description
+      // and there is no other signal.
       //
-      // This is the one an agent DOING WORK calls, and it is the only source of two things:
-      // `today`, which no other tool anywhere returns, and `how_this_works`, the pointer to
-      // the rules for a session that connected without a flow to tell it. Neither is a fact
-      // about the caller's account, which is what the other two answer.
-      //
-      // "THE ONLY TOOL THAT ANSWERS EITHER" is what this said first, and it was false:
-      // `team_mine` returns the acting team too. Overclaiming on the ONE tool whose job is to
-      // be told apart from two others is the defect this task exists to fix, so the exclusive
-      // claim is made where it is true — the date — and the team is described by WHO asks for
-      // it here rather than by nobody else having it.
+      // This is the one an agent doing work calls, and the only source of `today`, which no
+      // other tool anywhere returns, and of `how_this_works`. Neither is a fact about the
+      // caller's account, which is what the other two answer. `team_mine` also returns the
+      // acting team, so the exclusive claim is made only about the date.
       description:
         "TODAY'S DATE — no other tool on any door returns it — and the team this session is " +
         "acting for, which every document you write and every search you run is scoped to. " +
@@ -61,113 +55,72 @@ export function registerSkillTools(server: McpServer): void {
       return text(JSON.stringify({
         ...who,
         team: active,
-        // WHERE THE RULES ARE, said to everybody, because nothing else says it.
-        //
-        // A flow's entry skill tells you to read zz-platform first. An agent that connected
-        // this server WITHOUT a flow — a person wiring zz-core into Claude Code, an operator
-        // on the admin door — is told by nothing at all, and then works out the gates, the
-        // envelope and the store from error messages. The spine is one call away and its
-        // name is not guessable, so the one tool every session already calls carries the
-        // pointer.
-        how_this_works: 'skill_read("zz-platform") — gates, the envelope, the artifact store, ' +
-                        "and when a building block is checked. Read it before your first write.",
-        // The clock, because the alternative is a guess and the guess has been wrong.
-        //
-        // An agent naming an initiative reasoned: "latest stored activity is 27-08-2026 and
-        // your tag names pilot-2808, so this is 28-08-2026-..." — and called that "today's
-        // date from the system". It was inference from the newest row plus digits in a run
-        // tag. The same reasoning produced 26-08-2026 on 2026-08-28 and named a directory
-        // that no later stamp can repair: stampEnvelope can fix frontmatter, but a folder is
-        // chosen before any document exists.
-        //
-        // The model has no clock. Every harness hides it, so it pattern-matches its way to
-        // one. Handing it the date here is cheaper than any rule telling it not to guess.
+        // Where the rules are, said to everybody, because nothing else says it. A flow's entry
+        // skill tells you to read zz-platform first; an agent that connected this server
+        // without a flow is told by nothing at all. The name is not guessable, so the one tool
+        // every session already calls carries the pointer.
+        how_this_works: 'skill_read("zz-platform") — gates, the envelope and the artifact store. ' +
+                        "Read it before your first write.",
+        // The clock, because the alternative is a guess. The model has no clock and every
+        // harness hides it, so it pattern-matches its way to one — from the newest stored row
+        // plus digits in a run tag. An initiative's folder name is chosen before any document
+        // exists, so stampEnvelope cannot repair a wrong date afterwards.
         today,
         // Said out loud when it applies. The store is per team and no tool takes a team
-        // argument, so a person in two teams works in one of them and could not previously
-        // tell which, or that the other existed.
+        // argument, so a person in two teams works in one of them and cannot otherwise tell
+        // which, or that the other exists.
         ...(others.length ? {
           other_teams: others,
-          // The advice here used to be "ask an admin for a token bound to that team". That
-          // was true when the credential carried the team, and it is exactly what per-team
-          // agents replaced: a token is a person now, and the team comes from the agent
-          // they picked. Guidance that sends someone to an admin for a second token, when
-          // the answer is a menu in front of them, costs more than saying nothing.
+          // A token is a person, and the acting team is switched on /manage, not by a second
+          // token bound to that team.
           note: `your tools read and write ${active} only. To work in ${others.join(" or ")}, ` +
-                "switch to that team's agent — the same flow, manned for that team. Your " +
-                "token is yours and works in all of them; the agent you pick is what says " +
-                "which one you are acting for.",
+                "call team_switch on /manage. Your token is yours and works in all of them; " +
+                "team_switch is what says which one you are acting for.",
         } : {}),
       }));
     },
   );
 
-  /** THE SHELF: every skill this caller can reach, grouped by whatever owns it.
+  /** The shelf: every skill this caller can reach, grouped by whatever owns it.
    *
-   * ONE TOOL WHERE THERE WERE TWO, and the split was never a design. `list_skills` returned
-   * `JSON.stringify([...names].sort())` — a flat array of strings with no owner, no
-   * description and no order — and `block_skills` existed as a second tool only because
-   * block-owned skills were the one case the first could not express. An agent asking "what
-   * can I read, and what is each one for" had to call both, and after both still could not
-   * tell which flow a stage skill belonged to or where in that flow it sat.
+   * One tool, not two. Every skill carries its `when_to_use` whatever you asked for, the plugin
+   * that owns it, and its position in its flow.
    *
-   * Both costs block_skills was written to fix are still paid here, and both were measured on
-   * this deployment.
+   * Nothing here is retyped from anywhere: `when_to_use` comes out of each skill's own SKILL.md,
+   * and a stage's position out of its package's flow.json.
    *
-   * WHICH SKILLS DOES THIS BLOCK SHIP. ops-select told the agent to look for "usage guides in
-   * the shared skills library named `<block>-usage`". A block ships its usage skills under the
-   * names its own authors chose, which is rarely that one. So an agent following the
-   * instruction guesses `<block>-usage`, finds nothing, and builds without them — and they
-   * come out of evaluation BLIND, never opened by anybody. That reads as agents preferring to
-   * improvise and it is nothing of the sort: it is a naming convention that was never true,
-   * used as a lookup.
+   * DELIBERATE: `owner` is a filter, not a depth switch. It narrows which skills are listed and
+   * never what is said about each. An owner nothing answers to is refused with the list of owners
+   * that do — an empty answer reads like a platform with no skills on it.
    *
-   * WHICH BLOCKS ARE THERE AT ALL. The flat array carried no block attribution and no
-   * descriptions, so "what could I build this on" was answered from a capability sheet
-   * somebody maintains by hand.
-   *
-   * NOTHING HERE IS RETYPED FROM ANYWHERE. The block-to-skill mapping is zz.skill joined to
-   * zz.skill — the registry register-skills writes and the console reads. `when_to_use` comes out
-   * of each skill's own SKILL.md. A stage's position comes out of its package's flow.json.
-   * That is the only reason this can be trusted at a hundred blocks.
-   *
-   * OWNER IS A FILTER, NOT A DEPTH SWITCH, which is the one thing that is deliberately not
-   * carried over. block_skills had two depths and its argument chose between them, so the
-   * cheap call could not say what anything was for and the useful call had to be made once per
-   * block. Every skill carries its when_to_use here whatever you asked for; `owner` narrows
-   * WHICH skills, and an owner nothing answers to is refused with the list of owners that do —
-   * an empty answer reads like a platform with no skills on it.
-   *
-   * PRECEDENCE IS THE ONE THING THIS MUST NOT RESTATE. A skill of one name can exist in three
-   * places and allSkillRoots() decides which answers; this lists each name once, under the
-   * root that wins, exactly as skill_read would resolve it. Listing a shadowed copy would
-   * advertise text that skill_read can never return.
+   * COUPLED: precedence is allSkillRoots()'s and must not be restated here. A skill of one name
+   * can exist in three places; this lists each name once, under the root that wins, exactly as
+   * skill_read would resolve it. Listing a shadowed copy advertises text skill_read can never
+   * return.
    */
   server.registerTool(
     "skill_list",
     {
       description:
         "Call this BEFORE guessing a skill name, and before deciding what to build on: it is " +
-        "the whole shelf you can reach. Returns every skill grouped by the plugin or building " +
-        "block that owns it — each with when to use it, its position in its flow where it has " +
-        "one, and the supporting files beside it — plus every block this platform routes, " +
-        "including the ones that publish no usage skill. Refuses an owner id that names no " +
-        "plugin or block, listing the ones that exist; never invents a skill name and never " +
-        "returns a skill's body — that is skill_read, one at a time.",
+        "the whole shelf you can reach. Returns every skill grouped by the plugin that owns " +
+        "it — each with when to use it, its position in its flow where it has one, and the " +
+        "supporting files beside it. Refuses an owner id that names no plugin, listing the " +
+        "ones that exist; never invents a skill name and never returns a skill's body — that " +
+        "is skill_read, one at a time.",
       inputSchema: {
         owner: z.string().optional().describe(
-          "A plugin or block id exactly as this tool prints it, such as 'sdlc-flow' or " +
-          "'casebox'. Omit for everything you can reach."),
+          "A plugin id exactly as this tool prints it, such as 'sdlc-flow'. Omit for " +
+          "everything you can reach."),
       },
     },
     async ({ owner }) => {
       const roots = await allSkillRoots();
 
-      // WHERE A ROOT CAME FROM, decided by matching it rather than by spelling a path. The
-      // catalog's location is settable (`CATALOG_DIR`) and this file used to be one of the
-      // places that hardcoded it; the team's own store is under an artifact root that varies
-      // per caller. So both are matched against the values that produced them, `/blocks` is a
-      // shape, and the platform's own `/skills` is what is left.
+      // Where a root came from, decided by matching it rather than by spelling a path. The
+      // catalog's location is settable (`CATALOG_DIR`) and the team's own store is under an
+      // artifact root that varies per caller, so both are matched against the values that
+      // produced them, and the platform's own `/skills` is what is left.
       const packageAt = new Map<string, { owner: string; name: string; dir: string }>();
       for (const p of catalogPackages()) packageAt.set(join(p.dir, "skills"), p);
       const stagesOf = new Map<string, Map<string, { at: number; of: number; produces: string }>>();
@@ -190,9 +143,8 @@ export function registerSkillTools(server: McpServer): void {
 
       /** The reference material beside a SKILL.md — what `skill_read(name, file)` can open.
        *
-       * Named here because nothing else names them. A skill says "see references/foo.md" in
-       * its own prose or it does not, and where it does not, the file is unreachable in
-       * practice: skill_read takes an exact relative path and there was no way to learn one. */
+       * Named here because nothing else names them: skill_read takes an exact relative path, and
+       * a file a skill's prose does not mention is unreachable in practice. */
       const supporting = (dir: string): string[] => {
         const out: string[] = [];
         const walkFiles = (d: string, prefix: string): void => {
@@ -211,13 +163,12 @@ export function registerSkillTools(server: McpServer): void {
 
       const unquote = (v: string): string => v.replace(/^["']|["']$/g, "").trim();
       /** One skill, from its own file. A description written here would be a second copy of
-       * something the skill already says, and the second copy is the one that goes stale.
+       * something the skill already says.
        *
-       * `when_to_use` first, `description` only as a fallback: they answer different
-       * questions — one says when to reach for this, the other says what it is — and an agent
-       * choosing between forty skills needs the first. Every skill on this shelf carries both;
-       * a block's skill written by its own team may carry neither, and that is said out loud
-       * rather than rendered as an empty dash. */
+       * `when_to_use` first, `description` only as a fallback: one says when to reach for this,
+       * the other says what it is, and an agent choosing between many skills needs the first. A
+       * skill may carry neither, and that is said out loud rather than rendered as an
+       * empty dash. */
       const describe = (
         name: string, dir: string | null,
         stage?: { at: number; of: number; produces: string },
@@ -229,11 +180,10 @@ export function registerSkillTools(server: McpServer): void {
         // Registered and not on disk here. Said plainly rather than omitted: a skill missing
         // from the list reads as a package that does not ship one.
         if (!dir) return [head, "  (registered; its text is not on this deployment)"];
-        // INDEXED, not read as a property, and not because the property read is wrong. A
-        // SKILL.md's frontmatter is not a document envelope — `when_to_use` and `description`
-        // are a skill's own fields and belong in no document's schema — but the gate's
-        // "every envelope field the platform reads is one the schema publishes" cannot see
-        // the difference and reads `env.when_to_use` as an undeclared document field.
+        // DELIBERATE: indexed, not read as a property. A SKILL.md's frontmatter is not a
+        // document envelope, but the gate's "every envelope field the platform reads is one the
+        // schema publishes" cannot see the difference and reads `env.when_to_use` as an
+        // undeclared document field.
         const md = readFileSync(join(dir, "SKILL.md"), "utf8");
         const front = (field: string): string => unquote(parseEnvelope(md)[field] ?? "");
         const when = front("when_to_use")
@@ -252,11 +202,9 @@ export function registerSkillTools(server: McpServer): void {
         return g;
       };
 
-      // ── What is on disk for this caller, in precedence order ──────────────────────────
-      const BLOCK_ROOT = /^\/blocks\/([^/]+)\/skills$/;
+      // What is on disk for this caller, in precedence order.
       const seen = new Set<string>();
       for (const root of roots) {
-        if (BLOCK_ROOT.test(root)) continue;       // the registry answers for blocks, below
         if (!existsSync(root)) continue;
         const pkg = packageAt.get(root);
         const agent = pkg ? agentNameOf.get(pkg.dir) : undefined;
@@ -276,7 +224,7 @@ export function registerSkillTools(server: McpServer): void {
         }
       }
 
-      // ── The answer ────────────────────────────────────────────────────────────────────
+      // The answer.
       if (owner !== undefined && !groups.some((g) => g.id === owner)) {
         return text(
           `ERROR: '${owner}' is not a plugin you can reach. The owners that ` +
@@ -288,26 +236,15 @@ export function registerSkillTools(server: McpServer): void {
       for (const g of shown) {
         lines.push(`# ${g.label}`);
         if (!g.lines.length) {
-          lines.push(
-            "Ships no usage skill. That is a gap in what the block team published, not a " +
-            "reason to skip reading: read_api_spec and the block's own overview tool are what " +
-            "is left, and say in the selection that this block documents itself only through " +
-            "its API.");
+          lines.push("Ships no skill.");
         }
         lines.push(...g.lines);
         lines.push("");
       }
-      // THE TOOL, NAMED, because a live run reached for the wrong one. An agent that had just
-      // been handed these names called `bookit:usage_skill_view` with a casebox skill name in
-      // it — a block's own reader knows only that block's skills, so it answered "no usage
-      // skill", which reads as the skill not existing rather than as the wrong door. These sit
-      // on the PLATFORM's shelf; the platform's reader is what opens them.
       lines.push(
         'Read any of these with skill_read("<name>"), and a supporting file with ' +
         'skill_read("<name>", file: "<path>") — this server\'s tools, by the exact names ' +
-        "above. Never derive a skill name from a block name, and never a block's own " +
-        'usage_skill_view: it knows only that block\'s skills and answers "no usage skill" ' +
-        "for a name it does not own, which looks like the skill being missing when it is not.");
+        "above.");
 
       return text(lines.join("\n"));
     },
@@ -315,21 +252,16 @@ export function registerSkillTools(server: McpServer): void {
 
   /** A team's own additions to a stage of the flow they run, appended to it.
    *
-   * A team running ops-flow may want two more considerations at ops-select — the vendors they
-   * are not allowed to use, the question their director always asks. That is not a different
-   * ops-select and they should not have to fork one to say it.
+   * A team running ops-flow may want two more considerations at ops-select. That is not a
+   * different ops-select and they should not have to fork one to say it.
    *
-   * APPENDED, never substituted, and the difference is the whole design. A replacement can
-   * quietly delete a rule the platform depends on; an addition cannot. So the shelf's text
-   * arrives first and entire, the team's follows under a heading that says whose it is, and
-   * no overlay can shadow zz-platform or a stage of the flow — not by policy, but because
-   * substitution is not a thing this can express.
+   * DELIBERATE: appended, never substituted. The shelf's text arrives first and entire, the
+   * team's follows under a heading that says whose it is, and no overlay can shadow zz-platform
+   * or a stage of the flow — substitution is not a thing this can express.
    *
-   * Structure stays the platform's. flow.json — documents, gate, requires, closing,
-   * sections — is untouched by any of this: an overlay changes HOW a step is done, never
-   * WHICH steps exist or which of them a person must sign. A team whose overlay talks an
-   * agent into writing different headings meets sectionCheck at the write, which is where
-   * that boundary is actually held rather than merely asked for.
+   * Structure stays the platform's: flow.json — documents, gate, requires, closing, sections — is
+   * untouched. An overlay changes how a step is done, never which steps exist or which of them a
+   * person must sign, and sectionCheck holds that boundary at the write.
    *
    * Lives in the team's own store, so it costs no approval from us. */
   async function teamOverlay(name: string): Promise<string> {
@@ -377,19 +309,18 @@ export function registerSkillTools(server: McpServer): void {
           logActivity(await userRoot(), null,
             { user: parseCaller(requestHeaders()).email, action: "skill_read", skill: name });
           if (file === undefined) return text(readFileSync(path, "utf8") + await teamOverlay(name));
-          // RESOLVED INSIDE THE SKILL WE ALREADY FOUND, never searched for on its own.
-          // Two packages may ship a skill of one name — the roots are ordered precisely
-          // so the first wins — and looking the file up across roots independently could
-          // splice one package's reference onto another package's skill.
+          // Resolved inside the skill already found, never searched for on its own. Two
+          // packages may ship a skill of one name — the roots are ordered so the first wins —
+          // and an independent lookup could splice one package's reference onto another
+          // package's skill.
           const sub = join(dir, file);
           if (!existsSync(sub) || !statSync(sub).isFile()) {
             return text(
               `ERROR: '${name}' ships no file at '${file}'. Its SKILL.md names the ` +
               "supporting files it has; read the skill first and follow what it points at.");
           }
-          // NO TEAM OVERLAY on a supporting file. An overlay is a team's addition to a
-          // skill's INSTRUCTIONS; appending it to a table of API traps would put a
-          // sentence about how one team works at the bottom of a reference document.
+          // No team overlay on a supporting file. An overlay is a team's addition to a skill's
+          // instructions, not to a reference document.
           return text(readFileSync(sub, "utf8"));
         }
       }

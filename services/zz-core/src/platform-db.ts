@@ -1,11 +1,10 @@
 /**
- * The platform database, and the two questions zz-core asks it: which team a person acts
- * for, and what version a subject tag names.
+ * The platform database, and the two questions zz-core asks it: which team a person acts for, and
+ * what version a subject tag names.
  *
- * ONE POOL, LAZILY MADE. zz-core runs with TEAM_DB_URL unset in local development and every
- * one of these answers has a defined shape without a database — a person with no membership
- * row gets their own store — so the connection is made on first use rather than at import,
- * and `db()` returning null is an ordinary answer rather than a failure.
+ * One pool, lazily made. zz-core runs with TEAM_DB_URL unset in local development and every answer
+ * here has a defined shape without a database — a person with no membership row gets their own
+ * store — so the connection is made on first use and `db()` returning null is an ordinary answer.
  */
 import pg from "pg";
 
@@ -20,40 +19,22 @@ const TEAM_DB_URL = (process.env.TEAM_DB_URL ?? "").trim();
 let pool: pg.Pool | undefined;
 /** The platform database, connected on first use, or null when this deployment has none.
  *
- * `pool ??= new pg.Pool({ connectionString: TEAM_DB_URL, max: 4 })` was written out at five
- * call sites, and three more functions READ `pool` and treated `undefined` as "there is no
- * database". Those are two different questions — is there one configured, and has anybody
- * connected yet — and answering the first with the second is a race with whatever the caller
- * happened to do first.
+ * One accessor, so "is there a database configured" and "has anybody connected yet" are not
+ * answered with each other. Reading `pool` directly and treating `undefined` as "there is no
+ * database" makes a write arriving before any pool exists go to disk and never reach the index,
+ * invisible to knowledge_search until the next reindex. The pool size lives here for the same
+ * reason.
  *
- * reindexAllTeams already hit it: the boot rebuild returned 0 scanned, 0 indexed, 0 removed
- * for every team because nothing had served a request yet, and the fix was to write the
- * construction out a fifth time rather than to stop asking the wrong question. indexDoc and
- * reindexTeam still asked it, so a write arriving before any pool existed went to disk and
- * silently never reached the index — invisible to knowledge_search until the next reindex.
+ * Every wait here is bounded, and with four connections that is not a refinement: a statement with
+ * no timeout holds its connection for as long as the server will let it, and four of those leave
+ * the service with none while `/health` goes on answering 200, because it touches no database.
  *
- * One accessor, so "is there a database" has one answer and connecting is not something a
- * caller can forget to do. The size lives here too: four connections spelled in five places
- * is four connections until somebody changes one of them.
- *
- * EVERY WAIT HERE IS BOUNDED, and with only four connections that is not a refinement.
- *
- * A statement with no timeout holds its connection for as long as the server will let it — on a
- * lock, on a plan that went wrong, on a peer that stopped answering mid-transfer. Four of those
- * and this service has no connections left, while `/health` keeps answering 200 because it
- * touches no database. That is the worst shape an outage can take: every tool failing and every
- * probe green.
- *
- * `statement_timeout` is the server-side bound and the one that actually releases the
- * connection, so it is set on the connection rather than left to a client-side race. Thirty
- * seconds is far above anything here — the largest table on this deployment is six megabytes
- * and the slowest tool query returns in milliseconds — so it can only fire on something that is
- * already wrong. `connectionTimeoutMillis` bounds the wait for a connection to become free, so
- * a caller arriving during that pile-up is refused in ten seconds instead of joining it.
- * `idleTimeoutMillis` returns connections the deployment is not using.
- *
- * All three are overridable, because a deployment with a bigger database is the same contract
- * with different numbers. */
+ * `statement_timeout` is the server-side bound and the one that actually releases the connection,
+ * so it is set on the connection rather than left to a client-side race. Thirty seconds is far
+ * above anything here, so it can only fire on something already wrong.
+ * `connectionTimeoutMillis` bounds the wait for a connection to become free, so a caller arriving
+ * during a pile-up is refused rather than joining it. `idleTimeoutMillis` returns connections the
+ * deployment is not using. All three are overridable. */
 export function db(): pg.Pool | null {
   if (!TEAM_DB_URL) return null;
   pool ??= new pg.Pool({
@@ -65,44 +46,33 @@ export function db(): pg.Pool | null {
   });
   return pool;
 }
-// THE INDEXER IS TOLD HOW TO REACH THE DATABASE HERE, at import time, because this module is
-// the one that owns the pool. `@zz/indexing` is shared with the gateway, which builds its pool
-// eagerly at boot and answers the same question a different way, so the package takes an
-// accessor rather than picking one service's shape and making the other wrong.
+// The indexer is told how to reach the database here, at import time, because this module owns the
+// pool. The package takes an accessor, because the pool is built lazily.
 //
-// AT MODULE LEVEL AND NOT IN server.ts. Every path that indexes a document reaches teamFor()
-// or userRoot() first, so this module is loaded before any of them can run — whereas a call in
-// the entry point is one an eval door, a test harness or a future second entry point can
-// forget, and forgetting it does not fail loudly, it writes documents nothing can find.
+// At module level and not in server.ts: every path that indexes a document reaches teamFor() or
+// userRoot() first, so this module is loaded before any of them can run. A call in the entry point
+// is one an eval door, a test harness or a second entry point can forget, and forgetting it does
+// not fail loudly — it writes documents nothing can find.
 configureIndexing(db);
 const teamCache = new Map<string, { team: string | null; all: string[]; expires: number }>();
 /** Which team's store a person writes into.
  *
- * The platform's own membership decides it — zz.principal + zz.membership — and
- * nothing else does. There used to be a fallback here that read the front end's own
- * groups for anyone with no membership row, kept as a migration path. It is gone: a
- * live check found it matched no user, and while it existed the front end was still a
- * source of platform truth, which is the one thing "the interface is replaceable"
- * cannot be true alongside. A person with no membership now gets their own store. */
+ * The platform's own membership decides it — zz.principal + zz.membership — and nothing else does.
+ * A person with no membership gets their own store. */
 export async function teamFor(email: string): Promise<string | null> {
   return (await teamsFor(email)).active;
 }
-/** Every team a person belongs to, and the ONE whose store their tools act on.
+/** Every team a person belongs to, and the one whose store their tools act on.
  *
- * The store is per team and the tools take no team argument, so a person in two teams reads
- * and writes exactly one of them — chosen here, admin role first and then alphabetically.
- * That choice was invisible: session_whoami reported a single `team` and nothing said the other
- * existed, so work could land in the wrong store with the conversation looking normal.
- * session_whoami now names the others and how to pick one. */
+ * The store is per team and the tools take no team argument, so a person in two teams reads and
+ * writes exactly one of them — chosen here, admin role first and then alphabetically. COUPLED:
+ * session_whoami names the others and how to pick one. */
 export async function teamsFor(email: string): Promise<{ active: string | null; all: string[] }> {
   const p = db();
   if (!p || !email) return { active: null, all: [] };
-  // A team-bound token acts inside that team, here too.
-  //
-  // The gateway narrows an identity to the bound team and stamps x-zz-pat-team on the
-  // request; the /core proxy forwards it. zz-core queried the database by email and ignored
-  // it, so a token that said "team X" on its face read team Y's store — the same binding
-  // holding on one side of the proxy and not the other.
+  // A team-bound token acts inside that team, here too. The gateway narrows an identity to the
+  // bound team and stamps x-zz-pat-team on the request, and the /core proxy forwards it; querying
+  // by email alone makes a token that says "team X" read team Y's store.
   const boundRaw = requestHeaders()["x-zz-pat-team"];
   const bound = (Array.isArray(boundRaw) ? boundRaw[0] : boundRaw ?? "").trim();
   const now = Date.now();
@@ -110,14 +80,11 @@ export async function teamsFor(email: string): Promise<{ active: string | null; 
   const hit = teamCache.get(key);
   if (hit && hit.expires > now) return { active: hit.team, all: hit.all };
   try {
-    // `slug` is NULL for a membership of an archived team, and those rows are dropped two
-    // lines below — the row is still returned so `active_slug`, a scalar about the person
-    // rather than about any one membership, is readable even when every team they belong to
-    // has been archived. The ORDER BY is what `all` is listed in for session_whoami: live teams
-    // first, then the ones they administer, then by name.
-    //
-    // This comment described a `known` column and a fallback that depended on telling it
-    // apart from `slug`. Neither has existed since actingTeam took the choice over.
+    // `slug` is NULL for a membership of an archived team, and those rows are dropped two lines
+    // below — the row is still returned so `active_slug`, a scalar about the person rather than
+    // about any one membership, is readable even when every team they belong to has been archived.
+    // The ORDER BY is what `all` is listed in for session_whoami: live teams first, then the ones
+    // they administer, then by name.
     const platform = await p.query<{ slug: string | null; role: "admin" | "member"; active_slug: string | null }>(
       `SELECT CASE WHEN t.status = 'active' THEN t.slug END AS slug,
               m.role                                          AS role,
@@ -131,43 +98,32 @@ export async function teamsFor(email: string): Promise<{ active: string | null; 
       [email],
     );
     const every = platform.rows.map((r) => r.slug).filter((s): s is string => !!s);
-    // WHICH TEAM they are acting as: `actingTeam` in @zz/contracts, which the gateway calls
-    // too. The bound-token rule, the chosen team and the fallback ordering all live there —
-    // the gateway needed the same answer for credential resolution and was taking the first
-    // row of a differently ordered query, so a person in two teams could have documents land
-    // in one team's store while the block call spent another team's quota.
+    // COUPLED: which team they are acting as is `actingTeam` in @zz/contracts, which the gateway
+    // calls too. The bound-token rule, the chosen team and the fallback ordering all live there, so
+    // a person's documents and their gateway calls cannot resolve to two different teams.
     const active = actingTeam(
       platform.rows.filter((r) => !!r.slug).map((r) => ({ slug: r.slug as string, role: r.role })),
       platform.rows[0]?.active_slug ?? null,
       bound || null,
     );
-    // SECONDS, not a minute. This cached a fact that could not change — the team was derived
-    // from membership, so a minute of staleness cost nothing. The active team is now a
-    // choice a person makes, and a switch that takes up to a minute to apply is not a
-    // switch: they move team, keep working, and their next few writes land where they just
-    // left. Verified exactly that before shortening it.
+    // Seconds, not a minute. The active team is a choice a person makes, and a switch that takes up
+    // to a minute to apply is not a switch.
     //
-    // The entry is still kept after it expires: the catch below falls back to a stale one
-    // rather than failing every tool on a database hiccup, and that is worth more than the
-    // freshness it trades away in the one case where the database is already down.
+    // The entry is kept after it expires: the catch below falls back to a stale one rather than
+    // failing every tool on a database hiccup.
     teamCache.set(key, { team: active, all: every, expires: now + 3_000 });
     return { active, all: every };
   } catch (err) {
     if (hit) return { active: hit.team, all: hit.all }; // stale cache beats failing every tool on a DB hiccup
-    // The CAUSE, not a guess at it. This asserted "platform database unreachable" and threw
-    // the real error away — but the query can fail for reasons that are not a network: a
-    // half-migrated schema, a role without select on zz.membership, a connection string
-    // pointing at the wrong database. Every one of those then reached an operator as
-    // "unreachable", which is the wrong thing to go and check. db.ts states the rule for
-    // exactly this case: a platform that answers wrongly is worse than one that admits it
-    // cannot answer.
+    // The cause, not a guess at it. The query can fail for reasons that are not a network — a
+    // half-migrated schema, a role without select on zz.membership, a connection string pointing at
+    // the wrong database — and reporting every one of them as "unreachable" sends an operator to
+    // the wrong thing to check.
     //
-    // A `Refusal`, not a plain `Error` — this is THE reason that type exists. teamFor() is
-    // called bare (no try/catch) from userRoot() and from most tools directly, so a plain
-    // throw here used to reach the tool boundary as a raw, un-housestyled message. The
-    // registerTool wrapper turns a `Refusal` into `text(message)`; every write this failure
-    // could interrupt happens after this resolves, so "nothing was written" is true whenever
-    // it fires.
+    // A `Refusal`, not a plain `Error`: teamFor() is called bare from userRoot() and from most
+    // tools, and the registerTool wrapper turns a `Refusal` into `text(message)`. Every write this
+    // failure could interrupt happens after this resolves, so "nothing was written" is true
+    // whenever it fires.
     throw new Refusal(
       `ERROR: the platform database did not answer while resolving your team: ` +
       `${(err as Error).message}. Nothing was written. Tell an administrator if it persists.`);
@@ -176,19 +132,18 @@ export async function teamsFor(email: string): Promise<{ active: string | null; 
 /** The version behind a subject tag.
  *
  *  `plugin:<name>` and `flow:<name>` — the newest row in zz.plugin_version, which is what that
- *  plugin last released. A flow IS a plugin, registered at release under `pluginName` of its
- *  directory (`flow:sdlc-flow` is the plugin `sdlc`), so the two tags resolve the same way. (A `flow:` tag used to resolve from a team's install record, which
- *  the platform no longer keeps.) ORDERED BY THE VERSION ITSELF, semver-wise, because
- *  zz.plugin_version carries no timestamp: a lexicographic sort would put 0.9.0 above 0.43.0 and
- *  quietly answer with an older release than the one in force.
+ *  plugin last released. A flow is a plugin, registered at release under `pluginName` of its
+ *  directory (`flow:sdlc-flow` is the plugin `sdlc`), so the two tags resolve the same way. Ordered
+ *  by the version itself, semver-wise, because zz.plugin_version carries no timestamp and a
+ *  lexicographic sort puts 0.9.0 above 0.43.0.
  *
- *  `provider:` and `interface:` — there is NO backing table for either kind, so their
- *  "unresolved" is PERMANENT rather than a lookup that is merely failing today.
+ *  `provider:` and `interface:` — no backing table for either, so their "unresolved" is permanent
+ *  rather than a lookup that is merely failing today.
  *
- *  Returns null when no subject tag is present — a node not about any of them — and the field
- *  is then written empty rather than guessed. Never null once a subject tag IS present: an infra
- *  hiccup at write time must not be indistinguishable from "no subject involved", or it would
- *  permanently produce a claim that can never be retired. */
+ *  Null when no subject tag is present, and the field is then written empty rather than guessed.
+ *  Never null once a subject tag is present: an infra hiccup at write time must not be
+ *  indistinguishable from "no subject involved", or it produces a claim that can never be
+ *  retired. */
 export async function subjectVersionFor(tags: string[] | undefined): Promise<string | null> {
   const all = tags ?? [];
   const pluginTag = all.find((t) => t.startsWith("plugin:") || t.startsWith("flow:"));
@@ -196,7 +151,7 @@ export async function subjectVersionFor(tags: string[] | undefined): Promise<str
   if (pluginTag) {
     try {
       const p = db();
-      // `unresolved`, NOT null: a tag is present, so the subject exists and only the lookup
+      // `unresolved`, not null: a tag is present, so the subject exists and only the lookup
       // failed. Empty is this function's word for "no subject involved".
       if (!p) return "unresolved";
       const r = await p.query<{ version: string }>(

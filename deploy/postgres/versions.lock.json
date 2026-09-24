@@ -1,17 +1,7 @@
 {
   "_header": [
-    "Every field below marked with a matching entry in unverified_fields is a PLACEHOLDER,",
-    "not a fabricated real value. It was written from a checkout with no docker, no network",
-    "and no registry access, by the same data-safety constraint that forbade this task from",
-    "building, starting or connecting to any database. Fields use repeated single digits",
-    "(all-zero, all-one, all-two...) so a placeholder is visually unmistakable from a real",
-    "digest rather than merely regex-shaped like one \u2014 a syntactically valid but fabricated",
-    "hash is exactly the failure this lock file's own contract forbids. Resolving every field",
-    "in unverified_fields against an actual reachable registry/repository, then an actual",
-    "`docker build` and `docker inspect`/`SELECT version()` against the built image, is what",
-    "discharges each pin. Until then this lock validates its own shape and cross-file",
-    "agreement (see testing/tenant-info/deployment.ts) but proves nothing about the real",
-    "world."
+    "Each field is pinned and verified unless listed in unverified_fields. testing/tenant-info/",
+    "deployment.ts cross-checks this lock against the Dockerfile and postgresql.conf."
   ],
   "postgres_major": 17,
   "postgres_version": "17.11",
@@ -38,8 +28,8 @@
   "shared_preload_libraries": [
     "pg_textsearch"
   ],
-  "feature_report": "artifacts/tenant-info-v4/extension-features.json \u2014 produced by `npm run tenant-info -- verify --suite deployment --profile integration --cases extension` on the actual built isolated image, NOT by this task and NOT present in this checkout",
+  "feature_report": "artifacts/tenant-info-v4/extension-features.json \u2014 produced by `npm run tenant-info -- verify --suite deployment --profile integration --cases extension` on the built image; not in this checkout",
   "unverified_fields": [
-    "okf_reference_digest \u2014 NOT resolvable, and the reason is a finding rather than a gap in this build. The specification asks for a \"vendored OKF reference digest\", and this repository vendors no OKF reference: it carries its own implementation (services/zz-core/src/tenant-info/export.ts) and that implementation's tests, and nothing else named OKF exists in the tree. There is no artefact to digest. Eight of this lock's nine placeholders were resolved on 2026-09-21 against a real registry, a real upstream repository and a real built image; this one stays a placeholder because filling it would mean hashing something arbitrary and calling it a reference \u2014 the exact fabrication the rest of this file refused. Either vendor the OKF v0.2 reference and digest it, or strike the field from the specification."
+    "okf_reference_digest \u2014 a placeholder: the specification asks for a vendored OKF reference digest, and this repository vendors no OKF reference (services/zz-core/src/tenant-info/export.ts is its own implementation). Vendor the OKF v0.2 reference and digest it, or strike the field from the specification."
   ]
 }

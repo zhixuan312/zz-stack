@@ -1,14 +1,10 @@
 /**
  * The repository's own build, strictness and naming, each delegated to `checks/`.
-
- * The node floor, the tooling project's zero-strict-error rule, the rename that made every
- * script a `.ts`, and the paths and locks that have to keep resolving after it. What these have
- * in common is that they are about THIS REPOSITORY rather than about the platform it ships:
- * a reader chasing why the gate is red on one of them is not looking at product behaviour.
  *
- * Split out of `suites.ts`, which registered ninety-six checks in one file — so any edit to
- * it drifted ninety-four mutation rows, because `check_sha256` is computed per FILE. Grouping
- * by subject keeps that blast radius to the group somebody is actually working on.
+ * The node floor, the tooling project's zero-strict-error rule, every script being `.ts`, and
+ * the paths and locks that have to resolve. These are
+ * about this repository rather than about the platform it ships, so a red gate here is not
+ * product behaviour.
  */
 import { check } from "../run.ts";
 import { runsCheck } from "../suite-runner.ts";
@@ -60,9 +56,6 @@ check("a lock regenerated from the converted tree comes back unchanged, byte for
 
 check("the whole tooling project carries zero strict errors, measured as one project rather than subtree by subtree",
       runsCheck("strict-tooling-zero.ts"));
-
-check("the checks a stricter tooling project superseded are gone, not merely duplicated, and the incident they existed to prevent is still on record",
-      runsCheck("bespoke-checks-gone.ts"));
 
 check("every script or check a document or a thrown error names by path is a file that exists, and CHANGELOG.md alone is left free to remember one that isn't",
       runsCheck("docs-name-real-files.ts"));

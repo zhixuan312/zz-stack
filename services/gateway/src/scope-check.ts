@@ -1,25 +1,21 @@
 /**
- * Prove that resolveScope never returns "no scope" — only a team, the platform, or a
- * refusal.
+ * Prove that resolveScope never returns "no scope" — only a team, the platform, or a refusal.
  *
  *   npm run check:scope      # exits non-zero on failure, like every engine here
  *
- * The console's live SQL still has the null-wildcard shape resolveScope exists to replace —
- * `where ($1::text is null or team_slug = $1)` reads every team when the parameter is
- * absent. This check is the standing evidence that the replacement never does that: it
- * drives the REAL resolveScope, never a copy of its branches, over the ten cases the
- * contract names — one team, two teams with no parameter, picking the second team
- * explicitly, naming a team not joined, a malformed slug, a non-superadmin asking for the
- * platform, a superadmin's default, a superadmin asking for the platform, a superadmin
- * naming a team they do not belong to, and a caller in no team at all. Between them every
- * branch of the union is reached from both a member and a superadmin, and the one case that
- * must NEVER happen — a non-superadmin reaching platform scope — is asserted against
- * directly rather than left as an absence, so it stays proven when console.ts is rewired
- * onto this function.
+ * The null-wildcard shape resolveScope exists to replace —
+ * `where ($1::text is null or team_slug = $1)` — reads every team when the parameter is absent. This
+ * check drives the real resolveScope, never a copy of its branches, over the cases the contract
+ * names: one team, two teams with no parameter, picking the second team explicitly, naming a team
+ * not joined, a malformed slug, a non-superadmin asking for the platform, a superadmin's default,
+ * a superadmin asking for the platform, a superadmin naming a team they do not belong to, and a
+ * caller in no team at all. Between them every branch of the union is reached from both a member
+ * and a superadmin, and the one case that must never happen — a non-superadmin reaching platform
+ * scope — is asserted against directly rather than left as an absence.
  *
- * Task I-14 adds a second matrix below, driving `teamAuthority` (admin.ts) — the function
- * settings.ts's `/api/console/settings/team/*` routes and every admin.ts team-write tool
- * both call, rather than a comparison written out at either call site.
+ * The second matrix below drives `teamAuthority` (admin.ts) — the function settings.ts's
+ * `/api/console/settings/team/*` routes and every admin.ts team-write tool both call, rather than
+ * a comparison written out at either call site.
  */
 import type { Request } from "express";
 
@@ -165,17 +161,16 @@ function same(got: Scope, want: Scope): boolean {
 }
 
 /**
- * The team-authority matrix (← Task I-14, AC-5): who may add, remove or change the role of
- * a team's members, or install and uninstall its flows. Drives `teamAuthority` itself,
- * exported from admin.ts, rather than a second copy of "team admin or superadmin" — a check
- * that re-implemented the comparison would still pass if the real function drifted from it.
+ * The team-authority matrix: who may add, remove or change the role of a
+ * team's members. Drives `teamAuthority` itself, exported from
+ * admin.ts, rather than a second copy of "team admin or superadmin" — a check that re-implemented
+ * the comparison would still pass if the real function drifted from it.
  *
- * The fifth case is the one worth having this matrix for: a superadmin whose TOKEN is
- * bound to one team carries no authority anywhere else, including a team that same person
- * could reach with an unbound token. `isSuper` (identity.ts) is where that is decided —
- * `id.via === "pat" && id.patTeam` returns false before `platformRole` is even read — and
- * `isTeamAdmin` calls `isSuper` first, so this case is really proving the two functions
- * still agree, not proving either one in isolation.
+ * The fifth case is the one worth having this matrix for: a superadmin whose token is bound to one
+ * team carries no authority anywhere else, including a team that same person could reach with an
+ * unbound token. `isSuper` (identity.ts) decides that — `id.via === "pat" && id.patTeam` returns
+ * false before `platformRole` is even read — and `isTeamAdmin` calls `isSuper` first, so this case
+ * proves the two functions still agree rather than proving either in isolation.
  */
 interface TeamAuthorityCase {
   name: string;
@@ -243,16 +238,16 @@ const TEAM_AUTHORITY_CASES: TeamAuthorityCase[] = [
 ];
 
 /**
- * The platform-authority matrix (← Task I-15, AC-5): who may add or deactivate a person,
- * create or archive a team, or grant/revoke a team's block access. Drives `superOnly` itself,
- * exported from admin.ts, rather than a second copy of "superadmin required" — a check that
- * re-implemented the comparison would still pass if the real function drifted from it, which
- * is exactly the inline `platformRole === "superadmin"` bug this platform already fixed once
- * (see this file's header comment on `superOnly` in admin.ts).
+ * The platform-authority matrix: who may add or deactivate a person, or create or archive a
+ * team.
  *
- * Reuses the same four identities `TEAM_AUTHORITY_CASES` proves `teamAuthority` against —
- * `superOnly` is a strictly narrower rule (no team named, ever permitted), so the same
- * fixtures settle both matrices without a second set drifting from the first.
+ * COUPLED: drives `superOnly` itself, exported from admin.ts, rather than a second copy of
+ * "superadmin required". An inline `platformRole === "superadmin"` is a second authority nothing
+ * holds to this matrix.
+ *
+ * Reuses the same four identities `TEAM_AUTHORITY_CASES` proves `teamAuthority` against;
+ * `superOnly` is a strictly narrower rule (no team named, ever permitted), so the same fixtures
+ * settle both matrices without a second set drifting from the first.
  */
 interface PlatformAuthorityCase {
   name: string;
@@ -265,14 +260,13 @@ const PLATFORM_AUTHORITY_CASES: PlatformAuthorityCase[] = [
   {
     name: "a superadmin",
     id: superadmin, expect: true,
-    why: "person_add, team_create and tool_grant all exist for exactly this caller",
+    why: "person_add, team_create and team_archive all exist for exactly this caller",
   },
   {
     name: "a team admin",
     id: teamAdminOfP1, expect: false,
-    why: "administering a team is not platform authority — a team admin granting their own " +
-         "team a block, or another team's admin status, is exactly the escalation superOnly " +
-         "exists to refuse",
+    why: "administering a team is not platform authority — a team admin granting another " +
+         "team's admin status is exactly the escalation superOnly exists to refuse",
   },
   {
     name: "a plain member",
@@ -298,7 +292,7 @@ function main(): number {
     }
   }
   // The one invariant no single case states on its own: run every case again and confirm a
-  // non-superadmin NEVER comes back "platform", whatever they asked for. A regression that
+  // non-superadmin never comes back "platform", whatever they asked for. A regression that
   // grants platform scope to a member would still pass each case above if it also broke
   // something else about that case's expectation — this checks the property directly.
   for (const c of CASES) {

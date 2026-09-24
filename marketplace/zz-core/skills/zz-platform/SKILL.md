@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.44
+version: 3.45
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store outside a flow."
 ---
@@ -183,9 +183,8 @@ the timing; getting this wrong costs a plan, not a refusal.
   "ok", "go ahead", "approve first", "I think that's right — start" are
   agreement when they answer a clear ask, and so is a standing "you do not
   need to check with me on these", which keeps holding until they say
-  otherwise. This rule used to name three accepted phrases and refuse the
-  rest, which is a way to fail the person who said it the fourth way and
-  make them repeat a decision they had already made. Judge it the way a
+  otherwise. A list of accepted phrases fails the person who said it another
+  way and makes them repeat a decision they had already made. Judge it the way a
   colleague would. Ask again ONLY when you genuinely cannot tell WHAT they
   agreed to — never as a ritual, and never to collect a better-worded
   version of a yes you already have.
@@ -332,20 +331,19 @@ the timing; getting this wrong costs a plan, not a refusal.
 
 ## Which team you are acting for, and how it changes
 
-Everything you do belongs to ONE team — documents, gates, the knowledge store, which
-plugins you may reach. That team is a column on the PERSON, read fresh on every call.
-It is not a property of this conversation, of the agent they opened, or of anything
+Everything you do belongs to ONE team — documents, gates, the knowledge store. That team is a column on the PERSON, read fresh on every call.
+It is not a property of this conversation, of the client they use, or of anything
 you can see from inside the chat.
 
-- **To find out: `session_whoami`,** which answers `team`. Never infer it from the agent's
-  name, from what you were told earlier in the conversation, or from which documents
-  you happen to be able to read.
-- **To change it: `team_switch(team)`,** which is on the ACCESS door — the same place as
-  installs and platform tokens. Not every agent carries that door.
+- **To find out: `session_whoami`,** which answers `team`. Never infer it from what you
+  were told earlier in the conversation, or from which documents you happen to be able
+  to read.
+- **To change it: `team_switch(team)`,** which is on the access door (`/manage`) — the same
+  place as platform tokens. A client without the zz-access plugin does not carry that door.
 
 **If you do not have `team_switch`, say exactly that and name where it lives.** You are
-not carrying the access tools; the person opens the agent that does — ZZ Access — and
-asks there. One sentence, and they are done.
+not carrying the access tools; the person asks from a client that carries the zz-access
+plugin. One sentence, and they are done.
 
 **Do not explain the absence by inventing a mechanism. [convention]** An agent asked to
 switch team, holding no such tool, answered that the team is fixed by which agent you
@@ -415,13 +413,8 @@ The knowledge store is the team's, not one agent's session:
   thing is the normal move rather than an unusual one — and a node that says
   a plugin refuses a particular payload shape is worth nothing in summary.
 
-  Until 2026-09-09 the result did not say, and the read had no `scope`, so
-  every platform node came back from `document_read` as "does not exist". An agent
-  searched, found the two nodes describing the exact refusal it was about to
-  hit, could not open either, hit it, and asked a non-technical person to
-  build the thing by hand. **Knowledge you can see and cannot open is worse
-  than knowledge you do not have**, because the store looks like it is
-  working.
+  Open what you find. **Knowledge you can see and do not open is worse than
+  knowledge you do not have**, because the store looks like it is working.
 - **`source_add` is how information reaches work in flight.** Minutes, an
   email, a decision taken in a corridor — attach it to the initiative and
   name in `supports` every document it bears on (one or several). It is
@@ -541,9 +534,7 @@ reading later can see one caused the other.
   | administration | `/manage/mcp` | `person_add` `person_list` `person_deactivate` `enrolment_issue` `team_create` `team_archive` `member_add` `member_remove` — only if your role carries them |
 
 **THE DOOR IS DECIDED BY THE SUBJECT, AND YOUR ROLE DECIDES WHAT YOU SEE ON IT.** Those are
-two different cuts and they used to be confused: filing a bug was on `/core` and answering one
-was on `/manage`, because answering is an operator's act. That is role deciding a door. A bug is
-one subject and it lives where it is filed; `bug_list`, `bug_resolve`, `bug_delete` and
+two different cuts. A bug is one subject and it lives where it is filed; `bug_list`, `bug_resolve`, `bug_delete` and
 `knowledge_reindex` are registered on `/core` for a superadmin and are simply not in your list
 otherwise — which is a fact about your role, not about the platform.
 
@@ -610,20 +601,21 @@ make every number incomparable with every other number.
   and try once more; if the message does not change, that is a finding about that plugin, not a
   puzzle to solve by permutation. Record what you sent and what came back, and carry on with
   what you CAN settle — a third identical refusal has never once been the call that worked.
-- **Access is not your job.** Platform tokens, installs and client setup all belong to the **ZZ
-  Access** agent — one place, so a person always knows where to go. If someone asks how to
-  install a plugin, or how to connect Claude Code, name that agent and hold
+- **Access is not your job.** Platform tokens and client setup belong to the **zz-access**
+  plugin, on `/manage` — one place, so a person always knows where to go. If someone asks how
+  to install a plugin, or how to connect Claude Code, name that plugin and hold
   your position. Never ask anyone to paste a credential to you: you cannot store it, and a
   credential in a transcript is a leaked credential.
 
-## What people write from the web is work
+## What people write in the console is work
 
-People write on documents from the web view, and what they write lands as a
-source on that initiative, attached to that document. `source_list` shows
-them; `sources_after_approval` in `initiative_status` names the ones that
-arrived after a gate closed.
+People discuss a document in the console's thread, which no tool on your doors reads. When a
+person revises a document from the console, the platform writes the new version and records
+the discussion as its source, so it reaches you as a source on that initiative, attached to
+that document. `source_list` shows sources; `sources_after_approval` in `initiative_status`
+names the ones that arrived after a gate closed.
 
-Addressing one is not a flag you set. You read it, you revise the document
+Addressing a source is not a flag you set. You read it, you revise the document
 with `document_revise`, and you cite it — the next version, and the source it
 names, ARE the record that it was addressed. A source you did not act on
 stays visible, which is the point: nothing lets you mark it handled without
@@ -646,10 +638,6 @@ that skill, under a heading saying it is yours.
   always asks, the system that must never be touched on a Friday. That is the kind of thing
   no shelf skill can carry for you.
 
-*(This section was zz-kb-usage's until 2026-09-04. It is a platform rule — what an overlay
-may and may not do — so it belongs in the spine every flow loads, not in a skill nobody
-ever loaded.)*
-
 ## Tagging what the platform learns
 
 keeps stalling, an interface that drops something, one of the platform's own rules
@@ -666,5 +654,3 @@ The kinds are checked. A free tag drifts the moment two people write it — `cas
 without dropping them from the store: **the search says nothing is known while the
 knowledge sits right there.**
 
-*(Also zz-kb-usage's until 2026-09-04. The tag KINDS are a platform contract — `knowledge_add`
-enforces them — so the rule lives with the spine.)*

@@ -1,53 +1,30 @@
 /**
- * isolation.ts — I-19's own suite: the property every earlier retrieval task (I-16 registry
- * gate, I-17 lanes/fusion, I-18 query/cursor) was building toward and none of them proved —
- * that one tenant's writes never move another tenant's scores, counts or ranking, even when
- * every row-level predicate is completely correct.
+ * isolation.ts — the suite for one property: one tenant's writes never move another tenant's
+ * scores, counts or ranking, even when every row-level predicate is completely correct.
  *
- * TWO SEPARATE THINGS LIVE IN THIS FILE, AND THE FROZEN CHECK ONLY DRIVES ONE OF THEM.
- * `validateIsolationObservation` is the pure comparator `checks/tenant-isolation-statistics.ts`
- * imports directly — it tests BAD-OBSERVATION DETECTION (does the comparator itself notice an
- * empty baseline, a moved score, a leaked field), never database isolation, because it never
- * touches a database. `run` below is the actual suite: it seeds a real (invented, never
- * production) owner-A corpus, perturbs a real owner-B corpus through the fixture loader, and
- * re-observes A through production's own lane query builders, feeding the resulting
- * before/after pair through this same validator. A
- * suite that only called the validator on hand-built fixtures would be proving the comparator
- * works, not that the platform is isolated — see the "statistics" case group below for the
- * seed-first, mutation-capable form this task's own report demands.
+ * Two separate things live in this file. `validateIsolationObservation` is the pure comparator
+ * `checks/tenant-isolation-statistics.ts` imports directly — it tests bad-observation detection
+ * (does the comparator notice an empty baseline, a moved score, a leaked field), never database
+ * isolation, because it never touches a database. `run` below is the suite: it seeds an invented
+ * owner-A corpus, perturbs an owner-B corpus through the fixture loader, re-observes A through
+ * production's own lane query builders, and feeds the before/after pair through that validator.
  *
- * THE PROPERTY IS STATISTICAL, NOT ROW-LEVEL — and a row-level predicate does nothing about it.
- * `retrieval.ts`'s own header already proves the ROW predicate behaviorally (two rows sharing a
- * corpus_key and artifact_id, differing only in owner, where only `where owner_id = $2`
- * separates them). That is necessary and already covered. It is not sufficient: a real BM25
- * index's document-frequency statistics live in the INDEX STRUCTURE
- * (`to_bm25query(query, index_name)`'s own `index_name`), not in the row-level `where` clause
- * that runs after it. Two owners whose corpora are correctly row-filtered but who share one
- * physical index still leak — B's writes move A's IDF, and hence A's score, even though every
- * row A's query returns is genuinely A's own. The "statistics" case group below models exactly
- * this channel, on the one query-time call this checkout's own DDL gap (`lanes.ts`'s header:
- * migration 070 declares no bm25 index, I-5/I-21's boundary) actually leaves unverified: the
- * `to_bm25query(query, index_name)` call `buildLexicalLaneQuery` issues for real. A fake index
- * evaluates the REAL executed SQL text/params (never a mock of `buildLexicalLaneQuery` itself),
- * the same "evaluate what ran, don't grep for a substring" discipline `retrieval.ts`'s own
- * `recordingClient` already established.
+ * The property is statistical, not row-level. A real BM25 index's document-frequency statistics
+ * live in the index structure `to_bm25query(query, index_name)` names, not in the row-level `where`
+ * clause that runs after it — so two owners who are correctly row-filtered but share one physical
+ * index still leak: B's writes move A's IDF and hence A's score, though every row A's query returns
+ * is genuinely A's own. The "statistics" case group models that channel on the real `to_bm25query`
+ * call `buildLexicalLaneQuery` issues; a fake index evaluates the real executed SQL text and params,
+ * never a mock of `buildLexicalLaneQuery` itself.
  *
- * A NAMED, CARRIED-FORWARD GAP THIS TASK DOES NOT CLOSE. `retrieval.ts`'s own header says
- * `zz.artifact.audience` is `null` everywhere and migration 070's search tables carry no
- * audience column — so "recheck visibility" is honestly "still in the authorized corpus
- * projection right now", not a live read of a system-of-record publication flag. Closing that
- * needs a schema column and a write path outside this task's edit surface (`retrieval.ts` is
- * already at its 699-line ceiling and this task was told not to extend it) — reported, not
- * half-built. The "publication" case group below proves what IS true today: revocation through
- * the registry `checkVisibility` is actually handed is never deferred, because there is no
- * caching layer between a registry update and the next call.
- *
- * A NAMED, CARRIED-FORWARD GAP ON REAL PG17/pg_textsearch. This task's own instructions ask for
- * a `--profile integration` run against real PG17/pg_textsearch. `lanes.ts`'s own header and
- * `deployment.ts`'s own suite (`per_corpus_statistics` reported `not_run`) both already record
- * why nothing in this checkout can do that: no bm25 index, no verified score expression, no
- * DDL. The "live-postgres" case group reports this honestly as `not_run` — see its own comment
- * — rather than fabricating a real-database run this checkout cannot produce.
+ * Two gaps this suite reports rather than half-builds:
+ *  - `zz.artifact.audience` is null everywhere and the search tables carry no audience column, so
+ *    "recheck visibility" is honestly "still in the authorized corpus projection right now", not a
+ *    live read of a system-of-record publication flag. The "publication" group proves what is true
+ *    today: revocation through the registry `checkVisibility` is handed is never deferred, because
+ *    nothing caches between a registry update and the next call.
+ *  - Nothing in this checkout can run against real PG17/pg_textsearch: no bm25 index, no verified
+ *    score expression, no DDL. The "live-postgres" group reports `not_run`.
  */
 import assert from "node:assert/strict";
 
@@ -57,7 +34,7 @@ import type { CorpusDescriptor, RetrievalClient } from "../../services/zz-core/d
 import { buildLexicalLaneQuery } from "../../services/zz-core/dist/tenant-info/lanes.js";
 import { LIVE_CASES, LIVE_DB_ENV } from "./isolation-live.ts";
 
-// ── validateIsolationObservation: the pure comparator the frozen check drives ──────────────
+// validateIsolationObservation: the pure comparator the frozen check drives
 
 interface IsolationResultRow {
   readonly owner_id: string;
@@ -99,10 +76,10 @@ function resultRowIssues(label: "before" | "after", state: IsolationCorpusState,
       issues.push(`${label}.results carries a malformed row — every entry needs artifact_id/revision/score`);
       continue;
     }
-    // AN UNQUALIFIED KEY IS ITSELF THE DISCLOSURE. `resultKey` (retrieval.ts) folds owner_id
-    // into every identity precisely so two owners can never collide on one key; a result row
-    // that does not carry the observation's own bound owner is exactly the shape that
-    // collision would take, whether it is a leaked row or a comparator that forgot to qualify.
+    // An unqualified key is itself the disclosure. `resultKey` (retrieval.ts) folds owner_id into
+    // every identity so two owners can never collide on one key; a result row that does not carry
+    // the observation's own bound owner is the shape that collision would take, whether it is a
+    // leaked row or a comparator that forgot to qualify.
     if (!isNonEmptyString(row.owner_id) || row.owner_id !== ownerId) {
       issues.push(`${label}.results carries an unqualified key — row owner ${JSON.stringify(row.owner_id)} `
         + `does not match the observation's bound owner ${JSON.stringify(ownerId)}`);
@@ -116,12 +93,10 @@ function resultIdentity(row: IsolationResultRow): string {
 }
 
 /**
- * Requires nonempty comparable observations and explicit owner/query bindings — an empty
- * baseline, a missing after result, a changed score/statistic, an unqualified key or leaked
- * forbidden metadata all fail (this task's own Contract, "Errors"). Deliberately a pure
- * function of its argument alone: no database, no clock, no filesystem — the actual isolation
- * property is proved by the caller having produced a real before/after pair, not by anything
- * this function reaches out and checks for itself.
+ * Requires nonempty comparable observations and explicit owner/query bindings — an empty baseline, a
+ * missing after result, a changed score or statistic, an unqualified key or leaked forbidden
+ * metadata all fail. A pure function of its argument alone: no database, no clock, no filesystem.
+ * The isolation property is proved by the caller having produced a real before/after pair.
  */
 export function validateIsolationObservation(observation: unknown): IsolationValidation {
   if (!isRecord(observation)) return { ok: false, issues: ["observation must be an object"] };
@@ -141,19 +116,16 @@ export function validateIsolationObservation(observation: unknown): IsolationVal
 
   const issues: string[] = [];
 
-  // A LEAK OF FORBIDDEN METADATA FAILS REGARDLESS OF WHETHER SCORES MOVED — "no count, snippet,
-  // graph edge or fallback path may disclose metadata about an artifact the caller cannot
-  // read" (this task's own property) is a hard refusal, not a tiebreaker against the
-  // statistics comparison below.
+  // A leak of forbidden metadata fails regardless of whether scores moved: no count, snippet, graph
+  // edge or fallback path may disclose metadata about an artifact the caller cannot read. A hard
+  // refusal, not a tiebreaker against the statistics comparison below.
   if (forbidden.length > 0) {
     issues.push(`forbidden_metadata discloses ${forbidden.length} field(s) an unauthorized caller must never see: `
       + `${forbidden.map((f) => JSON.stringify(f)).join(", ")}`);
   }
 
-  // NONVACUOUS BY CONSTRUCTION: an empty baseline proves nothing, because every comparison
-  // below would trivially hold over two empty lists. This is the exact defect an earlier round
-  // of this delivery's planning found in a draft isolation case — the check that makes it
-  // impossible to repeat.
+  // Nonvacuous by construction: an empty baseline proves nothing, because every comparison below
+  // would trivially hold over two empty lists.
   if (before.results.length === 0) {
     issues.push("before.results is empty — nothing was seeded, so no comparison could possibly fail");
   }
@@ -162,9 +134,9 @@ export function validateIsolationObservation(observation: unknown): IsolationVal
   issues.push(...resultRowIssues("after", after, ownerId));
   if (issues.length > 0) return { ok: false, issues };
 
-  // STATISTICS: every key either side names must match, in both directions — a statistic that
-  // appears only after (not merely one that changed value) is exactly the shape a corpus-wide
-  // aggregate newly leaking into the observation would take.
+  // Statistics: every key either side names must match, in both directions — a statistic that
+  // appears only after, not merely one that changed value, is the shape a corpus-wide aggregate
+  // newly leaking into the observation would take.
   const statKeys = new Set([...Object.keys(before.stats), ...Object.keys(after.stats)]);
   for (const key of statKeys) {
     const b = before.stats[key];
@@ -175,9 +147,9 @@ export function validateIsolationObservation(observation: unknown): IsolationVal
     }
   }
 
-  // RESULTS: identity set and score, both directions — a result present after but absent
-  // before is a count leak (another owner's write surfacing a NEW result for this owner's
-  // query) exactly as much as a missing or rescored one is.
+  // Results: identity set and score, both directions — a result present after but absent before is
+  // a count leak (another owner's write surfacing a new result for this owner's query) as much as a
+  // missing or rescored one is.
   const beforeByKey = new Map(before.results.map((r) => [resultIdentity(r), r]));
   const afterByKey = new Map(after.results.map((r) => [resultIdentity(r), r]));
   for (const [key, beforeRow] of beforeByKey) {
@@ -194,16 +166,13 @@ export function validateIsolationObservation(observation: unknown): IsolationVal
   return { ok: issues.length === 0, issues };
 }
 
-// ── the "statistics" case group: a real fake index, driven through the REAL lane query ─────
+// The "statistics" case group: a fake index, driven through the real lane query.
 //
-// `statisticsClient` below evaluates the SQL TEXT AND PARAMS `buildLexicalLaneQuery` actually
-// produces — the owner/corpus equality conjuncts, exactly as `retrieval.ts`'s own
-// `recordingClient` does, PLUS the `to_bm25query($term, $index_name)` call this file's header
-// explains is the one query-time surface this checkout's own DDL gap leaves unverified. A
-// checker that grepped the query text for "owner_id" would pass on a mutation that pooled
-// statistics across owners while still filtering rows correctly; evaluating the executed
-// predicate is what makes that mutation visible (case
-// `shared_index_misconfiguration_moves_a_scores_and_goes_red` below proves it).
+// `statisticsClient` below evaluates the SQL text and params `buildLexicalLaneQuery` actually
+// produces — the owner/corpus equality conjuncts, plus the `to_bm25query($term, $index_name)` call
+// this file's header explains is the one query-time surface this checkout's DDL gap leaves
+// unverified. A checker that grepped the query text for "owner_id" would pass on a mutation that
+// pooled statistics across owners while still filtering rows correctly.
 
 interface FakeDoc {
   readonly corpus_key: string;
@@ -212,10 +181,9 @@ interface FakeDoc {
   readonly revision: number;
   readonly content_hash: string;
   readonly tags: readonly string[];
-  /** The PHYSICAL index this document's term statistics are pooled into — distinct, in a
-   *  correctly configured registry, from `corpus_key`/`owner_id`. The registry entry's own
-   *  `index_name` is what a real query binds into `to_bm25query`; this field is the fixture's
-   *  side of that same value. */
+  /** The physical index this document's term statistics are pooled into — distinct, in a correctly
+   *  configured registry, from `corpus_key`/`owner_id`. The registry entry's own `index_name` is
+   *  what a real query binds into `to_bm25query`; this field is the fixture's side of that value. */
   readonly index_name: string;
   readonly raw_body: string;
 }
@@ -232,10 +200,8 @@ function bm25Call(text: string, params: readonly unknown[]): { term: string; ind
 
 /**
  * A client that evaluates the executed predicate against an in-memory fixture — no real
- * pg_textsearch, no docker, no network; this task's absolute data-safety constraint forbids
- * every one of those, and this is what proves the property without any of them. `seen` lets a
- * case assert the SQL actually issued carried the predicate it expects, the same
- * `recordingClient` discipline `retrieval.ts` established.
+ * pg_textsearch, no docker, no network. `seen` lets a case assert the SQL actually issued carried
+ * the predicate it expects.
  */
 function statisticsClient(docs: readonly FakeDoc[]): { seen: { text: string; params: readonly unknown[] }[]; client: RetrievalClient } {
   const seen: { text: string; params: readonly unknown[] }[] = [];
@@ -253,13 +219,10 @@ function statisticsClient(docs: readonly FakeDoc[]): { seen: { text: string; par
 }
 
 /**
- * Okapi BM25's own idf, `ln((N - df + 0.5) / (df + 0.5) + 1)`, computed over the PHYSICAL
- * INDEX's population (every doc sharing `indexName`) — never over `corpus_key`/`owner_id`.
- * This is the exact distinction a real bm25 index makes and a row-level `where` clause cannot
- * fix: term/document-frequency statistics live in the index structure the query names, not in
- * the predicate that filters which rows come back. Substring containment stands in for the
- * real tsvector match, the same deliberate simplification `pinned-read.ts`'s own
- * `matchesArtifact` already uses for the same reason.
+ * Okapi BM25's own idf, `ln((N - df + 0.5) / (df + 0.5) + 1)`, computed over the physical index's
+ * population (every doc sharing `indexName`) and never over `corpus_key`/`owner_id` — the exact
+ * distinction a real bm25 index makes and a row-level `where` clause cannot fix. Substring
+ * containment stands in for the real tsvector match, as `pinned-read.ts`'s `matchesArtifact` does.
  */
 function idf(docs: readonly FakeDoc[], indexName: string, term: string): number {
   const population = docs.filter((d) => d.index_name === indexName);
@@ -270,9 +233,8 @@ function idf(docs: readonly FakeDoc[], indexName: string, term: string): number 
 
 interface Observation { readonly stats: Record<string, number>; readonly results: IsolationResultRow[] }
 
-/** Runs the REAL `buildLexicalLaneQuery` against `docs` through `statisticsClient`, and scores
- *  every returned row with `idf` over the index the executed query actually named — never a
- *  guessed or hand-passed index name. */
+/** Runs the real `buildLexicalLaneQuery` against `docs` through `statisticsClient`, and scores every
+ *  returned row with `idf` over the index the executed query actually named. */
 async function observe(docs: readonly FakeDoc[], descriptor: CorpusDescriptor, term: string): Promise<Observation> {
   const { client } = statisticsClient(docs);
   const q = buildLexicalLaneQuery(descriptor, term, {}, 50);
@@ -312,15 +274,13 @@ const TERM = "distinctive-b-perturbation";
 
 const DESCRIPTOR_A: CorpusDescriptor = { corpus_key: "acme-current", owner_id: OWNER_A, scope: "current", audience: "private", index_name: "idx-acme" };
 const DESCRIPTOR_B: CorpusDescriptor = { corpus_key: "widget-current", owner_id: OWNER_B, scope: "current", audience: "private", index_name: "idx-widget" };
-/** THE MISCONFIGURATION under test: owner B's own corpus, but pointed at owner A's physical
- *  index — "one index filtered by team" instead of one index per team, the exact anti-pattern
- *  this file's header names. Row-level filtering (`owner_id = $n`) is untouched; only the
- *  index population B's writes land in has changed. */
+/** The misconfiguration under test: owner B's own corpus, pointed at owner A's physical index — one
+ *  index filtered by team instead of one index per team. Row-level filtering (`owner_id = $n`) is
+ *  untouched; only the index population B's writes land in has changed. */
 const DESCRIPTOR_B_SHARED_INDEX: CorpusDescriptor = { ...DESCRIPTOR_B, index_name: DESCRIPTOR_A.index_name };
 
-/** Seeding must actually produce a comparable baseline — "assert the seed is non-empty before
- *  comparing anything" (this task's own report requirement), proved directly, not inferred
- *  from a later assertion passing. */
+/** Seeding must actually produce a comparable baseline, proved directly rather than inferred from a
+ *  later assertion passing. */
 async function caseSeedThenBaselineIsNonvacuous(): Promise<void> {
   const docsA = seedDocs(DESCRIPTOR_A, 40, TERM, 2);
   assert.equal(docsA.length, 40, "the tested owner's own corpus must be seeded before any observation is taken");
@@ -330,9 +290,9 @@ async function caseSeedThenBaselineIsNonvacuous(): Promise<void> {
   assert.equal(baseline.stats.documents, 40);
 }
 
-/** THE PROPERTY ITSELF. A correctly configured registry gives owner A and owner B distinct
- *  physical indexes — B's 5000-document, maximally distinctive perturbation must not move A's
- *  statistics, scores or result count by one bit. */
+/** The property itself. A correctly configured registry gives owner A and owner B distinct physical
+ *  indexes, so B's 5000-document, maximally distinctive perturbation must not move A's statistics,
+ *  scores or result count by one bit. */
 async function caseIsolatedIndexesLeaveAUnchanged(): Promise<void> {
   const docsA = seedDocs(DESCRIPTOR_A, 40, TERM, 2);
   const before = await observe(docsA, DESCRIPTOR_A, TERM);
@@ -346,11 +306,10 @@ async function caseIsolatedIndexesLeaveAUnchanged(): Promise<void> {
   assert.equal(verdict.ok, true, verdict.issues.join("; "));
 }
 
-/** THE MUTATION TEST THIS TASK'S REPORT NAMES: prove another tenant's writes CAN move the
- *  tested owner's scores, and that the suite goes red naming it. Row-level correctness is
- *  untouched throughout — A's own returned artifact identities are exactly the same before and
- *  after — which is the whole point: the leak this case exercises is invisible to any check
- *  that only inspects which rows came back. */
+/** The mutation test: another tenant's writes can move the tested owner's scores, and the suite goes
+ *  red naming it. Row-level correctness is untouched throughout — A's own returned artifact
+ *  identities are exactly the same before and after — so the leak is invisible to any check that
+ *  only inspects which rows came back. */
 async function caseSharedIndexMisconfigurationMovesAScoresAndGoesRed(): Promise<void> {
   const docsA = seedDocs(DESCRIPTOR_A, 40, TERM, 2);
   const before = await observe(docsA, DESCRIPTOR_A, TERM);
@@ -376,18 +335,10 @@ async function caseSharedIndexMisconfigurationMovesAScoresAndGoesRed(): Promise<
 }
 
 /**
- * THE CODE GUARANTEE THE CASE ABOVE WAS MISSING. `caseSharedIndexMisconfigurationMoves…`
- * proves the leak is real; on its own it also proved something uncomfortable — that the
- * statistical-isolation property rested entirely on registry configuration, with no code
- * anywhere refusing the configuration that breaks it. There was no code mutation capable of
- * causing the leak, because the invariant was not written down.
- *
- * `assertOneOwnerPerIndex` (retrieval.ts) is that invariant, and this case is what makes it
- * mutation-testable: remove the guard and this case goes red, which is exactly the loop the
- * case above could describe but not close. The misconfigured registry here is built from the
- * SAME `DESCRIPTOR_B_SHARED_INDEX` the leak case perturbs with, so the thing now refused is
- * demonstrably the thing shown to move A's scores — not a neighbouring shape that merely
- * looks like it.
+ * The code guarantee behind the case above. `assertOneOwnerPerIndex` (retrieval.ts) is the invariant,
+ * and this case is what makes it mutation-testable: remove the guard and this case goes red. The
+ * misconfigured registry here is built from the same `DESCRIPTOR_B_SHARED_INDEX` the leak case
+ * perturbs with, so the thing refused is the thing shown to move A's scores.
  */
 async function caseRegistryPointingTwoOwnersAtOneIndexIsRefused(): Promise<void> {
   const misconfigured = [DESCRIPTOR_A, DESCRIPTOR_B_SHARED_INDEX];
@@ -402,31 +353,26 @@ async function caseRegistryPointingTwoOwnersAtOneIndexIsRefused(): Promise<void>
     "not as INVALID_INPUT, which would blame a caller that did nothing wrong",
   );
 
-  // The guard must refuse THIS and not simply everything: a correctly configured registry,
-  // one index per owner, still resolves — otherwise the case above would pass on a function
-  // that had stopped working entirely.
+  // The guard must refuse this and not simply everything: a correctly configured registry, one index
+  // per owner, still resolves.
   const correct = resolveCorpora({ owner_id: OWNER_A, shared_allowed: false }, {}, [DESCRIPTOR_A, DESCRIPTOR_B]);
   assert.equal(correct.length, 1, "owner A's own current corpus still resolves when the registry is sound");
   assert.equal(correct[0].owner_id, OWNER_A);
 
-  // Two entries for the SAME owner sharing an index are not a tenant leak and stay allowed —
+  // Two entries for the same owner sharing an index are not a tenant leak and stay allowed —
   // the guard is the narrow property the mutation case proves, not a general uniqueness rule.
   const sameOwnerTwoScopes = [DESCRIPTOR_A, { ...DESCRIPTOR_A, corpus_key: "acme-history", scope: "history" }];
   assert.doesNotThrow(() => resolveCorpora({ owner_id: OWNER_A, shared_allowed: false }, { scopes: ["current", "history"] }, sameOwnerTwoScopes));
 }
 
 /**
- * ONE OWNER IS NOT ONE VISIBILITY SCOPE, and the guard above only checked the owner.
+ * One owner is not one visibility scope, and the guard above only checked the owner.
  *
- * `zz-platform` is the case this is about and it is not hypothetical: that owner holds both
- * its private work documents and the knowledge it publishes to every team. Two of its corpora
- * sharing one physical index passes an owner check — same owner, no cross-tenant collision —
- * and a shared reader's ranking is then moved by content they cannot see and cannot ask about.
- *
- * The cross-tenant leak is loud: two owners on one index is obviously wrong to anybody reading
- * the registry. This one is quiet. It happens INSIDE one tenant, across the exact line
- * `audience` exists to draw, and — like every statistical leak in this delivery — every row
- * that comes back is one the caller is entitled to.
+ * `zz-platform` holds both its private work documents and the knowledge it publishes to every team.
+ * Two of its corpora sharing one physical index passes an owner check — same owner, no cross-tenant
+ * collision — and a shared reader's ranking is then moved by content they cannot see and cannot ask
+ * about. The leak happens inside one tenant, across the line `audience` exists to draw, and every
+ * row that comes back is one the caller is entitled to.
  */
 async function caseRegistryPointingTwoAudiencesAtOneIndexIsRefused(): Promise<void> {
   const PLATFORM = "5c5c5c5c-5c5c-4c5c-8c5c-5c5c5c5c5c5c";
@@ -459,7 +405,7 @@ const STATISTICS_CASES: Readonly<Record<string, () => Promise<void>>> = {
   registry_pointing_two_audiences_at_one_index_is_refused: caseRegistryPointingTwoAudiencesAtOneIndexIsRefused,
 };
 
-// ── the "identity" case group: identical paths across two teams never collide on one key ──
+// The "identity" case group: identical paths across two teams never collide on one key
 
 function caseIdenticalPathsAcrossOwnersNeverCollide(): void {
   const artifactId = "identical-path-across-two-teams.md";
@@ -478,7 +424,7 @@ const IDENTITY_CASES: Readonly<Record<string, () => void>> = {
   identical_paths_across_owners_never_collide: caseIdenticalPathsAcrossOwnersNeverCollide,
 };
 
-// ── the "publication" case group: shared publication, revocation, and refusal shape ────────
+// The "publication" case group: shared publication, revocation, and refusal shape
 
 interface VisibilityRow { readonly corpus_key: string; readonly owner_id: string; readonly artifact_id: string; readonly revision: number; readonly content_hash: string }
 
@@ -496,9 +442,8 @@ const shared = (audience: "published" | "private"): CorpusDescriptor[] => [
   { corpus_key: "platform-shared", owner_id: OWNER_A, scope: "current", audience, index_name: "idx-platform-shared" },
 ];
 
-/** A caller without shared access can never see a published corpus belonging to another
- *  owner — `resolveCorpora`'s own audience/shared_allowed gate, exercised through
- *  `checkVisibility`'s real query path rather than asserted on `resolveCorpora` alone. */
+/** A caller without shared access can never see a published corpus belonging to another owner —
+ *  exercised through `checkVisibility`'s real query path, not asserted on `resolveCorpora` alone. */
 async function casePrivatePlatformIsolationWithoutSharedAccess(): Promise<void> {
   const rows: VisibilityRow[] = [{ corpus_key: "platform-shared", owner_id: OWNER_A, artifact_id: SHARED_ARTIFACT, revision: 1, content_hash: "c".repeat(64) }];
   const client = visibilityRowsClient(rows);
@@ -509,13 +454,10 @@ async function casePrivatePlatformIsolationWithoutSharedAccess(): Promise<void> 
 }
 
 /**
- * "Recheck publication/access before serializing results/counts and on every dereference/
- * cursor page; revocation is not deferred until index refresh" (retrieval contract, quoted in
- * `retrieval.ts`'s own header) — proved here by calling the REAL `checkVisibility` twice, once
- * against a `published` registry and once against the SAME registry with the entry flipped to
- * `private`, with no caching layer between the two calls that could serve stale state. The
- * refusal itself is asserted to carry nothing beyond `ok`/`code` — no title, snippet or count
- * leaks through a denial.
+ * Revocation is not deferred until index refresh: the real `checkVisibility` is called twice, once
+ * against a `published` registry and once against the same registry with the entry flipped to
+ * `private`, with no caching layer between the two calls that could serve stale state. The refusal
+ * carries nothing beyond `ok`/`code` — no title, snippet or count leaks through a denial.
  */
 async function caseSharedPublicationThenRevocationIsImmediatelyInvisible(): Promise<void> {
   const rows: VisibilityRow[] = [{ corpus_key: "platform-shared", owner_id: OWNER_A, artifact_id: SHARED_ARTIFACT, revision: 1, content_hash: "d".repeat(64) }];
@@ -538,37 +480,33 @@ const PUBLICATION_CASES: Readonly<Record<string, () => Promise<void>>> = {
   shared_publication_then_revocation_is_immediately_invisible: caseSharedPublicationThenRevocationIsImmediatelyInvisible,
 };
 
-// ── the "live-postgres" case group: real PG17/pg_textsearch, honestly not_run here ─────────
+// The "live-postgres" case group: real PG17/pg_textsearch, reported not_run here.
 //
-// This task's own instructions ask for `verify --suite isolation --profile integration` on
-// actual PG17/pg_textsearch with real fixtures — and this task's ABSOLUTE data-safety
-// constraint forbids connecting to any database or running docker/psql/any deployment command,
-// full stop. Both are true at once, and the Contract's own "Errors" clause resolves them:
-// "Unavailable PostgreSQL or a fixture setup error is blocked/not_run, never a successful
-// isolation refusal." These cases are never entered into the generic try/catch case runner
-// below (which would report an unset URL as "failed") — they report `not_run`, directly, with
-// the reason named, the same shape `deployment.ts`'s own `per_corpus_statistics` case already
-// uses for the identical gap. `ZZ_TENANT_INFO_ISOLATED_DB_URL` is the SAME env var
-// `rebuild.ts`'s `atomic_apply_against_isolated_database` case already uses — one name for "an
-// operator-provided isolated copy", not a second one for the same requirement.
+// An unavailable PostgreSQL or a fixture setup error is blocked/not_run, never a successful
+// isolation refusal. These cases are never entered into the generic try/catch case runner below,
+// which would report an unset URL as "failed" — they report `not_run` directly, with the reason
+// named.
+//
+// COUPLED: `ZZ_TENANT_INFO_ISOLATED_DB_URL` is the same env var `rebuild.ts`'s
+// `atomic_apply_against_isolated_database` case uses.
 const LIVE_POSTGRES_CASES = ["real_pg17_statistical_isolation", "real_pg17_bm25_score_expression"] as const;
 
 function liveNotRunReason(): string {
   const url = (process.env[LIVE_DB_ENV] ?? "").trim();
   if (!url) {
     return `${LIVE_DB_ENV} is not set. This case runs only against an operator-provided isolated `
-      + "PG17/pg_textsearch copy with migration 070 applied — never inferred from TEAM_DB_URL/"
+      + "PG17/pg_textsearch copy with the schema applied — never inferred from TEAM_DB_URL/"
       + "PLATFORM_DB_URL, and never spun up by this suite. A full-capacity run (40+ A fixtures, "
       + "5000+ B perturbations) is I-23/I-25's, not claimed from anything smaller here.";
   }
   return "lanes.ts's own header records that this checkout carries no verified pg_textsearch bm25 "
-    + "index or score expression (migration 070 declares neither; I-5/I-21's own boundary) — "
+    + "index or score expression (the schema declares neither) — "
     + "\"real pg_textsearch scores/statistics\" cannot be produced from anything committed here yet, "
     + `even with ${LIVE_DB_ENV} set. This is a named contract gap, not a guessed pass.`;
 }
 
 
-// ── suite entry point ───────────────────────────────────────────────────────────────────────
+// Suite entry point
 
 const CASE_GROUPS: Readonly<Record<string, Readonly<Record<string, () => void | Promise<void>>>>> = {
   statistics: STATISTICS_CASES,
@@ -581,12 +519,10 @@ interface SuiteDetail { readonly status: "blocked" | "ran"; readonly cases: Read
 interface SuiteOutcome { readonly passed: boolean; readonly detail: SuiteDetail }
 
 /**
- * `verify --suite isolation`'s entry point. `--cases` names one whole group; the special
- * `live-postgres` group is never run through the generic try/catch loop (see its own comment)
- * — its cases are always reported `not_run` directly. `passed` treats `not_run` as non-blocking
- * (`deployment.ts`'s own rule: `every(status !== "failed")`), so an honestly-unreachable live
- * database never reads as a false green OR drags down every offline case this checkout CAN
- * prove.
+ * `verify --suite isolation`'s entry point. `--cases` names one whole group; the `live-postgres`
+ * group is never run through the generic try/catch loop (see its own comment) and its cases are
+ * always reported `not_run`. `passed` treats `not_run` as non-blocking (`every(status !== "failed")`),
+ * so an unreachable live database neither reads as a false green nor drags down the offline cases.
  */
 export async function run({ cases }: { cases?: string }): Promise<SuiteOutcome> {
   const allGroupNames = [...Object.keys(CASE_GROUPS), "live-postgres"];

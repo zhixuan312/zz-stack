@@ -1,41 +1,15 @@
 /**
- * THE RUNTIME ADAPTER PORT: what this platform needs from anything that can carry out a piece
- * of work on its behalf, written so that no part of it is shaped around the runtime that
- * happened to be integrated first.
+ * The runtime adapter port: what this platform needs from anything that can carry out a piece
+ * of work on its behalf.
  *
- * WHY A PORT AT ALL, when one runtime works today. Not because a second one is planned — that
- * would be speculation, and this repository does not build for it. Because the platform had
- * already begun to encode one runtime's accidents as if they were facts about running work:
- * that a unit of work has a transcript file, that the file's last line means the work ended,
- * that a stop signal sent is a worker stopped. None of those is true of running work in
- * general and two of them are not reliably true of that runtime either. A port is how the
- * platform says which of those it actually depends on, and the second adapter in this folder
- * is how it finds out whether the answer was honest — a claim of portability that no second
- * implementation has ever been run against is a claim, not a property.
+ * Where a rule can be made unrepresentable rather than documented, it is: `never` fields on
+ * {@link DispatchAck}, a `false` literal on {@link CancellationLimits.lease_expiry_proves_stop}
+ * and on {@link DeclaredUnsupported.simulated}, and unions on {@link CancelOutcome} and
+ * {@link Observation} that attach a claim only to the arm holding its record. Each type below
+ * states its own half.
  *
- * THE HONESTY RULES ARE THE SUBSTANCE, and where a rule can be made unrepresentable rather
- * than merely documented, it is:
- *
- *   · {@link DispatchAck.completed} is typed `never`. Dispatching work returns an identifier
- *     for work that has started, and there is no value an adapter could put in that field.
- *     A runtime that answers a submission with a result is answering about something else.
- *   · {@link CancelOutcome} is a union in which only the confirmed arm carries
- *     `treatedAsStopped`. A request that was sent is a request that was sent; the arm that
- *     says a worker stopped has to name the record the claim rests on.
- *   · {@link CancellationLimits.lease_expiry_proves_stop} is typed `false`. A lease is a
- *     bound on how long somebody may hold a claim, and it expires whether or not the holder
- *     is still working. No adapter may declare otherwise.
- *   · {@link Observation} pairs its completeness with its receipt: only the confirmed arm has
- *     one, so "the feed went quiet" cannot be reported in the shape of "the work finished",
- *     and {@link Observation.elapsed_at_least_ms} is named for the floor it is.
- *   · An unsupported capability is DECLARED, through {@link DeclaredUnsupported}, whose
- *     `simulated` field is typed `false`. An adapter says what it cannot do; it does not
- *     quietly answer as though it could.
- *
- * WHAT THE PORT DELIBERATELY DOES NOT KNOW: how a runtime names its operations, where it
- * keeps its record of them, what a unit of activity is called, or how time is written down.
- * Every one of those differs between the two adapters shipped beside this file, and none of
- * them appears in the vocabulary below.
+ * The port does not know how a runtime names its operations, where it keeps its record of them,
+ * what a unit of activity is called, or how time is written down.
  */
 import { createHash } from "node:crypto";
 
@@ -48,10 +22,9 @@ export const RUNTIME_OPERATIONS = [
 ] as const;
 
 /**
- * The capabilities an adapter may declare, and the whole reason the list is closed: a
- * capability an adapter never mentions is not supported. Silence is not a yes, and
- * {@link admitToRuntime} reports it separately from an explicit refusal, because "we have
- * never said" and "we cannot" are different answers and only one of them is informative.
+ * The capabilities an adapter may declare. The list is closed: a capability an adapter never
+ * mentions is not supported, and {@link admitToRuntime} reports silence separately from an
+ * explicit refusal.
  */
 export const RUNTIME_CAPABILITIES = [
   /** `cancel` can reach `confirmed_stopped` — the runtime reports that a worker stopped. */
@@ -66,14 +39,13 @@ export const RUNTIME_CAPABILITIES = [
   "completion_receipt",
   /** The runtime reports what the work consumed. */
   "usage_accounting",
-  /** Consumption arrives as parent AND child records, which is where double counting lives. */
+  /** Consumption arrives as parent and child records, which is where double counting lives. */
   "subagent_usage_records",
 ] as const;
 export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number];
 
-/** What a bound asset is FOR, in the platform's vocabulary rather than the runtime's. A
- *  runtime that calls it a skill, a prompt, a policy or a job payload still binds one of
- *  these three, and the platform's own material never has to learn the runtime's word. */
+/** What a bound asset is for, in the platform's vocabulary rather than the runtime's. A runtime
+ *  that calls it a skill, a prompt, a policy or a job payload still binds one of these three. */
 export const ASSET_ROLES = ["method_text", "reference_material", "permitted_actions"] as const;
 export type AssetRole = (typeof ASSET_ROLES)[number];
 
@@ -102,7 +74,7 @@ export const RECEIPT_ASSURANCE = ["runtime_confirmed", "caller_asserted"] as con
 export type ReceiptAssurance = (typeof RECEIPT_ASSURANCE)[number];
 
 /** The records a stop may rest on. A signal the adapter sent is not among them: every member
- *  is something the RUNTIME produced. */
+ *  is something the runtime produced. */
 export const STOP_EVIDENCE = ["runtime_exit_record", "runtime_stop_acknowledgement"] as const;
 export type StopEvidence = (typeof STOP_EVIDENCE)[number];
 
@@ -110,11 +82,9 @@ export type StopEvidence = (typeof STOP_EVIDENCE)[number];
 // Capability identity
 
 /**
- * The structural facts about an adapter's event feed — the part of "a different event format"
- * that is checkable rather than asserted. Two adapters that differ only in the `id` string
- * have not demonstrated anything, so the fields below are what a caller would actually have
- * to write different code for: what identifies an event, how its time is written, whether the
- * feed is appended to or replaced wholesale, what orders it, and whether it can lose entries.
+ * The structural facts about an adapter's event feed: what identifies an event, how its time is
+ * written, whether the feed is appended to or replaced wholesale, what orders it, and whether it
+ * can lose entries. Two adapters differing only in the `id` string have demonstrated nothing.
  */
 export interface EventFormatIdentity {
   /** The adapter's own name for its feed shape. The single source for
@@ -130,12 +100,8 @@ export interface EventFormatIdentity {
 }
 
 /**
- * A capability this adapter does not have, said out loud.
- *
- * `simulated` is typed `false` so that the one thing the port refuses cannot be written down:
- * an adapter may not declare a capability missing and then behave as though it were present.
- * Either the runtime does it, or the caller is told it does not and decides what to do about
- * that — which is what {@link admitToRuntime} is for.
+ * A capability this adapter does not have, said out loud. `simulated` is typed `false`: an
+ * adapter may not declare a capability missing and then behave as though it were present.
  */
 export interface DeclaredUnsupported {
   readonly capability: RuntimeCapability;
@@ -144,13 +110,11 @@ export interface DeclaredUnsupported {
 }
 
 /**
- * What a cancellation can and cannot achieve against this runtime, declared up front rather
- * than discovered by a caller who assumed.
+ * What a cancellation can and cannot achieve against this runtime, declared up front.
  *
- * `settles_within_ms` is `null` when the runtime gives no bound, and `null` means unknown —
- * never zero, never "immediately". `lease_expiry_proves_stop` is typed `false` because it is
- * false: a lease bounds how long somebody may hold a claim, and a worker that outlives its
- * lease is a worker that is still running with a claim nobody can renew.
+ * `settles_within_ms` is `null` when the runtime gives no bound, and `null` means unknown, never
+ * zero and never "immediately". `lease_expiry_proves_stop` is typed `false`: a lease bounds how
+ * long somebody may hold a claim, and a worker that outlives its lease is still running.
  */
 export interface CancellationLimits {
   readonly strongest: CancelState;
@@ -161,18 +125,14 @@ export interface CancellationLimits {
 /**
  * The adapter's versioned capability identity, in two halves that fail differently.
  *
- * `protocol` is the revision of THIS PORT the adapter implements, and it is a name and a
- * monotonic integer rather than a dotted triple on purpose: it is not a release of anything
- * and must not be readable as one. Every adapter carries the same value, from
- * {@link PORT_PROTOCOL}, so there is one place a port revision is ever written down.
+ * `protocol` is the revision of this port the adapter implements — a name and a monotonic
+ * integer, not a dotted triple, because it is not a release of anything. Every adapter carries
+ * the same value, from {@link PORT_PROTOCOL}.
  *
- * `declaration_digest` is DERIVED from everything else on this record — the event format, the
- * supported and refused capabilities, the cancellation limits. Not written, because a number an
- * author types is a number that stops being true the moment somebody edits the thing it names,
- * and nothing fails: the declaration moves and the identity stands still, which is the same
- * shape as a serverInfo version no release ever produced. A derived identity moves exactly when
- * the declared behaviour moves, which is the entire job a version was supposed to do here, and
- * {@link runConformance} recomputes it rather than trusting it.
+ * `declaration_digest` is derived from everything else on this record: the event format, the
+ * supported and refused capabilities, the cancellation limits. A derived identity moves exactly
+ * when the declared behaviour moves, and {@link runConformance} recomputes it rather than
+ * trusting it.
  */
 export interface RuntimeCapabilities {
   readonly adapter: string;
@@ -188,7 +148,7 @@ export interface RuntimeCapabilities {
  *  or their contracts change, and it is written here and nowhere else. */
 export const PORT_PROTOCOL = "runtime-port/1";
 
-/** What an adapter declares about itself, without the identity that is derived FROM it. */
+/** What an adapter declares about itself, without the identity that is derived from it. */
 export type CapabilityDeclaration =
   Omit<RuntimeCapabilities, "protocol" | "declaration_digest">;
 
@@ -221,10 +181,9 @@ export interface LoadMethodRequest {
 /**
  * One asset the runtime actually bound, with its identity.
  *
- * `digest` is the point of the whole type. `locator` is where the runtime found the asset and
- * is in the runtime's own terms — a path for one of the adapters here, a content address for
- * the other — so it can never be compared across runtimes. The digest can, which is what
- * makes "the same method ran" a checkable statement rather than a hopeful one.
+ * `locator` is where the runtime found the asset, in the runtime's own terms — a path for one
+ * adapter here, a content address for the other — so it can never be compared across runtimes.
+ * `digest` can, which is what makes "the same method ran" checkable.
  */
 export interface BoundAsset {
   readonly role: AssetRole;
@@ -253,12 +212,9 @@ export interface DispatchRequest {
 /**
  * What dispatching returns: an identifier for work that has started.
  *
- * `completed` and `receipt` are typed `never` and that is the entire design. The failure this
- * prevents is not an adapter that lies; it is an adapter written against a runtime whose
- * submit call happens to return a body, and an author who fills the nearest field with it.
- * There is no nearest field. A completion is something {@link RuntimeAdapter.observe} may one
- * day report, and spawn metadata — a session identifier, a start time, a queue position — is
- * not one however much of it comes back at submission.
+ * `completed` and `receipt` are typed `never`, so an adapter written against a runtime whose
+ * submit call returns a body has no nearest field to put it in. A completion is something
+ * {@link RuntimeAdapter.observe} may report; spawn metadata is not one.
  */
 export interface DispatchAck {
   readonly work_id: string;
@@ -293,26 +249,23 @@ export interface CompletionReceipt {
 
 interface ObservationBase {
   readonly work_id: string;
-  /** When the ADAPTER looked. The only field on this type that comes from the platform's
+  /** When the adapter looked. The only field on this type that comes from the platform's
    *  clock rather than the runtime's feed. */
   readonly observed_at: string;
   readonly events: readonly ObservedEvent[];
   /** The stamp on the last event, or null when there are none. The last event is the last
    *  thing seen. It is not an end time, and nothing downstream may read it as one. */
   readonly last_activity_at: string | null;
-  /** First stamp to last stamp. A FLOOR, named as one: work that ran on after the feed went
-   *  quiet ran longer than this, and there is no way to tell from a feed how much longer. */
+  /** First stamp to last stamp. A floor: work that ran on after the feed went quiet ran longer
+   *  than this, and a feed cannot say how much longer. */
   readonly elapsed_at_least_ms: number | null;
   readonly usage: UsageTotal | null;
 }
 
 /**
  * What an observation establishes, with the receipt attached to the one state that has one.
- *
- * The union is the point: there is no way to return a receipt alongside `last_activity_only`,
- * and no way to claim `receipt_confirmed` without producing the record. A caller that wants
- * to know whether work finished asks about `completeness` and gets an answer that cannot have
- * been assembled out of a quiet feed.
+ * There is no way to return a receipt alongside `last_activity_only`, and no way to claim
+ * `receipt_confirmed` without producing the record.
  */
 export type Observation =
   | (ObservationBase & {
@@ -331,17 +284,14 @@ export interface CancelRequest {
 }
 
 /**
- * What asking to stop achieved — and the arm that carries `treatedAsStopped` is the only arm
- * that may, because it is the only arm that has a runtime record behind it.
+ * What asking to stop achieved. Only the confirmed arm carries `treatedAsStopped`, because it is
+ * the only arm with a runtime record behind it.
  *
- * `requested` says a request went out, and says nothing else, because at the moment a request
- * goes out there is nothing else to say. Whether the worker then stopped is a question about
- * the future, and the only honest place to answer it is a later {@link Observation}: events
- * stamped after `requested_at` are a worker still working. `settles_within_ms` is the one
- * forward-looking field, and it is a bound the RUNTIME publishes, not a prediction the adapter
- * makes — after it elapses a caller may stop watching, which is still not a confirmation.
- * `unsupported` is a runtime with no stop channel at all; returning `requested` there would be
- * an adapter reporting on a message it never sent.
+ * `requested` says a request went out and nothing else; whether the worker then stopped is
+ * answered by a later {@link Observation}, where events stamped after `requested_at` are a
+ * worker still working. `settles_within_ms` is a bound the runtime publishes, not a prediction —
+ * after it elapses a caller may stop watching, which is still not a confirmation. `unsupported`
+ * is a runtime with no stop channel at all.
  */
 export type CancelOutcome =
   | {
@@ -388,16 +338,14 @@ export type ResumeOutcome =
 /**
  * A runtime adapter: an identity, the name of its event format, and the six operations.
  *
- * THE INDEX SIGNATURE IS LOAD-BEARING, not slack. The check this port exists to satisfy walks
- * the six operation names as a `string[]` and asks whether each is a function — which is how a
- * caller with a list of required operations would really ask, and which is an implicit-any
- * element access without it. Two costs are accepted knowingly: excess-property checking is off
- * for object literals typed as this interface, and `a[someString]` is `unknown` rather than an
- * error. Both are cheaper than a check that only compiles while the thing it checks is absent.
+ * DELIBERATE: the index signature is load-bearing. The conformance check walks the six operation
+ * names as a `string[]` and asks whether each is a function, which is an implicit-any element
+ * access without it. Two costs come with it: excess-property checking is off for object literals
+ * typed as this interface, and `a[someString]` is `unknown` rather than an error.
  *
- * `eventFormat` duplicates `capabilities().event_format.id` deliberately, because a caller
- * choosing between adapters should not have to call one to find out. Both adapters here read
- * it off the same constant, and the conformance run refuses a pair that has drifted.
+ * COUPLED: `eventFormat` duplicates `capabilities().event_format.id`, so a caller choosing
+ * between adapters need not call one. Both adapters here read it off the same constant, and the
+ * conformance run refuses a pair that has drifted.
  */
 export interface RuntimeAdapter {
   readonly id: string;
@@ -428,10 +376,8 @@ export interface TaskProfile {
 /**
  * Whether the work may run here at all.
  *
- * `refused` is a capability the adapter declared it does not have. `undeclared` is one it has
- * never mentioned either way, and it is kept separate because the two need different answers:
- * the first is a fact about the runtime, the second is a gap in the adapter. Neither is
- * admission — an adapter that has not said it can do something has not said it can.
+ * `refused` is a capability the adapter declared it does not have; `undeclared` is one it has
+ * never mentioned either way. Neither is admission.
  */
 export interface RuntimeAdmission {
   readonly task: string;

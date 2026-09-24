@@ -4,25 +4,16 @@
  *   zz-tool watch-results [--window '7 days'] [--psql '<command>']
  *                         [--health http://cred-proxy:8000/health]
  *
- * A liveness check answers "is the gateway answering", and the gateway is almost always
- * answering. The failures that actually cost something look nothing like an outage: five
- * initiatives stuck on the same gate, a refusal class that tripled this week, a block whose
- * latency doubled, a team that has produced nothing for seven days. Every one of those is
- * invisible to a health endpoint and visible in data the platform is already writing.
+ * A liveness check answers "is the gateway answering", and the gateway is almost always answering.
+ * The failures that cost something look nothing like an outage: five initiatives stuck on the same
+ * gate, a refusal class that tripled this week, a tool whose latency doubled, a team that has
+ * produced nothing for seven days. Every one is invisible to a health endpoint and visible in data
+ * the platform already writes — everything here reads zz.event and zz.doc, and collects nothing new.
  *
- * NO NEW COLLECTION. Everything here reads zz.event and zz.doc, which have been recording
- * this all along. What was missing is something that reads them on a schedule and says so
- * when the numbers move the wrong way.
- *
- * NOT ERRORING IS NOT SUCCEEDING, and this tool is the first thing that rule applies to. A
- * collector nobody scheduled does not fail — it quietly produces "nothing wrong today" every
- * day, which is more dangerous than being down, because being down gets noticed. So an empty
- * window is an ALERT here, never an all-clear: if this cannot see any activity at all, the
- * most likely explanation is that it is looking at the wrong place, not that a platform with
- * users had a silent week.
+ * An empty window is an alert here, never an all-clear: if this cannot see any activity at all, the
+ * likely explanation is that it is looking at the wrong place.
  *
  * Exit status is the interface: 0 nothing worsened, 1 something did, 2 it could not tell.
- * Cron reads that; a human reads the lines above it.
  */
 import { execFileSync } from "node:child_process";
 
@@ -74,16 +65,10 @@ function main(): number {
 
   const alerts: string[] = [];
 
-  // PROVENANCE THE DATABASE REFUSED. events.ts writes those to a file and counts them, and
-  // /health reports the count — with a comment saying "a monitor already polls this
-  // endpoint; that is where it belongs". Nothing in this repository polls it: the release
-  // checks /health once and never again. So the one signal saying the audit record has
-  // holes in it was reported to nobody, which is the exact shape principle 12 names — the
-  // file exists, the count exists, and not erroring is not succeeding.
-  //
-  // Read here because this IS the monitor now. Failing to reach it is not an alert: this
-  // tool may be run from a checkout with no gateway on the network, and inventing an alarm
-  // out of "I could not ask" is how a monitor teaches people to ignore it.
+  // Provenance the database refused. events.ts writes those to a file and counts them, and /health
+  // reports the count. Read here because this is the monitor. Failing to reach /health is not an
+  // alert: this tool may be run from a checkout with no gateway on the network, and inventing an
+  // alarm out of "I could not ask" is how a monitor teaches people to ignore it.
   const health = flags.get("health") || "http://cred-proxy:8000/health";
   try {
     const raw = execFileSync("curl", ["-s", "-m", "10", health], { encoding: "utf8" });
@@ -95,9 +80,9 @@ function main(): number {
     }
   } catch { /* no gateway reachable from here: not something to wake anybody for */ }
 
-  // The check on this tool itself, first. Silence is the failure mode a monitor has, and a
-  // monitor that reports "all clear" on an empty query has told you nothing while sounding
-  // like it told you something.
+  // The check on this tool itself, first. Silence is the failure mode a monitor has, and one that
+  // reports "all clear" on an empty query has told you nothing while sounding like it told you
+  // something.
   if (!evNow.length && !evPrev.length) {
     console.log(`\n  CANNOT TELL: no tool calls recorded in the last ${window}, or the ${window} before it.\n`);
     console.log("  A platform with users does not have two silent windows in a row. Far more likely:");
@@ -125,7 +110,7 @@ function main(): number {
     }
   }
 
-  // 2. A block whose latency doubled. Median, because one slow call is not a trend and a
+  // 2. A door whose latency doubled. Median, because one slow call is not a trend and a
   //    mean is one timeout away from saying so.
   const msBy = (rows: EventRow[]): Map<string, number[]> => {
     const m = new Map<string, number[]>();
@@ -145,15 +130,13 @@ function main(): number {
     }
   }
 
-  // 3. Documents stuck at a gate. A draft nobody approved is normal for a day and a question
-  //    after a fortnight — and it is the shape of failure this platform is most prone to,
-  //    because a gate waiting on a person looks identical to one forgotten.
+  // 3. Documents stuck at a gate. A draft nobody approved is normal for a day and a question after
+  //    a fortnight, and a gate waiting on a person looks identical to one forgotten.
   //
-  //    THE OUTCOME IS THE INITIATIVE'S, NOT THE DOCUMENT'S. Only the closing document carries
-  //    it, so skipping rows that have one skipped exactly one file per initiative and left
-  //    every other document of a CLOSED initiative in the count. Those never change again —
-  //    which made this the one alert that, once raised, fires identically every run forever,
-  //    the precise way a monitor teaches the people reading it to stop.
+  //    The outcome is the initiative's, not the document's. Only the closing document carries it,
+  //    so skipping rows that have one skips exactly one file per initiative and leaves every other
+  //    document of a closed initiative in the count — and those never change again, so the alert
+  //    would fire identically every run forever.
   const closedInitiatives = new Set(
     docs.filter((d) => d.outcome).map((d) => `${d.team_slug} ${d.initiative}`));
   const stuck = new Map<string, number>();

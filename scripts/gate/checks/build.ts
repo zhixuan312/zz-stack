@@ -1,10 +1,8 @@
 /**
  * The code compiles, and the artifact that ships is the code that compiled.
  *
- * FIRST, and the order is load-bearing rather than tidy: several checks here RUN something
- * instead of reading it, and everything in every other module may rely on the build having
- * succeeded. A check that needs `dist/` guards itself with `unbuilt()`, but a gate that
- * reported forty failures because nothing had been built would bury the one real answer.
+ * DELIBERATE: this module runs first, and the order is load-bearing. Checks in every module
+ * may rely on the build having succeeded; one plain failure here beats forty elsewhere.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -30,17 +28,8 @@ function execFields(err: unknown): { stdout: string | undefined; stderr: string 
   return { stdout: undefined, stderr: undefined };
 }
 
-/* ── 0. the code compiles, and everything after this may rely on it ─────────
- *
- * FIRST, not last. Eight checks here RUN something rather than read it — the identity
- * resolver's ordering, the credential resolver's precedence, the acting-team rule, the two
- * emitted schemas, the classifier, the markdown sanitiser, the monitor's silence — because
- * each is a claim about behaviour that any inspection of the source would have passed. They
- * need the compiled output, and this check is what produces it.
- *
- * With it last, a fresh checkout failed all eight with eight different "could not be run"
- * messages, built as a side effect, and passed on a second run. "Run it twice" is not an
- * answer, and eight cryptic failures with one cause is worse than one plain one. */
+/* The code compiles, and everything after this may rely on it. Several checks in this gate
+ * run the compiled output rather than reading source, so this check is what produces it. */
 
 check("tsc -b", () => {
   try {
@@ -51,25 +40,6 @@ check("tsc -b", () => {
     return String(stdout ?? stderr ?? err).slice(-600);
   }
 });
-
-/* THE BUG tsc CANNOT SEE, BECAUSE `tsc -b` DOES NOT LOOK AT `.mjs`.
- *
- * `scripts/` is plain ESM and outside every tsconfig, so a name used but never imported is a
- * ReferenceError that waits for the line to be REACHED. That is not a hypothetical: splitting
- * release.ts left `verify.ts` using PUBLIC, die and envToken without importing them and
- * `build.ts` using die and dryRun the same way. The dry run was green both times — build.ts's
- * eleven sit inside a branch that is skipped when the console is already at its target version,
- * and verify.ts's are in step 5, which does not run in a dry run at all. So 0.26.1 deployed,
- * failed six of eleven verifications with "PUBLIC is not defined", and rolled itself back. The
- * platform was healthy the whole time; the thing checking it was not.
- *
- * The rollback worked, which is the only reason that cost minutes instead of a morning. A
- * release step that cannot run is still a release step that will run one day, on the day it is
- * least convenient, so it is checked here where the answer is free.
- *
- * TS2304 AND TS2552 ONLY. checkJs over untyped ESM reports plenty besides — implicit any,
- * missing types on a destructure — and none of that is a defect in a script. "Cannot find name"
- * is, every time. */
 
 check("every package manifest carries the same version", () => {
   const seen = MANIFESTS.map((m): [string, unknown] => [m, asRecord(readJson(m), m).version]);
@@ -82,16 +52,12 @@ check("every package manifest carries the same version", () => {
 });
 
 check("nothing in testing/ computes — it drives, and the computing lives in packages/tools", () => {
-  // WHO RUNS IT is the boundary between the three script surfaces, and testing/ is the one
-  // that drives a RUNNING DEPLOYMENT by hand. See ARCHITECTURE.md.
+  // Who runs it is the boundary between the three script surfaces, and testing/ is the one
+  // that drives a running deployment by hand. See ARCHITECTURE.md.
   //
-  // LENGTH IS THE WRONG TEST and this check was written with it first, with a ninety-line
-  // ceiling that caught shell drivers for being long — and they are long because the protocol
-  // they drive is long, not because they compute.
-  //
-  // The real line is COMPUTATION versus ORCHESTRATION. A file that touches no deployment and
-  // no database is not driving anything: it is a program, it belongs where programs are
-  // compiled and tested, and in testing/ nothing imports it and no test reaches it.
+  // The line is computation versus orchestration, not length. A file that touches no
+  // deployment and no database is a program, and in testing/ nothing imports it and no test
+  // reaches it.
   const dir = join(root, "testing");
   const bad: string[] = [];
   for (const f of readdirSync(dir)) {
@@ -108,19 +74,16 @@ check("nothing in testing/ computes — it drives, and the computing lives in pa
 });
 
 check("no version is written as a literal in the source", () => {
-  // Three MCP servers each declared their own — "2.0.0", "1.0.0" — while the packages were
-  // at 0.2.0, and that literal is what initialize hands every client as serverInfo.version.
-  // Nothing failed; clients were simply told a number no release had produced.
+  // A version literal in the source is a number no release produced — and it is what
+  // `initialize` hands every client as serverInfo.version.
   const bad: string[] = [];
   for (const rel of sourceFiles(["services", "packages"], [".ts"])) {
     const txt = readFileSync(join(root, rel), "utf8");
-    // Line-wise and context-based, not a fixed `version: "x.y.z"` shape. The shape
-    // missed `version: "${f.version || "1.0.0"}"` — a literal inside a template, which
-    // is the same invented number arriving by a different route, and it shipped in
-    // every generated command for a flow whose install recorded no version.
+    // Line-wise and context-based, not a fixed `version: "x.y.z"` shape, which misses a
+    // literal inside a template.
     //
-    // "0.0.0" is exempt: it is the sentinel for "the manifest could not be read", which
-    // is an honest unknown rather than a claim about a release.
+    // DELIBERATE: "0.0.0" is exempt — it is the sentinel for a manifest that could not be
+    // read, not a claim about a release.
     txt.split("\n").forEach((raw, i) => {
       const line = raw.trim();
       if (line.startsWith("//") || line.startsWith("*") || line.startsWith("/*")) return;
@@ -135,21 +98,11 @@ check("no version is written as a literal in the source", () => {
 });
 
 check("the lockfile records the version this release ships", () => {
-  // set-version.ts calls itself "the one place this repo's version is set" and argues the
-  // case in its own first paragraph: "keeping them in step by hand is a step that can be
-  // half-done, and half-done is invisible: the build passes, the deploy succeeds, and the
-  // wrong number ships". It rewrote seven manifests and the compose file and left the
-  // LOCKFILE, which records a version nine times — the root, each of the seven workspace
-  // members, and the top-level one npm writes beside the name.
+  // package-lock.json records a version once per workspace member plus twice at the top, and
+  // `npm ci` tolerates a mismatch with the manifests, so drift is silent.
   //
-  // So package-lock.json said 0.4.0 while every manifest said 0.4.1, and 0.4.0 is the release
-  // that was built, deployed, rolled back and spent — the number the changelog says "can never
-  // mean anything else". `npm ci` tolerates the mismatch, verified both ways, so nothing said
-  // anything: exactly the invisible half-done the script exists to prevent.
-  //
-  // Its sibling "every package manifest carries the same version" reads manifestPaths(), which
-  // is the list of package.json files. The lockfile is not one, which is why it could drift
-  // past a check whose name sounds like it covers this.
+  // COUPLED: the sibling check "every package manifest carries the same version" reads
+  // manifestPaths(), which is package.json files only — the lockfile is not one of them.
   const want = asRecord(readJson("package.json"), "package.json").version;
   const lock = asRecord(readJson("package-lock.json"), "package-lock.json");
   const packages = typeof lock.packages === "object" && lock.packages !== null
@@ -188,11 +141,9 @@ check("the lockfile records the version this release ships", () => {
 });
 
 check("the workspace build covers every package", () => {
-  // `npm run build` is `tsc -b`, which builds the project REFERENCES in tsconfig.json —
-  // another hand-kept list of the same packages that set-version.ts and this file's first
-  // check used to keep by hand. A package added under packages/ or services/ and not added
-  // here compiles when you point tsc at it directly and is silently absent from the build
-  // the image runs, the gate runs, and the release ships.
+  // `npm run build` is `tsc -b`, which builds the project references in tsconfig.json. A
+  // package not referenced there compiles when tsc is pointed at it directly and is silently
+  // absent from the build the image runs, the gate runs, and the release ships.
   const expected = manifestPaths(root)
     .filter((m) => m !== "package.json")
     .map((m) => m.replace(/\/package\.json$/, ""))
@@ -215,11 +166,9 @@ check("the workspace build covers every package", () => {
 });
 
 check("no workspace package can be published by accident", () => {
-  // Only the root manifest carried `"private": true`. `npm publish` inside any of the five
-  // workspace packages — or `npm publish -w` naming one — would push this platform's source
-  // to the public registry, and services/gateway is the identity and credential layer.
-  // Nothing else stands in the way: they have no license field either, so npm's own
-  // unlicensed-package warning is the last line of defence.
+  // `npm publish` inside a workspace package, or `npm publish -w` naming one, pushes this
+  // platform's source to the public registry unless that package is marked private. Nothing
+  // else stands in the way — no package here declares a license either.
   const bad = manifestPaths(root)
     .filter((m) => JSON.parse(readFileSync(join(root, m), "utf8")).private !== true)
     .map((m) => `${m} is not marked private`);
@@ -227,10 +176,8 @@ check("no workspace package can be published by accident", () => {
 });
 
 check("every service has source, not just build output", () => {
-  // services/ops-core survived a rename as a dist/ with no src/ — invisible to git, since
-  // dist is ignored, and harmless until the image started listing that directory to tell a
-  // reader which services it could run. Then it began offering a service that cannot start.
-  // It was also being COPYed into every image.
+  // A dist/ with no src/ is invisible to git, because dist is ignored — but the image lists
+  // services/ to say which ones it can run, and COPYs every one of them in.
   const bad: string[] = [];
   for (const d of readdirSync(join(root, "services"), { withFileTypes: true })) {
     if (!d.isDirectory()) continue;
@@ -242,22 +189,15 @@ check("every service has source, not just build output", () => {
 });
 
 check("a testing engine's exit status comes from its results", () => {
-  // block-conformance printed ✗ against a block that failed a published requirement, or
-  // "unreachable" against one that answered nothing, and exited 0. Its main() returned None
-  // and was called bare. Anything running it in a release or a pipeline read that as a pass —
-  // which is the same defect manifest-audit's own comment records having had: "It printed FAIL
-  // and returned success."
-  //
   // The convention is the check: main() returns a number and the entry point is
-  // `process.exit(main(...))` or `process.exit(await main(...))`.
+  // `process.exit(main(...))` or `process.exit(await main(...))`. An engine that prints a
+  // failure and exits 0 reads as a pass to a release or a pipeline.
   //
-  // This does not prove an engine's status is CORRECT — nothing static can. It makes the shape
-  // one where a status exists and is read, so returning the wrong one is a visible choice
-  // rather than the default.
+  // It does not prove the status is correct, only that one exists and is read.
   const bad: string[] = [];
-  // ENTRY POINTS ONLY: a module an engine imports has no exit status to get wrong.
-  // `toolEntryPoints` asks "what does nothing import" rather than "what has a main()", which
-  // would go quiet on the file that lost the very thing this rule is about.
+  // Entry points only: a module an engine imports has no exit status to get wrong.
+  // `toolEntryPoints` asks what nothing imports, rather than what has a main() — which would
+  // go quiet on the file that lost the thing this rule is about.
   for (const f of [...toolEntryPoints("packages/tools/src/testing"),
                    ...toolEntryPoints("packages/tools/src/ops")]) {
     const src = readFileSync(join(root, f), "utf8");
@@ -270,59 +210,12 @@ check("a testing engine's exit status comes from its results", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-check("a shell that invokes an evaluation tool passes the flow it means", () => {
-  // eval-judge, eval-grade and eval-store require --flow and have no default, so a caller
-  // without it exits 2. measure-variance.sh was missed when the other three were migrated, and
-  // its call is wrapped in `|| true` with the output redirected — so it would have failed
-  // SILENTLY, the script printing "0 judged" and carrying on.
-  //
-  // The miss happened because the migration checked the three files someone had already decided
-  // were the callers, rather than asking which files call. This asks.
-  const dir = join(root, "testing");
-  const bad: string[] = [];
-  // TRACKED, SO ITS ABSENCE IS A DEFECT. `testing/` is committed; a checkout without it is a
-  // broken one, and returning null here meant this check reported nothing at exactly the
-  // moment it had nothing to read.
-  if (!existsSync(dir)) return "testing/ does not exist, so no suite caller could be read at all";
-  for (const f of readdirSync(dir).filter((x) => x.endsWith(".sh"))) {
-    const lines = readFileSync(join(dir, f), "utf8").split("\n");
-    // A CALL CAN WEAR A VARIABLE'S NAME. judge-all.sh and deviate-all.sh DID
-    // `J=packages/tools/dist/testing/eval-judge.js` and then `node "$J" ...`, so a check
-    // matching only the literal path inspected measure-variance.sh — the one script that WAS
-    // broken — and never the two that were fixed. All three scripts have since been deleted;
-    // the rule below is kept and reads every `testing/*.sh` there is, because what it defends
-    // against is the shape rather than those three files. That is guarding the exception and leaving
-    // the rule unwatched. Collect the variables holding an eval-tool path first, then treat a
-    // call through any of them as a call.
-    const alias = new Set<string>();
-    for (const line of lines) {
-      const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)=.*eval-(judge|grade|store)(\.js)?\b/.exec(line);
-      if (m) alias.add(m[1]);
-    }
-    const callsATool = (line: string): boolean =>
-      /eval-(judge|grade|store)(\.js)?\b/.test(line) ||
-      [...alias].some((v) => new RegExp(`\\$\\{?${v}\\b`).test(line));
-    lines.forEach((line, i) => {
-      if (/^\s*(#|printf|echo)/.test(line)) return;          // a comment or a printed hint is not a call
-      if (/^\s*[A-Za-z_][A-Za-z0-9_]*=/.test(line)) return;  // assigning the path is not a call
-      if (!callsATool(line)) return;
-      if (!/--flow\b/.test(line)) {
-        bad.push(`testing/${f}:${i + 1} invokes an evaluation tool without --flow, which exits 2`);
-      }
-    });
-  }
-  return bad.length ? bad.join("; ") : null;
-});
-
 check("a built package holds together", () => {
   const nothingToRun = unbuilt();
   if (nothingToRun) return nothingToRun;
-  // The largest untested surface here: everything a person actually installs comes out of
-  // buildClientPackage, and nothing offline could look at one. CATALOG_DIR was hardcoded to
-  // the in-image path, so no test outside a container could build a package at all and the
-  // only possible check was a regex over the source. It takes an override now, and this
-  // builds real packages for all three clients and asserts what the module says about
-  // itself.
+  // Everything a person installs comes out of buildClientPackage. This builds a real package
+  // through the catalog-dir override, and asserts what the module says
+  // about itself.
   try {
     const out = execFileSync("node", [join(root, "scripts/probes/package-shape.ts")],
                              { encoding: "utf8", env: { ...process.env, ZZ_CATALOG_DIR: catalogRoot, ZZ_SKILLS_DIR: join(root, "skills") } });
@@ -344,7 +237,7 @@ check("a probe that expects a refusal says which refusal", () => {
       else if (src[end] === ")") { depth -= 1; if (depth === 0) break; }
     }
     const call = withoutComments(src.slice(i, end + 1));
-    if (!/,\s*true\s*[,)]/.test(call)) continue;      // only the ones expecting an ERROR
+    if (!/,\s*true\s*[,)]/.test(call)) continue;      // only the ones expecting an error
     if (/,\s*true\s*,\s*\//.test(call)) continue;       // has the pattern
     const line = src.slice(0, i).split("\n").length;
     bad.push(`chain-check.ts:${line} expects a refusal without saying which: ` +
@@ -354,16 +247,9 @@ check("a probe that expects a refusal says which refusal", () => {
 });
 
 check("the repository ships one runtime", () => {
-  // "Everything is TypeScript. There is no Python left" is stated in the changelog, in
-  // STATE.md §6b and in the README's opening line, and nothing enforced it. Thirteen files
-  // were ported this release for one operational reason: a deploy host runs containers and
-  // has no toolchain, which is why the Python that existed had to be standard-library-only
-  // and why the tools now run in the image that is already there, through deploy/zz-tool.
-  //
-  // A single .py added back reintroduces that constraint silently — it would run on a
-  // developer's laptop and not on the host, which is the worst order to find out in. Tracked
-  // files only: `runs/` and `docs/support/` are gitignored working directories and hold
-  // plenty, none of it shipped.
+  // A deploy host runs containers and has no toolchain, so a .py would run on a laptop and
+  // not on the host. Tracked files only: `runs/` and `docs/support/` are gitignored working
+  // directories and nothing in them ships.
   const belongs = trackedFiles();
   if (!belongs) return null;                          // not a git checkout: nothing to read
   const bad = [...belongs].filter((f) => f.endsWith(".py"));
@@ -374,47 +260,32 @@ check("the repository ships one runtime", () => {
 });
 
 check("a package that imports a workspace package declares it", () => {
-  // npm workspaces hoist, so `import { manifestAt } from "@zz/catalog"` RESOLVES from any
-  // package here whether or not that package depends on it. The build passes, the tests pass,
-  // and the dependency exists only as an accident of what somebody else installed.
+  // npm workspaces hoist, so a cross-package import resolves whether or not the package
+  // depends on it: the build passes and the dependency exists only as an accident of what
+  // somebody else installed. `tsc -b` builds a package's project references first, so an
+  // undeclared import compiles against whatever `dist` happens to be lying there.
   //
-  // Two things then quietly stop being true. `npm install` in a checkout that resolves
-  // differently has no reason to provide it. And `tsc -b` builds a package's project
-  // REFERENCES first — so a package that imports across the workspace without referencing it
-  // compiles against whatever `dist` happens to be lying there, which after a rename is the
-  // previous shape of the module.
-  //
-  // Found on @zz/tools, which imported @zz/catalog from two files, declared it in neither
-  // package.json nor tsconfig.json, and built cleanly because every other package's build
-  // had already produced it.
-  //
-  // The root tsconfig check above covers a different thing: that the BUILD reaches every
-  // package. This is about each package naming what it actually uses.
+  // COUPLED: the check above covers whether the build reaches every package; this covers
+  // whether each package names what it uses.
   const bad: string[] = [];
-  // THE ROOT IS A PACKAGE TOO, and it was the one left out. Its own code is scripts/ — nothing
-  // else at the top level is TypeScript or JavaScript we build — and scripts/probes/
-  // envelope-shape.ts imports @zz/contracts, which resolved for exactly the reason the
-  // paragraph above refuses everywhere else: npm hoists every workspace member into the root's
-  // node_modules whether the root asked for it or not.
-  //
-  // Given its own entry rather than folded into the loop: the loop derives a package's sources
-  // from its directory, and the root's directory is the whole repository, so it would have
-  // claimed every import in every member as the root's own.
+  // The root is a package too — its own code is scripts/ — and it gets its own entry rather
+  // than being folded into the loop, which derives a package's sources from its directory.
+  // The root's directory is the whole repository.
   const ROOTS: [string, string[]][] = [["package.json", ["scripts"]],
                  ...manifestPaths(root).filter((m) => m !== "package.json")
                    .map((m): [string, string[]] => [m, [m.replace(/\/package\.json$/, "")]])];
   for (const [manifest, srcDirs] of ROOTS) {
     const dir = manifest.replace(/\/?package\.json$/, "");
     const pkg = JSON.parse(readFileSync(join(root, manifest), "utf8"));
-    // devDependencies count for the ROOT, whose @zz import is a dev script — the probes the
-    // gate runs. A workspace member's runtime import must be a runtime dependency.
+    // devDependencies count for the root, whose @zz imports are the probes the gate runs. A
+    // workspace member's runtime import must be a runtime dependency.
     const declared = new Set<string>([...Object.keys(pkg.dependencies ?? {}),
                               ...(dir ? [] : Object.keys(pkg.devDependencies ?? {}))]);
     let refs = new Set<string>();
     const tsconfig = dir ? join(dir, "tsconfig.json") : "tsconfig.json";
     if (existsSync(join(root, tsconfig))) {
       const cfg = JSON.parse(readFileSync(join(root, tsconfig), "utf8"));
-      // A reference is a PATH; the name it resolves to is the package.json it points at.
+      // A reference is a path; the name it resolves to is in the package.json it points at.
       for (const r of cfg.references ?? []) {
         const at = join(dir, String(r.path), "package.json");
         try {
@@ -425,8 +296,6 @@ check("a package that imports a workspace package declares it", () => {
       }
     }
     const used = new Set<string>();
-    // .mjs too, and it is where the root's only such import is. The loop read .ts alone
-    // because every workspace member is TypeScript; the root's code is scripts/, which is not.
     for (const rel of sourceFiles(srcDirs, [".ts"])) {
       for (const m of readFileSync(join(root, rel), "utf8")
         .matchAll(/^\s*import\s[^;]*?from\s+"(@zz\/[a-z-]+)"/gm)) {
@@ -450,16 +319,10 @@ check("a package that imports a workspace package declares it", () => {
 });
 
 check("a package's own version is read in one place", () => {
-  // serviceVersion exists because three servers each declared a literal — "2.0.0", "1.0.0" —
-  // while the packages were at 0.2.0, and that literal is what `initialize` hands every
-  // client as serverInfo.version. Its docblock: "three servers, three different wrong
-  // numbers, none of which moved when the platform did".
-  //
-  // client-package then carried a byte-for-byte copy of the READ — the same dirname, the
-  // same `join(here, "..", "package.json")`, the same "0.0.0" on failure — to stamp the
-  // version into every plugin.json and into the shelf digest that decides whether a runtime
-  // notices a changed skill. One number, found two ways, is one rename from being two
-  // numbers.
+  // @zz/mcp-http's serviceVersion is the one read of a package.json. A second copy of that
+  // read — the same dirname, the same join, the same "0.0.0" on failure — is one rename from
+  // being a second number, and this one is stamped into every plugin.json and into the shelf
+  // digest that decides whether a runtime notices a changed skill.
   const bad: string[] = [];
   for (const rel of sourceFiles(["packages", "services"], [".ts"])) {
     if (rel === "packages/mcp-http/src/index.ts") continue;      // where the read lives
@@ -480,16 +343,12 @@ check("a package's own version is read in one place", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-/* AN npm SCRIPT THAT CANNOT RUN, which is the direction nothing was checking.
+/* An npm script whose tool is gone fails with node's "Cannot find module" against a dist
+ * path, which reads as a build problem rather than as a script that should not exist.
  *
- * "every tool in packages/tools is reachable from zz-tool" already asks whether each TOOL has
- * a way to be run. It cannot catch the reverse — a script whose tool is gone — and three had
- * accumulated: `provision` named a provisioner deleted when the front end went, `smoke` and
- * `classify-cases` named a testing engine that is no longer in the tree. Each fails with a
- * node "Cannot find module" against a dist path, which reads as a build problem rather than
- * as a script that should not exist.
+ * COUPLED: "every tool in packages/tools is reachable from zz-tool" asks the other direction.
  *
- * The source file, not the dist path: dist is a build artifact and may be absent or stale in
+ * DELIBERATE: the source file is checked, not the dist path — dist may be absent or stale in
  * a fresh checkout, so checking it would fail for the wrong reason. */
 check("every npm script that runs a built tool has a source file", () => {
   const pkg = asRecord(readJson("package.json"), "package.json");

@@ -1,9 +1,7 @@
 /**
  * The write guards: that every write runs them, that none of their answers is discarded, and
- * that nothing lands before the guard that would have refused it.
- *
- * A guard whose return value is computed and dropped is the failure mode this module exists
- * for. It typechecks, it reads as protection, and it protects nothing.
+ * that nothing lands before the guard that would have refused it. A guard whose return value
+ * is computed and dropped typechecks and protects nothing.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -13,44 +11,28 @@ import { between, firstOf, gateOwnSource, root, sourceFiles, unbuilt, zzCoreSour
 import { check } from "../run.ts";
 import { envelopeFields } from "../facts.ts";
 
-/* ── 5. one implementation per rule, and the code says what it does ────────
+/* One implementation per rule, and the code says what it does
  *
- * The long section: guards that must be universal, rules that must exist once, documents
- * that must match the code they describe, and the packaging and deployment that carry both.
- *
- * This banner read "no service exists only as build output" and carried that check's whole
- * explanation — for a check that sits a thousand lines below, at the very END of the run
- * that follows. Checks were added under the heading for months and the heading stayed
- * pinned to its original occupant, so a reader here met a paragraph about services/ops-core
- * above twenty-nine checks about something else, and the check itself had no reason at all
- * beside it. The paragraph moved to where it belongs. */
+ * Guards that must be universal, rules that must exist once, documents that must match the
+ * code they describe, and the packaging and deployment that carry both. */
 
 check("every store mutation goes through the shared guard and persist", () => {
-  // document_patch had the activity-log guard and not the _versions/ one, so a model could
-  // rewrite the frozen copy of what was approved — the record snapshotOnApproval exists to
-  // make un-writable. Two write paths, a guard added to one, and nothing to notice.
-  //
-  // Only writeGuard is demanded of everything. persistDocument is right for a CHAIN
-  // document and wrong for a source or a revision, which legitimately skip the approval
-  // snapshot and the ledger — so requiring it everywhere would push tools into doing
-  // something incorrect to satisfy a check.
+  // Only writeGuard is demanded of everything. persistDocument is right for a chain document
+  // and wrong for a source or a revision, which legitimately skip the approval snapshot and the
+  // ledger, so requiring it everywhere would push tools into doing something incorrect to
+  // satisfy this check.
   const bad: string[] = [];
   for (const { name, body } of zzCoreTools()) {
     // A tool that writes the artifact store calls safePath and then writes.
     const mutates = /writeFileSync\(|persistDocument\(/.test(body) && /safePath\(/.test(body);
     if (!mutates) continue;
-    // writeGuard is universal: it costs two regexes and it is what stops a tool added
-    // later from being the one that can rewrite a frozen approval.
+    // writeGuard is universal: it stops a tool added later from rewriting a frozen approval.
     if (!body.includes("writeGuard(")) bad.push(`${name}: writes the store without writeGuard`);
   }
   return bad.length ? bad.join("; ") : null;
 });
 
 check("every tool that writes a file also indexes it", () => {
-  // knowledge_supersede wrote the node and index.md and stopped. zz.doc — what
-  // knowledge_search actually reads — kept status: adopted until the next boot, so the
-  // "we tried this and moved on" signal was invisible to search for as long as the
-  // service stayed up. Nothing failed; the index simply disagreed with the file.
   const bad: string[] = [];
   for (const { name, body } of zzCoreTools()) {
     // Writing a .md into the store means the derived index must be told.
@@ -64,15 +46,10 @@ check("every tool that writes a file also indexes it", () => {
 });
 
 check("every document write runs the guards", () => {
-  // persistDocument is "everything that happens once a mutation is allowed"; documentGuards
-  // is "everything that must be true before one is". Both exist because the steps were
-  // listed at each call site and each new path got whichever ones its author remembered —
-  // document_patch skipped the envelope stamp for months, and document_revise ran no check at
-  // all, so a required section could be deleted in a revision without a refusal.
-  //
-  // The pairing is the check: a tool that persists a document must have asked first. This
-  // does not verify WHICH guards ran, only that the two halves stay together, which is the
-  // part that drifted.
+  // persistDocument is everything that happens once a mutation is allowed; documentGuards is
+  // everything that must be true before one is. The pairing is the check: a tool that persists
+  // a document must have asked first. It does not verify which guards ran, only that the two
+  // halves stay together.
   const src = zzCoreSource();
   const persists = [...src.matchAll(/persistDocument\(/g)].length - 1;   // less its definition
   const guards = [...src.matchAll(/documentGuards\(/g)].length - 1;
@@ -83,22 +60,12 @@ check("every document write runs the guards", () => {
 });
 
 check("no asymmetric fork in the document guards", () => {
-  // Two paths to the same effect must cost the same. Three times now the platform has
-  // shipped a rule where one route demanded a name or a signature and an equivalent route
-  // demanded nothing — and every time, the model took the cheaper one. That is not the
-  // model misbehaving; it is a design that offered a cheaper road.
-  //
-  //   outcome: accepted requires accepted_by;  outcome: delivered requires nothing.
-  //   approved_by is enforced;                 accepted_by only inside one branch.
-  //   document_revise clears the approval;     document_patch leaves it standing.
-  //
-  // The mechanisable half of that principle is narrow and worth having: a REQUIRED-ness
-  // that is itself conditional on another envelope field's value. Written to match the
-  // shape — a guard returning an ERROR about a missing field, from inside a branch keyed
-  // to some other field — not opinions about which fields matter.
+  // Two paths to the same effect must cost the same; the cheaper one is what gets taken. The
+  // mechanisable half is narrow: a required-ness conditional on another envelope field's value.
+  // Matched by shape — a guard returning an ERROR about a missing field, from inside a branch
+  // keyed to some other field — not by opinions about which fields matter.
   const src = zzCoreSource();
-  // From the schema. This named eight of the eighteen envelope fields, so an asymmetric fork
-  // keyed on any of the other ten was invisible to it.
+  // From the schema, so a fork keyed on any envelope field is visible to this.
   const ENVELOPE = `(${envelopeFields().join("|")})`;
   const bad: string[] = [];
   const lines = src.split("\n");
@@ -106,7 +73,7 @@ check("no asymmetric fork in the document guards", () => {
     // a branch that tests one envelope field against a literal value
     const guard = new RegExp(`\\benv(elope)?[.\\[]"?${ENVELOPE}"?\\]?\\s*===\\s*"`).exec(lines[i]);
     if (!guard) continue;
-    // ...and, within the next few lines, refuses because a DIFFERENT envelope field is absent
+    // ...and, within the next few lines, refuses because a different envelope field is absent
     const window = lines.slice(i, i + 6).join(" ");
     const refusal = new RegExp(`ERROR[^"]*\\b${ENVELOPE}\\b`).exec(window);
     if (refusal && refusal[1] !== guard[2] && /\b(no|missing|and no)\b/i.test(window)) {
@@ -120,16 +87,11 @@ check("no asymmetric fork in the document guards", () => {
 });
 
 check("a refusal is classified in one place", () => {
-  // The gateway redacted a refusal at WRITE time (to keep an address out of the table) and
-  // the report redacted it again at READ time (to group a hundred classes of one), with the
-  // same patterns in a different ORDER. Order decides the answer: measured on four real
-  // refusals, three came out differently, and `24-08-2026-sample-intake` collapsed to
-  // `<initiative>` in one and `<date>-sample-intake` in the other — so in the report every
-  // initiative made its own class, which is the exact failure the redaction exists to
-  // prevent.
-  //
-  // It is one function in @zz/contracts now. A file that writes its own placeholder
-  // vocabulary is building a second one.
+  // Redaction happens once, in @zz/contracts. Two implementations with the same patterns in a
+  // different order give different answers, because order decides which placeholder wins:
+  // `24-08-2026-sample-intake` collapses to `<initiative>` under one and `<date>-sample-intake`
+  // under the other, so every initiative makes its own class. A file writing its own
+  // placeholder vocabulary is a second implementation.
   const bad: string[] = [];
   for (const f of sourceFiles(["."], [".ts"])) {
     if (f === join("packages", "contracts", "src", "index.ts")
@@ -142,35 +104,21 @@ check("a refusal is classified in one place", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-// A GUARD'S ANSWER IS THE GUARD. Calling one and discarding what it says is the same as not
-// calling it, and it compiles: `writeGuard(path);` on its own line is a legal statement, and
-// with it document_write accepts a write to `_ledger.md` — the mechanical record the platform
-// owns and refuses by hand. Every guard here returns `string | null` precisely so a caller
-// must decide, and every call site follows the same two lines:
+// A guard's answer is the guard. Calling one and discarding what it says compiles —
+// `writeGuard(path);` on its own line is a legal statement — and with it document_write accepts
+// a write to `_ledger.md`. Every guard returns `string | null` so a caller must decide, and
+// every call site is the same two lines:
 //
 //   const blocked = writeGuard(path);
 //   if (blocked) return text(blocked);
 //
-// "every store mutation goes through the shared guard" asks whether the guard is CALLED. It
-// was satisfied by a call whose answer went nowhere, and so was the rest of this file: the
-// whole gate passed with the refusal thrown away. Only tsc noticed, and only because the
-// variable was left unused — write it without the variable and nothing objects at all.
+// Guards are found by their type, not by name, so one added tomorrow is covered without an edit.
 //
-// The guards are found by their type, not by name: `string | null` is the signature of "a
-// reason to refuse, or nothing", and a guard added tomorrow is covered without an edit.
-//
-// THE PARAMETER LIST IS MATCHED, NOT SPANNED, and that distinction was worth four wrong answers.
-// This read `\(` then `[\s\S]{0,300}?` then `\): string | null`, which does not stop at the
-// parameter list's own closing paren — so a `): string | null` belonging to a LATER function
-// within 300 characters was attributed to the earlier one. Measured on this repository: it named
-// `governingFlows` (returns `string[]`) and `headRevisionOf` (returns `TrialRevision | null`) as
-// guards, and because a global match consumes what it spans, it then MISSED the two real guards
-// whose signatures had been swallowed — `skillText` and `pinnedRevisionOf`. The false negatives
-// are the serious half: two genuine guards whose discarded answers this check could not see.
-//
-// `(?:[^()]|\([^()]*\))*` cannot cross the closing paren it is looking for. It admits one level
-// of nesting, which is what a parameter type like `(x: string) => string` needs, and nothing
-// beyond it. There is no character budget to tune, because the shape does the work.
+// DELIBERATE: the parameter list is matched with `(?:[^()]|\([^()]*\))*`, which cannot cross
+// the closing paren it is looking for. It admits one level of nesting, which a parameter type
+// like `(x: string) => string` needs, and nothing beyond. A bounded-span pattern such as
+// `[\s\S]{0,300}?` attributes a later function's `): string | null` to an earlier one, and a
+// global match then swallows the real guards in between.
 check("a guard's answer is never discarded", () => {
   const files = sourceFiles(["services", "packages"], [".ts"]);
   const guards = new Set();
@@ -186,7 +134,7 @@ check("a guard's answer is never discarded", () => {
     readFileSync(join(root, f), "utf8").split("\n").forEach((raw, i) => {
       const line = raw.trim();
       if (line.startsWith("//") || line.startsWith("*")) return;
-      // A bare call statement: the line IS `guard(...)` and nothing takes the result.
+      // A bare call statement: the line is `guard(...)` and nothing takes the result.
       const m = /^([a-zA-Z_]\w*)\s*\(/.exec(line);
       if (!m || !guards.has(m[1])) return;
       if (!/;\s*$/.test(line)) return;             // still an expression, e.g. a ?? chain
@@ -198,18 +146,12 @@ check("a guard's answer is never discarded", () => {
 });
 
 check("nothing is written before the guards that would refuse it", () => {
-  // document_revise wrote the source document that explains a revision FORTY LINES before
-  // documentGuards ran. So a revision the platform then refused left that source on disk,
-  // indexed into zz.doc and logged to activity, while the caller was told the write had
-  // failed and reasonably believed nothing had happened — and it sat uncommitted until some
-  // later act swept it into a commit under that act's name. The store kept a source document
-  // for a revision that never occurred.
+  // A refused call must leave the store as it found it: anything written before documentGuards
+  // stays on disk, indexed and logged, while the caller is told the write failed.
   //
-  // The rule is only for handlers that DO validate: knowledge_add and okr_set write things
-  // that are not chain documents and have no documentGuards to run, and requiring one of
-  // them would be inventing a rule rather than enforcing one. Where a guard exists, nothing
-  // may precede it — computing a NAME is free, and that is all a document needs to link to
-  // something it has not written yet.
+  // Only for handlers that do validate — knowledge_add writes things that are not chain
+  // documents and has no documentGuards to run. Where a guard exists, nothing may
+  // precede it; computing a name is free, and that is all a document needs to link forward.
   const src = zzCoreSource();
   const bad: string[] = [];
   for (const { name, from, body } of zzCoreTools()) {
@@ -229,35 +171,18 @@ check("nothing is written before the guards that would refuse it", () => {
 });
 
 check("every exclusive input pair refuses both-supplied, distinctly", () => {
-  // A generic precedence sniff was tried and abandoned: initiative_close() has no `??` between its
-  // pair, so the detector short-circuited and could never fail; and knowledge_reconcile()'s
-  // pre-existing NEITHER-supplied refusal already names both parameters, so a substring
-  // scan for "an ERROR mentioning both" passed on the unfixed defect. The pairs are
-  // enumerated instead — adding one is a visible diff, which is the point.
+  // The pairs are enumerated rather than sniffed. initiative_close() has no `??` between its
+  // pair, so a precedence detector short-circuits and can never fail; and a substring scan for
+  // "an ERROR mentioning both" passes on an unfixed defect, because a neither-supplied refusal
+  // already names both parameters.
   //
-  // ONE LINE PER REFUSAL, and that is a real constraint on the code this reads. Every
-  // refusal in server.ts is a concatenation of quoted literals with backticked identifiers,
-  // so a class excluding the backtick — which is what the plan this check came from
-  // specified — extracts `"ERROR: "` and dies seven characters in, failing on correct code
-  // and failing identically whether a guard is present or not. Backticks are allowed
-  // through and the NEWLINE is the bound instead: a fragment cannot run past its own line.
+  // Every refusal in server.ts concatenates quoted literals with backticked identifiers, so the
+  // extraction allows backticks through and bounds a fragment at the newline. Without that
+  // bound a fragment starting in a comment absorbs identifiers out of the code below it and
+  // passes a tool whose guard was deleted.
   //
-  // The newline bound is not tidiness. knowledge_reconcile()'s body carries a comment reading
-  // "tool answers 200 with `ERROR:` in its text", and a fragment starting there could
-  // otherwise absorb `initiative` and `block` out of the code below it and pass a tool
-  // whose guard had been deleted.
-  //
-  // WHAT THIS DEPENDS ON: both refusals name their pair inside their FIRST source line. A
-  // future refusal that wrapped its pair across two lines would be reported as missing when
-  // it is merely formatted differently. That is the safe direction — loud, not silent — but
-  // the fix is to keep the pair on one line, not to widen the bound back out.
-  //
-  // knowledge_reconcile IS NO LONGER A PAIR. It asked by `initiative` or by `block`, and the
-  // second question is gone with the columns it read: what a claim was ABOUT lived in
-  // `zz.decision.blocks`, joined to `zz.event.block`, and 0 of 541 claims ever carried one.
-  // Migration 057 drops both. The tool now takes one required `initiative` and there is no
-  // exclusive pair to refuse — a row kept here would assert a guard against an argument the
-  // tool does not accept.
+  // This depends on both refusals naming their pair inside their first source line. One
+  // wrapping its pair across two lines is reported as missing — loud, not silent.
   const PAIRS = [
     { tool: "initiative_close", a: "accepted_by", b: "no_signoff_reason", neither: "needs `no_signoff_reason`" },
   ];
@@ -277,51 +202,43 @@ check("every exclusive input pair refuses both-supplied, distinctly", () => {
 });
 
 check("the claim reader reads a criterion written as a checklist item", () => {
-  // ops-flow writes `**AC-1.1** ...` at line start and is read; sdlc-flow writes
-  // `- [ ] **AC-6.1** ...` and is not. So a spec's REQUIREMENTS were indexed as its
-  // criteria while its actual CRITERIA were indexed not at all — and the console then
-  // displayed the result under the heading "acceptance criteria".
+  // ops-flow writes `**AC-1.1** …` at line start and sdlc-flow writes `- [ ] **AC-6.1** …`.
+  // Both shapes must be indexed as criteria, and a key mentioned mid-sentence must not be: that
+  // is a reference to a claim, not a statement of one.
   //
-  // THE REGION IS READ FROM THE ANCHOR COMMENT FORWARD, so the prose that explains the
-  // widening sits ABOVE that sentence in server.ts and the regex sits immediately below it.
-  // The lesson is I-4's: a check reading a window either side of an anchor can be satisfied
-  // by a COMMENT that names what the code is supposed to do, and then it keeps passing after
-  // the code is reverted. Neither the anchor sentence nor anything after it may spell the
-  // shapes below in prose — the regex source is the only thing here that carries them, so
-  // reverting the regex and keeping every comment fails this check.
-  //
-  // THE READER MOVED AT TASK I-38, and this check followed it rather than being relaxed.
-  // `decisionRows` is what the knowledge INDEX derives a document's claims by, so it went to
-  // @zz/indexing with the indexer that is its only caller — byte for byte, all four readers
-  // intact. Read through `zzCoreSource()` it reported "the fourth claim reader is gone or was
-  // renamed", which is this check saying it has been disarmed. The four shapes it pins are
-  // unchanged; only the address is.
-  const f = join(root, "packages/indexing/src/rules.ts");
-  const src = existsSync(f) ? readFileSync(f, "utf8") : "";
-  const at = src.indexOf("An acceptance criterion as the spec states it");
-  if (at < 0) return "the fourth claim reader is gone or was renamed";
-  const region = src.slice(at, at + 900);
-  if (!/\[-\*\]|checkbox|\[ x\]/.test(region)) {
-    return "the claim reader still anchors at ^** — a checkbox-prefixed criterion is not indexed";
+  // COUPLED: the reader is `decisionRows` in packages/indexing/src/rules.ts, not zz-core.
+  const dist = join(root, "packages/indexing/dist/index.js");
+  if (!existsSync(dist)) {
+    return "packages/indexing/dist does not exist — this check runs the compiled reader rather " +
+           "than reading it, and `tsc -b` above says why there is none";
   }
-  return null;
+  const out = execFileSync("node", ["--input-type=module", "-e",
+    `import { decisionRows } from ${JSON.stringify(dist)};` +
+    "const keys = (b) => decisionRows(b).map((r) => r.key);" +
+    "process.stdout.write(JSON.stringify([" +
+    "  keys('**AC-1.1** `[qa]` — the endpoint answers')," +
+    "  keys('- [ ] **AC-6.1** `[qa]` — the endpoint answers')," +
+    "  keys('* [x] **FR-3** `[qa]` — the endpoint answers')," +
+    "  keys('see **AC-9.9** for the rest')," +
+    "]));"], { cwd: root, encoding: "utf8" });
+  const [plain, box, ticked, midSentence] = JSON.parse(out) as string[][];
+  const bad: string[] = [];
+  if (plain[0] !== "AC-1.1") bad.push(`a criterion at line start is not indexed (${JSON.stringify(plain)})`);
+  if (box[0] !== "AC-6.1") bad.push(`a criterion written \`- [ ] **AC-6.1**\` is not indexed (${JSON.stringify(box)})`);
+  if (ticked[0] !== "FR-3") bad.push(`a ticked criterion is not indexed (${JSON.stringify(ticked)})`);
+  if (midSentence.length) bad.push(`a key mentioned mid-sentence was indexed as a claim (${JSON.stringify(midSentence)})`);
+  return bad.length ? bad.join("; ") : null;
 });
 
 check("a tool that builds a path from an initiative name checks it first", () => {
-  // safeName's docstring records why it exists: "Several tools instead did
-  // `join(root, initiative, ...)` directly, and an initiative of '../other-team/x' resolved
-  // outside the caller's store — proven on the live gateway, where a member of one team
-  // listed the sources of a directory belonging to another."
+  // An initiative of '../other-team/x' joined into a path resolves outside the caller's store,
+  // which is what safeName refuses. safePath alone is not enough: it keeps a path inside the
+  // store, but being inside the store and being an initiative are different questions, and a
+  // name like `a/b` passes the first while every other tool refuses it as an initiative.
   //
-  // Every tool taking an `initiative` applied it but one. source_add did not, and built
-  // `${initiative}/sources/…` from the raw argument. safePath still stopped it leaving the
-  // store, which is why the gap read as harmless — but being inside the store and being an
-  // initiative are different questions, and a name like `a/b` passed the first and is refused
-  // as an initiative by every other tool.
-  //
-  // A tool that only FILTERS on the name (knowledge_search) builds no path and is not asked.
-  // EVERY FILE ZZ-CORE REGISTERS A TOOL IN, not the one that holds them today. This is a
-  // rule about what a TOOL must do, and a tool does not stop being a tool by moving module.
+  // A tool that only filters on the name (knowledge_search) builds no path and is not asked.
+  // Every file zz-core registers a tool in, not the one that holds them today: the rule is about
+  // what a tool must do, and a tool does not stop being one by moving module.
   const bad: string[] = [];
   let asked = 0;
   for (const { name, body } of zzCoreTools()) {
@@ -340,21 +257,13 @@ check("a tool that builds a path from an initiative name checks it first", () =>
 });
 
 check("a refusal names a way out the tool it came from actually has", () => {
-  // flowDeclarationCheck sat in the guard chain of BOTH document_write and document_patch, and its
-  // refusal said "pass `flow` as an argument to this call". document_write has that argument;
-  // document_patch does not. So an agent that hit the refusal while patching was told to do
-  // something the tool it was using cannot do — and the refusal that exists to unblock an
-  // ungoverned initiative was the one giving the impossible instruction.
+  // A guard reachable from more than one tool must not tell the caller to pass something only
+  // some of them take: an agent told to pass an argument its tool does not have cannot follow
+  // the refusal. frontmatterRefusal gives that instruction about `stakeholder`, `tags` and
+  // `title`, and both its callers declare all three.
   //
-  // That guard names document_write outright now, which is the better fix. The rule survives it:
-  // a guard reachable from more than one tool must not tell the caller to pass something
-  // only some of them take. frontmatterRefusal says exactly that about `stakeholder`, `tags`
-  // and `title` — correctly today, because both its callers declare all three.
-  //
-  // THE PHRASE IS THE SUBJECT, not a named guard. This used to test one guard by name and
-  // match a sentence nobody writes any more, so it had quietly stopped looking at anything:
-  // its pattern found no message at all, in either shape, and reported a pass. A second
-  // guard giving this instruction would have been unchecked, which is the whole failure.
+  // DELIBERATE: the subject is the phrase, not a named guard. Keyed to one guard's name, this
+  // finds nothing the day a second guard gives the same instruction, and reports a pass.
   const SAYS_IT = "argument to this call";
   const src = zzCoreSource();
   const bad: string[] = [];
@@ -393,12 +302,10 @@ check("a refusal names a way out the tool it came from actually has", () => {
 
 check("a refusal class keeps the number that IS the refusal", () => {
   // refusalClass collapses varying nouns so a hundred refusals group into a few classes, and
-  // exempts a status code because for a bare refusal the code is the whole message. The
-  // exemption named `code ` and `status ` — the two shapes a BLOCK happens to use — and the
-  // platform's own transport refusal is written `http ${res.statusCode}`, so `http 404`,
-  // `http 502` and `http 503` all became `http <n>`: a caller asking for a door that is not
-  // there and an upstream dying mid-response, counted as one class in the same table
-  // watch-results reads to alert when a refusal class gets worse.
+  // exempts a status code because for a bare refusal the code is the whole message. That
+  // covers `http ${res.statusCode}`, the platform's own transport refusal, as well as `code `
+  // and `status `: collapsed to `http <n>`, a door that is not there and an upstream dying
+  // mid-response would be one class in the table watch-results alerts on.
   //
   // Run against the real function, both directions — a number that carries the meaning is
   // kept, and one that is just a count is still redacted. An exemption that keeps everything
@@ -424,23 +331,13 @@ check("a refusal class keeps the number that IS the refusal", () => {
 });
 
 check("a path is resolved before the document at it is judged", () => {
-  // document_write was the one write path that called safePath LAST — after eight guards, a chain
-  // lookup and an envelope stamp. So `.zz/spec.md` came back complaining about the sections
-  // this flow requires, and only after the author had rewritten the document to satisfy that
-  // did the next attempt say the path form was wrong and always had been. approve, close,
-  // document_patch and document_revise all resolved first; one of five did not, which is the shape
-  // a rule takes when it is spelled at each call site instead of held in one place.
+  // Anything that judges a document — stamps its envelope, renames its headings, runs its
+  // guards — is downstream of knowing the path is one the store will accept. pathShapeRefusal
+  // teaches the path form, and it teaches nothing from behind a guard.
   //
-  // pathShapeRefusal is the message that teaches the path form, and it teaches nothing from
-  // behind a guard. Anything that JUDGES a document — stamps its envelope, renames its
-  // headings, runs its guards — is downstream of knowing the path is one the store will accept.
-  // BOUNDED HANDLER BODIES, which this check used to do itself and got wrong in two ways.
-  // It read server.ts alone, because the whole service concatenated let the last handler run
-  // past the end of the file and source_list was reported for a defect belonging to whatever
-  // sorted next. And it split on `server.registerTool(` and kept `parts.slice(1)`, so every
-  // handler's "body" also contained every handler after it — a safePath in a LATER tool
-  // satisfied an earlier one. zzCoreTools bounds each body inside its own file, which fixes
-  // both and is what lets the registrations live in more than one module.
+  // COUPLED: handler bodies come from zzCoreTools, which bounds each body inside its own file.
+  // Splitting server.ts on `server.registerTool(` gives every handler a body containing every
+  // handler after it, so a safePath in a later tool satisfies an earlier one.
   const JUDGES = ["documentGuards(", "normalizeSections(", "envelopeFor("];
   const bad: string[] = [];
   for (const { name, body } of zzCoreTools()) {

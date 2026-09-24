@@ -46,7 +46,6 @@ exactly — they are the method; this file is only the door.
   conversation is not an approval, and you cannot write one by hand — the
   platform stamps who approved and when, and refuses the fields if you try.
 - An approved document changes through `document_revise`, never by writing over it.
-- Keys for the building blocks and tokens belong to the **ZZ Access** agent.
-  Never ask anyone to paste a key here.
+- Tokens belong to the **ZZ Access** agent. Never ask anyone to paste one here.
 
 Outside a flow you are yourself. This skill is not a personality.

@@ -90,9 +90,9 @@ export const RETRIEVAL_SPECS: readonly MutationSpec[] = [
       "caller's, so a restriction no native table carries is silently dropped rather than refused",
   },
   {
-    // THE SECOND CHECK IN THIS FILE. Rows are per registered check, not per file: its sibling
-    // above only ever exercises an UNMAPPABLE filter, which returns before a stage is planned,
-    // so a mutation aimed at this one cannot be satisfied by tripping that one.
+    // The second check in this file. Rows are per registered check, not per file: its sibling
+    // above only exercises an unmappable filter, which returns before a stage is planned, so a
+    // mutation aimed at this one cannot be satisfied by tripping that one.
     check: "scripts/gate/checks/scope-filters-survive-lanes.ts",
     target: "a tag restriction reaches every lane, rescue and page",
     subject: "packages/indexing/src/search-plan.ts",
@@ -125,10 +125,10 @@ export const RETRIEVAL_SPECS: readonly MutationSpec[] = [
     target: "the read path queries with the configuration the write path stored a latin term through",
     subject: "services/zz-core/src/tools/search-predicate.ts",
     find: "const QUERY_CONFIG = sqlLiteral(TEXT_SEARCH_CONFIG.latin);",
-    // THE OTHER HALF OF THE SAME CONSTANT, not a bare literal. Writing `"simple"` here left
-    // `TEXT_SEARCH_CONFIG` imported and unused, so the build went red beside the row and a
-    // red build means a row cannot be taken at face value — this planted defect is the read
-    // path reaching for the Han configuration, which is a thing the code could plausibly do.
+    // The other half of the same constant, not a bare literal. `"simple"` here would leave
+    // `TEXT_SEARCH_CONFIG` imported and unused and turn the build red beside the row, and a red
+    // build means the row cannot be taken at face value. The planted defect is the read path
+    // reaching for the Han configuration.
     replace: "const QUERY_CONFIG = sqlLiteral(TEXT_SEARCH_CONFIG.han);",
     planted: "the read path parses an ascii query through a non-stemming configuration while " +
       "the write path stored the word stemmed, so an English word whose stem differs from its " +
@@ -156,9 +156,8 @@ export const RETRIEVAL_SPECS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/write-path-analysis.ts",
     target: "new writes carry the analyzer's han terms and the row's own latin text, each to its own half",
     subject: "packages/indexing/src/index.ts",
-    // THE CALL IS REPLACED, NOT DECORATED. A first attempt appended `::tsvector` after the
-    // interpolation, which leaves `${bodyTsvSql(12)}` intact — and that expression IS what the
-    // check counts. It survived because nothing it measures had changed.
+    // The call is replaced, not decorated. Appending `::tsvector` after the interpolation leaves
+    // `${bodyTsvSql(12)}` intact, and that expression is what the check counts.
     find: "${bodyTsvSql(12)})",
     replace: "to_tsvector($12))",
     planted: "one INSERT stops building its index vector from the shared construction, so a " +
@@ -177,10 +176,10 @@ export const RETRIEVAL_SPECS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/legacy-han-retrieval.ts",
     target: "the legacy handler builds a predicate that can match a term inside an unspaced Han run",
     subject: "services/zz-core/src/tools/search-predicate.ts",
-    // THE PREDICATE IS REMOVED, NOT WEAKENED. A first attempt put `true or` in front of it,
-    // which defeats the restriction at runtime and still leaves the words `team_slug` in the
-    // statement — and the check tests that the SQL CONTAINS them. It survived, correctly:
-    // what that clause asks is whether the scope predicate is still being built at all.
+    // The predicate is removed, not weakened. Putting `true or` in front of it defeats the
+    // restriction at runtime and still leaves the words `team_slug` in the statement, which is
+    // what the check tests for — and what that clause asks is whether the scope predicate is
+    // still being built at all.
     find: "  const cond = [`team_slug = any(",
     replace: "  const cond = [`true = any(",
     planted: "the scope predicate loses the column it restricts on, so the statement no longer " +

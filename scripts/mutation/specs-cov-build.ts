@@ -2,26 +2,21 @@
  * Defects planted in what the build, the manifests and this repository's own hygiene checks
  * read — `build.ts`, `hygiene.ts`, `image.ts`.
  *
- * THE SUBJECT IS DATA WHEREVER THE CHECK ALLOWS IT, and that is not a stylistic preference.
- * Every check in this group judges whether the workspace COMPILES, whether the manifests
- * agree, or whether the image is built from what was compiled — so a planted defect that
- * breaks `tsc -b` turns the gate red for the wrong reason and the row proves nothing. Most of
- * the rows below land in a `package.json`, a lockfile, a `tsconfig.json`, a `Dockerfile`, a
- * `.dockerignore`, a flow manifest, a shell script or an `.env` example for exactly that
- * reason — deliberately not counted here, because a number in prose beside the thing that
- * counts it is the staleness this gate refuses everywhere else. Where a TypeScript subject
- * was unavoidable the mutation is one that still compiles:
- * an unused import is held alive with `void`, a rewritten guard keeps its consumer's type,
- * and a duplicated comment line changes no code at all.
+ * DELIBERATE: the subject is data wherever the check allows it. Every check in this group
+ * judges whether the workspace compiles, whether the manifests agree, or whether the image is
+ * built from what was compiled, so a planted defect that breaks `tsc -b` turns the gate red
+ * for the wrong reason and the row proves nothing. Where a TypeScript subject is unavoidable
+ * the mutation still compiles: an unused import is held alive with `void`, a rewritten guard
+ * keeps its consumer's type, a duplicated comment line changes no code.
  *
- * THE ONE EXCEPTION IS DECLARED. `tsc -b` is the check whose whole job is to fail when the
- * workspace does not compile, so its row is the only one where `build_failed` is the answer
- * rather than a spoiled experiment. It carries a caveat saying so.
+ * The one exception is `tsc -b` itself, whose job is to fail when the workspace does not
+ * compile. Its row is the only one where `build_failed` is the answer rather than a spoiled
+ * experiment, and it carries a caveat saying so.
  */
 import type { MutationSpec } from "./plant.ts";
 
 export const COV_BUILD: readonly MutationSpec[] = [
-  /* ── build.ts ───────────────────────────────────────────────────────────── */
+  /* build.ts */
   {
     check: "scripts/gate/checks/build.ts",
     target: "tsc -b",
@@ -36,14 +31,11 @@ export const COV_BUILD: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/build.ts",
     target: "every package manifest carries the same version",
-    // ANCHORED ON A LINE THAT DOES NOT CARRY THE VERSION, because a spec that names one stops
-    // landing the next time somebody releases. This pinned `0.62.4` and had not landed for six
-    // releases — reported as "0 replacements" by every run and hidden behind a carried row
-    // until the artifact was bound to the tree at gate time.
+    // Anchored on a line that does not carry the version, because a spec naming one stops
+    // landing the next time somebody releases and reports "0 replacements" forever.
     //
-    // `"type"` sits AFTER `"version"` in this manifest and `readJson` is `JSON.parse`, where a
-    // duplicate key takes the LAST value — so an injected key here is the one the check reads,
-    // whatever the real version happens to be that week.
+    // `"type"` sits after `"version"` in this manifest and `readJson` is `JSON.parse`, where a
+    // duplicate key takes the last value, so an injected key here is the one the check reads.
     subject: "packages/contracts/package.json",
     find: '  "type": "module",',
     replace: '  "version": "0.0.1",\n  "type": "module",',
@@ -97,20 +89,7 @@ export const COV_BUILD: readonly MutationSpec[] = [
     planted: "an engine's entry point drops the status its own main() computed, so a run that " +
       "printed FAIL exits 0 and anything calling it in a release reads that as a pass",
   },
-  {
-    check: "scripts/gate/checks/build.ts",
-    target: "a shell that invokes an evaluation tool passes the flow it means",
-    subject: "testing/eval-step.sh",
-    find: 'echo "  interviews: $INTERVIEWS"',
-    replace: 'echo "  interviews: $INTERVIEWS"\n' +
-      'node packages/tools/dist/testing/eval-judge.js --out "$OUT"',
-    planted: "a suite driver invokes an evaluation tool without --flow, which exits 2 — and the " +
-      "driver carries on, so the step reports what it did and the judging silently never ran",
-    caveat: "eval-judge, eval-grade and eval-store were deleted with skill-level evaluation, so " +
-      "no shell in the tree calls one today and this clause currently guards nothing. The " +
-      "planted line restores the call shape the check is written about; it also names a dist " +
-      "path that no longer exists, which is a second defect this check does not claim to see.",
-  },
+
   {
     check: "scripts/gate/checks/build.ts",
     target: "a built package holds together",
@@ -151,33 +130,29 @@ export const COV_BUILD: readonly MutationSpec[] = [
       "script that should not exist",
   },
 
-  /* ── skill-tools.ts, not build.ts — see the report that accompanies this file ──
-   *
-   * The coverage roster hands this id to `build.ts`, which only MENTIONS it in a comment
-   * ("already asks whether each TOOL has a way to be run"). `check("every tool in
-   * packages/tools is reachable from zz-tool"` is registered in skill-tools.ts:430, and the
-   * `check` field below says so — a row filed against the wrong file would claim coverage for
-   * a check that file does not register. */
+  /* skill-tools.ts, not build.ts: the coverage roster hands this id to `build.ts`, which only
+   * mentions it in a comment. The registration is in skill-tools.ts, and the `check` field
+   * below says so — a row filed against the wrong file claims coverage for a check that file
+   * does not register. */
   {
     check: "scripts/gate/checks/skill-tools.ts",
     target: "every tool in packages/tools is reachable from zz-tool",
     subject: "deploy/zz-tool",
-    find: "  [probe-block]=ops/probe-block\n",
-    replace: "  [probe-block]=ops/probe-blocks\n",
+    find: "  [call]=ops/call\n",
+    replace: "  [call]=ops/calls\n",
     planted: "the wrapper's alias points at a tool that does not exist and the real one is left " +
       "with no alias at all, so an operator on a deploy host has no way to run it and finds " +
       "out at the moment they need it",
   },
 
-  /* ── hygiene.ts ─────────────────────────────────────────────────────────── */
+  /* hygiene.ts */
   {
     check: "scripts/gate/checks/hygiene.ts",
     target: "an async guard in a ?? chain is awaited",
     subject: "services/zz-core/src/tenant-info/record.ts",
-    // The historical shape exactly: a cheap synchronous pre-check in front, the async guard in
-    // the middle, and a second synchronous guard after it that a promise's non-nullishness makes
-    // unreachable. The outer `await` is what keeps it compiling, and is what kept the original
-    // from being noticed — everything resolves, everything returns, and one guard never runs.
+    // A cheap synchronous pre-check in front, the async guard in the middle, and a second
+    // synchronous guard after it that a promise's non-nullishness makes unreachable. The outer
+    // `await` keeps it compiling: everything resolves, everything returns, one guard never runs.
     find: "  const refusal = await preflightRefusal(io, root, request.manifest, request.blobs, zzDir, blobsDir, commitsDir);",
     replace: '  const refusal = await ((request.blobs.length > 512 ? refuse("INVALID_INPUT", "more than 512 blobs in one transaction") : null)\n' +
       "    ?? preflightRefusal(io, root, request.manifest, request.blobs, zzDir, blobsDir, commitsDir)\n" +
@@ -188,28 +163,13 @@ export const COV_BUILD: readonly MutationSpec[] = [
   },
   {
     check: "scripts/gate/checks/hygiene.ts",
-    target: "the platform model is one name, however many places name it",
-    subject: "deploy/.env.example",
-    find: "\nPLATFORM_BASE_MODEL=deepseek-v4.1-flash",
-    replace: "\nPLATFORM_MODEL=deepseek-v4.1-flash",
-    planted: "the one place that declares which model this platform runs on is renamed, so the " +
-      "name every other place has to agree with no longer exists and nothing can be held to it",
-    caveat: "this fires the check's DECLARATION clause. Its comparison clause — the four places " +
-      "that must carry the same name — reads `const found = {}`, an empty object, so " +
-      "`Object.entries(found)` is empty on every run and no disagreement between the front " +
-      "end's model list, its titleModel, its tokenConfig key and this variable can reach it. " +
-      "That clause is unexercisable until `found` is populated again.",
-  },
-  {
-    check: "scripts/gate/checks/hygiene.ts",
     target: "the MCP protocol is written once",
     subject: "scripts/deployment.ts",
     find: "                   params: { protocolVersion: mcpProtocol(), capabilities: {},",
-    // SEAMED, REPLACE ONLY. Written whole this row's payload IS a protocol version named
-    // outside @zz/mcp-client, which is the defect the target check hunts — so this file
-    // carrying it verbatim turned that check red at baseline. `plant()` writes the string it
-    // is handed, so the seam costs the experiment nothing. `find` quotes healthy text and is
-    // left exactly as it must match.
+    // SEAMED, `replace` only. Written whole, this payload is a protocol version named outside
+    // @zz/mcp-client, which is the defect the target check hunts, so this file carrying it
+    // verbatim turns that check red at baseline. `plant()` writes the string it is handed, so
+    // the seam costs the experiment nothing; `find` quotes healthy text and must match exactly.
     replace: '                   params: { protocol' + 'Version: "2025-' + '06-18", capabilities: {},',
     planted: "the release's own handshake names a protocol version of its own instead of reading " +
       "the client's, so the day the gateway stops accepting the older one the failure lands in " +
@@ -240,15 +200,10 @@ export const COV_BUILD: readonly MutationSpec[] = [
     target: "a plugin is named the same way wherever it is named",
     subject: "services/gateway/src/client-package.ts",
     find: "        description: cardDescription(f.flow, `${f.agentName || f.flow} — ${f.whenToUse}`.slice(0, 180)),",
-    replace: "        description: cardDescription(f.flow, `${f.agentName || f.flow} — ${f.whenToUse} (update: ${f.flow}@zz-platform)`.slice(0, 180)),",
+    replace: "        description: cardDescription(f.flow, `${f.agentName || f.flow} — ${f.whenToUse} (update: ${f.flow}@${MARKETPLACE})`.slice(0, 180)),",
     planted: "a flow's marketplace card tells a person to update a plugin by its FLOW name, which " +
       "is not what the plugin is called — install and update, in one file, naming one thing two " +
       "ways",
-    caveat: "the check's pattern is pinned to the literal `@zz-platform`, and this repository's " +
-      "MARKETPLACE constant is now `\"zz-stack\"` and is interpolated everywhere it is written. " +
-      "So no honest defect in today's code can reach this clause: the planted line has to name " +
-      "the retired marketplace to be seen at all, which is a second defect the check does not " +
-      "claim to catch.",
   },
   {
     check: "scripts/gate/checks/hygiene.ts",
@@ -277,13 +232,10 @@ export const COV_BUILD: readonly MutationSpec[] = [
     check: "scripts/gate/checks/hygiene.ts",
     target: "the shared MCP client still behaves",
     subject: "packages/mcp-client/src/index.ts",
-    // THE ANCHOR MOVED OFF THE PARSE LINE, AND NOT FOR TASTE. The obvious anchor is the
-    // assignment itself, and both sides of that pair quote an unnarrowed `JSON.parse(…)`
-    // assertion — which this repository sweeps for, and which turned the gate red at BASELINE
-    // when this file first landed. A baseline that is already red makes every row in the run
-    // read as a weak check. The guard moved one line up instead: same defect, same subject,
-    // and neither `find` nor `replace` quotes the construction. Seaming `find` was the other
-    // option and is the one thing that can silently stop a mutation landing.
+    // The anchor sits one line above the assignment, because both sides of that pair would
+    // quote an unnarrowed `JSON.parse(…)` assertion, which this repository sweeps for — a
+    // baseline already red makes every row in the run read as a weak check. Same defect, same
+    // subject, and neither `find` nor `replace` quotes the construction.
     find: '    if (!t.startsWith("{")) continue;',
     replace: '    if (!t.startsWith("{") || obj !== null) continue;',
     planted: "the one MCP client keeps the FIRST data frame of a streamable-HTTP answer instead " +
@@ -328,9 +280,9 @@ export const COV_BUILD: readonly MutationSpec[] = [
     check: "scripts/gate/checks/hygiene.ts",
     target: "no comment repeats a line of itself",
     subject: "services/zz-core/src/chain.ts",
-    find: "  // documents declare `flow: ops-flow@1` — the envelope carries the flow's\n",
-    replace: "  // documents declare `flow: ops-flow@1` — the envelope carries the flow's\n" +
-      "  // documents declare `flow: ops-flow@1` — the envelope carries the flow's\n",
+    find: "  // documents declare `flow: sdlc-flow@1` — the envelope carries the flow's\n",
+    replace: "  // documents declare `flow: sdlc-flow@1` — the envelope carries the flow's\n" +
+      "  // documents declare `flow: sdlc-flow@1` — the envelope carries the flow's\n",
     planted: "a comment line is left duplicated under itself — the debris an edit that rewrites a " +
       "paragraph and keeps the original leaves, which reads as deliberate emphasis until " +
       "somebody compares the two",
@@ -339,24 +291,32 @@ export const COV_BUILD: readonly MutationSpec[] = [
     check: "scripts/gate/checks/hygiene.ts",
     target: "no source file is larger than one subject usually is",
     subject: "scripts/tenant-info/benchmark-report.ts",
-    // MEASURED THE WAY THE CHECK MEASURES IT. The ceiling is `split("\n").length`, not `wc -l`,
-    // and the two differ by one on a file ending in a newline. This file is 697 by the check's
-    // count; seven added lines put it at 704, which is over 700 by four and cannot be read as a
-    // rounding argument. Comment lines, because code would risk the build for no extra evidence.
-    find: "/**\n * benchmark-report.ts — the benchmark report itself: how one is assembled from what is\n",
-    replace: "/**\n * benchmark-report.ts — the benchmark report itself: how one is assembled from what is\n" +
+    // Measured the way the check measures it: the ceiling is `split("\n").length`, not `wc -l`,
+    // and the two differ by one on a file ending in a newline. Comment lines, because code
+    // would risk the build for no extra evidence.
+    find: "/**\n * The benchmark report: how one is assembled from what is actually observable, written into a\n",
+    replace: "/**\n * The benchmark report: how one is assembled from what is actually observable, written into a\n" +
       " *\n" +
       " * WHAT A READER HAS TO HOLD IN THEIR HEAD TO CHANGE THIS FILE, written down here rather\n" +
       " * than reconstructed from the call sites every time somebody comes back to it:\n" +
       " *   - the workspace a report is written into, and who is responsible for clearing it\n" +
       " *   - which evidence is raw and which is derived, and why only the raw half is kept\n" +
       " *   - the structural validation, which runs before anybody evaluates a number in it\n" +
-      " *   - the one caller that reads a report back, and what it does with a missing field\n",
-    planted: "a source file grows past the 700-line ceiling, which is where a file in this " +
-      "repository has always turned out to be holding a second subject",
+      " *   - the one caller that reads a report back, and what it does with a missing field\n" +
+      " *   - the thresholds the agreement fixes, and where each one is restated\n" +
+      " *   - the bindings hashed off disk, and which of them a reader re-checks\n" +
+      " *   - the input files an operator drops in, and what each absence becomes\n" +
+      " *   - the two profiles, and what the baseline profile is allowed to leave unsupported\n" +
+      " *   - the per-corpus distribution contract, and why it is never an overall average\n" +
+      " *   - the language slices, and why a zero denominator is refused\n" +
+      " *   - the qrels hashes, and who has to have approved them\n" +
+      " *   - the evaluation block, and why it is re-derived rather than trusted\n" +
+      " *\n",
+    planted: "a source file grows past the 700-line ceiling, which is where a file usually " +
+      "turns out to be holding a second subject",
   },
 
-  /* ── image.ts ───────────────────────────────────────────────────────────── */
+  /* image.ts */
   {
     check: "scripts/gate/checks/image.ts",
     target: "the build context cannot carry a stale dist into the image",

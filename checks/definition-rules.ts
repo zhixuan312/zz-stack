@@ -1,22 +1,16 @@
-// THE DEFINITION, ENFORCED RATHER THAN WRITTEN DOWN.
+// The thirteen rules this platform is built on, from
+// `2026-09-16-plugin-is-the-only-concept/explore.md`. Each rule decidable from the source or
+// the schema is decided here, by its own clause, with its own message naming the rule.
 //
-// `2026-09-16-plugin-is-the-only-concept/explore.md` states thirteen rules this platform is
-// built on. A rule with no check is a rule that holds until somebody edits the file that
-// happens to satisfy it, so each one that can be decided from the SOURCE or the SCHEMA is
-// decided here, by its own clause, with its own message naming the rule.
+// DELIBERATE: three are not here.
 //
-// WHAT IS DELIBERATELY NOT HERE, so the absence is a decision rather than a gap:
-//
-//   R5  (a status exists only where a gate does) and R13 (no initiative was created by a
-//       probe) are about DATA. This gate is offline by design — it proves things about the
-//       source — so those two belong to the doctor, which runs against a live deployment.
-//   R2  (a door is a plugin's declared server) is already checked where it is measured:
-//       checks/eval-door.ts asserts pluginForDoor names the right plugin for each door, and
-//       catalog-manifest asserts every declared server is a door the gateway mounts.
+//   R5's data half (a status exists only where a gate does) and R13 (no initiative was created
+//       by a probe) are about data, and this gate is offline — they belong to the doctor.
+//   R2  (a door is a plugin's declared server) is checked where it is measured:
+//       checks/eval-door.ts and catalog-manifest.
 //   R10 (quantitative deterministic, qualitative by model) is not checkable in the direction
-//       that matters. "No counted metric comes from a model call" can be looked for; "every
-//       countable thing is counted" cannot, and claiming the second from the first would be
-//       the overclaiming this file exists to prevent.
+//       that matters: "no counted metric comes from a model call" can be looked for, "every
+//       countable thing is counted" cannot.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -24,18 +18,17 @@ import { MANAGE_ALIAS } from "../packages/contracts/dist/index.js";
 import { root, sourceFiles } from "../scripts/gate/read.ts";
 
 const fail: string[] = [];
-// MANAGE_ALIAS is a table of names that CHANGED, so a tool that has always had one name is
-// invisible to it. `whoami` is the only one, and checks/manage-surface.ts names it explicitly
-// for the same reason.
+// MANAGE_ALIAS holds names that changed, so a tool that has always had one name is invisible
+// to it. `whoami` is the only one. COUPLED: checks/manage-surface.ts names it for the same
+// reason.
 const manageNames = [...new Set([...Object.values(MANAGE_ALIAS), "whoami"])];
 const src = (rel: string): string => { try { return readFileSync(join(root, rel), "utf8"); } catch { return ""; } };
 const ts = (dirs: string[]): string[] => sourceFiles(dirs, [".ts"]).filter((f) => !f.includes("/dist/"));
 
-// ── R1 · every capability is a plugin, and nothing else is installable ───────────────────
+// R1 · every capability is a plugin, and nothing else is installable
 //
-// The block concept is gone from the code; this is what keeps it gone. Named tables rather
-// than the word "block", because the word is ordinary English — `bug.impact = 'blocks_work'`
-// is the verb, and a check that cannot tell them apart is a check somebody turns off.
+// Named tables rather than the word "block", because the word is ordinary English —
+// `bug.impact = 'blocks_work'` is the verb.
 {
   const schema = ts(["services/gateway/migrations"]).length
     ? "" : "";                                    // migrations are .sql; read them below
@@ -53,12 +46,10 @@ const ts = (dirs: string[]): string[] => sourceFiles(dirs, [".ts"]).filter((f) =
   }
 }
 
-// ── R3 · a flow is derived, never stored ────────────────────────────────────────────────
+// R3 · a flow is derived, never stored
 //
 // `isFlow(manifest) = documents.length > 0`, computed on read. A stored copy is a second
-// source of truth that can disagree with the manifest, which is what `kind: "platform"` was
-// before it became `shelved` — one field that could say "not a flow" and put zz-admin in the
-// flow menu beside a real one.
+// source of truth that can disagree with the manifest.
 {
   const contracts = src("packages/contracts/src/index.ts");
   if (/\bis_?flow\b\s*:/i.test(contracts)) {
@@ -71,17 +62,14 @@ const ts = (dirs: string[]): string[] => sourceFiles(dirs, [".ts"]).filter((f) =
   }
 }
 
-// ── R4 · gating is a manifest fact, never a property of the file ────────────────────────
+// R4 · gating is a manifest fact, never a property of the file
 //
 // The same document may be gated in one flow and not in another, so nothing may decide it
 // from a NAME. This looks for a gate decision keyed on a literal document filename.
 //
-// `handover.md` IS EXEMPT, and it is the only name that is. Every other document here is a
-// flow's to declare; the handover is the PLATFORM's, appended by deriveChain to any flow that
-// gates at least one document and gated by the platform itself. Code that names it is naming
-// its own declaration rather than reading a flow's — two places do, and both are right:
-// deriveChain appending it, and the close guard excluding it from the gates a DELIVERY must
-// pass, because it is what the platform asks for after the close rather than before it.
+// DELIBERATE: `handover.md` is exempt and is the only name that is. It is the platform's own
+// document, appended by deriveChain to any flow that gates at least one document, so code
+// naming it is naming its own declaration rather than reading a flow's.
 {
   for (const f of ts(["services", "packages"])) {
     const t = src(f);
@@ -95,16 +83,12 @@ const ts = (dirs: string[]): string[] => sourceFiles(dirs, [".ts"]).filter((f) =
   }
 }
 
-// ── R5 (the write half) · nothing can PUT a status where no gate exists ─────────────────
+// R5 (the write half) · nothing can PUT a status where no gate exists
 //
 // The data half of R5 is a doctor probe, because the gate is offline. This is the half the
-// gate CAN hold: the two writers that can create the violation.
-//
-// `stampEnvelope` writes `status: draft` and conditioned it on `governed` — the manifest
-// DECLARES this document — where the rule is `gated`. `document_approve` writes
-// `status: approved` and checked only `chain.docs.has(...)`, which is the same predicate
-// spelled differently. Fixing one and not the other fixes nothing durable: the platform stops
-// creating the rows and the next caller who approves an audit report recreates them.
+// gate can hold: both writers that can create the violation. `stampEnvelope` writes
+// `status: draft` and `document_approve` writes `status: approved`, and each must condition on
+// the manifest's gate rather than on the manifest merely declaring the document.
 {
   const stamp = src("services/zz-core/src/write-guards.ts");
   if (!/if \(gated && present\.status === undefined\)/.test(stamp)) {
@@ -120,7 +104,7 @@ const ts = (dirs: string[]): string[] => sourceFiles(dirs, [".ts"]).filter((f) =
   }
 }
 
-// ── R7 · who the caller is arrives with the request, never as an argument ────────────────
+// R7 · who the caller is arrives with the request, never as an argument
 //
 // Identity is resolved from the credential. A tool that takes the caller as a parameter is a
 // tool whose answer the caller chooses, and every authorisation decision behind it is then
@@ -137,20 +121,14 @@ const ts = (dirs: string[]): string[] => sourceFiles(dirs, [".ts"]).filter((f) =
   }
 }
 
-// R8 · DOMAIN PICKS THE DOOR; ROLE PICKS WHAT YOU SEE ON IT.
+// R8 · domain picks the door; role picks what you see on it
 //
-// The two cuts are different and they were confused: filing a bug was on /core and answering
-// one on /manage, because answering is an operator's act. Apply the test that settles it — a
-// superadmin with every plugin installed, so nothing is hidden — and the two answer differently
-// with nothing but the caller between them.
+// DELIBERATE: the table is frozen here. Nothing in either repository declares a tool's domain,
+// and R10 forbids asking a model a question with a determinate answer, so the answer is
+// written down once where a reviewer can disagree with a line of it.
 //
-// THE TABLE IS FROZEN HERE, and it has to be. The test as explore.md states it is a question a
-// PERSON answers; nothing in either repository declares a tool's domain, so a check could only
-// ask a model, which R10 forbids for a question with a determinate answer. A frozen table is
-// the answer written down once, where a reviewer can disagree with a line of it.
-//
-// Both directions, so neither half can rot quietly: a tool with no domain is unclassified and a
-// domain naming a tool that no door serves is stale.
+// Checked both directions: a tool with no domain is unclassified, and a domain naming a tool
+// no door serves is stale.
 const DOMAIN_DOOR: Record<string, string> = {
   work: "core", knowledge: "core", defect: "core",
   catalog: "manage", access: "manage",
@@ -158,7 +136,7 @@ const DOMAIN_DOOR: Record<string, string> = {
 };
 const TOOL_DOMAIN: Record<string, string> = {
   // Work — an initiative, its records, and reading the doctrine a step needs. Reading a skill
-  // is part of DOING the work; managing what is on the shelf is Catalog.
+  // is part of doing the work; managing what is on the shelf is Catalog.
   document_approve: "work", document_list: "work", document_patch: "work",
   document_present: "work", document_read: "work", document_revise: "work",
   document_write: "work", initiative_close: "work", initiative_open: "work",
@@ -167,9 +145,8 @@ const TOOL_DOMAIN: Record<string, string> = {
   // Knowledge — the journal, and rebuilding the index that stores it.
   knowledge_add: "knowledge", knowledge_search: "knowledge", knowledge_supersede: "knowledge",
   knowledge_reconcile: "knowledge", knowledge_reindex: "knowledge",
-  // Defect — a seventh domain, and the audit that found R8 unimplementable was right that it
-  // was missing. Reporting something broken is not Work (it is about the platform, not about
-  // the initiative) and not Access. Filing and answering are one subject; role decides which
+  // Defect — reporting something broken is about the platform rather than the initiative, so
+  // it is neither Work nor Access. Filing and answering are one subject; role decides which
   // half you see.
   bug_report: "defect", bug_list: "defect", bug_resolve: "defect", bug_delete: "defect",
   // Catalog — what is on the shelf, and how to install from it.
@@ -218,11 +195,10 @@ const TOOL_DOMAIN: Record<string, string> = {
   }
 }
 
-// ── R11 · attribution is looked up, never inferred ──────────────────────────────────────
+// R11 · attribution is looked up, never inferred
 //
-// Which plugin a call belongs to is a fact about the DOOR it arrived on. It was inferred from
-// the caller's most recently read skill: 3,928 tool calls on /core, 192 attributed, 150 of
-// those naming a plugin that declares no server at all.
+// Which plugin a call belongs to is a fact about the door it arrived on, knowable before the
+// call is answered and the same for every caller — never the caller's last-read skill.
 {
   const tel = src("services/gateway/src/tool-telemetry.ts");
   if (/plugin\s*=\s*await\s+pluginFor\(/.test(tel) || /pluginFor\(\s*step/.test(tel)) {
@@ -236,11 +212,11 @@ const TOOL_DOMAIN: Record<string, string> = {
   }
 }
 
-// ── R12 · one subject, one table ────────────────────────────────────────────────────────
+// R12 · one subject, one table
 //
-// zz.doc held documents, sources and knowledge nodes under one `status` column in which
-// `approved` means a person agreed and `adopted` means this is the best we know. Every query
-// about one subject had to remember to exclude the others, and three forgot.
+// A knowledge node lives in zz.knowledge_node, not zz.doc: sharing a `status` column in which
+// `approved` means a person agreed and `adopted` means this is the best we know makes every
+// query about one subject remember to exclude the others.
 {
   const idx = src("packages/indexing/src/index.ts");
   if (!/insert into zz\.knowledge_node/.test(idx)) {

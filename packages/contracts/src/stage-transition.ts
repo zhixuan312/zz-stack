@@ -1,43 +1,28 @@
 /**
- * A TRANSITION IS A RECORDED FACT OR IT IS NOT A FACT.
+ * A transition is a recorded fact or it is not a fact.
  *
- * Somebody wants to know how often work went backwards. The material to hand is a list of
- * documents with the inputs each version cited, and a list of approvals with times on them. It
- * is very easy to turn that into a number: this version cited that source, this approval came
- * after that one, therefore the work returned from one place to another. The number looks like
- * a measurement and it is an arrangement of two other measurements.
+ * A linked source shows that a version changed and cited an input. An approval time shows that
+ * one approval was recorded before another. Neither shows which stage the work came back from,
+ * and no combination of them does: the same pair of facts is produced by a straight run with a
+ * late correction as by a genuine return upstream.
  *
- * WHAT THOSE TWO THINGS ACTUALLY SHOW. A linked source shows that a version changed and cited
- * an input. An approval time shows that one approval was recorded before another. Neither
- * shows which stage the work came back FROM, and no combination of them does: a document can
- * cite an input nobody sent it back over, two approvals can be ordered by nothing more than
- * who was awake, and the same pair of facts is produced by a straight run through with a late
- * correction as by a genuine return upstream. CHRONOLOGY IS NOT CAUSALITY, and a citation is
- * not a route.
+ * So the two answers are two fields, and the guarantee is in the plumbing.
+ * {@link observedTransitions} takes recorded events and nothing else, so no amount of links or
+ * approvals can produce an observed transition. {@link inferredRelations} takes links and
+ * approvals and nothing else, and its relations are stamped inferred at construction and carry
+ * what they cannot establish written on them.
  *
- * SO THE TWO ANSWERS ARE TWO FIELDS, and the guarantee is in the plumbing rather than in this
- * paragraph. {@link observedTransitions} takes recorded events and nothing else — links and
- * approvals are not parameters of it, so no amount of either can produce an observed
- * transition. {@link inferredRelations} takes links and approvals and nothing else, and the
- * relations it builds are stamped inferred at construction and carry what they cannot
- * establish written on them.
- *
- * AND THE INFERENCE IS KEPT, which is the half that is easy to lose in the course of being
- * careful. Throwing the relation away because it is not proof discards a real signal somebody
- * looked for: a run whose versions keep citing new inputs is a run worth asking about. The
- * defect is not noticing it. The defect is filing it under the same name as a fact.
+ * The inference is kept rather than discarded: a run whose versions keep citing new inputs is
+ * worth asking about. The defect would be filing it under the same name as a fact.
  */
 
-/** Whether a row is something that happened or something somebody worked out. One union
- *  across both row shapes, so a consumer can ask any row what it is without first knowing
- *  which list it came out of — the question "is this observed?" has to be askable, or the
- *  distinction is only a matter of which array somebody looked in. */
+/** Whether a row is something that happened or something somebody worked out. One union across
+ *  both row shapes, so a consumer can ask any row what it is without first knowing which list it
+ *  came out of. */
 export type TransitionRelationKind = "observed" | "inferred";
 
-/** An event as a recorder wrote it. `from` and `to` are OPAQUE CALLER DATA: this module has no
- *  vocabulary of stages, cannot check one against a list it does not have, and would be the
- *  wrong place for that list even if it had it. A recorder that writes nonsense here writes
- *  nonsense; what this module guarantees is that nothing else gets to write here at all. */
+/** An event as a recorder wrote it. `from` and `to` are opaque caller data: this module has no
+ *  vocabulary of stages. What it guarantees is that nothing else gets to write here at all. */
 export interface TransitionEvent {
   readonly kind: string;
   readonly from?: string;
@@ -56,8 +41,8 @@ export interface ObservedTransition {
 }
 
 /** Something the material suggests, with the basis it rests on and the question it cannot
- *  answer. `cannot_establish` is on every row rather than in documentation because these rows
- *  travel: a reader who meets one three layers away needs its limit attached to it. */
+ *  answer. `cannot_establish` is on every row rather than in documentation, because these rows
+ *  travel and a reader three layers away needs the limit attached. */
 export interface InferredRelation {
   readonly kind: TransitionRelationKind;
   readonly relation: "revision_cited_input" | "approvals_ordered";
@@ -94,17 +79,12 @@ const CANNOT_ESTABLISH =
   "another — not which stage the work returned from";
 
 /**
- * TRANSITIONS FROM RECORDED EVENTS, AND FROM NOTHING ELSE.
+ * Transitions from recorded events and from nothing else. There is no argument carrying links or
+ * approvals, so the function cannot consult them however it is edited later.
  *
- * The parameter list is the guarantee. There is no argument here carrying links or approvals,
- * so the function cannot consult them however it is edited later — an edit that wanted to
- * would have to widen the signature, which is a visible change to a reviewer rather than an
- * extra clause inside a body.
- *
- * An event that claims to be a transition without naming where it went from, where it went to
- * and which run recorded it is not a recorded transition; it is a fragment. It is rejected by
- * name rather than dropped, because the difference between "nothing happened" and "somebody
- * recorded something unusable" is the difference between a clean run and a broken recorder.
+ * An event claiming to be a transition without naming where it went from, where it went to and
+ * which run recorded it is rejected by name rather than dropped: "nothing happened" and
+ * "somebody recorded something unusable" are different answers.
  */
 function observedTransitions(
   events: readonly TransitionEvent[],
@@ -137,12 +117,9 @@ function observedTransitions(
 }
 
 /**
- * WHAT THE DOCUMENT ACTIVITY SUGGESTS, STAMPED AS A SUGGESTION.
- *
- * Same construction, opposite direction: no events parameter, so nothing recorded can leak
- * into a relation and be read later as having been observed. Each relation names its basis —
- * the actual source ids, the actual approval times — so a reader can go and look at the same
- * material rather than take the relation's word for it.
+ * What the document activity suggests, stamped as a suggestion. Same construction, opposite
+ * direction: no events parameter, so nothing recorded can leak into a relation and later be read
+ * as observed. Each relation names its basis — the actual source ids, the actual approval times.
  */
 function inferredRelations(
   linkedSources: readonly string[],
@@ -169,13 +146,9 @@ function inferredRelations(
 }
 
 /**
- * BOTH ANSWERS, NEVER MIXED.
- *
- * This function does no work of its own beyond handing each half its own material and putting
- * the two results in two fields. That is deliberate: a body that combined them — promoting an
- * inference when there were no events, say, or suppressing an inference when there were — is
- * exactly the code path the contract forbids, and the way to not have it is to not have
- * anywhere to write it.
+ * Both answers, never mixed. This function hands each half its own material and puts the two
+ * results in two fields, so there is nowhere to write a body that promotes an inference when
+ * there were no events, or suppresses one when there were.
  */
 export function transitionsFor(input: TransitionInput): TransitionRecord {
   const { rows, rejected } = observedTransitions(input.events ?? []);

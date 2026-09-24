@@ -1,9 +1,8 @@
 /**
  * The release script and the documents that describe a release.
  *
- * STATE.md's counts, the changelog's sections, the bundle's contents, the rollback path. A
- * release step that quietly does nothing is the specific failure this module has caught more
- * than once, and it is invisible from the release's own output.
+ * The changelog's sections, the bundle's contents, the rollback path — a release step that
+ * quietly does nothing is invisible from the release's own output.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -23,16 +22,9 @@ function errMessage(err: unknown): string {
   return String(err);
 }
 
-/* THE DOCTOR AND THE RELEASE READ ONE LIST OF PROBES.
- *
- * Step 5 used to own eleven live checks of its own, which ran for forty seconds during a
- * release and at no other time. Nothing exercised them in between, so when the release.ts
- * split left three of them calling names they never imported, nothing found out until 0.26.1
- * deployed, reported six ReferenceErrors as deployment failures, and rolled a healthy platform
- * back. A second list is not a duplication problem here; it is a list that is only ever read
- * at the moment it is most expensive to be wrong about.
- *
- * So verify.ts selects layers and defines no probe, and this is what keeps it that way. */
+/* The doctor and the release read one list of probes: verify.ts selects layers and defines no
+ * probe of its own. A probe defined only in the release path runs during a release and at no
+ * other time, so nothing exercises it in between. */
 check("the release verifies through the doctor's probes, not a second list", () => {
   const rel = withoutComments(readFileSync(join(root, "scripts/release/verify.ts"), "utf8"));
   const bad = [];
@@ -55,28 +47,18 @@ check("the release verifies through the doctor's probes, not a second list", () 
   return bad.length ? bad.join("\n      ") : null;
 });
 
-/* THE DOCTOR CHANGES NOTHING, which is the property that makes it safe to run while something
- * is already broken — the only time anybody actually will. Its own header promises this, and a
- * promise in a header is enforced by nobody.
+/* The doctor changes nothing, which is what makes it safe to run while something is already
+ * broken. The risk is a probe reaching for a command that happens to mutate: a `docker
+ * compose up -d` to "make sure it is running", a `git checkout` to compare against a tag, a
+ * psql `delete` in a cleanup that seemed local.
  *
- * The risk is not somebody deciding to make it write. It is a probe reaching for a command
- * that happens to mutate: `docker compose up -d` to "make sure it is running" before checking
- * whether it is, a `git checkout` to compare against a tag, a psql `delete` in a cleanup that
- * seemed local. Each is a reasonable-looking line inside a diagnostic, and each turns the tool
- * you run during an outage into one that changes the outage.
- *
- * Read of the doctor AS A SUBJECT rather than file by file, so a probe that moves between
+ * Read of the doctor as a subject rather than file by file, so a probe that moves between
  * layers stays covered. */
 check("the doctor changes nothing", () => {
   const src = withoutComments(doctorSource());
-  // COMMAND POSITIONS ONLY, and that distinction is the whole check.
-  //
-  // The first version scanned the source as one text and went red twice on its own failure
-  // MESSAGES — a sentence saying "a bare `docker compose up` would run this version" and one
-  // telling an operator to re-run install-backup-cron.sh. Both are prose the doctor prints;
-  // neither runs anything. A check that cannot tell a command from a sentence about a command
-  // fails on exactly the files that explain themselves best, which teaches people to explain
-  // less. So: the argument list of what actually EXECUTES, and nothing else.
+  // DELIBERATE: the argument list of what executes, not the source as one text. The doctor
+  // prints failure messages that name the very commands this forbids, and a scan over the
+  // whole file goes red on prose about a command rather than on a command.
   const cmds = [];
   for (const m of src.matchAll(/\b(ssh|run|execSync|execFileSync)\s*\(/g)) {
     let depth = 0;
@@ -108,9 +90,9 @@ check("the doctor changes nothing", () => {
     : null;
 });
 
-/* A LAYER MISSING FROM doctor.ts IS A LAYER THAT DOES NOT RUN, and the diagnosis it would
- * have given is simply absent — which reads exactly like agreement. Same rule, same reason, as
- * gate.ts's own import list and the completeness guard in gate/run.ts. */
+/* A layer missing from doctor.ts does not run, and the diagnosis it would have given is
+ * absent, which reads like agreement. COUPLED: gate.ts's import list and the completeness
+ * guard in gate/run.ts apply the same rule to the gate. */
 check("the doctor runs every layer that is written", () => {
   const entry = readFileSync(join(root, "scripts/doctor.ts"), "utf8");
   const written = readdirSync(join(root, "scripts/doctor/layers")).filter((f) => f.endsWith(".ts")).sort();
@@ -133,13 +115,11 @@ check("the doctor runs every layer that is written", () => {
 
 check("the deploy stops what this release no longer defines", () => {
   // A release that removes a service does not stop it: compose cannot stop a container the
-  // file no longer mentions. Removing the old front end while leaving it RUNNING is the
-  // worst available shape — people keep landing on it, and every tool call it makes now
-  // fails because zz-core no longer trusts it — and release verification passes throughout,
-  // because it probes the new front end and finds it healthy.
+  // file no longer mentions, so it keeps running and release verification passes, because it
+  // probes the new service and finds it healthy. `--remove-orphans` is what stops it.
   const rel = releaseSource();
-  // Commands, not prose about commands: a line beginning with ` * ` is this file's own
-  // explanation of what the deploy does, and matching it reported a fault in a comment.
+  // Commands, not prose about commands: a comment line is this file's own explanation of
+  // what the deploy does.
   const ups = rel.split("\n")
     .filter((l) => !/^\s*(\*|\/\/)/.test(l))
     .flatMap((l) => [...l.matchAll(/docker compose up -d([^;`"']*)/g)].map((m) => m[1]));
@@ -149,21 +129,13 @@ check("the deploy stops what this release no longer defines", () => {
 });
 
 check("no release document points at a repository path that does not exist", () => {
-  // state.md (then direction.md) sent readers to `docs/building-block-contract.md` twice —
-  // it ships with the skill that teaches it — and named a "Component Register" and an
-  // "Atlas" as companion references that have never existed. These documents are read by
-  // people outside this repository, including the block teams the contract binds, so a path
-  // that does not resolve is the reader concluding the standard was withdrawn.
+  // These documents are read by people outside this repository, where a path that does not
+  // resolve reads as the thing having been withdrawn.
   const bad = [];
   for (const rel of ourDocs()) {
-    // THE CHANGELOG IS EXEMPT, and it is the only document that is.
-    //
-    // Its entries describe past states, so naming a file that has since been deleted is the
-    // job rather than a defect — and this repository deletes aggressively, by standing rule.
-    // Every removal would otherwise turn an accurate historical entry red, and the only way
-    // to clear it would be to stop naming what was removed, which is the one thing somebody
-    // reading a changelog came for. Every other document here describes the PRESENT, where a
-    // path that does not resolve reads as "the thing was withdrawn".
+    // DELIBERATE: the changelog is exempt, and it is the only document that is. Its entries
+    // describe past states, so naming a file that has since been deleted is the job. Every
+    // other document here describes the present.
     if (rel === "CHANGELOG.md") continue;
     const txt = readFileSync(join(root, rel), "utf8");
     // Backticked paths that look like repo paths: a slash, no scheme, no leading dot-slash
@@ -172,7 +144,7 @@ check("no release document points at a repository path that does not exist", () 
       const p = m[1];
       if (p.includes("<") || p.endsWith("/")) continue;
       if (existsSync(join(root, p))) continue;
-      // A gitignored path is one the reader CREATES — deploy/.env is the documented
+      // A gitignored path is one the reader creates — deploy/.env is the documented
       // example — so its absence from the repository is the point, not a broken link.
       try {
         execFileSync("git", ["check-ignore", "-q", p], { cwd: root, stdio: "ignore" });
@@ -185,45 +157,26 @@ check("no release document points at a repository path that does not exist", () 
 });
 
 check("the deploy bundle carries everything the install steps use", () => {
-  // The bundle IS the install. It used to carry a script that wrote agent presets into the
-  // front end's database, plus prompts generated from the catalog and gitignored — so a
-  // release cut on a clean machine shipped a bundle whose very first command died on a
-  // missing file. Nothing is generated now: agents come from the registry at provisioning
-  // time. What ships is the compose file, the example environment, the front end's config,
-  // and the two scripts an operator runs by hand.
+  // The bundle is the install: the compose file, the example environment, the front end's
+  // config, and the scripts an operator runs by hand. Nothing in it is generated.
   const rel = releaseSource();
   const tar = rel.indexOf("tar czf");
   if (tar === -1) return "release.ts no longer packages a bundle — this check needs rewriting";
   const line = rel.slice(tar, rel.indexOf("\n", tar));
   const bad = [];
-  // The files the INSTALL ITSELF names, which is what this check is called and was not doing.
-  // It retyped the same five names release.ts retypes, so the two agreed by construction and
-  // the question "does the bundle carry what an operator is told to run" was never asked.
-  //
-  // It was wrong. deploy/README.md's Day-2 section opens "Every command below runs from
-  // deploy/, which is what the release bundle unpacks to" and then tells an operator to run
-  // backup.sh and install-backup-cron.sh — neither of which shipped. A bundle recipient had
-  // no way to back the platform up and nothing saying so.
-  //
-  // From the README, because the README is the install. A script added to deploy/ and never
-  // documented is not part of it; one the README tells somebody to run is, by having been
-  // written there.
+  // The files the install itself names, read from deploy/README.md. A script added to
+  // deploy/ and never documented is not part of the install; one the README tells somebody
+  // to run is. A list retyped here would agree with release.ts by construction and never ask
+  // the question.
   const readme = readFileSync(join(root, "deploy/README.md"), "utf8");
   const invoked = new Set(
     [...readme.matchAll(/(?:\.\/|deploy\/)([A-Za-z0-9_.-]+\.sh|zz-tool)\b/g)].map((m) => m[1]));
-  // EXCEPT THE ONES THAT RUN AGAINST A HOST RATHER THAN ON IT.
+  // Except the scripts that run against a host rather than on it — they take an ssh host and
+  // reach it from a checkout, so they belong to the repository and not to the install.
   //
-  // provision-host.sh, install-caddy.sh and sync.sh each take an ssh host and reach it from a
-  // checkout. Shipping them inside the bundle would be shipping, to a machine somebody is
-  // already logged into, the scripts whose whole job is to log into it. They belong to the
-  // repository, not to the install.
-  //
-  // DERIVED FROM THE SCRIPT, not from a list here. A list would have to be kept in step by
-  // hand, which is the failure this check's own history is made of — it once retyped the five
-  // names release.ts retypes, so the two agreed by construction and the question was never
-  // asked. A script that invokes `ssh` on a line that is not a comment runs against a host;
-  // one that does not runs on it. Comments are excluded because zz-tool's explain `ssh` at
-  // length and invoke it never.
+  // Derived from the script rather than listed here: a script that invokes `ssh` on a line
+  // that is not a comment runs against a host; one that does not runs on it. Comments are
+  // excluded because zz-tool's comments explain `ssh` at length and never invoke it.
   const runsAgainstAHost = (name: string): boolean => {
     const f = join(root, "deploy", name);
     if (!existsSync(f)) return false;
@@ -240,8 +193,8 @@ check("the deploy bundle carries everything the install steps use", () => {
     }
     if (!existsSync(join(root, "deploy", need))) bad.push(`deploy/${need} does not exist`);
   }
-  // And the other direction: a bundle carrying a file nobody is told about is weight, and
-  // more usefully it is a sign the README stopped mentioning something that still ships.
+  // And the other direction: a bundle carrying a file the README never mentions is a sign
+  // the README stopped mentioning something that still ships.
   for (const m of line.matchAll(/\s([A-Za-z0-9_./-]+\.(?:yml|sh|yaml|example)|zz-tool)(?=\s|`)/g)) {
     if (!needs.has(m[1]) && !m[1].startsWith("../")) {
       bad.push(`the bundle carries ${m[1]} and deploy/README never mentions it`);
@@ -251,14 +204,13 @@ check("the deploy bundle carries everything the install steps use", () => {
 });
 
 check("a dry run cannot write git history", () => {
-  // --dry-run is documented as "verify locally, touch nothing remote", and it committed:
-  // the zz-blocks VERSION bump ran unguarded, so every rehearsal left a "zz-blocks
-  // <version>" commit behind and a second run started from different state than the first.
-  // A rehearsal that mutates what it is rehearsing is not one.
-  // THE ENTRY FILE SPECIFICALLY, and this is the one release check where that is right.
-  // It is about ORDER — what runs before the dry-run exit — and the steps and that exit
-  // are both in release.ts. Asked of the concatenated service, "before" means "in
-  // whichever module sorted first", which is not a fact about the release at all.
+  // --dry-run verifies locally and touches nothing remote, so no git write may run before
+  // its exit.
+  //
+  // DELIBERATE: scripts/release.ts specifically, not releaseSource(). This is about order —
+  // what runs before the dry-run exit — and both the steps and the exit are in that one
+  // file. Over the concatenated source, "before" would mean "in whichever module sorted
+  // first".
   const src = readFileSync(join(root, "scripts/release.ts"), "utf8");
   const lines = src.split("\n");
   const exitLine = lines.findIndex((l) => l.includes("DRY RUN OK"));
@@ -279,11 +231,9 @@ check("a dry run cannot write git history", () => {
 });
 
 check("the deployed image can be rebuilt from this repo", () => {
-  // The running image was built for a while by piping a heredoc into `docker build -f -`
-  // from the PARENT directory. Two consequences: `docker history` was the only surviving
-  // record of the recipe, and building one level up put .dockerignore out of scope — so the
-  // image copied the host's node_modules and dist/ straight in, which is exactly the failure
-  // that file exists to prevent and describes in its own comment.
+  // A Dockerfile in the repository root, so the recipe is in the checkout and .dockerignore
+  // is in scope. An image that copies the host's node_modules and dist/ is one built with
+  // that file out of scope.
   const bad = [];
   if (!existsSync(join(root, "Dockerfile"))) {
     return "no Dockerfile — the deployed artifact cannot be rebuilt from a checkout";
@@ -302,13 +252,10 @@ check("the deployed image can be rebuilt from this repo", () => {
   if (img && existsSync(join(root, "scripts/build-image.sh"))) {
     const sh = readFileSync(join(root, "scripts/build-image.sh"), "utf8");
     if (!sh.includes(img[1])) bad.push(`build-image.sh does not build ${img[1]}`);
-    // AND THE SAME ARCHITECTURE. Two scripts build this one tag, and they disagreed: the
-    // release pins `--platform`, build-image.sh pinned nothing — so on an arm64 machine it
-    // produced an arm64 image under the release's exact tag, which cannot run on the amd64
-    // deploy host. Nothing said so; a container simply fails to start, later, somewhere else.
-    //
-    // Compared as VALUES, not merely for the flag's presence: agreeing to pin and pinning
-    // two different platforms is the same defect wearing a fix.
+    // And the same architecture. Two scripts build this one tag; if either pins no platform
+    // it builds for whatever machine it runs on, and the image cannot start on the deploy
+    // host. Compared as values, not for the flag's presence: pinning two different platforms
+    // is the same defect.
     const shPlatform = /ZZ_PLATFORM:-([^}"\s]+)/.exec(sh)?.[1];
     const relPlatform = /process\.env\.ZZ_PLATFORM \|\| "([^"]+)"/
       .exec(releaseSource())?.[1];
@@ -323,31 +270,22 @@ check("the deployed image can be rebuilt from this repo", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-// THE TWO STATE.md CHECKS ARE GONE WITH THE FILE. One held its declared check count against
-// the gate's real one, the other held its version stamp against package.json. Both existed
-// because a number in prose about a thing that grows is a claim that goes stale, and both
-// caught that happening. STATE.md itself is what was removed: the changelog is the record
-// now, and a changelog entry is written per release rather than maintained between them, so
-// there is no standing number in it for a check to hold anything against.
-
-
 check("a failed rollback is reported, not thrown", () => {
   // rollback() throws when the remote `docker compose up` cannot start the old version — a
-  // pruned image is the obvious way. Both calls to it were unguarded, so the worst case this
-  // script has, a bad version live AND the rollback failing, produced a raw stack trace: no
-  // list of what failed verification, no statement of what is running, at the one moment an
-  // operator needs both.
+  // pruned image is the obvious way. Unguarded, the worst case this script has (a bad
+  // version live and the rollback failing) produces a stack trace instead of the
+  // verification report and a statement of what is running.
   //
-  // And the summary line said "was rolled back to X" whenever a previous version was
-  // RECORDED, which is a different claim from the rollback having worked.
+  // "Was rolled back to X" because a previous version was recorded is a different claim from
+  // the rollback having worked, so the outcome line must distinguish them.
   const src = releaseSource();
   const bad = [];
   // The automatic rollback — the one that runs after a failed verification — must be guarded.
-  // CODE ANCHORS, not the section headers. This ran from "6 · roll back if verification
-  // failed" to "7 · tag" — both of them comment dividers, so renaming a section, or a comment
-  // sweep, would have taken this check out with a "cannot be located" for a reason that was
-  // never about the rollback. Section 6 is conditional and has no `step(6, …)` call, so its
-  // start is the condition that opens it; both anchors are unique in releaseSource().
+  //
+  // DELIBERATE: both anchors are code, not section headers. Anchoring on a comment divider
+  // means a comment sweep takes this check out with "cannot be located". Section 6 is
+  // conditional and has no `step(6, …)` call, so its start is the condition that opens it;
+  // both anchors are unique in releaseSource().
   const auto = between(src, "if (problems.length) {", 'step(7, "tag")');
   if (!auto.text) return `the rollback step cannot be located: ${auto.why}`;
   const block = auto.text;
@@ -364,17 +302,11 @@ check("a failed rollback is reported, not thrown", () => {
 });
 
 check("a breaking change says what to do about it", () => {
-  // The changelog exists "for someone deciding whether to upgrade", and an Upgrade notes entry
-  // is the one part of it a reader has to ACT on. "Breaking — documents are written as a body,
-  // not as a whole file." shipped as a bare heading: its instructions — refuse content opening
-  // with `---`, send the body, pass the rest as named arguments — had been absorbed into the
-  // NEXT bullet by an edit, so one breaking change named no remedy and another carried
-  // somebody else's.
-  //
-  // Both halves are checked, because the failure has two shapes: a bullet with nothing after
-  // its bold lead, and a bullet whose lead says "Breaking" without ever saying what to do.
+  // An upgrade-notes entry is the part of a changelog a reader has to act on. Two shapes are
+  // checked: a bullet with nothing after its bold lead, and a bullet whose lead says
+  // "Breaking" without saying what to do.
   const bad: string[] = [];
-  for (const rel of ["CHANGELOG.md", "STATE.md", "README.md"]) {
+  for (const rel of ["CHANGELOG.md", "README.md"]) {
     const f = join(root, rel);
     if (!existsSync(f)) continue;
     const lines = readFileSync(f, "utf8").split("\n");
@@ -394,21 +326,14 @@ check("a breaking change says what to do about it", () => {
 });
 
 check("the release script can read every fact it parses out of source", () => {
-  // release.ts reads the MCP protocol version out of @zz/mcp-client's source rather than
-  // importing it, deliberately: "this script must run before a build has necessarily produced
-  // any JavaScript, and a release check that needs the build to pass cannot be what tells you
-  // the build is wrong". A reader keyed to source is right here and is also a coupling that
-  // nothing was checking.
+  // DELIBERATE: release.ts reads the MCP protocol version out of @zz/mcp-client's source
+  // rather than importing it, because it must run before a build has necessarily produced
+  // any JavaScript. COUPLED: the constant's spelling in packages/mcp-client/src/index.ts.
+  // A reader that stops matching kills every path that builds an initialize frame, including
+  // the verification step that decides whether to roll back.
   //
-  // Its regex required `export const PROTOCOL`, and the constant is not exported — nothing
-  // imports it, Mcp announces it internally. So it never matched, and every path that builds
-  // an initialize frame died on it: `--preflight` exited 1 before its first live check, and a
-  // real release reached step 5 — the verification that decides whether to roll back — AFTER
-  // deploying. The new version stays live, unverified, and the rollback is never reached,
-  // which is the single thing that script's ordering exists to prevent.
-  //
-  // RUN the reader, with its collaborators injected, and require it to return what the client
-  // actually declares. A regex over release.ts would only re-check the spelling that broke.
+  // The reader is run with its collaborators injected and required to return what the client
+  // declares; a regex over release.ts would only re-check the spelling.
   const rel = releaseSource();
   const body = functionBody(rel, "mcpProtocol");
   if (!body) return "release.ts no longer defines mcpProtocol — this check cannot run";
@@ -438,18 +363,11 @@ check("the release script can read every fact it parses out of source", () => {
 });
 
 check("a release groups each kind of change once", () => {
-  // The changelog says in its own header that it follows Keep a Changelog, whose whole
-  // structure is one grouping per kind of change per release. 0.4.0 had THREE `### Fixed`
-  // lists, two `### Added` and two `### Changed`, because entries were appended in batches
-  // and each batch opened its own heading.
-  //
-  // A reader "deciding whether to upgrade" — this file's own statement of who it is for —
-  // scans for what was fixed, finds a coherent list, and stops. Two more were below,
-  // separated by other headings, with nothing to say they existed. That is worse than a
-  // long section: a list that looks complete and is not gives the reader no reason to look
-  // further, which is the same shape as a listing that quietly omits things.
+  // Keep a Changelog is one grouping per kind of change per release. A second `### Fixed`
+  // under the same version is a list that looks complete and is not: a reader who finds the
+  // first has no reason to look for another.
   const bad: string[] = [];
-  for (const rel of ["CHANGELOG.md", "STATE.md", "README.md"]) {
+  for (const rel of ["CHANGELOG.md", "README.md"]) {
     const f = join(root, rel);
     if (!existsSync(f)) continue;
     let release: string | null = null;

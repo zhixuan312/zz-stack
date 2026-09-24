@@ -1,30 +1,14 @@
 /**
- * THE TOOLS THAT WRITE DOWN WHAT A PERSON DECIDED.
+ * The tools that write down what a person decided: the ruler the define stage derived, the
+ * findings the report stage concluded, what became of each finding, and the verdict the round
+ * ends on. Everything else in the plugin evaluation reads.
  *
- * Everything else in the plugin evaluation reads: it counts runs, reads a recorded delta, marks
- * artifacts against a ruler. These are where a judgement made by somebody comes back into
- * the platform as a row — the ruler the define stage derived, the findings the report stage
- * concluded, what became of each of those findings, and the verdict the round ends on. They are
- * their own subject for that reason, and not because plugin-judge.ts got
- * long: the tools there answer "what is true of this plugin", these answer "what did a person
- * decide about it", and the second is not a smaller version of the first.
+ * Both a ruler and a finding refuse incomplete input at recording time rather than at judging
+ * time: a quantitative dimension with no threshold, a threshold with no stated reason, or a
+ * generic finding proposing no change. Refusing later means refusing once the figures exist.
  *
- * A DECISION THAT CANNOT BE CLOSED IS NOT A LEDGER. `finding_record` has always said that
- * applying or rejecting a finding is "a separate act by whoever owns the plugin", and for as
- * long as it said so no tool performed that act: eleven findings on this deployment, eleven
- * `deferred`, none applied, none rejected. A column with three values that only ever holds one
- * is a promise with nothing behind it — and once headroom counts every open finding, it is also
- * a number that only ever grows.
- *
- * BOTH REFUSE INCOMPLETE INPUT, and for the same reason at both ends. A quantitative dimension
- * with no threshold, or a threshold with no stated reason, is a line somebody can move later
- * to make a result come out differently and nobody would be able to tell. A finding scoped
- * generic that proposes no change claims the plugin has a habit worth changing it over and
- * leaves the next round nothing to test against. Both are refused at RECORDING time, because
- * the alternative is refusing at judging time, and by then the figures exist.
- *
- * NEITHER IS APPROVING. A ruler is recorded, then put to a person, then affirmed. A finding
- * lands deferred. The platform holds what was decided; it does not decide.
+ * Neither tool approves. A ruler is recorded, then put to a person, then affirmed; a finding
+ * lands `deferred`. The platform holds what was decided.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
@@ -66,27 +50,21 @@ export function registerPluginRecordTools(server: McpServer): void {
         dimensions: z.array(z.object({
           name: z.string(),
           kind: z.enum(["qualitative", "quantitative"]),
-          /** 2-5 ORDERED level descriptions, low end first. This is what a qualitative
-           *  dimension IS — a scale somebody can place an artifact on — and it replaces the
-           *  two-ends form below, which left the rungs between them to whoever was marking.
+          /** 2-5 ordered level descriptions, low end first.
            *
-           *  FIVE IS THE CEILING BECAUSE THE ARITHMETIC UNDERSTANDS FIVE. `effectiveness` in
-           *  judge-score.ts rescales a mark with `(mean - 1) / 4` and plugin_record prints the
-           *  result out of ten; both read the 1-5 scale as a constant. A schema accepting ten
-           *  rungs while the arithmetic understands five is not a richer ruler — it is a mean
-           *  of 7 on an eight-rung scale reported as an effectiveness of 15. Raising this
-           *  again is a capability decision that belongs with the divisor, not ahead of it. */
+           *  COUPLED: five is the ceiling because `effectiveness` in judge-score.ts rescales a
+           *  mark with `(mean - 1) / 4` and stores the result out of ten. Raising it means
+           *  changing the divisor too. */
           levels: z.array(z.string()).min(2).max(5).optional(),
-          /** The two-ends form. Kept for the rulers written before levels existed; a NEW
+          /** The two-ends form. Kept for the rulers written before levels existed; a new
            *  qualitative dimension must send `levels`. */
           five_means: z.string().optional(),
           one_means: z.string().optional(),
           threshold: z.string().optional(),
           threshold_reason: z.string().optional(),
-          /** WHICH FIGURE THE LINE IS DRAWN OVER, as dotted paths into the facts sheet
-           *  plugin_profile produces — `record.revised_with_evidence_pct`, `refusals.total`,
-           *  `traces.usable_runs`. Required on a quantitative dimension and resolved against
-           *  this plugin's own sheet before the ruler is written. */
+          /** Which figure the line is drawn over, as dotted paths into the facts sheet
+           *  plugin_profile produces (`record.revised_with_evidence_pct`, `refusals.total`).
+           *  Required on a quantitative dimension and resolved against this plugin's own sheet. */
           reads: z.array(z.string()).optional(),
         })).min(1),
       },
@@ -95,9 +73,8 @@ export function registerPluginRecordTools(server: McpServer): void {
       const p = db();
       if (!p) return noDb();
 
-      // VALIDATED HERE AND NOT AT JUDGING TIME, because judging time is too late: by then the
-      // figures exist, and a threshold written after them is a number somebody chose knowing
-      // the answer. Nobody afterwards can tell that from one chosen before.
+      // Validated here and not at judging time: by then the figures exist, and a threshold
+      // written after them cannot be told from one written before.
       const bad: string[] = [];
       for (const d of dimensions) {
         if (d.kind === "quantitative") {
@@ -111,11 +88,8 @@ export function registerPluginRecordTools(server: McpServer): void {
                      "out differently, and nobody would be able to tell");
           }
         } else if (!d.levels?.length) {
-          // NAME EVERY LEVEL, for 016_reference.sql's own reason one step further on: "a
-          // dimension a marker cannot place is a dimension that gets placed by mood." Two ends
-          // and a number do not place the middle — they leave three rungs to the marker's
-          // taste, and two rounds then mark the same artifact differently for no recorded
-          // reason. A level that cannot be described is one nobody should be asked to award.
+          // Every level is named. Two ends and a 1-5 scale leave three rungs to the marker's
+          // taste, so two rounds mark the same artifact differently for no recorded reason.
           bad.push(`${d.name}: qualitative and carries no levels — give 2-5 ordered level ` +
                    "descriptions, low end first. Two ends and a 1-5 scale leave the rungs " +
                    "between them to whoever is marking, and that is where two rounds stop " +
@@ -127,15 +101,10 @@ export function registerPluginRecordTools(server: McpServer): void {
       }
       if (bad.length) return text(`REFUSED: ${bad.join("; ")}`);
 
-      // AND THE LINE HAS TO BE ABLE TO REACH ITS FIGURE — checked here, against this plugin's
-      // real sheet, while the ruler is still a draft nobody has agreed to.
-      //
-      // Refusing at judging time would be too late for the same reason the threshold checks
-      // above are here: by then the figures exist. But this one is worse than late, because
-      // judging time cannot refuse at all — `applyThresholds` answers NOT MET when the facts
-      // lack the figure a line needs, so an unanswerable line does not come back unanswered,
-      // it comes back FAILED, and the round proceeds to write a 1 into eval_score that nobody
-      // can afterwards distinguish from a line the plugin really missed. See journal 0143.
+      // The line has to be able to reach its figure, checked against this plugin's real sheet
+      // while the ruler is still a draft. Judging time cannot refuse at all: `applyThresholds`
+      // answers not met when the facts lack the figure a line needs, so an unanswerable line
+      // comes back failed and writes a 1 into eval_score indistinguishable from a real miss.
       if (dimensions.some((d) => d.kind === "quantitative")) {
         const refusal = readsRefusal(dimensions, await factObject(p, plugin, version));
         if (refusal) return text(refusal);
@@ -152,24 +121,12 @@ export function registerPluginRecordTools(server: McpServer): void {
         on conflict (plugin_id, version) do update set subject = excluded.subject
         returning id::text as id`, [pv.plugin_id, rubric_version, subject])).rows[0].id;
 
-      // REPLACED, not merged — and BY NAME, because a score points at a dimension row.
-      //
-      // This deleted every dimension and re-inserted them, which is right about the ruler and
-      // wrong about the database: zz.eval_score carries a foreign key to rubric_dimension.id,
-      // so the moment a round has been scored the delete fails and the caller gets a raw
-      // Postgres constraint name instead of a sentence. It is not a rare corner either — it
-      // is what "reuse this plugin's existing ruler" runs into the first time it is tried,
-      // which is the path ruler_read itself tells the define stage to take.
-      //
-      // So a dimension that is still in the ruler is UPDATED IN PLACE and keeps its id, which
-      // is also the more honest record: a score taken against "document depth" stays attached
-      // to "document depth" rather than to a row that was deleted and replaced by one that
-      // happens to read the same.
-      //
-      // A dimension the new draft drops is deleted — leaving it behind would score the plugin
-      // against a line nobody currently holds — unless something has already been scored
-      // against it, and then the caller is told to move to a new rubric version rather than
-      // have history rewritten underneath them.
+      // Replaced, not merged, and matched by name, because zz.eval_score carries a foreign key
+      // to rubric_dimension.id. A dimension still in the ruler is updated in place and keeps its
+      // id, so a score taken against "document depth" stays attached to that row rather than to
+      // a replacement that happens to read the same. A dimension the new draft drops is deleted,
+      // unless something has already been scored against it — then the caller is told to move to
+      // a new rubric version rather than have history rewritten underneath them.
       const existing = (await p.query<{ id: string; name: string; scored: string }>(`
         select d.id::text as id, d.name,
                (select count(*)::text from zz.eval_score s where s.dimension_id = d.id) as scored
@@ -257,12 +214,9 @@ export function registerPluginRecordTools(server: McpServer): void {
         "select id::text as id from zz.eval where id = $1::uuid", [eval_id])).rows[0];
       if (!ev) return text(`ERROR: no evaluation ${eval_id}`);
 
-      // A GENERIC FINDING WITH NO PROPOSED CHANGE IS AN OBSERVATION, and the distinction is
-      // load-bearing. `generic` claims the plugin has a habit worth changing it over; saying so
-      // and then naming no change leaves the next round nothing to test against, and a finding
-      // nothing can contradict reads as vindicated whatever happens next. `specific` may stand
-      // alone -- one piece of work's own problem is fixed by doing that work better, not by
-      // editing a plugin.
+      // A generic finding with no proposed change is an observation: `generic` claims the plugin
+      // has a habit worth changing it over, and naming no change leaves the next round nothing
+      // to test against. `specific` may stand alone.
       const mute = findings.filter((f) => f.scope === "generic" && !f.proposed_change?.trim());
       if (mute.length) {
         return text(
@@ -274,26 +228,13 @@ export function registerPluginRecordTools(server: McpServer): void {
           "it without the platform treating it as a claim about the plugin.");
       }
 
-      // THE IDS COME BACK, because a finding nobody can name is a finding nobody can close.
-      // `decision` has carried three values since it was written and held one: closing a
-      // finding is a separate act, and the act needs a handle to perform it on.
+      // The ids come back, because a finding nobody can name is a finding nobody can close.
       //
-      // `'deferred'` IS A LITERAL IN THIS STATEMENT AND NOT A PARAMETER, which is the whole of
-      // what this tool adopted from the kernel. The rule was stated in three places — the
-      // header above, this tool's own description, and zz-plugin-report's skill — and held in
-      // none: the schema carried an optional `decision`, the insert bound it, and a caller
-      // sending `decision: "applied"` recorded a finding CLOSED AT BIRTH. Such a row carries no
-      // `decided_by`, no `decided_at` and no `decision_note`, never counts against headroom
-      // because `round_score` reads openness as `decision = 'deferred'`, and can never be
-      // decided afterwards because `finding_decide` updates `where decision = 'deferred'` — so
-      // the one act that records who closed it and why is unreachable on it forever. No such
-      // row has ever been written; the door to write one was open.
-      //
-      // The field is gone rather than validated, because a check is a thing somebody can
-      // relax and an absent field is not. There is now no expression in this function that
-      // produces a decision and no input that could supply one, which is the same
-      // construction `applyAssessment` uses in packages/contracts/src/audit-identity.ts: the
-      // guarantee is the absence, not a branch defending it.
+      // DELIBERATE: `'deferred'` is a literal in this statement, not a parameter, and there is
+      // no input that could supply a decision. A finding closed at birth carries no
+      // `decided_by`, `decided_at` or `decision_note`, never counts against headroom because
+      // `round_score` reads openness as `decision = 'deferred'`, and can never be decided later
+      // because `finding_decide` updates `where decision = 'deferred'`.
       const stored: { id: string; scope: string; pattern: string }[] = [];
       for (const f of findings) {
         const id = (await p.query<{ id: string }>(`
@@ -335,7 +276,7 @@ export function registerPluginRecordTools(server: McpServer): void {
         "ledger stops being readable.",
       inputSchema: {
         decisions: z.array(z.object({
-          finding_id: z.string().describe("from finding_record, or round_recommend's open_changes"),
+          finding_id: z.string().describe("from finding_record, or round_score's open_changes"),
           decision: z.enum(["applied", "rejected"]),
           note: z.string().describe(
             "applied: what was changed and where — a version, a file, a release. " +
@@ -358,9 +299,8 @@ export function registerPluginRecordTools(server: McpServer): void {
       const done: unknown[] = [];
       const refused: string[] = [];
       for (const d of decisions) {
-        // ONE STATEMENT, GUARDED IN THE WHERE CLAUSE. Reading the row and then updating it
-        // would let two callers deciding the same finding both see `deferred` and both write,
-        // and the second would silently overwrite the first's name and reason.
+        // One statement, guarded in the where clause. Reading the row and then updating it would
+        // let two callers deciding the same finding both see `deferred` and both write.
         const row = (await p.query<{ id: string; pattern: string; decision: string; at: string }>(`
           update zz.eval_finding
              set decision = $2, decision_note = $3, decided_by = $4, decided_at = now()
@@ -368,9 +308,8 @@ export function registerPluginRecordTools(server: McpServer): void {
           returning id::text as id, pattern, decision, decided_at::text as at`,
           [d.finding_id, d.decision, d.note.trim(), who])).rows[0];
         if (row) { done.push({ ...row, decided_by: who, note: d.note.trim() }); continue; }
-        // WHICH OF THE TWO, because they need opposite responses: an unknown id is a caller
-        // working from the wrong round, and an already-decided one is a caller about to undo
-        // somebody else's decision.
+        // Which of the two, because they need opposite responses: an unknown id is a caller
+        // working from the wrong round, an already-decided one is about to undo someone's work.
         const was = (await p.query<{ decision: string; by: string | null; note: string }>(
           "select decision, decided_by as by, decision_note as note from zz.eval_finding where id = $1::uuid",
           [d.finding_id])).rows[0];
@@ -379,7 +318,7 @@ export function registerPluginRecordTools(server: McpServer): void {
             `${was.note ? ` — "${was.note}"` : ""}. Reopening a decided finding is not something ` +
             "this tool does: record what the next round found instead."
           : `${d.finding_id} names no finding. Ids come from finding_record, or from the ` +
-            "open_changes round_recommend returns.");
+            "open_changes round_score returns.");
       }
       logActivity(await userRoot(), null,
         { user: who, action: "finding_decide", decided: done.length, refused: refused.length });
@@ -436,20 +375,13 @@ export function registerPluginRecordTools(server: McpServer): void {
           "Pass the real round's eval_id — round_scores shows both.");
       }
 
-      // NO CONTROL, NO VERDICT — ENFORCED HERE RATHER THAN MEASURED ANYWHERE.
+      // No control, no verdict. A score without a blind control establishes nothing: a ruler
+      // that cannot tell this plugin's work from another plugin's produces marks that mean
+      // nothing, and the gap is the only thing that says which case you are in.
       //
-      // This flow's entire argument is that a score without a blind control establishes
-      // nothing: a ruler that cannot tell this plugin's work from another plugin's produces
-      // marks that mean nothing, and the gap is the only thing that says which case you are in.
-      // `round_judge` has always TOLD the caller to run the control next, and nothing has ever
-      // required it — so a round could be scored, recommended and written up on a ruler nobody
-      // tried.
-      //
-      // IT IS A REFUSAL AND NOT A RULER LINE, and that distinction cost a false headline. A
-      // threshold reading "every round carries a control" cannot work: the figure is not in the
-      // profile, and the control runs AFTER the pass that would read it, so the line is false
-      // at the instant it is measured no matter what the truth is. Enforced here the property
-      // is true by construction and needs no line, no figure and no judge. See journal 0143.
+      // DELIBERATE: a refusal here rather than a ruler line. The figure is not in the profile
+      // and the control runs after the pass that would read it, so such a line would be false at
+      // the instant it is measured whatever the truth is.
       const ctl = (await p.query<{ id: string }>(
         "select id::text as id from zz.eval where controls = $1::uuid limit 1", [eval_id])).rows[0];
       if (!ctl) {
@@ -463,10 +395,9 @@ export function registerPluginRecordTools(server: McpServer): void {
           "and have to be re-taken.");
       }
 
-      // WHAT THIS ROUND ESTABLISHED, read back rather than re-derived. Every figure here is
-      // already stored: the means the judge produced, the control it was tried against, the
-      // thresholds with the line each was held to. Re-deriving any of them would let the
-      // recommendation rest on numbers the report never showed.
+      // What this round established, read back rather than re-derived. Every figure is already
+      // stored: the means the judge produced, the control it was tried against, the thresholds.
+      // Re-deriving would let the recommendation rest on numbers the report never showed.
       const dims = (await p.query<{ dimension: string; kind: string; mean: string; n: string;
                                     confidence: string | null }>(`
         select d.name as dimension, d.kind, round(avg(s.score),2)::text as mean,
@@ -474,34 +405,21 @@ export function registerPluginRecordTools(server: McpServer): void {
           from zz.eval_score s join zz.rubric_dimension d on d.id = s.dimension_id
          where s.eval_id = $1::uuid and not s.is_control
          group by d.name, d.kind, d.ordinal order by d.ordinal`, [eval_id])).rows;
-      // THIS ROUND'S OWN CONTROL, NAMED — not every round that shares a version and a ruler.
-      //
-      // This pooled across `plugin_version_id + rubric_id`, which was the only thing available
-      // before a control named the round it controls. It meant a gap could be borrowed from a
-      // DIFFERENT round: three rounds at one version put all their marks in one average, so a
-      // round whose own control collapsed could read as discriminating because an earlier one
-      // did. Now that a control is required above, the link exists on every round that can
-      // reach this line, and the honest gap is the one between these two evals and no others.
+      // This round's own control, named — not every round that shares a version and a ruler.
+      // Pooling across `plugin_version_id + rubric_id` lets a round whose own control collapsed
+      // read as discriminating because an earlier round's did.
       const control = (await p.query<{ real: string | null; ctl: string | null }>(`
         select round(avg(s.score) filter (where not s.is_control),2)::text as real,
                round(avg(s.score) filter (where s.is_control),2)::text as ctl
           from zz.eval_score s
           join zz.rubric_dimension d on d.id = s.dimension_id and d.kind <> 'quantitative'
          where s.eval_id in ($1::uuid, $2::uuid)`, [eval_id, ctl.id])).rows[0];
-      // EVERY FINDING STILL OPEN ON THIS PLUGIN, NOT JUST THIS ROUND'S.
+      // Every finding still open on this plugin, not just this round's: headroom counts named
+      // changes, and a change named by an earlier round and never decided is one.
       //
-      // Headroom counts NAMED CHANGES -- things somebody could actually do -- and a change
-      // named by an earlier round and never decided is exactly that. Reading only this round's
-      // rows made the second round of any plugin report less to do than the first, purely
-      // because the first round's findings had scrolled out of the query: on this deployment
-      // eleven findings sat `deferred`, five of them about plugins that were scored again
-      // afterwards, and not one was visible to the score.
-      //
-      // `deferred` IS THE OPEN STATE and the other two are closed, which is why the ledger has
-      // three values rather than a boolean. `applied` means the change was made -- counting it
-      // would charge the plugin for work already done. `rejected` means somebody decided it was
-      // not worth doing, and a change nobody intends to make is not headroom. Neither is a
-      // silent drop: `finding_decide` records who closed it and why, and it stays readable.
+      // `deferred` is the open state; the other two are closed. `applied` would charge the
+      // plugin for work already done, and `rejected` is a change nobody intends to make. Neither
+      // is a silent drop — `finding_decide` records who closed it and why.
       const findings = (await p.query<{ id: string; scope: string; pattern: string;
                                         change: string; round: string; open: boolean }>(`
         select f.id::text as id, f.scope, f.pattern, f.proposed_change as change,
@@ -518,12 +436,9 @@ export function registerPluginRecordTools(server: McpServer): void {
 
       const gap = control?.real && control?.ctl
         ? Math.round((Number(control.real) - Number(control.ctl)) * 100) / 100 : null;
-      // THE SCORE GOES INTO THE STATE, so the enum is chosen knowing it.
-      //
-      // The word and the number answer different questions -- what to do, and how good it is --
-      // and they must not be derived independently or a report can carry "keep" beside a 4.2
-      // with nothing saying which to believe. The number is computed first, from figures no
-      // model touched; the enum is chosen after, with the number in front of it.
+      // The score goes into the state, so the enum is chosen knowing it. The word and the number
+      // answer different questions and must not be derived independently, or a report can carry
+      // "keep" beside a 4.2 with nothing saying which to believe.
       const qual = dims.filter((d) => d.kind === "qualitative");
       const quant = dims.filter((d) => d.kind === "quantitative");
       const qualMean = qual.length
@@ -551,10 +466,9 @@ export function registerPluginRecordTools(server: McpServer): void {
           : `Judge on trial: the real subjects averaged ${control?.real} and the blind control ` +
             `averaged ${control?.ctl}, a gap of ${gap}. A gap below 1.5 means the ruler failed ` +
             "to tell the right artifact from the wrong one and the round establishes nothing.",
-        // THE SAME SET THE SCORE WAS COMPUTED FROM. The enum is chosen with the number in
-        // front of it, so the evidence behind the number has to be in front of it too — a
-        // state naming this round's findings while headroom counted every open one would let
-        // `keep` be chosen against a plugin with four changes waiting that were never shown.
+        // The same set the score was computed from. A state naming only this round's findings
+        // while headroom counted every open one would let `keep` be chosen against a plugin with
+        // four changes waiting that were never shown.
         open.length
           ? `Changes still open on this plugin: ${open.length}, of which ` +
             `${open.filter((f) => f.round === round.version).length} were named by this round ` +
@@ -566,10 +480,8 @@ export function registerPluginRecordTools(server: McpServer): void {
             : "No findings were recorded against this round, and none are open from earlier ones.",
       ].join(" ");
 
-      // ABSENCE IS AN ANSWER. A deployment with no key still produces a report; it produces one
-      // that says the typed judgement was not taken and why, which a reader can act on. A
-      // report that refuses to exist because a third party is unreachable is a dependency
-      // nobody agreed to.
+      // Absence is an answer. A deployment with no key still produces a report — one that says
+      // the typed judgement was not taken and why, which a reader can act on.
       if (!configured()) {
         return json({
           eval_id, plugin: round.plugin, version: round.version,
@@ -583,16 +495,11 @@ export function registerPluginRecordTools(server: McpServer): void {
         });
       }
 
-      // NO RECOMMENDATION IS ASKED FOR ANY MORE, and the reason is that the question had one
-      // permanent answer. `keep`, `keep-and-change`, `re-run`, `not-evaluable`, `retire` asked
-      // what to DO about a plugin somebody installed on purpose and is going to keep — so
-      // `retire` was advice nobody takes, `keep` was information nobody needed, and the middle
-      // three were the headroom axis wearing a decision's clothes. Both axes are computed from
-      // figures no model touched; there is nothing left for a choice to add.
+      // No recommendation is asked for. Both axes are computed from figures no model touched, so
+      // a choice between `keep`/`re-run`/`retire` adds nothing.
       //
-      // WHAT IS STILL WORTH ASKING is how strong the body of evidence is: a judgement about the
-      // ROUND rather than about the plugin, not derivable from the marks, and the one number
-      // here that says how much weight the other two will bear.
+      // What is asked is how strong the body of evidence is: a judgement about the round rather
+      // than the plugin, not derivable from the marks.
       const questions: Record<string, ScoreQuestion> = {
         evidence_strength: {
           type: "score",
@@ -607,21 +514,13 @@ export function registerPluginRecordTools(server: McpServer): void {
         return text(String((err as Error).message));
       }
 
-      // THE NUMBER IS STORED, NOT ONLY RETURNED.
+      // The number is stored, not only returned, so anything reading this table later sees a
+      // measurement and not just a verb.
       //
-      // Both axes were computed here, put in front of the typed judge so the enum was chosen
-      // knowing them, handed back to the caller — and dropped. So "how good is it, out of ten"
-      // survived exactly as long as the tool response that carried it, and anything reading
-      // this table later saw a verb and no measurement.
-      //
-      // STORED RATHER THAN RECOMPUTED BY THE READER, because judge-score.ts owns the
-      // arithmetic and a second copy of it in the console's API would drift the first time a
-      // weight changed — the console would then print a different score from the report, with
-      // nothing on screen saying which of the two to believe.
-      // THE BAND IS NOT STORED, which is the lesson of the release before this one: it is
-      // `band(score)`, arithmetic over a column in the same row, so storing it was storing a
-      // cache — and the day the words changed every stored caption was wrong while every
-      // stored score stayed right. The rule lives in @zz/contracts; both services call it.
+      // COUPLED: judge-score.ts owns the arithmetic. Stored rather than recomputed by the
+      // reader, because a second copy in the console's API would drift the first time a weight
+      // changed. The band is not stored — it is `band(score)` over a column in the same row, so
+      // storing it stores a cache. The rule lives in @zz/contracts; both services call it.
       await p.query(`
         update zz.eval set effectiveness = $2, headroom_points = $3,
                            headroom_named = $4, headroom_state = $5
@@ -635,23 +534,20 @@ export function registerPluginRecordTools(server: McpServer): void {
 
       return json({
         eval_id, plugin: round.plugin, version: round.version,
-        // TWO AXES AND NOTHING ELSE. They answer different questions — how well it performs,
-        // and whether anything is left to do — and neither is derivable from the other.
+        // Two axes and nothing else. They answer different questions — how well it performs, and
+        // whether anything is left to do — and neither is derivable from the other.
         effectiveness: effective,
         headroom: { ...room, note: headroomNote(room) },
-        // WHAT THE HEADROOM IS MADE OF, with the handle needed to close each one. A count of
-        // named changes that a reader cannot enumerate is a number they have to trust; these
-        // are the rows it was computed from, including the ones earlier rounds named and
-        // nobody has decided since.
+        // What the headroom is made of, with the handle needed to close each one — the rows the
+        // count was computed from, including ones earlier rounds named and nobody has decided.
         open_changes: open.map((f) => ({
           finding_id: f.id, scope: f.scope, named_by_round: f.round,
           pattern: f.pattern, proposed_change: f.change,
           carried_over: f.round !== round.version,
         })),
-        // THE FIGURE, ITS SCALE AND HOW SURE THE JUDGE WAS, all three as the adapter validated
-        // them: the score against the four levels asked for above, the legend against the same
-        // count. A reply that carried none of that never reaches here -- `ask` refuses it --
-        // so a null here is the absence of a score rather than a score nobody could read.
+        // The figure, its scale and how sure the judge was, all three as the adapter validated
+        // them. A reply carrying none of that never reaches here — `ask` refuses it — so a null
+        // here is the absence of a score rather than a score nobody could read.
         evidence_strength: strength && strength.readings.score !== null
           ? { score: strength.readings.score, legend: strength.readings.legend,
               confidence: strength.readings.confidence }

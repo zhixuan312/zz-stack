@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.12
+version: 1.13
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -83,10 +83,9 @@ it read — `spec.md` for the spec audit, `plan.md` for the plan audit — and b
 gated, so the round is a reader's check on something somebody already stood behind. Ask for the approval first; the audit is the reader's check on a
 document somebody already stood behind, not a way to decide whether to stand behind it.
 
-The third is the one that changed, and it changed because the flow was closing on the wrong
-document. `spec.md` used to carry `closing`, so the platform offered the close as soon as the
-plan was approved — before any code was written. `review.md` carries it now, which is why the
-close waits for a review that exists and is signed.
+The third is `review.md`, not `spec.md`: it carries `closing`, so the close waits for a review
+that exists and is signed rather than being offered as soon as the plan is approved, before any
+code is written.
 
 **A person may delegate the decision — "auto-approve, I do not need to see it" — and that is
 theirs to say.** Delegation is an ordinary answer, and it keeps standing until they say
@@ -192,9 +191,8 @@ document_write(path: "<initiative>/explore.md", content: "<the body>")
 ```
 
 **THE FLOW IS DECLARED WHEN THE INITIATIVE IS OPENED, and `document_write` does not take one.**
-It used to, and passing it on a later document was a way to retrofit a manifest onto work
-already written — the gates that manifest declares would then land on documents nobody had
-approved. `initiative_open` is the one moment the choice is meaningful, and there is no tool
+Passing one on a later document would retrofit a manifest onto work already written — the gates
+that manifest declares would then land on documents nobody had approved. `initiative_open` is the one moment the choice is meaningful, and there is no tool
 for changing it afterwards.
 
 `flow` is not decoration. The platform reads it to decide which chain of gates applies, and a

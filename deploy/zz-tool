@@ -1,55 +1,36 @@
 #!/usr/bin/env bash
 # Run one of the platform's own tools on a deployment host.
 #
-#   ./deploy/zz-tool provision --email alice@example.com --team team-one --flow sdlc-flow
-#   ./deploy/zz-tool set-credential --csv keys.csv
+#   ./deploy/zz-tool call /core/mcp session_whoami
 #   ./deploy/zz-tool audit --manifest /catalog/sdlc/sdlc-flow/flow.json --store /artifacts/teams/<team>
-#   ./deploy/zz-tool smoke /catalog/sdlc/tests/scenarios.json
+#   ./deploy/zz-tool register-skills
 #   ./deploy/zz-tool                       # list what there is
 #
-# WHY THIS EXISTS. These tools were Python, standard library only, deliberately: they run on
-# a fresh host during an install, and a dependency there is a dependency at the worst possible
-# moment. They are TypeScript now, which needs a runtime — and a deploy host runs containers
-# and has no toolchain installed. `scripts/build-image.sh` says so in its own comment, and
-# reads package.json with sed rather than node for exactly this reason.
+# DELIBERATE: the tools run in the image already on the host. A deploy host runs containers and
+# has no toolchain; the image carries node and the compiled tools, so nothing new is installed
+# and a tool cannot be a different version from the services it talks to.
 #
-# So they run in the image that is already on the host. It carries node and the compiled
-# tools, because the Dockerfile copies `packages/` out of the build stage; nothing new is
-# installed, and the tools cannot be a different version from the services they talk to.
-#
-# ON THE COMPOSE NETWORK, so service names resolve — and a tool's own defaults do NOT apply
+# On the compose network, so service names resolve — and a tool's own defaults do not apply
 # here. A default of 127.0.0.1 means, inside a one-shot container, that container: pass the
-# SERVICE name instead.
+# service name instead.
 #
 #   --gateway http://cred-proxy:8000
 #
-# `cred-proxy`, not `gateway`. This line named a service that has never existed in
-# docker-compose.yml, so an operator following it got a DNS failure from a command the
-# README documents as the first thing to run after installing.
-#
-# NO DOCKER SOCKET. Mounting it would give this container root on the host, which is a large
-# thing to hand a one-shot command. The one tool that ever wanted it was the front end's
-# provisioner, and it is gone with the front end; nothing here needs the socket now.
+# DELIBERATE: no docker socket. Mounting it would give a one-shot command root on the host,
+# and no tool here needs it.
 set -euo pipefail
 cd "$(dirname "$0")"
 
 declare -A TOOLS=(
-  [set-credential]=ops/set-credential
-  [probe-block]=ops/probe-block
   [call]=ops/call
-  # register-skills and the two block-registry tools were missing from this map while their
-  # own docstrings said `zz-tool register-skills` and the README listed them as day-2 ops.
-  # A deploy host has no toolchain, so a tool absent here is a tool that cannot be run where
-  # it matters — and the registry it maintains is what the console reads.
+  # A deploy host has no toolchain, so a tool absent from this map cannot be run where it
+  # matters.
   [register-skills]=ops/register-skills
   [register-plugins]=ops/register-plugins
-  # plugin-surface reads what zz-core WRITES at boot. A record nothing reads back is a record
-  # nobody can be wrong about; this is the reader, and a deploy host is where the recorded
-  # surfaces actually are.
+  # plugin-surface reads back the surface zz-core records at boot.
   [plugin-surface]=ops/plugin-surface
   [audit]=testing/manifest-audit
   [chain-check]=testing/chain-check
-  [conformance]=testing/block-conformance
   [tool-report]=testing/tool-report
   [evolve-report]=testing/evolve-report
   [step-score]=testing/step-score
@@ -67,26 +48,19 @@ if [ -z "$name" ] || [ -z "${TOOLS[$name]:-}" ]; then
 fi
 shift
 
-# Pass through the variables the tools read, and ONLY those. `docker compose run -e NAME`
-# without a value forwards this shell's value when it is set and leaves it unset otherwise,
-# which is what keeps an unset secret from arriving as an empty string that a tool would then
-# treat as supplied.
+# Pass through the variables the tools read, and only those. `docker compose run -e NAME`
+# without a value forwards this shell's value when it is set and leaves it unset otherwise, so
+# an unset secret never arrives as an empty string a tool would treat as supplied.
+#
+# COUPLED: every name here is read by a tool this repository has, and the gate holds that.
 pass=()
-# EVERY NAME HERE IS READ BY A TOOL THIS REPOSITORY STILL HAS, and the gate holds that.
-# Thirteen of the twenty-five were not: ten SMOKE_* for a smoke engine no longer in the tree,
-# LC_BASE and LC_EMAIL and LIBRECHAT_MONGO_URL for a front end removed on 2026-09-10, and
-# ZZ_USER_PAT for nothing at all. A passthrough list costs nothing to be wrong, which is why
-# it was — an operator reading it cannot tell a knob from a fossil.
-for v in ZZ_PAT ZZ_TOKEN ZZ_TOKEN_FILE ZZ_URL ZZ_GATEWAY ZZ_BLOCK_KEY CHAIN_FLOW \
+for v in ZZ_PAT ZZ_TOKEN ZZ_TOKEN_FILE ZZ_URL ZZ_GATEWAY CHAIN_FLOW \
          PLATFORM_BASE_MODEL LLM_BASE_URL LLM_API_KEY JUDGE_MODEL TEAM_DB_URL; do
   [ -n "${!v:-}" ] && pass+=(-e "$v")
 done
 
-# `-T`: NO TTY. Nothing here is interactive — these tools read argv and env and write to
-# stdout — and without it `docker compose run` allocates one and keeps the session's streams
-# open. Over ssh that means the launching connection never returns — a launcher can background
-# a long run correctly and detach it correctly, and the ssh that started it still sits there
-# for the whole round, so the operator cannot tell a successful launch from a hang.
-# It also makes output line-buffered rather than terminal-shaped, which is what a log wants.
+# `-T`: no TTY. Nothing here is interactive, and with one allocated an ssh session that
+# launched a long run never returns, so a launch cannot be told from a hang. It also keeps
+# output line-buffered, which is what a log wants.
 exec docker compose run --rm --no-deps -T "${pass[@]}" \
   --entrypoint node zz-core "/repo/packages/tools/dist/${TOOLS[$name]}.js" "$@"

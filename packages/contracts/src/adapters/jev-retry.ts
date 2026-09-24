@@ -1,38 +1,28 @@
 /**
- * WHAT A FAILED CALL TO THE TYPED ASSESSOR WAS, AND WHETHER ASKING AGAIN COULD POSSIBLY HELP.
+ * What a failed call to the typed assessor was, and whether asking again could help.
  *
- * THE ONLY QUESTION THIS MODULE ANSWERS IS "WHAT KIND OF FAILURE WAS THAT". Everything else
- * follows from the kind. A retry is worth making when the request was fine and the supplier
- * was momentarily unable to serve it; it is worth nothing at all when the request itself is
- * the problem, and it is actively harmful then — a malformed body retried on a backoff is a
- * client generating load to be told the same thing, which is how one bad request becomes an
- * outage, and a rejected credential retried is a configuration fault wearing the costume of
- * flakiness while nobody goes and fixes it. So the classification is by KIND, written out one
- * status at a time, and the retry decision reads the kind rather than a band.
+ * The one question this module answers is which kind of failure it was; the retry decision
+ * reads the kind rather than a status band. A retry helps when the request was fine and the
+ * supplier was momentarily unable to serve it, and never when the request itself is the
+ * problem.
  *
- * AN UNLISTED STATUS IS NOT RETRIED, and that is the safe direction rather than a shortcut. A
- * status nobody has classified is not known to be transient; treating the whole 5xx band as
- * capacity would retry a 501, which means "this will never work" and will still mean that in
- * eight seconds. Widening this policy is a row in the table below, never a band — and adding
- * the row forces whoever adds it to say which kind the status is.
+ * An unlisted status is not retried: a status nobody has classified is not known to be
+ * transient, and treating the whole 5xx band as capacity would retry a 501. Widening this
+ * policy is a row in the table below, never a band.
  *
- * NOTHING HERE PERFORMS A CALL, WAITS, OR READS A CLOCK. Every function is pure: the caller
- * owns the transport, the timer and the budget, and hands in what it observed. That is what
- * makes the policy testable without a network and what keeps a supplier address out of a
- * package that must not hold one. `Retry-After` reaches `nextDelay` as a number of
- * milliseconds because parsing a header is the transport's job, not this policy's.
+ * Nothing here performs a call, waits or reads a clock. Every function is pure: the caller owns
+ * the transport, the timer and the budget, and hands in what it observed. `Retry-After` reaches
+ * `nextDelay` as a number of milliseconds because parsing a header is the transport's job.
  *
- * AND WHAT IT REFUSES TO PROMISE. `idempotencyKey` is a LOCAL key: it lets this platform
- * notice that two records describe the same logical decision and keep one. It is not sent to
- * the supplier, no documented supplier-side deduplication is claimed for it, and it therefore
- * does not stop a retried attempt being billed twice. `attemptRecord` says so in the only way
- * a record can — an attempt that was sent and produced no readable answer is billed
- * `uncertain`, not `not_billed`, because the supplier may have done the work and we cannot
- * see whether it did.
+ * DELIBERATE: `idempotencyKey` is a local key. It lets this platform notice that two records
+ * describe the same logical decision and keep one; it is not sent to the supplier and does not
+ * stop a retried attempt being billed twice. An attempt that was sent and produced no readable
+ * answer is billed `uncertain` rather than `not_billed`, because the supplier may have done the
+ * work.
  */
 import { stableDigest } from "../profiles.js";
 
-// ── what kind of failure it was ────────────────────────────────────────────────────────────
+// What kind of failure it was
 
 /**
  * `capacity` — the supplier could not serve a well-formed request right now.
@@ -45,11 +35,10 @@ import { stableDigest } from "../profiles.js";
 export type JevFailureKind =
   | "capacity" | "transport" | "authentication" | "request_schema" | "permanent" | "unclassified";
 
-/** THE TABLE. One row per status, each naming a kind rather than inheriting one from its
- *  hundreds digit. The two rows the surrounding contract is most explicit about are 429 and
- *  529 as capacity, and 401 and 422 as NOT capacity however often a burst of them looks like
- *  one. 408 and 504 are transport rather than capacity because the request may never have been
- *  served at all, which is also why both are billed as uncertain below. */
+/** The table: one row per status, each naming a kind rather than inheriting one from its
+ *  hundreds digit. 429 and 529 are capacity; 401 and 422 are not, however often a burst of them
+ *  looks like one. 408 and 504 are transport rather than capacity because the request may never
+ *  have been served at all, which is why both are billed uncertain below. */
 const CLASSIFICATION: Readonly<Record<number, JevFailureKind>> = Object.freeze({
   400: "request_schema",
   401: "authentication",
@@ -79,15 +68,14 @@ export function classify(status: number | null): JevFailureKind {
   return CLASSIFICATION[status] ?? "unclassified";
 }
 
-/** MAY THIS BE ASKED AGAIN. Derived from the kind and nothing else, so a caller cannot reach a
+/** May this be asked again. Derived from the kind and nothing else, so a caller cannot reach a
  *  retry by reasoning about a status directly. A 2xx classifies as `unclassified` and answers
- *  false: a success is not a failure, and the safe answer to a question that should not have
- *  been asked is "do not send it again". */
+ *  false. */
 export const retryable = (status: number | null): boolean => RETRYABLE.includes(classify(status));
 
-// ── how long to wait, if at all ────────────────────────────────────────────────────────────
+// How long to wait, if at all
 
-/** What the caller observed and what it has left. `attempt` counts attempts already MADE, so
+/** What the caller observed and what it has left. `attempt` counts attempts already made, so
  *  the first failure arrives as 1. `retry_after_ms` is the supplier's own instruction, already
  *  parsed out of its header by the transport. */
 export interface JevRetryInput {
@@ -116,18 +104,16 @@ const DEFAULT_BASE_MS = 500;
 const DEFAULT_CAP_MS = 8_000;
 
 /**
- * BOUNDED EXPONENTIAL BACKOFF WITH FULL JITTER, AND THE SUPPLIER'S OWN INSTRUCTION ON TOP.
+ * Bounded exponential backoff with full jitter, and the supplier's own instruction on top.
  *
- * Three things can stop a retry and each is reported separately: the kind cannot be fixed by
+ * Three things stop a retry and each is reported separately: the kind cannot be fixed by
  * retrying, the attempt budget is spent, or the wait would run past the time the caller has
- * left. That last one matters more than it looks — honouring a `Retry-After` of thirty seconds
- * inside a budget of ten is not patience, it is a caller that will be cancelled mid-sleep and
- * report nothing at all, which is strictly worse than reporting that it ran out of time.
+ * left — a `Retry-After` of thirty seconds inside a budget of ten leaves a caller cancelled
+ * mid-sleep, reporting nothing at all.
  *
- * HONOURING `Retry-After` MEANS NEVER GOING SOONER THAN ASKED, so the instruction is a floor
- * under the jittered delay rather than a replacement for it. Jitter is full rather than
- * proportional because its job is to break up a fleet of clients that all failed at the same
- * instant, and a narrow band around a fixed delay leaves them synchronised.
+ * `Retry-After` is a floor under the jittered delay rather than a replacement for it. Jitter is
+ * full rather than proportional, so a fleet of clients that all failed at the same instant does
+ * not stay synchronised.
  */
 export function nextDelay(input: JevRetryInput): JevRetryDecision {
   const kind = classify(input.status);
@@ -162,7 +148,7 @@ export function nextDelay(input: JevRetryInput): JevRetryDecision {
 const frozen = (retry: boolean, delay_ms: number, kind: JevFailureKind, reason: string): JevRetryDecision =>
   Object.freeze({ retry, delay_ms, kind, reason });
 
-// ── what was attempted, and what it may have cost ──────────────────────────────────────────
+// What was attempted, and what it may have cost
 
 /** Whether the supplier charged for the attempt. `uncertain` is not a hedge: it is the only
  *  honest value for an attempt that was sent and whose outcome we could not read. */
@@ -190,12 +176,10 @@ export interface JevAttempt {
 }
 
 /**
- * WHAT THE ATTEMPT MAY HAVE COST, decided from what came back rather than from what we hope.
- * A 4xx is the supplier refusing before it did any work. A 5xx, a timeout and a call that
- * returned nothing at all are all attempts where the work may have been done and the answer
- * lost on the way home, so they are `uncertain` — a retry after one of those may be the second
- * time this platform pays for the same judgement, and the record has to say so rather than
- * imply a clean slate.
+ * What the attempt may have cost, decided from what came back. A 4xx is the supplier refusing
+ * before it did any work. A 5xx, a timeout and a call that returned nothing at all are attempts
+ * where the work may have been done and the answer lost on the way home, so they are
+ * `uncertain`.
  */
 function billingFor(status: number | null): JevBilling {
   if (status === null) return "uncertain";
@@ -218,12 +202,12 @@ export function attemptRecord(input: JevAttemptInput): JevAttempt {
   });
 }
 
-// ── naming one logical decision ────────────────────────────────────────────────────────────
+// Naming one logical decision
 
 /** What makes two calls the same logical decision: the same question, against the same pinned
- *  evidence, under the same profile, asking the same exact model. Deliberately NOT the attempt
+ *  evidence, under the same profile, asking the same exact model. DELIBERATE: not the attempt
  *  number — retries of one request share the key, or it would name attempts rather than
- *  decisions and prevent nothing. */
+ *  decisions. */
 export interface JevRequestIdentity {
   readonly question_id: string;
   readonly question_digest: string | null;
@@ -232,7 +216,7 @@ export interface JevRequestIdentity {
   readonly requested_model: string;
 }
 
-/** A LOCAL key, and the header says what it does not do: nothing here reaches the supplier, so
- *  this prevents a duplicate DECISION on this platform and not a duplicate charge on theirs. */
+/** A local key: nothing here reaches the supplier, so this prevents a duplicate decision on
+ *  this platform and not a duplicate charge on theirs. */
 export const idempotencyKey = (identity: JevRequestIdentity): string =>
   `assessor-call:${stableDigest(identity)}`;

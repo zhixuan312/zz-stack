@@ -1,5 +1,5 @@
-// The initiative's critical risk, tested by mutation. A green gate is what success looks like
-// AND what a blinded discovery scan looks like; only the plant tells them apart.
+// Tested by mutation: a green gate is what success looks like and what a blinded discovery
+// scan looks like, so only the plant tells them apart.
 import { writeFileSync, rmSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 const PLANT = "checks/zz-audit-plant.ts";

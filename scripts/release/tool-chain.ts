@@ -1,23 +1,16 @@
 /**
- * Walk the tool chain against THE IMAGE BEING RELEASED, before anything is pushed.
+ * Walk the tool chain against the image being released, before anything is pushed.
  *
- * WHY THIS EXISTS, in two rollbacks. `chain-check` proves the acts a flow is made of — write,
- * approve, revise, close — and it needs a live deployment, so the offline gate cannot run it
- * and it ran for the first time against PRODUCTION, after the images were pushed and the
- * deployment switched. Twice in two days a release changed a contract the check still asserted
- * the old half of: 0.44 stopped stamping a status on an ungated document and stopped letting
- * one be approved, and 0.46 made closing the sign-off. Both were correct changes. Both were
- * found by a probe running against the deployment they had already replaced, and one of them
- * could not be rolled back because a migration had dropped a table underneath it.
+ * `chain-check` proves the acts a flow is made of — write, approve, revise, close — and it needs
+ * a live deployment, so the offline gate cannot run it. Run only after the deployment switched,
+ * it reports a contract change against the deployment that has already replaced it.
  *
- * A dry run that cannot fail the way the release fails is a rehearsal of a different release.
  * So the whole platform is stood up here from the image under test — postgres, zz-core, the
  * gateway — a token is minted the way a fresh install mints its first one, and the chain is
- * walked against that. Nothing touches the deployment, nothing is published, and a contract
- * the check no longer matches is a local failure a minute into the release.
+ * walked against that. Nothing touches the deployment and nothing is published.
  *
- * It is the same binary the release runs afterwards against the live deployment: this proves
- * the code, that proves the deployment, and neither replaces the other.
+ * It is the same binary the release runs afterwards against the live deployment: this proves the
+ * code, that proves the deployment.
  */
 import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -52,25 +45,22 @@ export function walkToolChain(version: string | undefined): void {
     }
     try { run("docker", ["network", "rm", net], { stdio: ["ignore", "ignore", "ignore"] }); } catch { /* already gone */ }
   };
-  // Registered BEFORE anything starts, like the sql-check stack: a die() between here and the
+  // Registered before anything starts, like the sql-check stack: a die() between here and the
   // teardown would otherwise leave three containers running on whoever ran the release.
   process.on("exit", drop);
   // An exit handler cannot run when the process is killed outright, so anything a previous
   // release left under this prefix goes first. See reapLeaked().
   reapLeaked("zz-chain-");
   try {
-    // A NETWORK, NOT LINKS, because two of these names are load-bearing. zz-core answers only
-    // the hosts in TRUSTED_PEERS, which defaults to `cred-proxy` — the compose service name the
-    // gateway still runs under — and the gateway reaches zz-core at `zz-core`. A `--link` alias
-    // reaches only the container that declares it, so zz-core could not have resolved the peer
-    // it was asked to trust. On a network every alias resolves for everybody, which is what the
-    // deployment's own compose network does.
+    // A network, not links, because two of these names are load-bearing: zz-core answers only
+    // the hosts in TRUSTED_PEERS, which defaults to `cred-proxy`, and the gateway reaches
+    // zz-core at `zz-core`. A `--link` alias reaches only the container that declares it; on a
+    // network every alias resolves for everybody, as the deployment's own compose network does.
     run("docker", ["network", "create", net]);
-    // THE DEPLOYMENT'S OWN DATABASE IMAGE, read from compose — see postgres-service.ts. This
-    // walk stands the real platform up and calls it, so standing it on a cluster offering
-    // different extensions walks a chain the deployment does not have. Its command comes along
-    // too: the image ships `shared_buffers = 8GB` from the specification's reference settings,
-    // and compose is where that is cut down to something a release host can map.
+    // The deployment's own database image, read from compose (postgres-service.ts): a cluster
+    // offering different extensions walks a chain the deployment does not have. Its command
+    // comes too — the image ships `shared_buffers = 8GB` and compose cuts that down to
+    // something a release host can map.
     const pgsvc = postgresService(root);
     run("docker", ["run", "-d", "--name", pg, "--network", net, "--network-alias", "postgres",
                    "-e", "POSTGRES_USER=zz", "-e", "POSTGRES_PASSWORD=chaincheck",
@@ -91,7 +81,7 @@ export function walkToolChain(version: string | undefined): void {
     if (!port) die("the release's own gateway published no port to walk the chain against");
     const base = `http://127.0.0.1:${port}`;
 
-    // THE GATEWAY MIGRATES AND SEEDS, and both have to be finished before a token means
+    // The gateway migrates and seeds, and both have to be finished before a token means
     // anything: the principal this mints for is created by that seed.
     waitFor("the gateway's own boot", () => {
       try {
@@ -100,10 +90,9 @@ export function walkToolChain(version: string | undefined): void {
       } catch { return false; }
     });
 
-    // The same row a fresh install writes — deploy/issue-first-pat.sh mints exactly this,
-    // because `pat_issue` needs a token to issue one and a new deployment has none. When that
-    // script and this disagree, the bootstrap is broken and nothing else would say so: this
-    // found `scope` still named here after the column was dropped.
+    // COUPLED: the same row a fresh install writes — deploy/issue-first-pat.sh mints exactly
+    // this, because `pat_issue` needs a token to issue one and a new deployment has none. When
+    // that script and this disagree, the bootstrap is broken and nothing else would say so.
     const token = `zzp_${randomBytes(24).toString("hex")}`;
     const hash = createHash("sha256").update(token).digest("hex");
     run("docker", ["exec", pg, "psql", "-U", "zz", "-d", "zz", "-q", "-c",

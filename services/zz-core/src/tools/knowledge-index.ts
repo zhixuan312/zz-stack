@@ -1,11 +1,10 @@
 /**
  * Rebuilding the knowledge index from the files, which are the source of truth.
  *
- * ITS OWN MODULE, not a fifth tool in knowledge.ts. The knowledge nouns — add, search,
- * supersede, reconcile — are what a flow does with what it learned. This is an OPERATOR act on
- * the index that stores them, reached after a restore, after a store was edited outside the
- * platform's tools, or after a release changed what a row means. Different subject, different
- * audience, and knowledge.ts was over the file ceiling holding both.
+ * Its own module rather than a fifth tool in knowledge.ts: the knowledge nouns — add, search,
+ * supersede, reconcile — are what a flow does with what it learned, and this is an operator act
+ * on the index that stores them, reached after a restore, after a store was edited outside the
+ * platform's tools, or after a release changed what a row means.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -18,18 +17,10 @@ import { z } from "zod";
 import { db } from "../platform-db.js";
 
 export function registerKnowledgeIndexTools(server: McpServer, sup: boolean): void {
-  // IT WENT TO /manage AND HAS COME BACK, and both moves were about the same sentence.
-  //
-  // It left because on /core it was TEAM-SCOPED by construction — it rebuilt the caller's team
-  // and could not reach anyone else's, so the one situation that actually produces it, a
-  // restore across the whole deployment, meant asking one person from each team to run it.
-  // That was a real defect and moving the tool fixed it. What moved with it was the reasoning:
-  // "this is an operator's act, so it belongs on the operator's door", which is ROLE deciding a
-  // door. Apply the superadmin test — every plugin installed, nothing to hide — and the
-  // knowledge tools all answer /core, this one included.
-  //
-  // What actually fixed the scoping was the `team` argument, and that comes back with it. Role
-  // still decides who SEES it: `if (sup)`, registered per request, exactly as before.
+  // Registered on /core, not /manage. The superadmin test — every plugin installed, nothing to
+  // hide — puts the knowledge tools on /core, this one included. What makes it usable across
+  // teams is the `team` argument, not the door; role still decides who sees it, through `if
+  // (sup)`, registered per request.
   if (sup) server.registerTool(
     "knowledge_reindex",
     {
@@ -54,11 +45,10 @@ export function registerKnowledgeIndexTools(server: McpServer, sup: boolean): vo
     },
     async ({ team, force }) => {
       if (!db()) return text("ERROR: knowledge index unavailable (no platform db)");
-      // THE STORE HAS TO BE MOUNTED. The indexer treats a missing teams/ directory as "the
-      // volume is not mounted, touch nothing" — deliberately, because the alternative is one
-      // boot emptying the whole index — and returns the same shape it returns for a team that
-      // had nothing to do. Without this line those two answers are the same sentence to the
-      // person asking: "nothing had changed", on a service that could not see a single file.
+      // The store has to be mounted. The indexer treats a missing teams/ directory as "the
+      // volume is not mounted, touch nothing" — the alternative is one boot emptying the whole
+      // index — and returns the same shape it returns for a team that had nothing to do.
+      // Without this line those two answers read identically to the person asking.
       if (!existsSync(join(ARTIFACTS_DIR, "teams"))) {
         return text(`ERROR: the artifact store is not mounted at ${ARTIFACTS_DIR} on this ` +
                     "gateway, so there are no files to rebuild the index from and NOTHING WAS " +
@@ -70,21 +60,20 @@ export function registerKnowledgeIndexTools(server: McpServer, sup: boolean): vo
           ? `${r.team}: FAILED — ${r.error}`
           : `${r.team}: ${r.scanned} files scanned, ${r.indexed} re-indexed, ${r.removed} stale row(s) removed` +
             (r.indexed === 0 && r.removed === 0 ? " (nothing had changed)" : ""));
-      // NO `team` MEANS EVERY TEAM, and the walk that finds them is the package's, not one
-      // spelled again here: the list is the union of the store directories and the slugs the
-      // index already believes in, and a team whose store was deleted appears only in the
-      // second. Rebuilding from the directories alone would silently never visit the one team
-      // that needs its rows cleaned.
+      // No `team` means every team, and the list is the union of the store directories and the
+      // slugs the index already believes in: a team whose store was deleted appears only in the
+      // second, so rebuilding from the directories alone would never visit the one team that
+      // needs its rows cleaned.
       if (team === undefined) {
         const all = await reindexAllTeams(force === true);
         if (!all.length) return text("no team has a store on this deployment — nothing to rebuild");
         return text(`knowledge index rebuilt for ${all.length} team(s):\n` +
                     all.map(line).join("\n"));
       }
-      // A SLUG THAT NAMES NO TEAM IS REFUSED BY NAME, and this is the guard that makes the
-      // named form safe to run. reindexTeam's contract for a team with no store directory is
-      // to DELETE that team's rows — correct for a team that was archived, and catastrophic
-      // for a typo, which has no directory either. Without this the two are the same call.
+      // A slug that names no team is refused by name, and this guard is what makes the named
+      // form safe to run. reindexTeam's contract for a team with no store directory is to
+      // delete that team's rows — correct for an archived team, catastrophic for a typo, which
+      // has no directory either.
       const slug = team.trim();
       const known = await db()!.query<{ slug: string }>(
         "select slug from zz.team where slug = $1", [slug]);

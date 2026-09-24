@@ -1,27 +1,17 @@
 /**
- * register-skills — put what we OFFER into the platform's own tables, from the catalog.
+ * register-skills — mirror the catalog's skill identity into the platform's own tables.
  *
  *   zz-tool register-skills
  *   zz-tool register-skills --psql '<command>' --dry-run
  *
- * WHY THE CATALOG IS NOT ENOUGH ON ITS OWN. The skills ship as files, and the files are the
- * source of truth for what a skill SAYS. But every question worth asking about them is a join:
- * which version produced this document, which rubric judged that version, what did it score, what
- * recurred across unrelated teams. A file cannot be joined against five thousand events.
+ * The files stay the source of truth for what a skill says; this copies name, kind, version and
+ * content hash into zz.skill and zz.skill_version so a skill can be joined against events. No
+ * skill text is copied — the hash proves which bytes a score belongs to.
  *
- * So the catalog stays authoritative and this mirrors its identity -- name, kind, version, content
- * hash -- into zz.skill and zz.skill_version. Nothing about the skill's TEXT is copied: the hash
- * is enough to prove which bytes a score belongs to, and the bytes themselves live where they are
- * edited.
- *
- * A SKILL'S KIND IS NOT COSMETIC. It decides what an improvement even means:
- *   flow_step    ours, sits in a flow. We edit the text directly and cut a version.
- *   plugin_skill standalone capability: a skill that is not a step of any flow's method.
- *                Ours live on the PLATFORM block: we are an MCP surface like any other,
- *                and a skill of ours is that surface's skill.
- *   plugin_skill written about a plugin's own tools. Which PLUGIN ships it is
- *                only surface is the assistant skill beside it -- and its ASSETS, which are how
- *                a guarantee gets made that prose can only request.
+ * A skill's kind decides what an improvement means:
+ *   flow_step    ours, a step of a flow's method; we edit the text and cut a version.
+ *   plugin_skill standalone capability, not a step of any flow's method. Which plugin ships it
+ *                is zz.plugin_version_skill, written per release by register-plugins.
  */
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -38,8 +28,8 @@ type SkillKind = (typeof SKILL_KINDS)[number];
 
 /** What a skill version can carry besides its own words.
  *  script     — makes a guarantee the prose can only request.
- *  reference  — a block's real quirks, quoted from refusals we actually met.
- *  tool_index — the answer to a block advertising a couple of hundred tools and hundreds of KB of schema in every prompt. */
+ *  reference  — a server's real quirks, quoted from refusals we actually met.
+ *  tool_index — a compact index for a server that advertises hundreds of tools and hundreds of KB of schema. */
 const ASSET_KINDS = ["script", "reference", "tool_index"] as const;
 type AssetKind = (typeof ASSET_KINDS)[number];
 
@@ -48,16 +38,13 @@ const lit = (s: string): string => `'${String(s ?? "").replace(/'/g, "''")}'`;
 interface Found { name: string; kind: SkillKind; flow: string | null;
                   version: string; hash: string; bodyHash: string; dir: string }
 
-/** sha256 of the skill BELOW its frontmatter.
+/** sha256 of the skill below its frontmatter.
  *
- *  `content_hash` covers the whole file, so it moves every time `version:` is bumped — the
- *  one edit guaranteed to accompany a version and to say nothing about the skill. Anything
- *  asking "did this actually change" got "yes" every time, which is no answer.
+ *  `content_hash` covers the whole file, so it moves every time `version:` is bumped — the one
+ *  edit guaranteed to accompany a version and to say nothing about the skill.
  *
- *  Through `documentBody`, not a regex of its own. Where a frontmatter block starts and ends
- *  is spelled once in @zz/contracts — two copies of that pattern have already disagreed about
- *  the fence, and a body hash computed from a different idea of "body" than the search index
- *  uses would be a hash of something nothing else in the platform means. */
+ *  COUPLED: through `documentBody`, not a regex of its own. Where a frontmatter block starts and
+ *  ends is spelled once in @zz/contracts, and the search index uses the same idea of "body". */
 function bodyHashOf(text: string): string {
   return createHash("sha256").update(documentBody(text)).digest("hex");
 }
@@ -67,11 +54,9 @@ function field(text: string, key: string): string {
 }
 
 /** Every flow the catalog carries, as `<skills dir>` plus the name its own manifest gives it.
- *
- *  `catalog/<team>/<flow>/flow.json` is what makes a directory a flow here — the gate reads it
- *  to check a flow declares what closes it, and the installer reads it to install one. A flow
- *  with no `skills/` beside it is skipped rather than reported — a manifest whose tools are
- *  the platform's own and whose instructions ship elsewhere is not a defect. */
+ *  `catalog/<team>/<flow>/flow.json` is what makes a directory a flow here. A flow with no
+ *  `skills/` beside it is skipped rather than reported — a manifest whose tools are the
+ *  platform's own and whose instructions ship elsewhere is not a defect. */
 function flowSkillDirs(root: string): { dir: string; flow: string }[] {
   const out: { dir: string; flow: string }[] = [];
   const catalog = join(root, "catalog");
@@ -83,10 +68,9 @@ function flowSkillDirs(root: string): { dir: string; flow: string }[] {
       const home = join(catalog, team.name, flow.name);
       const skills = join(home, "skills");
       if (!existsSync(join(home, "flow.json")) || !existsSync(skills)) continue;
-      // manifestAt, not JSON.parse and a cast. A cast reads `gate: "false"` as a gate,
-      // because a non-empty string is truthy — so the one reader that validates is the
-      // only one allowed to decide what a manifest says. This tool only wants the name,
-      // which makes the shortcut tempting and exactly as wrong as anywhere else.
+      // manifestAt, not JSON.parse and a cast: a cast reads `gate: "false"` as a gate, because a
+      // non-empty string is truthy. The one reader that validates decides what a manifest says,
+      // even where only the name is wanted.
       const got = manifestAt(join(home, "flow.json"));
       if (!got.manifest) {
         // Skipped, but never silently: a manifest that will not parse means every skill in
@@ -102,10 +86,9 @@ function flowSkillDirs(root: string): { dir: string; flow: string }[] {
   return out;
 }
 
-/** Every SKILL.md in the tree, and what kind each one is — decided by WHERE it lives, which is
- *  the one signal that cannot be mistyped. A skill under a flow's directory is a step of that
- *  flow's method; anything else is standalone capability. Which PLUGIN ships it is
- *  `zz.plugin_version_skill`, written per release by register-plugins. */
+/** Every SKILL.md in the tree, and what kind each one is — decided by where it lives. A skill
+ *  under a flow's directory is a step of that flow's method; anything else is standalone
+ *  capability. Which plugin ships it is `zz.plugin_version_skill`. */
 function findSkills(root: string): Found[] {
   const out: Found[] = [];
   const walk = (dir: string, flow: string | null): void => {
@@ -119,15 +102,12 @@ function findSkills(root: string): Found[] {
       if (!name) continue;
       out.push({
         name,
-        // NO THIRD KIND. A skill belongs to a flow or to a block, and ours belong to
-        // the PLATFORM block — which is what migration 024 recorded when it emptied
-        // A skill under a flow's directory is a step of that flow's method; anything else is
-        // standalone capability. Which PLUGIN ships it is zz.plugin_version_skill, written per
-        // release by register-plugins — a second copy here could only disagree with it.
+        // No third kind. A skill under a flow's directory is a step of that flow's method;
+        // anything else is standalone capability.
         kind: flow ? "flow_step" : "plugin_skill",
         flow,
         version: field(text, "version") || "unknown",
-        // The hash of the FILE, so a score can prove which bytes it belongs to. Not of the
+        // The hash of the file, so a score can prove which bytes it belongs to. Not of the
         // parsed fields: a change to the prose is exactly the change worth detecting.
         hash: String(statSync(p).size) + "-" + text.length.toString(16),
         bodyHash: bodyHashOf(text),
@@ -135,18 +115,10 @@ function findSkills(root: string): Found[] {
       });
     }
   };
-  // EVERY flow in the catalog, DISCOVERED — not a list. This was
-  //   for (const flowDir of ["catalog/<owner>/<flow>/skills"])
-  // a loop over a one-element array literal, which is the shape of a list somebody meant to
-  // grow and never did, and it cost what that shape always costs. casebox-assist, sdlc-flow,
-  // zz-access, zz-flow-builder and zz-knowledge were installable, reachable over MCP, and
-  // ABSENT FROM zz.skill — so no rubric, eval or score could attach to any of their skills,
-  // while the console listed them straight from the catalog directory and looked complete.
-  // A flow that cannot be scored is a flow nobody can tell is working.
-  //
-  // A flow is a directory with a flow.json — the same definition the gate and the installer
-  // use — and its name comes from the manifest, not the directory, so the one place that
-  // decides what a flow is called stays the one place.
+  // Every flow in the catalog, discovered rather than listed: a flow is a directory with a
+  // flow.json, the same definition the gate and the installer use, and its name comes from the
+  // manifest rather than the directory. A flow absent from zz.skill can carry no rubric, eval or
+  // score, while the console lists it straight from the catalog and looks complete.
   for (const flowDir of flowSkillDirs(root)) walk(flowDir.dir, flowDir.flow);
   walk(join(root, "skills"), null);
   return out;
@@ -174,7 +146,7 @@ function main(argv: string[]): number {
 
   const found = findSkills(root);
   if (!found.length) {
-    console.log("\n  No SKILL.md anywhere under the catalog, skills/ or blocks/. Nothing to register.\n");
+    console.log("\n  No SKILL.md anywhere under the catalog or skills/. Nothing to register.\n");
     return 0;
   }
 
@@ -186,13 +158,10 @@ function main(argv: string[]): number {
       values (${lit(s.name)}, ${lit(s.kind)}, ${s.flow ? lit(s.flow) : "null"})
       on conflict (name) do update set kind = excluded.kind, flow = excluded.flow,
                                        retired = false`);
-    // `released_at` NAMED, not left to its default. The column decides which version
-    // wrote a document older than the run link — the console reads it as a window —
-    // so the moment it records has to be the moment this version became the one being
-    // served, which is the first time this row is written and never again. The
-    // conflict branch deliberately does not touch it: re-registering an unchanged
-    // version is not a re-release, and moving the date would silently re-attribute
-    // every document written before it.
+    // `released_at` named, not left to its default. The column decides which version wrote a
+    // document older than the run link — the console reads it as a window — so it records the
+    // first time this row is written and never again. The conflict branch does not touch it:
+    // re-registering an unchanged version is not a re-release.
     psqlText(psql, `
       insert into zz.skill_version (skill_id, version, content_hash, body_hash, released_at)
       select id, ${lit(s.version)}, ${lit(s.hash)}, ${lit(s.bodyHash)}, now()
@@ -221,26 +190,17 @@ function main(argv: string[]): number {
   }
   console.log("");
 
-  // WHAT THE CATALOG NO LONGER CARRIES — RETIRED, not stale, and the word matters.
+  // What the catalog does not carry — retired, not deleted.
   //
-  // This registrar only inserts and updates, so a skill that was renamed or absorbed into
-  // another stays in zz.skill. That reads like a leak, and the first version of this said so
-  // and told the operator to remove one "when you are sure it is gone for good".
-  //
-  // THE DATABASE REFUSED, and it was right. casebox-stg-usage's version is referenced by zz.run,
-  // and `doc.produced_by_run_id -> run.skill_version_id` is the chain that answers WHICH
-  // VERSION WROTE THIS DOCUMENT. Deleting the row would orphan the provenance of every
-  // document that skill produced — the console would fall back to the released_at "era"
-  // window, and documents written by a skill that no longer exists would be attributed to
-  // whichever skill happened to be current instead. Silently wrong attribution, forever.
-  //
-  // So a retired skill STAYS. It is not clutter; it is the only remaining record of who
-  // wrote what. This reports them so nobody mistakes one for a registration that failed,
-  // and deliberately does not offer to remove them.
+  // This registrar only inserts and updates, so a skill that was renamed or absorbed stays in
+  // zz.skill. It has to: a version is referenced by zz.run, and
+  // `doc.produced_by_run_id -> run.skill_version_id` is the chain that answers which version
+  // wrote a document. Deleting the row would attribute those documents to whichever skill
+  // happened to be current. They are reported so nobody mistakes one for a failed registration,
+  // and never offered for removal.
   const names = found.map((f) => lit(f.name)).join(", ");
-  // RECORDED, so no other reader has to diff the catalog to know. loop-eval's first run
-  // reported five casebox skills NOT CONSULTED when casebox publishes four — the fifth was a ghost the
-  // query had no way to see. One writer sets the fact; everything else reads it.
+  // Recorded, so no other reader has to diff the catalog to know. One writer sets the fact;
+  // everything else reads it.
   if (!args.flags.has("dry-run")) {
     psqlText(psql, `update zz.skill set retired = true where name not in (${names}) and not retired`);
   }
@@ -260,9 +220,8 @@ function main(argv: string[]): number {
   if (stale.length) {
     console.log(`  ${stale.length} retired — in the registry, no longer in the catalog:\n`);
     for (const s of stale) {
-      // RUNS, because that is what a retired row is FOR. Reporting evals alone read as
-      // "nothing is holding this" for a row whose deletion the database then refused, and
-      // whose deletion would have been wrong even if it had succeeded.
+      // Runs, because that is what a retired row is for. Reporting evals alone reads as
+      // "nothing is holding this" for a row whose deletion the database would refuse.
       const held = [
         Number(s.runs) > 0 ? `${s.runs} run(s) attribute documents to it` : "",
         Number(s.evals) > 0 ? `${s.evals} eval(s)` : "",

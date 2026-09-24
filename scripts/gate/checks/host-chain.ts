@@ -11,28 +11,22 @@ function execStderr(err: unknown): string {
 }
 
 check("a registered procedure's chain is enforced all the way back, and still grants when it is met", () => {
-  // THE CHAIN WAS DECORATIVE AND TWO FIXTURES AGREED IT WAS NOT. `evaluate` asked whether the
-  // step immediately before had met its OWN completion rules, which says nothing about the
-  // steps before that — so a seven-step procedure was checked one link deep, and a step whose
-  // completion rules are empty was vacuously met and became a permanent hole every later step
-  // was measured through. The registered body granted its closing action on a run holding
-  // nothing but the closing document.
+  // The chain is checked to its root, not one link deep. Asking only whether the step
+  // immediately before met its own completion rules says nothing about the steps before that,
+  // and a step whose completion rules are empty is vacuously met and becomes a permanent hole
+  // every later step is measured through.
   //
-  // IT SURVIVED BECAUSE NO SUBJECT COULD EXPRESS IT. The second-flow fixture is two steps, so
-  // there is no "three steps back" for it to get wrong; the negative control gives every step
-  // a sign-off rule, so it has no rule-free step in the middle. Both agreed with the engine
-  // and neither could disagree. This check's subject is what the release actually registers,
-  // which is why it can.
+  // The subject is what the release actually registers. A two-step fixture has no "three steps
+  // back" to get wrong, and a negative control giving every step a sign-off rule has no
+  // rule-free step in the middle, so neither can disagree with the engine.
   //
-  // BOTH HALVES, and the second is not a formality. A host that refused everything would pass
-  // a check that only watched the refusal — and would be a worse host than the broken one,
-  // because a control loop that never grants is a control loop nobody can finish. So the same
+  // Both halves: a host that refused everything would pass a check that only watched the
+  // refusal, and a control loop that never grants is one nobody can finish. So the same
   // procedure is driven to a genuinely complete run and the same action must be granted.
   //
-  // DERIVED FROM THE MODULE, never written out here. The evidence is generated from each
-  // step's own completion rules — the counts it asks for, and the back-reference an `about`
-  // rule demands — so this check has no flow's vocabulary in it and a second registered module
-  // is covered the day it is approved.
+  // Derived from the module, never written out here: the evidence is generated from each step's
+  // own completion rules, so this check carries no flow's vocabulary and covers a second
+  // registered module the day it is approved.
   const dist = join(root, "services/zz-core/dist");
   if (!existsSync(join(dist, "reviewed-modules.js"))) {
     return "services/zz-core is not built, so the registered procedures cannot be driven — run `npx tsc -b` before the gate";
@@ -135,22 +129,15 @@ check("a registered procedure's chain is enforced all the way back, and still gr
 });
 
 check("a fact a later entry withdrew stops being counted, and the log still only grows", () => {
-  // THE LOOP ANSWERED A QUESTION ABOUT NOW WITH A FACT THAT NO LONGER STOOD.
+  // A withdrawn approval stops counting.
   //
-  // `zz.control_evidence` is append-only, which is right: a fact is a fact and the log is the
-  // history of what the platform was told. But a gated document can be REVISED — the platform
-  // files the signed text, bumps the version and returns the document to draft, clearing the
-  // approval it carried. The approval really was given, so deleting the entry would falsify
-  // the history; counting it says the step is met while the document is a draft nobody has
-  // agreed to.
+  // `zz.control_evidence` is append-only: a fact is a fact and the log is the history of what
+  // the platform was told. But a gated document can be revised — the platform files the signed
+  // text, bumps the version and returns the document to draft, clearing the approval it
+  // carried. Deleting the entry would falsify the history; counting it says the step is met
+  // while the document is a draft nobody has agreed to.
   //
-  // Measured by driving sdlc-flow's whole declared procedure through this kernel and then
-  // revising its spec: `close:initiative` granted, and granted again after the revision.
-  // Nothing leaked because `documentGuards` still refuses such a close — and that duplication
-  // is precisely what this control loop exists to replace, so the loop being wrong is the
-  // problem rather than a harmless disagreement.
-  //
-  // BOTH HALVES, because a kernel that counted nothing would pass a check watching only the
+  // Both halves, because a kernel that counted nothing would pass a check watching only the
   // refusal and would make every procedure unfinishable. The complete run must still grant.
   const dist = join(root, "services/zz-core/dist");
   if (!existsSync(join(dist, "reviewed-modules.js"))) {

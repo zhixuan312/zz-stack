@@ -1,111 +1,77 @@
 /**
- * ONE CONTROLLER FOR EVERY STEP A FLOW DECLARES, and the reason there is only one.
+ * One controller for every step a flow declares.
  *
- * A flow's steps are declared in its own catalog entry, and each of them binds a contract: what
- * the step is meant to change, what evidence it may not be entered without, and which gates it
- * is subject to. The temptation is a resolver per step, because each step really does have its
- * own contract — and what that buys is seven places for the rule to be slightly different, of
- * which six are read by nobody until the day one of them lets a step through on a default.
+ * A flow's steps are declared in its own catalog entry, and each binds a contract: what the step is
+ * meant to change, what evidence it may not be entered without, and which gates it is subject to.
+ * The profile is data and this module is the one path through it. {@link createController} is handed
+ * an {@link ExecutionProfile} — the bound contracts, resolved above this layer — and every step
+ * resolves its contract, reconciles against the control state and settles its outcome through the
+ * same three functions. This module cannot name a step: it has no list, and the only step ids it
+ * sees are the ones in the profile it was handed. How many steps a flow has is a fact about that
+ * flow's declaration, never a constant here.
  *
- * So the profile is DATA and this module is the one path through it. {@link createController}
- * is handed an {@link ExecutionProfile} — the bound contracts, resolved above this layer from
- * whatever the flow declared — and every step resolves its contract, reconciles against the
- * control state and settles its outcome through the same three functions. This module cannot
- * name a step; it has no list, and the only step ids it ever sees are the ones in the profile
- * it was handed. That is what keeps the kernel generic, and it is also why the number of steps
- * a flow has is a fact about that flow's declaration and never a constant here.
+ * The control state alone carries a revision. What a step produced enters as evidence and
+ * verification refs, which this module records and never versions — the documents they point at are
+ * versioned where they live. An entry or a settlement carries the control revision its caller last
+ * saw; if the control state has moved on, the call is refused and the refusal carries the current
+ * revision. It never proceeds against whatever the controller holds now, and never silently
+ * re-reads.
  *
- * THE CONTROL STATE IS RECONCILED, NOT ASSUMED — and it is the control state alone that
- * carries a revision here. What a step produced enters as evidence and verification REFS,
- * which this module records and never versions: the documents they point at are versioned
- * where they live, and a second revision counter here would be a copy free to disagree with
- * the first. An entry or a settlement carries the control revision its caller last saw. If the control state has moved on, the call is
- * REFUSED and the refusal carries the current revision — it does not proceed against whatever
- * the controller happens to hold now, and it does not silently re-read. The whole class of
- * defect here is a second writer whose work is overwritten by a first writer that never
- * noticed it existed.
+ * Entry evidence is returned, not defaulted: a step entered without the evidence its contract
+ * requires comes back with the missing kinds named.
  *
- * ENTRY EVIDENCE IS RETURNED, NOT DEFAULTED. A step entered without the evidence its contract
- * requires comes back with the missing kinds named. The alternative — entering anyway on an
- * empty default and discovering downstream that the ground was never established — is the
- * failure this refusal exists for, and it is worse than refusing because the work that follows
- * looks exactly like work that had its ground.
- *
- * EVIDENCE IS REQUIRED AT A STANDARD, AND THE STANDARD IS PART OF THE REQUIREMENT. "Held" was
- * once a set membership: a kind was present or it was not. That reading has one answer for two
- * different situations, and a caller whose evidence is subject to no ratification at all can
- * never satisfy it — nothing will ever ratify what nothing ratifies, so the step becomes
- * permanently unenterable and the refusal is correct for ever. {@link EvidenceStandard} is the
- * repair: a requirement says how firmly its evidence must stand, a holding says how firmly it
- * does stand, and the comparison is ordered. Which standard applies to which kind is the
+ * Evidence is required at a standard, and the standard is part of the requirement. A requirement
+ * says how firmly its evidence must stand, a holding says how firmly it does stand, and the
+ * comparison is ordered — see {@link EvidenceStandard}. Which standard applies to which kind is the
  * caller's fact about its own world, arriving as data like everything else here.
  *
- * AND A REQUIREMENT MAY BE DISCHARGED RATHER THAN MET, on a named ground. Some requirements
- * become permanently unsatisfiable through nobody's fault — the evidence they ask for is
- * evidence nobody will now produce, and what settles the question is a different fact
- * altogether. {@link EntryWaiver} carries that fact, for ONE named kind, and it is carried back
- * out on {@link EntryAdmission.waived}. Naming the ground is what makes a waiver a route rather
- * than a loophole: an admission granted on one is never mistaken for an admission granted on
- * evidence, by a reader or by anything that reads the admission.
+ * A requirement may be discharged rather than met, on a named ground. {@link EntryWaiver} carries
+ * that ground, for one named kind, and it is carried back out on {@link EntryAdmission.waived}, so
+ * an admission granted on a waiver is never mistaken for one granted on evidence.
  *
- * `needs_revisit` IS COMPUTED, never set. A step that was established and is settled again
- * with a gap open is a step whose outcome no longer holds, and the controller says so from the
- * prior outcome it already holds rather than from a caller's opinion of its own state.
+ * `needs_revisit` is computed, never set: a step that was established and is settled again with a
+ * gap open is a step whose outcome no longer holds, and the controller says so from the prior
+ * outcome it already holds rather than from a caller's opinion of its own state.
  */
 import { readiness, type AuditContext, type ObservedSignals, type ReadinessVerdict } from "./readiness.js";
 
 /** Where a step's intended change stands. `not_established` is the state a step starts in and
- *  returns to nothing from; `needs_revisit` is reserved for an outcome that DID hold and has
- *  stopped holding, because losing that distinction loses the reason to look again. */
+ *  returns to nothing from; `needs_revisit` is reserved for an outcome that did hold and has stopped
+ *  holding, because losing that distinction loses the reason to look again. */
 export type OutcomeState = "not_established" | "established" | "needs_revisit";
 
-/** How firmly a piece of evidence stands, or has to.
- *
- *  `recorded` is "it exists and somebody can read it". `ratified` is "somebody with standing
- *  has signed it off". The two are ORDERED, and the order is the whole rule: ratification
- *  satisfies a demand for a record, and nothing but ratification satisfies a demand for
- *  ratification.
- *
- *  THERE ARE TWO, AND A THIRD WOULD HAVE TO BE EARNED. A scale invented ahead of a caller that
- *  needs it is a scale whose middle values nobody can define, and every comparison against it
- *  is then a guess dressed as an ordering. */
+/** How firmly a piece of evidence stands, or has to. `recorded` is "it exists and somebody can read
+ *  it"; `ratified` is "somebody with standing has signed it off". The two are ordered, and the order
+ *  is the whole rule: ratification satisfies a demand for a record, and nothing but ratification
+ *  satisfies a demand for ratification. */
 export type EvidenceStandard = "recorded" | "ratified";
 
 /** The ordering, written once. A string comparison would put `ratified` below `recorded`
  *  alphabetically and be wrong in exactly the direction that admits an unratified step. */
 const STANDING: Readonly<Record<EvidenceStandard, number>> = Object.freeze({ recorded: 1, ratified: 2 });
 
-/** One kind of evidence at one standard.
- *
- *  The SAME shape stands on both sides of the entry question — a contract's requirement is the
- *  standard demanded, a caller's holding is the standard reached — because they are the two
- *  halves of one comparison. Two named types for one shape would be two places for that shape
- *  to drift apart, and the drift would be invisible until the day one side grew a field the
- *  other could not read. */
+/** One kind of evidence at one standard. The same shape stands on both sides of the entry question
+ *  — a contract's requirement is the standard demanded, a caller's holding is the standard reached —
+ *  because they are the two halves of one comparison. */
 export interface EvidenceStanding {
   readonly kind: string;
   readonly standard: EvidenceStandard;
 }
 
-/** A requirement DISCHARGED rather than met, and the ground it was discharged on.
+/** A requirement discharged rather than met, and the ground it was discharged on.
  *
- *  It names ONE kind, deliberately. A blanket waiver discharges requirements its ground says
- *  nothing about, and a caller holding a ground for one requirement is holding a ground for
- *  one requirement — the blanket form is broader than any fact that could justify it.
- *
- *  `ground` is not optional and is not decoration: it is the sentence a reader is owed when
- *  they ask why a step was entered without what its contract asked for. */
+ *  It names one kind: a blanket waiver would discharge requirements its ground says nothing about.
+ *  `ground` is not optional — it is the sentence a reader is owed when they ask why a step was
+ *  entered without what its contract asked for. */
 export interface EntryWaiver {
   readonly kind: string;
   readonly ground: string;
 }
 
-/** A requirement the caller did not meet, with what was demanded and what was actually held.
- *
- *  `held` is null when nothing of that kind was offered AT ALL, and that is a different
- *  situation from evidence that exists and has not been ratified. They are different enough
- *  that a caller answers them with different instructions — go and produce it, against go and
- *  get it signed — so collapsing both into "missing" is what makes a refusal say only no. */
+/** A requirement the caller did not meet, with what was demanded and what was actually held. `held`
+ *  is null when nothing of that kind was offered at all, which is a different situation from
+ *  evidence that exists and has not been ratified: a caller answers them differently — go and
+ *  produce it, against go and get it signed. */
 export interface UnmetRequirement {
   readonly kind: string;
   readonly required: EvidenceStandard;
@@ -120,28 +86,23 @@ export type EntryAdmission =
   | { readonly admitted: false; readonly unmet: readonly UnmetRequirement[] };
 
 /**
- * MAY A STEP BE ENTERED, GIVEN WHAT HAS BEEN RECORDED — the whole question, in one function.
+ * May a step be entered, given what has been recorded.
  *
- * It is exported rather than kept inside {@link createController} because it is a rule and not
- * a handler: it reads no state, names no step and holds nothing. A caller that asks this
- * question without an execution to hang it on — a guard on a single write, say — would
- * otherwise have to fabricate an identity, a profile and a revision it has no use for, and the
- * honest alternative to fabricating those is a second copy of the rule. That second copy is
- * precisely what this module's header exists to refuse, so there is one function and both the
- * controller and every other caller go through it.
+ * Exported rather than kept inside {@link createController} because it is a rule and not a handler:
+ * it reads no state, names no step and holds nothing. A caller asking this question without an
+ * execution to hang it on — a guard on a single write — would otherwise fabricate an identity, a
+ * profile and a revision it has no use for, or keep a second copy of the rule.
  *
- * A WAIVER IS READ ONLY WHERE THE REQUIREMENT WAS NOT MET. A waiver over evidence that was
- * there anyway would be recorded as the reason a step was entered when it was not the reason,
- * and a record that names the wrong ground is worse than one that names none.
+ * A waiver is read only where the requirement was not met: a waiver over evidence that was there
+ * anyway would be recorded as the reason a step was entered when it was not the reason.
  */
 export function admitEntry(
   required: readonly EvidenceStanding[],
   held: readonly EvidenceStanding[],
   waivers: readonly EntryWaiver[],
 ): EntryAdmission {
-  // The STRONGEST holding of each kind, not the last one offered. A caller listing the same
-  // kind twice is describing one thing it knows two facts about, and taking whichever arrived
-  // last would make the answer depend on the order of a list nobody sorts.
+  // The strongest holding of each kind, not the last one offered. A caller listing the same kind
+  // twice is describing one thing it knows two facts about.
   const strongest = new Map<string, EvidenceStandard>();
   for (const h of held) {
     const prior = strongest.get(h.kind);
@@ -164,9 +125,8 @@ export function admitEntry(
     : Object.freeze({ admitted: true as const, waived: Object.freeze(waived) });
 }
 
-/** One unmet requirement as a phrase, for the sentence a refusal carries. It says which of the
- *  two situations this is, because {@link UnmetRequirement} draws that distinction and a detail
- *  string that threw it away would make the caller re-derive it from the fields. */
+/** One unmet requirement as a phrase, for the sentence a refusal carries. It says which of the two
+ *  situations this is, so the caller does not have to re-derive it from the fields. */
 const unmetPhrase = (u: UnmetRequirement): string =>
   u.held === null
     ? `${u.kind}, of which nothing is held`
@@ -201,9 +161,8 @@ export interface StageEntry {
   readonly revision: number;
   /** The evidence the caller holds at entry, each at the standard it actually reaches. */
   readonly evidenceHeld: readonly EvidenceStanding[];
-  /** Grounds on which this caller claims a requirement is discharged rather than met. Required
-   *  and empty where none is claimed: a field that may be left out is a field a caller forgets
-   *  it had, and this one is the difference between a refusal and an entry. */
+  /** Grounds on which this caller claims a requirement is discharged rather than met. Required and
+   *  empty where none is claimed: this is the difference between a refusal and an entry. */
   readonly waivers: readonly EntryWaiver[];
 }
 
@@ -226,16 +185,15 @@ export type RefusalKind =
   | "missing_entry_evidence";
 
 /** Why the controller would not proceed, with the material the caller needs to fix it. Both
- *  `missingEvidence` and `currentRevision` are populated on every refusal — the first is empty
- *  where it does not apply, and the second is always the truth about the control state, so a
- *  caller reconciling after a refusal never has to guess which of them it may trust. */
+ *  `missingEvidence` and `currentRevision` are populated on every refusal — the first empty where it
+ *  does not apply, the second always the truth about the control state. */
 export interface StageRefusal {
   readonly kind: RefusalKind;
   readonly step: string;
   readonly missingEvidence: readonly string[];
-  /** The same requirements as `missingEvidence`, with the standard each demanded and the
-   *  standard actually held. `missingEvidence` is the kinds alone, which is what a caller that
-   *  only wants to name them reads; this is what a caller that has to ANSWER them reads. */
+  /** The same requirements as `missingEvidence`, with the standard each demanded and the standard
+   *  actually held. `missingEvidence` is the kinds alone, for a caller that only wants to name them;
+   *  this is for a caller that has to answer them. */
   readonly unmet: readonly UnmetRequirement[];
   readonly currentRevision: number;
   readonly detail: string;
@@ -278,12 +236,9 @@ export interface StageController {
 }
 
 /**
- * A controller over one execution's bound contracts.
- *
- * `startingRevision` is a parameter rather than a constant so a controller can be rebuilt over
- * a control state that already exists — a run resumed is not a run started, and a controller
- * that always began at zero would hand a resumed run a revision every earlier caller has
- * already seen.
+ * A controller over one execution's bound contracts. `startingRevision` is a parameter rather than a
+ * constant so a controller can be rebuilt over a control state that already exists — one that always
+ * began at zero would hand a resumed run a revision every earlier caller has already seen.
  */
 export function createController(
   profile: ExecutionProfile,
@@ -297,9 +252,8 @@ export function createController(
     Object.freeze({
       kind,
       step,
-      // DERIVED FROM `unmet`, never passed alongside it. Two lists a caller could populate
-      // independently are two lists that can disagree about which requirements were unmet,
-      // and the shorter one is the one everything reads.
+      // Derived from `unmet`, never passed alongside it: two lists a caller could populate
+      // independently are two lists that can disagree about which requirements were unmet.
       missingEvidence: Object.freeze(unmet.map((u) => u.kind)),
       unmet: Object.freeze([...unmet]),
       currentRevision: revision,
@@ -339,17 +293,12 @@ export function createController(
     steps: Object.freeze(profile.steps.map((s) => s.step)),
 
     admit(entry: StageEntry): StageAdmission {
-      // NOT A TOOL: `reconcile` here is the English verb this task's own Output line uses —
-      // settling an execution's binding, step and revision against the control state — and it
-      // is a local arrow function declared a few lines above, in a package that sits below
-      // services/ and can reach no door at all. The platform tool once called that is
-      // `knowledge_reconcile` now, and it has nothing to do with this.
+      // NOT A TOOL: `reconcile` here is a local arrow function declared a few lines above, in a
+      // package that sits below services/ and can reach no door at all — not `knowledge_reconcile`.
       const r = reconcile(entry.identity, entry.step, entry.revision);
       if ("refusal" in r) return Object.freeze({ admitted: false as const, refusal: r.refusal });
-      // THROUGH `admitEntry`, which is also what every caller outside this module reaches. A
-      // set difference written here instead would be a second copy of the entry rule, and the
-      // copy inside the controller is the one that would go on being right while the other
-      // quietly stopped agreeing with it.
+      // Through `admitEntry`, which is what every caller outside this module reaches too. A set
+      // difference written here would be a second copy of the entry rule.
       const decision = admitEntry(r.contract.entryEvidence, entry.evidenceHeld, entry.waivers);
       if (!decision.admitted) {
         return Object.freeze({

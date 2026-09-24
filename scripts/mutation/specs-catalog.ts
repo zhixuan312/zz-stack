@@ -1,12 +1,12 @@
 /**
  * Defects planted in the catalog, the shelf and the shipped prose.
  *
- * THE SUBJECT OF THESE CHECKS IS SHIPPED CONTENT, so the planted defect is a change to that
- * content — a manifest that names a skill it does not ship, a skill that cites a sibling that
- * was merged away, a count that drifted from the thing it counts. That is not a weaker kind
- * of mutation: it is the exact regression each of these checks was written after somebody
- * shipped it. What is never touched is the CHECK's own prose, which is the failure mode this
- * whole run exists to rule out.
+ * The subject of these checks is shipped content, so the planted defect is a change to that
+ * content — a manifest naming a skill it does not ship, a skill citing a sibling that was
+ * merged away, a count drifted from the thing it counts.
+ *
+ * DELIBERATE: the check's own prose is never the planted defect. Mutating that is the failure
+ * mode this run exists to rule out.
  */
 import type { MutationSpec } from "./plant.ts";
 

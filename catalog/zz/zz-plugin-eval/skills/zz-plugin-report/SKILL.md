@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-report
-version: 1.3
+version: 1.4
 description: Stage 5 of plugin evaluation. Take the recommendation from the typed judge, read the scores back, and write findings.md — five sections, gated, and it closes the initiative.
 when_to_use: "The last stage of zz-plugin-eval, after judge. Produces findings.md; approving it is what closes the evaluation."
 ---
@@ -59,17 +59,15 @@ section 1 that evidence strength was not taken and why.
   dimension's mean, the judge-on-trial gap, and every threshold met-or-not.
 - **One paragraph** — why those numbers read that way. Written from them, not beside them.
 
-**THERE IS NO RECOMMENDATION AND YOU MUST NOT INVENT ONE.** This flow used to end in a verb
-from a closed set — `keep`, `keep-and-change`, `retire` — and it was removed because the
-question it answered has one permanent answer: somebody installs a plugin for a reason and they
-keep it. Telling them to retire it is advice nobody takes, and telling them to keep it is
-information nobody needed. Your job is to report what was found, not what to do about it.
+**THERE IS NO RECOMMENDATION AND YOU MUST NOT INVENT ONE** — no `keep`, `keep-and-change` or
+`retire`. Somebody installs a plugin for a reason and they keep it: telling them to retire it is
+advice nobody takes, and telling them to keep it is information nobody needed. Your job is to report what was found, not what to do about it.
 
 **THE TWO AXES ARE INDEPENDENT and section 1 must not blend them.** A plugin can score 9 and
 still have a change identified; one at 5 with nothing identified is a worse position than a 5
 with three changes waiting, because nobody knows why it is short. Never write the headroom into
-the score's sentence — "working, with a defect worth fixing" was a band label once, and it
-asserted a defect the score cannot establish.
+the score's sentence — "working, with a defect worth fixing" asserts a defect the score cannot
+establish.
 
 Anything that is not one of those four belongs in a later section.
 
@@ -81,13 +79,12 @@ Anything that is not one of those four belongs in a later section.
 finding id it was recorded as, and what you expect it to move. Every generic finding should
 appear here; if one cannot, it was not a generic finding.
 
-**`## 5 · What this does not establish`** — two things that used to be separate sections and
-belong together, because both answer "do not read more into this than it says":
+**`## 5 · What this does not establish`** — two things that belong together, because both
+answer "do not read more into this than it says":
 
 - what could NOT be measured, and why — thin evidence, a void control, a dimension with no
   subject to read
-- what the numbers do not mean even though they exist — a ceiling score over n=3, a delta that
-  measures reachability rather than whether anybody is better off
+- what the numbers do not mean even though they exist — a ceiling score over n=3
 
 ## `not measurable` is a statement about the MEASUREMENT, never about the plugin
 

@@ -1,31 +1,18 @@
 /**
- * WHAT A PIECE OF WORK CONSUMED, summed under one written-down rule.
+ * What a piece of work consumed, summed under one written-down rule.
  *
- * THE DEFECT THIS EXISTS FOR IS REAL AND WAS MEASURED, not imagined. The first runtime this
- * platform integrated reports consumption twice for the same tokens whenever a unit of work
- * delegates: the delegating turn's result carries a rollup for the whole delegated run, and
- * the delegated run's own turns each carry their own record. Adding up every record you can
- * see therefore charges the delegated work to the account twice, and the error grows with the
- * thing the platform most wants to encourage. Nothing in the records is malformed — both
- * numbers are correct about what they describe — so nothing catches it except a rule.
+ * A runtime can report consumption twice for the same tokens when a unit of work delegates: the
+ * delegating turn's result carries a rollup for the whole delegated run, and the delegated run's
+ * own turns each carry their own record. Both numbers are correct about what they describe, so
+ * nothing catches the double count except a rule.
  *
- * THE RULE, in one sentence: a record is counted exactly when no ancestor of it is marked as
- * already including its descendants.
+ * The rule: a record is counted exactly when no ancestor of it is marked as already including
+ * its descendants. Flat records all count once; a rollup counts and its descendants are excluded
+ * by name.
  *
- * That one sentence covers both shapes a runtime can report in, which is why it is the rule
- * rather than a special case:
- *
- *   · Flat records, nothing rolled up — every record's ancestry is clean, so every record is
- *     counted, once.
- *   · A rollup over children — the rollup is counted and its descendants are excluded by
- *     name, because the rollup already contains them.
- *
- * AND WHERE IT CANNOT DECIDE, IT SAYS SO. A record whose parent is not among the records
- * given, or whose ancestry runs in a circle, cannot be shown to be uncounted — and cannot be
- * shown to be counted either. Guessing in either direction produces a number that looks like
- * every other number. So such a record is excluded by name, and {@link UsageTotal.completeness}
- * drops to `floor_only`: the total is then a lower bound on what the work consumed, and a
- * caller deciding a budget against it is deciding against a floor and knows it.
+ * A record whose parent is not among the records given, or whose ancestry runs in a circle, is
+ * excluded by name and {@link UsageTotal.completeness} drops to `floor_only`: the total is then
+ * a lower bound, and a caller deciding a budget against it is deciding against a floor.
  */
 
 /** One consumption record as a runtime reported it, normalised to the two numbers every
@@ -33,7 +20,7 @@
 export interface UsageRecord {
   readonly record_id: string;
   readonly parent_record_id: string | null;
-  /** True when the RUNTIME has already folded every descendant's numbers into this record.
+  /** True when the runtime has already folded every descendant's numbers into this record.
    *  Not a hint and not a heuristic: an adapter sets this from what the runtime documents
    *  about its own rollups, and where it does not know, it does not set it. */
   readonly includes_descendants: boolean;

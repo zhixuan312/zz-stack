@@ -1,10 +1,7 @@
 /**
- * Frontmatter at the boundary: what a caller may send, and what is refused rather than
- * quietly dropped.
- *
- * A field a caller types that the platform silently discards is worse than a refusal — the
- * write succeeds, the document looks right, and the field the caller believes they set is
- * simply absent.
+ * Frontmatter at the boundary: what a caller may send, and what is refused rather than quietly
+ * dropped. A field a caller types that the platform silently discards is worse than a refusal — the
+ * write succeeds, the document looks right, and the field the caller believes they set is absent.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -22,30 +19,22 @@ function errMessage(err: unknown): string {
   return String(err);
 }
 
-// A VALUE SOMEBODY TYPED, INSIDE HAND-WRITTEN YAML QUOTES.
+// A value somebody typed, inside hand-written YAML quotes.
 //
-// client-package generates the frontmatter of every file a person installs. Most of it is
-// slugs the platform controls, and one field is not: `agentName` is free text from a manifest,
-// and it was interpolated into
-// `description: "Run the ${…} flow…"`. An agent called `My "Special" Agent` closes the quote
-// early, and the client then cannot parse the command: it silently does not exist, and
-// nothing anywhere says why.
-//
-// The file already knew the answer. Forty lines down, the standalone command builds the same
-// field with JSON.stringify, and says why.
-//
-// The rule is the general one: a YAML scalar built by hand around an interpolation is a
-// quoting decision made by hoping. JSON.stringify is a correct YAML double-quoted scalar.
+// client-package generates the frontmatter of every file a person installs. Most of it is slugs the
+// platform controls; `agentName` is free text from a manifest. A YAML scalar built by hand around an
+// interpolation is a quoting decision made by hoping — an agent called `My "Special" Agent` closes
+// the quote early and the command then silently does not exist. JSON.stringify is a correct YAML
+// double-quoted scalar.
 check("generated frontmatter quotes what it interpolates", () => {
   const rel = join("services", "gateway", "src", "client-package.ts");
   const src = readFileSync(join(root, rel), "utf8");
   const bad: string[] = [];
   src.split("\n").forEach((line, i) => {
     if (/^\s*(\/\/|\*)/.test(line)) return;
-    // A frontmatter key whose value is a hand-quoted string containing an interpolation.
-    // Indented keys too. The first version anchored the key to the backtick, so
-    // `    url: "${s.url}"` — the Hermes config, where the value is the operator's own
-    // GATEWAY_PUBLIC_URL — was invisible. A YAML file's keys are indented by definition.
+    // A frontmatter key whose value is a hand-quoted string containing an interpolation. Indented
+    // keys too — a YAML file's keys are indented by definition, so anchoring the key to the backtick
+    // misses `    url: "${s.url}"`.
     if (!/`\s*[a-z_]+:\s*"[^"]*\$\{/i.test(line)) return;
     bad.push(`${rel}:${i + 1} builds a quoted YAML scalar around an interpolation — ` +
              "JSON.stringify the whole value, as the standalone command does");
@@ -54,20 +43,15 @@ check("generated frontmatter quotes what it interpolates", () => {
 });
 
 check("a frontmatter field that will not appear is refused, never dropped", () => {
-  // The flow's OWN fields — sm's `building_block`, sdlc's pointers between stages — arrive as
-  // an argument because a value the agent was TOLD is worth more than YAML it composed. Two
-  // things can be wrong with one: the name belongs to the envelope, or the name is not a
-  // frontmatter name at all. Only the first was ever said out loud.
+  // The flow's own fields — sdlc's pointers between stages, say — arrive as an
+  // argument, because a value the agent was told is worth more than YAML it composed. Two things can
+  // be wrong with one: the name belongs to the envelope, or the name is not a frontmatter name at
+  // all. A dropped field produces `written: <path> (N chars)` and a document with no such field in
+  // it.
   //
-  // The second was enforced by `/^[a-z][a-z0-9_]*$/` written twice — once inside envelopeFor
-  // and once inside document_revise — and both copies DROPPED the field and carried on. So
-  // `buildingBlock` where the skill said `building_block` produced `written: <path> (N chars)`
-  // and a document with no such field in it, which is the failure this repository keeps
-  // finding: a call that did not error and did not do the thing either.
-  //
-  // Both halves are the rule. Every tool that takes `fields` must run the refusal, so a third
-  // write path cannot be added without one; and the name predicate must exist ONCE, so it
-  // cannot be half-changed in a copy the refusal does not see.
+  // Both halves are the rule. Every tool that takes `fields` must run the refusal, so a third write
+  // path cannot be added without one; and the name predicate must exist once, so it cannot be
+  // half-changed in a copy the refusal does not see.
   const src = zzCoreSource();
   const bad: string[] = [];
 
@@ -79,9 +63,8 @@ check("a frontmatter field that will not appear is refused, never dropped", () =
     }
   }
 
-  // Counted across the whole file rather than looked for inside fieldRefusal: what matters is
-  // that no SECOND copy exists, and a check that only read the refusal would pass while a
-  // copy sat in the writer.
+  // Counted across the whole file rather than inside fieldRefusal: what matters is that no second
+  // copy exists, and a check that only read the refusal would pass while a copy sat in the writer.
   const copies = [...src.matchAll(/\^\[a-z\]\[a-z0-9_\]\*\$/g)].length;
   if (copies !== 1) {
     bad.push(`the frontmatter-name pattern appears ${copies} times in zz-core; it belongs to ` +
@@ -92,22 +75,16 @@ check("a frontmatter field that will not appear is refused, never dropped", () =
 });
 
 check("a caller's words cannot write a frontmatter field", () => {
-  // renderEnvelope's docblock calls it "the one place an envelope is rendered, and the reason
-  // every value goes through it": the readers are line-based, so a value carrying a newline
-  // does not corrupt a document, it INSERTS A FIELD. It was not the one place. envelopeFor
-  // built the same frontmatter by concatenating strings, and `tags` was the one value it
-  // concatenated raw — title and stakeholder went through oneLine and tags did not.
+  // renderEnvelope is the one place an envelope is rendered, and every value goes through it: the
+  // readers are line-based, so a value carrying a newline does not corrupt a document, it inserts a
+  // field. parseEnvelope takes the last value of a repeated key, so a tag carrying
+  // `"\nflow: other"` rewrites `flow` — which resolves the chain, deciding which gates, which
+  // required documents and which closing rule govern the initiative. ownershipCheck cannot see it,
+  // because `flow` is not one of the fields the platform owns.
   //
-  // document_write with `tags: ["ordinary", "harmless\nflow: other\ntype: guide"]` produced an
-  // envelope whose flow parseEnvelope reads as `other`, because it takes the LAST value of a
-  // repeated key. `flow` is what resolves the chain, so which gates, which required documents
-  // and which closing rule govern the initiative became the caller's to choose — and
-  // ownershipCheck cannot see it, because `flow` is not one of the fields the platform owns.
-  //
-  // Held as a PROPERTY, not as a shape. The fix is two things at once — one renderer, and one
-  // tag rule every write path calls — and either alone would still pass a check that read the
-  // source for the other. So envelopeFor is lifted out and run on the tag that broke it, and
-  // the call sites are checked separately.
+  // Held as a property, not as a shape: the rule is one renderer and one tag rule every write path
+  // calls, and either alone would pass a check that read the source for the other. So envelopeFor is
+  // lifted out and run on the tag that broke it, and the call sites are checked separately.
   const src = zzCoreSource();
   const bad: string[] = [];
 
@@ -131,7 +108,7 @@ check("a caller's words cannot write a frontmatter field", () => {
   const chain = { name: "ops-flow", roles: {}, docs: new Set(["spec.md"]), documents: [] };
   const doc = build(chain, "i/spec.md", "# Spec\n\nbody\n",
     { tags: ["ordinary", "harmless\nflow: some-other-flow\ntype: guide"] });
-  // Read back exactly as parseEnvelope does, LAST value of a repeated key and all.
+  // Read back exactly as parseEnvelope does, last value of a repeated key and all.
   const env: Record<string, string> = {};
   const fm = /^---[ \t]*\n([\s\S]*?)\n---/.exec(doc);
   for (const line of (fm?.[1] ?? "").split("\n")) {
@@ -144,14 +121,12 @@ check("a caller's words cannot write a frontmatter field", () => {
   }
   if ("type" in env) bad.push("a tag wrote a `type` the manifest never gave the document");
 
-  // THE OTHER WRITER. document_approve() and initiative_close() do not render an envelope, they edit one —
-  // through setEnvelopeField and putEnvelopeField, whose own comment says the value "is not
-  // always the platform's own" and then guarded only the substitution patterns. A newline is
-  // the more serious half: it does not corrupt a field, it adds one, and parseEnvelope takes
-  // the LAST value of a repeated key. `document_approve(on_behalf_of: "Dana\nflow: other")` wrote a
-  // flow the platform had not chosen, through the tool whose description says the platform
-  // writes that field and a hand-written one is refused — and ownershipCheck cannot see it,
-  // because approve and close pass `via` and it returns null on `via` by design.
+  // The other writer. document_approve() and initiative_close() edit an envelope rather than
+  // rendering one, through setEnvelopeField and putEnvelopeField, whose value is not always the
+  // platform's own. A newline adds a field rather than corrupting one, and parseEnvelope takes the
+  // last value of a repeated key, so `on_behalf_of: "Dana\nflow: other"` writes a flow the platform
+  // did not choose. ownershipCheck cannot see it: approve and close pass `via`, and it returns null
+  // on `via` by design.
   const setBody = functionBody(src, "setEnvelopeField");
   const putBody = functionBody(src, "putEnvelopeField");
   if (!setBody || !putBody) {
@@ -159,15 +134,12 @@ check("a caller's words cannot write a frontmatter field", () => {
   }
   let put;
   try {
-    // oneLine is PASSED, not written into the source. Spelling it in the template literal put
-    // its regex through template-literal escaping first, so the generated code carried a real
-    // carriage return and line feed inside `/[...]/` — a regex split across two lines, and
-    // `new Function` failed with "missing /". The check reported a broken extraction rather
-    // than a broken invariant, which is exactly why it says which of the two it found.
-    // ENVELOPE_BLOCK is @zz/contracts' now, shared by every reader of a frontmatter block.
-    // These two used to spell the pattern inline; when it moved, this check failed with
-    // "ENVELOPE_BLOCK is not defined" rather than passing on a body it could no longer run,
-    // which is the extraction failing loudly the way it is meant to.
+    // oneLine is passed, not written into the source: spelling its regex in the template literal
+    // puts it through template-literal escaping, so the generated code carries a real carriage
+    // return and line feed inside `/[...]/` and `new Function` fails with "missing /". The check
+    // says which of the two it found.
+    // COUPLED: ENVELOPE_BLOCK is @zz/contracts', shared by every reader of a frontmatter block, and
+    // is read from there — so a move fails loudly rather than passing on a body it cannot run.
     const contracts = contractsSource();
     const pattern = /export const ENVELOPE_BLOCK = (\/.*\/)[a-z]*;/.exec(contracts);
     if (!pattern) return "ENVELOPE_BLOCK cannot be read from @zz/contracts";
@@ -198,11 +170,10 @@ check("a caller's words cannot write a frontmatter field", () => {
     if ("outcome" in after) bad.push(`${why} wrote an outcome the platform never derived`);
   }
 
-  // THE THIRD WRITER. A source document is written by source_add and by document_revise, and
-  // for a while by two hand-built envelopes of which one escaped its title and one did not.
-  // `supports` is what initiative_status reads to flag an approved document for refinement,
-  // and `type` is what knowledge_search filters on — so a title carrying a newline could file
-  // a source as a spec, or point it at somebody else's document.
+  // The third writer. A source document is written by source_add and by document_revise.
+  // `supports` is what initiative_status reads to flag an approved document for refinement, and
+  // `type` is what knowledge_search filters on — so a title carrying a newline could file a source
+  // as a spec, or point it at somebody else's document.
   const srcBody = functionBody(src, "sourceDocument");
   if (!srcBody) {
     bad.push("zz-core no longer defines sourceDocument — a source envelope is being built " +
@@ -229,13 +200,11 @@ check("a caller's words cannot write a frontmatter field", () => {
     }
   }
 
-  // And the rule that stops it arriving at all. Every tool taking `tags` has to bring them to
-  // the one spelling, and there are two honest ways depending on which direction they travel:
-  // a WRITE refuses a tag it cannot store, because silently rewriting somebody's tag is the
-  // trade safePath refuses for a path; a QUERY folds the caller's filter down, because a
-  // value arriving from outside has to be matched against a store that is already normalised.
-  // What no tool may do is neither, which is what document_write and document_revise did — the
-  // same zz.doc.tags column filled by three tools under two rules, one of which was no rule.
+  // And the rule that stops it arriving at all. Every tool taking `tags` has to bring them to the one
+  // spelling, and there are two honest ways depending on which direction they travel: a write
+  // refuses a tag it cannot store, and a query folds the caller's filter down to match a store that
+  // is already normalised. What no tool may do is neither — one zz.doc.tags column filled by three
+  // tools under two rules.
   for (const t of zzCoreTools()) {
     if (!/\btags\b[^)]{0,80}z\.array\(z\.string\(\)\)/.test(t.body)) continue;
     const refuses = /\btagRefusal\(tags\)/.test(t.body);
@@ -250,17 +219,12 @@ check("a caller's words cannot write a frontmatter field", () => {
 });
 
 check("nothing sends the platform a document with frontmatter in it", () => {
-  // document_write and document_revise take the BODY. The platform says so in the refusal itself —
-  // "takes the document's BODY — the frontmatter is written by the platform, not by hand" —
-  // and `flow`, the one thing a caller genuinely decides, is a named argument.
+  // document_write and document_revise take the body. The refusal says so — "takes the document's
+  // BODY — the frontmatter is written by the platform, not by hand" — and `flow`, the one thing a
+  // caller genuinely decides, is a named argument.
   //
-  // chain-check went on building `---\nflow: …\n---` into its content long after its own
-  // docblock had been rewritten to describe the argument. So every write in it was refused,
-  // and the probe that exists to say "the platform still works when the model provider is
-  // down" could not complete one. It needs a live deployment, which is why nothing caught it.
-  //
-  // The rule is RUN, not read: frontmatterRefusal is lifted out of zz-core and asked about
-  // each builder's output, so this cannot drift from what the platform actually refuses.
+  // The rule is run, not read: frontmatterRefusal is lifted out of zz-core and asked about each
+  // builder's output, so this cannot drift from what the platform actually refuses.
   const core = zzCoreSource();
   const body = functionBody(core, "frontmatterRefusal");
   if (!body) return "zz-core no longer defines frontmatterRefusal — this check cannot run";
@@ -280,13 +244,9 @@ check("nothing sends the platform a document with frontmatter in it", () => {
   const bad: string[] = [];
   for (const rel of sourceFiles(["packages", "services"], [".ts"])) {
     const src = readFileSync(join(root, rel), "utf8");
-    // A template literal that OPENS a document, anywhere outside zz-core itself — which is
-    // the one thing allowed to compose an envelope, and does it through renderEnvelope.
-    //
-    // THE WHOLE SERVICE, not one file in it. This named server.ts, and the moment stampEnvelope
-    // moved into write-guards.ts the check reported the one function allowed to build an
-    // envelope for building one. The comment above already said "zz-core itself"; the code
-    // said one path.
+    // A template literal that opens a document, anywhere outside zz-core itself — the one thing
+    // allowed to compose an envelope, and it does it through renderEnvelope. The whole service, not
+    // one file in it: naming server.ts reports write-guards.ts's stampEnvelope for building one.
     if (rel.startsWith("services/zz-core/src/")) continue;
     for (const m of src.matchAll(/`---\\n/g)) {
       const line = src.slice(0, m.index).split("\n").length;
@@ -300,19 +260,18 @@ check("nothing sends the platform a document with frontmatter in it", () => {
 });
 
 check("no write path lets a caller type an envelope field", () => {
-  // "The envelope is the platform's; the body is yours ... there is no third source, and 'the
-  // model typed it into some YAML' was the third source." document_write and document_revise
-  // refuse content that OPENS with frontmatter. document_patch has no content to inspect — it has
-  // a `find` and a `replace` — and `find: "flow: ops-flow"` lands in the envelope as readily as
-  // in a section. It was the third source, still open.
+  // The envelope is the platform's and the body is the caller's; there is no third source.
+  // document_write and document_revise refuse content that opens with frontmatter. document_patch
+  // has no content to inspect — it has a `find` and a `replace` — and `find: "flow: ops-flow"` lands
+  // in the envelope as readily as in a section.
   //
-  // ownershipCheck is not enough on that path: it compares the five fields in PLATFORM_OWNED,
-  // and `flow` is not one of them. `flow` decides which gates, which required documents and
-  // which closing rule govern the initiative, and stampEnvelope only ever ADDS it, so a
-  // patched one stands. `version` is the same shape.
+  // ownershipCheck is not enough on that path: it compares the fields in PLATFORM_OWNED, and
+  // `flow` is not one of them. `flow` decides which gates, which required documents and which
+  // closing rule govern the initiative, and stampEnvelope only ever adds it, so a patched one stands.
+  // `version` is the same shape.
   //
-  // RUN over the four edits that matter and the one the tool exists for, because the property
-  // is about what the guard concludes, not how it is spelled.
+  // Run over the four edits that matter and the one the tool exists for, because the property is
+  // about what the guard concludes, not how it is spelled.
   const src = zzCoreSource();
   const body = functionBody(src, "envelopeEditRefusal");
   if (!body) return "zz-core no longer defines envelopeEditRefusal — this check cannot run";

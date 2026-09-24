@@ -2,58 +2,32 @@
  * The control grant: what a stored controller decision authorises, issued by a trusted host
  * and redeemed at a public handler that re-derives every claim the record makes.
  *
- * WHY THE ENGINE IS HERE AND NOT IN THE SERVICE, for the same reason `host.ts` gives: a
- * fixture has to drive the engine the service drives, and `@zz/contracts` is the only layer
- * both can reach. `services/zz-core/src/host/` owns the part that is genuinely the service's
- * — which issuer components this release approves, and the guard that keeps the issuance
- * operation out of every door's registration list.
+ * COUPLED: the engine lives here rather than in the service so a fixture can drive the engine
+ * the service drives; `@zz/contracts` is the only layer both reach.
+ * `services/zz-core/src/host/` owns which issuer components this release approves and the guard
+ * keeping the issuance operation out of every door's registration list.
  *
- * UNREGISTERED IS NECESSARY AND NOT SUFFICIENT, and this file is written around that. A name
- * absent from a registry is hidden, not protected: a door added next year, a wildcard
- * dispatcher, an admin console that enumerates handlers by reflection, and the name is back.
- * So the protection is structural in three separate places, any one of which refuses alone:
+ * The protection is structural in three places, any one of which refuses alone: issuance takes
+ * a trusted host context whose `trusted` field is the literal `true`; issuance takes a decision
+ * id and nothing else, so no field a caller fills in can widen what it gets; and redemption
+ * looks the record up server-side, re-hashes the decision's effect, re-resolves the dependency
+ * snapshot against current revisions, and re-checks the issuing digest against the allowlist.
+ * Absence from a registry is not one of the three — it hides a name, it does not protect it.
  *
- *   · ISSUANCE TAKES A TRUSTED HOST CONTEXT, whose `trusted` field is the literal `true`. A
- *     typed caller cannot construct a context that is anything else, and an untyped one is
- *     refused by name below rather than having the field coerced — the same argument
- *     `registry.ts` makes for `body?: never`.
+ * A grant is a protected server record, never a bearer permission: a row, an id a caller holds,
+ * re-checked at every redemption. A lease effect produces a grant whose redemption for a
+ * mutation is refused. Approval is by digest, not by name, so a component renamed after
+ * issuance still redeems and one whose body changed does not.
  *
- *   · ISSUANCE TAKES NOTHING ELSE. A decision id, and no profile, no artifact body, no
- *     targets. Everything the grant carries is derived from the stored decision, so there is
- *     no field a caller could fill in to widen what it gets.
- *
- *   · REDEMPTION RE-DERIVES EVERYTHING. The public handler does not trust the record it is
- *     handed an id for. It looks the record up server-side, re-hashes the decision's effect,
- *     re-resolves the dependency snapshot against the store's current revisions, and re-checks
- *     the issuing digest against the allowlist. A record whose effect digest was edited after
- *     issuance is refused there, not merely unissuable.
- *
- * GRANTS ARE PROTECTED SERVER RECORDS, NEVER BEARER PERMISSIONS. Nothing here returns a
- * signed blob a worker could carry. A grant is a row; a caller holds an id; the id is
- * meaningless without the row, and the row is re-checked at every redemption.
- *
- * A LEASE IS NOT A MUTATION GRANT. The distinction is in the effect the decision recorded, so
- * it cannot be talked around at the call site: a lease effect produces a grant whose
- * redemption for a mutation is refused, and no combination of arguments converts one into the
- * other.
- *
- * APPROVAL IS BY DIGEST, NOT BY NAME, which is why the record carries the issuing digest and
- * no component id. An id is a label; the digest is what somebody actually reviewed, and
- * looking the approval back up by it means a component renamed after issuance still redeems
- * and a component whose body changed does not.
- *
- * SNAKE_CASE ON {@link ControlGrant} AND {@link GrantClaim} ALONE. Every other type here is
- * camelCase like the rest of this package; those two are the shapes a handler reads
- * field-by-field out of a store and off a tool argument, and they are spelled the way the
- * tool arguments beside them are.
+ * DELIBERATE: {@link ControlGrant} and {@link GrantClaim} are snake_case where the rest of this
+ * package is camelCase — they are read field-by-field out of a store and off a tool argument.
  */
 import { createHash } from "node:crypto";
 
-/** The internal issuance operation's one spelling, exported so the service's registration
- *  guard and this file's public dispatch cannot disagree about which name is internal. It is
- *  a constant and never a registration: nothing in this repository writes it beside a
- *  `registerTool(` call, and the guard in `services/zz-core/src/host/` exists to keep that
- *  true as doors are added. */
+/** The internal issuance operation's one spelling, exported so the service's registration guard
+ *  and this file's public dispatch cannot disagree about which name is internal.
+ *  COUPLED: the guard in `services/zz-core/src/host/` keeps it out of every `registerTool(` call
+ *  as doors are added. */
 export const INTERNAL_GRANT_ISSUANCE = "issue_control_grant";
 
 /** How long a grant stays redeemable when the decision does not say. Both this and the use
@@ -70,13 +44,10 @@ const DEFAULT_TTL_MS = 15 * 60 * 1000;
 const CANONICAL_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
 /**
- * What a grant points at.
- *
- * A RESOURCE THAT DOES NOT EXIST YET IS RESERVED THROUGH THIS SAME SCHEME. The tempting
- * shortcut is to authorise a not-yet-created resource by the path it is going to be written
- * to, which hands the caller the one field it can vary — and a path is an alias, resolved by
- * whatever filesystem or router reads it, not an identity the store can check. So a
- * reservation is an id like any other, minted under a kind, and the authorisation names it.
+ * What a grant points at. A resource that does not exist yet is reserved through this same
+ * scheme: a reservation is an id minted under a kind, never the path it will be written to. A
+ * path is an alias resolved by whatever filesystem or router reads it, not an identity the
+ * store can check, and it is the one field a caller could vary.
  */
 export type ResourceIdentity =
   | { readonly kind: string; readonly existing: string }
@@ -88,13 +59,11 @@ const isReservation = (r: ResourceIdentity): boolean => "reserved" in r;
 
 const identityId = (r: ResourceIdentity): string => ("existing" in r ? r.existing : r.reserved);
 
-/**
- * One target string: a canonical resource identity and the operation it is authorised for.
+/** One target string: a canonical resource identity and the operation it is authorised for.
  *
- * Throws rather than returning a refusal — targets are derived at issuance, inside a trusted
- * call, and a malformed one there is a defect in the stored decision rather than a caller's
- * mistake. {@link issueControlGrant} turns it back into a refusal at the boundary.
- */
+ *  Throws rather than returning a refusal — targets are derived at issuance inside a trusted
+ *  call, so a malformed one is a defect in the stored decision, not a caller's mistake.
+ *  {@link issueControlGrant} turns it back into a refusal at the boundary. */
 export function canonicalTarget(resource: ResourceIdentity, operation: string): string {
   const id = identityId(resource);
   for (const [label, value] of [["kind", resource.kind], ["id", id], ["operation", operation]]) {
@@ -161,13 +130,9 @@ export interface GrantUse {
   readonly spent: number;
 }
 
-/**
- * A control grant, as the store holds it.
- *
- * EVERY FIELD IS DERIVED, NONE SUPPLIED. The issuing digest comes from the host context that
- * was checked against the allowlist, the decision id from the lookup that succeeded, and the
- * three digests from the decision's own contents. There is no field here a caller named.
- */
+/** A control grant, as the store holds it. Every field is derived, none supplied: the issuing
+ *  digest from the host context checked against the allowlist, the decision id from the lookup
+ *  that succeeded, and the three digests from the decision's own contents. */
 export interface ControlGrant {
   readonly id: string;
   readonly issuer_component_digest: string;
@@ -213,18 +178,12 @@ export interface GrantWorldSeed {
   readonly permissionEpoch: number;
 }
 
-/**
- * The protected record store.
+/** The protected record store.
  *
- * `grant` RETURNS A COPY, and that is not decoration. A handler handed the live row could
- * edit it, and the point of re-deriving digests at redemption is that the row is evidence
- * rather than authority. A copy also makes the tamper case testable without reaching into
- * private state through a back door the production path does not have.
- *
- * NO MODULE-SCOPE STATE, for the reason `createHost` gives: every instance is independent, so
- * a service composing one at boot and a fixture composing one in a test cannot interfere and
- * neither depends on the order the other ran in. The grant counter lives here for that reason.
- */
+ *  `grant` returns a copy: re-deriving digests at redemption only works if the row is evidence
+ *  rather than authority, and a handler handed the live row could edit it. No module-scope
+ *  state, so a service composing one at boot and a fixture in a test cannot interfere; the
+ *  grant counter lives here for that reason. */
 export interface GrantStore {
   decision(id: string): ControlDecision | undefined;
   /** The approval for a digest, or undefined. Keyed by digest rather than by component id
@@ -241,17 +200,12 @@ export interface GrantStore {
   spend(id: string): void;
 }
 
-/**
- * A store that can also be pushed around, which is what a test needs and a real one must not
- * owe anybody.
+/** A store that can also be pushed around, which is what a test needs and a real one must not
+ *  owe anybody.
  *
- * SEPARATE FROM {@link GrantStore} because `tamper` on an interface named "the protected
- * record store" would oblige every future implementation to provide a way of rewriting a
- * protected record. The engine takes the narrow one; only {@link createGrantStore} returns
- * this. What the three hooks buy is the only evidence that matters here: the public handler's
- * re-derivation can be shown to refuse a record that no longer describes its decision, and no
- * amount of issuance-side checking demonstrates that.
- */
+ *  DELIBERATE: separate from {@link GrantStore}, so no future implementation of "the protected
+ *  record store" is obliged to provide a way of rewriting a protected record. The engine takes
+ *  the narrow one; only {@link createGrantStore} returns this. */
 export interface ProbeableGrantStore extends GrantStore {
   /** Rewrite a filed record, as somebody with store access would. */
   tamper(id: string, patch: Partial<ControlGrant>): void;
@@ -319,14 +273,10 @@ export function createGrantStore(seed: GrantWorldSeed): ProbeableGrantStore {
 // ---------------------------------------------------------------------------------------
 // Issuance — trusted callers only, and nothing else supplied
 
-/**
- * A trusted host context.
- *
- * `trusted` IS THE LITERAL `true`, so there is no value of this type that says otherwise and
- * a typed caller cannot express an untrusted issuance at all. The runtime check below is for
- * the untyped one, and it refuses by name rather than coercing — "ignored" and "accepted"
- * being indistinguishable to whoever sent it.
- */
+/** A trusted host context. `trusted` is the literal `true`, so no value of this type says
+ *  otherwise and a typed caller cannot express an untrusted issuance. The runtime check below is
+ *  for the untyped caller, and it refuses by name rather than coercing — "ignored" and
+ *  "accepted" being indistinguishable to whoever sent it. */
 export interface TrustedHostContext {
   readonly trusted: true;
   readonly componentDigest: string;
@@ -350,12 +300,9 @@ export type GrantIssuance =
 
 const refuse = (reason: string): GrantIssuance => ({ ok: false, reason });
 
-/**
- * Issue a grant for one stored decision, or refuse.
- *
- * THE ONLY WAY A GRANT COMES INTO EXISTENCE. There is no second constructor, no exported
- * record literal and no path that files one without passing every check below.
- */
+/** Issue a grant for one stored decision, or refuse. The only way a grant comes into existence:
+ *  no second constructor, no exported record literal, and no path that files one without
+ *  passing every check below. */
 export function issueControlGrant(
   store: GrantStore,
   ctx: TrustedHostContext,
@@ -442,18 +389,14 @@ export type ClaimOutcome =
 
 const deny = (reason: string): ClaimOutcome => ({ ok: false, reason });
 
-/**
- * Redeem a grant, or refuse — re-deriving every claim the stored record makes.
+/** Redeem a grant, or refuse — re-deriving every claim the stored record makes.
  *
- * THE ORDER IS DELIBERATE. Existence first, so a fabricated id never reaches a check that
- * could be made to say whether some other id exists. Then the decision it cites, then the
- * approval it was issued under, then the record's own digests against that decision, then the
- * world the decision rested on, and only then the ordinary freshness of the grant itself.
- * Each of the first four is a forgery of a different kind, and each refuses on its own.
+ *  DELIBERATE: the order. Existence first, so a fabricated id never reaches a check that could
+ *  say whether some other id exists; then the decision it cites, the approval it was issued
+ *  under, the record's digests against that decision, the world the decision rested on, and last
+ *  the grant's own freshness. Each of the first four is a different forgery.
  *
- * `now` IS A PARAMETER. The store has no clock, and a handler that reached for one would be a
- * handler whose expiry rule could not be tested without waiting.
- */
+ *  `now` is a parameter: the store has no clock. */
 export function claimAgainstGrant(
   store: GrantStore,
   claim: GrantClaim,
@@ -495,19 +438,17 @@ export function claimAgainstGrant(
   if (grant.profile_digest !== profileDigest(decision.profile)) {
     return deny(`${grant.id} carries a profile digest the stored decision does not produce`);
   }
-  // THE TARGETS ARE RE-DERIVED, NOT READ. They are not covered by the effect digest — the
-  // digest is over the decision's effect, and the targets are a rendering of it — so a record
-  // whose `targets` array gained a second entry would otherwise hash correctly and authorise
-  // a resource the decision never named. Deriving them here from the decision means the field
-  // on the record is a convenience for readers and never the thing consulted.
+  // The targets are re-derived, not read. They are not covered by the effect digest — that is
+  // over the decision's effect, and the targets are a rendering of it — so a record whose
+  // `targets` array gained an entry would hash correctly and authorise a resource the decision
+  // never named. The field on the record is a convenience for readers, never consulted.
   let derived: string;
   try {
     derived = canonicalTarget(decision.effect.resource, decision.effect.operation);
   } catch (e) {
-    // A STORED DECISION THAT NO LONGER RENDERS IS A REFUSAL, NOT A CRASH. This is a public
-    // handler: a throw here is an unhandled fault on a request somebody sent, and the caller
-    // learns nothing it can act on. Unreachable for a decision that was well formed when the
-    // grant was issued, and reachable the moment anything can edit one.
+    // A stored decision that no longer renders is a refusal, not a crash. This is a public
+    // handler: a throw is an unhandled fault on a request somebody sent. Reachable the moment
+    // anything can edit a decision.
     return deny(`${grant.id} cites a decision that no longer renders a target: ` +
                 (e instanceof Error ? e.message : String(e)));
   }

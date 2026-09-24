@@ -1,47 +1,31 @@
 /**
- * legacy-import.ts — the adoption path: how bytes that predate this platform's record store
- * become artifacts it holds, without any of them changing.
+ * legacy-import.ts — the adoption path: how bytes that predate this platform's record store become
+ * artifacts it holds, without any of them changing.
  *
- * THIS IS THE FILE I-11 WAS MISSING. `mutations.ts` refuses `NOT_FOUND_OR_FORBIDDEN` for any
- * artifact_id it holds no commit for, because `readOwnerState` replays only
- * `.zz/commits/*.json`. Every document written before that store existed has no commit, so
- * routing the registered tools through `mutate()` would have answered every write to an
- * existing document with a refusal. The answer is not to loosen the kernel's identity rule —
- * it is to give a legacy artifact a first commit that says, truthfully, "these bytes came from
- * somewhere else and this platform did not produce them". That commit is `import_legacy`, and
- * this module is what prepares it.
+ * A legacy artifact gets a first commit, `import_legacy`, saying that these bytes came from
+ * somewhere else and this platform did not produce them. `mutations.ts` refuses
+ * `NOT_FOUND_OR_FORBIDDEN` for any artifact_id it holds no commit for, because `readOwnerState`
+ * replays only `.zz/commits/*.json`.
  *
- * FOUR THINGS ARE DETERMINISTIC HERE, AND EVERY ONE OF THEM IS load-bearing for the contract's
- * "applying the same approved conversion manifest twice produces no extra identity, revision
- * or event":
- *   1. `legacyArtifactId(owner_id, locator)` — the identity. A UUIDv5-shaped digest of the
- *      owner and the legacy locator, so the same file in the same store is the same artifact
- *      on every run, on every machine, forever. This IS the alias map: `document_patch("a/b.md")`
- *      can compute the artifact_id it needs without consulting a table that might be missing.
- *   2. `manifestIdOf(rows)` — the manifest's own identity, a digest over its rows. A manifest
- *      re-prepared from the same inputs is the same manifest.
- *   3. `legacyImportKey(manifest_id, row)` — the idempotency key, a digest of the manifest id,
- *      the locator and the ORIGINAL BYTE HASH. This is the key `mutate()` finds in the
- *      idempotency index on a second apply and replays from, writing nothing.
- *   4. `legacyImportRequest(...)` — the whole request, a pure function of the row and the
- *      bytes. It carries no clock and no random value, so `requestHash` matches on the replay
- *      and the kernel does not refuse it as a different request under a reused key.
- * Nothing below deduplicates anything itself. The kernel's idempotency index does that, and it
- * can only do it because all four of the above are computed from the input and not from now.
+ * Four values here are deterministic, and applying the same manifest twice adds no identity,
+ * revision or event only because all four are computed from the input and never from now:
+ *   1. `legacyArtifactId(owner_id, locator)` — the identity, and the alias map itself: an adapter
+ *      holding a legacy path computes the artifact_id without consulting a table.
+ *   2. `manifestIdOf(rows)` — the manifest's own identity, a digest over its rows.
+ *   3. `legacyImportKey(manifest_id, row)` — the idempotency key `mutate()` replays from.
+ *   4. `legacyImportRequest(...)` — the whole request, carrying no clock and no random value, so
+ *      `requestHash` matches on the replay.
+ * Nothing here deduplicates anything itself; the kernel's idempotency index does.
  *
- * WHAT IS NEVER DECIDED HERE. A legacy `type:` is carried across verbatim, whatever it says.
- * This module classifies a document's PROFILE — native-shaped, foreign OKF, or unparsable —
- * using `export.ts`'s real parser, and records that profile; it never rewrites a foreign type
- * into one of this platform's four, and it never marks anything reviewed. Semantic conversion
- * of a team's own concepts needs that team's reviewer (H2), which is a decision a person
- * records, not a default a converter takes.
+ * Nothing is decided here. A legacy `type:` is carried across verbatim. This module classifies a
+ * document's profile — native-shaped, foreign OKF, or unparsable — using `export.ts`'s real parser
+ * and records that profile; it never rewrites a foreign type into one of this platform's four, and
+ * it never marks anything reviewed.
  *
- * WHAT IS NEVER LOST. The exact original bytes are written to `.zz/blobs/<sha256>` and
- * materialized at `legacy/<locator>` — before any parsing, and whatever the parsing concluded.
- * A file whose frontmatter is broken YAML still lands there byte for byte, wrapped as
- * `legacy-raw` with the reason recorded; so does a binary; so does text past the kernel's
- * 8-MiB new-write ceiling, which the migration exception exists for and which this module is
- * the one caller of.
+ * Nothing is lost. The exact original bytes are written to `.zz/blobs/<sha256>` and materialized at
+ * `legacy/<locator>`, before any parsing and whatever the parsing concluded — broken YAML, a
+ * binary, or text past the kernel's 8-MiB new-write ceiling, which the migration exception exists
+ * for and which this module is the one caller of.
  */
 import { createHash, randomUUID } from "node:crypto";
 
@@ -72,12 +56,11 @@ export const BINARY_PROFILE = "legacy-binary" as const;
 export type LegacyProfile =
   | typeof NATIVE_PROFILE | typeof LEGACY_PROFILE | typeof RAW_PROFILE | typeof BINARY_PROFILE;
 
-// ── deterministic identity ──────────────────────────────────────────────────────────────────
+// Deterministic identity
 
-/** A UUIDv5-SHAPED digest, not a v5 UUID: SHA-256 rather than SHA-1, with the version and
- *  variant nibbles set so the result is a well-formed UUID every schema on this platform
- *  accepts. The point is not RFC-4122 lineage, it is that the same (owner, locator) pair
- *  always produces the same identity — SHA-1 buys nothing here and is the weaker digest. */
+/** A UUIDv5-shaped digest, not a v5 UUID: SHA-256 rather than SHA-1, with the version and variant
+ *  nibbles set so the result is a well-formed UUID every schema on this platform accepts. The same
+ *  (owner, locator) pair always produces the same identity. */
 function digestUuid(namespace: string, name: string): string {
   const bytes = Buffer.from(createHash("sha256").update(`${namespace}\u0000${name}`, "utf8").digest().subarray(0, 16));
   bytes[6] = (bytes[6] & 0x0f) | 0x50;
@@ -87,9 +70,8 @@ function digestUuid(namespace: string, name: string): string {
 }
 
 /**
- * THE ALIAS MAP, as a function rather than a table. An adapter holding a legacy path — which
- * is all any registered tool ever holds — computes the artifact_id this migration gave (or
- * will give) those bytes, with no lookup that could be absent, stale or out of order.
+ * The alias map, as a function rather than a table: an adapter holding a legacy path computes the
+ * artifact_id this migration gave those bytes, with no lookup that could be absent or stale.
  */
 export function legacyArtifactId(ownerId: string, locator: string): string {
   return digestUuid(`zz-legacy-artifact:${ownerId}`, locator);
@@ -106,7 +88,7 @@ function sha256Hex(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-// ── the conversion manifest ─────────────────────────────────────────────────────────────────
+// The conversion manifest
 
 /** One row of an approved mechanical conversion manifest: everything the contract requires be
  *  accounted for about one input file, and nothing that is a judgement about its contents. */
@@ -140,9 +122,8 @@ export interface LegacyConversionManifest {
   readonly rows: readonly LegacyManifestRow[];
 }
 
-/** A row that cannot be carried forward at all. The contract makes each of these block the
- *  cutover rather than be skipped with a warning — a migration that quietly dropped a file
- *  would be exactly the loss this whole task exists to prevent. */
+/** A row that cannot be carried forward at all. Each of these blocks the cutover rather than being
+ *  skipped with a warning. */
 export interface LegacyBlockingError {
   readonly path: string;
   readonly code: "UNSAFE_LOCATOR" | "ALTERED_SOURCE_HASH" | "DUPLICATE_IDENTITY" | "UNINDEXABLE_CONTENT";
@@ -175,10 +156,9 @@ function readOriginalTime(fields: Record<string, unknown>): { at: string | null;
   return { at: null, precision: "unknown" };
 }
 
-/** Every `sources:` entry a legacy document declared, labelled unresolved. This migration
- *  resolves none of them on purpose: a legacy citation names a record in a system this
- *  platform did not own, and pointing it at a local artifact that merely looks similar would
- *  be fabricating provenance. */
+/** Every `sources:` entry a legacy document declared, labelled unresolved. This migration resolves
+ *  none of them: a legacy citation names a record in a system this platform did not own, and
+ *  pointing it at a local artifact that merely looks similar would be fabricating provenance. */
 function unresolvedReferences(fields: Record<string, unknown>): { original: string; reason: string }[] {
   const raw = fields.sources;
   if (!Array.isArray(raw)) return [];
@@ -189,10 +169,10 @@ function unresolvedReferences(fields: Record<string, unknown>): { original: stri
 }
 
 /** A locator this migration will refuse, or `null` when it is safe to archive. The same rule
- *  `record.ts` applies to a materialized path, applied one step earlier so the refusal names
- *  the input file rather than surfacing as an INVALID_INPUT from deep inside a commit — and
- *  exported so an adapter reading a legacy file off disk applies the identical rule BEFORE it
- *  opens the path, rather than a second, slightly different one of its own. */
+ *  `record.ts` applies to a materialized path, applied one step earlier so the refusal names the
+ *  input file rather than surfacing as an INVALID_INPUT from deep inside a commit. COUPLED:
+ *  exported so an adapter reading a legacy file off disk applies this rule before it opens the
+ *  path, rather than a second, slightly different one of its own. */
 export function legacyLocatorRefusal(path: string): string | null {
   if (path === "" || path.startsWith("/") || path.startsWith("\\") || /^[A-Za-z]:/.test(path)) {
     return "a legacy locator must be relative to the source store root";
@@ -228,16 +208,12 @@ interface LegacyReading {
 }
 
 /**
- * HOW A LEGACY TEXT FILE IS READ, and the one place the distinction the contract insists on is
- * drawn: "Plain Markdown with no frontmatter is not automatically malformed YAML."
+ * How a legacy text file is read. Plain Markdown with no frontmatter is not malformed YAML: it
+ * declared nothing, its body is the whole file, and it keeps its own profile. A file that did open
+ * a frontmatter block and put unparsable YAML in it stays `legacy-raw`.
  *
- * `parseKnowledge` collapses both into `legacy-raw`, correctly for a knowledge document where
- * frontmatter is mandatory. A migration reads a whole team's store, most of which never
- * claimed to be a knowledge document at all — a README, a meeting note, a scratch file. Those
- * declared nothing; they are not broken, their body is the whole file, and calling them
- * malformed would put every one of them behind a Reference wrapper for a defect they do not
- * have. A file that DID open a frontmatter block and put unparsable YAML in it is a different
- * thing, and stays `legacy-raw`.
+ * `parseKnowledge` collapses both into `legacy-raw`, which is right for a knowledge document and
+ * wrong for a store most of which never claimed to be one.
  */
 function readLegacyDocument(raw: string): LegacyReading {
   if (!hasFrontmatter(raw)) return { profile: LEGACY_PROFILE, fields: {}, body: raw };
@@ -246,10 +222,10 @@ function readLegacyDocument(raw: string): LegacyReading {
 }
 
 /**
- * ONE INPUT FILE, ACCOUNTED FOR: its bytes' hash, its legacy id, its available history label,
- * its known date precision, and the profile the real OKF parser assigns it. Pure — no
- * filesystem, no clock, no randomness — which is what lets `prepare()` be re-run and produce
- * the identical manifest.
+ * One input file, accounted for: its bytes' hash, its legacy id, its available history label, its
+ * known date precision, and the profile the real OKF parser assigns it. Pure — no filesystem, no
+ * clock, no randomness — which is what lets `prepare()` be re-run and produce the identical
+ * manifest.
  */
 export function classifyLegacyInput(path: string, bytes: Uint8Array): LegacyManifestRow | LegacyBlockingError {
   const unsafe = legacyLocatorRefusal(path);
@@ -280,10 +256,9 @@ export function classifyLegacyInput(path: string, bytes: Uint8Array): LegacyMani
   };
 }
 
-/** The manifest's identity: a digest over exactly the rows it carries, in locator order. Two
- *  preparations of the same inputs are the same manifest, and a manifest with one row changed
- *  is a different one — which is what stops a second, edited manifest from replaying the
- *  first's idempotency keys and silently doing nothing. */
+/** The manifest's identity: a digest over exactly the rows it carries, in locator order. A manifest
+ *  with one row changed is a different one, which is what stops a second, edited manifest from
+ *  replaying the first's idempotency keys and silently doing nothing. */
 function manifestIdOf(rows: readonly LegacyManifestRow[]): string {
   const canonical = rows.map((r) => `${r.path}\u0000${r.sha256}\u0000${r.profile}`).join("\u0001");
   return createHash("sha256").update(`${LEGACY_MANIFEST_FORMAT_VERSION}\u0002${canonical}`, "utf8").digest("hex");
@@ -295,10 +270,9 @@ export interface LegacyManifestPreparation {
 }
 
 /**
- * Turns a set of read inputs into an approved-shape mechanical manifest. Rows come out sorted
- * by locator so the manifest id does not depend on the order a directory walk happened to
- * yield, and a locator appearing twice is a DUPLICATE_IDENTITY block rather than a row that
- * silently wins.
+ * Turns a set of read inputs into an approved-shape mechanical manifest. Rows come out sorted by
+ * locator so the manifest id does not depend on the order a directory walk happened to yield, and a
+ * locator appearing twice is a DUPLICATE_IDENTITY block rather than a row that silently wins.
  */
 export function prepareLegacyManifest(
   inputs: readonly { readonly path: string; readonly bytes: Uint8Array }[],
@@ -324,11 +298,10 @@ export function prepareLegacyManifest(
 }
 
 /**
- * "UNINDEXABLE RETAINED CONTENT BLOCKS CUTOVER" — measured, not assumed. Retained text has to
- * be fully indexed under the legacy exception, so this runs the real analyzer and checks that
- * its passages cover every byte. Oversized text is explicitly NOT a reason to refuse: that is
- * what `assertWithinInputLimit(..., { imported: true })` is for, and this module is the only
- * caller entitled to pass it.
+ * Retained text has to be fully indexed under the legacy exception, so this runs the real analyzer
+ * and checks that its passages cover every byte. Oversized text is not a reason to refuse: that is
+ * what `assertWithinInputLimit(..., { imported: true })` is for, and this module is the only caller
+ * entitled to pass it.
  */
 function unindexableReason(text: string, byteLength: number): string | null {
   try {
@@ -344,13 +317,12 @@ function unindexableReason(text: string, byteLength: number): string | null {
   }
 }
 
-// ── the request, and its idempotency key ────────────────────────────────────────────────────
+// The request, and its idempotency key
 
-/** THE KEY THE SECOND APPLY REPLAYS FROM. Manifest id, locator and original byte hash — no
- *  clock, no counter, no random value. `mutate()` qualifies it with the operation, finds it in
- *  the idempotency index it replayed off `.zz/commits/`, sees the same `request_hash`, and
- *  returns the first commit's result without writing anything. That, and nothing else, is what
- *  makes applying the same manifest twice add no identity, revision or event. */
+/** The key the second apply replays from: manifest id, locator and original byte hash — no clock,
+ *  no counter, no random value. `mutate()` qualifies it with the operation, finds it in the
+ *  idempotency index it replayed off `.zz/commits/`, sees the same `request_hash`, and returns the
+ *  first commit's result without writing anything. */
 export function legacyImportKey(manifestId: string, row: LegacyManifestRow): string {
   return `legacy-import:${createHash("sha256").update(`${manifestId}\u0000${row.path}\u0000${row.sha256}`, "utf8").digest("hex")}`;
 }
@@ -371,7 +343,7 @@ export function legacyImportRequest(
   };
 }
 
-// ── the policy ──────────────────────────────────────────────────────────────────────────────
+// The policy
 
 function refuse(code: MutationError["code"], message: string): PolicyOutcome {
   return { ok: false, error: { committed: false, code, message } };
@@ -423,9 +395,9 @@ function readImportPayload(payload: Record<string, unknown>): ParsedImportPayloa
   }
   if (typeof payload.bytes_base64 !== "string") return invalid("import_legacy requires payload.bytes_base64");
   const bytes = Buffer.from(payload.bytes_base64, "base64");
-  // "ALTERED SOURCE HASH BLOCKS CUTOVER", checked here rather than only at the CLI: the bytes
-  // that reach the commit are the ones re-hashed, so nothing can be substituted between the
-  // manifest being approved and the import being applied.
+  // An altered source hash blocks cutover, checked here rather than only at the CLI: the bytes that
+  // reach the commit are the ones re-hashed, so nothing can be substituted between the manifest
+  // being approved and the import being applied.
   if (sha256Hex(bytes) !== row.sha256) {
     return { committed: false, code: "INVALID_INPUT", message: `the bytes presented for ${row.path} hash to ${sha256Hex(bytes)}, not the manifest's ${row.sha256}` };
   }
@@ -436,17 +408,16 @@ function readImportPayload(payload: Record<string, unknown>): ParsedImportPayloa
 }
 
 /**
- * `import_legacy`'s policy — the one operation `nativePolicy` deliberately does not handle.
+ * `import_legacy`'s policy — the one operation `nativePolicy` does not handle.
  *
- * It produces a revision 1 whose `origin_profile` is `legacy_import`, whose `generated` block
- * names neither an author nor a time unless the source declared one this reader could parse,
- * whose `sources` list is empty and whose `legacy_unresolved_sources` carries every reference
- * the source declared that nothing here resolved. `ContentRevisionSchema` permits that shape
- * for an import and refuses it for a native write, which is the schema doing the work of
- * keeping "we imported this" and "we wrote this" apart.
+ * It produces a revision 1 whose `origin_profile` is `legacy_import`, whose `generated` block names
+ * neither an author nor a time unless the source declared one this reader could parse, whose
+ * `sources` list is empty, and whose `legacy_unresolved_sources` carries every reference the source
+ * declared that nothing here resolved. `ContentRevisionSchema` permits that shape for an import and
+ * refuses it for a native write.
  *
- * The import event is `legacy_imported` and its actor and time are the IMPORT's, which are
- * known facts about the conversion — never a claim about who wrote the original or when.
+ * The import event is `legacy_imported`, and its actor and time are the import's — never a claim
+ * about who wrote the original or when.
  */
 export const legacyImportPolicy: Policy = (request, ctx) => {
   if (request.operation !== "import_legacy") {
@@ -454,9 +425,9 @@ export const legacyImportPolicy: Policy = (request, ctx) => {
   }
   const artifactId = request.artifact_id;
   if (artifactId === undefined) return refuse("INVALID_INPUT", "import_legacy names the artifact_id its locator determines");
-  // DUPLICATE IDENTITY BLOCKS CUTOVER. A replay of the same import never reaches policy at
-  // all — the kernel answers it from the idempotency index — so a head already here means a
-  // DIFFERENT manifest is claiming a locator this store has already adopted.
+  // Duplicate identity blocks cutover. A replay of the same import never reaches policy at all —
+  // the kernel answers it from the idempotency index — so a head already here means a different
+  // manifest is claiming a locator this store has already adopted.
   if (ctx.getHead(artifactId) !== null) {
     return refuse("IDEMPOTENCY_CONFLICT", `artifact ${artifactId} already exists in this store; a second manifest may not re-import the same legacy locator`);
   }
@@ -482,7 +453,7 @@ export const legacyImportPolicy: Policy = (request, ctx) => {
     owner_id: ctx.owner_id, artifact_id: legacySourceArtifactId(ctx.owner_id, row.path),
     original_path: row.path, title: row.path, media_type: row.media_type,
     byte_length: row.byte_length, blob_hash: row.sha256,
-    // The CONVERSION's time and actor, and the contract says so in as many words: the import
+    // The conversion's time and actor, and the contract says so in as many words: the import
     // record describes the conversion, not the truth of the historical claim it carries.
     captured_at: now, captured_by: ctx.actor, original_locator: row.path,
   };

@@ -2,8 +2,8 @@
  * SQL: that every statement is one Postgres agreed to run, and that the schema queried is
  * the schema the migrations leave behind.
  *
- * Migrations are append-only history, not the schema. A table created in 002 and dropped in
- * 012 is still in the text, and a query against it typechecks perfectly.
+ * Migrations are history, not the schema: a table one creates a later one may drop, and a query
+ * against it typechecks perfectly.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -13,43 +13,27 @@ import { codeOnly, firstOf, root, sourceFiles, withoutComments } from "../read.t
 import { check } from "../run.ts";
 import { schemaColumns } from "../facts.ts";
 
-/** The indexer, which left services/zz-core/src/indexing.ts for @zz/indexing at Task I-38.
+/** The indexer, which lives in packages/indexing rather than services/zz-core.
  *
- * The two checks below read it for `reindexTeam` and `reindexAllTeams`, and they used to read
- * it through `zzCoreSource()`. They had to move with it: `knowledge_reindex` went to /manage,
- * the gateway serves that door, and a service cannot import another service — so the indexer
- * is a package both import, and zz-core's source no longer contains a line of it. Left aimed
- * at the old address both checks reported "this check reads nothing", which is the honest
- * sentence for a disarmed check and is exactly the silent-skip this gate exists to refuse.
- *
- * GUARDED rather than read bare. Both checks already say "reindexTeam is gone — this check
- * reads nothing" when the function is absent, and that sentence is the failure path; a bare
- * readFileSync would replace it with an ENOENT stack trace and send the reader looking for a
- * broken check instead of a missing function. */
+ *  Guarded rather than read bare: both checks below already say "reindexTeam is gone — this
+ *  check reads nothing" when the function is absent, and a bare readFileSync would replace that
+ *  sentence with an ENOENT stack trace. */
 const indexerSource = () => {
   const f = join(root, "packages/indexing/src/index.ts");
   return existsSync(f) ? readFileSync(f, "utf8") : "";
 };
 
 check("a team whose store is gone loses its index rows", () => {
-  // GHOST ROWS. reindexTeam took one early return for two different absences:
+  // reindexTeam must distinguish two absences:
   //   teams/ missing        -> the volume is not mounted; touching anything would empty the index
   //   teams/<slug> missing  -> that team's store was removed; its rows must go with it
-  // Conflating them meant a retired team kept its zz.doc rows for good. Archiving zz-team left
-  // six behind that had to be deleted by hand, and the function's own comment calls a ghost row
-  // "the worst failure this store has".
+  // Conflating them leaves a retired team's rows behind, and reindexAllTeams walking teams/
+  // alone can never visit the one team that needs cleaning.
   //
-  // And reindexAllTeams walked teams/ alone, so the one team that needed cleaning — the one
-  // with no directory — was the one it could never visit.
-  //
-  // THE TRAILING QUOTE IN THE TWO PATTERNS BELOW IS LOAD-BEARING, and it was missing. Both
-  // asked for `delete from zz.<table> where team_slug=$1` unanchored, and the per-document
-  // cleanup at the foot of the same function — `... where team_slug=$1 and initiative=$2 and
-  // path=$3` — begins with exactly that text. The whole function is the region, so the wrong
-  // statement satisfied the assertion about the right one: deleting the vanished team's
-  // `zz.decision` line outright left this check GREEN. Proven by mutation while the check was
-  // being re-aimed at the package, not by reading it. Requiring the closing `"` is what makes
-  // the two statements distinguishable, and the argument list is what tells them apart.
+  // DELIBERATE: the trailing `"` in the two delete patterns below is load-bearing. Unanchored,
+  // `delete from zz.<table> where team_slug=$1` also matches the per-document cleanup at the
+  // foot of the same function (`... and initiative=$2 and path=$3`). The closing quote plus the
+  // argument list is what tells the two apart.
   const src = indexerSource();
   const fn = /async function reindexTeam\([\s\S]*?\n}/.exec(src)?.[0] ?? "";
   const all = /async function reindexAllTeams\([\s\S]*?\n}/.exec(src)?.[0] ?? "";
@@ -71,10 +55,8 @@ check("a team whose store is gone loses its index rows", () => {
     }
   }
   if (!all) bad.push("reindexAllTeams is gone — this check reads nothing");
-  // BOTH TABLES, because since migration 059 a team's knowledge is its own subject in its own
-  // table — and a team can hold nodes and no documents at all, which is exactly the team the
-  // union exists to reach. Pinned on the union rather than on one spelling of one query, so
-  // dropping either half fails here.
+  // Both tables: a team's knowledge is its own subject in its own table, and a team can hold
+  // nodes and no documents at all. Pinned on the union, so dropping either half fails here.
   else if (!/select team_slug from zz\.doc/.test(all) || !/select team_slug from zz\.knowledge_node/.test(all)) {
     bad.push("reindexAllTeams does not union both index tables, so a team whose store was " +
              "removed — or one holding only knowledge nodes — is never visited and its rows " +
@@ -84,13 +66,9 @@ check("a team whose store is gone loses its index rows", () => {
 });
 
 check("a database read is not silently cut off at one megabyte", () => {
-  // execFileSync TRUNCATES past maxBuffer, which defaults to 1MB: the child is killed, the
-  // partial output is returned, and the only symptom is that the JSON stops parsing. psqlRows
-  // then blamed the command — "anything else means the command is not psql" — which is a
-  // confident accusation against the one thing that was working.
-  //
-  // Three days of one campaign is 1,157,750 bytes. Every tool reading this database broke at
-  // exactly the volume the platform exists to produce, and the failure named the wrong thing.
+  // execFileSync truncates past maxBuffer, which defaults to 1MB: the child is killed, the
+  // partial output is returned, and the only symptom is that the JSON stops parsing — which
+  // psqlRows then reports as "anything else means the command is not psql".
   const src = readFileSync(join(root, "packages/tools/src/lib/psql.ts"), "utf8");
   const calls = src.match(/execFileSync\([\s\S]*?\)\.trim\(\)/g) ?? [];
   const bad = [];
@@ -106,15 +84,11 @@ check("a database read is not silently cut off at one megabyte", () => {
 
 check("a document's two derived tables are cleaned together", () => {
   // zz.doc holds the document; zz.decision holds the claims derived from it, keyed the same
-  // way. The team reindex deleted only the first, so a deleted or renamed document left its
-  // claims behind forever — indexDoc clears them, and indexDoc never runs for a file that is
-  // gone. Two tables, one cleanup that knew about one of them.
+  // way. A deleted or renamed document must lose both — indexDoc clears claims, and it never
+  // runs for a file that is gone.
   //
-  // Counting the two statement kinds does NOT work, and the first version of this check did
-  // exactly that: zz.decision is deleted from twice (indexDoc clears a document's claims
-  // before re-deriving them, and the cleanup below), zz.doc once, so removing the cleanup's
-  // one still left two against one and the check passed with the bug reinstated. A check
-  // that cannot fail is not a check — so this reads the cleanup loop itself.
+  // DELIBERATE: this reads the cleanup loop itself rather than counting statement kinds.
+  // zz.decision is deleted from twice and zz.doc once, so a count passes with the cleanup gone.
   const src = indexerSource();
   const from = src.indexOf("const gone = rows.rows.filter");
   if (from === -1) return "cannot find the reindex cleanup loop — this check needs rewriting";
@@ -127,18 +101,12 @@ check("a document's two derived tables are cleaned together", () => {
 });
 
 check("the platform database is reached one way", () => {
-  // Five tools each carried their own psql transport. `q<T>` in watch-results and `query<T>`
-  // in flow-compare were byte-identical apart from the name; evolve-report's `events()` was
-  // the same function with its SQL inlined; collect-turns and tool-report had two more. All
-  // five also spelled out the same default command, so the deployment's compose service, user
-  // and database were recorded in five places and would have had to be changed in five.
+  // One psql transport, in packages/tools/src/lib/psql.ts. It is where the rule lives that a
+  // statement goes in on stdin with psql `-v` bindings and never through `-c`, because psql
+  // interpolates :'name' while lexing its input. It also holds the deployment's compose
+  // service, user and database, recorded once.
   //
-  // That transport is not incidental. It is where the rule lives that a statement goes in on
-  // STDIN with psql `-v` bindings and never through `-c` — because psql interpolates :'name'
-  // while lexing its input, and deploy/issue-first-pat.sh learned both halves of that the hard
-  // way. Five copies is five chances for the next one to interpolate into the SQL instead.
-  //
-  // Keyed on `-tA`, which is the psql invocation itself rather than on any tool's name.
+  // Keyed on `-tA`, the psql invocation itself, rather than on any tool's name.
   const home = "packages/tools/src/lib/psql.ts";
   if (!existsSync(join(root, home))) return `${home} is gone — the one psql transport with it`;
   const bad = [];
@@ -150,15 +118,11 @@ check("the platform database is reached one way", () => {
       if (/docker compose exec -T postgres psql/.test(ln)) bad.push(`${f}:${i + 1} spells out the psql command`);
     });
   }
-  // AND THE WRAPPER IS THE TRANSPORT'S. psqlRows' own refusal told an operator "every query
-  // here selects a single json_agg" as though something guaranteed it; nothing did, and the
-  // wrapper was hand-written at seven call sites. A caller who left it off got `-tA`
-  // tab-separated text, fell through to that refusal, and was told their `--psql` command was
-  // not psql — a message naming the wrong half of a fault that is in the tool's own SQL.
-  //
-  // THE WRAPPER, not any json_agg. The gateway aggregates a nested column out of `pg` — a
-  // person's memberships as one array — and that is an ordinary aggregate with nothing to do
-  // with this transport. What is refused is psqlRows' own envelope, written by hand.
+  // The json_agg wrapper belongs to the transport. A caller that writes its own gets `-tA`
+  // tab-separated text back and falls through to psqlRows' refusal, which names the operator's
+  // command rather than the tool's own SQL. What is refused is psqlRows' envelope written by
+  // hand — an ordinary aggregate elsewhere, such as the gateway aggregating a person's
+  // memberships out of `pg`, has nothing to do with this transport.
   for (const f of sourceFiles(["packages/tools/src"], [".ts"])) {
     if (f === home) continue;
     readFileSync(join(root, f), "utf8").split("\n").forEach((ln, i) => {
@@ -169,8 +133,8 @@ check("the platform database is reached one way", () => {
       }
     });
   }
-  // RUN it: what is held is that the transport wraps a bare SELECT, which no reading of a
-  // call site can show.
+  // Run it: what is held is that the transport wraps a bare SELECT, which no reading of a call
+  // site can show.
   const stub = join(root, "node_modules", ".zz-psql-echo.sh");
   writeFileSync(stub, "#!/bin/sh\ncat\n", { mode: 0o755 });
   const probe = `
@@ -179,8 +143,8 @@ check("the platform database is reached one way", () => {
   `;
   let sent = "";
   try {
-    // The stub echoes the statement back, so psqlRows dies on it — which is the point: the
-    // sentence it dies with carries the statement that was sent.
+    // The stub echoes the statement back, so psqlRows dies on it, and the sentence it dies
+    // with carries the statement that was sent.
     execFileSync("node", ["--input-type=module", "-e", probe], { encoding: "utf8" });
   } catch (err) {
     const e = err && typeof err === "object" ? err as Record<string, unknown> : {};
@@ -196,19 +160,15 @@ check("the platform database is reached one way", () => {
 });
 
 check("nothing queries a table the migrations dropped", () => {
-  // Migration 012 dropped zz.comment when comments became sources. reset-smoke-store.sh went
-  // on deleting from it AND counting it in the query that proves the wipe worked — so that
-  // select errored, `rows` came back empty, and the script aborted with "store is NOT empty"
-  // on a store it had just emptied. That is step 2 of 4 in run-smoke-uat.sh, so the whole
-  // smoke suite could not start, and nothing said why.
-  //
   // A dropped table is the one schema change no compiler catches: SQL in this repo lives in
-  // template literals and shell heredocs. The migrations are the schema's definition and are
-  // already replayed here for columns; this asks the same replay the other question.
+  // template literals and shell heredocs, so a query against a table dropped by a later
+  // migration typechecks and errors at run time, taking whatever reads its result with it. The
+  // migrations are the schema's definition and are already replayed here for columns; this asks
+  // the same replay the other question.
   const live = new Set(schemaColumns().map((c) => c.split(".")[0]));
   // The migration runner's own bookkeeping table is created by the runner, necessarily before
-  // any migration runs. Read from the code that creates it rather than named here, so this
-  // does not become a second list to keep in step.
+  // any migration runs. Read from the code that creates it rather than named here, so this does
+  // not become a second list to keep in step.
   const boot = readFileSync(join(root, "services/gateway/src/db.ts"), "utf8");
   for (const m of boot.matchAll(/create table (?:if not exists )?zz\.([a-z_]+)/gi)) live.add(m[1]);
   if (live.size < 5) return "the schema replay produced almost nothing — this check reads nothing";
@@ -228,22 +188,11 @@ check("nothing queries a table the migrations dropped", () => {
 });
 
 check("a column the platform enforces is a column something can write", () => {
-  // Half a feature, in either direction, is what this repository has learned to distrust.
-  // The dropped `platform_credential` table was one half — a schema implying keys were
-  // encrypted at rest when they were not. `pat.expires_at` was the other: resolvePat has
-  // always refused a token past its expiry, and nothing could issue one, so every token
-  // lived for ever and the check could not fire. Enforcement without issuance reads, to
-  // anybody looking at the schema, like a platform that expires its tokens.
+  // A column named in a WHERE that decides access must also appear in an INSERT or UPDATE
+  // somewhere, or the access check it feeds can never fire.
   //
-  // The shape is checkable: a column named in a WHERE that decides access must also appear
-  // in an INSERT or UPDATE somewhere.
-  // FROM THE SCHEMA, and across every source. Naming the two columns that were wrong is the
-  // list of what somebody found; the schema is the list of what could be. A timestamp column
-  // that gates access is exactly the kind a migration adds and nothing ever learns to set —
-  // that is how `expires_at` came to make the platform look like it expires its tokens.
-  // Replayed, not read flat: `resolved_at` belongs to a `comment` table that a later
-  // migration drops, and demanding a writer for a column of a dropped table is asking about
-  // history rather than about the platform.
+  // Taken from the schema rather than a named list, and replayed rather than read flat — a
+  // column of a table a later migration drops is history, not the platform.
   const columns = new Set(schemaColumns()
     .filter((c) => /_at$/.test(c.split(".")[1]))
     .map((c) => c.split(".")[1]));
@@ -261,34 +210,26 @@ check("a column the platform enforces is a column something can write", () => {
 });
 
 check("a SELECT DISTINCT is ordered only by columns it selects", () => {
-  // Postgres 42P10. `select distinct a, b ... order by a, c` is not a slow query or a subtly
-  // wrong one — it is rejected at parse time, every time, so the route above it returns 500
-  // for every caller. flowsFor ordered by `f.created_at` to make the newest install win and
-  // did not select it, which took /pkg out completely: no client package could be installed
-  // or refreshed, for anybody, on any of the three clients. Release verification caught it in
-  // production. Nothing offline could, because the gate does not run SQL — but it does not
-  // need to: the select list and the order list are both right there in the string.
+  // Postgres rejects `select distinct a, b ... order by a, c` at parse time (42P10), so the
+  // route above it returns 500 for every caller. The gate runs no SQL and does not need to.
   //
-  // `distinct on (...)` is EXEMPT and not an oversight. It carries the opposite rule — its
-  // ORDER BY must LEAD with the distinct-on expressions and may then name anything at all —
-  // so applying this test to it would report correct queries as broken and push whoever is
-  // reading toward the rewrite that reintroduces a real bug flowsFor documents at length.
+  // DELIBERATE: `distinct on (...)` is exempt. It carries the opposite rule — its ORDER BY must
+  // lead with the distinct-on expressions and may then name anything — so testing it here
+  // reports correct queries as broken.
   const findings = [];
   for (const rel of sourceFiles(["packages", "services", "scripts"], [".ts"])) {
     const src = withoutComments(readFileSync(join(root, rel), "utf8"));
     for (const m of src.matchAll(/\bselect\s+distinct\b/gi)) {
       const head = src.slice(m.index, m.index + 4000);
       if (/^select\s+distinct\s+on\s*\(/i.test(head)) continue;   // the opposite rule
-      // The statement ends where its string does — UNLESS it is a CTE, and then it ends at
-      // its own closing paren. `with calling as (select distinct ...), loaded as (...)
-      // select ... order by s.kind` put the OUTER query's ORDER BY inside the CTE's
-      // statement, and this reported four columns as unselected on a query that runs fine.
-      // A check that cries wolf on correct SQL is worse than no check: the next person to
-      // see it learns to add the exemption rather than read the finding.
+      // The statement ends where its string does — unless it is a CTE, and then at its own
+      // closing paren. Otherwise `with calling as (select distinct ...), loaded as (...) select
+      // ... order by s.kind` puts the outer query's ORDER BY inside the CTE's statement and
+      // reports unselected columns on a query that runs fine.
       const quote = src.lastIndexOf("`", m.index);
       const close = src.indexOf("`", m.index);
       if (quote === -1 || close === -1) continue;
-      // Scan forward for the paren that CLOSES an enclosing one. A `select distinct` at the
+      // Scan forward for the paren that closes an enclosing one. A `select distinct` at the
       // top level never meets it and keeps the whole literal; one inside `as ( … )` stops
       // exactly where the CTE does.
       let end = close, d = 0;
@@ -331,31 +272,21 @@ check("a SELECT DISTINCT is ordered only by columns it selects", () => {
 });
 
 check("a service reaches its database through one accessor", () => {
-  // zz-core spelled `pool ??= new pg.Pool({ connectionString: TEAM_DB_URL, max: 4 })` at five
-  // call sites, and three more functions read the `pool` variable directly and treated
-  // `undefined` as "this deployment has no database". Under LAZY construction those are
-  // different questions — is one configured, and has anybody connected yet — and answering
-  // the first with the second is a race with whatever the caller happened to do first.
+  // A service builds its pool once, in one accessor. Spelled at several call sites, the
+  // connection string and the pool size are recorded that many times.
   //
-  // It had already cost something twice. reindexAllTeams' boot rebuild returned 0/0/0 for
-  // every team because nothing had served a request yet, and the fix was to write the
-  // construction out a fifth time. indexDoc and reindexTeam still asked it, so a write
-  // arriving before the first database-backed request went to disk and never reached the
-  // index — knowledge_search then answers "nothing is known" about a document that is there.
+  // Under lazy construction "is a database configured" and "has anybody connected yet" are
+  // different questions, and reading the `pool` variable directly answers the first with the
+  // second. A write arriving before the first database-backed request then goes to disk and
+  // never reaches the index.
   //
-  // The pool SIZE is the quiet half: four connections spelled in five places is four
-  // connections until somebody changes one of them, and a pool that disagrees with itself is
-  // found under load and nowhere else.
-  //
-  // TWO SHAPES ARE BOTH FINE, and the difference is what this measures. The gateway builds
-  // its pool EAGERLY in initPlatformDb at boot and exposes platformDb()/platformDbReady(),
-  // so "does it exist" is a boot fact and `platformDbReady` is its honest name. zz-core
-  // builds LAZILY, where existence is a race — so there every read has to go through the
-  // accessor. What neither may do is build it twice.
+  // Two shapes are both fine. The gateway builds eagerly in initPlatformDb at boot and exposes
+  // platformDb()/platformDbReady(), so existence is a boot fact. zz-core builds lazily, so
+  // there every read goes through the accessor. What neither may do is build it twice.
   const bad = [];
   for (const rel of sourceFiles(["services"], [".ts"])) {
     const src = readFileSync(join(root, rel), "utf8");
-    // Comments and STRING LITERALS both dropped: `pool` is an ordinary English word, and a
+    // Comments and string literals both dropped: `pool` is an ordinary English word, and a
     // tool description reading "narrow the pool" is prose about search results, not a read.
     const code = codeOnly(src);
     const lines = code.split("\n");
@@ -380,29 +311,21 @@ check("a service reaches its database through one accessor", () => {
 });
 
 check("a run is attributed to a version by time, not by a column nothing stamps", () => {
-  // WHAT A RUN IS KEYED ON, and the shape that made zz.run 99.8% junk.
+  // A run is keyed on time, not on `step_version`. That column is written only when a skill is
+  // served whole through skill_read; an installed skill read off disk stamps nothing, so the
+  // join it feeds resolves almost never.
   //
-  // reconcileRuns() joined zz.skill_version on `sv.version = e.step_version`. That column is
-  // written only when a skill is served WHOLE through skill_read; an installed skill read off
-  // disk stamps nothing. Measured a day apart: the event log grew 381 -> 510 and step_version
-  // stayed at 39. Not sparse -- dead.
+  // A LEFT join over a dead column compounds it: an unresolvable event still produces a row
+  // carrying skill_version_id NULL, and a NULL cannot match the insert's conflict target,
+  // because Postgres treats NULLs as distinct — so `do update` never fires and the timer
+  // appends a duplicate every pass.
   //
-  // Dead alone would only have lost rows. What made it compound is the pair: the join was
-  // LEFT, so an unresolvable event still produced a row carrying skill_version_id NULL, and a
-  // NULL cannot match that insert's conflict target, because Postgres treats NULLs as
-  // distinct. `do update` never fired, so the timer appended a duplicate every pass -- 1787 of
-  // 1791 rows, growing by roughly 950 a day, each with events attached by a linkback that
-  // matched NULLs deliberately. Nothing in the gate or in tsc could see it: SQL lives in
-  // template literals, and a table full of plausible-looking rows reads as a healthy table.
+  // Both halves are required: binding by a dead column loses every row, and an inner join over
+  // a dead column writes nothing at all.
   //
-  // THE RULE IS THE SHAPE. Two halves, and either alone is worse than neither: binding by a
-  // dead column loses every row, and an inner join over a dead column writes nothing at all,
-  // for all time. So this asks for both.
-  //
-  // Only EVENT-RESOLVED joins are held to it. A join on `sv.id = run.skill_version_id` reads a
-  // version the insert already decided and needs no predicate; what must be time-bound is the
-  // step where an event becomes a version, and those are recognisable by resolving against the
-  // event row itself.
+  // Only event-resolved joins are held to it. A join on `sv.id = run.skill_version_id` reads a
+  // version the insert already decided; what must be time-bound is the step where an event
+  // becomes a version, recognisable by resolving against the event row itself.
   const rel = "services/gateway/src/runs.ts";
   const f = join(root, rel);
   if (!existsSync(f)) return `${rel} is gone -- this check reads nothing`;
@@ -414,7 +337,7 @@ check("a run is attributed to a version by time, not by a column nothing stamps"
              "not moved in a month; resolve the version from the event's timestamp against " +
              "zz.skill_version.released_at instead");
   }
-  // Every place a version is resolved FROM AN EVENT -- recognised by the skill being matched
+  // Every place a version is resolved from an event -- recognised by the skill being matched
   // on the event's own step -- must carry released_at. Counted, so that deleting the
   // derivation to satisfy the rule above cannot pass as a green tick.
   const resolutions = [...code.matchAll(/zz\.skill_version[\s\S]{0,200}/g)]

@@ -1,6 +1,6 @@
 // Every literal tooling path mentioned anywhere in scripts/ or checks/ must name a file that
-// exists. This covers imports, spawns and readFileSync calls in one sweep, so a class of site
-// nobody enumerated is still caught.
+// exists — imports, spawns and reads in one sweep, so a class of site nobody enumerated is
+// still caught.
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 const walk = (dir: string, out: string[] = []): string[] => {
@@ -11,20 +11,14 @@ const walk = (dir: string, out: string[] = []): string[] => {
   return out;
 };
 const fail: string[] = [];
-// ONE FILE IS DATA ABOUT A PLAN RATHER THAN CODE THAT DEREFERENCES A PATH, and it is named
-// here rather than left to work around the rule from the inside.
+// One file is data about a plan rather than code that dereferences a path: the edit-surface
+// ledger carries a row per deliverable the approved specification declares, most of them
+// future tasks' outputs that do not exist yet. A ledger row is not an import, a spawn or a
+// read, and its paths being absent is the normal state of a plan partway through.
 //
-// `scripts/tenant-info/ledger.ts` carries the edit-surface ledger: a row per deliverable the
-// approved specification declares, most of them FUTURE tasks' outputs that do not exist yet and
-// are not supposed to. This check exists to stop an import, a spawn or a read from outliving its
-// target, and a ledger row is none of those three — it is a description, and its paths being
-// absent is the normal state of a plan partway through.
-//
-// It was first kept green by assembling those strings at runtime (`"checks/name" + TS`), which
-// worked and was the wrong shape: an exemption hidden inside the scanned file blinds this check
-// for every later reader, and once `+ TS` is an accepted idiom any real import can climb through
-// it. The rule is carved here, beside the planted-probe carve-out above it and for the same
-// reason — an exemption written where the rule lives keeps teaching the rule.
+// DELIBERATE: the exemption is carved here rather than inside the scanned file. An exemption
+// that assembles its strings at runtime blinds this check for every later reader, and any
+// real import can climb through the same idiom.
 const LEDGER = "scripts/tenant-info/ledger.ts";
 
 const files = [...walk("scripts"), ...walk("checks")].filter((f) => f.endsWith(".ts"));
@@ -35,34 +29,24 @@ for (const f of files) {
     if (/^\s*\*/.test(line) || /^\s*\/\//.test(line)) return;      // prose
     for (const m of line.matchAll(/["'`]((?:\.{0,2}\/)?(?:scripts|checks|testing)\/[A-Za-z0-9._\/-]+\.(?:ts|mjs))["'`]/g)) {
       const spec = m[1];
-      // A PATH INSIDE A STRING THAT IS ITSELF INSIDE A STRING IS A FIXTURE, NOT A REFERENCE.
+      // A path inside a string that is itself inside a string is a fixture, not a reference:
+      // `checks/tenant-checks-registered.ts` hands a classifier whole fragments of TypeScript
+      // as data, and nothing in it opens, imports or spawns what those fragments name.
       //
-      // `checks/tenant-checks-registered.ts` hands `isGateLaunchSource` whole fragments of
-      // TypeScript as data — `'import { execFileSync } ...; execFileSync("node",
-      // ["checks/example.ts"]);'` — and nothing in that file ever opens, imports or spawns
-      // checks/example.ts. It is the source text a classifier is asked to read, the way a
-      // regex fixture is the text a matcher is asked to read, and demanding that it exist
-      // would demand this repository carry a file whose whole purpose is to be a plausible
-      // name. The rule is lexical and narrow: the inner quote is inside an unclosed outer one
-      // on the same line. A real import, spawn or read is never nested that way, so this
-      // exempts no site the check exists to hold.
+      // The rule is lexical and narrow: the inner quote is inside an unclosed outer one on
+      // the same line. A real import, spawn or read is never nested that way.
       const before = line.slice(0, m.index);
       const unclosed = (quote: string): boolean =>
         (before.match(new RegExp(`(?<!\\\\)${quote}`, "g")) ?? []).length % 2 === 1;
       if (unclosed("'") || unclosed("`")) continue;
       if (spec.endsWith(".mjs")) { fail.push(`${f}:${i + 1} names ${spec}, which no longer exists`); continue; }
-      // A PLANTED PROBE IS MEANT TO BE ABSENT. Break-tests write a file, run the gate against it
-      // and rmSync it in the same process; `zz-temp-` is this repository's marker for that.
-      // Requiring one to exist in a checked-out tree asserts the opposite of what it is for.
+      // A planted probe is meant to be absent: a break-test writes a file, runs the gate
+      // against it and removes it in the same process. `zz-temp-` is the marker for that.
       if (/(^|\/)zz-(temp|audit)-/.test(spec)) continue;
-      // RESOLVED AGAINST THE FILE THAT NAMES IT, not the process's cwd. "../scripts/gate/read.ts"
-      // written inside checks/ is correct; resolving it from the repository root tests a path one
-      // directory ABOVE the repository and reports every correct relative import as missing.
-      // EITHER RESOLUTION COUNTS. A literal path in this tree is sometimes an import specifier,
-      // resolved against the file that writes it, and sometimes a path handed to readFileSync or
-      // a subprocess, resolved against the repository root. Nothing in the text distinguishes
-      // them, so the file must exist under one reading or the other — demanding a single one
-      // reports correct code as broken.
+      // Either resolution counts. A literal path here is sometimes an import specifier,
+      // resolved against the file that writes it, and sometimes a path handed to a read or a
+      // subprocess, resolved against the repository root. Nothing in the text distinguishes
+      // them, so the file must exist under one reading or the other.
       const fromFile = join(f, "..", spec);
       const fromRoot = spec.replace(/^\.\//, "");
       if (!existsSync(fromFile) && !existsSync(fromRoot)) {
@@ -71,7 +55,8 @@ for (const f of files) {
     }
   });
 }
-// The self-check that fails silently rather than loudly.
+// skill-versions.ts decides whether it was run directly by comparing argv[1] against its own
+// file name. A stale `.mjs` name there does not throw; it silently takes the wrong branch.
 const sv = readFileSync("scripts/skill-versions.ts", "utf8");
 if (/endsWith\(["'`]skill-versions\.mjs["'`]\)/.test(sv)) {
   fail.push("scripts/skill-versions.ts:~140 still compares argv[1] against skill-versions.mjs — " +

@@ -1,33 +1,27 @@
 /**
- * Defects planted in the document envelope, its guards, its lifecycle and the prose that
- * ships beside them.
+ * Defects planted in the document envelope, its guards, its lifecycle and the prose that ships
+ * beside them.
  *
- * WHAT THESE CHECKS PROTECT, IN ONE SENTENCE: the envelope is the platform's and the body is
- * the caller's, and there is no third source. Three routes to that third source have been
- * closed — `document_write` and `document_revise` refuse content that opens with frontmatter,
- * and `document_patch` refuses a find/replace that reaches the block — so the rows that matter
- * most here are the ones that re-open one of them: a guard whose answer is thrown away, a
- * refusal that stops firing, a stamp that invents a field for a document it does not govern.
+ * What these checks protect: the envelope is the platform's and the body is the caller's, and
+ * there is no third source. `document_write` and `document_revise` refuse content that opens
+ * with frontmatter, and `document_patch` refuses a find/replace reaching the block, so the
+ * rows that matter most re-open one of those: a guard whose answer is thrown away, a refusal
+ * that stops firing, a stamp that invents a field for a document it does not govern.
  *
- * THIS FILE IS ONE OF THE FILES THESE CHECKS READ, and that is a hazard rather than a curiosity.
- * `makeWorkspace` runs `git add -A` inside the disposable copy, so an untracked spec file is a
- * TRACKED one by the time the gate runs, and `sourceFiles(["."], [".ts"])` and
- * `sourceFiles(["services", "packages", "scripts"], [".ts"])` both reach `scripts/mutation/`.
- * Three of the strings below would therefore fire their own target at BASELINE — the redaction
- * placeholder, the removed comment tool, and an undeclared slash command — and a target that is
- * already red is excluded from `new_failures`, so every row aimed at it reads SURVIVED whatever
- * the check actually did. Those three are assembled from halves, with the reason written above
- * each one. The alternative was to weaken the mutation; disclosing the assembly is the same
- * trade `specs-documents.ts` made for `NOT_YET_PLANTED`, and for the same reason.
+ * DELIBERATE: several payloads below are assembled from halves rather than written whole.
+ * `makeWorkspace` runs `git add -A` inside the disposable copy, so this spec file is tracked
+ * by the time the gate runs, and `sourceFiles(["."], [".ts"])` and `sourceFiles(["services",
+ * "packages", "scripts"], [".ts"])` both reach `scripts/mutation/`. A payload written whole
+ * fires its own target at baseline, and a target already red is excluded from `new_failures`,
+ * so every row aimed at it reads SURVIVED. The reason is written above each assembled string.
  *
- * NOT COVERED HERE, and reported to the dispatcher rather than invented:
- *   - "the gate reads the files it says it reads" — every file it reads is under
- *     `scripts/gate/`, which `plant()` freezes by construction.
+ * Not covered here: "the gate reads the files it says it reads" — every file it reads is under
+ * `scripts/gate/`, which `plant()` freezes by construction.
  */
 import type { MutationSpec } from "./plant.ts";
 
 export const COV_DOCUMENTS: readonly MutationSpec[] = [
-  /* ── the write guards ─────────────────────────────────────────────────── */
+  /* The write guards */
   {
     check: "scripts/gate/checks/documents-guards.ts",
     target: "every tool that writes a file also indexes it",
@@ -66,10 +60,8 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
       "which is the asymmetry the platform has already shipped three times",
   },
   {
-    // ASSEMBLED, AND HERE IS WHY. This check refuses any tracked `.ts` outside @zz/contracts
-    // that writes its own redaction placeholder, and it sweeps `scripts/` — including this
-    // file. Written out whole, the replacement below would make this spec file the defect and
-    // turn the target red before a single mutation was planted.
+    // Assembled: this check refuses any tracked `.ts` outside @zz/contracts that writes its
+    // own redaction placeholder, and it sweeps `scripts/` — including this file.
     check: "scripts/gate/checks/documents-guards.ts",
     target: "a refusal is classified in one place",
     subject: "packages/tools/src/ops/watch-results.ts",
@@ -179,7 +171,7 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
       "that teaches the path form never reaches the caller who needs it",
   },
 
-  /* ── the envelope ─────────────────────────────────────────────────────── */
+  /* The envelope */
   {
     check: "scripts/gate/checks/documents-envelope.ts",
     target: "nothing reads an envelope field except parseEnvelope",
@@ -271,9 +263,9 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
       "silently not set",
   },
   {
-    // The dispatcher's list files this id under documents-envelope.ts, where line 279 quotes
-    // the name in a comment. It is REGISTERED in skill-prose.ts, and `check` is the file that
-    // registers it, so that is what this row names.
+    // COUPLED: the dispatcher's list files this id under documents-envelope.ts, which quotes
+    // the name in a comment. `check` is the file that registers it, so that is what this
+    // row names.
     check: "scripts/gate/checks/skill-prose.ts",
     target: "no skill template hands a model a field the platform owns",
     assertion: "a fenced template carrying envelope keys the platform owns",
@@ -285,7 +277,7 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
       "save of the very first document of the flow",
   },
 
-  /* ── the lifecycle ────────────────────────────────────────────────────── */
+  /* The lifecycle */
   {
     check: "scripts/gate/checks/documents-lifecycle.ts",
     target: "a document the flow does not declare can still record why it changed",
@@ -342,7 +334,7 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
     replace: "        delete env.approved_by; delete env.approved_at; delete env.status; delete env.outcome;",
     planted: "revising an ungated closing document clears the field that says the initiative " +
       "closed, so the close can run a second time and append a second ledger row for the same " +
-      "work — which is what the OKR grading and the cross-flow comparison count",
+      "work",
   },
   {
     check: "scripts/gate/checks/documents-lifecycle.ts",
@@ -356,9 +348,9 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
       "silently, and only for the flows whose manifests say least",
   },
 
-  /* ── the documents this repository ships ──────────────────────────────── */
+  /* The documents this repository ships */
   {
-    // NOT a deleted file: a spec is a find/replace on one subject and cannot remove one. The
+    // Not a deleted file: a spec is a find/replace on one subject and cannot remove one. The
     // link is pointed somewhere that is not there, which is the defect this check is about.
     check: "scripts/gate/checks/docs-integrity.ts",
     target: "a document's links point at something that exists",
@@ -381,9 +373,8 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
       "no longer worth checking either",
   },
   {
-    // ASSEMBLED, AND HERE IS WHY. This check sweeps every tracked `.ts` in the repository for
-    // the names of the comment tools the platform removed, and the mutation workspace commits
-    // this file — so the tool name written out whole here would fire the target at baseline.
+    // Assembled: this check sweeps every tracked `.ts` for the names of the comment tools the
+    // platform removed, and the mutation workspace commits this file.
     check: "scripts/gate/checks/docs-integrity.ts",
     target: "what someone says about a document has one home",
     assertion: "a comment TOOL named in shipped text",
@@ -398,33 +389,28 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
       "on which door the person used",
   },
 
-  /* ── the names shipped prose spells out ───────────────────────────────── */
+  /* The names shipped prose spells out */
   {
     check: "scripts/gate/checks/prose-names.ts",
     target: "no shipped prose names a skill no plugin ships",
     subject: "catalog/sdlc/sdlc-flow/skills/sdlc-method/SKILL.md",
-    // SEAMED, AND HERE IS WHY. `zz-backbone` is one of the two names in SKILL_ALIAS, and
-    // `checks/skill-renames.ts` sweeps `scripts/` with comments stripped and strings kept — so
-    // the name written out whole here is this file naming a skill that no longer exists, and
-    // the gate goes red at baseline. `find` is left alone: it quotes the healthy current name.
+    // SEAMED: `zz-backbone` is one of the two names in SKILL_ALIAS, and
+    // `checks/skill-renames.ts` sweeps `scripts/` with comments stripped and strings kept.
+    // `find` is left alone — it quotes the healthy current name.
     find: "call, the way `zz-platform`",
     replace: "call, the way `zz-back" + "bone`",
-    // REDACTED, BECAUSE THE REPORT IS A TRACKED FILE THIS REPOSITORY SWEEPS TOO. The payload
-    // above is seamed so it never exists whole in this source — but `plant()` writes the
-    // RECONSTRUCTED string into testing/mutation-report.json, and that file is swept like any
-    // other. Seaming the spec without redacting the row just moves the finding from one
-    // tracked file to another, which is what the gate caught. `redact` base64-encodes it in
-    // the artifact, so the experiment stays exactly reproducible and the report is not the
-    // disclosure.
+    // REDACTED, because the report is a tracked file this repository sweeps too. `plant()`
+    // writes the reconstructed string into testing/mutation-report.json, so seaming the spec
+    // without redacting the row moves the finding from one tracked file to another. `redact`
+    // base64-encodes it in the artifact, keeping the experiment reproducible.
     redact: true,
     planted: "the skill every sdlc stage is told to read first sends the reader to a component " +
       "nothing else in the platform calls by that name and no plugin ships, so the rule it " +
       "cites for closing an initiative cannot be found by anybody who goes looking for it",
   },
   {
-    // ASSEMBLED, AND HERE IS WHY. This check sweeps `.ts` under scripts/ as well as shipped
-    // markdown, keeping string literals, and the mutation workspace commits this file — so an
-    // undeclared command written out whole here would fire the target at baseline.
+    // Assembled: this check sweeps `.ts` under scripts/ as well as shipped markdown, keeping
+    // string literals, and the mutation workspace commits this file.
     check: "scripts/gate/checks/prose-names.ts",
     target: "no shipped prose types a slash command the plugin does not declare",
     subject: "catalog/sdlc/sdlc-flow/skills/sdlc-flow/SKILL.md",

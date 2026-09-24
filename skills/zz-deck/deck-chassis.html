@@ -336,7 +336,7 @@ text.cx-seg{font-family:var(--sans);font-weight:600;font-size:calc(13px * var(--
 /* ======================================================================
    LAYOUT CONSISTENCY PASS · A · stage fill
    .zone-stage and .guide__sample are centred flex columns, so a short
-   exhibit used to float in a tall row. The primary exhibit now consumes
+   exhibit would float in a tall row. The primary exhibit consumes
    the row; captions, callouts, sources and legends keep natural height.
    Anything that still cannot stretch stays optically centred, because
    justify-content:center is preserved on both zones.
@@ -457,7 +457,7 @@ text.cx-seg{font-family:var(--sans);font-weight:600;font-size:calc(13px * var(--
 .zone-stage .route-card{min-height:calc(var(--s9) + var(--s9));padding:var(--s6) var(--s5)}
 .zone-stage .route-row{min-height:calc(var(--s10) + var(--s6))}
 
-/* coverage matrix: cells no longer inherit the stage's spare height, so the
+/* coverage matrix: cells do not inherit the stage's spare height, so the
    floor moves up one step to keep the grid from reading cramped */
 .zone-stage .matrix__cell{min-height:var(--s9)}
 .zone-stage .matrix__cell--head{min-height:var(--s8)}

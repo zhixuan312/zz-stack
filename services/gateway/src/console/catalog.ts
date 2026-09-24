@@ -1,26 +1,13 @@
 /**
- * The catalog, as PLUGINS — the unit a person actually installs.
+ * The catalog, as plugins — the unit a person actually installs. `claude plugin install
+ * sdlc@zz-stack` installs a flow's skills and the servers those skills call, together, under
+ * one version, so there is one subject here and one route per question about it.
  *
- * THIS SERVED TWO PAGES AND ONE SUBJECT. `/flows` listed agent methods, `/blocks` listed MCP
- * surfaces, and the console's own navigation defended the split: "a flow is an agent method,
- * a block is something reached over MCP, every skill belongs to one or the other." Every word
- * of that is true and the taxonomy was still wrong for a reader, because neither half is a
- * thing anybody installs. `claude plugin install sdlc@zz-stack` installs a flow's skills AND
- * the servers those skills call, together, under one version — and the two pages showed the
- * halves of it side by side with no line drawn between them.
+ * The catalog says what exists; the store says what happened. These reads are catalog-first: a
+ * plugin in the catalog with no telemetry reads as "never run", where a telemetry-first listing
+ * renders it as absent.
  *
- * Migration 047 makes the same move in the schema for the same reason: the two properties that
- * decide whether a plugin is any good — can it recover from a bad stage, are its reachable
- * tools ever called — are properties of the whole and of neither half. So there is one subject
- * here now, and one route per question about it.
- *
- * THE CATALOG SAYS WHAT EXISTS; THE STORE SAYS WHAT HAPPENED. That division is the reason the
- * old flows route was catalog-first and it survives unchanged: a plugin in the catalog with no
- * telemetry reads as "never run", which is a true and useful answer, where a telemetry-first
- * listing rendered it as absent. sdlc-flow was invisible for exactly that reason.
- *
- * These are the reads that are about the PLATFORM rather than any team's work, which is why
- * they go through `teamless` — a plugin's manifest and its skills are the same facts for
+ * They go through `teamless` — a plugin's manifest and its skills are the same facts for
  * everybody, and passing a scope nobody narrows by would imply otherwise.
  */
 import { existsSync } from "node:fs";
@@ -34,7 +21,7 @@ import { PLATFORM_VERSION } from "../client-package.js";
 import { platformDb } from "../db.js";
 import { BASELINE } from "../package/skills.js";
 import { teamless } from "./shared.js";
-import { PLATFORM_SKILLS_DIR, type ShippedSkill, blockSkills, readSkillAt, skillsIn } from "./skill-source.js";
+import { PLATFORM_SKILLS_DIR, type ShippedSkill, readSkillAt, skillsIn } from "./skill-source.js";
 
 /** One plugin as it sits on disk, before the store is asked anything about it. */
 interface DiskPlugin {
@@ -43,15 +30,14 @@ interface DiskPlugin {
   owner: string | null;
   agentName: string | null;
   description: string | null;
-  /** What the plugin DECLARES it is — flow.json, or the gateway's manifest for `zz`. */
+  /** What the plugin declares it is — flow.json, or the gateway's manifest for `zz`. */
   version: string | null;
   /** The MCP servers this plugin's skills reach. */
   servers: string[];
   documents: { name: string; role: string | null; gate: boolean; stage: string | null }[];
-  /** IS IT A FLOW? Read from the manifest through the one classifier, never reconstructed
-   * here. The console used to carry only `stages` and let the reader draw the conclusion from
-   * its emptiness — which is inference, moved from the server to whoever is looking, and it
-   * is what put a stepper on a package that had one stage and no method. */
+  /** Is it a flow? Read from the manifest through the one classifier, never reconstructed here.
+   * Carrying only `stages` and letting the reader conclude from its emptiness moves the
+   * inference from the server to whoever is looking. */
   flow: boolean;
   /** Stage names in declared order; empty for a plugin that declares no method. */
   stages: string[];
@@ -61,23 +47,18 @@ interface DiskPlugin {
 }
 
 /**
- * EVERY PLUGIN THIS IMAGE SHIPS: the catalog's, plus `zz`.
+ * Every plugin this image ships: the catalog's, plus `zz`. No `stages.length > 0` filter — a
+ * package with no stages is still a plugin somebody installs, and plugins.lock.json counts it.
+ * The distinction is carried by each row's `flow` field, declared by the manifest and read
+ * through `isFlow`.
  *
- * NO `stages.length > 0` FILTER, and that is the one deliberate difference from the flows
- * route this replaces. That filter existed to keep a toolbox out of a list of methods —
- * zz-admin declared no stages and shipped no skills directory, and sat beside ops-flow
- * inviting a reader to ask why nobody adopted it. A PLUGINS list has no such problem: a
- * package with no stages is still a plugin somebody installs, zz-access is exactly that, and
- * plugins.lock.json has always counted it. The distinction the old filter drew is still
- * carried, by the `flow` field on each row — declared by the manifest and read through
- * `isFlow`, rather than left for the reader to infer from an empty `stages`.
+ * `zz-core` is built below rather than in the walk. It has a flow.json, so the walk finds it,
+ * but client-package.ts synthesises its files per caller and its skills are the tree beside the
+ * catalog rather than that entry's `skills/` — a row from the walk would report it as shipping
+ * nothing, beside a second row of the same name.
  *
- * `zz-core` IS A PLUGIN ROW LIKE ANY OTHER, and it is built BELOW rather than in the walk. It
- * has a flow.json — so the walk finds it — but client-package.ts synthesises its files per
- * caller, and its skills are the tree beside the catalog rather than that entry's `skills/`. A
- * row from the walk would therefore report the plugin every account carries as shipping nothing
- * at all, beside a second row of the same name. Its skills are read from the same directory
- * plugin-lock.ts walks to compute its digest, so the two cannot disagree about what it ships.
+ * COUPLED: its skills are read from the directory `src/package/plugin-lock.ts` walks for its
+ * digest.
  */
 function diskPlugins(): DiskPlugin[] {
   const out: DiskPlugin[] = catalogEntries().filter((e) => e.flow !== BASELINE).map((e) => {
@@ -88,17 +69,9 @@ function diskPlugins(): DiskPlugin[] {
       agentName: e.manifest.agentName ?? null,
       description: e.manifest.description ?? null,
       version: PLATFORM_VERSION,
-      // BOTH DECLARATIONS, because both become servers in the installed package.
-      // client-package.ts maps `tools` to /p/<block>/mcp and `servers` to their own paths and
-      // concatenates them; a console showing one of the two would be showing a plugin that
-      // reaches fewer servers than the one on somebody's machine.
-      //
-      // AND zz-core, WHICH NO MANIFEST DECLARES. It arrives through the `zz` baseline plugin,
-      // which is `required` and therefore on every account, so a plugin's own manifest has no
-      // reason to name it — and it is where that plugin's store, gates and documents live.
-      // The flows page learned this the hard way: listing only what the manifest declared
-      // showed sdlc reaching nothing at all, which reads as a method that talks to no server.
-      // Deduped, because three of the five DO declare it.
+      // The servers the installed package carries: each one the manifest declares, plus zz-core,
+      // which no manifest declares — it arrives through the required baseline plugin and is
+      // where a plugin's store, gates and documents live. Deduped, because some declare it.
       servers: [...new Set([
         "zz-core",
         ...(e.manifest.servers ?? []).map((sv) => sv.name),
@@ -133,86 +106,56 @@ function diskPlugins(): DiskPlugin[] {
 }
 
 export function mountCatalog(app: Express): void {
-  /** EVERY PLUGIN, one row each — what it declares, what it ships, and what the store knows.
+  /** Every plugin, one row each — what it declares, what it ships, and what the store knows.
    *
-   * THE DIGEST COMES FROM THE DATABASE, not from plugins.lock.json, and the reason is the
-   * Dockerfile. The image copies `catalog`, `skills`, `blocks`, `packages` and `services`; it
-   * copies neither lock file. So a route that read plugins.lock.json would work on a laptop
-   * and return nothing at all in production — and `pluginLock()`, which computes the same
-   * numbers live, throws on the missing skills.lock.json for the same reason. zz.plugin_version
-   * is written at release, is present wherever the console runs, and is the only one of the
-   * three that says what was actually RELEASED rather than what a checkout currently contains.
+   * The digest comes from zz.plugin_version, not plugins.lock.json: the image copies `catalog`,
+   * `skills`, `packages` and `services` and neither lock file, so a route reading the lock
+   * works on a laptop and returns nothing in production. The table is written at release
+   * and says what was released rather than what a checkout contains.
    *
-   * JOINED ON THE DECLARED VERSION, never on the newest recorded one. The pair is the whole
-   * point — the digest is not an alternative to the version, it is what makes the version
-   * true — so the digest shown has to be the digest OF the number shown. A plugin whose
-   * flow.json has moved past its last release shows its declared version with no digest, which
-   * is the honest answer: nothing has vouched for that number yet.
+   * Joined on the declared version, never the newest recorded one: the digest shown has to be
+   * the digest of the number shown. A plugin whose flow.json has moved past its last release
+   * shows its declared version with no digest — nothing has vouched for that number yet.
    *
-   * A ROW ARRIVES AT RELEASE and at no other moment: `zz-tool register-plugins` mirrors
-   * plugins.lock.json into the registry after the gate has refused any release where a declared
-   * version and its content digest disagree. So a deployment that has not released since these
-   * tables landed answers null for every plugin, and so does a plugin whose flow.json has been
-   * edited since. Both are facts a reader needs rather than faults to chase, which is why
-   * nothing here treats an absent row as an error.
-   */
+   * A row arrives at release and at no other moment, so an absent row is a fact rather than an
+   * error. */
   app.get("/api/console/plugins", teamless("plugins", async (_req, res) => {
-    // NO TEAM DIMENSION: a plugin's manifest, its skills and its release digest are the same
+    // No team dimension: a plugin's manifest, its skills and its release digest are the same
     // rows for every reader. The platform records no installs, so there is nothing per team.
     const db = platformDb();
     const [ran, released, evaluated] = await Promise.all([
-      // EVERY SKILL THE STORE HAS SEEN, whatever kind it is. The flows route filtered
-      // `kind = 'flow_step'`, which was right when the only subject was a flow's stages and
-      // is wrong now: `zz` ships common skills (zz-platform) and a block ships block_usage
-      // skills, and both are skills of a plugin here. A filter on kind would have shown them
-      // all as never run.
+      // Every skill the store has seen, whatever kind it is. `zz` ships common skills
+      // (zz-platform), which are skills of a plugin here too, so a filter on
+      // `kind = 'flow_step'` would show them as never run.
       db.query(`select s.name,
                        (select count(*) from zz.skill_version v where v.skill_id = s.id) as versions,
                        (select count(*) from zz.event e
                          where e.kind = 'tool_call' and e.step = s.name)                  as calls,
                        (select count(*) from zz.event e
                          where e.kind = 'tool_call' and e.step = s.name and e.ok = false) as failed,
-                       -- WHEN IT LAST RAN. The list sorts on it, so a plugin nobody has
-                       -- touched in a month sinks below one in use rather than sitting
-                       -- wherever the catalog walk happened to put it.
-                       -- NO EVAL COUNT. This counted the rounds run against a skill, through
-                       -- zz.eval.skill_version_id. 048 drops that column: an evaluation's
-                       -- subject is a plugin version now, so "how many times was this SKILL
-                       -- evaluated" is not a question the store can answer or will ever be
-                       -- asked again. The plugin's own count is on the release row below.
+                       -- When it last ran. The list sorts on it, so a plugin nobody has touched in a month
+                       -- sinks below one in use rather than sitting wherever the catalog walk put it. No eval
+                       -- count: an evaluation's subject is a plugin version, and the plugin's own count is on
+                       -- the release row below.
                        (select to_char(max(e.ts) at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') from zz.event e
                          where e.kind = 'tool_call' and e.step = s.name)                  as last_run
                   from zz.skill s`),
-      // WHAT WAS RELEASED. The ablation run that used to ride beside it is gone with the
-      // suite: it measured whether a method's text reached an agent, never whether the
-      // plugin worked.
-      //
-      // The delta is read here in SQL and PARSED in zz-core. plugin-cases.ts owns
-      // `parseCaseRun` — it knows which spellings of the two arm scores the CLI has used and
-      // says so out loud when the shape moves. A second parser in the gateway would be a
-      // second opinion about what a delta is, so this takes the mean of the one field both
-      // agree on and nothing else. The `jsonb_typeof` guards are not decoration: `result` is
-      // whatever the CLI printed, and a run whose shape moved must leave the row without a
-      // number rather than throwing 22023 at every reader of the page.
-      db.query(`select p.name as plugin, p.origin, pv.version, pv.digest,
+      // What was released, and how many evaluations each released version has.
+      db.query(`select p.name as plugin, pv.version, pv.digest,
                        (select count(*) from zz.eval ev where ev.plugin_version_id = pv.id) as evals
                   from zz.plugin p
                   join zz.plugin_version pv on pv.plugin_id = p.id`),
-      // THE LATEST ROUND THAT REACHED A VERDICT, one per plugin.
+      // The latest round that reached a verdict, one per plugin. `headroom_state is not null` is
+      // the definition of evaluated: a round is minted by round_judge and gets its verdict at
+      // round_score, so an abandoned round has marks but nothing to report, and showing the
+      // newest row regardless would put an empty score beside a perfectly good earlier one.
       //
-      // `recommendation is not null` is the whole definition of "evaluated" here. A round is
-      // minted by round_judge and only gets its verdict at round_recommend, so a round that
-      // was started and abandoned — or one whose control never ran, which round_recommend now
-      // refuses — has marks but nothing to report. Showing the newest row regardless would put
-      // an empty score beside a plugin that has a perfectly good one from the round before.
+      // Across versions, not within one: the answer is the last time anybody measured the
+      // plugin, and pinning to the shelf version would blank the column on every release day.
+      // The version that was measured travels with the figures.
       //
-      // ACROSS VERSIONS, not within one. The question a reader has is "how did this plugin
-      // score", and the answer is the last time anybody measured it; pinning to the version on
-      // the shelf would blank the column on the day of every release. The version that WAS
-      // measured travels with the figures so the answer never pretends to be about today's.
-      //
-      // The columns are named rather than starred: `recommendation_probabilities` is jsonb and
-      // no reader of this page wants it on the wire.
+      // DELIBERATE: the columns are named rather than starred. A `select *` over these tables
+      // would pull jsonb nobody asked for.
       db.query(`select distinct on (pv.plugin_id)
                        p.name as plugin, pv.version,
                        e.effectiveness, e.headroom_points, e.headroom_named, e.headroom_state,
@@ -227,22 +170,17 @@ export function mountCatalog(app: Express): void {
 
     /** The newest scored round per plugin, by name.
      *
-     *  THE INITIATIVE IS NULLABLE AND THAT IS THE POINT. Migration 067 added the link; rounds
-     *  taken before it have none, and there is no backfill — inferring which initiative
-     *  produced a round from its plugin name and a date window is the
-     *  attribution-through-an-absent-link that journal 0116 was minted for. Such a round reads
-     *  as a date with no report, which is exactly what it is. */
+     *  The initiative is nullable; a round without one reads as a date with no report. */
     const verdict = new Map(evaluated.rows.map((r) => [r.plugin as string, {
       version: r.version as string,
       effectiveness: r.effectiveness === null ? null : Number(r.effectiveness),
-      // NAMED HERE, NOT READ FROM A COLUMN. The band is `band(score)` and the rule is in
-      // @zz/contracts, so the console and the report cannot print different words for one
-      // number — which is exactly what happened for one release while it was stored.
+      // COUPLED: the band is `band(score)` and the rule is in @zz/contracts, so the console and
+      // the report cannot print different words for one number. Named here, not read off a column.
       band: band(r.effectiveness === null ? null : Number(r.effectiveness)),
       headroomPoints: r.headroom_points === null ? null : Number(r.headroom_points),
       headroomNamed: r.headroom_named === null ? null : Number(r.headroom_named),
       headroomState: r.headroom_state as string,
-      // BOTH, OR NEITHER. zz.doc is keyed (team_slug, initiative): a slug with no team cannot
+      // Both, or neither. zz.doc is keyed (team_slug, initiative): a slug with no team cannot
       // be addressed, and a link built from half of a key is a 404 waiting for a reader.
       initiative: r.initiative && r.team_slug
         ? { team: r.team_slug as string, slug: r.initiative as string }
@@ -267,11 +205,9 @@ export function mountCatalog(app: Express): void {
     };
 
     const rows = diskPlugins().map((p) => {
-      // EVERY SKILL IT SHIPS, not its stages. The flow routes allowed `stages` plus the entry,
-      // which is the method's running order and not its contents: sdlc ships more skills than
-      // it declares stages, so the difference — sdlc-method, sdlc-recall, the audit criteria —
-      // were unlistable and unreadable in a console that packages them. Position is carried
-      // where the method declares one, and is null where the skill is simply shipped.
+      // Every skill it ships, not its stages: sdlc ships more skills than it declares stages,
+      // and the difference would be unlistable in a console that packages them. Position is
+      // carried where the method declares one, and null where the skill is simply shipped.
       const shipped = skillsIn(p.skillsDir);
       const skills = shipped.map((s) => {
         const at = p.stages.indexOf(s.name);
@@ -281,15 +217,8 @@ export function mountCatalog(app: Express): void {
       return {
         plugin: p.plugin,
         owner: p.owner,
-        // OURS. Every catalog package in this image is written here, and so is `zz`; the
-        // column exists because zz.plugin.origin decides what an evaluation DOES with its
-        // findings — for our own plugins they feed a change, for somebody else's we assess
-        // and stop. A registered block is the other value, below.
-        origin: "platform" as const,
         agentName: p.agentName,
         description: p.description,
-        title: null as string | null,
-        kind: null as string | null,
         version: p.version,
         servers: p.servers,
         flow: p.flow,
@@ -298,10 +227,7 @@ export function mountCatalog(app: Express): void {
         documents: p.documents,
         gates: p.documents.filter((d) => d.gate).length,
         skills,
-        // ITS SKILLS' CALLS, SUMMED. A block row below counts calls the other way — by the
-        // block column on the event — because a registered block has no skill of ours running
-        // inside it. Two derivations of one word, and the difference is which end of the call
-        // the plugin is on.
+        // Its skills' calls, summed.
         calls: skills.reduce((a, s) => a + s.calls, 0),
         failed: shipped.reduce((a, s) => a + Number(stats.get(s.name)?.failed ?? 0), 0),
         lastRun: skills.map((s) => s.lastRun).filter(Boolean).sort().pop() ?? null,
@@ -322,36 +248,27 @@ export function mountCatalog(app: Express): void {
     res.json({ plugins });
   }));
 
-  /** ONE SKILL A PLUGIN SHIPS — its text, and everything shipped beside it.
+  /** One skill a plugin ships — its text, and everything shipped beside it.
    *
-   * ONE ROUTE FOR THREE CONTAINERS, where there were two routes for two. A skill is the same
-   * kind of thing whether a catalog package runs it as a stage, the platform loads it into
-   * every flow, or a block team publishes it about their own server; the halves differed only
-   * in how they FOUND the directory, which is not a difference a reader has a URL for.
+   * One route for both containers: a skill is the same kind of thing whether a catalog package
+   * runs it as a stage or the platform loads it into every flow. They differ only in how the
+   * directory is found.
    *
-   * The listing page could say sdlc-plan scored what it scored and never show a line of what
-   * sdlc-plan SAYS. Reading the skill is most of judging it: a score without the text is a
-   * number about something the reader cannot see.
+   * DELIBERATE: resolved through the enumeration, never by joining the route into a path. The
+   * walk that lists a plugin's skills already resolved each one's directory, so this looks the
+   * name up in that list. No path is built from `req.params`, which is why there is no traversal
+   * guard.
    *
-   * RESOLVED THROUGH THE ENUMERATION, never by joining the route into a path. The walk that
-   * lists a plugin's skills already resolved each one's directory, so this looks the name up
-   * in that list and reads from the directory it finds. There is no path built from
-   * `req.params` here, which is why there is no traversal guard either — the class of bug is
-   * absent rather than defended against.
-   *
-   * References are inlined. The largest that exists is a few kilobytes, and a `file`
-   * parameter with its own guard would be machinery for a problem nobody has yet. */
+   * References are inlined; the largest that exists is a few kilobytes. */
   app.get("/api/console/plugins/:plugin/skills/:skill", teamless("the plugin skill", async (req, res) => {
-    // NO TEAM DIMENSION: this reads a skill's text off disk, the same file for every reader.
+    // No team dimension: this reads a skill's text off disk, the same file for every reader.
     const { plugin, skill } = req.params;
     const disk = diskPlugins().find((p) => p.plugin === plugin);
-    const carried = disk ? undefined : blockSkills().get(plugin);
-    const found = (disk ? skillsIn(disk.skillsDir) : carried ?? []).find((s) => s.name === skill);
+    const found = disk ? skillsIn(disk.skillsDir).find((s) => s.name === skill) : undefined;
     if (!found) {
-      // NAMED SEPARATELY, because the two are different problems with different fixes: a
-      // plugin nobody ships is a wrong address, and a skill missing from a plugin that does
-      // exist is a renamed or deleted skill.
-      if (!disk && !carried) {
+      // Named separately: a plugin nobody ships is a wrong address, and a skill missing from a
+      // plugin that does exist is a renamed or deleted skill.
+      if (!disk) {
         res.status(404).json({ error: `no plugin '${plugin}'` });
         return;
       }

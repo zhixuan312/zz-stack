@@ -1,4 +1,4 @@
-// Scoped to this task's subtree, because the project as a whole is still red until I-12.
+// Scoped to checks/: `tsc` errors from any other subtree are ignored here.
 import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -8,21 +8,17 @@ const mine = out.split("\n").filter((l) => /^checks\/[^(]*\(\d+,\d+\): error TS/
 const fail: string[] = [];
 if (mine.length) fail.push(`${mine.length} strict error(s) remain under checks/:\n` + mine.slice(0, 20).join("\n"));
 // Zero errors reached by widening is not zero errors.
-// A DETECTOR MUST NAME WHAT IT DETECTS. The two regexes below contain the literal strings
-// "any" and "@ts-expect-error", so scanning this file with them flags the detector itself —
-// the same self-exemption every other self-scanning check in this tree already carries.
-// THE WHOLE DETECTOR FAMILY IS EXEMPT, not just this file. strict-gate-dir and
-// strict-scripts-dir carry the same two regexes for their own subtrees, so scanning them for
-// the literals those regexes are made of reports the detectors instead of the code. Each of
-// the three covers a different directory and none scans the others' subject.
+// DELIBERATE: the whole strict-* detector family is exempt from the scan below, not just this
+// file. Each carries the same two regexes, whose literals are the strings being detected, so
+// scanning one reports the detector instead of the code. Each covers a different directory
+// and none scans another's subject.
 const DETECTORS = new Set([
   "strict-checks-dir.ts", "strict-gate-dir.ts", "strict-scripts-dir.ts",
   "strict-catalog-skills.ts",
 ]);
-// Four now, one per converted subtree, and the list is by name rather than by pattern on
-// purpose: a rule like /^strict-/ would silently excuse any future file that happened to be
-// named that way, which is precisely the "green by absence" failure this repository exists to
-// refuse. Each entry here is a file that must name `any` in order to detect it.
+// DELIBERATE: the exemption list is by name, not a /^strict-/ pattern, which would silently
+// excuse any future file named that way. Each entry must name what it detects in order to
+// detect it.
 for (const f of readdirSync("checks").filter((x) => x.endsWith(".ts") && !DETECTORS.has(x))) {
   const src = readFileSync(join("checks", f), "utf8");
   src.split("\n").forEach((line, i) => {

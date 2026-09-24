@@ -1,37 +1,25 @@
 # Public entry points for ZZ Stack.
 #
-# TWO HOSTNAMES, ONE MACHINE, one deployment:
+# Two hostnames, one machine, one deployment:
 #
 #   203-0-113-11.nip.io           the console — the only dashboard this deployment has
 #   api.203-0-113-11.nip.io       the platform gateway — every non-browser client
 #
-# THIS FILE IS A TEMPLATE, AND `install-caddy.sh` IS THE ONLY THING THAT SHOULD APPLY IT.
-# It substitutes the hostname above for the target's own and the upstream below for wherever
-# the gateway is actually published, then refuses the install if either literal survived.
-# Copying this file onto a host by hand skips both guards.
+# DELIBERATE: this file is a template, and `install-caddy.sh` is the only thing that should
+# apply it. It substitutes the hostname above for the target's own and the upstream below for
+# wherever the gateway is actually published, then refuses the install if either literal
+# survived. Copying this file onto a host by hand skips both guards.
 #
-# THE ADDRESS ABOVE IS ZZ-STACK'S OWN, and that is not a detail. It used to read
-# `203-0-113-10.nip.io`, which was true of an address this platform no longer uses. The
-# literal went stale and the site block went on serving it. Nothing
-# here broke, because install-caddy.sh substitutes them; what broke was every reader who
-# took the literal for a fact, including the header paragraphs that used to sit here
-# describing a two-deployment topology this platform no longer has. An address is a fact
-# with an expiry date. If this file's literal ever stops matching what
+# The address above is zz-stack's own. If it ever stops matching what
 # `ssh zz-stack 'curl -s ifconfig.me'` answers, the literal is the thing that is wrong.
 #
-# ONE THING DIFFERS PER HOST: how Caddy reaches the gateway on port 8764. Here it is
-# loopback, because the gateway is published on 127.0.0.1. A host that binds it to a
-# tailnet address instead needs that address, and install-caddy.sh reads the real one off
-# the running container rather than trusting anything written down.
+# One thing differs per host: how Caddy reaches the gateway on port 8764. Here it is loopback,
+# because the gateway is published on 127.0.0.1. A host that binds it to a tailnet address
+# needs that address, and install-caddy.sh reads the real one off the running container.
 #
-# nip.io resolves <anything>.<ip-with-dashes>.nip.io to that IP, so the api
-# subdomain needs no DNS record and Caddy issues its certificate automatically.
-#
-# Why the api. subdomain exists at all: the console's browser front end reaches the gateway
-# over the compose network, so that path always worked — but Claude Code, Codex and Hermes
-# run on somebody's laptop and need a public route in. Without this host the terminal
-# clients cannot connect from outside, and the failure looks like a hang rather than a
-# refusal.
+# nip.io resolves <anything>.<ip-with-dashes>.nip.io to that IP, so the api subdomain needs no
+# DNS record and Caddy issues its certificate automatically. The api. host exists because
+# an MCP client runs on somebody's laptop and needs a public route in.
 #
 # After changing this file:
 #   1. run deploy/install-caddy.sh — do not copy it by hand
@@ -40,15 +28,11 @@
 #      unreachable URLs to every person who installs
 #   3. systemctl reload caddy && docker compose up -d cred-proxy
 
-# An agent turn runs for minutes: tens of sequential tool calls, each one a round trip to a
-# building block. Caddy's defaults would sever the response mid-turn and reproduce, at the
-# proxy, exactly the stall this front end was chosen to end.
+# An agent turn runs for minutes: tens of sequential tool calls, each a round trip to a door,
+# and Caddy's defaults would sever the response mid-turn.
 #
-# These are GLOBAL OPTIONS. `timeouts` is not a site directive — placed inside a site block it
-# is rejected outright ("unrecognized directive: timeouts"), so `systemctl reload caddy`
-# fails, the old config stays loaded, and the site keeps proxying wherever it did before. On a
-# host being migrated that is the previous front end, which the release has just removed: the
-# public URL answers 502 and nothing in the deployment looks wrong.
+# DELIBERATE: global options. `timeouts` is not a site directive — inside a site block Caddy
+# rejects the whole file, `systemctl reload` fails, and the old config stays loaded.
 {
     servers {
         timeouts {
@@ -60,32 +44,10 @@
     }
 }
 
-# NO SITE BLOCK FOR THE BARE DOMAIN, and no /blocks/* routes. Both were removed on
-# 2026-09-10 when this became a single personal deployment: the browser front end is gone, so
-# nothing listens on 3080, and the stand-in blocks it proxied OAuth for are gone with it.
-#
-# What remains is what this deployment is: an MCP gateway that terminal clients reach, and a
-# console to read the record in. A site block pointing at a port nothing serves is worse than
-# no site block — Caddy answers 502 with a valid certificate, which reads as "the app is
-# broken" rather than "there is no app here".
+# The gateway, for every non-browser client.
 api.203-0-113-11.nip.io {
-
-    # THE MOCK BLOCKS' OWN OAUTH ENDPOINTS, reachable from a browser.
-    #
-    # These stand in for a third-party authorization server, so they are exposed the way a real
-    # one is — on a public address of their own, not tunnelled through the gateway. A person's
-    # browser has to reach /authorize to give consent; the gateway does discovery and the code
-    # exchange server-side, but the consent is the person's to give.
-    #
-    # ONLY the OAuth paths. /mcp stays private, because the blocks are reached through the
-    # gateway so that every call is authorised and recorded, and that must not become optional.
-    #
-    # `handle` is terminal and Caddy sorts it ahead of a bare `reverse_proxy`, so these match
-    # first and everything else still falls through to the gateway below untouched.
-
-    # The gateway authenticates every request itself (Bearer zzp_… resolved
-    # against zz.pat), so this proxy adds no authorisation of its own and must
-    # not strip the Authorization header.
+    # The gateway authenticates every request itself (Bearer zzp_… resolved against zz.pat), so
+    # this proxy adds no authorisation of its own and must not strip the Authorization header.
     reverse_proxy 127.0.0.1:8764 {
         flush_interval -1
         transport http {
@@ -93,54 +55,40 @@ api.203-0-113-11.nip.io {
         }
     }
 
-    # A cap on what a client may SEND, not on what it receives — the client
-    # package streaming back from /pkg/<client>.tgz is a response and is not
-    # bounded here. 20MB is far above any MCP call and far below anything worth
-    # buffering, so a runaway body is refused rather than held in memory.
+    # A cap on what a client may send, not on what it receives — the client package streaming
+    # back from /pkg/<client>.tgz is a response and is not bounded here. 20MB is far above any MCP
+    # call and far below anything worth buffering.
     request_body {
         max_size 20MB
     }
 }
 
-# ── ZZ Console: the admin dashboard ──────────────────────────────────────────
-# ONE HOST, SPLIT ON PATH, and the split is load-bearing rather than tidy. The
-# sign-in cookie the gateway sets is host-only and SameSite=Lax; serving the app
-# from one origin and its API from another would make it a third-party cookie
-# and every browser would be within its rights to drop it. Same origin also
-# means no CORS, no preflight, and nothing for the app to configure.
+# The console: the admin dashboard.
+#
+# DELIBERATE: one host, split on path. The sign-in cookie the gateway sets is host-only and
+# SameSite=Lax; serving the app from one origin and its API from another would make it a
+# third-party cookie that every browser may drop. Same origin also means no CORS and no
+# preflight.
 #
 #   /auth/*          the passkey ceremony and logout            → gateway
+#   /oauth/*         the authorize step of the gateway's OAuth  → gateway
 #   /api/console/*   the read API                                → gateway
 #   everything else  the Next app                                → console
 203-0-113-11.nip.io {
     handle /auth/* {
         reverse_proxy 127.0.0.1:8764
     }
-    # /oauth/authorize HAS TO LIVE WHERE THE SESSION COOKIE LIVES, and that is here.
-    #
-    # The gateway is an OAuth authorization server for its own MCP doors, and its authorize
-    # endpoint asks one question before anything else: who is at this keyboard. The answer is
-    # the `zz_console` cookie, which /auth/* sets — and it is set HOST-ONLY on purpose, so
-    # that a subdomain cannot shadow it. That means api.<host> cannot read it.
-    #
-    # Served from api. it therefore saw no session on every request, sent the person to sign
-    # in, and SsoAuth's callback returned them to CONSOLE_PUBLIC_URL — where nothing served
-    # /oauth/authorize, so they got the dashboard's 404 with their authorization still
-    # unfinished. Here, the cookie is present and the round trip closes.
-    #
-    # The rest of the flow stays on api.: discovery, /oauth/register and /oauth/token are read
-    # by the front end's server, which has no cookie and needs none.
+    # COUPLED: /oauth/authorize lives where the session cookie lives. The authorize endpoint asks
+    # who is at this keyboard, and the answer is the `zz_console` cookie that /auth/* sets
+    # host-only, so api.<host> cannot read it. Discovery, /oauth/register and /oauth/token stay on
+    # api.: they are called by an MCP client, which has no cookie and needs none.
     handle /oauth/* {
         reverse_proxy 127.0.0.1:8764
     }
     handle /api/console/* {
-        # -1 DISABLES RESPONSE BUFFERING, and this path is why it matters here.
-        # The discussion thread is delivered as server-sent events, and a
-        # buffering proxy holds a stream until the connection closes — so the
-        # feature does not fail, it silently never updates, which reads as a bug
-        # in the app rather than a line missing from this file. The other two
-        # hosts have carried this for the same reason since the front end
-        # started streaming; the console host was added later and did not.
+        # -1 disables response buffering. The discussion thread is server-sent events, and a
+        # buffering proxy holds a stream until the connection closes — the feature silently never
+        # updates.
         reverse_proxy 127.0.0.1:8764 {
             flush_interval -1
         }

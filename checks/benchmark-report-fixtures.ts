@@ -1,11 +1,8 @@
-// A well-formed benchmark report is not a passing one, and six plausible-looking reports are
-// not evidence at all. This drives `validateBenchmarkReport` over SYNTHETIC fixtures built
-// here — it never opens the real private report, which lives outside this checkout and which
-// no ordinary gate check may read.
+// Drives `validateBenchmarkReport` over synthetic fixtures built here. It never opens the real
+// private report, which lives outside this checkout and which no ordinary gate check may read.
 //
-// The six shapes the plan names are each exercised by mutating one field of a fixture that
-// otherwise validates. That is the only form that proves anything: a rejection test whose
-// fixture was broken in two ways passes while the rule under test does nothing.
+// Each rejection mutates exactly one field of a fixture that otherwise validates: a rejection
+// test whose fixture was broken in two ways passes while the rule under test does nothing.
 import assert from "node:assert/strict";
 
 import { evaluateTargets, RELEASE_TARGETS } from "../scripts/tenant-info/benchmark.ts";
@@ -68,9 +65,8 @@ function measured(): Record<string, unknown> {
   };
 }
 
-/** The same report with nothing measured — the honest empty shape, which must VALIDATE while
- *  still evaluating to blocked. If this were rejected, a report could only be well formed by
- *  carrying numbers, which is precisely the pressure to invent them. */
+/** The same report with nothing measured: it must validate while still evaluating to blocked.
+ *  Rejecting it would make a report well formed only by carrying numbers. */
 function empty(): Record<string, unknown> {
   const report = measured();
   report.release_verdict = "blocked";
@@ -142,17 +138,16 @@ rejects("latency measured at another limit", (r) => { path(r, "quality", "defini
   /latency_limit is 50, not the agreed 15/);
 rejects("silence about the raw evidence", (r) => { r.raw_evidence = []; }, /records what it looked for/);
 
-// An empty report that claims to have passed is the one shape this whole task exists to stop.
+// An empty report that claims to have passed is the one shape this check exists to stop.
 const lying = empty();
 lying.evaluation = { passed: true, failed: [], blocked: [] };
 lying.release_verdict = "passed";
 assert.equal(validateBenchmarkReport(lying).ok, false);
 
-// INFINITY ON A FLOOR IS THE NONFINITE CASE THE FROZEN CHECK CANNOT SEE. It tests NaN, and NaN
-// fails every comparison anyway — so deleting `evaluateTargets`'s finiteness guard entirely
-// leaves that check green. Measured: the mutation was applied and the frozen check passed it.
-// Infinity is the value that separates them, because `Infinity >= 0.80` is true, and a target
-// whose instrument overflowed would otherwise read as comfortably met.
+// Infinity on a floor is the nonfinite case the frozen check cannot see: it tests NaN, which
+// fails every comparison anyway, so deleting `evaluateTargets`'s finiteness guard leaves that
+// check green. `Infinity >= 0.80` is true, so a target whose instrument overflowed would read
+// as comfortably met.
 const atLeast = RELEASE_TARGETS.filter((t) => t.direction === "at_least").map((t) => t.key);
 const overflowed = Object.fromEntries(RELEASE_TARGETS.map((t) => [t.key, t.target]));
 for (const key of atLeast) {
@@ -160,8 +155,7 @@ for (const key of atLeast) {
   assert.equal(result.passed, false, `${key}: an infinite observation was read as meeting the target`);
   assert.ok(result.failed.includes(key), `${key}: an infinite observation was not failed`);
 }
-// And the property the whole task rests on, stated where it can be read: an empty measurement
-// set blocks all eighteen and passes nothing.
+// An empty measurement set blocks all eighteen targets and passes nothing.
 const nothing = evaluateTargets({});
 assert.equal(nothing.passed, false);
 assert.deepEqual([...nothing.blocked].sort(), RELEASE_TARGETS.map((t) => t.key).sort());

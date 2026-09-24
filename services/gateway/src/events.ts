@@ -1,24 +1,17 @@
 /**
  * Append-only platform event stream — the provenance record behind every admin action.
  *
- * Fire-and-forget: logging must never break the operation it describes. But "never break"
- * is not "never notice", and an event that vanishes because the database was briefly down
- * is a hole in the one record an audit later reads.
+ * Fire-and-forget: logging must never break the operation it describes. But "never break" is not
+ * "never notice", and an event that vanishes because the database was briefly down is a hole in the
+ * one record an audit later reads.
  *
- * So there is one store and one fallback, not two stores. Events go to `zz.event`, which
- * is what kb.ts reads. If — and only if — that write cannot happen, the event is appended
- * to /data/events-unwritten.jsonl and the failure is logged. That file existing means
- * something needs attention; it is not a second copy of the history.
+ * One store and one fallback, not two stores. Events go to `zz.event`, which is what the console
+ * read surface and the reports read back.
+ * If, and only if, that write cannot happen, the event is appended to /data/events-unwritten.jsonl
+ * and the failure is logged. That file existing means something needs attention; it is not a second
+ * copy of the history.
  *
- * WHO NOTICES: `zz-tool watch-results` reads the count off /health and alerts on it. This
- * used to say "a monitor already polls this endpoint", which was an assumption about the
- * environment rather than a fact about this repository — nothing here polled /health, the
- * release checks it once, and so the one signal saying the audit record has holes in it was
- * reported to nobody.
- *
- * It used to double-write unconditionally, from a transition that had long finished: the
- * jsonl held 1892 lines and the table 716, nothing read the file, and the divergence was
- * invisible precisely because nobody was looking at either.
+ * COUPLED: `zz-tool watch-results` reads the stranded count off /health and alerts on it.
  */
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 
@@ -35,18 +28,14 @@ const STRANDED_PATH = "/data/events-unwritten.jsonl";
 let strandedCount = 0;
 let strandedLast: string | null = null;
 
-/** Seeded from the file at boot, ONCE, so a restart does not erase the signal.
+/** Seeded from the file at boot, once, so a restart does not erase the signal.
  *
- * The count was in-memory only, and /health omits the field entirely when it is zero — so
- * every restart reported a clean record while the holes sat in the file, and
- * `zz-tool watch-results` had nothing to alert on. That is the worst possible timing: an
- * event strands when the database is unavailable, and the thing that follows a database
- * outage is a restart. The one signal saying the audit record has gaps was reliably wiped by
- * the recovery.
+ * /health omits the field entirely when the count is zero, and an event strands when the database
+ * is unavailable — which is followed by a restart. Counted in memory only, the one signal saying
+ * the audit record has gaps is wiped by the recovery.
  *
- * Read once here rather than per request, so /health stays cheap enough to poll. A file too
- * large to count at boot is itself the alarm, and it is bounded by how much a broken database
- * can strand before somebody looks. */
+ * Read once here rather than per request, so /health stays cheap enough to poll. A file too large
+ * to count at boot is itself the alarm. */
 function seedFromFile(): void {
   let lines: string[];
   try {
@@ -55,7 +44,7 @@ function seedFromFile(): void {
     return;   // no file is the normal case, and an unreadable one is not worth a boot failure
   }
   if (!lines.length) return;
-  // A LINE is the signal, not a parsable line. The timestamp is a nicety on top, so a
+  // A line is the signal, not a parsable line. The timestamp is a nicety on top, so a
   // half-written final row — the likeliest corruption, since this file is appended to while
   // something is going wrong — must not cost the count or the warning.
   strandedCount = lines.length;
@@ -93,60 +82,40 @@ export function logEvent(e: {
   teamSlug?: string | null;
   detail?: Record<string, unknown>;
 
-  /* ── the measurement columns, on a tool_call ───────────────────────────────
-   *
-   * These were keys in `detail`, which is right for an audit payload and wrong for anything
-   * anybody groups by: the three questions an improvement loop asks became `detail->>'step'`,
-   * and nothing about a row's shape said whether it could answer them at all.
-   *
-   * Every one of them earns its column by the same test — would somebody GROUP BY or WHERE on
-   * it. What is read once and never filtered on stays in the bag. */
+  /* The measurement columns, on a tool_call. Each earns its column by the same test — would
+   * somebody GROUP BY or WHERE on it. What is read once and never filtered on stays in `detail`. */
   initiative?: string;
   flow?: string;
   step?: string;
   stepVersion?: string;
   ok?: boolean;
   refusal?: string;
-  /** WHO THE REFUSAL BELONGS TO — guardrail, ours, theirs or other, from
-   *  @zz/contracts' refusalOwner(). Derived here rather than asked of the caller: every
-   *  writer would otherwise classify its own refusals, which is how one table ends up
+  /** Who the refusal belongs to — guardrail, ours, theirs or other, from @zz/contracts'
+   *  refusalOwner(). Derived here rather than asked of the caller, so one table does not end up
    *  holding four vocabularies. Null whenever `ok` is not false. */
   refusalOwner?: string;
 
-  /* ── what a tool call cost (AC-2.2) ────────────────────────────────────────
-   *
-   * Was `detail.ms` / `detail.bytes` — read once and never filtered on, until a latency or a
-   * payload-size percentile turned out to be exactly the kind of question a column answers
-   * and a jsonb reach does not. Nullable, and null means "not measured", never a guessed
-   * zero: `requestBytes` is null whenever a caller's request carried no Content-Length (a
-   * chunked body, or none at all), which is the one case tool-telemetry.ts cannot measure
-   * today. `durationMs` and `responseBytes` are written on every tool_call row it produces —
-   * `started` and `bytes` are both set before anything that call handles can fail — so their
-   * being nullable here is future-proofing for a caller shape this file does not have, not a
-   * gap in this one. `batched` is the one exception to nullable at all — the gateway always
-   * knows whether a request carried more than one call, so it is `not null default false` at
-   * the schema and always written here. */
+  /* What a tool call cost. Nullable, and null means "not measured", never a guessed zero:
+   * `requestBytes` is null whenever a caller's request carried no Content-Length — a chunked body,
+   * or none at all — which is the one case tool-telemetry.ts cannot measure. `durationMs` and
+   * `responseBytes` are written on every tool_call row it produces. `batched` is the exception to
+   * nullable: the gateway always knows whether a request carried more than one call, so it is
+   * `not null default false` at the schema and always written here. */
   durationMs?: number;
   requestBytes?: number | null;
   responseBytes?: number;
   batched?: boolean;
 
-  /* ── plugin attribution (AC-1.5, AC-1.6) ───────────────────────────────────
-   *
-   * Resolved by the caller from the loaded skill, through zz.plugin_version_skill — never
-   * from `flow` and never from the x-zz-client header, both of which answer a different
-   * question. Left unset when unresolvable; this insert writes that as a plain SQL null,
-   * never a guessed value. */
+  /* Plugin attribution, resolved by the caller from the loaded skill through
+   * zz.plugin_version_skill — never from `flow` and never from the x-zz-client header, which answer
+   * a different question. Left unset when unresolvable, and written as a plain SQL null. */
   plugin?: string;
   pluginVersion?: string;
   toolKey?: string;
 }): void {
-  // ONE SPELLING OF A PERSON, folded here because this is the one place every gateway event
-  // passes through. Eleven call sites reach it, all of them handing over a canonical address
-  // today — from parseCaller, from the identity middleware's own header — but "all of them
-  // today" is what a boundary exists to stop being load-bearing. The actor column is grouped
-  // on by tool-report --actor, evolve-report and watch-results, and one person appearing as
-  // two rows makes each half look like complete work.
+  // One spelling of a person, folded here because this is the one place every gateway event passes
+  // through. The actor column is grouped on by tool-report --actor, evolve-report and
+  // watch-results, and one person appearing as two rows makes each half look like complete work.
   const actor = e.actor.trim().toLowerCase();
   const record = {
     ts: new Date().toISOString(),
@@ -161,28 +130,17 @@ export function logEvent(e: {
     stranded(record, "platform database not configured");
     return;
   }
-  // team_id IS RESOLVED HERE, IN THE INSERT, from the slug the caller gave.
+  // team_id is resolved here, in the insert, from the slug the caller gave.
   //
-  // 020_event_attribution.sql made team_id the real foreign key — "tenancy has to be
-  // answerable without a join, because every query in the system filters by it" — and
-  // backfilled every row that existed. It did not touch this statement, so from the moment
-  // that migration landed every new event carried a slug and a null key: 36,784 of them
-  // before anyone looked, which is a week of the console's team-scoped views reading empty
-  // while the platform was busier than it had ever been. The console was right and the
-  // data was wrong.
+  // A subselect, not a lookup in TypeScript: the id must come from the same statement that writes
+  // the row, or two events a millisecond apart can disagree about a team that was just renamed. An
+  // unknown slug resolves to null rather than raising — telemetry must never be able to fail the
+  // operation it is describing, and a slug naming no team is exactly as unattributed as no slug.
   //
-  // A SUBSELECT, not a lookup in TypeScript: the id must come from the same statement that
-  // writes the row, or two events a millisecond apart can disagree about a team that was
-  // just renamed. An unknown slug resolves to null rather than raising — telemetry must
-  // never be able to fail the operation it is describing, and a slug naming no team is
-  // exactly as unattributed as no slug at all, which is the truth about it.
-  // `|| null`, NOT `??`, ON THE TWO FIELDS THAT HAVE HELD AN EMPTY STRING. `??` coalesces only
-  // null and undefined, so a `""` reaches the column verbatim and the table holds two spellings
-  // of nothing where the index holds one. `step` was cleaned at its source on 2026-09-19 and
-  // `initiative` was not; 381 rows carried `''` because of it, every one a `skill_read` at the
-  // start of a conversation. They were cleared from the store on 2026-09-23, after 0.70.0 shipped
-  // the fix — in that order, so nothing refilled behind the clean. The source is fixed too —
-  // this is the second line of defence, at the one place every row is written.
+  // `|| null`, not `??`, on the two fields that have held an empty string: `??` coalesces only null
+  // and undefined, so a `""` reaches the column verbatim and the table holds two spellings of
+  // nothing where the index holds one. This is the second line of defence, at the one place every
+  // row is written.
   void platformDb()
     .query(
       `insert into event (actor, team_slug, team_id, kind, subject, detail,

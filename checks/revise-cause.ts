@@ -1,29 +1,24 @@
-// A revision names the MATERIAL behind it, and there is no other route.
+// A revision names the material behind it, and there is no other route.
 //
-// WHY THIS IS NOT THE PLAN'S CHECK. The plan-authored form asked whether the words "both"
-// and "neither" appear somewhere in the tool's source. Every comment in that handler is
-// prose about causes, so both patterns matched before a line of the feature existed — and
-// the two assertions the plan wrote as its own controls were the only ones that ever went
-// red. A check an explanatory comment can satisfy is a check that reads nothing.
+// The guard conditions are executed here rather than read: the `if (…)` expressions that return a
+// refusal are lifted out of the comment-stripped handler and evaluated over each combination of the
+// cause fields. A check that only looked for the words "both" and "neither" in the source is
+// satisfied by any comment about causes.
 //
-// So the guard conditions are EXECUTED here rather than read. The `if (…)` expressions that
-// return a refusal are lifted out of the comment-stripped handler and evaluated over each
-// combination of the cause fields. A revision citing nothing is refused; one citing a source
-// or carrying `source_content` is accepted — the second half is what a refusal-only check
-// cannot see, since an implementation that refuses everything satisfies the first.
+// A revision citing nothing is refused; one citing a source or carrying `source_content` is
+// accepted — the second half is what a refusal-only check cannot see, since an implementation that
+// refuses everything satisfies the first.
 //
-// `self_edit` USED TO BE THE OTHER ROUTE and this check kept it deliberately: "without it a
-// wording fix would have to invent a source". That is now the rule rather than the exception —
-// a content change names its material, and one line saying what was wrong IS the material — so
-// the field is gone and this check asserts its absence.
+// `self_edit` is gone: a content change names its material, and one line saying what was wrong is
+// the material. This check asserts its absence.
 import { readFileSync } from "node:fs";
 
 const fail = [];
 const src = readFileSync("services/zz-core/src/tools/initiative-acts.ts", "utf8");
 
-// The registration, not the name. "document_revise" also appears in its own comments, in
-// its refusals and in the activity payload, so splitting on the bare string lands wherever
-// the first mention happens to be.
+// The registration, not the name. "document_revise" also appears in its own comments, in its
+// refusals and in the activity payload, so splitting on the bare string lands wherever the first
+// mention happens to be.
 const at = src.search(/server\.registerTool\(\s*\n?\s*"document_revise"/);
 if (at < 0) {
   console.error("document_revise is not registered");
@@ -38,8 +33,8 @@ const block = next < 0 ? rest : rest.slice(0, next);
 const cut = block.indexOf("async ({");
 if (cut < 0) fail.push("the document_revise handler could not be found");
 const head = block.slice(0, cut < 0 ? block.length : cut);
-// Every comment in this handler is a full line. Dropping those lines cannot eat a `//`
-// inside a string, and it is what makes the assertions below unsatisfiable by prose.
+// Every comment in this handler is a full line. Dropping those lines cannot eat a `//` inside a
+// string, and it is what makes the assertions below unsatisfiable by prose.
 const body = block.slice(cut < 0 ? block.length : cut)
   .split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
 
@@ -103,8 +98,8 @@ for (const c of CASES) {
     try {
       if (fn(c.causes, c.causes.length > 0)) firing.push(g);
     } catch (err) {
-      // An honest red. The condition reads something this check cannot bind, so the check
-      // no longer knows what the tool does and must not report that it does.
+      // An honest red. The condition reads something this check cannot bind, so the check no longer
+      // knows what the tool does and must not report that it does.
       fail.push(`the refusal condition \`${g.cond}\` reads something this check cannot ` +
                 `bind (${err instanceof Error ? err.message : String(err)}) — rewrite it in terms of causes, or teach ` +
                 `this check the new name`);
@@ -114,9 +109,8 @@ for (const c of CASES) {
   if (c.refuse && !firing.length) fail.push(`a revision with ${c.name} is accepted`);
   if (!c.refuse && firing.length) fail.push(`a revision with ${c.name} is refused`);
   if (c.name.startsWith("no material") && firing.length) {
-    // The way out has to exist. A refusal naming a field the tool does not take is a dead
-    // end dressed as an instruction, and this one is reached by a caller whose revision is
-    // legitimate — the only thing left to tell them is which claim to make.
+    // The way out has to exist. A refusal naming a field the tool does not take is a dead end
+    // dressed as an instruction, and this one is reached by a caller whose revision is legitimate.
     const declared = new Set([...head.matchAll(/^\s{8}(\w+):\s*z\./gm)].map((m) => m[1]));
     const named = [...new Set([...firing[0].message.matchAll(/`([a-z_]+)`/g)].map((m) => m[1]))];
     if (!declared.size) fail.push("the inputSchema of document_revise could not be read");

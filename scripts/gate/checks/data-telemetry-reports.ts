@@ -26,36 +26,30 @@ function errMessage(err: unknown): string {
 import { flows, schemaColumns } from "../facts.ts";
 
 check("the evolution loop is closed, and separate from what it measures", () => {
-  // Evidence -> which step is not working -> change one thing -> re-verify -> next round
-  // says. Two of those had tools already: tool-report says which TOOL is refused,
-  // flow-compare which FLOW costs more. Neither says "ops-select is where this stalls", and
-  // that is the only form of the answer a skill can be edited from — so the loop was open
-  // at exactly the step that names what to change.
+  // Evidence -> which step is not working -> change one thing -> re-verify -> next round.
+  // tool-report says which tool is refused; it does not name the step that stalls, which is the
+  // form a skill can be edited from.
   //
-  // evolve-report attributes each refusal to the skill the agent had loaded when it
-  // happened, BY TRACE: skill_read says which skill, and everything after it is done while
-  // following that skill. Attribution by document name would be a guess, because a flow may
-  // write the same document from more than one step.
+  // evolve-report attributes each refusal to the skill the agent had loaded when it happened,
+  // by trace: skill_read says which skill, and everything after it is done while following
+  // that skill. Attribution by document name would be a guess, because a flow may write the
+  // same document from more than one step.
   //
-  // And it must stay separate from what it measures. zz-evolve is a platform skill under
-  // skills/, not a stage in any flow's manifest — an evaluation whose subject runs it is one
-  // that means nothing, and a flow that listed it would be doing exactly that.
+  // DELIBERATE: zz-evolve is a platform skill under skills/, never a stage in any flow's
+  // manifest. An evaluation whose subject runs it means nothing.
   const bad: string[] = [];
   const tool = join(root, "packages/tools/src/testing/evolve-report.ts");
   if (!existsSync(tool)) {
     bad.push("evolve-report is missing — nothing says which STEP stalls");
   } else {
     const src = readFileSync(tool, "utf8");
-    // The trace attribution, not a document-name heuristic.
-    // The attribution EXPRESSION, not the words. Testing for the string "skill_view" — the
-    // name this tool carried before the noun-first rename — passed when the branch was renamed
-    // to `skill_view_disabled`, which still contains it. Found by trying to break this check,
-    // and the reason to try.
-    // Attribution is a COLUMN now — the gateway decides which step a call belonged to at the
-    // door and stores it, so the report reads `e.step` instead of replaying skill loads per
-    // caller. The trace fallback stayed for rows written before that existed, and both legs
-    // are required: without the column the report is guessing, and without the fallback the
-    // history written before today becomes unreadable.
+    // The attribution expression, not the words: a test for the string "skill_view" also
+    // passes on `skill_view_disabled`.
+    //
+    // Attribution is a column — the gateway decides which step a call belonged to at the door
+    // and stores it, so the report reads `e.step` rather than replaying skill loads per caller.
+    // Both legs are required: without the column the report is guessing, and without the trace
+    // fallback the history written before the column becomes unreadable.
     if (!/const stamped = e\.step/.test(src) || !/following\.set\(e\.caller/.test(src)) {
       bad.push("evolve-report no longer attributes refusals to the skill being followed");
     }
@@ -63,21 +57,10 @@ check("the evolution loop is closed, and separate from what it measures", () => 
       bad.push("evolve-report no longer groups refusals by class — raw texts do not rank");
     }
   }
-  // WHERE THE LOOP CLOSES, now that no skill claims to close it.
-  //
-  // This required skills/zz-skill-evolve to exist. That skill named four steps and three of
-  // them were `zz-tool` shell commands, which no agent on this platform can run — and the
-  // fourth, changing a skill, is impossible at runtime because /catalog and /skills are
-  // read-only wherever the platform runs. So it instructed an agent to do four things, three
-  // of which no agent could do, and in two months it never ran once. Its two recorded runs
-  // are the evaluation flow's own calls, mis-attributed to it because it was the last skill
-  // loaded.
-  //
-  // The loop is real and it closes elsewhere: the report SPECIFIES the change and a release
-  // APPLIES it. So what has to be true is that the report says so — one change, the expected
-  // effect written down, and the route named. A recommendation that does not say what it
-  // expects cannot be contradicted by the next round, and gets read as agreement whatever
-  // that round says.
+  // The loop closes outside any skill: the report specifies the change and a release applies
+  // it. So the report has to say so — one change, the expected effect written down, and the
+  // route named. A recommendation that does not say what it expects cannot be contradicted by
+  // the next round, and gets read as agreement whatever that round says.
   const report = join(root, "catalog/zz/zz-plugin-eval/skills/zz-plugin-report/SKILL.md");
   if (!existsSync(report)) {
     bad.push("zz-plugin-report is missing — nothing specifies the change the evidence calls for");
@@ -106,16 +89,11 @@ check("the evolution loop is closed, and separate from what it measures", () => 
   return bad.length ? bad.join("; ") : null;
 });
 
-// PROVENANCE THAT NOTHING CAN READ ANSWERS NOTHING.
+// Provenance that nothing can read answers nothing.
 //
-// The other half of the column rule. "A column the platform enforces is a column something
-// can write" catches a guard with no writer; this catches a writer with no reader.
-// `flow_install.installed_by` and `tool_grant.granted_by` were both written on every insert
-// since the schema was created and appeared in no select anywhere — so "who gave this team
-// casebox, and when" could only be answered by opening the database by hand, which is the same
-// answer as not having recorded it. This platform's own principle is that provenance is
-// produced mechanically; recording it where nobody can reach it is the form that looks like
-// compliance.
+// The other half of the column rule: "a column the platform enforces is a column something can
+// write" catches a guard with no writer; this catches a writer with no reader. Provenance
+// recorded where nobody can reach it answers the same as not having recorded it.
 //
 // Only the `_by` columns. Every column has to be written; not every column is a claim about
 // who did something, and a claim about who did something exists to be read back.
@@ -143,17 +121,8 @@ check("provenance the platform records is provenance something reads", () => {
   return bad.join("\n");
 });
 
-// The smoke suite has two failing verdicts and they mean opposite things: exit 1 is a finding
-// about the FLOW, exit 2 is the DEPLOYMENT not answering. TurnBlocked is the whole difference,
-// and a plain Error thrown where the environment gave up reports a rate limit as a regression
-// — which sends the next reader to audit a flow that did nothing wrong.
-//
-// The general rule, rather than a list of the three places: RETRYING WITH BACKOFF IS ITSELF
-// THE CLAIM THAT THE CONDITION IS TRANSIENT. Nobody sleeps between attempts at something they
-// believe is a logic error. So a throw that follows a backoff loop is, by the code's own
-// construction, the environment — and must say so. `send` waited through four attempts to open
-// a generation and then threw a plain Error, so a front end too busy to start a stream failed
-// the scenario.
+// A report that counts calls to one tool counts the ones that succeeded: a refused call is not
+// the activity it names.
 check("a report counting an activity counts the ones that happened", () => {
   const bad: string[] = [];
   for (const rel of sourceFiles(["packages/tools/src"], [".ts"])) {
@@ -176,25 +145,14 @@ check("a report counting an activity counts the ones that happened", () => {
 });
 
 check("a telemetry field a report reads is a field something writes", () => {
-  // zz.event.team_slug existed, was indexed, and was written by nothing on the busiest kind
-  // of row there is: 2,610 tool_call events on the production store, every one null. Two of
-  // the three reports that close the improvement loop depend on it — flow-compare joins an
-  // event to an initiative by (team, initiative) and counts a row without one as
-  // UNATTRIBUTED, and watch-results builds "a team has gone quiet" from the distinct teams in
-  // the window. Both ran, both reported nothing, and nothing was wrong as far as either could
-  // tell: an absent team reads exactly like a quiet platform.
+  // A reader may not depend on a column no writer sets. watch-results builds "a team has gone
+  // quiet" from the distinct teams in the window, so an unwritten zz.event.team_slug reads
+  // exactly like a quiet platform.
   //
-  // The shape is write-only-column, and this repository has now found it three times
-  // (zz.decision derived and read by nothing; `ids` captured and read by nothing; this). The
-  // rule it earns: a reader may not depend on a column no writer sets.
-  //
-  // THAT RULE, not the one instance. This named `teamSlug`, `tool-telemetry.ts` and two
-  // reader files by hand, so it could only ever catch the case already fixed — the shape this
-  // file criticises elsewhere as "a probe narrower than the code it guards finds the instance
-  // you already knew about". Seven of thirteen logEvent call sites write no team, and they are
-  // RIGHT to: a self-issued PAT and a package download belong to a person, not a team. So the
-  // invariant is not "every writer attributes" but the one the paragraph above actually
-  // states — a reader of team_slug must be reading kinds that something attributes.
+  // The invariant is not "every writer attributes": several logEvent call sites write no team
+  // and are right to, since a self-issued PAT and a package download belong to a person rather
+  // than a team. It is that a reader of team_slug must be reading kinds that something
+  // attributes.
   const bad: string[] = [];
   const attributed = new Set(), unattributed = new Set();
   let dynamic = 0;
@@ -215,8 +173,8 @@ check("a telemetry field a report reads is a field something writes", () => {
       if (!kind) { dynamic++; continue; }
       (/teamSlug\s*:/.test(call) ? attributed : unattributed).add(kind);
     }
-    // Raw SQL writers too — collect-turns inserts `turn` rows through psql and never touches
-    // logEvent, so a check reading only the helper would call that kind unwritten.
+    // Raw SQL writers too: a statement that inserts into zz.event directly never touches
+    // logEvent, so a check reading only the helper would call its kinds unwritten.
     for (const m of src.matchAll(/insert into (?:zz\.)?event\s*\(([^)]*)\)([\s\S]{0,400})/g)) {
       const cols = m[1];
       for (const k of m[2].matchAll(/'([a-z_.]+)'/g)) {
@@ -228,7 +186,7 @@ check("a telemetry field a report reads is a field something writes", () => {
     return "no zz.event writer found at all — this check cannot run";
   }
 
-  // READERS. The SQL is assembled from adjacent string literals, so the seam is removed first
+  // Readers. The SQL is assembled from adjacent string literals, so the seam is removed first
   // or `select … team_slug` and the `where kind = …` that scopes it sit on different lines.
   for (const rel of sourceFiles(["services", "packages"], [".ts"])) {
     const src = withoutComments(readFileSync(join(root, rel), "utf8"))
@@ -253,19 +211,12 @@ check("a telemetry field a report reads is a field something writes", () => {
 });
 
 check("a count of what is on this deployment says when it was counted", () => {
-  // Two shipped skills stated a live count in the present tense — "of the eleven nodes on this
-  // deployment, three carry a sentence of prose where a folder belongs" and "eight of the
-  // eleven nodes on this deployment cannot be". Production has fourteen. Both sentences exist
-  // to justify a rule and the reasoning is sound; what rots is the tense. This repository
-  // already draws that line for STATE.md — a fact and a status are different
-  // things — and nothing drew it for a skill a tenant reads.
+  // A skill stating a live count in the present tense rots as the data grows.
   //
-  // WHITESPACE IS NORMALISED, and that is the whole reason this is a check rather than a grep.
-  // A third instance sits in ops-intent as "...an initiative on this\ndeployment...", wrapped
-  // across two lines, so `grep "this deployment"` reports zero matches on a file that contains
-  // it. A line-oriented sweep would have found two of the three and reported the file clean.
+  // Whitespace is normalised, which is why this is a check rather than a grep: a count wrapped
+  // across two lines is invisible to a line-oriented sweep.
   //
-  // A COUNT, not any mention. "there is an initiative on this deployment in that state" is an
+  // A count, not any mention. "there is an initiative on this deployment in that state" is an
   // existence claim that stays true as the data grows; "of the eleven nodes" does not.
   const NUM = /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/i;
   // What makes a count honest: a date, or wording that puts it in the past on purpose.
@@ -286,20 +237,15 @@ check("a count of what is on this deployment says when it was counted", () => {
 });
 
 check("whether a refusal taught anything is one judgement", () => {
-  // R6 of the building-block contract — "validation errors in prose that teach the rule — no
-  // silent coercion, no bare status codes" — is asked in two places: block-conformance asks
-  // whether a block CAN teach, tool-report asks whether it DID. Both had their own answer and
-  // the two disagreed on the message that motivated the requirement.
+  // A refusal must teach the rule: no silent coercion, no bare status codes.
+  // COUPLED: one implementation, packages/tools/src/lib/refusal.ts, answers it wherever it is
+  // asked.
   //
-  // block-conformance used a length floor of forty characters and a pattern that did not know
-  // about `request failed with status code`. So "RPC ERROR: request failed with status code
-  // 422" — forty-six characters, quoted in that file's own comment as the thing R6 exists to
-  // catch — scored R6 as MET. It is also the commonest shape that engine sees, because
-  // `RPC ERROR: ` is the prefix it adds to every JSON-RPC error itself.
+  // A length floor gets it wrong: "RPC ERROR: request failed with status code 422" is
+  // forty-six characters and teaches nothing, and `RPC ERROR: ` is the prefix the engine adds
+  // to every JSON-RPC error itself.
   //
-  // RUN, over the messages that separate the two readings. A rule with one implementation can
-  // still be the wrong rule; what this holds is that there is one, and that it answers the
-  // cases the requirement was written for.
+  // Run, over the messages that separate the two readings.
   const src = readFileSync(join(root, "packages/tools/src/lib/refusal.ts"), "utf8");
   const body = functionBody(src, "teachesTheRule");
   if (!body) return "packages/tools no longer defines teachesTheRule — this check cannot run";
@@ -345,20 +291,10 @@ check("whether a refusal taught anything is one judgement", () => {
 });
 
 check("every field the tool telemetry writes has a reader", () => {
-  // "The gateway captures it specifically so 'which skills does a winning run load that a
-  // stalling one does not' can be answered, and that question stayed unanswerable because no
-  // reader existed." This file said that twice, about `ids` and about `bytes` — a capture
-  // wired at one end and nowhere at the other.
+  // Both sides of the same rule: a field written on every row and read by nobody is capture
+  // nobody asked for, and a reader with no field is a question that looks answered.
   //
-  // The mirror of it is a field written on every row and read by nobody, and there was one:
-  // `status`. tool-telemetry's own first paragraph explains that the telemetry it replaced had
-  // `{"status": 200}` for its whole detail and could not answer the only question worth
-  // asking, and then it wrote that field on every call.
-  //
-  // BOTH SIDES, because each is the other's failure: a field with no reader is capture nobody
-  // asked for, and a reader with no field is a question that looks answered.
-  //
-  // The measurement fields now live in two places — real COLUMNS for what anybody groups by,
+  // The measurement fields live in two places — real columns for what anybody groups by,
   // declared on logEvent's parameter, and the `detail` bag for what is read once and never
   // filtered on. Both are compared. The envelope's own plumbing is not: `actor`, `kind`,
   // `subject`, `teamSlug` and `detail` describe the row rather than the measurement, and every
@@ -386,13 +322,9 @@ check("every field the tool telemetry writes has a reader", () => {
   const bag = between(withoutComments(src).slice(withoutComments(src).indexOf('kind: "tool_call",')),
                       "detail: {", "\n          },");
   if (!bag.text) return `the tool_call detail cannot be located: ${bag.why}`;
-  // WITHOUT COMMENTS. The prose in this block explains why each field is there, and a word
-  // followed by a colon in a sentence reads exactly like a key — `column:` and `values:` were
-  // both picked up as fields the telemetry writes.
-  // SHORTHAND COUNTS. `ms,` and `bytes,` are properties as much as `caller: callerHash` is, and
-  // `{ ids }` inside a conditional spread is one too — a pattern that reads only `name:` saw
-  // three fields as unwritten while the reader correctly declared them, which is the check
-  // accusing the code of the check's own blind spot.
+  // Without comments: a word followed by a colon in a sentence reads exactly like a key.
+  // Shorthand counts: `ms,` and `bytes,` are properties as much as `caller: callerHash` is, and
+  // `{ ids }` inside a conditional spread is one too.
   const written = new Set([...bag.text.matchAll(/(?:^|[{\s])([a-z_]+)\s*(?::|,|\s*\})/gm)]
     .map((m) => norm(m[1])).filter((k) => !PLUMBING.has(k)));
   for (const c of columns) written.add(c);

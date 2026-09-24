@@ -1,35 +1,18 @@
 /**
  * The control loop's contracts, through one door.
  *
- * WHY THIS FILE EXISTS AT ALL, since `index.ts` is already the package's door. `index.ts` is
- * 660 lines against a 700-line ceiling this repository enforces with no exemption list, and
- * the control loop arrives as many modules rather than one. A block per module appended
- * there would take the package's own door over the ceiling, and the task that happened to be
- * last would be the one reported for it — a failure attached to the wrong change.
+ * COUPLED: `index.ts` re-exports this file with a single wildcard. A new control-loop module is
+ * added here, and `index.ts` does not change.
  *
- * So the modules aggregate HERE and `index.ts` carries a single block re-exporting this file.
- * That block is written once and never edited again — which is the whole reason it is the one
- * wildcard in that file: a module added below has to reach every consumer of `@zz/contracts`
- * without anybody touching the door, and a name list there would have to be edited by every
- * task that adds a module, which is the growth the ceiling cannot take.
- *
- * EXPLICIT NAMES HERE, THOUGH, one commented block per module — the same shape `index.ts`
- * uses for the four modules it re-exports directly. The wildcard buys a door that never has
- * to change; this file is where a reader asks where a symbol comes from and gets an answer
- * without consulting a resolver, and where a name that stops existing breaks the build
- * rather than quietly disappearing from the package surface.
- *
- * NOTHING IS DECLARED HERE. This file re-exports and does no other work; a helper declared in
- * an aggregator is a helper nobody expects to find in one.
+ * Every module below is re-exported by explicit name, so a name that stops existing breaks the
+ * build. Nothing is declared in this file.
  */
 
 // The generic control-loop host: what a reviewed module is, the five operations a host serves
 // (`run_start`, `method_read`, `evidence_record`, `control_evaluate`, `action_claim`), and the
-// digest a registration is checked against. The structural signature that says whether a
-// procedure is a second flow or the platform's own pipeline under other names is computed
-// INSIDE the module and reaches a consumer on `SecondFlowRun`, not as a function to call: the
-// question it answers is about a fixture this door publishes whole, and a detector exported for
-// anyone to point at anything is a detector with no fixture behind its answer.
+// digest a registration is checked against.
+// DELIBERATE: the second-flow signature is computed inside the module and reaches a consumer on
+// `SecondFlowRun`, not as an exported function.
 export {
   createHost,
   moduleDigest,
@@ -49,17 +32,11 @@ export {
   type SecondFlowRun,
 } from "./host.js";
 
-// What a documentary recall EPISODE concluded, and the distinction the whole type exists for:
-// a search that could not answer (`retrieval_inconclusive`) is not a search that ran cleanly and
-// found nothing (`no_relevant_match_in_searched_scope`). A complete empty means no match under
-// that search — never that the team never decided the topic. `RecallBlocker` enumerates every
-// reason the first verdict is owed instead of the second.
-//
-// THE LANE-TO-MATCH-KIND MAPPING IS NOT ON THIS DOOR. Turning the lanes a hit arrived through
-// into a `RecallMatchKind` is a step inside running an episode, and `recall-trial.ts` beside
-// this module is the only thing that runs one. A second copy of that mapping in
-// `@zz/indexing` was deleted rather than published, because two renderings of one vocabulary
-// drift; publishing this one would invite the third.
+// What a documentary recall episode concluded. `retrieval_inconclusive` (could not answer) is
+// distinct from `no_relevant_match_in_searched_scope` (ran cleanly, found nothing); `RecallBlocker`
+// enumerates every reason the first is owed instead of the second.
+// DELIBERATE: the lane-to-match-kind mapping is not on this door — it runs inside
+// `recall-trial.ts`.
 export {
   recallResultFrom,
   type RecallBlocker,
@@ -80,11 +57,9 @@ export {
   type RecallSupport,
 } from "./recall.js";
 
-// SHAPE, NOT ADEQUACY. A plan's structural report says whether the document can be executed
-// from — unique task ids, an Output per task, dependencies that resolve, no cycle — and says
-// nothing about whether the plan is any good. `admitToExecute` is the other half and the whole
-// point: a human approval is a verdict on CONTENT and can never stand in for the report, and a
-// missing report is not a pass. Neither substitutes for the other.
+// A plan's structural report says whether the document can be executed from — unique task ids, an
+// Output per task, dependencies that resolve, no cycle — and nothing about whether the plan is any
+// good. `admitToExecute` is the other half; neither substitutes for the other.
 export {
   admitToExecute,
   validatePlan,
@@ -96,17 +71,12 @@ export {
   type PlanViolationKind,
 } from "./plan-validation.js";
 
-// THE SEMANTIC-ASSESSMENT PORT, and most of its value is in what it refuses to invent. A label
-// with no probability yields an EMPTY signals array — not zero, not 0.5, and never a one-hot
-// distribution manufactured from a category. A confidence number the model typed as text is
-// `self_reported` however numeric it looks; only a declared native channel is a distribution.
-// And `unavailable` (the call failed) is kept distinct from `unknown` (the assessor answered
-// and could not tell), because collapsing them turns a timeout into a considered judgement.
-//
-// ONE QUESTION AT A TIME IS WHAT THIS DOOR PUBLISHES. Whether an assessment may carry a
-// semantic advance is asked through `evaluateBranch`, which is where the requirement it is
-// judged against lives; a bare predicate on the door would be that judgement without the
-// requirement beside it.
+// The semantic-assessment port. A label with no probability yields an empty signals array, never
+// zero, 0.5 or a one-hot distribution. A confidence the model typed as text is `self_reported`
+// however numeric it looks; only a declared native channel is a distribution. `unavailable` (the
+// call failed) is distinct from `unknown` (the assessor could not tell).
+// DELIBERATE: whether an assessment may carry a semantic advance is asked through
+// `evaluateBranch`, not through a predicate on this door.
 export {
   QUESTION_FAMILIES,
   interpret,
@@ -124,20 +94,12 @@ export {
   type StatisticalSignal,
 } from "./assessment.js";
 
-// GRANT ISSUANCE, which is internal-only and must stay that way. Every field of a ControlGrant
-// is DERIVED — the issuer's component digest, the decision it came from, the effect digest, the
-// sorted dependency pins — and none is caller-supplied, because a grant a caller can describe is
-// a bearer permission wearing a server record's name. `INTERNAL_GRANT_ISSUANCE` is the one
-// spelling of the name, so nothing downstream can register a second.
-//
-// THE ENGINE ITSELF IS NOT ON THIS DOOR, and that is the point rather than an omission.
-// `issueControlGrant`, `claimAgainstGrant`, `createGrantStore` and `canonicalTarget` are
-// reached only by `control-grant-fixture.ts` beside them, which is what a consumer outside
-// this package is given: a driveable stand-in, never the minting function. Publishing them
-// here would put the one operation this release refuses to register within one import of
-// anybody who can write `@zz/contracts`. The three digest helpers are narrower still — they
-// are private to `control-grant.ts`, because every one of them is a step in a derivation the
-// handler re-runs rather than a question a caller is entitled to ask.
+// Grant issuance, internal only. Every ControlGrant field is derived — issuer component digest,
+// originating decision, effect digest, sorted dependency pins — and none is caller-supplied.
+// `INTERNAL_GRANT_ISSUANCE` is the one spelling of the name.
+// DELIBERATE: `issueControlGrant`, `claimAgainstGrant`, `createGrantStore` and `canonicalTarget`
+// are not on this door; consumers outside the package get `control-grant-fixture.ts`. The three
+// digest helpers stay private to `control-grant.ts`.
 export {
   INTERNAL_GRANT_ISSUANCE,
   type ApprovedIssuer,
@@ -157,10 +119,8 @@ export {
   type TrustedHostContext,
 } from "./control-grant.js";
 
-// The door STAND-IN, kept in its own module and named as one. `@zz/contracts` sits below
-// `services/` and cannot import from it, so this can never be the real registry — it is a
-// fixture that lets the refusal and the successful control both be exercised. That the real
-// doors register no issuer is established against real source, not here.
+// The door stand-in. `@zz/contracts` sits below `services/` and cannot import from it, so this is
+// a fixture, never the real registry: it lets the refusal and the successful control both be run.
 export {
   callTool,
   grantFixtureWorld,
@@ -174,27 +134,14 @@ export {
   type ToolOutcome,
 } from "./control-grant-fixture.js";
 
-// CENTRAL ROLE BINDINGS. A global default change must not reach work already under way: a run
-// resolves its binding ONCE, at enrolment, and stores it — there is no path by which an
-// in-flight run reads the current default again. Moving one onto a new profile is a deliberate
-// act (`rebind`) that suspends and reconciles first, revokes the grants that depended on the
-// old binding, and refuses to carry calibration or cached answers across, because those were
-// qualified against a different model identity.
-//
-// `rebindDetectorProbe` is a NEGATIVE CONTROL, not a convenience. It plants faults through a
-// seam this module keeps private and reports whether each detector noticed — because a
-// detector that answers "no defect" for everything answers it for a real defect too. The first
-// version of this module compared qualification keys to audit a key-based retirement
-// mechanism, and the probe is what showed both detectors silent exactly when the mechanism was
-// broken.
-//
-// WHAT A RUN RECORDS IS NOT ON THIS DOOR, and neither is what a profile's withdrawal would do.
-// Filing a threshold or an invocation, and the shapes either produces, are module-private: the
-// retirement rules are written in them and run in the same module, and a caller that could file
-// one from outside could file it under a key no rebind would think to retire. The run's event
-// ledger is private for the same reason — `RebindResult` already answers, from the entries a
-// rebind appended, both questions a reader of the ledger would be asking (`suspendedFirst` and
-// `historyPreserved`), and a second, rawer answer beside it could only disagree with the first.
+// Central role bindings. A run resolves its binding once, at enrolment, and stores it; an in-flight
+// run never reads the current default again. `rebind` suspends and reconciles first, revokes the
+// grants that depended on the old binding, and refuses to carry calibration or cached answers
+// across. `rebindDetectorProbe` plants faults through a private seam and reports which detectors
+// noticed.
+// DELIBERATE: filing a threshold or an invocation, the shapes either produces, and the run's event
+// ledger stay module-private. `RebindResult` answers `suspendedFirst` and `historyPreserved` from
+// the entries a rebind appended.
 export {
   rebind,
   rebindDetectorProbe,
@@ -209,17 +156,10 @@ export {
   type RoleBindings,
 } from "./bindings.js";
 
-// THE REGISTER'S VOCABULARY, AND ONLY THAT. What a profile ref IS, separately from what it is
-// bound to: the declaration a caller writes, the resolved shape it becomes, and the slice a
-// measurement is qualified on. Split from `bindings.ts` because those are two subjects — this
-// one is the vocabulary, that one is what changing a binding costs.
-//
-// THE REGISTER'S OPERATIONS ARE NOT HERE, and the shape of that is worth stating rather than
-// leaving as an absence. `declareProfile` and `qualificationKey` are reached by `bindings.ts`
-// as a sibling, which is the module that has a run to declare a profile for and evidence to
-// file under a key; nothing outside this package holds either. Publishing them would offer a
-// second way to mint a key, and a key minted outside the module that retires keys is one no
-// rebind can find.
+// The register's vocabulary: what a profile ref is, separately from what it is bound to — the
+// declaration a caller writes, the resolved shape, and the slice a measurement is qualified on.
+// DELIBERATE: `declareProfile` and `qualificationKey` are not on this door; `bindings.ts` reaches
+// them as a sibling. A key minted elsewhere is one no rebind can find.
 export {
   type BoundRole,
   type ProfileDeclaration,
@@ -227,14 +167,11 @@ export {
   type ResolvedProfile,
 } from "./profiles.js";
 
-// THE DEPENDENCY SNAPSHOT, and the one thing it must not do. `content_hash` is recorded as a
-// witness and NEVER compared — because a record-local digest cannot see an external dependency
-// moving while the target's own bytes stay put, and that is the whole defect this task exists
-// for. Validity is decided by iterating the CLOSED SET of dependency kinds, not the snapshot's
-// own entries: a kind with no entry is a coverage gap, and a gap pauses rather than passing.
-// `stillValid` is the whole of that offered to a caller — the verdict behind it is computed in
-// the module and stays there, because two ways to ask one question are two answers waiting to
-// be read as different policies.
+// The dependency snapshot. `content_hash` is recorded as a witness and never compared — a
+// record-local digest cannot see an external dependency move while the target's own bytes stay put.
+// Validity iterates the closed set of dependency kinds, not the snapshot's own entries: a kind with
+// no entry is a coverage gap, and a gap pauses rather than passing. `stillValid` is all a caller
+// gets; the verdict behind it stays in the module.
 export {
   snapshot,
   snapshotCoverageProbe,
@@ -250,10 +187,10 @@ export {
   type VersionPredicate,
 } from "./dependency-snapshot.js";
 
-// THE COMMIT BOUNDARY: the predicate check and the effect publication have to happen inside one
-// serialization, and it has to cover the separate permission store, or a stale grant races a
-// revocation. `holdsLockAcrossModelCall` is computed from the step list rather than asserted —
-// no model call or backoff may hold a document lock.
+// The commit boundary: the predicate check and the effect publication happen inside one
+// serialization covering the separate permission store, or a stale grant races a revocation.
+// `holdsLockAcrossModelCall` is computed from the step list — no model call or backoff may hold a
+// document lock.
 export {
   boundaryDetectorProbe,
   boundaryOf,
@@ -261,13 +198,12 @@ export {
   type CommitBoundary,
 } from "./commit-boundary.js";
 
-// Commit-result reconciliation: what a caller may conclude from each of the mutation kernel's
-// three replies. The canonical no-op (`committed: true, changed: false`, null transaction, null
-// commit sequence) is `applied` with its nulls left as nulls; a pending projection is catch-up
-// work attached to an applied write rather than a fourth result; an unknown commit reconciles
-// against the transaction and the key it was already sent under. The four negative flags are
-// COMPUTED by an audit that compares the plan against the reply, not set by the branch that
-// built the plan — `reconcileDetectorProbe` plants one fault per flag and shows each fire.
+// Commit-result reconciliation: what a caller may conclude from each of the mutation kernel's three
+// replies. The canonical no-op (`committed: true, changed: false`, null transaction, null commit
+// sequence) is `applied` with its nulls left as nulls; a pending projection is catch-up work on an
+// applied write, not a fourth result; an unknown commit reconciles against the transaction and key
+// it was already sent under. The four negative flags are computed by an audit comparing plan to
+// reply, not set by the branch that built the plan.
 export {
   reconcile,
   reconcileDetectorProbe,
@@ -282,45 +218,35 @@ export {
   type ReconciliationPlan,
 } from "./commit-reconciliation.js";
 
-// A SECOND EXECUTABLE ASSESSOR, differing from the one with a probability primitive in exactly
-// the way that matters: it declares it has none. `native_distributions: false` is the truthful
-// statement about a backend that returns a word, and the rest follows from refusing to paper
-// over it — a model emitting `confidence: "0.93"` has emitted a string, so it is `self_reported`
-// and never a distribution; a branch that genuinely needs a probability DECLINES rather than
-// consuming that number; and a `local-only` profile with its primary down reaches a declared
-// local standby, because locality is a field in the register and never a reading of a name.
+// A second executable assessor that declares it has no probability primitive.
+// `native_distributions: false` for a backend returning a word: `confidence: "0.93"` is a string,
+// so it is `self_reported` and never a distribution, and a branch needing a probability declines
+// rather than consuming it. A `local-only` profile with its primary down reaches a declared local
+// standby; locality is a register field, never a reading of a name.
 export { labelAdapter } from "./label-adapter.js";
 export { evaluateBranch } from "./branch-policy.js";
 export { resolveEndpoint } from "./local-transport.js";
 
-// THE FIRST PRODUCTION ASSESSOR ADAPTER. Its identity rule is the half most easily got wrong:
-// a hosted service asserting its own exact version is a PROVIDER ASSERTION, never cryptographic
-// proof, so a match records `provider_reported` and an alias pin records `unverified`. The
-// sibling label adapter compares deployment DIGESTS and may reach `deployment_verified`; the
-// two are different evidence reaching different assurance, not a disagreement. An adapter that
-// instead fed the model NAME to the port as an observed identity would have the port comparing
-// a vendor's self-report against a pin — green on every test, verifying nothing.
+// The first production assessor adapter. A hosted service asserting its own version is a provider
+// assertion, not cryptographic proof: a match records `provider_reported`, an alias pin records
+// `unverified`. The sibling label adapter compares deployment digests and may reach
+// `deployment_verified`.
+// DELIBERATE: the model name is never fed to the port as an observed identity.
 export { jevAdapter } from "./adapters/jev.js";
-// What a caller needs to ASK through it and to READ what came back: how one question's reply is
-// to be validated, and the record plus validated readings each reply becomes.
+// What a caller needs to ask through it and to read what came back: how one question's reply is to
+// be validated, and the record plus validated readings each reply becomes.
 export type { JevAnswerOptions, JevParseResult } from "./adapters/jev.js";
 
-// THE RUNTIME ADAPTER PORT, and the second adapter that is the only reason it can be called
-// one. A dispatch returns a work id and cannot report a completion — `completed` is typed
-// `never`. A cancellation request is not a confirmation: only the confirmed arm of
-// `CancelOutcome` carries `treatedAsStopped`, and it has to name the runtime record behind it.
-// A lease expiry never proves a worker stopped, which is why `lease_expiry_proves_stop` is
-// typed `false`. The last line of a feed is the last activity observed, so `Observation` pairs
-// its completeness with its receipt and names its elapsed field for the floor it is. An
-// unsupported capability is DECLARED (`simulated: false`) and admission decides whether the
-// work may run at all.
-//
-// THE PORT PUBLISHES SHAPES HERE AND NOTHING ELSE. Its vocabularies, its digest and its
-// admission rule are named by `claude-code.ts`, `batch-queue.ts` and `conformance.ts` beside
-// it and by nothing outside this package — a contract's own implementations are not its
-// consumers. A consumer meets all three through `runConformance` below, which is the form in
-// which they are meant to be met: an adapter judged against its own declaration, rather than
-// a set of constants a caller could re-implement the judgement from.
+// The runtime adapter port. A dispatch returns a work id and cannot report a completion —
+// `completed` is typed `never`. A cancellation request is not a confirmation: only the confirmed arm
+// of `CancelOutcome` carries `treatedAsStopped`, naming the runtime record behind it. A lease expiry
+// never proves a worker stopped, so `lease_expiry_proves_stop` is typed `false`. The last line of a
+// feed is the last activity observed, so `Observation` pairs completeness with receipt and names its
+// elapsed field for the floor it is. An unsupported capability is declared (`simulated: false`) and
+// admission decides whether the work may run.
+// DELIBERATE: only shapes are published here. The port's vocabularies, digest and admission rule
+// are named by `claude-code.ts`, `batch-queue.ts` and `conformance.ts` beside it; a consumer meets
+// all three through `runConformance` below.
 export type {
   CapabilityDeclaration,
   AssetRole, BoundAsset, CancelOutcome, CancelRequest, CancelState,
@@ -332,38 +258,31 @@ export type {
   RuntimeCapability, StopEvidence, TaskProfile,
 } from "./adapters/port.js";
 
-// WHAT A PIECE OF WORK CONSUMED, under one rule stated in the data: a record is counted
-// exactly when no ancestor of it is marked as already including its descendants. Where an
-// ancestry cannot be resolved the record is excluded BY NAME and the total drops to
-// `floor_only` — a lower bound that says it is one. The rule runs where the records are read:
-// each adapter calls it while turning its runtime's own accounting into a `UsageTotal`, so a
-// consumer is handed the total and never the counting. Publishing the counter beside the total
-// would offer a second way to arrive at a different number.
+// What a piece of work consumed: a record is counted exactly when no ancestor of it is marked as
+// already including its descendants. An unresolvable ancestry excludes the record by name and drops
+// the total to `floor_only`, a lower bound that says so. Each adapter runs the rule while turning
+// its runtime's accounting into a `UsageTotal`, so a consumer is handed the total, never the
+// counting.
 export type {
   UsageCompleteness, UsageRecord, UsageTotal,
 } from "./adapters/usage.js";
 
-// EVERY RUNTIME ADAPTER THIS RELEASE SHIPS, and the protocol all of them are driven through.
-// `runConformance` asserts each adapter against ITS OWN declaration — an adapter that says it
-// can confirm a stop must confirm one, and an adapter that says it cannot must never produce
-// the confirmed answer — so neither can be satisfied by imitating the other.
+// Every runtime adapter this release ships, and the protocol all of them are driven through.
+// `runConformance` asserts each adapter against its own declaration: an adapter that says it can
+// confirm a stop must confirm one, and an adapter that says it cannot must never produce the
+// confirmed answer.
 export {
   adapters, runConformance,
   type ConformanceReport,
 } from "./adapters/conformance.js";
 
-// WHETHER A STEP MAY ADVANCE, and the four measurements that are real and are not grounds.
-// Bytes added, rounds elapsed, a model's confidence in itself, an aggregate score — each is
-// carried into the verdict's `disregarded` list BY NAME with the reason it was set aside,
-// rather than hidden, so a reader can see it was seen and refused. `advance` is computed from
-// outcome evidence, closed gaps and recorded gates, and from nothing else; a twelve-byte
-// evidenced correction advances and half a megabyte with a gap open does not. An episode is
-// keyed by what it audits — the key digests subject and criteria and never the label, so a
-// rename spends the same budget — and exhaustion sets `exhausted` and a blocker, never
-// `advance`. The keying function itself is not published: `readiness` applies it to every input
-// it is given, and the module's negative control reaches it as a sibling to show a renamed
-// episode keying the same. A caller that could key an episode separately could key one this
-// module would not, which is the rename the budget exists to catch.
+// Whether a step may advance. Bytes added, rounds elapsed, a model's confidence in itself and an
+// aggregate score are each carried into the verdict's `disregarded` list by name with the reason
+// they were set aside. `advance` is computed from outcome evidence, closed gaps and recorded gates
+// and from nothing else. An episode's key digests subject and criteria and never the label, so a
+// rename spends the same budget; exhaustion sets `exhausted` and a blocker, never `advance`.
+// DELIBERATE: the keying function is not published — `readiness` applies it to every input it is
+// given.
 export {
   readiness,
   type AuditContext,
@@ -374,22 +293,17 @@ export {
   type ReadinessVerdict,
 } from "./readiness.js";
 
-// ONE CONTROLLER FOR EVERY STEP A FLOW DECLARES. The bound contracts arrive as DATA in an
-// `ExecutionProfile`, resolved above this layer from whatever the flow declared — this module
-// has no step list and cannot name one, which is what keeps the kernel generic. A step entered
-// without its entry evidence returns the missing kinds; a call against a superseded revision is
-// refused and carries the current one; `needs_revisit` is COMPUTED from the outcome the
-// controller already holds, never set by a caller. Evidence is required at a STANDARD, and a
-// requirement can be DISCHARGED on a named ground rather than met; which standard applies and
-// what grounds exist are caller-supplied facts, like every other input here.
-//
-// `admitEntry` IS THE ONLY HALF ON THIS DOOR, and the split is the finding rather than an
-// oversight. It is the entry rule alone, so a caller with no execution to hang the question on
-// — `services/zz-core/src/guards.ts`, guarding a single write — can ask it without fabricating
-// an identity and a revision, and without keeping a second copy of the rule. The controller
-// that drives a whole declared flow needs all three, and nothing in this repository runs one:
-// it is built and exercised by `stage-control-probe.ts` beside it, which is a sibling and not
-// a consumer. Publishing it would advertise a flow kernel no flow here is driven through.
+// One controller for every step a flow declares. The bound contracts arrive as data in an
+// `ExecutionProfile` resolved above this layer, so this module has no step list and cannot name one.
+// A step entered without its entry evidence returns the missing kinds; a call against a superseded
+// revision is refused and carries the current one; `needs_revisit` is computed from the outcome the
+// controller holds, never set by a caller. Evidence is required at a standard and can be discharged
+// on a named ground rather than met; which standard applies and what grounds exist are
+// caller-supplied.
+// DELIBERATE: `admitEntry` is the only half on this door — the entry rule alone, so a caller with no
+// execution to hang the question on, such as `services/zz-core/src/guards.ts`, can ask it without
+// fabricating an identity and a revision. The full controller is built and exercised by
+// `stage-control-probe.ts` beside it; nothing in this repository drives a declared flow.
 export {
   admitEntry,
   type ControlState,
@@ -412,41 +326,28 @@ export {
   type UnmetRequirement,
 } from "./stage-control.js";
 
-// The negative control. Each rule above is exercised twice — silent on a healthy subject, firing
-// on a planted fault — because a detector nobody has watched fail is a detector nobody has
-// tested. Its fixture profile is seven generic steps: this package is below the layer that binds
-// a flow's declared names, and the probe demonstrates that a seven-step profile resolves every
-// contract through the one controller without knowing what any of them is called.
+// The negative control. Each rule above is exercised twice: silent on a healthy subject, firing on
+// a planted fault. Its fixture profile is seven generic steps — this package sits below the layer
+// that binds a flow's declared names.
 export { stageControlProbe, type StageControlProbeRow } from "./stage-control-probe.js";
 
-// THE SEVEN CHECK STATES, OWNED BY NEITHER CONSUMER. An audit record says what state a check
-// was observed in and an observation manifest says what state it was captured in; both need the
-// same seven words, and a vocabulary owned by one of two equal consumers is two vocabularies
-// waiting to disagree. `unknown` is the default and is never written as `passed` or `failed`.
-//
-// THE LIST AND THE TYPE, NOT THE COERCION. Narrowing an arbitrary value to one of the seven is
-// what a module reading a record off disk does on the way in, and both such modules are in this
-// package; a consumer outside it holds a `CheckState` rather than validating one, and asks
-// `CHECK_STATES.includes(…)` where it has to ask at all.
+// The seven check states, owned by neither consumer: an audit record and an observation manifest
+// need the same seven words. `unknown` is the default and is never written as `passed` or `failed`.
+// DELIBERATE: the list and the type are published, not the coercion. Narrowing an arbitrary value
+// happens in the two modules here that read a record off disk; a consumer outside holds a
+// `CheckState` and asks `CHECK_STATES.includes(…)` where it must.
 export {
   CHECK_STATES,
   type CheckState,
 } from "./check-state.js";
 
-// AUDIT IDENTITY, AND THE THREE THINGS AN ASSESSMENT CANNOT DO. Every audit carries execution,
-// attempt, reviewer, target, report and completion identity, and an assessment can neither
-// resolve a finding, delete one, nor stand in for a required test — each of those is a computed
-// refusal rather than a convention.
-//
-// RECORDING AND CLOSING STAY INSIDE. What this door publishes is recording a FINDING and
-// reading an assessment against one, because those are what a consumer outside this package
-// does. Opening an audit record and closing a finding are the two ends of a round, and both are
-// refusals before they are constructors — `recordAudit` refuses six missing identities,
-// `resolveFinding` refuses a verification that did not pass. A refusal is worth publishing when
-// somebody is on the other side of it; nobody outside this package opens a round or closes a
-// finding today, and the flow that decides findings — `finding_decide` in zz-core — keeps its
-// own vocabulary, which this one cannot express. They stay exported to the modules that hold
-// this package's own record honest, and off the surface until there is a caller.
+// Audit identity. Every audit carries execution, attempt, reviewer, target, report and completion
+// identity, and an assessment can neither resolve a finding, delete one, nor stand in for a
+// required test — each is a computed refusal.
+// DELIBERATE: recording a finding and reading an assessment against one are published; opening an
+// audit record and closing a finding are not, and stay exported only to this package's own probes.
+// `recordAudit` refuses six missing identities, `resolveFinding` refuses a verification that did not
+// pass, and `finding_decide` in zz-core keeps its own vocabulary.
 export {
   applyAssessment,
   recordFinding,
@@ -462,11 +363,10 @@ export {
   type TestDischarge,
 } from "./audit-identity.js";
 
-// THE SIX HISTORICAL ROUNDS, IMPORTED WITH WHAT IS MISSING STILL MISSING. None of the six
-// reports records who reviewed it, so every imported row reads `unavailable` rather than
-// borrowing `contributed_by`, which records source intake and is not reviewer identity. A
-// digest exists only when a caller supplies the bytes, and is then labelled `computed_at_import`
-// — a hash computed today is never presented as a signature somebody left behind.
+// The six historical rounds, imported with what is missing still missing. No report records who
+// reviewed it, so every imported row reads `unavailable` rather than borrowing `contributed_by`,
+// which records source intake and is not reviewer identity. A digest exists only when a caller
+// supplies the bytes, and is then labelled `computed_at_import`.
 export {
   importLegacyAudits,
   type FieldOrigin,
@@ -475,10 +375,9 @@ export {
   type RepositoryGrounding,
 } from "./audit-legacy-import.js";
 
-// A TRANSITION IS A RECORDED FACT OR IT IS NOT A FACT. Linked sources and approval chronology
-// show that a version changed and cited an input; they cannot show which stage the work
-// returned from. So an inferred relation is kept as `inferred` — discarding it would lose a
-// real signal — and can never be represented as `observed`. Chronology is not causality.
+// Linked sources and approval chronology show that a version changed and cited an input; they
+// cannot show which stage the work returned from. An inferred relation is kept as `inferred` and
+// can never be represented as `observed`.
 export {
   transitionsFor,
   type InferredRelation,
@@ -491,21 +390,16 @@ export {
 } from "./stage-transition.js";
 
 // The negative control for the three rules above: ten planted faults, each shown firing on a
-// damaged subject and silent on a healthy one. A refusal nobody has watched fail is untested.
+// damaged subject and silent on a healthy one.
 export { auditIdentityProbe, type AuditIdentityProbeRow } from "./audit-identity-probe.js";
 
-// NINE ACTION KINDS, AND A GAP THAT REACHES THE WORK THAT RESOLVES IT. `ACTION_KINDS` is the
-// keys of the contract inventory, so the count cannot pass a length check while an entry is
-// missing. Coexisting gap kinds stay separate — `collapsedToOne` is observed by counting the
-// units that answer them, not asserted — and a gap with no permitted action resolves to a pause
-// carrying a concrete resumption condition. There is NO `advance` kind: review grants close
-// eligibility, which is why it cannot advance to a stage that does not exist.
-//
-// THE KINDS, NOT THE INVENTORIES BEHIND THEM. `ACTION_CONTRACTS` is what each kind commits to
-// and `GAP_KINDS` is what the router recognises; both are read BY `routeGap` on the way to a
-// routing, and a caller holding the routing has the answer they encode. Published, a caller
-// could read a contract's target and completion and claim to have met them without ever
-// routing the gap that would have said whether the action was permitted at all.
+// Nine action kinds. `ACTION_KINDS` is the keys of the contract inventory, so the count cannot pass
+// a length check while an entry is missing. Coexisting gap kinds stay separate — `collapsedToOne` is
+// observed by counting the units that answer them — and a gap with no permitted action resolves to a
+// pause carrying a concrete resumption condition. There is no `advance` kind: review grants close
+// eligibility.
+// DELIBERATE: `ACTION_CONTRACTS` and `GAP_KINDS` are not on this door; both are read by `routeGap`
+// on the way to a routing, and the routing carries the answer they encode.
 export {
   ACTION_KINDS,
   routeGap,
@@ -515,12 +409,11 @@ export {
   type GapRouting,
 } from "./gap-routing.js";
 
-// THE THREE MOVES THAT ARE NOT ORDINARY WORK, each inviting the same deadlock: a permission that
-// cannot be granted until the thing it permits has already happened. Opening invents no prior
-// outcome; a corrective return invalidates dependent readiness rather than leaving it standing,
-// and never requires forward progress first; close eligibility is a grant, never a close.
-// Named `stage-progression`, one letter from `stage-transition.js` above and a different
-// subject: this is whether a move is PERMITTED, that is whether a transition was RECORDED.
+// The three moves that are not ordinary work, each inviting the same deadlock: a permission that
+// cannot be granted until the thing it permits has happened. Opening invents no prior outcome; a
+// corrective return invalidates dependent readiness and never requires forward progress first;
+// close eligibility is a grant, never a close. One letter from `stage-transition.js` above and a
+// different subject: this is whether a move is permitted, that is whether one was recorded.
 export {
   bootstrap,
   correctiveReturn,
@@ -535,34 +428,25 @@ export {
   type Objective,
 } from "./stage-progression.js";
 
-// THE FOUR AUDITS, WHICH IMPORT NOTHING — not the router, not the contract inventory, not the
-// gap vocabulary. They answer structural questions about plain string lists, so the mechanism
-// cannot make them agree with it. An audit that shares the mechanism's assumption is the defect
-// this initiative kept finding in its own work, and this module is the shape of not having it.
-//
-// NOT ON THIS DOOR, AND THAT IS THE POINT OF THEM. An audit is what the router and the three
-// progression moves are held to, applied to the lists THEY produce: between them `routeGap`,
-// `bootstrap`, `correctiveReturn` and `reviewClose` run all four on the way to their own
-// verdicts — no single one of them runs every audit, because not every move can commit every
-// fault — and a caller reads the result. Published, they would be four functions anybody could
-// run over lists of their own choosing and quote the answer, which is the mechanism grading its
-// own homework with an extra step. What this door publishes is the precondition shape a caller
-// has to supply to be audited.
+// The four audits, which import nothing — not the router, not the contract inventory, not the gap
+// vocabulary. They answer structural questions about plain string lists, so the mechanism cannot
+// make them agree with it.
+// DELIBERATE: the audits are not on this door. They run over the lists `routeGap`, `bootstrap`,
+// `correctiveReturn` and `reviewClose` produce — no one of those runs every audit, because not every
+// move can commit every fault — and a caller reads the result. Published here is the precondition
+// shape a caller supplies to be audited.
 export {
   type PermissionPrecondition,
 } from "./gap-audit.js";
 
 // The negative control: nineteen rows, each silent on a healthy subject and firing on a planted
-// fault, covering every flag above that says something did NOT happen.
+// fault, covering every flag above that says something did not happen.
 export { gapRoutingProbe, type GapRoutingProbeRow } from "./gap-routing-probe.js";
 
-// WHAT THE WORK ACTUALLY TOUCHED, INCLUDING WHAT GIT WAS TOLD TO IGNORE. A build artifact, a
-// generated bundle or a report written outside version control is still an output, and a
-// manifest that consults `.gitignore` makes exactly those invisible in the record. So the walk
-// never reads an ignore rule, and `includesIgnored` is observed by reducing over what was
-// actually excluded rather than asserted. Completeness is REPORTED — `complete`, `bounded` or
-// `incomplete`, with a reason per gap — because a capture that quietly skipped half a tree reads,
-// later and to someone who was not there, exactly like a capture that found nothing to skip.
+// What the work touched, including what git was told to ignore: a build artifact or a report
+// written outside version control is still an output, so the walk never reads an ignore rule and
+// `includesIgnored` is reduced over what was actually excluded. Completeness is reported —
+// `complete`, `bounded` or `incomplete`, with a reason per gap.
 export {
   captureManifest,
   type ManifestCapture,
@@ -573,51 +457,42 @@ export {
 // everything else it exports is a seam the manifest module imports, not a public surface.
 export { type FileManifest } from "./observation-walk.js";
 
-// A CLOSE SAYS ONLY WHAT IS KNOWN, AND A HANDOVER CLAIMS ONLY WHAT IT VERIFIED. `deriveOutcome`
-// is the only producer of an outcome and `closeInitiative` cannot be handed one — `acceptedByHand`
-// observes that a caller supplied one rather than recording that somebody remembered not to. A
-// reason explains a delivery and never makes one, so `no_signoff_reason` is carried and is not an
-// input to the derivation. An abandoned close cannot assert that the stages before it succeeded:
-// `state` and `evidence` come out of one builder, so `established` with no evidence is not a
-// shape this module can produce. And a self-reported count arrives labelled self-reported,
-// because nothing reads `proposed_team_nodes` back — expected impact is not observed impact.
+// `deriveOutcome` is the only producer of an outcome and `closeInitiative` cannot be handed one;
+// `acceptedByHand` observes that a caller supplied one. `no_signoff_reason` is carried and is not an
+// input to the derivation. `state` and `evidence` come out of one builder, so `established` with no
+// evidence is not a shape this module can produce. `proposed_team_nodes` is labelled self-reported
+// and nothing reads it back.
 export {
   closeInitiative,
   deriveOutcome,
   handoverClaims,
 } from "./close.js";
 
-// NO TYPES FROM THAT MODULE ON THIS DOOR, DELIBERATELY. Seven of its interfaces are reachable
-// only through a return position, so TypeScript emits them into the `.d.ts` as local
-// declarations and a consumer still gets the full shape by inference. Six more are exported
-// from the module because its probe names them to build faulted subjects — a real importer,
-// inside the package. Neither group belongs here: a name on the package door with no importer
-// is the one thing the hygiene rule forbids, and nothing outside this package names them.
+// DELIBERATE: no types from `close.js` are on this door. Seven of its interfaces are reachable only
+// through a return position, so TypeScript emits them into the `.d.ts` as local declarations and a
+// consumer gets the full shape by inference; six more are exported from the module for its probe.
+// Nothing outside this package names either group.
 
-// The negative control for the four refusals above, on disk rather than in a transcript: the
-// closing review has to be able to watch each of them fire without re-running the worker that
-// wrote them.
+// The negative control for the four refusals above, written to disk so the closing review can watch
+// each fire without re-running the worker.
 export { closeProbe, type CloseProbeRow } from "./close-probe.js";
 
-// ONE RECALL EPISODE END TO END: public search, a pinned read of the original, source and
-// supersession traversal, and a result in the language the asker used. The traversal rules are
-// what this exists to pin down — a broadened or graph hit is a LEAD until original text supports
-// the claim, a current head may be fetched to check supersession but never replaces the revision
-// a citation named, and a translation is a search hypothesis that is never written back into the
-// document. `answer_language` is derived from the question alone, so a monolingual corpus cannot
-// make it right by accident.
+// One recall episode end to end: public search, a pinned read of the original, source and
+// supersession traversal, and a result in the language the asker used. A broadened or graph hit is a
+// lead until original text supports the claim; a current head may be fetched to check supersession
+// but never replaces the revision a citation named; a translation is a search hypothesis and is
+// never written back into the document. `answer_language` is derived from the question alone.
 export { trial } from "./recall-trial.js";
 
 // The negative control for the four computed flags above, including faulted local copies of
 // computations that no input can make the real ones perform.
 export { recallTrialProbe, type RecallTrialProbeRow } from "./recall-trial-probe.js";
 
-// THE TRIAL'S OWN ANALYZER, ON THE DOOR SO ITS AGREEMENT WITH `zz-lexical-v2` IS MEASURABLE.
-// The corpus needs Han segmentation and this package sits BELOW `@zz/indexing`, so it cannot
-// import the real analyzer and keeps a copy of the Han half — the layering forces that and it
-// is legitimate. What is not is leaving the two unwatched: `rederivation-generation.ts` exists
-// because two implementations of one weighting drifted apart, and this is the same shape one
-// directory over. A gate check may import from both packages, so this name is here for that
-// check to hold the copy to the original. Nothing else names it; the fixture reaches it as
-// `searchCorpus`'s default analyzer, inside its own module.
+// The trial's own analyzer, on the door so its agreement with `@zz/indexing`'s is measurable. The
+// corpus needs Han segmentation and this package sits below `@zz/indexing`, so it keeps a copy of
+// the Han half.
+// COUPLED: the copy has to track `identifierTokens` in `@zz/indexing`; a gate check imports both
+// and holds the copy to the original. Nothing else names this export.
+// DELIBERATE: named by module, not by analyzer version. `ANALYZER_NAME` is `zz-lexical-v3` and has
+// moved before; the copy tracks whatever that module emits, not a numbered generation.
 export { trialAnalyze } from "./recall-trial-corpus.js";

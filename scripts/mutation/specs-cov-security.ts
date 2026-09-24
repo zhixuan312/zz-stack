@@ -1,26 +1,17 @@
 /**
  * Defects planted in the security boundary, in who the caller is, in what holds a credential,
- * and in what the platform records about itself.
+ * and in what the platform records about itself. Six check files, one row per registered
+ * check.
  *
- * SIX CHECK FILES, THIRTY-EIGHT REGISTERED CHECKS, one row each. The grouping is not
- * cosmetic: every check here protects a property that is invisible when it holds and
- * expensive when it stops — a refusal that keeps handling the request, an address that is
- * canonical at twenty call sites instead of one, a column a report groups by that nothing
- * writes. None of those breaks a build, and none of them shows up in a passing gate run, so
- * the only way to learn whether the check would notice is to put the defect back.
+ * Two rows are disclosed rather than quietly arranged, each in its own comment below:
+ * `DROPPED_TABLE` (this file would otherwise fail one of the checks it is measuring) and the
+ * acting-team row (its defect is the one expression two checks both forbid, so it turns two red
+ * and only one is its target).
  *
- * THREE ROWS ARE DISCLOSED RATHER THAN QUIETLY ARRANGED, each in its own comment below:
- * `DROPPED_TABLE` (this file would otherwise fail one of the checks it is measuring),
- * `credential_set_mine` (the check it is aimed at is vacuous on today's surface and its own
- * comment says so), and the acting-team row (its defect is the one expression two different
- * checks both forbid, so it turns two red and only one of them is its target).
- *
- * WHY NO ROW HERE CARRIES A CREDENTIAL. `security-secrets.ts` refuses any tracked file that
- * carries a routable address, an email or a credential shape, and `testing/mutation-report.json`
- * is a tracked file that quotes every `find` and `replace` verbatim. So the password row
- * plants `change-me` — the literal this repository actually shipped, and a string no shape in
- * that sweep matches — and the token row changes a byte COUNT rather than writing a token.
- * Nothing here needs `redact`.
+ * DELIBERATE: no row here carries a credential. `security-secrets.ts` refuses any tracked file
+ * carrying a routable address, an email or a credential shape, and `testing/mutation-report.json`
+ * quotes every `find` and `replace` verbatim. The password row plants `change-me` and the token
+ * row changes a byte count rather than writing a token.
  */
 import type { MutationSpec } from "./plant.ts";
 
@@ -29,19 +20,14 @@ import type { MutationSpec } from "./plant.ts";
  *
  * `nothing queries a table the migrations dropped` scans `scripts/` as well as the services,
  * matching `from|join|into|update|delete from` followed by `zz.<table>` with no comment
- * stripping and no exemption for this directory. A `replace` string spelling the dropped table
- * out would therefore make THIS file the finding — a spec that turns the gate red at baseline
- * on the very check it exists to measure, which is worse than no spec at all.
- *
- * Disclosed rather than left in, for the same reason `specs-documents.ts` disclosed its own
- * assembled path: a script under `scripts/` stepping around one of this repository's checks is
- * exactly the shape those checks exist to find, and saying so is what stops it becoming a
- * pattern somebody copies. The planted file gets the contiguous name; this file never holds it.
+ * stripping and no exemption for this directory, so a `replace` string spelling the dropped
+ * table out would make this file the finding. The planted file gets the contiguous name; this
+ * file never holds it.
  */
 const DROPPED_TABLE = `zz.${"block_tool"}`;
 
 export const COV_SECURITY: readonly MutationSpec[] = [
-  // ── scripts/gate/checks/security-boundary.ts ────────────────────────────────────────────
+  // scripts/gate/checks/security-boundary.ts
   {
     check: "scripts/gate/checks/security-boundary.ts",
     target: "a value crossing into a shell is quoted for a shell",
@@ -90,8 +76,8 @@ export const COV_SECURITY: readonly MutationSpec[] = [
     assertion: "a path that must carry a token is not on the public list",
     subject: "services/gateway/src/server.ts",
     find: 'const PUBLIC_PREFIXES = ["/schemas/", "/auth/", "/oauth/", "/.well-known/"];',
-    replace: 'const PUBLIC_PREFIXES = ["/schemas/", "/auth/", "/oauth/", "/.well-known/", "/p/"];',
-    planted: "every block door under /p/ becomes reachable with no token at all, on a gateway " +
+    replace: 'const PUBLIC_PREFIXES = ["/schemas/", "/auth/", "/oauth/", "/.well-known/", "/eval/"];',
+    planted: "the evaluation door becomes reachable with no token at all, on a gateway " +
       "that answers from the internet — the exception list is the one thing standing between " +
       "a deny-by-default middleware and a public MCP surface",
   },
@@ -142,11 +128,10 @@ export const COV_SECURITY: readonly MutationSpec[] = [
     replace: '      res.status(404).set("Allow", "POST").json({',
     planted: "opening the optional server-to-client stream answers 404 instead of the spec's " +
       "405, so the client reads a dead transport where it should read 'this server does not " +
-      "push' — three of those open the front end's per-user circuit breaker for good, and " +
-      "the person is told to reconnect credentials that were never the problem",
+      "push', and the person is told to reconnect credentials that were never the problem",
   },
 
-  // ── scripts/gate/checks/security-identity.ts ────────────────────────────────────────────
+  // scripts/gate/checks/security-identity.ts
   {
     check: "scripts/gate/checks/security-identity.ts",
     target: "the team a person acts for is stored, not asserted",
@@ -230,7 +215,7 @@ export const COV_SECURITY: readonly MutationSpec[] = [
       "target",
   },
 
-  // ── scripts/gate/checks/security-secrets.ts ─────────────────────────────────────────────
+  // scripts/gate/checks/security-secrets.ts
   {
     check: "scripts/gate/checks/security-secrets.ts",
     target: "no proxy forwards the caller's credentials upstream",
@@ -238,39 +223,9 @@ export const COV_SECURITY: readonly MutationSpec[] = [
     subject: "services/gateway/src/relay.ts",
     find: "        if (HOP_HEADERS.has(lk) || NEVER_FORWARD.has(lk)) continue;",
     replace: "        if (HOP_HEADERS.has(lk)) continue;",
-    planted: "the one relay both the core door and every block door pass through copies the " +
+    planted: "the one relay both the core door and the eval door pass through copies the " +
       "caller's Authorization header upstream, so a third party receives the PAT that " +
       "authenticates as that person against this platform — and nothing about the call fails",
-  },
-  {
-    check: "scripts/gate/checks/security-secrets.ts",
-    target: "anything that stores a credential can also remove it",
-    assertion: "a tool that writes into the credential store has a counterpart that removes",
-    subject: "services/gateway/src/access-door.ts",
-    find: '  server.registerTool(\n    "team_mine",',
-    replace: "  server.registerTool(\n" +
-      '    "credential_set_mine",\n' +
-      "    {\n" +
-      "      description:\n" +
-      '        "WHEN you want your own key used for a block instead of the team\'s. RETURNS " +\n' +
-      '        "confirmation that it is stored. REFUSES a request it cannot identify.",\n' +
-      "      inputSchema: { api_key: z.string() },\n" +
-      "    },\n" +
-      "    async ({ api_key }) => {\n" +
-      '      if (!id) return text("ERROR: no user identity on this request");\n' +
-      '      return text("stored a key of " + api_key.length + " characters");\n' +
-      "    },\n" +
-      "  );\n\n" +
-      '  server.registerTool(\n    "team_mine",',
-    planted: "a tool that stores a person's own block key ships with no counterpart that " +
-      "removes one, so a key put into the store can never be taken out — deactivating the " +
-      "person stops them authenticating and leaves the platform going on injecting their key, " +
-      "which is no answer at all when the reason to remove one is that it leaked",
-    caveat: "this check selects setters by NAME, and its own comment records that the " +
-      "verb-first selector matches nothing on today's noun-first surface — there are in fact " +
-      "no credential tools on this door at all, so the loop runs zero times and the check " +
-      "cannot currently fail. This row adds the surface the check was written for and shows " +
-      "it fires on that; it does not show the check covers anything that ships today",
   },
   {
     check: "scripts/gate/checks/security-secrets.ts",
@@ -299,7 +254,7 @@ export const COV_SECURITY: readonly MutationSpec[] = [
       "nobody can log in on the day it is installed",
   },
 
-  // ── scripts/gate/checks/data-sql.ts ─────────────────────────────────────────────────────
+  // scripts/gate/checks/data-sql.ts
   {
     check: "scripts/gate/checks/data-sql.ts",
     target: "a team whose store is gone loses its index rows",
@@ -358,7 +313,7 @@ export const COV_SECURITY: readonly MutationSpec[] = [
     subject: "packages/tools/src/ops/plugin-surface.ts",
     find: "      select name, door from zz.plugin_tool",
     replace: `      select name, door from ${DROPPED_TABLE}`,
-    planted: "the surface report reads the table migration 058 dropped, left behind by the " +
+    planted: "the surface report reads a dropped table, left behind by the " +
       "rename that moved the surface onto the plugin — the statement errors at run time and " +
       "takes whatever reads its result with it, and no compiler can see it because the SQL " +
       "is a template literal",
@@ -404,7 +359,7 @@ export const COV_SECURITY: readonly MutationSpec[] = [
       "rows, which is exactly how the last attribution bug stayed invisible",
   },
 
-  // ── scripts/gate/checks/data-telemetry.ts ───────────────────────────────────────────────
+  // scripts/gate/checks/data-telemetry.ts
   {
     check: "scripts/gate/checks/data-telemetry.ts",
     target: "an initiative is carried forward within a team, never across a switch between two",
@@ -495,9 +450,8 @@ export const COV_SECURITY: readonly MutationSpec[] = [
     find: "    if (parseEnvelope(prev).outcome) return; // already closed once",
     replace: "    if (!prev) return; // nothing on disk to compare against",
     planted: "closing an initiative a second time appends a second ledger row while the " +
-      "document keeps one outcome, so what OKR grading and flow-compare COUNT and what the " +
-      "closing documents SAY disagree — silently, and the disagreement is invisible from " +
-      "either side",
+      "document keeps one outcome, so what the ledger counts and what the closing documents " +
+      "say disagree — silently, and the disagreement is invisible from either side",
   },
   {
     check: "scripts/gate/checks/data-telemetry.ts",
@@ -537,7 +491,7 @@ export const COV_SECURITY: readonly MutationSpec[] = [
       "on it quietly stop containing those calls",
   },
 
-  // ── scripts/gate/checks/data-telemetry-reports.ts ───────────────────────────────────────
+  // scripts/gate/checks/data-telemetry-reports.ts
   {
     check: "scripts/gate/checks/data-telemetry-reports.ts",
     target: "the evolution loop is closed, and separate from what it measures",
@@ -587,9 +541,9 @@ export const COV_SECURITY: readonly MutationSpec[] = [
     find: "          teamSlug: req.zzIdentity?.activeTeam ?? null,",
     replace: "          // a measurement is not a team's property",
     planted: "every tool call is written with no team, on the busiest kind of row there is — " +
-      "flow-compare counts each one UNATTRIBUTED and watch-results builds 'a team has gone " +
-      "quiet' out of a column that is always null. Both run, both report nothing, and nothing " +
-      "is wrong as far as either can tell: an absent team reads exactly like a quiet platform",
+      "watch-results builds 'a team has gone quiet' out of a column that is always null. It " +
+      "runs, reports nothing, and nothing is wrong as far as it can tell: an absent team reads " +
+      "exactly like a quiet platform",
   },
   {
     check: "scripts/gate/checks/data-telemetry-reports.ts",

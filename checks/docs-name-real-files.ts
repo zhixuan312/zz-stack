@@ -1,9 +1,9 @@
-// Every path named in prose or in a runtime string must exist. CHANGELOG.md is exempt BY NAME:
-// it is a historical record and its .mjs mentions were true when written.
+// Every path named in prose or in a runtime string must exist. DELIBERATE: CHANGELOG.md is
+// exempt by name — it is a historical record and its .mjs mentions were true when written.
 import { readFileSync, existsSync } from "node:fs";
 const fail: string[] = [];
 const DOCS = ["README.md", "ARCHITECTURE.md", "CONTRIBUTING.md",
-              "deploy/README.md", "deploy/.env.example",
+              "deploy/README.md", "deploy/.env.example", "deploy/RESTORE-AND-CUTOVER.md",
               "deploy/install-backup-cron.sh", "scripts/build-image.sh"];
 for (const d of DOCS) {
   if (!existsSync(d)) { fail.push(`${d} does not exist — the sweep list is stale`); continue; }
@@ -13,10 +13,18 @@ for (const d of DOCS) {
       if (p.endsWith(".mjs")) fail.push(`${d}:${i + 1} names ${p}, which no longer exists`);
       else if (!existsSync(p)) fail.push(`${d}:${i + 1} names ${p}, which does not exist`);
     }
+    // Migrations too: the sweep above reads only .ts and .mjs, and a restore rehearsal is
+    // followed literally.
+    for (const m of line.matchAll(/(services\/gateway\/migrations\/[A-Za-z0-9._-]+\.sql)/g)) {
+      if (!existsSync(m[1])) {
+        fail.push(`${d}:${i + 1} names ${m[1]}, which does not exist — an operator following ` +
+                  "this document pipes a missing file into psql");
+      }
+    }
   });
 }
-// The three functional runtime strings — NOT comments. A stale one is read by a human at the
-// moment something has already failed, and followed literally.
+// The functional runtime strings, not comments. A stale one is read by a human at the moment
+// something has already failed, and followed literally.
 for (const f of ["services/gateway/src/package/plugin-lock.ts",
                  "packages/tools/src/ops/register-plugins.ts"]) {
   readFileSync(f, "utf8").split("\n").forEach((line, i) => {

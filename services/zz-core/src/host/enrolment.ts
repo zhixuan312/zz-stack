@@ -2,8 +2,8 @@
  * Which step of a run a document or a source is evidence for — read from the flow's own
  * manifest, never from a list in this file.
  *
- * THE MAPPING ALREADY EXISTS AND IS ALREADY DECLARED. `catalog/sdlc/sdlc-flow/flow.json`
- * says, stage by stage, what each one produces:
+ * COUPLED: `catalog/sdlc/sdlc-flow/flow.json` already declares, stage by stage, what each
+ * stage produces:
  *
  *     sdlc-explore     produces explore.md
  *     sdlc-spec        produces spec.md
@@ -13,21 +13,16 @@
  *     sdlc-execute     produces nothing
  *     sdlc-review      produces review.md
  *
- * and the reviewed module's step ids are those same seven names. So a hardcoded table here
- * would be a second declaration of a thing already declared once — the shape this platform
- * spent an initiative removing. When a flow adds a stage, this follows without an edit;
- * when a flow renames one, this stops matching and the run stops being credited, which is
- * visible, rather than silently crediting the wrong step.
+ * and the reviewed module's step ids are those same seven names. When a flow adds a stage this
+ * follows without an edit; when a flow renames one this stops matching and the run stops being
+ * credited, which is visible rather than silently crediting the wrong step.
  *
- * NULL IS THE ORDINARY ANSWER. Most writes are not evidence for anything: a source on a
+ * Null is the ordinary answer. Most writes are not evidence for anything: a source on a
  * freeform initiative, a document on a flow with no reviewed module, a stage that produces
- * "nothing". Returning null rather than guessing is what keeps "this was not evidence" from
- * being recorded as "this was evidence for the step I assumed".
+ * "nothing".
  *
- * STAGES ARRIVE FROM THE CALLER, already parsed, which is why this file imports nothing.
- * Every caller in the service holds a `Chain`, and a chain carries the flow's stages — so
- * re-reading the manifest here would be a second read of a file already read, and two
- * readings of one declaration are two chances to disagree about it.
+ * Stages arrive from the caller, already parsed, which is why this file imports nothing. Every
+ * caller in the service holds a `Chain`, and a chain carries the flow's stages.
  */
 
 /** A stage as the manifest declares it, narrowed to the two fields this file asks about. */
@@ -40,10 +35,9 @@ export interface DeclaredStage {
 /**
  * The step a document is evidence for, by the name the flow declares it under.
  *
- * MATCHED ON THE DECLARED NAME, NOT A PATH. Callers hold a repo-relative path like
- * `2026-09-20-x/spec.md`; the manifest declares `spec.md`. Taking the last segment is the
- * whole translation, and doing it here rather than at each call site keeps four callers from
- * disagreeing about it.
+ * Matched on the declared name, not a path: callers hold a repo-relative path like
+ * `2026-09-20-x/spec.md` and the manifest declares `spec.md`. Taking the last segment here
+ * rather than at each call site keeps four callers from disagreeing about it.
  */
 export function stepForDocument(
   stages: readonly DeclaredStage[], path: string,
@@ -53,14 +47,12 @@ export function stepForDocument(
 }
 
 /**
- * The step a SOURCE is evidence for: the stage that produces a source supporting that
- * document.
+ * The step a source is evidence for: the stage that produces a source supporting that document.
  *
- * THIS IS HOW AN AUDIT IS EVIDENCED, and it is why the module asks those two steps for
- * `1x audit` rather than `1x document`. An audit round does not write a document of its own
- * in the flow's declaration — it produces a source that supports the document it audited. A
- * platform that looked for a document here would find none and would report every audited
- * initiative as un-audited.
+ * COUPLED: this is how an audit is evidenced, and why `services/zz-core/src/reviewed-modules.ts`
+ * asks those two steps for `1x audit` rather than `1x document`. An audit round produces a
+ * source supporting the document it audited rather than a document of its own, so looking for a document here would
+ * report every audited initiative as un-audited.
  */
 export function stepForSource(
   stages: readonly DeclaredStage[], supports: string | null,

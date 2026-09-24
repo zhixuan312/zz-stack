@@ -1,29 +1,20 @@
 /**
- * evolve-report — which STEP is not working, and the platform's own words for why.
+ * evolve-report — which step is not working, and the platform's own words for why.
  *
  *   zz-tool evolve-report [--since '30 days'] [--psql '<command>']
  *
- * The loop this serves: evidence arrives, something is found not to work, a skill or a
- * guardrail or a contract changes, the suite re-verifies, and the next round's evidence says
- * whether the change was right. Two of those steps already had tools — tool-report says which
- * TOOL is refused and flow-compare says which FLOW costs more — and the one in between did
- * not. Neither answers "ops-select is where this stalls", which is the only form of the answer
- * a skill can be edited from.
+ * tool-report says which tool is refused; it does not answer "sdlc-spec is where this stalls",
+ * which is the only form of the answer a skill can be edited from.
  *
- * ATTRIBUTION BY TRACE, NOT BY GUESS. Every `skill_read` says which skill an agent loaded;
- * everything it does next, it does while following that skill. So the refusals that follow a
- * load are attributable to the step being followed, per actor, in order. Nothing here infers
- * a stage from a document name — a flow may write the same document from more than one step,
- * and the point is to be wrong less often than prose is.
+ * Attribution is by trace, not by guess. Every `skill_read` says which skill an agent loaded, and
+ * everything it does next it does while following that skill, so the refusals that follow a load are
+ * attributable to the step being followed, per actor, in order. Nothing here infers a stage from a
+ * document name — a flow may write the same document from more than one step.
  *
- * The refusal TEXT is the output that matters, not the count. These are the platform's own
- * sentences, written to say which rule was broken, and grouped by class they are the natural
- * language feedback that reflective prompt evolution needs and most teams cannot produce. A
- * count says a step is expensive; the sentence says what to change.
+ * The refusal text is the output that matters, not the count: these are the platform's own sentences
+ * saying which rule was broken. A count says a step is expensive; the sentence says what to change.
  *
- * Run by an analyst, never installed beside the agent being measured. Improvement is a
- * service the platform owes its users, not homework it sets them — and letting the thing
- * under evaluation run its own evaluation is the fastest way to make one meaningless.
+ * Run by an analyst, never installed beside the agent being measured.
  */
 import { refusalClass, resolveStep, resolveTool } from "@zz/contracts";
 
@@ -32,9 +23,7 @@ import { DEFAULT_PSQL, psqlRows } from "../lib/psql.js";
 
 const SHOW = 3;
 
-/** A row of zz.tool_call. Flat columns, because the table has them: this used to be a
- * `subject` string to split and a `detail` bag to reach into, and every reader spelled the
- * reaching-in slightly differently. */
+/** A row of zz.tool_call. Flat columns, because the table has them. */
 interface CallRow {
   ts: string;
   /** A stable hash, never a person. Only used to correlate one conversation. */
@@ -111,18 +100,15 @@ function main(): number {
     // `surface`/`tool` kept as separate columns.
     const tool = resolveTool(e.surface, e.tool);
     const ids = e.ids ?? {};
-    // THE ROW SAYS WHICH STEP, when it was written by a gateway that knew. Attribution is
-    // decided at the door now — per conversation, with an expiry, and with the hash of the
-    // skill text the model was actually served — so this reads a fact instead of re-deriving
-    // a guess. Re-derivation keyed on the PERSON and never expired: one human running two
-    // conversations had every call attributed to whichever skill either had loaded last.
+    // The row says which step, when it was written by a gateway that knew: attribution is decided at
+    // the door — per conversation, with an expiry, and with the hash of the skill text the model was
+    // actually served. Re-deriving it keys on the person and never expires, so one human running two
+    // conversations has every call attributed to whichever skill either loaded last.
     //
-    // The trace below still runs for rows written before that existed. It is the same rule
-    // the gateway now applies once, kept here only so old evidence stays readable — and it is
-    // marked, because a number that mixes an exact attribution with a heuristic one and says
-    // neither is the kind of measurement this whole report exists to replace.
-    // Resolved through SKILL_ALIAS (FR-37a) so a step renamed mid-window is one series, not
-    // two — a step is matched against a known skill name on both sides below.
+    // The trace below still runs for rows written before that existed, and is marked, because a
+    // number mixing an exact attribution with a heuristic one and saying neither is what this report
+    // exists to replace.
+    // Resolved through SKILL_ALIAS so a step renamed mid-window is one series, not two.
     const stamped = e.step ? resolveStep(e.step) : "";
     if (tool === "skill_read" && !stamped) {
       if (ids.name) following.set(e.caller ?? "", resolveStep(ids.name));
@@ -130,17 +116,16 @@ function main(): number {
     }
     if (stamped) derivedFromRow += 1; else derivedByTrace += 1;
     const skill = stamped || following.get(e.caller ?? "");
-    // Work done before any skill was loaded belongs to no step. Counted and reported rather
-    // than folded into whichever step came first, which would blame a step for calls made
-    // before anyone had read it.
+    // Work done before any skill was loaded belongs to no step. Counted and reported rather than
+    // folded into whichever step came first, which would blame a step for calls made before anyone
+    // had read it.
     if (!skill) { if (e.refusal) unattributed += 1; continue; }
     const s = step(skill);
     s.calls += 1;
-    // PER VERSION OF THE STEP. `step_sha` is the hash of the skill text the model was served,
-    // so this table is the one that can say a change worked: the same step, two versions, two
-    // refusal counts. Rows written before the gateway stamped it fall under `(unversioned)`
-    // rather than being folded into whichever version came later — a change credited with a
-    // result from before it existed is worse than no result.
+    // Per version of the step. `step_sha` is the hash of the skill text the model was served, so
+    // this table is the one that can say a change worked: same step, two versions, two refusal
+    // counts. Rows written before the gateway stamped it fall under `(unversioned)` rather than
+    // being folded into whichever version came later.
     {
       const sha = e.step_sha || "(unversioned)";
       let per = versions.get(skill);
@@ -150,18 +135,14 @@ function main(): number {
       v.calls += 1;
       if (e.refusal) v.refusals += 1;
     }
-    // WHAT A PERSON SENT BACK, beside what the platform refused.
-    //
-    // A refusal is the platform saying a rule was broken. A revision is a PERSON saying the
-    // document was wrong — the richest signal there is about a step, and the one this report
-    // was blind to. `document_revise` exists precisely because somebody's words changed a
-    // document, and `source_add` after a gate is material that arrived too late to have been
-    // considered. Both are recorded on every run and neither reached the improvement loop.
+    // What a person sent back, beside what the platform refused. A refusal is the platform saying a
+    // rule was broken; a revision is a person saying the document was wrong. `source_add` after a
+    // gate is material that arrived too late to have been considered.
     //
     // Counted, never quoted. The reasons live in the team's own store — a source document, a
-    // no_signoff_reason — and reading those into a platform report would carry a tenant's
-    // words across a boundary that is deliberately one-way: conclusions cross, files do not.
-    // The count says WHICH STEP to go and read; the reading needs the team's own access.
+    // no_signoff_reason — and reading those into a platform report would carry a tenant's words
+    // across a boundary that is deliberately one-way: conclusions cross, files do not. The count
+    // says which step to go and read.
     if (tool === "document_revise" && e.ok) s.revisions += 1;
     if (tool === "source_add" && e.ok) s.lateSources += 1;
     if (!e.refusal) continue;
@@ -171,9 +152,9 @@ function main(): number {
     s.tools.set(tool, (s.tools.get(tool) ?? 0) + 1);
   }
 
-  // Ranked by what a step COSTS, which is refusals plus the rounds a person spent sending it
-  // back. Ranking on refusals alone put a step that never refuses and is rewritten three
-  // times every run below one that refuses twice and is right the first time.
+  // Ranked by what a step costs: refusals plus the rounds a person spent sending it back. Ranking on
+  // refusals alone puts a step that never refuses and is rewritten three times every run below one
+  // that refuses twice and is right the first time.
   const ranked = [...steps.values()]
     .filter((s) => s.refusals > 0 || s.revisions > 0)
     .sort((a, b) => (b.refusals + b.revisions) - (a.refusals + a.revisions)
@@ -200,22 +181,21 @@ function main(): number {
     console.log();
   }
 
-  // The change is a person's to make. This says which step and hands over the sentences; it
-  // does not propose an edit, because a proposal generated from the same data that produced
-  // the problem reads as evidence and is not.
+  // The change is a person's to make. This says which step and hands over the sentences; it does not
+  // propose an edit, because a proposal generated from the same data that produced the problem reads
+  // as evidence and is not.
   console.log("  Each ERROR line is the platform's own refusal, saying which rule was broken.");
   console.log("  A step SENT BACK is a person saying the document was wrong, which no refusal");
   console.log("  can tell you — go and read those revisions in the team's own store, with their");
   console.log("  access: the reason is in the source they attached, and it is theirs, not ours.");
-  console.log("  That is the feedback to edit a skill, a guardrail or a block contract from —");
+  console.log("  That is the feedback to edit a skill or a guardrail from —");
   console.log("  then re-run the suite, and the next round of this report says whether it worked.");
   if (unattributed) {
     console.log(`\n  ${unattributed} refusals happened before any skill was loaded, and belong to no step.`);
   }
 
-  // DID THE CHANGE WORK. Every other table here says which step is expensive; this is the
-  // only one that can say whether editing it helped, because it splits a step by the hash of
-  // the skill text the model was actually served. Two versions, two refusal rates, same step.
+  // Did the change work. The only table here that can say whether editing a step helped, because it
+  // splits a step by the hash of the skill text the model was actually served.
   const multi = [...versions].filter(([, per]) => per.size > 1);
   if (multi.length) {
     console.log(`\n  ── THE SAME STEP, ACROSS VERSIONS OF ITSELF ─────────────────────────`);
@@ -236,8 +216,8 @@ function main(): number {
     console.log(`  becomes the comparison.`);
   }
 
-  // HOW THE ATTRIBUTION WAS MADE. An exact answer and a heuristic one reported as one number
-  // is the failure this whole report exists to end, so the mix is stated rather than assumed.
+  // How the attribution was made. An exact answer and a heuristic one reported as one number is what
+  // this report exists to end, so the mix is stated rather than assumed.
   if (derivedByTrace || derivedFromRow) {
     console.log(`\n  Attribution: ${derivedFromRow} call(s) stamped by the gateway with the step`);
     console.log(`  they belonged to; ${derivedByTrace} recovered by replaying skill loads in order,`);

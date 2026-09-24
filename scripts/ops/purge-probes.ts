@@ -1,32 +1,25 @@
 /**
  * Remove what the live chain check left behind.
  *
- * `chain-check` opens a FRESH initiative on every run — `chain-check-<DDMM>-<uuid4>` — walks a
- * whole flow through it, and closes it. Closing is not deleting, and nothing ever deleted it,
- * so every run of `scripts/release.ts` against a live deployment left an initiative and every
- * document it wrote permanently in that deployment's store.
+ * `chain-check` opens a fresh initiative on every run — `chain-check-<DDMM>-<uuid4>` — walks a whole
+ * flow through it, and closes it. Closing is not deleting, so every run of `scripts/release.ts`
+ * against a live deployment leaves an initiative and every document it wrote permanently in that
+ * deployment's store.
  *
- * Measured on 2026-09-16, three days after the first probe run: 58 probe initiatives holding
- * 463 indexed rows, against 17 real ones — and 240 of the platform's 350 runs. Four of the
- * probe initiatives were on `xuan`, a real person's team, which is how it was noticed.
+ * That is the denominator, not untidiness: every ratio anybody computes about this platform — how
+ * long a run takes, which plugin a call belongs to, how many gates are waiting on a person — is
+ * taken over these tables, and a store that is mostly probe output cannot answer any of them.
  *
- * That is not untidiness, it is the DENOMINATOR. Every ratio anybody computes about this
- * platform — how long a run takes, which plugin a call belongs to, how many gates are waiting
- * on a person — is taken over these tables, and a store that is four fifths probe output
- * cannot answer any of those questions. Three separate measurements were wrong this way
- * before anyone looked.
- *
- * AN OPERATOR SCRIPT, DELIBERATELY NOT A TOOL ON ANY DOOR. Deletion is the one act that can
- * destroy the record a gate was recorded on, and no agent needs it: an agent that can delete
- * a gated document can erase the evidence it was judged against. So this runs where the files
- * and the database both are, by somebody who went there on purpose.
+ * An operator script, deliberately not a tool on any door. Deletion can destroy the record a gate
+ * was recorded on, and an agent that can delete a gated document can erase the evidence it was
+ * judged against. So this runs where the files and the database both are, by somebody who went
+ * there on purpose.
  *
  *   node scripts/ops/purge-probes.ts              # counts only, changes nothing
  *   node scripts/ops/purge-probes.ts --apply      # deletes
  *
- * THE PATTERN IS NOT AN ARGUMENT. It is `chain-check-`, fixed, because a purge that takes a
- * pattern from the command line is one typo away from deleting a team's work — and the only
- * thing this exists to remove is traffic the platform generated against itself.
+ * The pattern is not an argument. It is `chain-check-`, fixed: a purge that takes a pattern from the
+ * command line is one typo away from deleting a team's work.
  */
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -42,8 +35,8 @@ const ARTIFACTS = process.env.ZZ_ARTIFACTS ?? "/artifacts";
 
 const db = new pg.Pool({ connectionString: process.env.TEAM_DB_URL });
 
-/** Counted BEFORE and AFTER, and both are printed. A purge that reports only what it intended
- * to do is a purge nobody can check; the pair is what shows it did that and nothing else. */
+/** Counted before and after, and both are printed: a purge that reports only what it intended to do
+ * is a purge nobody can check. */
 async function census() {
   const one = async (label: string, sql: string) =>
     [label, Number((await db.query(sql)).rows[0].n)] as const;
@@ -53,24 +46,23 @@ async function census() {
     one("event", `select count(*) n from zz.event where initiative like '${LIKE}'`),
     one("run", `select count(*) n from zz.run r join zz.initiative i on i.id = r.initiative_id
                 where i.slug like '${LIKE}'`),
-    // FROM zz.knowledge_node, which is where a node has lived since migration 059. This
-    // counted zz.doc — where nodes no longer are — so it read 0 whatever the store held, the
-    // DELETE below deleted nothing, and a purge that removed the FILES left their index rows
-    // behind. Two probe nodes were sitting in knowledge_search results when this was found.
+    // From zz.knowledge_node, which is where a node lives. Counting zz.doc
+    // reads 0 whatever the store holds, so the DELETE below deletes nothing and a purge that removed
+    // the files leaves their index rows behind.
     one("node", `select count(*) n from zz.knowledge_node where path ilike '${LIKE}'`),
     one("REAL initiative", `select count(*) n from zz.initiative where slug not like '${LIKE}'`),
-    // INITIATIVE documents only — nodes are their own table now, and were their own subject
-    // before that: counting both here made deleting 58 probe NODES look like real documents
-    // going missing, and the survivor assertion fired on a purge that had done the right thing.
+    // Initiative documents only — nodes are their own table. Counting both makes deleting probe
+    // nodes look like real documents going missing, and fires the survivor assertion on a purge that
+    // did the right thing.
     one("REAL doc", `select count(*) n from zz.doc
                      where initiative not like '${LIKE}' and path not like 'nodes/%'`),
     one("REAL node", `select count(*) n from zz.knowledge_node where path not ilike '${LIKE}'`),
   ]));
 }
 
-/** Probe initiative directories on disk, which are the SOURCE OF TRUTH — `zz.doc` is an index
- * projected from each file's frontmatter, so a row deleted without its file comes back on the
- * next reindex. Both halves or neither. */
+/** Probe initiative directories on disk, which are the source of truth — `zz.doc` is an index
+ * projected from each file's frontmatter, so a row deleted without its file comes back on the next
+ * reindex. Both halves or neither. */
 function probeDirs(): string[] {
   const teams = join(ARTIFACTS, "teams");
   if (!existsSync(teams)) return [];
@@ -82,15 +74,13 @@ function probeDirs(): string[] {
   });
 }
 
-/** The probe's KNOWLEDGE NODES, which do not live under an initiative and so survived the
- * first version of this script entirely. chain-check calls `knowledge_add`, and a node lands
- * in `<team>/_knowledge/nodes/` keyed by nothing the initiative purge can see: 58 of them were
- * left behind, 5 on a real person's team.
+/** The probe's knowledge nodes, which do not live under an initiative and so are invisible to the
+ * initiative purge: chain-check calls `knowledge_add`, and a node lands in `<team>/_knowledge/nodes/`
+ * keyed by nothing that purge can see.
  *
- * MATCHED ON THE PATH, NEVER THE TITLE. One real node on this deployment is called "A check
- * not wired into the gate is not enforced — unless it cannot be", which mentions the chain
- * check in its title and is somebody's actual finding. Matching titles would have deleted it.
- * The 58 real probes are two generated stems, `chain-check-subject-probe.md` and
+ * Matched on the path, never the title. A real node called "A check not wired into the gate is not
+ * enforced — unless it cannot be" mentions the chain check in its title and is somebody's actual
+ * finding. The probes are two generated stems, `chain-check-subject-probe.md` and
  * `chain-check-subject-probe-superseding.md`. */
 function probeNodes(): string[] {
   const teams = join(ARTIFACTS, "teams");
@@ -142,15 +132,14 @@ if (!APPLY) {
   process.exit(0);
 }
 
-// ORDER MATTERS, and it is the foreign keys that set it. `zz.doc.initiative_id` references
-// `zz.initiative` with NO ACTION, so the documents go first or the initiative delete is
-// refused. `zz.run.initiative_id` is ON DELETE CASCADE, so the 240 probe runs go with their
-// initiatives whether or not this script mentions them — that is the schema's decision, not
-// this script's, and it is named here so nobody is surprised by the count.
+// Order matters, and the foreign keys set it. `zz.doc.initiative_id` references `zz.initiative` with
+// NO ACTION, so the documents go first or the initiative delete is refused. `zz.run.initiative_id` is
+// ON DELETE CASCADE, so probe runs go with their initiatives whether or not this script mentions
+// them — the schema's decision, named here so nobody is surprised by the count.
 //
-// The events go too. They have no foreign key, so leaving them would orphan 1,882 rows
-// pointing at initiatives that no longer exist — rows that would go on poisoning exactly the
-// measurements this purge exists to clean, while referring to nothing a reader could open.
+// The events go too. They have no foreign key, so leaving them orphans rows pointing at initiatives
+// that no longer exist — rows that would go on poisoning the measurements this purge exists to
+// clean, while referring to nothing a reader could open.
 await db.query("begin");
 try {
   const d = await db.query(`delete from zz.doc where initiative like '${LIKE}'`);
@@ -167,21 +156,21 @@ try {
 
 for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
 for (const f of nodes) rmSync(f, { force: true });
-// AND THE INDEX A PERSON READS. `_knowledge/index.md` is appended to on every mint and
-// rebuilt by nothing, so deleting a node's file and its row left the node listed in the one
-// place `zz-platform` tells every agent to look first: 62 probe rows were sitting in it.
+// And the index a person reads. `_knowledge/index.md` is appended to on every mint and rebuilt by
+// nothing, so deleting a node's file and its row leaves the node listed in the one place
+// `zz-platform` tells every agent to look first.
 //
-// BY ID, NEVER BY TITLE — the same rule probeNodes() keeps, and for the same reason. A node's
-// id is the leading number of its file name, so the rows to drop are derived from the files
-// just deleted rather than matched on words a real finding might also carry.
+// By id, never by title — the same rule probeNodes() keeps. A node's id is the leading number of its
+// file name, so the rows to drop are derived from the files just deleted rather than matched on
+// words a real finding might also carry.
 const droppedRows = dropIndexRows(nodes);
 console.log(`removed ${dirs.length} directories, ${nodes.length} knowledge nodes and ${droppedRows} index row(s)`);
 
 const after = await census();
 console.log("after:", after);
 
-// THE ASSERTION IS ABOUT THE SURVIVORS, not about the victims. "I deleted 463 rows" is
-// satisfied by deleting the wrong 463; "every real initiative is still here" is not.
+// The assertion is about the survivors, not about the victims. "I deleted 463 rows" is satisfied by
+// deleting the wrong 463; "every real initiative is still here" is not.
 const bad: string[] = [];
 for (const k of ["doc", "initiative", "event", "run", "node"]) {
   if (after[k] !== 0) bad.push(`${after[k]} ${k} rows still match ${PROBE}`);

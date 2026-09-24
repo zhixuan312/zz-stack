@@ -3,19 +3,13 @@
 Prereqs: any Linux host with Docker and the compose plugin. **No repository, no toolchain,
 no build** — an installer runs published images.
 
-This platform serves **MCP to terminal clients**. It has no browser front end of its own: the
-one browser surface is the admin console, which is a separate app with its own compose file,
-and `<gateway>/app` for reading a team's knowledge. A previous front end was removed on
-2026-09-10 and nothing here provisions accounts into one.
+This platform serves **MCP to terminal clients**. Its one browser surface is the admin console,
+a separate app with its own compose file.
 
 ## Standing up a host from scratch
 
 **A new host never receives this repository.** It receives the release bundle, the same
-artifact an outside installer gets, and it runs published images — which is what the second
-line of this file promises and what a second path here used to quietly break. The sync script
-— deleted on 2026-09-11, and named in the changelog rather than here because naming it here is
-telling you to go and run it — rsynced the working tree onto a host and built the images
-there, leaving 1.8M and 22M of stale source on the one host we have. **There is one way the
+artifact an outside installer gets, and it runs published images. **There is one way the
 platform reaches a server.**
 
 Each step is its own decision, which is why each is its own script rather than one that makes
@@ -73,8 +67,7 @@ Then mint the one token that opens the platform:
 ```
 
 **Why a script mints the first token.** Every other way to get one needs one already —
-`pat_issue` and `pat_issue` both resolve the caller before they will mint
-anything. A fresh install can therefore authenticate nobody, which is a closed loop with no
+`pat_issue` resolves the caller before it will mint anything. A fresh install can therefore authenticate nobody, which is a closed loop with no
 door into it. `issue-first-pat.sh` is that door, and it is deliberately the operator's: it
 runs on the host, against the database, by someone who already has root.
 
@@ -88,8 +81,8 @@ better value than we already know.
 |---|---|
 | `LLM_BASE_URL` + `LLM_API_KEY` | any OpenAI-compatible endpoint and a key for it |
 | `GATEWAY_PUBLIC_URL` | this platform's public gateway address. **Every client package generated here embeds it**, so a wrong value hands out unreachable URLs to everyone who installs. It must be reachable from a laptop, not just from inside the network |
-| `SUPERADMIN_EMAIL` | the platform superadmin — who can create teams, issue tokens and install flows |
-| `BOOTSTRAP_TEAM` | the first team, created on boot with the superadmin as its admin. **Set it.** A deployment with a superadmin and no team looks perfectly healthy and is not: every document lands in a per-user store instead of the team's, and nobody notices until they go looking for it. **It is re-seeded on EVERY boot** — `on conflict do nothing`, so it is a no-op once the team exists, but a team named here cannot be deleted: it returns on the next restart. Point it at a team you actually use, and change it rather than deleting what it names |
+| `SUPERADMIN_EMAIL` | the platform superadmin — who can create teams, add people and issue tokens |
+| `BOOTSTRAP_TEAM` | the first team, created on boot with the superadmin as its admin. **Set it.** A deployment with a superadmin and no team looks perfectly healthy and is not: every document lands in a per-user store instead of the team's, and nobody notices until they go looking for it. **It is re-seeded on every boot** — `on conflict do nothing`, so it is a no-op once the team exists, but a team named here cannot be deleted: it returns on the next restart. Point it at a team you actually use, and change it rather than deleting what it names |
 | `POSTGRES_PASSWORD` | the platform database's own password |
 | `CONSOLE_PUBLIC_URL` | only if you run the console — see below |
 
@@ -100,7 +93,7 @@ this compose file: it has its own compose file, from the `zz-stack-dashboard` re
 its own path on the host. It is still released by `zz-stack/scripts/release.ts` — one
 release, two components — so what runs there is a published image
 (`ghcr.io/zhixuan312/zz-stack-dashboard`) and the only file the host holds is that compose
-file. It binds to loopback, and Caddy splits ONE host on path: `/auth/*` and `/api/console/*`
+file. It binds to loopback, and Caddy splits one host on path: `/auth/*` and `/api/console/*`
 to this gateway, everything else to the app. Same origin, so the sign-in cookie is
 first-party; split them and it becomes a third-party cookie every browser is entitled to drop.
 
@@ -109,7 +102,7 @@ why, rather than guessing a relying party from the Host header.
 
 | | |
 |---|---|
-| `CONSOLE_PUBLIC_URL` | where a BROWSER reaches the console — and, from it, the whole relying party: its hostname is the RP ID and its origin the expected origin. Never derived from the Host header, because the one value worth forging is exactly the one that must not come from the request. **A registered passkey is bound to the hostname in here**; change it and everybody re-enrols |
+| `CONSOLE_PUBLIC_URL` | where a browser reaches the console — and, from it, the whole relying party: its hostname is the RP ID and its origin the expected origin. Never derived from the Host header, because the one value worth forging is exactly the one that must not come from the request. **A registered passkey is bound to the hostname in here**; change it and everybody re-enrols |
 
 Nobody registers themselves. Create the principal, then mint a one-time enrolment link — the
 first one from the host, because before anyone has a passkey there is no superadmin session
@@ -127,10 +120,10 @@ Later ones come from the console, or from `enrolment_issue` on `/manage/mcp`.
 |---|---|
 | `/core/mcp` | everyone — the platform's own tools |
 | `/manage/mcp` | everyone; **the tool list is your role**, so a tool you cannot execute is a tool you are not offered |
+| `/eval/mcp` | everyone; a client reaches it through the zz-plugin-eval plugin — plugin evaluation |
 
 There is no package route. A person's client package is the public shelf in this
-repository, which their client clones from GitHub; `/pkg/<client>.tgz` went with Codex and
-Hermes on 2026-09-12 and answers 404.
+repository, which their client clones from GitHub.
 
 ## Developing against a checkout
 
@@ -152,11 +145,10 @@ at all, which is the point of the split.
 - **One service is published beyond loopback and it is the gateway.** zz-core and Postgres
   bind to 127.0.0.1 (`INTERNAL_BIND` / `POSTGRES_BIND`); reach them through an SSH tunnel. The
   gateway takes `GATEWAY_BIND`, and it is the one service that may widen, because Caddy has to
-  reach it and it authenticates every request itself. These were ONE variable, so widening the
-  gateway's reach silently published zz-core beside it — and zz-core has no authentication of
-  its own: that port answered `tools/list` to anyone, and `document_read` returned another team's
-  approved spec to a caller who supplied nothing but an email header.
-- The catalog and the platform skills ship INSIDE the image, so a released version describes
+  reach it and it authenticates every request itself. DELIBERATE: separate variables, because
+  zz-core has no authentication of its own — published beside the gateway, it would answer
+  anyone who supplied an email header.
+- The catalog and the platform skills ship inside the image, so a released version describes
   the method as well as the code. They are live-editable only under the build override above.
 - **Air-gapped install:** `docker save ghcr.io/zhixuan312/zz-stack:<version> | gzip >
   zz-images.tgz`, ship it, `docker load` on the server, then use the bundle as above.
@@ -167,21 +159,7 @@ Every command below runs from `deploy/`, which is what the release bundle unpack
 `docker compose` finds its file. `zz-tool` runs the platform's own tools inside the image
 already on the host — no toolchain to install, and no docker socket mounted.
 
-**Credentials** — people store their own key by asking the **ZZ Access** agent. For onboarding
-several at once:
-
-```bash
-export ZZ_TOKEN=<an admin-scope platform token>
-export ZZ_URL=$GATEWAY_PUBLIC_URL      # this deployment's gateway; there is no default
-./zz-tool set-credential --csv keys.csv                    # Email,Platform,Key
-./zz-tool set-credential --csv keys.csv --platform casebox      # Email,Key rows
-./zz-tool set-credential --email alice@x --platform casebox --delete
-```
-
-A member-scope token is refused: acting on another person's behalf is exactly what a terminal
-token is scoped down to prevent. There is no default block, for the reason there is no default
-gateway: a key stored against the wrong one authenticates as nobody and still prints OK.
-Three-column rows carry their own; anything else needs `--platform`.
+`./zz-tool` with no arguments lists the tools it can run.
 
 ## Installing plugins
 
@@ -217,21 +195,14 @@ The shelf is build output, rendered by `npm run build:marketplace` from the cata
 committed here; the gate fails a release that forgot to rebuild it. It lists the platform
 baseline, the access tools and one plugin per flow — everything the catalog holds, rather
 than a set chosen per person, because what a person may actually *use* is decided by their
-role and their team's installs at the door, not by what their shelf lists.
+role at the door, not by what their shelf lists.
 
 `client_setup` on `/manage/mcp` prints these steps with the person's own values.
 
-Claude Code is the only client. Codex and Hermes were served until 2026-09-12 — nobody ran
-either, and `/pkg/<client>.tgz` went with them.
+Claude Code is the only client.
 
 People authenticate with a PAT (`pat_issue`), and get the same identity, the same
 team knowledge store and the same gates — enforced in zz-core, so no client can bypass them.
-
-The team's knowledge is readable in a browser at `<gateway>/app` (PAT login): documents,
-search, and the sources behind each one. Writing on a document there attaches a SOURCE to the
-initiative, through zz-core like every other write — there is no separate comment record,
-because a comment and a source were the same thing wearing two names and only one of them was
-part of the document's history.
 
 ## Sizing
 
@@ -250,22 +221,6 @@ keeps its own data there — and is an ordinary service in this compose, started
 The one caveat the server cannot fix: **the model provider's rate limits.** Concurrent
 reasoning streams share the one `LLM_API_KEY`; raise the plan or rotate several keys.
 
-## Per-user platform credentials (cred-proxy)
-
-Every user brings their OWN API key per building-block platform. The `cred-proxy` service is a
-credential gateway: the caller's own token carries the caller's identity on every MCP call; the
-gateway injects THAT user's stored key and streams the call through to the real endpoint.
-Solves both problems at once: no shared key, and each person works in their own platform app.
-
-- Users self-serve **in chat with the ZZ Access agent**: "store my CaseBox key: ..." →
-  `credential_set` (per-user, masked, never echoed back). That agent carries the access
-  tools and no other does, so a delivery agent asked for a key sends them there rather than
-  collecting one it cannot store.
-- Operators batch-import or revoke with `./zz-tool set-credential`, as above.
-- No key stored → the block's call returns a guidance error naming ZZ Access.
-- Keys live in the `cred-data` volume only, written through one serialised, atomic path in the
-  gateway. Nothing else may open that file.
-
 ## HTTPS
 
 Caddy + nip.io — no domain purchase needed. `deploy/Caddyfile` is a template and
@@ -278,7 +233,7 @@ host for a real domain in the Caddyfile whenever one exists.
 
 ## Connecting to the DB from your laptop
 
-Postgres is published on the SERVER's loopback only (127.0.0.1:5432, `POSTGRES_BIND`) — reach
+Postgres is published on the server's loopback only (127.0.0.1:5432, `POSTGRES_BIND`) — reach
 it through an SSH tunnel; nothing is exposed to the internet:
 
 ```bash
@@ -292,18 +247,18 @@ GUI clients (TablePlus/DBeaver/DataGrip): use their built-in SSH-tunnel tab — 
 
 ## Backups
 
-`deploy/backup.sh` writes **three** things into `$BACKUP_DIR` (default `/root/zz-backups`),
+`deploy/backup.sh` writes **four** things into `$BACKUP_DIR` (default `/root/zz-backups`),
 because losing any one of them loses something no restart brings back:
 
 | | |
 |---|---|
-| the `zz` schema | identity truth — principals, teams, PATs, flow installs, grants, events |
+| the `zz` schema | identity truth — principals, teams, PATs, events |
 | the artifacts volume | every team's documents and knowledge |
-| the credential volume | each person's own building-block API keys |
+| the gateway's data volume | events the gateway could not write to the database |
+| `deploy/.env` | this deployment's configuration and the database password |
 
-The third is the one nobody can reconstruct: the platform can be reinstalled and documents
-re-indexed, but a person's key to another platform exists only in that volume and in whatever
-they wrote it down on.
+`deploy/.env` is the one nobody can reconstruct: it is gitignored and exists on this host only,
+and without it a restored dump cannot be opened.
 
 It checks the dump actually contains the identity tables, reads every archive back and matches
 it against the volume it came from, and prunes past `$KEEP_DAYS` (14). A run that fails deletes
@@ -315,5 +270,5 @@ tagged lines and touches nothing else, so re-running it is how you pick up a cha
 removing a job that no longer exists.
 
 **The default directory is on the same host as the data — copy it off-host.**
-`zz-credentials-*.tar.gz` holds those API keys in plaintext, exactly as the volume does; treat
-a copy of it as you would the keys themselves.
+`zz-config-*.tar.gz` holds `deploy/.env`, database password included; treat a copy of it as you
+would the password itself.

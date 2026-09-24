@@ -1,14 +1,10 @@
 /**
  * The image, and what may enter it.
  *
- * Split out of build.ts, which had grown to hold two subjects: whether this workspace COMPILES
- * — tsc, the manifests, the lockfile, what a package may import — and what the Docker build
- * actually puts in the artefact people run. The two fail for different reasons and are read by
- * different people: one by whoever broke the build, the other by whoever is about to ship.
- *
- * Every rule here encodes something that shipped. A fixture directory that reached production, a
- * stale dist baked in from a dirty context, an image with no git in it for a store that is a git
- * repository, and two Dockerfiles building the same name.
+ * COUPLED: split from build.ts, which holds the other subject — whether this workspace compiles
+ * (tsc, the manifests, the lockfile, what a package may import). This file is about what the Docker
+ * build actually puts in the artefact people run. The two fail for different reasons and are read by
+ * different people.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -19,12 +15,9 @@ import { gateOwnSource, root, sourceFiles, trackedFiles } from "../read.ts";
 import { check } from "../run.ts";
 
 check("no fixture directory enters the image", () => {
-  // A flow's tests directory is requirements, steps and expectations — it can run to megabytes.
-  // Nothing at runtime reads them — eval-judge and eval-grade do, at test time, from the
-  // repository. They were shipping because `COPY catalog /catalog` takes the whole tree and
-  // .dockerignore's `runs` pattern matches the context ROOT only, so the nested one sailed
-  // through. A fixture in a release image is weight, and worse, it is a second copy of the
-  // expectations that can disagree with the first.
+  // A flow's tests directory is requirements, steps and expectations. Nothing at runtime reads
+  // it; testing/eval-step.sh reads it from the repository. `COPY catalog /catalog` takes the
+  // whole tree, so .dockerignore has to exclude it by its own pattern.
   const ignore = readFileSync(join(root, ".dockerignore"), "utf8");
   const shipped = [];
   for (const f of flows) {
@@ -39,22 +32,18 @@ check("no fixture directory enters the image", () => {
 });
 
 check("the build context cannot carry a stale dist into the image", () => {
-  // `npm run build` is `tsc -b`, which is INCREMENTAL, and the Dockerfile COPYs packages/
-  // and services/ wholesale. With no .dockerignore, a build run on a machine that has ever
-  // built locally hands tsc that machine's dist/ and .tsbuildinfo — and tsc can then decide
-  // there is nothing to recompile. The image ships whatever the developer's tree held, with
-  // no error, and nothing about the running container would say so.
+  // `npm run build` is `tsc -b`, which is incremental, and the Dockerfile COPYs packages/ and
+  // services/ wholesale. With no .dockerignore, a build run on a machine that has ever built locally
+  // hands tsc that machine's dist/ and .tsbuildinfo, and tsc can then decide there is nothing to
+  // recompile: the image ships whatever the developer's tree held, with no error.
   const p = join(root, ".dockerignore");
   if (!existsSync(p)) return "no .dockerignore — the build context includes every local dist/";
-  // Pattern LINES, not a substring of the file: a comment saying "excludes node_modules and
-  // dist" satisfied all three while excluding nothing. Every other check here that searched
-  // a whole document for a bare word has been fooled by prose eventually; this one had not
-  // been yet, and there is no reason to wait.
+  // Pattern lines, not a substring of the file: a comment saying "excludes node_modules and dist"
+  // satisfies all three while excluding nothing.
   const patterns = new Set(readFileSync(p, "utf8").split("\n")
     .map((l) => l.trim()).filter((l) => l && !l.startsWith("#")));
-  // The PATTERN that does the job, not the word. Substring matching passed on `dist/release`
-  // — a line that excludes one directory at the repo root and none of packages/*/dist, which
-  // is the whole point of the rule.
+  // The pattern that does the job, not the word. Substring matching passes on `dist/release` — a
+  // line that excludes one directory at the repo root and none of packages/*/dist.
   const needs: [string, string[]][] = [
     ["packages/*/dist", ["**/dist", "*/*/dist"]],
     ["node_modules anywhere", ["**/node_modules"]],
@@ -65,20 +54,14 @@ check("the build context cannot carry a stale dist into the image", () => {
 });
 
 check("the image installs from the manifests, then copies the source", () => {
-  // The Dockerfile said "Manifests first, so a change to source does not invalidate the
-  // install layer" directly above `COPY packages packages` / `COPY services services` and
-  // then `RUN npm ci`. The comment described the intent and the lines did the opposite: every
-  // source edit invalidated the install, so a release build reinstalled the whole dependency
-  // tree to compile one changed line. Verified both ways against the daemon — with the split,
-  // `RUN npm ci` reports CACHED after a source edit.
+  // Manifests are copied before the source, so a change to source does not invalidate the install
+  // layer. Interleaved, every source edit reinstalls the whole dependency tree to compile one line.
   //
-  // TWO PROPERTIES, and the second is why this is a check rather than a comment. Docker has
-  // no glob for "every package.json two levels down", so the members are listed by hand — and
-  // a member left off that list does NOT fail loudly. npm's workspace glob simply matches
-  // fewer directories, installs less, and the image ships missing a package's dependencies.
-  // manifestPaths() is where tsconfig.json's references and set-version.ts already get this
-  // same list, so there is one answer to "what are this repository's packages" and three
-  // readers of it.
+  // Two properties, and the second is why this is a check rather than a comment. Docker has no glob
+  // for "every package.json two levels down", so the members are listed by hand — and a member left
+  // off that list does not fail loudly: npm's workspace glob matches fewer directories, installs
+  // less, and the image ships missing a package's dependencies. manifestPaths() is where
+  // tsconfig.json's references and set-version.ts already get this same list.
   const src = readFileSync(join(root, "Dockerfile"), "utf8");
   const lines = src.split("\n");
   const install = lines.findIndex((l) => /^RUN npm ci\s*$/.test(l));
@@ -101,17 +84,15 @@ check("the image installs from the manifests, then copies the source", () => {
   for (const c of copied) {
     if (!wanted.includes(c)) bad.push(`the Dockerfile copies ${c}, which is not a workspace package`);
   }
-  // BEFORE the install, not anywhere in the file. The runtime stage copies the root manifest
-  // and lockfile too, so a whole-file match was answered by that second stage and reported the
-  // build stage as fine with the line deleted from it. Found by mutation, and it is the same
-  // shape as the two-stage prune this Dockerfile already carries a paragraph about: in a
-  // multi-stage file, "the Dockerfile does X" is never the question — which stage is.
+  // Before the install, not anywhere in the file. The runtime stage copies the root manifest and
+  // lockfile too, so a whole-file match is answered by that second stage and reports the build stage
+  // as fine with the line deleted from it. In a multi-stage file, which stage is the question.
   if (!lines.slice(0, install).some((l) => /^COPY package\.json package-lock\.json/.test(l))) {
     bad.push("the build stage does not copy the root package.json and lockfile before `npm ci`");
   }
 
-  // And the source AFTER, which is the whole point: a COPY of the tree above the install
-  // puts every edit in the install layer's hash.
+  // And the source after, which is the whole point: a COPY of the tree above the install puts every
+  // edit in the install layer's hash.
   for (const dir of ["packages", "services"]) {
     const at = lines.findIndex((l) => new RegExp(`^COPY ${dir} ${dir}\\s*$`).test(l));
     if (at < 0) bad.push(`the build stage never copies ${dir}/ — it cannot compile`);
@@ -124,11 +105,10 @@ check("the image installs from the manifests, then copies the source", () => {
 });
 
 check("a store the team can walk away with has git in the image", () => {
-  // Every act that changes a team's store is a commit authored by whoever made it, so the
-  // repository carries the attribution even after this platform is gone. node:alpine does
-  // not ship git, and commitStore never throws — so without it every write would succeed,
-  // log `git_failed`, and leave a store with no history that nobody notices until they go
-  // looking for one. A silent degradation of the one property that makes the store portable.
+  // Every act that changes a team's store is a commit authored by whoever made it, so the repository
+  // carries the attribution even after this platform is gone. node:alpine ships no git, and
+  // commitStore never throws — so without it every write succeeds, logs `git_failed`, and leaves a
+  // store with no history that nobody notices until they go looking for one.
   const df = readFileSync(join(root, "Dockerfile"), "utf8");
   const runtime = df.slice(df.lastIndexOf("\nFROM "));
   return /apk add[^\n]*\bgit\b/.test(runtime)
@@ -137,22 +117,14 @@ check("a store the team can walk away with has git in the image", () => {
 });
 
 check("one image, one recipe", () => {
-  // There were two Dockerfiles building the same image: the root one, which
-  // docker-compose.build.yml uses for development, and deploy/ts.Dockerfile, which
-  // scripts/release.ts used for the RELEASE. They had drifted where it mattered most — the
-  // root installs git and says why (commitStore never throws, so without it every document
-  // write succeeds, logs `git_failed`, and leaves a team's store with no history), and
-  // ts.Dockerfile did not. Verified: node:22-alpine ships no git.
-  //
-  // So development built an image that could commit a store and production built one that
-  // could not, and the check for exactly that read the root Dockerfile — passing, correctly,
-  // about a file production was not built from. Every guarantee this gate makes about the
-  // image is made about ONE file, so there has to be one.
+  // Two Dockerfiles building the same image drift: the root one installs git and says why, and the
+  // other may not — so development builds an image that can commit a store and production builds one
+  // that cannot, while the check for exactly that reads the root Dockerfile and passes, correctly,
+  // about a file production was not built from. Every guarantee this gate makes about the image is
+  // made about one file, so there has to be one.
   const named = new Map<string, string>();   // repo-relative path -> who names it
-  // Repo-relative, or null for anything outside this checkout. zz-blocks is a sibling repo
-  // with a Dockerfile of its own, reached through `context: ../../zz-blocks`; it is built by
-  // this release and is not ours to make claims about, which is what the compose check
-  // beside this one already says.
+  // Repo-relative, or null for anything outside this checkout, which is not ours to make claims
+  // about.
   const ours = (abs: string) => (abs === root || abs.startsWith(`${root}/`)) ? abs.slice(root.length + 1) : null;
   for (const f of sourceFiles(["scripts", "deploy", "testing"], [".ts", ".sh"])) {
     // Not this file. It quotes `docker build -f -` while explaining why that was wrong, and
@@ -178,25 +150,17 @@ check("one image, one recipe", () => {
   }
   if (!named.size) return "nothing in this repo names a Dockerfile — this check reads nothing";
 
-  // ONE RECIPE PER IMAGE, AND THIS REPOSITORY NOW SHIPS TWO IMAGES.
+  // One recipe per image, and this repository ships two images: the application, and a PostgreSQL
+  // image pinned to an exact base digest and an exact pg_textsearch source, built in isolation to
+  // prove a dependency before anything is deployed on it. They are different things, on different
+  // schedules, for different readers — so the rule is per class: each class has one recipe, a
+  // Dockerfile belongs to a class, and a class nothing builds from is still the other half of the
+  // defect.
   //
-  // The defect above is two Dockerfiles building the SAME artefact, and "one Dockerfile in the
-  // repository" was a faithful reading of that while there was one artefact to build. The
-  // tenant-information delivery adds a second and genuinely different one: a PostgreSQL image
-  // pinned to an exact base digest and an exact pg_textsearch source, built in isolation to
-  // prove a dependency before anything is deployed on it. It is not a rival recipe for the
-  // application image — it produces a different thing, on a different schedule, for a different
-  // reader — and collapsing the two would either forbid it or restore exactly the drift this
-  // check exists to catch, one class down.
-  //
-  // So the rule is stated as what it always meant. Each class has one recipe; a Dockerfile
-  // belongs to a class; a class nothing builds from is still the other half of the defect.
-  //
-  // THE DATABASE IMAGE IS DECLARED RATHER THAN DETECTED, and that is deliberate. Its builder,
-  // testing/tenant-info/deployment.ts, composes the path (`join(DEPLOY_DIR, "Dockerfile")`)
-  // instead of writing it as a literal, so the scan above cannot see it — and the fix is not to
-  // demand a literal there. A path spelled out to satisfy a regex is a path that can drift from
-  // the one actually built; naming the class here keeps the claim where a reader checks it.
+  // DELIBERATE: the database image is declared here rather than detected. Its builder,
+  // testing/tenant-info/deployment.ts, composes the path (`join(DEPLOY_DIR, "Dockerfile")`) instead
+  // of writing it as a literal, so the scan above cannot see it — and a path spelled out to satisfy
+  // a regex is a path that can drift from the one actually built.
   const CLASSES: readonly { name: string; is: (p: string) => boolean }[] = [
     { name: "database (dependency-proof)", is: (p) => p === "deploy/postgres/Dockerfile" },
     { name: "application", is: () => true },

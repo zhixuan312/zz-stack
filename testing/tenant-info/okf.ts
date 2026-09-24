@@ -1,18 +1,13 @@
 /**
- * okf.ts — I-12's OKF interoperability case group, over the real `services/zz-core/dist/
- * tenant-info/export.js`. `scripts/tenant-info/suites.ts` reserves the name "okf" at this
- * path, so `verify --suite okf` dynamic-imports it and calls `run`, exactly as `model.ts`
- * does for "model".
+ * I-12's OKF interoperability case group, over the real `services/zz-core/dist/
+ * tenant-info/export.js`. `scripts/tenant-info/suites.ts` reserves the name "okf" at this path,
+ * so `verify --suite okf` dynamic-imports it and calls `run`.
  *
- * NOTHING HERE TOUCHES A REAL STORE. Every fixture is a literal in-memory record — a raw OKF
- * markdown string, or a hand-built `ContentRevision`/`ArtifactEvent` — never a file under this
- * checkout and never a live artifact volume.
+ * Nothing here touches a real store. Every fixture is a literal in-memory record — a raw OKF
+ * markdown string, or a hand-built `ContentRevision`/`ArtifactEvent`.
  *
- * NO OFFICIAL OKF REFERENCE DOCUMENT WAS SUPPLIED to this task or found anywhere in this
- * repository or the tenant-info workspace (checked: no `OKF` hit outside this suite and the
- * frozen check). `REFERENCE_FIXTURE` below is this suite's OWN pinned fixture, named for what
- * it is rather than claimed as "official" — if an actual official conformance reference is
- * meant to exist, it needs to be supplied; this suite cannot invent one honestly.
+ * `REFERENCE_FIXTURE` below is this suite's own pinned fixture, named for what it is rather than
+ * claimed as official: no official OKF reference document exists in this repository.
  */
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
@@ -30,7 +25,7 @@ import {
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const OWNER = "11111111-1111-4111-8111-111111111111";
 
-// ── fixtures ─────────────────────────────────────────────────────────────────────────────────
+// Fixtures
 
 function nativeDoc(overrides: Record<string, string> = {}): string {
   const fields: Record<string, string> = { type: "Decision", title: "t", description: "d", ...overrides };
@@ -66,7 +61,7 @@ const REFERENCE_FIXTURE = [
 ].join("\n");
 const REFERENCE_FIXTURE_DIGEST = createHash("sha256").update(REFERENCE_FIXTURE, "utf8").digest("hex");
 
-// ── case group ───────────────────────────────────────────────────────────────────────────────
+// Case group
 
 function caseNativePositiveRoundTrips(): void {
   const first = parseKnowledge(nativeDoc());
@@ -84,8 +79,8 @@ function caseNativeNegativeEmptyTypeFailsBoth(): void {
 }
 
 function caseForeignTypeIsLegacyOkfNeverNative(): void {
-  // The clause under test: official OKF conformance and native-profile validation are
-  // SEPARATE verdicts. A foreign type passes one and fails the other, on the same record.
+  // The clause under test: official OKF conformance and native-profile validation are separate
+  // verdicts. A foreign type passes one and fails the other, on the same record.
   const parsed = parseKnowledge(REFERENCE_FIXTURE);
   assert.equal(parsed.zz_profile, LEGACY_PROFILE);
   assert.equal(validateOkf(parsed).ok, true, "a well-formed foreign type is still valid OKF");
@@ -100,7 +95,7 @@ function caseUnknownNestedKeysSurviveRoundTrip(): void {
   ].join("\n");
   const first = parseKnowledge(raw);
   const second = parseKnowledge(serializeKnowledge(first));
-  // BY PARSED VALUE, not by re-serialized spelling — the contract only promises the values
+  // By parsed value, not by re-serialized spelling — the contract only promises the values
   // survive, never the original YAML formatting.
   assert.deepEqual(second.extension, { list: ["a", { b: 2 }], flag: true, count: 3 });
 }

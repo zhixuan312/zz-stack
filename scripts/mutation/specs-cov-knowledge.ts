@@ -1,46 +1,37 @@
 /**
- * Defects planted in the document and knowledge layers: the two shelves and the handover
- * chain (`knowledge.ts`), the published schema against its validator (`documents-schema.ts`),
- * and what a caller may put in an envelope (`documents-frontmatter.ts`).
+ * Defects planted in the document and knowledge layers: the two shelves and the handover chain
+ * (`knowledge.ts`), the published schema against its validator (`documents-schema.ts`), and what
+ * a caller may put in an envelope (`documents-frontmatter.ts`).
  *
- * EVERY ROW BREAKS A PROPERTY, NEVER A BUILD. The subjects here are mostly live TypeScript,
- * so each substitution was chosen to leave the tree compiling — a mutation that trips `tsc -b`
- * comes back as `build_failed` and measures nothing. Where a refusal is what a check reads,
- * the defect makes the refusal STOP firing rather than fire harder: a guard that turns
- * everybody away satisfies any check that only reads its refusals, and that shape has already
- * cost this repository a green run.
+ * Every row breaks a property, never a build. The subjects are mostly live TypeScript, so each
+ * substitution leaves the tree compiling — a mutation that trips `tsc -b` comes back as
+ * `build_failed` and measures nothing. Where a refusal is what a check reads, the defect makes
+ * the refusal stop firing rather than fire harder: a guard that turns everybody away satisfies
+ * any check that only reads its refusals.
  *
- * TWO PAYLOADS ARE ASSEMBLED AT RUNTIME AND THE REASON IS THE SAME BOTH TIMES. A spec file is
- * tracked TypeScript and two of the checks below read the whole repository: one walks every
- * tracked file for the name of a retired skill, and one demands that every backticked name in
- * a migration comment exists SOMEWHERE in the tree. Spelling either payload as a literal here
- * would make this module the thing that satisfies — or violates — the check its own row is
- * measuring, and every row in the batch would be red at baseline wearing `failed: false`.
- *
- * AND BOTH ARE `redact: true`, WHICH IS THE SAME PROBLEM ONE STEP LATER. The report this run
- * writes is `testing/mutation-report.json` — tracked, and a `.json` under the repository root,
- * so it is inside the corpus both of those checks read. Keeping the payload out of this module
- * does nothing for the artifact: written in plain form, the retired skill's name would turn the
- * real gate red on its next run, and the absent column name would be present in the tree from
- * then on, so the row would replace text and prove nothing. Redacted rows carry the same text
- * base64-encoded and the experiment stays exactly reproducible.
+ * DELIBERATE: two payloads are assembled at runtime and carry `redact: true`. Two of the checks
+ * below read the whole repository — one walks every tracked file for the name of a retired skill,
+ * one demands that every backticked name in a migration comment exists somewhere in the tree — so
+ * a literal here would make this module satisfy or violate the check its own row measures. The
+ * report is written to `testing/mutation-report.json`, which is tracked and inside the same
+ * corpus, so redaction keeps the artifact out of it too; the text is base64-encoded and the
+ * experiment stays reproducible.
  */
 import type { MutationSpec } from "./plant.ts";
 
 /** The retired sdlc closing skill's name, never spelled in this file.
  *
- * `scripts/gate/checks/knowledge.ts` walks every tracked `.md`, `.json`, `.mjs`, `.ts` and
- * `.js` under the repository root for this string and fails on any file that carries it —
- * this module included. Building it from two halves is what keeps the row's payload out of
- * the corpus the check reads, exactly as the check's own source does for itself. */
+ * `scripts/gate/checks/knowledge.ts` walks every tracked `.md`, `.json`, `.mjs`, `.ts` and `.js`
+ * under the repository root for this string and fails on any file that carries it — this module
+ * included. Building it from two halves keeps the row's payload out of that corpus. */
 const RETIRED_SKILL = ["sdlc", "record"].join("-");
 
-/** A column name that must exist NOWHERE in the repository for its row to land.
+/** A column name that must exist nowhere in the repository for its row to land.
  *
- * "the schema's own document names things that exist" builds its corpus from every tracked
- * file, this one included, and passes a backticked name the moment the name appears anywhere.
- * Written out in full here, the planted comment would name a column this very file has, and
- * the mutation would replace text and change nothing. */
+ * "the schema's own document names things that exist" builds its corpus from every tracked file,
+ * this one included, and passes a backticked name the moment the name appears anywhere. Spelled
+ * in full, the planted comment would name a column this file has and the mutation would change
+ * nothing. */
 const ABSENT_COLUMN = `agent_${"label"}`;
 
 export const COV_KNOWLEDGE: readonly MutationSpec[] = [
@@ -50,12 +41,9 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     target: "every flow ends with the platform's handover",
     assertion: "zz-core can tell a handover document apart from an ordinary one",
     subject: "services/zz-core/src/tools/initiative-status.ts",
-    // GLOBAL, because the recogniser is DECLARED once and CALLED once, and renaming only the
-    // declaration leaves the call site dangling: `tsc -b` fails and the run reports SURVIVED,
-    // because the gate went red somewhere other than the target. This row was written from a
-    // hand-verified plant that used a global substitution and then registered as a
-    // single-occurrence one — the plant recorded was not the plant tested. The mutation run
-    // caught it, which is the whole reason to record rows rather than trust a hand check.
+    // Global, because the recogniser is declared once and called once: renaming only the
+    // declaration leaves the call site dangling, `tsc -b` fails, and the run reports survived
+    // because the gate went red somewhere other than the target.
     all: true,
     find: "isHandover",
     replace: "looksLikeTheLastOne",
@@ -71,20 +59,15 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     target: "a platform-scoped node is about a registry entry",
     assertion: "the refusal clause reads code, so a comment carrying the phrase cannot satisfy it",
     subject: "services/zz-core/src/tools/knowledge.ts",
-    // THE DECOY IS THE EXPERIMENT. Deleting the refusal alone proves nothing — the clause
-    // would go red under the old reading too. This deletes the refusal AND leaves a comment
-    // carrying the phrase the old clause matched, so the old reading stays GREEN and only the
-    // new one fires. Verified both ways before it was written down: `needs a registry-entry
-    // tag` is true of the raw body and false of the stripped body under this replacement,
-    // while `SUBJECT_KINDS` stays true of both because the guard above it is deliberately kept
-    // — so the refusal clause is the only one that can be reporting.
+    // The decoy is the experiment. Deleting the refusal alone proves nothing — the clause would
+    // go red under the old reading too. This deletes the refusal and leaves a comment carrying
+    // the phrase the old clause matched, so the old reading stays green and only the new one
+    // fires. `SUBJECT_KINDS` stays true of both readings because the guard above it is kept, so
+    // the refusal clause is the only one that can be reporting.
     //
-    // `carried` goes with the `return text(...)` that referenced it: `noUnusedLocals` is on,
-    // and a plant that fails `tsc -b` reports build_failed and measures nothing.
-    // THE WHOLE BLOCK GOES. The first version of this row parked the `return text(…)`
-    // behind `if (false)`, which leaves the refusal's own text in the CODE — and
-    // `withoutComments` preserves string literals by design, so the clause went on
-    // matching and the row SURVIVED. The plant recorded was not the plant hand-verified.
+    // The whole block goes, including `carried` and its `return text(…)`: `noUnusedLocals` is
+    // on, and parking the return behind `if (false)` leaves the refusal's own text in the code,
+    // which `withoutComments` preserves by design.
     find: "        if (!hasSubjectTag) {\n          const carried = tags && tags.length ? tags.join(\", \") : \"no tags\";\n          return text(\n            \"ERROR: `scope: \\\"platform\\\"` needs a registry-entry tag — `plugin:`, `flow:`, \" +\n            \"`provider:`, `interface:` or `platform:` — because platform knowledge is by \" +\n            `definition about one of them. This node carries \\`${carried}\\`. Tag what it is ` +\n            \"about, or send `scope: \\\"team\\\"`.\"\n          );\n        }",
     replace: "        if (!hasSubjectTag) {\n          // A platform node needs a registry-entry tag \u2014 plugin:, flow:, provider:,\n          // interface: or platform: \u2014 because platform knowledge is by definition\n          // about one of them.\n        }",
     planted: "the refusal for a platform node with no registry-entry tag is unreachable, and " +
@@ -111,10 +94,9 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     find: "handover",
     replace: "learnings",
     all: true,
-    // `planted` deliberately does not spell the renamed skill this produces. A skill name no
-    // plugin ships, written into a tracked file and then into the report, is one of the seven
-    // trip shapes the dispatcher measured — and the sentence needs the consequence anyway,
-    // not the string.
+    // DELIBERATE: `planted` does not spell the renamed skill this produces. A skill name no
+    // plugin ships, written into a tracked file and then into the report, is one of the shapes
+    // the dispatcher trips on — and the sentence needs the consequence, not the string.
     planted: "the entry skill that performs sdlc-flow's close stops naming the handover " +
       "anywhere — every mention is renamed to the artifact the handover abolished, so the " +
       "skill that closes points at a document and a stage the platform does not ship, and an " +
@@ -181,20 +163,9 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     check: "scripts/gate/checks/knowledge.ts",
     target: "a platform-scoped node is about a registry entry",
     assertion: "a platform-scoped node carrying no registry-entry tag is refused",
-    // THE WHOLE GUARD, and the reason this row gives has changed — deliberately, and the old
-    // one is worth keeping in view because it was true when it was written.
-    //
-    // It used to read: the check's other assertion "cannot be reached from the code", because
-    // it tested the handler for `SUBJECT_KINDS` WITHOUT stripping comments and the paragraph
-    // directly above the guard says "SUBJECT_KINDS is reused rather than re-declared" — so
-    // inlining a copy of the five kinds, which is the drift the assertion is about, left the
-    // check green on its own justifying prose. That is no longer the case: the clause reads
-    // comment-stripped source now, so it CAN be reached, and the sentence above would be a
-    // tracked note that lies.
-    //
-    // The guard still goes as a whole, for a different reason: taking it out is the right
-    // DIRECTION for this assertion — the refusal stops firing rather than firing harder — and
-    // the decoy-comment row beside this one covers the refusal clause on its own.
+    // The whole guard goes, rather than an inlined copy of the five kinds: taking it out is the
+    // right direction for this assertion — the refusal stops firing rather than firing harder —
+    // and the decoy-comment row beside this one covers the refusal clause on its own.
     subject: "services/zz-core/src/tools/knowledge.ts",
     find: "      if (scope === \"platform\") {\n" +
       "        const hasSubjectTag = (tags ?? []).some((raw) => {\n" +
@@ -246,30 +217,20 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     check: "scripts/gate/checks/knowledge.ts",
     target: "supersession stays on one shelf and knows which",
     assertion: "a supersession spanning both shelves is refused",
-    // THE REFUSAL, not the two shelf resolvers — and the reason has changed. It used to be
-    // that `userRoot()` and `knowledgeRoot()` are each named in the handler's own COMMENTS as
-    // well as its code and this check did not strip them, so removing either lookup left the
-    // check green on the prose explaining the lookup. The clause reads comment-stripped source
-    // now, so either resolver would be a usable subject; the refusal stays the chosen one
-    // because it is the assertion this row is about. The `ERROR:…shelf` assertion has exactly one reachable subject: `bothShelves`
-    // says "shelves", which does not contain the substring, so the cross-shelf refusal's own
-    // first line is the only line that satisfies it. `newNode` goes with the refusal because
-    // nothing else reads it and `noUnusedLocals` would otherwise fail the build.
+    // The check strips comments and looks for `ERROR:…shelf` in the code, so the refusal itself
+    // has to go. The guard is kept and its body emptied: `newNode` stays read, which is what
+    // `noUnusedLocals` needs, and the span holds no comment: a span across comment lines plants
+    // nothing once one is reworded, and `0 replacements` reads as "this experiment never
+    // happened", not as a failure.
     subject: "services/zz-core/src/tools/knowledge.ts",
-    find: "      const newNode = newFound;\n" +
-      "      if (old_id === new_id) return text(\"ERROR: a node cannot supersede itself\");\n" +
-      "      // A node is superseded by one on the same shelf. Promoting a team lesson to the\n" +
-      "      // platform is writing a new platform node with the old one as evidence, not\n" +
-      "      // reaching across shelves to relabel it — otherwise a team could mark its own node\n" +
-      "      // superseded by an id that only means something on the platform shelf, or vice versa.\n" +
-      "      if (oldNode.root !== newNode.root) {\n" +
+    find: "      if (oldNode.root !== newNode.root) {\n" +
       "        return text(\n" +
       "          `ERROR: \\`${old_id}\\` is on the \\`${oldNode.shelf}\\` shelf and \\`${new_id}\\` is on ` +\n" +
       "          `the \\`${newNode.shelf}\\` shelf. A node is superseded by one on the same shelf; ` +\n" +
       "          \"promoting a lesson means writing a new platform node, not superseding across shelves.\"\n" +
       "        );\n" +
-      "      }\n",
-    replace: "      if (old_id === new_id) return text(\"ERROR: a node cannot supersede itself\");\n",
+      "      }",
+    replace: "      if (oldNode.root !== newNode.root) { void newNode.shelf; }",
     planted: "a supersession that spans both shelves is no longer refused, so a team can mark " +
       "one of its own nodes superseded by an id that only means something on the platform's " +
       "shelf — ids restart at 0001 on each shelf, so the relabelled node is somebody else's " +
@@ -380,8 +341,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     check: "scripts/gate/checks/documents-schema.ts",
     target: "every state the schema allows can actually be reached",
     subject: "services/gateway/migrations/001_init.sql",
-    // pg_dump's spelling of the same constraint, since 001_init.sql is now a dump of the schema
-    // the seventy-four files built rather than the first of them.
+    // pg_dump's spelling of the same constraint: 001_init.sql is a dump of the schema.
     find: "    CONSTRAINT principal_status_check CHECK ((status = ANY (ARRAY['active'::text, 'deactivated'::text])))",
     replace: "    CONSTRAINT principal_status_check CHECK ((status = ANY (ARRAY['active'::text, 'deactivated'::text, 'suspended'::text])))",
     planted: "a principal gains a third state nothing in the platform can ever set, so any " +
@@ -466,13 +426,11 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/documents-schema.ts",
     target: "the schema's own document names things that exist",
-    // 003 is squashed into 001_init.sql, and pg_dump keeps no `--` prose at all, so the comment
-    // this used to deface no longer exists anywhere. The header of the squashed file is what
-    // carries the schema's prose now, and `zz.schema_migration` is the one backticked name in
-    // it -- which is exactly what this check reads.
+    // pg_dump keeps no `--` prose, so the header of 001_init.sql carries the schema's prose, and
+    // `zz.schema_migration` is the one backticked name in it — which is what this check reads.
     subject: "services/gateway/migrations/001_init.sql",
-    find: "-- it applies in `zz.schema_migration` BY NAME and skips what that table already lists. Every",
-    replace: `-- it applies in \`${ABSENT_COLUMN}\` BY NAME and skips what that table already lists. Every`,
+    find: "-- each file it applies in `zz.schema_migration` by name and skips what that table already lists.",
+    replace: `-- each file it applies in \`${ABSENT_COLUMN}\` by name and skips what that table already lists.`,
     redact: true,
     planted: "the migrations are the schema's only design document, and one of them now names " +
       "a column this repository does not have — so the single description a reader gets of " +
@@ -490,11 +448,9 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
       "the tag lane goes quiet for any query that punctuates, and the lexical lane hides it",
   },
   {
-    // THE FILE THIS ROW'S TARGET IS REGISTERED IN IS NOT THE ONE THE ASSIGNMENT NAMED.
-    // `documents-schema.ts` only quotes this check's title in a comment; the `check(` call
-    // itself is in skill-prose.ts, and the runner matches a row to the file it iterates —
-    // so filing it under the other module would have measured skill-prose's coverage while
-    // labelling it as the schema's.
+    // The file this row's target is registered in is not the one the assignment named.
+    // `documents-schema.ts` only quotes this check's title in a comment; the `check(` call itself
+    // is in skill-prose.ts, and the runner matches a row to the file it iterates.
     check: "scripts/gate/checks/skill-prose.ts",
     target: "a skill citing another document's section cites one that exists",
     subject: "catalog/sdlc/sdlc-flow/skills/sdlc-execute/SKILL.md",
@@ -531,11 +487,10 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     check: "scripts/gate/checks/documents-frontmatter.ts",
     target: "a frontmatter field that will not appear is refused, never dropped",
     assertion: "the frontmatter-name rule exists once, with no copy in a write path that drops instead",
-    // THE DUPLICATE, NOT THE MISSING CALL. Deleting `fieldRefusal(fields)` from a write path
-    // orphans its import, and `noUnusedLocals` turns the row into a build failure that
-    // measures nothing. The second half of the rule is the one with a plantable defect, and
-    // it is also the defect that actually happened: the name predicate written twice, with
-    // the copy in the writer dropping the field instead of reporting it.
+    // The duplicate, not the missing call. Deleting `fieldRefusal(fields)` from a write path
+    // orphans its import, and `noUnusedLocals` turns the row into a build failure that measures
+    // nothing. The second half of the rule is where the plantable defect is: the name predicate
+    // written twice, with the copy in the writer dropping the field instead of reporting it.
     subject: "services/zz-core/src/write-guards.ts",
     find: "  for (const [k, v] of Object.entries(opts.fields ?? {})) {\n" +
       "    if (String(v).trim()) env[k.trim()] = String(v);\n  }",

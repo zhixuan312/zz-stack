@@ -1,15 +1,11 @@
 /**
- * WHAT A PLUGIN VERSION'S SUBJECTS ARE — the one question, answered four ways.
+ * What a plugin version's subjects are — the one question, answered four ways.
  *
- * SPLIT OUT OF plugin-judge.ts BY SUBJECT. That file runs the round: it holds the tools, the
- * ruler guard, the control and the threshold pass. This one answers what is being marked, and
- * only that. A round and its sampling frame fail differently and are read by different people
- * — the round is checked against the ruler, the frame against the evidence — and keeping them
- * apart is what let the `sources/` defect below be seen as one line of SQL rather than as a
- * paragraph inside a six-hundred-line tool.
+ * plugin-judge.ts runs the round: the tools, the ruler guard, the control and the threshold
+ * pass. This one answers what is being marked, and only that.
  *
- * All four are SELECTORS and none of them reads an artifact. Bodies are fetched at the moment
- * a subject is marked, so a round that stops early never paid to read what it did not mark.
+ * All four are selectors and none of them reads an artifact. Bodies are fetched at the moment a
+ * subject is marked, so a round that stops early never paid to read what it did not mark.
  */
 import type pg from "pg";
 
@@ -27,56 +23,40 @@ const RUNS_OF = `
   join zz.plugin p on p.id = pv.plugin_id
  where p.name = $1 and pv.version = $2`;
 
-/** The documents this plugin version GOVERNS, newest first — and which route says so depends
+/** The documents this plugin version governs, newest first — and which route says so depends
  *  on whether the plugin owns a door.
  *
- * A FLOW'S DOCUMENTS ARE THE ONES `zz.doc.flow` NAMES, AND THAT IS THE FOURTH TIME THIS FILE
- * HAS HAD TO LEARN IT. The `false` arm went through `zz.doc.produced_by_run_id` -> a run -> the
- * skill versions a plugin version shipped, which is the identical route `usageInitiatives`
- * abandoned 100 lines below for the identical reason — and the lesson was applied there and not
- * here, in the same commit, one function apart.
+ * DELIBERATE: a flow's documents are the ones `zz.doc.flow` names, never
+ * `zz.doc.produced_by_run_id`. That column is null on almost every document, because a document
+ * is written by whatever is holding the conversation and only some of those carry a run; a
+ * round joined through it scores a fraction of the corpus and reports it as the plugin's usage
+ * evidence. `flow` is stamped on the document when it is written, from the flow that governs
+ * the initiative, and needs no run to exist.
  *
- * The column is null on almost every document, because a document is written by whatever is
- * holding the conversation and only some of those carry a run. It is also the attribution route
- * this platform ruled out after five defects in one day. Measured 2026-09-19: judging `sdlc`
- * 0.60.0 through that join reached 10 documents where `zz.doc.flow = 'sdlc-flow'` holds 72, and
- * `SUBJECT_CAP` is 20 — so the cap was not the constraint, the join was. The round did not fail;
- * it scored 14% of the corpus and reported it as the plugin's usage evidence, which is the
- * failure this file keeps rediscovering.
+ * Counted across every version, the way the door arm counts tool use: a document governed by
+ * this flow is this flow's work whichever release was current while it was written.
  *
- * `flow` is stamped on the document when it is written, from the flow that governs the
- * initiative, and needs no run to exist. COUNTED ACROSS EVERY VERSION, the way the door arm
- * counts tool use and for the reason `usageInitiatives` argues below: a document governed by
- * this flow is this flow's work whichever release happened to be current while it was written.
+ * A door-owner's documents are the ones written through its door. zz-core's own skills barely
+ * write documents — every document is written by another flow's stage calling zz-core's
+ * `document_write` — so a skill join returns nothing for the one plugin that touches every
+ * document there is, and the round falls through to marking run transcripts against a ruler
+ * whose dimensions ask about documents.
  *
- * A DOOR-OWNER'S DOCUMENTS ARE THE ONES WRITTEN THROUGH ITS DOOR, and the skill route gets
- * that badly wrong. zz-core's own skills barely write documents — every document on this
- * platform is written by another flow's stage CALLING zz-core's `document_write` — so the
- * skill join returned nothing for the one plugin that touches every document there is. The
- * consequence was not an empty round: it was a SILENT SUBSTITUTION. With no documents found,
- * the round fell through to marking run transcripts against a ruler whose dimensions ask
- * whether documents carry their frontmatter, cite their evidence and move version on approval.
- * A transcript answers none of those, so it scored 1.68 to 1.94 — and the report drawn from it
- * would have called the backbone weak for the second time, on the same mistaken attribution,
- * in the other half of the same file.
+ * The door route attributes a document to a plugin when that plugin's door recorded work on the
+ * document's initiative. `zz.event` carries the initiative and the door but not the document's
+ * path, so this is the finest link the record holds. The round's denominator is what the report
+ * prints beside the cap.
  *
- * The door route attributes a document to a plugin when that plugin's door recorded work on
- * the document's INITIATIVE. `zz.event` carries the initiative and the door but not the
- * document's path, so this is the finest link the record actually holds; it reaches 211 of the
- * platform's 365 documents where the run route reached 13. Announced rather than hidden — the
- * round's denominator is what the report prints beside the cap.
- *
- * `scored` says whether a round has already marked it, and it is a fact the define stage needs
- * before it writes anything: a ruler derived from work that was already judged under an earlier
- * ruler is a ruler fitted to its own answers. */
+ * `scored` says whether a round has already marked it, which the define stage needs before it
+ * writes anything: a ruler derived from work already judged under an earlier ruler is a ruler
+ * fitted to its own answers. */
 export async function usageDocs(
   p: pg.Pool, plugin: string, version: string, ownsDoor: boolean, flowName: string,
 ) {
   const pvId = `(select pv.id from zz.plugin_version pv join zz.plugin p on p.id = pv.plugin_id
                   where p.name = $1 and pv.version = $2)`;
   // A plugin the catalog does not carry governs no flow, so no document is attributable to it.
-  // Empty is the honest answer and plugin_profile reports it as the gap it is; the old route
-  // would have returned whatever rows a stale run join happened to reach.
+  // Empty is the honest answer and plugin_profile reports it as the gap it is.
   if (!ownsDoor && !flowName) return [];
   return ownsDoor
     ? (await p.query<{ team_slug: string; initiative: string; path: string; id: string; scored: boolean }>(`
@@ -85,25 +65,16 @@ export async function usageDocs(
                         where es.doc_id = d.id and es.plugin_version_id = ${pvId}) as scored
           from zz.doc d
          where d.path not like '\_versions/%'
-           -- A CALL THAT WROTE A DOCUMENT, not any call at all.
+           -- A call that wrote a document, not any call at all: a door whose calls merely happened
+           -- while an initiative was the session's context has not produced that initiative's
+           -- documents, and crediting it would mark one plugin's artifacts under another's ruler.
            --
-           -- Matching on every tool_call credited a door with documents it never touched. An
-           -- administration door proved it: two whoami and team_switch calls happened while
-           -- an evaluation initiative was the session's context, so the event carried that
-           -- initiative, and the query handed zz-access the whole of zz-core's evaluation to be
-           -- judged on. That is the same substitution this file already refuses elsewhere --
-           -- marking one plugin's artifacts under another plugin's ruler -- arriving through
-           -- the selector instead of the fallback.
+           -- The writing tools are spelled out rather than matched by prefix: document_read,
+           -- document_list, document_present and document_approve begin the same way and write
+           -- nothing.
            --
-           -- The three names are spelled out rather than matched by prefix. document_read,
-           -- document_list, document_present and document_approve all begin the same way
-           -- and none of them writes anything; a plugin whose door only READS documents has not
-           -- produced them and must not be judged on them.
-           --
-           -- tool_call is implied by the tool names but kept explicit, because zz.event.team_slug
-           -- is nullable and other kinds are written by acts that belong to a person rather than
-           -- a team -- matching a document's team against one of those compares on a column that
-           -- kind never filled.
+           -- tool_call is implied by the tool names but kept explicit: zz.event.team_slug is nullable,
+           -- and other kinds are written by acts that belong to a person rather than a team.
            and exists (select 1 from zz.event e
                         where e.kind = 'tool_call' and e.plugin = $1
                           and split_part(coalesce(e.tool_key, e.subject), ':', 2)
@@ -132,51 +103,32 @@ export async function usageRuns(p: pg.Pool, plugin: string, version: string) {
      order by r.started_at desc limit ${SUBJECT_CAP}`, [plugin, version])).rows;
 }
 
-/** The INITIATIVES this flow CARRIED TO ITS OWN END, each with both of them.
+/** The initiatives this flow carried to its own end, each with its first and last document.
  *
  * The subject is the sequence, not a document: "does the end deliver what the beginning asked
- * for" cannot be asked of one file. So each row is one initiative with the first and the last
- * of THE DOCUMENTS THIS FLOW'S OWN STAGES DECLARE.
+ * for" cannot be asked of one file.
  *
- * WHICH INITIATIVES ARE THIS FLOW'S IS ANSWERED BY `zz.doc.flow`, AND THAT IS THE THIRD TIME
- * THIS FILE HAS HAD TO LEARN IT. The first two routes both went through
- * `zz.doc.produced_by_run_id` -> a run -> the skill versions a plugin version shipped. That
- * column is null on 326 of this platform's 365 documents, because a document is written by
- * whatever is holding the conversation and only some of those carry a run. The consequence was
- * not an error: the query returned 3 initiatives where the store holds 17 governed by this
- * flow, and 1 of them had reached its closing document where 6 have. A round was scored on one
- * subject and reported as thin evidence, when the evidence was there and the join could not
- * see it.
+ * DELIBERATE: which initiatives are this flow's is answered by `zz.doc.flow`, never
+ * `zz.doc.produced_by_run_id`, which is null on most documents because only some conversations
+ * carry a run. `flow` is stamped on the document when it is written, from the flow that governs
+ * the initiative, and is the same string the catalog entry carries.
  *
- * `flow` is stamped on the document when it is written, from the flow that governs the
- * initiative, and it is the same string the catalog entry carries. It needs no run to exist.
+ * Counted across every version, the way a door plugin's tool use is: an initiative governed by
+ * this flow is this flow's work whichever release was current while it ran, and version-scoping
+ * it reports a plugin's whole history as empty after a release that changed nothing in it.
  *
- * COUNTED ACROSS EVERY VERSION, deliberately, the way a door plugin's tool use is. An
- * initiative governed by this flow is this flow's work whichever release happened to be
- * current while it ran, and version-scoping it reported a plugin's whole history as empty four
- * minutes after a release that changed nothing in it.
+ * The ends are not the oldest and newest file in the folder. An initiative folder holds more
+ * than the flow's stage output: `source_add` registers supporting material under `sources/`,
+ * and `handover.md` is written after the close by a different plugin's skill, so ordering by
+ * the clock hands a ruler a stakeholder attachment and a spec. The manifest says which
+ * documents are this flow's: `stages[].produces`, in the order the stages run, whenever it
+ * names a file rather than `source`, `record` or `nothing`. That list arrives as `$4` and the
+ * join to it excludes everything else without naming any of it.
  *
- * NOT THE OLDEST AND NEWEST FILE IN THE FOLDER either, which is what the ends used to be. An
- * initiative folder holds more than the flow's stage output: `source_add` registers supporting
- * material under `sources/`, and `handover.md` is written after the close by a different
- * plugin's skill. Ordered by the clock, those won both ends — so a ruler asking whether the
- * conclusion answers the brief was handed a stakeholder attachment and a spec, and marked them
- * 4.55. The manifest says which documents are this flow's: `stages[].produces`, in the order
- * the stages run, whenever it names a file rather than `source`, `record` or `nothing`. That
- * list arrives as `$4` and the join to it excludes everything else without naming any of it.
- *
- * AND THE CLOSING DOCUMENT MUST BE THERE AND APPROVED. `$5` is the last entry in that list,
- * and an initiative without it is not a subject. An initiative still in flight has no end, and
- * feeding `explore.md -> spec.md` to a ruler that asks about DELIVERY marks the spec as though
- * it were the deliverable.
- *
- * APPROVED, because PRESENT was not enough and the round that proved it is on the record. Six
- * sdlc initiatives were judged on a written review.md whatever status it carried. Two of those
- * reviews were drafts nobody had signed -- and they were the two LOWEST marks in the round,
- * 1.7 and 2.9 against an approved-arc mean of 3.78. An initiative whose review was written and
- * never signed has not finished its own gate, so judging it as a delivered arc measures the
- * work's incompleteness rather than the plugin. That is the same error this file already
- * refuses one step earlier, at the in-flight initiative, arriving one document later. */
+ * The closing document must be there and approved. `$5` is the last entry in that list, and an
+ * initiative without it is not a subject: an initiative still in flight has no end, and one
+ * whose closing document was written and never signed has not finished its own gate, so judging
+ * it as a delivered arc measures the work's incompleteness rather than the plugin. */
 export async function usageInitiatives(
   p: pg.Pool, plugin: string, version: string, stageDocs: string[], flowName: string,
 ) {
@@ -195,9 +147,8 @@ export async function usageInitiatives(
              count(*)                                          as docs
         from touched t
         join zz.doc d on d.team_slug = t.team_slug and d.initiative = t.initiative
-        -- STAGE ORDER, NOT CLOCK ORDER. A flow can revisit a stage -- an audit sends the spec
-        -- back -- so the newest write is not the furthest point reached. The manifest's
-        -- position is what "first" and "last" mean here.
+        -- Stage order, not clock order: a flow can revisit a stage, so the newest write is not the
+        -- furthest point reached. The manifest's position is what "first" and "last" mean here.
         join unnest($4::text[]) with ordinality as sd(path, ord) on sd.path = d.path
        group by t.team_slug, t.initiative
     )
@@ -208,8 +159,7 @@ export async function usageInitiatives(
                                                     join zz.plugin p on p.id = pv.plugin_id
                                                    where p.name = $1 and pv.version = $2)) as scored
       from ends e
-      -- SIGNED, not merely written. See the header: two unsigned reviews were the two lowest
-      -- marks in a round that treated them as delivered work.
+      -- Signed, not merely written: an unsigned closing document is not delivered work.
       join zz.doc cd on cd.team_slug = e.team_slug and cd.initiative = e.initiative
                     and cd.path = e.close_path and cd.status = 'approved'
      where e.docs > 1 and e.close_path = $5
@@ -217,7 +167,7 @@ export async function usageInitiatives(
     [plugin, version, flowName, stageDocs, stageDocs[stageDocs.length - 1]])).rows;
 }
 
-/** The documents THIS FLOW'S OWN STAGES produce, in the order the stages run.
+/** The documents this flow's own stages produce, in the order the stages run.
  *
  * `produces` is one of a filename, `source`, `record` or `nothing`, and only the first is a
  * document of this flow's. A plugin that declares no stages, or none that write a document,

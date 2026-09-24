@@ -1,29 +1,23 @@
 /**
- * WHAT A POLICY BRANCH MAY CONSUME, and the one number it may never consume.
+ * What a policy branch may consume, and the one number it may never consume.
  *
- * A branch that genuinely needs a probability — a threshold, a cost-weighted choice, anything
- * that multiplies — needs a number whose provenance is not the assessor's own token stream. The
- * failure this module exists to prevent is small and entirely plausible: an assessment carries
- * `confidence: 0.93`, the branch reads `signals[0].values.confidence`, and from that point on a
- * word the model wrote is doing the work of a measurement. Nothing about the row says which it
- * was, and the branch's own logs will record a number as though one had been measured.
+ * A branch that needs a probability — a threshold, a cost-weighted choice, anything that
+ * multiplies — needs a number whose provenance is not the assessor's own token stream. A
+ * self-reported `confidence: 0.93` read as one puts a word the model wrote where a measurement
+ * belongs, and nothing about the row afterwards says which it was.
  *
- * SO THE REFUSAL IS THE FEATURE. A branch requiring a probability, given an assessment that
- * carries only a self-reported one, resolves `unsupported` — or, where the profile permits it,
- * routes to a named independent review. Both are `decided: false`, and the second is not an
- * exception to the first: a review that has not happened has decided nothing either. What is
- * never returned is a decision, a zero, or an invented confidence.
+ * So a branch requiring a probability, given an assessment carrying only a self-reported one,
+ * resolves `unsupported`, or routes to a named independent review where the profile permits
+ * it. Both are `decided: false`. What is never returned is a decision, a zero, or an invented
+ * confidence.
  *
- * TWO ORIGINS QUALIFY, and they are the two the port declares for numbers the model did not
- * generate: `native_distribution`, copied from a provider's own primitive, and
+ * Two origins qualify: `native_distribution`, copied from a provider's own primitive, and
  * `empirical_calibration`, supplied by a separately validated calibration. `native_score` does
- * not — a score on a declared scale is a magnitude, not a probability, and the module that
- * turns one into a level needs a qualified mapping rather than this branch's permission.
+ * not — a score on a declared scale is a magnitude, not a probability.
  *
- * AND THE ASSESSMENT MUST ALSO BE ANSWERED. A native distribution can arrive on an assessment
- * the port left `unsupported` — that is exactly what it does when no qualified mapping declares
- * where the decision bounds are. Deciding on it here would be this module performing the
- * mapping the port refused to perform, one layer further from the qualification record.
+ * The assessment must also be answered. A native distribution can arrive on an assessment the
+ * port left `unsupported`, which is what it does when no qualified mapping declares where the
+ * decision bounds are; deciding on it here would perform the mapping the port refused to.
  */
 import { authorizesSemanticAdvance, type SemanticAssessment } from "./assessment.js";
 
@@ -78,12 +72,11 @@ const unanswered = (assessment: SemanticAssessment): string =>
     : `the assessment is ${assessment.status}: ${assessment.failure_reason}`;
 
 /**
- * MAY THIS BRANCH MOVE, ON THIS ASSESSMENT.
+ * May this branch move, on this assessment.
  *
- * The self-reported case gets its own sentence rather than falling into a generic refusal,
- * because "no probability arrived" and "a probability-shaped number arrived and this branch may
- * not consume it" are different facts about the run, and the second is the one somebody will
- * want to read when they ask why the branch stalled.
+ * The self-reported case gets its own sentence rather than a generic refusal: "no probability
+ * arrived" and "a probability-shaped number arrived and this branch may not consume it" are
+ * different facts about the run.
  */
 export function evaluateBranch(request: BranchRequest): BranchVerdict {
   const { assessment } = request;

@@ -1,31 +1,26 @@
 /**
  * Running the rows N at a time, each in a checkout of its own.
  *
- * WHY THIS SPAWNS THE SERIAL RUNNER INSTEAD OF MAKING ITS LOOP ASYNC. The loop is not the
- * valuable part of `mutation-run.ts` — the CONTRACT around each row is: plant exactly once and
- * count it, build, run the whole gate, restore, and prove the tree came back to the snapshot
- * digest or die. That contract is synchronous by construction and has been shown to hold over
- * thousands of rows. Rewriting it to interleave would put every one of those properties back in
- * question to buy the same speed this buys by leaving it alone. So each worker IS the serial
- * runner, unmodified, pointed at a work directory of its own.
+ * DELIBERATE: this spawns the serial runner rather than making its loop async. The valuable part
+ * of `mutation-run.ts` is the contract around each row — plant exactly once and count it, build,
+ * run the whole gate, restore, and prove the tree came back to the snapshot digest or die — and
+ * that contract is synchronous by construction. Each worker is the serial runner, unmodified,
+ * pointed at a work directory of its own.
  *
- * WHY THE WORK IS ALREADY SAFE TO SPLIT. `makeWorkspace` does `cp -a` of the whole checkout,
- * node_modules included, into its own directory, and takes a lock named after its pid. Two
- * runners therefore share no mutable state at all — not the build output, not
- * `node_modules/.zz-psql-echo.sh` that `data-sql.ts` writes during a gate run, not the
- * `marketplace/` tree the gate regenerates. The one thing that made concurrent gate runs unsafe
- * in this repository was two of them in ONE tree; there is no such case here.
+ * The work is safe to split because `makeWorkspace` does `cp -a` of the whole checkout,
+ * node_modules included, into its own directory and takes a lock named after its pid. Two runners
+ * share no mutable state: not the build output, not `node_modules/.zz-psql-echo.sh` that
+ * `data-sql.ts` writes during a gate run, not the `marketplace/` tree the gate regenerates. What
+ * is unsafe is two gate runs in one tree, which cannot happen here.
  *
- * WHY SHARDS ARE BALANCED BY ROW COUNT AND NOT BY FILE. `--only` selects whole check FILES, and
- * the files are wildly uneven: `suites.ts` carries 92 rows and thirty-odd files carry one. Round
- * robin over files hands one worker the 92 and finishes forty minutes after everybody else, so
- * the shards are filled longest-first into whichever worker currently has the fewest rows.
+ * Shards are balanced by row count, not by file: `--only` selects whole check files and they are
+ * wildly uneven, so the shards are filled longest-first into whichever worker currently has the
+ * fewest rows.
  *
- * WHY EVERY WORKER RUNS ITS OWN BASELINE. A baseline is one gate run over a particular copy, and
- * a copy is what a worker restores to. Sharing one would be a claim about a tree no other worker
- * is using. They cost 31 seconds each and they run at the same time, so the price is one gate
- * run of wall clock — and N independently computed baselines that DISAGREE is a fact worth
- * having: it means the source moved while the pass was in flight.
+ * Every worker runs its own baseline. A baseline is one gate run over a particular copy, and a
+ * copy is what a worker restores to; sharing one would be a claim about a tree no other worker is
+ * using. They run at the same time, so the price is one gate run of wall clock — and N
+ * independently computed baselines that disagree means the source moved mid-pass.
  */
 import { spawn } from "node:child_process";
 import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -74,13 +69,12 @@ function child(runner: string, files: string[], work: string, out: string,
 /**
  * Run `wanted` across `workers` processes and merge their reports into `out`.
  *
- * THE MERGE IS BY OWNERSHIP, NOT BY UNION. Every worker is given the CURRENT report as its seed,
- * so each one writes a complete report: its own fresh rows plus every prior row it did not
- * re-run. Unioning those would count the untouched rows N times and, worse, would let a stale
- * copy of a row this pass re-measured win. So each worker contributes exactly the rows for the
- * files it owned, and the rows nobody owned are taken from one worker's copy of them -- which
- * is current, because every worker re-stamped them against the checkout before writing. The
- * seed is kept only to prove afterwards that nothing it held went missing.
+ * The merge is by ownership, not by union. Every worker is seeded with the current report, so
+ * each writes a complete one: its own fresh rows plus every prior row it did not re-run. Unioning
+ * those would count untouched rows N times and let a stale copy of a re-measured row win. Each
+ * worker contributes exactly the rows for the files it owned; rows nobody owned are taken from
+ * one worker's copy, which is current because every worker re-stamped them against the checkout
+ * before writing. The seed is kept only to prove afterwards that nothing it held went missing.
  */
 export async function runSharded(opts: {
   runner: string; source: string; workAt: string; out: string; wanted: string[];
@@ -95,7 +89,7 @@ export async function runSharded(opts: {
     process.exit(2);
   }
   const seed = JSON.parse(readFileSync(out, "utf8")) as Report;
-  // BEFORE ANYTHING IS COPIED. What every worker is about to duplicate, digested once, so the
+  // Before anything is copied. What every worker is about to duplicate, digested once, so the
   // same measurement at the end says whether it stayed still.
   const sourceBefore = treeDigest(source);
   const groups = shard(wanted, rowsFor, workers);
@@ -117,18 +111,15 @@ export async function runSharded(opts: {
 
   const reports = shards.map((s) => JSON.parse(readFileSync(s.out, "utf8")) as Report);
 
-  // THE TREE MUST HAVE BEEN ONE TREE, AND THE WORKERS CANNOT ANSWER THAT.
+  // The tree must have been one tree, and the workers cannot answer that.
   //
-  // This compared their `snapshot_tree_sha256` and refused when they differed — and they always
-  // differ, by construction. `makeWorkspace` runs `seedProvisional` INSIDE the copy before it
-  // takes the snapshot, and what that seeds is the worker's OWN `--only` set, so five workers
-  // produce five legitimately different snapshots. The first sharded pass measured all 105 rows
-  // correctly and then threw them away on that comparison. A cross-check between things that are
-  // meant to differ is not a check, it is a coin toss that happened to come up wrong.
+  // DELIBERATE: the workers' `snapshot_tree_sha256` values are not compared. `makeWorkspace` runs
+  // `seedProvisional` inside the copy before taking the snapshot, and what it seeds is the
+  // worker's own `--only` set, so N workers legitimately produce N different snapshots.
   //
-  // The question was always about the SOURCE, so the source is what is asked. The parent digests
-  // it before spawning and again now: identical means nothing edited the checkout while the pass
-  // was in flight, whatever each worker's copy of it grew afterwards.
+  // The question is about the source, so the source is what is asked. The parent digests it
+  // before spawning and again now: identical means nothing edited the checkout while the pass was
+  // in flight, whatever each worker's copy grew afterwards.
   const sourceAfter = treeDigest(source);
   if (sourceAfter !== sourceBefore) {
     console.error(`  REFUSED — the checkout changed while the pass was running ` +
@@ -136,21 +127,17 @@ export async function runSharded(opts: {
       "exists, and two of them may have been measured against different ones.");
     process.exit(6);
   }
-  // AND THEY MUST HAVE COPIED THE SAME COMMIT. Weaker than the digest above and free: it catches
+  // And they must have copied the same commit. Weaker than the digest above and free: it catches
   // a worker launched against a different checkout entirely, which the digest cannot see.
   const provenance = new Set(reports.map((r) => `${r.source_commit ?? "?"}@${r.source_dirty_paths ?? "?"}`));
   if (provenance.size !== 1) {
     console.error(`  REFUSED — the workers report different provenance (${[...provenance].join(", ")})`);
     process.exit(6);
   }
-  // A RED BASELINE IS NOT THE FAULT — DISAGREEMENT IS. Re-running drifted rows means the tree
-  // arrives with `mutation-coverage.ts` already failing, because a drifted row is exactly what
-  // it reports; that is the reason for the run, not a reason to refuse it. The serial runner has
-  // always handled it: whatever is red before anything is planted is excluded from
-  // `new_failures`, so a row still answers about its own target. What CANNOT be tolerated is two
-  // workers disagreeing, because they are supposed to be looking at one tree — the digests above
-  // say they are, so a different baseline means the run is not reproducible and no row from it
-  // can be compared with any other.
+  // A red baseline is not the fault — disagreement is. Whatever is red before anything is planted
+  // is excluded from `new_failures`, so a row still answers about its own target. Two
+  // workers disagreeing cannot be tolerated: they are looking at one tree, so a different
+  // baseline means the run is not reproducible and no row from it can be compared with another.
   const baselines = new Set(reports.map((r) => [...(r.baseline_failed_ids ?? [])].sort().join("|")));
   if (baselines.size !== 1) {
     console.error(`  REFUSED — the workers did not agree on the baseline: ` +
@@ -167,17 +154,14 @@ export async function runSharded(opts: {
   reports.forEach((r, k) => {
     for (const row of r.results) if (owned[k].has(row.check)) { merged.push(row); seen.add(row.check); }
   });
-  // THE ROWS NOBODY RE-RAN COME FROM A WORKER, NOT FROM THE SEED. Every worker carried them
-  // forward AND re-stamped `live_check_sha256`/`stale` against the checkout as it is now, which
-  // is the binding that makes a carried row honest. Taking them from the seed instead would put
-  // yesterday's verdict about the tree back into today's artifact — the exact staleness the
-  // stamping exists to expose. Any worker's copy will do; they all did the same thing.
+  // The rows nobody re-ran come from a worker, not from the seed. Every worker carried them
+  // forward and re-stamped `live_check_sha256`/`stale` against the checkout as it is now, which is
+  // the binding that makes a carried row honest. Any worker's copy will do.
   const everyone = new Set(wanted);
   for (const row of reports[0].results) if (!everyone.has(row.check)) { merged.push(row); seen.add(row.check); }
 
-  // NOTHING MAY BE LOST, and a missing row is silent in exactly the way this whole artifact
-  // exists to refuse: the coverage check reads a row per declared check, so a merge that
-  // dropped one turns a measured check into an uncovered one with nothing saying so.
+  // Nothing may be lost, and a missing row is silent: a merge that dropped one turns a measured
+  // check into an unmeasured one.
   const lost = seed.results.map((r) => r.check).filter((c) => !seen.has(c));
   const unmeasured = wanted.filter((f) => !seen.has(f));
   if (lost.length || unmeasured.length) {
@@ -188,10 +172,9 @@ export async function runSharded(opts: {
   }
 
   // The envelope comes from a worker rather than being rebuilt here: every worker composed it
-  // from the same source in the same run — the digests above have just proved that was ONE
-  // source — and a second copy of that hundred-line `method` block is the duplicated-constant
-  // shape this repository refuses everywhere else. `produced_at` is the latest of them, so the
-  // artifact is dated when the pass ENDED rather than when its first worker happened to finish.
+  // from the same source in the same run, and a second copy of that `method` block is the
+  // duplicated-constant shape this repository refuses. `produced_at` is the latest of them, so the
+  // artifact is dated when the pass ended rather than when its first worker finished.
   const envelope = reports[0];
   const doc: Report = { ...envelope, results: merged,
                         produced_at: reports.map((r) => r.produced_at ?? "").sort().pop() ?? envelope.produced_at };

@@ -1,5 +1,5 @@
 /**
- * LAYER 3 — is the host running the images and the files this checkout declares?
+ * Layer 3 — is the host running the images and the files this checkout declares?
  *
  * The layer that most often explains everything below it. If the host is a release behind,
  * every door and every contract probe will disagree with the source, correctly, and none of
@@ -7,8 +7,7 @@
  *
  * Everything here is read off the host itself. Nothing is assumed from a container name: the
  * compose project name comes from the directory, so the same stack is `zz-*` on one host and
- * `deploy-*` on another, and a literal that is right for one is silently wrong for the other.
- * deploy/backup.sh made that assumption and stopped backing production up for four nights.
+ * `deploy-*` on another, and a literal right for one is silently wrong for the other.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -52,28 +51,25 @@ probe("the running containers carry the declared image tag", () => {
 
 probe("the console runs the image the host declares", () => {
   const want = ssh(`grep -oP '(?<=^ZZ_DASHBOARD_VERSION=).*' ${DASH_REMOTE}/.env 2>/dev/null || echo ''`).trim();
-  if (!want) return null;   // predates being released; layer `doors` still asks whether it serves
+  if (!want) return null;   // not released yet; layer `doors` still asks whether it serves
   const img = ssh(`cd ${DASH_REMOTE} 2>/dev/null && docker compose ps -q console 2>/dev/null | head -1 | ` +
                   `xargs -r docker inspect --format '{{.Config.Image}}' || true`).trim();
   if (!img) return `the host declares ${want} and no console container is running`;
   return img === `${DASH_IMAGE}:${want}` ? null : `running ${img}, the host declares ${DASH_IMAGE}:${want}`;
 });
 
-// The crontab is host state a release changes by DELETING files out from under it. The
-// TypeScript port removed deploy/collect-turns.py while the host's cron still ran it hourly —
-// the deploy itself would have broken the turn collector, into a log, with nothing saying so.
+// The crontab is host state a release changes by deleting files out from under it: a removed
+// script leaves cron running it hourly, into a log, with nothing saying so.
 probe("every scheduled job names a file that exists", () => {
   const lines = ssh("crontab -l 2>/dev/null | grep '# zz-cron' || true")
     .split("\n").map((x) => x.trim()).filter(Boolean);
-  if (!lines.length) return "no zz-cron jobs on the host — the backup and the turn collector are not scheduled";
+  if (!lines.length) return "no zz-cron jobs on the host — the backup is not scheduled";
   const missing = [];
   for (const line of lines) {
     const cmd = line.replace(/^(\S+\s+){5}/, "").replace(/\s*>>[\s\S]*$/, "");
-    // A `cd <dir> &&` prefix is what a relative script name is relative TO. The first version
-    // of this looked for a name right after `&&`, and the line it was written for is
-    // `cd <dir> && python3 collect-turns.py` — where the name sits after the INTERPRETER. It
-    // found nothing and reported a pass, which is this repository's most-recorded way for a
-    // check to be useless.
+    // A `cd <dir> &&` prefix is what a relative script name is relative to, and the name itself
+    // can sit after an interpreter rather than right after the `&&`, as in
+    // `cd <dir> && python3 job.py`.
     const cwd = /(?:^|&&\s*)cd\s+(\S+)/.exec(cmd)?.[1] ?? `${REMOTE}/deploy`;
     for (const m of cmd.matchAll(/[\w./-]*(?:\.(?:py|sh|mjs)|zz-tool)\b/g)) {
       const abs = m[0].startsWith("/") ? m[0] : `${cwd}/${m[0]}`;

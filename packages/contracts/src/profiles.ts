@@ -1,27 +1,23 @@
 /**
- * THE PROFILE REGISTER: what an immutable profile reference resolves to, and the key anything
- * measured against it is filed under. One subject, separate from `bindings.ts` on purpose — that
- * module is about which profile a run is BOUND to and what changing it costs; this one is about
- * what a ref IS and how work qualifies against it. Nothing here knows a run exists.
+ * The profile register: what an immutable profile reference resolves to, and the key anything
+ * measured against it is filed under. Nothing here knows a run exists.
+ * COUPLED: `bindings.ts` is the other half — which profile a run is bound to, and what
+ * changing it costs.
  *
- * AN IMMUTABLE REF MEANS WHAT IT SAYS. {@link declareProfile} refuses to redefine a ref that is
- * already declared differently: a reference that can be redefined in place is a mutable one with
- * a reassuring name, and every key minted before the redefinition would silently describe
- * something else.
+ * {@link declareProfile} refuses to redefine a ref that is already declared differently: every
+ * key minted before a redefinition would silently describe something else.
  *
- * THE PROVISIONAL PROFILE, AND WHY IT IS SAFE. A ref nobody declared still has to qualify. Its
- * identity is taken to be the ref itself, marked `unverified`, and its adapter, renderer, options
- * and interpretation mapping are null rather than invented. An immutable ref names one pinned
- * profile, so two refs are never the same profile — which makes the ref a LOWER bound on
- * identity: it may SPLIT one model across two keys, never MERGE two models into one. Splitting
- * costs a re-qualification; merging silently lends one model's thresholds to another. Declaring
- * the profile later changes the key again, in the same safe direction.
+ * A ref nobody declared still has to qualify. Its identity is taken to be the ref itself,
+ * marked `unverified`, and its adapter, renderer, options and interpretation mapping are null
+ * rather than invented. An immutable ref names one pinned profile, so the ref is a lower bound
+ * on identity: it may split one model across two keys, never merge two models into one.
+ * Splitting costs a re-qualification; merging lends one model's thresholds to another.
  *
- * HANDLES, NEVER VALUES. `endpoint_ref` and `credential_ref` are host-held handles: stored,
- * digested, dereferenced never. A scheme, an authority, a path or whitespace is refused. The
- * limit of that, plainly: a grammar cannot tell a short opaque handle from a short secret. What
- * makes the guarantee is that nothing here resolves one — no fetch, no client, and no field
- * through which a caller-supplied address could reach a transport.
+ * `endpoint_ref` and `credential_ref` are host-held handles: stored, digested, never
+ * dereferenced. A scheme, an authority, a path or whitespace is refused. A grammar cannot tell
+ * a short opaque handle from a short secret; what makes the guarantee is that nothing here
+ * resolves one — no fetch, no client, and no field through which a caller-supplied address
+ * could reach a transport.
  */
 import { createHash } from "node:crypto";
 import type { IdentityAssurance } from "./assessment.js";
@@ -79,11 +75,11 @@ function canonical(value: unknown): string {
 export const stableDigest = (value: unknown): string =>
   createHash("sha256").update(canonical(value)).digest("hex").slice(0, 32);
 
-/** THE KEY A THRESHOLD OR AN ANSWER IS FILED UNDER. Model identity, adapter, renderer, options
+/** The key a threshold or an answer is filed under. Model identity, adapter, renderer, options
  *  and interpretation mapping come from the profile; task, language and risk from the slice.
- *  Every one is something the measurement depended on, so every one is in the key — and the
- *  identity being in it is why a new model cannot find the old model's numbers. It is a digest,
- *  not a name: two profiles differing in any declared field differ in it. */
+ *  Every one is something the measurement depended on, and the identity being in it is why a
+ *  new model cannot find the old model's numbers. A digest, not a name: two profiles differing
+ *  in any declared field differ in it. */
 export function qualificationKey(profile: ResolvedProfile, slice: QualificationSlice): string {
   return stableDigest({
     model_identity: profile.model_identity, adapter: profile.adapter, renderer: profile.renderer,
@@ -95,9 +91,9 @@ export function qualificationKey(profile: ResolvedProfile, slice: QualificationS
 const declarations = new Map<string, ProfileDeclaration>();
 const minted = new Map<string, ResolvedProfile>();
 
-/** A host handle, in the only shape this register accepts: dotted or dashed lowercase segments,
- *  optionally namespaced with a colon. A scheme, an authority, a path or whitespace is refused
- *  outright — those are the shapes an address takes, and no address belongs in this record. */
+/** A host handle, in the only shape this register accepts: dotted or dashed lowercase
+ *  segments, optionally namespaced with a colon. A scheme, an authority, a path or whitespace
+ *  is refused — those are the shapes an address takes. */
 const HANDLE = /^[a-z][a-z0-9]*(?:[-.][a-z0-9]+)*(?::[a-z0-9][a-z0-9-]*)*$/;
 
 function assertHandle(kind: string, value: string): void {
@@ -140,9 +136,8 @@ export function resolveProfile(ref: string, slot: BoundRole): ResolvedProfile {
   return profile;
 }
 
-/** The profile a digest was minted from. This is what lets a consumer re-derive the key a piece
- *  of evidence was filed under WITHOUT trusting the key stored beside it — which is the whole
- *  reason provenance is checkable after the fact. */
+/** The profile a digest was minted from, so a consumer can re-derive the key a piece of
+ *  evidence was filed under without trusting the key stored beside it. */
 export const profileByDigest = (profileDigest: string): ResolvedProfile | undefined =>
   minted.get(profileDigest);
 

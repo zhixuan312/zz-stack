@@ -1,6 +1,6 @@
 ---
 name: zz-deck
-version: 2.2
+version: 2.3
 description: Turn something already written — a spec, a report, a changelog, a thread — into a slide deck that makes an argument, built on the house visual system. Not an outline of the source: a conclusion, the claims that carry it, and one composition per claim.
 when_to_use: "Someone needs to present something that already exists in prose. Typed on purpose as /zz-core:deck in Claude Code, or matched as a skill. Standalone — no initiative, no gate, no place in the sequence."
 ---

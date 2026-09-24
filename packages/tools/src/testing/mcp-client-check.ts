@@ -1,16 +1,11 @@
 /**
  * Verify the shared MCP client against a stub server. No gateway, no network, no fixtures.
  *
- * Every other engine here needs a live deployment, which is right for what they measure and
- * wrong for this: a protocol client is exactly the thing that should be provable on a laptop
- * in a second. The six hand-rolled clients this replaced were never tested at all — they were
- * verified by the scripts around them appearing to work, which is how three of them came to
- * parse a streamable-HTTP answer three different ways without anybody noticing.
+ * Every other engine here needs a live deployment; a protocol client is provable on a laptop.
  *
- * The case that matters most is `sse_with_progress`: a progress frame arrives BEFORE the
- * result. A reading that takes the first `data:` line returns the notification and calls it
- * the answer. That was one of the six, and it was correct only because nothing had sent a
- * progress frame yet.
+ * The case that matters most is `sse_with_progress`: a progress frame arrives before the
+ * result, so a reading that takes the first `data:` line returns the notification and calls it
+ * the answer.
  *
  *   npm run check:mcp-client      # exits non-zero on failure, like every engine here
  */
@@ -21,10 +16,10 @@ import { Mcp, McpError, lastJson } from "@zz/mcp-client";
 
 const SEEN: { method?: string; session: string | null }[] = [];
 const HEADERS: IncomingMessage["headers"][] = [];
-/** Incrementing, so "it opened a NEW session" is something a check can see rather than
+/** Incrementing, so "it opened a new session" is something a check can see rather than
  * infer. The first client still gets S1, which is what the assertions below name. */
 let sessions = 0;
-/** Tools that answer 404 once, mirroring a session mcp-http's sweeper has reclaimed. */
+/** Tools that answer 404 once, mirroring a session-managed server that has reclaimed a session. */
 const expired = new Set<string>();
 
 function stub(req: IncomingMessage, res: ServerResponse): void {
@@ -44,10 +39,9 @@ function stub(req: IncomingMessage, res: ServerResponse): void {
     };
 
     if (body.method === "initialize") {
-      // /broken answers a well-formed JSON-RPC frame that carries no result. A real endpoint
-      // does this when it is up but not an MCP server — the wrong path, a proxy's own error
-      // page rendered as JSON — and it is the case where saying so at the handshake is worth
-      // far more than a confusing failure one call later.
+      // /broken answers a well-formed JSON-RPC frame carrying no result — what a real endpoint
+      // does when it is up but not an MCP server, where saying so at the handshake beats a
+      // confusing failure one call later.
       if ((req.url ?? "").endsWith("/broken")) {
         json('{"jsonrpc":"2.0","id":1,"error":{"message":"not an MCP server"}}');
         return;
@@ -62,9 +56,8 @@ function stub(req: IncomingMessage, res: ServerResponse): void {
       return;
     }
     const tool = body.params?.name;
-    // A session this server no longer knows. Byte for byte what @zz/mcp-http answers, because
-    // the client keys on the STATUS and a stub that answered 400 here would prove nothing
-    // about the case that actually happens.
+    // A session this server no longer knows, as a session-managed MCP server answers it: the
+    // client keys on the status, so a stub answering 400 here would prove nothing.
     const gone = (): void => {
       json('{"jsonrpc":"2.0","error":{"code":-32001,"message":"Session not found: initialize a new session"},"id":null}', 404);
     };
@@ -143,12 +136,12 @@ async function main(): Promise<number> {
     client.server,
   );
 
-  // A block authenticates on whatever header its team chose, so the probe has to be able to
-  // send one that is not Authorization.
-  // From here, so EVERY request this client makes is examined — including its handshake. The
-  // Authorization assertion below read the last two requests, which left the initialize out:
-  // a client that invented a bearer token at the handshake and dropped it afterwards would
-  // have passed, and the handshake is where a wrong credential does the most damage.
+  // A caller may need to send a header that is not Authorization — the console forwards the
+  // caller's identity headers this way.
+  //
+  // Marked from here, so every request this client makes is examined including its handshake:
+  // reading only the last two requests leaves the initialize out, and a client that invented a
+  // bearer token at the handshake and dropped it afterwards would pass.
   const firstKeyed = HEADERS.length;
   const keyed = new Mcp(url, { client: "mcp-client-check", headers: { "X-API-Key": "k-123" } });
   await keyed.call("plain");
@@ -171,13 +164,12 @@ async function main(): Promise<number> {
     check("a handshake that returns no result fails at the handshake", String(e).includes("initialize"), String(e));
   }
 
-  // A SESSION THE SERVER HAS FORGOTTEN. mcp-http reclaims one after two idle hours and
-  // answers 404 so a client can open a new one; this client used to throw instead, so a long
-  // probe or a smoke lane died on a session that had simply been tidied away.
-  // FROM THIS CLIENT'S OWN REQUESTS. SEEN is every request the stub has taken, and the
-  // assertion below used to read all of them: "some tools/call carried a session that is not
-  // S1". By this point `keyed` has already opened S2 and called through it, so that was true
-  // before this client existed — the check could not fail, and proved nothing about reopening.
+  // A session the server has forgotten: a session-managed server answers 404 so a client can
+  // open a new one.
+  //
+  // Sliced to this client's own requests. SEEN is every request the stub has taken, and `keyed`
+  // has already opened a second session by this point, so an assertion over all of them would
+  // be true before this client existed.
   const beforeDropped = SEEN.length;
   const dropped = new Mcp(url, { client: "mcp-client-check" });
   try {
@@ -186,8 +178,8 @@ async function main(): Promise<number> {
   } catch (e) {
     check("a session the server has forgotten is reopened, not fatal", false, String(e));
   }
-  // Two attempts at ONE call: the first on the session the server forgot, the second on a
-  // fresh one. That is the whole property, and it is visible only in this client's slice.
+  // Two attempts at one call: the first on the session the server forgot, the second on a
+  // fresh one. Visible only in this client's slice.
   const droppedCalls = SEEN.slice(beforeDropped).filter((x) => x.method === "tools/call");
   check(
     "reopening means a NEW session, not the dead one resent",
@@ -197,8 +189,8 @@ async function main(): Promise<number> {
     droppedCalls,
   );
 
-  // ONCE. A server that 404s a session it has just issued is not dropping a session, and
-  // retrying it forever would be this client hammering somebody else's endpoint.
+  // Once: a server that 404s a session it has just issued is not dropping a session, and
+  // retrying forever would be this client hammering somebody else's endpoint.
   const initsBefore = SEEN.filter((x) => x.method === "initialize").length;
   try {
     await new Mcp(url, { client: "mcp-client-check" }).call("always_gone");

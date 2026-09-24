@@ -4,18 +4,16 @@
  *
  * Six verbs (`baseline`, `fixtures`, `verify`, `benchmark`, `migrate`, `export`), a required
  * workspace that must resolve outside this checkout, and ten named verification suites. Every
- * verb's actual work is a plain function in a sibling module; this file's whole job is argv,
- * the workspace gate, and turning a `CliError` into the JSON-on-stderr shape a caller can
- * parse — `code`, `message`, and `suites` for UNKNOWN_SUITE.
+ * verb's work is a plain function in a sibling module; this file handles argv, the workspace
+ * gate, and turning a `CliError` into the JSON-on-stderr shape a caller can parse — `code`,
+ * `message`, and `suites` for UNKNOWN_SUITE.
  *
- * NOTHING RUNS ON IMPORT. Dispatch only happens inside the "am I the file that was invoked"
+ * Nothing runs on import: dispatch happens only inside the "am I the file that was invoked"
  * guard at the bottom, so `checks/tenant-info-cli.ts` can import `resolveSuite` from
- * `verify.ts` — which this file also imports — without a command ever firing, and anything
- * else that wants these functions can import them the same way. That guard compares realpaths
- * rather than `import.meta.main`: the package floor is Node >=24.0.0 and the flag-free form of
- * `import.meta.main` is newer than that, so a plain `===` on `import.meta.url` would silently
- * read `undefined` — and hence never dispatch, exiting 0 having printed nothing — on an
- * otherwise-supported Node this repository declares as its floor.
+ * `verify.ts` without a command firing. DELIBERATE: that guard compares realpaths rather than
+ * `import.meta.main`, whose flag-free form is newer than this package's Node >=24.0.0 floor —
+ * a plain `===` on `import.meta.url` would read `undefined`, never dispatch, and exit 0 having
+ * printed nothing.
  *
  * Exit codes: 2 is an invalid invocation (a WORKSPACE_*, UNKNOWN_SUITE or INVALID_ARGUMENTS
  * `CliError`); 1 is a required operation that ran and did not pass, including a suite whose
@@ -68,10 +66,9 @@ async function dispatchVerify(flags: Map<string, FlagValue>): Promise<DispatchRe
   }
   const workspace = resolveWorkspace();
   if (finalizeFlag) {
-    // `ok` IS `ready`, AND NOTHING ELSE IS. A finalization that ran to completion, wrote a
+    // `ok` is `ready`, and nothing else is. A finalization that ran to completion, wrote a
     // structurally perfect report and found four suites blocked has succeeded as a command and
-    // has not produced a release — exactly the distinction `benchmark` above draws, on the one
-    // receipt where getting it wrong would exit 0 on a delivery nobody may ship.
+    // has not produced a release.
     const result = await finalize(workspace);
     return { receipt: result, ok: result.ready };
   }
@@ -123,25 +120,21 @@ async function dispatch(argv: string[]): Promise<DispatchResult> {
         throw new CliError("INVALID_ARGUMENTS", `--profile must be "baseline" or "acceptance", got "${profile}".`);
       }
       const workspace = resolveWorkspace();
-      // `--measure` IS THE EXECUTION HALF, and it runs BEFORE the assembler rather than beside
-      // it. `runMeasurement` puts the held-out queries through the real public search path and,
-      // only if every premise of that measurement held, writes the observations into
-      // `<workspace>/benchmark-inputs/<profile>/measurements.json` — which is exactly the file
-      // `assembleBenchmarkReport` below already loads. So a measured run turns blocked quality
-      // targets into observations without this verb, or that module, knowing anything new.
-      // A refused measurement stops here: nothing was written, every target is still blocked,
-      // and assembling a report over the same absent inputs would only restate that at length.
+      // `--measure` is the execution half and it runs before the assembler. `runMeasurement`
+      // puts the held-out queries through the real public search path and, only if every
+      // premise of that measurement held, writes the observations into
+      // `<workspace>/benchmark-inputs/<profile>/measurements.json`, which is the file
+      // `assembleBenchmarkReport` below already loads. A refused measurement stops here:
+      // nothing was written and every target is still blocked.
       if (flags.get("measure") === true) {
         const measurement: MeasureReceipt = await runMeasurement(workspace, profile as BenchmarkProfile);
         if (!measurement.ok) return { receipt: measurement, ok: false };
         const assembled: BenchmarkReceipt = runBenchmark(workspace, profile as BenchmarkProfile);
         return { receipt: { measurement, benchmark: assembled }, ok: assembled.ok };
       }
-      // `ok` COMES OFF THE RECEIPT, exactly as `migrate` below already does. A benchmark that
-      // produced a structurally perfect report carrying eighteen blocked targets has run and
-      // has not passed, and the exit code is the only part of that an acceptance script reads.
-      // This verb returned 0 unconditionally until I-23, so "the benchmark command succeeded"
-      // and "the release targets were met" were two claims that looked like one.
+      // `ok` comes off the receipt. A benchmark that produced a structurally perfect report
+      // carrying eighteen blocked targets has run and has not passed, and the exit code is the
+      // only part of that an acceptance script reads.
       const receipt: BenchmarkReceipt = runBenchmark(workspace, profile as BenchmarkProfile);
       return { receipt, ok: receipt.ok };
     }
@@ -156,10 +149,9 @@ async function dispatch(argv: string[]): Promise<DispatchResult> {
         throw new CliError("INVALID_ARGUMENTS", "--apply requires --target PATH and --manifest PATH.");
       }
       const workspace = resolveWorkspace();
-      // `ok` COMES OFF THE RECEIPT, not from "the verb returned". A migration that carried
-      // eleven of twelve rows, or matched none of its bytes back out of the target, has run
-      // and has not succeeded — and the exit code is the only part of that a cutover script
-      // reads. Every other verb here already distinguishes the two.
+      // `ok` comes off the receipt, not from "the verb returned". A migration that carried
+      // eleven of twelve rows, or matched none of its bytes back out of the target, has run and
+      // has not succeeded, and the exit code is the only part of that a cutover script reads.
       const args: MigrateArgs = {
         apply, source: value("source"), target: value("target"),
         manifest: value("manifest"), owner: value("owner"),
@@ -193,12 +185,10 @@ if (isMain) {
     })
     .catch((err: unknown) => {
       if (err instanceof CliError) failInvocation(err);
-      // A THROWN VALUE THAT ALREADY NAMES ITSELF KEEPS ITS NAME. `planCorpora` refuses a scale
+      // A thrown value that already names itself keeps its name: `planCorpora` refuses a scale
       // demanding a fraction of a 1-MiB fixture with its own `FRACTIONAL_FIXTURE_COUNT`, which
-      // the contract names and the frozen check asserts — and the catch-all below used to
-      // relabel it `INVALID_ARGUMENTS` on the way out, so the refusal was correct in process
-      // and invisible at the command line. Anything carrying a code this CLI recognises is
-      // reported as itself; everything else is still an invalid invocation.
+      // the contract names and the frozen check asserts. Anything carrying a code this CLI
+      // recognises is reported as itself; everything else is an invalid invocation.
       const code = err instanceof Error && "code" in err && isCliErrorCode((err as { code: unknown }).code)
         ? (err as { code: CliErrorCode }).code
         : "INVALID_ARGUMENTS";

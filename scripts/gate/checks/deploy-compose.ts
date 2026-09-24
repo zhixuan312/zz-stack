@@ -16,20 +16,16 @@ import { postgresService } from "../../release/postgres-service.ts";
 import { ourDocs } from "../facts.ts";
 
 check("compose resolves with NO environment at all", () => {
-  // This is the install experience: a person has the file and nothing else. It used to
-  // REQUIRE ZZ_VERSION, which meant the one value nobody receiving the file could know
-  // was also the one that stopped it starting. Now the versions are literals and an empty
-  // environment must produce exactly the images this release publishes.
+  // This is the install experience: a person has the file and nothing else. The versions are
+  // literals, and an empty environment must produce exactly the images this release publishes.
   const bare = { ...process.env };
-  for (const k of ["ZZ_VERSION", "ZZ_BLOCKS_VERSION", "ZZ_IMAGE", "ZZ_BLOCKS_IMAGE"]) delete bare[k];
-  // The front end's own secrets are the one thing this file REFUSES to default, because a
-  // default here would be a published secret every deployment shared. They are supplied as
-  // placeholders so this check still asks what it is about: that nobody has to know a
-  // VERSION to start the stack. The install steps generate the real ones.
+  for (const k of ["ZZ_VERSION", "ZZ_IMAGE"]) delete bare[k];
+  // Secrets are the one thing compose refuses to default, because a default would be a published
+  // secret every deployment shared. Placeholders keep this check asking its own question: that
+  // nobody has to know a version to start the stack.
   //
-  // READ OFF THE FILE, not listed here. Four were named, and a fifth `:?` added to compose
-  // would have failed this check with a docker error about a variable — pointing at the gate
-  // rather than at the variable, for a defect that is not in either.
+  // Read off the file, not listed here — a new `:?` added to compose would otherwise fail this
+  // check with a docker error pointing at the gate.
   const composeText = readFileSync(join(root, "deploy/docker-compose.yml"), "utf8");
   for (const m of composeText.matchAll(/\$\{([A-Z_]+):\?/g)) bare[m[1]] ||= "gate-placeholder";
   const out = execFileSync("docker", ["compose", "-f", "docker-compose.yml", "config"], {
@@ -48,9 +44,9 @@ check("compose resolves with NO environment at all", () => {
 });
 
 check("the compose file names this release's images", () => {
-  // The compose literal and the manifests are one release. They drifted apart silently
-  // before this check existed: a bundle can look correct while every image tag in it
-  // points at the previous version, and the first sign is a host running old code.
+  // The compose literal and the manifests are one release. A bundle can look correct while
+  // every image tag in it points at the previous version, and the first sign is a host running
+  // old code.
   const want = String(asRecord(readJson("package.json"), "package.json").version);
   const txt = readFileSync(join(root, "deploy/docker-compose.yml"), "utf8");
   const tags = [...txt.matchAll(/ZZ_VERSION:-([^}]*)\}/g)].map((m) => m[1]);
@@ -69,13 +65,11 @@ check("no compose service builds from a sibling repo in the images-only file", (
 });
 
 check("no document tells someone to use a compose profile that does not exist", () => {
-  // deploy/README named `--profile scale` in four places — the sizing table, the migration
-  // note, and the cold-start record — after the profile was removed and Postgres and Redis
-  // became ordinary services. An instruction naming a profile compose does not define runs
-  // and silently starts nothing, which is the same failure the profile itself used to cause.
-  // Comment lines stripped first: the compose file EXPLAINS that postgres used to sit
-  // behind `profiles: [scale]`, and reading that sentence as a definition made this check
-  // certify the very profile whose removal the sentence describes.
+  // A document telling someone to start the stack with a profile that compose does not define
+  // sends them to a command that silently starts nothing.
+  //
+  // Comment lines are stripped first: the compose file's own prose names a profile it no longer
+  // defines, and reading that sentence as a definition would certify exactly that profile.
   const compose = readFileSync(join(root, "deploy/docker-compose.yml"), "utf8")
     .split("\n").filter((l) => !l.trim().startsWith("#")).join("\n");
   const defined = new Set([...compose.matchAll(/profiles:\s*\[([^\]]*)\]/g)]
@@ -85,20 +79,14 @@ check("no document tells someone to use a compose profile that does not exist", 
   for (const rel of ourDocs()) {
     const txt = readFileSync(join(root, rel), "utf8");
     txt.split("\n").forEach((line, i) => {
-      // `--profile` IS NOT COMPOSE'S WORD ALONE. `npm run tenant-info -- verify --suite X
-      // --profile integration` selects a VERIFICATION profile (scripts/tenant-info/cli.ts:
-      // "integration" or "acceptance"), which has nothing to do with a compose profile and
-      // cannot be defined in docker-compose.yml. Matching the flag spelling rather than the
-      // command made deploy/RESTORE-AND-CUTOVER.md's rehearsal commands read as instructions
-      // to start a compose profile that does not exist — a false positive whose only
-      // available fix would have been to stop documenting the real command.
-      //
-      // Narrow on purpose: it excuses the one other CLI in this repository that owns a
-      // `--profile` flag, and excuses nothing about compose. A bare "start it with
-      // --profile scale" is still caught, which is the defect this check was written for.
+      // DELIBERATE: `--profile` is not compose's word alone. `npm run tenant-info -- verify
+      // --suite X --profile integration` selects a verification profile (scripts/tenant-info/
+      // cli.ts: "integration" or "acceptance"), which cannot be defined in docker-compose.yml.
+      // Narrow on purpose: it excuses that one CLI and nothing about compose, so a bare "start
+      // it with --profile scale" is still caught.
       if (/\btenant-info\b/.test(line)) return;
       for (const m of line.matchAll(/--profile\s+([a-z0-9-]+)/g)) {
-        // A line that says the profile is GONE is the fix, not the defect.
+        // A line that says the profile is gone is the fix, not the defect.
         if (/\bnow\b|used to|no longer|unconditional|removed/i.test(line)) continue;
         if (!defined.has(m[1])) bad.push(`${rel}:${i + 1} tells the reader to use --profile ${m[1]}`);
       }
@@ -108,30 +96,20 @@ check("no document tells someone to use a compose profile that does not exist", 
 });
 
 check("Caddy proxies the port the compose file actually publishes", () => {
-  // Two files have to agree about one number and nothing made them. The Caddyfile names the
-  // gateway's upstream host:port; the compose file publishes it from CRED_PROXY_PORT. A
-  // change to either alone produces a 502 with nothing in it to say which half moved.
+  // Two files have to agree about one number. The Caddyfile names the gateway's upstream
+  // host:port; the compose file publishes it from CRED_PROXY_PORT. A change to either alone
+  // produces a 502 with nothing in it to say which half moved.
   const caddy = readFileSync(join(root, "deploy/Caddyfile"), "utf8");
   const compose = readFileSync(join(root, "deploy/docker-compose.yml"), "utf8");
   const want = /CRED_PROXY_PORT:-(\d+)/.exec(compose)?.[1];
   if (!want) return "compose declares no CRED_PROXY_PORT default";
-  // The api host's BLOCK, not the first mention of "api." — which is in the comment header,
-  // and slicing from there found the browser host's proxy instead. This check reported the
-  // browser port as a mismatch on its first run, which is the sort of thing that trains
-  // people to ignore a gate.
+  // The api host's block, not the first mention of "api." — which is in the comment header, and
+  // slicing from there finds the browser host's proxy instead.
   const block = /^api\.[^\s{]*\s*\{([\s\S]*?)^\}/m.exec(caddy)?.[1];
   if (!block) return "deploy/Caddyfile has no api host block";
-  // THE FALLTHROUGH PROXY, not the first one in the block. The api host also carries ten
-  // `handle /blocks/…` directives, each with a reverse_proxy of its own to a mock block on
-  // :8761 or :8762, and they are written ABOVE the gateway because `handle` is terminal and
-  // matching more specifically first is how the file reads. Taking the first match therefore
-  // compared the gateway's declared port against bookit's and reported a mismatch that
-  // was not one.
-  //
-  // This check passed for months only because deploy/Caddyfile was missing those handles
-  // entirely while both live hosts ran them — so it was reading a file that did not describe
-  // the deployment, and agreeing with it. Stripping the handle blocks leaves exactly the
-  // unconditional proxy the compose port has to match.
+  // The fallthrough proxy, not the first one in the block: a `handle` directive carries its own
+  // reverse_proxy, so stripping the handle blocks leaves the unconditional proxy the compose
+  // port has to match.
   const fallthrough = block.replace(/handle[^\n]*\{[\s\S]*?\n\s*\}/g, "");
   const got = /reverse_proxy\s+\S*?:(\d+)/.exec(fallthrough)?.[1];
   if (!got) return "the api host in deploy/Caddyfile has no unconditional reverse_proxy upstream";
@@ -140,22 +118,15 @@ check("Caddy proxies the port the compose file actually publishes", () => {
 });
 
 check("only the authenticated door may be published beyond loopback", () => {
-  // zz-core has no authentication of its own; the gateway is the door and /core/mcp is the
-  // way in. Publishing zz-core on the same host address made that premise false — the port
-  // answered tools/list to anyone, and document_read returned another team's approved spec to a
-  // caller who supplied nothing but an email header. It happened because ONE variable,
-  // MCP_BIND, governed both the gateway (which must be reachable) and the internal services
-  // (which must not be), so widening one widened the other.
+  // zz-core has no authentication of its own; the gateway is the door and /core/mcp is the way
+  // in. Publishing zz-core on the same host address makes that premise false — the port answers
+  // tools/list to anyone, and document_read returns another team's approved spec to a caller who
+  // supplied nothing but an email header.
   const compose = readFileSync(join(root, "deploy/docker-compose.yml"), "utf8");
-  // WHAT CADDY FRONTS, asked of the Caddyfile. The exemption named `cred-proxy` and
-  // `librechat`, and its own comment claims to name roles — but `librechat` is a product, and
-  // this exemption has already been stranded once by a front-end swap: it named the previous
-  // product, so after the replacement it covered nothing, and a configuration the front end
-  // is allowed would have been refused. The next swap does the same thing again.
-  //
-  // A service is a DOOR if Caddy reverse-proxies the port it publishes. That is the property
-  // the rule is actually about — everything else is reachable only from the compose network
-  // and has no business binding wider — and it survives the container being renamed.
+  // What Caddy fronts, asked of the Caddyfile rather than from a list of container names: a
+  // service is a door if Caddy reverse-proxies the port it publishes. That is the property the
+  // rule is about — everything else is reachable only from the compose network — and it survives
+  // the container being renamed or the front end being swapped.
   const fronted = new Set([...readFileSync(join(root, "deploy/Caddyfile"), "utf8")
     .matchAll(/reverse_proxy\s+\S*?:(\d+)/g)].map((m) => m[1]));
   if (fronted.size === 0) return "deploy/Caddyfile proxies nothing — no door can be identified";
@@ -177,15 +148,12 @@ check("only the authenticated door may be published beyond loopback", () => {
 });
 
 check("a default install starts every service its defaults point at", () => {
-  // `docker compose up -d` is the documented install and the release bundle's whole
-  // premise. postgres and redis sat behind `profiles: [scale]`, so it started three
-  // services whose default database URLs named a container it had just declined to start —
-  // while the comment beside those URLs said "falls back to the postgres this compose
-  // starts". The live host never noticed because it runs --profile scale and overrides
-  // every URL in .env, so the tested path and the shipped path were different paths.
+  // `docker compose up -d` is the documented install and the release bundle's whole premise, so
+  // a service behind `profiles:` must not be named in another service's default URL: the stack
+  // starts with a database URL pointing at a container it declined to start.
   //
-  // "compose resolves with no environment" could not see this: `{}` and an unreachable
-  // hostname both resolve perfectly. Resolving is not the same as working.
+  // "compose resolves with no environment" cannot see this — `{}` and an unreachable hostname
+  // both resolve perfectly.
   const compose = readFileSync(join(root, "deploy/docker-compose.yml"), "utf8");
   const services = [];
   const profiled = new Set();
@@ -207,10 +175,8 @@ check("a default install starts every service its defaults point at", () => {
 });
 
 check("every build a compose file names points at a Dockerfile that exists", () => {
-  // docker-compose.build.yml named `deploy/ts.Dockerfile`, which was not in the repo — so
-  // the development build path the README documents failed on the first command, and had
-  // for as long as the Dockerfile lived only in someone's shell history. A build that names
-  // a missing file is not a stale comment; it is a broken instruction that reads as working.
+  // A build that names a missing Dockerfile is a broken instruction that reads as working: the
+  // development build path the README documents fails on its first command.
   const bad: string[] = [];
   for (const name of ["deploy/docker-compose.yml", "deploy/docker-compose.build.yml"]) {
     const f = join(root, name);
@@ -228,16 +194,13 @@ check("every build a compose file names points at a Dockerfile that exists", () 
 });
 
 check("the Caddyfile puts global options where Caddy accepts them", () => {
-  // `timeouts` is a GLOBAL option — it belongs in the `{ servers { … } }` block at the top,
-  // not inside a site. Inside one, Caddy rejects the whole file: "unrecognized directive:
-  // timeouts". The reload then FAILS and the previous config stays loaded, which is the part
-  // that hurts — on a host being migrated the old config still proxies to the front end the
-  // release has just removed, so the public URL answers 502 while every container is healthy
-  // and the deployment looks fine. That happened on production during this release.
+  // `timeouts` is a global option — it belongs in the `{ servers { … } }` block at the top, not
+  // inside a site. Inside one, Caddy rejects the whole file ("unrecognized directive: timeouts"),
+  // the reload fails and the previous config stays loaded, so the public URL answers 502 while
+  // every container is healthy.
   const f = join(root, "deploy/Caddyfile");
-  // TRACKED, SO ITS ABSENCE IS A DEFECT. deploy/Caddyfile is committed, and the 502 described
-  // above is what a missing or wrong one does to production. Passing silently when the file
-  // is gone is the one answer this check must not give.
+  // Tracked, so its absence is a defect: deploy/Caddyfile is committed, and passing silently
+  // when the file is gone is the one answer this check must not give.
   if (!existsSync(f)) return "deploy/Caddyfile does not exist — the reverse proxy a release "
                            + "reloads has no configuration in this repository";
   const lines = readFileSync(f, "utf8").split("\n");
@@ -258,42 +221,27 @@ check("the Caddyfile puts global options where Caddy accepts them", () => {
 });
 
 check("a compose container is addressed as a service, never by a name we built", () => {
-  // Compose names a container `<project>-<service>-<n>`, and the PROJECT comes from
-  // COMPOSE_PROJECT_NAME — which lives in deploy/.env, a file COMPOSE reads and a shell does
-  // not. Production sets it to `zz` and UAT does not, so the same stack runs as `zz-*` on one
-  // host and `deploy-*` on the other, and any name built here is right on at most one of them.
+  // Compose names a container `<project>-<service>-<n>`, and the project comes from
+  // COMPOSE_PROJECT_NAME — which lives in deploy/.env, a file compose reads and a shell does
+  // not, and is set per host — so any name built here is right on at most one host.
   //
-  // It has now cost something on both sides of that. deploy/backup.sh derived the project
-  // from its own directory, got `deploy` on production, and from 2026-08-26 ran `docker exec
-  // deploy-postgres-1` into "No such container": four nights of 20-byte database dumps, no
-  // artifacts archive and no credential archive, into a log nobody reads, while the script
-  // exited non-zero to cron. release.ts had the same literal pointing the other way,
-  // `zz-postgres-1` under `|| true`, so its migration probe could only ever work against the
-  // one host a release touches. reset-smoke-store.sh had `deploy-zz-core-1`, correct on UAT
-  // and wrong on production, in a script whose whole job is deleting things.
-  //
-  // `docker compose exec <service>` from the compose directory asks compose to resolve its
-  // own project, and then nothing here has to know the convention. A `docker run` against an
-  // ad-hoc image is not this — it names no compose container — and stays allowed.
+  // `docker compose exec <service>` from the compose directory asks compose to resolve its own
+  // project. A `docker run` against an ad-hoc image names no compose container and stays
+  // allowed.
   const bad: string[] = [];
   for (const rel of [...sourceFiles(["deploy", "testing", "scripts"], [".sh", ".ts"]),
                      ...sourceFiles(["packages", "services"], [".ts"])]) {
     if (gateOwnSource(rel)) continue;   // it has to spell the shape
     const src = readFileSync(join(root, rel), "utf8");
-    // Names THIS FILE created itself, with `docker run --name <x>`. The paragraph above
-    // already draws this line — an ad-hoc `docker run` names no compose container — and the
-    // implementation did not, so a script that starts a throwaway postgres and then execs
-    // into it under the name it just chose was told to ask compose about a service compose
-    // has never heard of. A name the file did not create is still a name it guessed.
+    // Names this file created itself, with `docker run --name <x>`. A name the file did not
+    // create is still a name it guessed.
     const created = new Set(
       [...src.matchAll(/--name["'\s,]+([A-Za-z_$][\w$]*)/g)].map((m) => m[1])
         .filter((n) => n !== "true" && n !== "false"));
     src.split("\n").forEach((ln, i) => {
       if (/^\s*(#|\/\/|\*|\/\*)/.test(ln)) return;       // prose about the mistake is the record
-      // BOTH SPELLINGS. This read only the shell form, so `run("docker", ["exec", "zz-postgres-1"
-      // …])` — the argv form every .mjs here uses — walked straight past a rule written for
-      // exactly that container name. A check that catches a mistake in one syntax and not the
-      // other is worse than none, because the syntax it misses is the one people write.
+      // Both spellings: `docker exec …` in a shell and `run("docker", ["exec", …])` in argv
+      // form, which is what every .mjs here uses.
       if (!/\bdocker exec\b/.test(ln) &&
           !/["'`]docker["'`]\s*,\s*\[\s*["'`]exec["'`]/.test(ln)) return;
       if ([...created].some((n) => new RegExp(`(\\$\\{\\s*${n}\\s*\\}|\\b${n}\\b)`).test(ln))) return;
@@ -318,17 +266,11 @@ check("a compose container is addressed as a service, never by a name we built",
 });
 
 check("a hostname with no dots is a service this compose file defines", () => {
-  // `deploy/zz-tool` told an operator to pass `--gateway http://gateway:8000`. There has
-  // never been a service called `gateway` — it is `cred-proxy` — so the address in the
-  // header of the script that runs every day-2 command resolved to nothing, and the failure
-  // arrives as a DNS error from a command deploy/README documents as the first thing to run
-  // after installing.
-  //
-  // A DOTLESS HOST WITH A PORT is the whole rule, and it is exactly the shape a compose
-  // service reference takes: on the compose network `librechat`, `cred-proxy` and `postgres`
-  // resolve and nothing else does. A real address has a dot in it, and `localhost` and the
-  // loopback literals are named below. Surveyed across every tracked file before this was
-  // added: one occurrence, and it was the defect.
+  // A dotless host with a port is the whole rule, and it is exactly the shape a compose service
+  // reference takes: on the compose network `zz-core`, `cred-proxy` and `postgres` resolve and
+  // nothing else does. A real address has a dot in it, and `localhost` and the loopback literals
+  // are named below. An address like `http://gateway:8000` names no service and resolves to
+  // nothing, and the failure arrives as a DNS error.
   const compose = readFileSync(join(root, "deploy/docker-compose.yml"), "utf8");
   const services = new Set(
     [...between(compose, "\nservices:", "\nvolumes:").text?.matchAll(/^  ([a-z][a-z0-9_-]*):$/gm) ?? []]
@@ -339,18 +281,15 @@ check("a hostname with no dots is a service this compose file defines", () => {
   for (const rel of trackedFiles() ?? []) {
     // The lockfile is npm's, full of registry URLs, and not ours to hold to this.
     if (rel === "package-lock.json") continue;
-    // And the changelog, whose entries are the RECORD of what was wrong — the entry for this
-    // very defect has to be able to say `http://gateway:8000`, or it cannot say what was
-    // fixed. Migration 003 makes the same distinction about naming a retired front end:
-    // history rather than description. Nothing in it is an instruction anybody follows.
+    // And the changelog, whose entries are the record of what was wrong — the entry for this
+    // defect has to be able to name the bad address. Nothing in it is an instruction anybody
+    // follows.
     if (rel === "CHANGELOG.md") continue;
     let text;
     try { text = readFileSync(join(root, rel), "utf8"); } catch { continue; }
-    // JS comments stripped, and ONLY those. A rule's own prose quotes the address it
-    // refuses — this one names `http://gateway:8000` three lines up — so a check reading its
-    // own file whole fails on itself. Nothing else is stripped, because the defect this was
-    // written for lived in a `#` comment at the top of deploy/zz-tool: prose in a shell
-    // header or a README is an instruction somebody follows, not a note about the code.
+    // JS comments stripped, and only those. A rule's own prose quotes the address it refuses, so
+    // a check reading its own file whole fails on itself. Prose in a shell header or a README is
+    // an instruction somebody follows, not a note about the code, so it is not stripped.
     if (/\.(ts|mjs|js)$/.test(rel)) text = withoutComments(text);
     for (const m of text.matchAll(/https?:\/\/([A-Za-z0-9][A-Za-z0-9._-]*):(\d+)/g)) {
       const host = m[1];
@@ -364,16 +303,12 @@ check("a hostname with no dots is a service this compose file defines", () => {
 });
 
 check("every path the Dockerfile copies is a path that exists", () => {
-  // THE GATE DOES NOT BUILD, and this is the gap that costs a release. `COPY blocks /blocks`
-  // stayed in the Dockerfile after the blocks/ tree was removed: tsc was clean, all 328 checks
-  // passed, and the failure arrived in step 2 of the release as
-  // `failed to compute cache key: "/blocks": not found` — after the gate, after the changelog,
-  // after the version bump. A path in a COPY is a claim about the tree exactly like a path in
-  // prose is, and every other such claim in this repository is checked.
+  // The gate does not build, so a path in a COPY is a claim about the tree that nothing else
+  // checks: `COPY assets /assets` against a tree with no assets/ passes tsc and every other
+  // check, and fails in step 2 of the release with `failed to compute cache key`.
   //
-  // BUILD-STAGE COPIES ARE SKIPPED, because `--from=build` names a path inside a previous
-  // stage's filesystem rather than in this checkout, and asking the working tree about
-  // `/repo/packages` would report a correct Dockerfile as broken.
+  // DELIBERATE: build-stage copies are skipped. `--from=build` names a path inside a previous
+  // stage's filesystem rather than in this checkout.
   const df = readFileSync(join(root, "Dockerfile"), "utf8");
   const bad: string[] = [];
   let copies = 0;
@@ -385,8 +320,8 @@ check("every path the Dockerfile copies is a path that exists", () => {
     for (const src of parts.slice(0, -1)) {
       if (src.startsWith("--")) continue;
       copies++;
-      // A glob is a claim about a shape rather than about one path; it is matched by the
-      // builder and cannot be resolved with existsSync.
+      // A glob is a claim about a shape rather than about one path; it is matched by the builder
+      // and cannot be resolved with existsSync.
       if (/[*?\[]/.test(src)) continue;
       if (!existsSync(join(root, src))) {
         bad.push(`Dockerfile copies ${src}, which this repository does not carry — the image ` +
@@ -399,23 +334,19 @@ check("every path the Dockerfile copies is a path that exists", () => {
 });
 
 check("the postgres image compose runs is the one the lock file pins", () => {
-  // ONE SOURCE FOR THE DATABASE IMAGE, because two release steps now start it from here.
+  // One source for the database image, because two release steps start it from here.
   // `scripts/release/postgres-service.ts` reads the `postgres` service out of compose so the
-  // release rehearses against the image the deployment runs — the SQL check migrates an empty
-  // one and PREPAREs every query in the tree against the schema it leaves behind, and the
-  // tool-chain walk stands the whole platform on it. Both used to hardcode `postgres:16-alpine`,
-  // which cannot carry pg_textsearch, so migration 070 was deferred on every release and the
-  // search partitions and BM25 index were checked nowhere but production.
+  // release rehearses against the image the deployment runs: the SQL check migrates an empty one
+  // and PREPAREs every query in the tree against the schema it leaves behind, and the tool-chain
+  // walk stands the whole platform on it. A hardcoded `postgres:16-alpine` cannot carry
+  // pg_textsearch, which defers the schema on every release.
   //
-  // Reading it from compose fixes the drift between the release and the deployment. It leaves
-  // one: compose and `deploy/postgres/versions.lock.json` are both descriptions of that image,
-  // and the lock is what `checks/postgres-image-pinned.ts` validates the Dockerfile against. If
-  // the tag says 17.11 and the lock says something else, one of them is describing an image
-  // nobody runs, and nothing else in this repository compares them.
+  // COUPLED: compose and `deploy/postgres/versions.lock.json` are both descriptions of that
+  // image, and the lock is what `checks/postgres-image-pinned.ts` validates the Dockerfile
+  // against. Nothing else in this repository compares them.
   //
-  // The tag is asserted to CONTAIN both versions rather than to equal a reconstructed string.
-  // A registry path and a naming convention are not this check's business; what it is about is
-  // that the numbers agree.
+  // The tag is asserted to contain both versions rather than to equal a reconstructed string: a
+  // registry path and a naming convention are not this check's business.
   const { image } = postgresService(root);
   const rel = "deploy/postgres/versions.lock.json";
   const lock = asRecord(readJson(rel), rel);

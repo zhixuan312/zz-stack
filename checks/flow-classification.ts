@@ -1,15 +1,12 @@
 // A flow is a plugin that declares documents. zz-access is not one.
 //
-// THREE LAYERS, because the first alone proves nothing. Reading the manifests says the
-// catalog is in the right shape; it says nothing about which field the CODE branches on, so
-// a tree where every flow.json is correct and the platform still classified on `stages`
-// would pass a manifest-only check silently. So the real reader runs (manifestAt, isFlow,
+// Three layers, because reading the manifests says the catalog is in the right shape and
+// nothing about which field the code branches on. So the real reader runs (manifestAt, isFlow,
 // out of packages/catalog/dist), and the sites that cannot be run from here — the chain, the
-// status tool, the gate's own manifest rule, the contract's prose — are read for the field
-// they name.
+// status tool, the gate's own manifest rule, the contract's prose — are read for the field they
+// name.
 //
-// Every failure below says which of the three layers it came from, so a mutation is
-// attributable to the property it broke rather than to "the check went red".
+// Every failure below says which of the three layers it came from.
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -20,7 +17,7 @@ import { isFlow, manifestAt } from "../packages/catalog/dist/index.js";
 const fail: string[] = [];
 const src = (p: string) => readFileSync(p, "utf8");
 
-// ── 1. the manifests ──────────────────────────────────────────────────────────────────────
+// 1. the manifests
 const manifests: string[] = [];
 const walk = (d: string): void => readdirSync(d).forEach((f) => {
   const p = join(d, f);
@@ -46,18 +43,18 @@ const byName = Object.fromEntries(manifests.map((p) => [JSON.parse(src(p)).name,
 const manifestOf = (n: string) => JSON.parse(src(byName[n]));
 const docs = (n: string) => (manifestOf(n).documents || []).length;
 if (byName["zz-access"] && docs("zz-access") !== 0) fail.push("manifest: zz-access declares documents; it is not a flow");
-// The phantom is DELETED, not merely undeclared as a flow. A stage kept "for the stepper" is
+// The phantom is deleted, not merely undeclared as a flow: a stage kept "for the stepper" is
 // the same package shape under a new justification.
 if (byName["zz-access"] && (manifestOf("zz-access").stages || []).length) {
   fail.push("manifest: zz-access declares stages again — the phantom is back");
 }
-// Control: sdlc-flow MUST still be a flow, or the test is passing for the wrong reason.
+// Control: sdlc-flow must still be a flow, or the test is passing for the wrong reason.
 if (byName["sdlc-flow"] && docs("sdlc-flow") === 0) fail.push("manifest: sdlc-flow lost its documents");
 
-// ── 2. the real classifier, run ───────────────────────────────────────────────────────────
+// 2. the real classifier, run
 // isFlow is the one predicate the platform classifies with. Run it over every manifest on the
-// shelf and hold it to `documents.length > 0` — the assertion the manifest layer above cannot
-// make, because it is about the code.
+// shelf and hold it to `documents.length > 0` — the assertion the manifest layer cannot make,
+// because it is about the code.
 for (const p of manifests) {
   const m = manifestAt(p);
   if (!m.manifest) { fail.push(`classifier: ${p} ${m.why}`); continue; }
@@ -68,9 +65,9 @@ for (const p of manifests) {
               "not reading `documents`");
   }
 }
-// Guarded on the manifest resolving, because a refused manifest is null and asking isFlow
-// about it would throw — reporting a stack trace where the loop above has already reported
-// the sentence that says what is actually wrong.
+// Guarded on the manifest resolving: a refused manifest is null and asking isFlow about it
+// would throw, reporting a stack trace where the loop above has already reported the sentence
+// that says what is wrong.
 const classifies = (n: string) => (byName[n] ? manifestAt(byName[n]).manifest : null);
 const zzAccess = classifies("zz-access");
 const sdlcFlow = classifies("sdlc-flow");
@@ -88,7 +85,7 @@ try {
     writeFileSync(f, JSON.stringify(manifest));
     return manifestAt(f);
   };
-  // documents with nothing to produce them is refused, and the refusal NAMES the field.
+  // documents with nothing to produce them is refused, and the refusal names the field.
   const orphan = at("orphan.json", {
     name: "orphan", entry: "orphan",
     documents: [{ name: "spec.md", sections: ["Context"] }],
@@ -98,9 +95,8 @@ try {
   } else if (!/stages/.test(orphan.why)) {
     fail.push(`refusal: documents-without-stages was refused without naming \`stages\` — "${orphan.why}"`);
   }
-  // CONTROL, and the one that matters most: stages with no documents is an ordinary non-flow
-  // package. Refusing it would be the old rule reinstated in the other direction, and
-  // zz-access is exactly this shape.
+  // Control: stages with no documents is an ordinary non-flow package, and zz-access is
+  // exactly this shape.
   const surface = at("surface.json", {
     name: "surface", entry: "surface",
     stages: [{ name: "surface", produces: "nothing" }],
@@ -109,11 +105,10 @@ try {
     fail.push(`refusal: a package with stages and no documents was refused — "${surface.why}"; ` +
               "that is a legal non-flow package");
   } else if (isFlow(surface.manifest)) {
-    // THE CASE THE SHELF CANNOT MAKE. Every manifest in the catalog answers `documents` and
-    // `stages` the same way — three flows declare both, zz-access declares neither — so
-    // running the classifier over the shelf alone cannot tell the two rules apart, and an
-    // isFlow rewritten to read `stages` passed every assertion above. This fixture is the
-    // only shape that discriminates, which is why it is asserted rather than the catalog.
+    // The case the shelf cannot make. Every manifest in the catalog answers `documents` and
+    // `stages` the same way, so running the classifier over the shelf alone cannot tell the two
+    // rules apart: an isFlow reading `stages` passes every assertion above. This fixture is the
+    // only shape that discriminates.
     fail.push("classifier: isFlow says a package with stages and no documents is a flow — " +
               "it is reading `stages`, not `documents`");
   }
@@ -127,7 +122,7 @@ try {
   } else if (!isFlow(governed.manifest)) {
     fail.push("classifier: isFlow says a package declaring documents is not a flow");
   }
-  // CONTROL: neither field at all is legal too — zz-access after the phantom went.
+  // Control: neither field at all is legal too.
   const bare = at("bare.json", { name: "bare", entry: "bare" });
   if (!bare.manifest) {
     fail.push(`refusal: a package with neither stages nor documents was refused — "${bare.why}"`);
@@ -136,8 +131,8 @@ try {
   rmSync(tmp, { recursive: true, force: true });
 }
 
-// ── 3. the sites that classify, read for the field they name ──────────────────────────────
-// Each entry: file, a pattern that MUST be there, a pattern that must NOT, and why.
+// 3. the sites that classify, read for the field they name
+// Each entry: file, a pattern that must be there, a pattern that must not, and why.
 const sites: [string, RegExp, RegExp, string][] = [
   ["packages/catalog/src/index.ts", /\.filter\(\(e\) => isFlow\(e\.manifest\)\)/,
    /\(e\.manifest\.stages/,
@@ -174,26 +169,24 @@ for (const [file, must, mustNot, why] of sites) {
   if (mustNot.test(text)) fail.push(`site: ${file} still matches ${mustNot} — ${why}`);
 }
 
-// The prose that states the rule. Documentation asserting the opposite of the code is the
-// failure this initiative found twice, so the two sentences that define a flow are read.
-const prose: [string, RegExp, string][] = [
-  ["packages/contracts/src/index.ts", /Shape is `documents` and\s*\n?\s*\* nothing else/,
-   "the manifest contract still says shape is `stages`"],
-  ["ARCHITECTURE.md", /\*\*A package is a flow if and only if it declares `documents`\.\*\*/,
-   "ARCHITECTURE.md is the ruler and still states the replaced rule"],
-];
-for (const [file, must, why] of prose) {
-  if (!must.test(src(file))) fail.push(`prose: ${file} — ${why}`);
+// ARCHITECTURE.md is the ruler, so it must state the rule the sites above enforce.
+//
+// DELIBERATE: a document only, never a code comment. The sites loop above asserts the rule at
+// every place code decides it; asserting a sentence in a .ts file makes a comment load-bearing
+// and costs an unwrapper to survive a rewrap.
+const RULER = "ARCHITECTURE.md";
+const RULE = /\*\*A package is a flow if and only if it declares `documents`\.\*\*/;
+if (!RULE.test(src(RULER))) {
+  fail.push(`prose: ${RULER} is the ruler and still states the replaced rule`);
 }
 
-// zz-access has NO stages now, and nothing may quietly require one back. The packager reads
-// `entry`, stage-access reads a stage's blocks and finds none (absent means unenforced, which
-// is rule 1 of stage-access.ts), and the console's stepper walks an empty list. Proven rather
-// than argued: the package the gateway builds for zz-access still carries its entry skill.
+// zz-access has no stages, and nothing may quietly require one back. The packager reads
+// `entry`, and the console's stepper walks an empty list. Proven by building the
+// package the gateway serves for zz-access and checking it still carries its entry skill.
 try {
-  // A SEPARATE PROCESS, because CATALOG_DIR is read once when @zz/catalog loads and this
-  // file has already loaded it. The child gets the working tree's catalog/ instead of the
-  // image's /catalog, which is what makes the walk runnable outside a container at all.
+  // A separate process, because CATALOG_DIR is read once when @zz/catalog loads and this file
+  // has already loaded it. The child gets the working tree's catalog/ instead of the image's
+  // /catalog, which is what makes the walk runnable outside a container.
   const out = execFileSync("node", ["--input-type=module", "-e",
     'import { catalogEntry } from "./packages/catalog/dist/index.js";' +
     'const e = catalogEntry("zz-access", true);' +

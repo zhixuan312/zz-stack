@@ -1,10 +1,9 @@
 /**
- * A person's own settings: their keys, their access tokens, which team they act for, the
+ * A person's own settings: their access tokens, which team they act for, the teams they are on,
  * and the client package that installs the platform for them.
  *
- * EVERY ROUTE HERE ACTS ON THE CALLER and takes no subject argument, which is what makes the
- * authorisation trivial and the surface safe: there is nothing here that can reach anybody
- * else's account, so the only question left is whether the caller is signed in.
+ * Every route here acts on the caller and takes no subject argument, so nothing here can reach
+ * anybody else's account and the only question left is whether the caller is signed in.
  */
 import type { Express, Request, Response } from "express";
 
@@ -31,26 +30,19 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
     });
   });
 
-  /** Change which of the caller's own teams they act for (← the console's own team_switch).
+  /** Change which of the caller's own teams they act for: the console's own `team_switch`.
    *
-   * IT IS THE SAME SWITCH, not a second notion of one. `principal.active_team_id` is what
-   * `chosenTeam` (identity.ts) reads on every request, so moving it here moves the browser,
-   * every agent that authenticates as this person, and anything else that resolves an
-   * identity — which is right: a person acts for ONE team at a time and that fact belongs
-   * to the person, not to whichever client is in front of them.
+   * COUPLED: this is the same switch, not a second notion of one. `principal.active_team_id` is
+   * what `chosenTeam` (identity.ts) reads on every request, so moving it here moves the browser,
+   * every agent that authenticates as this person, and anything else that resolves an identity.
    *
-   * THE UPDATE IS THE AUTHORISATION. The `from membership` join means a team the caller is
-   * not in matches no row and is indistinguishable from one that does not exist — the same
-   * shape `revokeMyAccessTokenFor` uses for a token id belonging to somebody else, and for
-   * the same reason: a separate membership check is a check somebody can forget, where a
-   * join that produces nothing cannot be. Superadmins get no bypass here; reading another
-   * team's data is what `?scope=platform` is for, and ACTING as a team you are not in is a
-   * different claim that nothing on this console needs to make.
+   * The update is the authorisation: the `from membership` join means a team the caller is not in
+   * matches no row and is indistinguishable from one that does not exist — the same shape
+   * `revokeMyAccessTokenFor` uses for a token id belonging to somebody else. Superadmins get no
+   * bypass; reading another team's data is what `?scope=platform` is for.
    *
-   * A BOUND TOKEN IS REFUSED RATHER THAN SILENTLY IGNORED. `myTeamsSummary` already tells
-   * the caller their token is bound and that team_switch cannot move it; writing
-   * active_team_id under a bound token would succeed in the database and change nothing
-   * they can see, which is worse than saying no.
+   * A bound token is refused rather than silently ignored: writing active_team_id under one would
+   * succeed in the database and change nothing the caller can see.
    */
   app.post("/api/console/settings/me/active-team", (req: Request, res: Response) => {
     void (async () => {
@@ -81,7 +73,7 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
         res.status(400).json({ error: `not a member of ${team}` });
         return;
       }
-      // `via: "web"` is stated HERE and never inherited — see the gate check "every console
+      // `via: "web"` is stated here and never inherited — see the gate check "every console
       // write route records the door it came through". Without it the row would say a person
       // switched teams and nothing would say a browser did it rather than an agent turn.
       logEvent({
@@ -97,23 +89,18 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
 
   /** Issue a brand new personal access token for the caller.
    *
-   * THE ONE DELIBERATE EXCEPTION IN THIS FILE: `result.token` is returned in plaintext,
-   * outside `redact()`, on purpose. It is shown exactly once, at the moment of issue, and is
-   * useless to the platform forever after — redacting it would not protect anything, it
-   * would just break the one response whose entire purpose is handing over the secret the
-   * caller just asked for. This is the ONLY response in settings.ts not passed through
-   * `redact()`; every other route in this file is. See redact.ts's own header for the other
-   * half of this contract — `redact()` itself makes no exception for a field named `token`,
-   * so the exemption can only ever live here, in this route choosing not to call it. */
+   * DELIBERATE: `result.token` is returned in plaintext, outside `redact()`. It is shown exactly
+   * once, at the moment of issue, and is useless to the platform afterwards. This is the only
+   * response in settings.ts not passed through `redact()`, and `redact()` itself makes no
+   * exception for a field named `token`, so the exemption can only live here. */
   app.post("/api/console/settings/me/tokens", (req: Request, res: Response) => {
     void (async () => {
       const id = req.zzIdentity;
       if (!id) { res.status(401).json({ error: "authentication required" }); return; }
       if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
-      // THE SAME RULE `pat_issue` KEEPS: a bound token cannot mint a wider one. This route
-      // issues an UNBOUND token — credentials.ts's insert has no team column — so without this
-      // it is the HTTP way round the binding, beside a route twenty lines up that refuses the
-      // same token for a smaller act.
+      // The same rule `pat_issue` keeps: a bound token cannot mint a wider one. This route issues
+      // an unbound token — credentials.ts's insert has no team column — so without this it is the
+      // HTTP way round the binding, beside a route that refuses the same token for a smaller act.
       if (id.patTeam) {
         res.status(403).json({
           error: `your token is bound to team '${id.patTeam}', so it cannot issue a token that ` +
@@ -150,12 +137,10 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
     });
   });
 
-  /** The caller's own client setup — the MCP config for Claude Code, Codex or Hermes,
-   *  pointing here, carrying only the blocks their team's installed flows declare. Its
-   *  bearer header is always a placeholder (`<YOUR-TOKEN>` / `$ZZ_TOKEN`) — `renderClientSetup`
-   *  never mints or embeds a real one — so there is no live secret in this response for
-   *  `redact()` to catch; it is still wrapped for the same reason every other read here is:
-   *  a future change to what this renders should not have to remember to add it. */
+  /** The caller's own client setup — the Claude Code install steps, pointing here. Its bearer
+   *  header is always a placeholder (`<YOUR-TOKEN>` / `$ZZ_TOKEN`); `renderClientSetup` never
+   *  mints or embeds a real one. Still wrapped in `redact()`, so a
+   *  future change to what this renders does not have to remember to add it. */
   app.get("/api/console/settings/me/client-setup", (req: Request, res: Response) => {
     void (async () => {
       const id = req.zzIdentity;

@@ -1,17 +1,13 @@
 /**
- * SYMPTOM → CHANGE. Given a version that was known good, say which commits since it touched
+ * Symptom to change: given a version that was known good, say which commits since it touched
  * the layer that disagrees.
  *
- * This is the half of a diagnosis a person otherwise does from memory, badly: "what did we
- * change" is answered by scrolling a log that is ordered by time rather than by relevance. A
- * layer already declares the paths its claim is made of — `owns` in run.ts — so the answer is
- * a path-filtered log, which is deterministic and needs no judgement about what "related"
- * means.
+ * COUPLED: a layer declares the paths its claim is made of in `owns`, in run.ts, so the answer
+ * is a path-filtered log and needs no judgement about what "related" means.
  *
- * IT NAMES SUSPECTS, NOT CAUSES, and says so in the output. A layer's paths are where its
+ * It names suspects, not causes, and says so in the output. A layer's paths are where its
  * claim comes from, not the only place a change can break it: a gateway commit can break the
- * data layer through a query it did not touch. A list that implied otherwise would be worse
- * than none, because it would stop somebody looking.
+ * data layer through a query it did not touch.
  */
 import { root, run } from "../deployment.ts";
 import { layerOwns } from "./run.ts";

@@ -1,36 +1,24 @@
 /**
- * PLANTING EACH FAULT close.ts CLAIMS TO PREVENT, AND WATCHING THE PREVENTION HOLD.
+ * Planting each fault close.ts claims to prevent, and watching the prevention hold.
  *
  * Every negative answer that module gives — `acceptedByHand`, `ok`, `proposedIsEnforced`,
- * `observedImpact` — is a refusal, and a refusal nobody has watched fail is a refusal nobody
- * has tested. A flag hard-wired to the comfortable answer passes every test that only ever
- * asks it for the comfortable answer. So each row below runs its detector TWICE: once on a
- * subject where it must stay SILENT, and once with a fault planted, where it must FIRE. A row
+ * `observedImpact` — is a refusal, and a flag hard-wired to the comfortable answer passes every
+ * test that only asks for the comfortable answer. So each row runs its detector twice: once on
+ * a subject where it must stay silent, and once with a fault planted, where it must fire. A row
  * whose `fires` is false is a finding about close.ts, not about its subject.
  *
- * THE SILENT HALF IS NOT A FORMALITY HERE. A close that refused everything would satisfy every
- * faulted column in this table and be useless — worse than useless, since work that really did
- * finish would become unclosable, which is exactly the mistake that got the read-back check on
- * the proposed count removed in the first place. So every row's healthy column is a close or a
- * handover that SHOULD go through, and it is the half that keeps the other half honest.
+ * The healthy column carries weight: a close that refused everything would satisfy every
+ * faulted column here and make finished work unclosable.
  *
- * TWO KINDS OF PLANTED FAULT, AND THE SECOND IS THE INTERESTING ONE.
+ * Where a caller can reach the flattering answer by what they pass, the fault is planted in the
+ * call: an outcome supplied by hand, a stage handed a state it did not earn, a second closing
+ * record. Where no input can reach it — nothing makes `proposedIsEnforced` true or turns a
+ * forecast into a measurement, because those follow from which builder the value was routed
+ * through — the fault is planted as a wrong implementation, written out here in full.
+ * DELIBERATE: that implementation is reimplemented rather than derived from the mechanism, so a
+ * probe cannot go green by sharing the assumption it is testing.
  *
- * Where a caller can reach the flattering answer by what they pass, the fault is planted in
- * the call: an outcome supplied by hand, a stage handed a state it did not earn, a second
- * closing record. The detector fires by refusing, and the faulted column shows the refusal.
- *
- * Where NO input can reach it — nothing a caller passes can make `proposedIsEnforced` true or
- * turn a forecast into a measurement, because those follow from which builder the value was
- * routed through in code — the fault is planted as a WRONG IMPLEMENTATION, written out here in
- * full, and the row shows that implementation producing the flattering answer on the very
- * declaration where the real one refuses to. That is the only honest way to watch a structural
- * guarantee fire, and it is deliberately not a copy of the real derivation: this file
- * reimplements the mistake rather than importing the mechanism, so a probe cannot go green by
- * sharing the assumption it is supposed to be testing.
- *
- * NOTHING HERE IS A MEASUREMENT. Every count, reason and acceptor below is invented material
- * chosen to make one distinction visible.
+ * Nothing here is a measurement. Every count, reason and acceptor below is invented.
  */
 import {
   closeInitiative,
@@ -74,20 +62,18 @@ const asRequest = (raw: Record<string, unknown>): CloseRequest => raw as unknown
  *  stage is than the module it exercises does. */
 const EARLIER = "S1";
 const LATER = "S2";
-/** A third name, for a stage the caller records NOTHING about. It is what makes the append
+/** A third name, for a stage the caller records nothing about. It is what makes the append
  *  path — the one an abandoned close takes for the stage it stopped at — reachable in the
  *  fixture at all: a reached stage that already appears among the caller's own records is
  *  never appended, so using one to stand for both hides the append entirely. */
 const UNREACHED = "S3";
 
-// ── the faults that no input can reach, written out as the wrong implementation ────────────
+// The faults that no input can reach, written out as the wrong implementation
 
 /**
- * THE WRONG STAGE RECORD: state set beside the evidence instead of from it.
- *
- * This is the shape close.ts exists to prevent, and it is four lines long — which is the point.
- * Nothing about it looks careless. It simply trusts a `state` that arrived with the record,
- * and that is all it takes for a close to assert that work nobody has evidence for succeeded.
+ * The wrong stage record: state set beside the evidence instead of from it. It trusts a `state`
+ * that arrived with the record, which is all it takes for a close to assert that work nobody
+ * has evidence for succeeded.
  */
 function faultedStageRecord(record: StageEvidence & { readonly state?: string }): StageRecord {
   return Object.freeze({
@@ -98,10 +84,8 @@ function faultedStageRecord(record: StageEvidence & { readonly state?: string })
 }
 
 /**
- * THE WRONG CLAIM BASIS: a declared count routed through the reader's door.
- *
- * The flattering version of a handover is one line different from the honest one — the count
- * the author typed, stamped with the name of something that never read it back.
+ * The wrong claim basis: a declared count routed through the reader's door — the count the
+ * author typed, stamped with the name of something that never read it back.
  */
 function faultedProposedClaim(declaration: HandoverDeclaration): Claim {
   const basis: ClaimBasis = "read-back";
@@ -109,42 +93,40 @@ function faultedProposedClaim(declaration: HandoverDeclaration): Claim {
 }
 
 /**
- * THE NARROW READING UNDER A GENERAL NAME — the fault this module actually shipped with, and
- * the reason this row exists.
+ * The narrow reading under a general name.
  *
- * `selfReported` once answered "is the PROPOSED COUNT the author's word", under a name that
- * promises "does this handover assert anything nobody read back". Every call that declared no
- * count therefore reported `selfReported: false` while self-reporting everything it had. It
- * passed the declared check the whole time, because that check only ever asks about a
- * declaration that HAS a count — which is what a flag nobody has watched be wrong looks like.
+ * `selfReported` answering "is the proposed count the author's word", under a name promising
+ * "does this handover assert anything nobody read back", reports `false` for every call that
+ * declared no count while self-reporting everything it had — and passes the declared check,
+ * which only asks about a declaration that has a count.
  */
 function faultedSelfReported(claims: readonly Claim[]): boolean {
   return claims.find((c) => c.field === "proposed_team_nodes")?.basis === "self-reported";
 }
 
 /**
- * THE SECOND PREDICATE: the forecast read off the declaration again, beside the claim that
- * already holds it. Two readings of one fact, free to disagree — here, over whitespace, which
+ * The second predicate: the forecast read off the declaration again, beside the claim that
+ * already holds it. Two readings of one fact, free to disagree — here over whitespace, which
  * the claim builder discards and this does not.
  */
 function faultedForecast(declaration: HandoverDeclaration): string | null {
   return declaration.expectedImpact ?? null;
 }
 
-/** THE WRONG IMPACT: the forecast, relabelled. Nobody measured anything. */
+/** The wrong impact: the forecast, relabelled. Nobody measured anything. */
 function faultedObservedImpact(declaration: HandoverDeclaration): string | undefined {
   return declaration.expectedImpact;
 }
 
-// ── the rows ───────────────────────────────────────────────────────────────────────────────
+// The rows
 
 function outcomeRows(): readonly CloseProbeRow[] {
   const honest = closeInitiative({ disposition: "finished", accepted_by: "the stakeholder" });
   const smuggledUnderAName = closeInitiative(asRequest({ disposition: "finished", note: "it went well" }));
-  // The read-set drift case, stated as a subject rather than left to be inferred: `abandoned`
-  // is BOTH a disposition and an outcome word, so a scan that reached a field this module
-  // reads would refuse every abandoned close ever made. It is the one input that tells the
-  // destructure's leftovers apart from a list of key names somebody maintains.
+  // The read-set drift case: `abandoned` is both a disposition and an outcome word, so a scan
+  // that reached a field this module reads would refuse every abandoned close ever made. It is
+  // the one input that tells the destructure's leftovers apart from a hand-maintained list of
+  // key names.
   const alsoAnOutcomeWord = closeInitiative({ disposition: "abandoned", reachedStage: LATER });
   const byHand = closeInitiative(asRequest({ disposition: "finished", outcome: "accepted" }));
   const underAnotherKey = closeInitiative(asRequest({ disposition: "finished", finalState: "delivered" }));
@@ -279,15 +261,14 @@ function handoverRows(): readonly CloseProbeRow[] {
   const faultedProposed = faultedProposedClaim(declaration);
   const faultedImpact = faultedObservedImpact({ expectedImpact: "fewer repeated questions" });
 
-  // Two declarations that carry NO proposed count — the shape the declared check never asks
-  // about, and the shape every flag here was silently wrong about.
+  // Two declarations that carry no proposed count — the shape the declared check never asks
+  // about.
   const nothingAtAll = handoverClaims({});
   const blankForecast = handoverClaims({ expectedImpact: "   " });
   const readBackOnly = handoverClaims({ mintedTeamNodes: 0, mintedReadBy: "the minting record" });
-  // A count the author proposed, ALONGSIDE a different count something really did read back.
+  // A count the author proposed, alongside a different count something really did read back.
   // This is the declaration that tells "the proposed count is enforced" apart from "something
-  // around here was read back" — without it, a flag widened to any read-back claim reports
-  // this handover's count as enforced and no row notices.
+  // around here was read back".
   const proposedBesideARealReading = handoverClaims({
     proposed_team_nodes: "2",
     mintedTeamNodes: 1,

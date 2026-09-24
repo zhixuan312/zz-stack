@@ -1,11 +1,7 @@
 /**
  * A person's platform access tokens.
  *
- * THE BLOCK CREDENTIAL STORE WAS THE OTHER HALF OF THIS FILE and went with the concept. It
- * held one key per person per third-party server, injected at the proxy on every call, and
- * there is no proxy and no third-party server any more — a plugin declares the servers its
- * own skills call. What is left is what was always a different subject that happened to
- * share a filename: the tokens a person uses to reach THIS platform.
+ * The tokens a person uses to reach this platform, and nothing else.
  */
 import { mintPat, parseCaller } from "@zz/contracts";
 import { requestHeaders } from "@zz/mcp-http";
@@ -32,11 +28,9 @@ export type IssueTokenOutcome =
   | { ok: true; token: string; label: string; email: string }
   | { ok: false; error: string };
 
-/** Issue a brand new personal access token for the caller. See the module-level comment
- *  above for `extraDetail`. The token is returned in plaintext here — same as the MCP tool
- *  always has — because minting it IS handing it over; what each CALLER does with that
- *  plaintext afterwards (an agent's chat turn vs. settings.ts's one-time browser response)
- *  is the boundary that matters, and it is drawn at the call site, never in here. */
+/** Issue a new personal access token for the caller. The token is returned in plaintext,
+ *  because minting it is handing it over; what a caller does with that plaintext — an agent's
+ *  chat turn, settings.ts's one-time browser response — is drawn at the call site. */
 export async function issueMyAccessTokenFor(
   email: string, label: string | undefined, extraDetail: Record<string, unknown> = {},
 ): Promise<IssueTokenOutcome> {
@@ -50,22 +44,17 @@ export async function issueMyAccessTokenFor(
   }
   if (r.rows[0].status !== "active") return { ok: false, error: `${email} is deactivated` };
   const token = mintPat();
-  // NO SCOPE, AND THE LITERAL 'member' IS WHY THIS MATTERS. Self-issuing a token wrote
-  // `member` regardless of who was asking, so a superadmin who minted their own token was
-  // quietly handed one that could not administer anything — and the platform's advice for
-  // being refused was to mint a token, which produced another of the same. A token carries
-  // whatever its holder may do; migration 053 drops the column that said otherwise.
+  // No scope column: a token carries whatever its holder may do, read from the principal.
   await db.query(
     "insert into pat (principal_id, token_hash, label) values ($1,$2,$3)",
     [r.rows[0].id, sha256(token), label ?? ""]);
   logEvent({ actor: email, kind: "pat.self_issue", subject: label ?? "", detail: extraDetail });
   return { ok: true, token, label: label ?? "", email };
 }
-/** Revoke one of the caller's own tokens. See the module-level comment above for
- *  `extraDetail`. Returns whether an active token of theirs actually matched — the query's
- *  own `principal_id = (select id from principal where email = $2)` is what makes "someone
- *  else's token id" and "no such token" indistinguishable, which is the whole authorisation
- *  story for this act: there is no id a caller could name that reaches past their own rows. */
+/** Revoke one of the caller's own tokens, returning whether an active token of theirs
+ *  matched. The query's `principal_id = (select id from principal where email = $2)` is the
+ *  whole authorisation story: "someone else's token id" and "no such token" are
+ *  indistinguishable, and no id a caller names reaches past their own rows. */
 export async function revokeMyAccessTokenFor(
   email: string, id: string, extraDetail: Record<string, unknown> = {},
 ): Promise<boolean> {

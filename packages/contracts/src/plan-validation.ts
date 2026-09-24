@@ -1,57 +1,37 @@
 /**
- * PLAN SHAPE, AND NOTHING ELSE — the deterministic structural report a plan must carry before
- * a controlled Execute will admit it.
+ * The deterministic structural report a plan must carry before a controlled Execute admits it.
  *
- * WHAT THIS SETTLES. A plan document is a graph wearing markdown: `### Task I-N:` headings are
- * its nodes, the `**Dependencies:**` line under each is its edges, and the `**Output:**` line is
- * what that node promises to leave behind. Those are facts about the text, checkable by reading
- * it, and every reader has to agree on them or the plan cannot be executed at all — two tasks
- * called `I-7` means an executor cannot say which one it just ran, and a dependency ring means
- * there is no order in which the work can start.
+ * A plan document is a graph wearing markdown: `### Task I-N:` headings are its nodes, the
+ * `**Dependencies:**` line under each is its edges, and the `**Output:**` line is what that node
+ * promises to leave behind. Two tasks called `I-7` means an executor cannot say which one it
+ * ran; a dependency ring means there is no order in which the work can start.
  *
- * WHAT THIS DOES NOT SETTLE, and the reason the file says so twice. It cannot tell you whether a
- * plan is good, complete, feasible, well-sequenced, or worth executing. There is no `quality`
- * field here, no `confidence`, no score, and no room for one: a plan can pass every check below
- * and still be the wrong plan, built on a test that proves nothing, aimed at a solution that
- * cannot work. Judging THAT is an independent semantic audit by a reader who understands the
- * domain, and it stays independent precisely because this file cannot be mistaken for it. A
- * passing report says the document parses as a plan. It says nothing about the plan.
+ * It settles shape and nothing else. There is no `quality` field, no `confidence` and no score:
+ * a passing report says the document parses as a plan, and nothing about the plan. Judging that
+ * is an independent semantic audit.
  *
- * WHY IT IS BOUND TO A TARGET. A structural report is a statement about one version of one
- * document. Left unbound it becomes a statement about "the plan", which is a moving object — the
- * report keeps passing while the text it described is edited out from under it, and the thing
- * admitted to execution is not the thing that was checked. So every report carries the digest of
- * the bytes it read and the target it was computed against, and admission can refuse a report
- * that describes a version nobody is executing.
+ * Every report carries the digest of the bytes it read and the target it was computed against,
+ * so admission can refuse a report that describes a version nobody is executing.
  *
- * WHY APPROVAL IS NOT A SUBSTITUTE, which is the whole reason this task exists. A human approval
- * is a verdict on CONTENT: somebody read the plan and agreed with what it proposes. A structural
- * report is a verdict on SHAPE. Neither implies the other, and the failure mode being closed
- * here is the plausible one — a person approves a plan they believe in, and the duplicate task id
- * they never noticed rides in on their signature. `admitToExecute` therefore requires both and
- * accepts neither alone, and a missing report is not a silent pass.
+ * `admitToExecute` requires both a report and an approval and accepts neither alone: an approval
+ * is a verdict on content, a report a verdict on shape, and a missing report is not a silent
+ * pass.
  *
- * THESE ARE SDLC SEMANTICS AND THEY STAY OUT OF THE DOCUMENT KERNEL. `### Task I-N:`, `Output`,
- * `Dependencies` are this flow's conventions, not the platform's idea of what a document is. The
- * generic kernel stores and gates documents of any shape; the knowledge that a plan has tasks
- * with edges between them lives here, beside the flow that invented it.
+ * `### Task I-N:`, `Output` and `Dependencies` are this flow's conventions, not the document
+ * kernel's — the kernel stores and gates documents of any shape.
  */
 import { createHash } from "node:crypto";
 
-// ── the shape a plan is read against ───────────────────────────────────────────────────────
-//
-// Deliberately narrow. Every pattern below matches something a writer can see in their own text,
-// because a structural refusal a human cannot reproduce by looking at the line is a refusal they
-// will route around rather than fix.
+// Deliberately narrow. Every pattern below matches something a writer can see in their own
+// text: a structural refusal a human cannot reproduce by looking at the line gets routed around
+// rather than fixed.
 
-/** A line that is TRYING to be a task heading: `### Task` followed by something numeric. Matching
- *  on intent rather than on the strict form is what lets a typo be reported as a malformed heading
- *  instead of vanishing — `### Task I-1 X`, missing its colon, would otherwise simply not be a
- *  task, and the plan would pass with a node silently absent from the graph.
+/** A line trying to be a task heading: `### Task` followed by something numeric. Matching on
+ *  intent rather than the strict form reports a typo as a malformed heading instead of letting
+ *  it vanish — `### Task I-1 X`, missing its colon, would otherwise not be a task at all.
  *
- *  THE NUMBER IS WHAT KEEPS IT OFF PROSE. `### Task\b` alone would take `### Task breakdown` and
- *  `### Task ordering` — ordinary section headings a long plan really does carry — and report a
- *  valid plan as malformed, which is the one outcome this validator must never produce. */
+ *  The number is what keeps it off prose: `### Task` alone would take `### Task breakdown` and
+ *  report a valid plan as malformed. */
 const TASK_HEADING_INTENT = /^###\s+Task\s+I?-?\d/;
 
 /** The full form: `### Task I-17: Deterministic plan-shape validator (← AC-8.2)`. An id, a
@@ -59,34 +39,24 @@ const TASK_HEADING_INTENT = /^###\s+Task\s+I?-?\d/;
 const TASK_HEADING = /^###\s+Task\s+(I-\d+)\s*:\s*(\S.*?)\s*$/;
 
 /**
- * THE AC REFERENCE, which is required — `(← AC-8.2)`, or a comma list, `(← AC-7.5, AC-7.1)`.
+ * The AC reference, required: `(← AC-8.2)`, or a comma list, `(← AC-7.5, AC-7.1)`.
  *
- * IT IS THE ONE PIECE OF TRACEABILITY THAT IS SHAPE. Whether a task traces to the RIGHT criterion
- * is a reading of both documents and is not answered here; whether the link was written down at
- * all is a fact about the heading, and a task with no link is a task nobody can tie back to
- * anything the plan was approved for. Measured against the plan this was built for: all 39 task
- * headings carry one, so requiring it refuses no plan anybody has written.
+ * Whether a task traces to the right criterion is not asked here; whether the link was written
+ * down at all is a fact about the heading.
  *
- * NO ORDER AND NO COUNT IS ASSUMED. The real headings carry one, two and three references, and
- * `(← AC-7.2, AC-7.1)` descending is as valid as ascending — a rule about the order of a list of
- * references would be a rule about tidiness, and that is not a property of an executable plan.
- *
- * THE ASCII ARROW IS ACCEPTED TOO. The house form is `←` and every real heading uses it, but
- * refusing `<-` would be refusing a plan over which character a keyboard produced, which is
- * typography and not shape. */
+ * No order and no count is assumed — a rule about the order of a reference list would be a rule
+ * about tidiness. The ASCII arrow `<-` is accepted alongside `←`. */
 const AC_REFERENCE = /\((?:←|<-)\s*(AC-\d+\.\d+(?:\s*,\s*AC-\d+\.\d+)*)\s*\)$/;
 
 /** Where a task's block ends: the next heading at `#`, `##` or `###`. A `####` sub-heading stays
- *  INSIDE the task, because plans really do sub-divide a task and its `**Output:**` line may sit
+ *  inside the task, because plans really do sub-divide a task and its `**Output:**` line may sit
  *  under one of those sub-headings. */
 const BLOCK_BOUNDARY = /^#{1,3}\s/;
 
-/** What may sit in front of either line: indentation, a list marker, a quote marker. The real
- *  plan writes both lines flush at column zero, and a validator that refused `- **Output:** a`
- *  would be refusing a plan over a bullet — a false refusal of a valid plan, which is the one
- *  outcome this file must never produce. Reading a line a writer did not intend as the task's
- *  Output is the opposite error and the cheaper one: it lets a malformed task pass, which the
- *  reader who is auditing the plan still catches. */
+/** What may sit in front of either line: indentation, a list marker, a quote marker. Refusing
+ *  `- **Output:** a` would be a false refusal of a valid plan, which this file must never
+ *  produce. Reading a line the writer did not intend as the Output is the cheaper error: it lets
+ *  a malformed task pass, which the reader auditing the plan still catches. */
 const LINE_PREFIX = "^[\\s>]*(?:[-*+]\\s+)?";
 
 /** `**Output:** a` — and the near-misses a writer produces: `**Outputs:**`, `**Output**:`. All of
@@ -107,12 +77,11 @@ const TASK_ID_TOKEN = /\bI-\d+\b/g;
 /** How a dependency tail says there are none. Normalised first, so `None.` and `none` agree. */
 const NO_DEPENDENCIES = new Set(["none", "n/a", "na", "nothing"]);
 
-// ── what a report says ─────────────────────────────────────────────────────────────────────
+// What a report says
 
 /**
- * The structural failures, named. A closed vocabulary rather than free prose so a caller can
- * branch on one — and so nobody can add a kind that means "this plan looks weak", which is the
- * judgement this file does not make. Every kind below is a fact about the document's text.
+ * The structural failures, named. A closed vocabulary so a caller can branch on one, and so no
+ * kind can mean "this plan looks weak". Every kind below is a fact about the document's text.
  */
 export type PlanViolationKind =
   /** The document declares no tasks at all. Not a plan anything can execute. */
@@ -123,7 +92,7 @@ export type PlanViolationKind =
   /** A line announces a task but does not carry `I-N:` and a title. */
   | "malformed_task_heading"
   /** A task heading ends with no readable `(← AC-x.y)`: nothing ties the task to what the plan
-   *  was approved for. Whether it is the RIGHT criterion is not asked. */
+   *  was approved for. Whether it is the right criterion is not asked. */
   | "missing_ac_reference"
   /** Two headings declare the same task id; an executor cannot say which one it ran. */
   | "duplicate_task_id"
@@ -155,11 +124,9 @@ export interface PlanViolation {
 /**
  * The report. Bound to a target, derived only from the text, and carrying no verdict but `ok`.
  *
- * `order` is AN executable ordering over the edges the document declares — a sequence in which
- * every task's declared dependencies come before it. It is not the RIGHT order, and it is not a
- * claim that following it produces working software: the edges are the ones the author wrote,
- * and whether those edges are the true ones is exactly the adequacy question this file refuses.
- * It is empty when a cycle makes any such ordering impossible.
+ * `order` is an executable ordering over the edges the document declares — every task's declared
+ * dependencies come before it. It is not the right order: the edges are the ones the author
+ * wrote. Empty when a cycle makes any such ordering impossible.
  */
 export interface PlanStructuralReport {
   readonly ok: boolean;
@@ -173,7 +140,7 @@ export interface PlanStructuralReport {
   readonly order: readonly string[];
 }
 
-// ── reading the document ───────────────────────────────────────────────────────────────────
+// Reading the document
 
 interface ParsedTask {
   readonly id: string;
@@ -188,14 +155,11 @@ function normaliseTail(tail: string): string {
 }
 
 /**
- * A FENCED BLOCK IS AN EXAMPLE, NOT A TASK, and this is what keeps a plan that documents its own
- * format from being refused by the rule that reads it. A plan explaining what a task heading
- * looks like writes ```` ``` ````, a specimen `### Task I-1:` and a closing fence — and read
- * flat, that specimen is a second task claiming an id, which comes back as `duplicate_task_id`
- * against a document with no such defect. A false refusal of a valid plan is the one outcome
- * this validator must never produce.
+ * A fenced block is an example, not a task, so a plan documenting its own format is not refused
+ * by the rule that reads it: a specimen `### Task I-1:` inside a fence would otherwise come back
+ * as `duplicate_task_id` against a document with no such defect.
  *
- * BLANKED, NOT DROPPED, so every line number in the report is still the line somebody opens.
+ * Blanked, not dropped, so every line number in the report is still the line somebody opens.
  */
 function blankFencedRuns(lines: readonly string[]): { text: string[]; openedAt: number | null } {
   const text: string[] = [];
@@ -217,10 +181,8 @@ function blankFencedRuns(lines: readonly string[]): { text: string[]; openedAt: 
 /**
  * Split the document into tasks, reporting every defect visible from the text alone.
  *
- * A DUPLICATE HEADING IS REPORTED AND THEN SKIPPED. Its block is not checked for an Output or a
- * Dependencies line and its edges do not enter the graph: the first occurrence owns the id, and
- * piling three more violations onto a block nobody can address until the id clash is resolved
- * buries the one violation that has to be fixed first.
+ * A duplicate heading is reported and then skipped: its block is not checked for an Output or a
+ * Dependencies line and its edges do not enter the graph. The first occurrence owns the id.
  */
 function parseTasks(lines: readonly string[]): {
   tasks: ParsedTask[];
@@ -334,7 +296,7 @@ function readDependencies(
         kind: "unreadable_dependencies",
         taskId: id,
         line,
-        // NOT read as "none": a line nobody can parse is an undeclared position in the order,
+        // Not read as "none": a line nobody can parse is an undeclared position in the order,
         // and defaulting it to "no dependencies" would invent an edge-free task out of a typo.
         detail: `task ${id} has a "**Dependencies:**" line reading "${tail.trim()}", which names ` +
           "neither `none` nor any task id",
@@ -353,13 +315,12 @@ function readDependencies(
   };
 }
 
-// ── the graph ──────────────────────────────────────────────────────────────────────────────
+// The graph
 
 /**
- * Edges, with the unusable ones reported rather than followed. A self-edge is a `self_dependency`
- * and is kept out of the cycle graph, so it is named once and not again as a one-node ring; an
- * edge to an id no heading declares is an `unknown_dependency` and is dropped, because following
- * it would mean inventing a node the document does not have.
+ * Edges, with the unusable ones reported rather than followed. A self-edge is a
+ * `self_dependency` and is kept out of the cycle graph, so it is named once and not again as a
+ * one-node ring; an edge to an id no heading declares is an `unknown_dependency` and is dropped.
  */
 function buildEdges(tasks: readonly ParsedTask[]): {
   edges: Map<string, string[]>;
@@ -399,12 +360,9 @@ function buildEdges(tasks: readonly ParsedTask[]): {
 }
 
 /**
- * Every dependency ring in the graph, each reported once.
- *
- * One depth-first pass traverses each edge exactly once, so every back edge — and therefore every
- * ring — is seen. A ring is rotated to start at its earliest member in document order before it
- * is recorded, which is what makes `I-2 -> I-3 -> I-2` and `I-3 -> I-2 -> I-3` the one finding
- * they are rather than two.
+ * Every dependency ring in the graph, each reported once. One depth-first pass traverses each
+ * edge exactly once, so every back edge is seen. A ring is rotated to start at its earliest
+ * member in document order, which makes `I-2 -> I-3 -> I-2` and `I-3 -> I-2 -> I-3` one finding.
  */
 function findCycles(
   order: readonly string[],
@@ -446,13 +404,9 @@ function findCycles(
 }
 
 /**
- * An executable ordering, or nothing.
- *
- * Kahn's algorithm, taking the earliest ready task in document order at every step — the plan's
- * own sequence is the tie-break, so a plan already written in a runnable order gets that order
- * back rather than a re-shuffle that is equally valid and reads as a correction. Returns null
- * when a ring leaves tasks that never become ready: there is then no such ordering to report,
- * and a partial one would be an executable-looking answer to a question with no answer.
+ * An executable ordering, or nothing. Kahn's algorithm, taking the earliest ready task in
+ * document order at every step, so a plan already written in a runnable order gets that order
+ * back. Returns null when a ring leaves tasks that never become ready.
  */
 function executableOrder(
   ids: readonly string[],
@@ -474,7 +428,7 @@ function executableOrder(
   return ordered;
 }
 
-// ── the two entry points ───────────────────────────────────────────────────────────────────
+// The two entry points
 
 /** Violations sort by document line, then by the order they were found, so two runs over the
  *  same bytes produce the same report and a diff of two reports is a diff of two documents. */
@@ -489,13 +443,12 @@ function byLine(violations: readonly PlanViolation[]): PlanViolation[] {
  * Read a plan and report its shape, bound to `target`.
  *
  * Deterministic and side-effect free: the same bytes and the same target give the same report,
- * every time, with no model in the path. That is the point of it — the report is evidence, and
- * evidence that could come back differently on a second run is not evidence.
+ * with no model in the path.
  *
- * `target` is the version or digest the plan is being validated against. Omitted, the report
- * binds to the digest of the text it just read, which is always true but says only "this report
- * describes these bytes"; passing the version a caller believes it is executing is what lets
- * `admitToExecute` catch a report that has gone stale.
+ * `target` is the version or digest the plan is validated against. Omitted, the report binds to
+ * the digest of the text it just read, which says only that the report describes these bytes;
+ * passing the version a caller believes it is executing is what lets `admitToExecute` catch a
+ * stale report.
  */
 export function validatePlan(text: string, target?: string): PlanStructuralReport {
   const digest = createHash("sha256").update(text, "utf8").digest("hex");
@@ -506,10 +459,9 @@ export function validatePlan(text: string, target?: string): PlanStructuralRepor
   const graph = buildEdges(parsed.tasks);
   const violations = [...parsed.violations, ...graph.violations];
 
-  // A FENCE NOBODY CLOSED swallows the rest of the document, and every task after it simply
-  // stops existing — reported, otherwise, as tasks that were never declared and dependencies on
-  // nothing. Said plainly instead, because the defect is one unclosed line and the report a
-  // reader would otherwise get names ten tasks that are perfectly fine.
+  // A fence nobody closed swallows the rest of the document, so every task after it stops
+  // existing. Reported as the one unclosed line rather than as ten tasks that were never
+  // declared.
   if (source.openedAt !== null) {
     violations.push({
       kind: "unterminated_code_fence",
@@ -571,15 +523,12 @@ export interface ExecuteAdmission {
 /**
  * Admit a plan to controlled execution, or say exactly why not.
  *
- * BOTH VERDICTS ARE REQUIRED AND NEITHER SUBSTITUTES FOR THE OTHER. An approval says a person
- * read the plan and wants it built. A passing report says the document parses as a plan. A
- * duplicate task id is invisible to the first and fatal to the second, and an approval arriving
- * over a failing report is the exact shape of accident this refuses: the person did not overrule
- * the check, they never saw what it found.
+ * Both verdicts are required and neither substitutes for the other: an approval says a person
+ * read the plan and wants it built, a passing report says the document parses as a plan. A
+ * duplicate task id is invisible to the first and fatal to the second.
  *
- * NOTHING HERE BLOCKS WRITING. A malformed draft can be written, revised and read all day, and a
- * genuine approval can be recorded against it — this gate stands at controlled Execute and
- * nowhere earlier. Refusing the draft would refuse the only form in which a plan can be fixed.
+ * Nothing here blocks writing. A malformed draft can be written, revised, read and approved;
+ * this gate stands at controlled Execute and nowhere earlier.
  */
 export function admitToExecute(request: ExecuteAdmissionRequest): ExecuteAdmission {
   const refusals: ExecuteRefusal[] = [];

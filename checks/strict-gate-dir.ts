@@ -9,20 +9,15 @@ const mine = out.split("\n").filter((l) => /^scripts\/gate\/[^(]*\(\d+,\d+\): er
 if (mine.length) fail.push(`${mine.length} strict error(s) remain under scripts/gate/:\n` + mine.slice(0, 20).join("\n"));
 
 const modules = readdirSync("scripts/gate/checks").filter((f) => f.endsWith(".ts"));
-// DERIVED, NOT HARDCODED. A count written here is wrong the first time a module is added or
-// split — which happened during this very conversion, when data-telemetry.ts was split for
-// the 700-line ceiling. What must hold is that gate.ts imports every module that exists.
+// DELIBERATE: a floor, not an exact count — the exact number is wrong the first time a module
+// is added or split. What must hold is that gate.ts imports every module that exists.
 if (modules.length < 30) fail.push(`scripts/gate/checks holds only ${modules.length} modules — something was lost`);
 const gate = readFileSync("scripts/gate.ts", "utf8");
-// A MODULE THAT REGISTERS NOTHING IS REACHED DIFFERENTLY, AND STILL HAS TO BE REACHED.
-// `gate.ts` is an ORDER of check modules — its own header says so — and `suite-runner.ts`
-// holds the machinery the `suites-*` modules share and registers no check at all. Importing it
-// there to satisfy a rule would put a file in the order that contributes nothing to it. So the
-// question is asked of what the file DOES: a module carrying a top-level `check(` must be in
-// gate.ts, because that import is the only thing that runs it; a module carrying none must be
-// imported by SOMETHING under scripts/gate/, because a module nobody imports is dead code the
-// directory still pays for. Neither arm is weaker than the rule it replaces, and the second
-// catches an orphan the old one could not see.
+// A module that registers nothing is reached differently, and still has to be reached. A
+// module carrying a top-level `check(` must be imported by gate.ts, which is the order the
+// checks run in and the only thing that runs them; a module carrying none — `suite-runner.ts`
+// holds shared machinery and registers nothing — must be imported by something else under
+// scripts/gate/, because a module nobody imports is dead.
 const gateTree = readdirSync("scripts/gate", { recursive: true, withFileTypes: true })
   .filter((e) => e.isFile() && e.name.endsWith(".ts"))
   .map((e) => readFileSync(join(e.parentPath, e.name), "utf8")).join("\n");

@@ -1,15 +1,13 @@
 /**
- * How chain-check SAYS what it found — separate from what it walks.
+ * How chain-check says what it found — separate from what it walks.
  *
- * THREE WAYS TO ASSERT, AND THE DIFFERENCE BETWEEN THEM IS THE POINT. `record` states a claim
- * this file cannot evaluate for you. `check` asserts a call succeeded or was refused, and
- * `because` is what stops it passing on the WRONG refusal. `eitherOr` is for a tool whose
- * subject is not this run's throwaway initiative, where "did the work" and "refused" are both
- * correct and only an UNNAMED refusal says the tool is broken.
+ * Three ways to assert, and the difference between them is the point. `record` states a claim
+ * this file cannot evaluate. `check` asserts a call succeeded or was refused, and `because` is
+ * what stops it passing on the wrong refusal. `eitherOr` is for a tool whose subject is not this
+ * run's throwaway initiative, where "did the work" and "refused" are both correct and only an
+ * unnamed refusal says the tool is broken.
  *
- * Split out of chain-check.ts, which had reached the size where a file in this repository has
- * always turned out to hold a second subject. Reporting is that second subject: the walk is
- * about a flow's declared procedure, and none of these three functions knows what a flow is.
+ * None of these three functions knows what a flow is; the walk is the other subject.
  */
 
 /** Every claim this run made, in order, for the summary at the end. */
@@ -23,12 +21,9 @@ export function record(ok: boolean, name: string, got: string): void {
 /**
  * `because` is what stops a check passing on the wrong refusal.
  *
- * "the call errored" and "the rule fired" are different claims, and this probe already knows
- * it — the journal probe fills in every other argument precisely so a schema rejection cannot
- * be mistaken for the subject rule. The hand-written-approval probe did not have that, and it
- * patched `status: draft` on a document approved forty lines earlier: document_patch answered
- * "`find` occurs 0 times" long before any guard ran, and the check printed ok having never
- * reached ownershipCheck at all.
+ * "the call errored" and "the rule fired" are different claims. Without it, a probe that patches
+ * `status: draft` on an already-approved document gets "`find` occurs 0 times" long before any
+ * guard runs, and prints ok having never reached ownershipCheck.
  */
 export function check(name: string, got: string, wantError: boolean, because?: RegExp): void {
   const body = got.trim();
@@ -45,12 +40,12 @@ export function check(name: string, got: string, wantError: boolean, because?: R
 }
 
 /**
- * A tool whose real subject is not this run's throwaway initiative — a plugin's release
- * history, a skill's install state, an evaluation nobody has started — cannot be asserted on
- * the way `check` does: which of "did the work" or "refused" is correct depends on state the
- * probe does not control and a fresh initiative does not create. So this asserts on the SHAPE
- * of the answer instead: either the tool did its work, or it refused for a cause it names. An
- * unnamed refusal, or the call throwing at all, is what actually says the tool is broken.
+ * A tool whose real subject is not this run's throwaway initiative — a plugin's release history, a
+ * skill's install state, an evaluation nobody has started — cannot be asserted on the way `check`
+ * does: which of "did the work" or "refused" is correct depends on state the probe does not
+ * control. So this asserts on the shape of the answer instead: either the tool did its work, or it
+ * refused for a cause it names. An unnamed refusal, or the call throwing, is what says the tool is
+ * broken.
  */
 export function eitherOr(name: string, got: string, acceptableRefusal: RegExp): void {
   const body = got.trim();

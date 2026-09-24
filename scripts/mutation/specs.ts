@@ -1,13 +1,11 @@
 /**
- * Every planted defect, in one list, split by what it is planted IN.
+ * Every planted defect, in one list, split by what it is planted in.
  *
- * Split by subject rather than by check name, because that is what a reader coming back to
- * one of these needs: a mutation is only as good as the understanding of the file it lands
- * in, and the four groups here have four different ways of reaching their check — through
- * the build, through the build plus a fixture, through source text this repository sweeps,
- * and through shipped content. One file of sixty-five would also be over this repository's
- * seven-hundred-line ceiling, which is where a file here has always turned out to hold a
- * second subject.
+ * Split by subject rather than by check name: a mutation is only as good as the understanding
+ * of the file it lands in, and these groups reach their check four different ways —
+ * through the build, through the build plus a fixture, through source text this repository
+ * sweeps, and through shipped content. One file would also be over this repository's
+ * seven-hundred-line ceiling.
  */
 import type { MutationSpec } from "./plant.ts";
 import { CATALOG_SPECS } from "./specs-catalog.ts";
@@ -28,18 +26,12 @@ import { PLATFORM_SPECS } from "./specs-platform.ts";
 import { RETRIEVAL_SPECS } from "./specs-retrieval.ts";
 
 /**
- * THE `specs-cov-*` FILES ARE GROUPED BY WHICH CHECK THEY COVER, not by subject, and that is a
- * deliberate departure from the rule above.
+ * DELIBERATE: the `specs-cov-*` files are grouped by which check they cover, not by subject,
+ * departing from the rule above. Their subjects are scattered across services, packages,
+ * scripts, catalog, deploy and testing, so a subject grouping would split one check's defects
+ * across several files.
  *
- * The five original files are split by what a defect is planted IN, because a reader coming back
- * to one of them needs the file it lands in. These eleven were written to close a coverage gap —
- * 331 registered checks with no row — and the unit of that work is the CHECK, not the subject.
- * Their subjects are scattered across services, packages, scripts, catalog, deploy and testing;
- * grouping them by subject would have meant eleven authors editing the same five files.
- *
- * Each was written by one author against one list of check ids, and each verified its own anchors
- * before delivering. Between them they carry 318 specs; the remaining 13 ids are recorded in
- * `unexercisable.ts` with the reason none of them can be planted.
+ * The check ids that cannot be planted are recorded in `unexercisable.ts` with the reason.
  */
 export const SPECS: readonly MutationSpec[] =
   [...KERNEL_SPECS, ...RETRIEVAL_SPECS, ...PLATFORM_SPECS, ...CATALOG_SPECS, ...DOCUMENT_SPECS,

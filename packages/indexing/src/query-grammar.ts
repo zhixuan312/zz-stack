@@ -1,47 +1,32 @@
 /**
  * The query-grammar lexer: quotes, exclusions and explicit `OR` alternatives, recognised on
- * the raw scalars a person typed, BEFORE any lexical normalization touches them.
+ * the raw scalars a person typed, before any lexical normalization touches them.
  *
- * WHY THIS RUNS BEFORE NORMALIZATION. `identifierTokens`/`analyze` (`tenant-analysis.ts`)
- * split on `.`/`_`/`/`/`-`/`:`, camelCase and Han-scalar boundaries — useful for matching, but
- * it would also eat this grammar's own syntax: a leading `-` on a term is an exclusion
- * operator, and the same `-` one character into `primary_evidence-000037.txt` is punctuation
- * inside an identifier. Only the SURFACE FORM — an operator's position relative to whitespace
- * and quotes — can tell those two apart, and that information is gone once a normalizer has
- * already lowercased and split the text. So this module reads the raw string first; lexical
- * normalization is left to run afterward, on each clause's own `.text`, exactly as
- * `identifierTokens`'s own header already states it expects ("operates on text a QUERY LEXER
- * has already read for quotes/OR/exclusions").
+ * COUPLED: `identifierTokens`/`analyze` (`tenant-analysis.ts`) split on `.`/`_`/`/`/`-`/`:`,
+ * camelCase and Han-scalar boundaries, which would eat this grammar's own syntax — a leading
+ * `-` is an exclusion operator, and the same `-` inside `primary_evidence-000037.txt` is
+ * punctuation. Only the surface form tells them apart, and that is gone once a normalizer has
+ * lowercased and split. Normalization runs afterwards, on each clause's own `.text`.
  *
- * A PARALLEL, NARROWER GRAMMAR TO `services/zz-core/src/tenant-info/retrieval.ts`'s OWN
- * `parseQuery`. That one folds a query into the boolean AST the tenant-information search
- * lanes rank against — `required` terms, PostgreSQL modes, response serialization — and lives
- * where its one caller (`search.ts`) already imports its neighbours from. This one has no
- * caller yet ("final deliverable content is not in this plan") and a narrower job: preserve
- * what a person typed as a clause tree, for whichever consumer reaches for it next. Same
- * recognition rules (quote, leading `-`, bare `OR`), because both are reading the same
- * surface a person types — but two different exported symbols, in two different packages, are
- * not the drift this platform normally refuses: nothing here re-implements the other's
+ * A parallel, narrower grammar to `services/zz-core/src/tenant-info/retrieval.ts`'s own
+ * `parseQuery`, which folds a query into the boolean AST the search lanes rank against. Same
+ * recognition rules (quote, leading `-`, bare `OR`); nothing here re-implements the other's
  * ranking, wire shape or PostgreSQL mode handling, and neither imports the other.
  *
- * A PHRASE CANNOT CROSS A FIELD BOUNDARY. This function takes one field's raw text — the
- * caller passes a single string per field it wants parsed (a title, a body). There is no
- * multi-field structure inside one call for a quote to span across, so the invariant holds
- * structurally: nothing downstream of `parseQuery` ever sees a phrase clause whose `.text`
- * reaches past the string it was given.
+ * A phrase cannot cross a field boundary: this takes one field's raw text, so there is no
+ * multi-field structure inside one call for a quote to span.
  */
 
-// ── the clause tree ─────────────────────────────────────────────────────────────────────────
+// The clause tree
 
 export type QueryClauseKind = "phrase" | "term" | "exclude" | "alternation";
 
 export interface QueryClause {
   readonly kind: QueryClauseKind;
   /** The clause's own content — a phrase's quoted text with the quotes stripped, a term's or
-   *  exclusion's word with any leading `-` stripped, or (for `"alternation"`) the original
+   *  exclusion's word with any leading `-` stripped, or, for `"alternation"`, the original
    *  substring spanning every alternative and the `OR` keywords between them. Never
-   *  normalized: whatever splitting or lowercasing a consumer wants happens after this, on
-   *  this field. */
+   *  normalized. */
   readonly text: string;
   /** Only present on `"alternation"` — the operands `OR` joined, in the order they appeared. */
   readonly alternatives?: readonly QueryClause[];
@@ -51,11 +36,10 @@ export interface QueryAst {
   readonly clauses: readonly QueryClause[];
 }
 
-/** Thrown when `text` cannot be parsed under this grammar — an opened quote that is never
- *  closed, so far the only such case. Carries the offending span (scalar offsets, so a caller
- *  can point at the exact characters) rather than degrading to a bag of words, which is what
- *  the Contract's "never silently flattened" refuses: swallowing the stray `"` and treating
- *  the rest of the query as ordinary terms would parse a syntax error as if it meant something. */
+/** Thrown when `text` cannot be parsed under this grammar — so far, only an opened quote that
+ *  is never closed. Carries the offending span as scalar offsets rather than degrading to a
+ *  bag of words: swallowing the stray `"` would parse a syntax error as if it meant
+ *  something. */
 export class QueryParseError extends Error {
   constructor(message: string, public readonly span: { readonly start: number; readonly end: number }) {
     super(message);
@@ -63,7 +47,7 @@ export class QueryParseError extends Error {
   }
 }
 
-// ── tokenizing: quotes, a leading `-`, and whitespace — nothing else ────────────────────────
+// Tokenizing: quotes, a leading `-`, and whitespace — nothing else
 
 function isWhitespaceScalar(ch: string | undefined): boolean {
   return ch === undefined || /\s/u.test(ch);
@@ -74,19 +58,18 @@ interface RawToken {
   /** Content alone: quotes stripped for a phrase, a leading exclusion `-` stripped for a word. */
   readonly text: string;
   readonly excluded: boolean;
-  /** Scalar offsets of the token's own RAW span in `scalars` — including the quotes or the
-   *  leading `-` — so an alternation clause can recover its original substring by slicing the
-   *  source between its first and last operand. */
+  /** Scalar offsets of the token's raw span in `scalars`, including the quotes or the leading
+   *  `-`, so an alternation clause can recover its original substring by slicing the source
+   *  between its first and last operand. */
   readonly start: number;
   readonly end: number;
 }
 
 /** Scans `scalars` left to right, recognizing exactly three things: a double-quoted phrase, a
- *  leading `-` immediately against the next scalar (an exclusion), and whitespace as the only
- *  word boundary. No internal punctuation is inspected — `-`, `/`, `.` and everything else
- *  inside a word stay part of it, which is what keeps `primary_evidence-000037.txt` one token
- *  instead of an exclusion plus a fragment. An unspaced Han run has no whitespace in it either,
- *  so it falls out of the same word-scanning loop as a single token, with no separate case. */
+ *  leading `-` immediately against the next scalar, and whitespace as the only word boundary.
+ *  No internal punctuation is inspected, which keeps `primary_evidence-000037.txt` one token.
+ *  An unspaced Han run has no whitespace either, so it falls out of the same loop as one
+ *  token. */
 function tokenize(scalars: readonly string[]): RawToken[] {
   const tokens: RawToken[] = [];
   const n = scalars.length;
@@ -119,17 +102,15 @@ function tokenize(scalars: readonly string[]): RawToken[] {
   return tokens;
 }
 
-// ── folding tokens into clauses ──────────────────────────────────────────────────────────────
+// Folding tokens into clauses
 
 const isOrKeyword = (tok: RawToken): boolean => tok.kind === "word" && !tok.excluded && tok.text === "OR";
 
 /** Folds raw tokens into the clause tree: a phrase or word becomes `"phrase"`/`"term"`, a
  *  `-`-prefixed one becomes `"exclude"` and is never eligible to join an alternation, and an
- *  explicit `OR` between two clauses merges them (and every further `OR`-joined operand) into
- *  one `"alternation"` clause carrying the original substring across all of them. A dangling
- *  `OR` — nothing before it, or immediately followed by an exclusion — contributes no operator
- *  and is simply dropped, the same tolerant reading `retrieval.ts`'s own `buildClauses` gives
- *  the same case. */
+ *  explicit `OR` between two clauses merges them, and every further `OR`-joined operand, into
+ *  one `"alternation"` carrying the original substring across all of them. A dangling `OR` —
+ *  nothing before it, or immediately followed by an exclusion — is dropped. */
 function buildClauses(tokens: readonly RawToken[], scalars: readonly string[]): QueryClause[] {
   const clauses: QueryClause[] = [];
   const spans: { start: number; end: number }[] = [];
@@ -174,13 +155,11 @@ function buildClauses(tokens: readonly RawToken[], scalars: readonly string[]): 
   return clauses;
 }
 
-/** Parses `text` under this platform's query grammar — quoted phrases, a leading `-` as an
- *  exclusion, and a bare `OR` between two operands as an explicit alternative — and returns
- *  the clause tree, each clause carrying its own original text. Throws `QueryParseError` for
- *  an expression this grammar cannot read (today: an unterminated quote) rather than
- *  degrading it into ordinary terms. Lexical normalization is deliberately not run here: a
- *  caller wanting `identifierTokens`/`analyze` over a clause applies it to that clause's own
- *  `.text`, after this stage, never before it. */
+/** Parses `text` under this platform's query grammar and returns the clause tree, each clause
+ *  carrying its own original text. Throws `QueryParseError` for an expression this grammar
+ *  cannot read rather than degrading it into ordinary terms. Lexical normalization is not run
+ *  here: a caller wanting `identifierTokens`/`analyze` applies it to a clause's `.text`
+ *  afterwards. */
 export function parseQuery(text: string): QueryAst {
   const scalars = Array.from(text);
   const tokens = tokenize(scalars);

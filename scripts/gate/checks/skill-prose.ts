@@ -1,11 +1,8 @@
 /**
- * What a skill's TEXT may and may not say.
- *
- * Not its shape and not its arithmetic — its claims. A skill that justifies itself by
- * machinery this platform does not have, that tells an agent to write a document with a
- * local-file tool, that names a repository path nobody ships, or that instructs a model to
- * refuse a person's own words. Each of these reads as authoritative and is wrong, and prose
- * is the one part of this platform nothing else checks.
+ * What a skill's text may and may not say — its claims, not its shape or its arithmetic.
+ * A skill that justifies itself by machinery this platform does not have, that tells an
+ * agent to write a document with a local-file tool, that names a repository path nobody
+ * ships, or that instructs a model to refuse a person's own words.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -15,22 +12,14 @@ import { check } from "../run.ts";
 import { NAMING, catalogPackages, declaredCommands, everyShippedSkill, flows, ownedFields, platformSkills, skillsOf } from "../facts.ts";
 
 check("a skill_read a skill spells out names a skill that exists", () => {
-  // THE DIRECT INSTRUCTION, checked directly. The prefix check below covers a backticked
-  // sibling name, which is what a citation usually looks like WITHIN a flow. It cannot
-  // cover a cross-family name: `blocks-capabilities` shares no prefix with ops-flow's
-  // skills, so `skill_read("blocks-capabilities")` sat in ops-select AND in zz-backbone —
-  // the platform skill every flow on this platform loads first — for as long as the skill
-  // was gone, and the gate was green the whole time. A block evaluation loaded zz-backbone,
-  // did what it said, and was refused: "no skill named 'blocks-capabilities' is available
-  // to you".
+  // `skill_read("X")` is an instruction to load X, not a citation, so it is checked
+  // directly. The prefix check below covers a backticked sibling name, which is what a
+  // citation looks like within a flow; it cannot cover a cross-family name.
   //
-  // `skill_read("X")` is not a citation, it is an instruction to load X, and an instruction
-  // to load something that does not exist is wrong in a way no convention makes ambiguous.
-  // Its `file:` form is out of scope here: whether a skill ships a given reference is a
-  // question about that skill's directory, and "a skill never instructs a tool its package
+  // The `file:` form is out of scope here — "a skill never instructs a tool its package
   // cannot reach" is where file paths are answered.
   const bad: string[] = [];
-  for (const rel of sourceFiles(["catalog", "skills", "blocks"], ["SKILL.md"])) {
+  for (const rel of sourceFiles(["catalog", "skills"], ["SKILL.md"])) {
     const txt = readFileSync(join(root, rel), "utf8");
     for (const m of txt.matchAll(/skill_read\(\s*["'`]([a-z0-9][a-z0-9-]*)["'`]/g)) {
       if (!everyShippedSkill().has(m[1])) bad.push(`${rel} -> skill_read("${m[1]}")`);
@@ -45,18 +34,12 @@ check("no skill references a skill that is not shipped", () => {
     const have = new Set(skillsOf(f).map((s) => s.name));
     if (have.size === 0) continue;
     // A backticked `<flow-prefix>-name` is an identifier the reader is expected to load.
-    // Prose mentions are deliberately written without backticks, which is the convention
-    // that lets this check mean something.
-    // FROM THE SKILLS THEMSELVES, not from the flow's name. This was
-    //   f.flow.replace(/-flow$/, "")
-    // which works only where a flow is called `<x>-flow` and its skills `<x>-…`. For
-    // zz-block-eval it looked for `zz-block-eval-*` while the skills are `zz-block-*`, so
-    // the check covered NOTHING for both evaluation flows — and a restructure left
-    // `zz-block-defects` and `zz-block-handover` cited in prose after they were merged away.
-    // The agent loaded them, was refused, and the gate had been green throughout.
+    // Prose mentions are written without backticks, which is the convention that lets this
+    // check mean something.
     //
-    // The shared prefix of a flow's own skill names is what a citation of a sibling looks
-    // like, and it cannot drift from the names it is derived from.
+    // The prefix comes from the skill names themselves, not from the flow's name: a flow is
+    // not always called `<x>-flow` with skills named `<x>-…` — zz-plugin-eval ships
+    // `zz-plugin-*` skills.
     const names = [...have];
     let prefix = names[0] ?? "";
     for (const n of names) {
@@ -70,10 +53,8 @@ check("no skill references a skill that is not shipped", () => {
     for (const s of skillsOf(f)) {
       const txt = readFileSync(s.path, "utf8");
       for (const m of txt.matchAll(re)) {
-        // Shipped ANYWHERE, not just by this flow. `zz-skill-evolve` is a platform skill and
-        // zz-skill-eval's report legitimately names it as what consumes its findings; a check
-        // that knew only one flow's skills would call every cross-flow citation a defect and
-        // teach the reader to ignore it.
+        // Shipped anywhere, not just by this flow: a cross-flow citation is legitimate, so
+        // a check that knew only one flow's skills would call every one a defect.
         if (!have.has(m[1]) && !everyShippedSkill().has(m[1])) bad.push(`${s.name} -> ${m[1]}`);
       }
     }
@@ -82,23 +63,11 @@ check("no skill references a skill that is not shipped", () => {
 });
 
 check("no skill justifies itself by machinery this platform does not have", () => {
-  // The sdlc flow was ported, and the port kept its source project's furniture. A "plan-stage
-  // renderer" and a "spec-stage renderer" were given as the REASON the heading formats matter;
-  // neither exists here. A check path was to be resolved "relative to the directory
-  // execute_plan runs in", quoting "the validator's own error" — no such tool, no such
-  // validator.
-  //
-  // The rules were right and the reasons were fiction, which is the worse way round: anyone
-  // who checks finds no renderer and concludes the rule is vestigial, when sdlc-execute and
-  // sdlc-plan-audit genuinely depend on it.
-  // @include is here too: nothing on this platform expands one. skill_read returns the file
-  // verbatim, so a directive that names another file ships as literal text — and both skills
-  // that carried one followed it with "apply these writing rules", above nothing at all.
-  // "the pipeline" joined them: sdlc-plan told a plan author that it "re-materializes your
-  // declared checks from the plan before scoring". Nothing here is a pipeline — sdlc-execute's
-  // caller writes each check to its path before dispatching the task that must pass it, which
-  // is a person or an agent following a skill, and knowing which it is changes how you write
-  // the check.
+  // Each pattern names something this platform does not have: no renderer, no `execute_plan`
+  // tool, no validator, no pipeline. `@include` is here because nothing expands one —
+  // skill_read returns the file verbatim, so the directive ships as literal text.
+  // sdlc-execute's caller writes each check to its path before dispatching the task that
+  // must pass it, and the executor is a person or an agent following a skill.
   const GHOSTS = [/\brenderer\b/, /\bexecute_plan\b/, /\bthe validator\b/, /\bPer FR-\d/,
                   /^@include\b/, /\bthe pipeline\b/, /\bregistered Method\b/, /\bsoftware-change@/,
                   // Another project's architecture, describing what this one does not add.
@@ -112,20 +81,15 @@ check("no skill justifies itself by machinery this platform does not have", () =
       }
     });
   }
-  // Shown eight at a time, and SAYING SO. It sliced to eight silently, so a port that dragged
-  // forty citations across looked like a port that dragged eight — and the reader fixes eight,
-  // re-runs, and is surprised. A cap that does not report itself is the same shape as a
-  // listing that quietly omits things.
+  // Eight at a time, and the cap reports itself rather than slicing silently.
   return firstOf(bad);
 });
 
 check("no skill writes a document with a local-file tool", () => {
-  // sdlc-spec told the model to write the spec skeleton "in ONE `Write` call" and to enrich
-  // each section "using `Edit`". Those are the runtime's LOCAL file tools. The platform's
-  // documents live in the initiative store and are written with document_write / document_patch — a
-  // spec written to a local path has no envelope, no version snapshot at approval, no
-  // telemetry, and nothing a person can approve or an auditor can read. And it looks exactly
-  // like success, which is why the same file's own design note warns against it.
+  // `Write`/`Edit`/`MultiEdit`/`NotebookEdit` are the runtime's local file tools. The
+  // platform's documents live in the initiative store and are written with document_write /
+  // document_patch; a document written to a local path has no envelope, no version snapshot
+  // at approval and no telemetry, and it looks exactly like success.
   const LOCAL = /`(Write|Edit|MultiEdit|NotebookEdit)`/g;
   const bad: string[] = [];
   for (const rel of sourceFiles(["catalog", "skills"], ["SKILL.md"])) {
@@ -139,14 +103,9 @@ check("no skill writes a document with a local-file tool", () => {
 });
 
 check("a skill that ships an asset does not say the asset is beside it", () => {
-  // On Claude Code a skill the manifest declares as a command is PROMOTED: its SKILL.md
-  // becomes commands/<command>.md and only the text moves — assets stay in skills/<name>/. So
-  // "next to this file" is true in Codex and false on Claude Code, which is the client where
-  // the promotion happens and the one most people use.
-  //
-  // sdlc-deck said exactly that about a 250KB template, added "that is the only place to
-  // look — no probing, no fallbacks", and instructed the model to stop rather than improvise
-  // if it was missing. Which it dutifully would have, every time, on Claude Code.
+  // A skill the manifest declares as a command is promoted: its SKILL.md becomes
+  // commands/<command>.md and only the text moves — assets stay in skills/<name>/. So "next to
+  // this file" is false for a promoted skill.
   const bad: string[] = [];
   for (const f of flows) {
     const m = JSON.parse(readFileSync(join(f.dir, "flow.json"), "utf8"));
@@ -166,10 +125,8 @@ check("a skill that ships an asset does not say the asset is beside it", () => {
 });
 
 check("every stage that writes a document names document_present, or says why not", () => {
-  // ops-flow told its agent to present documents in full and its records show it did.
-  // sdlc-flow's skill files never mentioned the subject anywhere, and its records show that
-  // too. The difference was never a decision — it was which prose happened to be loaded.
-  // The departure regex is verified against ops-plan:177's actual wording.
+  // A stage that writes a document either names document_present or states a departure from
+  // it in one of the phrasings the regex below accepts.
   const bad: string[] = [];
   for (const f of flows) {
     const mf = join(f.dir, "flow.json");
@@ -189,16 +146,9 @@ check("every stage that writes a document names document_present, or says why no
 });
 
 check("a skill citing another document's section cites one that exists", () => {
-  // Skills send each other to numbered sections of documents other skills produce —
-  // "read section 10 ('about this stakeholder') of their records". The producing template is
-  // edited, the numbers move, and the citation goes on looking authoritative.
-  //
-  // Four were wrong at once: learnings.md has SEVEN sections, and ops-spec sent readers to 10
-  // and 4 while ops-select sent them to 10 and 9. An agent that follows one of those opens the
-  // document, cannot find the section, and concludes the instruction is stale.
-  //
-  // The templates declare their sections as `N. **Title**`, so the numbering is readable.
-  // A citation must agree with it on both the number and the name.
+  // Skills send each other to numbered sections of documents other skills produce. The
+  // templates declare their sections as `N. **Title**`, and a citation must agree with a
+  // declaration on both the number and the name.
   const declared = new Map();          // number -> Set of titles declared anywhere
   const skillFiles = sourceFiles(["catalog", "skills"], ["SKILL.md"]);
   for (const rel of skillFiles) {
@@ -224,16 +174,9 @@ check("a skill citing another document's section cites one that exists", () => {
 });
 
 check("no skill or agent prompt names a repository path that does not exist", () => {
-  // The release-document version of this check deliberately skips catalog/ and skills/,
-  // because those are versioned by their own digest rather than dated as release documents.
-  // The consequence was that nothing checked their paths at all, and both agent system
-  // prompts said they were generated by a script one directory up from where it actually
-  // sat. Both that script and the front end it bootstrapped have since been replaced, which
-  // is the general case rather than the exception: a path in prose goes stale because the
-  // thing moved, and nothing that moves it reads the prose.
-  //
-  // Matched with or without backticks: these two were written plain, which is exactly how
-  // the other check missed them.
+  // COUPLED: `scripts/gate/checks/docs-integrity.ts` runs the same path check over release
+  // documents and skips catalog/ and skills/, which are versioned by digest rather than
+  // dated. This one covers those two, and matches a path with or without backticks.
   const bad: string[] = [];
   const files = sourceFiles(["catalog", "skills"], [".md"]);
   const TOP = "docs|services|packages|catalog|skills|deploy|scripts|testing";
@@ -256,13 +199,10 @@ check("no skill or agent prompt names a repository path that does not exist", ()
 });
 
 check("only a dispatched skill demands a JSON-only final response", () => {
-  // "Your FINAL text response must be exactly one JSON block" is a WORKER's contract: it is
-  // read by the caller that dispatched it and synthesised. sdlc-spec carried it while running
-  // in the main agent, where the final response goes to the person who has just been
-  // interviewed and must now agree to the spec — so the stage ended by handing a stakeholder
-  // a JSON envelope, and nothing on this platform reads one.
-  //
-  // A skill that demands it must say, in its own description, that it is dispatched.
+  // "Your FINAL text response must be exactly one JSON block" is a worker's contract, read
+  // by the caller that dispatched it. In a main-agent skill the final response goes to a
+  // person instead. A skill that demands it must say, in its own description, that it is
+  // dispatched.
   const bad: string[] = [];
   for (const rel of sourceFiles(["catalog", "skills"], ["SKILL.md"])) {
     const txt = readFileSync(join(root, rel), "utf8");
@@ -276,25 +216,16 @@ check("only a dispatched skill demands a JSON-only final response", () => {
 });
 
 check("no flow tells an agent to refuse a person's own words", () => {
-  // The platform default used to be that an approval passes ONLY on "approved" or "yes, I
-  // approve", and that "ok" and "go ahead" do NOT pass — the agent was to hold and ask again.
-  // That is the platform instructing every flow to make a person repeat a decision they had
-  // already made. It is gone from zz-platform, and the risk now is a flow reintroducing it
-  // locally, where nobody would see it.
-  //
-  // Deliberately narrow: it looks for the shape of a phrase whitelist near an approval, not
-  // for opinions about approvals. A flow that genuinely needs a stricter rule states the
-  // override in its own words, which this does not match.
+  // A phrase whitelist near an approval — "approved", not "ok" — makes a person repeat a
+  // decision they already made. DELIBERATE: this matches the shape of such a whitelist, not
+  // opinions about approvals, so a flow that states a stricter rule in its own words passes.
   const bad: string[] = [];
   for (const f of [...flows, { dir: null }]) {
     for (const sk of (f.dir === null ? platformSkills() : skillsOf(f))) {
       for (const m of readFileSync(sk.path, "utf8").matchAll(/^.*\bapprov\w*\b.*$/gim)) {
         const line = m[0].trim();
-        // Three shapes, because the second and third slipped past the first. ops-intent
-        // carried `(the same discipline as every gate: "approved", not "ok" or "continue")`
-        // — a phrase whitelist in every respect, using none of the words the original
-        // pattern looked for. A list of accepted words beside a list of rejected ones IS
-        // the defect, however the sentence is built.
+        // Three shapes: a list of accepted words beside a list of rejected ones is the
+        // defect, however the sentence is built.
         const WHITELIST = /"[^"]{1,20}"\s*,?\s*(and )?not\s+"|not\s+"[^"]{1,20}"\s*(or|,)\s*"/i;
         if (/\bdo(es)? not pass\b|\bonly on an? (unambiguous|explicit|exact)\b/i.test(line)
             || WHITELIST.test(line)) {
@@ -311,26 +242,12 @@ check("no flow tells an agent to refuse a person's own words", () => {
 
 check("no skill template hands a model a field the platform owns", () => {
   // A frontmatter template inside a fenced block is an instruction: the model copies it.
-  // Five fields are the platform's — status, approved_by, approved_at, outcome, closed_by —
-  // and zz-core refuses a write that moves any of them by hand. A template carrying one
-  // therefore produces a refusal on the very first save of the very first document, which
-  // is the worst place for a flow to discover it.
+  // zz-core refuses a write that moves a platform-owned field by hand, so a template
+  // carrying one produces a refusal on the first save of the first document.
   //
-  // Found by reading rather than by running: three sdlc templates opened with
-  // `status: draft`, and an sdlc closing skill's close section handed over a whole
-  // `outcome: delivered` block while the same file, forty lines down, correctly said
-  // `initiative_close()` derives it. The stale half came first, which is the half an agent follows.
-  //
-  // Only inside a fence, and only as a KEY at the start of a line. Prose naming a field is
-  // how these skills explain the rule, and explaining it is exactly what they should do.
-  //
-  // A fence is not the only way to hand a model a template. sdlc-plan's step 2 said "Write
-  // the header — frontmatter — `flow: sdlc-flow`, `type: plan`, `status: draft`" in an
-  // ordinary numbered step, inline backticks and no fence, and an agent following it was
-  // refused on the first save of every plan.md. So OUTSIDE a fence the test is different and
-  // has to be: naming a field is how these skills explain the rule, and they must go on
-  // explaining it — what is refused is being TOLD TO WRITE one, which is an imperative verb
-  // and the field in the same sentence.
+  // Inside a fence, the test is the field as a key at the start of a line. Outside one, the
+  // test is different: prose naming a field is how these skills explain the rule, so what is
+  // matched is an imperative verb and the field in the same sentence.
   const OWNED = new RegExp(`^\\s*(${ownedFields().join("|")})\\s*:`);
   const ENVELOPE_KEY = /^\s*(flow|type|version|updated_at|accepted_by|no_signoff_reason)\s*:/;
   const OWNED_INLINE = new RegExp(
@@ -345,12 +262,9 @@ check("no skill template hands a model a field the platform owns", () => {
       if (fenced && OWNED.test(line)) {
         bad.push(`${rel}:${i + 1} templates \`${line.trim().split(":")[0]}\``);
       }
-      // ANY envelope key in a fenced block, not only the five the platform owns. sdlc-method
-      // — the skill every sdlc stage is told to read first — showed the envelope as a
-      // ```yaml block of `flow:` and `type:` under the words "every document carries the
-      // envelope". Neither key is platform-OWNED in the refusing sense, and there was no
-      // `---`, so both halves of this check walked past it while it taught every stage the
-      // model that 2.12 removed.
+      // Any envelope key in a fenced block, not only the ones the platform owns: a `flow:`
+      // or `type:` shown in a yaml block still teaches a stage to write the envelope by
+      // hand, and neither key is owned in the refusing sense.
       if (fenced && ENVELOPE_KEY.test(line)) {
         bad.push(`${rel}:${i + 1} shows \`${line.trim().split(":")[0]}\` as something to write`);
       }
@@ -367,27 +281,18 @@ check("no skill template hands a model a field the platform owns", () => {
 
 check("a skill names the command a person would actually type", () => {
   // A command is `/<plugin>:<file>`. The plugin half is computed — a trailing `-flow` is
-  // dropped — and the command half is DECLARED, in the manifest's `commands` map. So
+  // dropped — and the command half is declared, in the manifest's `commands` map. So
   // zz-core's tldr skill is typed `/zz-core:tldr` because flow.json says `"tldr": "zz-tldr"`.
   //
-  // Twelve places said `/zz:sdlc-tldr` — the namespace from when every flow shipped inside
-  // one `zz` plugin. The `zz` plugin carries the router skill and NO commands, so every one
-  // of those named a command that cannot exist, in when_to_use fields a model reads and
-  // headings a person reads. The generated command file had been fixed and carries a comment
-  // about the mistake; the skills describing those commands had not, and neither had the
-  // setup text the package hands a person on install.
-  //
-  // Checked against the real declaration rather than against a list of known-bad strings.
-  // TWO WAYS TO BE WRONG NOW, where the derivation could only produce one: a skill can name
-  // the wrong string for a command that exists, and it can name a command for a skill the
-  // manifest declares none for — which the strip could not detect, because it invented a
-  // name for every skill whether one shipped or not.
+  // Checked against the real declaration, so two ways to be wrong are caught: naming the
+  // wrong string for a command that exists, and naming a command for a skill the manifest
+  // declares none for.
   if (NAMING.error || !NAMING.pluginName) return NAMING.error ?? "NAMING has no pluginName";
   const { pluginName } = NAMING;
   const bad: string[] = [];
-  // Every package with skills, INCLUDING one that ships no manifest: a skills-only package
-  // is packaged too, and it declares no commands, so naming one of its skills as a command
-  // is naming a file the packager does not write.
+  // Every package with skills, including one that ships no manifest: such a package declares
+  // no commands, so naming one of its skills as a command names a file the packager does not
+  // write.
   for (const pkg of catalogPackages) {
     const skillsDir = join(pkg.dir, "skills");
     if (!existsSync(skillsDir)) continue;
@@ -400,8 +305,8 @@ check("a skill names the command a person would actually type", () => {
       if (!existsSync(md)) continue;
       for (const m of readFileSync(md, "utf8").matchAll(/\/([a-z0-9-]+):([a-z0-9-]+)/g)) {
         const named = `/${m[1]}:${m[2]}`;
-        // Only claims about THIS package's own skills. A skill may legitimately name
-        // another plugin's command, and a URL scheme is not a command at all.
+        // Only claims about this package's own skills: naming another plugin's command is
+        // legitimate, and a URL scheme is not a command at all.
         const target = shipped.find((k) => right.get(k) === named || named.endsWith(`:${k}`));
         if (!target) continue;
         const want = right.get(target);
@@ -418,17 +323,10 @@ check("a skill names the command a person would actually type", () => {
 });
 
 check("no skill names a package file the packager does not emit", () => {
-  // The check above reads `/plugin:command` strings. A skill can also name the FILE — and
-  // sdlc-deck did, telling the reader it is installed as `commands/sdlc-deck.md` so it can
-  // resolve its template relative to the plugin root. The packager emits
-  // `commands/<the manifest's key>.md`, which is `commands/deck.md`; the file is named by the
-  // command, not by the skill, because the key IS the command.
-  //
-  // The consequence is not cosmetic. That table exists so the skill can find
-  // `../skills/zz-deck/deck-chassis.html` from where it is actually reading, and a deck
-  // built without the chassis is the one failure the skill says to stop on. The string form
-  // had already been corrected across twelve places; this form reads as a path rather than a
-  // command, so the same sweep did not see it.
+  // The check above reads `/plugin:command` strings; a skill can also name the file. The
+  // packager emits `commands/<the manifest's key>.md`, so the file is named by the command
+  // and not by the skill. A skill resolves its assets relative to where it is installed, so
+  // naming the wrong file makes it look in the wrong place.
   const bad: string[] = [];
   for (const pkg of catalogPackages) {
     const skillsDir = join(pkg.dir, "skills");
@@ -438,8 +336,8 @@ check("no skill names a package file the packager does not emit", () => {
     for (const sk of own) {
       const text = readFileSync(join(skillsDir, sk, "SKILL.md"), "utf8");
       for (const m of text.matchAll(/commands\/([a-z0-9-]+)\.md/g)) {
-        // Only claims about a skill THIS package ships. Naming another plugin's file is
-        // somebody else's business, and an unrelated path is not a claim at all.
+        // Only claims about a skill this package ships: another plugin's file is somebody
+        // else's business, and an unrelated path is not a claim at all.
         const target = own.find((k) => k === m[1] || cmds.get(k) === m[1]);
         if (!target) continue;
         const cmd = cmds.get(target);
@@ -463,20 +361,12 @@ check("no skill names a package file the packager does not emit", () => {
 });
 
 check("a re-entry section names the tool that can change an approved document", () => {
-  // An approved gated document changes through document_revise; document_write and document_patch are
-  // refused on it, because a signature has to cover the bytes it signed.
+  // An approved gated document changes through document_revise; document_write and
+  // document_patch are refused on it, because a signature has to cover the bytes it signed.
+  // A stage re-entered from verification is by definition working on such a document.
   //
-  // Re-entry is where this always bites, and it is identifiable rather than guessable: a stage
-  // re-entered from verification is by definition working on a document a stakeholder already
-  // approved. ops-spec and ops-plan both said "amend it in place" there — the plan section says
-  // one line above that "the stakeholder approved the old one" — so the skill routed the agent
-  // into a refusal, and before the guard existed, into something worse: a silent write leaving
-  // the approver's name over text they never read.
-  //
-  // Judged on the SECTION HEADING, not on whether the prose contains the word "approved".
-  // The first version of this check read the word, and "**Not approved** -> amend the plan in
-  // place" is the draft case where patching is exactly right — it called a correct line a
-  // defect. A heading says which situation the section is about; a keyword does not.
+  // Judged on the section heading, not on whether the prose contains the word "approved":
+  // "**Not approved** -> amend the plan in place" is the draft case, where patching is right.
   const RE_ENTRY = /^##+ .*(coming back|re-?enter|re-?entry|arrived here|back from verification)/im;
   const bad: string[] = [];
   for (const f of flows) {
@@ -507,20 +397,13 @@ check("a re-entry section names the tool that can change an approved document", 
 });
 
 check("no skill offers a choice the manifest does not allow", () => {
-  // sectionCheck refuses the APPROVAL of a gated document missing any heading its manifest
-  // declares — drafts may be half-written, but a document offered as done may not. sdlc-spec
-  // meanwhile said "emit all eight unless the person narrowed them", told the agent to write
-  // the omission into the document, and sdlc-spec-audit had an UNLESS clause for exactly
-  // that case.
+  // sectionCheck refuses the approval of a gated document missing any heading its manifest
+  // declares — drafts may be half-written, a document offered as done may not. So a skill
+  // that offers to leave one out sends the agent into a refusal at the gate.
   //
-  // So a narrowed spec wrote cleanly and was refused at the gate. That is the worst place to
-  // discover a rule: the work is finished, the person has agreed, and the refusal arrives
-  // after both. Two skills offering a choice the platform does not have is worse than either
-  // one being wrong, because it reads as considered.
-  //
-  // The shape: a skill that names a document with declared sections, and offers to leave one
-  // out. Presence is the manifest's to decide; whether a section says anything is the
-  // auditor's, and that is the finding worth keeping.
+  // The shape matched: a skill that names a document with declared sections, and offers to
+  // leave one out. Presence is the manifest's to decide; whether a section says anything is
+  // the auditor's.
   const bad: string[] = [];
   for (const f of flows) {
     const fj = join(f.dir, "flow.json");
@@ -535,21 +418,14 @@ check("no skill offers a choice the manifest does not allow", () => {
       const text = readFileSync(md, "utf8");
       if (!withSections.some((d: { name: string }) => text.includes(d.name) || text.includes(d.name.replace(/\.md$/, "")))) continue;
       for (const [i, line] of text.split("\n").entries()) {
-        // A SUBSET BY ANY NAME. This looked for omit-words only, and sdlc-spec's Phase B —
-        // the instruction an agent actually follows — said "the title and EVERY heading of the
-        // REQUESTED components" and "all eight only when all eight were requested". Neither is
-        // an omit-word, and both were survivors of the correction three paragraphs above them,
-        // which had already established that the platform refuses the approval of a spec
-        // missing one. A spec written from Phase B emitted a subset, wrote cleanly as a draft,
-        // and was refused at the gate — exactly the cost the correction describes.
+        // A subset by any name, not just an omit-word: "every heading of the requested
+        // components" describes a subset without naming an omission.
         if (/\b(omit|omission|left out|narrow(ed|ing)?|subset|requested|agreed|selected|chosen)\b/i.test(line)
             && /\b(component|section|heading)/i.test(line)
-            // Saying the platform REFUSES an omission is the correct statement of the rule.
+            // Saying the platform refuses an omission is the correct statement of the rule.
             && !/refus|cannot|must|no exception|always|every time/i.test(line)
-            // A FIELD is not a section. sdlc-review says to "OMIT `line`" from a finding
-            // while mentioning a section heading in the same breath — the shape of a
-            // report, nothing to do with a document's components. The tell is the
-            // backticked identifier the omit-word takes as its object.
+            // A field is not a section; the tell is the backticked identifier the omit-word
+            // takes as its object.
             && !/\b(omit|leave out)\s+`[a-z_]+`/i.test(line)) {
           bad.push(`${f.owner}/${f.flow}/${sk}:${i + 1} offers to leave a declared section out`);
         }
@@ -565,15 +441,11 @@ check("no skill offers a choice the manifest does not allow", () => {
 check("a skill a person types is not one a model is told to load", () => {
   // `commands` promotes a skill into a Claude Code command, and the promotion is not
   // additive: standaloneCommandFile writes `disable-model-invocation: true` and the SKILL.md
-  // is dropped from the package, because the method ships exactly once. So a skill that
-  // ANOTHER skill instructs a model to load must never be named in `commands` — the command
-  // still exists, the person can still type it, and the instruction to load it silently stops
-  // working. Nothing about the package build fails; the route just goes quiet.
+  // is dropped from the package. So a skill that another skill instructs a model to load
+  // must never be named in `commands` — the command still exists and a person can type it,
+  // but the instruction to load it stops working and nothing about the build fails.
   //
-  // Nearly shipped: zz-journal was declared a command here while `zz-kb-usage` says "read
-  // `zz-journal` first", which is the platform's own flow-agnostic path into the journal.
-  //
-  // A reference that names the COMMAND (`/sdlc:deck`) is the correct way to point at a
+  // A reference that names the command (`/sdlc:deck`) is the correct way to point at a
   // promoted skill and is not a load, which is why this reads the verb rather than the name.
   const promoted = new Map();   // skill -> flow that declares a command for it
   for (const f of flows) {
@@ -596,15 +468,10 @@ check("a skill a person types is not one a model is told to load", () => {
 });
 
 check("a skill citing another's section cites one that is there", () => {
-  // Three skills read `learnings.md` by section NUMBER and TITLE — ops-select wants section 4
-  // ("platform gaps"), ops-spec wants 5 ("stakeholder patterns") and 6 ("repeated-question
-  // candidates"). zz-handover is what writes that file, as a numbered list in its own text, and
-  // nothing tied the two together: renumbering the list, or renaming an item, sends a reader
-  // to a section that is not there and nothing says so.
-  //
-  // Found by changing zz-handover's section 4 and leaving ops-select describing what it used to
-  // say. The citation still resolved by number, so only the description was wrong — which is
-  // the version of this that no reader catches, because the section exists.
+  // Skills read documents other skills write by section number and title, so renumbering the
+  // producing list, or renaming an item, sends a reader to a section that is not there.
+  // Matching the title as well as the number catches the rename, which resolves by number
+  // and so looks correct.
   //
   // The producing list is found by content, not by filename: any numbered `N. **Title**` list
   // in any shipped skill counts, so moving a document's definition to another skill keeps
@@ -624,8 +491,8 @@ check("a skill citing another's section cites one that is there", () => {
       const n = Number(nStr);
       const ok = lists.some((l) => (l.items.get(n) ?? "").toLowerCase() === title.toLowerCase());
       if (!ok) {
-        // The useful hint is where that TITLE actually sits, not what every list happens to
-        // hold at N — a renumbering is the common cause and the fix is the new number.
+        // The hint is where that title actually sits, not what every list holds at N: a
+        // renumbering is the common cause and the fix is the new number.
         const moved = lists.flatMap((l) => [...l.items]
           .filter(([, t]) => t.toLowerCase() === title.toLowerCase())
           .map(([at]) => `${l.rel} has it at ${at}`));
@@ -638,19 +505,12 @@ check("a skill citing another's section cites one that is there", () => {
 });
 
 check("a skill describing acceptance describes the honest close too", () => {
-  // `initiative_close()` has two honest endings for finished work: somebody accepted it, or nobody did
-  // and one line says why. Its own description states the design — "closing without an
-  // acceptor is a legitimate route and costs a sentence... an honest close is never the
-  // expensive one, but it is never free either" — and the whole point is that the cheap word
-  // must never be the only one an agent can see.
-  //
-  // ops-build said "the platform refuses that close, because every outcome needs an
-  // `accepted_by` you cannot honestly supply". Both halves wrong: the close is refused
-  // because guide.md is requiredForClose, and an acceptor is optional. An agent that believed
-  // it would go looking for a name to get past a guardrail — inventing the acceptance that
-  // attributionCheck, closeCheck and the outcome derivation all exist to make impossible.
-  //
-  // So: name the acceptor and you must name the other route in the same file.
+  // `initiative_close()` has two honest endings for finished work: somebody accepted it, or
+  // nobody did and one line says why. An acceptor is optional. A skill that names only the
+  // first route leaves an agent looking for a name to get past a guardrail, which is the
+  // invented acceptance attributionCheck, closeCheck and the outcome derivation exist to
+  // make impossible. So: name the acceptor and you must name the other route in the same
+  // file.
   const bad: string[] = [];
   for (const rel of sourceFiles(["catalog", "skills"], ["SKILL.md"])) {
     const src = readFileSync(join(root, rel), "utf8");

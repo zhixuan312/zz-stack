@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.12
+version: 1.13
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -273,10 +273,8 @@ Work in this order (guidance for producing a good document, not a rigid ritual):
    **The id in the marker is not decoration — it is what makes the next step possible.**
    `document_patch` replaces a fragment that occurs EXACTLY ONCE and refuses one that repeats, so
    a scaffold whose eleven tasks all say `<!-- enrich -->` can have its first task filled and
-   not one of the other ten. This skill used to say exactly that, having copied the pattern
-   from `sdlc-spec` without the property that makes it work: a brief there is one line of
-   prose about its own section, unique by construction. Uniqueness was doing the work and the
-   copy kept the shape and dropped it.
+   not one of the other ten. Uniqueness is what does the work, which is why each marker carries
+   its own task id.
 3. **Fill each task** one at a time (technical AC + Contract + any declared checks), in dependency
    order, with `document_patch("<initiative>/plan.md", find: "<!-- enrich: I-N -->", replace: "<the
    task's complete body>")` — the marker line is the `find`, and the task id is what makes it

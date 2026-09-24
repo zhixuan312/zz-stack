@@ -1,18 +1,14 @@
 /**
- * persistence-coordination.ts — I-8's "coordination" case group: the owner lock, the etag
- * comparison made under it, idempotency receipts, and recovery from an uncertain outcome.
+ * I-8's "coordination" case group: the owner lock, the etag comparison made under it,
+ * idempotency receipts, and recovery from an uncertain outcome, on the actual kernel
+ * (mutations.ts and recovery.ts). persistence.ts keeps the shared fixtures and the group
+ * registry, and each case group is a file that imports them.
  *
- * SPLIT OUT OF persistence.ts AT THE CEILING, and not for tidiness. That file reached 698 lines
- * of a measured, unexemptable 700 while the ledger still owed it a third case group from I-11.
- * The rule in this repository is to agree the size and split rather than let a worker discover
- * the wall mid-task, so the shape is set here: the suite entry keeps the shared fixtures and the
- * group registry, and each case group is a file that imports them. I-11 adds a file.
- *
- * THESE CASES SPAWN REAL CHILD PROCESSES. Two writers racing on one stale etag, and two carrying
+ * These cases spawn real child processes. Two writers racing on one stale etag, and two carrying
  * the same idempotency key with equal and with differing requests, are each two operating-system
  * processes contending for one lock — with the first to reach rename made to sleep inside it, so
- * what is measured is the lock serialising them rather than which process happened to start
- * first. Sequential calls in a single process would pass against a kernel holding no lock at all.
+ * what is measured is the lock serialising them rather than which process started first.
+ * Sequential calls in a single process would pass against a kernel holding no lock at all.
  */
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -45,10 +41,6 @@ import {
 } from "../../services/zz-core/dist/tenant-info/recovery.js";
 import { instrument, isManifestRenameTarget, makeStoreRoot } from "./persistence.ts";
 
-// I-8's "coordination" case group: mutations.ts + recovery.ts — the owner lock, etag
-// comparison, idempotency receipt and commit-outcome classification, on the ACTUAL kernel.
-// Two cases spawn real child processes: a Map-keyed in-process lock cannot coordinate
-// across them at all, which is the defect those two exist to catch.
 const AUTH: AuthContext = { owner_id: "44444444-4444-4444-8444-444444444444", actor: "coordination-suite" };
 
 function payloadHash(payload: unknown): string {
@@ -245,7 +237,7 @@ async function caseTwoProcessesSameKeyDifferentRequestConflicts(): Promise<void>
   });
 }
 
-// ── single-process coordination cases: the lock, and every acknowledgement boundary ────────
+// Single-process coordination cases: the lock, and every acknowledgement boundary
 
 async function withRoot(body: (root: string) => Promise<void>): Promise<void> {
   const root = makeStoreRoot();

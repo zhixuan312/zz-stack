@@ -1,9 +1,7 @@
 /**
- * Approve, close, revise, show — the acts that move a document through its life, and the
- * record each leaves.
- *
- * These are the calls whose whole purpose is the record. An act that happens without its
- * entry is indistinguishable, afterwards, from one that never happened.
+ * Approve, close, revise, show — the acts that move a document through its life, and the record
+ * each leaves. An act that happens without its entry is indistinguishable, afterwards, from one
+ * that never happened.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -22,25 +20,21 @@ function errMessage(err: unknown): string {
 }
 
 check("document_revise records the material behind every version", () => {
-  // An earlier version of this check searched forward from src.indexOf("explained") — which
-  // lands inside the word "unexplained" in a comment, thousands of characters before the
-  // logActivity payload and outside its own window. It could not have verified the thing it
-  // was written for. Anchored on the payload instead.
+  // Anchored on the logActivity payload, not on a word: searching forward from
+  // src.indexOf("explained") lands inside "unexplained" in a comment, outside the window.
   //
-  // WHAT CHANGED HERE, and why the old clauses are gone. `self_edit` was the route for a
-  // version nothing caused — a declaration of WHAT was edited, accepted instead of material.
-  // A content change names its material now, whatever the edit was, so this asserts the field
-  // is ABSENT and that the two routes that remain are both present: `sources` for material
-  // already on the record, `source_content` for words that are not yet.
+  // `self_edit` must be absent and both remaining routes present: `sources` for material already
+  // on the record, `source_content` for words that are not yet. A content change names its
+  // material, whatever the edit was.
   const src = zzCoreSource();
   const bad: string[] = [];
-  // THE FIELD, not the word: the handler explains in a comment why the route was removed, and a
+  // The field, not the word: the handler explains in a comment why the route was removed, and a
   // check that cannot tell an explanation from a declaration fails on its own documentation.
   if (/self_edit:\s*z\./.test(src)) bad.push("self_edit is back; a content change names its material");
   if (!/sources:\s*z\.array/.test(src)) bad.push("document_revise no longer takes `sources` — nothing can cite an audit round");
   if (!/source_content:\s*z\.string\(\)/.test(src)) bad.push("document_revise no longer takes `source_content` — a cause with no file has nowhere to go");
   if (!/ERROR: nothing says what caused this version/.test(src)) bad.push("no refusal for a revision that cites nothing");
-  // AND THE ONE IT CANNOT INVENT: a source that already supports this document, newer than the
+  // And the one it cannot invent: a source that already supports this document, newer than the
   // version being replaced, must be cited rather than ignored.
   if (!/supports/.test(src) || !/what this revision answers/.test(src)) {
     bad.push("nothing requires a revision to cite the sources that already support the document");
@@ -57,28 +51,22 @@ check("document_revise records the material behind every version", () => {
 });
 
 check("document_present returns a document, not a rendering or a summary", () => {
-  // "Your reply includes the document's full content" lived only in zz-platform's prose and
-  // was routed around — including by the agent writing the spec about routing around it,
-  // twice in one session. A tool can be checked; prose cannot.
+  // "Your reply includes the document's full content" lives only in zz-platform's prose, and
+  // prose gets routed around. A tool can be checked.
   //
-  // THE BODY THIS READS IS THE WHOLE REGISTRATION, comments included. That is why the prose
-  // about what this tool must NOT do sits above `server.registerTool(` in server.ts rather
-  // than inside it: a comment naming the renderer within the registration would fail this
-  // check against a correct implementation.
+  // The body read is the whole registration, comments included, which is why the prose about
+  // what this tool must not do sits above `server.registerTool(` in server.ts, not inside it.
   //
-  // ONE LINE PER REFUSAL, the same character class as the two checks above and for the same
-  // reason. Every refusal in server.ts is a concatenation of quoted literals with backticked
-  // identifiers, so a class excluding the backtick — which is what the plan specified —
-  // extracts `"ERROR: "` and dies at the first one, failing on correct code. Backticks pass
-  // and the NEWLINE is the bound, so a fragment cannot run past its own source line and
-  // collect words out of the code below it.
+  // One line per refusal: every refusal in server.ts concatenates quoted literals with
+  // backticked identifiers, so a class excluding the backtick stops at the first `"ERROR: "`.
+  // The newline is the bound, so a fragment cannot run past its own source line.
   const src = zzCoreSource();
   const at = src.indexOf('registerTool(\n    "document_present"');
   if (at < 0) return "document_present is not registered";
   const body = withoutComments(src.slice(at, src.indexOf("\n  );", at)));
   const bad: string[] = [];
   if (/renderMarkdown|marked|<pre>|escapeHtml/.test(body)) {
-    bad.push("document_present emits HTML; the interfaces render markdown (spec D9)");
+    bad.push("document_present emits HTML; the interfaces render markdown");
   }
   if (!/ERROR:[^"'\n]*no document at/.test(body)) {
     bad.push("document_present does not refuse a missing path by name");
@@ -87,13 +75,10 @@ check("document_present returns a document, not a rendering or a summary", () =>
 });
 
 check("an act and the act that undoes it are recorded the same way", () => {
-  // auditAdmin takes an optional team, and the activity feed a team admin reads is scoped by
-  // it. pat_issue passed the bound team; pat_revoke did not — so a team saw a token appear
-  // for them and never saw it withdrawn, with the gap falling on the half somebody checks
-  // AFTER a leak. Every other paired act already recorded both halves the same way, which is
-  // what made the one exception invisible: nothing was wrong anywhere else to compare it to.
-  //
-  // Paired by name rather than by a list, so a new pair is covered the day it is written.
+  // auditAdmin takes an optional team, and the activity feed a team admin reads is scoped by it,
+  // so both halves of a paired act must pass it — a token appearing for a team and never being
+  // withdrawn is the half somebody checks after a leak. Paired by name rather than by a list, so
+  // a new pair is covered the day it is written.
   const src = gatewaySource();
   // Every auditAdmin call, with the kind it records and whether a team argument follows the
   // detail object.
@@ -133,25 +118,19 @@ check("an act and the act that undoes it are recorded the same way", () => {
 });
 
 check("the store audit applies the platform's close rules, not stricter ones", () => {
-  // manifest-audit's own docstring says why it must not carry a second copy of a rule: an
-  // audit that judges a store "against rules the platform never enforced" reports "defects
-  // nobody has and misses the ones they do". It then carried one.
+  // COUPLED: manifest-audit must not carry a second copy of a rule the platform enforces, or it
+  // reports defects nobody has and misses the ones they do.
   //
-  // closeCheck exempts every gate but the closing document's own when the outcome is a stop,
-  // and says why: "an initiative that was dropped is precisely one whose gates were never
-  // passed, so requiring them here would leave two options — approve a plan nobody agreed to,
-  // or leave the initiative open forever". It also separates EXISTENCE from APPROVAL: a gated
-  // document that was never written is requiredForClose's business, not the gate's.
+  // closeCheck exempts every gate but the closing document's own when the outcome is a stop: an
+  // initiative that was dropped is precisely one whose gates were never passed. It also
+  // separates existence from approval — a gated document that was never written is
+  // requiredForClose's business, not the gate's.
   //
-  // The audit merged both. Measured on a store holding one correctly abandoned ops-flow
-  // initiative, it reported four defects and the platform has two of them.
-  //
-  // RUN, because this is about what the function concludes. The filesystem is injected, so
-  // the fixture is a set of documents rather than a directory.
+  // Run, because this is about what the function concludes. The filesystem is injected, so the
+  // fixture is a set of documents rather than a directory.
   const src = readFileSync(join(root, "packages/tools/src/testing/manifest-audit.ts"), "utf8");
   // `as readonly string[]` is this body's own TypeScript, stripped here rather than in
-  // functionBody: the shared lifter drops the annotations every lifted body has, and a cast
-  // one function happens to use is that function's business.
+  // functionBody: the shared lifter drops the annotations every lifted body has.
   const body = functionBody(src, "auditInitiative")?.replace(/\s+as\s+readonly\s+string\[\]/g, "");
   if (!body) return "manifest-audit no longer defines auditInitiative — this check cannot run";
 
@@ -242,17 +221,13 @@ check("the store audit applies the platform's close rules, not stricter ones", (
 
 check("nothing can clear the field that says an initiative already closed", () => {
   // `outcome` is the whole record that an initiative closed. initiative_close() reads it off the
-  // document to refuse a second close; ledgerOnClose reads it off the file on disk to refuse
-  // a second row. Both guards are one field deep, so anything that can REMOVE that field
-  // reopens the initiative and lets the close run again — and _ledger.md is what the OKR
-  // grading and the cross-flow comparison count, so the same work is counted twice.
+  // document to refuse a second close; ledgerOnClose reads it off the file on disk to refuse a
+  // second row. Both guards are one field deep, so anything that removes the field reopens the
+  // initiative and lets the close run again, and _ledger.md records the same work twice.
   //
-  // document_revise did exactly that. It clears the governance fields so the gate goes back
-  // to a person, and `outcome` was in that list alongside approved_by and approved_at — while
-  // `closed_by` and `accepted_by` were left standing, so the document said who closed it and
-  // nothing about what the close was. closeCheck fires only on content that HAS an outcome,
-  // so no guard saw it. It now refuses the revision instead, and points at a journal node,
-  // which is what initiative_close() says to do when a close was wrong.
+  // document_revise clears the governance fields so the gate goes back to a person; `outcome`
+  // must not be in that list. closeCheck fires only on content that has an outcome, so no guard
+  // sees its removal.
   const bad: string[] = [];
   for (const rel of sourceFiles(["services", "packages"], [".ts"])) {
     const src = readFileSync(join(root, rel), "utf8");
@@ -264,8 +239,8 @@ check("nothing can clear the field that says an initiative already closed", () =
                "closed, so removing it lets the same work be closed and counted twice");
     });
   }
-  // And the one path that used to do it has to still refuse the case, or the rule above is
-  // satisfied by a tool that simply writes the whole envelope back without the field.
+  // And `document_revise` itself has to refuse the case, or the rule above is satisfied by a tool
+  // that writes the whole envelope back without the field.
   const rev = between(zzCoreSource(),
                       '"document_revise",', "server.registerTool(");
   const code = (rev.text ?? "").split("\n")
@@ -274,16 +249,13 @@ check("nothing can clear the field that says an initiative already closed", () =
     bad.push(`document_revise is no longer readable here: ${rev.why}`);
   } else if (!/env\.outcome\s*=\s*closedOutcome/.test(code)
              || !/const\s+closedOutcome\s*=\s*prevEnv\.outcome/.test(code)) {
-    // CARRIED FORWARD, not refused. This used to require `if (prevEnv.outcome)` — a blanket
-    // refusal of any revision to a closing document — which defended the ledger by making a
-    // closed report uncorrectable. A report whose numbers were wrong stayed wrong, and the
-    // remedy on offer was a journal node that nobody opening the report ever sees.
+    // Carried forward, not refused. Requiring `if (prevEnv.outcome)` defends the ledger by
+    // making a closed report uncorrectable.
     //
-    // The invariant that actually matters is narrower and stronger: whatever a revision does
-    // to the prose, the field that says the initiative closed must come out the other side
-    // unchanged. Then initiative_close() still refuses a second close and ledgerOnClose still returns
-    // before appending, so the same work cannot be counted twice — and the text can still be
-    // fixed, with the signed copy frozen in _versions/ and a person re-approving the new one.
+    // The invariant is narrower: whatever a revision does to the prose, the field that says the
+    // initiative closed comes out the other side unchanged. initiative_close() still refuses a
+    // second close and ledgerOnClose still returns before appending, and the text can still be
+    // fixed with the signed copy frozen in _versions/.
     bad.push("document_revise does not carry `outcome` forward from the previous envelope — " +
              "read it into `closedOutcome` before the rebuild and write it back onto `env`. " +
              "Leaving the field merely untouched is not the same guarantee: it is the field " +
@@ -294,18 +266,13 @@ check("nothing can clear the field that says an initiative already closed", () =
 });
 
 check("the closing document is resolved from the list the flow declared", () => {
-  // NOT a source-order test. An earlier version compared where "closingDoc:" and "handover.md"
-  // appear and was broken in both directions: the correct implementation writes closingDoc as
-  // an ES6 shorthand with no trailing colon, so it read as "no longer computes closingDoc";
-  // and a buggy one that appends first and recomputes from the augmented array put
-  // "handover.md" earlier and passed.
+  // Anchored on the variable the bug depends on, which statement reordering cannot defeat. Not a
+  // source-order test: the correct implementation writes closingDoc as an ES6 shorthand with no
+  // trailing colon, and a buggy one that appends first and recomputes puts "handover.md" earlier
+  // and passes.
   //
-  // A behavioural test is not available: deriveChain is not exported (dist/server.d.ts is
-  // `export {}`), and importing the module would bind port 8000 and open a Postgres connection
-  // during a gate run. Today's manifests cannot exercise it either — all five qualifying flows
-  // mark `closing` explicitly, so real catalog data never reaches the fallback. So this is
-  // anchored on the VARIABLE the bug depends on, which statement reordering cannot defeat.
-  // Stated as a heuristic, not as proof.
+  // deriveChain is not exported and importing the module would bind port 8000 and open a
+  // Postgres connection during a gate run, so a behavioural test is not available. A heuristic.
   const src = zzCoreSource();
   const at = src.indexOf("function deriveChain(");
   if (at < 0) return "deriveChain is gone or was renamed — every document list resolves through it";
@@ -321,22 +288,14 @@ check("the closing document is resolved from the list the flow declared", () => 
 });
 
 check("a document the flow does not declare can still record why it changed", () => {
-  // THE SAME TEST, AND THE OPPOSITE ACTION. `write-guards.ts` writes
-  // `if (chain.documents.length && !chain.docs.has(parts[1])) return null;` at four guards:
-  // a document the flow does not declare is EXEMPT from its rules. `document_revise` ran the
-  // identical test and returned `ERROR: <name> is not a document this flow declares`.
+  // The same test, the opposite action. `write-guards.ts` writes
+  // `if (chain.documents.length && !chain.docs.has(parts[1])) return null;` at four guards: a
+  // document the flow does not declare is exempt from its rules, so `document_revise` must not
+  // run that test and refuse — an undeclared document would be creatable and rewritable forever
+  // by document_write and be the one document that can never record why it changed.
   //
-  // So on a governed initiative an undeclared document could be created by document_write and
-  // rewritten by it forever, and was the one document that could never record WHY it changed —
-  // the platform's own law inverted, on exactly the documents no flow is watching. Reported
-  // from a real session on 0.60.0: a standalone article the stakeholder chose over a spec,
-  // revised with their verbatim feedback as the cause, refused by name. The agent fell back to
-  // source_add plus an ordinary write — a change with its cause beside it rather than attached
-  // to it, which is the shape document_revise exists to prevent.
-  //
-  // BOTH HALVES, because deleting the refusal everywhere would be the opposite mistake.
-  // `document_approve` must go on refusing an undeclared document: there is no gate on it, so
-  // there is no verdict to record. A revision is not a gate.
+  // Both halves: `document_approve` goes on refusing an undeclared document, because there is no
+  // gate on it and so no verdict to record. A revision is not a gate.
   const src = readFileSync(join(root, "services/zz-core/src/tools/initiative-acts.ts"), "utf8");
   const bodyOf = (tool: string): string => {
     const at = src.indexOf(`"${tool}"`);

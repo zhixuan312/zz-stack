@@ -2,23 +2,20 @@
  * verify.ts — resolves a suite name to its module, runs a suite module once it is known to
  * be ready, and finalizes an acceptance run across all ten.
  *
- * `resolveSuite` is a plain function of its two arguments and nothing else: no argv, no
- * environment, no filesystem read of its own. A check gets to hand it a fixed
- * `availableNames` and get a fixed answer back, regardless of what this repository's
- * `testing/tenant-info/` actually contains at the moment the check runs — and `cli.ts`'s own
- * per-suite dispatch calls this same function rather than re-deciding readiness its own way.
- * Everything that DOES read the filesystem or write a receipt is a separate, explicitly-named
- * function below it, so importing this module, on its own, does nothing.
+ * `resolveSuite` is a plain function of its two arguments: no argv, no environment, no
+ * filesystem read of its own, so a caller can hand it a fixed `availableNames` and get a fixed
+ * answer back. `cli.ts`'s per-suite dispatch calls this same function rather than re-deciding
+ * readiness its own way. Everything that reads the filesystem or writes a receipt is a
+ * separate named function below, so importing this module on its own does nothing.
  */
 import { pathToFileURL } from "node:url";
 
 import { suiteModulePath } from "./suites.ts";
 
 /** Whether `name`'s module is on disk, judged only against `availableNames` — never a
- *  filesystem read of its own. `name` need not even be one of the ten canonical suites; a
- *  name outside that list simply has no module and resolves `not_run`, same as a canonical
- *  one whose file has not been written yet. Distinguishing "not a suite at all" from "a
- *  suite with no module yet" is the CLI's job at the UNKNOWN_SUITE boundary, not this one's. */
+ *  filesystem read of its own. `name` need not be one of the ten canonical suites; a name
+ *  outside that list has no module and resolves `not_run`. Telling "not a suite at all" from
+ *  "a suite with no module yet" is the CLI's job at the UNKNOWN_SUITE boundary. */
 export function resolveSuite(name: string, availableNames: readonly string[]) {
   const module = suiteModulePath(name);
   return availableNames.includes(name)
@@ -27,7 +24,7 @@ export function resolveSuite(name: string, availableNames: readonly string[]) {
 }
 
 /** The two profiles the spec declares for `verify`. It lives here rather than in `cli.ts`
- *  because the profile's MEANING is enforced here — `cli.ts` only parses the flag. */
+ *  because the profile's meaning is enforced here — `cli.ts` only parses the flag. */
 export type VerifyProfile = "integration" | "acceptance";
 
 interface SuiteOutcome {
@@ -44,10 +41,9 @@ interface SuiteOutcome {
  * The names of every case a suite reported `not_run`, or `null` when its detail carries no
  * readable case map at all.
  *
- * `null` IS NOT "nothing was skipped". A suite whose receipt cannot be read case-by-case
- * cannot demonstrate it ran a complete required set, and at the acceptance profile that is
- * the same answer as having skipped one. Returning `[]` for an unreadable receipt would make
- * the weakest suite in the repository the easiest one to pass.
+ * DELIBERATE: `null` is not "nothing was skipped". A suite whose receipt cannot be read
+ * case-by-case cannot demonstrate it ran a complete required set, which at the acceptance
+ * profile is the same answer as having skipped one.
  */
 function notRunCases(detail: unknown): string[] | null {
   if (typeof detail !== "object" || detail === null) return null;
@@ -64,25 +60,20 @@ function notRunCases(detail: unknown): string[] | null {
 }
 
 /**
- * `--profile acceptance` FORBIDS A SUITE FROM PASSING ON CASES IT DID NOT RUN.
+ * `--profile acceptance` forbids a suite from passing on cases it did not run.
  *
- * The spec's CLI contract is explicit: "`--profile acceptance` forbids case restrictions and
- * runs the complete required suite. Partial cases never pass a whole business AC." Every one
- * of the thirteen acceptance criteria names `verify --suite <name> --profile acceptance` as
- * its evidence command, so this predicate is what stands between a criterion's evidence and a
- * green tick it did not earn.
+ * The CLI contract: "`--profile acceptance` forbids case restrictions and runs the complete
+ * required suite. Partial cases never pass a whole business AC." Every one of the thirteen
+ * acceptance criteria names `verify --suite <name> --profile acceptance` as its evidence
+ * command.
  *
- * WHAT THIS CORRECTS. Until this existed, `--profile` was parsed, validated and then never
- * threaded anywhere — `runReadySuite` called `mod.run({ cases })` identically for both
- * profiles. Suites deliberately treat `not_run` as non-blocking so an honestly-unreachable
- * live database does not drag down the offline cases a checkout CAN prove, which is right at
- * the integration profile and exactly wrong at the acceptance one: it made `passed` the
- * default answer for a case that never executed.
+ * Suites treat `not_run` as non-blocking so an unreachable live database does not drag down
+ * the offline cases a checkout can prove. That is right at the integration profile and wrong
+ * at the acceptance one, where it would make `passed` the default answer for a case that
+ * never executed.
  *
- * `blocked`, NOT `failed`, and the distinction is the point. A failure is an assertion that
- * ran and went red — a fact about the system. A block is the absence of evidence — a fact
- * about the run. Collapsing them would let a reader of `acceptance.json` mistake "we never
- * stood up PostgreSQL 17" for "isolation is broken".
+ * `blocked`, not `failed`: a failure is an assertion that ran and went red, a fact about the
+ * system; a block is the absence of evidence, a fact about the run.
  */
 function blockedAtAcceptance(outcome: SuiteOutcome): SuiteOutcome {
   if (outcome.status !== "passed") return outcome;
@@ -116,18 +107,13 @@ export async function runReadySuite(
 ): Promise<SuiteOutcome> {
   const mod = (await import(pathToFileURL(modulePath).href)) as SuiteModule;
   const outcome = await mod.run({ cases });
-  // A SUITE THAT SAYS IT IS BLOCKED IS BLOCKED, NOT FAILED — at either profile.
+  // A suite that says it is blocked is blocked, not failed, at either profile.
   //
   // A suite reports `passed: false` for two different reasons and says which in its own
   // detail: an assertion ran and went red, or the suite could not do its job at all and
-  // declares `detail.status === "blocked"`. Reading only the boolean collapsed those, and the
-  // collapse was visible: `verify --suite deployment` reported "failed" on a checkout where
-  // nothing was wrong, because `versions.lock.json` still carries the unverified pins I-5
-  // deliberately recorded as placeholders. Nobody reading that word would have guessed it
-  // meant "the operator has not resolved the image pins yet".
+  // declares `detail.status === "blocked"`. Reading only the boolean collapses them.
   //
-  // The same distinction `blockedAtAcceptance` draws below, applied one level up. A failure is
-  // a fact about the system; a block is a fact about the run.
+  // COUPLED: the same distinction `blockedAtAcceptance` draws below, applied one level up.
   const declaredBlocked = typeof outcome.detail === "object" && outcome.detail !== null
     && (outcome.detail as { status?: unknown }).status === "blocked";
   const result: SuiteOutcome = {
@@ -140,35 +126,29 @@ export async function runReadySuite(
   return profile === "acceptance" ? blockedAtAcceptance(result) : result;
 }
 
-// ───────────────────────────── the acceptance decision itself ─────────────────────────────
+// The acceptance decision itself
 //
-// A PURE FUNCTION OF OBSERVATIONS, and everything that could make it impure lives in
-// `acceptance.ts`. It reads no file, spawns nothing and resolves nothing: hand it a set of
-// observations and it says whether they add up to a release. That separation is what lets
+// A pure function of observations; everything that could make it impure lives in
+// `acceptance.ts`. It reads no file, spawns nothing and resolves nothing, which is what lets
 // `checks/acceptance-covers-every-criterion.ts` drive it over synthetic inputs inside the
-// ordinary gate without the gate ever touching, or depending on, the actual acceptance report.
+// ordinary gate without the gate touching the actual acceptance report.
 //
-// WHAT IT IS NOT. It cannot tell you that this delivery is ready, because it cannot tell you
-// that any of the evidence it was handed exists. `verified: true` on an evidence entry is a
-// CONSTRUCTED FACT — `resolveEvidence` in `acceptance.ts` reads the file, hashes it and builds
-// the flag — and a caller who simply writes `verified: true` beside a plausible hash has
-// asserted something this function has no way to check and no business believing on its own.
-// The finalizer never lets a caller's assertion reach here; the resolver is the only producer.
+// It cannot tell you the evidence it was handed exists. `verified: true` on an evidence entry
+// is a constructed fact — `resolveEvidence` in `acceptance.ts` reads the file, hashes it and
+// builds the flag. COUPLED: `acceptance.ts`'s finalizer never lets a caller's assertion reach
+// here; `resolveEvidence` there is the only producer.
 
 /** The three ways a criterion can be established. `command` is a program that ran and exited;
  *  `human` is a named person's recorded decision; `agent-review` is an analytical transcript. */
 export type CriterionMethod = "command" | "human" | "agent-review";
 
 /**
- * THE METHOD EVERY CRITERION IS PROVED BY, transcribed from `spec-approved.md`'s `acceptance:`
- * block, and read from HERE rather than from the report being assessed.
+ * The method every criterion is proved by, transcribed from `spec-approved.md`'s `acceptance:`
+ * block and read from here rather than from the report being assessed.
  *
- * "Map methods from the approved spec, never from a caller-supplied method field" is the
- * contract's wording, and this constant is the whole of that sentence. A report's own `method`
- * is not an input to the decision — it is COMPARED against this map, and a disagreement is an
- * issue. Otherwise AC-6.1, which the spec says a person must sign, could be re-declared
- * `command` by the very report claiming to have satisfied it, and a green exit code from any
- * program at all would stand in for the signature.
+ * A report's own `method` is not an input to the decision — it is compared against this map,
+ * and a disagreement is an issue. Otherwise AC-6.1, which the spec says a person must sign,
+ * could be re-declared `command` by the report claiming to have satisfied it.
  */
 export const CRITERION_METHODS: Readonly<Record<string, CriterionMethod>> = {
   "AC-1.1": "command", "AC-2.1": "command", "AC-2.2": "command", "AC-3.1": "command",
@@ -185,7 +165,7 @@ export const PREREQUISITE_IDS = [
   "migration.json", "parity.json", "restore.json", "cutover-rehearsal.json", "benchmark.json",
 ] as const;
 
-/** The seven fields that identify WHICH candidate a piece of evidence is about. Every one of
+/** The seven fields that identify which candidate a piece of evidence is about. Every one of
  *  them must agree across the report's own binding, the gate's, and each evidence entry's —
  *  evidence bound to a different source tree is evidence about a different delivery. */
 const BINDING_FIELDS = [
@@ -198,7 +178,7 @@ const IMAGE_DIGEST = /^sha256:[0-9a-f]{64}$/;
 const CRITERION_STATUSES = ["passed", "failed", "blocked"];
 
 interface AcceptanceAssessment {
-  /** Whether the report has the SHAPE a report must have. A stage report missing nine of its
+  /** Whether the report has the shape a report must have. A stage report missing nine of its
    *  thirteen criteria is structurally valid and not ready; a report whose criteria are a
    *  string is neither. */
   readonly structure_valid: boolean;
@@ -233,11 +213,9 @@ const bindingsAgree = (a: Record<string, unknown>, b: Record<string, unknown>): 
 /**
  * Names in `discovered` that `executed` does not account for, counted rather than set-tested.
  *
- * THE SAME ARITHMETIC `scripts/gate/run.ts` USES, for the same reason: two checks registered
- * under one name would let a set-membership test report full coverage while one of them never
- * ran. "Every declared check was activated ... cannot be inferred from equal counts alone" is
- * the contract's phrasing and this is its executable half — the names are compared, and the
- * multiplicity of each name with them.
+ * COUPLED: the same arithmetic `scripts/gate/run.ts` uses. Two checks registered under one
+ * name would let a set-membership test report full coverage while one of them never ran, so
+ * the names are compared and the multiplicity of each name with them.
  */
 function unaccountedFor(discovered: readonly string[], executed: readonly string[]): string[] {
   const remaining = new Map<string, number>();
@@ -252,7 +230,7 @@ function unaccountedFor(discovered: readonly string[], executed: readonly string
 }
 
 /** The report's shape, checked before any of it is believed. Returns the problems that make it
- *  unreadable — NOT the ones that merely make it not ready. A criterion that is absent, failed
+ *  unreadable, not the ones that merely make it not ready. A criterion that is absent, failed
  *  or blocked is a readable report saying something true and unwelcome. */
 function structureProblems(report: Record<string, unknown>): string[] {
   const problems = bindingProblems("binding", report.binding);
@@ -306,15 +284,12 @@ function structureProblems(report: Record<string, unknown>): string[] {
 /**
  * Whether a set of acceptance observations adds up to a release.
  *
- * THE THREE COVERAGES ARE COMPARED INDEPENDENTLY — criteria, prerequisites and the gate — and
- * each contributes its own issues, so a report that is short on two of them says so twice.
- * Folding them into one boolean would tell a reader that something is missing and make them
- * go and find out which, which is the shape of report this whole task exists to not produce.
+ * The three coverages — criteria, prerequisites and the gate — are compared independently and
+ * each contributes its own issues, so a report short on two of them says so twice.
  *
- * `ready` is true only when NOTHING is outstanding. There is no partial credit and no quorum:
- * "Only all required criteria passed with no unresolved applicable prerequisite yields
- * ready:true", and the inverse — a structurally complete failed report is a good report and
- * still not a release — is the case the frozen check asserts second.
+ * `ready` is true only when nothing is outstanding: "Only all required criteria passed with no
+ * unresolved applicable prerequisite yields ready:true". A structurally complete failed report
+ * is a good report and still not a release.
  */
 export function assessAcceptance(report: unknown): AcceptanceAssessment {
   if (!isRecord(report)) return { structure_valid: false, ready: false, issues: ["the report is not an object"] };
@@ -328,7 +303,7 @@ export function assessAcceptance(report: unknown): AcceptanceAssessment {
   const evidence = report.evidence as Record<string, unknown>[];
   const issues: string[] = [];
 
-  // ── evidence, first: everything below asks whether a criterion's evidence is verified ─────
+  // Evidence, first: everything below asks whether a criterion's evidence is verified
   const byId = new Map<string, Record<string, unknown>>();
   for (const entry of evidence) {
     byId.set(entry.id as string, entry);
@@ -341,7 +316,7 @@ export function assessAcceptance(report: unknown): AcceptanceAssessment {
     }
   }
 
-  // ── criterion coverage ────────────────────────────────────────────────────────────────────
+  // Criterion coverage
   for (const [id, method] of Object.entries(CRITERION_METHODS)) {
     const record = criteria[id];
     if (record === undefined) { issues.push(`criterion ${id} has no record at all`); continue; }
@@ -364,19 +339,19 @@ export function assessAcceptance(report: unknown): AcceptanceAssessment {
     }
   }
 
-  // ── prerequisite coverage ─────────────────────────────────────────────────────────────────
+  // Prerequisite coverage
   for (const id of PREREQUISITE_IDS) {
     const record = prerequisites[id];
     if (record === undefined) { issues.push(`prerequisite ${id} has no record at all`); continue; }
-    // A PREREQUISITE RECORDED INAPPLICABLE IS RESOLVED, NOT MISSING. The plan says so of H2 in
-    // as many words: "No selected conversions means an explicit no-conversion record, not a
-    // missing sign-off." What is refused is an applicable prerequisite that did not pass.
+    // A prerequisite recorded inapplicable is resolved, not missing: "No selected conversions
+    // means an explicit no-conversion record, not a missing sign-off." What is refused is an
+    // applicable prerequisite that did not pass.
     if (record.applicable === true && record.status !== "passed") {
       issues.push(`prerequisite ${id} is applicable and ${String(record.status)}`);
     }
   }
 
-  // ── gate coverage ─────────────────────────────────────────────────────────────────────────
+  // Gate coverage
   const discovered = gate.discovered_ids as string[];
   const executed = gate.executed_ids as string[];
   if (gate.verdict !== "PASSED") issues.push(`the gate verdict is ${String(gate.verdict)}`);

@@ -1,34 +1,28 @@
 /**
- * lifecycle.ts — I-10's "transition-matrix" case group: `policies.ts`'s independent gate,
- * knowledge and closure transitions (`decideTransition`, `handleLifecycleTransition`,
- * `handleSupersede`, and the `move` slot guard), exercised through the real `mutate()` kernel
- * against a fresh temporary owner-store — exactly the way `model.ts` exercises I-9's native
- * semantic policy. `scripts/tenant-info/suites.ts` reserves the name "lifecycle" at this path,
- * so `verify --suite lifecycle` dynamic-imports it and calls `run`.
+ * lifecycle.ts — the "transition-matrix" case group: `policies.ts`'s independent gate, knowledge and
+ * closure transitions (`decideTransition`, `handleLifecycleTransition`, `handleSupersede`, and the
+ * `move` slot guard), exercised through the real `mutate()` kernel against a fresh temporary
+ * owner-store, the way `model.ts` exercises the native semantic policy.
+ * COUPLED: `scripts/tenant-info/suites.ts` reserves the name "lifecycle" at this path, so
+ * `verify --suite lifecycle` dynamic-imports it and calls `run`.
  *
- * EVERY FIXTURE LIVES UNDER A FRESH `mkdtemp` OUTSIDE THIS CHECKOUT, removed in every case's
+ * Every fixture lives under a fresh `mkdtemp` outside this checkout, removed in every case's
  * `finally` — `makeStoreRoot`/`withRoot` are `model.ts`'s own, reused here rather than copied.
- * Nothing here ever touches `ZZ_TENANT_INFO_WORKSPACE`, a deployment volume, or this
- * repository as a record root.
+ * Nothing here touches `ZZ_TENANT_INFO_WORKSPACE`, a deployment volume, or this repository as a
+ * record root.
  *
- * WHAT `decideTransition`'S OWN MATRIX ALREADY PROVES, this file does not re-prove: the
- * frozen check at `checks/tenant-lifecycle-matrix.ts` pins its class/operation/authorization/
- * gate/revision/digest decision directly. What is left for this suite is everything only the
- * bound kernel can show — that a real `approve`/`verify`/`set_knowledge_status`/`supersede`/
- * `move` request actually reaches that decision with the right revision and record digest,
- * that a supersession batch commits as one atomic transaction, and that a correction to an
- * already-approved revision cannot retroactively validate under the old signature.
+ * This file does not re-prove `decideTransition`'s matrix: the frozen check at
+ * `checks/tenant-lifecycle-matrix.ts` pins that class/operation/authorization/gate/revision/digest
+ * decision directly. What is left is everything only the bound kernel can show — that a real
+ * `approve`/`verify`/`set_knowledge_status`/`supersede`/`move` request reaches that decision with
+ * the right revision and record digest, that a supersession batch commits as one atomic transaction,
+ * and that a correction to an already-approved revision cannot retroactively validate under the old
+ * signature.
  *
- * "CORRECTING A CLOSED REPORT" IS TESTED IN THIS STORE'S OWN VOCABULARY, not the legacy flow
- * system's initiative/closing-document one. Tenant-info has no `outcome`/`closed_by` — its
- * closest analogue is an `approved` event pinned to a revision and record digest. This suite's
- * `correction_of_a_signed_revision_*` cases show the property the spec asks for in that
- * vocabulary: the original `approved` result is never mutated, and a correction (a new
- * revision) leaves the old expected revision/digest refused rather than silently still valid.
- * The legacy system's OWN closing-pointer/second-close guarantee — `guards.ts`'s
- * `closeCheck`/`closedDocumentGuard` — is unrelated code with zero import coupling to this
- * kernel (verified by inspection, not simulated here); the task report names the exact checks
- * that already exercise it.
+ * "Correcting a closed report" is tested in this store's own vocabulary. Tenant-info has no
+ * `outcome`/`closed_by`; its closest analogue is an `approved` event pinned to a revision and record
+ * digest, so the `correction_of_a_signed_revision_*` cases show that the original `approved` result
+ * is never mutated and that a correction leaves the old expected revision and digest refused.
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -75,7 +69,7 @@ async function withRoot(body: (root: string) => Promise<void>): Promise<void> {
   }
 }
 
-// ── fixtures ─────────────────────────────────────────────────────────────────────────────
+// Fixtures
 
 async function seedSource(root: string): Promise<{ id: string; hash: string }> {
   const result = await runMutate(root, req({
@@ -102,7 +96,7 @@ function digestFor(hash: string, sequence: number): string {
   return recordDigestOf({ content_hash: hash, head_event_sequence: sequence });
 }
 
-// ── the case group ───────────────────────────────────────────────────────────────────────
+// The case group
 
 async function caseSourceVerifyIsInvalidInput(): Promise<void> {
   await withRoot(async (root) => {
@@ -204,9 +198,9 @@ async function caseKnowledgeStatusIndependentOfWorkGate(): Promise<void> {
   });
 }
 
-/** Reads the one commit manifest a `mutate()` result's own `transaction_id` names, straight
- *  off disk — the only way to observe that a batch's events actually landed together, rather
- *  than trusting the same call that would also report a partial write as success. */
+/** Reads the one commit manifest a `mutate()` result's own `transaction_id` names, straight off
+ *  disk — the only way to observe that a batch's events actually landed together, rather than
+ *  trusting the same call that would also report a partial write as success. */
 function manifestFor(root: string, transactionId: string): { events: { kind: string; transaction_id: string; revision: number | null; data: Record<string, unknown> }[] } {
   const dir = join(root, ".zz", "commits");
   for (const f of readdirSync(dir)) {
@@ -228,9 +222,8 @@ async function caseSupersessionBatch(): Promise<void> {
     assert.equal(result.committed, true, `a same-owner supersession must commit as one batch: ${JSON.stringify(result)}`);
     if (result.committed !== true) return;
 
-    // Not assertion-by-construction: this reads the durable manifest back and checks the
-    // batch actually landed as one atomic transaction with both expected events, not merely
-    // that `mutate()` reported success.
+    // Reads the durable manifest back and checks the batch landed as one atomic transaction with
+    // both expected events, not merely that `mutate()` reported success.
     const manifest = manifestFor(root, result.transaction_id ?? "");
     assert.equal(manifest.events.length, 2, "a supersession batch must commit exactly two events");
     const kinds = manifest.events.map((e) => e.kind).sort();
@@ -340,10 +333,9 @@ async function caseCorrectionOfASignedRevisionNeverTransfersTheOldSignature(): P
     });
     assert.equal(approved.committed, true, JSON.stringify(approved));
     if (approved.committed !== true) return;
-    // The historical signature is exactly what `approve` returned — captured once, and this
-    // suite never mutates a manifest to check that it "stayed"; it stayed because nothing here
-    // writes over a commit. What is tested is the property that matters operationally: it does
-    // not transfer.
+    // The historical signature is exactly what `approve` returned, captured once. Nothing here
+    // writes over a commit, so what is tested is the property that matters operationally: the
+    // signature does not transfer.
     assert.equal(approved.revision, 1);
     assert.equal(approved.content_hash, doc.hash);
 

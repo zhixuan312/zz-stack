@@ -1,7 +1,7 @@
 /**
  * Teams and who is in them.
  *
- * Every function here returns an OUTCOME rather than throwing: a refusal carries the status
+ * Every function here returns an outcome rather than throwing: a refusal carries the status
  * and the sentence, so the MCP tool and the console route that both call it answer the same
  * way. A write that throws would make those two disagree about what a refusal looks like.
  */
@@ -12,26 +12,20 @@ import { type PlatformWriteOutcome } from "./people.js";
 
 // ---------------------------------------------------------------- shared team-write logic
 //
-// The guarded bodies behind member_add and member_remove —
-// extracted once (Task I-14) so the admin tools (below) and settings.ts's browser routes
-// call the SAME function rather than a second copy of the authority check and the query
-// drifting apart. settings.ts imports these as VALUES: unlike server.ts, this module never
-// imports settings.ts, so there is no cycle here for dependency injection to avoid — see
-// settings.ts's own header for the file where that constraint DOES apply.
+// COUPLED: the guarded bodies behind member_add and member_remove. The admin tools below and
+// settings.ts's browser routes call the same function rather than a second copy of the
+// authority check and the query. settings.ts imports these as values; this module never
+// imports settings.ts, so there is no cycle here for dependency injection to avoid.
 //
-// EACH WRITE TAKES `extraDetail`, merged into its own `auditAdmin` call's detail — a tool
-// call passes none, so an agent-issued write audits exactly as it always has; settings.ts's
-// routes pass `{ via: "web" }`. See settings.ts's header for why the marker is added by the
-// CALLER rather than assumed here, and gate.ts's "every console write route records the
-// door it came through" for what reads that literal text back out of the route body.
-// Not exported: unlike server.ts's SetCredentialOutcome/IssueTokenOutcome, nothing outside
-// this file needs to NAME this shape — settings.ts imports the four functions below as
-// values and lets their return type infer, since there is no cycle here forcing a
-// type-only import the way there is for server.ts's my_* functions (see settings.ts's
-// header). An `export` nobody imports is exactly what "nothing is exported that nobody
-// imports" (gate.ts) exists to catch.
+// Each write takes `extraDetail`, merged into its own `auditAdmin` call's detail — a tool call
+// passes none, settings.ts's routes pass `{ via: "web" }`. The marker is added by the caller;
+// the gate's "every console write route records the door it came through" reads that literal
+// text back out of the route body.
+//
+// Not exported: settings.ts imports the four functions below as values and lets their return
+// type infer, so nothing outside this file needs to name this shape.
 type TeamWriteOutcome = { ok: true; message: string } | { ok: false; status: 400 | 403; error: string };
-/** Add a principal to a team, or change their role — the SAME call, because the insert's
+/** Add a principal to a team, or change their role — the same call, because the insert's
  * own `on conflict (team_id, principal_id) do update set role = excluded.role` already
  * handles both. A second code path for "already a member" would only be a second way for
  * add and change-role to disagree about what happened. */
@@ -65,13 +59,10 @@ export async function removeMember(
   if (!teamAuthority(id, team)) return { ok: false, status: 403, error: `team admin or superadmin required for ${team}` };
   if (confirm !== team) return { ok: false, status: 400, error: `confirm must repeat the team slug exactly ('${team}')` };
   const db = platformDb();
-  // What was actually deleted, not what was asked for.
-  //
-  // This reported "removed" whatever happened, so a mistyped address — the ordinary way to
-  // get this wrong — read as done while the person it was meant for stayed a member. Its
-  // destructive siblings all check: team_archive refuses an inactive team, pat_revoke
-  // refuses an id that is not there. An access-control tool that cannot fail is the worst
-  // place for that gap.
+  // What was actually deleted, not what was asked for: reporting "removed" whatever happened
+  // makes a mistyped address read as done while the person it was meant for stays a member.
+  // COUPLED: the destructive siblings hold the same rule — team_archive refuses an inactive
+  // team, pat_revoke refuses an id that is not there.
   const r = await db.query(
     `delete from membership using team t, principal p
      where membership.team_id = t.id and membership.principal_id = p.id
@@ -102,9 +93,9 @@ export async function createTeam(
     return { ok: false, status: 400,
       error: `'${PLATFORM_TEAM}' is the platform's own team and cannot be created or claimed.` };
   }
-  // `do nothing` reported "team X active" for a slug that already existed — true when it
-  // was already active, a lie when it was archived, which is the case where someone types
-  // team_create precisely BECAUSE they want it back. Reactivate and say which happened.
+  // `do nothing` would report "team X active" for a slug that already existed — a lie when it
+  // was archived, which is the case where someone types team_create precisely because they want
+  // it back. Reactivate, and say which happened.
   const r = await db.query<{ status: string; existed: boolean }>(
     `insert into team (slug, name, created_by) values ($1,$2,$3)
      on conflict (slug) do update set status = 'active', name = excluded.name
@@ -127,11 +118,7 @@ export async function archiveTeam(
   const db = platformDb();
   const r = await db.query("update team set status = 'archived' where slug = $1 and status = 'active'", [team]);
   if (!r.rowCount) return { ok: false, status: 400, error: `no active team '${team}'` };
-  // What used to sit here reached into the retired front end's database and deleted from
-  // its `group` and `group_member` tables. That schema is gone — this deployment's database
-  // holds the `zz` schema and nothing else — so the block could only ever find nothing or
-  // fail, while telling a reader that archiving a team still has a second half somewhere.
   auditAdmin(id, "archive_team", team, { ...extraDetail }, team);
   return { ok: true, message: `team ${team} archived.\n` +
-    "Its flow installs and block grants are kept, so team_create on the same slug restores it." };
+    "Its memberships and its store are kept, so team_create on the same slug restores it." };
 }

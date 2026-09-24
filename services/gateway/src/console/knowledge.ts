@@ -11,31 +11,23 @@ import { platformDb } from "../db.js";
 import { handler } from "./shared.js";
 
 export function mountKnowledge(app: Express): void {
-  /** The knowledge base: the list, with enough of each body to recognise it.
-   *
-   * The excerpt is here so the list is readable on its own — a title alone told
-   * a reader nothing about whether the node was the one they wanted, which is
-   * the complaint the console exists to answer. Full bodies come from the
-   * endpoint below, one at a time. */
+  /** The knowledge base: the list, with enough of each body to recognise it. A title alone does
+   *  not tell a reader whether the node is the one they wanted. Full bodies come from the
+   *  endpoint below, one at a time. */
   app.get("/api/console/knowledge", handler("the knowledge base", async (_req, res, scope) => {
     const db = platformDb();
-    // Same deletion as /initiatives, and the same reason: a null `team_slug` parameter
-    // must never again mean "every team's nodes".
+    // Same deletion as /initiatives, and the same reason: a null `team_slug` parameter must
+    // never mean "every team's nodes".
     //
-    // TWO COMPLETE STATEMENTS, not one assembled from `scope` — see the note in
-    // /api/console/initiatives above; `check:sql` can only PREPARE a literal it can read
-    // whole.
+    // Two complete statements, not one assembled from `scope` — `check:sql` can only PREPARE a
+    // literal it can read whole.
     const { rows } = scope.kind === "platform"
       ? await db.query(
       `select team_slug as team, path, kind as type, lifecycle as status, title, tags,
-              -- WHERE THE LESSON CAME FROM. evidence holds the initiative that
-              -- produced the node, and it is the only linkage the store actually
-              -- records between a node and the work behind it. Nothing displayed it,
-              -- so every node read as a free-floating assertion.
+              -- Where the lesson came from: evidence holds the initiative that produced the node, the
+              -- only linkage the store records between a node and the work behind it.
               evidence, superseded_by,
-              -- ISO like every other time this API sends. It was a bare date, which meant
-              -- one field named updated carried a day and another carried an instant, so no
-              -- rule about rendering a time could be stated here, let alone checked.
+              -- An instant, like every other time this API sends.
               to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated,
               length(coalesce(body,'')) as bytes,
               left(regexp_replace(coalesce(body,''), '\\s+', ' ', 'g'), 220) as excerpt
@@ -52,10 +44,9 @@ export function mountKnowledge(app: Express): void {
         order by team_slug, path`, [scope.slug]);
     res.json({ nodes: rows.map((r) => ({
       ...r, bytes: +r.bytes,
-      // The NUMBER is per team — every team numbers its own nodes from 0001, so
-      // two teams both have a node 1. Shown as a number and keyed by team+path,
-      // because a list mixing teams under a bare "1, 1, 2, 2" looks duplicated
-      // and is unusable for picking one.
+      // The number is per team — every team numbers its own nodes from 0001, so two teams both
+      // have a node 1. Shown as a number and keyed by team+path, because a list mixing teams
+      // under a bare "1, 1, 2, 2" looks duplicated.
       num: /nodes\/0*(\d+)/.exec(r.path as string)?.[1] ?? "",
       key: `${r.team_slug as string}/${r.path as string}`,
     })) });
@@ -63,16 +54,13 @@ export function mountKnowledge(app: Express): void {
 
   /** The knowledge base's own log — what was recorded, what replaced what, and by whom.
    *
-   * READS `knowledge.add` / `knowledge.supersede`, the entries zz-core writes beside its
-   * `_knowledge/log.md` (see `knowledgeEvent` there). Not `tool_call` rows: those carry no
-   * actor on purpose — "no address on a measurement" — and they include `knowledge_search`
-   * reads, which are not journal entries. A log needs exactly the thing a measurement drops.
+   * Reads `knowledge.add` / `knowledge.supersede`, the entries zz-core writes beside its
+   * `_knowledge/log.md`, which the store writes. Not `tool_call` rows: those carry no actor
+   * by design and include `knowledge_search` reads, which are not journal entries.
    *
-   * THE NODES ARE JOINED BACK IN, by (team, subject), so a row can carry the node's title
-   * as it stands NOW rather than as it was typed. A log listing "node 3, superseded" with
-   * no title is a list of numbers; the title is the only part a person recognises. A left
-   * join, because a node deleted from the shelf still has a log entry that happened, and
-   * dropping it would edit the record to match the store.
+   * The nodes are joined back in by (team, subject), so a row carries the node's title as it
+   * stands now rather than as it was typed. A left join, because a node deleted from the shelf
+   * still has a log entry that happened.
    */
   app.get("/api/console/knowledge/log", handler("the knowledge log", async (_req, res, scope) => {
     const db = platformDb();
@@ -108,8 +96,8 @@ export function mountKnowledge(app: Express): void {
   app.get("/api/console/knowledge/:team/*", handler("the node", async (req, res, scope) => {
     const db = platformDb();
     const path = (req.params as Record<string, string>)[0];
-    // Same not-found rather than a refusal as /teams/:slug: a team scope naming someone
-    // else's team gets the response it would get for a node that never existed.
+    // Same not-found rather than a refusal as /teams/:slug: a team scope naming someone else's
+    // team gets the response it would get for a node that never existed.
     if (scope.kind === "team" && req.params.team !== scope.slug) {
       res.status(404).json({ error: `no node ${path}` });
       return;
@@ -117,14 +105,11 @@ export function mountKnowledge(app: Express): void {
     const { rows } = await db.query(
       `select team_slug as team, path, kind as type, lifecycle as status, title, tags, body,
               evidence, superseded_by,
-              -- WHICH TEAM EACH PIECE OF EVIDENCE LIVES IN, resolved rather than assumed.
-              -- The console linked every entry to the NODE's team, and knowledge_add
-              -- deliberately accepts evidence naming an initiative in any team the author
-              -- belongs to -- a platform-shelf node citing a tenant initiative therefore
-              -- linked to /initiatives/zz-platform/<slug>, which answers "not found". Null
-              -- when no team on this deployment has an initiative by that name, and the
-              -- console then renders the name as text instead of as a dead link. The node's
-              -- own team wins a tie, because that is the likeliest author.
+              -- Which team each piece of evidence lives in, resolved rather than assumed:
+              -- knowledge_add accepts evidence naming an initiative in any team the author belongs
+              -- to. Null when no team on this deployment has an initiative by that name, and the
+              -- console then renders the name as text. The node's own team wins a tie, because that
+              -- is the likeliest author.
               (select coalesce(jsonb_agg(jsonb_build_object(
                         \'name\', ev.name,
                         \'team\', (select t2.slug from zz.initiative i2
@@ -133,11 +118,8 @@ export function mountKnowledge(app: Express): void {
                                    order by (t2.slug = n.team_slug) desc, t2.slug
                                    limit 1))), \'[]\'::jsonb)
                  from unnest(coalesce(evidence, array[]::text[])) as ev(name)) as evidence_in,
-              -- AN INSTANT, like the list two routes up. This sent a bare date, and the
-              -- console renders the value through its Time component, which parses a bare
-              -- date as UTC midnight and formats it in the deployment zone: the same node
-              -- read 2026-09-17 08:00 here and 2026-09-17 14:32 in the list beside it. One
-              -- value, one format, whichever route answers.
+              -- An instant, like the list route: the console's Time component reads a bare date as
+              -- UTC midnight.
               to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated
          from zz.knowledge_node n where n.team_slug = $1 and n.path = $2`,
       [req.params.team, path]);

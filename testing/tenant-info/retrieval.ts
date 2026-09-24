@@ -1,20 +1,6 @@
 /**
- * retrieval.ts — the retrieval suite. I-16 opens it with the "visibility" case group: corpus
- * and scope resolution, and the authorization boundary every later lane sits behind.
- *
- * WHY THIS FILE EXISTS AT I-16 RATHER THAN I-18, which the plan names as the retrieval suite's
- * first producing task. I-16's cases proved the owner predicate behaviourally — two rows sharing
- * a corpus key AND an artifact id, differing only in owner, where only the real `where owner_id
- * = $2` returns the one the caller asked for — and they were living in a scratch directory,
- * reachable from a report and from nowhere else. Evidence that cannot be re-run is not evidence
- * anybody can check later, and the plan's own rule is that the FIRST producing task creates the
- * suite and later tasks extend it. I-16 produced cases; this is that file. I-18 extends it.
- *
- * AND IT GIVES `checkVisibility` ITS FIRST CONSUMER, honestly. Exported for I-17's lanes and
- * I-18's pinned reads, it had none yet, and the dead-export gate check said so correctly. The
- * implementing worker declined to call it from inside its own module to quiet that — which would
- * have been gaming the check rather than satisfying it. A suite that exercises the primitive is
- * the real consumer the check was asking for.
+ * The retrieval suite. Five case groups: visibility (corpus and scope resolution, and the
+ * authorization boundary every lane sits behind), fusion, lanes, query and cursor.
  */
 import assert from "node:assert/strict";
 
@@ -38,9 +24,9 @@ interface Row {
   readonly content_hash: string;
 }
 
-/** A client that EVALUATES the predicates the query text actually carries, rather than scanning
- *  it for a substring. A checker that greps for "owner_id" passes on a query that selects the
- *  column and filters on nothing — which is the exact defect this task's contract names. */
+/** A client that evaluates the predicates the query text carries, rather than scanning it for
+ *  a substring: a checker that greps for "owner_id" passes on a query that selects the column
+ *  and filters on nothing. */
 function recordingClient(rows: readonly Row[]) {
   const seen: { text: string; params: readonly unknown[] }[] = [];
   return {
@@ -59,14 +45,10 @@ function recordingClient(rows: readonly Row[]) {
   };
 }
 
-// ONE INDEX PER OWNER, and this fixture used to get that wrong. Both entries named
-// `index_name: "i"` — which is the configuration `assertOneOwnerPerIndex` (retrieval.ts) now
-// refuses, and which `testing/tenant-info/isolation.ts` demonstrates actually moves one
-// owner's bm25 scores with the other's writes. Nothing in this file ever depended on it: the
-// collision these cases are built to exercise is at the ROW level (two rows sharing a
-// corpus_key and artifact_id, separated only by `where owner_id = $n`), and
-// `buildVisibilityQuery` never reads `index_name` at all. The fixture was adversarial in the
-// dimension it meant to be and accidentally misconfigured in one it did not.
+// One index per owner: `assertOneOwnerPerIndex` (retrieval.ts) refuses a shared `index_name`,
+// and `testing/tenant-info/isolation.ts` shows it moves one owner's bm25 scores with the
+// other's writes. The collision these cases exercise is at the row level — two rows sharing a
+// corpus_key and artifact_id, separated only by `where owner_id = $n`.
 const REGISTRY = [
   { corpus_key: "q-current", owner_id: OWNER_Q, scope: "current", audience: "private", index_name: "i_q" },
   { corpus_key: "p-current", owner_id: OWNER_P, scope: "current", audience: "private", index_name: "i_p" },
@@ -86,10 +68,10 @@ async function caseUnregisteredOwnerIssuesNoQuery(): Promise<void> {
   assert.equal(seen.length, 0, "an owner absent from the registry must not reach a query");
 }
 
-/** THE CASE THE WHOLE TASK RESTS ON. Two rows share a corpus key and, deliberately, the same
- *  artifact id, differing only in owner — the shape a partial index's WHERE clause would let
- *  through the moment somebody changed the index. Only the predicate in the executed text
- *  separates them, and the assertion is on the CONTENT HASH returned, not on "a row was found". */
+/** Two rows share a corpus key and an artifact id, differing only in owner — the shape a
+ *  partial index's WHERE clause would let through. Only the predicate in the executed text
+ *  separates them, and the assertion is on the content hash returned, not on a row being
+ *  found. */
 async function caseOwnerPredicateSeparatesCollidingRows(): Promise<void> {
   const rows: Row[] = [
     { corpus_key: "q-current", owner_id: OWNER_P, artifact_id: ARTIFACT, revision: 1, content_hash: "p".repeat(64) },
@@ -156,14 +138,12 @@ const VISIBILITY_CASES: Readonly<Record<string, () => Promise<void>>> = {
   request_cannot_smuggle_owner_or_index: caseRequestCannotSmuggleOwnerOrIndex,
 };
 
-// ── I-17: the "fusion" case group — dedup-before-cap and cross-corpus RRF arithmetic ────────
+// The "fusion" case group — dedup-before-cap and cross-corpus RRF arithmetic
 //
-// `checks/tenant-fusion-arithmetic.ts` is frozen and drives `rrf`/`budgets`/`resultKey` on
-// opaque string keys; it cannot see whether a REAL pipeline collapses passages before or after
-// applying a lane's cap, because it never builds a `RankedRow`. These cases exercise
-// `collapseBeforeCap` and `rrf` the way the real orchestrator (I-17's `lanes.ts`) actually
-// calls them, on fixtures shaped like real lane output — the mutation the task's own report
-// calls out (cap-then-dedup) fails one of these by distinct-artifact COUNT, not incidentally.
+// `checks/tenant-fusion-arithmetic.ts` drives `rrf`/`budgets`/`resultKey` on opaque string
+// keys and never builds a `RankedRow`, so it cannot see whether a real pipeline collapses
+// passages before or after applying a lane's cap. These cases call `collapseBeforeCap` and
+// `rrf` the way `lanes.ts` does, on fixtures shaped like real lane output.
 
 const OWNER_A = "55555555-5555-4555-8555-555555555555";
 
@@ -175,13 +155,11 @@ function passageIdentity(artifactSuffix: string, revision = 1): { identity: { ow
   };
 }
 
-/** THE CASE THE MUTATION TEST NAMES. Artifact A contributes three ranked passages before
- *  artifact B, C, D each contribute one. Dedup-before-cap over a cap of 4 keeps one row per
- *  artifact and returns all four distinct artifacts (A, B, C, D). Capping first — the
- *  mutation this task's report asks to be provoked and observed — would slice to A's three
- *  passages plus B, collapsing to only two distinct artifacts: "a page of results that is
- *  really three documents". The assertion is on the distinct-artifact COUNT, not on any
- *  particular row surviving, so it fails for that reason and no other. */
+/** Artifact A contributes three ranked passages before B, C and D each contribute one.
+ *  Dedup-before-cap over a cap of 4 keeps one row per artifact and returns all four distinct
+ *  artifacts. Capping first would slice to A's three passages plus B — two distinct
+ *  artifacts. The assertion is on the distinct-artifact count, not on any particular row
+ *  surviving. */
 async function caseDedupCollapsesPassagesBeforeTheCap(): Promise<void> {
   const rows = [
     passageIdentity("000000000001"), passageIdentity("000000000001"), passageIdentity("000000000001"),
@@ -194,12 +172,10 @@ async function caseDedupCollapsesPassagesBeforeTheCap(): Promise<void> {
   assert.equal(collapsed.length, 4);
 }
 
-/** The same artifact ranked #1 in both a private and a shared corpus, within the SAME lane,
- *  must contribute once to that lane's fused score — "the same artifact in private and shared
- *  corpus contributes at most once per lane, taking the better local contribution" (retrieval
- *  contract). A mutation that summed per-corpus contributions instead of taking their max
- *  would double the private/shared artifact's score relative to one that appeared in only one
- *  corpus; this case fails on that exact doubling, not on an incidental total. */
+/** The same artifact ranked #1 in both a private and a shared corpus, within one lane,
+ *  contributes once to that lane's fused score, at its better local rank. Summing per-corpus
+ *  contributions instead of taking their max doubles that artifact's score relative to one
+ *  that appeared in a single corpus, which is the doubling this case fails on. */
 async function caseSharedAndPrivateNeverDoubleCountWithinALane(): Promise<void> {
   const lists = [
     { lane: "lexical", corpus: "private", keys: ["shared-artifact", "private-only"] },
@@ -216,11 +192,11 @@ const FUSION_CASES: Readonly<Record<string, () => Promise<void>>> = {
   shared_and_private_never_double_count_within_a_lane: caseSharedAndPrivateNeverDoubleCountWithinALane,
 };
 
-// ── I-18: the "query" and "cursor" case groups — grammar, wire response, pinned reads ──────
+// The "query" and "cursor" case groups — grammar, wire response, pinned reads
 //
-// `retrieval-query.ts` (`parseQuery`/`serializeResults`/`matchesArtifact`) and
-// `retrieval-cursor.ts` (provenance cursors, pinned dereference, read-your-write freshness)
-// are this task's own split, following the `retrieval-lanes.ts` pattern I-17 already set.
+// `retrieval-query.ts` holds `parseQuery`/`serializeResults`/`matchesArtifact`;
+// `retrieval-cursor.ts` holds provenance cursors, pinned dereference and read-your-write
+// freshness.
 
 const CASE_GROUPS: Readonly<Record<string, Readonly<Record<string, () => Promise<void>>>>> = {
   visibility: VISIBILITY_CASES,

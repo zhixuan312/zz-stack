@@ -1,41 +1,25 @@
 /**
- * benchmark-measure.ts — the EXECUTION half of the benchmark: the part that actually runs the
- * held-out queries and counts what came back. `benchmark-report.ts` assembles and validates a
- * report and measures nothing by design; this file is the producer that turns its blocked
- * quality targets into observations, and it is a separate module because that file sits at 696
- * lines of a 700-line ceiling.
+ * The execution half of the benchmark: runs the held-out queries and counts what came back.
+ * `benchmark-report.ts` assembles and validates a report and measures nothing.
  *
- * IT CALLS THE PUBLIC PATH, NOT SQL AND NOT A RANKER. Every measured query goes through
- * `searchTenantInformation` (services/zz-core/src/tenant-info/search.ts) — the one function
- * that composes `parseQuery` → `loadCorpusRegistry` → `resolveCorpora` → `search()` (four lanes
- * and RRF) → hydration → `matchesArtifact` → `serializeResults` — and what is counted is the
- * string `serializeResults` emitted, parsed back through the published `SearchResponseSchema`.
- * Nothing here imports a lane, a scorer or a table name.
+ * It calls the public path, not SQL and not a ranker. Every measured query goes through
+ * `searchTenantInformation` (services/zz-core/src/tenant-info/search.ts), which composes
+ * `parseQuery` → `loadCorpusRegistry` → `resolveCorpora` → `search()` (four lanes and RRF) →
+ * hydration → `matchesArtifact` → `serializeResults`; what is counted is the string
+ * `serializeResults` emitted, parsed back through the published `SearchResponseSchema`. Nothing
+ * here imports a lane, a scorer or a table name. `knowledge_search` is not that path: it reads
+ * `zz.doc`/`zz.knowledge_node`, a different store from the tenant-information corpora.
  *
- * WHY NOT `tools/knowledge-search.ts`. That file's `registerKnowledgeSearch` is the live
- * `knowledge_search` MCP handler and it reads `zz.doc`/`zz.knowledge_node` — a different store
- * from the one this initiative built, which its own header says is deliberate and is a cutover
- * step rather than a wiring step. Measuring recall over the tenant-information corpora through
- * it would measure the wrong corpus entirely. So no MCP handler sits above this path yet, and
- * the producer calls the function an MCP handler would call: one layer below transport, and
- * nothing shallower exists. `benchmark-report.ts` already binds this same module by hash
- * (`search_module_sha256`), so the two agree on what "the search path" names.
+ * COUPLED: `benchmark-report.ts` binds this module by hash (`search_module_sha256`).
  *
- * ONE QUESTION: WHAT DID THE HELD-OUT QUERIES RECALL? Slices, denominators, a binary
- * `Recall@20` per query, and whether the three language populations stayed separate. The other
- * question this file used to answer — did a call actually travel the public path — left for
- * `benchmark-route.ts` at the 700-line ceiling, and the seam it left along is real rather than
- * arithmetic: nothing there knows what a slice or a relevant artifact is, and nothing here
- * knows a table name or a statement. They fail differently too. A route fault means the numbers
- * were taken through a path nobody can vouch for and must not be read at all; a recall fault
- * means a slice is below its target. The first refuses before anything is written.
+ * What it answers: slices, denominators, a binary `Recall@20` per query, and whether the three
+ * language populations stayed separate. Whether a call travelled the public path is
+ * `benchmark-route.ts`'s question, and a route fault means the numbers must not be read at all.
  *
- * `pooled` IS AN OBSERVATION, NEVER A LITERAL — earned by recomputing each slice's ratio from
- * its own recorded per-query outcomes and checking the three slices are disjoint. `route` is
- * earned the same way next door, and for the same reason: a report that merely SAYS it went
- * through the handler is indistinguishable from one that did not.
+ * `pooled` is an observation, never a literal: earned by recomputing each slice's ratio from
+ * its own recorded per-query outcomes and checking the three slices are disjoint.
  *
- * NOTHING HERE READS OR WRITES A FILE, so the probe can drive the same code against a fake
+ * Nothing here reads or writes a file, so the probe can drive the same code against a fake
  * store. The runner (`benchmark-measure-run.ts`) owns the database, the preflight and the two
  * writes.
  */
@@ -49,48 +33,41 @@ import { RELEASE_TARGETS } from "./benchmark.ts";
 import { computeRoute, instrument, observeRoute, type RouteObservation } from "./benchmark-route.ts";
 import { ISOLATION_CATEGORY, type JudgedQuery, type Qrel } from "./judged-dataset.ts";
 
-/** The k in `Recall@20`, and the request limit that produces it. Both are 20 because the
- *  target key IS `recall_at_20` and its `measured_by` says "at quality limit 20"; the number is
- *  read off the agreement in `benchmark.ts` rather than restated as policy here. */
+/** The k in `Recall@20`, and the request limit that produces it. Both are 20, read off the
+ *  target key `recall_at_20` in `benchmark.ts` rather than restated as policy here. */
 const DISPLAYED_AT_K = 20;
 
 /** The three held-out language slices, in the order a report prints them. Measured
  *  independently and never pooled: each one carries its own denominator and its own mean. */
 export const SLICE_LANGUAGES = ["en", "zh", "mixed"] as const;
 
-// ───────────────────────── the request translation, stated rather than assumed ─────────────────────────
-
 /**
- * THE JUDGED DATASET AND THE HANDLER DO NOT SHARE A VOCABULARY, and nothing in this repository
- * translated between them until this file. Three fields collide by name and disagree in value:
+ * The judged dataset and the handler do not share a vocabulary. Three fields collide by name
+ * and disagree in value:
  *
  *   · `query_mode` is `exact` | `semantic` | `hybrid` (judged-dataset.ts's
  *     `QUERY_MODE_BY_CATEGORY`). The handler's `QueryMode` is `natural` | `websearch`. Not one
  *     value overlaps.
- *   · `scopes` is `own_team` | `shared` — an AUDIENCE, the thing `resolveCorpora` decides with
+ *   · `scopes` is `own_team` | `shared` — an audience, which `resolveCorpora` decides with
  *     `context.shared_allowed`. The handler's `scopes` are retrieval scopes: `current`,
- *     `evidence`, `history`. Passing the dataset's values straight through would resolve zero
- *     corpora and return an empty page for every query.
+ *     `evidence`, `history`. Passing the dataset's values straight through resolves zero
+ *     corpora and returns an empty page for every query.
  *   · `caller_fixture` is a corpus key (`primary_evidence`, `other_team_a`, …). The handler's
- *     `context.owner_id` is a uuid, and which uuid owns that corpus is a runtime fact only the
- *     loaded registry can answer.
+ *     `context.owner_id` is a uuid, and which uuid owns that corpus only the loaded registry
+ *     can answer.
  *
- * So a translation has to exist, and the only honest place for it is here, in the open, carried
- * into the report as `request_translation` so nobody reads a number without seeing what was
- * assumed. Each rule below says what it maps and why:
+ * The translation is carried into the report as `request_translation`. Each rule:
  *
- *   mode      every dataset mode → `natural`. `websearch` is a different GRAMMAR (quoted
+ *   mode      every dataset mode → `natural`. `websearch` is a different grammar (quoted
  *             phrases, `OR`, `-exclusion`), not a different intent, and the dataset's query
- *             strings are plain prose in all three modes. Mapping `exact` to `websearch` would
- *             change the parse of a query the judgment was made against.
+ *             strings are plain prose in all three modes.
  *   scopes    the retrieval scope of the caller's own corpus, taken from the registry entry for
- *             `caller_fixture` — `primary_evidence` is an `evidence`-scope corpus, so a query
- *             whose relevant artifact lives there must ask for that scope or the corpus is
- *             never consulted.
- *   audience  `shared` present → `shared_allowed: true`; absent → false. That is exactly the
+ *             `caller_fixture`: a query whose relevant artifact lives in an `evidence`-scope
+ *             corpus must ask for that scope or the corpus is never consulted.
+ *   audience  `shared` present → `shared_allowed: true`; absent → false, which is the
  *             distinction `resolveCorpora`'s two admitting branches draw.
- *   owner     the registry entry's `owner_id` for `caller_fixture`. One fixed uuid for all 98
- *             queries would measure one tenant's corpus five times over.
+ *   owner     the registry entry's `owner_id` for `caller_fixture`. One fixed uuid for every
+ *             query would measure one tenant's corpus over and over.
  */
 const REQUEST_TRANSLATION = Object.freeze({
   query_mode: Object.freeze({ exact: "natural", semantic: "natural", hybrid: "natural" }),
@@ -108,9 +85,8 @@ interface TranslatedRequest {
 
 /**
  * One judged query as a call the handler will accept, or `null` when the deployment holds no
- * corpus by the name the query's `caller_fixture` gives. A null is a BLOCKED case, never a
- * miss: a query nobody could ask is not a query the system failed to answer, and the caller
- * below refuses the whole run rather than scoring it zero.
+ * corpus by the name the query's `caller_fixture` gives. A null is a blocked case, never a
+ * miss: the caller below refuses the whole run rather than scoring it zero.
  */
 function translateRequest(
   query: JudgedQuery, registry: readonly CorpusDescriptor[], runtime: { index_generation: string; cursor_key: string; caller_id: string },
@@ -135,21 +111,17 @@ function translateRequest(
   };
 }
 
-// ───────────────────────── one query, measured off the DISPLAYED results ─────────────────────────
-
 /**
- * What a case records. NO QUERY TEXT AND NO RELEVANT REF, deliberately, including in the failed
- * cases a reader will most want them for: "a case exposed for debugging stops being held-out
- * evidence" is the contract's own sentence, and a failure report carrying the query string and
- * the answer is exactly that exposure. The id, the slice, the category and where the relevant
- * artifact ranked are enough to act on and disclose neither.
+ * What a case records. DELIBERATE: no query text and no relevant ref, including in the failed
+ * cases — a case exposed for debugging stops being held-out evidence. The id, the slice, the
+ * category and where the relevant artifact ranked are enough to act on.
  */
 interface MeasuredCase {
   readonly query_id: string;
   readonly language: string;
   readonly category: string;
   readonly hit: boolean;
-  /** 1-based rank within the DISPLAYED list, or null when it was not displayed at all. */
+  /** 1-based rank within the displayed list, or null when it was not displayed at all. */
   readonly rank: number | null;
   readonly displayed: number;
   readonly candidate_total: number;
@@ -163,7 +135,7 @@ interface EmptyCase {
   readonly query_id: string;
   readonly language: string;
   readonly category: string;
-  /** A COMPLETE empty: nothing displayed, nothing withheld, and the response not marked
+  /** A complete empty: nothing displayed, nothing withheld, and the response not marked
    *  incomplete. A budget-limited or otherwise qualified empty is not a correct negative. */
   readonly complete_empty: boolean;
   readonly displayed: number;
@@ -173,17 +145,14 @@ interface EmptyCase {
 
 /**
  * The fixture locator a displayed result could be filed under. A qrel's `ref` is a generated
- * filename (`primary_evidence-000037.txt` — `benchmark.ts`'s `REF_PATTERN` admits nothing
- * else), and a result carries a `path`. So the match is on the path, whole or basename, with
- * and without the extension; nothing is inferred from a prefix, so a result matches only by
- * naming the fixture outright. `ref.artifact_id` is deliberately NOT a locator: it is a uuid
- * on every real response, and `REF_PATTERN` means no qrel can ever name one.
+ * filename (`primary_evidence-000037.txt` — all `benchmark.ts`'s `REF_PATTERN` admits) and a
+ * result carries a `path`, so the match is on the path, whole or basename, with and without the
+ * extension. Nothing is inferred from a prefix: a result matches only by naming the fixture
+ * outright. DELIBERATE: `ref.artifact_id` is not a locator — it is a uuid on every real
+ * response, and `REF_PATTERN` means no qrel can name one.
  *
- * THE PRODUCER DOES NOT GET TO BE WRONG ABOUT THIS QUIETLY. No loader has ever put a generated
- * fixture into the store, so which of these spellings a real row will carry is unproven — and
- * a wrong guess would miss on every query and read as a measured 0.00 rather than as an unmade
- * measurement. The runner's preflight resolves every judged ref against the store before a
- * single query is asked, and refuses when one does not resolve.
+ * A wrong guess here would miss on every query and read as a measured 0.00, so the runner's
+ * preflight resolves every judged ref against the store before a single query is asked.
  */
 function locatorsOf(result: { path: string }): string[] {
   const base = result.path.split("/").pop() ?? result.path;
@@ -223,10 +192,10 @@ async function runOne(
   }
   const body = parsed.data;
   return {
-    // THE DISPLAYED LIST, not the candidate list. `serializeResults` drops trailing candidates
-    // until the 24000-byte envelope fits, so what a caller was shown is `results` — and an
-    // artifact withheld under `response_budget` is a miss, not an undisplayed candidate scored
-    // anyway. The slice is a second bound, not the first: `limit` already asked for 20.
+    // The displayed list, not the candidate list: `serializeResults` drops trailing candidates
+    // until the 24000-byte envelope fits, so what a caller was shown is `results`, and an
+    // artifact withheld under `response_budget` is a miss. The slice is a second bound —
+    // `limit` already asked for 20.
     displayed: body.results.slice(0, DISPLAYED_AT_K),
     candidate_total: body.candidate_total,
     withheld_candidates: body.withheld_candidates,
@@ -235,8 +204,6 @@ async function runOne(
     route,
   };
 }
-
-// ───────────────────────── the slices: three denominators, three means, never one ─────────────────────────
 
 export interface SliceMeasurement {
   readonly language: string;
@@ -259,16 +226,16 @@ export interface Measurement {
 }
 
 /**
- * `pooled`, COMPUTED. Three independent things have to hold for three slices to be three
- * measurements rather than one figure printed three times, and each is checked against the
- * per-case records the slice was built from:
+ * `pooled`, computed. Three things have to hold for three slices to be three measurements
+ * rather than one figure printed three times, each checked against the per-case records the
+ * slice was built from:
  *
- *   1. the slices are DISJOINT — no query id appears in two of them;
- *   2. every slice's denominator is its OWN case count, not a number carried in from anywhere;
+ *   1. the slices are disjoint — no query id appears in two of them;
+ *   2. every slice's denominator is its own case count;
  *   3. every slice's ratio recomputes from its own hits and its own denominator.
  *
  * Any of the three failing means the numbers did not come from three separate populations, and
- * `pooled` says so. A literal `false` here would be a claim; this is an observation.
+ * `pooled` says so.
  */
 export function detectPooling(slices: readonly SliceMeasurement[]): { pooled: boolean; evidence: string[] } {
   const evidence: string[] = [];
@@ -294,9 +261,9 @@ function buildSlice(language: string, cases: readonly MeasuredCase[]): SliceMeas
   const hits = cases.filter((c) => c.hit).length;
   return {
     language,
-    // THE DENOMINATOR IS THIS SLICE'S OWN CASE COUNT and it is printed beside the ratio,
-    // because these denominators are small: at n=20 a single miss is 0.95 exactly and a second
-    // one is 0.90, so a bare "0.95" hides whether the slice cleared the bar or sat on it.
+    // The denominator is this slice's own case count and is printed beside the ratio: these
+    // denominators are small, so at n=20 a single miss is 0.95 exactly and a bare "0.95" hides
+    // whether the slice cleared the bar or sat on it.
     denominator: cases.length,
     hits,
     recall_at_20: cases.length === 0 ? Number.NaN : hits / cases.length,
@@ -304,8 +271,6 @@ function buildSlice(language: string, cases: readonly MeasuredCase[]): SliceMeas
     cases,
   };
 }
-
-// ───────────────────────── the producer ─────────────────────────
 
 /** Judged queries that are actually measurable for recall: held out, answerable, and not an
  *  isolation case. `no-answer` is answerable:false and is measured separately; `isolation` is
@@ -322,7 +287,7 @@ export function selectHeldOut(queries: readonly JudgedQuery[]): {
   };
 }
 
-/** Every judged-relevant (grade > 0) fixture ref, by query id. Grade 0 is a judged NON-match
+/** Every judged-relevant (grade > 0) fixture ref, by query id. Grade 0 is a judged non-match
  *  and never counts toward recall. */
 export function relevantRefsByQuery(qrels: readonly Qrel[]): Map<string, string[]> {
   const out = new Map<string, string[]>();
@@ -345,11 +310,10 @@ export class MeasurementRefused extends Error {
 /**
  * Runs every held-out case through the public path and returns what was observed.
  *
- * REFUSES RATHER THAN SCORING A ZERO, in the two cases where a zero would be a lie: a query
- * whose `caller_fixture` names no corpus this deployment holds, and a query with no judged
- * relevant ref at all. Neither is a retrieval failure — both mean the measurement could not be
- * put to the system — so the whole run is refused and the target stays blocked. A query that
- * WAS asked and returned nothing relevant is a genuine miss and is counted as one.
+ * Refuses rather than scoring a zero in two cases: a query whose `caller_fixture` names no
+ * corpus this deployment holds, and a query with no judged relevant ref. Neither is a retrieval
+ * failure, so the whole run is refused and the target stays blocked. A query that was asked and
+ * returned nothing relevant is a genuine miss and is counted as one.
  */
 export async function measureHeldOut(
   client: RetrievalClient,
@@ -402,7 +366,7 @@ export async function measureHeldOut(
     observations.push(outcome.route);
     emptyCases.push({
       query_id: query.id, language: query.language, category: query.category,
-      // A BUDGET-LIMITED OR UNQUALIFIED EMPTY IS NOT A CORRECT COMPLETE NEGATIVE. All three
+      // A budget-limited or unqualified empty is not a correct complete negative. All three
       // clauses are required: nothing shown, nothing held back, and the response not flagged
       // incomplete for any reason of its own.
       complete_empty: outcome.displayed.length === 0 && outcome.withheld_candidates === 0 && !outcome.incomplete,
@@ -438,12 +402,9 @@ export async function measureHeldOut(
   };
 }
 
-// ───────────────────────── the report body ─────────────────────────
-
-/** The quality thresholds this run is read against, copied FROM `RELEASE_TARGETS` by key. The
- *  eighteen targets and their numbers are `benchmark.ts`'s and are never redefined here; this
- *  is a projection of four of them into the report so a reader sees the bar beside the
- *  measurement without having to hold both files open. */
+/** The quality thresholds this run is read against, copied from `RELEASE_TARGETS` by key. The
+ *  targets and their numbers are `benchmark.ts`'s and are never redefined here; this is a
+ *  projection of four of them into the report. */
 function thresholdsForSlices(): Record<string, { direction: string; target: number; unit: string }> {
   const wanted = ["en_recall_at_20", "zh_recall_at_20", "mixed_recall_at_20", "no_answer_correct_rate"];
   const out: Record<string, { direction: string; target: number; unit: string }> = {};
@@ -465,10 +426,9 @@ interface ReportInputs {
 }
 
 /**
- * The benchmark report, as `testing/tenant-info/benchmark-report.json` holds it. Every field a
- * reader would use to decide whether to believe it — the denominators, the route, the pooling
- * observation, the translation, the topology, the exits — is carried; nothing is summarised
- * into a single number that could stand in for the three.
+ * The benchmark report, as `testing/tenant-info/benchmark-report.json` holds it. The
+ * denominators, the route, the pooling observation, the translation, the topology and the exits
+ * are all carried; nothing is summarised into a single number.
  */
 export function buildReport(inputs: ReportInputs): Record<string, unknown> {
   const { measurement } = inputs;
@@ -502,13 +462,11 @@ export function buildReport(inputs: ReportInputs): Record<string, unknown> {
       "authorized-read receipt — how many statements it issued and how many bound the caller's id.",
     ],
     route: measurement.route,
-    // WHAT `route` DENOTES, beside the word itself. The literal is the one the release check
-    // compares against, and on this deployment it names a FUNCTION CALL rather than a door: no
-    // MCP handler sits above this path yet (services/zz-core/src/tools/knowledge-search.ts:26
-    // keeps the live knowledge_search tool on zz.doc/zz.knowledge_node and calls repointing it
-    // a cutover step; services/zz-core/src/tenant-info/search.ts:23 says the same from the
-    // other side). A reader who took "public_handler" to mean a transport was exercised would
-    // be reading something this run did not measure, so what WAS called is spelled out here.
+    // What `route` denotes, beside the word itself. The literal the release check compares
+    // against names a function call rather than a door: no MCP handler sits above this path
+    // (services/zz-core/src/tools/knowledge-search.ts keeps the live knowledge_search tool on
+    // zz.doc/zz.knowledge_node). A reader taking "public_handler" for a transport would be
+    // reading something this run did not measure, so what was called is spelled out here.
     route_denotes: {
       called: "searchTenantInformation(client, context, request)",
       module: "services/zz-core/src/tenant-info/search.ts",
@@ -535,19 +493,19 @@ export function buildReport(inputs: ReportInputs): Record<string, unknown> {
 
 /**
  * The quality observations this run supplies to `evaluateTargets`, keyed exactly as
- * `RELEASE_TARGETS` names them. A slice that produced no denominator supplies NO KEY AT ALL —
- * an absent observation is blocked, and a `0` would read as a measured failure.
+ * `RELEASE_TARGETS` names them. A slice that produced no denominator supplies no key at all —
+ * an absent observation is blocked, where a `0` would read as a measured failure.
  *
- * EXACTLY THREE KEYS, AND `no_answer_correct_rate` IS NOT ONE OF THEM. That target's own
- * `measured_by` says "the 70 no-answer cases"; this run asks the 14 that are held out, and
- * supplying a 14-case figure under a key defined over 70 would put a wrong-denominator number
- * into the release verdict. The held-out no-answer rate is reported separately, in the report's
- * own `no_answer` block and in `quality.rates`, where its denominator travels with it.
+ * DELIBERATE: `no_answer_correct_rate` is not one of the keys. That target's `measured_by` is
+ * the 70 no-answer cases; this run asks the 14 that are held out, and a 14-case figure under a
+ * key defined over 70 would put a wrong-denominator number into the release verdict. The
+ * held-out no-answer rate is reported separately, in the report's own `no_answer` block and in
+ * `quality.rates`, where its denominator travels with it.
  */
 export function measurementsForTargets(measurement: Measurement): Record<string, number> {
   const out: Record<string, number> = {};
   for (const language of SLICE_LANGUAGES) {
-    // An ABSENT slice supplies no key either, for the same reason an empty one does not: the
+    // An absent slice supplies no key either, for the same reason an empty one does not: the
     // target it would have answered stays blocked rather than acquiring a zero.
     const slice = measurement.slices[language];
     if (slice !== undefined && slice.denominator > 0 && Number.isFinite(slice.recall_at_20)) {
@@ -560,15 +518,14 @@ export function measurementsForTargets(measurement: Measurement): Record<string,
 /**
  * The `quality.json` input `assembleBenchmarkReport` loads, in its own vocabulary.
  *
- * WITHOUT THIS THE ASSEMBLED REPORT CONTRADICTS ITSELF. That function fills `quality.slices`
- * from this file and its targets from `measurements.json`, and nothing in
- * `validateBenchmarkReport` cross-checks the two — so supplying only the measurements would
- * print `en_recall_at_20` as an observation beside a `held-out-answerable-en` slice reading
- * `denominator: null, blocked_reason: "this slice has never been sampled"`. The denominators
- * belong in the section a reader actually looks at, under the slice names that section uses.
+ * `assembleBenchmarkReport` fills `quality.slices` from this file and its targets from
+ * `measurements.json`, and nothing in `validateBenchmarkReport` cross-checks the two — so
+ * supplying only the measurements prints `en_recall_at_20` as an observation beside a
+ * `held-out-answerable-en` slice reading `denominator: null`. The denominators belong under the
+ * slice names that section uses.
  *
  * The two limits are restated because the validator demands the agreement's own values there
- * (quality 20, latency 15) and refuses anything else; they are the agreement, not this run's.
+ * (quality 20, latency 15) and refuses anything else.
  */
 export function qualityInputFor(measurement: Measurement): Record<string, unknown> {
   const rate = (hits: number, denominator: number): number | null => (denominator === 0 ? null : hits / denominator);
@@ -591,14 +548,12 @@ export function qualityInputFor(measurement: Measurement): Record<string, unknow
         metrics: { recall_at_20: slice.recall_at_20, hits: slice.hits },
       };
     }),
-    // A NULL RATE CARRIES ITS REASON, because `validateBenchmarkReport` refuses one that does
-    // not — "quality.rates.<field> is absent and says why nowhere" — and a rate over zero cases
-    // is exactly the unmeasured-but-shaped-like-a-measurement state the whole file guards
-    // against. The runner refuses a zero denominator before it ever reaches here, so in a real
-    // run all three are numbers; this keeps the shape honest if that ever stops being true.
+    // A null rate carries its reason, because `validateBenchmarkReport` refuses one that does
+    // not. The runner refuses a zero denominator before it reaches here, so in a real run all
+    // three are numbers.
     rates: {
       no_answer_correct_rate: rate(measurement.no_answer.correct, measurement.no_answer.denominator),
-      // An ANSWERABLE query answered with an empty page. Distinct from the no-answer rate:
+      // An answerable query answered with an empty page. Distinct from the no-answer rate:
       // there, an empty page is the correct answer; here it is the whole miss.
       false_empty_rate: rate(falseEmpties, all.length),
       incomplete_rate: rate(incompletes.filter(Boolean).length, incompletes.length),

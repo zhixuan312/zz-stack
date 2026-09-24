@@ -1,44 +1,23 @@
-/** One event per tool call, recording what the call DID — not that it happened.
+/** One event per tool call, recording what the call did — not that it happened.
  *
- * ── WHY THIS EXISTS ──────────────────────────────────────────────────────────
+ * Wraps `res` at the gateway, so it catches every door with one implementation: `/core` and
+ * `/eval` are proxied and observable only from outside, `/manage` is served here. zz-core stays
+ * untouched.
  *
- * There was already a `tool_call` event, written at the block proxy, and its whole detail
- * was `{"status": 200}`. On the UAT host that had produced 2,369 rows, every one of them
- * saying 200, and not one of them able to answer the only question worth asking: did the
- * call work? An MCP tool that refuses returns HTTP 200 with `ERROR: …` as its text — so a
- * transport status is blind to exactly the outcomes we are trying to count.
+ * Recorded: the tool, accepted or refused, the refusal text, duration, and the names of the
+ * arguments.
  *
- * It was also blind to most of the platform. `tool_call` fired only for `/p/<block>/mcp`.
- * Every tool on zz-core — document_write, document_patch, the gates, initiative_status, the whole
- * flow — went through `/core/mcp`, which had no telemetry at all. The tools that do the
- * work were the tools nothing recorded.
+ * DELIBERATE: argument values are never recorded. They carry the team's own content — a brain
+ * dump, a document body, on `/manage` a person's email — and this table is read by people
+ * and by tooling. Names alone still answer "was the call shaped right".
  *
- * ── WHY AT THE DOOR, AND NOT IN EACH SERVICE ─────────────────────────────────
+ * DELIBERATE: the refusal text is recorded. It is the platform's own sentence saying which
+ * rule was broken, and the only mechanical account of why a flow stalled. Capped at
+ * REASON_CAP.
  *
- * Everything reaches a person through this gateway: `/core` and `/p/<block>` are proxied,
- * `/manage` and `/admin` are served here. Proxied surfaces can only be observed from
- * outside; local ones would have to be observed from inside, tool by tool. But both write
- * their answer to the same `res`, so wrapping `res` catches all four with one
- * implementation and leaves zz-core untouched.
- *
- * ── WHAT IS RECORDED, AND WHAT DELIBERATELY IS NOT ───────────────────────────
- *
- * Recorded: the tool, whether it was accepted or refused, the refusal text, how long it
- * took, and the NAMES of the arguments.
- *
- * Not recorded: argument VALUES. They carry the team's own content — a stakeholder's brain
- * dump, a document body, in `/manage` a building-block key. This table is read by people
- * and will be read by tooling; it has no business holding either. Argument names alone
- * still answer "was the call even shaped right", which is what a failure analysis needs.
- *
- * The refusal text IS recorded, because it is ours: these messages are written by the
- * platform to say what rule was broken, and they are the only mechanical account of WHY a
- * flow stalled. Capped, because a message is a sentence and anything longer is a document
- * that leaked into one.
- *
- * Principle 6 in STATE.md: telemetry is mechanical — if a model wrote it, it is not
- * evidence. Nothing here is model-written. The tool name comes off the wire, the outcome
- * off the platform's own answer.
+ * DELIBERATE: an MCP refusal is HTTP 200 with `ERROR: …` as its text, so a transport status
+ * cannot decide the outcome. Nothing here is model-written: the tool name comes off the wire,
+ * the outcome off the platform's own answer.
  */
 import { createHash } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
@@ -48,12 +27,8 @@ import type { NextFunction, Request, Response } from "express";
 import { pluginForDoor } from "@zz/catalog";
 import { refusalClass } from "@zz/contracts";
 import { lastJson } from "@zz/mcp-client";
-// The alias resolver, from @zz/contracts, where the maps it reads also live. It briefly lived
-// in @zz/tools instead, which made a service depend on a package carrying pg, @zz/catalog and
-// @zz/mcp-client in order to reach a pure function — and split one concept across two packages,
-// which is how a second implementation starts. Maps and resolvers now share one door.
-// `tool_key` must fold onto the exact same series a reader building one from historical
-// `subject` values would, so it cannot be resolved by anything but this.
+// COUPLED: `tool_key` must fold onto the same series a reader building one from historical
+// `subject` values would, so nothing but this resolver may produce it.
 import { resolveToolKey } from "@zz/contracts";
 
 import { logEvent } from "./events.js";
@@ -61,14 +36,11 @@ import { ANSWER_NAMES_INITIATIVE, initiativeFrom, stageOwing } from "./call-attr
 import { callerKey, currentStep, doorHandshake, doorVersion, flowFor, initiativeSeen,
          stepLoaded } from "./step-trace.js";
 
-/** The most we will hold of ONE answer. Answers are classified as they stream, so nothing
- * accumulates past this.
+/** The most we hold of one answer. Classified as it streams, so nothing accumulates past this.
  *
- * Past it we keep the HEAD and classify from that rather than dropping the line. A real tool
- * answer ran to megabytes — a documentation tool returning a whole spec — and dropping it
- * recorded a call that had plainly worked as `unreadable`, which is the one verdict this
- * table must not hand out when it can tell. The head is enough: a refusal is `ERROR:` at the
- * START of the text, so the first 64 KB decides it however long the answer runs. */
+ * DELIBERATE: past the cap the head is kept and classified, never dropped. A refusal is
+ * `ERROR:` at the start of the text, so the first 64 KB decides it however long the answer
+ * runs; dropping it would record a working megabyte answer as `unreadable`. */
 const LINE_CAP = 64 * 1024;
 /** A refusal is a sentence. Past this it is a document that leaked into one. */
 const REASON_CAP = 500;
@@ -89,15 +61,11 @@ interface ToolOutcome {
 
 /** Read the outcome out of what the caller was actually sent.
  *
- * Two shapes reach here. Streamable HTTP answers a tools/call as an SSE frame —
- * `event: message` then `data: {…}` — and a plain JSON response is the same object without
- * the frame. Both carry one JSON-RPC envelope, so this looks for the envelope rather than
- * for either shape.
+ * Two shapes reach here — an SSE frame (`event: message` then `data: {…}`) and a plain JSON
+ * response — so this looks for the JSON-RPC envelope rather than for either shape.
  *
- * Our refusals are TEXT, not protocol errors: `{"result":{"content":[{"text":"ERROR: …"}]}}`
- * with no `isError` flag anywhere. That convention is what makes this readable at all, and
- * it is also why `{"status": 200}` could never have worked. `isError` is honoured too, for
- * a tool that starts setting it. */
+ * DELIBERATE: this platform's refusals are text, `{"result":{"content":[{"text":"ERROR: …"}]}}`
+ * with no `isError` flag. `isError` is honoured too, for a tool that sets it. */
 interface Envelope {
   id?: string | number;
   error?: { message?: string };
@@ -114,12 +82,8 @@ function outcomeOf(env: Envelope): ToolOutcome {
 
 /** Every answer in what the caller was sent, by the id it answers.
  *
- * Keyed by id rather than "the last one wins", because ONE request can carry several calls:
- * JSON-RPC allows a batch, and a batch of two tool calls used to be recorded as nothing at
- * all — the body was an array, `body.method` was undefined, and the middleware skipped the
- * whole request. Proven live: two calls executed and the event count did not move. An
- * instrument that under-reports silently is worse than none, and this one was reporting a
- * clean run while dropping eleven calls out of a hundred and forty-one. */
+ * DELIBERATE: keyed by id, not "the last one wins". One request can carry several calls —
+ * JSON-RPC allows a batch — and a batch arrives as an array with no `body.method`. */
 function readLine(line: string, into: Map<string, ToolOutcome>, truncated = false,
                   fallbackId?: string): void {
   const s = line.startsWith("data:") ? line.slice(5).trim() : line.trim();
@@ -140,84 +104,52 @@ function readLine(line: string, into: Map<string, ToolOutcome>, truncated = fals
   const outcome: ToolOutcome = refused
     ? { ok: false, reason: "ERROR (answer too large to read in full)" }
     : { ok: true };
-  // WHICH call this was. The head used to be filed under "", and "" is only ever read back
-  // when the request held exactly one call and produced exactly one answer. So in a batch —
-  // the one place an id is load-bearing — a large answer was classified correctly and then
-  // recorded as `unreadable`, because its own id never matched the key it was stored under.
-  // The envelope is serialised `{"jsonrpc":"2.0","id":N,"result":…}`, so the id is in the
-  // head even when the result is not; `fallbackId` covers a server that orders it otherwise
-  // and is only unambiguous when one call is still unanswered.
+  // Which call this was. The envelope serialises as `{"jsonrpc":"2.0","id":N,"result":…}`, so
+  // the id is in the head even when the result is truncated away. `fallbackId` covers a server
+  // that orders it otherwise, and is only unambiguous while one call is still unanswered.
+  // The "" key is read back only when the request held exactly one call.
   const id = /"id"\s*:\s*(\d+|"[^"]*")/.exec(s)?.[1]?.replace(/^"|"$/g, "");
   into.set(id ?? fallbackId ?? "", outcome);
 }
 
 /** A refusal, redacted and capped for storage.
  *
- * The redaction is @zz/contracts' — one list, shared with the report that reads these rows
- * back, because two copies of it in different orders classified the same refusal two ways.
- * The CAP is this file's: a refusal is a sentence, and past this it is a document that
- * leaked into one.
+ * COUPLED: the redaction list is @zz/contracts', shared with the report that reads these rows
+ * back. Order decides the answer, so two lists cannot agree. The cap is this file's.
  *
- * Redacting HERE rather than at read time is what keeps an address out of the table at all.
- * It also covers the case redacting there never could: a block's own refusal text, from a
- * server this repository does not own. */
+ * DELIBERATE: redacted at write time, so an address never enters the table. */
 function cap(s: string): string {
   const one = refusalClass(s);
   return one.length > REASON_CAP ? `${one.slice(0, REASON_CAP)}…` : one;
 }
 
-/** Argument values worth keeping: the IDENTIFIERS the platform itself names.
+/** Argument values worth keeping: the identifiers the platform itself names.
  *
- * The rule was "names, never values", and it is right for what it was written against — a
- * stakeholder's brain dump, a document body, a building-block key. Applied to every argument
- * it also threw away the one signal this whole record exists to produce. `skill_read` was
- * logged as `args: ["name"]`: a skill was read, and nothing about WHICH. So "does this skill
- * earn its place", "was the preload actually read", "which skills does a winning run load
- * that a stalling one does not" were all unanswerable, from a record taken specifically to
- * answer them.
+ * The line is identifier versus content, not name versus value. A skill name, an initiative, a
+ * flow, a document path, an enum identify things the platform publishes. A title, a
+ * body, a query, an email, an api_key are the team's own words and stay out.
  *
- * The line is not name-versus-value. It is IDENTIFIER versus CONTENT. A skill name, an
- * initiative, a flow, a block, a document path, an enum — the platform publishes all of
- * these; they identify things rather than say anything. A title, a body, a query, an email,
- * an api_key are the team's own words about their own work, and those stay out however
- * useful they would be.
- *
- * `query` is the deliberate omission that hurts: what people search for is the sharpest
- * signal there is about what the corpus is missing. It is also a sentence an agent wrote
- * about somebody's business, so it is content. The hit COUNT would carry most of the signal
- * without the words, and that belongs in the tool's own result, not in a guess made here.
+ * DELIBERATE: `query` is excluded even though it is the sharpest signal about what the corpus
+ * is missing. It is a sentence somebody wrote about their own business. A hit count belongs in
+ * the tool's own result, not in a guess made here.
  */
 const IDENTIFIER_ARGS = new Set([
   "team", "initiative", "flow", "path", "name", "type",
-  // `platform` and `block` LEFT WITH THE CONCEPT. Both named a third party's server — the
-  // argument every credential and grant tool took — and nothing declares either now.
-  // `harness` left with render_harness_config, then `client` and `clients` left with Codex
-  // and Hermes: client_setup takes no client any more, because there is one.
-  // `id` LEFT WITH revoke_my_access_token, which was the only tool on the platform that ever
-  // declared it — a bare `id` at the top level, where every survivor names what the id is OF
-  // (`pat_id`, `old_id`, `new_id`). That tool was a duplicate of pat_revoke and was deleted,
-  // so the entry became unreachable in the same change.
+  // DELIBERATE: every entry names what the id is of — `pat_id`, `old_id`, `new_id` — never a
+  // bare `id`. An entry no tool declares is unreachable and reads as a considered decision
+  // while being debris, so the list is pruned when a tool that declared one goes.
   "old_id", "new_id", "slug", "role",
   "scope", "status", "prefix", "version", "limit",
   "include_superseded",
-  // `direction` LEFT WITH encode_base64, the only tool that ever declared it — encode or
-  // decode, and nothing else on any door takes the name. An allowlist entry that cannot be
-  // reached is a decision that reads as considered and is only debris.
-  // `disposition` — finished or abandoned, on initiative_close(), which is the most consequential act
-  // this platform has. It is a two-value enum the platform itself defines, and it answers
-  // "how did this end" from the telemetry rather than only from the ledger. It was being
-  // thrown away for the same reason `skill_read`'s `name` was: the rule read as
-  // name-versus-value rather than identifier-versus-content.
+  // `disposition` — finished or abandoned, on initiative_close(). A two-value enum the
+  // platform defines, so the telemetry can answer "how did this end" without the ledger.
   "disposition",
-  // REMOVED, because no tool declares them and none can: `open_only` is named by nothing
-  // anywhere in this repository, and `kr` exists only nested inside okr_grade's `scores`,
-  // which this function never sees — it reads the top-level arguments. An allowlist entry
-  // that cannot be reached is a decision that reads as considered and is only debris.
-  // `confirm` was here, and it was the one entry that let content in through the front door.
-  // Every tool that takes it defines it as an ECHO of another argument, and admin's
-  // person_deactivate defines it as an echo of the email: `if (confirm !== email) return ...`.
-  // So the one value the list most deliberately excludes arrived under a name that looked
-  // like an enum. A confirmation is a yes; whether it matched is already in `ok`.
+  // DELIBERATE: `confirm` is not here. Every tool defining it defines it as an echo of
+  // another argument — person_deactivate echoes the email — so an allowlisted `confirm` would
+  // let content in under a name that looks like an enum. Whether it matched is already in `ok`.
+  //
+  // DELIBERATE: this reads top-level arguments only. A name nested inside an object argument
+  // can never reach it and does not belong on the list.
 ]);
 /** An identifier is short. Anything longer is a field that happens to share a safe name. */
 const ID_CAP = 200;
@@ -233,18 +165,11 @@ function identifiers(args: Record<string, unknown>): Record<string, string> | un
   return Object.keys(out).length ? out : undefined;
 }
 
-/** The SHAPE of each argument — type and size, never content.
+/** The shape of each argument — type and size, never content. An empty string, a value ten
+ * times longer than the one that worked, an object where a string was wanted: each is visible
+ * as a type and a length, and none is the value.
  *
- * Argument names alone answered "was the call even shaped right", and on a real run that
- * turned out to be one question short. one block's write tool was refused repeatedly and then
- * succeeded twice, and every one of those nine calls carried the same three argument
- * NAMES. Whatever the agent changed to get through, the record could not show it, so the
- * usage skill could not be told and the next run makes the same seven calls.
- *
- * Shapes close that without holding the team's content: an empty string, a value ten times
- * longer than the one that worked, an object where a string was wanted — each is visible as
- * a type and a length, and none of them is the value itself. Recorded on REFUSAL only,
- * because a call that worked has nothing to diagnose.
+ * DELIBERATE: recorded on refusal only. A call that worked has nothing to diagnose.
  */
 function shapes(args: Record<string, unknown>): Record<string, string> {
   const out: Record<string, string> = {};
@@ -258,49 +183,37 @@ function shapes(args: Record<string, unknown>): Record<string, string> {
   return out;
 }
 
-/** Which door a request came through, from the URL it arrived on.
+/** Which door a request came through, from the URL it arrived on. Decides the subject a row is
+ * filed under (`<surface>:<tool>`) and, as the key into @zz/contracts' `SURFACE_ALIAS`,
+ * which alias map the tool name folds through.
  *
- * A FUNCTION WITH A NAME, and that is the whole reason it is not the inline lambda it used to
- * be. Its answer decides three things a wrong label does not begin to describe: the subject a
- * row is filed under (`<surface>:<tool>`), whether `blockOf` in step-trace calls this the
- * platform's own traffic or a BUILDING BLOCK's, and which map a tool name resolves through —
- * `TOOL_ALIAS` is keyed by surface, so a call labelled with the wrong door has its name folded
- * through the wrong door's aliases and lands in a different series.
+ * COUPLED: it falls through to `core`, so every new door must be named here as well as in the
+ * mount list. A door named only there has its calls recorded as core — nothing fails and the
+ * numbers are wrong. Exported so `checks/eval-door.ts` calls it per door.
  *
- * IT FALLS THROUGH TO `core`, WHICH IS WHY EVERY NEW DOOR HAS TO BE NAMED HERE. That default
- * is safe for exactly one reason — the mount list beside it is short and every entry appears
- * below. Add a door to that list and not to this function and its calls are recorded as core:
- * nothing fails, nothing is empty, and the numbers are wrong in a way no report can show.
- * Written as an exported function of the URL so `checks/eval-door.ts` CALLS it, per door,
- * rather than reading a lambda out of server.ts and hoping the branch it found is the one that
- * runs.
- *
- * `originalUrl`, not `baseUrl`: under `app.use` with a path array `baseUrl` is not the matched
- * entry, and every surface was once recorded as "core" for precisely that reason. */
+ * DELIBERATE: `originalUrl`, never `baseUrl`. Under `app.use` with a path array `baseUrl` is
+ * not the matched entry. */
 export function doorSurface(url: string): string {
-  const block = /^\/p\/([^/]+)\/mcp/.exec(url)?.[1];
-  if (block) return block;
   if (url.startsWith("/eval")) return "eval";
   if (url.startsWith("/manage")) return "manage";
   return "core";
 }
 
-/** Express middleware. Mount AFTER identity (it reads the resolved caller) and BEFORE the
+/** Express middleware. Mount after identity (it reads the resolved caller) and before the
  * MCP routes (it wraps the response they write to).
  *
- * `surface` names which door this is — `core`, `eval`, `manage`, `admin`, or the block's own
- * name — so one subject format, `<surface>:<tool>`, spans all of them. */
+ * `surface` names which door this is — `core`, `eval` or `manage` — so one subject format,
+ * `<surface>:<tool>`, spans all of them. */
 export function toolCallTelemetry(surface: (req: Request) => string) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const body = req.body as RpcBody | RpcBody[] | undefined;
     const wanted = (Array.isArray(body) ? body : [body])
       .filter((m): m is RpcBody => m?.method === "tools/call");
 
-    // THE HANDSHAKE IS WATCHED TOO, and it writes no row. Every MCP server states its name and
-    // version at `initialize`, which is the block's own account of what it is, in a protocol
-    // field it already has to send — so a block version costs no new contract and nothing for
-    // a block team to adopt. It arrives on a different request from the calls it describes, so
-    // it is remembered per block and stamped on those.
+    // The handshake is watched too, and writes no row. Every MCP server states its name and
+    // version at `initialize` — the door's own account of what it is, in a protocol field it
+    // already sends. It arrives on a different request from the calls it describes, so it is
+    // remembered per door and stamped on those.
     if (!wanted.length) {
       const handshake = (Array.isArray(body) ? body : [body]).some((m) => m?.method === "initialize");
       const forDoor = handshake ? surface(req) : undefined;
@@ -327,79 +240,57 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
     }
     const started = Date.now();
 
-    // Classified as it streams, one complete line at a time, rather than kept and read at
-    // the end. A total cap on what was kept would truncate the LATER answers in a batch —
-    // and a batch is exactly where several answers share one response — so the calls at the
-    // end of a big turn would have reported `unreadable` for no reason but their position.
-    // One run already had a turn with sixty-two tool calls in it.
+    // DELIBERATE: classified as it streams, one complete line at a time, never kept and read at
+    // the end. A total cap on what was kept would truncate the later answers in a batch — and a
+    // batch is exactly where several answers share one response — so the calls at the end of a
+    // big turn would report `unreadable` for no reason but their position.
     const answers = new Map<string, ToolOutcome>();
     const decoder = new StringDecoder("utf8");
     let pending = "";
     let bytes = 0;
-    // THE SKILL TEXT AS SERVED, accumulated only when a skill is actually being loaded.
-    // Every call attributed to a step carries the hash of the bytes the model was handed, so
-    // "this step refused eight times" can become "this VERSION of this step did" — which is
-    // the difference between measuring a step and proving a change to it. Every other call
-    // pays nothing: the flag is false and this branch never runs.
-    // THE SKILL AND WHETHER THE SKILL ITSELF WAS ASKED FOR. `skill_read(name, file: …)` serves
-    // a supporting file beside the SKILL.md — reference material the skill's own instructions
-    // point at — and that file's frontmatter is not the skill's version. Reading one out of it
-    // wrote an empty step_version onto every call that followed, or a document template's
-    // version, under the skill's name. See stepLoaded.
-    // RAW NAME: this is the tool name the CLIENT sent, before any resolution, so the
-    // REGISTERED spelling is the correct one here and `resolveToolKey` would be wrong —
-    // the `toolKey` assignment further down puts the same field through the resolver, because
-    // that answers a different question. (A line number here would be the third stale one in
-    // this comment's history; the identifier does not drift.) The hazard is not hypothetical: this line said
-    // `skill_view` until the registration became `skill_read`, and the two moved together
-    // in one commit precisely because nothing would have gone red if they had not. The
-    // next rename of this tool has the same obligation — change it HERE and at the
-    // registration in the same commit, or every call silently loses `step_version` and
-    // `step_sha`, which is attribution rather than display. No resolver can do it for us.
+    // The skill text as served, accumulated only while a skill is being loaded, so every call
+    // attributed to a step carries the hash of the bytes the model was handed. Every other
+    // call pays nothing.
+    //
+    // `skill_read(name, file: …)` serves a supporting file beside the SKILL.md, whose
+    // frontmatter is not the skill's version — see stepLoaded.
+    //
+    // RAW NAME: the name the CLIENT sent, so this is the REGISTERED spelling and
+    // `resolveToolKey` would be wrong here; `toolKey` below answers a different question.
+    // COUPLED: this literal and the tool's registration must be renamed in the same commit.
+    // Nothing goes red if they diverge — every call silently loses `step_version` and
+    // `step_sha`, which is attribution, not display.
     const loading = wanted.filter((m) => m.params?.name === "skill_read")
       .map((m) => {
         const a = m.params?.arguments as Record<string, unknown> | undefined;
         return { name: String(a?.name ?? ""), whole: a?.file === undefined || a?.file === "" };
       })
       .filter((l) => l.name);
-    // CAPTURE THE ANSWER FOR THE TWO CALLS WHOSE ANSWER NAMES THE INITIATIVE, and not only
-    // when a skill is being loaded.
+    // Capture the answer for the two calls whose answer names the initiative, not only when a
+    // skill is being loaded — `initiative_open` names it in its answer, never its arguments,
+    // and the block below that reads it sits behind `served !== null`.
     //
-    // This was `loading.length ? "" : null`, so the response body was captured only on a
-    // request that also read a skill. The block below that reads `initiative_open`'s answer —
-    // written precisely because that call names the initiative in its ANSWER rather than its
-    // arguments, and carrying a comment saying so — sits behind `if (served !== null)` and
-    // therefore could never run. The fix was written, committed, and has never once executed.
-    //
-    // Measured on this deployment before the change: 110 `initiative_open` events, 20 carrying
-    // an initiative, 17 of those naming one that exists. And 436 events across the whole store
-    // are filed against an initiative that was never created — because the ARGUMENT scan below
-    // learns from any call that names one, including an `initiative_status` on a slug that
-    // does not exist, which answers `{"error": "no such initiative"}` and is recorded `ok`.
+    // DELIBERATE: the argument scan below learns a slug from any call that names one,
+    // including an `initiative_status` on a slug that does not exist, which answers an error
+    // and is recorded `ok`. That is why the answer is read at all.
     let served = (loading.length
       || wanted.some((c) => ANSWER_NAMES_INITIATIVE.test(String(c.params?.name ?? "")))) ? "" : null;
     let skipping = false;   // inside the tail of an answer already classified from its head
     const take = (chunk: unknown): void => {
       let s: string;
       if (typeof chunk === "string") s = chunk;
-      // ArrayBuffer.isView, not Buffer.isBuffer. The two doors deliver different things:
-      // the proxied ones go through Readable.fromWeb().pipe(res), which yields Buffers, and
-      // the locally-served ones through @hono/node-server, which reads a Web ReadableStream
-      // and writes raw Uint8Arrays. Buffer.isBuffer(uint8array) is false, so /manage and
-      // /admin recorded `unreadable: true` on calls that had in fact succeeded — the
-      // telemetry was mis-reporting the platform because of its own type check. Buffer is
-      // itself an ArrayBuffer view, so this covers both.
+      // DELIBERATE: ArrayBuffer.isView, not Buffer.isBuffer. The doors deliver different things
+      // — proxied ones go through Readable.fromWeb().pipe(res), which yields Buffers; locally
+      // served ones through @hono/node-server, which writes raw Uint8Arrays. Buffer.isBuffer of a
+      // Uint8Array is false; a Buffer is itself an ArrayBuffer view, so this covers both.
       else if (!ArrayBuffer.isView(chunk)) return;
-      // Through a StringDecoder, which holds an incomplete multi-byte sequence until the
-      // next chunk completes it. Decoding each chunk on its own replaced any character that
-      // straddled a write boundary with U+FFFD — silently, since the JSON structure around
-      // it is ASCII and still parses. A refusal naming a document in Chinese would have been
-      // recorded with the damage and nothing would have looked wrong.
+      // DELIBERATE: through a StringDecoder, which holds an incomplete multi-byte sequence until
+      // the next chunk completes it. Decoding each chunk on its own replaces any character that
+      // straddles a write boundary with U+FFFD, silently: the JSON structure around it is ASCII
+      // and still parses.
       else s = decoder.write(Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength));
-      // BYTES, not characters. This counted `s.length` into a field called `bytes`, which is
-      // the same number only for ASCII — a refusal or a document in Chinese was recorded as
-      // roughly a third of its real size, in the one column that says how much an answer
-      // costs to carry.
+      // DELIBERATE: bytes, not characters. `s.length` is the same number only for ASCII, and this
+      // is the one column that says how much an answer costs to carry.
       bytes += typeof chunk === "string"
         ? Buffer.byteLength(chunk, "utf8")
         : (chunk as ArrayBufferView).byteLength;
@@ -438,74 +329,60 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
       return end(...a);
     } as Response["end"];
 
-    // "finish" is the response ending normally. "close" is the socket going away — a client
-    // that hung up, an upstream that died mid-stream, a request that ran past its timeout.
-    // Listening only for "finish" left exactly the worst failures unrecorded: a tool call
-    // that never came back produced no row at all, so the record showed a flow that simply
-    // stopped making calls. Both are wired, and `done` makes sure one call writes one row.
+    // DELIBERATE: both "finish" and "close" are wired. "finish" is the response ending
+    // normally; "close" is the socket going away — a client that hung up, an upstream that died
+    // mid-stream, a request past its timeout. On "finish" alone a call that never came back
+    // writes no row at all, and the record reads as a flow that stopped making calls.
     let done = false;
-    // ASYNC, because the flow an initiative runs is a fact in the database and the row should
-    // carry it rather than leave every reader to look it up later.
-    // `done` is set synchronously on the first line, so "finish" and "close" both firing still
-    // writes exactly one row — the guard never awaits anything before it closes.
+    // Async, so the row carries the flow the initiative runs rather than leaving every reader to
+    // look it up. `done` is set synchronously on the first line, so both events firing still
+    // writes exactly one row — the guard never awaits before it closes.
     const record = async (): Promise<void> => {
       if (done) return;
       done = true;
       if (!skipping) readLine(pending, answers);   // a last line with no trailing newline
-      // A transport failure is a refusal with a reason, not an unreadable answer. Clearing
-      // the map here instead would have recorded every call in the request as "we could not
-      // tell", which is the one verdict this table must not hand out when it can tell.
+      // DELIBERATE: a transport failure is a refusal with a reason, not an unreadable answer.
+      // "We could not tell" is the one verdict this table must not hand out when it can tell.
       const transport = res.statusCode >= 400
         ? { ok: false, reason: `http ${res.statusCode}` } as ToolOutcome
         : null;
-      // ONE duration for the whole REQUEST, which is all this door can measure. In a batch
-      // it is the batch's, not any single call's — `batched` says so, and tool-report leaves
-      // those rows out of its latency percentiles rather than averaging a batch total in
-      // sixty-two times. `bytes` is the same: one response, one size.
+      // One duration for the whole request, which is all this door can measure. In a batch it is
+      // the batch's, not any single call's — `batched` says so, and tool-report leaves those rows
+      // out of its latency percentiles. `bytes` is the same: one response, one size.
       const ms = Date.now() - started;
-      // REQUEST BYTES, from Content-Length — the one honest measure available here. The body
-      // is already parsed into `req.body` by the time this middleware runs, and
-      // re-serializing it would measure our own JSON.stringify of it, not what the caller
-      // actually put on the wire. A request with no Content-Length (chunked, or none at all)
-      // is not measured, and null says so rather than a guessed zero.
+      // From Content-Length. The body is already parsed into `req.body` by the time this runs,
+      // so re-serializing it would measure our own JSON.stringify, not what the caller put on the
+      // wire. No Content-Length (chunked, or none) is written null, never a guessed zero.
       const rawLength = req.headers["content-length"];
       const requestBytes = rawLength !== undefined && /^\d+$/.test(rawLength) ? Number(rawLength) : null;
       const where = surface(req);
 
-      // WHICH FLOW, WHICH STEP, WHICH BLOCK — the three questions an improvement loop asks,
-      // answered here rather than left for each reader to re-derive. `caller` correlates a
-      // skill load with the calls that follow it and is not written anywhere: what lands on
-      // the row is a flow, a step, a version and a block. Knowing which skill to edit never
-      // required knowing who was running it.
+      // Which flow and which step — answered here rather than left for each reader to re-derive.
+      // `caller` correlates a skill load with the calls that follow it and is never written: what
+      // lands on the row is a flow, a step and a version.
       const caller = callerKey(req.headers as Record<string, unknown>);
-      // What is WRITTEN is the hash. The correlation key above never leaves this process.
+      // Only the hash is written. The correlation key above never leaves this process.
       const callerHash = createHash("sha256").update(caller).digest("hex").slice(0, 12);
-      // Registered BEFORE the row is written, so the skill_read call is itself attributed to
-      // the step it loaded. A load is the first act of a step, not the last act of the one
-      // before it.
-      // THE SKILL TEXT, NOT THE FRAME AROUND IT. `served` is the raw streamed answer — SSE
-      // lines wrapping a JSON-RPC envelope whose result holds the markdown as an escaped
-      // string. Handing that to the frontmatter parser found no `---` at the start and
-      // returned no version at all, which is how step_version arrived empty on every row
-      // while looking wired.
+      // DELIBERATE: registered before the row is written, so the skill_read call is itself
+      // attributed to the step it loaded. A load is a step's first act, not the previous
+      // step's last.
       //
-      // It also makes the hash mean the right thing. Hashing the frame would move the version
-      // whenever the transport changed its framing, and a skill that had not been touched
-      // would read as a new version — the exact false signal this whole scheme exists to
-      // prevent. lastJson is the shared reader, so the envelope is understood in one place.
+      // DELIBERATE: the skill text, never the frame. `served` is SSE lines wrapping a JSON-RPC
+      // envelope holding the markdown as an escaped string; the frontmatter parser finds no
+      // `---` in that, and hashing the frame would move the version whenever the transport
+      // changed its framing. `lastJson` is the one reader of the envelope.
       if (served !== null && loading.length === 1 && !transport) {
         const env = lastJson(served);
         const text = (env?.result?.content ?? [])
           .map((c) => (c as { text?: string })?.text ?? "").filter(Boolean).join("\n");
         stepLoaded(caller, loading[0].name, text || served, loading[0].whole);
       }
-      // WHAT THIS EXCHANGE TAUGHT US ABOUT WHICH INITIATIVE IS BEING WORKED ON —
+      // What this exchange taught us about which initiative is being worked on —
       // `call-attribution.ts`, beside the question of which stage an act completes.
-      // THE ACTIVE TEAM GOES INTO THE TRACE, not only into the flow lookup below. `flowFor`
-      // has always joined the initiative to the team and returned nothing when they disagree;
-      // the initiative itself was carried forward on the caller alone, so a slug learned from
-      // a cross-team read stayed on the next call's rows whatever team it was made under,
-      // while the flow beside it correctly said nothing.
+      //
+      // COUPLED: the active team goes into the trace, not only into the flow lookup below. An
+      // initiative carried forward on the caller alone keeps a slug learned from a cross-team
+      // read on the next call's rows, whatever team that call was made under.
       const team = req.zzIdentity?.activeTeam ?? undefined;
       const learned = initiativeFrom(wanted, served);
       if (learned) initiativeSeen(caller, learned, team);
@@ -515,67 +392,36 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
       for (const call of wanted) {
         const given = call.params?.arguments ?? {};
         const ids = identifiers(given);
-        // A DOCUMENT WRITE SAYS WHICH STAGE IS RUNNING, and it says it better than the trace.
+        // A write to a declared document is stamped with the stage the manifest says owes it,
+        // whatever skill was loaded last. `currentStep` is the last skill served, which is
+        // wrong the moment an agent consults something mid-flow.
         //
-        // `currentStep` is the last skill SERVED, which is right until an agent consults
-        // something mid-flow — and then everything after belongs to that consultation. On
-        // 2026-09-06 twenty intent.md documents were written and TWO document_write calls were
-        // stamped ops-intent; the rest landed under ops-verify, zz-knowledge and ops-build,
-        // which had been loaded later in the same conversation. Every one of those documents
-        // is unattributable, because attribution needs a run of the stage that owes the
-        // document and no such run exists.
+        // COUPLED: `call-attribution.ts` is also what the evidence side reads, so one act
+        // cannot be filed under two steps depending on which table you ask.
         //
-        // The flow already declares who owes what: `stage` on a manifest document. So a write
-        // to a declared document is stamped with the stage that writes it, whatever was
-        // loaded last. This is not a heuristic — it is the manifest answering a question the
-        // trace was guessing at.
-        // RAW NAME: the same reason as the `loading` predicate above — `call.params.name` is
-        // what the CLIENT sent, so these are the registered spellings and not resolver output.
-        // A regex literal is invisible to `checks/pre-rename-literals.ts`, which only reads
-        // quoted strings, so this marker is the only thing standing between the next rename
-        // and three document writes that stop being stamped with the stage that owes them.
-        // WHICH STAGE THIS ACT COMPLETES, from the flow's own manifest — `call-attribution.ts`,
-        // which is also what the evidence side reads, so one act cannot be filed under two
-        // different steps depending on which table you ask.
+        // RAW NAME: the names the CLIENT sent, again, and these are REGEX literals —
+        // `checks/pre-rename-literals.ts` reads quoted strings only, so it cannot see them.
+        // Rename the tool and these in the same commit.
         const owedBy = stageOwing(flow?.flow, String(call.params?.name ?? ""),
                                   given as Record<string, unknown>);
         const stepName = owedBy ?? step?.step;
-        // AND THE VERSION AND THE HASH FOLLOW THE NAME, or they are not written at all.
+        // DELIBERATE: the version and the hash follow the NAME, or are not written at all.
+        // When the manifest overrides the traced step it knows which stage owes the document
+        // and not which version of that stage's skill this caller has, so absent is the honest
+        // answer.
         //
-        // When the manifest overrides the traced step, `step_version` and `step_sha` went on
-        // coming from the LAST SKILL LOADED — so a row named one skill and carried another
-        // one's bytes. Measured: step_sha 9a04bd96e3dd appears under five different step
-        // names and d7e8470ed416 under six; ten hashes in all span more than one name. The
-        // hash exists so a change cannot be shipped and never proved, and pinned to the
-        // wrong skill it proves the opposite. step-score.ts keys its whole per-version
-        // scoring on `${step} ${step_version}`, so the mismatch reaches the scores too.
-        //
-        // The manifest knows WHICH STAGE owes the document; it does not know which version
-        // of that stage's skill this caller has. Unknown is the honest answer, and this
-        // table already writes an absent version wherever the trace has none.
+        // COUPLED: step-score.ts keys per-version scoring on `${step} ${step_version}`, so a
+        // name carrying another skill's bytes reaches the scores.
         const owedElsewhere = !!owedBy && owedBy !== step?.step;
         const stepVersion = owedElsewhere ? undefined : step?.step_version;
         const stepSha = owedElsewhere ? undefined : step?.step_sha;
-        // WHICH PLUGIN — A FACT ABOUT THE DOOR, not a guess about the caller.
-        //
-        // A door IS a plugin's declared server, so the plugin a tool call belongs to is fixed
-        // by where the call arrived and is the same for everyone. This was inferred from the
-        // caller's most recently read skill instead, and the result was not close: measured on
-        // this deployment, 3,928 tool calls arrived on `core` and 192 carried any attribution
-        // at all — of which 150 said `sdlc`, a plugin that declares NO server and therefore
-        // cannot serve a tool call. 150 of 150 wrong, and 96% unattributed.
-        //
-        // The skill a caller last loaded is a real fact and this is not it. It answers "what
-        // were they reading", which drifts the moment an agent consults anything mid-flow;
-        // the question telemetry needs answered is "whose tool is this", and the manifest has
-        // said so all along.
-        //
-        // A surface no manifest claims — `admin`, which is no longer a door — comes back null
-        // and is written as null. Never guessed at.
+        // DELIBERATE: from the door, never from the skill the caller last read. A door is a
+        // plugin's declared server, so the plugin is fixed by where the call arrived; the skill
+        // answers "what were they reading", which drifts mid-flow. A surface no manifest claims
+        // comes back null and is written as null, never guessed at.
         const plugin = pluginForDoor(where);
-        // THE ALIAS-RESOLVED TOOL NAME, Task I-2's resolver, so `tool_key` already reads as
-        // one series across a rename rather than needing every future reader to resolve
-        // `subject` itself.
+        // Alias-resolved, so `tool_key` reads as one series across a rename and no future reader
+        // has to resolve `subject` itself.
         const toolKey = resolveToolKey(`${where}:${call.params?.name ?? ""}`);
         // An id that answered nothing is unreadable, not refused — the same distinction the
         // report depends on to keep its accepted rate from being a guess.
@@ -585,79 +431,64 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
                 ? [...answers.values()][0]
                 : { ok: false, unreadable: true });
         logEvent({
-          // NO ADDRESS ON A MEASUREMENT. `actor` carries the provenance of an admin act,
-          // which is the entire point of one; a tool call's provenance is not what anybody
-          // asks of it. `caller` in the detail is a hash, kept only so calls made in one
-          // conversation can be told from another's. Improvement needs to know which skill to
-          // edit and never who was running it.
+          // DELIBERATE: empty. `actor` carries the provenance of an admin act; a measurement
+          // carries no address. `caller` in the detail is a hash, kept only so calls made in one
+          // conversation can be told from another's.
           actor: "",
           kind: "tool_call",
-          // THE TEAM THE CALL WAS MADE FOR. Every row was once written with none — 2,610 of
-          // them on the production store, all null — and the team is not decoration:
-          // flow-compare joins a call to an initiative by (team, initiative) and counts a row
-          // without one as UNATTRIBUTED, and watch-results builds "a team has gone quiet" from
-          // the distinct teams in the window. Two of the three reports that close the
-          // improvement loop had a leg that could not work, and neither said so — an absent
-          // team reads exactly like a quiet platform.
+          // COUPLED: watch-results builds "a team has gone quiet" from the distinct teams in the
+          // window, so a null here reads as a quiet platform.
           teamSlug: req.zzIdentity?.activeTeam ?? null,
           subject: `${where}:${call.params?.name ?? ""}`,
 
-          // ── COLUMNS: what somebody groups by ────────────────────────────────
-          // Which skill, which revision of it, which block, and whether it worked. `step_sha`
-          // is the hash of the skill text actually served, which is what makes the declared
-          // version true — every skill here said `1.0` while three were edited five times in
-          // one day.
-          // WHICH INITIATIVE, carried forward the same way the step is. It reached only 129
-          // of 6,225 rows as an argument — so a refusal could not be joined to the document it
-          // was made for, and the reconciliation between what a step PREDICTED and what
-          // actually happened had almost nothing to read.
+          // Columns: what somebody groups by.
+          // Which skill, which revision of it, and whether it worked. `step_sha` is
+          // the hash of the skill text actually served, which is what makes the declared version
+          // true. The initiative is carried forward the same way the step is, rather than read
+          // off the arguments, so a refusal can still be joined to the document it was made for.
           initiative: step?.initiative,
           flow: flow?.flow,
           step: stepName,
           stepVersion,
-          // WHICH PLUGIN, AND WHICH RELEASE OF IT — the answer this task adds. Never `flow`
-          // (the initiative's flow, not a skill's owner) and never `x-zz-client` in `detail`
-          // below (which program made the call, not which plugin's skill it was following).
+          // Which plugin, and which release of it. Not `flow` (the initiative's flow, not a
+          // skill's owner) and not `x-zz-client` in `detail` below (which program made the call,
+          // not which plugin's skill it was following).
           plugin: plugin ?? undefined,
-          // THE DOOR'S OWN ACCOUNT OF ITS VERSION, from the `initialize` handshake it already
-          // sends. Absent until that door has been handshaken in this process, which is
-          // honest: a version nobody stated is not one to invent.
+          // The door's own account of its version, from the `initialize` handshake it already
+          // sends. Absent until that door has been handshaken in this process: a version nobody
+          // stated is not one to invent.
           pluginVersion: doorVersion(where),
           toolKey,
           ok: outcome.ok,
           // The platform's own sentence saying which rule was broken — the one thing a skill
           // can actually be edited from.
           refusal: outcome.reason,
-          // WHAT THE CALL COST — duration_ms, request_bytes and response_bytes, so a latency
-          // or a payload-size percentile is a WHERE/GROUP BY rather than a detail->>'' reach.
-          // `batched` says whether this row's duration and response size belong to it alone
-          // or were shared with the rest of `wanted`; tool-report now reads the column
-          // instead of inferring it from an entry that used to live in the bag below.
+          // What the call cost, as columns rather than in the bag, so a latency or payload-size
+          // percentile is a WHERE/GROUP BY. `batched` says whether this row's duration and
+          // response size belong to it alone or were shared with the rest of `wanted`.
           durationMs: ms,
           requestBytes,
           responseBytes: bytes,
           batched: wanted.length > 1,
 
-          // ── THE BAG: read, never filtered on ────────────────────────────────
+          // The bag: read, never filtered on.
           detail: {
             caller: callerHash,
-            // WHICH OF OUR OWN TOOLS MADE THE CALL — `zz-plugin` for a person's chat session,
-            // `zz-doctor`, `zz-update`, `zz-migrate` for the commands, `provision`/`smoke` for
-            // the harnesses. It is already half of `caller`, hashed in with the address and
-            // therefore unreadable; on its own it names no person and answers the question the
-            // hash cannot: which of the things we ship do people actually run.
+            // Which of our own tools made the call — `zz-plugin` for a person's chat session,
+            // `zz-doctor`, `zz-update`, `zz-migrate` for the commands, `provision`/`smoke` for the
+            // harnesses. It is already half of `caller`, hashed in with the address and therefore
+            // unreadable; on its own it names no person.
             //
-            // NOT a second capture path. Everything that reaches a door is recorded here, by
-            // this one mount, as a by-product of the call — so a tool becomes measurable by
-            // sending the header it already has to send, and never by reporting itself.
+            // DELIBERATE: not a second capture path. A tool becomes measurable by sending the
+            // header it already sends, never by reporting itself.
             ...(req.headers["x-zz-client"] ? { client: String(req.headers["x-zz-client"]) } : {}),
             run: step?.run,
-            // The hash of the skill text actually SERVED. Not a column: the gate refuses a
+            // The hash of the skill text actually served. Not a column: the gate refuses a
             // changed skill that kept its version, so authoring drift is caught in the repo
             // and what is left here is the narrower case of a host running text the repo does
             // not claim. Kept, because that case is invisible without it.
             step_sha: stepSha,
-            // Argument NAMES, never values: the values carry the team's own content, and the
+            // Argument names, never values: the values carry the team's own content, and the
             // names alone still answer "was the call even shaped right".
             args: Object.keys(given).sort(),
             ...(ids ? { ids } : {}),
@@ -669,10 +500,9 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
         });
       }
     };
-    // An async listener that rejects is an UNHANDLED REJECTION, and node's default for those
-    // is to end the process. This file's first principle is that a telemetry layer must not
-    // change what the caller receives; taking the gateway down over a failed measurement is
-    // the loudest possible version of breaking that.
+    // DELIBERATE: swallows. An async listener that rejects is an unhandled rejection, and node's
+    // default for those is to end the process — a failed measurement must not take the gateway
+    // down with it.
     const safely = (): void => { void record().catch(() => {}); };
     res.on("finish", safely);
     res.on("close", safely);

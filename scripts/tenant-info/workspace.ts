@@ -1,16 +1,15 @@
 /**
  * Where every tenant-info command is allowed to write, and where it never is.
  *
- * `ZZ_TENANT_INFO_WORKSPACE` is required precisely so that "run the suite" never defaults to
- * writing beside the checkout it is testing — this platform's real data (38 initiatives, 527
- * live documents, 880 knowledge nodes) is one accidental write away, and a disposable
- * workspace outside the repository is the only shape that cannot reach it by construction.
+ * `ZZ_TENANT_INFO_WORKSPACE` is required so that "run the suite" never defaults to writing beside
+ * the checkout it is testing: a disposable workspace outside the repository is the only shape that
+ * cannot reach this platform's live data by construction.
  *
- * `resolveWorkspace` follows every symlink with `realpathSync` — the same resolution a write
- * is about to make — and refuses a workspace that lands inside this repository, whether
- * directly or through a link that only looks like it points elsewhere. Nothing here runs at
- * import time: computing this module's own idea of the repository root is a read, never a
- * write, and every check is inside a function a verb calls after its own argument parsing.
+ * `resolveWorkspace` follows every symlink with `realpathSync` — the same resolution a write is
+ * about to make — and refuses a workspace that lands inside this repository, directly or through
+ * a link. DELIBERATE: nothing here runs at import time. Computing this module's own idea of the
+ * repository root is a read, and every check is inside a function a verb calls after its own
+ * argument parsing.
  */
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, sep } from "node:path";

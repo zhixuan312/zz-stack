@@ -1,30 +1,25 @@
 /**
- * Prove that redact() drives every settings response shape (← Task I-12, AC-4) to the same
- * outcome: no credential value and no stored token survives, including
- * nested in arrays or objects, while non-secret metadata — which block, when it was set, by
- * whom, a label, an id, a scope, a team, an expiry, a last-used timestamp — does survive.
+ * redact() driven over the shapes a settings response carries: no credential value and no stored
+ * token survives, including nested in arrays or objects, while non-secret metadata — which
+ * platform, when it was set, by whom, a label, an id, a scope, a team, an expiry, a last-used
+ * timestamp — does survive.
  *
  *   npm run check:redaction      # exits non-zero on failure, like every engine here
  *
- * Every CASE below is a settings shape modelled on a REAL tool response in server.ts —
- * credential_list, credential_set, credential_admin_set, credential_delete,
- * pat_list, pat_issue, client_setup. Each
- * case names the secret values it plants and the metadata it expects
- * back untouched, and `check()` asserts both against the REAL `redact`, driven through the
- * REAL `looksSecret`/`SECRET_NAME_PARTS` field rule exported from redact.ts — never a copy
- * of either.
+ * Every case below is a settings shape modelled on a real tool response in server.ts. Each names
+ * the secret values it plants and the metadata it expects back untouched, and `check()` asserts
+ * both against the real `redact`, driven through the real `looksSecret`/`SECRET_NAME_PARTS`
+ * field rule exported from redact.ts, never a copy of either.
  *
- * Two things a reading of redact.ts cannot show on its own: that the field rule really does
- * fail CLOSED on a field nobody enumerated (Case "a field nobody named yet"), and that the
- * marker it produces cannot be turned back into the value it replaced (Case "the marker
- * survives the value it stood in for", which fingerprints the SAME secret twice and asserts
- * equal markers, then a DIFFERENT secret and asserts unequal ones — the property that makes
- * "still the same secret as before" answerable without the marker being a partial reveal).
+ * Two things a reading of redact.ts cannot show: that the field rule fails closed on a field
+ * nobody enumerated, and that the marker cannot be turned back into the value it replaced — the
+ * same secret fingerprints identically, a different one does not, so "still the same secret as
+ * before" is answerable without the marker being a partial reveal.
  */
 import { looksSecret, redact, SECRET_NAME_PARTS, type RedactedMarker } from "./redact.js";
 
 /** True if `needle` appears anywhere in `value`'s JSON form — the direct test that a secret
- *  did not survive redaction in ANY position, nested or not. Buffers/Dates round-trip through
+ *  did not survive redaction in any position, nested or not. Buffers/Dates round-trip through
  *  JSON.stringify as plain data (`{"type":"Buffer",...}` / an ISO string) with nothing secret
  *  in either, so this is safe to run over the whole redacted tree unconditionally. */
 function containsRaw(value: unknown, needle: string): boolean {
@@ -52,7 +47,7 @@ interface Case {
   /** Secret values that must not survive anywhere in the redacted output, in any form. */
   secrets: string[];
   /** Paths into the redacted output whose value must equal the same path in the input,
-   *  unchanged — the metadata half of AC-4 that a secrets-only test would miss entirely. */
+   *  unchanged: the metadata half that a secrets-only test would miss entirely. */
   metadataPaths: string[];
   /** Paths that must come back as a RedactedMarker with the given `present`. */
   redactedPaths: Array<{ path: string; present: boolean }>;
@@ -64,7 +59,7 @@ const ROOT = "root@example.com";
 
 const CASES: Case[] = [
   {
-    name: "credential_list — a list of platforms, each with a live personal key",
+    name: "a list of rows, each carrying a live personal key",
     build: () => [
       { platform: "github", api_key: "ghp_1234567890abcdefGHJK", set_at: "2026-01-01T00:00:00Z", set_by: ALICE },
       { platform: "gitlab", api_key: "glpat-zzzzzzzzzzzzzzzzzzzz", set_at: "2026-02-02T00:00:00Z", set_by: ALICE },
@@ -76,7 +71,7 @@ const CASES: Case[] = [
          "show; the key itself is exactly what it must never receive",
   },
   {
-    name: "credential_set — echoes the key just stored and the one it replaced",
+    name: "an answer that echoes the key just stored and the one it replaced",
     build: () => ({
       platform: "github", stored: true,
       key: "ghp_brandnewvalue00000001", replaced_key: "ghp_oldvalue000000000002",
@@ -85,12 +80,12 @@ const CASES: Case[] = [
     secrets: ["ghp_brandnewvalue00000001", "ghp_oldvalue000000000002"],
     metadataPaths: ["platform", "stored", "set_by", "set_at"],
     redactedPaths: [{ path: "key", present: true }, { path: "replaced_key", present: true }],
-    why: "credential_set's own answer names the replaced key so an overwrite " +
+    why: "an answer that names the replaced key so an overwrite " +
          "is not silent — both the new and the replaced value must be caught, not only the " +
          "field literally named 'key'",
   },
   {
-    name: "credential_admin_set — a key stored on somebody else's behalf",
+    name: "a key stored on somebody else's behalf",
     build: () => ({
       team: "team_one", platform: "openai", api_key: "sk-liveabcdefghijklmno",
       set_by: ROOT, set_at: "2026-03-02T00:00:00Z",
@@ -102,7 +97,7 @@ const CASES: Case[] = [
          "operator identity are metadata regardless of who made the call",
   },
   {
-    name: "credential_delete — no secret in the response at all",
+    name: "a response with no secret in it at all",
     build: () => ({ platform: "github", deleted: true, deleted_by: ALICE, deleted_at: "2026-03-03T00:00:00Z" }),
     secrets: [],
     metadataPaths: ["platform", "deleted", "deleted_by", "deleted_at"],
@@ -118,10 +113,9 @@ const CASES: Case[] = [
       { id: "22222222-2222-2222-2222-222222222222", label: "ci", scope: "member",
         team: "team_one", created_at: "2026-01-02T00:00:00Z",
         last_used_at: "2026-02-01T00:00:00Z", revoked_at: "2026-02-15T00:00:00Z",
-        // pat_list's real query never selects this — but nothing in the TYPE SYSTEM stops
-        // a future column from being added to the select list without anyone deciding
-        // whether it is safe to show. That is exactly the case this file exists to prove:
-        // the field rule catches it on NAME alone, with no update to redact.ts required.
+        // pat_list's real query never selects this, and nothing in the type system stops a
+        // future column being added to the select list. The field rule catches it on name
+        // alone, with no update to redact.ts.
         token_hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8" },
     ],
     secrets: ["e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8"],
@@ -177,7 +171,7 @@ const CASES: Case[] = [
 
 /** A settings response can legitimately hold a Date the database returned uncast, or a
  *  Buffer for a binary secret — checked structurally rather than by JSON round-trip, since
- *  the whole point is confirming the ORIGINAL objects/bytes come back untouched or replaced,
+ *  the whole point is confirming the original objects/bytes come back untouched or replaced,
  *  which JSON.stringify would already have destroyed before the assertion ran. */
 function checkDatesAndBuffers(): string[] {
   const failures: string[] = [];
@@ -208,7 +202,7 @@ function checkDatesAndBuffers(): string[] {
 
 /** Two structurally different cycles: an object referencing itself directly, and one two
  *  levels of nesting away, each also carrying a live secret — a cycle must not hang the
- *  process AND must not give the secret walker an excuse to skip the field rule on the rest
+ *  process and must not give the secret walker an excuse to skip the field rule on the rest
  *  of the structure. */
 function checkCircularReferences(): string[] {
   const failures: string[] = [];
@@ -229,8 +223,8 @@ function checkCircularReferences(): string[] {
   if (items[0] !== "a" || items[1] !== "b") failures.push("array elements before the cycle were altered");
   if (!isMarker(gotNested.api_key)) failures.push("a secret survived on an object reachable through an array cycle");
 
-  // A shared (non-cyclic) reference from two branches must still be redacted correctly in
-  // BOTH places — proof that `seen` is scoped to the current path, not the whole call.
+  // A shared, non-cyclic reference from two branches must still be redacted in both places:
+  // `seen` is scoped to the current path, not the whole call.
   const shared = { platform: "openai", api_key: "sk-shared00000001" };
   const twoBranches = { a: shared, b: shared };
   const gotShared = redact(twoBranches) as { a: { api_key: unknown }; b: { api_key: unknown } };
@@ -241,9 +235,8 @@ function checkCircularReferences(): string[] {
   return failures;
 }
 
-/** No field name at the root means no decision this function can make — documented in
- *  redact.ts's own doc comment as a deliberate limitation, checked here so the behaviour it
- *  promises does not silently change. */
+/** No field name at the root means no decision this function can make. DELIBERATE: redact.ts
+ *  documents this limitation, and it is checked here so the behaviour cannot change silently. */
 function checkNoFieldNameAtRoot(): string[] {
   const failures: string[] = [];
   if (redact("ghp_bareStringNoFieldName") !== "ghp_bareStringNoFieldName") {
@@ -258,9 +251,8 @@ function checkNoFieldNameAtRoot(): string[] {
   return failures;
 }
 
-/** The field rule itself (← the predicate redact-check.ts is required to drive directly,
- *  never a restatement of it), over every listed part and a handful of names it must NOT
- *  catch — metadata this whole module exists to keep visible. */
+/** The field rule itself, driven directly rather than restated, over every listed part and a
+ *  handful of names it must not catch — metadata this module exists to keep visible. */
 function checkFieldRule(): string[] {
   const failures: string[] = [];
   const mustCatch = [
@@ -283,10 +275,9 @@ function checkFieldRule(): string[] {
   return failures;
 }
 
-/** The marker cannot be turned back into the value — checked by the property that makes it
- *  USEFUL rather than merely opaque: the SAME secret fingerprints identically every time
- *  (so a caller can tell "this didn't change"), and two DIFFERENT secrets of the same length
- *  fingerprint differently (so the fingerprint isn't just an echo of the length). Neither
+/** The marker cannot be turned back into the value: the same secret fingerprints identically
+ *  every time, so a caller can tell "this didn't change", and two different secrets of the same
+ *  length fingerprint differently, so the fingerprint is not an echo of the length. Neither
  *  fingerprint contains any substring of either secret. */
 function checkMarkerCannotReconstructValue(): string[] {
   const failures: string[] = [];

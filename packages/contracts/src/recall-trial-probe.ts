@@ -1,32 +1,27 @@
 /**
- * PLANTING EACH FAULT THE TRIAL'S RULES CLAIM TO CATCH, AND WATCHING THE DETECTOR FIRE.
+ * Planting each fault the trial's rules claim to catch, and watching the detector fire.
  *
- * Every rule is exercised twice: once on the healthy path, where the detector must stay SILENT,
- * and once with one specific fault planted, where it must FIRE. A negative flag that is only
- * ever read off a healthy run has been watched doing nothing, and a flag written as the literal
- * `false` would pass exactly the same observation. That is the failure this file exists for:
- * `citationFollowedHead`, `translationInOriginal`, `authorizedPinnedEffect` and
- * `supersessionReported` are all COMPUTED, and the faulted column is where that becomes a
- * measurement rather than a claim in a comment.
+ * Every rule is exercised twice: once on the healthy path, where the detector must stay silent,
+ * and once with one specific fault planted, where it must fire. `citationFollowedHead`,
+ * `translationInOriginal`, `authorizedPinnedEffect` and `supersessionReported` are all
+ * computed, and the faulted column is what makes that a measurement rather than a claim.
  *
- * THE SILENT HALF CARRIES REAL WEIGHT HERE, because almost every rule in this subject is a
- * refusal and a trial that refused everything would satisfy every faulted column while being
- * useless. So the healthy column carries what must still work: the Chinese original IS read and
- * quoted for an English asker, a graph-lane hit whose original was opened IS a conclusion, a
- * pinned read DOES authorize a pinned effect, and a superseded document IS reported as one.
+ * The silent half carries real weight: almost every rule in this subject is a refusal, and a
+ * trial that refused everything would satisfy every faulted column while being useless. The
+ * healthy column carries what must still work — the Chinese original is read and quoted for an
+ * English asker, a graph-lane hit whose original was opened is a conclusion, a pinned read
+ * authorizes a pinned effect, and a superseded document is reported as one.
  *
- * WHERE EACH FAULT LIVES. Two kinds, the same two the sibling audit probe uses. Some are
- * planted in the SUBJECT — a corpus whose original has had a rendering spliced into it, a
- * receipt that claims a language qualification the analyzer never had — and the real function
- * under test is what reports them. The rest are planted in a faulted LOCAL COPY of the
- * computation, because the rules they break are rules about what the trial MAY DO and no input
- * can make it do them: `TrialRead` is a union whose text exists only on the successful branch,
- * and `askerLanguage` has no parameter a corpus could arrive through, so "the real one cannot
- * do this" has to be shown as a comparison against a copy that can. Those copies are never
- * exported and nothing calls them but this file.
+ * Two places a fault lives. Some are planted in the subject — a corpus whose original has had a
+ * rendering spliced into it, a receipt claiming a language qualification the analyzer never had
+ * — and the real function under test is what reports them. The rest are planted in a faulted
+ * local copy of the computation, because the rules they break are rules about what the trial
+ * may do and no input can make it do them: `TrialRead` is a union whose text exists only on the
+ * successful branch, and `askerLanguage` has no parameter a corpus could arrive through. Those
+ * copies are never exported and nothing calls them but this file.
  *
- * NOTHING HERE IS A MEASUREMENT OF THE LIVE SYSTEM. The corpus is a fixture in this package and
- * `recall-trial.ts`'s header lists, by name, what that leaves unestablished.
+ * Nothing here is a measurement of the live system. The corpus is a fixture in this package,
+ * and `recall-trial.ts`'s header lists by name what that leaves unestablished.
  */
 import {
   recallResultFrom,
@@ -60,7 +55,7 @@ const row = (
   fires: healthy[0] && faulted[0],
 });
 
-// ── the fixtures these rows plant faults on ────────────────────────────────────────────────
+// The fixtures these rows plant faults on
 
 const ZH = "doc/mig-zh";
 const RENDERING = "doc/mig-en-rendering";
@@ -81,17 +76,16 @@ function docOrRaise(corpus: TrialCorpus, id: string): TrialDocument {
   return doc;
 }
 
-/** The same rule one level down, and it is the rule this probe learned the hard way: a fault
- *  planted into an empty string is not planted at all, and the row that watches for it goes
- *  green on nothing. `headRevisionOf` answers null for a document with no revision history, so
- *  every fixture setup below that needs a document's TEXT says so here rather than defaulting. */
+/** The same rule one level down: a fault planted into an empty string is not planted at all,
+ *  and the row that watches for it goes green on nothing. `headRevisionOf` answers null for a document with no revision history, so
+ *  every fixture setup below that needs a document's text says so here rather than defaulting. */
 function headTextOrRaise(corpus: TrialCorpus, id: string): string {
   const head = headRevisionOf(docOrRaise(corpus, id));
   if (head === null) throw new Error(`${id} carries no revision, so there is no text to plant`);
   return head.text;
 }
 
-/** GENERIC over the finding type, so a row that needs what the TRIAL observed about a hit —
+/** Generic over the finding type, so a row that needs what the trial observed about a hit —
  *  its read failure, its rendering — keeps it instead of widening to the base finding. */
 function findingFor<T extends RecallFinding>(findings: readonly T[], id: string): T | null {
   return findings.find((f) => (f.refs[0] ?? "").startsWith(id)) ?? null;
@@ -103,19 +97,18 @@ const RECEIPT: RecallSearchReceipt = Object.freeze({
   withheld: 0, scopes_searched: ["team"],
 });
 
-// ── the faulted local copies ───────────────────────────────────────────────────────────────
+// The faulted local copies
 
-/** THE FAULT THE REAL `askerLanguage` CANNOT HAVE: a signature through which the corpus can
- *  reach it. Written out in full because it is worth seeing how short it is — one line, and it
- *  is right for every monolingual corpus anybody would build while testing. */
+/** The fault the real `askerLanguage` cannot have: a signature through which the corpus can
+ *  reach it. */
 function corpusLanguage(findings: readonly RecallFinding[]): string {
   return findings[0]?.quote?.language ?? "en";
 }
 
-/** THE FAULT THE REAL `itemFrom` CANNOT HAVE: a quotation built from something other than a
+/** The fault the real `itemFrom` cannot have: a quotation built from something other than a
  *  successful read. `TrialRead`'s `text` exists only on the `ok` branch, so no rearrangement of
  *  the real path reaches this shape; this copy takes the text as an argument and asserts the
- *  read beside it. Two fields, and that is the entire distance between a lead and a conclusion. */
+ *  read beside it. */
 function quoteWithoutReading(
   doc: TrialDocument, text: string, language: string, via: readonly string[],
 ): RecallSearchItem {
@@ -128,39 +121,37 @@ function quoteWithoutReading(
   };
 }
 
-/** THE FAULT THE REAL `readOriginalText` CANNOT HAVE: dropping the revision from the citation
- *  and answering with whatever the document says now. It reads as freshness — the caller asked
- *  about that document, this is that document — and what it changes is the sentence somebody
- *  else already cited. */
+/** The fault the real `readOriginalText` cannot have: dropping the revision from the citation
+ *  and answering with whatever the document says now, which changes the sentence somebody else
+ *  already cited. */
 function resolveIgnoringRevision(corpus: TrialCorpus, ref: string): string | null {
   const doc = documentOf(corpus, ref.split("@")[0]);
   return doc === null ? null : headRevisionOf(doc)?.text ?? null;
 }
 
-/** THE FAULT THE REAL `authorizes` CANNOT HAVE: taking a successful read as sufficient, with no
- *  question about WHAT was read. Under a current-path episode every read succeeds — against the
+/** The fault the real `authorizes` cannot have: taking a successful read as sufficient, with no
+ *  question about what was read. Under a current-path episode every read succeeds — against the
  *  head — so this authorizes a pinned effect from a lead that never saw the pinned revision. */
 function authorizeFromCurrentPath(findings: readonly RecallFinding[]): boolean {
   return findings.some((f) => f.support === "original_text_read");
 }
 
-/** THE FAULT NOTHING IN THE TRIAL DOES: writing the rendering into the original. It is what
- *  "keep the record in one language" looks like when somebody tidies, and afterwards there is
- *  no copy of the document that is only what its author wrote. */
+/** The fault nothing in the trial does: writing the rendering into the original, after which
+ *  there is no copy of the document that is only what its author wrote. */
 function spliceRenderingIntoOriginal(corpus: TrialCorpus): void {
   const original = docOrRaise(corpus, ZH);
   const rendered = headTextOrRaise(corpus, RENDERING);
   original.revisions = original.revisions.map((r) => ({ ...r, text: `${r.text} ${rendered}` }));
 }
 
-/** THE TOKENIZER THE ANALYSIS EXISTS TO REPLACE: whitespace, which is what a prose text-search
- *  configuration does to an unspaced Han run. Not a strawman — `TEXT_SEARCH_CONFIG` pins
- *  `{ latin: "english", han: "simple" }` precisely because this is the live behaviour, and the
- *  whole of the Chinese question comes back as one token under it. */
+/** The tokenizer the analysis exists to replace: whitespace, which is what a prose text-search
+ *  configuration does to an unspaced Han run. `TEXT_SEARCH_CONFIG` pins
+ *  `{ latin: "english", han: "simple" }` because this is the live behaviour, and the whole of
+ *  the Chinese question comes back as one token under it. */
 const tokenizeOnWhitespace: TrialAnalyzer = (text) =>
   text.toLowerCase().split(/\s+/).filter((t) => t.length > 0);
 
-// ── the detectors ──────────────────────────────────────────────────────────────────────────
+// The detectors
 
 function answerLanguageComesFromTheAsker(): RecallTrialProbeRow {
   const en = trial(EN_QUESTION);
@@ -195,7 +186,7 @@ function hanQueriesAreSegmentedBeforeTheIndexIsAsked(): RecallTrialProbeRow {
 
 function anUnsegmentedSearchMayNotClaimACleanEmpty(): RecallTrialProbeRow {
   const honest = trial(ZH_QUESTION, { analyzer: tokenizeOnWhitespace });
-  // The fault is in the RECEIPT, not the search: the same zero items, declared as having been
+  // The fault is in the receipt, not the search: the same zero items, declared as having been
   // asked in a language the index could match.
   const flattering = recallResultFrom({
     items: [], receipt: { ...RECEIPT, query: ZH_QUESTION }, question: ZH_QUESTION,
@@ -364,10 +355,10 @@ function aSupersessionThatDidNotHappenIsRefused(): RecallTrialProbeRow {
   const applied = supersedeDocument(corpus, ZH, SUPERSEDED_HEAD);
   const moved = trial("migration", { thenSupersede: true });
 
-  // THE FAILURE IS REACHABLE THROUGH THE PUBLIC SURFACE, not through an id nobody would type.
-  // The imported runbook carries no revision history, so it has no head to move — and it is
-  // the strongest finding for its own name, so an episode asked to supersede after searching
-  // for it lands on a `supersedeDocument` that can only answer null.
+  // The failure is reachable through the public surface. The imported runbook carries no
+  // revision history, so it has no head to move — and it is the strongest finding for its own
+  // name, so an episode asked to supersede after searching for it lands on a
+  // `supersedeDocument` that can only answer null.
   const unmoved = trialCorpus();
   const missed = supersedeDocument(unmoved, LEGACY, SUPERSEDED_HEAD);
   const head = headRevisionOf(docOrRaise(unmoved, LEGACY));
@@ -377,11 +368,9 @@ function aSupersessionThatDidNotHappenIsRefused(): RecallTrialProbeRow {
   } catch (err) {
     raised = err instanceof Error ? err.message : String(err);
   }
-  // AND THIS IS WHY THE ANSWER CANNOT BE DISCARDED. These are the two flags an episode that
-  // shrugged at that null would have reported, taken from a run that asked for no supersession
-  // at all — the same values, indistinguishable from the case where the citation genuinely
-  // held against a head that genuinely moved. The guard's answer is the only thing that tells
-  // the two apart.
+  // Why the answer cannot be discarded: these are the two flags an episode that shrugged at
+  // that null would have reported, taken from a run that asked for no supersession at all. The
+  // guard's answer is the only thing that tells the two apart.
   const neverAsked = trial("legacy");
 
   return row(

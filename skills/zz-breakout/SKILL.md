@@ -1,6 +1,6 @@
 ---
 name: zz-breakout
-version: 1.5
+version: 1.6
 description: Spin up one named expert teammate for a bounded deep dialogue, keep that conversation out of the main thread, and close by writing the confirmed insights to the ZZ knowledge base. Widens a thin option space before a decision is made.
 when_to_use: "A decision needs a perspective the main thread cannot hold — a domain expert, an adversary, a specialist lens — and the exchange will be long enough to pollute the main context. The sdlc-flow spec stage leans on this when the options are thin, and so may any other flow. Typed on purpose as /zz-core:breakout in Claude Code, or matched as a skill. Standalone — no initiative, no gate, no place in the sequence."
 ---
@@ -86,7 +86,7 @@ When the person says it is done:
    it: a breakout runs mid-flow, before any close, so what it produces is almost always
    `scope: "team"` — a lesson about how this team works, not yet the platform's read-back of
    a finished cycle. Send `scope: "platform"` only for the rare insight that is itself a fact
-   about a registry entry (a block, a flow, a provider, an interface) rather than about this
+   about a registry entry (a plugin, a flow, a provider, an interface) rather than about this
    team, and tag it accordingly. The platform checks the evidence name against the team's
    store and refuses one that is not there, so a breakout run outside any initiative has
    nothing to cite: name the initiative it was called to inform, or keep the insights in the

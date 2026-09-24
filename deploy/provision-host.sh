@@ -1,15 +1,9 @@
 #!/usr/bin/env bash
 # Bring a bare Ubuntu host up to the point where it can receive a release bundle.
 #
-# Everything below was worked out by hand the first time, on 2026-09-10, standing up the
-# single environment that replaced the old UAT/production pair. It is a script rather than a
-# note because the next host is either a rebuild of this one or its replacement, and a
-# half-remembered sequence is how a deployment ends up subtly unlike the one it replaced.
-#
-# What it does NOT do: secrets, DNS, the Caddyfile, or anything with data in it. Those are
-# deploy/.env, deploy/install-caddy.sh and whatever migration you decide on — each is a
-# decision, and a provisioning script that quietly makes decisions is worse than one that
-# stops.
+# DELIBERATE: it does not do secrets, DNS, the Caddyfile or anything with data in it. Those are
+# deploy/.env, deploy/install-caddy.sh and whatever migration you decide on — each a decision
+# this script leaves to the operator.
 #
 # Usage:  ./deploy/provision-host.sh <ssh-host>
 set -euo pipefail
@@ -32,7 +26,7 @@ ssh "$HOST" 'set -e
   if need docker; then
     echo "  docker: installing from the official repository"
     # Not `apt install docker.io`: Ubuntu ships an older engine and no compose v2 plugin, and
-    # this repo drives `docker compose` (v2, a plugin) everywhere rather than `docker-compose`.
+    # this repository drives `docker compose` (v2) everywhere.
     apt-get update -qq
     apt-get install -y -qq ca-certificates curl gnupg >/dev/null
     install -m 0755 -d /etc/apt/keyrings
@@ -58,8 +52,7 @@ https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CO
     systemctl enable --now caddy
   else echo "  caddy: already present"; fi
 
-  # git and rsync went with sync.sh: a host receives a bundle over scp and runs
-  # published images, so it needs neither a checkout nor a tree to rsync into.
+  # No git or rsync: a host receives a bundle over scp and runs published images.
   for p in jq; do
     command -v "$p" >/dev/null || { echo "  $p: installing"; apt-get install -y -qq "$p" >/dev/null; }
   done'

@@ -1,15 +1,13 @@
 /**
  * The store: reading, writing and showing a document, and the sources attached to one.
  *
- * EVERY WRITE GOES THROUGH THE SAME TWO STEPS — `documentGuards` decides whether it may
- * land, `persistDocument` lands it — and no tool here decides either for itself. That is
- * what makes a rule added to the guards a rule that holds on every path rather than on the
- * paths somebody remembered.
+ * Every write goes through the same two steps — `documentGuards` decides whether it may land,
+ * `persistDocument` lands it — and no tool here decides either for itself, so a rule added to
+ * the guards holds on every path.
  *
- * `document_present` is the odd one: it returns the document rather than a rendering of it,
- * and appends a `shown` entry naming the path and version FOR EACH DOCUMENT it fetched.
- * Whether a document was fetched before its gate was approved is answerable from the record
- * because of it — and stays answerable per document once a call may carry several.
+ * `document_present` returns the document rather than a rendering of it, and appends a
+ * `shown` entry naming the path and version for each document it fetched. That is what makes
+ * "was this fetched before its gate was approved" answerable per document.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
@@ -53,7 +51,7 @@ export function registerArtifactTools(server: McpServer): void {
         tags: z.array(z.string()).optional().describe("Index tags for this document."),
         title: z.string().optional().describe("Document title for the index. Defaults to the first heading."),
         fields: z.record(z.string()).optional()
-          .describe("This FLOW's own frontmatter fields, e.g. {building_block: 'casebox'}. Not envelope names."),
+          .describe("This FLOW's own frontmatter fields, e.g. {component: 'billing'}. Not envelope names."),
       },
     },
     async ({ path, content, stakeholder, tags, title, fields }) => {
@@ -64,36 +62,25 @@ export function registerArtifactTools(server: McpServer): void {
       if (refused) return text(refused);
       const root = await userRoot();
       const team = await teamFor(parseCaller(requestHeaders()).email);
-      // RESOLVED FIRST, as approve, close, document_patch and document_revise all resolve it.
-      //
-      // This was the one write path that resolved last, after eight guards and a chain
-      // lookup — so `.zz/spec.md` was answered with a complaint about the flow's required
-      // sections, and the reason it could never be written anywhere was the message after
-      // the author had rewritten the document. pathShapeRefusal exists to teach the path
-      // form once, and it cannot do that from behind the guards.
+      // DELIBERATE: the path is resolved before the guards run, as approve, close,
+      // document_patch and document_revise all do. A bad path answered from behind the guards
+      // is answered with a complaint about the document's sections instead.
       const target = await safePath(path);
-      // THE WRITE NO LONGER CREATES, and three guards left with the creating. The name shape,
-      // the taken check and the flow declaration all asked questions about CREATION, and they
-      // ran on every write of every document because this path could not tell which write was
-      // the creating one. `initiative_open` is that moment now, so each is asked once, where
-      // the answer can still be acted on, and what is left here is a single existence test.
+      // This write does not create an initiative — `initiative_open` does, and the name shape,
+      // the taken check and the flow declaration are asked there, once. What is left here is
+      // an existence test.
       const unopened = unopenedRefusal(root, path);
       if (unopened) return text(unopened);
-      // THE `flow` ARGUMENT IS GONE FROM THIS TOOL. It was the adopt-a-flow tool FR-30 forbids
-      // reached through an argument instead of a verb: an initiative opened freeform would
-      // acquire a manifest on its next document, and the gates that manifest declares would
-      // land on documents already written and unapproved. The flow is declared to
-      // `initiative_open`, at the one moment the choice is meaningful, and chainFor reads it
-      // from the record written there — which is also what covers the window this argument
-      // used to cover, an initiative whose first document is not yet on disk.
+      // The flow is read from the record `initiative_open` wrote, never from an argument here:
+      // an initiative that acquired a manifest on its second document would have that
+      // manifest's gates land on documents already written and unapproved.
       const chain = chainFor(root, path, content);
-      // THE DOCUMENT ALREADY THERE IS READ BEFORE IT IS OVERWRITTEN. `document_write` is
-      // "create or overwrite", and the overwrite half has to preserve the fields the
-      // platform wrote on the previous copy — see envelopeFor's `carry`.
-      // EXACTLY the fields the platform owns, plus `version`. Named here, against
-      // PLATFORM_OWNED, so envelopeFor renders what it is handed rather than holding a
-      // second copy of the list — and so a field added to the platform's set is carried
-      // without anybody remembering this line.
+      // The document already there is read before it is overwritten: the overwrite half of
+      // "create or overwrite" has to preserve the fields the platform wrote on the previous
+      // copy — see envelopeFor's `carry`.
+      //
+      // COUPLED: the carried set is PLATFORM_OWNED plus `version`, read from @zz/contracts, so
+      // a field added to the platform's set is carried without editing this line.
       const onDisk = existsSync(target) && statSync(target).isFile()
         ? parseEnvelope(readFileSync(target, "utf8")) : {};
       const carry: Record<string, string> = {};
@@ -107,15 +94,12 @@ export function registerArtifactTools(server: McpServer): void {
       const written = persistDocument(chain, root, path, target, fixed.content, "write");
       logActivity(root, path,
         { user: parseCaller(requestHeaders()).email, action: "document_write", path, chars: written.length });
-      // THE CONTROL LOOP IS TOLD, AFTER THE WRITE SUCCEEDED AND NEVER BEFORE. `noteDocument`
-      // cannot refuse anything: `documentGuards` above has already decided whether this write
-      // is allowed, and a second veto here would be the duplication this adoption removes.
-      // What it does is give the loop the fact — so that when somebody later asks whether this
-      // initiative may close, the answer is derived from what actually happened rather than
-      // from nine hand-written guards re-deciding it.
+      // The control loop is told after the write succeeded, never before. `noteDocument`
+      // cannot refuse anything — `documentGuards` above has already decided — it only records
+      // the fact the close is later derived from.
       //
-      // Awaited rather than fired and forgotten: a write that returns before its evidence
-      // lands would let a caller write a document and immediately be told the step is unmet.
+      // DELIBERATE: awaited, not fired and forgotten. A write that returned before its
+      // evidence landed would let a caller write a document and be told the step is unmet.
       await noteDocument(chain, path, "document",
                          parseCaller(requestHeaders()).email, team);
       return text(`written: ${path} (${written.length} chars)`
@@ -140,19 +124,18 @@ export function registerArtifactTools(server: McpServer): void {
           .describe("One path, or an array of paths read in the order given."),
         version: z.number().int().positive().optional()
           .describe("Read the copy filed at approval N instead of the current document."),
-        // READ-ONLY, and only here. document_write and document_patch stay on the caller's own team,
-        // because a shared journal anyone may edit is not a journal. knowledge_add already
-        // owns the writing side and already takes `scope`.
+        // DELIBERATE: `scope` is read-only and only on this tool. document_write and
+        // document_patch stay on the caller's own team; knowledge_add owns the writing side
+        // of the shared journal and takes its own `scope`.
         scope: z.enum(["team", "platform"]).optional()
           .describe("Which shelf the path is on. Omit for your team's own store; " +
                     "\"platform\" for the shared journal, as knowledge_search reports it."),
       },
     },
     async ({ path, version, scope }) => {
-      // AN ARGUMENT THAT DOES NOT APPLY, refused before the loop rather than once per entry.
-      // The shared journal holds no gated documents, so it files no approvals and has no
-      // `_versions/` — a version asked of it could only ever be answered "there are none",
-      // which reads as a missing file rather than as a request that does not make sense.
+      // Refused before the loop, not once per entry. The shared journal holds no gated
+      // documents, so it files no approvals and has no `_versions/`; answering per entry
+      // would read as a missing file rather than as a request that does not apply.
       if (version !== undefined && scope === "platform") {
         return text("ERROR: `version` reads a copy filed at an approval, and the platform " +
                     "journal keeps none — its nodes are superseded, not versioned. Drop one " +
@@ -161,10 +144,8 @@ export function registerArtifactTools(server: McpServer): void {
       const root = await userRoot();
       const single = !Array.isArray(path);
       const rows: { rel: string; body: string }[] = [];
-      // ONE BAD ENTRY DOES NOT COST THE OTHERS, which is the whole reason an array is worth
-      // having: a caller reading a spec, a plan and a source in one call gets the two that
-      // exist and the name of the one that does not. So nothing returns from inside this
-      // loop — every outcome, refusal included, becomes a row.
+      // One bad entry does not cost the others: nothing returns from inside this loop, and
+      // every outcome, refusal included, becomes a row.
       for (const rel of (single ? [path as string] : path as string[])) {
         try {
           let readRel = rel;
@@ -173,16 +154,12 @@ export function registerArtifactTools(server: McpServer): void {
             if (refused) { rows.push({ rel, body: refused }); continue; }
             readRel = documentVersions(root, rel).find((v) => v.version === version)?.rel ?? rel;
           }
-          // THE SEARCH SPANS TWO SHELVES AND THE READ REACHED ONE, which made the platform's own
-          // lessons visible and unreadable to every team agent. Observed end to end on a live
-          // ops-flow round: the agent searched, found the two nodes describing the exact casebox
-          // refusal it was about to hit, was told both "do not exist", hit the refusal, and asked
-          // a non-technical person to build the workflows by hand. Knowledge you can see and
-          // cannot open is worse than knowledge you do not have — it reads as a working store.
+          // The search spans two shelves, so the read reaches both: a node knowledge_search
+          // returns with `shelf: "platform"` is otherwise visible and unopenable.
           const target = scope === "platform" ? platformPath(readRel) : await safePath(readRel);
           if (!existsSync(target)) {
-            // NAMES THE OTHER SHELF, once, when the path looks like a journal node. The whole
-            // failure above was a caller who had no way to know a second shelf existed.
+            // Names the other shelf, once, when the path looks like a journal node — a caller
+            // has no other way to learn a second shelf exists.
             const hint = scope !== "platform" && rel.startsWith("_knowledge/")
               ? " — if knowledge_search returned it with `shelf: \"platform\"`, read it with scope: \"platform\""
               : "";
@@ -192,40 +169,33 @@ export function registerArtifactTools(server: McpServer): void {
           rows.push({ rel: readRel, body: readFileSync(target, "utf8") });
         } catch (err) {
           // safePath throws a Refusal for a path that walks out of the store or is the wrong
-          // shape. Thrown, that ends the whole call — right when one path was asked for, and
-          // wrong for an array, where it would discard the entries that were fine.
+          // shape. Caught here so it becomes a row rather than ending the call and discarding
+          // the entries that were fine.
           rows.push({ rel, body: err instanceof Error ? err.message : String(err) });
         }
       }
-      // THE RESPONSE SHAPE FOLLOWS THE REQUEST SHAPE, not the count. `path: "x"` is the bytes
-      // and nothing else, exactly as it has always been — console-write.ts and the chain check
-      // consume that string directly. `path: ["x"]` is labelled even at length one, so a
-      // caller that built its array in a loop never has to parse two different answers.
+      // DELIBERATE: the response shape follows the request shape, not the count. `path: "x"`
+      // is the bytes and nothing else — console-write.ts and the chain check consume that
+      // string directly — and `path: ["x"]` is labelled even at length one.
       return text(single
         ? rows[0]?.body ?? ""
         : rows.map((r) => `── ${r.rel} ──\n${r.body}`).join("\n\n"));
     },
   );
 
-  // A DOCUMENT COMES BACK AS A DOCUMENT, and what that rules out is written here rather than
-  // inside the registration: the gate check for this tool scans the registration body for the
-  // renderer's own names, so a comment spelling them below would fail on correct code.
+  // COUPLED: this note stays outside the registration below. scripts/gate/checks/
+  // documents-lifecycle.ts reads the whole registration body, comments included, and fails on
+  // a renderer's name in it.
   //
-  // THE PLATFORM RENDERS NOTHING (spec D9). The gateway owns a markdown-to-HTML renderer and it
-  // is the wrong tool for this: it builds a page for the web console, while all four of this
-  // platform's interfaces render markdown themselves. So the body goes back as markdown,
-  // unfenced and unescaped (spec FR-12b, C-7) — a fenced body is source presented as syntax,
-  // which is the one thing the readability floor rules out.
+  // The platform renders nothing: the body goes back as markdown, unfenced and unescaped,
+  // because every interface renders markdown itself and a fenced body is source presented as
+  // syntax.
   //
-  // AND IT NEVER JUDGES (spec C-6). No summary, no score, no comment of its own. document_read
-  // already returns the bytes; what this adds is that the ENVELOPE IS STATED. A reader handed
-  // frontmatter has been handed a parsing job, and the facts that decide whether a document may
-  // be approved — its version, its status, whose signature is already on it — are exactly the
-  // ones buried in it.
+  // It never judges: no summary, no score. What it adds over document_read is that the
+  // envelope is stated separately, so the facts that decide an approval are not buried in
+  // frontmatter the reader has to parse.
   //
-  // IT DOES NOT GUARANTEE ANYBODY SAW IT. A tool result is model input, not a display (spec
-  // D10). The platform guarantees the fetch; the hop from here to a person's screen belongs to
-  // the interface, and this tool claims nothing about it.
+  // It does not guarantee anybody saw it: a tool result is model input, not a display.
   server.registerTool(
     "document_present",
     {
@@ -253,29 +223,24 @@ export function registerArtifactTools(server: McpServer): void {
       const user = parseCaller(requestHeaders()).email;
       const single = !Array.isArray(path);
       const out: string[] = [];
-      // ONE ROW PER DOCUMENT, WHICH IS WHY THE LOOP CALLS presentDocument RATHER THAN
-      // RECORDING ANYTHING ITSELF. attest.ts shownSinceLastChange answers per document, so a
-      // single `shown` written for a batch would make an approval look attested when only the
-      // neighbouring document had been opened. Nothing in this registration touches the
-      // record; the per-document helper owns it, and the check asserts both halves.
+      // COUPLED: `shown` is written by presentDocument, once per document, and nothing in
+      // this registration touches the record. attest.ts shownSinceLastChange answers per
+      // document, so one `shown` per batch would make an approval look attested when only a
+      // neighbouring document had been opened. checks/document-reads.ts asserts both halves.
       for (const rel of (single ? [path as string] : path as string[])) {
         const target = await safePath(rel);
-        // A DIRECTORY IS NOT A DOCUMENT, and `existsSync` alone says it is — readFileSync on one
-        // throws EISDIR, which reaches the caller as a raw error instead of this file's refusal.
+        // A directory passes `existsSync` and readFileSync on one throws EISDIR, which would
+        // reach the caller as a raw error instead of this file's refusal.
         if (!existsSync(target) || !statSync(target).isFile()) {
-          // The initiative is taken off the RESOLVED path, never off the argument. safePath has
-          // already refused anything that walks out of the store, and rebuilding a folder from
-          // the raw string is the shape safeName's docstring records going wrong on the live
-          // gateway.
+          // The initiative is taken off the resolved path, never off the argument — safePath
+          // has already refused anything that walks out of the store.
           const initiative = target.slice(root.length + 1).split(sep)[0];
           const folder = join(root, initiative);
           const held = existsSync(folder) && statSync(folder).isDirectory()
             ? readdirSync(folder).filter((f) => f.endsWith(".md")).sort()
             : [];
-          // TWO ANSWERS, because an empty list means two different things — the folder is there
-          // and holds no document, or there is no such folder at all — and they want different
-          // next moves. A refusal that reads the same either way sends someone looking for a
-          // typo in a name that was never there.
+          // Two answers: an empty list means either the folder is there and holds no
+          // document, or there is no such folder, and those want different next moves.
           out.push(held.length
             ? `ERROR: no document at \`${rel}\`. The initiative holds: ${held.join(", ")}. ` +
               `Ask for one of those by its full path, \`${initiative}/<name>\`, or call ` +
@@ -312,41 +277,19 @@ export function registerArtifactTools(server: McpServer): void {
       const body = readFileSync(target, "utf8");
       const n = body.split(find).length - 1;
       if (n !== 1) return text(`ERROR: \`find\` occurs ${n} times, need exactly 1`);
-      // A FUNCTION replacement. `replace` is the model's own text going into a team's
-      // document, and a string replacement interprets $$, $&, $` and $' inside it: "$$50"
-      // became "$50", a shell example containing $' swallowed the line and injected the whole
-      // rest of the document after it, and "$&" wrote the text being replaced back out. All
-      // four verified against this exact call. Silent, in the tool whose description says it
-      // is how a draft is filled in section by section.
+      // DELIBERATE: a function replacement, not a string one. `replace` is the model's own
+      // text, and a string replacement interprets `$$`, `$&`, `` $` `` and `$'` inside it.
       const result = body.replace(find, () => replace);
-      // THE ENVELOPE IS NOT PATCHABLE, which is the third and last way it was writable by hand.
-      //
-      // document_write and document_revise refuse content that opens with frontmatter, and say
-      // why: "the envelope is the platform's; the body is yours ... there is no third source,
-      // and 'the model typed it into some YAML' was the third source". document_patch WAS that
-      // third source. It edits text in place, so `find: "flow: ops-flow"` reached the envelope,
-      // and ownershipCheck only guards the five fields in PLATFORM_OWNED — `flow` is not one
-      // of them.
-      //
-      // WHICH fields, and what closing this route costs, are envelopeEditRefusal's own
-      // docstring. They were written out here as well, in nearly the same words, and each
-      // copy pointed at the other — "one comment in document_patch contemplated" there, "one
-      // comment here contemplated" in this one — so a reader following either was sent to
-      // the paragraph they had just read.
+      // The envelope is not patchable: a patch edits text in place, so `find: "flow: x"` would
+      // otherwise reach the envelope, and ownershipCheck guards only PLATFORM_OWNED. Which
+      // fields, and what closing this route costs, are in envelopeEditRefusal's docstring.
       const edited = envelopeEditRefusal(body, result);
       if (edited) return text(edited);
-      // The chain comes from what the document says. It cannot differ from the file's own
-      // envelope now, and reading it from `result` keeps this the same expression document_write
-      // uses rather than a second way of asking the same question.
+      // The chain comes from `result`, which is the same expression document_write uses.
       const chain = chainFor(root, path, result);
-      // Against the RESULTING document, not the replacement fragment. A patch is normally a
-      // few lines, so a check reading `replace` was reading a document with no frontmatter —
-      // which is why the guards have to see the whole thing.
+      // Against the resulting document, not the replacement fragment: a fragment is a few
+      // lines with no frontmatter, and the guards have to see the whole thing.
       const fixed = normalizeSections(chain, path, result);
-      // flowDeclarationCheck went with the creation guards. It asked "did you forget to
-      // declare a flow?" — a question about an initiative being created, asked on a path that
-      // has never created one. initiative_open asks it now, once, and an initiative that
-      // exists is one that was already asked.
       const bad = documentGuards(chain, root, path, fixed.content, team);
       if (bad) return text(bad);
       persistDocument(chain, root, path, target, fixed.content, "patch");
@@ -374,7 +317,7 @@ export function registerArtifactTools(server: McpServer): void {
     },
   );
 
-  // ── knowledge tools: format is mechanical, judgment stays with skills ──
+  // Knowledge tools: format is mechanical, judgment stays with skills.
 
   server.registerTool(
     "source_add",
@@ -395,27 +338,21 @@ export function registerArtifactTools(server: McpServer): void {
       },
     },
     async ({ initiative, title, content, supports }) => {
-      // The same guard the other four initiative-taking tools apply. This one did not, so it
-      // accepted a multi-segment name like `a/b` that initiative_status, reconcile, close and
-      // source_list all refuse — a source attached to something no other tool calls an
-      // initiative. safePath below still stopped it leaving the store, which is why the gap
-      // read as harmless; being inside the store is a different question from being an
-      // initiative, and `join(root, initiative, d)` further down asks the second one.
+      // The same guard the other initiative-taking tools apply. safePath below only
+      // stops a path leaving the store, which is a different question from whether the name
+      // is an initiative — and `join(root, initiative, d)` further down asks the second one.
       const badInitiative = safeName(initiative, "initiative");
       if (badInitiative) return text(badInitiative);
       const who = parseCaller(requestHeaders());
       const root = await userRoot();
-      // The string form is split on commas, not taken whole. `supports` accepts either, and
-      // the description asks for "every document this material bears on" — so the obvious
-      // call is `supports: "intent.md, spec.md"`. Wrapped in an array unsplit, that is one
-      // entry containing a comma, which the envelope check below correctly refuses. It used
-      // to work by accident: the comma survived into the YAML and the reader split it there.
-      // Splitting here is what makes both call shapes mean the same thing.
+      // The string form is split on commas, so `supports: "intent.md, spec.md"` and the array
+      // form mean the same thing. Unsplit it is one entry containing a comma, which the check
+      // below refuses.
       const list = (Array.isArray(supports) ? supports : supports ? supports.split(",") : [])
         .map((x) => x.trim()).filter(Boolean);
-      // Same reason as knowledge_add's evidence: these are written into YAML and read back by
-      // a comma-splitter, so a separator inside one silently becomes two entries and a
-      // bracket or newline ends the envelope. They name documents — single path segments.
+      // These are written into YAML and read back by a comma-splitter, so a separator inside
+      // one becomes two entries and a bracket or newline ends the envelope. They name
+      // documents — single path segments.
       for (const d of list) {
         if (!PLAIN_TOKEN.test(d.trim())) {
           return text(`ERROR: supports entry "${d}" must be a document name — ` +
@@ -429,10 +366,9 @@ export function registerArtifactTools(server: McpServer): void {
       // and it is what stops a tool added later from being the exception.
       const blocked = writeGuard(rel, "source_add");
       if (blocked) return text(blocked);
-      // THE SECOND CREATION PATH, and it is easy to miss. `mkdirSync(..., {recursive:true})`
-      // below builds `<initiative>/sources/` for an initiative that does not exist, so
-      // attaching a source used to conjure the folder that document_write is now refused for
-      // — leaving a half-initiative with material in it and no record of anyone opening it.
+      // The second creation path: `mkdirSync(..., {recursive:true})` below would build
+      // `<initiative>/sources/` for an initiative nobody opened, leaving a half-initiative
+      // with material in it and no record of anyone opening it.
       const unopened = unopenedRefusal(root, rel);
       if (unopened) return text(unopened);
       const target = await safePath(rel);
@@ -450,25 +386,17 @@ export function registerArtifactTools(server: McpServer): void {
           ? readFileSync(join(root, initiative, d), "utf8") : "");
         return env.status === "approved";
       });
-      // AN AUDIT EVIDENCES ITSELF WITH A SOURCE, which is why this call is here and not in a
-      // tool named for auditing. The flow declares `sdlc-spec-audit` and `sdlc-plan-audit` as
-      // producing a SOURCE that supports the document they audited — no document of their own
-      // — so a platform that waited for an audit document would report every audited
-      // initiative as un-audited. One source per supported document, because a source
-      // supporting two documents is evidence for both stages and the loop should hear it twice.
-      // THE CHAIN IS RESOLVED FROM THE INITIATIVE, NOT FROM THE SOURCE'S OWN PATH.
+      // An audit evidences itself with a source, which is why this call is here and not in a
+      // tool named for auditing: `sdlc-spec-audit` and `sdlc-plan-audit` are declared as
+      // producing a source that supports the document they audited, and no document of their
+      // own. One `noteSource` per supported document — a source supporting two documents is
+      // evidence for both stages.
       //
-      // `chainFor` answers for a DOCUMENT the flow declares. A source is not one — it lives
-      // under `sources/` and carries no `flow:` of its own — so asking it about the source's
-      // path returns EMPTY_CHAIN: name null, zero stages. Wired that way, `noteSource` looked
-      // up the audit step in an empty stage list, found nothing, and returned silently. The
-      // source was recorded, the platform said "source recorded", and the audit evidence the
-      // flow needs was never written. Nothing anywhere reported a problem.
-      //
-      // Found by driving a real initiative through the real doors: every document written and
-      // approved, both audit sources added, and the close still refused for "needs 1 audit
-      // about a recorded document". `<initiative>/x.md` is the same form `initiative_open`
-      // uses to resolve a chain before any document exists.
+      // DELIBERATE: the chain is resolved from `<initiative>/x.md`, not from the source's own
+      // path. `chainFor` answers for a document the flow declares; a source lives under
+      // `sources/` and carries no `flow:`, so its own path returns EMPTY_CHAIN and
+      // `noteSource` would look the audit step up in an empty stage list and return silently.
+      // This is the form `initiative_open` uses to resolve a chain before any document exists.
       const governing = chainFor(root, `${initiative}/x.md`);
       const sourceTeam = await teamFor(who.email);
       for (const supported of list) {
@@ -505,9 +433,7 @@ export function registerArtifactTools(server: McpServer): void {
       if (!existsSync(dir)) return text(JSON.stringify({ initiative, sources: [] }));
       const rows = readdirSync(dir).filter((f) => f.endsWith(".md")).map((f) => {
         const env = parseEnvelope(readFileSync(join(dir, f), "utf8"));
-        // `contributed_by` is what source_add and document_revise actually write. This
-        // read `added_by`, a field nothing has ever written, so every source came back
-        // with an empty contributor — the one thing that says whose material it is.
+        // COUPLED: `contributed_by` is the field source_add and document_revise write.
         return { path: `${initiative}/sources/${f}`, title: env.title || f,
                  supports: env.supports || "",
                  contributed_by: env.contributed_by || "", added_at: env.added_at || "" };

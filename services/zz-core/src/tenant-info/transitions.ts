@@ -2,21 +2,17 @@
  * transitions.ts — the two lifecycle handlers: what an approval or a status change binds to,
  * and what a supersession must establish about both of its participants.
  *
- * SPLIT OUT OF policies.ts AT THE 700-LINE CEILING during I-10, the third file in this delivery
- * to reach it. WHICH HALF MOVED WAS DECIDED BY A FROZEN CHECK rather than by taste:
- * `checks/tenant-lifecycle-matrix.ts` imports `decideTransition` from `policies.js` by name, and
- * a frozen check's bytes cannot be edited to follow a symbol somewhere else — so the matrix
- * decision and the record digest stay where it expects them, and the handlers that call them are
- * what left. The same constraint decided the inventory.ts split one ceiling earlier, and on both
- * occasions taking the tidier-looking seam broke a check on the first attempt.
+ * COUPLED: `checks/tenant-lifecycle-matrix.ts` imports `decideTransition` from `policies.js` by
+ * name and its bytes are frozen, so the matrix decision and the record digest stay there and
+ * the handlers that call them live here.
  *
- * WHAT THESE TWO ENFORCE. An approval binds to the revision AND the record digest, so content or
- * effective provenance moving underneath it invalidates the approval instead of carrying a
- * signature onto bytes nobody read. A native knowledge edit returns the concept to draft, so an
- * old verification cannot come to describe new content. A supersession is one atomic batch and
- * refuses self-replacement, a cycle, a missing replacement and cross-owner retirement — the
- * kernel's `getHead` takes an id precisely so both participants can be checked here, without the
- * kernel ever learning what a supersession is.
+ * An approval binds to the revision and the record digest, so content or effective provenance
+ * moving underneath it invalidates the approval rather than carrying a signature onto bytes
+ * nobody read. A native knowledge edit returns the concept to draft, so an old verification
+ * cannot come to describe new content. A supersession is one atomic batch and refuses
+ * self-replacement, a cycle, a missing replacement and cross-owner retirement — the kernel's
+ * `getHead` takes an id so both participants can be checked here, without the kernel ever
+ * learning what a supersession is.
  */
 import { randomUUID } from "node:crypto";
 
@@ -33,10 +29,10 @@ import type { ArtifactHead, PolicyContext, PolicyOutcome } from "./mutations.js"
 import { decideTransition, recordDigestOf, invalid, resolveRef, SHA256_RE, LIFECYCLE_EVENT_KIND, type LifecycleOp } from "./policies.js";
 
 /** `approve`/`verify`/`set_knowledge_status`/`publish`/`unpublish` share one shape: none
- *  touch content, all bind to the revision AND record digest the caller asserts is current,
+ *  touch content, all bind to the revision and record digest the caller asserts is current,
  *  and `decideTransition` is the one gate for class/operation/authorization/gate/binding. A
- *  SourceArtifact is refused structurally (`head.revision === null`) before the caller's own
- *  declared `artifact_class` is even consulted — a lie about class buys it no lifecycle. */
+ *  SourceArtifact is refused structurally (`head.revision === null`) before the caller's
+ *  declared `artifact_class` is consulted, so a lie about class buys it no lifecycle. */
 export function handleLifecycleTransition(request: MutationRequest, ctx: PolicyContext, head: ArtifactHead, op: LifecycleOp): PolicyOutcome {
   const artifactId = request.artifact_id as string;
   const raw = request.payload;
@@ -135,4 +131,4 @@ export function handleSupersede(request: MutationRequest, ctx: PolicyContext, he
   };
 }
 
-// ── the dispatcher ───────────────────────────────────────────────────────────────────────
+// The dispatcher

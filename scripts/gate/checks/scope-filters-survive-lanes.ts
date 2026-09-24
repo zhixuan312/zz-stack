@@ -1,13 +1,10 @@
 import { planSearch } from "@zz/indexing";
 import { check } from "../run.ts";
 
-// TWO CASES, BECAUSE ONE OF THEM IS THE ONLY ONE THAT REACHES THE LOOP.
-//
-// This check used to pass `{ initiative, flow }` — both unmappable — so `planSearch` returned
-// its typed refusal on the first line and the stage loop below iterated over four empty
-// arrays. It reported green on every gate run this repository has ever done without executing
-// a single one of its own assertions. `tag` is the one scope filter with a native mapping, so
-// it is the one that can prove the restriction actually reaches every stage.
+// DELIBERATE: two cases, because only one of them reaches the stage loop. `planSearch`
+// refuses an unmappable filter on its first line, so a case built on `initiative` or `flow`
+// leaves the loop below iterating over four empty arrays. `tag` is the one scope filter with
+// a native mapping, so it is the one that can prove the restriction reaches every stage.
 check("an unmappable scope restriction is refused rather than silently dropped", () => {
   for (const filters of [{ initiative: "2026-09-20-x" }, { flow: "sdlc-flow" }]) {
     const p = planSearch({ query: "迁移", filters, broadened: true });

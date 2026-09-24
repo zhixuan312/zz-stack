@@ -3,7 +3,7 @@
  *
  * The team is a column on the person, read fresh on every call, and everything the platform
  * scopes depends on it being derived one way. A tool that picks a team by taking the first
- * membership row is not wrong for somebody in one team, which is why it survives review.
+ * membership row is right for somebody in one team, which is why review does not catch it.
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -21,15 +21,9 @@ function execStderr(err: unknown): string {
 }
 
 check("authority is decided by one function, never by comparing the role", () => {
-  // "A superadmin is every team" is a real rule and a correct one. It was also written out
-  // by hand in four places — team_list, catalog_list, install_list and the knowledge
-  // store's team check — in a form that compares platformRole directly and therefore cannot
-  // see anything else about how the caller authenticated. So a token deliberately bound to
-  // one team listed every team on the platform, and one of those four even declared a local
-  // `const isSuper` that SHADOWED the imported check of that name.
-  //
-  // isSuper() is where the question is answered: role, plus whether this is a PAT, plus its
-  // scope, plus its team binding. A second spelling of it is a spelling that stops agreeing.
+  // isSuper() is where "is this caller platform authority" is answered: role, plus whether
+  // this is a PAT, plus its team binding. A line comparing platformRole directly cannot see
+  // the binding, so a token bound to one team would list every team on the platform.
   const bad: string[] = [];
   const OWNER = "services/gateway/src/identity.ts";
   for (const rel of sourceFiles(["services", "packages"], [".ts"])) {
@@ -49,16 +43,9 @@ check("authority is decided by one function, never by comparing the role", () =>
 check("the team a person acts for is stored, not asserted", () => {
   const nothingToRun = unbuilt();
   if (nothingToRun) return nothingToRun;
-  // ONE active team per person, chosen in ZZ Access and read from the database on every
-  // call. The whole value is that there is a single answer to "which team" — so the ways it
-  // used to be decided must stay gone, not linger beside it:
-  //
-  //   · a header a client sends (any client could then claim any team, and the middleware
-  //     had to police it)
-  //   · `every[0]` — an active team decided by role and the alphabet, which nobody chose
-  //     and nobody could see
-  //
-  // A bound token is the ONE exception and stays: automation confined to a team.
+  // One active team per person, chosen in ZZ Access and read from the database on every call.
+  // Neither a client-sent header nor the first membership row may decide it. A bound token is
+  // the one exception: automation confined to a team.
   const bad: string[] = [];
   const idsrc = withoutComments(readFileSync(join(root, "services/gateway/src/identity.ts"), "utf8"));
   if (/x-zz-team/.test(idsrc)) {
@@ -66,14 +53,8 @@ check("the team a person acts for is stored, not asserted", () => {
   }
   const core = withoutComments(zzCoreSource());
   if (!/active_team_id/.test(core)) bad.push("zz-core no longer reads the stored active team");
-  // The RULE now lives in @zz/contracts, because the gateway needs the same answer for
-  // credential resolution and was taking the first row of a differently ordered query — so
-  // a person in two teams could have documents land in one team's store while the block
-  // call spent another team's quota. Both services call actingTeam.
-  //
-  // Which means this can RUN it rather than grep for the expression that used to implement
-  // it. The earlier version tested for the literal `every.includes(stored)` and failed the
-  // moment the rule moved, while the property it names still held perfectly.
+  // The rule lives in @zz/contracts and both services call actingTeam, so this runs it rather
+  // than grepping for the expression that implements it.
   if (!/actingTeam\(/.test(core)) bad.push("zz-core no longer uses the shared acting-team rule");
   const probe = `
     import { actingTeam } from ${JSON.stringify(join(root, "packages/contracts/dist/index.js"))};
@@ -95,35 +76,23 @@ check("the team a person acts for is stored, not asserted", () => {
   }
   const srv = gatewaySource();
   if (!/"team_switch"/.test(srv)) bad.push("there is no way for a person to switch team");
-  // And nothing may quietly pick a different one. `teams[0]` is a membership row in whatever
-  // order a query returned it, and it was standing in for the acting team in three places:
-  // credential resolution (so a block call could spend one team's quota while documents
-  // landed in another's), the web knowledge base (so the browser showed one team and the
-  // agent wrote to the other), and catalog_list (so "what does my team run" answered about
-  // a team they were not working in). None of them failed; they were just about a different
-  // team than the person was.
-  // The three files it was found in are the three it was named for. It is a mistake anyone
-  // reaching for a person's team can make, in any file that has the list.
+  // And nothing may quietly pick a different one: `teams[0]` is a membership row in whatever
+  // order a query returned it, so it silently answers about a team the person is not acting
+  // for. Scanned repo-wide, because any file holding the list can make the mistake.
   for (const f of sourceFiles(["services", "packages"], [".ts"])) {
     const src = readFileSync(join(root, f), "utf8");
     for (const [i, line] of src.split("\n").entries()) {
       if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue;
-      // Any local that holds the list, not the name `teams` alone. catalog_list aliased it
-      // to `myTeams` and then took `myTeams[0]`, one line below a comment refusing exactly
-      // that — and `\bteams\[0\]` cannot match it, because `y` and `t` are both word
-      // characters so there is no boundary to anchor on.
+      // Any local that holds the list, not the name `teams` alone: an alias such as
+      // `myTeams[0]` has no word boundary before `teams`, so `\bteams\[0\]` would miss it.
       if (/[Tt]eams\[0\]/.test(line)) {
         bad.push(`${f}:${i + 1} takes the first membership row instead of the acting team`);
       }
     }
   }
-  // Switching is a state change on who did what, and this platform records those.
-  //
-  // TO THE NEXT REGISTRATION, not to a byte count. This read a fixed 3,000-character window
-  // after the registration and failed the moment `team_switch` grew a refusal for a
-  // team-bound token — the event was still logged, 3,155 characters in. A window measured in
-  // bytes asks "did this handler stay short", which is not the rule; the rule is that THIS
-  // handler records the switch, and the handler ends where the next `registerTool` begins.
+  // Switching is a state change on who did what, and this platform records those. The window
+  // runs to the next registration rather than to a byte count: the rule is that this handler
+  // records the switch, and the handler ends where the next `registerTool` begins.
   const zone = srv.slice(srv.indexOf('"team_switch"'));
   const next = zone.indexOf("registerTool", 1);
   if (!/team\.switch/.test(next > 0 ? zone.slice(0, next) : zone)) {
@@ -133,21 +102,13 @@ check("the team a person acts for is stored, not asserted", () => {
 });
 
 check("a tool picks the caller's team the platform's way", () => {
-  // "Which team am I acting for" has exactly one right answer per request, and actingTeam in
-  // @zz/contracts is where it is decided — the bound token first, then the team the person
-  // chose, then admin-role before alphabetical. Its own docstring records that the gateway
-  // once took the first row of a differently ordered query and put documents in one team's
-  // store while the block call spent another's.
+  // "Which team am I acting for" has one right answer per request, and actingTeam in
+  // @zz/contracts decides it: the bound token first, then the team the person chose, then
+  // admin-role before alphabetical.
   //
-  // team_mine was still doing it, in the one tool whose entire job is to answer the question:
-  // `order by t.slug`, then `rows.find(r => r.active) ?? rows[0]`. A person who is a member
-  // of 'alpha' and an admin of 'beta' and has never switched was told alpha while every call
-  // acted for beta, and no other check saw it because both answers are a team the person is
-  // really in. Fixing that instance is not the point — the query is easy to write again.
-  //
-  // So: a tool that reads memberships and SELECTS one of them is choosing a caller's team,
-  // and must choose it the one way. Listing them all (team_switch's "yours:" line) is not
-  // selecting, and neither is acting on a team named in an argument.
+  // A tool that reads memberships and selects one of them is choosing a caller's team, and
+  // must choose it that way. Listing them all is not selecting, and neither is acting on a
+  // team named in an argument.
   const bad: string[] = [];
   for (const f of sourceFiles(["services"], [".ts"])) {
     const src = readFileSync(join(root, f), "utf8");
@@ -168,17 +129,13 @@ check("a tool picks the caller's team the platform's way", () => {
 check("identity is a port, and a door that says no ends the request", () => {
   const nothingToRun = unbuilt();
   if (nothingToRun) return nothingToRun;
-  // Identity answers ONE question — which person is calling — and it answers it through
-  // adapters. The shape has to be right before it is needed: "we have our own auth, SSO
-  // later" is the road that welds itself shut, because once a PAT is the foundation rather
-  // than one adapter, every new way of logging in means surgery on identity resolution.
-  // Adding Keycloak or another OIDC provider should be adding an entry to an array.
+  // Identity answers one question — which person is calling — through an adapter list, so a
+  // new login method is a new entry in that array.
   //
-  // The property that is not visible by reading is the ORDERING. A door that says NO must
-  // end the request, not pass the caller to the next door — a revoked PAT falling through to
-  // the forwarded-header adapter would turn a revoked token into an unauthenticated header
-  // claim, which is the exact opposite of revoking it. So this RUNS the resolver with stub
-  // adapters instead of inspecting it.
+  // The property not visible by reading is the ordering: a door that says no must end the
+  // request, not pass the caller to the next one, or a revoked PAT would fall through to the
+  // forwarded-header adapter and become an unauthenticated header claim. So this runs the
+  // resolver with stub adapters instead of inspecting it.
   const src = withoutComments(readFileSync(join(root, "services/gateway/src/identity.ts"), "utf8"));
   const bad: string[] = [];
   if (!/const ADAPTERS: IdentityAdapter\[\] = \[/.test(src)) {
@@ -213,26 +170,10 @@ check("identity is a port, and a door that says no ends the request", () => {
 });
 
 check("a caller's email is normalised at the boundary, never at the call site", () => {
-  // ONE SPELLING OF A PERSON. Every reader of `Caller.email` either compares it — to the
-  // `user` stored in activity.jsonl, to a row the database returned, to an address somebody
-  // typed as a tool argument — or writes it into a record something later compares. The
-  // platform had already settled on lowercase everywhere that spelling is STORED:
-  // `principal.email` is citext, every insert lowercases, every predicate says
-  // `lower(p.email)`. What it lacked was a place where the header became that, so the
-  // normalisation was a ritual repeated at twenty-odd call sites — and a ritual is exactly
-  // the kind of thing three of them forgot.
-  //
-  // Each of those three then compared a lowercased value against a raw one, which is never
-  // equal for an address with a capital in it: initiativeNameTaken read a person's own draft
-  // as somebody else's and told them to open a second initiative, and pat_issue and
-  // client_setup refused a person their own token. All three were invisible because the
-  // database happens to hold lowercase — the bug waited on the one identity that does not
-  // come from it, the forwarded caller a gateway with no platform database passes straight
-  // through, which is local development.
-  //
-  // Both halves are held here. Without the first the ritual is load-bearing again; without
-  // the second it grows back, and the next call site to forget is invisible for the same
-  // reason as the last three were.
+  // One spelling of a person. Everything stored is lowercase — `principal.email` is citext,
+  // every insert lowercases, every predicate says `lower(p.email)` — so `parseCaller` folds
+  // the header once, at the boundary, and no call site repeats it. Both halves are asserted
+  // here: the fold exists, and nobody does it again.
   const bad: string[] = [];
 
   const contracts = contractsSource();
@@ -244,58 +185,37 @@ check("a caller's email is normalised at the boundary, never at the call site", 
              "normalise at and every comparison depends on what the sender happened to send");
   }
 
-  // Lowercasing applied DIRECTLY to an email field. Written as a SUFFIX rather than as a list
-  // of receivers: the first attempt enumerated them — `parseCaller(...)`, `caller()`, `who`,
-  // `id` — and `parseCaller\([^)]*\)` stops at the first `)`, so it never matched the one form
-  // that actually appears, `parseCaller(requestHeaders()).email`. A pattern that misses the
-  // commonest spelling of the thing it forbids is worse than none, because it reads as cover.
+  // Lowercasing applied directly to an email field, matched as a suffix rather than by
+  // enumerating the receivers — `parseCaller(requestHeaders()).email` is the common spelling
+  // and no receiver list catches it.
   //
-  // Two things end in `.toLowerCase()` near an email and are NOT this:
-  //   `(email ?? id.email).toLowerCase()` — the lowercase applies to the parenthesised
-  //       expression, not to `.email`, and what it normalises is an address a caller TYPED as
-  //       a tool argument. A value arriving from outside has to be brought to the one
-  //       spelling; that is the boundary doing its job, in the other direction.
-  //   `lane.email` — a smoke fixture read from a credentials file, not a Caller at all. It is
-  //       compared against a `closed_by` the platform wrote, so it too is an outside value
-  //       being normalised inwards.
-  const RITUAL = /(?<!\blane)\.email(?:\.trim\(\))?\.toLowerCase\(\)/;
+  // `(email ?? id.email).toLowerCase()` ends the same way and is not this: the lowercase
+  // applies to the parenthesised expression, and what it normalises is an address a caller
+  // typed as a tool argument.
+  const RITUAL = /\.email(?:\.trim\(\))?\.toLowerCase\(\)/;
   for (const rel of sourceFiles(["packages", "services"], [".ts"])) {
     readFileSync(join(root, rel), "utf8").split("\n").forEach((ln, i) => {
       if (RITUAL.test(ln)) bad.push(`${rel}:${i + 1} lowercases the caller's email again`);
     });
   }
 
-  // AN ACTOR THAT DID NOT COME FROM parseCaller. zz.event.actor is written from the canonical
-  // header by the gateway — one spelling, folded at the boundary above — and once from
-  // somewhere else entirely: collect-turns reads LibreChat's own store, where the address is
-  // whatever the account was registered with. An operator who typed `Alice@Example.com` when
-  // provisioning made one person two actors in one table, and `tool-report --actor`,
-  // evolve-report and watch-results all group on it.
-  //
-  // The GUARD had to widen too. Written `insert into zz.event`, it skipped the gateway's own
-  // writer entirely — that statement says `insert into event`, unqualified — so the rule
-  // covered exactly one of the two, and the one it covered was the one that happened to need
-  // it. A check that passes because of what it cannot see is the shape this file refuses.
+  // An actor that did not come from parseCaller. Every statement that writes zz.event.actor
+  // folds it; unfolded, one person becomes two rows in the column tool-report, evolve-report
+  // and watch-results group on.
   for (const rel of sourceFiles(["packages", "services"], [".ts"])) {
     const text = readFileSync(join(root, rel), "utf8");
     if (!/insert into (?:zz\.)?event\b/.test(text)) continue;
-    // COMMENTS STRIPPED FIRST, THEN the statement located. The paragraph explaining why the
-    // fold is there sits between the two halves of the SQL and contains the word `lower(`, so
-    // a window taken over the raw text matched the check's own prose and passed with the fold
-    // removed — and a window taken after stripping, but measured before, no longer reached the
-    // code at all. A comment cannot be evidence that the code does what it says.
+    // Comments stripped first, then the statement located: a window over raw text can match
+    // `lower(` in the prose beside the SQL and pass with the fold removed.
     const code = text.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
-    // BOTH writers of the column. The gateway's says `insert into event`, unqualified, and a
-    // rule keyed to `zz.event` covered only the tool — which was luck rather than design: the
-    // one it happened to cover was the one that needed it.
+    // The gateway's statement says `insert into event`, unqualified, so a rule keyed to
+    // `zz.event` alone would miss it.
     const at = /insert into (?:zz\.)?event\b/.exec(code)?.index ?? -1;
     if (at < 0) continue;
     const stmt = code.slice(at, at + 400);
     if (!/\bactor\b/.test(stmt)) continue;
-    // Folded in the STATEMENT, or folded into the value the statement binds. The gateway's
-    // insert binds `actor`, which logEvent lowercases on the way in because it is the one
-    // place every gateway event passes through; the tool folds in SQL because its actor comes
-    // from LibreChat's store rather than from the platform's identity.
+    // Folded in the statement, or folded into the value it binds: the gateway lowercases in
+    // logEvent, the tool folds in SQL.
     const foldedInSql = /lower\(/.test(stmt);
     const foldedInCode = /const actor = e\.actor\.trim\(\)\.toLowerCase\(\)/.test(code);
     if (!foldedInSql && !foldedInCode) {
@@ -313,38 +233,24 @@ check("a caller's email is normalised at the boundary, never at the call site", 
 
 check("the request-scoped header store is only read where it exists", () => {
   // requestHeaders() reads an AsyncLocalStorage store, and exactly one place enters it:
-  // serveMcp's own route handler, in @zz/mcp-http. Anywhere else it returns {} — silently,
+  // serveMcp's own route handler, in @zz/mcp-http. Anywhere else it returns {} silently,
   // because an empty header bag is a legal header bag.
   //
-  // The gateway's block proxy is a plain `app.all("/p/:platform/mcp")`, and it opened with
-  // `const email = caller().email` — caller() being parseCaller(requestHeaders()). So the
-  // address was always "", resolveCredential looked the personal key up under the empty
-  // string, found nothing, and EVERY block call fell through to the team's shared key. A
-  // person who had stored their own key spent the team's quota under the team's permissions,
-  // and the audit recorded level "team" for everybody. "A personal key always wins" is what
-  // the tool description, the door index and the missing-credential guidance all promise.
+  // The test is having a request in hand, not being outside a tool handler. A helper reached
+  // from inside a handler is fine; a function that was handed `req` is not, because express
+  // handed it that, which means serveMcp did not. Such a function reads req.zzIdentity.
   //
-  // THE TEST IS HAVING A REQUEST IN HAND, not being outside a tool handler. Plenty of helpers
-  // sit outside one and are reached from inside it, where the store is live; that is the
-  // normal shape and nothing is wrong with it. What cannot be right is a function that was
-  // handed `req` — because express handed it that, which means serveMcp did not, which means
-  // the store is empty. Such a function already has the answer: req.zzIdentity.
+  // Indirect readers count, repo-wide: any zero-argument function whose answer comes out of
+  // that store is a reader, so a wrapper does not open the guard.
   //
-  // INDIRECT READERS COUNT, repo-wide. `caller()` was one line of sugar over requestHeaders,
-  // and `callerIdentity()` in identity.ts is another — a zero-argument function whose answer
-  // comes entirely from that store. Naming only the accessor would leave the guard open
-  // through whichever wrapper the next author reached for, which is how this class of defect
-  // arrives in the first place.
-  // @zz/mcp-http is the module that ENTERS the store — serveMcp's own handler runs inside
-  // als.run, so a `req` in scope there is the one case where the store is live. It is the
-  // implementation of the rule, not a place the rule applies.
+  // @zz/mcp-http is excluded: it is the module that enters the store, so a `req` in scope
+  // there is the one case where the store is live.
   const files = sourceFiles(["services", "packages"], [".ts"])
     .filter((rel) => !rel.startsWith(join("packages", "mcp-http")))
     .map((rel) => [rel, readFileSync(join(root, rel), "utf8")]);
 
-  /** Spans that are a TOOL HANDLER, blanked. A function that merely builds a server contains
-   * every handler's reads without doing any reading itself: `buildServer` in zz-core wraps
-   * fifty registerTool calls, and counting it as a reader made every caller of it a suspect. */
+  /** Spans that are a tool handler, blanked. A function that merely builds a server contains
+   * every handler's reads without doing any reading itself. */
   const withoutTools = (span: string): string => {
     let out = span;
     for (const m of [...span.matchAll(/registerTool\(/g)].reverse()) {
@@ -372,7 +278,7 @@ check("the request-scoped header store is only read where it exists", () => {
 
   const stripped = files.map(([rel, src]) => [rel, codeOnly(src)]);
 
-  // Pass one: every ZERO-ARGUMENT function whose answer comes out of that store, by name.
+  // Pass one: every zero-argument function whose answer comes out of that store, by name.
   const alsReaders = new Set(["requestHeaders"]);
   for (let round = 0; round < 3; round++) {          // a wrapper of a wrapper still reads it
     const uses = new RegExp(`\\b(?:${[...alsReaders].join("|")})\\(`);
@@ -416,16 +322,9 @@ check("the request-scoped header store is only read where it exists", () => {
 check("nothing picks a team by taking the first membership row", () => {
   // Which team a person acts as is `actingTeam` in @zz/contracts and nothing else: a bound
   // token wins or resolves to nothing, else the team they chose while it is still live, else
-  // admin-role then alphabetical. Three places took the first row of a differently-ordered
-  // list instead — the gateway, `catalog_list`, and the knowledge web app — and the failure
-  // is always the same shape: one team's documents on screen, another team's name beside
-  // them, or a block call spending a team's key that never authorised it.
-  //
-  // The web app was the last one, and the quietest: it fetched an identity that already
-  // carried `activeTeam` and used `teams[0].slug` for the header. The DATA was right, because
-  // the server scopes every route by activeTeam; only the label was wrong, which is worse in
-  // one specific way — the page tells the reader which team they are looking at, and that is
-  // the sentence they would use to notice a mistake.
+  // admin-role then alphabetical. Taking the first row of a differently-ordered list puts one
+  // team's documents on screen under another team's name, or spends a key that never
+  // authorised the call. Covers .html too, because a wrong label is a wrong answer.
   const bad: string[] = [];
   for (const rel of sourceFiles(["services", "packages"], [".ts", ".html"])) {
     const src = readFileSync(join(root, rel), "utf8");

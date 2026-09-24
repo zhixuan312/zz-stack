@@ -1,9 +1,6 @@
 /**
  * A flow's manifest: that it parses, that it names things that exist, and that it is read
  * through one reader wherever it is read.
- *
- *
-
  */
 
 import { execFileSync } from "node:child_process";
@@ -35,18 +32,9 @@ check("every flow.json parses, and its entry names a skill it ships", () => {
       continue;
     }
     if (m.name !== f.flow) bad.push(`${f.flow}: name is "${m.name}"`);
-    // `entry` names the skill a reader starts from, so it has to BE one.
+    // `entry` names the skill a reader starts from, so it has to be one. A package with no
+    // skills is not required to name one.
     //
-    // This required the field and never looked at what it pointed to, and zz-admin
-    // therefore declared `entry: "zz-admin"` while shipping no skills directory at all —
-    // a manifest naming a document nobody wrote. Nothing broke, because every consumer
-    // falls back: whenToUse returns "work that belongs to the zz-admin flow" instead of the
-    // skill's own sentence. A field that can point at nothing is a field that eventually
-    // does, quietly.
-    //
-    // A package with no skills is not required to name one. zz-admin was that for a while —
-    // MCP wiring and nothing else — and it is why this rule reads the way it does; the
-    // package itself has since been folded into zz-access, which ships two skills.
     // skillsDirOf, not join(f.dir, "skills"): the baseline's manifest is in the catalog and its
     // skills are not, so reading the entry's own directory would report every command zz-core
     // declares as naming a skill nobody ships.
@@ -54,21 +42,15 @@ check("every flow.json parses, and its entry names a skill it ships", () => {
     const entrySkills = existsSync(skillsDir)
       ? readdirSync(skillsDir).filter((s) => existsSync(join(skillsDir, s, "SKILL.md")))
       : [];
-    // THE BASELINE IS EXEMPT, and only from this half. Its front door is `zz-router`, which is
-    // GENERATED per person from the flows they installed — client-package.ts builds it into the
-    // package and it is on nobody's disk — so there is no shipped skill for `entry` to name and
-    // naming one would be the "field that points at nothing" this rule exists to refuse. The
-    // skills it DOES ship are still held to every other line below.
+    // The baseline is exempt from this half only. Its front door `zz-router` is generated per
+    // person from the flows they installed — client-package.ts builds it into the package and it
+    // is on nobody's disk — so there is no shipped skill for `entry` to name. The skills it does
+    // ship are held to every other rule below.
     if (!m.entry && entrySkills.length && f.flow !== BASELINE) {
       bad.push(`${f.flow}: ships skills and declares no entry`);
     }
-    // EVERY skill a manifest names, not just the entry. sdlc-flow's `stages` listed
-    // `sdlc-audit` twice — a skill that has never existed. sdlc-method says why: "There is no
-    // generic audit skill", the auditors are sdlc-spec-audit and sdlc-plan-audit, and the
-    // manifest kept the name from before that split. Nothing failed: the flow's stages come
-    // from the skills an agent loads, and the smoke engine's stage-order check quietly drops
-    // any stage it never sees a skill_read for — so a stage naming nothing was a stage
-    // nothing verified.
+    // Every skill a manifest names, not just the entry. Nothing else verifies that a stage's
+    // skill exists.
     for (const [field, names] of [["stages", (m.stages ?? []).map((x: { name: string }) => x.name)],
                                   ["commands", Object.values(m.commands ?? {}) as string[]]] as [string, string[]][]) {
       for (const n of new Set(names ?? [])) {
@@ -81,18 +63,9 @@ check("every flow.json parses, and its entry names a skill it ships", () => {
       bad.push(`${f.flow}: entry is "${m.entry}" and no such skill is shipped` +
                (entrySkills.length ? ` (has: ${entrySkills.join(", ")})` : " (it ships none)"));
     }
-    // `clients` was removed from the manifest on 2026-09-12 with Codex and Hermes. A manifest
-    // still carrying it is not harmless: the schema drops unknown keys, so the field would
-    // read as an honoured declaration and silently do nothing.
-    if ("clients" in m) {
-      bad.push(`${f.flow}: declares 'clients', a field this platform no longer reads`);
-    }
-    // `standalone` was replaced by `commands` on 2026-09-14. The SCHEMA already refuses it —
-    // CatalogManifest is strict, so a manifest carrying it does not validate — but what zod
-    // says is `Unrecognized key(s): 'standalone'`, which tells an author the key is illegal
-    // and not what to write instead. The schema is PUBLISHED as JSON at /schemas/manifest.json
-    // and cannot carry that advice; this can, and it is the same sentence the retired
-    // `clients` field gets above.
+    // `commands` is the field; `standalone` is refused with a pointer to it. The strict schema
+    // already refuses it, but zod says `Unrecognized key(s): 'standalone'` without saying what to
+    // write instead, and the schema is published as JSON at /schemas/manifest.json.
     if ("standalone" in m) {
       bad.push(`${f.flow}: declares 'standalone'; it is replaced by 'commands', a map from ` +
                "the name a person types to the skill that carries the method");
@@ -103,26 +76,15 @@ check("every flow.json parses, and its entry names a skill it ships", () => {
 
 check("no two flows collapse to the same command namespace", () => {
   // A command is `/<plugin>:<file>`, and the plugin name is the flow's name with a trailing
-  // `-flow` removed — so `/sdlc:flow` rather than `/sdlc-flow:sdlc-flow`. That derivation
-  // can map two different flows onto one name: `sdlc-flow` and a flow called plainly `sdlc`
-  // both become `sdlc`, and one plugin then silently shadows the other in a person's
-  // marketplace, with no error anywhere and no way to tell which one answered.
-  //
-  // The rule is in client-package.ts (pluginName); this is the check that it stays
-  // injective across the catalog it is applied to.
+  // `-flow` removed — `/sdlc:flow`, not `/sdlc-flow:sdlc-flow`. That derivation can map two
+  // flows onto one name, and one plugin then shadows the other in a person's marketplace with
+  // no error. COUPLED: the rule itself is `pluginName` in client-package.ts; this checks that it
+  // stays injective across the catalog.
   if (NAMING.error || !NAMING.pluginName) return NAMING.error ?? "NAMING has no pluginName";
   const shortOf = NAMING.pluginName;
-  // NOT PRE-SEEDED WITH THE BASELINE ANY MORE. buildClientPackage emits a plugin called
-  // `zz-core` — the router and the platform's own MCP, which everything else needs — and this
-  // map used to reserve that name against the catalog, because a second package taking it gives
-  // two plugins one name, one marketplace entry and one directory. Files at the same tar path
-  // is a failure this file has already had once, in the hermes router, "and the one that won on
-  // extraction was the wrong one".
-  //
-  // The baseline now HAS a catalog entry — `catalog/zz/zz-core/`, which is where its manifest
-  // declares its commands — so reserving the name here would report the plugin against itself.
-  // What the reservation was defending is still defended: the loop below refuses any TWO
-  // packages that collapse to one name, and the baseline is one of the two it counts.
+  // Not pre-seeded with the baseline. The baseline has a catalog entry (`catalog/zz/zz-core/`),
+  // so reserving its name here would report the plugin against itself. The loop below still
+  // refuses any two packages that collapse to one name, and the baseline is one of the two.
   const seen = new Map();
   const clashes = [];
   for (const f of flows) {
@@ -136,32 +98,20 @@ check("no two flows collapse to the same command namespace", () => {
 });
 
 check("every catalog entry has a flow.json and declares what it is", () => {
-  // One manifest name, one rule. zz-handover shipped nothing for weeks because it carried
-  // plugin.json while every reader looks for flow.json — and nothing failed, it was simply
-  // invisible.
-  //
-  // "Content and no manifest" was the wrong shape for that rule, and it forbade something
-  // the platform supports and zz-flow-builder teaches: a SKILLS-ONLY package, no manifest at
-  // all, that a team keeps its conventions in. catalogSkillRoots scans the filesystem and
-  // serves a package owned by the caller's own team whether or not any flow is installed —
-  // verified on the deployment, where skill_read returned a skill from a package with no
-  // flow.json. This check would have failed the build the first time a team did as they were
-  // told.
-  //
-  // What it looks for now is the actual zz-handover shape: a manifest filed under some other
-  // name. And `agents/` still needs a manifest, because a preset is created from one.
+  // One manifest name, one rule: a manifest filed under some other name is invisible to every
+  // reader. A skills-only package with no manifest at all is supported — catalogSkillRoots
+  // serves a package owned by the caller's own team whether or not any flow is installed — so
+  // "content and no manifest" is not the rule.
   const bad = [];
-  // EVERY package, because the subject is a package with no manifest. Iterating `flows` here
+  // Every package, because the subject is a package with no manifest. Iterating `flows` here
   // would have been looking only at the ones that already have one.
   for (const f of catalogPackages) {
     const dir = f.dir;
     const manifest = join(dir, "flow.json");
     if (!f.hasManifest) {
-      // A stray .json is a suspected MISNAMED MANIFEST, not any JSON at all. zz-handover's was
-      // plugin.json and declared a `name`, which is what a manifest does; a flow's
-      // tests/scenarios.json declares scenarios and answers and is content. Reading the file
-      // rather than its extension is what tells them apart — and it keeps the rule about
-      // manifests instead of quietly becoming a rule about where data may live.
+      // A stray .json is a suspected misnamed manifest, not any JSON at all: a manifest declares
+      // a `name`, and a JSON file that declares none is content. Reading the file rather than
+      // its extension is what tells them apart.
       const strays = readdirSync(dir).filter((f) => {
         if (!f.endsWith(".json")) return false;
         try {
@@ -171,14 +121,10 @@ check("every catalog entry has a flow.json and declares what it is", () => {
       if (strays.length) {
         bad.push(`${f.owner}/${f.flow} carries ${strays.join(", ")} and no flow.json — ` +
                  "every reader looks for flow.json, so this package is invisible");
-      } else if (existsSync(join(dir, "agents"))) {
-        bad.push(`${f.owner}/${f.flow} ships an agent and no flow.json — ` +
-                 "an agent preset is created from the manifest");
       }
       continue;   // skills-only, which is a package kind, not a mistake
     }
     const m = JSON.parse(readFileSync(manifest, "utf8"));
-    if ("kind" in m) bad.push(`${f.owner}/${f.flow}: 'kind' is gone — it named a shape and meant ownership. Use 'shelved: true'.`);
     if ("shelved" in m && m.shelved !== true) bad.push(`${f.owner}/${f.flow}: shelved must be true or absent`);
     // A shelved entry is shipped by the shelf, so it needs a description to show on the
     // card; a flow gets one from cardDescription and may fall back.
@@ -191,26 +137,13 @@ check("every catalog entry has a flow.json and declares what it is", () => {
 });
 
 check("a package declares whether it is a flow, and the console reads the declaration", () => {
-  // THE FLOW-MENU BUG, made impossible. zz-admin sat in the console's flows tab beside
-  // ops-flow because nothing in its manifest said it was not a flow, and the console had been
-  // guessing shape from contents. Guessing is wrong even when it guesses right: the day it
-  // guesses wrong there is nothing to point at.
+  // A package is a flow if and only if it declares `documents` (ARCHITECTURE.md). `stages` does
+  // not discriminate — every package whose agent opens a skill has steps.
   //
-  // The rule, from ARCHITECTURE.md: a package is a flow if and only if it declares
-  // `documents`. It was `stages`, which was the right KIND of answer — one declared field,
-  // never inferred — and the wrong field, because it does not discriminate: every package
-  // whose agent opens a skill has steps, so `stages` said yes to all of them. zz-access is
-  // the proof. It is a surface — an agent, an MCP door, no discipline over anything — and
-  // to satisfy the old rule it declared one stage whose name repeated its own entry, which
-  // bought it a stepper over a single step that produced nothing. The declaration was
-  // written to satisfy the check rather than to say something, which is the failure mode a
-  // declared rule exists to avoid.
-  //
-  // `documents` and `stages` travel together in ONE direction. A flow's documents have to be
-  // produced by something, so declaring documents obliges a `stages`. The converse is not an
-  // error and must never become one: stages with no documents is an ordinary non-flow
-  // package. `entry` and `stages` no longer travel together at all — zz-access has an entry
-  // and zero stages, and that is now a supported shape rather than the debt it used to be.
+  // `documents` and `stages` travel together in one direction only: declaring documents obliges
+  // a `stages`, because a flow's documents have to be produced by something. Stages with no
+  // documents is an ordinary non-flow package. `entry` and `stages` do not travel together at
+  // all; an entry and zero stages is a supported shape.
   const bad = [];
   for (const f of flows) {
     const manifest = join(f.dir, "flow.json");
@@ -226,28 +159,17 @@ check("a package declares whether it is a flow, and the console reads the declar
       bad.push(`${f.owner}/${f.flow} declares ${stages} stage(s) and no entry — a package ` +
                "with a method needs a door: the skill its agent opens first");
     }
-    // THE PHANTOM, named so it cannot come back under another name. A single stage whose
-    // name is the entry skill, producing nothing, is not a method — it is the shape a
-    // package took to pass the old rule.
+    // A single stage whose name is the entry skill, producing nothing, is not a method. Named
+    // here so it cannot come back under another name.
     if (!documents && stages === 1 && m.stages[0].name === m.entry) {
       bad.push(`${f.owner}/${f.flow} declares one stage repeating its entry "${m.entry}" and ` +
                "no documents — that is not a method, it is a placeholder; delete it");
     }
   }
-  // And the console must READ that declaration rather than reconstruct it. The first fix
-  // here filtered on `entry || stages`, which gave the right answer for the eight packages
-  // that existed and would have kept giving an answer for a ninth that declared nothing.
-  //
-  // IT USED TO CHECK A FILTER, and there is no filter left to check. The console listed FLOWS,
-  // so `catalogEntries().filter((e) => stages.length > 0)` was the line where the declaration
-  // was read and this asserted its shape. The console lists PLUGINS now — one page where there
-  // were two — and every catalog package is one whether or not it declares a method, so the
-  // filter is gone on purpose and its absence is not evidence of anything.
-  //
-  // What the rule was always about survives: the console carries BOTH declarations to the
-  // reader — `documents`, which says what the package is, and `stages`, which says how it
-  // gets there — and it never decides what a package is from `entry`. The second half is the
-  // one that caught a real bug.
+  // And the console must read that declaration rather than reconstruct it: it carries both
+  // `documents`, which says what the package is, and `stages`, which says how it gets there, and
+  // it never decides what a package is from `entry`. There is no filter to check — the console
+  // lists plugins, and every catalog package is one whether or not it declares a method.
   const consoleSrc = consoleSource();
   for (const field of ["documents", "stages"]) {
     if (!new RegExp(`manifest\\.${field}`).test(consoleSrc)) {
@@ -266,18 +188,10 @@ check("a package declares whether it is a flow, and the console reads the declar
 
 check("a flow.json is validated wherever it is read", () => {
   // A manifest decides which documents gate, in what order, and therefore which writes the
-  // platform refuses. Four places read one — zz-core to build the chain it enforces, and
-  // three tools to audit or drive a flow — and all four asserted the shape with a cast
-  // instead of parsing it.
+  // platform refuses. Several places read one, and a cast instead of a parse lets `gate: "false"`
+  // through as a truthy string — a document declared not to be a gate becomes one.
   //
-  // The cost is not theoretical: `gate: "false"` is a STRING and therefore truthy, so a
-  // manifest saying a document is not a gate made it one. In zz-core that refused writes the
-  // flow depends on; in smoke-engine it set the premature-acceptance guard above any
-  // threshold the flow can reach, so the guard blocks a run that is going correctly; in
-  // manifest-audit it audits a store against rules the platform never enforced.
-  //
-  // @zz/contracts holds the schema and it says NO. Anywhere a flow.json is parsed, that is
-  // what must parse it.
+  // COUPLED: @zz/contracts holds the schema. Anywhere a flow.json is parsed, that must parse it.
   const bad: string[] = [];
   for (const f of sourceFiles(["services", "packages", "scripts"], [".ts"])) {
     if (f.startsWith("packages/catalog/")) continue;   // the reader every other caller uses
@@ -300,20 +214,11 @@ check("a flow.json is validated wherever it is read", () => {
 check("a stray file in the catalog cannot empty it", () => {
   const nothingToRun = unbuilt();
   if (nothingToRun) return nothingToRun;
-  // zz-core walked the catalog's two levels for its skill roots — the same walk @zz/catalog
-  // does, sorted for the same reason it states — but under a SINGLE try. A file where an
-  // owner directory was expected threw ENOTDIR, and the catch beneath it, whose comment says
-  // "no catalog mounted (local dev)", swallowed it and returned whatever had accumulated.
-  //
-  // `.DS_Store` sorts FIRST, so what accumulated was nothing: no platform skills, no flow
-  // stage skills, no team overlays. skill_read finds nothing at all, and the only symptom is
-  // that every skill has vanished. It is reachable on any host using the build override,
-  // which mounts the working tree over the image's copy — which is where a stray file comes
-  // from in the first place.
-  //
-  // @zz/catalog had the tolerance and said so in as many words: "a file where an owner
-  // directory was expected". One walk now, and this RUNS it over a catalog with exactly that
-  // stray file — a reading of the source cannot tell you which packages come back.
+  // The catalog's two levels are walked once, through @zz/catalog, which tolerates a file where
+  // an owner directory was expected. A single try around both levels does not: a stray file
+  // throws ENOTDIR, the catch returns whatever had accumulated, and `.DS_Store` sorts first, so
+  // what comes back is nothing at all — no platform skills, no stage skills, no team overlays.
+  // This runs the walk over a catalog containing exactly that stray file.
   const bad = [];
   for (const rel of sourceFiles(["services", "packages"], [".ts"])) {
     if (rel === join("packages", "catalog", "src", "index.ts")) continue;
@@ -333,10 +238,9 @@ check("a stray file in the catalog cannot empty it", () => {
   // A catalog with a stray file at its root, a package that ships a manifest, and one that
   // ships only skills — which is a package kind the platform supports.
   const dir = join(root, "node_modules", ".zz-catalog-probe");
-  // CLEARED FIRST, because `mkdir -p` adds and never removes. The probe's expected answer is an
-  // EXACT package list, so a package left behind by a previous run — a fixture that has since
-  // been renamed, say — fails this check with a ghost that is not in any source file. It cost a
-  // rename exactly that, and the directory lives under node_modules where nobody thinks to look.
+  // Cleared first, because `mkdir -p` adds and never removes. The probe's expected answer is an
+  // exact package list, so a package left behind by a previous run fails this check with a ghost
+  // that is in no source file, under node_modules where nobody looks.
   rmSync(dir, { recursive: true, force: true });
   for (const p of [join(dir, "zz", "zz-handover"), join(dir, "ops", "ops-flow", "skills")]) {
     execFileSync("mkdir", ["-p", p]);
@@ -372,24 +276,16 @@ check("a stray file in the catalog cannot empty it", () => {
 
 check("a flow's manifest is read through one reader", () => {
   // @zz/catalog's manifestAt exists because reading a flow.json is three decisions, not one:
-  // does the file exist, is it JSON, and does it satisfy the schema the PLATFORM enforces. A
-  // reader that answers them differently from the platform audits a store against rules
-  // nothing enforces — manifest-audit's own docstring makes that argument about the envelope
-  // parser it used to carry, and chain-check's makes it about walking a chain the deployment
-  // does not have.
-  //
-  // Both of those were moved to manifestAt. smoke-engine was the third and was not: it parsed
-  // the file itself inside a try that caught everything, so an INVALID manifest — `gate:
-  // "false"`, a misspelled key — came back as `no manifest at <path>`, and the operator went
-  // looking for a file that was sitting right there. Two of three is how this class of defect
-  // always looks.
+  // does the file exist, is it JSON, and does it satisfy the schema the platform enforces. A
+  // reader that answers them differently audits a store against rules nothing enforces, and
+  // reports an invalid manifest as a missing one.
   const bad = [];
   const READER = join("packages", "catalog", "src", "index.ts");
   for (const rel of sourceFiles(["packages", "services"], [".ts"])) {
     if (rel === READER) continue;                       // the reader itself
-    // withoutComments, not codeOnly: half of what this looks for IS a string literal — the
-    // path to the file. Blanking the strings made the second arm below unable to see a single
-    // `join(dir, "flow.json")` in the repository, and it passed on every file for that reason.
+    // DELIBERATE: withoutComments, not codeOnly. Half of what this looks for is a string literal
+    // — the path to the file — so blanking strings makes the second arm below match nothing in
+    // the repository and pass on every file.
     const code = withoutComments(readFileSync(join(root, rel), "utf8"));
     // The schema belongs to @zz/contracts and the reader is the only thing that runs it over a
     // file. Anywhere else, a manifest is being validated a second way.
@@ -399,15 +295,10 @@ check("a flow's manifest is read through one reader", () => {
                "the one reader, and it answers 'missing', 'not JSON' and 'not a manifest' as " +
                "three different sentences rather than one catch");
     }
-    // And a file that READS the manifest file has to reach it through the catalog package.
-    //
-    // The mention has to be part of a path being BUILT or a file being read, not any
-    // occurrence of the name. zz-core's flow guard names `catalog/<owner>/<flow>/flow.json`
-    // inside a refusal — the sentence that tells an admin which file to go and check — and
-    // that is prose for a person, not a second reader. It passed for years because the file
-    // it lived in also imported catalogManifest for an unrelated reason, so the exemption was
-    // accidental; splitting server.ts moved the sentence into a file that did not, and the
-    // check reported a defect that was never there.
+    // And a file that reads the manifest file has to reach it through the catalog package. The
+    // mention has to be part of a path being built or a file being read, not any occurrence of
+    // the name: zz-core's flow guard names `catalog/<owner>/<flow>/flow.json` inside a refusal
+    // that tells an admin which file to check, which is prose and not a second reader.
     const READS = /(?:readFileSync|existsSync|statSync|readdirSync|join)\s*\([^)]*["'`][^"'`]*flow\.json/;
     if (!READS.test(code)) continue;
     if (/\bmanifestAt\b|\bcatalogManifest\b|\bcatalogEntr(y|ies)\b/.test(code)) continue;
@@ -418,22 +309,13 @@ check("a flow's manifest is read through one reader", () => {
 });
 
 check("plugins.lock.json says what the catalog ships, on both version and digest", () => {
-  // WHAT A PLUGIN VERSION IS WORTH, and it was worth nothing until this.
+  // A plugin's version is the platform's release version, so content can move under it between
+  // releases with nothing to notice. The lock hash is what makes the version true — skill-shape.ts's
+  // lock check one level up, applied to plugins.
   //
-  // A plugin is what a person installs. Its version is declared by hand in flow.json, and
-  // `set-version.ts` bumps every manifest in the workspace while never touching catalog/ — so
-  // the one number a person cites when they say "sdlc 0.2 fixed it" was the one number nothing
-  // checked. Content could move under it forever.
-  //
-  // This is skill-shape.ts's lock check one level up, and its reasoning transfers whole: the
-  // hash is not an alternative to the version, it is what makes the version true.
-  //
-  // THE RULE IS IMPORTED FROM THE TOOL THAT FIXES IT. pluginLock() is the same function
-  // plugin-versions.ts calls, which is the same enumeration the packager ships from. A second
-  // implementation of "what does this plugin contain" would drift, and then the digest would
-  // vouch for something nobody installs. Run in a subprocess because the enumeration reads
-  // three directories that are absolute in the image and relative here — the shape
-  // catalog-manifest already uses above, for the same reason.
+  // COUPLED: pluginLock() is the same function plugin-versions.ts calls and the same enumeration
+  // the packager ships from. Run in a subprocess because it reads two directories that are
+  // absolute in the image and relative here.
   const lockPath = join(root, "plugins.lock.json");
   if (!existsSync(lockPath)) {
     return "plugins.lock.json does not exist — run `node scripts/plugin-versions.ts --write`";
@@ -448,14 +330,13 @@ check("plugins.lock.json says what the catalog ships, on both version and digest
       encoding: "utf8",
       env: { ...process.env,
              ZZ_CATALOG_DIR: join(root, "catalog"),
-             ZZ_SKILLS_DIR: join(root, "skills"),
-             ZZ_EVALS_DIR: join(root, "evals") },
+             ZZ_SKILLS_DIR: join(root, "skills") },
     }));
   } catch (err) {
     const stderr = err && typeof err === "object" ? (err as Record<string, unknown>).stderr : undefined;
     return `the plugin enumeration could not be run: ${String(stderr ?? err).slice(-300)}`;
   }
-  // An empty enumeration must FAIL, not pass. A wrong directory finds nothing, and nothing
+  // An empty enumeration must fail, not pass. A wrong directory finds nothing, and nothing
   // agrees with nothing — a green tick over a lock that vouches for no plugin at all.
   if (!live.length) return "the plugin enumeration returned nothing — the extraction is broken";
 
@@ -473,19 +354,13 @@ check("plugins.lock.json says what the catalog ships, on both version and digest
                `(${was.digest} -> ${p.digest}) — bump the version in its flow.json, or re-run ` +
                "`node scripts/plugin-versions.ts --write` if the change is deliberate");
     } else if (was.version !== p.version) {
-      // THE LOCK BEING BEHIND THE CATALOG WAS CHECKED BY NOTHING, and the branch above is why:
-      // it reads `content moved AND the version did not`, so the moment a version moves the
-      // conjunction collapses and a lock a whole release out of date passes silently.
+      // The branch above reads "content moved and the version did not", so a version moving
+      // collapses the conjunction and a lock a whole release out of date passes silently.
       //
-      // That is not a tidiness failure, because plugins.lock.json is not a record — it is an
-      // INPUT. release.ts:496 registers zz.plugin_version from it and never regenerates it,
-      // so a stale lock makes a release write the PREVIOUS release's plugin versions into the
-      // database. It happened on 0.33.0: the deployment was correct and every one of its 17
-      // live probes was green, because each of them asks whether the deployment matches the
-      // checkout and the stale lock WAS part of the checkout. It agreed with itself. What
-      // broke was the ability to say which version anything belonged to — plugin_cases_record
-      // resolves its subject through that table and refused every recording against a version
-      // the release plainly contained.
+      // plugins.lock.json is an input, not a record: release.ts registers zz.plugin_version from
+      // it and never regenerates it, so a stale lock writes the previous release's plugin
+      // versions into the database and nothing downstream can say which version anything
+      // belonged to.
       bad.push(`plugins.lock.json records ${p.name} at ${was.version} and the catalog now ` +
                `declares ${p.version} — run \`node scripts/plugin-versions.ts --write\`. The ` +
                "release registers zz.plugin_version FROM this file and never regenerates it, " +
@@ -502,26 +377,18 @@ check("plugins.lock.json says what the catalog ships, on both version and digest
 });
 
 check("a plugin's recorded membership is the one it ships", () => {
-  // WHICH SKILL VERSIONS WERE IN THIS PLUGIN VERSION, which nothing recorded until now.
-  //
-  // zz.skill_version has no plugin column, and zz.skill.flow is CURRENT registration rather than
-  // per-version. So "which version of
-  // this skill was running" had no honest answer, and the evaluation track resolved it to
-  // whatever happened to be current at read time -- a wrong answer indistinguishable from a
-  // right one.
-  //
-  // Release is the only moment anybody actually knows, so release is where it is written. This
-  // refuses a lock whose membership has drifted from the catalog, because a membership that is
-  // wrong is worse than one that is missing: the profile would resolve events through it and
-  // report the result as fact.
+  // Which skill versions were in this plugin version. zz.skill_version has no plugin column and
+  // zz.skill.flow is current registration rather than per-version, so release is the only moment
+  // anybody knows. This refuses a lock whose membership has drifted from the catalog: a wrong
+  // membership is worse than a missing one, because the profile resolves events through it and
+  // reports the result as fact.
   const lockPath = join(root, "plugins.lock.json");
   if (!existsSync(lockPath)) return null;   // the check above already says this
   const recorded = JSON.parse(readFileSync(lockPath, "utf8"));
   const bad = [];
   for (const [plugin, entry] of Object.entries(recorded) as [string, { skills?: Record<string, unknown> }][]) {
-    // catalogPackages is an ARRAY of {owner, flow, dir}, not a function, and dir is already
-    // absolute -- so the plugin name is its flow with the -flow suffix off, the same rule
-    // pluginName() applies everywhere else.
+    // catalogPackages is an array of {owner, flow, dir} with dir already absolute, so the plugin
+    // name is its flow with the -flow suffix off, the rule pluginName() applies everywhere else.
     const dirs = plugin === BASELINE
       ? [join(root, "skills")]
       : catalogPackages.filter((e) => e.flow.replace(/-flow$/, "") === plugin)

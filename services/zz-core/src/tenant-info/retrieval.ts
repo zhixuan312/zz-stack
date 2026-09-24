@@ -1,69 +1,36 @@
 /**
- * retrieval.ts — I-16's authorized corpus registry/resolution and visibility checks: the one
- * gate every later search lane (I-17), parser/serializer (I-18) and dereference/cursor read
- * consumes before a query ever reaches `zz.search_current`/`evidence`/`history`.
+ * Authorized corpus resolution for tenant search: the gate every search lane, parser and
+ * dereference read passes before a query reaches `zz.search_current`/`evidence`/`history`.
  *
- * TWO FUNCTIONS, ONE CONTRACT. `resolveCorpora` decides WHICH corpus/scope/index
- * combinations this authenticated context may query at all — a pure function over a
- * server-owned registry, never the database. `checkVisibility` decides whether one SPECIFIC
- * artifact is still visible RIGHT NOW — a real query, because "recheck publication/access
- * before serializing results/counts and on every dereference/cursor page; revocation is not
- * deferred until index refresh" (spec, retrieval contract) means the registry's static grant
- * is necessary but not sufficient: a corpus a context may query can still contain, at any one
- * moment, a row that was authorized when the search index last ran and is not any more.
+ * `resolveCorpora` decides which corpus/scope/index combinations a context may query — pure
+ * over a server-owned registry, never the database. The visibility recheck (`pinned-read.ts`)
+ * decides whether one artifact is visible right now, with a real query: a corpus a context may
+ * query can still hold a row that was authorized when the index last ran and is not any more.
  *
- * THE OWNER PREDICATE LIVES IN THE QUERY TEXT, NEVER ONLY IN A PRIOR JS CHECK OR A PARTIAL
- * INDEX. `buildVisibilityQuery` below binds `owner_id` as an explicit `where` conjunct on
- * every statement it builds — `resolveCorpora`'s own registry gate runs first (so an owner
- * this context cannot see for the requested scope never reaches a query at all, matching "a
- * private descriptor from another owner is excluded before ranking"), but the SQL predicate
- * is not removed just because an earlier gate also checked: this task's own contract says a
- * partial index's `where` clause is "an optimisation, not a permission filter" and that
- * "selecting owner_id in SQL is not accepted as proof of a filtering predicate" — the
- * predicate has to be the thing that actually narrows the result set. `checkVisibility`'s own
- * isolated integration cases (this task's report, not a file this task's edit surface names)
- * prove it behaviorally: two rows sharing a corpus_key and, deliberately, the same
- * artifact_id but different owners, where only the real `where owner_id = $2` clause returns
- * the one the caller actually asked for.
+ * DELIBERATE: the visibility query binds `owner_id` as an explicit `where` conjunct even
+ * though the registry gate already ran. A partial index's `where` clause is an optimisation,
+ * not a permission filter; the SQL predicate has to be what narrows the result set.
  *
- * WHAT THIS FILE DOES NOT DO. No lane, no ranking, no BM25/GiST query, no query parsing, no
- * wire serialization — I-17 and I-18 add those to this same file. No `audience`/publication
- * write path — that is `policies.ts`'s `publish`/`unpublish` transitions. And the recheck
- * below is honest about a named, inherited gap: `zz.artifact.audience` is always `null` today
- * (`packages/indexing/src/tenant-rebuild.ts`'s own `toProjectionManifest`, `audience: null`),
- * and the search tables migration 070 created carry no audience column of their own — so
- * "still present in the authorized corpus projection right now" is the honest reading of
- * "recheck visibility" available from what I-15 populates today, not a live read of a
- * system-of-record publication flag. I-19's own output line ("completed shared visibility
- * enforcement in all retrieval/read paths") is where that gap closes; this file does not
- * paper over it by pretending `audience` says something it does not yet say.
+ * `zz.artifact.audience` is `null` for every row today and the search tables carry no audience
+ * column, so the recheck means "still in the authorized corpus projection", not a read of a
+ * publication flag. COUPLED: `packages/indexing/src/tenant-rebuild.ts`'s
+ * `toProjectionManifest` sets that null; publication transitions live in `policies.ts`.
  */
 import { z } from "zod";
 
-// ── the one error every refusal in this file throws ─────────────────────────────────────────
+// The one error every refusal in this file throws
 //
-// The frozen check (`checks/tenant-scope-predicates.ts`) drives `resolveCorpora` with
-// `assert.throws`, never a returned error object — unlike `policies.ts`'s mutation outcomes,
-// which are data because a caller commits or does not. Corpus resolution has no such
-// two-sided outcome to represent; an invalid request is a programming defect in the caller,
-// not a business outcome, so it throws. `code` is carried so a later caller (I-17/I-18, both
-// landing in this same file) can build a `MutationError`-shaped response without a second
-// error hierarchy — `RESERVED_PAYLOAD_KEYS` in `@zz/contracts` makes the same "unknown/
-// disallowed field is a defect, not silently ignored input" argument for `MutationRequestSchema`.
+// Corpus resolution throws rather than returning an outcome object: an invalid request is a
+// caller defect, not a two-sided outcome the way `policies.ts`'s mutations are. `code` is
+// carried so a caller can build a `MutationError`-shaped response without a second hierarchy.
+// COUPLED: `checks/tenant-scope-predicates.ts` drives `resolveCorpora` with `assert.throws`.
 
-// `REGISTRY_MISCONFIGURED` is deliberately NOT `INVALID_INPUT`. The other two codes are both
-// verdicts on a CALLER: it sent a malformed request, or it asked for something it may not
-// have. This one is a verdict on the SERVER'S OWN configuration, and a caller can do nothing
-// about it and must never be told it did something wrong. It is also why the refusal throws
-// rather than returning an empty descriptor list: silently resolving nothing would turn a
-// misconfigured deployment into "this tenant has no corpora", which reads as an ordinary
-// empty result at every call site above this one.
+// DELIBERATE: `REGISTRY_MISCONFIGURED` is not `INVALID_INPUT` — it is a verdict on the
+// server's own configuration, which the caller can do nothing about. It throws rather than
+// resolving an empty descriptor list, which would read as "this tenant has no corpora".
 type RetrievalErrorCode = "INVALID_INPUT" | "NOT_FOUND_OR_FORBIDDEN" | "REGISTRY_MISCONFIGURED";
 
-// Exported at I-18: `pinned-read.ts` (I-18's own split, see this file's tail) throws the same
-// error class for cursor/dereference refusals rather than inventing a second hierarchy, the
-// same reasoning this section's own comment already gives for carrying `code` in the first
-// place.
+// COUPLED: `pinned-read.ts` throws this same error class for cursor and dereference refusals.
 export class RetrievalError extends Error {
   readonly code: RetrievalErrorCode;
   constructor(code: RetrievalErrorCode, message: string) {
@@ -73,25 +40,20 @@ export class RetrievalError extends Error {
   }
 }
 
-// ── registry, context and request shapes ────────────────────────────────────────────────────
+// Registry, context and request shapes
 
 const RetrievalScopeSchema = z.enum(["current", "evidence", "history"]);
-/** Exported because `pinned-read.ts`'s `DereferenceTarget` is declared over it — the
- *  visibility recheck moved there at the ceiling and its target type moved with it. */
+/** COUPLED: `pinned-read.ts`'s `DereferenceTarget` is declared over this. */
 export type RetrievalScope = z.infer<typeof RetrievalScopeSchema>;
 
 /** One row of the server-owned registry `resolveCorpora` is handed — never read from a
- *  database by this function itself; the caller (a future wiring task) owns loading it.
- *  `audience` is the registry's OWN declared grant for this corpus/owner/scope, distinct from
- *  a single artifact's live publication state, which `checkVisibility` re-verifies.
+ *  database by this function; the caller owns loading it. `audience` is the registry's declared
+ *  grant for this corpus/owner/scope, distinct from an artifact's live publication state. An
+ *  unrecognized value in `scope` or `audience` is refused at runtime by the loop below.
  *
- *  `scope`/`audience` are plain `string`, not the narrower `RetrievalScope`/`"private" |
- *  "published"` unions — the same reasoning `policies.ts`'s `TransitionContext` states for
- *  itself: the frozen check (`checks/tenant-scope-predicates.ts`) builds registry entries as
- *  object literals with no `as const`, and a narrower field type fails that check's own
- *  `typecheck:tooling` pass rather than exercise `resolveCorpora`'s runtime decision. An
- *  unrecognized value in either field is refused at runtime, fail-closed — see the loop
- *  below, which admits an entry only through one of exactly two named branches. */
+ *  DELIBERATE: both are plain `string`, not the narrower unions.
+ *  COUPLED: `checks/tenant-scope-predicates.ts` builds registry entries as object literals with
+ *  no `as const`, and a narrower field type fails its `typecheck:tooling` pass. */
 interface CorpusRegistryEntry {
   readonly corpus_key: string;
   readonly owner_id: string;
@@ -100,10 +62,9 @@ interface CorpusRegistryEntry {
   readonly index_name: string;
 }
 
-/** `CorpusDescriptor` is deliberately the same shape as a registry entry — `resolveCorpora`
- *  never adds or drops a field, it only filters which entries this context may see. Exported
- *  for `lanes.ts` (I-17's own file): every lane builder takes one already-authorized
- *  descriptor, never the raw registry or an unauthenticated request. */
+/** Same shape as a registry entry: `resolveCorpora` never adds or drops a field, it only
+ *  filters which entries a context may see. COUPLED: `lanes.ts`'s lane builders each take one
+ *  already-authorized descriptor, never the raw registry. */
 export type CorpusDescriptor = CorpusRegistryEntry;
 
 export interface RetrievalContext {
@@ -111,11 +72,8 @@ export interface RetrievalContext {
   readonly shared_allowed: boolean;
 }
 
-// Filters named by the spec's query grammar section ("type/initiative/flow/tags filters") —
-// the only filter vocabulary this task's Contract has anything to validate against. Pushdown
-// into a lane's own predicate is I-17's job; this schema only refuses a request naming
-// something outside that vocabulary, which is what "unsupported filter... combinations fail
-// INVALID_INPUT" asks of THIS task (no lane exists yet to push a filter down into).
+// The whole filter vocabulary this schema validates against. A request naming anything outside
+// it is refused; pushdown into a lane's own predicate happens in `lanes.ts`, not here.
 const CorpusFiltersSchema = z.object({
   type: z.string().optional(),
   initiative: z.string().optional(),
@@ -123,13 +81,10 @@ const CorpusFiltersSchema = z.object({
   tags: z.array(z.string()).optional(),
 }).strict();
 
-/** `.strict()`, deliberately, on both this and the filters schema above — the same argument
- *  `MutationRequestSchema` makes in `@zz/contracts` (see that file's own comment): an unknown
- *  top-level field is exactly how a caller would try to smuggle `owner_id`/`index_name` past
- *  the request shape and have it read as data rather than refused. `scopes`, when present,
- *  must be nonempty — an explicitly empty array is "adding history/evidence is explicit"
- *  read backwards (asking for nothing, explicitly) and is refused rather than silently
- *  defaulting to `current` for a caller who deliberately sent `[]`. */
+/** `.strict()` on both this and the filters schema: an unknown top-level field is how a caller
+ *  would smuggle `owner_id`/`index_name` past the request shape and have it read as data.
+ *  `scopes`, when present, must be nonempty — an explicit `[]` is refused rather than silently
+ *  defaulting to `current`. */
 const CorpusRequestSchema = z.object({
   scopes: z.array(RetrievalScopeSchema).min(1).optional(),
   filters: CorpusFiltersSchema.optional(),
@@ -144,44 +99,15 @@ function invalidRequest(request: unknown): never {
 }
 
 /**
- * ONE PHYSICAL INDEX CARRIES ONE VISIBILITY SCOPE — one owner AND one audience. A registry
- * that points two owners, or two audiences of the same owner, at one `index_name` is refused
- * outright, before a single entry is read for scope.
+ * One physical index carries one visibility scope — one owner and one audience. A registry
+ * pointing two owners, or two audiences of the same owner, at one `index_name` is refused.
+ * Term and document frequencies live in the index structure a query names, not in the row
+ * predicate, so a shared index moves ranking scores while every returned row stays correct.
  *
- * THE AUDIENCE HALF WAS MISSING AND IS THE SUBTLER LEAK. This guard checked `owner_id` alone,
- * and one owner is not one visibility scope: `zz-platform` holds both private work documents
- * and knowledge published to every team. Two corpora of that one owner sharing an index passed
- * the check, and a shared reader's ranking would then be moved by content they cannot see and
- * cannot ask about. The cross-tenant case is loud — two owners, obviously wrong. This one
- * leaks INSIDE a tenant, across the exact boundary `audience` exists to draw, and every
- * returned row stays correct while it happens.
- *
- * Found by a review that had the delivery's own reasoning and applied it one step further than
- * the delivery had.
- *
- * WHAT THIS CLOSES, and how it was found. `testing/tenant-info/isolation.ts`'s mutation case
- * takes owner B's corpus, changes nothing but its `index_name` to owner A's, and measures what
- * owner A then sees: A's returned `artifact_id`s are byte-identical before and after — the
- * row-level `owner_id = $n` predicate is untouched and still perfectly correct — and A's bm25
- * scores move anyway, because term and document frequencies live in the index structure the
- * query names, not in the predicate that filters which rows come back. Every row-level check
- * in this delivery passes on that configuration. So does `tenant-scope-predicates`.
- *
- * Which meant the delivery's most emphasised property — one tenant's writes cannot move
- * another's ranking — rested on nothing but a registry nobody validated. The isolation suite
- * could demonstrate the leak but could not name a code change that caused it, because there
- * was no code to change: the invariant existed only as an assumption about configuration.
- * This function is that invariant written down, which is what makes the leak reachable by a
- * mutation test at all.
- *
- * ONE OWNER PER INDEX, NOT ONE CORPUS PER INDEX. The stricter rule would also refuse a single
- * owner serving two scopes from one index, which leaks nothing across tenants and which
- * nothing here has evidence against. This is exactly the property the mutation case proves is
- * load-bearing, and no more.
- *
- * BEFORE THE SCOPE FILTER, deliberately. Checking only the entries a request happens to
- * select would let a misconfigured registry resolve cleanly for `current` and refuse for
- * `history`, so whether the deployment was safe would depend on what the caller asked for.
+ * DELIBERATE: one owner per index, not one corpus per index — a single owner serving two
+ * scopes from one index is allowed.
+ * DELIBERATE: this runs before the scope filter, so a misconfigured registry cannot resolve
+ * cleanly for `current` and refuse for `history`.
  */
 function assertOneVisibilityScopePerIndex(registry: readonly CorpusRegistryEntry[]): void {
   const seenByIndex = new Map<string, { owner_id: string; audience: string }>();
@@ -210,19 +136,13 @@ function assertOneVisibilityScopePerIndex(registry: readonly CorpusRegistryEntry
 
 
 /**
- * Resolves every corpus/scope/index combination `context` may query for `request` — the
- * ONLY function in this file (or, per the plan, anywhere in the retrieval path) that decides
- * "may this context see this owner's data at this scope". `request` is untrusted input:
- * `owner_id`/`index_name`/anything else it might carry to try to widen access is refused by
- * `.strict()` before a single registry entry is read, which is what "no public owner/index
- * override is accepted" means as code rather than as a promise.
+ * Resolves every corpus/scope/index combination `context` may query for `request` — the only
+ * place that decides "may this context see this owner's data at this scope". `request` is
+ * untrusted: `owner_id`/`index_name`/any other field is refused by `.strict()` before a
+ * registry entry is read.
  *
- * "Omitting scopes means current" — `scopes` absent resolves as `["current"]`; `scopes: []`
- * is refused above, not silently read the same way. `filters` is validated but not yet
- * consumed: no lane exists in this task to push a filter down into, so accepting a
- * well-shaped `filters` object without doing anything with it would be pretending to filter.
- * It is kept on the parsed request only so a future lane can read `request.filters` without
- * this function's own validation being duplicated.
+ * `scopes` absent resolves as `["current"]`; `scopes: []` is refused above. `filters` is
+ * validated and kept on the parsed request but not consumed here.
  */
 export function resolveCorpora(
   context: RetrievalContext,
@@ -233,38 +153,27 @@ export function resolveCorpora(
   if (!parsed.success) invalidRequest(request);
   assertOneVisibilityScopePerIndex(registry);
 
-  // `Set<string>`, not `Set<RetrievalScope>` — `entry.scope` is the registry's own widened
-  // `string` field (see `CorpusRegistryEntry`'s comment), and membership here is compared
-  // against that same width rather than forcing a narrower cast at every call.
+  // `Set<string>` matches `entry.scope`'s widened `string` type, rather than forcing a narrower
+  // cast at every membership test.
   const scopes = new Set<string>(parsed.data.scopes ?? ["current"]);
   const out: CorpusDescriptor[] = [];
   for (const entry of registry) {
     if (!scopes.has(entry.scope)) continue;
-    // "Private descriptors require the authenticated owner; published-shared descriptors
-    // require shared access and explicit publication." Exactly these two branches, and
-    // nothing else ever admits an entry — an audience value this registry format does not
-    // declare (neither "private" nor "published") is excluded by falling through both, the
-    // same fail-closed shape `decideTransition` (policies.ts) uses for an unrecognized class.
+    // Exactly two branches admit an entry: private requires the authenticated owner, published
+    // requires shared access. An audience value that is neither falls through both, fail-closed.
     if (entry.audience === "private" && entry.owner_id === context.owner_id) { out.push(entry); continue; }
     if (entry.audience === "published" && context.shared_allowed) { out.push(entry); continue; }
   }
   return out;
 }
 
-// ── what every reader of a search table shares: a client, and the three table names ────────
+// What every reader of a search table shares: a client, and the three table names
 //
-// THE VISIBILITY RECHECK ITSELF LEFT during the registry-isolation fix, at the 700-line
-// ceiling — `DereferenceTarget`, `buildVisibilityQuery` and `checkVisibility` are in
-// `pinned-read.ts` now, beside the pinned/dereference reader that is their only caller in
-// this service. Which half moved was decided by the frozen checks, as it was for inventory.ts
-// and policies.ts before it: `tenant-fusion-arithmetic`, `tenant-query-syntax` and
-// `tenant-scope-predicates` pin `budgets`/`resultKey`/`rrf`, `parseQuery`/`serializeResults`
-// and `resolveCorpora` to THIS module by name, and a frozen check's bytes cannot be edited to
-// follow a symbol somewhere else. Nothing pinned `checkVisibility`, so it is what could go.
-//
-// `RetrievalClient` and `scopeTable` stayed because they are not the visibility path's: the
-// client shape is every lane's and every pinned read's, and one migration (070) names these
-// three tables while one function says so — `lanes.ts` resolves its lane tables through it.
+// COUPLED: the visibility recheck — `DereferenceTarget`, `buildVisibilityQuery`,
+// `checkVisibility` — lives in `pinned-read.ts`. The frozen checks `tenant-fusion-arithmetic`,
+// `tenant-query-syntax` and `tenant-scope-predicates` pin `budgets`/`resultKey`/`rrf`,
+// `parseQuery`/`serializeResults` and `resolveCorpora` to this module by name, so those cannot
+// move. `lanes.ts` resolves its lane tables through `scopeTable`.
 
 export interface RetrievalClient {
   query<T = Record<string, unknown>>(text: string, params?: readonly unknown[]): Promise<{ rows: T[] }>;
@@ -276,31 +185,25 @@ const SCOPE_TABLE: Readonly<Record<RetrievalScope, string>> = {
   history: "zz.search_history",
 };
 
-/** The same closed 3-entry map `buildVisibilityQuery` keys off internally, exported so
- *  `lanes.ts`'s lane builders resolve the identical table name rather than repeating this
- *  mapping — one migration (070) names these three tables; one function says so. Plain
- *  `string` in, fail-closed on anything outside the three scopes this schema actually has. */
+/** The same closed 3-entry map the visibility query keys off, exported so `lanes.ts`'s lane
+ *  builders resolve the identical table name. Plain `string` in, fail-closed on anything
+ *  outside the three scopes. */
 export function scopeTable(scope: string): string {
   if (scope !== "current" && scope !== "evidence" && scope !== "history") {
     throw new RetrievalError("INVALID_INPUT", `no search table for scope ${JSON.stringify(scope)}`);
   }
   return SCOPE_TABLE[scope];
 }
-// ── I-17: budgets, result-key identity and cross-corpus RRF fusion ─────────────────────────
+// Budgets, result-key identity and cross-corpus RRF fusion
 //
-// The three pure functions the frozen check (`checks/tenant-fusion-arithmetic.ts`) drives —
-// `budgets`, `resultKey`, `rrf` — plus `collapseBeforeCap`, the primitive that makes "passage/
-// alias collapse precedes unique-artifact caps" true in code rather than only in prose. Lane
-// SQL (exact/BM25/fuzzy/graph) and the orchestrator that calls them live in `lanes.ts`
-// (I-17's own split of this file, cleared with the plan owner once `retrieval.ts` was going to
-// exceed the 700-line ceiling with I-18 still to land after it) and consume every export below.
+// COUPLED: `checks/tenant-fusion-arithmetic.ts` drives `budgets`, `resultKey` and `rrf`. Lane
+// SQL (exact/BM25/fuzzy/graph) and the orchestrator that calls them live in `lanes.ts` and
+// consume every export below.
 
-/** The four recall lanes, in a fixed order — never the order a caller's `laneLists` happens to
- *  arrive in. `rrf` sums each lane's own max-over-corpora contribution, and summing floats in
- *  a fixed lane order (rather than Map insertion order, which tracks input order) is what
- *  makes `rrf(lists)` and `rrf([...lists].reverse())` produce bit-identical scores — addition
- *  of more than two floats is not associative in general, so "the same inputs produce the same
- *  order" needs a fixed summation order, not just a correct total. */
+/** The four recall lanes, in a fixed order — never the order a caller's `laneLists` arrives in.
+ *  DELIBERATE: `rrf` sums in this order rather than Map insertion order. Float addition is not
+ *  associative, so a fixed summation order is what makes `rrf(lists)` and
+ *  `rrf([...lists].reverse())` produce bit-identical scores. */
 const LANE_ORDER = ["exact", "lexical", "fuzzy", "graph"] as const;
 
 export interface LaneBudgets {
@@ -312,10 +215,8 @@ export interface LaneBudgets {
 
 /**
  * `exact=min(50,5L)`, `lexical=min(1000,max(200,20L))`, `fuzzy=min(500,max(100,10L))`,
- * `graph=min(200,max(50,5L))` — the spec's fixed functions of the result limit, verbatim.
- * `L` must be an integer 1–50; every other value (including `NaN`, which fails every
- * comparison and would otherwise silently produce budgets of `NaN`) is refused rather than
- * clamped, matching "invalid limit fails" in this task's own Contract.
+ * `graph=min(200,max(50,5L))`. `L` must be an integer 1–50; every other value, `NaN` included,
+ * is refused rather than clamped.
  */
 export function budgets(L: number): LaneBudgets {
   if (!Number.isInteger(L) || L < 1 || L > 50) {
@@ -329,11 +230,10 @@ export function budgets(L: number): LaneBudgets {
   };
 }
 
-/** The fields `resultKey` reads — deliberately plain `string` for `scope`, not the narrower
- *  `RetrievalScope` union, for the same reason `CorpusRegistryEntry`'s own fields are widened
- *  above: the frozen check builds `row` as an object literal with no `as const`, and a
- *  narrower field type here fails `typecheck:tooling` on the check itself rather than exercise
- *  this function's runtime decision. An unrecognized scope is refused, fail-closed. */
+/** The fields `resultKey` reads. DELIBERATE: `scope` is plain `string`, not `RetrievalScope`.
+ *  COUPLED: the frozen check builds `row` as an object literal with no `as const`, and a
+ *  narrower type here fails `typecheck:tooling` on the check. An unrecognized scope is
+ *  refused, fail-closed. */
 export interface ResultIdentity {
   readonly owner_id: string;
   readonly artifact_id: string;
@@ -343,11 +243,9 @@ export interface ResultIdentity {
 }
 
 /**
- * Scope-specific owner-qualified identity — "current/evidence identity is owner+artifact;
- * history additionally includes revision/hash" (this task's own Contract, and the retrieval
- * contract's own sentence). Two passages or aliases of the SAME artifact collapse to the same
- * key here, before any lane budget is ever applied — that ordering is `collapseBeforeCap`'s
- * job, not this function's, but this is the identity it collapses on.
+ * Scope-specific owner-qualified identity: current/evidence is owner+artifact, history adds
+ * revision and content hash. Two passages or aliases of the same artifact collapse to the same
+ * key, which `collapseBeforeCap` applies before any lane budget.
  */
 export function resultKey(record: ResultIdentity): string {
   const { owner_id, artifact_id, revision, content_hash, scope } = record;
@@ -359,9 +257,8 @@ export function resultKey(record: ResultIdentity): string {
     : `${scope}:${owner_id}:${artifact_id}`;
 }
 
-/** One lane's ranked key list for one authorized corpus — `lane`/`corpus` deliberately plain
- *  `string`, the same widening `resultKey.scope` uses and for the same reason: the frozen
- *  check builds these as object literals with no `as const`. */
+/** One lane's ranked key list for one authorized corpus. `lane`/`corpus` are plain `string`
+ *  for the same reason as `ResultIdentity.scope`. */
 export interface LaneKeyList {
   readonly lane: string;
   readonly corpus: string;
@@ -374,20 +271,16 @@ export interface FusedResult {
 }
 
 /**
- * Reciprocal rank fusion, k=60, over positions alone — never a raw lane score, because scores
- * from independent corpora (or independent ranking methods) are not on a comparable scale;
- * that is the whole reason the lanes are fused by RRF rather than by summing whatever each one
- * happened to return. For result key `d`:
+ * Reciprocal rank fusion, k=60. DELIBERATE: over positions alone, never a raw lane score —
+ * scores from independent corpora or ranking methods are not on a comparable scale.
  *
  *   score(d) = sum over lanes l of [ max over corpora c of 1 / (60 + r(l,c,d)) ]
  *
  * where `r(l,c,d)` is `d`'s 1-based rank within lane `l`'s list for corpus `c`. A key repeated
- * within one list uses its FIRST rank (the lane's own best local position for it), and a lane
- * takes the BEST of its per-corpus contributions rather than summing them — "the same artifact
- * in private and shared corpus contributes at most once per lane" (retrieval contract). Ties
- * break on `key` ascending; a richer tie-break (tag overlap, then owner/artifact/revision) needs
- * the actual records this function never sees, and lives one level up in `lanes.ts`'s
- * orchestrator, which has them.
+ * within one list uses its first rank; a lane takes the best of its per-corpus contributions
+ * rather than summing them, so one artifact in a private and a shared corpus contributes at
+ * most once per lane. Ties break on `key` ascending; the richer tie-break needs records this
+ * function never sees and lives in `lanes.ts`'s orchestrator.
  */
 export function rrf(laneLists: readonly LaneKeyList[]): FusedResult[] {
   const perLane = new Map<string, Map<string, number>>();
@@ -408,10 +301,8 @@ export function rrf(laneLists: readonly LaneKeyList[]): FusedResult[] {
     }
   }
 
-  // Sum in LANE_ORDER, plus any lane the caller passed that isn't one of the four named ones
-  // (sorted, appended after) — so an unrecognized lane name still fuses deterministically
-  // rather than being silently dropped, while the four real lanes always sum in the same order
-  // regardless of `laneLists`' own order.
+  // Sum in LANE_ORDER, then any lane the caller passed that is not one of the four, sorted and
+  // appended — an unrecognized lane name still fuses deterministically instead of being dropped.
   const laneNames = [...perLane.keys()];
   const orderedLanes = [
     ...LANE_ORDER.filter((l) => perLane.has(l)),
@@ -432,21 +323,17 @@ export function rrf(laneLists: readonly LaneKeyList[]): FusedResult[] {
     .sort((a, b) => (b.score !== a.score ? b.score - a.score : (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)));
 }
 
-/** One raw row a lane query returned, ordered by that lane's own local rank (position in the
- *  array is the rank `collapseBeforeCap` reads) — `identity` is what `resultKey` collapses on;
- *  the row itself carries whatever a lane needs downstream (tags for tie-break, etc). */
+/** One raw row a lane query returned; array position is that lane's local rank. `identity` is
+ *  what `resultKey` collapses on, and the row carries whatever a lane needs downstream. */
 export interface RankedRow<T> {
   readonly identity: ResultIdentity;
   readonly row: T;
 }
 
 /**
- * Collapses passages/aliases of the same artifact to one entry — keeping the row at the BEST
- * (lowest) local rank — and only THEN slices to `cap`. Doing it in the other order is exactly
- * the mutation this task's report calls out: cap first and a page of "cap" results can really
- * be one artifact's first `cap` passages, or `cap` aliases of two or three real artifacts. This
- * function is deliberately the one place that ordering happens, so a mutation swapping the two
- * steps has exactly one call site to touch and exactly one suite case to fail against.
+ * Collapses passages and aliases of the same artifact to one entry — keeping the row at the
+ * best (lowest) local rank — and only then slices to `cap`. DELIBERATE: capping first turns a
+ * page of `cap` results into one artifact's first `cap` passages.
  */
 export function collapseBeforeCap<T>(rows: readonly RankedRow<T>[], cap: number): RankedRow<T>[] {
   const seen = new Map<string, RankedRow<T>>();
@@ -457,25 +344,22 @@ export function collapseBeforeCap<T>(rows: readonly RankedRow<T>[], cap: number)
   return [...seen.values()].slice(0, cap);
 }
 
-// ── I-18: query grammar and the actual wire response ────────────────────────────────────────
+// Query grammar and the wire response
 //
-// The two functions the frozen check (`checks/tenant-query-syntax.ts`) imports directly from
-// THIS file — everything downstream of a parsed query (matcher, cursors, pinned reads,
-// freshness) lives in `pinned-read.ts`, importing FROM here, the same one-directional seam
-// `lanes.ts` (I-17) established.
+// COUPLED: `checks/tenant-query-syntax.ts` imports `parseQuery` and `serializeResults` from
+// this file. Matcher, cursors, pinned reads and freshness live in `pinned-read.ts`.
 //
-// GRAMMAR RECOGNITION PRECEDES IDENTIFIER NORMALIZATION (Contract): `tokenize` recognizes
-// quotes, a leading `-` against the next scalar, and the bare word `OR` on the RAW token text,
-// before any identifier splitting (dot/underscore/slash/hyphen/colon — `packages/indexing`'s
-// job, never this one's) runs. A hyphen inside `plugin-judge` survives as one word; a dot
-// inside `zz.eval_finding` is never touched.
+// Grammar recognition precedes identifier normalization: `tokenize` recognizes quotes, a
+// leading `-` against the next scalar, and the bare word `OR` on the raw token text, before any
+// identifier splitting (`packages/indexing`'s job). A hyphen inside `plugin-judge` survives as
+// one word; a dot inside `zz.eval_finding` is never touched.
 
 export type QueryMode = "natural" | "websearch";
 
-/** The "complete boolean structure" the Contract asks for. `clauses` is an AND across its
- *  top-level entries; `"or"` folds consecutive `OR`-joined operands into one alternatives
- *  group. `"term".required` is `false` in natural mode (an unquoted word is a ranking hint) and
- *  always `true` in websearch mode (which ANDs every word); `"phrase"` is always hard. */
+/** `clauses` is an AND across its top-level entries; `"or"` folds consecutive `OR`-joined
+ *  operands into one alternatives group. `"term".required` is `false` in natural mode (an
+ *  unquoted word is a ranking hint) and always `true` in websearch mode; `"phrase"` is always
+ *  hard. */
 export type BooleanClause =
   | { readonly kind: "term"; readonly value: string; readonly required: boolean }
   | { readonly kind: "phrase"; readonly value: string }
@@ -487,10 +371,9 @@ export interface QueryAst {
   readonly phrases: readonly string[];
   readonly exclusions: readonly string[];
   readonly clauses: readonly BooleanClause[];
-  /** True once nothing is left to rank or require ("no query ... performs metadata browsing",
-   *  spec). Only the "no query" half: no stopword list exists in this checkout for PostgreSQL's
-   *  pinned `english` configuration, so a non-empty stopword-only query is NOT detected — a
-   *  named, carried-forward gap (the same reason `lanes.ts` declines pg_textsearch's DDL). */
+  /** True once nothing is left to rank or require, which makes the request metadata browsing.
+   *  Detects only an empty query: no stopword list exists in this checkout for PostgreSQL's
+   *  pinned `english` configuration, so a stopword-only query is not detected. */
   readonly browse: boolean;
 }
 
@@ -510,11 +393,10 @@ interface RawToken {
   readonly excluded: boolean;
 }
 
-/** Scans `scalars` left to right, recognizing quotes/exclusions/whitespace boundaries alone —
- *  no lowercasing, no splitting on internal punctuation. An unterminated quote in natural mode
- *  is `INVALID_INPUT` naming the opening quote's scalar offset; in websearch mode it is
- *  PostgreSQL's documented tolerance (Text Search §12.3.3) — the phrase runs to end of input,
- *  as if the string's end were an implicit closing quote. */
+/** Scans `scalars` left to right, recognizing quotes, exclusions and whitespace boundaries
+ *  alone — no lowercasing, no splitting on internal punctuation. An unterminated quote is
+ *  `INVALID_INPUT` in natural mode, naming the opening quote's scalar offset; in websearch mode
+ *  the phrase runs to end of input, matching PostgreSQL's documented tolerance. */
 function tokenize(scalars: readonly string[], mode: QueryMode): RawToken[] {
   const tokens: RawToken[] = [];
   const n = scalars.length;
@@ -551,10 +433,8 @@ function tokenize(scalars: readonly string[], mode: QueryMode): RawToken[] {
   return tokens;
 }
 
-/** Natural's `OR` is the spec's own words — "uppercase OR" — matched case-sensitively; a
- *  lowercase "or" is an ordinary word. Websearch matches case-insensitively, per PostgreSQL's
- *  documented parser (Text Search §12.3.3: "the word `or` will be converted to the `|`
- *  operator") — a documented reading, not a live differential run (no database access here). */
+/** Natural mode matches `OR` case-sensitively, so a lowercase "or" is an ordinary word.
+ *  Websearch matches case-insensitively, per PostgreSQL's documented parser. */
 function isOrKeyword(word: string, mode: QueryMode): boolean {
   return mode === "natural" ? word === "OR" : word.toLowerCase() === "or";
 }
@@ -603,10 +483,9 @@ function buildClauses(tokens: readonly RawToken[], mode: QueryMode): ParsedClaus
   return { clauses, phrases, exclusions };
 }
 
-/** Parses `text` under `mode`'s grammar — natural (new API default) or websearch (legacy
- *  adapters' default). The 2048-scalar query limit applies before tokenizing; the 256-scalar
- *  phrase limit is enforced per phrase inside `buildClauses` — "documented query/phrase length
- *  limits still apply in both modes" (Contract). `original_text` is returned untouched. */
+/** Parses `text` under `mode`'s grammar. The 2048-scalar query limit applies before tokenizing;
+ *  the 256-scalar phrase limit is enforced per phrase inside `buildClauses`. `original_text` is
+ *  returned untouched. */
 export function parseQuery(text: string, mode: QueryMode): QueryAst {
   const scalars = [...text];
   if (scalars.length > MAX_QUERY_SCALARS) {
@@ -624,11 +503,10 @@ export function parseQuery(text: string, mode: QueryMode): QueryAst {
   };
 }
 
-// ── I-18: the actual wire response ───────────────────────────────────────────────────────────
+// The wire response
 //
-// `serializeResults` emits the spec's exact `SearchResponse` (schema version 2) directly — the
-// candidates it is handed are already `SearchResult`-shaped, so there is no helper-only
-// bounded/omitted wrapper and no separate "convert" step.
+// `serializeResults` emits the spec's `SearchResponse` (schema version 2) directly; the
+// candidates it is handed are already `SearchResult`-shaped.
 
 const RESPONSE_BYTE_BUDGET = 24000;
 /** Fields a real search/browse run already knows (exhaustion from `lanes.ts`'s `search()`,
@@ -642,9 +520,8 @@ export interface ResultEnvelope {
   readonly reasons: readonly string[];
 }
 
-/** Widened the same way `CorpusRegistryEntry`/`ResultIdentity` already are: the frozen check's
- *  fixture rows carry no `as const`, so enum fields are plain `string` here, not
- *  `SearchResultSchema`'s narrower unions — `safeParse` still proves the runtime shape. */
+/** Enum fields are plain `string`, not `SearchResultSchema`'s narrower unions, because the
+ *  frozen check's fixture rows carry no `as const`. `safeParse` still proves the runtime shape. */
 interface WireResult {
   readonly ref: { readonly owner_id: string; readonly artifact_id: string; readonly revision: number | null; readonly content_hash: string; readonly selector?: string };
   readonly record_digest: string; readonly etag: string; readonly path: string; readonly title: string;
@@ -655,12 +532,10 @@ interface WireResult {
   readonly via: readonly string[]; readonly corpora: readonly string[]; readonly score: number;
 }
 
-/** Builds the JSON wire string for `SearchResponseSchema`, holding results+metadata+cursors to
- *  at most 24000 UTF-8 bytes. Tries the full candidate list first; on overflow, drops one
- *  trailing candidate at a time and re-measures — never stops mid-record. The request's own
- *  `limit` (1–50) bounds `candidateResults.length` in production, so at most 51 stringify
- *  passes. Truncation is disclosed: `incomplete: true`, `"response_budget"` in `reasons`, and
- *  `withheld_candidates` counting exactly what this function withheld. */
+/** Builds the JSON wire string for `SearchResponseSchema`, held to RESPONSE_BYTE_BUDGET. Tries
+ *  the full candidate list, then drops one trailing candidate at a time and re-measures — never
+ *  stops mid-record. Truncation is disclosed: `incomplete: true`, `"response_budget"` in
+ *  `reasons`, and `withheld_candidates`. */
 export function serializeResults(candidateResults: readonly WireResult[], envelope: ResultEnvelope): string {
   for (let n = candidateResults.length; n >= 0; n--) {
     const truncated = n < candidateResults.length;

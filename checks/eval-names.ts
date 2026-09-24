@@ -1,4 +1,5 @@
-// Seven rename, three do not, and the skills follow.
+// The evaluation door's renames: the renamed tools are registered, the rest keep their names,
+// and the skills follow.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { EVAL_ALIAS } from "../packages/contracts/dist/index.js";
@@ -13,17 +14,16 @@ for (const want of ["ruler_read", "ruler_record", "ruler_affirm", "round_judge",
                     "round_scores", "finding_record"]) {
   if (!registered.has(want)) fail.push(`${want} is not registered`);
 }
-// Control: the three correct names must be UNCHANGED. A sweep that renamed everything fails here.
+// Control: the three correct names must be unchanged. A sweep that renamed everything fails here.
 for (const keep of ["plugin_locate", "plugin_profile", "plugin_conform"]) {
   if (!registered.has(keep)) fail.push(`${keep} was renamed; it was already correct`);
 }
 for (const old of Object.keys(EVAL_ALIAS)) {
   if (registered.has(old)) fail.push(`${old} is still registered`);
 }
-// THE SET, NOT THE SIZE. This asserted a count of 10, which fails identically whether a tool
-// was lost or one was added — and says neither. Naming the set fails on both and tells you
-// which: a missing name is a tool that vanished, an unexpected one is a tool nobody wrote into
-// the door's own description.
+// The set, not the size. A count fails identically whether a tool was lost or one was added, and
+// says neither. A missing name is a tool that vanished; an unexpected one is a tool nobody wrote
+// into the door's own description.
 const EXPECTED = new Set([
   "plugin_locate", "plugin_profile", "plugin_conform",
   "ruler_read", "ruler_record", "ruler_affirm",
@@ -40,14 +40,13 @@ for (const got of registered) {
   }
 }
 
-// AC-2.13: every description on this door says when / returns / refuses.
+// Every description on this door says when / returns / refuses.
 //
-// THE WINDOW IS A SILENT SKIP WAITING TO HAPPEN, and the count below is what stops it being
-// one. A description longer than the `{0,N}` span between `description:` and `inputSchema`
-// does not fail this loop — it never enters it, and the check reports nothing at all about
-// the tool whose prose is longest, which is the one most likely to have gone wrong.
-// `round_judge` sat at 1092 characters against the plan's 1200. So the span is wide, and the
-// number of descriptions read is compared with the number of registrations found.
+// The window is a silent skip waiting to happen, and the count below is what stops it being one.
+// A description longer than the `{0,N}` span between `description:` and `inputSchema` never
+// enters the loop, so the check reports nothing about the tool whose prose is longest — the one
+// most likely to have gone wrong. So the span is wide, and the number of descriptions read is
+// compared with the number of registrations found.
 const described = new Set();
 for (const f of ["plugin-eval", "plugin-judge", "plugin-record"]) {
   const src = readFileSync(`services/zz-core/src/eval/${f}.ts`, "utf8");
@@ -76,32 +75,19 @@ for (const s of readdirSync(skillsDir)) {
   }
 }
 
-// ── TWO CALLER CLASSES THE CLAUSES ABOVE CANNOT SEE ───────────────────────────────────────
+// A caller the clauses above cannot see: `chain-check.ts` calls the door for real, at release,
+// against a live deployment, so a stale name there is a tool call that 404s in front of a
+// deployment.
 //
-// The registrations and the skills are both watched by the gate already. These two are not,
-// and each fails only where nobody is looking:
-//
-//   - The eval suite's GRADERS. `case.yaml` matches a model's answer against a regex, and the
-//     gate never runs evals — so a grader whose pattern names a tool that no longer exists is
-//     a grader that matches nothing and passes nothing, and the first sign of it is a red
-//     eval run somebody pays $0.40 a case for. All three of this flow's cases named old tools
-//     in their patterns.
-//   - `chain-check.ts`. It calls the door for real, and it runs at RELEASE against a live
-//     deployment. A stale name there is a tool call that 404s in front of a deployment,
-//     hours after the gate said the change was fine.
-//
-// Both are checked against `registered`, which was read off the source above rather than
-// listed here — so a later rename moves them together or this goes red.
+// COUPLED: checked against `registered`, read off the source above rather than listed here, so
+// a later rename moves both together or this goes red.
 
-
-// The chain check. Its first argument IS the tool name sent over the wire.
+// The chain check. Its first argument is the tool name sent over the wire.
 //
-// THE WALK, NOT ONE FILE. chain-check.ts is split by subject — chain-bugs, chain-shelf,
-// chain-freeform, chain-eval — and the eval door's calls moved into chain-eval.ts when
-// chain-check hit the 700-line ceiling. Reading the entry file alone then found no
-// `callEval` at all and reported every eval tool as unexercised, which is this check
-// failing because the code was tidied rather than because anything stopped being tested.
-// Every chain-*.ts file is part of one walk, so the subject is the directory.
+// The walk, not one file. chain-check.ts is split by subject — chain-bugs, chain-shelf,
+// chain-freeform, chain-eval — so reading the entry file alone finds no `callEval` and reports
+// every eval tool as unexercised. Every chain-*.ts file is part of one walk, so the subject is
+// the directory.
 const CHAIN_DIR = "packages/tools/src/testing";
 const CHAIN_FILES = readdirSync(CHAIN_DIR).filter((f) => /^chain-.*\.ts$/.test(f));
 const CHAIN = `${CHAIN_DIR}/chain-*.ts`;

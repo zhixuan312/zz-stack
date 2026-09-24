@@ -9,8 +9,7 @@
   "dependencies": {
     "@zz/catalog": "*",
     "@zz/contracts": "*",
-    "@zz/mcp-client": "*",
-    "pg": "^8.13.0"
+    "@zz/mcp-client": "*"
   },
   "license": "MIT"
 }

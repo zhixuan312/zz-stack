@@ -3,34 +3,21 @@
  *
  *   zz-tool testing/sql-check [--psql '<command>'] [--src <dir>]
  *
- * 0.4.0 shipped a query Postgres refuses to parse. `select distinct` ordered by a column it
- * did not project is error 42P10, raised at PARSE time, so the statement never ran at all —
- * and it sat behind /pkg, which meant every client package request returned 500 for every
- * caller on all three clients. Nobody could install the platform or refresh what they had.
- * Release verification found it in production, the host rolled back, and the version number
- * was spent.
+ * The queries live in template literals, so nothing else in this repository checks them: the
+ * gate is offline and does not run SQL, the type system sees a string, and the release's
+ * service-start step only proves the service is alive — a statement Postgres refuses to parse fails only when called.
  *
- * NOTHING ELSE COULD HAVE FOUND IT. The gate is offline and does not run SQL. The type system
- * sees a template literal. The smoke suite starts each service and checks it is still alive,
- * which this query's service was — it only fails when called. The queries live in template
- * literals, so they are the one part of this codebase with no compiler behind them at all,
- * and there are 74 of them across seven files.
- *
- * PREPARE IS THE WHOLE IDEA. Postgres parses a prepared statement, resolves every table and
+ * PREPARE is the whole idea. Postgres parses a prepared statement, resolves every table and
  * column, and applies the rules a plain parse cannot — DISTINCT against ORDER BY, GROUP BY
- * against the select list, types across an operator — without executing anything or touching
- * a row. So this needs a schema and not data, which is what makes it cheap enough to run on
- * every release: an empty database the gateway has migrated is a complete oracle.
+ * against the select list, types across an operator — without executing anything or touching a
+ * row. So this needs a schema and not data: an empty database the gateway has migrated is a
+ * complete oracle, which also makes it the check that catches a query still naming a column a
+ * migration dropped.
  *
- * That also makes it the check that catches a migration going one way and a query staying
- * behind. Four of this repository's migrations DROP something, and a query still naming a
- * dropped column is invisible until someone calls it.
- *
- * WHAT IT CANNOT CHECK, IT NAMES. Six queries build part of their text at runtime. A
- * statement with a hole in it is not a statement, and substituting something plausible would
- * check a query this repository does not contain — so those are reported, every run, with
- * the reason. A checker that quietly skips what is hard reads exactly like one that found
- * nothing wrong.
+ * What it cannot check, it names. A few queries build part of their text at runtime, and a
+ * statement with a hole in it is not a statement, so substituting something plausible would
+ * check a query this repository does not contain. Those are reported every run, with the
+ * reason.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -53,9 +40,8 @@ const SELF = "packages/tools/src/testing/sql-check.ts";
  * statement — `create table` and `begin` are perfectly good SQL that a prepared statement
  * cannot hold.
  *
- * Named rather than silently dropped. The migration runner's own DDL and transaction control
- * are the statements this excludes, and reporting them as refused would be five loud
- * findings against correct code, which is how a checker gets switched off. */
+ * Named rather than silently dropped: what this excludes is the migration runner's own DDL and
+ * transaction control, which are correct code. */
 const PREPARABLE = /^\s*(with|select|insert|update|delete|merge|values)\b/i;
 
 interface Found {
@@ -85,11 +71,10 @@ function sources(root: string, dirs: string[]): string[] {
 /**
  * Every `.query(...)` in a file, with the statement it was handed.
  *
- * THE SCAN ITSELF IS SHARED — `@zz/tools/lib/sql-scan`. `scripts/gate.ts` holds console.ts to
- * literals using the same walk, offline, and the two have to agree exactly on where a
- * statement starts and ends. They used to be two copies kept in step by hand.
+ * COUPLED: the scan is `@zz/tools/lib/sql-scan`, which the gate's console check also uses to hold
+ * console.ts to literals; the two have to agree exactly on where a statement starts and ends.
  *
- * What stays here is what only this tool decides: whether a statement PREPARE will accept.
+ * What stays here is what only this tool decides: whether PREPARE will accept a statement.
  */
 function queriesIn(file: string, root: string): Found[] {
   const rel = file.slice(root.length + 1);
@@ -115,7 +100,7 @@ function main(): number {
     .filter((f) => f.slice(root.length + 1) !== SELF)
     .flatMap((f) => queriesIn(f, root));
   if (!found.length) {
-    // Non-zero. Finding no queries in a repository that has 74 means the walk is pointed
+    // Non-zero: finding no queries in a repository that has them means the walk is pointed
     // somewhere wrong, and "0 failures" would be the most confident wrong answer available.
     console.log(`\n  CANNOT TELL: no queries found under ${SRC.join(", ")} in ${root}.`);
     console.log("  This repository has them; finding none means --src names the wrong tree.\n");
@@ -138,7 +123,7 @@ function main(): number {
   checkable.forEach((q, n) => {
     const name = `zzchk_${n}`;
     // DEALLOCATE in the same input, so a run leaves the session as it found it and the name
-    // can never collide with itself on a retry.
+    // cannot collide with itself on a retry.
     const r = psqlTry(psql, `prepare ${name} as ${q.sql};\ndeallocate ${name};`);
     if (!r.ok) {
       const msg = r.error.split("\n").filter((l) => /^(ERROR|DETAIL|HINT):/.test(l)).join(" ")

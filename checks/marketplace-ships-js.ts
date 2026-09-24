@@ -24,12 +24,9 @@ for (const f of js) {
     fail.push(`${f} carries an inline sourceMappingURL — the build is not deterministic`);
   }
 }
-// REPRODUCIBLE MEANS THE TREE MATCHES ITSELF ACROSS TWO BUILDS, not that it matches HEAD.
-// `git status` answers the second question, and it is non-empty for any uncommitted change —
-// deterministic or not — so it reports "the compile is not deterministic" for a tree that has
-// simply not been committed yet, which is the state during every execution of this plan.
-// Hashing the output before and after a rebuild asks the actual question, and asks it whether
-// or not anything is committed.
+// DELIBERATE: reproducible means the tree matches itself across two builds, not that it
+// matches HEAD, so this hashes the output before and after a rebuild rather than reading
+// `git status`. `git status` is non-empty for any uncommitted change, deterministic or not.
 const digest = (): string => {
   const files: string[] = [];
   const walk = (dir: string): void => {

@@ -1,27 +1,26 @@
 /**
- * Mirror plugins.lock.json into the registry, so a plugin VERSION is a row somebody can join
+ * Mirror plugins.lock.json into the registry, so a plugin version is a row somebody can join
  * against.
  *
  *   zz-tool register-plugins --psql '<command>' [--dry-run]
  *
- * WHY THIS RUNS AT RELEASE. A plugin's version is declared by hand in flow.json and its content
- * moves whenever anybody edits a skill inside it. Release is the one moment those two are fixed
- * together — the gate has just refused a release where the declared version and the content
- * digest disagree — so release is the only honest moment to write the pair down.
+ * A plugin's version is the platform's release version and its content moves whenever anybody edits
+ * a skill inside it. Release is the one moment those two are fixed together — the gate has just
+ * refused a release where the declared version and the content digest disagree — so release is the
+ * only honest moment to write the pair down.
  *
- * WITHOUT THESE ROWS THE EVALUATION HAS NO SUBJECT. `plugin_locate` reads zz.plugin_version and
- * would find nothing, so the flow would fail at its first stage with a message about a plugin
- * that plainly exists. That failure is worth naming here because the shape invites it: the lock
- * file and the rows look like the same fact, and only one of them is in the database.
+ * Without these rows the evaluation has no subject: `plugin_locate` reads zz.plugin_version and
+ * finds nothing, so the flow fails at its first stage with a message about a plugin that plainly
+ * exists.
  *
- * AND THE MEMBERSHIP IS THE HALF NOTHING ELSE RECORDS. zz.skill_version has no plugin column,
- * and zz.skill.flow is CURRENT registration rather than per-version. So "which version of this skill was running when that event fired"
- * had no honest answer and resolved to whatever happened to be current at read time — a wrong
- * answer indistinguishable from a right one. Release knows; nothing later does.
+ * The membership is the half nothing else records. zz.skill_version has no plugin column, and
+ * zz.skill.flow is current registration rather than per-version, so "which version of this skill was
+ * running when that event fired" otherwise resolves to whatever happened to be current at read time
+ * — a wrong answer indistinguishable from a right one.
  *
- * It runs FROM the release script and not as a day-2 command, for the same reason
- * register-skills does: zz-tool executes inside the image, its default psql is
- * `docker compose exec`, and there is no docker in that container.
+ * It runs from the release script and not as a day-2 command, for the same reason register-skills
+ * does: zz-tool executes inside the image, its default psql is `docker compose exec`, and there is
+ * no docker in that container.
  *
  * Idempotent. Re-releasing the same version writes the same rows.
  */
@@ -39,10 +38,10 @@ interface LockEntry {
 
 const lit = (s: string): string => `'${String(s).replace(/'/g, "''")}'`;
 
-/** Ours or somebody else's, and it decides what an evaluation may DO with its findings: for our
- *  own plugins they feed a change, for a third party's we assess and stop. Everything in this
- *  repository's own catalog is ours by definition; a third-party plugin is registered when
- *  somebody installs one, not here. */
+/** Ours or somebody else's, and it decides what an evaluation may do with its findings: for our own
+ *  plugins they feed a change, for a third party's we assess and stop. Everything in this
+ *  repository's own catalog is ours by definition; a third-party plugin is registered when somebody
+ *  installs one, not here. */
 const ORIGIN = "platform";
 
 function main(argv: string[]): number {
@@ -52,8 +51,8 @@ function main(argv: string[]): number {
 
   const lockPath = join(root, "plugins.lock.json");
   if (!existsSync(lockPath)) {
-    // Loud. An absent lock means plugin-versions.ts has not run, and writing nothing would
-    // leave the evaluation with no subject while this reported success.
+    // Loud. An absent lock means plugin-versions.ts has not run, and writing nothing would leave
+    // the evaluation with no subject while this reported success.
     console.error("\n  plugins.lock.json does not exist — run `node scripts/plugin-versions.ts --write`\n");
     return 1;
   }
@@ -77,25 +76,19 @@ function main(argv: string[]): number {
         from zz.plugin where name = ${lit(name)}
       on conflict (plugin_id, version) do update set digest = excluded.digest`);
     for (const skill of Object.keys(p.skills ?? {}).sort()) {
-      // Resolved by NAME AND VERSION against what register-skills wrote a moment earlier in the
-      // same release. A skill the registry has not heard of is COUNTED AND REPORTED rather than
-      // skipped: a membership that is silently short is one the profile resolves events through
-      // anyway, and the symptom arrives much later as "this plugin was never used".
-      const sv = (p.skills ?? {})[skill];
-      void sv;
-      // `on conflict DO UPDATE ... returning`, never `do nothing`. A membership that is
-      // ALREADY RECORDED is the normal case — most releases move one plugin's version and
-      // leave the rest — and `do nothing` returns no row for it, which is indistinguishable
-      // from the row this counter exists to catch: a skill the registry has never heard of.
+      // Resolved by name against what register-skills wrote a moment earlier in the same release.
+      // A skill the registry has not heard of is counted and reported rather than skipped: a
+      // membership that is silently short is one the profile resolves events through anyway, and
+      // the symptom arrives much later as "this plugin was never used".
       //
-      // It counted both as missing. 0.38.0 printed "24 plugin member(s) UNRESOLVED" with a
-      // complete and correct registry, told the reader their lock was describing a different
-      // catalog, and prescribed a fix that made the number go UP to 30 — because by then
-      // every membership existed. A warning that fires on the healthy path is a warning
-      // people learn to skip, which costs exactly the failure the comment below describes.
+      // `on conflict do update ... returning`, never `do nothing`. A membership that is already
+      // recorded is the normal case — most releases move one plugin's version and leave the rest —
+      // and `do nothing` returns no row for it, which is indistinguishable from the row this counter
+      // exists to catch: a skill the registry has never heard of. A warning that fires on the
+      // healthy path is one people learn to skip.
       //
-      // The update is a no-op write of the key onto itself. It exists only so the row comes
-      // back, so "already there" reads as recorded rather than as missing.
+      // The update is a no-op write of the key onto itself. It exists only so the row comes back, so
+      // "already there" reads as recorded rather than as missing.
       const out = psqlText(psql, `
         insert into zz.plugin_version_skill (plugin_version_id, skill_version_id)
         select pv.id, sv.id

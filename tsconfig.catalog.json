@@ -1,12 +1,12 @@
 {
   // tsconfig.catalog.json — compiles the shipped skill scripts to JavaScript.
   //
-  // NOT tsconfig.tooling.json: that config sets `noEmit: true`, which is exactly wrong for
-  // the one place in this repository that must emit — the five scripts under
+  // DELIBERATE: not tsconfig.tooling.json, which sets `noEmit: true` — wrong for the one
+  // place in this repository that must emit. The scripts under
   // catalog/zz/zz-access/skills/ are the only source that leaves this machine, packaged
   // into marketplace/ and installed by consumers who have no `tsc` of their own.
   //
-  // NOT added to tsconfig.json's `references`: two standing gate checks require every
+  // DELIBERATE: not in tsconfig.json's `references`: two standing gate checks require every
   // reference to be a workspace package with its own package.json, and this is a staging
   // compile for distribution, not a project `tsc -b` builds as a side effect of an
   // ordinary build.

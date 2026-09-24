@@ -1,11 +1,10 @@
 /**
  * A minimal `--flag value` / `--flag` reader for tenant-info's own six verbs.
  *
- * No third-party parser: the whole surface is six verbs and a dozen flags between them, and
- * `CliError` already gives every rejection the JSON shape a caller expects. Every unexpected
- * token — an unknown flag, a value-flag with nothing after it, a bare positional argument —
- * is `INVALID_ARGUMENTS`, so a verb handler never has to invent its own wording for "that
- * argument made no sense".
+ * Every unexpected token — an unknown flag, a value-flag with nothing after it, a bare
+ * positional argument — is `INVALID_ARGUMENTS`, in the JSON shape `CliError` gives every
+ * rejection, so a verb handler never has to invent its own wording for "that argument made no
+ * sense".
  */
 import { CliError } from "./errors.ts";
 
@@ -42,8 +41,8 @@ export function parseFlags(
   return flags;
 }
 
-/** A value-flag that must have been given. Used for the handful of flags every verb that
- *  declares them treats as mandatory (`--seed`, `--scale`, `--profile` on `benchmark`). */
+/** A value-flag that must have been given — the flags every verb declaring them treats as
+ *  mandatory (`--seed`, `--scale`, `--profile` on `benchmark`). */
 export function requireFlag(flags: Map<string, FlagValue>, name: string): string {
   const v = flags.get(name);
   if (typeof v !== "string") throw new CliError("INVALID_ARGUMENTS", `--${name} is required.`);

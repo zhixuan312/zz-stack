@@ -1,47 +1,37 @@
 /**
- * step-score — what "better" MEANS for a step, as numbers
+ * step-score — what "better" means for a step, as numbers
  *
  *   zz-tool step-score [--since '7 days'] [--json] [--psql '<command>']
  *
- * WHY THIS EXISTS. Every other report here says where a run went; none says whether that was
- * GOOD. "ops-select refused 8 of 44 calls" is a fact nobody can act on until somebody decides
- * whether 18% is bad — and for ten rounds that decision was made by eye, one round at a time,
- * which is how variance gets written up as improvement. Idle turns went 32% then 0% then 31%
- * across three rounds of one configuration, and the 0% was reported as a rule working.
+ * Every other report here says where a run went; none says whether that was good. "sdlc-spec
+ * refused 8 of 44 calls" is a fact nobody can act on until somebody decides whether 18% is bad.
  *
- * A plugin already had a definition — the conformance contract, scored by `conformance`.
- * Steps had none. This is the missing half.
+ * What is scored, and what deliberately is not:
  *
- * WHAT IS SCORED, AND WHAT DELIBERATELY IS NOT.
- *
- *   OURS, per step     the refusals a better skill would have avoided — a call made with
+ *   ours, per step     the refusals a better skill would have avoided — a call made with
  *                      arguments the caller could have read first. The only class the flow can
  *                      fix, so the only one a step is scored on.
- *   THEIRS             bare statuses, web pages where a result belongs, tools that are not
- *                      there. Never charged to the step that met them: a step is not worse
- *                      for calling a tool having a bad day.
- *   NEITHER            platform guardrails. A refusal that says which rule was broken is the
- *                      platform WORKING, and scoring it as a defect is how somebody ends up
- *                      weakening a guard that does its job.
+ *   theirs             bare statuses, web pages where a result belongs, tools that are not
+ *                      there. Never charged to the step that met them: a step is not worse for
+ *                      calling a tool having a bad day.
+ *   neither            platform guardrails. A refusal that says which rule was broken is the
+ *                      platform working, and scoring it as a defect is how a guard that does its
+ *                      job gets weakened.
  *
- * THE BASELINE IS THE MEDIAN OF WHAT THIS STEP HAS DONE BEFORE. Not a number anybody typed,
- * and not the previous round — that makes every reading a comparison with one day's luck. And
- * only WITHIN A MAJOR: a rate under 2.3 against one under 2.7 is a fair comparison, same intent
- * and two attempts at executing it, while 1.5 against 2.0 is not — the second skill was asked
- * for something the first never was, and reading the gap as a regression blames a change for
- * work it was never doing.
+ * The baseline is the median of what this step has done before — not a number anybody typed, and
+ * not the previous round. And only within a major: a rate under 2.3 against one under 2.7 is a
+ * fair comparison, same intent and two attempts at executing it, while 1.5 against 2.0 is not,
+ * because the second skill was asked for something the first never was.
  */
 import { refusalOwner, resolveStep } from "@zz/contracts";
 
 import { parseArgs } from "../lib/cli.js";
 import { DEFAULT_PSQL, psqlRows } from "../lib/psql.js";
 
-/** WHO A REFUSAL BELONGS TO — the contract's own classifier, not a second copy.
- *
- * These four regexes lived here, and nothing that WROTE a refusal could reach them: the
- * gateway recorded every not-ok call as one undifferentiated "refusal" while this file, read
- * by nobody at release time, knew the difference. The classifier is in @zz/contracts beside
- * refusalClass now, and the gateway stamps its verdict onto the event as it happens. */
+/** Who a refusal belongs to — the contract's own classifier, not a second copy.
+ * COUPLED: the classifier lives in @zz/contracts beside refusalClass, and the gateway stamps its
+ * verdict onto the event as it happens. A copy here cannot be reached by anything that writes a
+ * refusal. */
 export const owner = refusalOwner;
 
 interface Row {
@@ -50,10 +40,8 @@ interface Row {
   ok: boolean | null;
   refusal: string | null;
   run: string | null;
-  /** THE UNIT OF EVIDENCE. Not the round and not the scenario — an initiative is one piece of
-   * work, and in production there are no scenarios, only initiatives. "Across 500 initiatives
-   * that reached ops-select, is ops-select effective" is the question this table exists to
-   * answer, and the initiative is what makes it countable. */
+  /** The unit of evidence. Not the round and not the scenario — an initiative is one piece of
+   * work, and in production there are no scenarios, only initiatives. */
   initiative: string | null;
 }
 
@@ -69,38 +57,36 @@ export interface StepScore {
   /** ours / calls, because a busy step and a quiet one are not comparable by count. */
   rate: number;
   runs: number;
-  /** How many distinct pieces of work this version has been through. THE SAMPLE SIZE, and the
-   * only thing that turns a number into a claim: one initiative is an anecdote and five
-   * hundred is a property of the step. Printed on every row rather than warned about in prose,
-   * so nobody has to remember which numbers were thin. */
+  /** How many distinct pieces of work this version has been through — the sample size, and the
+   * only thing that turns a number into a claim. Printed on every row rather than warned about in
+   * prose, so nobody has to remember which numbers were thin. */
   initiatives: number;
-  /** The median rate of this step's OTHER versions in the same major, or null when there is
+  /** The median rate of this step's other versions in the same major, or null when there is
    *  nothing to compare against — the honest answer for a step seen once. */
   baseline: number | null;
   /** Never a judgement without a baseline to make it against. */
   verdict: "better" | "worse" | "same" | "unknown";
 
-  /** ── THE OTHER HALF OF EFFECTIVE ────────────────────────────────────────────
+  /**
+   * The other half of effective. A refusal rate says whether the step calls things correctly, not
+   * whether the work came out right: a step can make no bad calls and still produce a spec the
+   * stakeholder rejects, or fumble a dozen calls on the way to something accepted.
    *
-   * A refusal rate says whether the step CALLS things correctly. It does not say whether the
-   * work came out right, and those are different questions: a step can make no bad calls and
-   * still produce a spec the stakeholder rejects, or fumble a dozen calls on the way to
-   * something accepted.
-   *
-   * So the initiatives this version touched are counted by how they ENDED. `accepted` means a
-   * person signed for it; `delivered` means it closed with nobody's signature and owes a line
-   * on why; `abandoned` means the work stopped. `open` is neither a success nor a failure —
-   * work in flight, kept apart so it cannot be quietly counted as either. */
+   * So the initiatives this version touched are counted by how they ended. `accepted` means a
+   * person signed for it; `delivered` means it closed with nobody's signature and owes a line on
+   * why; `abandoned` means the work stopped. `open` is neither a success nor a failure, kept
+   * apart so it cannot be quietly counted as either.
+   */
   accepted: number;
   delivered: number;
   abandoned: number;
   open: number;
-  /** The sentences themselves, most frequent first. A count says which step to read; the
-   *  sentence is the only thing a skill can actually be edited from.
+  /** The sentences themselves, most frequent first. A count says which step to read; the sentence
+   *  is the only thing a skill can actually be edited from.
    *
-   *  `seenIn` is how many distinct initiatives produced it, and it is what separates a defect
-   *  in the step from a bad afternoon. A sentence that appears twenty times inside one piece of
-   *  work is one agent stuck in a loop; the same sentence across five is the skill. */
+   *  `seenIn` is how many distinct initiatives produced it. A sentence that appears twenty times
+   *  inside one piece of work is one agent stuck in a loop; the same sentence across five is the
+   *  skill. */
   says: { text: string; n: number; seenIn: number }[];
 }
 
@@ -112,7 +98,7 @@ const median = (xs: number[]): number | null => {
   return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
 };
 
-/** Ordered by HOW MANY PIECES OF WORK produced it, then by count. A sentence seen once in five
+/** Ordered by how many pieces of work produced it, then by count. A sentence seen once in five
  * initiatives is worth more than one seen forty times in a single stuck run, and sorting by raw
  * count puts the stuck run first every time. */
 const top = (m: Map<string, { n: number; where: Set<string> }>): { text: string; n: number; seenIn: number }[] =>
@@ -145,7 +131,7 @@ export function score(rows: Row[], endings: Ending[] = []): { steps: StepScore[]
 
   for (const r of rows) {
     if (r.step) {
-      // Resolved through SKILL_ALIAS (FR-37a) so a step renamed mid-window scores as one
+      // Resolved through SKILL_ALIAS so a step renamed mid-window scores as one
       // series — a step is a known skill name, matched against the same map tool-report uses.
       const k = `${resolveStep(r.step)} ${r.step_version ?? ""}`;
       const s = perStep.get(k) ?? {
@@ -195,7 +181,7 @@ export function score(rows: Row[], endings: Ending[] = []): { steps: StepScore[]
 
   const steps: StepScore[] = raw
     .map((r) => {
-      // The step's OTHER versions in the same major. Excluding itself, because a version
+      // The step's other versions in the same major. Excluding itself, because a version
       // compared against a set containing itself is dragged toward its own number, and a step
       // seen under one version would always read as exactly average.
       const peers = raw.filter((p) => p.step === r.step && p.major === r.major && p.version !== r.version);
@@ -213,7 +199,7 @@ export function score(rows: Row[], endings: Ending[] = []): { steps: StepScore[]
 }
 
 /** How each initiative ended, from the platform's own record. Read separately from the calls
- * because an outcome belongs to a piece of WORK and a refusal belongs to a CALL, and joining
+ * because an outcome belongs to a piece of work and a refusal belongs to a call, and joining
  * them in SQL would multiply one by the other. */
 interface Ending { initiative: string; outcome: string | null }
 

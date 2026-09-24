@@ -1,6 +1,5 @@
-// The inverse assertion. Rather than listing the sites that must change — a list that goes
-// stale the moment anything moves — this asserts that NO discovery site filters on .mjs alone
-// anywhere in the tooling. It cannot miss a site the way an enumeration can.
+// Asserts that no discovery site under scripts/ or checks/ filters on .mjs alone, rather than
+// enumerating the sites that must change.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 const walk = (dir: string, out: string[] = []): string[] => {
@@ -20,10 +19,9 @@ const SUSPECT = [
   /\\\.mjs/,                                          // any escaped .mjs inside a regex literal
 ];
 const fail: string[] = [];
-// TWO FILES LEGITIMATELY SPELL OUT .mjs AND MUST NOT BE FLIPPED. This check's own SUSPECT
-// array has to name the thing it hunts, so it matches itself; and rename-complete.ts exists to
-// assert .mjs remnants are GONE, so an empty match is its pass condition — the exact inverse of
-// the silent-class risk. Flipping either would break the guard rather than the bug.
+// DELIBERATE: these files spell out .mjs and must keep doing so — each hunts .mjs for a
+// living, so naming it is the point. Flipping one breaks the guard rather than the bug.
+// COUPLED: a new check that hunts .mjs must be added here, or this check flags it.
 const HUNTERS = new Set([
   "checks/no-mjs-filters.ts",        // its SUSPECT array must name what it hunts
   "checks/rename-complete.ts",       // asserts .mjs remnants are gone; empty match is its pass
@@ -33,10 +31,6 @@ const HUNTERS = new Set([
   "checks/lock-current.ts",          // asserts no .mjs survives in the lock
   "checks/skill-commands-runnable.ts", // flags a SKILL.md still instructing a .mjs
 ]);
-// Seven files, and the list is explicit rather than a heuristic on purpose: each one hunts
-// .mjs for a living, so each must spell it out, and a clever rule that inferred "this looks
-// like a hunter" would eventually excuse a file that is simply stale. A named list with a
-// reason per entry is auditable; a heuristic is not.
 for (const f of [...walk("scripts"), ...walk("checks")].filter((x) => x.endsWith(".ts"))) {
   if (HUNTERS.has(f)) continue;
   const src = readFileSync(f, "utf8");

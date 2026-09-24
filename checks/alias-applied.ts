@@ -25,7 +25,7 @@ if (resolveToolKey("manage:issue_my_access_token") === resolveToolKey("manage:pa
 }
 
 // 2. No per-tool grouper reads `subject` raw. Any file that groups by subject must import
-//    the resolver — this is the check that catches a SECOND grouper added later.
+//    the resolver, so a grouper added later is caught too.
 const dir = "packages/tools/src/testing";
 for (const f of readdirSync(dir).filter((f) => f.endsWith(".ts"))) {
   const src = readFileSync(join(dir, f), "utf8");

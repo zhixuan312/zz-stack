@@ -3,38 +3,15 @@
  * control-loop-e2e.ts — drive a real initiative through the real doors and check that the
  * control loop refuses and grants the way the flow declares.
  *
- * WHY THIS EXISTS, AND WHY THE GATE CANNOT REPLACE IT.
- *
- * `scripts/gate.ts` is offline and proves things about the SOURCE. It never opens a database
- * and never calls a door, which is right — it runs in seconds on every change and it must
- * answer the same way on any machine. But the question a person asks about a control loop is
- * not "does the library work". It is "does a run recorded THROUGH THE PLATFORM reach a
- * grant", and no offline check can answer that.
- *
- * The adoption this exercises was committed typechecked and gate-green at 418 checks with
- * SIX defects in it. Every one was found by running this and none by reading the code:
- *
- *   · an approval recorded `about` a filename, where a completion rule wants the ID of
- *     another entry — so every gated step was permanently unmeetable;
- *   · `chainFor` on a source's own path returns EMPTY_CHAIN, so the audit step was looked up
- *     in an empty stage list and nothing was recorded, silently;
- *   · an audit pointed at `doc:spec.md` where the entry is `doc:<initiative>/spec.md`;
- *   · the migration wrote a second, internally-consistent namespace that satisfied its own
- *     rules and joined nothing;
- *   · the migration filtered rows on a flow stamp that sources do not carry;
- *   · the migration counted one of the two forms an audit takes.
- *
- * Three of the six are one shape: a name carried from the flow's vocabulary into the
- * platform's namespace without translation. None is visible to a type, a build, or any check
- * in this repository. Each produces a platform that records diligently and answers wrongly.
+ * `scripts/gate.ts` is offline and proves things about the source; it never opens a database or
+ * calls a door. The question here is whether a run recorded through the platform reaches a
+ * grant, which no offline check can answer.
  *
  *   ZZ_E2E_URL=http://127.0.0.1:18000/core/mcp ZZ_E2E_PAT=zzp_… \
  *   ZZ_E2E_DB=postgresql://… node scripts/control-loop-e2e.ts
  *
- * IT REFUSES TO RUN AGAINST PRODUCTION, and the refusal is not advisory. This writes an
- * initiative, four documents, two sources and a close — into whatever store it is pointed
- * at. A test that can be aimed at the real store by a mistyped variable is a test nobody
- * should run.
+ * It refuses to run against anything but loopback. This writes an initiative, four documents,
+ * two sources and a close into whatever store it is pointed at.
  */
 import pg from "pg";
 
@@ -45,15 +22,11 @@ const DB = process.env.ZZ_E2E_DB ?? "";
 /**
  * Where this may be aimed: loopback, and nothing else.
  *
- * AN ALLOWLIST, NOT A LIST OF PRODUCTION ADDRESSES, and the difference is which way it fails.
- * A blocklist has to name every store that must not be touched, so it fails OPEN for the one
- * somebody forgot or the one that gets a new address next month. This fails CLOSED: anything
- * that is not plainly a local scratch container is refused, and a second deployment tomorrow
- * is refused without anybody remembering to add it.
- *
- * It also means this file names no production address. The first draft listed them, and this
- * repository's own sweep refused the file for disclosing a host — correctly, and the fix was
- * better than the thing it refused.
+ * An allowlist, not a blocklist, so it fails closed. A blocklist has to name every store that
+ * must not be touched and fails open for the one somebody forgot or the one that gets a new
+ * address next month; anything that is not plainly a local scratch container is refused here,
+ * and a second deployment tomorrow is refused without anybody adding it. It also means this
+ * file names no production address.
  */
 const LOOPBACK = /^(https?:\/\/)?(127\.0\.0\.1|localhost|\[::1\])(:\d+)?([/?]|$)/;
 const localDb = (url: string): boolean =>
@@ -134,9 +107,8 @@ async function main(): Promise<void> {
   await doc("review.md", "## Verdict\nx\n");
   await sign("review.md");
 
-  // THE CASE THAT MATTERS MOST, and the one nothing in this repository could catch before.
   // Every document the flow declares is written and approved, so `documentGuards` is fully
-  // satisfied and the old guards would let this close. Two audit rounds never happened.
+  // satisfied — and two audit rounds never happened.
   const early = await call("initiative_close", { initiative: name, disposition: "finished" });
   ok = expect("a close is REFUSED when the documents are complete but the audits never ran",
     early.text.includes("cannot claim close:initiative") && early.text.includes("needs 1 audit"),
@@ -153,7 +125,7 @@ async function main(): Promise<void> {
   ok = expect("source_add records the audit evidence, against the document it supports",
     audits.length === 2 && audits.every((a: { about: string }) => a.about.startsWith(`doc:${name}/`)),
     JSON.stringify(audits)) && ok;
-  // THE BACK-REFERENCE, CHECKED AS A SHAPE rather than assumed from a passing grant. A grant
+  // The back-reference, checked as a shape rather than assumed from a passing grant. A grant
   // can be reached by a graph that is wrong in a way that happens not to matter yet.
   const approvals = rows.filter((r: { kind: string }) => r.kind === "approval");
   ok = expect("every approval points at the ID of a document entry, not at a filename",

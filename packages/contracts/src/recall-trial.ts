@@ -1,39 +1,23 @@
 /**
- * ONE RECALL EPISODE, END TO END: a public search, a pinned read of the original, a walk of the
+ * One recall episode, end to end: a public search, a pinned read of the original, a walk of the
  * source and supersession relations, and a `RecallResult` in the language the asker used.
  *
- * WHAT THIS TRIAL IS FOR. The pieces already existed and nothing put them in a line. `recall.ts`
- * maps a search outcome to one of four exits and caps a claim that has no original text behind
- * it; `recall-trial-corpus.ts` holds a corpus and a Han-aware analysis. Neither of them says
- * what an episode DOES between the first query and the answer, and every rule this task exists
- * for lives in that gap: which hit may be quoted, which citation the reader is handed after the
- * document moves, which lead may authorize an effect, and which language the answer comes back
- * in. `trial` below is that path, run once per question.
+ * `recall.ts` maps a search outcome to one of four exits and caps a claim with no original text
+ * behind it; `recall-trial-corpus.ts` holds the corpus and a Han-aware analysis. Neither says what an
+ * episode does between the first query and the answer: which hit may be quoted, which citation the
+ * reader is handed after the document moves, which lead may authorize an effect, and which language
+ * the answer comes back in. `trial` below is that path, run once per question.
  *
- * WHAT IT DOES NOT ESTABLISH, and this list is the honest half of the header. The trial runs
- * over a corpus declared in this package, because `@zz/contracts` sits underneath the services
- * and cannot import `services/zz-core/src/tenant-info/search.ts` — zz-core depends on this
- * package and never the reverse. So NOTHING here is evidence about:
+ * The corpus is declared in this package, because `@zz/contracts` sits underneath the services and
+ * cannot import `services/zz-core/src/tenant-info/search.ts`. So nothing here is evidence about the
+ * live `knowledge_search` handler and its lanes, BM25 scoring or RRF fusion; `serializeResults` and
+ * its response budget; the query grammar, its phrases, exclusions or cursors; whether `pg_textsearch`
+ * and `pg_trgm` exist on any cluster; the real supersession operation; or team scoping and the
+ * `no_team` exit. What it is evidence about is the traversal rules.
  *
- *   · the live `knowledge_search` handler, its lanes, its BM25 scoring or its RRF fusion;
- *   · `serializeResults` and the 24000-byte response budget it discloses;
- *   · the query grammar, its phrases, its exclusions or its cursors;
- *   · whether `pg_textsearch` and `pg_trgm` exist on any cluster, or whether the stored
- *     `body_tsv` agrees with the query the read path sends;
- *   · the real supersession operation, its authorization, or what it writes;
- *   · team scoping, the `no_team` exit, or anything a deployment decides.
- *
- * What it IS evidence about is the traversal rules, and they are the part that was never
- * written down anywhere a check could reach. The corpus is built to make each of them
- * expensive rather than convenient — see that module's header, document by document.
- *
- * THE ANSWER'S LANGUAGE COMES FROM THE QUESTION. `askerLanguage` takes the question and
- * NOTHING ELSE; it has no parameter through which a corpus, a hit or a finding could reach it.
- * That is deliberate and it is the point: a trial that read the language off whichever document
- * matched would answer correctly for every monolingual corpus and be wrong for the only one
- * that matters. The corpus here is arranged so the strongest answer to the ENGLISH question is
- * a Chinese document, so an implementation that inherited the language would be caught by the
- * fixture as well as by the probe.
+ * The answer's language comes from the question. `askerLanguage` takes the question and nothing else,
+ * so no implementation can inherit a language from the material that matched; the corpus is arranged
+ * so the strongest answer to the English question is a Chinese document.
  */
 import {
   citationFor, documentIdOf, documentOf, headRevisionOf, pinnedRevisionOf, readOriginalText,
@@ -59,16 +43,13 @@ interface TrialRendering {
 }
 
 /**
- * A `RecallFinding` with what the traversal observed about it. Extending the existing type
- * rather than declaring a second one beside it: `claim_kind`, `support`, `match_kind`, `refs`,
- * `quote` and `status` keep the meanings `recall.ts` gives them, and the fields added here are
- * observations about the episode rather than a parallel vocabulary for the same facts.
+ * A `RecallFinding` with what the traversal observed about it. `claim_kind`, `support`, `match_kind`,
+ * `refs`, `quote` and `status` keep the meanings `recall.ts` gives them.
  *
- * `original_quote` and `readOriginal` are ASSIGNED FROM the inherited fields, never computed a
- * second time — `original_quote` is the same object `quote` holds, and `readOriginal` is
- * `support === "original_text_read"`. That is what makes `claim_kind === "observed_result"`
- * with `readOriginal` false unrepresentable rather than merely forbidden: `recall.ts` decides
- * both from one boolean, so there is no state in which they disagree.
+ * `original_quote` and `readOriginal` are assigned from the inherited fields, never computed again:
+ * `original_quote` is the same object `quote` holds and `readOriginal` is
+ * `support === "original_text_read"`, so `claim_kind === "observed_result"` with `readOriginal` false
+ * is unrepresentable.
  */
 interface TrialFinding extends RecallFinding {
   readonly original_quote: RecallFinding["quote"];
@@ -101,25 +82,23 @@ interface TrialOptions {
   readonly analyzer?: TrialAnalyzer;
 }
 
-// ── deriving the answer's language from the question, and from nothing else ─────────────────
+// Deriving the answer's language from the question, and from nothing else
 
 /**
- * The language the asker asked in. ONE PARAMETER, THE QUESTION — there is no corpus, no hit and
- * no finding in this signature, so no implementation of it can inherit a language from the
- * material that happened to match.
+ * The language the asker asked in. One parameter, the question — no corpus, no hit and no finding in
+ * this signature, so no implementation of it can inherit a language from the material that matched.
  */
 export function askerLanguage(question: string): TrialLanguage {
   return /\p{Script=Han}/u.test(question) ? "zh" : "en";
 }
 
-// ── ranking: what answers a question about a decision ──────────────────────────────────────
+// Ranking: what answers a question about a decision
 
 /**
- * How strongly a claim answers "what did we decide". NOT `RecallClaimKind`'s declaration order,
- * which orders by how strongly a claim is SUPPORTED — an approved decision and a stated intent
- * sit next to each other there, and for this question they are opposites. A proposal that says
- * "nothing is decided yet" is exactly what must not be handed back as the decision, and this
- * table is what stops it.
+ * How strongly a claim answers "what did we decide". Not `RecallClaimKind`'s declaration order, which
+ * orders by how strongly a claim is supported — an approved decision and a stated intent sit next to
+ * each other there. A proposal saying "nothing is decided yet" must not be handed back as the
+ * decision.
  */
 const ANSWERS_A_DECISION: Readonly<Record<RecallClaimKind, number>> = {
   approved_decision: 5,
@@ -140,30 +119,20 @@ interface Candidate {
 }
 
 /**
- * Conclusions before leads, then by how well the claim answers a question about a decision,
- * then by recency.
- *
- * `read.ok` IS THE SAME BOOLEAN `recall.ts` DEMOTES ON — a successful read always carries a
- * non-empty language, which is the rest of that module's condition — so ranking by it cannot
- * disagree with the claim the finding ends up carrying. Ranking on the asserted `claim_kind`
- * of an unread hit is what would put the loudest unverified document first.
+ * Conclusions before leads, then by how well the claim answers a question about a decision, then by
+ * recency. `read.ok` is the same boolean `recall.ts` demotes on, so ranking by it cannot disagree
+ * with the claim the finding ends up carrying; ranking on an unread hit's asserted `claim_kind` would
+ * put the loudest unverified document first.
  */
 function rank(candidates: readonly Candidate[]): readonly Candidate[] {
   const strength = (c: Candidate): number =>
     ANSWERS_A_DECISION[c.read.ok ? c.doc.claim_kind : "author_inference"];
   const recorded = (c: Candidate): string => {
     const head = headRevisionOf(c.doc);
-    // A DOCUMENT WITH NO REVISION HISTORY IS STILL RANKABLE, AND IS DELIBERATELY NOT REFUSED
-    // HERE. `doc/mig-legacy` is readable through its current path, quotable, and a real
-    // finding; dropping it out of the ranking would drop a finding a reader is entitled to
-    // see, on the grounds of a field that decides nothing about whether it answers them. What
-    // such a document CANNOT do is say when it was written — so it sorts oldest. Recency is
-    // the last tiebreak, after read-ness and after how well the claim answers the question, so
-    // the only thing this decides is which of two equally supported, equally strong claims is
-    // offered first, and an undated document may not take that place from a dated one.
-    //
-    // Written out rather than reached through `?.`, because the `?.` hid that decision behind
-    // a default and left no line where a reader could see it being taken.
+    // DELIBERATE: a document with no revision history is still rankable and not refused here — it is
+    // readable through its current path, quotable, and a real finding. What it cannot do is say when
+    // it was written, so it sorts oldest. Recency is the last tiebreak, after read-ness and after how
+    // well the claim answers the question.
     return head === null ? "" : head.recorded_at;
   };
   return [...candidates].sort((a, b) =>
@@ -173,18 +142,16 @@ function rank(candidates: readonly Candidate[]): readonly Candidate[] {
     || (a.doc.id < b.doc.id ? -1 : 1));
 }
 
-// ── the episode ────────────────────────────────────────────────────────────────────────────
+// The episode
 
 const READ_AT = "2026-09-21T00:00:00.000Z";
 const RECEIPT_REF = "trial-search-1";
 const SCOPES: readonly string[] = ["team"];
 
 /**
- * THE ONE PLACE A QUOTE IS BUILT, and it is built from the union's `ok` branch. `text` and
- * `language` do not exist on the failed branch, so no rearrangement of this function can
- * produce a quote for an original nobody opened; and `original_text_read` is the same
- * `read.ok`, so the two can never be set apart. Everything `recall.ts` refuses to promote
- * follows from that single value.
+ * The one place a quote is built, from the union's `ok` branch. `text` and `language` do not exist on
+ * the failed branch, so no rearrangement can produce a quote for an original nobody opened, and
+ * `original_text_read` is the same `read.ok`.
  */
 function itemFrom(candidate: Candidate): RecallSearchItem {
   const { doc, ref, read, via } = candidate;
@@ -199,12 +166,10 @@ function itemFrom(candidate: Candidate): RecallSearchItem {
     claim_kind: doc.claim_kind,
     original_text_read: read.ok,
     quote: read.ok ? { text: read.text, language: read.language } : null,
-    // A DOCUMENT NOBODY OPENED HAS NO CURRENCY EITHER. `adopted` is a claim about a document,
-    // and asserting it for a hit whose original was refused or unretrievable is the same
-    // promotion the claim rule exists to stop, one field along — which is why `recall.ts`
-    // defaults an absent status to `unknown` rather than to the friendly reading. Supersession
-    // stays reportable for a lead: the head fetch is metadata about where the document went and
-    // is not a read of what it says.
+    // A document nobody opened has no currency either: asserting `adopted` for a hit whose original
+    // was refused or unretrievable is the promotion the claim rule exists to stop, which is why
+    // `recall.ts` defaults an absent status to `unknown`. Supersession stays reportable for a lead —
+    // the head fetch is metadata about where the document went, not a read of what it says.
     status: movedOn ? "superseded" : read.ok ? "adopted" : "unknown",
     superseded_by: movedOn ? (doc.superseded_by ?? `${doc.id}@${head.id}`) : null,
     recorded_at: read.ok ? (doc.revisions.find((r) => r.id === read.revision)?.recorded_at ?? null) : null,
@@ -228,7 +193,7 @@ function renderingFor(
 }
 
 /** Whether a finding may authorize an effect against a pinned revision: the citation names a
- *  revision, the original behind it was opened, and what was opened IS that revision. A
+ *  revision, the original behind it was opened, and what was opened is that revision. A
  *  current-path lead fails the first clause and a failed read fails the second. */
 function authorizes(candidate: Candidate): boolean {
   const pinned = pinnedRevisionOf(candidate.ref);
@@ -236,10 +201,9 @@ function authorizes(candidate: Candidate): boolean {
 }
 
 /**
- * Whether the reader was moved off the revision they cited. Measured by RE-OPENING the citation
- * after the document has been superseded and asking what came back — not by trusting that the
- * resolver was written to honour it. Only meaningful where the head has actually moved, so a
- * document nobody superseded contributes nothing either way.
+ * Whether the reader was moved off the revision they cited. Measured by re-opening the citation after
+ * the document has been superseded, not by trusting that the resolver was written to honour it. Only
+ * meaningful where the head has actually moved.
  */
 function citationFollowsHead(corpus: TrialCorpus, findings: readonly RecallFinding[]): boolean {
   return findings.some((f) => {
@@ -270,12 +234,9 @@ interface AnswerRow {
 }
 
 /**
- * The answer sentence, in the asker's language.
- *
- * THE CHINESE TEMPLATE IS OUTPUT DATA, of the same kind as the corpus's Chinese bodies and the
- * frozen check's Chinese query. A `RecallResult` whose `answer_language` says `zh` over English
- * prose would be a false statement about its own contents, which is the one thing this module
- * exists to prevent. Every comment, identifier and diagnostic in this package stays English.
+ * The answer sentence, in the asker's language. The Chinese template is output data: a `RecallResult`
+ * whose `answer_language` says `zh` over English prose would be a false statement about its own
+ * contents. Every comment, identifier and diagnostic in this package stays English.
  */
 function answerIn(
   language: TrialLanguage, question: string, rows: readonly AnswerRow[],
@@ -302,12 +263,10 @@ function answerIn(
 /**
  * One trial: ask, search, read, walk, answer.
  *
- * THE ORDER MATTERS AND IS THE CONTRACT. The citation is formed from the head AS IT STOOD WHEN
- * THE EPISODE READ IT, before any supersession; the head is fetched afterwards only to CHECK
- * whether the document has moved, and what that check produces is a `status` and a
- * `superseded_by` beside the citation — never a new citation and never a new quotation. That is
- * the difference between telling a reader their source has been superseded and quietly handing
- * them a different document under the reference they already cited.
+ * The order is the contract. The citation is formed from the head as it stood when the episode read
+ * it, before any supersession; the head is fetched afterwards only to check whether the document has
+ * moved, producing a `status` and a `superseded_by` beside the citation — never a new citation and
+ * never a new quotation.
  */
 export function trial(query: string, options: TrialOptions = {}): TrialResult {
   const corpus = trialCorpus();
@@ -325,20 +284,15 @@ export function trial(query: string, options: TrialOptions = {}): TrialResult {
   const ranked = rank(candidates);
 
   // The head is fetched only after the strongest finding has been cited and quoted, so that
-  // what supersession can do to this episode is limited to being REPORTED by the walk below.
+  // what supersession can do to this episode is limited to being reported by the walk below.
   if (options.thenSupersede === true && ranked.length > 0) {
     const applied = supersedeDocument(corpus, ranked[0].doc.id, SUPERSEDING_TEXT);
-    // A SUPERSESSION THAT DID NOT HAPPEN MAKES THE WALK BELOW MEANINGLESS, AND MEANINGLESS IN
-    // THE FLATTERING DIRECTION — which is why the answer is taken rather than discarded.
-    // `supersedeDocument` answers null when the document has no head to move, and that is a
-    // REACHABLE state through this function's own surface, not a defensive hypothetical: the
-    // imported runbook carries no revision history, and it is the strongest finding for its
-    // own name, so `trial("legacy", { thenSupersede: true })` lands exactly here. An episode
-    // that shrugged at the null would go on to report `supersessionReported: false` and
-    // `citationFollowedHead: false` — both TRUE, and true because there was never a head to
-    // follow rather than because the citation held. A negative flag that is right by accident
-    // is the one thing this module exists to make impossible, so the episode refuses to report
-    // on a condition it failed to arrange instead of answering for it.
+    // A supersession that did not happen makes the walk below meaningless in the flattering
+    // direction, so the answer is taken rather than discarded. `supersedeDocument` answers null when
+    // the document has no head to move, which is reachable through this function's own surface.
+    // Shrugging at it would report `supersessionReported: false` and `citationFollowedHead: false` —
+    // both true, and true because there was never a head to follow rather than because the citation
+    // held.
     if (applied === null) {
       throw new Error(`this episode was asked to supersede ${ranked[0].doc.id} and nothing was `
         + "superseded: that document carries no revision to move. Any supersession reported "

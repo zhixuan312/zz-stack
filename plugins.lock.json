@@ -1,15 +1,15 @@
 {
   "sdlc": {
     "version": "0.71.0",
-    "digest": "ed4e9c86",
+    "digest": "d167b0dc",
     "skills": {
       "sdlc-audit-criteria": "7a33bec2796c",
       "sdlc-execute": "cd0bc5ec8107",
       "sdlc-explore": "c7eb0a109e8b",
-      "sdlc-flow": "7ebef54afafe",
+      "sdlc-flow": "caca158c6842",
       "sdlc-investigate": "7b4dfc8ef68c",
-      "sdlc-method": "5cec69cb6bda",
-      "sdlc-plan": "dd5a741f3898",
+      "sdlc-method": "d73583d8eb53",
+      "sdlc-plan": "7ffd2b6589b6",
       "sdlc-plan-audit": "0f79ad5f88d0",
       "sdlc-recall": "636faf9cf4ba",
       "sdlc-research": "2a8c4a886be8",
@@ -20,10 +20,10 @@
   },
   "zz-access": {
     "version": "0.71.0",
-    "digest": "f0bd0060",
+    "digest": "530b3083",
     "skills": {
-      "zz-access": "54e579e57350",
-      "zz-admin": "c5e53a49db29",
+      "zz-access": "a40c67ebf69f",
+      "zz-admin": "118accd960db",
       "zz-doctor": "b3960436e687",
       "zz-migrate": "2ccb1e0161d2",
       "zz-update": "a5d73e2d40eb"
@@ -31,26 +31,26 @@
   },
   "zz-core": {
     "version": "0.71.0",
-    "digest": "c68a7356",
+    "digest": "b1497e6d",
     "skills": {
       "zz-authoring": "60f258ebec54",
-      "zz-breakout": "44950226bab5",
-      "zz-deck": "564cc938a102",
-      "zz-handover": "5335aaade5e2",
-      "zz-platform": "dac29055d623",
+      "zz-breakout": "8ec4136f1e82",
+      "zz-deck": "ad14925b6473",
+      "zz-handover": "20fda0ac1218",
+      "zz-platform": "0865806b8518",
       "zz-tldr": "ac9890b7fffb"
     }
   },
   "zz-plugin-eval": {
     "version": "0.71.0",
-    "digest": "69c73efb",
+    "digest": "b7acd2e2",
     "skills": {
       "zz-plugin-define": "f80733547fcd",
-      "zz-plugin-eval": "0f2f26d089d4",
+      "zz-plugin-eval": "e81e09dcf3e1",
       "zz-plugin-judge": "a4d402d2773c",
       "zz-plugin-locate": "641a2d2e8a99",
-      "zz-plugin-profile": "4eeb3b6a2bc7",
-      "zz-plugin-report": "f44fb2bf7512"
+      "zz-plugin-profile": "8648c947e0fa",
+      "zz-plugin-report": "2a2858e7af68"
     }
   }
 }

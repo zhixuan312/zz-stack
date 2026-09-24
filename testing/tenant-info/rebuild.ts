@@ -1,21 +1,13 @@
 /**
- * rebuild.ts — I-13's "projection-schema" case group, the first tenant-info suite that touches
- * migration 070's derived database rather than only the file-backed commit engine. `scripts/
+ * The "projection-schema" case group: the tenant-info suite that touches the derived
+ * projection database rather than only the file-backed commit engine. `scripts/
  * tenant-info/suites.ts` reserves the name "rebuild" at this path, so `verify --suite rebuild`
- * dynamic-imports it and calls `run`, exactly as `persistence.ts` does for "persistence".
+ * dynamic-imports it and calls `run`.
  *
- * INITIAL, PER I-13's OWN OUTPUT LINE. The full rebuild walk (`packages/indexing/src/
- * tenant-rebuild.ts`) and the analyzer it depends on (`tenant-analysis.ts`) do not exist yet
- * — I-15 completes this file once they do. What is here now is everything "projection-schema"
- * can actually prove today: the offline cases exercise the migration file's own text and
- * `tenant-projections.ts`'s pure logic without any database at all, and `atomic_apply_*`
- * exercises the real `applyCommit` against an operator-provided isolated copy — never touched
- * by this suite's own default run, and never inferred from `TEAM_DB_URL`/`PLATFORM_DB_URL`
- * (the spec's own words: "a test target must be explicitly isolated/copy, never inferred from
- * a missing environment value"). Absent `ZZ_TENANT_INFO_ISOLATED_DB_URL`, that one case fails
- * loudly naming the variable, which is the correct, honest answer in an environment with no
- * database reachable at all — not a skip that would look like a pass to anyone reading the
- * receipt.
+ * The offline cases exercise the schema file's own text and `tenant-projections.ts`'s pure
+ * logic with no database at all. `atomic_apply_*` exercises the real `applyCommit` against an
+ * operator-provided isolated copy, named by `ZZ_TENANT_INFO_ISOLATED_DB_URL` and never inferred
+ * from `TEAM_DB_URL`/`PLATFORM_DB_URL`.
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -33,17 +25,12 @@ import {
 import { GENERATION_CASES } from "./rebuild-generation.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-// THE SCHEMA, NOT THE MIGRATION THAT INTRODUCED IT. This was
-// `070_artifacts_revisions_events_and_scoped_search.sql`. 070 is applied on every deployment and
-// its text has been squashed into `001_init.sql` with the other seventy-three; editing an applied
-// migration changes nothing on any host, so a case reading 070's bytes was asking about a file
-// rather than about the database. Every claim below was always a claim about the schema, and each
-// one is now made against the schema itself -- which also means they keep holding on a database
-// that never had a 070.
+// The schema, read from `001_init.sql`. Every claim below is a claim about the schema, not
+// about the migration that introduced it.
 const SCHEMA_PATH = join(repoRoot, "services/gateway/migrations/001_init.sql");
 const MIGRATIONS_DIR = join(repoRoot, "services/gateway/migrations");
 
-// ── offline: the compatibility-id map is stable across a reload, never reallocated ─────────
+// Offline: the compatibility-id map is stable across a reload, never reallocated
 
 function caseCompatMapRoundTripsAndNeverReallocates(): void {
   const dir = mkdtempSync(join(tmpdir(), "zz-tenant-compat-"));
@@ -65,9 +52,8 @@ function caseCompatMapRoundTripsAndNeverReallocates(): void {
     assert.notEqual(second.id, first.id, "a different artifact must never share a compatibility id");
     saveCompatibilityMap(path, second.map);
 
-    // A THIRD LOAD, after both ids exist — reallocating either on a later rebuild is exactly
-    // the defect this map exists to prevent (a1zz.decision.doc_id-style external reference
-    // pointing at an id nothing holds any more).
+    // A third load, after both ids exist — reallocating either on a later rebuild would leave an
+    // external reference pointing at an id nothing holds.
     const thirdLoad = loadCompatibilityMap(path);
     assert.equal(compatIdFor(thirdLoad, owner, artifactA).id, first.id);
     assert.equal(compatIdFor(thirdLoad, owner, artifactB).id, second.id);
@@ -89,7 +75,7 @@ function caseCompatMapRejectsAnUnreadableFile(): void {
   }
 }
 
-// ── offline: the semantic parity hash excludes operational fields by construction ──────────
+// Offline: the semantic parity hash excludes operational fields by construction
 
 function caseSemanticHashExcludesOperationalFields(): void {
   const base = {
@@ -101,10 +87,9 @@ function caseSemanticHashExcludesOperationalFields(): void {
     payload: { title: "t" },
   };
   const hashA = semanticProjectionHash(base);
-  // Two "rows" built at different rebuild times, with different physical/operational facts
-  // attached (a wall-clock duration, a physical index OID, a retry timestamp) — none of which
-  // `semanticProjectionHash`'s own parameter type has a slot for, so there is no field to
-  // accidentally read even if a caller's row object happens to carry one.
+  // Two rows built at different rebuild times with different physical facts attached (a
+  // wall-clock duration, an index OID, a retry timestamp), none of which
+  // `semanticProjectionHash`'s parameter type has a slot for, so none can be read by accident.
   const rowSeenLater = { ...base, rebuild_duration_ms: 91234, index_oid: 88213, retried_at: "2026-09-20T00:00:00Z" };
   const hashB = semanticProjectionHash(rowSeenLater);
   assert.equal(hashA, hashB, "operational facts must never change the semantic parity hash");
@@ -126,7 +111,7 @@ function caseSemanticHashChangesWithAnySemanticField(): void {
   assert.notEqual(semanticProjectionHash({ ...base, artifact_class: "source" }), baseline);
 }
 
-// ── offline: the schema's own text ──────────────────────────────────────────────────────────
+// Offline: the schema's own text
 
 const REQUIRED_OBJECTS = [
   "zz.artifact", "zz.artifact_revision", "zz.artifact_event", "zz.artifact_edge",
@@ -147,10 +132,8 @@ function caseMigrationCreatesEveryRequiredObject(): void {
 }
 
 function caseMigrationCarriesNoNestedTransactionControl(): void {
-  // EVERY FILE IN THE DIRECTORY, not one of them. Scoped to 070 this asked whether one author
-  // had made the mistake; the runner wraps EVERY file it applies, so the hazard belongs to the
-  // directory. Two of the squashed seventy-four did carry their own begin;/commit;, which is
-  // exactly what a one-file scope could not see.
+  // Every file in the directory, not one of them: the runner wraps every file it applies, so the
+  // hazard belongs to the directory.
   const offenders: string[] = [];
   for (const f of readdirSync(MIGRATIONS_DIR).filter((x) => x.endsWith(".sql")).sort()) {
     for (const l of readFileSync(join(MIGRATIONS_DIR, f), "utf8").split("\n")) {
@@ -164,35 +147,27 @@ function caseMigrationCarriesNoNestedTransactionControl(): void {
 }
 
 function caseExtensionPrecedesAnyBm25Reference(): void {
-  // Both positions are found in the SAME stripped text — comment lines out first, so a mention
-  // of "bm25" in this file's own prose (its header explains, in words, why the index itself is
-  // deferred) can never be mistaken for the executable object it is describing. Comparing an
-  // executable-text position against a full-text position — as an earlier version of this case
-  // did — finds the comment's own earlier mention of the word and reports a real, correctly
-  // ordered bm25 index as failing, the day one is finally added here.
+  // Both positions are found in the same stripped text, comment lines removed first, so a
+  // mention of "bm25" in this file's own prose is never mistaken for the executable object.
+  // Comparing an executable-text position against a full-text position finds the comment's
+  // earlier mention and reports a correctly ordered bm25 index as failing.
   const executable = schemaSource().split("\n")
     .filter((line) => !line.trim().startsWith("--")).join("\n").toLowerCase();
   const extensionAt = executable.indexOf("create extension if not exists pg_textsearch");
   assert.ok(extensionAt >= 0, "the schema must create the pinned extension");
   const bm25At = executable.indexOf("bm25");
-  // No bm25-dependent OBJECT exists yet (see the migration's own header on why), so this is
-  // vacuously true today — asserted anyway so the case means something the day one is added.
+  // The schema creates no bm25-dependent object (ensureCorpus builds the per-corpus indexes),
+  // so this holds vacuously; asserted so it means something the day one is added.
   if (bm25At >= 0) {
     assert.ok(bm25At > extensionAt, "CREATE EXTENSION must precede any BM25-dependent object");
   }
 }
 
 function caseMigrationIsAdditiveOnly(): void {
-  // THE DECISION, NOT THE DIFF. This swept 070's executable text for `alter table`, `drop
-  // column` and their kin — a way of asking "did this migration modify the tables that were
-  // already there, or add beside them?" A schema file cannot be asked that: a pg_dump of any
-  // database on earth is full of `ALTER TABLE ONLY ... ADD CONSTRAINT`, and 070 is applied
-  // everywhere anyway, so its text can no longer move a row.
-  //
-  // What the sweep was defending is still checkable, and is checked here instead: an ALTER on
-  // zz.doc and zz.knowledge_node was REJECTED in favour of a bridge table, so neither of those
-  // two carries a column pointing at an artifact, and the two bridge tables are what carry the
-  // link. That is the decision; the absence of the word `alter` was only ever its shadow.
+  // The decision, not the diff. A schema file cannot be swept for `alter table`: a pg_dump of
+  // any database is full of `ALTER TABLE ONLY ... ADD CONSTRAINT`. What the sweep defended is
+  // checked instead — neither zz.doc nor zz.knowledge_node carries a column pointing at an
+  // artifact, and the two bridge tables are what carry the link.
   const sql = schemaSource();
   const bodyOf = (t: string): string =>
     new RegExp(`create table ${t.replace(".", "\\.")} \\(([\\s\\S]*?)\\n\\);`, "i").exec(sql)?.[1] ?? "";
@@ -207,16 +182,13 @@ function caseMigrationIsAdditiveOnly(): void {
   }
 }
 
-// ── offline: applyCommit's own control flow, against an in-memory fake — no database at all ─
+// Offline: applyCommit's own control flow, against an in-memory fake — no database at all ─
 //
-// A REAL POSTGRES IS WHAT `atomic_apply_against_isolated_database` BELOW EXERCISES, and this
-// suite cannot reach one in this environment (no database connection is available here at
-// all). What follows instead is the actual, imported `applyCommit` — not a rewritten copy of
-// its logic — run against a minimal in-memory store that implements just enough of `begin`/
-// `commit`/`rollback` and the handful of statements `applyCommit` issues to prove its own
-// decision logic: replay-by-transaction_id, watermark regression refusal, and rollback
-// leaving nothing behind. It proves the CONTROL FLOW; it cannot prove Postgres accepts the
-// actual SQL text, which is what `check:sql` and the isolated-database case are for.
+// The actual imported `applyCommit`, not a rewritten copy, run against a minimal in-memory
+// store implementing just enough of `begin`/`commit`/`rollback` and the statements it issues:
+// replay-by-transaction_id, watermark regression refusal, and rollback leaving nothing behind.
+// It proves the control flow; that Postgres accepts the SQL text is what `check:sql` and
+// `atomic_apply_against_isolated_database` are for.
 
 interface FakeRow { [key: string]: unknown }
 
@@ -227,26 +199,21 @@ class FakeProjectionStore implements ProjectionClient {
   private readonly commits = new Set<string>();
   private readonly watermarks = new Map<string, number>();
   private pending: (() => void)[] | null = null;
-  // FOREIGN-KEY SIMULATION, IMMEDIATE, NOT DEFERRED — a real `zz.artifact_edge.
-  // asserted_event_id` foreign key is checked the moment the INSERT runs, against every row
-  // already inserted earlier in the SAME open transaction (even though none of it is
-  // committed yet). `durableEventIds` are events from a PRIOR committed transaction;
-  // `pendingEventIds` are events inserted earlier in the transaction still open right now —
-  // added the instant that insert is queued, not when the transaction later commits, and
-  // discarded on rollback rather than kept. An edge insert ordered before its own asserting
-  // event's insert is caught here exactly as it would be refused on a real Postgres.
+  // Foreign-key simulation, immediate rather than deferred: a real
+  // `zz.artifact_edge.asserted_event_id` foreign key is checked the moment the INSERT runs,
+  // against every row already inserted earlier in the same open transaction. `durableEventIds`
+  // are events from a prior committed transaction; `pendingEventIds` are added the instant an
+  // insert is queued and discarded on rollback.
   private readonly durableEventIds = new Set<string>();
   private pendingEventIds = new Set<string>();
-  /** Set by a test to make the NEXT non-transaction-control call throw, simulating a fault
+  /** Set by a test to make the next non-transaction-control call throw, simulating a fault
    *  partway through a real projection transaction. */
   public failNextWrite = false;
 
   async query<T = FakeRow>(text: string, params: readonly unknown[] = []): Promise<{ rows: T[] }> {
-    // WHITESPACE-COLLAPSED, not merely trimmed: every statement below is a multi-line template
-    // literal in the real source (`insert into zz.artifact\n  (owner_id, ...`), so a plain
-    // `startsWith` against the raw text never matches past the table name and every insert
-    // silently fell through to the no-op default — caught by this suite's own
-    // `offline_apply_creates_projections_and_advances_watermark` case the first time it ran.
+    // Whitespace-collapsed, not merely trimmed: every statement below is a multi-line template
+    // literal in the real source, so a `startsWith` against the raw text never matches past the
+    // table name and every insert falls through to the no-op default.
     const sql = text.trim().toLowerCase().replace(/\s+/g, " ");
     if (sql === "begin") { this.pending = []; this.pendingEventIds = new Set(); return { rows: [] as T[] }; }
     if (sql === "commit") {
@@ -284,10 +251,9 @@ class FakeProjectionStore implements ProjectionClient {
       return { rows: [] as T[] };
     }
     if (sql.startsWith("insert into zz.artifact_edge")) {
-      // `asserted_event_id` is the LAST bind parameter on both edge-insert statements
-      // applyCommit issues (derived_from: 8 params; cites: 9) — checked immediately, the way
-      // a real, non-deferred foreign key is, against events visible in this transaction OR a
-      // prior committed one.
+      // `asserted_event_id` is the last bind parameter on both edge-insert statements applyCommit
+      // issues (derived_from: 8 params; cites: 9), checked immediately against events visible in
+      // this transaction or a prior committed one.
       const assertedEventId = params[params.length - 1] as string;
       if (!this.durableEventIds.has(assertedEventId) && !this.pendingEventIds.has(assertedEventId)) {
         throw new Error(
@@ -356,12 +322,10 @@ async function caseOfflineApplyRollsBackOnMidTransactionFailure(): Promise<void>
 }
 
 async function caseOfflineApplyProjectsEventsBeforeCitationEdges(): Promise<void> {
-  // `zz.artifact_edge.asserted_event_id` is an immediate foreign key into zz.artifact_event —
+  // `zz.artifact_edge.asserted_event_id` is an immediate foreign key into zz.artifact_event, so
   // a "cites" edge inserted before the event that asserts it fails on a real Postgres. This
-  // fixture carries a `sources` entry specifically so that path runs; `FakeProjectionStore`
-  // enforces the same ordering `durableEventIds`/`pendingEventIds` check a real database
-  // would, so a regression that moved the revisions loop back above the events loop fails
-  // this case immediately rather than only on the isolated-database integration case.
+  // fixture carries a `sources` entry so that path runs, and `FakeProjectionStore` enforces the
+  // same ordering, so moving the revisions loop above the events loop fails here immediately.
   const store = new FakeProjectionStore();
   const owner = randomUUID();
   const artifact = randomUUID();
@@ -369,7 +333,7 @@ async function caseOfflineApplyProjectsEventsBeforeCitationEdges(): Promise<void
   assert.equal(result.applied, true);
 }
 
-// ── offline: ensureCorpus's own validation and the statements it issues ─────────────────────
+// Offline: ensureCorpus's own validation and the statements it issues
 
 class RecordingClient implements ProjectionClient {
   readonly calls: string[] = [];
@@ -392,26 +356,24 @@ async function caseEnsureCorpusProvisionsAllThreeSearchParents(): Promise<void> 
     assert.ok(recorder.calls.some((c) => c.includes(`partition of ${parent} for values in ('acme_team')`)),
       `ensureCorpus must attach a partition of ${parent}`);
   }
-  // The bm25 index is the fourth statement per parent, and it is the one the partitions exist
-  // for: `to_bm25query(query, index_name)` requires the named index to be on the relation being
-  // scanned, so a per-corpus BM25 index on a concrete partition is what keeps one tenant's term
-  // statistics out of another's ranking. Verified against PostgreSQL 17.11 with pg_textsearch
-  // 1.4.0, which accepted the DDL and reported k1=1.20, b=0.75.
+  // The bm25 index is the fourth statement per parent, and it is what the partitions exist for:
+  // `to_bm25query(query, index_name)` requires the named index to be on the relation being
+  // scanned, so a per-corpus BM25 index on a concrete partition keeps one tenant's term
+  // statistics out of another's ranking.
   assert.ok(recorder.calls.some((c) => /using bm25 \(raw_body\) with \(text_config='english'\)/.test(c)),
     "ensureCorpus must build the per-corpus BM25 index, not leave the corpus to a parent index");
   assert.equal(recorder.calls.length, 12, "3 search parents × (partition + tsv index + tags index + bm25 index)");
 }
 
-// ── integration: applyCommit against an operator-provided isolated copy ────────────────────
+// Integration: applyCommit against an operator-provided isolated copy
 
 function manifestFor(
   owner: string, artifact: string, sequence: number, transactionId: string,
   withCitation = false,
 ): ProjectionManifest {
   const now = "2026-09-20T00:00:00.000Z";
-  // A CITED SOURCE, WHEN ASKED FOR — exercises the "cites" edge path, whose
-  // `asserted_event_id` foreign key is what `offline_apply_projects_events_before_edges`
-  // below actually proves is ordered correctly.
+  // A cited source, when asked for — exercises the "cites" edge path, whose `asserted_event_id`
+  // foreign key `offline_apply_projects_events_before_edges` below proves is ordered correctly.
   const sourceRef = withCitation
     ? { owner_id: owner, artifact_id: randomUUID(), revision: 1, content_hash: "1".repeat(64) }
     : null;
@@ -439,7 +401,7 @@ async function caseAtomicApplyAgainstIsolatedDatabase(): Promise<void> {
   if (!url) {
     throw new Error(
       "ZZ_TENANT_INFO_ISOLATED_DB_URL is not set. This case applies real DDL and real rows " +
-      "and runs only against an operator-provided isolated copy that migration 070 is already " +
+      "and runs only against an operator-provided isolated copy that the schema is already " +
       "applied to — never inferred from TEAM_DB_URL/PLATFORM_DB_URL, and never run here. Set " +
       "it to such a database and rerun `verify --suite rebuild --profile integration --cases " +
       "projection-schema` to exercise it.");
@@ -465,8 +427,8 @@ async function caseAtomicApplyAgainstIsolatedDatabase(): Promise<void> {
     const txA = randomUUID();
 
     // 2. Deliver an older sequence after a newer one — the older must never regress the head.
-    //    `withCitation: true` also exercises the "cites" edge path against a REAL, immediate
-    //    foreign key — the offline fake proves the ordering; this proves Postgres accepts it.
+    //    `withCitation: true` also exercises the "cites" edge against a real, immediate foreign
+    //    key: the offline fake proves the ordering, this proves Postgres accepts it.
     const newer = await applyCommit(client, manifestFor(owner, artifact, 5, txA, true));
     assert.equal(newer.applied, true);
     const older = await applyCommit(client, manifestFor(owner, artifact, 2, randomUUID()));
@@ -476,7 +438,7 @@ async function caseAtomicApplyAgainstIsolatedDatabase(): Promise<void> {
       "select head_sequence from zz.artifact_projection_watermark where owner_id=$1", [owner]);
     assert.equal(watermark.rows[0]?.head_sequence, 5, "an older queue item must never overwrite a newer head");
 
-    // 3. Replay the SAME commit twice — the second call is a no-op, not a duplicate.
+    // 3. Replay the same commit twice — the second call is a no-op, not a duplicate.
     const replay = await applyCommit(client, manifestFor(owner, artifact, 5, txA));
     assert.equal(replay.applied, false);
     assert.equal(replay.reason, "already_applied");
@@ -510,7 +472,7 @@ async function caseAtomicApplyAgainstIsolatedDatabase(): Promise<void> {
   }
 }
 
-// ── case group ───────────────────────────────────────────────────────────────────────────────
+// Case group
 
 const PROJECTION_SCHEMA_CASES: Readonly<Record<string, () => void | Promise<void>>> = {
   compat_map_round_trips_and_never_reallocates: caseCompatMapRoundTripsAndNeverReallocates,
@@ -545,21 +507,8 @@ interface SuiteOutcome { readonly passed: boolean; readonly detail: SuiteDetail 
  * `not_run` with a reason when `ZZ_TENANT_INFO_ISOLATED_DB_URL` is unset — the same shape
  * `isolation.ts` uses for its own live-database group.
  *
- * THIS REVERSES A DELIBERATE EARLIER CHOICE, and the earlier choice was right when it was
- * made. Both cases used to THROW, naming the variable, because — in
- * `rebuild-generation.ts`'s own words — a case must "never silently skip". That was a true
- * description of `not_run` at the time: it counted as passing at every profile, and nothing
- * anywhere surfaced it, so loudness could only be bought with a red case.
- *
- * `not_run` IS NOT SILENT ANY MORE. At `--profile acceptance` a suite with any unrun case is
- * `blocked`, the receipt names the case, and the command exits nonzero — and every one of the
- * thirteen acceptance criteria uses that profile for its evidence. The loudness the original
- * argument wanted now exists in the one place it has to.
- *
- * What the old form cost, meanwhile, was real: `verify --suite rebuild` was red on a checkout
- * where nothing whatsoever was wrong, for as long as no PostgreSQL 17 existed to point it at.
- * A suite that is permanently red in a sound environment is how a team learns to stop reading
- * red — which is a worse outcome than the silence the original rule was written against.
+ * `not_run` is not silent: at `--profile acceptance` a suite with any unrun case is `blocked`,
+ * the receipt names the case, and the command exits nonzero.
  */
 const ISOLATED_DATABASE_CASES = new Set([
   "atomic_apply_against_isolated_database",
@@ -568,7 +517,7 @@ const ISOLATED_DATABASE_CASES = new Set([
 
 const ISOLATED_DATABASE_REASON =
   "ZZ_TENANT_INFO_ISOLATED_DB_URL is not set. This case applies real DDL and real rows and runs " +
-  "only against an operator-provided isolated copy with migration 070 already applied — never " +
+  "only against an operator-provided isolated copy with the schema already applied — never " +
   "inferred from TEAM_DB_URL/PLATFORM_DB_URL, and never provisioned by this suite. I-21 is the " +
   "task that produces that copy and exports the variable.";
 
@@ -599,6 +548,6 @@ export async function run({ cases }: { cases?: string }): Promise<SuiteOutcome> 
       }
     }
   }
-  // `not_run` IS NOT A FAILURE HERE — see ISOLATED_DATABASE_CASES above for why this changed.
+  // `not_run` is not a failure here — see `ISOLATED_DATABASE_CASES` above for what it means.
   return { passed: Object.values(results).every((r) => r.status !== "failed"), detail: { status: "ran", cases: results } };
 }

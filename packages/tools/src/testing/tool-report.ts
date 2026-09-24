@@ -1,14 +1,9 @@
 /**
  * tool-report — what the platform's tools actually did, from the platform's own record.
  *
- * Reads `zz.event` where kind = 'tool_call' and answers three questions the smoke suite
- * cannot: which tools are being refused, why, and how long they take. The suite scores a
- * SCENARIO — one boolean for ten minutes of work — so a run that fails at the first gate and
- * a run that fails at the last are the same number. One scenario produces fifty to a hundred
- * tool calls, and each one is an outcome with a reason attached.
- *
- * The reasons are the platform's own refusal messages, written to say which rule was broken.
- * Grouped, they are the shortest description of where a flow actually stalls.
+ * Reads `zz.event` where kind = 'tool_call' and answers which tools are being refused, why, and
+ * how long they take. The reasons are the platform's own refusal messages, written to say which
+ * rule was broken; grouped, they say where a flow stalls.
  *
  *   npm run tool-report                                     # last 24h, on the host
  *   npm run tool-report -- --since 2h --surface core
@@ -19,8 +14,8 @@
  *   npm run tool-report -- --ledger runs/                   # every saved run, by refusal class
  *   npm run tool-report -- --fail-under 90                  # non-zero below that accepted rate
  *
- * Run it on the deployment host: it reads the platform database through the compose project,
- * the same way backup.sh and issue-first-pat.sh do. --psql overrides that for anywhere else.
+ * Run it on the deployment host: it reads the platform database through the compose project, the
+ * same way backup.sh and issue-first-pat.sh do. --psql overrides that for anywhere else.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -34,41 +29,28 @@ import { teachesTheRule } from "../lib/refusal.js";
 import { DEFAULT_PSQL, psqlRows } from "../lib/psql.js";
 import { localStamp } from "../lib/shell.js";
 
-// Re-exported so the resolvers this file groups `perTool` through are importable from the one
-// place the alias-applied and skill-renames checks already look for them. The maps and the
-// actual resolution live in @zz/contracts/alias.ts — this is read-side wiring, not a second
-// implementation.
+// Re-exported so the alias-applied and skill-renames checks find the resolvers `perTool` groups
+// through in one place. The maps and the resolution live in @zz/contracts/alias.ts.
 export { resolveToolKey, resolveStep };
 
-// R6 of the building-block contract: "validation errors in prose that teach the rule — no
-// silent coercion, no bare status codes". A refusal that names a status and stops is the
-// violation, and it is visible from here: the agent gets nothing to change, so it retries the
-// same call with the same arguments until it gives up. Measured on a real run,
-// one block's write tool was refused on most calls with "Request failed with status
-// code 422" and nothing else — the same gap this contract's appendix recorded on 2026-08-20.
-//
-// The judgement lives in lib/refusal.ts, because block-conformance asks the same question of
-// a block's answer and the two used to disagree about it.
+// A refusal must teach the rule: a refusal that names a status and stops gives the agent nothing
+// to change, and it retries the same call until it gives up. The judgement lives in
+// lib/refusal.ts.
 
-/** A row of zz.tool_call. Flat columns, because the table has them — this was a `subject`
- * string to split and a `detail` bag to reach into, and every reader spelled the reaching-in
- * slightly differently. */
+/** A `tool_call` row of zz.event. Flat columns, because the table has them. */
 interface CallRow {
   ts: string;
   subject: string;                       // `<surface>:<tool>`
 
-  /* ── COLUMNS: the dimensions and the outcome ────────────────────────────────
-   * Which of a step's revisions ran, which block, and its own account of itself; whether the
-   * call worked and, when it did not, the platform's own sentence saying which rule was
-   * broken. These are columns because somebody groups by them.
+  /* The dimensions and the outcome: which of a step's revisions ran, and its own account of
+   * itself; whether the call worked and, when it did not, the platform's own sentence
+   * saying which rule was broken. These are columns because somebody groups by them.
    *
-   * `initiative` and `team_slug` are the JOIN KEYS to zz.doc and zz.decision — without them a
-   * refusal cannot be connected to the document it was made for or the claim it was testing,
-   * which is why the reconciliation between prediction and outcome had almost nothing to read.
+   * `initiative` and `team_slug` are the join keys to zz.doc and zz.decision — without them a
+   * refusal cannot be connected to the document it was made for or the claim it was testing.
    *
-   * `flow` is TEAM CONTEXT, not attribution — the team's most recently installed flow, so a
-   * team running two of them reads every row as whichever was installed last. `plugin` below
-   * is the answer to "which plugin", resolved from the skill actually loaded. */
+   * `flow` is the flow the call's initiative was opened with, or null when the call named no
+   * initiative. `plugin` below is resolved from the door the call arrived on. */
   team_slug: string | null;
   initiative: string | null;
   flow: string | null;
@@ -79,28 +61,25 @@ interface CallRow {
    * skill's owner) and never guessed at: an unresolvable step leaves both null. */
   plugin: string | null;
   plugin_version: string | null;
-  /** `<surface>:<tool>`, alias-resolved as of WRITE time — a snapshot, not a live answer. A
-   * row older than this column carries none and falls back to `subject`. Either way it still
-   * passes through `resolveToolKey` below, not trusted outright: a tool renamed AGAIN after
-   * the snapshot would otherwise stay stuck under the now-superseded name. A no-op when it
-   * is already current. */
+  /** `<surface>:<tool>`, alias-resolved as of write time — a snapshot, not a live answer. A row
+   * older than this column carries none and falls back to `subject`. Either way it still passes
+   * through `resolveToolKey` below rather than being trusted outright: a tool renamed again after
+   * the snapshot would stay stuck under the superseded name. A no-op when it is already current. */
   tool_key: string | null;
   ok: boolean | null;
   refusal: string | null;
-  /** WHO THE REFUSAL BELONGS TO, stamped at ingest by @zz/contracts' refusalOwner().
+  /** Who the refusal belongs to, stamped at ingest by @zz/contracts' refusalOwner().
    *
-   * Four owners, because "not ok" was four different facts counted as one: `guardrail` is the
-   * platform saying no by name and is working as intended, `ours` is a malformed CALL,
-   * `theirs` is the tool failing, `other` is a sentence that says neither. A report that
-   * totals all four answers "is the surface breaking" with whatever share happens to be one
-   * client's argument bug — on this deployment, 185 of 285. Null on a call that worked, and
-   * on a row written before migration 061 that the backfill did not reach. */
+   * Four owners: `guardrail` is the platform saying no by name and working as intended, `ours` is
+   * a malformed call, `theirs` is the tool failing, `other` is a sentence that says neither. A
+   * report that totals all four answers "is the surface breaking" with whatever share happens to
+   * be one client's argument bug. Null on a call that worked, and on an old row the backfill
+   * did not reach. */
   refusal_owner: string | null;
-  /** What the call cost. Null means not measured, never a guessed zero — a request that
-   * failed before tool-telemetry.ts started timing it leaves these unset. `batched` is the
-   * one column that is never null: the gateway always knows whether a request carried more
-   * than one call, and a row's duration and response size belong to it alone only when this
-   * is false. */
+  /** What the call cost. Null means not measured, never a guessed zero — a request that failed
+   * before tool-telemetry.ts started timing it leaves these unset. `batched` is never null: the
+   * gateway always knows whether a request carried more than one call, and a row's duration and
+   * response size belong to it alone only when this is false. */
   duration_ms: number | null;
   request_bytes: number | null;
   response_bytes: number | null;
@@ -111,8 +90,8 @@ interface CallRow {
     /** A stable hash, never a person: it correlates one conversation and identifies nobody. */
     caller?: string;
     /** Which of our own tools made the call — the chat plugin, a command, a harness. Names a
-     * piece of software, never a person, and is what "which of the things we ship get used"
-     * is counted from. */
+     * piece of software, never a person, and is what "which of the things we ship get used" is
+     * counted from. */
     client?: string;
     /** One conversation, so one evaluation round can be told from the next. */
     run?: string;
@@ -133,32 +112,26 @@ interface CallRow {
 /**
  * The tool calls to report on.
  *
- * Through psql VARIABLES and stdin, not interpolated into the statement. Every one of these
- * three values comes from the command line, and an operator pasting an address with an
- * apostrophe in it would have produced a syntax error at best. It is the same mistake
- * issue-first-pat.sh made and fixed, repeated one directory over — which is what makes it
- * worth naming rather than quietly correcting: the pattern is what recurs, not the file.
+ * Through psql variables and stdin, not interpolated into the statement: all three values come
+ * from the command line, and an operator pasting an address with an apostrophe in it would
+ * produce a syntax error at best.
  *
- * psql interpolates while lexing its INPUT, so a statement handed to -c never gets that
- * pass. On stdin it does.
+ * psql interpolates while lexing its input, so a statement handed to -c never gets that pass. On
+ * stdin it does.
  */
 function rows(psql: string, since: string, surface: string | null, actor: string | null): CallRow[] {
   const where = ["ts > now() - (:'since')::interval"];
-  // A COLUMN, not a substring of one. `surface` used to be the part of `subject` before the
-  // colon, picked out with split_part rather than LIKE because `_` is a LIKE wildcard and
-  // `--surface my_block` would have counted calls belonging to `myXblock`. The table has the
-  // column now, so the filter says what it means and has nothing left to escape.
+  // A column, not a substring of one. `_` is a LIKE wildcard, so `--surface my_door` matched
+  // against a split-out substring would count calls belonging to `myXdoor`.
   if (surface) where.push("split_part(subject, ':', 1) = :'surface'");
-  // ONE RUN, one conversation. This used to filter on an email; a caller is a stable hash now,
-  // which is the same filter with nothing personal in it. Without it the report mixes the run
-  // being measured with whatever else touched the deployment while it ran — including the
-  // operator setting the run up, whose mistakes are not the flow's.
+  // One run, one conversation, keyed on the caller hash. Without it the report mixes the run being
+  // measured with whatever else touched the deployment while it ran, including the operator
+  // setting the run up.
   if (actor) where.push("detail->>'caller' = :'actor'");
   const sql =
-    // The kind is IN the statement, not assembled into it. team_slug is null on the kinds
-    // written by acts that belong to a person rather than a team — a self-issued PAT, a package
-    // download — so a reader of that column has to say which kinds it means, and a scope hidden
-    // in a joined array is a scope nothing can check.
+    // The kind is in the statement, not assembled into it. team_slug is null on the kinds written
+    // by acts that belong to a person rather than a team — a self-issued PAT, a package download —
+    // so a reader of that column has to say which kinds it means.
     "select ts, subject, team_slug, initiative, flow, step, step_version, plugin, plugin_version," +
     " tool_key," +
     " ok, refusal, refusal_owner, duration_ms, request_bytes, response_bytes, batched, detail" +
@@ -193,11 +166,9 @@ interface ToolStat {
   unreadable: number;
   p50_ms: number;
   p95_ms: number;
-  /** How large this tool's answers are. The gateway has recorded it on every call since the
-   * telemetry was written and nothing read it — so "which tool floods a context window" was
-   * a question the record could answer and nobody could ask. It is not idle: one block
-   * can publish enough tools that their schemas alone fill most of a context window, and one of its
-   * answers can run to megabytes. */
+  /** How large this tool's answers are, so "which tool floods a context window" is answerable.
+   * One server can publish enough tools that their schemas alone fill most of a context window,
+   * and one of its answers can run to megabytes. */
   p95_bytes: number;
 }
 /** One identifier value, and how often a run named it. */
@@ -235,11 +206,9 @@ interface ClientStat { client: string; calls: number; refused: number; tools: nu
 
 /** Whether a parsed file is one of this tool's own reports.
  *
- * The two fields every reader here uses. --ledger needs it because a stray `notes.json` beside
- * the saved runs must be named and skipped rather than crash the listing; --compare needs it
- * because `as ReportShape` on an arbitrary file is an assertion about a shape nobody checked,
- * and showMovement is written tolerantly enough that the comparison then ran against zeros and
- * reported the whole run as new. Both want the same question answered, so it is asked once. */
+ * --ledger needs it so a stray `notes.json` beside the saved runs is named and skipped rather than
+ * crashing the listing; --compare needs it because showMovement reads fields tolerantly, so any
+ * other JSON file compares cleanly against zeros and reports the whole run as new. */
 export function isReport(r: unknown): r is ReportShape {
   return typeof r === "object" && r !== null &&
     typeof (r as ReportShape).calls === "number" && Array.isArray((r as ReportShape).refusals);
@@ -250,18 +219,14 @@ function main(argv: string[]): number {
   // `||`, never `??` with a real default: parseArgs gives "" for a flag written with no
   // value, and "" is not nullish — `--since` alone became an empty psql interval.
   const since = args.flags.get("since") || "24h";
-  // Through optional(), like the five below. These two were the exception, and they are the
-  // two that decide WHICH CALLS THE REPORT IS ABOUT: `--actor` with nothing after it reported
-  // on everybody while the operator read it as one evaluation run's calls, which is the one
-  // thing that flag exists to separate.
-  const surface = optional(args, "surface", "a surface to narrow to, e.g. `core` or `casebox`");
+  // Through optional(), like the flags below: `--actor` with nothing after it reports on everybody
+  // while the operator reads it as one evaluation run's calls.
+  const surface = optional(args, "surface", "a surface to narrow to, e.g. `core` or `eval`");
   const actor = optional(args, "actor", "the address whose calls to report on");
   const psql = args.flags.get("psql") || DEFAULT_PSQL;
-  // VALIDATED, because this is the one flag here that decides an exit code. `Number("9o")` is
-  // NaN and `rate < NaN` is false, so a typo did not fail loudly — it silently removed the
-  // gate and every subsequent run passed. A threshold nobody can trip is worse than none,
-  // because somebody is relying on it. optional() answers the empty case; this answers the
-  // unusable one.
+  // Validated, because this is the one flag here that decides an exit code. `Number("9o")` is NaN
+  // and `rate < NaN` is false, so a typo silently removes the gate. optional() answers the empty
+  // case; this answers the unusable one.
   const failUnderRaw = optional(args, "fail-under", "a percentage between 0 and 100");
   let failUnder: number | null = null;
   if (failUnderRaw !== null) {
@@ -271,13 +236,12 @@ function main(argv: string[]): number {
     }
   }
 
-  // ALL of them here, before the query. --save and --compare are used far below, past the
-  // early return for a window with no calls — so a mistyped --save was still accepted in
-  // silence on exactly the quiet window where an operator is most likely to be retrying.
+  // All of them here, before the query. --save and --compare are used far below, past the early
+  // return for a window with no calls, so a mistyped --save would be accepted in silence on
+  // exactly the quiet window where an operator is most likely to be retrying.
   //
   // The rule these share lives in optional(): a flag given with nothing after it is a mistyped
-  // flag, not an absent one. It was a local helper here, which is why --surface and --actor
-  // three lines above it never got it.
+  // flag, not an absent one.
   const ledger = optional(args, "ledger", "the directory holding saved reports");
   const save = optional(args, "save", "a directory to write this run into");
   const compare = optional(args, "compare", "a report file written by --json or --save");
@@ -293,11 +257,9 @@ function main(argv: string[]): number {
   if (events.length === 0) {
     const where = (surface ? ` on ${surface}` : "") + (actor ? ` by ${actor}` : "");
     console.log(`no tool calls in the last ${since}${where}`);
-    // A GATE THAT CANNOT FAIL IS NOT A GATE. This returned 0 — "all good" — for exactly the
-    // runs most worth catching: an --actor that matches nobody, a window that misses the run,
-    // an evaluation that died before it called anything. The accepted rate of no calls is not
-    // 100%; there is no rate, and a caller who asked for a floor asked to be told when the
-    // floor cannot be established.
+    // A gate that cannot fail is not a gate. The accepted rate of no calls is not 100%; there is
+    // no rate, and a caller who asked for a floor asked to be told when the floor cannot be
+    // established.
     if (failUnder !== null) {
       die(
         `--fail-under ${failUnder} was asked for and there are no tool calls${where} to ` +
@@ -307,19 +269,17 @@ function main(argv: string[]): number {
     return 0;
   }
 
-  // A call whose answer could not be read is NOT counted as refused. It is a gap in the
+  // A call whose answer could not be read is not counted as refused. It is a gap in the
   // record, and folding it into either column would make the number a guess.
   const perTool = new Map<string, { calls: number; ok: number; refused: number; unreadable: number; ms: number[]; bytes: number[] }>();
   const refusals = new Map<string, number>();
   /** Refused calls by who the refusal belongs to — see CallRow.refusal_owner. */
   const byOwner: Record<string, number> = {};
-  // What each call NAMED. Keyed by identifier-and-value so the same skill read twelve times
-  // is one row of twelve, which is the shape the question needs: not how many calls a run
-  // made, but which things it kept reaching for.
+  // What each call named. Keyed by identifier-and-value, so the same skill read twelve times is
+  // one row of twelve: not how many calls a run made, but which things it kept reaching for.
   const named = new Map<string, { key: string; value: string; count: number; tools: Set<string> }>();
-  // WHICH OF THE THINGS WE SHIP GET USED. One row per client — the chat plugin, each command,
-  // each harness — because "improve the tools people use" needs to know which those are, and
-  // until this existed the answer was buried inside a hash that also carried an address.
+  // One row per client — the chat plugin, each command, each harness — so "improve the tools
+  // people use" can name which those are.
   const perClient = new Map<string, { calls: number; refused: number; tools: Set<string> }>();
   let aborted = 0;
   let batched = 0;
@@ -327,24 +287,21 @@ function main(argv: string[]): number {
   const example = new Map<string, { tool: string; args: string[]; shapes: Record<string, string>; text: string }>();
 
   for (const e of events) {
-    // `tool_key` preferred when the row has one, but RESOLVED AGAIN rather than trusted
-    // outright — it is a write-time snapshot, and a second rename after that row was written
-    // would otherwise leave it stuck under a now-superseded name. `<surface>:<tool>` stays
-    // the display key either way, so the report still reads `casebox:list_records`.
+    // `tool_key` preferred when the row has one, but resolved again rather than trusted outright:
+    // it is a write-time snapshot, and a second rename after that row was written would leave it
+    // stuck under a superseded name. `<surface>:<tool>` stays the display key either way.
     if (!(e.tool_key ?? e.subject).includes(":")) unparseable++;
     const subject = resolveToolKey(e.tool_key ?? e.subject);
     const d = e.detail ?? {};
     if (!perTool.has(subject)) perTool.set(subject, { calls: 0, ok: 0, refused: 0, unreadable: 0, ms: [], bytes: [] });
     const t = perTool.get(subject)!;
     t.calls++;
-    // NOT FROM A BATCH. The gateway measures one request, so every call in a batch carries
-    // the batch's duration and the response's whole size. Averaging those in counts one
-    // measurement sixty-two times and calls it sixty-two calls' latency — the batched flag
-    // exists precisely so a reader can tell, and nothing was reading it.
+    // Not from a batch. The gateway measures one request, so every call in a batch carries the
+    // batch's duration and the response's whole size; averaging those in counts one measurement
+    // once per call in the batch and calls it latency.
     {
-      // `unattributed` rather than dropping the row: a client that sends no header is a
-      // caller we ship and forgot to tag, and a report that silently omits it would hide
-      // exactly the gap worth closing.
+      // `unattributed` rather than dropping the row: a client that sends no header is a caller we
+      // ship and forgot to tag.
       const c = d.client || "unattributed";
       if (!perClient.has(c)) perClient.set(c, { calls: 0, refused: 0, tools: new Set() });
       const pc = perClient.get(c)!;
@@ -370,10 +327,9 @@ function main(argv: string[]): number {
     else {
       t.refused++;
       const reason = String(e.refusal ?? "").trim();
-      // COUNTED BY OWNER TOO. The class says which sentence; the owner says whose problem it
-      // is, and a reader acting on this table needs both — a rising `guardrail` class is a
-      // skill to edit, a rising `ours` is a client to fix, and totalling them hides whichever
-      // is smaller behind whichever is louder.
+      // Counted by owner too. The class says which sentence; the owner says whose problem it is —
+      // a rising `guardrail` class is a skill to edit, a rising `ours` is a client to fix, and
+      // totalling them hides whichever is smaller behind whichever is louder.
       byOwner[e.refusal_owner ?? "other"] = (byOwner[e.refusal_owner ?? "other"] ?? 0) + 1;
       if (reason) {
         const cls = refusalClass(reason).slice(0, 160);
@@ -435,9 +391,8 @@ function main(argv: string[]): number {
       `\n${events.length} tool calls in the last ${since} — ${accepted} accepted, ` +
         `${judged - accepted} refused (${report.accepted_rate}% accepted)` +
         (report.unreadable ? `, ${report.unreadable} unreadable` : "") +
-        // A call that never came back is the failure most worth seeing and the one least
-        // visible: it is not refused, not accepted, and leaves no answer to classify. The
-        // gateway has recorded it since the "close" listener was wired; nothing showed it.
+        // A call that never came back is not refused, not accepted, and leaves no answer to
+        // classify.
         (report.aborted ? `, ${report.aborted} never came back` : "") +
         // A subject with no colon to split — counted under its own raw value above rather
         // than dropped, and said out loud so an operator goes and reads that row.
@@ -484,14 +439,11 @@ function main(argv: string[]): number {
       }
     }
 
-    // WHAT THE RUN KEPT REACHING FOR. The gateway records the identifiers a call names —
-    // which skill, which initiative, which block — precisely so this can be asked, and until
-    // now nothing asked it: the capture was wired and the reading was not, which is a
-    // question that stays unanswerable while looking answered.
+    // What the run kept reaching for: the gateway records the identifiers a call names — which
+    // skill, which initiative.
     //
-    // Skills first, because that is the question it was added for: a run that stalls and a
-    // run that finishes load different ones, and the difference is a fact about the method
-    // rather than about the model.
+    // Skills first: a run that stalls and a run that finishes load different ones, and the
+    // difference is a fact about the method rather than about the model.
     if (report.clients.length) {
       console.log(`\nwhat made these calls (${report.clients.length} client${report.clients.length > 1 ? "s" : ""})`);
       console.log("-".repeat(69));
@@ -501,13 +453,12 @@ function main(argv: string[]): number {
       }
     }
     if (report.named.length) {
-      // `skill_read`, THE RESOLVED NAME: `named.tools` holds subjects already folded through
-      // resolveToolKey, so `skill_read` matches no row at all and this section would stop
-      // rendering. evolve-report.ts folds the same rename the same way.
+      // `skill_read`, the resolved name: `named.tools` holds subjects already folded through
+      // resolveToolKey, so an unresolved spelling matches no row and this section stops rendering.
+      // COUPLED: evolve-report.ts folds the same rename the same way.
       const skills = report.named.filter((n) => n.key === "name" && n.tools.some((t) => t.includes("skill_read")));
-      // Capped for the terminal, and the cap is stated. A listing that quietly stops at
-      // twelve reads as "that is all of them", which is the shape this file objects to three
-      // paragraphs up about a narrowed denominator. --json carries every row.
+      // Capped for the terminal, and the cap is stated: a listing that quietly stops at twelve
+      // reads as "that is all of them". --json carries every row.
       const allRest = report.named.filter((n) => !skills.includes(n));
       const rest = allRest.slice(0, 12);
       if (skills.length) {
@@ -529,9 +480,8 @@ function main(argv: string[]): number {
     console.log();
   }
 
-  // A ledger is only as good as the runs saved into it, and "remember to redirect --json into
-  // a file with a name you will still understand next week" is the step that quietly stops
-  // happening. One flag, one file, named so the series orders itself.
+  // One flag, one file, named so the series orders itself — a ledger is only as good as the runs
+  // saved into it.
   if (save) {
     mkdirSync(save, { recursive: true });
     const who = (actor ?? "all").split("@")[0];
@@ -542,8 +492,7 @@ function main(argv: string[]): number {
 
   if (compare) {
     // Named by an operator, so it is mistyped like any other path. Unreadable or not a report
-    // ended the run in a parser stack trace, after the report above had already been printed —
-    // which reads as the report itself having gone wrong.
+    // ended the run in a parser stack trace after the report above had already been printed.
     let before: unknown;
     try {
       before = JSON.parse(readFileSync(compare, "utf8"));
@@ -551,10 +500,9 @@ function main(argv: string[]): number {
       return die(`--compare ${compare}: ${(e as Error).message}. It takes a report written by ` +
                  "--json or --save, not a database or a directory (--ledger reads a directory).");
     }
-    // VALID JSON IS NOT A REPORT. The cast said it was, and showMovement reads its fields
-    // tolerantly — `before.accepted_rate ?? 0`, `before.refusals ?? []` — so any other JSON
-    // file compared cleanly against zeros and reported every refusal class in this run as NEW.
-    // A regression is what that looks like.
+    // Valid JSON is not a report. showMovement reads its fields tolerantly — `before.accepted_rate
+    // ?? 0`, `before.refusals ?? []` — so any other JSON file compares cleanly against zeros and
+    // reports every refusal class in this run as new.
     if (!isReport(before)) {
       return die(`--compare ${compare} is JSON but not a report — it carries no calls/refusals. ` +
                  "It takes a file written by --json or --save.");
@@ -568,9 +516,9 @@ function main(argv: string[]): number {
   return 0;
 }
 
-// Only when run as the CLI. evolve-report and step-score import resolvers, and the checks
-// that verify them import this file too — an import must not also run the CLI's own psql
-// query and exit the process under it.
+// Only when run as the CLI. evolve-report and step-score import the resolvers, and the checks that
+// verify them import this file too — an import must not also run the CLI's psql query and exit the
+// process under it.
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   process.exit(main(process.argv.slice(2)));
 }

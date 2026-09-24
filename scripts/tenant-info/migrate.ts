@@ -1,30 +1,25 @@
 /**
- * migrate.ts — the `migrate` verb: read-only snapshot in, separate explicitly-identified
- * volume out, three protected reports beside them.
+ * The `migrate` verb: read-only snapshot in, separate explicitly-identified volume out, three
+ * protected reports beside them.
  *
- * DRY RUN IS THE DEFAULT AND IT IS NOT A SIMULATION. Bare, this verb reads the source
- * snapshot, classifies every file with the real importer's own `prepareLegacyManifest`, and
- * writes the manifest an apply would later be given. Nothing at `--target` is touched, and
- * `--target` need not even be named. `--apply` is the only path that writes anything anywhere
- * but the workspace, and `cli.ts` refuses it without both `--target` and `--manifest`.
+ * Dry run is the default and is not a simulation. Bare, this verb reads the source snapshot,
+ * classifies every file with the real importer's own `prepareLegacyManifest`, and writes the
+ * manifest an apply would later be given. Nothing at `--target` is touched, and `--target` need
+ * not be named. `--apply` is the only path that writes anywhere but the workspace, and `cli.ts`
+ * refuses it without both `--target` and `--manifest`.
  *
- * TWO REFUSALS STAND BETWEEN THIS VERB AND A LIVE STORE, and both are checked before a single
- * byte is read:
- *   - LIVE_SOURCE_REFUSED — the source must be a snapshot, not a store something is writing.
- *     A directory carrying `.zz/commits/` or a `.zz/lock` IS a live owner store; so is one that
+ * Two refusals stand between this verb and a live store, both checked before a byte is read:
+ *   - LIVE_SOURCE_REFUSED — the source must be a snapshot, not a store something is writing. A
+ *     directory carrying `.zz/commits/` or a `.zz/lock` is a live owner store; so is one that
  *     contains the target, or is contained by it. Read-only-ness cannot be established from a
- *     mode bit on every platform this runs on, so the check is structural, and the flag is
- *     named `--source` rather than `--store` so nobody reaches for it by habit.
- *   - AMBIGUOUS_TARGET — "a separate explicitly identified target volume" means exactly that.
- *     An empty directory qualifies and is claimed by writing `.zz-migration-target.json` into
- *     it; a directory already carrying that marker for this owner and this path qualifies; a
- *     directory with anything else in it does not, and is refused rather than migrated into.
+ *     mode bit on every platform this runs on, so the check is structural.
+ *   - AMBIGUOUS_TARGET — an empty directory qualifies and is claimed by writing
+ *     `.zz-migration-target.json` into it; a directory already carrying that marker for this
+ *     owner and this path qualifies; a directory with anything else in it is refused.
  *
- * THE THREE REPORTS ARE PROTECTED, which here means two things and no more: they are written
- * through `safeWritePath`, which cannot escape the workspace into this checkout or into a live
- * store, and they are left mode 0o444 so nothing rewrites them by accident. A re-run clears
- * that bit deliberately before replacing them, which is the point — replacing migration
- * evidence should be something a program had to decide to do.
+ * The three reports are written through `safeWritePath`, which cannot escape the workspace into
+ * this checkout or into a live store, and are left mode 0o444. A re-run clears that bit before
+ * replacing them.
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -50,7 +45,7 @@ export interface MigrateArgs {
   readonly owner?: string;
 }
 
-// ── the two refusals ────────────────────────────────────────────────────────────────────────
+// The two refusals
 
 function resolveExistingDirectory(flag: string, raw: string | undefined): string {
   if (raw === undefined) throw new CliError("INVALID_ARGUMENTS", `--${flag} is required.`);
@@ -124,7 +119,7 @@ function claimTarget(raw: string | undefined, ownerId: string): string {
   return target;
 }
 
-// ── reading the snapshot ────────────────────────────────────────────────────────────────────
+// Reading the snapshot
 
 /** Every file under the snapshot, as locators relative to its root. `.zz-migration-target.json`
  *  and any `.git` directory are this platform's own bookkeeping rather than a team's content,
@@ -144,33 +139,23 @@ function readSnapshot(source: string): { path: string; bytes: Buffer }[] {
   return walkSnapshot(source).map((path) => ({ path, bytes: readFileSync(join(source, ...path.split("/"))) }));
 }
 
-// ── the classification inventory ────────────────────────────────────────────────────────────
+// The classification inventory
 
 export interface ClassificationInventory {
   readonly manifest_id: string;
-  /** THE CORPUS THIS INVENTORY IS ABOUT, without which the numbers below answer nothing.
+  /** The corpus this inventory is about, without which the numbers below answer nothing.
    *
-   *  `selected_count: 0` with `review_required: false` is exactly the shape the contract names
-   *  as a valid H2 resolution — "a recorded zero-selected/no-review inventory permits lossless
-   *  legacy carry-forward without fictitious approval." It is also exactly what this verb
-   *  produces over a three-row fixture snapshot in a temp directory, and the two were
-   *  BYTE-INDISTINGUISHABLE IN KIND: every other field is a count or a relative path, and a
-   *  relative path from a fixture reads like a relative path from a real corpus. Nothing in
-   *  the file said which one it described.
+   *  `selected_count: 0` with `review_required: false` is the shape the contract names as a
+   *  valid H2 resolution, and it is also what this verb produces over a fixture snapshot in a
+   *  temp directory. Every other field is a count or a relative path, so nothing else in the
+   *  file distinguishes the two. `manifest_id` is a corpus hash — `manifestIdOf` digests every
+   *  row's path, content hash and profile — but a hash is an identity, not a description.
    *
-   *  A reviewer asked to resolve a human gate needs both halves and had neither in usable
-   *  form. `manifest_id` was already a corpus HASH — `manifestIdOf` digests every row's path,
-   *  content hash and profile, so two corpora cannot share one — but a hash is an identity,
-   *  not a description: it cannot say that this was the production artifact volume rather than
-   *  somebody's scratch directory.
-   *
-   *  Found by the I-25 finalizer, which now refuses to resolve H2 from an inventory carrying
-   *  no binding to the material it describes — correctly, and it will keep blocking until a
-   *  real conversion is run, because this field makes the receipt CAPABLE of answering the
-   *  question without answering it. */
+   *  The finalizer refuses to resolve H2 from an inventory carrying no binding to the material
+   *  it describes. */
   readonly source_root: string;
   readonly profiles: Readonly<Record<string, number>>;
-  /** How many rows a reviewer SELECTED for native semantic conversion. A mechanical
+  /** How many rows a reviewer selected for native semantic conversion. A mechanical
    *  carry-forward selects none, and that is a complete answer. */
   readonly selected_count: number;
   /** False when nothing was selected. The contract is explicit that this is not missing
@@ -199,7 +184,7 @@ export function classifyMigration(manifest: LegacyConversionManifest, sourceRoot
   };
 }
 
-// ── parity ──────────────────────────────────────────────────────────────────────────────────
+// Parity
 
 interface ParityRow {
   readonly path: string;
@@ -226,7 +211,7 @@ function parityOf(target: string, rows: readonly LegacyManifestRow[]): ParityRow
   });
 }
 
-// ── the receipt ─────────────────────────────────────────────────────────────────────────────
+// The receipt
 
 export interface MigrateReceipt {
   readonly verb: "migrate";
@@ -311,9 +296,8 @@ export async function runMigrate(workspaceReal: string, args: MigrateArgs): Prom
     imported,
     refused,
     parity_complete: parityComplete,
-    // A DRY RUN IS OK WHEN NOTHING BLOCKS IT. An apply additionally has to have imported every
-    // row and matched every byte back out of the target — anything less is a cutover that did
-    // not happen, however many rows it did carry.
+    // A dry run is ok when nothing blocks it. An apply additionally has to have imported every
+    // row and matched every byte back out of the target.
     ok: prepared.blocking.length === 0 && refused.length === 0 && (!args.apply || parityComplete),
     reports: [manifestPath, ...reports].map((p) => relative(workspaceReal, p)),
     plannedAt: new Date().toISOString(),
@@ -330,10 +314,9 @@ function requireOwner(owner: string | undefined): string {
 }
 
 /**
- * The approved manifest, read and CHECKED AGAINST THE SNAPSHOT IT CLAIMS TO DESCRIBE. A
- * manifest whose id no longer matches what the source actually contains is exactly the
- * "altered source hash" the contract makes a blocking error: the bytes changed after the
- * manifest was approved, and approving one set of bytes never approves another.
+ * The approved manifest, read and checked against the snapshot it claims to describe. A
+ * manifest whose id no longer matches what the source contains is the "altered source hash" the
+ * contract makes a blocking error: the bytes changed after the manifest was approved.
  */
 function readApprovedManifest(path: string | undefined, fromSnapshot: LegacyConversionManifest): LegacyConversionManifest {
   if (path === undefined) throw new CliError("INVALID_ARGUMENTS", "--apply requires --manifest PATH.");

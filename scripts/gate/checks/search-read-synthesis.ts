@@ -9,20 +9,10 @@ check("search to pinned read to synthesis holds in both languages and cannot be 
     const f = t.findings[0];
     if (!f) return `the ${lang} trial produced no finding`;
     if (!f.original_quote) return `the ${lang} finding carries no original-language quotation`;
-    // "AN OBSERVED RESULT NEEDS A SUCCESSFUL READ" IS NOT ASKED HERE, AND THIS IS WHERE IT WENT.
-    // A clause `f.claim_kind === "observed_result" && !f.readOriginal` stood on this line and
-    // could never fire. Measured, by running both trials: the zh one returns approved_decision,
-    // distilled_learning, author_inference, author_inference; the en one returns
-    // approved_decision, reported_result, stated_intent, author_inference. No observed_result in
-    // any position in either — so widening it past findings[0] would not have reached it either.
-    //
-    // The property is covered, and driven rather than hoped for. recall-trial-probe.ts's
-    // observedResultsRequireASuccessfulRead() takes doc/mig-zh-ops — claim_kind
-    // "observed_result", readable false — and runs both arms: a control asserting the episode
-    // reports author_inference carrying the read failure, and a faulted arm that builds the
-    // quotation out of the search row's excerpt and watches the same unopened document get
-    // promoted to an observed result. That probe chooses its subject; this clause waited for a
-    // query to rank one first, and no query does.
+    // DELIBERATE: "an observed result needs a successful read" is not asked here. Neither
+    // trial returns an observed_result in any position, so a clause on it could never fire.
+    // COUPLED: that property is driven by recall-trial-probe.ts's
+    // observedResultsRequireASuccessfulRead(), which chooses its own subject.
     if (f.translationInOriginal) return "a translation was written into the original document";
   }
   const pinned = trial("migration", { thenSupersede: true });

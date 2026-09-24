@@ -1,18 +1,13 @@
 /**
- * inventory.ts — the `fixtures` verb: the seven declared corpora, the deterministic generator
- * behind them, and the arithmetic that refuses a scale it cannot honour.
+ * The `fixtures` verb: the seven declared corpora, the deterministic generator behind them, and
+ * the arithmetic that refuses a scale it cannot honour.
  *
- * THE EDIT-SURFACE LEDGER MOVED OUT DURING I-3, into ledger.ts, and which half moved was not a
- * free choice. This file was 698 lines of a measured, unexemptable 700-line ceiling with I-13's
- * migration-name validation still owed to it, so something had to go — but two frozen
- * plan-authored checks import `planCorpora`, `textFixture` and `validateMigrationNames` from
- * THIS path by name, and a frozen check is not editable. So the symbols the checks pin stay and
- * the ledger, which no check imports, is what left. Splitting the other way looked tidier and
- * broke a check on the first run.
+ * COUPLED: two frozen plan-authored checks import `planCorpora`, `textFixture` and
+ * `validateMigrationNames` from this path by name, so those three symbols cannot move. The
+ * edit-surface ledger, which no check imports, lives in ledger.ts.
  *
- * NOTHING HERE READS REAL CONTENT. Every byte a corpus contains is invented from a seed, because
- * these fixtures stand in for private team documents: a generator that sampled real material
- * would put tenant content into an acceptance corpus and from there into a benchmark report.
+ * Nothing here reads real content: every byte a corpus contains is invented from a seed, because
+ * these fixtures stand in for private team documents.
  */
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -25,7 +20,7 @@ const GENERATOR_VERSION = "1";
 const ONE_MIB = 1048576;
 
 /** `planCorpora`'s own refusal, distinct from `CliError`: a fractional fixture count is a
- *  property of the PLAN, not of one invocation, so it needs its own stable `code`. */
+ *  property of the plan, not of one invocation, so it needs its own stable `code`. */
 class FractionalFixtureCountError extends Error {
   readonly code = "FRACTIONAL_FIXTURE_COUNT" as const;
 }
@@ -33,9 +28,9 @@ class FractionalFixtureCountError extends Error {
 interface CorpusPlan { readonly records: number; readonly one_mib: number }
 
 /** The seven declared corpora's full-scale (`scale: 1`) record counts — matches the committed
- *  public DEFINITION at `testing/tenant-info/manifest.json`, never a private run's numbers.
- *  `1500` is fixed by that same definition: one 1-MiB fixture per 1500 records, every corpus,
- *  every scale. */
+ *  public definition at `testing/tenant-info/manifest.json`, never a private run's numbers.
+ *  `1500` is fixed by that definition: one 1-MiB fixture per 1500 records, every corpus, every
+ *  scale. */
 const BASE_CORPORA: Readonly<Record<string, number>> = {
   primary_current: 150000, primary_evidence: 150000, primary_history: 150000,
   other_team_a: 150000, other_team_b: 150000,
@@ -48,10 +43,10 @@ const BASE_CORPORA: Readonly<Record<string, number>> = {
 const isWholeNumber = (n: number): boolean => Math.abs(n - Math.round(n)) < 1e-9;
 
 /**
- * Each corpus's `{records, one_mib}` at `scale` (1 is full scale: 780,000 records including
- * 520 exactly-1-MiB fixtures). A scale outside `(0, 1]` is an invalid invocation; a scale that
- * leaves any single corpus with a fractional record or fixture count is refused separately —
- * a reduced-scale corpus that rounds quietly is a different, undeclared corpus.
+ * Each corpus's `{records, one_mib}` at `scale` (1 is full scale: 780,000 records including 520
+ * exactly-1-MiB fixtures). A scale outside `(0, 1]` is an invalid invocation; a scale leaving any
+ * corpus with a fractional record or fixture count is refused separately, because a
+ * reduced-scale corpus that rounds quietly is a different, undeclared corpus.
  */
 export function planCorpora(scale: number): Record<string, CorpusPlan> {
   if (!Number.isFinite(scale) || scale <= 0 || scale > 1) {
@@ -71,7 +66,7 @@ export function planCorpora(scale: number): Record<string, CorpusPlan> {
   return plan;
 }
 
-// ─────────────────────────────── deterministic fixture text ───────────────────────────────
+// Deterministic fixture text
 
 interface TextFixtureRequest {
   readonly seed: number; readonly ordinal: number; readonly bytes: number;
@@ -144,7 +139,7 @@ export function textFixture(req: TextFixtureRequest): string {
   return out + ".".repeat(req.bytes - usedBytes);
 }
 
-// ─────────────────────────────── corpus generation and manifest ───────────────────────────
+// Corpus generation and manifest
 
 interface CorpusManifestEntry {
   readonly record_count: number; readonly one_mib_fixture_count: number;
@@ -171,13 +166,10 @@ function histogramOf(sizes: readonly number[]): Record<string, number> {
 }
 
 /**
- * Non-1-MiB record size, calibrated by Monte-Carlo simulation (see the task report, not
- * asserted by a check here) so a full corpus's OVERALL mean/p95, 1-MiB fixtures included,
- * land within 5% of the full-scale target (8192 / 65536 bytes). Two overlapping bands rather
- * than one lognormal — a single lognormal cannot reach a p95/mean ratio of 8 without an
- * unrealistically fat body — with the 65536 boundary INSIDE the large band's range rather
- * than at its edge, so the empirical p95 does not hinge on which side of a hard cutoff
- * sampling noise lands on. I-23 measures the real generated store; this only approximates it.
+ * Non-1-MiB record size, calibrated so a full corpus's overall mean/p95, 1-MiB fixtures
+ * included, land within 5% of the full-scale target (8192 / 65536 bytes). Two overlapping bands
+ * rather than one lognormal, which cannot reach a p95/mean ratio of 8 without an unrealistically
+ * fat body, with the 65536 boundary inside the large band's range rather than at its edge.
  */
 function sampleBodyBytes(rand: () => number): number {
   return rand() < 0.918
@@ -186,10 +178,9 @@ function sampleBodyBytes(rand: () => number): number {
 }
 
 /**
- * Generates one corpus's fixture files under `dir` (inside the validated workspace) and
- * returns its measured manifest entry. These are Phase 1 records — neutral, seed-derived text
- * with a predetermined identifier, not a native committed platform transaction; loading them
- * through the fixture/import adapter is later work, once the kernel and projections exist.
+ * Generates one corpus's fixture files under `dir` (inside the validated workspace) and returns
+ * its measured manifest entry. These are Phase 1 records — neutral, seed-derived text with a
+ * predetermined identifier, not a native committed platform transaction.
  */
 function generateCorpus(
   dir: string, corpus: string, seed: number, records: number, oneMib: number,
@@ -229,12 +220,11 @@ interface FixturesReceipt {
 }
 
 /**
- * Generates the seven declared corpora at `args.scale` under the validated workspace and
- * writes the full measured manifest there — `<workspace>/fixtures-manifest.json`, never into
- * this repository. That file, not the committed `testing/tenant-info/manifest.json` (the
- * public DEFINITION this generator is built from, not a run's output), is where
- * `file_hashes` and each corpus's aggregate hash actually live. The returned receipt carries
- * the same per-corpus data minus `file_hashes`, which at full scale is tens of megabytes.
+ * Generates the seven declared corpora at `args.scale` under the validated workspace and writes
+ * the full measured manifest to `<workspace>/fixtures-manifest.json`, never into this
+ * repository. That file, not the committed `testing/tenant-info/manifest.json`, is where
+ * `file_hashes` and each corpus's aggregate hash live. The returned receipt carries the same
+ * per-corpus data minus `file_hashes`, which at full scale is tens of megabytes.
  */
 export function runFixtures(workspaceReal: string, args: FixturesArgs): FixturesReceipt {
   const scale = Number(args.scale);
@@ -265,7 +255,7 @@ export function runFixtures(workspaceReal: string, args: FixturesArgs): Fixtures
   };
 }
 
-// ─────────────────────────────── migration name validation ────────────────────────────────
+// Migration name validation
 
 const MIGRATION_NAME = /^(\d{3})_(.+)\.sql$/;
 
@@ -275,15 +265,12 @@ interface MigrationNameValidation {
 }
 
 /**
- * Two properties over a migration directory's actual filenames, asked at whatever moment the
- * caller likes: every three-digit numeric prefix is unique, and `slug` names EXACTLY one of
- * them. Neither is about ORDER — I-13's own contract says a migration need not remain the
- * largest number forever, so "did this land at the next free target-branch number" is a
- * separate, merge-time workflow check this function does not make. This one stays true
- * forever after a merge; that one is only ever asked of a migration not yet merged.
+ * Two properties over a migration directory's actual filenames: every three-digit numeric prefix
+ * is unique, and `slug` names exactly one of them. Neither is about order — "did this land at the
+ * next free target-branch number" is a separate, merge-time check.
  *
  * A filename that is not `<NNN>_<anything>.sql` is reported and otherwise ignored for the
- * prefix-uniqueness count — it has no prefix to collide with anything.
+ * prefix-uniqueness count.
  */
 export function validateMigrationNames(filenames: readonly string[], slug: string): MigrationNameValidation {
   const problems: string[] = [];
@@ -309,4 +296,4 @@ export function validateMigrationNames(filenames: readonly string[], slug: strin
   return { ok: problems.length === 0, problems };
 }
 
-// ────────────────────────── edit-surface ownership ledger ──────────────────────────
+// Edit-surface ownership ledger

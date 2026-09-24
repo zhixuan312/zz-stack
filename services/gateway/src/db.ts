@@ -1,30 +1,20 @@
 /**
  * Platform database ("zz") — creation, migration and access.
  *
- * The gateway owns the `zz` SCHEMA inside the existing database (default:
+ * The gateway owns the `zz` schema inside the existing database (default:
  * the same DB as TEAM_DB_URL). On boot: ensure the schema, run the SQL
  * files in ./migrations in name order, record each in zz.schema_migration.
  *
- * ONLY ./migrations, AND THERE IS NO SECOND DIRECTORY. There used to be `../migrations-next/`,
- * for a migration written and tested ahead of the read paths that had to move with it. It is
- * deleted: the one file left in it had gone from deferred to WRONG. It drops
- * `zz.event.team_slug`, `.initiative` and `.flow` and `zz.doc.team_slug`, `.initiative` and
- * `.flow` — columns the deployment carries 11,220, 7,417, 8,173 and 1,082 rows in, that
- * `events.ts` and `indexing.ts` write on every call, that `runs.ts` joins a team on, and that
- * `eval/plugin-subjects.ts` records as the CORRECT join after the other one reached 10
- * documents where 72 exist. A deferred migration nobody re-derives becomes a loaded gun.
- * No framework — migrations are plain SQL. Connections pin
- * search_path=zz,public so platform tables resolve to zz.* while extensions,
- * which install into public, stay resolvable. `public` used to hold the old
- * front end's own tables; it holds nothing of ours now.
+ * DELIBERATE: ./migrations is the only migration directory; the runner reads nothing else.
+ *
+ * No framework — migrations are plain SQL. Connections pin search_path=zz,public so platform
+ * tables resolve to zz.* while extensions, which install into public, stay resolvable.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import pg from "pg";
-
-import { configureIndexing } from "@zz/indexing";
 
 import { PLATFORM_TEAM, TEAM_SLUG, toTeamSlug } from "./identity.js";
 
@@ -40,31 +30,15 @@ export function platformDb(): pg.Pool {
 export function platformDbReady(): boolean {
   return pool !== undefined;
 }
-// THE INDEXER IS TOLD HOW TO REACH THE DATABASE HERE, at import time, because this module is
-// the one that owns the pool. `@zz/indexing` is shared with zz-core, which builds its pool
-// lazily and answers "is there a database" a different way, so the package takes an accessor
-// rather than picking one service's shape and making the other wrong.
-//
-// `null` WHERE THIS THROWS. platformDb() throws before initPlatformDb has run, which is right
-// for a caller that cannot proceed without a database; the indexer's null means "this
-// deployment has none", which is an ordinary answer it already handles. Handing it the
-// throwing accessor would turn a local dev boot into a stack trace on the first document
-// written.
-configureIndexing(() => (platformDbReady() ? platformDb() : null));
 
 /**
  * Every extension a migration declares it cannot run without.
  *
- * EXPORTED SO IT CAN BE DRIVEN DIRECTLY by `checks/migration-extension-declared.ts`, rather
- * than asserted about by reading this file's source text. The two source-text assertions that
- * check already makes exist because a directive with no reader is a comment; this one is the
- * reader's actual behaviour, and the runner below calls the same function, so the two cannot
- * drift apart.
+ * COUPLED: exported so `checks/migration-extension-declared.ts` drives this function rather
+ * than asserting over this file's source text, and the runner below calls the same function.
  *
- * ALL OF THEM, AND THAT IS THE POINT. This was `.exec(...)?.[1]` — the first match only. A
- * migration needing two extensions had one of them checked and was attempted anyway when the
- * other was absent, which is exactly the platform-wide outage the deferral exists to prevent.
- * Migration 070 needs `pg_textsearch` and `pg_trgm`, and it was the second that went unread.
+ * All the directives, not the first: a migration needing two extensions must have both
+ * checked, or it is attempted with one missing.
  */
 export function requiredExtensions(sql: string): string[] {
   return [...sql.matchAll(/^--\s*requires-extension:\s*([a-z0-9_]+)\s*$/gim)].map((m) => m[1]);
@@ -76,20 +50,12 @@ export async function initPlatformDb(): Promise<void> {
     console.log("PLATFORM_DB_URL/TEAM_DB_URL not set — platform db features disabled (local dev)");
     return;
   }
-  // platform tables live in the `zz` SCHEMA of the existing database —
-  // one Postgres, clean separation, zero new infrastructure
+  // Platform tables live in the `zz` schema of the existing database.
   //
-  // BOUNDED WAITS, AND NO `statement_timeout` — the omission is deliberate.
-  //
-  // zz-core's pool sets one, because every statement it runs is a tool query that returns in
-  // milliseconds. THIS pool runs the migrations, twenty lines below, and a migration that
-  // rewrites a table legitimately takes as long as it takes. A server-side timeout here would
-  // abort one partway on the first deployment whose data outgrew it, which is a worse failure
-  // than the one it prevents: a half-applied migration is not something a retry fixes.
-  //
-  // The other two bounds carry no such risk and are set. `connectionTimeoutMillis` stops a
-  // caller queueing forever behind six busy connections — it is refused in ten seconds and says
-  // so — and `idleTimeoutMillis` returns what the deployment is not using.
+  // DELIBERATE: no `statement_timeout`, unlike zz-core's pool. This pool runs the migrations
+  // below, and a migration that rewrites a table takes as long as it takes; a server-side
+  // timeout would abort one partway, which no retry fixes. The other two bounds carry no such
+  // risk and are set.
   pool = new pg.Pool({
     connectionString: serverUrl,
     max: Number(process.env.ZZ_DB_POOL_MAX || 6),
@@ -104,9 +70,8 @@ export async function initPlatformDb(): Promise<void> {
   const applied = new Set(
     (await pool.query<{ name: string }>("select name from zz.schema_migration")).rows.map((r) => r.name),
   );
-  // WHICH EXTENSIONS THIS CLUSTER COULD EVEN INSTALL, read once. A migration that needs one the
-  // server does not ship must not be attempted here — see the deferral below for what it costs
-  // when it is.
+  // Which extensions this cluster could install, read once: a migration needing one the server
+  // does not ship is deferred rather than attempted.
   const available = new Set(
     (await pool.query<{ name: string }>("select name from pg_available_extensions")).rows.map((r) => r.name),
   );
@@ -115,40 +80,20 @@ export async function initPlatformDb(): Promise<void> {
     if (applied.has(file)) continue;
     const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf8");
 
-    // A MIGRATION MAY DECLARE AN EXTENSION IT CANNOT RUN WITHOUT, and if this cluster cannot
-    // supply it the migration is DEFERRED — skipped, and deliberately NOT recorded as applied.
+    // A migration may declare an extension it cannot run without, and a cluster that cannot
+    // supply it defers the migration: skipped, and not recorded as applied.
     //
-    // WHAT THIS PREVENTED, precisely, and why it stays. The tenant-information migration needs
-    // pg_textsearch. When it merged, the deployed platform database was PostgreSQL 16 with
-    // citext and plpgsql and nothing else; the PostgreSQL 17 image carrying the extension
-    // arrived in a later, separately rehearsed cutover, which happened on 2026-09-21. So today
-    // NOTHING DEFERS — every migration applies on the deployment and on the release's own
-    // rehearsal, which runs the same image and treats a deferral there as release-blocking.
+    // DELIBERATE: not recording it is the load-bearing half. Making the extension conditional
+    // inside the SQL would mark the migration applied on a cluster where it did nothing, and
+    // `zz.schema_migration` travels with a logical restore, so the objects would never exist.
+    // Deferral leaves the ledger honest and the first boot on a capable cluster applies it.
     //
-    // This guard is not therefore spent. It is what makes the NEXT extension safe to introduce:
-    // a migration declaring one the cluster has not got is skipped instead of taking the
-    // platform down, and the release says which one before an operator ever sees it. Without it
-    // the first boot after such a migration merged would
-    // fail `create extension`, roll back, un-set the pool and rethrow — and the caller logs and
-    // starts the server anyway, by a deliberate choice made elsewhere in this file. The result
-    // is not a crash anybody notices. It is the whole platform running with no database while
-    // reporting itself up, against a deployment holding 527 live documents.
+    // The loop breaks rather than continuing, because a later migration may build on a
+    // deferred one's objects.
     //
-    // NOT RECORDED IS THE LOAD-BEARING HALF. Making the extension conditional inside the SQL
-    // would let the migration mark itself applied on a cluster where it did nothing, and
-    // `zz.schema_migration` travels with the logical restore into the new cluster — so it would
-    // never run there either, and the objects would simply never exist. Deferral leaves the
-    // ledger honest: the migration is still owed, and the first boot on a cluster that can
-    // supply the extension applies it.
-    //
-    // AND IT STOPS THE LOOP. A later migration may build on a deferred one's objects, so
-    // applying past a gap trades a loud, correct failure for a confusing one.
-    // EVERY directive, not the first one. This read `.exec(...)?.[1]`, which stops at the
-    // first match — so a migration needing two extensions was checked for one and attempted
-    // anyway if the other was missing, which is precisely the platform-wide outage this
-    // deferral exists to prevent. Migration 070 needs both `pg_textsearch` (the BM25 ranker)
-    // and `pg_trgm` (the fuzzy lane's `similarity()`/`<->`), and it was the second one that
-    // would have gone unchecked.
+    // Attempting one instead fails `create extension`, rolls back, un-sets the pool and
+    // rethrows — and the caller starts the server anyway, so the platform runs with no
+    // database while reporting itself up.
     const missing = requiredExtensions(sql).filter((name) => !available.has(name));
     if (missing.length > 0) {
       console.warn(`migration DEFERRED: ${file} requires the ${missing.map((n) => `"${n}"`).join(" and ")} ` +
@@ -167,11 +112,9 @@ export async function initPlatformDb(): Promise<void> {
       console.log("migration applied:", file);
     } catch (err) {
       await client.query("rollback");
-      // Withdraw the pool before rethrowing. The caller logs and starts the server
-      // anyway — deliberately, so a database problem does not take the platform down —
-      // but `pool` was assigned before migrations ran, so platformDbReady() would keep
-      // saying yes and every feature would go on querying a HALF-MIGRATED schema. A
-      // platform that answers wrongly is worse than one that admits it cannot answer.
+      // Withdraw the pool before rethrowing: the caller starts the server anyway, and `pool`
+      // was assigned before migrations ran, so platformDbReady() would otherwise keep saying
+      // yes and every feature would query a half-migrated schema.
       pool = undefined;
       throw err;
     } finally {
@@ -184,16 +127,9 @@ export async function initPlatformDb(): Promise<void> {
 
 /** Seed: the superadmin, and the first team, from configuration.
  *
- * This used to import principals and teams out of Open WebUI's own tables — "user",
- * "group", group_member — because Open WebUI was where people already existed. It is
- * gone, and with it the last path where a front end was a source of platform truth.
- *
- * What replaced it answers the question a fresh install actually asks: who is the
- * superadmin, and which team do they belong to? A deployment with a superadmin and no
- * team is not usable — `teamFor()` returns null and every document lands in a per-user
- * store instead of the team's. So the first team is seeded here from BOOTSTRAP_TEAM and
- * the superadmin is made its admin. Both steps are idempotent, and neither depends on
- * another product's schema. */
+ * A deployment with a superadmin and no team is not usable: `teamFor()` returns null and every
+ * document lands in a per-user store instead of the team's. So the first team is seeded from
+ * BOOTSTRAP_TEAM and the superadmin is made its admin. Both steps are idempotent. */
 async function seed(): Promise<void> {
   const db = platformDb();
   const superadmin = (process.env.SUPERADMIN_EMAIL ?? "").trim().toLowerCase();
@@ -210,30 +146,13 @@ async function seed(): Promise<void> {
   ).rows[0]?.id;
   if (!actorId) return;
 
-  // THE PLATFORM IS ALSO A TENANT, and this is the team it is.
+  // The platform is also a tenant, and this is the team it is: an ordinary team with the same
+  // store and `_knowledge/` every tenant has, holding what the platform learns about its own
+  // registry entries. Seeded here rather than through team_create, which reserves the slug.
   //
-  // BEFORE the tenant team, because it does not depend on one. This sat below the
-  // BOOTSTRAP_TEAM block and inside its early return, so an install that set a superadmin
-  // and left BOOTSTRAP_TEAM empty — which deploy/README.md warns against and nothing
-  // prevents — reserved this slug and never created it. The gate's own words for that
-  // state: "reserved but never seeded means the home is a name with nothing behind it."
-  //
-  // Every day this platform learns things that are not about anybody's delivery: that a
-  // block returns a bare 422 and still has not been fixed, that most of a block's tools describe
-  // themselves by restating their own name, that a section rule we wrote was strict enough
-  // that six of six real documents broke it. None of that belongs to a tenant, and until
-  // now it had nowhere to live — so it lived in a hand-written appendix, in STATE.md
-  // paragraphs, and in commit messages, which is to say it was not queryable at all.
-  //
-  // Zero new mechanism, deliberately. This is an ordinary team with an ordinary store and
-  // the same `_knowledge/` every tenant has: the same journal nodes, the same type enum,
-  // the same supersession, the same refusal to record an opinion with no evidence behind
-  // it. The only new thing is that its nodes are keyed to a REGISTRY ENTRY — `block:casebox`,
-  // `flow:sdlc-flow`, `provider:…`, `interface:…` — which is a vocabulary the platform
-  // already closed.
-  //
-  // Seeded rather than created through team_create, and reserved there, because a tenant
-  // taking this slug would be writing into the platform's own record.
+  // DELIBERATE: before the tenant team and outside BOOTSTRAP_TEAM's early return, because it
+  // does not depend on one — otherwise an install with no BOOTSTRAP_TEAM reserves the slug and
+  // never creates the team.
   await db.query(
     `insert into team (slug, name, created_by) values ($1, $2, $3)
      on conflict (slug) do nothing`,
@@ -246,11 +165,8 @@ async function seed(): Promise<void> {
     [PLATFORM_TEAM, actorId],
   );
 
-  // SAID EVEN WHEN THERE IS NO FIRST TEAM. The platform team is seeded above this line
-  // deliberately — it does not depend on a tenant — and the only line reporting any of it sat
-  // BELOW the early return, so an install that set a superadmin and left BOOTSTRAP_TEAM empty
-  // did the work and said nothing at all. Work done in silence is indistinguishable from work
-  // skipped, which is the state this block's own comment was written about.
+  // Reported even when there is no first team: the platform team was seeded above, and work
+  // done in silence is indistinguishable from work skipped.
   const raw = (process.env.BOOTSTRAP_TEAM ?? "").trim();
   if (!raw) {
     console.log(`platform db seeded: superadmin ${superadmin}, platform team ${PLATFORM_TEAM}; ` +

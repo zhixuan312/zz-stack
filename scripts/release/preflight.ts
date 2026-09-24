@@ -14,13 +14,12 @@ export function preflight(): void {
   const row = (ok: boolean | null, label: string, detail: string | null = null): void =>
     say(`  ${ok === null ? "·" : ok ? "\x1b[32m✓\x1b[0m" : "\x1b[31m✗\x1b[0m"} ${label}${detail ? ` — ${detail}` : ""}`);
 
-  // WHICH DEPLOYMENT, FIRST AND ALWAYS. Half the rows below are read off a host over ssh —
-  // the address, whether the token authenticates, what the console is running — so a
+  // Which deployment, first and always. Half the rows below are read off a host over ssh, so a
   // preflight that does not say which host it asked is a page of facts about somewhere.
   say(`\n\x1b[1m── preflight · what is a fact about this release\x1b[0m` +
       `  \x1b[1m${HOST}\x1b[0m`);
 
-  /* ── versions on disk ─────────────────────────────────────────────────── */
+  /* Versions on disk */
   const pkg = safe(() => JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version, "?");
   const composeTxt = safe(() => readFileSync(join(root, "deploy/docker-compose.yml"), "utf8"), "");
   const composeVer = (/ZZ_VERSION:-([0-9][^}]*)\}/.exec(composeTxt) || [])[1] || "?";
@@ -34,7 +33,7 @@ export function preflight(): void {
       dashPkg === dashComposeVer ? null
         : "they must move together — the release bumps both, so a disagreement here is a hand edit");
 
-  /* ── the tree, checked now rather than by the gate after the changelog ── */
+  /* The tree, checked now rather than by the gate after the changelog */
   const branch = git(["rev-parse", "--abbrev-ref", "HEAD"]);
   const dirty = git(["status", "--porcelain"]).split("\n").filter(Boolean);
   safe(() => run("git", ["fetch", "origin", "--quiet"], { cwd: root }), "");
@@ -47,7 +46,7 @@ export function preflight(): void {
   row(behind === "0", `master vs origin: ${ahead} ahead, ${behind} behind`,
       behind === "0" ? null : "the HOST pulls from origin — push before releasing");
 
-  /* ── what moved ────────────────────────────────────────────────────────── */
+  /* What moved */
   const tag = git(["describe", "--tags", "--abbrev=0"]);
   const range = tag ? `${tag}..HEAD` : "HEAD";
   const commits = tag ? git(["rev-list", range]).split("\n").filter(Boolean) : [];
@@ -56,13 +55,9 @@ export function preflight(): void {
   const d = resolveDashboard();
   row(d.blocked ? false : null, `console: ${d.why}`,
       null);
-  // What is live NOW, which is the fact this repo cannot answer for itself: the console was
-  // deployed by building on the host, so `local` here means the host is running something no
-  // registry has a copy of and no version names.
-  // HOW THIS HOST TAKES ITS deploy/ FILES, which was an assumption until it cost a release.
-  // The deploy step read `git reset --hard origin/master` as universal; UAT is not a checkout
-  // and never was, so the first release aimed at it died AFTER pushing an image. Nothing here
-  // decides anything — it reports which of the two paths this host is on.
+  // How this host takes its deploy/ files. UAT is not a checkout, so `git reset --hard
+  // origin/master` is not universal. Nothing here decides anything — it reports which of the two
+  // paths this host is on.
   const checkout = safe(() => ssh(`test -d ${REMOTE}/.git && echo yes || echo no`).trim(), "");
   row(checkout ? null : false,
       checkout === "yes" ? `${HOST}:${REMOTE} is a checkout — deploy/ comes from origin/master`
@@ -77,10 +72,9 @@ export function preflight(): void {
         : d.release ? "not a published image — this release replaces it and records no rollback target"
                     : "not a published image, and this release does not replace it");
 
-  /* ── what the range DECLARES as breaking ───────────────────────────────
-   * A floor, never a ceiling. Of 0.3.0's seven breaking changes three said so here; a
-   * closed enum, a write path that began enforcing its guards, and a changed default
-   * model each broke something in silence. This says where to start reading. */
+  /* What the range declares as breaking — a floor, never a ceiling. A closed enum, a write path
+   * that begins enforcing its guards and a changed default model each break something without
+   * saying so. This says where to start reading. */
   const breaking = [];
   for (const c of commits) {
     const body = git(["log", "-1", "--format=%b", c]);
@@ -91,21 +85,19 @@ export function preflight(): void {
   if (breaking.length) breaking.forEach((x) => say(`    ${x}`));
   else say("    none declared — which is not the same as none present");
 
-  /* ── can this machine actually finish? ─────────────────────────────────── */
+  /* Can this machine actually finish? */
   say("\n  this machine");
   const dockerUp = safe(() => { run("docker", ["info"]); return true; }, false);
   row(dockerUp, "docker running", dockerUp ? null : "start Docker — the build needs it");
   const ghcr = safe(() => readFileSync(join(process.env.HOME ?? "", ".docker/config.json"), "utf8"), "").includes("ghcr.io");
   row(ghcr, "ghcr.io login present", ghcr ? null : "docker login ghcr.io (a token with write:packages)");
 
-  /* ── the address, read from the deployment rather than asked of a person ─
-   * No default, deliberately: a fork must not inherit an address it would then hand its
-   * own bearer token to. Reading it off the host each time keeps that property and drops
-   * the part that was only ever a lookup done by hand.
+  /* The address, read from the deployment rather than asked of a person. No default: a fork must
+   * not inherit an address it would then hand its own bearer token to.
    *
-   * THROUGH THE SAME RESOLVER THE REST OF THE RELEASE USES. This repeated the environment
-   * variable and the ssh grep itself, so a preflight could report an address the release
-   * would then not use — a row that is right about a fact nobody acts on. */
+   * COUPLED: through `publicUrl`, the same resolver the rest of the release uses. A second copy
+   * of the environment variable and the ssh grep could report an address the release would not
+   * then use. */
   const address = safe(() => publicUrl({ quiet: true }), "");
   const fromHost = !!address && !(process.env.ZZ_PUBLIC_URL || "").trim();
   row(!!address, `ZZ_PUBLIC_URL ${address || "(unresolved)"}`,
@@ -113,15 +105,12 @@ export function preflight(): void {
               : `could not reach ${HOST} — set it by hand`);
   if (address) out.push(`export ZZ_PUBLIC_URL=${address}`);
 
-  /* ── the check that would have saved 0.3.0 ─────────────────────────────
-   * The token is the one input the release never validated before spending a whole
+  /* The token is the one input the release never validated before spending a whole
    * gate-build-push-deploy cycle on it.
    *
-   * THROUGH `envToken`, which is what the release itself reads. This called
-   * `process.env.ZZ_TOKEN` and fell back to a file, so it answered a question the release
-   * was not asking: a ZZ_TOKEN sitting in this repository's own .env — the documented place
-   * to put it — made the release work and made preflight report "no token found", which is
-   * the preflight lying about the very cycle it exists to save. */
+   * COUPLED: through `envToken`, which is what the release itself reads. Reading
+   * `process.env.ZZ_TOKEN` with a file fallback answers a different question, and reports "no
+   * token found" for a ZZ_TOKEN in this repository's own .env that the release uses happily. */
   const src = process.env.ZZ_TOKEN ? "$ZZ_TOKEN" : `${root}/.env`;
   const tok = envToken();
   if (!tok) {

@@ -2,34 +2,23 @@
 /**
  * zz-migrate — bring one mma repository's history onto the ZZ platform.
  *
- *   node migrate.mjs [repo]            # default: the current directory
- *   node migrate.mjs --dry-run         # decide everything, send nothing
- *   node migrate.mjs --limit 20        # first N of each kind, to try it on something small
+ *   node migrate.js [repo]             # default: the current directory
+ *   node migrate.js --dry-run          # decide everything, send nothing
+ *   node migrate.js --limit 20         # first N of each kind, to try it on something small
  *
- * WHAT BECOMES WHAT, and why each is the only honest answer available:
+ * `.mma/journal/nodes/*.md` become knowledge nodes; mma's six node types are the platform's six.
  *
- * `.mma/journal/nodes/*.md` -> knowledge nodes. mma's six node types ARE the platform's six,
- *   so this is a rename and not a translation.
+ * Everything else historical becomes sources on one archive initiative, not documents: an
+ * initiative's documents are envelope-governed and gated, and importing historical plans as
+ * documents would mean signing their gates on behalf of people who signed nothing. `source_add` is
+ * ungated and immutable.
  *
- * Everything else historical -> SOURCES on one archive initiative. Not documents: an
- *   initiative's documents are envelope-governed and gated, `plan.md` requires an approved
- *   `spec.md`, and 212 historical plans have no approvals because nobody ever approved them
- *   under rules that did not exist yet. Importing them as documents would mean signing 212
- *   gates on behalf of people who signed nothing, which is the one thing the gates are for.
- *   `source_add` is ungated and immutable and its description says what it is for — material
- *   from elsewhere that work rests on. That is exactly what this is.
+ * `knowledge_add` refuses a node with no evidence, and an mma journal node cites no initiative.
+ * So the import creates one archive initiative per repository first, puts the whole historical
+ * corpus in it as sources, and every migrated node cites that.
  *
- * THE EVIDENCE PROBLEM, and how it is answered. `knowledge_add` refuses a node with no
- *   evidence: "a node without evidence is an opinion". An mma journal node cites no
- *   initiative, because mma had none. So the import creates ONE archive initiative per
- *   repository first, puts the whole historical corpus in it as sources, and every migrated
- *   node cites that. The claim it makes is true and checkable: this lesson came from that
- *   body of work, and the work is right there.
- *
- * IT CAN BE RUN TWICE. Every send is recorded in `.mma/.zz-migrated.json` the moment it
- *   succeeds, so an interrupted import resumes where it stopped instead of minting a second
- *   copy of everything before it. 700 sends over a network is long enough that "what happens
- *   when it stops halfway" is a certainty, not a risk.
+ * It can be run twice: every send is recorded in `.mma/.zz-migrated.json` the moment it succeeds,
+ * so an interrupted import resumes where it stopped.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -43,9 +32,8 @@ function errMessage(e) {
 }
 /** Progress on one rewritten line, and nothing at all when this is not a terminal.
  *
- * `\r` is a cursor move, not a line. Piped to a file or read by a harness it is just another
- * character, so 537 progress ticks became a 50KB transcript of a run whose result is four
- * lines. A person watching wants the tick; anything else wants the summary. */
+ *  `\r` is a cursor move, not a line: piped to a file or read by a harness it is just another
+ *  character, so hundreds of progress ticks become a transcript of a four-line result. */
 const tick = process.stdout.isTTY
     ? (msg) => process.stdout.write(`\r${msg.padEnd(78).slice(0, 78)}`)
     : () => { };
@@ -75,10 +63,9 @@ const remember = (key, val) => {
         writeFileSync(ledgerFile, JSON.stringify(ledger, null, 2) + "\n");
 };
 // ── the body of a migrated node ────────────────────────────────────────────
-/** mma kept the prose in `## Context` / `## Consequences` and a one-line `description`, and
- * two thirds of the corpus filled only the description. So the body is whatever is actually
- * there, plus a provenance line — because a node that turns up in a search two years from now
- * should say where it came from without anybody having to remember there was an import. */
+/** mma kept the prose in `## Context` / `## Consequences` and a one-line `description`, and two
+ *  thirds of the corpus filled only the description. The body is whatever is actually there,
+ *  plus a provenance line saying where it came from. */
 function nodeBody(n, repo, initiative) {
     const parts = [];
     if (n.description)
@@ -155,15 +142,11 @@ async function main() {
         console.log(`\nDRY RUN — deciding everything, sending nothing.\n`);
     else
         console.log("");
-    // ONLY WHAT THIS PLATFORM CAN SAY. mma's journal has four statuses; a zz node has two
-    // states, adopted and superseded-by-another-node. A `dropped` or `inconclusive` node
-    // imported anyway would be minted `adopted` — the platform stamps that on every node it
-    // writes — so "we tried this and dropped it" would come back out of knowledge_search as
-    // current practice. That is worse than not importing it: it is the record saying the
-    // opposite of what happened.
-    //
-    // Neither corpus this was built against has one, which is exactly why it is filtered
-    // rather than trusted: the schema allows both, and the next repository is not these two.
+    // Only what this platform can say. mma's journal has four statuses; a zz node has two, adopted
+    // and superseded-by-another-node. A `dropped` or `inconclusive` node imported anyway would be
+    // minted `adopted` — the platform stamps that on every node it writes — so "we tried this and
+    // dropped it" would come back out of knowledge_search as current practice. Filtered rather than
+    // trusted, because the schema allows both.
     const IMPORTABLE = new Set(["adopted", "superseded"]);
     const untaken = s.nodes.filter((n) => !IMPORTABLE.has(n.status));
     const importable = s.nodes.filter((n) => IMPORTABLE.has(n.status));
@@ -236,10 +219,9 @@ async function main() {
             continue;
         }
         try {
-            // Tags carry the origin so a migrated node can be found as one, and so a second run of
-            // this import can be told apart from a node somebody wrote by hand. A colon form
-            // (`mma:0001`) is refused — the platform reads `kind:name` as a registry key and `mma`
-            // is not one of its kinds — so the origin is spelled out flat.
+            // Tags carry the origin so a migrated node can be found as one, and so a second run can be
+            // told apart from a node somebody wrote by hand. A colon form (`mma:0001`) is refused — the
+            // platform reads `kind:name` as a registry key — so the origin is spelled out flat.
             const tags = [...new Set([
                     ...n.tags.map(slug).filter(Boolean),
                     ...(n.topic ? [slug(n.topic)] : []),
@@ -271,9 +253,8 @@ async function main() {
         const key = `supersede:${n.mmaId}`;
         if (ledger[key])
             continue;
-        // A dry run mints nothing, so neither end has a platform id yet. Counting that as a
-        // failure reported nine problems for a run that had none and exited non-zero on a
-        // rehearsal that went perfectly.
+        // A dry run mints nothing, so neither end has a platform id yet; counting that as a failure
+        // reports problems for a rehearsal that went perfectly.
         if (DRY) {
             sup++;
             continue;
@@ -286,9 +267,8 @@ async function main() {
         }
         try {
             // `shelf` because ids are allocated per shelf and both start at 0001, so a minted team
-            // node's number usually also names a platform node — and a bare pair is refused as
-            // ambiguous. Everything this import mints is `scope: "team"`, so the shelf is never in
-            // doubt on this side.
+            // node's number usually also names a platform node, and a bare pair is refused as
+            // ambiguous. Everything this import mints is `scope: "team"`.
             await core.call("knowledge_supersede", { old_id: oldId, new_id: newId, shelf: "team" });
             remember(key, true);
             sup++;
@@ -300,12 +280,10 @@ async function main() {
     console.log(`  history  ${sup} supersede edges${supFailed.length ? `, ${supFailed.length} not made` : ""}`);
     // 5 ── say plainly that the archive stays open.
     //
-    // There is no archived state on this platform. `initiative_close` writes the outcome onto the flow's
-    // CLOSING document, every flow that declares one gates it, and an imported archive has no
-    // approvals because nobody approved anything — signing that gate to tidy a listing is the
-    // one thing the gates exist to prevent. So the archive sits in `initiative_status()` beside
-    // real work, and the only honest thing to do about it is say so here rather than let it be
-    // discovered later as a mystery entry from 2026.
+    // There is no archived state on this platform. `initiative_close` writes the outcome onto the
+    // flow's closing document, every flow that declares one gates it, and an imported archive has
+    // no approvals. So the archive sits in `initiative_status()` beside real work, and this says so
+    // rather than letting it be discovered later as a mystery entry.
     console.log(`  open     ${initiative} stays OPEN — this platform has no archived state, and ` +
         `closing it\n           would mean signing a gate nobody signed. It will appear ` +
         `in initiative_status().`);

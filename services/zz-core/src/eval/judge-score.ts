@@ -1,48 +1,36 @@
 /**
- * HOW GOOD IS IT, AND WHAT IS LEFT TO FIX — two questions, two numbers, deliberately separate.
+ * How good is it, and what is left to fix — two questions, two numbers, kept separate.
  *
- * A round used to end in one word from a closed set: keep, keep-and-change, re-run,
- * not-evaluable, retire. That word is a DECISION and it was being read as a MEASUREMENT, which
- * it cannot be. "Keep" does not say whether a plugin is excellent or barely adequate, and a
- * reader who needs to know how good something is cannot get it out of a verb.
+ * A single word from a closed set (keep, re-run, retire) is a decision, not a measurement: it
+ * does not say whether a plugin is excellent or barely adequate.
  *
- * THE TWO AXES ARE INDEPENDENT, and that is the whole design. A plugin scoring 9 can still have
- * something worth fixing; a plugin scoring 5 with nothing identifiable to do about it is a
- * different and worse situation than a 5 with three named changes waiting. Collapsing them into
- * one scale loses exactly the distinction a person needs to act:
+ * The two axes are independent:
  *
  *        high score + headroom   good, and there is a next move
  *        high score + none       leave it alone
  *        low  score + headroom   underperforming, and we know what to do
  *        low  score + none       underperforming and nobody knows why — the retire signal
  *
- * COMPUTED, NOT ASKED. Every input is already on the round and no model is anywhere in the
- * derivation. A number a model produced is one more thing a reader has to trust; arithmetic
- * over figures they can see is one they can disagree with. The weights below are a judgement
- * and they are written down here rather than buried in a caller, so disagreeing with them is a
- * one-line change and not an argument.
+ * Computed, not asked. Every input is already on the round and no model is in the derivation.
+ * The weights below are a judgement, written here rather than in a caller.
  */
 import { HEADROOM, MARK_SCALE, NOT_MEASURABLE, band, headroomState } from "@zz/contracts";
 
 /** The qualitative half against the quantitative half.
  *
- *  Quality leads because it is read from the artifacts themselves across every subject, while
- *  the thresholds are two or three lines somebody drew — coarse by construction, so one unmet
- *  line should move the score without dominating it. At 0.4 over three thresholds, one failing
- *  costs 1.3 points, which is a band boundary's worth and not a verdict on its own. */
+ *  Quality leads because it is read from the artifacts across every subject, while the
+ *  thresholds are two or three lines somebody drew. At 0.4 over three thresholds, one failing
+ *  costs 1.3 points — a band boundary's worth, not a verdict on its own. */
 const QUALITATIVE_WEIGHT = 0.6;
 const QUANTITATIVE_WEIGHT = 0.4;
 
 /** Below this, the ruler could not tell the right artifact from the wrong one and the
- *  qualitative half is noise. The same line round_scores already prints beside the gap — named
- *  once, here, so the score and the note cannot drift apart. */
+ *  qualitative half is noise. COUPLED: round_scores prints the same line beside the gap. */
 const COLLAPSE_GAP = 1.5;
 
-// THE BANDS ARE THE PLATFORM'S, NOT THIS FILE'S. They moved to @zz/contracts when the
-// console needed to name the same band the reports do: one rule, or the two drift and a
-// reader gets a different word from each. `band()` is also why nothing stores the label any
-// more — it is arithmetic over a number in the same row, which is a cache, and the day the
-// words changed every stored caption was wrong while every stored score stayed right.
+// COUPLED: the bands live in @zz/contracts, so the console and the reports name the same band.
+// `band()` is arithmetic over a number in the same row, so nothing stores the label — a stored
+// caption goes wrong the day the words change while every stored score stays right.
 
 interface Effectiveness {
   /** 0-10, or null when the round is void. Never a number over a void round: a mean below a
@@ -63,21 +51,16 @@ interface Headroom {
    *  threshold names a figure and a line, a generic finding names a change by construction
    *  (finding_record refuses one that proposes none). */
   named_changes: number;
-  /** One of the four, from @zz/contracts. A CLOSED SET, not a sentence.
-   *
-   *  This was a paragraph of prose the caller pasted into a report, which made the second axis
-   *  unreadable anywhere a paragraph does not fit — a table cell, a tile — and unqueryable
-   *  everywhere. Worse, the prose editorialised: it told the reader what to do about the gap,
-   *  which is not something the figures establish. The state says which of four situations the
-   *  round is in and leaves the explaining to the report. */
+  /** One of the four, from @zz/contracts — a closed set, not a sentence. The state says which of
+   *  four situations the round is in; the explaining is the report's job. A paragraph here is
+   *  unreadable in a table cell or a tile and unqueryable everywhere. */
   state: string;
 }
 
 /** The effectiveness score, from figures the round already carries.
  *
  *  `qualMean` is on the platform's 1-5 scale and is rescaled, so a ruler whose dimensions all
- *  sit at 1 scores 0 rather than 2 — the floor of the scale is not a fifth of the way to good.
- */
+ *  sit at 1 scores 0 rather than 2 — the floor of the scale is not a fifth of the way to good. */
 export function effectiveness(
   qualMean: number | null, thresholdsMet: number, thresholdsTotal: number, gap: number | null,
 ): Effectiveness {
@@ -89,14 +72,13 @@ export function effectiveness(
              "round is noise and no score is computed from them",
     };
   }
-  // RESCALED FROM THE DECLARED SCALE, not from two literals. This was `(qualMean - 1) / 4`,
-  // and the prompt that produced `qualMean` spelled its ends as `5 =` and `1 =` — two
-  // spellings of one scale, neither reading the other.
+  // Rescaled from the declared scale, not from two literals: `(qualMean - 1) / 4` is a second
+  // spelling of the scale the prompt that produced `qualMean` already states.
   const SPAN = MARK_SCALE.max - MARK_SCALE.min;
   const qual = qualMean === null
     ? null : Math.round(((qualMean - MARK_SCALE.min) / SPAN) * 1000) / 100;
   const quant = thresholdsTotal ? Math.round((thresholdsMet / thresholdsTotal) * 1000) / 100 : null;
-  // EITHER HALF ALONE IS THE WHOLE SCORE. A ruler of purely qualitative dimensions has no
+  // Either half alone is the whole score. A ruler of purely qualitative dimensions has no
   // thresholds to read, and one of purely quantitative dimensions is marked by no judge. Both
   // are legal rulers, and re-weighting a missing half to zero would score them as failures.
   const score = qual !== null && quant !== null
@@ -120,26 +102,22 @@ export function effectiveness(
 
 /** What is left to do, counted from things already written down rather than inferred.
  *
- *  AN UNMET THRESHOLD AND A GENERIC FINDING ARE THE TWO KINDS OF NAMED CHANGE this platform
- *  holds. A threshold names a figure and the line it missed; a generic finding names a change
- *  and what it should move, because `finding_record` refuses one that proposes nothing. Anything
- *  else a reader might call an improvement is an opinion, and this counts evidence.
+ *  The two kinds of named change this platform holds: an unmet threshold, which names a figure
+ *  and the line it missed, and a generic finding, which names a change because `finding_record`
+ *  refuses one that proposes nothing.
  *
- *  THE DISTINCTION THAT MATTERS IS BELOW THE CEILING WITH NOTHING NAMED. A plugin two points
- *  short with two changes waiting is ordinary work. A plugin two points short with nothing
- *  identified is not a plugin to fix — it is a measurement nobody has explained, and the next
- *  move is to find out why rather than to change anything. */
+ *  Below the ceiling with nothing named is the distinction that matters: a plugin two points
+ *  short with changes waiting is ordinary work, while one two points short with nothing
+ *  identified is a measurement nobody has explained. */
 export function headroom(score: number | null, unmetThresholds: number, genericFindings: number): Headroom {
   const named = unmetThresholds + genericFindings;
   const points = score === null ? null : Math.round((10 - score) * 100) / 100;
   return { points, named_changes: named, state: headroomState(points, named) };
 }
 
-/** The one line of prose the second axis is worth, for a tool response that has room for it.
- *
- *  SEPARATE FROM THE STATE, because they are read by different things. The state is a closed
- *  value a table can print and a query can group by; this is the sentence a person reads once.
- *  Keeping them in one field is what made the state unusable. */
+/** The one line of prose the second axis is worth, for a tool response with room for it. Kept
+ *  separate from the state, which is a closed value a table can print and a query can group by;
+ *  keeping them in one field makes the state unusable. */
 export function headroomNote(h: Headroom): string {
   if (h.state === HEADROOM.ABSENT) {
     return "no score, so no distance from one — the round could not measure this plugin";

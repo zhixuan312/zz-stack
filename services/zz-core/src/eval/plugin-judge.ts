@@ -1,23 +1,17 @@
 /**
- * A PLUGIN AS THE SUBJECT OF THE JUDGE: what a ruler is written from, the record
- * that one was approved, the marking itself, and reading the marks back.
+ * A plugin as the subject of the judge: what a ruler is written from, the record that one was
+ * approved, the marking itself, and reading the marks back.
  *
- * WHY THESE ARE NOT IN plugin-eval.ts. That file's whole rule is that nothing in it returns a
- * judgement — every field there is a count, a set, an ordering or a difference. These four are
- * the other half: they exist to produce judgements, from a ruler a person approved, through a
- * model nobody in the conversation chose. Putting them in one file would make that boundary
- * something a reader has to hold in their head rather than something they can see.
+ * COUPLED: `plugin-eval.ts` holds the half that returns no judgement — every field there is a
+ * count, a set, an ordering or a difference. A tool that returns a judgement belongs here.
  *
- * THE JUDGE IS NOT THE AGENT, and this door keeps that the same way judge.ts does: every tool
- * here takes identifiers. The ruler comes from the plugin version, the artifacts from the
- * database and the artifact store, the model from deployment configuration. `round_judge`
- * takes a rubric_id and it is a GUARD, not a supply — see the tool.
+ * Every tool here takes identifiers. The ruler comes from the plugin version, the artifacts from
+ * the database and the artifact store, the model from deployment configuration. `round_judge`
+ * takes a rubric_id as a guard, not a supply.
  *
- * TWO KINDS OF DIMENSION, and the split is why this subject needed anything new at all. A
- * 'qualitative' dimension is what a rubric has always held: a reader places an artifact between
- * two written ends. A 'quantitative' one is a line a person drew over a figure plugin_profile
- * computed, and the line is written down BEFORE any artifact is measured — which is the only
- * thing standing between a ruler and a number chosen to flatter the result it will produce.
+ * Two kinds of dimension: a 'qualitative' one places an artifact between two written ends; a
+ * 'quantitative' one is a line drawn over a figure `plugin_profile` computed, and the line is
+ * written down before any artifact is measured.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
@@ -41,17 +35,16 @@ const noDb = () => text("ERROR: this deployment has no platform database, so not
                         "plugin's evaluation can be read or written");
 
 
-/** The ruler this plugin VERSION declares, dimension by dimension. Through
- *  zz.plugin_version.rubric_id and never through zz.rubric.plugin_id: a plugin may carry more
- *  than one ruler over its life, and which one judges THIS version is a decision ruler_affirm
- *  records rather than a lookup anybody can shortcut. */
+/** The ruler this plugin version declares, dimension by dimension. Through
+ *  zz.plugin_version.rubric_id and never zz.rubric.plugin_id: a plugin may carry more than one
+ *  ruler over its life, and which one judges this version is a decision ruler_affirm records. */
 async function pluginRuler(p: pg.Pool, plugin: string, version: string) {
   return (await p.query<Dim & { version_id: string; rubric_id: string; rubric_version: string; subject: string }>(`
     select pv.id::text as version_id, rb.id::text as rubric_id, rb.version as rubric_version,
            rb.subject, d.id::text as dim_id, d.name, d.five_means, d.one_means,
-           -- THE NAMED LEVELS, which decide which judge can mark this ruler: a typed
-           -- judgement service is asked against described levels and cannot be asked against
-           -- two ends and a number. Null on a ruler written before levels existed.
+           -- The named levels, which decide which judge can mark this ruler: a typed judgement
+           -- service is asked against described levels and cannot be asked against two ends and a
+           -- number. Null on a ruler that has none.
            d.levels,
            d.kind, d.threshold, d.threshold_reason, d.reads
       from zz.plugin p
@@ -88,9 +81,8 @@ export function registerPluginJudgeTools(server: McpServer): void {
         usageDocs(p, plugin, version, servesOwnDoor(plugin), entry?.flow ?? ""),
         usageRuns(p, plugin, version),
       ]);
-      // EVERY RULER THE PLUGIN HAS, not only the one this version declares. The skill side
-      // learned this the expensive way: a rubric nobody had affirmed read as no rubric at all,
-      // and the stage that read it went off and derived a second one beside it — splitting the
+      // Every ruler the plugin has, not only the one this version declares. A rubric nobody has
+      // affirmed reads as no rubric at all, and a second one derived beside it splits the
       // subject's history into two scales that can never be compared.
       const rulers = (await p.query<{ rubric_id: string; version: string; approved_by: string | null;
                                       dims: string; declared_by: string | null }>(`
@@ -142,9 +134,8 @@ export function registerPluginJudgeTools(server: McpServer): void {
          where p.name = $1 and pv.version = $2
          order by rb.created_at desc nulls last limit 1`, [plugin, version]);
       if (!rows.length) return text(`ERROR: no released version ${version} of "${plugin}" is recorded`);
-      // NOT "no rubric found". The absence is not a lookup failure, it is the define stage's
-      // gate showing through, and a refusal that says "not found" sends an agent looking for a
-      // row instead of back to the person who has to agree what good means here.
+      // Not "no rubric found". The absence is the define stage's gate showing through, and a
+      // refusal that says "not found" sends an agent looking for a row.
       if (!rows[0].rubric_id) {
         return text(
           `REFUSED: the define stage's document — rulers.md for ${plugin} ${version} — has not ` +
@@ -167,11 +158,10 @@ export function registerPluginJudgeTools(server: McpServer): void {
           "result, which nobody afterwards can tell from one they picked before. Fill in " +
           "`threshold` and `threshold_reason` for each, put the document back, and call again.");
       }
-      // AND THE SAME CLAUSE AGAIN AT THE LAST GATE. ruler_record refuses a line that cannot
-      // reach its figure, so this catches only what changed in between — a ruler recorded
-      // before `reads` existed, or a sheet whose shape moved while the document was with the
-      // stakeholder. This is the last point before marks can be taken: a line that gets past
-      // here becomes a 1 in eval_score that nobody can distinguish from a real failure.
+      // The same clause again at the last gate. ruler_record refuses a line that cannot reach its
+      // figure, so this catches only what changed in between — a ruler recorded before `reads`
+      // existed, or a sheet whose shape moved while the document was with the stakeholder. A line
+      // that gets past here becomes a 1 in eval_score nobody can distinguish from a real failure.
       if (dims.some((d) => d.kind === "quantitative")) {
         const refusal = readsRefusal(dims, await factObject(p, plugin, version));
         if (refusal) return text(refusal);
@@ -179,9 +169,8 @@ export function registerPluginJudgeTools(server: McpServer): void {
       const who = parseCaller(requestHeaders()).email;
       await p.query("update zz.plugin_version set rubric_id = $1::uuid where id = $2::uuid",
                     [rows[0].rubric_id, rows[0].pv_id]);
-      // WHO, on the rubric; WHEN, from the statement that records it. zz.rubric keeps
-      // approved_by and no approved_at, so the moment is this call's — a re-affirmation stamps
-      // a new one, which is honest: it is a fresh decision by whoever made it.
+      // Who, on the rubric; when, from the statement that records it. zz.rubric keeps approved_by
+      // and no approved_at, so the moment is this call's and a re-affirmation stamps a new one.
       const at = (await p.query<{ at: string }>(
         "update zz.rubric set approved_by = $1 where id = $2::uuid returning now()::text as at",
         [who, rows[0].rubric_id])).rows[0].at;
@@ -247,28 +236,19 @@ export function registerPluginJudgeTools(server: McpServer): void {
             "it. That is the define stage's gate showing through: agree rulers.md, then " +
             `ruler_affirm(plugin: "${plugin}", version: "${version}").`);
         }
-        // THE RUBRIC ID IS A GUARD. The caller cannot choose a ruler — the version declares one
-        // — but a caller working from an earlier turn can name one that has since been
-        // replaced, and marking under a ruler the caller thinks is different from the one in
-        // force produces a number nobody can attribute. Refused rather than silently corrected.
+        // The rubric id is a guard. The caller cannot choose a ruler — the version declares one —
+        // but a caller working from an earlier turn can name one that has since been replaced.
+        // Refused rather than silently corrected.
         if (rubric_id !== dims[0].rubric_id) {
           return text(
             `ERROR: ${plugin} ${version} is judged by rubric ${dims[0].rubric_id} ` +
             `(v${dims[0].rubric_version}) and you named ${rubric_id}. Re-read ruler_affirm and ` +
             "call again with the ruler this version actually declares.");
         }
-        // `body` was a fourth value here and is not one any more. It marked a skill's own text
-        // as the artifact, a plugin has none, and this refused it — but 048 dropped it from
-        // zz.rubric's check constraint, so the database cannot hold such a ruler and the
-        // refusal became a guard against a state nothing can reach. Removed rather than kept
-        // as insurance: an unreachable branch costs the next reader the time to work out what
-        // could ever trip it, and the answer is nothing.
         const declared = (dims[0].subject ?? "auto") as Subject | "auto";
-        // AN INITIATIVE IS ASKED FOR, never fallen back to. A ruler whose dimensions are about
-        // the sequence — does the end deliver the beginning — declares `subject: "initiative"`,
-        // and if this version has left no initiative with two ends then that ruler cannot be
-        // scored and says so, rather than quietly marking single documents against dimensions
-        // written about a whole arc.
+        // An initiative is asked for, never fallen back to. A ruler whose dimensions are about
+        // the sequence declares `subject: "initiative"`; if this version has left no initiative
+        // with two ends, that ruler cannot be scored and says so.
         const stageDocs = stageDocsOf(plugin);
         const inits = declared === "initiative"
           ? await usageInitiatives(p, plugin, version, stageDocs, entryOf(plugin)?.flow ?? "") : [];
@@ -290,12 +270,9 @@ export function registerPluginJudgeTools(server: McpServer): void {
         }
         const docs = declared === "trace" || declared === "initiative"
           ? [] : await usageDocs(p, plugin, version, servesOwnDoor(plugin), entryOf(plugin)?.flow ?? "");
-        // A DOCUMENT IS ASKED FOR TOO, and for the reason the initiative branch above already
-        // gives. This used to fall through: a ruler that declared `document`, finding none,
-        // silently marked run transcripts instead — against dimensions asking whether a
-        // document carries its frontmatter and moves version on approval, which a transcript
-        // cannot answer at all. It scored the backbone 1.68 and the round read as a verdict.
-        // A declared subject the evidence cannot supply is a refusal, never a substitution.
+        // A document is asked for too. A declared subject the evidence cannot supply is a refusal,
+        // never a substitution: marking run transcripts against dimensions asking whether a
+        // document carries its frontmatter answers a different question.
         if (declared === "document" && !docs.length) {
           return text(
             `ERROR: ${plugin} ${version} governs no document this round could read, so a ruler ` +
@@ -323,30 +300,25 @@ export function registerPluginJudgeTools(server: McpServer): void {
                                docId: d.id, team: d.team_slug, init: d.initiative, path: d.path }))
           : runs.map((r) => ({ key: r.run_id, label: r.started, runId: r.run_id,
                                docId: null, team: "", init: "", path: "" }));
-        // Computed only when a threshold will read it. The profile costs six queries; a ruler
-        // of purely qualitative dimensions has nothing to apply them to, and a CONTROL round
-        // never runs the threshold pass at all — its dimensions read the version's own facts,
-        // so scoring them on both arms would shrink the gap the control exists to measure.
-        // THE SHEET IS BUILT ONCE AND CHECKED BEFORE IT IS USED.
+        // Computed only when a threshold will read it. The profile costs six queries, a ruler of
+        // purely qualitative dimensions has nothing to apply them to, and a control round never
+        // runs the threshold pass — its dimensions read the version's own facts, so scoring them
+        // on both arms would shrink the gap the control exists to measure.
         //
-        // ruler_record already refused any line that could not reach its figure, so reaching
-        // this refusal means the SHEET changed under a ruler somebody had already affirmed —
-        // a profile block that stopped being computed, or a plugin whose door no longer writes
-        // documents so `record` came back null. Both are real and neither is visible from the
-        // ruler: the line still reads correctly and the figure behind it is gone.
+        // The sheet is built once and checked before it is used. ruler_record already refused any
+        // line that could not reach its figure, so reaching this refusal means the sheet changed
+        // under a ruler somebody had already affirmed: a profile block that stopped being
+        // computed, or a door that no longer writes documents so `record` came back null.
         //
-        // REFUSED BEFORE THE FIRST MARK, not reported after the last. A round that discovers
-        // this halfway has already paid for the qualitative pass and written rows nobody can
-        // use, and the natural next move — score it anyway and note the gap — is precisely how
-        // a line that measured nothing became a closed report's headline finding.
+        // Refused before the first mark, not reported after the last — a round that discovers this
+        // halfway has already paid for the qualitative pass and written rows nobody can use.
         const sheet = !control && dims.some((d) => d.kind === "quantitative")
           ? await factObject(p, plugin, version) : null;
         if (sheet) {
           const refusal = readsRefusal(dims, sheet);
           if (refusal) {
-            // CONCATENATED, NEVER String.replace. The refusal carries a plugin's own ruler
-            // text, and `$&` or `$'` inside a replacement VALUE is read as a pattern — so a
-            // dimension named with a dollar sign would rewrite the message around itself.
+            // DELIBERATE: concatenated, never String.replace. The refusal carries a plugin's own
+            // ruler text, and `$&` or `$'` inside a replacement value is read as a pattern.
             return text(
               `REFUSED: the ruler in force for ${plugin} ${version} can no longer be measured ` +
               `against this version —${refusal.slice("REFUSED:".length)}` +
@@ -357,33 +329,25 @@ export function registerPluginJudgeTools(server: McpServer): void {
         }
         const facts = sheet ? JSON.stringify(sheet, null, 2) : null;
 
-        // WHAT THE CONTROL ACTUALLY READ, captured so the response can name it.
-        //
-        // A control round iterates this plugin's own subjects and substitutes the control's
-        // text for each, so `subjects` labels the plugin's document while the bytes judged were
-        // somebody else's. Printing only the label let a control round read as though it had
-        // scored the artifact named beside it — which is the one number in the record whose
-        // provenance a reader most needs, because it is what says the rest are trustworthy.
+        // What the control actually read, captured so the response can name it. A control round
+        // iterates this plugin's own subjects and substitutes the control's text for each, so
+        // `subjects` labels the plugin's document while the bytes judged were somebody else's.
         let controlSource = "";
 
-        // RESOLVED FROM THE CALLER, not asked for. An initiative is keyed (team_slug,
-        // initiative) — the slug alone does not identify one and cannot address one — and the
-        // team is a fact about who is calling rather than a choice the caller should be able
-        // to make. Same resolution every document write on this platform already uses.
+        // Resolved from the caller, not asked for. An initiative is keyed (team_slug, initiative),
+        // so the slug alone does not identify one, and the team is a fact about who is calling.
         const teamSlug = initiative?.trim() ? await teamFor(parseCaller(requestHeaders()).email) : null;
         const marking: Marking = {
           versionColumn: "plugin_version_id", versionId: dims[0].version_id, noun: "plugin",
           name: plugin, version, rubricId: dims[0].rubric_id,
           initiative: initiative?.trim() || null, teamSlug,
           rubricVersion: dims[0].rubric_version, dims, kind, items, facts,
-          // THE BLIND CONTROL IS UNCHANGED: a different subject's artifact of the same kind,
-          // under this ruler. Another PLUGIN's run rather than another skill's, because the
-          // subject moved — everything else about the test, including that a document round
-          // still controls against a trace, is exactly what the skill side does. Redefining it
-          // here would start a series that cannot be read beside the one already recorded.
+          // The blind control: a different subject's artifact of the same kind, under this ruler.
+          // Another plugin's run rather than another skill's, and a document round still controls
+          // against a trace.
           control: async () => {
-            // FIRST CHOICE: another plugin's run. Strongest, because the subject differs in
-            // every respect the ruler was written about.
+            // First choice: another plugin's run — the subject differs in every respect the ruler
+            // was written about.
             const other = (await p.query<{ run_id: string }>(`
               select r.id::text as run_id from zz.run r
                join zz.plugin_version_skill pvs on pvs.skill_version_id = r.skill_version_id
@@ -396,67 +360,26 @@ export function registerPluginJudgeTools(server: McpServer): void {
               return traceOf(p, other.run_id);
             }
 
-            // FALLBACK: a document THIS plugin's runs did not produce.
+            // Fallback: a document from an initiative that did not run this plugin's own flow. A
+            // subject this ruler was not written about, marked under it, so a high score is the
+            // judge failing to discriminate.
             //
-            // The first choice threw on the platform that built this, and the failure mode is
-            // the worst available: one plugin has runs, so the control could never be taken,
-            // and a round with no control is a round in which nothing says whether the judge
-            // was reading or rewarding confident prose. Every number would have been recorded
-            // and none of them validated.
+            // COUPLED: the exclusion is by initiative, not by document. An initiative that ran
+            // this flow also holds documents the platform never stamped a flow on, and those are
+            // as contaminated as their siblings — filtering on `d.flow` alone lets one through.
             //
-            // A document from another initiative keeps the invariant that matters -- a subject
-            // this ruler was not written about, marked under it, so a high score is the judge
-            // failing to discriminate. It is weaker than another plugin's run only in that the
-            // two subjects share a house style, which makes it a HARDER control to pass, not
-            // an easier one.
-            // EXCLUDED BY THE ROUND'S OWN ITEM SET, not by produced_by_run_id.
+            // Excluded by the round's own item set, not by `produced_by_run_id`: that column is
+            // null for every document here, so the predicate would be true of everything and the
+            // control would pick the very document the real round is judging.
             //
-            // The first version of this fallback said "a document this plugin's runs did not
-            // produce" and asked the database with `produced_by_run_id is null or not in
-            // (...)`. Every document on this deployment has a NULL there — the column is set by
-            // a linkback that has attributed none of them — so the predicate was true of
-            // everything, and the control picked THE VERY DOCUMENT the real round was judging.
+            // DELIBERATE: a plugin with no flow of its own skips this entirely rather than
+            // matching the empty string. An empty `ownFlow` compared with `<>` would exclude
+            // precisely the unflowed documents and offer another flow's instead.
             //
-            // It scored 5.0 against the real round's 4.5 on the same bytes under the same
-            // ruler. That is not a weak control, it is a broken test: two readings of one
-            // artifact will always agree, and a reader would have concluded the judge cannot
-            // discriminate when nothing had actually been asked of it. Worse than no control,
-            // because it looks like one.
-            //
-            // The round's items are what it is judging. A control must not be among them, and
-            // that is knowable here without trusting a column nothing writes.
-            //
-            // AND IT MUST NOT COME FROM THIS PLUGIN'S OWN FLOW EITHER, which the second version
-            // of this fallback still allowed. It excluded the round's items and nothing else,
-            // so on this deployment it reached for the newest document that was not being
-            // judged and found `2026-09-13-console-brand-adoption/plan.md` — an initiative that
-            // ran sdlc-flow. sdlc's plan.md marked against sdlc's ruler is not a control; it is
-            // a second sample. It scored 4.00/5.00 against the real round's 4.00/5.00, and the
-            // round was read as "the ruler does not discriminate" when what had actually been
-            // asked was whether two sdlc documents score alike. They do, and should.
-            //
-            // The exclusion is by INITIATIVE, not by document. An initiative that ran this flow
-            // also holds documents the platform never stamped a flow on — 2026-09-13-console-
-            // brand-adoption carries three with `sdlc-flow` and two with nothing — and those
-            // are exactly as contaminated as their siblings. Filtering on `d.flow` alone would
-            // have let one of the two through and left the finding intact.
-            //
-            // A PLUGIN WITH NO FLOW OF ITS OWN SKIPS THIS ENTIRELY, rather than matching the
-            // empty string and sweeping in every document whose flow is blank. `zz` is the
-            // case, it has no flow.json, and an empty `ownFlow` compared with `<>` would have
-            // excluded precisely the unflowed documents and offered it sdlc's — the same defect
-            // this fallback was just fixed for, arriving through the fix.
-            //
-            // AN INITIATIVE DOCUMENT IS PREFERRED OVER A KNOWLEDGE NODE, and the ordering is
-            // the point rather than a tidiness. The blind control is "a different subject's
-            // artifact OF THE SAME KIND", and a knowledge node is a ten-line finding while the
-            // artifacts under judgement are specs and plans. A node will score low against a
-            // spec ruler because it is a different genre, not because the judge discriminated
-            // — so it validates that the judge is READING and proves nothing about whether it
-            // is calibrated. It is still far better than no control, so it is kept as the last
-            // resort and `control_read` names it in full: on this deployment every non-node
-            // initiative has run sdlc-flow, so a node is what sdlc's control actually is
-            // today, and a report that does not say so is claiming more than it measured.
+            // An initiative document is preferred over a knowledge node. A node is a ten-line
+            // finding while the artifacts under judgement are specs and plans, so a low score
+            // against it shows the judge is reading and says nothing about calibration. It is kept
+            // as the last resort and `control_read` names it in full.
             const ownFlow = entryOf(plugin)?.flow ?? "";
             const judging = new Set(items.map((i) => i.docId).filter(Boolean));
             const candidates = ownFlow ? (await p.query<{ id: string; team_slug: string; initiative: string; path: string; is_node: boolean }>(`
@@ -467,11 +390,9 @@ export function registerPluginJudgeTools(server: McpServer): void {
                where d.path not like '\\_versions/%'
                  and coalesce(d.flow, '') <> $1 and coalesce(i.flow, '') <> $1
                union all
-              -- THE LAST-RESORT CONTROL, FROM ITS OWN TABLE NOW. Nodes left zz.doc when
-              -- knowledge became its own subject, and dropping them from this pool would
-              -- leave sdlc with NO control: every non-node initiative on this deployment has
-              -- run sdlc-flow, so a node is what sdlc's control actually is today. is_node
-              -- carries the ordering that used to be d.initiative = the knowledge shelf.
+              -- The last-resort control, from the knowledge nodes' own table: every non-node initiative
+              -- on a deployment may run the flow under evaluation, so a node can be the only control
+              -- there is. is_node carries that ordering.
               select n.id::text as id, n.team_slug, '_knowledge' as initiative, n.path, true as is_node
                 from zz.knowledge_node n
                 join zz.team t on t.slug = n.team_slug
@@ -489,15 +410,11 @@ export function registerPluginJudgeTools(server: McpServer): void {
               }
             }
 
-            // NEITHER. Said plainly rather than skipped: a round whose control could not be
-            // taken is unvalidated, and that is a fact about the round the report has to carry.
+            // Neither. Said plainly rather than skipped: a round whose control could not be taken
+            // is unvalidated, and that is a fact about the round the report has to carry.
             //
-            // `zz` reaches here by construction and will keep reaching here, which is the
-            // honest answer rather than a gap. Every initiative on this platform runs on zz —
-            // it is the required plugin — so there is no document anywhere that zz did not have
-            // a hand in, and no amount of searching produces one. A control for zz's document
-            // half would have to come from a platform zz does not run. Its CASE half needs no
-            // control: the ablation arm IS the control, taken by construction.
+            // `zz` reaches here by construction — every initiative on this platform runs on zz, so
+            // no document exists that zz did not have a hand in.
             throw new Error(
               `no control subject exists for "${plugin}" — this platform holds no run from ` +
               "another plugin, and every document it holds comes from an initiative that ran " +
@@ -507,16 +424,14 @@ export function registerPluginJudgeTools(server: McpServer): void {
           },
         };
         const got = await markAll(p, marking, control === true, take ?? 1, eval_id ?? null, bodyOf);
-        // A round costs the platform's own LLM budget and leaves rows nobody else writes. WHO
-        // marked WHAT and WHEN is provenance a later reader needs, and it is the only record of
-        // a call that timed out after spending most of it.
+        // Who marked what and when. It is the only record of a call that timed out after spending
+        // most of the platform's LLM budget.
         logActivity(await userRoot(), null, {
           user: parseCaller(requestHeaders()).email, action: "round_judge",
           plugin, version, eval_id: got.eval_id, control: got.control, stored: got.stored,
         });
         // `subjects` names this plugin's documents even on a control round, because the loop
-        // stores a control score against the same subject row. So the source is reported beside
-        // it: without that, a control round reads as though it had scored the artifact named.
+        // stores a control score against the same subject row. The source is reported beside it.
         return json(control === true ? { ...got, control_read: controlSource || '(none)' } : got);
       } catch (err) {
         return text(`ERROR: ${(err as Error).message}`);
@@ -556,9 +471,9 @@ export function registerPluginJudgeTools(server: McpServer): void {
                     "the id of the round it started; that is the only id this reads.");
       }
       const pvId = round.plugin_version_id;
-      // ACROSS EVERY ROUND OF THIS PLUGIN VERSION, not this round alone. A round resumes and a
-      // control is its own row, so the one number worth reading — how far the real mean sits
-      // above the control's — cannot be computed inside a single eval by construction.
+      // Across every round of this plugin version, not this round alone. A round resumes and a
+      // control is its own row, so the gap between the real mean and the control's cannot be
+      // computed inside a single eval.
       const dimensions = (await p.query<{ rubric: string; judge: string; dimension: string;
                                           n: string; mean: string; worst: string; best: string }>(`
         select rb.version as rubric, ev.judge_model as judge, d.name as dimension,
@@ -570,20 +485,13 @@ export function registerPluginJudgeTools(server: McpServer): void {
           join zz.rubric_dimension d on d.id = sc.dimension_id
          where ev.plugin_version_id = $1::uuid and sc.is_control is false and d.kind = 'qualitative'
          group by 1,2,3,d.ordinal order by 1,2,d.ordinal`, [pvId])).rows;
-      // QUALITATIVE ONLY, and that is not a detail. A quantitative dimension reads the version's
-      // computed facts and never the artifact, so it scores identically whichever artifact is in
-      // front of the judge — folding it into both arms would shrink the gap by arithmetic and
-      // make a ruler look worse the more lines it draws.
-      // THIS ROUND AGAINST ITS OWN CONTROL, when the control named it.
+      // Qualitative only. A quantitative dimension reads the version's computed facts and never
+      // the artifact, so it scores identically whichever artifact is in front of the judge;
+      // folding it into both arms would shrink the gap by arithmetic.
       //
-      // A gap is a property of ONE round and this pooled every score under the version and
-      // ruler, real on one side and control on the other, because nothing linked them. Correct
-      // while a version had one round; wrong the moment it had two, and a round later shown to
-      // be defective moved the number of every round beside it until its rows were deleted.
-      //
-      // The pooled form is still the fallback and is LABELLED as such, because every round
-      // recorded before migration 063 has no link and was always measured that way. Changing
-      // what those numbers mean retroactively would be worse than reporting how they were got.
+      // This round against its own control, when the control named it: a gap is a property of one
+      // round. The pooled form is the fallback and is labelled as such, because every round
+      // recorded before the link existed has none and was always measured that way.
       const paired = (await p.query<{ rubric: string; judge: string; real_mean: string | null;
                                       control_mean: string | null }>(`
         select rb.version as rubric, ev.judge_model as judge,
@@ -607,9 +515,8 @@ export function registerPluginJudgeTools(server: McpServer): void {
           join zz.rubric_dimension d on d.id = sc.dimension_id
          where ev.plugin_version_id = $1::uuid and d.kind = 'qualitative'
          group by 1,2 having count(*) filter (where sc.is_control is true) > 0`, [pvId])).rows;
-      // ROUND BY ROUND, and that is not decoration. A second real round re-applies every
-      // threshold, so an ungrouped listing shows each dimension twice with nothing saying which
-      // reading is today's — and a line that moved from met to unmet is the finding.
+      // Round by round. A second real round re-applies every threshold, so an ungrouped listing
+      // shows each dimension twice with nothing saying which reading is today's.
       const thresholds = (await p.query<{ round: string; rubric: string; judge: string; when: string;
                                           dimension: string; threshold: string; reason: string;
                                           score: number; fact: string }>(`
@@ -628,18 +535,14 @@ export function registerPluginJudgeTools(server: McpServer): void {
                                         proposed_change: string; decision: string }>(`
         select pattern, scope, docs_affected, proposed_change, decision
           from zz.eval_finding where eval_id = $1::uuid order by created_at`, [eval_id])).rows;
-      // THE TWO NUMBERS A PERSON ACTUALLY ASKED FOR, computed here from what is already above.
+      // The two numbers a person actually asked for, computed here from what is already above.
+      // The recommendation enum is a decision, not a measurement: how-good-is-it and
+      // what-is-left-to-fix are independent. See judge-score.ts for the weights and the bands,
+      // which are fixed before any round is read.
       //
-      // The recommendation enum is a DECISION and was being read as a MEASUREMENT. "Keep" does
-      // not say whether a plugin is excellent or barely adequate, and how-good-is-it and
-      // what-is-left-to-fix are independent: a plugin at 9 can still have a named change
-      // waiting, and one at 5 with nothing identified is a worse situation than one at 5 with
-      // three. See judge-score.ts for the weights and the bands, which are fixed before any
-      // round is read rather than fitted to one.
-      //
-      // THIS ROUND'S OWN FIGURES, not the pooled ones. `dimensions` above groups by rubric and
-      // judge across every round under this version, which is right for a series and wrong for
-      // scoring one round — a second round would otherwise be scored partly on the first.
+      // This round's own figures, not the pooled ones. `dimensions` above groups by rubric and
+      // judge across every round under this version, which would score a second round partly on
+      // the first.
       const thisRound = dimensions.filter((d) => d.rubric === round.rubric && d.judge === round.judge);
       const qualMean = thisRound.length
         ? Math.round((thisRound.reduce((a, d) => a + Number(d.mean), 0) / thisRound.length) * 100) / 100
@@ -654,8 +557,8 @@ export function registerPluginJudgeTools(server: McpServer): void {
 
       return json({
         eval_id, round,
-        // FIRST IN THE ANSWER, because it is the first question. Everything below is what it
-        // was computed from, in the order somebody would check it.
+        // First in the answer, because it is the first question. Everything below is what it was
+        // computed from, in the order somebody would check it.
         effectiveness: effective,
         headroom: room,
         dimensions,
@@ -663,14 +566,13 @@ export function registerPluginJudgeTools(server: McpServer): void {
           ...t,
           gap: t.real_mean && t.control_mean
             ? Number((Number(t.real_mean) - Number(t.control_mean)).toFixed(2)) : null,
-          // WHICH ROUNDS THE NUMBER IS OVER, said rather than left to be assumed. A reader
-          // comparing two reports needs to know whether a gap is this round's or an average
-          // across every round under the ruler.
+          // Which rounds the number is over: a reader comparing two reports needs to know whether
+          // a gap is this round's or an average across every round under the ruler.
           over: paired.length ? "this round and the control that names it"
                               : "every round under this ruler, pooled - no control names this one",
         })),
         // Met is 5 and unmet is 1 because a line is binary; the reason is the ruler's own
-        // threshold_reason, recorded when the line was drawn and not written after the fact.
+        // threshold_reason, recorded when the line was drawn.
         thresholds: thresholds.map((t) => ({ ...t, meets: t.score >= 5 })),
         findings,
         note: trial.length

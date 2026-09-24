@@ -1,38 +1,25 @@
 /**
- * `snippetFor` — cut a snippet out of a document's ORIGINAL bytes, addressed by a byte range
+ * `snippetFor` — cut a snippet out of a document's original bytes, addressed by a byte range
  * that never lands mid-character.
  *
- * WHY THIS EXISTS SEPARATELY FROM THE ANALYZER. `tenant-analysis.ts`'s `analyze` turns a body
- * into encoded search terms — `zh`+hex bigrams among them — so a search HIT is a match on
- * encoded text, not on anything a person should ever read back. A citation is the opposite
- * direction: given a byte range a hit points at, return what the document actually says
- * there, in its own words. Handing an encoded bigram back as a citation would show the reader
- * a token like `zh4e2d56fd` instead of their own text — this function's job is exactly to
- * never do that, by construction: it only ever slices `body`'s own UTF-8 bytes and never
- * touches the analyzer's output.
+ * DELIBERATE: this only ever slices `body`'s own UTF-8 bytes and never touches the analyzer's
+ * output. `tenant-analysis.ts`'s `analyze` encodes a body into search terms, `zh`+hex bigrams
+ * among them, so returning one as a citation would show a reader `zh4e2d56fd` instead of their
+ * own text.
  *
- * BYTE OFFSETS, WIDENED OUTWARD, NEVER INWARD. A match's byte range can start or end in the
- * middle of a multi-byte UTF-8 sequence — a CJK character (3 bytes) or an emoji scalar (4
- * bytes, and a ZWJ emoji sequence like a family emoji is several scalars joined by U+200D, each
- * one still a complete multi-byte sequence in its own right). Slicing at such an offset
- * produces a truncated sequence that decodes as U+FFFD. So every offset is walked outward —
- * `start` moved down, `end` moved up — until it lands on a UTF-8 lead byte, using the
- * continuation-byte test (`10xxxxxx`, i.e. `(byte & 0xC0) === 0x80`) rather than building a
- * scalar array over the whole body: a document can be up to `MAX_INPUT_BYTES` (8 MiB), and a
- * snippet only ever touches the few bytes around its own range, so widening must cost O(range),
- * not O(document).
+ * Byte offsets are widened outward, never inward. A match's byte range can start or end in the
+ * middle of a multi-byte UTF-8 sequence, and slicing there produces a truncated sequence that
+ * decodes as U+FFFD. Each offset walks outward until it lands on a lead byte, using the
+ * continuation-byte test rather than building a scalar array over the whole body: a document
+ * can be up to `MAX_INPUT_BYTES`, so widening costs O(range), not O(document).
  *
- * THE RETURNED RANGE IS THE WIDENED ONE, NOT THE INPUT ONE. `text` is always exactly what
- * `Buffer.from(body, "utf8").subarray(range.start, range.end).toString("utf8")` reconstructs —
- * by construction, the same guarantee `passagesOf` makes for passages. A caller that stored the
- * original narrow range next to a widened `text` would have a citation that no longer
- * round-trips.
+ * The returned range is the widened one. `text` is always exactly what
+ * `Buffer.from(body, "utf8").subarray(range.start, range.end).toString("utf8")` reconstructs,
+ * the same guarantee `passagesOf` makes for passages; storing the original narrow range beside
+ * a widened `text` would give a citation that no longer round-trips.
  *
- * `body` IS THE ONLY FIELD THIS FUNCTION KNOWS ABOUT — its own start (byte 0) and end (its
- * UTF-8 byte length) ARE the field boundary the contract requires a widen to stop at. Widening
- * clips there rather than throwing: a range whose boundary already sits at the very edge of
- * `body` is returned as the field-clipped snippet, never as a range that reaches past the
- * bytes that exist.
+ * `body`'s own start and end are the field boundary. Widening clips there rather than
+ * throwing, so a range already at the edge comes back field-clipped.
  */
 
 export interface Snippet {
@@ -62,7 +49,7 @@ export function snippetFor(body: string, range: { readonly start: number; readon
   let end = Math.max(start, Math.min(range.end, total));
 
   // Widen outward (start down, end up) until each boundary lands on a lead byte. At most three
-  // steps per side — the longest a UTF-8 sequence runs — so this is O(1) per call, not O(body).
+  // steps per side, the longest a UTF-8 sequence runs, so this is O(1) per call.
   while (start > 0 && isContinuationByte(bytes[start])) start--;
   while (end < total && isContinuationByte(bytes[end])) end++;
 

@@ -1,27 +1,20 @@
 /**
- * migration-adoption.ts — the brownfield half of I-20, and the case I-11 could not write.
+ * The brownfield half of the migration suite.
  *
- * WHAT MAKES A CASE BROWNFIELD. Every other suite in this delivery creates its artifacts
- * through the kernel and then writes to them, so the artifact always has a commit by the time
- * anything edits it. That is greenfield, and it is why a green gate could not see that routing
- * the registered tools through `mutate()` would refuse every write to each of the 527
- * documents already on a live deployment: none of them has a commit in the new record store,
- * because all of them predate it.
+ * Every other suite creates its artifacts through the kernel and then writes to them, so the
+ * artifact always has a commit by the time anything edits it. The documents already on a live
+ * deployment have none, because they predate the record store.
  *
- * So the store here is seeded THE OLD WAY — `writeFileSync` straight to
- * `<root>/<initiative>/<doc>.md`, exactly what `persistDocument` does, with no commit in
- * `.zz/commits/` for it and no blob in `.zz/blobs/` — and then written to through the real
- * exported adapter, `reviseDocumentAtPath`. `assertNoCommitFor` runs before every such write
- * and fails the case if the artifact already has a head, so a future edit that accidentally
- * made these cases greenfield turns them red rather than leaving them passing and vacuous.
+ * So the store here is seeded the old way — `writeFileSync` straight to
+ * `<root>/<initiative>/<doc>.md`, what `persistDocument` does, with no commit in `.zz/commits/`
+ * and no blob in `.zz/blobs/` — and then written to through the real exported adapter,
+ * `reviseDocumentAtPath`. `assertNoCommitFor` runs before every such write and fails the case if
+ * the artifact already has a head, so an edit that made these cases greenfield turns them red
+ * rather than leaving them vacuous.
  *
- * WHY THIS CANNOT PASS WITH THE ADOPTION PATH REMOVED, stated as a case rather than as a
- * comment: `adoption_is_what_makes_the_brownfield_write_possible` drives the id-addressed
- * `patchDocument` — the same kernel, the same store, the same bytes, without the adoption step
- * — and asserts it REFUSES. If adoption were removed from `reviseDocumentAtPath`, that is
- * precisely the refusal the brownfield case would get, and it asserts `committed === true` and
- * `revision === 2`. There is no way for both cases to be green at once without a real
- * `import_legacy` commit in between.
+ * `adoption_is_what_makes_the_brownfield_write_possible` drives the id-addressed `patchDocument`
+ * — same kernel, same store, same bytes, no adoption step — and asserts it refuses. Both cases
+ * cannot be green at once without a real `import_legacy` commit in between.
  */
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
@@ -74,10 +67,9 @@ function commitsOf(root: string): { revisions: ContentRevision[]; events: Artifa
 }
 
 /**
- * A store seeded exactly the way the store on a live deployment was seeded: bytes written
- * straight to a path, and nothing else. The one commit this fixture does make first is the
- * fixture SOURCE every native edit needs for `cause_refs` — the document itself stays
- * uncommitted, which `assertNoCommitFor` verifies before any case writes to it.
+ * A store seeded the way a live deployment's store was: bytes written straight to a path, and
+ * nothing else. The one commit this fixture makes first is the source every native edit needs
+ * for `cause_refs`; the document itself stays uncommitted.
  */
 async function seedBrownfield(): Promise<Brownfield> {
   const root = makeStoreRoot();
@@ -101,9 +93,9 @@ async function seedBrownfield(): Promise<Brownfield> {
   };
 }
 
-/** THE PRECONDITION THAT KEEPS THIS SUITE HONEST. A case that writes to an artifact the store
- *  already holds is testing something else entirely, so every adoption case asserts the
- *  artifact has no head and the bytes are only on disk before it writes. */
+/** Every adoption case asserts the artifact has no head and the bytes are only on disk before it
+ *  writes — a case that writes to an artifact the store already holds is testing something
+ *  else. */
 async function assertNoCommitFor(b: Brownfield): Promise<void> {
   assert.equal(await readArtifactHead(b.ports.root, b.artifactId), null,
     "this case is only meaningful while the artifact has no commit — it is not brownfield otherwise");
@@ -117,11 +109,11 @@ async function withBrownfield(body: (b: Brownfield) => Promise<void>): Promise<v
   try { await body(b); } finally { b.close(); }
 }
 
-// ── the cases ───────────────────────────────────────────────────────────────────────────────
+// The cases
 
 /**
- * The write every one of the 527 live documents would have received on cutover day: a document
- * with bytes on disk, no commit anywhere, edited through the adapter the cutover registers.
+ * The write every live document would receive on cutover day: bytes on disk, no commit anywhere,
+ * edited through the adapter the cutover registers.
  */
 async function caseBrownfieldWriteThroughTheRegisteredHandler(): Promise<void> {
   await withBrownfield(async (b) => {
@@ -143,7 +135,7 @@ async function caseBrownfieldWriteThroughTheRegisteredHandler(): Promise<void> {
     assert.ok(events.some((e) => e.artifact_id === b.artifactId && e.kind === "legacy_imported"),
       "the adoption must be recorded as a legacy_imported event");
 
-    // THE ORIGINAL BYTES SURVIVED, proven two ways: content-addressed in the record store, and
+    // The original bytes survived, proven two ways: content-addressed in the record store, and
     // readable at the archive path a person can open.
     const hash = createHash("sha256").update(LEGACY_BYTES).digest("hex");
     assert.ok(readFileSync(join(b.ports.root, ".zz", "blobs", hash)).equals(LEGACY_BYTES),
@@ -159,9 +151,8 @@ async function caseBrownfieldWriteThroughTheRegisteredHandler(): Promise<void> {
 }
 
 /**
- * THE CASE THAT PROVES THE ONE ABOVE IS NOT VACUOUS. The same store, the same bytes, the same
- * kernel — and the id-addressed adapter, which has no adoption step. It must refuse, exactly
- * as `persist.ts`'s I-11 note predicted it would, or the brownfield case above proves nothing.
+ * Proves the case above is not vacuous: the same store, the same bytes, the same kernel, and the
+ * id-addressed adapter, which has no adoption step. It must refuse.
  */
 async function caseAdoptionIsWhatMakesTheBrownfieldWritePossible(): Promise<void> {
   await withBrownfield(async (b) => {
@@ -226,9 +217,9 @@ async function caseRepeatedBrownfieldWriteIsOneWrite(): Promise<void> {
   });
 }
 
-/** Malformed frontmatter is adopted as legacy-raw behind a Reference wrapper and is STILL
- *  writable — a document nobody can edit because its YAML was broken years ago is exactly the
- *  regression the cutover must not ship. */
+/** Malformed frontmatter is adopted as legacy-raw behind a Reference wrapper and is still
+ *  writable — a document nobody can edit because its YAML was broken is the regression the
+ *  cutover must not ship. */
 async function caseBrokenFrontmatterIsAdoptedAndStillWritable(): Promise<void> {
   await withBrownfield(async (b) => {
     const broken = Buffer.from("---\ntype: [broken\n---\nnotes\n");
@@ -252,9 +243,9 @@ async function caseBrokenFrontmatterIsAdoptedAndStillWritable(): Promise<void> {
   });
 }
 
-/** A caller that HAS an etag still gets the etag rule. The adoption fallback exists only for
- *  the first write to bytes nobody could have read a kernel etag for; it never turns a stale
- *  etag into an accepted write. */
+/** A caller that has an etag still gets the etag rule. The adoption fallback exists only for the
+ *  first write to bytes nobody could have read a kernel etag for; it never turns a stale etag
+ *  into an accepted write. */
 async function caseAStaleEtagIsStillRefused(): Promise<void> {
   await withBrownfield(async (b) => {
     await assertNoCommitFor(b);
@@ -305,16 +296,13 @@ async function caseNativeWritesAfterImportFollowOrdinaryPolicy(): Promise<void> 
 }
 
 /**
- * THE FALLBACK ETAG IS GOOD FOR ONE WRITE PER DOCUMENT, AND THE CUTOVER HAS TO KNOW IT.
+ * The fallback etag is good for one write per document.
  *
- * The adoption's etag is stable precisely because it replays the import commit forever — which
- * is what makes a retry a replay. The other side of that: once a no-etag write has landed and
- * moved the head past the import, the NEXT no-etag write presents the import's etag against a
- * head that has moved on, and is refused REVISION_CONFLICT. That is the safe answer — a caller
- * that has not read the document may not blind-write over it — but it means `document_patch`
- * and `document_revise` must become read-then-write at cutover rather than keeping today's
- * path-and-content shape. Pinned as a case so that constraint is something a later task has to
- * decide about rather than discover.
+ * The adoption's etag is stable because it replays the import commit forever, which is what
+ * makes a retry a replay. Once a no-etag write has moved the head past the import, the next
+ * no-etag write presents the import's etag against a moved head and is refused
+ * REVISION_CONFLICT. So `document_patch` and `document_revise` must become read-then-write at
+ * cutover rather than keeping today's path-and-content shape.
  */
 async function caseASecondBlindWriteIsRefused(): Promise<void> {
   await withBrownfield(async (b) => {
@@ -332,17 +320,13 @@ async function caseASecondBlindWriteIsRefused(): Promise<void> {
 }
 
 /**
- * THE STORE THE CUTOVER WILL ACTUALLY FIND, which is not the store every other case here uses.
- * `makeStoreRoot()` creates an empty `.zz/blobs` and `.zz/commits`; a store holding documents
- * written before the record store existed has NO `.zz/` at all. `record.ts` refuses a missing
- * layout on purpose — "a missing mount is refused, never read as an empty tenant" — so adoption
- * must not conjure one, and this case pins that: the write is refused STORE_UNAVAILABLE rather
- * than quietly initialising somebody's volume.
+ * The store the cutover will find: `makeStoreRoot()` creates an empty `.zz/blobs` and
+ * `.zz/commits`, but a store holding documents written before the record store existed has no
+ * `.zz/` at all. `record.ts` refuses a missing layout, so adoption must not conjure one — the
+ * write is refused STORE_UNAVAILABLE rather than initialising somebody's volume.
  *
- * What it makes explicit is a cutover precondition, not a defect: creating `.zz/blobs` and
- * `.zz/commits` on each live owner store is an operator act that happens before any of this
- * runs. If a later change makes the kernel auto-create the layout, this case goes red and
- * somebody has to decide that deliberately.
+ * Creating `.zz/blobs` and `.zz/commits` on each live owner store is an operator act before any
+ * of this runs. If a later change makes the kernel auto-create the layout, this case goes red.
  */
 async function caseAStoreWithNoRecordLayoutIsRefusedNotInitialised(): Promise<void> {
   const root = mkdtempSync(join(tmpdir(), "zz-preexisting-store-"));

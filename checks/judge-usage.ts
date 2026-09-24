@@ -1,36 +1,29 @@
 /**
  * The judge records what it consumed, and a gap stays a gap.
  *
- * THIS DRIVES `markAll`; IT DOES NOT GREP judge.ts. The first draft of this check was six
- * regexes over the source, and two of them — `/Date\.now\(\)/` and `/ok\s*:/` — would have
- * passed on almost any TypeScript file in this repository. They asserted that two strings
- * appear, not that a completion is timed or that a failed one is still recorded, and a check
- * that cannot tell the property from a coincidence is a defect wearing a green tick. A regex
- * cannot express "every path out of the fetch writes exactly one row" at all; running the
- * function can, so it does.
+ * DELIBERATE: this drives `markAll` rather than grepping judge.ts. A regex asserts that a
+ * string appears, not that a completion is timed or that a failed one is still recorded, and it
+ * cannot express "every path out of the fetch writes exactly one row" at all.
  *
- * Four scenarios, one `markAll` call each, against a fake pool that records the
- * `zz.model_call` inserts and a `fetch` that answers however the scenario needs:
+ * One `markAll` call per scenario, against a fake pool that records the `zz.model_call` inserts
+ * and a `fetch` that answers however the scenario needs:
  *
- *   whole      — a normal answer with no `usage` block: one row, ok, all three token
- *                columns null, because "the provider said nothing" is not "it cost nothing".
- *   counted    — a normal answer WITH usage: the three columns carry what it reported.
- *   truncated  — `finish_reason: "length"` with usage: one row, NOT ok, and the tokens it
- *                still cost. The expensive failure, and the one a happy-path recorder drops.
- *   threw      — the fetch itself throwing: one row, NOT ok, tokens null.
- *   refused    — the endpoint answering 500: one row, NOT ok. The fourth way out.
+ *   whole      — a normal answer with no `usage` block: one row, ok, all three token columns
+ *                null, because "the provider said nothing" is not "it cost nothing".
+ *   counted    — a normal answer with usage: the three columns carry what it reported.
+ *   truncated  — `finish_reason: "length"` with usage: one row, not ok, and the tokens it still
+ *                cost.
+ *   threw      — the fetch itself throwing: one row, not ok, tokens null.
+ *   refused    — the endpoint answering 500: one row, not ok.
  *
- * `duration_ms` IS TESTED AGAINST A REAL DELAY rather than against `typeof "number"`. The stub
- * sleeps 25ms before answering and the row must show at least 10, so a `duration_ms: 0` and a
- * `Date.now()` deleted into `undefined - started` (which is NaN, and NaN is a number) both go
- * red. A type assertion would have passed all three.
+ * `duration_ms` is tested against a real delay: the stub sleeps 25ms and the row must show at
+ * least 10, so `duration_ms: 0` and a NaN duration both go red.
  *
- * Columns are read BY NAME — the insert's own `(a, b, c)` list is parsed and zipped with the
+ * Columns are read by name — the insert's own `(a, b, c)` list is parsed and zipped with the
  * parameter array — so reordering the statement cannot make a wrong assertion pass.
  *
- * `cached_tokens` IS UNVERIFIED AGAINST A LIVE PROVIDER. This check pins the mapping judge.ts
- * chose from z.ai's published chat-completion reference; it cannot prove the provider really
- * spells it that way, and judge.ts says so at the `Usage` interface.
+ * `cached_tokens` is unverified against a live provider: this pins the mapping judge.ts chose
+ * from z.ai's published chat-completion reference.
  */
 import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -128,7 +121,7 @@ const eq = (scenario: string, row: Record<string, unknown>, col: string, want: u
   if (row[col] !== want) fail.push(`${scenario}: ${col} is ${JSON.stringify(row[col])}, expected ${JSON.stringify(want)}`);
 };
 
-// ── whole: an answer with no usage block. A gap stays a gap. ──────────────────────────────
+// Whole: an answer with no usage block. A gap stays a gap.
 {
   const row = one(await round(answers({ choices: [{ finish_reason: "stop", message: { content: ANSWER } }] })), "whole");
   if (row) {
@@ -150,7 +143,7 @@ const eq = (scenario: string, row: Record<string, unknown>, col: string, want: u
   }
 }
 
-// ── counted: the three columns carry what the provider reported. ──────────────────────────
+// Counted: the three columns carry what the provider reported.
 {
   const row = one(await round(answers({
     choices: [{ finish_reason: "stop", message: { content: ANSWER } }],
@@ -164,7 +157,7 @@ const eq = (scenario: string, row: Record<string, unknown>, col: string, want: u
   }
 }
 
-// ── truncated: a failure that cost tokens is still evidence. ──────────────────────────────
+// Truncated: a failure that cost tokens is still evidence.
 {
   const row = one(await round(answers({
     choices: [{ finish_reason: "length", message: { content: "{\"marks\"" } }],
@@ -178,7 +171,7 @@ const eq = (scenario: string, row: Record<string, unknown>, col: string, want: u
   }
 }
 
-// ── threw: the fetch never returned. The call still happened. ─────────────────────────────
+// Threw: the fetch never returned. The call still happened.
 {
   const row = one(await round(async () => { throw new Error("socket hang up"); }), "threw");
   if (row) {
@@ -187,7 +180,7 @@ const eq = (scenario: string, row: Record<string, unknown>, col: string, want: u
   }
 }
 
-// ── refused: the endpoint answered 500. The prompt was still sent. ────────────────────────
+// Refused: the endpoint answered 500. The prompt was still sent.
 {
   const row = one(await round(async () => ({
     ok: false, status: 500, text: async () => "upstream exploded", json: async () => ({}),

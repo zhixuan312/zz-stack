@@ -1,48 +1,41 @@
 /**
- * What a recall episode is allowed to conclude: `RecallResult`, `RecallFinding`, and the one
- * pure mapping that turns a search outcome into one of them.
+ * What a recall episode is allowed to conclude: `RecallResult`, `RecallFinding`, and the one pure
+ * mapping that turns a search outcome into one of them.
  *
- * THE DISTINCTION THIS FILE EXISTS FOR is between three outcomes that all look like "nothing
- * came back", and which are three entirely different facts:
+ * Three outcomes all look like "nothing came back" and are three different facts:
  *
- *   `retrieval_inconclusive`                 the search could not answer — it did not report
- *                                            how far it got, it was not qualified for the
- *                                            language the material is written in, a requested
- *                                            scope was never searched, candidates were
- *                                            withheld, the episode's budget ran out, or the
- *                                            service was unavailable. This says NOTHING about
- *                                            what the team decided.
- *   `no_relevant_match_in_searched_scope`    the search ran to completion and cleanly, and
- *                                            nothing matched UNDER THAT SEARCH.
+ *   `retrieval_inconclusive`                 the search could not answer — it did not report how
+ *                                            far it got, it was not qualified for the language
+ *                                            the material is written in, a requested scope was
+ *                                            never searched, candidates were withheld, the
+ *                                            episode's budget ran out, or the service was
+ *                                            unavailable. Says nothing about what the team
+ *                                            decided.
+ *   `no_relevant_match_in_searched_scope`    the search ran cleanly to completion, and nothing
+ *                                            matched under that search.
  *   `findings`                               something matched, and each finding says how
  *                                            strongly it is supported.
  *
- * A clean empty read as "we never discussed this" is the real-world failure this guards
- * against, and it is why a negative result is mapped here rather than written by whatever
- * happens to be reading the search response. The sentence in `answer` for the two negative
- * exits and the error exit is authored HERE, deterministically, so the three can never be
- * merged by a summariser that found them all equally empty. A negative claims no more than
- * its declared query, scopes, filters, visible corpus and completion limits, and the sentence
- * says so in as many words.
+ * The sentence in `answer` for the two negative exits and the error exit is authored here,
+ * deterministically, so the three can never be merged by a summariser that found them all equally
+ * empty. A negative claims no more than its declared query, scopes, filters, visible corpus and
+ * completion limits, and the sentence says so.
  *
- * THIS BUILDS NO SECOND STORE. It is a result type and a pure function over a search outcome
- * somebody else already obtained. It runs no query, reaches no network, and holds no state —
- * query planning belongs to the already-selected reasoning role, never to a hidden provider
- * call in the search hot path, and a templated sentence over an outcome is not a model.
+ * DELIBERATE: this builds no second store. It is a result type and a pure function over a search
+ * outcome somebody else already obtained — it runs no query, reaches no network, and holds no
+ * state.
  *
- * VOCABULARY MATCHES THE LIVE HANDLER WITHOUT IMPORTING IT. `services/zz-core`'s
- * `knowledge_search` returns `via` (`lexical`, `lexical-broad`, `tag`, `evidence`), `withheld`,
- * `subject` and `shelf`; `matchKindFromVia` below is the bridge. `@zz/contracts` sits BELOW
- * the services and must never depend upward, so the mapping is stated here rather than
- * imported from there.
+ * COUPLED: `matchKindFromVia` below mirrors the `via` values `services/zz-core`'s
+ * `knowledge_search` returns. `@zz/contracts` sits below the services and must never depend
+ * upward, so the mapping is stated here rather than imported from there.
  */
 
-// ── the closed sets ─────────────────────────────────────────────────────────────────────────
+// The closed sets
 
 /**
  * The four exits `sdlc-recall`'s own skill contract declares, and they must never be merged.
- * `no_team` is the error exit: the search is team-scoped and the caller was not acting for a
- * team, so nothing was searched at all — a different fact again from a search that ran.
+ * `no_team` is the error exit: the search is team-scoped and the caller was not acting for a team,
+ * so nothing was searched at all — a different fact again from a search that ran.
  */
 export type RecallOutcome =
   | "findings"
@@ -51,11 +44,10 @@ export type RecallOutcome =
   | "no_team";
 
 /**
- * How strongly a finding is claimed, weakest last. `author_inference` is what the agent
- * concluded rather than what any source states, and it is the ceiling for anything whose
- * original text has not been read: a snippet says a source is ABOUT a topic, never what it
- * concluded. `stated_intent` is a document asserting an intent at a date — reading one as a
- * settled decision is how an abandoned proposal comes back.
+ * How strongly a finding is claimed, weakest last. `author_inference` is what the agent concluded
+ * rather than what any source states, and it is the ceiling for anything whose original text has
+ * not been read: a snippet says a source is about a topic, never what it concluded.
+ * `stated_intent` is a document asserting an intent at a date, not a settled decision.
  */
 export type RecallClaimKind =
   | "stated_intent"
@@ -81,9 +73,8 @@ export type RecallReceiptStatus = "ok" | "unavailable" | "no_team";
 export type RecallFindingStatus = "adopted" | "superseded" | "unknown";
 
 /**
- * Every reason a search may not claim a clean empty — the whole enumeration, in one closed
- * set. Each one is rendered into the `answer` sentence and into one `unresolved_questions`
- * entry; none of them is a seventh field on `RecallResult`, whose shape is declared.
+ * Every reason a search may not claim a clean empty, in one closed set. Each is rendered into the
+ * `answer` sentence and into one `unresolved_questions` entry; none is a field on `RecallResult`.
  */
 export type RecallBlocker =
   | "service_unavailable"
@@ -95,11 +86,11 @@ export type RecallBlocker =
   | "candidates_withheld"
   | "budget_exhausted";
 
-// ── what goes in ────────────────────────────────────────────────────────────────────────────
+// What goes in
 
-/** A quote in the language the source was written in. A translation is a search hypothesis,
- *  never evidence, and is never written back into the original document — so `language` is
- *  the SOURCE's language and `text` is its own words, not a rendering of them. */
+/** A quote in the language the source was written in. A translation is a search hypothesis, never
+ *  evidence, and is never written back into the original document — so `language` is the source's
+ *  language and `text` is its own words, not a rendering of them. */
 export interface RecallQuote {
   readonly text: string;
   readonly language: string;
@@ -121,15 +112,14 @@ export interface RecallEpisodeBudget {
 }
 
 /**
- * What one search call reported about ITSELF, as opposed to what it returned. Only `status`
- * is required: a caller that cannot say how complete its search was has said `unknown`, which
- * is the honest reading and the one that blocks a clean empty.
+ * What one search call reported about itself, as opposed to what it returned. Only `status` is
+ * required: a caller that cannot say how complete its search was has said `unknown`, which is the
+ * honest reading and the one that blocks a clean empty.
  *
- * ABSENCE RULES, because they decide the outcome: `completeness` absent is `unknown`;
- * `language_qualified` absent or null is NOT qualified; `withheld` absent is zero, because a
+ * Absence rules, because they decide the outcome: `completeness` absent is `unknown`;
+ * `language_qualified` absent or null is not qualified; `withheld` absent is zero, because a
  * receipt that declares itself complete for its declared search has already said nothing was
- * trimmed; `scopes_searched` absent means the receipt does not account for any requested
- * scope, so a requested scope stays unaccounted for.
+ * trimmed; `scopes_searched` absent means the receipt accounts for no requested scope.
  */
 export interface RecallSearchReceipt {
   readonly status: RecallReceiptStatus;
@@ -138,7 +128,7 @@ export interface RecallSearchReceipt {
   readonly ref?: string | null;
   readonly query?: string | null;
   readonly completeness?: RecallCompleteness;
-  /** True only when the query was framed so the index CAN match the material's language. An
+  /** True only when the query was framed so the index can match the material's language. An
    *  index that splits an unspaced script on whitespace cannot match a word inside a run of
    *  it, so an empty result there is a fact about retrieval and not about the team. */
   readonly language_qualified?: boolean | null;
@@ -190,7 +180,7 @@ export interface RecallSearchOutcome {
   readonly unresolved_questions?: readonly string[];
 }
 
-// ── what comes out ──────────────────────────────────────────────────────────────────────────
+// What comes out
 
 export interface RecallFinding {
   readonly claim_kind: RecallClaimKind;
@@ -216,18 +206,18 @@ export interface RecallResult {
   readonly unresolved_questions: readonly string[];
 }
 
-// ── the live handler's vocabulary, one way ──────────────────────────────────────────────────
+// The live handler's vocabulary, one way
 
 /**
  * `via` as `knowledge_search` spells it, mapped to what the hit is worth here. `lexical-broad`
- * means NO document contained all the query terms — the platform re-asked with OR and handed
- * back what matched some of them, so those rows are leads. `evidence` is the graph lane: a row
- * reached because it cites the same initiative as a strong hit, sharing no vocabulary with the
- * query at all. Both stay leads until original text supports them.
+ * means no document contained all the query terms — the platform re-asked with OR and handed back
+ * what matched some of them — so those rows are leads. `evidence` is the graph lane: a row reached
+ * because it cites the same initiative as a strong hit, sharing no vocabulary with the query. Both
+ * stay leads until original text supports them.
  *
- * THE PRIORITY IS A LABEL, NEVER A PROMOTION. A row fused from several lanes is named by the
- * weakest claim those lanes support, and the name changes nothing about `claim_kind` — that is
- * decided by whether original text was read, below, and by nothing else.
+ * DELIBERATE: the priority is a label, never a promotion. A row fused from several lanes is named
+ * by the weakest claim those lanes support, and the name changes nothing about `claim_kind`, which
+ * is decided by whether original text was read and by nothing else.
  */
 export function matchKindFromVia(via: readonly string[]): RecallMatchKind {
   if (via.includes("lexical-broad")) return "broadened_lead";
@@ -236,7 +226,7 @@ export function matchKindFromVia(via: readonly string[]): RecallMatchKind {
   return "graph_lead";
 }
 
-// ── the mapping ─────────────────────────────────────────────────────────────────────────────
+// The mapping
 
 const BLOCKER_CLAUSE: Readonly<Record<RecallBlocker, string>> = {
   service_unavailable: "the search service was unavailable",
@@ -278,15 +268,14 @@ function blockersOf(
   budget: RecallEpisodeBudget | undefined,
 ): RecallBlocker[] {
   const found = new Set<RecallBlocker>();
-  // NO RECEIPT AT ALL IS NOT A CLEAN EMPTY. An episode that ran no search declared no
-  // progress, so it may not claim that nothing matched: without this the shape the whole
-  // file exists to prevent walks straight out of an empty list.
+  // No receipt at all is not a clean empty. An episode that ran no search declared no progress, so
+  // it may not claim that nothing matched.
   if (receipts.length === 0) found.add("unknown_index_progress");
   for (const r of receipts) {
-    // A CALL THAT FAILED REPORTED NOTHING ELSE. Its missing completeness and missing language
+    // A call that failed reported nothing else. Its missing completeness and missing language
     // qualification are absences of a report, not findings about the search, and the authored
-    // sentence must not assert them. `continue` per receipt, so a second, partial receipt in
-    // the same episode still contributes its own blockers.
+    // sentence must not assert them. `continue` per receipt, so a second, partial receipt in the
+    // same episode still contributes its own blockers.
     if (r.status !== "ok") { found.add("service_unavailable"); continue; }
     const completeness = r.completeness ?? "unknown";
     if (completeness === "unknown") found.add("unknown_index_progress");
@@ -313,10 +302,8 @@ function blockersOf(
 /**
  * One hit, as strongly as it may honestly be claimed.
  *
- * THE PROMOTION RULE, and it is the invariant: nothing rises above `author_inference` until
- * the original text has been read AND a quote in the source's own language is in hand. A
- * broadened or graph hit therefore stays a lead — it may not become an `observed_result`
- * because the lane that found it looked plausible.
+ * Nothing rises above `author_inference` until the original text has been read and a quote in the
+ * source's own language is in hand. A broadened or graph hit therefore stays a lead.
  */
 function findingFrom(item: RecallSearchItem): RecallFinding {
   const quote = item.quote ?? null;
@@ -351,15 +338,14 @@ function declaredSearch(receipts: readonly RecallSearchReceipt[], scopes: readon
 }
 
 /**
- * The one mapping. A search outcome in, one of the four exits out — and the sentence for the
- * three that found nothing to report, written here so they can never be collapsed into each
- * other downstream.
+ * The one mapping. A search outcome in, one of the four exits out — and the sentence for the three
+ * that found nothing to report, written here so they can never be collapsed into each other
+ * downstream.
  *
- * ORDER, and it is the whole decision: no team beats everything, because nothing was searched.
- * Otherwise blockers are collected from every receipt, the weakest governing. Items in hand
- * are findings regardless of the blockers — a partial search that found something still found
- * something — and the blockers become unresolved questions instead of suppressing them. With
- * no items, blockers decide between an inconclusive retrieval and a scoped no-match.
+ * Order decides it: no team beats everything, because nothing was searched. Otherwise blockers are
+ * collected from every receipt, the weakest governing. Items in hand are findings regardless of
+ * the blockers, which become unresolved questions instead of suppressing them. With no items,
+ * blockers decide between an inconclusive retrieval and a scoped no-match.
  */
 export function recallResultFrom(outcome: RecallSearchOutcome): RecallResult {
   const receipts = Array.isArray(outcome.receipt)

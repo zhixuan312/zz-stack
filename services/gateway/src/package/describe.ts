@@ -1,14 +1,10 @@
 /**
- * What the package IS, in two answers: its digest, and the description a person reads before
+ * What the package is, in two answers: its digest, and the description a person reads before
  * installing it.
  *
- * The digest is over the package's CONTENT, so the same flows rendered twice produce the same
+ * The digest is over the package's content, so the same flows rendered twice produce the same
  * identity. That is what lets a client tell "nothing changed" from "this is a new shelf", and
- * it is why every plugin's version carries it.
- *
- * This file was `archive.ts` and also held `tarGz`, a hand-rolled ustar writer, because the
- * package was served as a tarball from `/pkg/`. Claude Code clones the shelf from git now and
- * the archive has no reader, so the name stopped describing the file.
+ * why every plugin's version carries it.
  */
 import { createHash } from "node:crypto";
 
@@ -30,23 +26,20 @@ export function digestOf(plugins: Plugin[]): string {
   return h.digest("hex").slice(0, 8);
 }
 
-/** WHAT ONE PLUGIN *IS*, which is a different question from the one above.
+/** What one plugin is, which is a different question from the one above.
  *
- * `digestOf` answers "what did this PERSON receive": it runs over the whole shelf, it includes
- * each server's URL, and it is the runtime's per-person cache key. Correct for that job, and
- * useless as an identity for a plugin — every plugin on a shelf carries the same value, it
- * moves when an unrelated plugin moves, and it differs between two people running identical
- * code. `claude plugin list` shows it: sdlc and zz both read 0.29.0+1e7d702a.
+ * `digestOf` answers what this person received: it runs over the whole shelf, includes each
+ * server's URL, and is the runtime's per-person cache key. As an identity for a plugin it is
+ * useless — every plugin on a shelf carries the same value, it moves when an unrelated plugin
+ * moves, and it differs between two people running identical code.
  *
- * This answers "what IS this plugin": one plugin, and no server URL. The URL carries the
+ * This answers what the plugin is: one plugin, and no server URL. The URL carries the
  * deployment's own base address, so including it would make two deployments running
- * byte-identical content disagree about what that content is — the opposite of what a content
- * identity is for. Everything else is the same fields in the same order, fed by the same
- * function, so the two cannot drift apart.
+ * byte-identical content disagree about what that content is. Everything else is the same
+ * fields in the same order, fed by the same function.
  *
- * Paired with the version a plugin declares, this is what makes that version TRUE: the gate
- * compares them and refuses a release whose content moved while its number did not. The same
- * argument skill-versions.ts makes for skills, one level up. */
+ * COUPLED: paired with the version a plugin declares, this is what makes that version true —
+ * the gate compares them and refuses a release whose content moved while its number did not. */
 export function digestOfPlugin(plugin: Plugin): string {
   const h = createHash("sha256");
   feed(h, plugin, false);
@@ -55,12 +48,11 @@ export function digestOfPlugin(plugin: Plugin): string {
 
 /** The fields of one plugin, in a fixed order, into a hash.
  *
- * ONE function for both digests so that adding a field to a plugin cannot be remembered in one
- * and forgotten in the other — which is how the description came to be left out of the shelf
- * digest for a while: editing a flow.json description moved the marketplace card and left the
- * digest still, and the version-keyed cache went on serving the old text with no way to notice.
+ * One function for both digests, so a field added to a plugin cannot be remembered in one and
+ * forgotten in the other: a field left out of the shelf digest lets a content change move the
+ * marketplace card while the version-keyed cache goes on serving the old text.
  *
- * `withUrl` is the ONLY difference between the two, and it is not a detail. See digestOfPlugin. */
+ * `withUrl` is the only difference between the two. See digestOfPlugin. */
 function feed(h: ReturnType<typeof createHash>, pl: Plugin, withUrl: boolean): void {
   h.update(pl.name).update("\0").update(pl.description).update("\0")
     .update(pl.required ? "required" : "optional").update("\0");
@@ -79,8 +71,8 @@ export function describePackage(pkg: ClientPackage, target: string): string {
     ``,
     `## 1. Get a token (once)`,
     `Ask the **ZZ Access** agent for a token. It is shown ONCE. That agent is also`,
-    `where you store your keys for the building blocks and revoke a token you no`,
-    `longer trust. Then \`export ZZ_TOKEN=<it>\` for the commands below.`,
+    `where you revoke a token you no longer trust. Then \`export ZZ_TOKEN=<it>\` for`,
+    `the commands below.`,
     ``,
     `## 2. Install`,
     "```bash",
@@ -90,19 +82,12 @@ export function describePackage(pkg: ClientPackage, target: string): string {
     `## 3. Use it`,
   ];
 
-  // THE BASELINE'S OWN COMMANDS COME FIRST, and they are listed whether or not a flow is
-  // installed — they work on an empty account, because zz-core and zz-access are both
-  // required. `/zz-access:doctor` especially: the moment this setup text is wrong about
-  // anything, it is the thing that says so, and a person whose install did not take is
-  // exactly the person who cannot reach a flow to ask.
+  // The baseline's own commands come first, listed whether or not a flow is installed: they
+  // work on an empty account, because zz-core and zz-access are both required.
   //
-  // BOTH ARE ZZ-ACCESS'S, and both said `/zz-core:` here until 2026-09-21. `zz-core` owns the
-  // record — documents, knowledge, gates; `zz-access` owns your access to it, which is what
-  // your client's setup and its currency are. `checks/skill-homes.ts` has held that line for
-  // the skills themselves the whole time, and this prose was never checked against it. A
-  // person following the first instruction they are given typed a command that does not
-  // exist and got nothing — in the onboarding text, which is the worst place to be wrong,
-  // because it is read by the one person with no way to tell whether the fault is theirs.
+  // COUPLED: both commands are zz-access's, not zz-core's. zz-core owns the record — documents,
+  // knowledge, gates; zz-access owns your access to it, which is what a client's setup and its
+  // currency are. `checks/skill-homes.ts` holds the same line for the skills themselves.
   lines.push(
     `\`/zz-access:doctor\` checks this machine can reach the platform, and names the fix when it cannot.`,
     `\`/zz-access:update\` brings every ZZ plugin you have up to date, in one command.`,
@@ -112,14 +97,10 @@ export function describePackage(pkg: ClientPackage, target: string): string {
   if (pkg.flows.length === 0) {
     lines.push(`The shelf has no flow yet.`);
   } else {
-    // READ FROM THE MANIFEST, the same declaration the packager emits from, never spelled
-    // out here. This said `/zz:<flow>` — the namespace from when every flow shipped inside
-    // one `zz` plugin — so the setup text a person reads told them to type a command that
-    // does not exist: the real one is /sm:flow, not /zz:ops-flow. commandFile's frontmatter
-    // carries a comment about this exact mistake, because it was fixed there and not here.
-    // Two places deciding one name is how one of them stays wrong.
+    // Read from the manifest, the same declaration the packager emits from, never spelled out
+    // here: two places deciding one command name is how one of them stays wrong.
     //
-    // A flow that declares no command for its entry is LEFT OUT rather than given an invented
+    // A flow that declares no command for its entry is left out rather than given an invented
     // name: it has no front door to type, and the router sentence below is how it is reached.
     const typed = pkg.flows.flatMap((f) => {
       const cmd = entryCommand(f.flow, f.entry || f.flow);
@@ -132,13 +113,8 @@ export function describePackage(pkg: ClientPackage, target: string): string {
     );
   }
 
-  // EVERY flow travels as FILES, so a content fix does NOT reach this person by itself.
-  //
-  // This section used to split them: a flow served to a browser fetched its method on every
-  // run ("a fix is live on your next message"), a flow shipped to a terminal did not. With
-  // the browser front end gone and Claude Code the only client, there is no served half left
-  // to contrast against — every flow's skills are files on their disk, and saying so once is
-  // the whole of it.
+  // Every flow travels as files, so a content fix does not reach this person by itself: every
+  // flow's skills are files on their own disk.
   lines.push(
     ``,
     `## When the shelf changes`,
@@ -153,8 +129,8 @@ export function describePackage(pkg: ClientPackage, target: string): string {
       `otherwise, because the old files keep working:`,
       "```bash",
       // The platform does not know which plugins this person installed, so it names the
-      // pattern rather than a list. MARKETPLACE, not a literal: the shelf was renamed
-      // zz-platform -> zz-stack and a literal kept the old name.
+      // pattern rather than a list. `MARKETPLACE`, not a literal, so a rename of the shelf
+      // reaches this text.
       `claude plugin update <plugin>@${MARKETPLACE} # for each plugin you installed`,
       "```",
     );

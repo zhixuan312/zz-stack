@@ -2,15 +2,13 @@
 /**
  * The write guards, exercised — the refusals that protect the store.
  *
- * Each one answers "may this write land?" and returns an INSTRUCTIVE refusal or null. They are
- * pure functions of a chain, a path and a document's text, and until they were their own module
- * nothing could call one: they sat inside a 6,000-line `server.ts`, so every claim about them
- * was a claim about how the source reads.
+ * Each one answers "may this write land?" and returns an instructive refusal or null. They are
+ * pure functions of a chain, a path and a document's text.
  *
- * The cases below are chosen for the direction that is dangerous. A guard that refuses too much
- * is a nuisance somebody reports within the hour. A guard that lets something through is silent
- * — a fabricated approver, a second `status:` line, a close on a gate nobody passed — so what
- * is pinned here is mostly that the refusals FIRE, not that they stay quiet.
+ * The cases below are weighted towards the dangerous direction. A guard that refuses too much
+ * is reported within the hour; a guard that lets something through is silent — a fabricated
+ * approver, a second `status:` line, a close on a gate nobody passed. So what is pinned here
+ * is mostly that the refusals fire.
  *
  * Run: node checks/write-guards.ts   (also run by scripts/gate.ts)
  */
@@ -46,7 +44,7 @@ const P = "2026-09-11-x/spec.md";
 const doc = (env: Record<string, string>, body = "# Spec\n\n## Context\n\nc\n\n## Problem\n\np\n") =>
   "---\n" + Object.entries(env).map(([k, v]) => `${k}: ${v}`).join("\n") + "\n---\n\n" + body;
 
-/* ── statusCheck — the two words, and only those ──────────────────────────── */
+/* statusCheck — the two words, and only those */
 allows("draft is a status",       G.statusCheck(chain, P, doc({ status: "draft" })));
 allows("approved is a status",    G.statusCheck(chain, P, doc({ status: "approved" })));
 refuses("accepted is not a status — it is an outcome, and this is the category error the "
@@ -54,16 +52,15 @@ refuses("accepted is not a status — it is an outcome, and this is the category
         G.statusCheck(chain, P, doc({ status: "accepted" })));
 refuses("a made-up status is refused", G.statusCheck(chain, P, doc({ status: "in_review" })));
 
-/* ── outcomeCheck — the ledger is counted by these words ──────────────────── */
+/* outcomeCheck — the ledger is counted by these words */
 allows("delivered is an outcome",  G.outcomeCheck(chain, P, doc({ status: "approved", outcome: "delivered" })));
 allows("accepted is an outcome",   G.outcomeCheck(chain, P, doc({ status: "approved", outcome: "accepted" })));
 refuses("a fourth word invents a ledger row nobody can total",
         G.outcomeCheck(chain, P, doc({ status: "approved", outcome: "shipped" })));
 
-/* ── attributionCheck — a signature exists so somebody can be asked ───────── */
-// THE PAIR IS ATOMIC, which is the property and not the one I expected. A gated document
-// carrying approved_by without approved_at is refused: a gate is passed by a person ON A DAY,
-// and half a signature is the shape that reads as signed and cannot be dated.
+/* attributionCheck — a signature exists so somebody can be asked */
+// The pair is atomic: a gated document carrying approved_by without approved_at is refused.
+// Half a signature reads as signed and cannot be dated.
 allows("a person and a date together are an attribution",
        G.attributionCheck(chain, P, doc({ status: "approved", approved_by: "someone@example.com", approved_at: "2026-09-11" }), "xuan"));
 refuses("a signer with no date is half a signature",
@@ -77,7 +74,7 @@ refuses("'unknown' is nobody",
 refuses("the team's own name is not a person",
         G.attributionCheck(chain, P, doc({ status: "approved", approved_by: "xuan", approved_at: "2026-09-11" }), "xuan"));
 
-/* ── sectionCheck — a draft may be half-written, a gate may not ───────────── */
+/* sectionCheck — a draft may be half-written, a gate may not */
 allows("a draft missing a section is allowed — that is what draft means",
        G.sectionCheck(chain, P, doc({ status: "draft" }, "# Spec\n\n## Context\n\nc\n")));
 refuses("a document offered as approved may not be missing one",
@@ -85,7 +82,7 @@ refuses("a document offered as approved may not be missing one",
 allows("approved with every declared section is allowed",
        G.sectionCheck(chain, P, doc({ status: "approved" })));
 
-/* ── stampEnvelope — the platform writes the envelope ─────────────────────── */
+/* stampEnvelope — the platform writes the envelope */
 const stamped = G.stampEnvelope(chain, P, doc({ status: "draft" }));
 const count = (s: string, re: RegExp) => (s.match(re) ?? []).length;
 if (count(stamped, /^status:/gm) !== 1) { failed += 1; console.log("  FAIL stamping leaves exactly one status line"); }
@@ -95,11 +92,10 @@ else console.log("  ok   the flow that governs is stamped from the chain");
 if (!/^type: agreement$/m.test(stamped)) { failed += 1; console.log("  FAIL the role is stamped from the manifest, not from what the writer typed"); }
 else console.log("  ok   the role is stamped from the manifest, not from what the writer typed");
 
-/* ── normalizeSections — it RENAMES, and silence is the risk ──────────────── */
+/* normalizeSections — it renames, and silence is the risk */
 // A flow declares its section headings; a writer types something close. This renames the
-// writer's heading to the declared one so the gate that requires it can find it. Worth
-// pinning precisely because the rename is silent in the document — the only trace is the
-// `renamed` list the caller is handed and may ignore.
+// writer's heading to the declared one so the gate that requires it can find it. The rename
+// is silent in the document — the only trace is the `renamed` list handed to the caller.
 const ns = (body: string) => G.normalizeSections(chain, P, doc({ status: "draft" }, body));
 {
   const r = ns("# Spec\n\n## The context\n\nc\n\n## Problem\n\np\n");
@@ -114,7 +110,7 @@ const ns = (body: string) => G.normalizeSections(chain, P, doc({ status: "draft"
   else console.log("  ok   an exact heading is left alone");
 }
 {
-  // The dangerous direction: a heading about something else must NOT be captured, or the
+  // The dangerous direction: a heading about something else must not be captured, or the
   // document silently loses the section it did have.
   const r = ns("# Spec\n\n## Appendix\n\na\n\n## Problem\n\np\n");
   const ok = r.content.includes("## Appendix");
@@ -122,7 +118,7 @@ const ns = (body: string) => G.normalizeSections(chain, P, doc({ status: "draft"
   else console.log("  ok   an unrelated heading is not captured");
 }
 
-/* ── isoToday — every date this platform writes ───────────────────────────── */
+/* isoToday — every date this platform writes */
 if (!/^\d{4}-\d{2}-\d{2}$/.test(G.isoToday())) { failed += 1; console.log("  FAIL isoToday is YYYY-MM-DD"); }
 else console.log("  ok   isoToday is YYYY-MM-DD");
 

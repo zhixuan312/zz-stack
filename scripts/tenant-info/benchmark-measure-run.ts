@@ -3,36 +3,28 @@
  * preflight, and the two writes. The measurement itself is `benchmark-measure.ts`, which owns
  * no I/O so a probe can drive the identical code against a fake store.
  *
- * WHAT THIS REFUSES TO DO IS THE POINT. A benchmark report is structurally indistinguishable
- * from a fabricated one, so the only protection is that the producer cannot reach the file
- * unless every premise of the measurement was observed first. Each preflight below is a
- * premise, each failure names itself, and a failed preflight writes NOTHING and exits nonzero —
- * leaving `en/zh/mixed_recall_at_20` blocked in `evaluateTargets`, which is what "a missing
- * measurement leaves its target blocked, never 0" means at the only place it can be enforced.
- * `analyzer-opacity-run.ts` is the same shape for the same reason: "it never writes a fixture
- * from nothing."
+ * A benchmark report is structurally indistinguishable from a fabricated one, so the producer
+ * must not reach the file unless every premise of the measurement was observed first. Each
+ * preflight below is a premise, each failure names itself, and a failed preflight writes
+ * nothing and exits nonzero — leaving `en/zh/mixed_recall_at_20` blocked in `evaluateTargets`.
  *
- * TWO WRITES, AND ONE OF THEM IS DELIBERATELY INSIDE THE CHECKOUT.
+ * Two writes, and one of them is deliberately inside the checkout:
  *   · `<workspace>/benchmark-inputs/<profile>/measurements.json` goes through `safeWritePath`
- *     like every other tenant-info write. `assembleBenchmarkReport` already loads that file and
- *     feeds its numbers to `evaluateTargets`, so a measured run turns blocked targets into
- *     observations with no edit to that 696-line module.
- *   · `testing/tenant-info/benchmark-report.json` is where a measured run writes, and it is
- *     meant to become repo-resident evidence of the same class as
- *     `testing/tenant-info/analyzer-opacity.golden.json`: a fixture a gate check reads,
- *     produced by a generator that fails rather than invent one. IT IS NOT COMMITTED TODAY and
- *     this sentence used to say it was. `benchmark-report-slices.ts` finds nothing on disk,
- *     notes that its eleven per-slice clauses did not run, and leaves the target BLOCKED —
- *     which is the honest state, and not the one a reader of that sentence would expect. It is the only write
- *     this repository's tooling makes inside its own checkout, and it is not a workspace write
- *     wearing a disguise — `ZZ_TENANT_INFO_WORKSPACE` is still required, and everything
- *     scratch still goes there.
+ *     like every other tenant-info write. `assembleBenchmarkReport` loads that file and feeds
+ *     its numbers to `evaluateTargets`.
+ *   · `testing/tenant-info/benchmark-report.json` is where a measured run writes, of the same
+ *     class as `testing/tenant-info/analyzer-opacity.golden.json`: a fixture a gate check
+ *     reads, produced by a generator that fails rather than invent one. It is not committed,
+ *     so `benchmark-report-slices.ts` finds nothing on disk, notes that its per-slice
+ *     clauses did not run, and leaves the target blocked. It is the only write this
+ *     repository's tooling makes inside its own checkout; `ZZ_TENANT_INFO_WORKSPACE` is still
+ *     required and everything scratch still goes there.
  *
- * THE RUNTIME FACTS NOBODY MAY INVENT come from the environment, and their absence blocks:
- * `ZZ_TENANT_INFO_INDEX_GENERATION` (which projection generation is mounted — search.ts's own
- * comment says only the serving process can say, because nothing in migration 070 records it)
- * and `ZZ_TENANT_INFO_CURSOR_KEY` (the deployment's HMAC key for provenance cursors). A
- * producer that made up either would put a fabricated value in a disclosed response field.
+ * The runtime facts nobody may invent come from the environment, and their absence blocks:
+ * `ZZ_TENANT_INFO_INDEX_GENERATION` (which projection generation is mounted — only the serving
+ * process can say) and `ZZ_TENANT_INFO_CURSOR_KEY` (the deployment's HMAC key for provenance
+ * cursors). A producer that made up either would put a fabricated value in a disclosed
+ * response field.
  */
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -74,18 +66,16 @@ export interface MeasureReceipt {
   readonly ok: boolean;
 }
 
-// ───────────────────────── the judged dataset, read from the committed bytes ─────────────────────────
+// The judged dataset, read from the committed bytes
 
 /**
  * A row that did not narrow, named by file, line and field.
  *
- * PARSING A LINE AND ASSERTING IT TO `T` WAS THE WHOLE PROBLEM, AND IS WHY EVERY FIELD IS
- * CHECKED BELOW. A cast asserts the shape the caller asked for, so a renamed or malformed field
- * arrives in the
- * measurement as a well-typed value: a query whose `language` became `"english"` silently
- * leaves the `en` slice, and the run reports a denominator of 57 as a measurement rather than
- * as a broken instrument. The rows under measurement are the rows H1's signature is over, and a
- * cast is exactly the step that stops anybody noticing when they are not.
+ * Every field is checked rather than cast: a cast asserts the shape the caller asked for, so a
+ * renamed or malformed field arrives in the measurement as a well-typed value — a query whose
+ * `language` became `"english"` silently leaves the `en` slice, and the run reports a shrunken
+ * denominator as a measurement rather than as a broken instrument. The rows under measurement
+ * are the rows H1's signature is over.
  */
 class DatasetRowError extends Error {
   constructor(message: string) {
@@ -191,7 +181,7 @@ function loadJudgedDataset(): { queries: JudgedQuery[]; qrels: Qrel[] } {
   };
 }
 
-// ───────────────────────── the preflight: every premise, named ─────────────────────────
+// The preflight: every premise, named
 
 const TABLES = [
   "zz.artifact", "zz.artifact_event", "zz.artifact_edge", "zz.artifact_identifier",
@@ -217,7 +207,7 @@ async function preflight(client: RetrievalClient, queries: readonly JudgedQuery[
     "select extname, extversion from pg_extension order by extname", []);
   topology.extensions = extensions;
 
-  // ── the tables migration 070 creates ────────────────────────────────────────────────────
+ // The search projection tables
   const { rows: present } = await client.query<{ name: string }>(
     "select (n.nspname || '.' || c.relname) as name from pg_class c join pg_namespace n on n.oid = c.relnamespace "
     + "where n.nspname = 'zz' and c.relkind in ('r','p') and (n.nspname || '.' || c.relname) = any($1::text[])",
@@ -226,12 +216,12 @@ async function preflight(client: RetrievalClient, queries: readonly JudgedQuery[
   const missing = TABLES.filter((t) => !have.has(t));
   topology.tables_present = [...have].sort();
   if (missing.length > 0) {
-    blocked.push(`migration 070's tables are absent from this cluster: ${missing.join(", ")}`);
+    blocked.push(`the search projection tables are absent from this cluster: ${missing.join(", ")}`);
     // Nothing below can be asked of tables that do not exist.
     return { blocked, topology, registry: [] };
   }
 
-  // ── a bm25 index, which is what the lexical lane's `to_bm25query` requires ───────────────
+  // A bm25 index, which is what the lexical lane's `to_bm25query` requires
   const { rows: bm25 } = await client.query<{ indexname: string }>(
     "select indexname from pg_indexes where schemaname = 'zz' and indexdef ilike '%using bm25%' order by indexname", []);
   topology.bm25_indexes = bm25.map((r) => r.indexname);
@@ -240,7 +230,7 @@ async function preflight(client: RetrievalClient, queries: readonly JudgedQuery[
       + "not there, so a measured recall would be a measurement of a missing index");
   }
 
-  // ── rows, per corpus, against the pinned plan ────────────────────────────────────────────
+  // Rows, per corpus, against the pinned plan
   const { rows: counts } = await client.query<{ scope: string; corpus_key: string; artifacts: string }>(
     "select 'current' as scope, corpus_key, count(distinct artifact_id)::text as artifacts from zz.search_current group by corpus_key "
     + "union all select 'evidence', corpus_key, count(distinct artifact_id)::text from zz.search_evidence group by corpus_key "
@@ -257,7 +247,7 @@ async function preflight(client: RetrievalClient, queries: readonly JudgedQuery[
     }
   }
 
-  // ── the pinned artifacts the judgments point at ──────────────────────────────────────────
+  // The pinned artifacts the judgments point at
   const { answerable } = selectHeldOut(queries);
   const relevant = relevantRefsByQuery(qrels);
   const wanted = [...new Set(answerable.flatMap((q) => relevant.get(q.id) ?? []))];
@@ -269,9 +259,9 @@ async function preflight(client: RetrievalClient, queries: readonly JudgedQuery[
   const resolvable = new Set(found.map((r) => r.locator));
   topology.judged_artifacts = { wanted: wanted.length, resolvable: resolvable.size };
   if (resolvable.size !== wanted.length) {
-    // THE SILENT-ZERO GUARD. If a judged fixture is not in the store under the name the qrel
-    // gives it, every query misses and all three slices read 0.00 — a failing measurement that
-    // is really an unmade one. Refusing here is the difference.
+    // The silent-zero guard. A judged fixture missing from the store under the name its qrel
+    // gives it makes every query miss and all three slices read 0.00 — a failing measurement
+    // that is really an unmade one.
     blocked.push(`${wanted.length - resolvable.size} of ${wanted.length} judged relevant artifacts are not `
       + "in the store under the locator their qrel names: recall could only be measured as zero, which would "
       + "report an unmade measurement as a failed one");
@@ -288,7 +278,7 @@ async function preflight(client: RetrievalClient, queries: readonly JudgedQuery[
   return { blocked, topology, registry };
 }
 
-// ───────────────────────── the run ─────────────────────────
+// The run
 
 /** `git rev-parse HEAD` with its exit code retained rather than swallowed, so the report's
  *  `command_exits` records what this run actually invoked and how it ended. */
@@ -323,7 +313,7 @@ export async function runMeasurement(
   const missing: string[] = [];
   if (!url) missing.push("no TEAM_DB_URL / DATABASE_URL in the environment: there is no deployment to measure");
   if (!generation) {
-    missing.push("ZZ_TENANT_INFO_INDEX_GENERATION is not set: nothing in migration 070 records which projection "
+    missing.push("ZZ_TENANT_INFO_INDEX_GENERATION is not set: nothing in the schema records which projection "
       + "generation is mounted, so only the operator can say and this producer will not invent one");
   }
   if (!cursorKey) {
@@ -340,11 +330,10 @@ export async function runMeasurement(
 
   const exits = [runCommand("git", ["rev-parse", "HEAD"])];
   try {
-    // A MALFORMED ROW IS A REFUSAL, NOT AN EXCEPTION THAT ESCAPES. Left to propagate it reaches
-    // `cli.ts`'s catch-all and exits 2 as INVALID_ARGUMENTS — telling an operator their command
-    // was wrong when what was wrong was the committed dataset. It refuses here for the same
-    // reason an unreachable deployment does below: the measurement was never made, so its
-    // targets stay blocked, and the reason names the file, the line and the field to fix.
+    // A malformed row is a refusal, not an exception that escapes. Left to propagate it reaches
+    // `cli.ts`'s catch-all and exits 2 as INVALID_ARGUMENTS, telling an operator their command
+    // was wrong when what was wrong was the committed dataset. The reason names the file, the
+    // line and the field to fix.
     let queries: readonly JudgedQuery[];
     let qrels: readonly Qrel[];
     try {
@@ -356,11 +345,10 @@ export async function runMeasurement(
       throw err;
     }
 
-    // A DATABASE THAT CANNOT BE REACHED IS A BLOCKED MEASUREMENT, NOT A BROKEN INVOCATION.
+    // A database that cannot be reached is a blocked measurement, not a broken invocation.
     // Left to propagate, a refused connection reaches `cli.ts`'s catch-all, is relabelled
-    // INVALID_ARGUMENTS and exits 2 — telling an operator their command was wrong when what
-    // was wrong was the deployment. It is caught here and named as what it is, alongside every
-    // other unmet premise, so the receipt reads the same whichever premise failed.
+    // INVALID_ARGUMENTS and exits 2. It is caught here and named alongside every other unmet
+    // premise, so the receipt reads the same whichever premise failed.
     let flight: Preflight;
     try {
       flight = await preflight(client, queries, qrels);
@@ -379,7 +367,7 @@ export async function runMeasurement(
       throw err;
     }
 
-    // A SLICE WITH NO DENOMINATOR IS NOT A ZERO. Nothing is written when one is empty: the
+    // A slice with no denominator is not a zero. Nothing is written when one is empty: the
     // target stays blocked and the reason says which slice never got sampled.
     const ordered: SliceMeasurement[] = SLICE_LANGUAGES.map((language) => measurement.slices[language]);
     const empty = ordered.filter((s) => s === undefined || s.denominator === 0);
@@ -389,10 +377,10 @@ export async function runMeasurement(
         .map((language) => `the ${language} slice has a denominator of 0: it was never sampled`));
     }
 
-    // TRUST BUT VERIFY AT THE BOUNDARY THAT WRITES THE FILE, the same shape the `baseline` verb
-    // already uses before it emits an exit code. `measurement.pooled` was computed inside
-    // `measureHeldOut`; recomputing it here from the slices about to be serialised means the
-    // file cannot carry a `pooled: false` that the numbers beside it do not support.
+    // Verified at the boundary that writes the file, the same shape the `baseline` verb uses
+    // before it emits an exit code. `measurement.pooled` was computed inside `measureHeldOut`;
+    // recomputing it here from the slices about to be serialised means the file cannot carry a
+    // `pooled: false` that the numbers beside it do not support.
     const recomputed = detectPooling(ordered);
     if (recomputed.pooled !== measurement.pooled || recomputed.pooled) {
       return refuse(profile, recomputed.pooled
@@ -400,12 +388,11 @@ export async function runMeasurement(
         : ["the pooling observation recomputed at the write boundary disagrees with the one measured"]);
     }
 
-    // AN UNVERIFIED ROUTE REFUSES BEFORE ANY WRITE, not after. `measurements.json` carries the
+    // An unverified route refuses before any write, not after. `measurements.json` carries the
     // numbers and none of their provenance, and every later plain `benchmark --profile
     // acceptance` loads it and turns them into `observed` values in the official report — so a
-    // figure produced off a path nobody could verify would arrive there with nothing beside it
-    // saying so. Refusing here keeps the targets blocked, which is the honest state for a
-    // measurement whose route could not be established.
+    // figure produced off a path nobody could verify would arrive there with nothing saying
+    // so.
     if (measurement.route !== "public_handler") {
       return refuse(profile, [`the measurement did not travel the public handler and serializer: ${measurement.route}`]);
     }
@@ -413,8 +400,8 @@ export async function runMeasurement(
     const report = buildReport({
       measurement,
       // Which build was under measurement is the profile the operator invoked, not something
-      // this code can observe: `baseline` measures I-2's preserved image, `acceptance` the
-      // candidate this initiative builds.
+      // this code can observe: `baseline` measures the preserved baseline image, `acceptance`
+      // the candidate build.
       run: profile === "baseline" ? "baseline" : "candidate",
       topology: flight.topology,
       command_exits: exits.map((e) => ({ command: e.command, exit: e.exit })),
@@ -432,9 +419,9 @@ export async function runMeasurement(
     mkdirSync(inputDir, { recursive: true });
     const measurementsPath = safeWritePath(workspaceReal, "benchmark-inputs", profile, "measurements.json");
     writeFileSync(measurementsPath, `${JSON.stringify(measurementsForTargets(measurement), null, 2)}\n`);
-    // BOTH INPUTS OR NEITHER. `assembleBenchmarkReport` fills its targets from the first file
+    // Both inputs or neither. `assembleBenchmarkReport` fills its targets from the first file
     // and its `quality.slices` from this one, and nothing cross-checks them — a report carrying
-    // an observed recall beside a slice that says it was never sampled is incoherent evidence.
+    // an observed recall beside a slice that says it was never sampled is incoherent.
     writeFileSync(safeWritePath(workspaceReal, "benchmark-inputs", profile, "quality.json"),
       `${JSON.stringify(qualityInputFor(measurement), null, 2)}\n`);
 
@@ -448,9 +435,8 @@ export async function runMeasurement(
       report_path: REPORT_PATH,
       measurements_path: `benchmark-inputs/${profile}/measurements.json`,
       route: measurement.route, slices,
-      // `ok` IS NOT "the command ran" — but by here the two ways it could be false have already
-      // refused above, before a byte was written. This is the boundary restating them rather
-      // than a second chance to be wrong about them.
+      // `ok` is not "the command ran": the two ways it could be false have already refused
+      // above, before a byte was written. This is the boundary restating them.
       ok: measurement.route === "public_handler" && !measurement.pooled,
     };
   } finally {

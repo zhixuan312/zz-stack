@@ -1,33 +1,27 @@
 /**
  * The tenant-information derived database's write path: replaying one owner's committed
- * transaction into the common/subtype/search projections that migration 070 created, the
- * file-backed compatibility-id map that survives a rebuild, and the per-corpus partitions
- * `zz.search_current`/`zz.search_evidence`/`zz.search_history` need before they can hold a row.
+ * transaction into the common/subtype/search projections, the file-backed compatibility-id map
+ * that survives a rebuild, and the per-corpus partitions `zz.search_current`/`zz.search_evidence`/
+ * `zz.search_history` need before they can hold a row.
  *
- * NOTHING HERE OWNS A CONNECTION. `ProjectionClient` is the smallest shape a single connection
- * already satisfies — one `query(text, params)` — so a caller hands in whichever it has and a
- * test hands in a plain object that records calls. Nothing imports `pg` for its runtime here
- * except `connectIsolated` below, which is its own exception (see its own comment).
+ * Nothing here owns a connection. `ProjectionClient` is the smallest shape a single connection
+ * already satisfies — one `query(text, params)` — so a caller hands in whichever it has and a test
+ * hands in a plain object that records calls. Nothing imports `pg` for its runtime except
+ * `connectIsolated` below.
  *
- * MUST BE ONE DEDICATED CONNECTION, NEVER A `pg.Pool` DIRECTLY. `applyCommit` issues its own
- * `begin`/`commit`/`rollback` and depends on every statement in between landing on the SAME
- * session. A `pg.Pool` structurally satisfies `.query()` too, but handing one to `applyCommit`
- * sends `begin` down whichever connection happens to be free and the inserts down others —
- * no transaction at all, silently, and a real error only shows up as data that never quite
- * lands. Callers acquire a `pg.PoolClient` (`pool.connect()`) or use `connectIsolated` below,
- * never `pool.query` itself.
+ * It must be one dedicated connection, never a `pg.Pool`. `applyCommit` issues its own
+ * `begin`/`commit`/`rollback` and every statement between them must land on the same session. A
+ * `pg.Pool` structurally satisfies `.query()`, but sends `begin` down whichever connection happens
+ * to be free and the inserts down others — no transaction at all, silently. Callers acquire a
+ * `pg.PoolClient` (`pool.connect()`) or use `connectIsolated` below, never `pool.query` itself.
  *
- * WHAT `applyCommit` DOES NOT DO. It projects the common tables (`zz.artifact`,
- * `zz.artifact_revision`, `zz.artifact_event`, `zz.artifact_edge`), the two legacy-subtype
- * bridges when the caller supplies them, and its own replay/watermark bookkeeping. It does
- * NOT write to `zz.search_current`/`evidence`/`history` or to `zz.artifact_passage`/
- * `zz.artifact_identifier` — migration 070 creates those tables, but populating them needs a
- * text analyzer (`tenant-analysis.ts`, I-14) and a corpus-key derivation rule that do not exist
- * yet, and `semanticProjectionHash` below is not yet called from anywhere. A later task wires
- * both in. It does not decide which team a `team_slug` belongs to either — the subtype-bridge
- * writes in `applyCommit` only run when the CALLER supplies `docBridge`/`knowledgeBridge`,
- * because only the caller (the adapter that still speaks zz.doc's team_slug/initiative/path
- * vocabulary) knows that mapping.
+ * `applyCommit` projects the common tables (`zz.artifact`, `zz.artifact_revision`,
+ * `zz.artifact_event`, `zz.artifact_edge`), the two legacy-subtype bridges when the caller supplies
+ * them, and its own replay/watermark bookkeeping. It does not write to
+ * `zz.search_current`/`evidence`/`history` or to `zz.artifact_passage`/`zz.artifact_identifier`,
+ * and `semanticProjectionHash` below is not called from anywhere. It does not decide which team a
+ * `team_slug` belongs to either: the subtype-bridge writes run only when the caller supplies
+ * `docBridge`/`knowledgeBridge`, because only the caller knows that mapping.
  */
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -39,23 +33,22 @@ import type { ArtifactClass, ArtifactEvent, ContentRevision } from "@zz/contract
 import { analyze } from "./tenant-analysis.js";
 import { parseQuery, type QueryClause } from "./query-grammar.js";
 
-// ── the smallest shape a caller's pool/client already has ──────────────────────────────────
+// The smallest shape a caller's pool/client already has
 
 export interface ProjectionClient {
   query<T = Record<string, unknown>>(text: string, params?: readonly unknown[]): Promise<{ rows: T[] }>;
 }
 
-/** A real `ProjectionClient` over one dedicated connection to an operator-provided database —
- *  used ONLY by `testing/tenant-info/rebuild.ts`'s integration case group, which this
- *  repository's tooling tsconfig (`tsconfig.tooling.json`) has no "pg" type declarations for,
- *  so that file never imports "pg" itself. Every other caller of `applyCommit`/`ensureCorpus`
- *  supplies its own pool/client — the gateway's `db.ts` and zz-core's `platform-db.ts` each
- *  already own one and neither needs this. One connection, not a pool: the integration cases
- *  need one session's transaction boundary, not concurrency. */
+/** A real `ProjectionClient` over one dedicated connection to an operator-provided database.
+ *  COUPLED: used only by `testing/tenant-info/rebuild.ts`'s integration cases, which run under
+ *  `tsconfig.tooling.json` and so have no "pg" type declarations — which is why that file never
+ *  imports "pg" itself. Every other caller of `applyCommit`/`ensureCorpus` supplies its own pool or
+ *  client. One connection, not a pool: the integration cases need one session's transaction
+ *  boundary, not concurrency. */
 export async function connectIsolated(
   connectionString: string,
-  // NOT A TOOL: `close()` below just ends this one pg connection — nothing to do with the
-  // `initiative_close` MCP tool.
+  // NOT A TOOL: `close()` below ends this one pg connection, and has nothing to do with the
+  // `initiative_close` tool.
 ): Promise<ProjectionClient & { close(): Promise<void> }> {
   const client = new pg.Client({ connectionString });
   await client.connect();
@@ -68,15 +61,10 @@ export async function connectIsolated(
   };
 }
 
-// ── the file-backed compatibility-id map ────────────────────────────────────────────────────
-//
-// "Preserve compatibility IDs through a file-backed migration map" and "never reallocated on
-// rebuild" — this task's own contract. A rebuild that re-derives zz.doc/zz.knowledge_node rows
-// from canonical files must not hand a document a fresh random id every time it runs, or every
-// external reference to that row (zz.decision.doc_id, a bookmark, a link in prose) breaks on
-// the next rebuild. This map is the durable record of "this owner+artifact already has id N",
-// read before a rebuild starts and written back after — plain JSON, one file per deployment,
-// never regenerated from scratch while any existing entry could still be looked up.
+// The file-backed compatibility-id map: the durable record of "this owner+artifact already has
+// id N", read before a rebuild starts and written back after. Plain JSON, one file per deployment,
+// never regenerated from scratch while any existing entry could still be looked up — a reallocated
+// id breaks every external reference to that row (zz.decision.doc_id, a bookmark, a link in prose).
 
 interface CompatibilityMap {
   readonly version: 1;
@@ -85,10 +73,9 @@ interface CompatibilityMap {
 
 const EMPTY_MAP: CompatibilityMap = { version: 1, entries: {} };
 
-/** A fresh or absent file reads as the empty map, not an error — the first rebuild of a new
- *  deployment has nothing to preserve yet. A file that exists but fails to parse as this
- *  map's own shape is the one case this refuses outright: silently discarding it would
- *  reallocate every id in the deployment, which is exactly what this map exists to prevent. */
+/** A fresh or absent file reads as the empty map, not an error. A file that exists but fails to
+ *  parse as this map's own shape is refused outright: silently discarding it would reallocate every
+ *  id in the deployment. */
 export function loadCompatibilityMap(path: string): CompatibilityMap {
   let raw: string;
   try {
@@ -110,11 +97,10 @@ export function saveCompatibilityMap(path: string, map: CompatibilityMap): void 
 
 const compatKey = (ownerId: string, artifactId: string): string => `${ownerId}\u0000${artifactId}`;
 
-/** The stable compatibility id for (owner, artifact) — allocated once, on first sight, and
- *  read back unchanged on every later call against a map that already has it, including
- *  across a full rebuild that reloads this file from disk. A plain function of its input
- *  rather than an in-place mutator: the map is data, and `applyCommit`/a rebuild walk decides
- *  when the updated map is actually durable via `saveCompatibilityMap`. */
+/** The stable compatibility id for (owner, artifact) — allocated once, on first sight, and read
+ *  back unchanged on every later call against a map that already has it, including across a full
+ *  rebuild that reloads this file from disk. A plain function of its input rather than an in-place
+ *  mutator: `saveCompatibilityMap` is what decides when the updated map is durable. */
 export function compatIdFor(
   map: CompatibilityMap, ownerId: string, artifactId: string,
 ): { readonly id: number; readonly map: CompatibilityMap } {
@@ -125,13 +111,10 @@ export function compatIdFor(
   return { id: next, map: { version: 1, entries: { ...map.entries, [key]: next } } };
 }
 
-// ── the semantic parity hash ────────────────────────────────────────────────────────────────
-//
-// "Operational rebuild/index IDs are excluded from semantic parity hashes" — this task's own
-// contract. Excluded BY CONSTRUCTION: this function's input type has no field for a rebuild's
-// wall-clock duration, a physical index OID or a retry timestamp, so there is no way to feed
-// one in by mistake. Two projections of the same semantic facts hash identically regardless
-// of when, how many times or how slowly either one was produced.
+// The semantic parity hash. Operational rebuild and index ids are excluded by construction: this
+// function's input type has no field for a rebuild's wall-clock duration, a physical index OID or a
+// retry timestamp. Two projections of the same semantic facts hash identically regardless of when,
+// how many times or how slowly either was produced.
 
 interface SemanticProjectionInput {
   readonly owner_id: string;
@@ -149,13 +132,12 @@ export function semanticProjectionHash(input: SemanticProjectionInput): string {
   })).digest("hex");
 }
 
-// ── replaying one owner's committed transaction ─────────────────────────────────────────────
+// Replaying one owner's committed transaction
 
-/** What one owner commit hands `applyCommit`: the identity/class it names, the revisions and
- *  events a real commit manifest already carries (see `services/zz-core/src/tenant-info/
- *  record.ts`'s `PreparedManifestInput` — this is the subset the derived database needs, not
- *  a second copy of that file's own shape), and the two legacy-subtype bridges, each supplied
- *  only when the caller actually knows that mapping. */
+/** What one owner commit hands `applyCommit`: the identity and class it names, the revisions and
+ *  events a real commit manifest carries (the subset the derived database needs from
+ *  `services/zz-core/src/tenant-info/record.ts`'s `PreparedManifestInput`), and the two
+ *  legacy-subtype bridges, each supplied only when the caller knows that mapping. */
 export interface ProjectionManifest {
   readonly owner_id: string;
   readonly artifact_id: string;
@@ -179,15 +161,13 @@ interface ApplyCommitResult {
   readonly reason?: "already_applied" | "stale_sequence";
 }
 
-/** Applies one owner's committed manifest to every projection migration 070 created except
- *  the passage/identifier tables (see this module's header), in one transaction it owns
- *  itself — the caller passes a fresh client/connection, not one already mid-transaction.
+/** Applies one owner's committed manifest to every projection except the passage and identifier
+ *  tables (see this module's header), in one transaction it owns itself — the caller passes a fresh
+ *  client, not one already mid-transaction.
  *
- *  "replay uses transaction_id as its unique key" and "an older queue item never overwrites a
- *  newer head": a transaction_id already recorded, or a sequence at or below the owner's
- *  current watermark, is a no-op that still commits (nothing to roll back) rather than an
- *  error — replaying an already-applied commit, or one that arrives out of order behind a
- *  newer one already applied, must never regress or duplicate what is already projected. */
+ *  Replay keys on transaction_id: an id already recorded, or a sequence at or below the owner's
+ *  watermark, is a no-op that still commits rather than an error, so an already-applied commit or
+ *  one arriving behind a newer one never regresses or duplicates what is projected. */
 export async function applyCommit(
   client: ProjectionClient, manifest: ProjectionManifest,
 ): Promise<ApplyCommitResult> {
@@ -209,16 +189,14 @@ export async function applyCommit(
       return { applied: false, reason: "stale_sequence" };
     }
 
-    // NULL FOR A SOURCE, NOT ZERO. `reduce(max, 0)` over an empty revision list returns its
-    // seed, so an immutable SourceArtifact — which has no content revision at all — projected
-    // as `current_revision = 0`. The schema refuses that, correctly: revision numbers start at
-    // 1, and `null` is how the rest of this platform says a source has none. `ArtifactRefSchema`
-    // accepts `revision: null` and resolves it only to a source; `transitions.ts` refuses every
-    // lifecycle operation on `head.revision === null` for the same reason.
+    // Null for a source, not zero. `reduce(max, 0)` over an empty revision list returns its seed,
+    // and the schema refuses 0: revision numbers start at 1, and `null` is how the rest of this
+    // platform says a source has none. `ArtifactRefSchema` resolves `revision: null` only to a
+    // source; `transitions.ts` refuses every lifecycle operation on `head.revision === null`.
     //
-    // `greatest()` below is NULL-tolerant: it ignores nulls and returns null only when every
-    // argument is null, so a source stays null across replays and a document that later gains
-    // revisions still takes the higher number.
+    // `greatest()` below ignores nulls and returns null only when every argument is null, so a
+    // source stays null across replays and a document that later gains revisions still takes the
+    // higher number.
     const latestRevision = manifest.revisions.length === 0
       ? null
       : manifest.revisions.reduce((m, r) => Math.max(m, r.revision), 0);
@@ -241,14 +219,10 @@ export async function applyCommit(
        latestRevision, latest?.content_hash ?? "", latestEventSequence, createdAt,
        manifest.audience ?? null, manifest.profile ?? null]);
 
-    // EVENTS BEFORE REVISIONS. `zz.artifact_edge.asserted_event_id` is an immediate (not
-    // deferred) foreign key into `zz.artifact_event`, and the revisions loop below inserts
-    // "cites" edges asserted by one of these same events — so on a real Postgres, inserting a
-    // "cites" edge before its asserting event exists fails the whole transaction the moment
-    // any revision carries a `sources` entry. The in-memory fake this suite's offline cases
-    // use models no foreign keys and both its fixtures carry an empty `sources`, so neither
-    // caught this ordering; `atomic_apply_against_isolated_database`'s own fixture does carry
-    // one, against a real foreign key.
+    // Events before revisions. `zz.artifact_edge.asserted_event_id` is an immediate (not deferred)
+    // foreign key into `zz.artifact_event`, and the revisions loop below inserts "cites" edges
+    // asserted by these same events — so inserting a "cites" edge before its asserting event exists
+    // fails the whole transaction the moment any revision carries a `sources` entry.
     for (const event of manifest.events) {
       await client.query(
         `insert into zz.artifact_event
@@ -288,9 +262,8 @@ export async function applyCommit(
          revision.origin_profile, JSON.stringify(revision.legacy_unresolved_sources),
          revision.previous_revision]);
 
-      // "cites" edges, asserted by whichever event actually produced this revision — a
-      // SourceCitation has no event of its own, so the assertion is the revision's own. The
-      // event row this references was inserted above, in the loop before this one.
+      // "cites" edges, asserted by whichever event produced this revision — a SourceCitation has no
+      // event of its own. That event row was inserted in the loop above.
       const assertingEvent = manifest.events.find(
         (e) => e.revision === revision.revision && (e.kind === "created" || e.kind === "revised"));
       if (assertingEvent) {
@@ -353,24 +326,20 @@ export async function applyCommit(
   }
 }
 
-// ── provisioning a corpus's own partition ───────────────────────────────────────────────────
-//
-// "Use separate PostgreSQL list partitions ... for each private owner and published shared
-// shelf" — which corpora exist is a runtime fact (a tenant signs up, a shelf publishes), so
-// migration 070 creates the three partitioned parents and a `_default` catch-all; this
-// function attaches ONE partition per corpus to all three, the first time that corpus is
-// about to hold a row. Idempotent: attaching a partition that already exists is a no-op.
+// Provisioning a corpus's own partition. Which corpora exist is a runtime fact (a tenant signs up,
+// a shelf publishes), so the migration creates the three partitioned parents and a `_default`
+// catch-all and this function attaches one partition per corpus to all three, the first time that
+// corpus is about to hold a row. Idempotent: attaching a partition that already exists is a no-op.
 
 const CORPUS_KEY = /^[a-z][a-z0-9_]{0,62}$/;
 
 const SEARCH_PARENTS = ["zz.search_current", "zz.search_evidence", "zz.search_history"] as const;
 
 /** `corpusKey` becomes part of a table name and a partition-bound literal, neither of which
- *  Postgres lets a bind parameter fill — so it is validated against a closed character set
- *  first and then interpolated, exactly the pattern `check:sql` already recognises and
- *  reports as "not checkable" rather than silently skips (see `packages/tools/src/testing/
- *  sql-check.ts`). Nothing about `corpusKey` is caller-supplied free text by the time it
- *  reaches here; the check above is what makes that true rather than assumed. */
+ *  Postgres lets a bind parameter fill — so it is validated against a closed character set first and
+ *  then interpolated, the pattern `packages/tools/src/testing/sql-check.ts` reports as "not
+ *  checkable" rather than silently skips. The check above is what makes "nothing here is
+ *  caller-supplied free text" true rather than assumed. */
 export async function ensureCorpus(client: ProjectionClient, corpusKey: string): Promise<void> {
   if (!CORPUS_KEY.test(corpusKey)) {
     throw new RangeError(`corpus key ${JSON.stringify(corpusKey)} is not a safe partition-name suffix`);
@@ -383,57 +352,42 @@ export async function ensureCorpus(client: ProjectionClient, corpusKey: string):
       `create index if not exists ${table.replace(".", "_")}_tsv on ${table} using gin (to_tsvector('english', raw_body))`);
     await client.query(
       `create index if not exists ${table.replace(".", "_")}_tags on ${table} using gin (tags)`);
-    // THE BM25 INDEX, ON THE CONCRETE PARTITION — which is the whole reason these partitions
-    // exist. `to_bm25query(query, index_name)` requires the named index to be on the relation
-    // being scanned, and the alternative it offers when that is not true is automatic index
-    // resolution: the IDF would then come from whichever index the planner chose, across
-    // whatever rows it covers, which is exactly the cross-tenant statistics leak this delivery
-    // proved is invisible to every row-level check. One corpus, one partition, one index.
+    // The BM25 index, on the concrete partition — which is why these partitions exist.
+    // `to_bm25query(query, index_name)` requires the named index to be on the relation being
+    // scanned; otherwise it resolves an index automatically and the IDF comes from whichever index
+    // the planner chose, across whatever rows it covers — a cross-tenant statistics leak no
+    // row-level check can see. One corpus, one partition, one index.
     //
-    // DDL verified against the built image rather than read from a README: PostgreSQL 17.11
-    // with pg_textsearch 1.4.0 accepted this statement and reported `k1=1.20, b=0.75`.
-    //
-    // `text_config='english'` matches the stock tsvector fallback on the same partition. It is
-    // also the limit of what this extension can do for Chinese: text_config names a POSTGRESQL
-    // text search configuration, and none of the built-in ones segments CJK. Chinese and mixed
-    // content is served by the GiST trigram index on zz.artifact_identifier, which segments by
-    // character rather than by whitespace.
+    // `text_config='english'` matches the stock tsvector fallback on the same partition, and is the
+    // limit of what this extension can do for Chinese: text_config names a PostgreSQL text search
+    // configuration, and none of the built-in ones segments CJK. Chinese and mixed content is served
+    // by the GiST trigram index on zz.artifact_identifier, which segments by character.
     await client.query(
       `create index if not exists ${table.replace(".", "_")}_bm25 on ${table} using bm25 (raw_body) with (text_config='english')`);
   }
 }
 
-// ── the native lane set: which of exact / BM25 / fuzzy-identifier / typed-provenance a query
-//    actually reaches, over Chinese prose exactly as over Latin, through the shared analyzer ──
+// The native lane set: which of exact / BM25 / fuzzy-identifier / typed-provenance a query reaches,
+// over Chinese prose exactly as over Latin, through the shared analyzer.
 //
-// TAGS ARE FILTERS AND TIE-BREAKS, NEVER A LANE. `zz.search_current`/`evidence`/`history` all
-// carry a `tags` GIN index (`ensureCorpus` above) for narrowing and ranking a result set that
-// another lane already produced — they are never themselves a way to reach a row nothing else
-// found. Reintroducing a tag lane here is the one regression this task's Contract names by
-// name, so `lanesFor` below has no branch that can ever push `"tag"` into its result.
+// Tags are filters and tie-breaks, never a lane. `zz.search_current`/`evidence`/`history` carry a
+// `tags` GIN index (`ensureCorpus` above) for narrowing and ranking a result set another lane
+// produced; they are never a way to reach a row nothing else found. `lanesFor` below has no branch
+// that can push `"tag"` into its result.
 //
-// "RECORDED AS NOT APPLICABLE — NEVER AS ZERO RESULTS." A lane this module excludes for a
-// query never ran: it has no ranking, no cost, and nothing to report as empty. `lanesFor`
-// reflects that at the type level by simply leaving an inapplicable lane out of its returned
-// array, rather than returning all four with a `matched: false` flag a caller could mistake
-// for "ran and found nothing". Each lane that IS returned still carries its own
-// `LaneApplicability` — the rule that let it in — so a caller building "not applicable" text
-// for the lanes NOT returned has the same rule objects to draw the negative from, without
-// `lanesFor` itself having to enumerate every lane it declined.
+// A lane this module excludes never ran, so it has no ranking, no cost and nothing to report as
+// empty: it is left out of the returned array rather than returned with a `matched: false` flag a
+// caller could mistake for "ran and found nothing". Each lane that is returned carries its own
+// `LaneApplicability`, so a caller writing "not applicable" text for the lanes not returned has the
+// same rule objects to draw the negative from.
 //
-// WHAT THIS FUNCTION DOES NOT DO: it does not run a query, touch `ProjectionClient`, or read
-// `zz.artifact_passage`/`zz.artifact_identifier` — nothing populates those tables yet (see
-// this file's own header; `applyCommit` above stops short of them on purpose). `lanesFor` is
-// the routing decision a real retrieval call would make BEFORE it queries anything; wiring it
-// to an actual corpus, ranking within a lane and fusing lanes into one ordered result is later
-// work this task's Plan boundary excludes ("final deliverable content is not in this plan").
+// `lanesFor` runs no query, touches no `ProjectionClient` and reads neither `zz.artifact_passage`
+// nor `zz.artifact_identifier` — nothing populates those tables yet. It is the routing decision a
+// retrieval call would make before it queries anything.
 //
-// NO SECOND ANALYZER OR QUERY PARSER. Every applicability rule below reads a query exactly the
-// way the rest of this platform already does: `parseQuery` (`query-grammar.ts`, Task I-7) for
-// the clause a person typed — quotes, a leading `-` exclusion, `OR` alternation — and `analyze`
-// (`tenant-analysis.ts`, `zz-lexical-v2`, Task I-6) for whether the shared analyzer finds any
-// term to rank at all. Natural-mode ranking hints and legacy conjunction semantics are that
-// other file's own concern and are not read here.
+// COUPLED: every applicability rule below reads a query through `parseQuery` (`query-grammar.ts`)
+// and `analyze` (`tenant-analysis.ts`, `zz-lexical-v2`), never a second parser or analyzer of its
+// own. Natural-mode ranking hints and legacy conjunction semantics are that other file's concern.
 
 /** The four lanes this module can route a query to. No `"tag"` member exists — see this
  *  section's header — so a caller cannot even type a tag lane into existence here. */
@@ -447,13 +401,10 @@ export interface LaneApplicability {
   readonly detail: string;
 }
 
-/** `name` is `string`, not the narrower `LaneName`, ON PURPOSE: a caller checking a returned
- *  lane set against a lane that must NEVER appear — `names.includes("tag")`, exactly this
- *  task's own frozen check — has to be able to ask that question about a value outside the
- *  union without TypeScript refusing the comparison as unreachable. `lanesFor` itself still
- *  only ever constructs a `name` from `LaneName` (`pushLane` below is where that is pinned),
- *  so the widened field type gives up no real safety — it only stops the widened union from
- *  fighting the one check written to interrogate it. */
+/** DELIBERATE: `name` is `string`, not the narrower `LaneName`. A caller checking a returned lane
+ *  set against a lane that must never appear — `names.includes("tag")` — has to be able to ask that
+ *  about a value outside the union without TypeScript refusing the comparison as unreachable.
+ *  `pushLane` below still pins every constructed `name` to `LaneName`. */
 export interface LaneDescriptor {
   readonly name: string;
   readonly applicability: LaneApplicability;
@@ -461,26 +412,23 @@ export interface LaneDescriptor {
 
 const HAN_SCALAR = /\p{Script=Han}/u;
 
-/** A clause reads as identifier-shaped when it carries the internal structure an identifier
- *  has and ordinary prose does not: a delimiter (`.`, `_`, `/`, `-`, `:`), a camelCase or
- *  acronym transition, or a letter-digit boundary — the exact boundary set
- *  `identifierTokens` (`tenant-analysis.ts`) splits on. A bare lowercase word like `"reader"`
- *  has none of these and is left to the BM25 lane; `"primary_evidence-000037.txt"` and
- *  `"httpServer2"` both do. Han text is never identifier-shaped — Chinese prose is served by
- *  the shared analyzer's BM25 lane, never by pretending the identifier lanes (which key off
- *  `zz.artifact_identifier`, a Latin-identifier table) contain bodies. */
+/** A clause reads as identifier-shaped when it carries internal structure ordinary prose does not:
+ *  a delimiter (`.`, `_`, `/`, `-`, `:`), a camelCase or acronym transition, or a letter-digit
+ *  boundary — the boundary set `identifierTokens` (`tenant-analysis.ts`) splits on. A bare lowercase
+ *  word like `"reader"` has none and is left to the BM25 lane. Han text is never identifier-shaped:
+ *  the identifier lanes key off `zz.artifact_identifier`, a Latin-identifier table, so Chinese prose
+ *  is served by BM25. */
 function isIdentifierShaped(raw: string): boolean {
   if (HAN_SCALAR.test(raw)) return false;
   if (!/[A-Za-z0-9]/.test(raw)) return false;
   return /[._/:-]/.test(raw) || /[a-z0-9][A-Z]/.test(raw) || /[A-Za-z][0-9]/.test(raw) || /[0-9][A-Za-z]/.test(raw);
 }
 
-/** The narrower shape `provenance` keys off: identifier-shaped AND carrying a `.` or `/`, the
- *  two scalars that make an identifier read as a concrete artifact reference (an extension, a
- *  path) rather than merely a structured token like `httpServer2`. Typed neighbours
- *  (`zz.artifact_edge`'s `derived_from`/`cites` rows) are asserted about one specific artifact,
- *  so this lane's rule is deliberately narrower than `exact`'s — the same underlying shape,
- *  owned by this lane on its own stricter terms rather than reused as-is. */
+/** The narrower shape `provenance` keys off: identifier-shaped and carrying a `.` or `/`, the two
+ *  scalars that make an identifier read as a concrete artifact reference (an extension, a path)
+ *  rather than a structured token like `httpServer2`. Typed neighbours (`zz.artifact_edge`'s
+ *  `derived_from`/`cites` rows) are asserted about one specific artifact, so this lane is stricter
+ *  than `exact`'s. */
 function isArtifactReferenceShaped(raw: string): boolean {
   return isIdentifierShaped(raw) && /[./]/.test(raw);
 }
@@ -498,33 +446,26 @@ function positiveLeaves(clauses: readonly QueryClause[]): QueryClause[] {
   return leaves;
 }
 
-/** The one place a `LaneDescriptor.name` is ever constructed — pinned to `LaneName`, so
- *  `lanesFor` itself cannot typo a lane name or, still less, push `"tag"`, even though the
- *  field the caller reads back is the wider `string` explained on `LaneDescriptor` above. */
+/** The one place a `LaneDescriptor.name` is constructed — pinned to `LaneName`, so `lanesFor`
+ *  cannot typo a lane name or push `"tag"`, though the field a caller reads back is wider. */
 function pushLane(lanes: LaneDescriptor[], name: LaneName, applicability: LaneApplicability): void {
   lanes.push({ name, applicability });
 }
 
-/** Routes one query to the native lanes it actually reaches. Four independent rules, each
- *  reading `query` through `parseQuery`/`analyze` rather than a second parser of its own:
+/** Routes one query to the native lanes it actually reaches. Four independent rules, each reading
+ *  `query` through `parseQuery`/`analyze` rather than a second parser of its own:
  *
  *   `exact`      — a positive clause is identifier-shaped: looked up by its unsplit spelling.
  *   `bm25`       — the shared `zz-lexical-v2` analyzer produces at least one base term (a Han
- *                  unigram or a Latin word) to rank, which is true of Chinese prose exactly as
- *                  it is true of English prose — the same analyzer, the same rule, no
- *                  Han-specific branch.
- *   `fuzzy`      — a positive clause is identifier-shaped AND at least 3 scalars long, the
- *                  floor a GiST trigram index needs to mean anything; never reached by prose,
- *                  Han or Latin, because `isIdentifierShaped` already excludes it.
- *   `provenance` — a positive clause is artifact-reference-shaped (identifier-shaped plus a
- *                  `.` or `/`): specific enough to name one artifact whose typed
- *                  `zz.artifact_edge` neighbours can be resolved.
+ *                  unigram or a Latin word) to rank; no Han-specific branch.
+ *   `fuzzy`      — a positive clause is identifier-shaped and at least 3 scalars long, the floor a
+ *                  GiST trigram index needs to mean anything; never reached by prose, Han or Latin.
+ *   `provenance` — a positive clause is artifact-reference-shaped: specific enough to name one
+ *                  artifact whose typed `zz.artifact_edge` neighbours can be resolved.
  *
- *  No `"tag"` branch exists, ever — see this section's header. A lane whose rule finds nothing
- *  to match is simply absent from the returned array; `lanesFor` never fabricates a zero-result
- *  entry for it. `QueryParseError` from a malformed `query` (an unterminated quote) propagates
- *  to the caller unchanged, exactly as `parseQuery`'s own contract requires — never silently
- *  flattened into "no lanes apply". */
+ *  No `"tag"` branch exists. A lane whose rule finds nothing to match is absent from the returned
+ *  array; no zero-result entry is fabricated for it. `QueryParseError` from a malformed query
+ *  propagates to the caller unchanged rather than being flattened into "no lanes apply". */
 export function lanesFor(query: string): LaneDescriptor[] {
   const leaves = positiveLeaves(parseQuery(query).clauses);
   const identifierLeaves = leaves.filter((c) => isIdentifierShaped(c.text));

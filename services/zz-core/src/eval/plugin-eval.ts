@@ -1,32 +1,16 @@
 /**
- * THE FACTS ABOUT ONE PLUGIN, and not one of these tools returns a judgement.
+ * The facts about one plugin — a flow's skills plus the MCP servers those skills call. No tool
+ * here returns a judgement.
  *
- * A plugin is what a person installs — a flow's skills plus the MCP servers those skills call.
- * The platform used to evaluate the two halves separately and could therefore see neither of the
- * things that decide whether the whole is any good: whether a flow that goes wrong can return to
- * an earlier stage, and whether the tools it can reach are ever actually used.
+ * DELIBERATE: every field below is a count, a set, an ordering, a timing or a difference.
+ * `returns: 3` is a fact; whether three returns is healthy belongs to a ruler a person
+ * approved. A field named `healthy` here would answer a question this file cannot see the
+ * evidence for.
  *
- * THE BOUNDARY THIS FILE KEEPS. Every field below is a count, a set, an ordering, a timing or a
- * difference. `returns: 3` is a fact. Whether three returns is a flow re-grounding well or one
- * thrashing is a JUDGEMENT, and it belongs to a ruler a person approved — the initiative that
- * produced this file returned three times and every one was healthy. So: the tool produces the
- * fact, the ruler says where the line is, and the tool may then apply that line. A field named
- * `healthy` here would be this file answering a question it cannot see the evidence for.
- *
- * READ-ONLY, WITHOUT EXCEPTION. `case_record` used to be the one tool here that wrote: it took
- * the output of a `claude plugin eval` suite -- a CLI on the person's own machine, spending
- * their own credential -- and stored the with-plugin against without-plugin delta it reported.
- *
- * That whole half is removed, and what it was actually measuring is the reason. No case ever
- * declared a mock, so under `--mocks record` no plugin server started and the plugin's tools
- * were NOT CALLABLE IN EITHER ARM. Every grader was a regex over tool NAMES or a judgement
- * about an answer's shape, so a delta said the method's text had reached the agent and it had
- * used the right words. It never said the plugin worked.
- *
- * What this door can see instead is what the platform's own doors recorded: which tools were
- * called, on whose door, how often, what they refused and whose refusal it was. That is the
- * thing itself rather than an agent's vocabulary, it needs no second runner and no credential,
- * and it cannot fall out of step with the plugin because the plugin produces it.
+ * DELIBERATE: read-only, without exception. The evidence is what the platform's own doors
+ * recorded — which tools were called, on whose door, how often, what they refused and whose
+ * refusal it was — so it needs no second runner and no credential, and cannot fall out of step
+ * with the plugin.
  */
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -50,27 +34,20 @@ export function entryOf(plugin: string): ReturnType<typeof catalogEntries>[numbe
   return catalogEntries().find((e) => pluginName(e.flow) === plugin);
 }
 
-/** The platform's own skills — the `zz-core` plugin's content. The same constant plugin-lock.ts
- *  keeps on the gateway side, spelled again here because zz-core does not depend on the
- *  gateway, and honouring the same override for the same reason: the gate runs on a machine
- *  where /skills does not exist. */
+/** The platform's own skills — the `zz-core` plugin's content.
+ *
+ *  COUPLED: the gateway's plugin-lock.ts keeps the same constant and the same override.
+ *  zz-core does not depend on the gateway, so it is spelled twice. The override exists because
+ *  the gate runs where /skills does not. */
 const SKILLS_DIR = process.env.ZZ_SKILLS_DIR || "/skills";
 
 /** Where a plugin's skills are on disk, or "" if this deployment holds none.
  *
- * `zz-core` HAS A CATALOG ENTRY AND ITS SKILLS ARE NOT IN IT, which is why the baseline is
- * answered FIRST and not as a fallback. Every caller of toolsNamedBy used to guard the call
- * with a ternary on the catalog entry, falling back to the empty list. The consequence was not
- * an error anywhere: the baseline reported `tools_named: []`, so `reachable` was empty, so
- * `never_called` was empty, so the one finding this whole half exists to produce — a tool a
- * skill tells an agent to call and no agent ever called — was structurally impossible for the
- * plugin every account installs, and read as a clean bill of health. The `tool fit` dimension
- * found `knowledge_add` for sdlc on its first real round; zz-handover names `knowledge_add`
- * too, and the question could never have been asked of it.
- *
- * Asking the catalog first would restore that failure by a new route rather than by an absence:
- * `catalog/zz/zz-core/` carries the manifest and no `skills/`, so an entry-first order resolves
- * the baseline to a directory that does not exist and returns the same empty list.
+ * DELIBERATE: the `zz-core` baseline is answered first and not as a fallback. It has a catalog
+ * entry whose directory carries the manifest and no `skills/`, so an entry-first order
+ * resolves it to a directory that does not exist and returns an empty list — which makes
+ * `never_called` empty and reads as a clean bill of health for the plugin every account
+ * installs.
  *
  * Resolved here rather than at each call site so there is one answer to it. */
 function skillsDirOf(plugin: string): string {
@@ -79,51 +56,38 @@ function skillsDirOf(plugin: string): string {
   return entry ? join(entry.dir, "skills") : "";
 }
 
-/** The MCP surfaces this plugin can actually reach.
+/** The MCP surfaces this plugin can actually reach: the baseline plus whatever the manifest
+ * declares.
  *
- * THE BASELINE IS NOT OPTIONAL AND IS NOT DECLARED. `zz` is required by every package, so
- * `zz-core` arrives with every plugin whether or not a manifest mentions it — which is the rule
- * the gate states at skill-tools.ts:182-183: "Reachable = the baseline (/core, in every agent
- * and the required package) plus whatever the manifest declares."
+ * DELIBERATE: the baseline is neither optional nor declared. `zz` is required by every
+ * package, so `zz-core` arrives with every plugin whether or not a manifest mentions it.
+ * Reading `manifest.servers` alone reports a flow as reaching nothing.
  *
- * Reading `manifest.servers` alone reported sdlc as reaching NOTHING while the skills it ships
- * name eight zz-core tools between them. A plugin that names eight tools and reaches no server
- * is the "complete and unreachable" shape the gate exists to refuse — so the report said, of a
- * plugin that is entirely fine, the one thing this platform treats as most expensive.
- *
- * `tools` is folded in beside `servers` because client-package.ts concatenates both into what
- * a person installs. */
+ * COUPLED: `tools` is folded in beside `servers` because client-package.ts concatenates both
+ * into what a person installs. */
 function serversOf(entry: ReturnType<typeof catalogEntries>[number] | undefined):
   { name: string; path: string; baseline?: true }[] {
   const all = (entry?.manifest.servers ?? []).map((sv) => ({ name: sv.name, path: sv.path }));
-  // Marked, so a reader can tell what this plugin ASKED for from what every plugin gets.
+  // Marked, so a reader can tell what this plugin asked for from what every plugin gets.
   if (!all.some((sv) => sv.name === "zz-core")) {
     all.unshift({ name: "zz-core", path: "/core/mcp", baseline: true } as never);
   }
   return all;
 }
 
-/** Does this plugin DECLARE A SERVER of its own?
- *
- * The manifest answers it with no judgement required: a plugin that declares `servers` owns a
- * door and its evidence is that door's traffic; one that declares none rides the baseline and
- * is a flow, whose evidence is the runs of its own skills. zz-core, zz-access and
- * zz-plugin-eval are the first kind; sdlc is the second. */
+/** Does this plugin declare a server of its own? One that declares `servers` owns a door and
+ * its evidence is that door's traffic; one that declares none rides the baseline and is a
+ * flow, whose evidence is the runs of its own skills. */
 export function servesOwnDoor(plugin: string): boolean {
   return (entryOf(plugin)?.manifest.servers?.length ?? 0) > 0;
 }
 
-/** Every tool this plugin's own skills tell an agent to call.
+/** Every tool this plugin's own skills tell an agent to call — not every tool on the surfaces
+ * it declares. A tool in this set that was never called is a finding; a tool merely present on
+ * a shared door and unused says nothing about this plugin.
  *
- * NOT "every tool on the surfaces it declares", which was the first shape and the wrong
- * question. A plugin does not claim the whole surface; it claims what its skills name. So a
- * tool in this set that was never called is a sharp finding — the plugin TELLS an agent to call
- * it and no agent ever did — where a tool merely present on a shared door and unused says
- * nothing about this plugin at all.
- *
- * The static half of the same question is already settled elsewhere and is not recomputed here:
- * the gate refuses a release whose skill names a tool its package cannot reach. That is a
- * precondition of a plugin version existing, not an input to its evaluation. */
+ * COUPLED: the static half is the gate's, which refuses a release whose skill names a tool its
+ * package cannot reach. It is a precondition of a version existing, not an input here. */
 export function toolsNamedBy(plugin: string): string[] {
   const skills = skillsDirOf(plugin);
   if (!skills || !existsSync(skills)) return [];
@@ -134,8 +98,8 @@ export function toolsNamedBy(plugin: string): string[] {
       if (f.isDirectory()) { walk(abs); continue; }
       if (f.name !== "SKILL.md") continue;
       const body = readFileSync(abs, "utf8");
-      // `tool_name(` in prose or in a table. Snake case with at least one underscore, which is
-      // what every tool on this platform is named and what ordinary English in a skill is not.
+      // `tool_name(` in prose or in a table: snake case with at least one underscore, which
+      // every tool here is named and ordinary English in a skill is not.
       for (const m of body.matchAll(/\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\s*\(/g)) named.add(m[1]);
     }
   };
@@ -184,11 +148,10 @@ export function registerPluginEvalTools(server: McpServer): void {
       return json({
         plugin, version: row.version, digest: row.digest,
         origin: row.origin,
-        // WHAT AN EVALUATION IS ALLOWED TO DO WITH ITS FINDINGS, and it follows from whose the
-        // plugin is. Ours: the findings feed a change somebody makes. Somebody else's: we
-        // assess and stop -- there is no recommendation to give a team that did not ask us for
-        // one, and a "proposed_change" against a plugin we do not own is a finding pretending
-        // to be an instruction.
+        // What an evaluation may do with its findings follows from whose the plugin is. Ours:
+        // the findings feed a change somebody makes. A third party's: assess and stop, because
+        // a proposed change against a plugin we do not own is a finding pretending to be an
+        // instruction.
         mode: row.origin === "third_party" ? "assess only" : "assess, then change",
         skills,
         servers: serversOf(entry),
@@ -202,10 +165,9 @@ export function registerPluginEvalTools(server: McpServer): void {
     {
       description:
         "What this plugin version DID, as computed facts with no model anywhere in the " +
-        "derivation. Two evidence blocks, each with its OWN sufficiency verdict: TRACES from " +
-        "the event log (runs, stage paths, returns to an earlier stage, per-tool calls and " +
-        "refusals, tools its skills name that were never called) and CASES from the recorded " +
-        "ablation run (per-case delta against a no-plugin arm). Every figure carries the " +
+        "derivation: TRACES from the event log (runs, stage paths, returns to an earlier " +
+        "stage, per-tool calls and refusals, tools its skills name that were never called), " +
+        "with their own sufficiency verdict. Every figure carries the " +
         "coverage it was derived from. Returns are COUNTED AND NOT CLASSIFIED — whether a " +
         "return is healthy re-grounding or thrash is the ruler's judgement, not this tool's. " +
         "Call it when a ruler is being written, and again when its figures are read.",
@@ -220,35 +182,16 @@ export function registerPluginEvalTools(server: McpServer): void {
       return json({
         plugin, version,
         traces,
-        // THE RUN HISTORY IS THE EVIDENCE, and it is the only evidence now.
-        //
-        // There was a second half: a `claude plugin eval` suite of ablation cases, recorded
-        // through `case_record`, giving a with-plugin against without-plugin delta. It is gone,
-        // and the reason is worth keeping. It never measured what it appeared to: no case ever
-        // declared a mock, so with `--mocks record` no plugin server started and the plugin's
-        // tools were NOT CALLABLE IN EITHER ARM. Every grader was a regex over tool NAMES or a
-        // judgement about an answer's shape, so a delta established that the method's text had
-        // reached the agent and it had used the right words -- never that the plugin worked.
-        //
-        // Nine cases, several hundred dollars of somebody's own credential, and two of the four
-        // most recent came back with a delta of exactly zero. The strongest result in the whole
-        // suite came from a prompt that TYPED THE COMMAND, which is a way of asking whether text
-        // helps once you have already handed it over.
-        //
-        // What this platform can actually see is what its own doors recorded: which tools were
-        // called, on whose door, how often, what they refused and whose refusal it was. That is
-        // a measurement of the thing itself rather than of an agent's vocabulary, and it needs
-        // no second runner, no credential and no suite to be kept in step with the plugin.
+        // DELIBERATE: the run history is the only evidence. It is what the platform's own
+        // doors recorded — which tools were called, on whose door, how often, what they
+        // refused and whose refusal it was — rather than an agent's vocabulary, and it needs
+        // no second runner, no credential and no suite kept in step with the plugin.
         sufficient_for_judging: traces.sufficient,
-        // AND WHAT TO DO ABOUT IT, in the same shape `initiative_status` answers with.
+        // And what to do about it, in the same shape `initiative_status` answers with.
         //
-        // NEVER NULL, WHICH IT USED TO BE WHENEVER THE EVIDENCE WAS ENOUGH. The reasoning was
-        // that a next action nobody needs is noise on a profile that is already fine. What it
-        // did was END THE CHAIN: a caller following `next_action` from plugin_locate arrived
-        // here, got null, and went on from memory of the skill. `plugin_conform` is named by
-        // this stage's own skill and had NEVER been called -- not once in four complete
-        // evaluations, including by the agent that wrote this comment. The chain is what gets
-        // followed; anything worth doing has to be on it.
+        // DELIBERATE: never null, even when the evidence is sufficient. A caller follows
+        // `next_action` from plugin_locate to here; a null ends the chain and the caller goes
+        // on from memory of the skill instead.
         next_action: traces.sufficient ? {
           action: "read_the_contract_then_define",
           why: "the evidence is enough to judge against, so this stage's remaining question is " +
@@ -262,8 +205,8 @@ export function registerPluginEvalTools(server: McpServer): void {
           why: traces.reason
             ? `no usable run history: ${traces.reason}`
             : "this version's run history does not carry enough to judge against",
-          // No command to offer, and saying so is the honest answer. Evidence here is a
-          // by-product of the plugin being USED; nothing anybody runs on demand produces it.
+          // No command to offer: this evidence is a by-product of the plugin being used, and
+          // nothing run on demand produces it.
           then: "let the plugin be used, then profile it again. A ruler whose subject is the " +
                 "document or the initiative may already have subjects even when the trace " +
                 "history is thin — ruler_read says what is there.",
@@ -292,24 +235,11 @@ export function registerPluginEvalTools(server: McpServer): void {
       const named = toolsNamedBy(plugin);
       const servesOwnSurface = (entry.manifest.servers ?? []).length > 0;
 
-      // WHAT THIS TOOL DOES NOT DO, said before what it does, because an earlier version of it
-      // did the opposite and that was worse than doing nothing.
-      //
-      // It reported R4 as "8 tools named by this plugin's skills", R5 as "0 servers declared",
-      // R6 as "7 stages declared", R9 as "declared version 0.1.0". Not one of those is what the
-      // clause says. R4 asks whether the SERVER offers list_usage_skills() and
-      // usage_skill_view(name); R5 asks whether its tool VERBS state the capability; R6 asks
-      // whether its validation errors are prose that teach the rule; R9 asks for get_app_url.
-      // A mapping was invented and labelled with the standard's clause numbers, which produced
-      // a conformance report citing a standard it did not check.
-      //
-      // contract.md:196-199 names the failure exactly: "R1, R7, R12, R13 and R14 are
-      // behavioural ... a battery that guessed would hand out passes this standard never
-      // granted." The invented mapping WAS the guessing battery, one level worse than the
-      // thing the contract warns about, because it guessed at the nine mechanical ones too.
-      //
-      // The mechanical battery that really settles R2-R6 and R8-R11 read each block's live tool
-      // surface through the gateway. It went with zz-block-eval and is not reimplemented here.
+      // DELIBERATE: every clause but R5 reports `not_measured` rather than a stand-in.
+      // Settling R2-R6 and R8-R11 needs a server's live tool surface read through the gateway,
+      // which this door does not do, and the building-block standard names R1, R7, R12, R13 and
+      // R14 as behavioural. A mapping from whatever this door can count would hand out
+      // passes the standard never granted, under the standard's own clause numbers.
       const notMeasured = (why: string) => ({ holds: "not_measured" as const, evidence: why });
       const BEHAVIOURAL = "the contract names this clause as behavioural and not mechanically measured";
       const NO_SURFACE =
@@ -324,8 +254,8 @@ export function registerPluginEvalTools(server: McpServer): void {
         .map((id) => {
           if (["R1","R7","R12","R13","R14"].includes(id)) return { id, ...notMeasured(BEHAVIOURAL) };
           if (!servesOwnSurface) return { id, ...notMeasured(NO_SURFACE) };
-          // R5 is the one mechanical clause a tool NAME can settle: honest verbs that state the
-          // capability, never do_action or submit. The rest need the live surface.
+          // R5 is the one mechanical clause a tool name can settle: honest verbs that state
+          // the capability, never do_action or submit.
           if (id === "R5" && named.length) {
             const dishonest = named.filter((t) => /^(do_|submit$|submit_|perform_|handle_|process_)/.test(t));
             return { id, holds: dishonest.length === 0,

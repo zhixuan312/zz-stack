@@ -20,11 +20,12 @@ check("rederivation covers old rows and refuses to mix analyzer generations", ()
   }
   if (!p.resumable) return "the rebuild declares no watermark, so an interrupted run cannot resume";
 
-  // ONE CONSTRUCTION, TWO CALLERS — never two implementations of the same weighting. Checked
+  // One construction, two callers — never two implementations of the same weighting. Checked
   // two ways, because neither alone is enough: the rebuild module must literally import the
-  // write path's builder, AND the two must agree on a row. An earlier form of this check
-  // demanded `rebuildRowVector === buildRowVector`, which forces an alias export and makes the
-  // agreement test dead code — requiring exactly the dormant code this plan forbids.
+  // write path's builder, and the two must agree on a row.
+  //
+  // DELIBERATE: this does not demand `rebuildRowVector === buildRowVector`. Identity forces an
+  // alias export and makes the agreement test below dead code.
   const rebuildSrc = withoutComments(readFileSync(join(root, "packages/indexing/src/tenant-rebuild.ts"), "utf8"));
   if (!/import\s*\{[^}]*\bbuildRowVector\b/.test(rebuildSrc)) {
     return "tenant-rebuild.ts does not import buildRowVector — a second implementation of the same "

@@ -1,16 +1,12 @@
 /**
- * export.ts — the `export` verb.
+ * The `export` verb.
  *
- * DELEGATES ENTIRELY TO THE REAL OKF ASSEMBLER — `buildOkfBundle` in
- * `services/zz-core/dist/tenant-info/export.js`, the same function I-12's suite exercises.
- * This file owns no YAML serializer and no second frontmatter format of its own; whatever this
- * verb ever hands a caller is exactly what that one function produced.
+ * Delegates entirely to `buildOkfBundle` in `services/zz-core/dist/tenant-info/export.js`.
+ * This file owns no YAML serializer and no frontmatter format of its own; what the verb hands
+ * a caller is exactly what that function produced.
  *
- * What gets exported — reading real revisions/events out of an actual owner-store — is a later
- * task's contract: no store connection is wired here yet. Until then this always calls the
- * real assembler over an empty closure (nothing to export, nothing authorized to resolve), so
- * the exact bundling path a real caller will use is exercised today rather than invented from
- * scratch the day the store wiring lands.
+ * No store connection is wired yet, so it calls the real assembler over an empty closure —
+ * nothing to export, nothing authorized to resolve.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 

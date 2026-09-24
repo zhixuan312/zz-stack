@@ -1,49 +1,32 @@
 /**
- * deployment.ts — I-5's PostgreSQL 17 / pg_textsearch v1.4.0 pin, in two halves.
+ * The PostgreSQL 17 / pg_textsearch v1.4.0 pin, and the restore/cutover rehearsal's offline
+ * half. Three exports.
  *
- * `validateImageInputs` is the pure, offline half: no docker, no network, no live database.
- * It is what the dependency suite checks BEFORE it ever touches a built image — the shape and
- * cross-file agreement a coding worker can supply from a checkout alone, not the network-
- * verified truth of a digest. A `true` result here is necessary, not sufficient: the
- * contract's own words are that a placeholder-looking but syntactically valid hash is not
- * release evidence, and nothing offline can tell a real digest from a well-formed fake one.
- * So this checks exactly what it CAN see without a network: `deploy/postgres/
- * versions.lock.json`'s own shape, and that the lock, `deploy/postgres/Dockerfile` and
- * `deploy/postgres/postgresql.conf` all name the SAME pins rather than three separately-
- * plausible stories. `checks/postgres-image-pinned.ts` (frozen) is its only tracked caller.
+ * `validateImageInputs` is offline: no docker, no network, no live database. It checks
+ * `deploy/postgres/versions.lock.json`'s shape and that the lock, `deploy/postgres/Dockerfile`
+ * and `deploy/postgres/postgresql.conf` name the same pins. A `true` is necessary and not
+ * sufficient — nothing offline can tell a real digest from a well-formed fake one.
  *
- * `run` below is this file's OTHER job: `scripts/tenant-info/suites.ts` reserves the name
- * "deployment" at exactly this path, so the moment this file exists, `verify --suite
- * deployment` and `--finalize` dynamic-import it and call `run` — a module at this path with
- * no such export would turn "not yet built" into a crash. `run` stays fail-closed on THIS
- * checkout by construction: every pin in versions.lock.json still carries a `*_verified:
- * false` placeholder (see that file's own header), and `run` refuses to spawn anything —
- * no docker, no network — until every one of those flags is true. Nothing in this file
- * changes that; only an operator who has actually resolved and rebuilt the pins does. Once
- * they have, `run` builds the pinned image, starts it, and checks the three things the spec
- * literally names: the running major/patch, the loaded extension's exact version, and actual
- * shared_preload_libraries membership. BM25 parameters, explicit-index queries and per-corpus
- * statistics need the extension's own verified DDL, which does not exist in this checkout —
- * inventing plausible-looking SQL for them would be the same fabrication as a fake digest, so
- * they are reported `not_run` rather than guessed.
+ * `validateBackupManifest` is the second offline half: which components a protected backup
+ * must carry before a restore may begin.
  *
- * I-21 ADDED THE OTHER TWO THIRDS OF THIS SUITE, and changed what the pin gate blocks.
+ * COUPLED: both symbols are pinned by name and import path by frozen checks —
+ * `checks/postgres-image-pinned.ts` and `checks/backup-covers-the-undisposable.ts` — which
+ * cannot be edited to follow a move.
  *
- * `validateBackupManifest` is this file's third export and its second offline half: which
- * components a protected backup must carry before a restore may begin. It lives HERE, rather
- * than beside the rest of the rehearsal in `deployment-cutover.ts`, because
- * `checks/backup-covers-the-undisposable.ts` is frozen at this import path — the check pins
- * the symbol to the file by name and cannot be edited to follow it elsewhere.
+ * COUPLED: `scripts/tenant-info/suites.ts` reserves the suite name "deployment" at this exact
+ * path, so `verify --suite deployment` and `--finalize` dynamic-import this module and call
+ * `run`. A module here without that export crashes them.
  *
- * The eight-step restore/cutover procedure itself is in `deployment-cutover.ts`: pure
- * predicates over a drain, a matched release unit and a forward recovery, plus the two live
- * cases that need an isolated PostgreSQL 17 copy and protected backup bytes. The predicates
- * run here on every invocation as the `offline` group — they used to not exist, and before
- * I-21 this module returned at the pin gate having executed nothing at all, which made a
- * broken rule and an unbuilt image the same word in the receipt. They are different facts now:
- * a failing offline case reports `ran` (and reads as FAILED), an unresolved pin reports
- * `blocked`. `deploy/RESTORE-AND-CUTOVER.md` is what an operator runs to make the two live
- * cases execute for real.
+ * `run` is fail-closed: it spawns nothing until every `*_verified` flag in versions.lock.json
+ * is true. Once they are, it builds the pinned image, starts it, and checks the running
+ * major/patch, the loaded extension's exact version and shared_preload_libraries membership.
+ * BM25 parameters, explicit-index queries and per-corpus statistics need the extension's own
+ * verified DDL, which this checkout does not have, so they report `not_run`.
+ *
+ * The eight-step restore/cutover procedure is in `deployment-cutover.ts`; its pure predicates
+ * run here on every invocation as the `offline` group. `deploy/RESTORE-AND-CUTOVER.md` is
+ * what an operator runs to make the two live cases execute for real.
  */
 import assert from "node:assert/strict";
 import { execFileSync, execSync } from "node:child_process";
@@ -76,9 +59,9 @@ const RELEASE_TAG_RE = /^v\d+\.\d+\.\d+$/;
 const ALLOWED_ARCHITECTURES = new Set(["linux/amd64", "linux/arm64"]);
 const REQUIRED_PRELOAD = "pg_textsearch";
 
-/** spec.md's "PostgreSQL image and dependency lock" reference settings, verbatim — not
- *  guessed configuration names, the exact values agreed there. `enable_seqscan` is checked
- *  separately below: it has no correct value to require, only a forbidden one. */
+/** spec.md's "PostgreSQL image and dependency lock" reference settings, verbatim.
+ *  `enable_seqscan` is checked separately below: it has no correct value to require, only a
+ *  forbidden one. */
 const REQUIRED_SETTINGS: Readonly<Record<string, string>> = {
   shared_buffers: "8GB",
   work_mem: "16MB",
@@ -92,8 +75,9 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 /** postgresql.conf's own grammar: `name = value` (value optionally single-quoted), one
- *  setting per line, `#` starts a comment running to end of line. Good enough for the
- *  settings this task pins — not a general parser, and not asked to be one. */
+ *  setting per line, `#` starts a comment running to end of line.
+ *
+ *  DELIBERATE: not a general parser — it covers the settings this file pins. */
 function parseConf(config: string): Map<string, string> {
   const out = new Map<string, string>();
   for (const rawLine of config.split("\n")) {
@@ -125,7 +109,7 @@ export function validateImageInputs(input: ImageInputs): ValidationResult {
 
   const issues: string[] = [];
 
-  // ── PostgreSQL major/patch: the lock, and the Dockerfile that pulls it, must agree ────────
+  // PostgreSQL major/patch: the lock and the Dockerfile that pulls it must agree.
   const postgresVersion = lock.postgres_version;
   if (typeof postgresVersion !== "string" || !POSTGRES_VERSION_RE.test(postgresVersion)) {
     issues.push(`postgres_version must be an exact PostgreSQL 17 patch ("17.<n>"), got ${JSON.stringify(postgresVersion)}`);
@@ -133,7 +117,7 @@ export function validateImageInputs(input: ImageInputs): ValidationResult {
     issues.push("Dockerfile does not reference the lock's postgres_version");
   }
 
-  // ── base image: pinned by digest, and the SAME digest in both, not merely same shape ─────
+  // Base image: pinned by digest, and the same digest in both, not merely the same shape.
   const baseDigest = lock.base_image_digest;
   if (typeof baseDigest !== "string" || !SHA256_DIGEST_RE.test(baseDigest)) {
     issues.push(`base_image_digest must be "sha256:" plus 64 hex characters, got ${JSON.stringify(baseDigest)}`);
@@ -148,7 +132,7 @@ export function validateImageInputs(input: ImageInputs): ValidationResult {
     issues.push("Dockerfile pins a floating tag (latest/main/master) — no substitution for a resolved release");
   }
 
-  // ── pg_textsearch: an exact release tag, its resolved commit, and its source hash ────────
+  // pg_textsearch: an exact release tag, its resolved commit, and its source hash.
   const tag = lock.pg_textsearch_tag;
   if (typeof tag !== "string" || !RELEASE_TAG_RE.test(tag)) {
     issues.push(`pg_textsearch_tag must be an exact release tag ("vX.Y.Z"), got ${JSON.stringify(tag)}`);
@@ -170,7 +154,7 @@ export function validateImageInputs(input: ImageInputs): ValidationResult {
     issues.push("Dockerfile does not verify the lock's pg_textsearch_source_sha256");
   }
 
-  // ── evidence only the actual build/inspection can produce — shape-checked, never trusted ──
+  // Evidence only the actual build or inspection can produce: shape-checked, never trusted.
   const builtDigest = lock.built_image_digest;
   if (typeof builtDigest !== "string" || !SHA256_DIGEST_RE.test(builtDigest)) {
     issues.push(`built_image_digest must be "sha256:" plus 64 hex characters, got ${JSON.stringify(builtDigest)}`);
@@ -189,8 +173,8 @@ export function validateImageInputs(input: ImageInputs): ValidationResult {
     issues.push(`architecture must be one of ${[...ALLOWED_ARCHITECTURES].join(", ")}, got ${JSON.stringify(architecture)}`);
   }
 
-  // ── preload membership: the lock's declared list and the shipped config must be the SAME
-  //    set, and that set must actually contain pg_textsearch — not just a setting that exists
+  // Preload membership: the lock's declared list and the shipped config must be the same
+  // set, and that set must contain pg_textsearch, not merely exist.
   const declaredPreload = lock.shared_preload_libraries;
   const declaredSet = Array.isArray(declaredPreload)
     ? new Set(declaredPreload.filter((s): s is string => typeof s === "string"))
@@ -207,7 +191,7 @@ export function validateImageInputs(input: ImageInputs): ValidationResult {
     issues.push("postgresql.conf's shared_preload_libraries does not match versions.lock.json's declared list");
   }
 
-  // ── reference memory settings and autovacuum: exactly the spec's values, nothing guessed ──
+  // Reference memory settings and autovacuum: exactly the spec's values.
   for (const [key, expected] of Object.entries(REQUIRED_SETTINGS)) {
     const actual = settings.get(key);
     if (actual !== expected) {
@@ -215,7 +199,7 @@ export function validateImageInputs(input: ImageInputs): ValidationResult {
     }
   }
 
-  // ── enable_seqscan=off is never shipped, whatever else is true ────────────────────────────
+  // enable_seqscan=off is never shipped, whatever else is true.
   const seqscan = settings.get("enable_seqscan");
   if (seqscan !== undefined && seqscan.toLowerCase() === "off") {
     issues.push("postgresql.conf ships enable_seqscan=off, which the contract never permits");
@@ -224,20 +208,19 @@ export function validateImageInputs(input: ImageInputs): ValidationResult {
   return { ok: issues.length === 0, issues };
 }
 
-// ──────────────────────────── the protected backup manifest ───────────────────────────────
+// The protected backup manifest.
 
 /** The five component kinds the contract names, and the whole of what "undisposable" means
- *  on this platform. Each is here because losing it loses something no restart brings back:
+ *  here. Losing any one loses something no restart brings back:
  *
  *    database            identity truth — principals, teams, PATs, installs, grants, events
  *    artifacts           every team's documents and knowledge, including the canonical .zz record
  *    git                 the portable per-team history, which is what a team keeps if they leave
- *    credentials         each person's own building-block keys, which exist nowhere else
+ *    credentials         the gateway's own data volume
  *    configuration_keys  the encrypted configuration and key material the rest is useless without
  *
- *  `deploy/backup.sh` writes four of them and `deploy/backup-manifest.sh` derives the fifth
- *  and the manifest. A manifest short one kind is refused below, which is the point: the
- *  refusal is how a backup that quietly stopped covering something becomes visible. */
+ *  COUPLED: `deploy/backup.sh` writes four of them, `deploy/backup-manifest.sh` derives the
+ *  fifth and the manifest. A manifest short one kind is refused below. */
 const BACKUP_COMPONENT_KINDS = [
   "database", "artifacts", "git", "credentials", "configuration_keys",
 ] as const;
@@ -248,11 +231,10 @@ interface ManifestResult {
 }
 
 /** A locator is `protected:` plus a bare name — no directory, no host, no userinfo, no query.
- *  THAT IS A SECRECY RULE, NOT A TIDINESS ONE. The contract's own words are that backup
- *  reports never print secret values or unredacted credentials, and the most natural way for
- *  one to arrive in a report is a "locator" that is really a connection string. Refusing the
- *  shape at the boundary means no code downstream has to remember to redact: `@`, `:` and `/`
- *  simply cannot appear, so there is nothing to leak. */
+ *
+ *  DELIBERATE: this is a secrecy rule, not a tidiness one. A "locator" that is really a
+ *  connection string is how a credential reaches a backup report. Refusing the shape here
+ *  means `@`, `:` and `/` cannot appear, so nothing downstream has to redact. */
 const LOCATOR_RE = /^protected:[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 /**
@@ -260,26 +242,21 @@ const LOCATOR_RE = /^protected:[A-Za-z0-9][A-Za-z0-9._-]*$/;
  * `caseProtectedBackupRestoresIntoACleanTarget` passes before it touches a byte, and what
  * `checks/backup-covers-the-undisposable.ts` (frozen) drives.
  *
- * WHAT A `true` HERE IS AND IS NOT. It is a well-formed manifest: five kinds, a protected
- * locator and a syntactically valid SHA-256 each, the canonical record declared present, a
- * compose project named. It is NOT restoration evidence, and the distinction is the same one
- * `validateImageInputs` above draws about a digest — nothing offline can tell a real hash
- * from a well-formed fake one. A manifest that passes here and was never restored has proved
- * that somebody filled in a form. Only the live case, which re-hashes the actual bytes and
- * then interrogates the restored database, proves a backup exists.
+ * A `true` means a well-formed manifest: five kinds, a protected locator and a syntactically
+ * valid SHA-256 each, the canonical record declared present, a compose project named. It is
+ * not restoration evidence — only the live case, which re-hashes the bytes and interrogates
+ * the restored database, proves a backup exists.
  *
- * NO ISSUE EVER ECHOES A VALUE. `validateImageInputs` reports `JSON.stringify(value)`, which
- * is right for a digest and wrong here: a malformed manifest is exactly where a credential
- * shows up, and an error message is a thing that gets pasted into a ticket. Every issue below
- * names the field and the kind and stops there.
+ * DELIBERATE: no issue below ever echoes a value, unlike `validateImageInputs`, which reports
+ * `JSON.stringify(value)`. A malformed manifest is where a credential shows up, and an issue
+ * string gets pasted into a ticket. Every issue names the field and the kind and stops.
  */
 export function validateBackupManifest(report: unknown): ManifestResult {
   if (!isRecord(report)) return { ok: false, issues: ["the manifest must be an object"] };
   const issues: string[] = [];
 
-  // THIS VALIDATOR ONLY EVER BLESSES A REHEARSAL. "This task does not freeze or switch
-  // production; H3 production authority is sought only after I-25 readiness" — encoded, so
-  // that a manifest aimed at the live deployment cannot pass through the rehearsal's own gate.
+  // This validator only ever blesses a rehearsal: a manifest aimed at the live deployment
+  // cannot pass through the rehearsal's gate.
   if (report.scope !== "isolated-rehearsal") {
     issues.push('scope must be "isolated-rehearsal" — this validator admits no other scope');
   }
@@ -288,9 +265,9 @@ export function validateBackupManifest(report: unknown): ManifestResult {
     issues.push("compose_project must name the Compose project the volume IDs were resolved from");
   }
 
-  // "Artifacts include the canonical .zz record" — declared explicitly rather than inferred
-  // from the artifacts component being present, because the component is a volume archive and
-  // whether the record is inside it is a separate fact somebody has to have checked.
+  // DELIBERATE: declared explicitly rather than inferred from the artifacts component being
+  // present. That component is a volume archive, and whether the canonical .zz record is
+  // inside it is a separate fact somebody has to have checked.
   if (report.artifacts_include_canonical_record !== true) {
     issues.push("artifacts_include_canonical_record must be true — the canonical .zz record is protected backup material, not disposable telemetry");
   }
@@ -314,9 +291,8 @@ export function validateBackupManifest(report: unknown): ManifestResult {
     if (typeof component.locator !== "string" || !LOCATOR_RE.test(component.locator)) {
       issues.push(`the ${kind} component's locator must be "protected:" plus a bare name carrying no path, host or credential`);
     } else if (component.locator.includes("deploy_zz-artifacts")) {
-      // "No hardcoded deploy_zz-artifacts volume name" — the contract names this literal, so
-      // so does the rule. A volume ID that was typed rather than resolved is wrong on every
-      // host whose Compose project is not `deploy`, and silently wrong.
+      // No hardcoded deploy_zz-artifacts volume name: a volume ID that was typed rather than
+      // resolved is silently wrong on every host whose Compose project is not `deploy`.
       issues.push(`the ${kind} component's locator hardcodes the deploy_zz-artifacts volume name instead of resolving it from the Compose project`);
     }
 
@@ -332,7 +308,7 @@ export function validateBackupManifest(report: unknown): ManifestResult {
   return { ok: issues.length === 0, issues };
 }
 
-// ─────────────────────────────────── the "deployment" suite ───────────────────────────────
+// The "deployment" suite.
 
 interface CaseResult {
   readonly status: "passed" | "failed" | "not_run";
@@ -354,27 +330,20 @@ interface SuiteOutcome {
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const DEPLOY_DIR = join(repoRoot, "deploy", "postgres");
 
-/** The dependency-proof case group the technical AC names. `restore` and `cutover` are no
- *  longer deferred out of this module — I-21 wrote them, and they live in the two groups
- *  below. */
+/** The dependency-proof case group the technical AC names. `restore` and `cutover` are the
+ *  two groups below. */
 const EXTENSION_CASES = [
   "extension_load", "bm25_parameters", "explicit_index_queries",
   "per_corpus_statistics", "update_delete", "restart",
 ] as const;
 
 /**
- * THE OFFLINE GROUP, AND WHY IT EXISTS AS A GROUP AT ALL.
+ * The offline group: the half of the eight-step procedure that is judgement rather than
+ * infrastructure — whether a backup covers the undisposable, whether a drain drained, whether
+ * a switch was one matched unit, whether a resumed write survived.
  *
- * Until I-21 this module returned from the unverified-pin gate before running anything, so
- * every case in the suite was `not_run` on this checkout and the suite had no executable
- * content whatsoever. That was honest about the image pins and wrong about everything else:
- * the rules deciding whether a backup covers the undisposable, whether a drain actually
- * drained, whether a switch was one matched unit and whether a resumed write survived are all
- * decidable from a checkout alone, and a rule that never executes is a rule nobody can break
- * on purpose to find out whether it works.
- *
- * So these run always, at either profile, pins or no pins. They are the half of the eight-step
- * procedure that is judgement rather than infrastructure.
+ * DELIBERATE: these run always, at either profile, pins or no pins. They are decidable from
+ * a checkout alone, so the unverified-pin gate below must not block them.
  */
 const OFFLINE_CASES: Readonly<Record<string, () => void>> = {
   backup_manifest_covers_every_undisposable_component: () => {
@@ -409,9 +378,8 @@ const OFFLINE_CASES: Readonly<Record<string, () => void>> = {
     const secret = "protected:postgres://zz:s3cr3t-value@db.example.com/zz";
     const result = validateBackupManifest(withLocator(secret));
     assert.equal(result.ok, false, "a locator carrying a connection string must be refused");
-    // AND THE REFUSAL MUST NOT REPEAT IT. This is the rule that makes "backup reports never
-    // print a secret value" true of the validator's own output, which is the one place it is
-    // easiest to forget — an issue string is a thing people paste into tickets.
+    // And the refusal must not repeat it: an issue string is the validator's own output, and
+    // it gets pasted into tickets.
     for (const issue of result.issues) {
       assert.equal(issue.includes("s3cr3t-value"), false, "an issue echoed the credential it was refusing");
     }
@@ -516,9 +484,8 @@ function readDeployFiles(): ImageInputs {
   };
 }
 
-/** Every `<field>_verified` flag in the lock that is not `true` — the exact fields
- *  versions.lock.json's own "unverified_fields" names in prose, read back structurally so
- *  `run` can refuse to proceed without re-parsing that prose. */
+/** Every `<field>_verified` flag in the lock that is not `true`, read structurally rather
+ *  than from versions.lock.json's own "unverified_fields" prose. */
 function unverifiedFields(lock: Record<string, unknown>): string[] {
   const suffix = "_verified";
   return Object.keys(lock)
@@ -530,28 +497,22 @@ function notRun(reason: string): CaseResult {
   return { status: "not_run", reason };
 }
 
-/** The four case groups `--cases` selects from. The plan's own rehearsal command is
- *  `--cases restore,cutover`, so a comma-separated list of groups is accepted; the acceptance
- *  profile rejects `--cases` outright (cli.ts), which is where "partial cases never pass a
- *  whole business AC" is actually enforced. */
+/** The four case groups `--cases` selects from, as a comma-separated list.
+ *
+ *  COUPLED: cli.ts rejects `--cases` outright under the acceptance profile, which is what
+ *  stops partial cases passing a whole business AC. */
 const GROUP_NAMES = ["offline", "extension", "restore", "cutover"] as const;
 
 /**
  * `verify --suite deployment`'s entry point.
  *
- * THE ORDER OF THE THREE VERDICTS BELOW IS THE WHOLE DESIGN, and it changed with I-21.
+ * DELIBERATE: the order of the three verdicts is load-bearing. The offline group runs first
+ * and a real failure outranks the block, so a failing offline case reports `ran` (the CLI
+ * renders it FAILED) while an unresolved image pin with nothing failing reports `blocked`.
+ * Collapsing them makes a broken rule and an unbuilt image the same word in the receipt.
  *
- * A failing offline case reports `ran`, which the CLI renders as FAILED. An unresolved image
- * pin, with nothing failing, reports `blocked`. Those are different facts and they used to be
- * the same one: this module returned at the pin gate before executing anything, so a broken
- * rule and an unbuilt image were indistinguishable — both came back "blocked", and the broken
- * rule was the one nobody would have found. Running the offline group first, and letting a
- * real failure outrank the block, is what separates them.
- *
- * "Missing information is a blocked result, not an invitation to invent a value" still holds
- * exactly where it did: no docker is spawned while a pin is unverified, no database is
- * touched without an operator setting the variable that names one, and neither absence is
- * ever reported as a pass.
+ * Missing information is a blocked result, never a pass: no docker is spawned while a pin is
+ * unverified, and no database is touched without an operator setting the variable naming one.
  */
 export async function run({ cases }: { cases?: string }): Promise<SuiteOutcome> {
   const inputs = readDeployFiles();
@@ -581,7 +542,7 @@ export async function run({ cases }: { cases?: string }): Promise<SuiteOutcome> 
 
   const results: Record<string, CaseResult> = {};
 
-  // ── offline: always executed, pins or no pins ─────────────────────────────────────────
+  // Offline: always executed, pins or no pins.
   if (selected.includes("offline")) {
     for (const [name, body] of Object.entries(OFFLINE_CASES)) {
       try {
@@ -593,7 +554,7 @@ export async function run({ cases }: { cases?: string }): Promise<SuiteOutcome> 
     }
   }
 
-  // ── restore and cutover: real bytes and a real isolated database, or an honest not_run ──
+  // Restore and cutover: real bytes and a real isolated database, or an honest not_run.
   if (selected.includes("restore")) {
     results.restore = await caseProtectedBackupRestoresIntoACleanTarget(validateBackupManifest);
   }
@@ -606,7 +567,7 @@ export async function run({ cases }: { cases?: string }): Promise<SuiteOutcome> 
   const wantsExtension = selected.includes("extension");
 
   if (wantsExtension && unverified.length > 0) {
-    // EVERY MISSING PRECONDITION AT ONCE. Naming only the next blocker makes an operator
+    // Every missing precondition at once: naming only the next blocker makes an operator
     // discover the list one rerun at a time.
     for (const c of EXTENSION_CASES) {
       results[c] = notRun(
@@ -617,8 +578,8 @@ export async function run({ cases }: { cases?: string }): Promise<SuiteOutcome> 
 
   const anyFailed = Object.values(results).some((r) => r.status === "failed");
   if (!wantsExtension || unverified.length > 0) {
-    // A REAL FAILURE OUTRANKS A BLOCK. Blocked means "we could not look"; if something we DID
-    // look at went red, that is what the receipt has to say.
+    // A real failure outranks a block: blocked means nothing was looked at, and something
+    // that was looked at and went red is what the receipt has to say.
     const status = anyFailed ? "ran" as const : "blocked" as const;
     const detail: SuiteDetail = status === "blocked"
       ? { status, unverified, cases: results }
@@ -626,10 +587,9 @@ export async function run({ cases }: { cases?: string }): Promise<SuiteOutcome> 
     return { passed: false, detail };
   }
 
-  // UNREACHABLE FROM THIS CHECKOUT TODAY: every `*_verified` flag in the lock is false, so the
-  // block above always returns first here. It becomes reachable once an operator has
-  // resolved every field versions.lock.json's "unverified_fields" lists and flipped its
-  // matching `*_verified` flag to true — never by this task, which ran none of it.
+  // DELIBERATE: unreachable while any `*_verified` flag in the lock is false — the block
+  // above returns first. It becomes reachable once an operator resolves every field and flips
+  // the matching flag to true.
   for (const c of EXTENSION_CASES) {
     results[c] = c === "extension_load"
       ? notRun("pending build")

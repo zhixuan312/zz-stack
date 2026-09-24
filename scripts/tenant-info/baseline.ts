@@ -1,25 +1,21 @@
 /**
- * baseline.ts — the `baseline` verb: a read-only capture of the checkout, the runtime, the
- * store and the database, validated and written before anything downstream compares against
- * it. I-1 left this as a safe entry point that recorded only that the verb ran; this task's
- * contract is what it now actually measures.
+ * baseline.ts — the `baseline` verb: a read-only capture of the checkout, the runtime, the store
+ * and the database, validated and written before anything downstream compares against it.
  *
- * THREE ENV INPUTS the contract names directly — `ZZ_TENANT_INFO_BASELINE_DATABASE_URL` (a
+ * Six environment inputs. The contract names two: `ZZ_TENANT_INFO_BASELINE_DATABASE_URL` (a
  * restricted, read-only principal) and `ZZ_TENANT_INFO_STORE_ROOT` (a read-only snapshot,
- * expected to be the store's `teams/` directory — see `ledger.ts`'s `walkStore`) — plus
- * three more this task defines FOR "operator-provided runtime inspection access", which the
- * contract names as an input category without naming variables: `
- * ZZ_TENANT_INFO_RUNTIME_IMAGE_DIGEST`, `ZZ_TENANT_INFO_COMPOSE_PROJECT` and
- * `ZZ_TENANT_INFO_VOLUME_IDS` (a JSON object). The operator inspects the running deployment
- * themselves — with `docker inspect`, `docker compose ps`, whatever their access allows — and
- * hands the answers in; this collector never shells out to an inspection tool itself, and
- * never must run as whatever principal that inspection needs.
+ * expected to be the store's `teams/` directory — see `ledger.ts`'s `walkStore`). Three more
+ * carry "operator-provided runtime inspection access", which the contract names as a category
+ * without naming variables: `ZZ_TENANT_INFO_RUNTIME_IMAGE_DIGEST`,
+ * `ZZ_TENANT_INFO_COMPOSE_PROJECT` and `ZZ_TENANT_INFO_VOLUME_IDS` (a JSON object).
  *
- * FAILS CLOSED: every measurement is attempted independently and failures accumulate into
- * `blocked` diagnostics rather than aborting the first one hit, matching "records every
- * required field with its measurement evidence, and fails closed when any required
- * measurement is unavailable" — an operator fixing one blocked mount should not have to run
- * the whole command five times to discover the other four.
+ * DELIBERATE: the operator inspects the running deployment themselves and hands the answers in.
+ * This collector never shells out to an inspection tool, so it never has to run as whatever
+ * principal that inspection needs.
+ *
+ * Fails closed: every measurement is attempted independently and failures accumulate into
+ * `blocked` diagnostics rather than aborting on the first. An operator fixing one blocked mount
+ * should not have to run the whole command five times to discover the other four.
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -35,7 +31,7 @@ import {
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-// ────────────────────────────────── report shape ──────────────────────────────────
+// Report shape.
 
 interface MeasurementEvidence { readonly kind: string; readonly locator: string }
 interface CountEntry { readonly name: string; readonly value: number; readonly query: string }
@@ -79,7 +75,7 @@ interface BlockedReport {
   readonly partial: Readonly<Record<string, unknown>>;
 }
 
-// ────────────────────────────────── validator ──────────────────────────────────
+// Validator.
 
 const isNonEmptyString = (v: unknown): v is string => typeof v === "string" && v.length > 0;
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
@@ -99,10 +95,9 @@ function leaksCredentials(value: unknown): boolean {
 }
 
 /**
- * `{ok, issues}` — the collector's own gate before it will call anything a "complete"
- * receipt, and the frozen check's whole subject. Deliberately permissive about EXTRA keys (a
- * real capture may carry more than the fixture does) and strict about the required ones the
- * fixture exercises field-by-field.
+ * `{ok, issues}` — the collector's own gate before it will call anything a "complete" receipt,
+ * and the frozen check's subject. Permissive about extra keys, since a real capture may carry
+ * more than the fixture does, and strict field-by-field about the required ones.
  */
 export function validateBaseline(report: unknown): { ok: boolean; issues: string[] } {
   const issues: string[] = [];
@@ -168,25 +163,24 @@ export function validateBaseline(report: unknown): { ok: boolean; issues: string
   return { ok: issues.length === 0, issues };
 }
 
-// ────────────────────────────────── measurement helpers ──────────────────────────────────
+// Measurement helpers.
 
 const git = (args: string[]): string => execFileSync("git", args, { cwd: repoRoot, encoding: "utf8" }).trim();
 
 /**
- * NO FALLBACK to this checkout's root commit. That would make `reviewRef..HEAD` the entire
- * history, and `buildEditSurface`'s whole point is restricting the "is this task done" scan
- * to THIS initiative's own commits — a repository this old has reused task numbers across
- * earlier initiatives, and widening the range would credit one of those to this plan. A
- * missing `origin/master` blocks `review_reference_sha` (and everything downstream of it)
- * rather than silently measuring against the wrong range.
+ * DELIBERATE: no fallback to this checkout's root commit. That would make `reviewRef..HEAD` the
+ * entire history, and `buildEditSurface` exists to restrict the "is this task done" scan to this
+ * initiative's own commits — task numbers have been reused across earlier initiatives, so
+ * widening the range credits one of those to this plan. A missing `origin/master` blocks
+ * `review_reference_sha` and everything downstream of it.
  */
 function reviewReferenceSha(): string {
   return git(["merge-base", "HEAD", "origin/master"]);
 }
 
-/** The checkout's OWN idea of the migration ledger's head — read from `services/gateway/src/
- *  db.ts`'s `MIGRATIONS_DIR`, never assumed as `zz.schema_migration` without having read that
- *  runner (it names the table at `services/gateway/src/db.ts:81`). */
+/** The checkout's own idea of the migration ledger's head, read from
+ *  `services/gateway/src/db.ts`'s `MIGRATIONS_DIR` — never assumed as `zz.schema_migration`
+ *  without having read that runner, which creates the table itself. */
 function checkoutMigrationHead(): string {
   const dir = join(repoRoot, "services/gateway/migrations");
   const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
@@ -217,10 +211,10 @@ interface DbFacts {
   counts: CountEntry[];
 }
 
-/** Everything the database measures, inside one `REPEATABLE READ READ ONLY` transaction so
- *  every fact — the migration ledger, the extension catalog, every count — comes from the
- *  same snapshot boundary. No mutating probe runs here, in a rollback or otherwise; the
- *  transaction is rolled back at the end purely because there is never anything to commit. */
+/** Everything the database measures, inside one `REPEATABLE READ READ ONLY` transaction so every
+ *  fact — the migration ledger, the extension catalog, every count — comes from the same snapshot
+ *  boundary. No mutating probe runs here; the transaction is rolled back at the end purely
+ *  because there is never anything to commit. */
 async function readDatabaseFacts(databaseUrl: string): Promise<DbFacts> {
   const { default: pg } = await import("pg");
   const client = new pg.Client({ connectionString: databaseUrl });
@@ -277,7 +271,7 @@ async function readDatabaseFacts(databaseUrl: string): Promise<DbFacts> {
   }
 }
 
-// ────────────────────────────────── collector ──────────────────────────────────
+// Collector.
 
 function evidence(kind: string, locator: string): MeasurementEvidence { return { kind, locator }; }
 

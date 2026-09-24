@@ -3,7 +3,7 @@
  *
  * Every check registered by that file is one line — `check("<id>", runsCheck("<name>.ts"))` —
  * so the file itself asserts nothing. The real subject of each row below is whatever
- * `checks/<name>.ts` READS, and the defect is planted there rather than in the script that
+ * `checks/<name>.ts` reads, and the defect is planted there rather than in the script that
  * judges it: a defect in the thing being judged is a measurement, a defect in the judge is not.
  *
  * Every row carries an `assertion` because this one check file will end up with ~95 rows, and
@@ -11,9 +11,7 @@
  */
 import type { MutationSpec } from "./plant.ts";
 
-// WHICH MODULE REGISTERS THE TARGET, which is what `check_sha256` is computed over.
-// These were all `SUITES` while one file registered ninety-six checks; the split by
-// subject means a row now drifts only when the module its own check lives in moves.
+// Which module registers the target, which is what `check_sha256` is computed over.
 const SUITES_DATA = "scripts/gate/checks/suites-data.ts";
 const SUITES_SURFACE = "scripts/gate/checks/suites-surface.ts";
 const SUITES_TENANT = "scripts/gate/checks/suites-tenant.ts";
@@ -90,8 +88,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
     replace: 't.includes("skill_vi' + 'ew")',
     // REDACTED. The payload is a pre-rename tool name, and this repository sweeps every tracked
     // file for those — including testing/mutation-report.json, which plant() writes the
-    // RECONSTRUCTED string into. Seaming the source keeps the name out of THIS file and the
-    // report still carries it whole. redact base64-encodes it there.
+    // reconstructed string into. redact base64-encodes it there.
     redact: true,
     planted: "the tool report filters resolved subjects for a name the resolver has already " +
       "folded away. It matches no row, ever, so the \"skills this run loaded\" section " +
@@ -106,9 +103,9 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
     replace: '  write_file: "document_revise",',
     // REDACTED. The payload is a pre-rename tool or skill name, and this repository sweeps
     // every tracked file for those — including `testing/mutation-report.json`, which `plant()`
-    // writes the RECONSTRUCTED string into. Seaming the source is not enough: the seam keeps
-    // the name out of THIS file and the report still carries it whole. `redact` base64-encodes
-    // it there, so the experiment stays exactly reproducible and neither file is the finding.
+    // writes the reconstructed string into, so seaming the source is not enough. `redact`
+    // base64-encodes it there, so the experiment stays reproducible and neither file is the
+    // finding.
     redact: true,
     planted: "calls made before the rename are folded onto the wrong survivor. A window " +
       "spanning the rename reads as one series for write_file and document_revise and another " +
@@ -244,9 +241,9 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
     check: SUITES_TENANT,
     target: "a migration needing an extension declares it, and the runner still defers rather than taking the database down",
     assertion: "a migration that creates an extension declares that requirement",
-    // 070 is squashed into 001_init.sql, which carries the same directive verbatim -- pg_dump
-    // does not emit extensions, so they are written back into the squashed file's header along
-    // with the two lines the runner reads to decide whether to defer.
+    // 001_init.sql carries the directive in its header: pg_dump does not emit extensions, so
+    // they are written back there along with the two lines the runner reads to decide whether
+    // to defer.
     subject: "services/gateway/migrations/001_init.sql",
     find: "-- requires-extension: pg_trgm",
     replace: "-- note: this migration also needs pg_trgm",

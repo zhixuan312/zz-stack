@@ -1,18 +1,11 @@
-// Every core rename the spec froze is applied at the door, and no caller still names an old one.
+// Every core rename is applied at the door, and no caller still names an old one.
 //
-// WHAT THIS IS NOT. An earlier draft of this file also asserted that the core door holds
-// exactly 19 tools, and that every description says when/returns/refuses. Neither is this
-// task's: `checks/core-surface-19.ts` already owns the count — asserting it twice means two
-// files go red for one cause and the second one teaches nothing — and the description contract
-// (AC-2.13) is a different change that this rename does not make true. Both were dropped
-// rather than left failing, because a check registered in the gate and known to be red is a
-// check everybody learns to read past.
+// COUPLED: `TOOL_ALIAS` in `packages/contracts/src/alias.ts` is the old → new map and this
+// file reads it rather than re-deriving it. A `<verb>_<noun>` → `<noun>_<verb>` rule would produce `whoami` for
+// `get_my_info` and would rename `block_skills` instead of merging it.
 //
-// THE TABLE IS NOT RE-DERIVED HERE. `TOOL_ALIAS` is the frozen old → new map and this file
-// reads it. A `<verb>_<noun>` → `<noun>_<verb>` rule would have produced `whoami` for
-// `get_my_info` and would have renamed `block_skills` instead of merging it; alias.ts says so
-// in its own header, and a check that re-derived the answer would agree with the bug rather
-// than with the spec.
+// The tool count and the description contract are `checks/core-surface.ts`'s question, not
+// this file's.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { TOOL_ALIAS } from "../packages/contracts/dist/index.js";
@@ -20,21 +13,16 @@ import { TOOL_ALIAS } from "../packages/contracts/dist/index.js";
 const fail: string[] = [];
 const NOUNS = ["session", "skill", "initiative", "document", "source", "knowledge"];
 
-// `block_skills` IS THE ONE KEY THAT IS NOT A RENAME. It has an alias entry so its telemetry
-// history resolves, but the spec's table counts it as a MERGE into `skill_list` — it keeps its
-// own registration until that merge lands, and core-surface-19.ts is the check that asserts
-// it is gone. Excluded by name rather than by a rule, because nothing in the map's shape
-// distinguishes a merge from a rename.
+// DELIBERATE: `block_skills` is excluded by name. It has an alias entry so its telemetry
+// history resolves, but it is a merge into `skill_list` rather than a rename,
+// and nothing in the map's shape distinguishes the two. core-surface.ts asserts it is gone.
 const MERGED = "block_skills";
 const RENAMES = Object.entries(TOOL_ALIAS).filter(([old]) => old !== MERGED);
 
-// ── 1. The door ──────────────────────────────────────────────────────────────────────────
+// 1. The door
 //
-// EVERY SERVICE, not just `services/zz-core/src/tools`. `knowledge_reindex` is renamed here
-// and MOVED to `/manage` by a later task, so a check that demanded it on the core door would
-// go red the day that move lands and would be reporting a success. What this asserts is that
-// the name exists somewhere a client can reach; where it lives is core-surface-19.ts's
-// question.
+// Every service, not just `services/zz-core/src/tools`: this asserts only that the name exists
+// somewhere a client can reach. Where it lives is core-surface.ts's question.
 const walk = (d: string, out: string[] = []) => {
   for (const e of readdirSync(d)) {
     if (["node_modules", "dist", "_versions", "results"].includes(e)) continue;
@@ -53,7 +41,7 @@ if (registered.size === 0) fail.push("found no registerTool calls at all — the
 
 for (const [old, neu] of RENAMES) {
   if (registered.has(old)) fail.push(`${old} is still registered — it was renamed to ${neu}`);
-  // THE CONTROL. Without it this check passes on a door that registers nothing at all, which
+  // The control: without it this check passes on a door that registers nothing at all, which
   // is precisely the state a broken extraction produces.
   if (!registered.has(neu)) fail.push(`${neu} is registered nowhere — ${old} was renamed to it`);
   if (!NOUNS.some((n) => neu.startsWith(`${n}_`))) {
@@ -61,64 +49,53 @@ for (const [old, neu] of RENAMES) {
   }
 }
 
-// ── 2. The callers, which is the half that fails silently ────────────────────────────────
+// 2. The callers, which is the half that fails silently
 //
 // A skill telling a model to call `document_write` when the door says `write_file` gets
-// "unknown tool" mid-stage and the model improvises around a step the flow declared
-// mandatory. Nothing is red, nothing is logged as a defect, and the run reads as a bad
-// answer rather than a broken tool.
+// "unknown tool" mid-stage and the model improvises around a step the flow declared mandatory.
+// Nothing is red and nothing is logged as a defect.
 //
-// A REFERENCE HAS A SHAPE, and a bare word boundary is not it. `close`, `approve` and
-// `reconcile` are ordinary English and `res.on("close")` is an HTTP event; matching the word
-// put 69 files under `close` alone, most of them prose and socket teardown. So: backticked,
+// A reference has a shape, and a bare word boundary is not it: `close`, `approve` and
+// `reconcile` are ordinary English and `res.on("close")` is an HTTP event. So: backticked,
 // quoted, or in call form with no space before the paren — the same convention
-// `skill-tools.ts` settled on for "a skill names a TOOL", reused rather than reinvented.
+// `skill-tools.ts` uses for "a skill names a TOOL".
 //
-// AND THE ESCAPED PAREN, which is the form this task nearly shipped past twice. A tool name
-// inside a regex — `/^(write_file|…)$/` in tool-telemetry.ts, `approve\(` in an eval grader's
-// `pattern:`, `/close\(\s*(initiative/` in the gate's own knowledge.ts — is a live matcher
-// against a name a client sends, and it goes stale silently: the regex still compiles, still
-// runs, and matches nothing. Three of those were found by reading rather than by any check.
+// The escaped paren counts too. A tool name inside a regex — `/^(write_file|…)$/` in
+// tool-telemetry.ts, `approve\(` in an eval grader's `pattern:`, `/close\(\s*(initiative/` in
+// the gate's own knowledge.ts — is a live matcher against a name a client sends, and it goes
+// stale silently: the regex still compiles, still runs, and matches nothing.
 const SHAPE = (old: string) =>
   new RegExp(`(^|[^A-Za-z0-9_.])(?:(["'\`])${old}\\2|\`${old}\\(|${old}\\\\?\\()`);
 
-// The files whose SUBJECT is the rename. Each one exists to state the old names, so matching
+// The files whose subject is the rename. Each one exists to state the old names, so matching
 // them is the check reading its own homework back.
 const EXEMPT = new Set([
   "packages/contracts/src/alias.ts", "checks/alias-maps.ts", "checks/alias-applied.ts",
-  "checks/pre-rename-literals.ts", "checks/core-surface-19.ts", "checks/core-names.ts",
+  "checks/pre-rename-literals.ts", "checks/core-surface.ts", "checks/core-names.ts",
 ]);
 
-// A WORD THAT IS NOT THE TOOL DECLARES ITSELF, the way `pre-rename-literals.ts` makes a
+// A word that is not the tool declares itself, the way `pre-rename-literals.ts` makes a
 // deliberate pre-rename literal declare itself with `RAW NAME:`. A marker forces the author to
-// write down why — a socket event, a flow stage, a `next_move` verb, a grader's word list —
-// where a central allowlist would be a list nobody prunes and nobody reads.
+// write down why, where a central allowlist would be a list nobody prunes and nobody reads.
 const MARKER = /NOT A TOOL:/;
 
-// ONE FILE CANNOT CARRY THE MARKER, and it is named here rather than folded into EXEMPT above,
-// because EXEMPT means "this file's subject IS the rename" and this file's subject is not.
+// Two files cannot carry the marker, named here rather than folded into EXEMPT because EXEMPT
+// means "this file's subject is the rename" and neither file's subject is.
 //
 // `checks/tenant-lifecycle-matrix.ts` is a plan-authored check whose bytes are frozen before
-// execution and hash-verified before and after every task: the whole point is that a worker
-// cannot find a check inconvenient and soften it, so nobody — including this repository's own
-// conventions — may edit it afterwards. It writes `operation:'approve'`, the kernel's mutation
-// verb, which `alias.ts` also knows as the renamed MCP tool `document_approve`.
+// execution and hash-verified before and after every task, so nobody — including this
+// repository's own conventions — may edit it afterwards. It writes `operation:'approve'`, the
+// kernel's mutation verb, which `alias.ts` also knows as the renamed MCP tool
+// `document_approve`.
 //
-// The word is right and the marker is impossible, so the exemption goes where the rule is
-// stated. It is a single named path rather than a pattern: the day a second frozen check needs
-// this, somebody should have to write down why, which is the property the marker convention
-// exists to preserve.
-// THE SECOND ONE, and this is the "write down why" the paragraph above asks for.
+// `scripts/gate/checks/commit-result-reconciliation.ts` is frozen the same way. It imports
+// `reconcile` from `@zz/contracts` — a pure function that settles what a mutation kernel's
+// reply means about the operation that produced it — and reaches no door. The renamed MCP tool
+// `knowledge_reconcile` is a different thing sharing an English verb, and the source module it
+// imports from carries the `NOT A TOOL:` marker in full.
 //
-// `scripts/gate/checks/commit-result-reconciliation.ts` is Task I-23's declared check in the
-// Jev/LLM control-loop plan, frozen before dispatch and hash-verified after it for the same
-// reason as the matrix above: a worker who finds a check inconvenient must not be able to
-// soften it, and that holds against this repository's conventions too.
-//
-// It imports `reconcile` from `@zz/contracts` — a pure function that settles what a mutation
-// kernel's reply means about the operation that produced it. It reaches no door. The renamed
-// MCP tool `knowledge_reconcile` is a different thing that happens to share an English verb,
-// and the source module it imports from carries the `NOT A TOOL:` marker in full.
+// Named paths rather than a pattern: a third frozen check needing this should have to write
+// down why.
 const FROZEN_WITHOUT_MARKERS = new Set([
   "checks/tenant-lifecycle-matrix.ts",
   "scripts/gate/checks/commit-result-reconciliation.ts",
@@ -136,9 +113,8 @@ for (const p of TREES.flatMap((t) => walk(t))) {
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
     let code = raw;
-    // PROSE IN A MARKDOWN FILE IS THE INSTRUCTION, so nothing is stripped there. In a source
-    // file a comment recording what a name used to be is history, and every one of these
-    // files legitimately carries some.
+    // Prose in a markdown file is the instruction, so nothing is stripped there. In a source
+    // file a comment recording what a name used to be is history.
     if (CODE.test(p)) {
       if (inBlock) { const e = code.indexOf("*/"); if (e < 0) continue; code = code.slice(e + 2); inBlock = false; }
       const o = code.indexOf("/*");
@@ -151,8 +127,7 @@ for (const p of TREES.flatMap((t) => walk(t))) {
     // An event name is categorically not a tool name — `res.on("close", …)` collides with the
     // tool purely as a word. Skipping the listener call is narrower than exempting `close`,
     // which would blind this to a real skill naming the tool. The optional backslash catches
-    // the same call written inside a regex literal, which is how security-boundary.ts asserts
-    // that relayBody wires one.
+    // the same call written inside a regex literal.
     if (/\.(on|once|off|emit|addEventListener|removeEventListener)\\?\s*\(/.test(code)) continue;
 
     let marked = MARKER.test(raw);

@@ -1,39 +1,26 @@
-/** The catalog, read in one place.
+/** The catalog, read in one place: the manifest, a description, the commands map, the skills,
+ * the entry skill's when_to_use, the platform entries, the installable list.
  *
- * "Find this flow's directory" was written seven times across two files — once per thing
- * anyone wanted out of it: the manifest, a description, the commands map, the skills, the
- * entry skill's when_to_use, the platform entries, the installable list. Each spelled the
- * same walk over /catalog/<owner>/<flow>/ and each decided for itself what a missing
- * directory or an unparseable manifest meant, so they did not all decide the same way.
- *
- * The manifest shape lived in admin.ts while client-package.ts read the same file with its
- * own inline types, which is how `servers` and the commands map came to be read by one and
- * unknown to the other.
+ * COUPLED: the manifest shape is @zz/contracts' schema, not an interface declared here.
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 /** Where the shelf lives. `/catalog` in the image, which is where it ships.
  *
- * Overridable because it was not, and that made the packaging path untestable: everything
- * under buildClientPackage — what every person actually installs — reads the catalog through
- * this constant, so nothing outside a container could build a package to look at. The one
- * offline check that could exist was a regex over the source.
+ * Overridable so a checkout can point at its own catalog/ directory: everything under
+ * buildClientPackage reads the catalog through this constant, and without the override nothing
+ * outside a container could build a package to look at.
  *
- * Not a toggle and not a fallback: the default is the real path, and the override exists so
- * a checkout can point at its own catalog/ directory. */
+ * DELIBERATE: not a toggle and not a fallback — the default is the real path. */
 export const CATALOG_DIR = process.env.ZZ_CATALOG_DIR || "/catalog";
 
-/* The manifest's shape lives in @zz/contracts, as a schema rather than an interface.
- * It was declared here as a TypeScript interface and again in zz-core as a narrower local
- * view, so the same file was described twice by two things that could not see each other.
- * A schema also does what neither interface could: say NO to a manifest, and be published
- * so somebody writing one can read the rules before the write is refused.
+/* The manifest's shape lives in @zz/contracts, as a schema rather than an interface: a schema
+ * can say no to a manifest, and is published so somebody writing one can read the rules before
+ * the write is refused.
  *
- * NOT re-exported from here. It was, so `CatalogManifest` arrived from two module paths —
- * gateway/server.ts took it from the contract and admin.ts and zz-core took it from this
- * façade — and both services already depend on @zz/contracts directly. A second path to one
- * definition is the thing this package was made to remove, one level up. */
+ * DELIBERATE: not re-exported from here. Both services already depend on @zz/contracts
+ * directly, and a second module path to one definition is what this package exists to remove. */
 import { CatalogManifest as CatalogManifestSchema, type CatalogManifest, type FlowDoc, whyNot } from "@zz/contracts";
 
 interface CatalogEntry {
@@ -44,22 +31,15 @@ interface CatalogEntry {
 }
 
 /**
- * One flow.json, read and VALIDATED, or a sentence saying why not.
+ * One flow.json, read and validated, or a sentence saying why not.
  *
- * A manifest is read in three places and each has a different reader to answer for: this
- * package walks the whole catalog and must skip a broken flow rather than take the build down;
- * manifest-audit and chain-check are given ONE file by an operator and must stop with a
- * sentence. Two of the three called `CatalogManifest.parse` directly, so a mistyped key ended
- * an operator's command in a ZodError dump — a wall of JSON whose one useful word is buried,
- * which is the thing lib/cli.ts exists to prevent.
+ * Returns rather than throws: this package walks the whole catalog and must skip a broken flow
+ * rather than take the build down, while manifest-audit and chain-check are given one file and
+ * must stop with a sentence rather than a ZodError dump.
  *
- * `as CatalogManifest` is the other half and the reason validation is not optional: it
- * asserted a shape nobody checked, so a manifest with `gate: "true"` or a misspelled
- * `documents` key produced a chain that was wrong rather than absent — and a wrong chain
- * refuses the writes the flow depends on, at the stage that depends on them, far from the typo.
- *
- * Returns rather than throws, because the three callers want different things from a failure
- * and only one of them wants to stop.
+ * Validation is not optional. An unchecked `as CatalogManifest` lets `gate: "true"` or a
+ * misspelled `documents` key produce a chain that is wrong rather than absent, and a wrong chain
+ * refuses writes at the stage that depends on them, far from the typo.
  */
 export function manifestAt(file: string): { manifest: CatalogManifest; why: null }
   | { manifest: null; why: string } {
@@ -71,24 +51,13 @@ export function manifestAt(file: string): { manifest: CatalogManifest; why: null
   }
   const parsed = CatalogManifestSchema.safeParse(raw);
   if (parsed.success) {
-    // THE ONE LAW THE SCHEMA CANNOT STATE, checked here because this is the only reader that
-    // validates. `documents` is what makes a package a flow (see isFlow), and a document has
-    // to be PRODUCED by something: `stages` is where `produces` hangs and where a stage's
-    // block authority is declared, so a manifest promising documents with no stage to write
-    // them describes a flow nobody can run. zod says no to a shape; this is a relation
-    // between two fields, and z.object() has no spelling for one that survives `.shape`,
-    // `_def.unknownKeys` and jsonSchema() — all three of which the gate reads off
-    // CatalogManifest, and all three of which a `.superRefine()` would turn into undefined.
+    // The one law the schema cannot state, checked here because this is the only reader that
+    // validates: a manifest declaring `documents` must declare `stages`, since `stages` is what
+    // produces a document. The converse is legal — `stages` alone is an ordinary non-flow
+    // package, and so is declaring neither, which is what zz-access is.
     //
-    // The converse is NOT an error. `stages` and no `documents` is an ordinary non-flow
-    // package: a method somebody follows that leaves no governed document behind. So is
-    // declaring neither, which is what zz-access is. Refusing either here would be the old
-    // rule reinstated under a new name.
-    //
-    // THROUGH isFlow, not through a fourth copy of its expression. The rule this initiative
-    // replaced was scattered across the sites that asked it, which is why changing it meant
-    // finding them all; restating it inline here — in the function that enforces the
-    // obligation it creates — would rebuild that exact problem one file from the classifier.
+    // DELIBERATE: zod cannot carry this. A `.superRefine()` turns `.shape`, `_def.unknownKeys`
+    // and jsonSchema() into undefined, and the gate reads all three off CatalogManifest.
     const m = parsed.data;
     if (isFlow(m) && !(m.stages?.length ?? 0)) {
       return {
@@ -108,9 +77,8 @@ export function manifestAt(file: string): { manifest: CatalogManifest; why: null
   };
 }
 
-/** A package on the shelf: `<owner>/<name>`, whether or not it ships a manifest. Not
- * exported — every caller destructures it, and an exported name nobody imports is a door
- * onto nothing, which this repository refuses everywhere else. */
+/** A package on the shelf: `<owner>/<name>`, whether or not it ships a manifest. Not exported —
+ * every caller destructures it. */
 interface CatalogPackage {
   owner: string;
   name: string;
@@ -120,25 +88,16 @@ interface CatalogPackage {
 /**
  * Every package the catalog holds, owner-then-name ordered.
  *
- * Sorted rather than left in filesystem order: the shelf and the digest keyed to it are
- * built from this, and a listing that reorders itself between two containers of the same
- * image changes a version for nobody's benefit. skill_read has the sharper version of the
- * same reason — it returns the FIRST match, so directory order decided which of two packages
- * answered, and that differed between two containers of one image.
+ * Sorted rather than left in filesystem order: skill_read returns the first match, so directory
+ * order would decide which of two packages answers and would differ between two containers of
+ * one image. The shelf's digest is keyed to this order too.
  *
- * THE TOLERANCE IS THE POINT, and it is why this is one function rather than two walks.
- * zz-core walked the same two levels for its skill roots with a single try around the whole
- * thing, so a FILE where an owner directory was expected threw ENOTDIR and the catch — whose
- * comment says "no catalog mounted (local dev)" — swallowed it and returned whatever had
- * accumulated. A stray `.DS_Store` at the catalog root sorts FIRST, so the answer was the
- * empty list: no platform skills, no flow stage skills, no team overlays, and skill_read
- * finding nothing at all, with the only symptom being that every skill had vanished. The
- * catalog is mounted from the working tree on any host using the build override, which is
- * exactly where a stray file comes from.
+ * DELIBERATE: the per-level try/catch is the point. A single try around the whole walk lets a
+ * file where an owner directory was expected throw ENOTDIR and return whatever had accumulated;
+ * a stray `.DS_Store` sorts first, so the answer is the empty list and every skill vanishes.
  *
- * Every package, INCLUDING one with no flow.json. A skills-only package is a package kind
- * the platform supports and zz-flow-builder teaches — a team keeping its own conventions —
- * and it is served by skill_read today. catalogEntries() is the narrower question.
+ * Every package, including one with no flow.json — skill_read serves those. catalogEntries() is
+ * the narrower question.
  */
 export function catalogPackages(): readonly CatalogPackage[] {
   const out: CatalogPackage[] = [];
@@ -167,11 +126,9 @@ export function catalogEntries(): CatalogEntry[] {
     if (!existsSync(f)) continue;
     const got = manifestAt(f);
     if (got.manifest) { out.push({ owner, flow, dir, manifest: got.manifest }); continue; }
-    // Skipped, but never silently. This can only happen to a catalog edited on a running
-    // host — the build override makes that easy, mounting the working tree over the
-    // image's copy — and a typo there removes the flow from the shelf, from catalog_list
-    // and from every gate it governs. Without this line the only symptom is that it is
-    // gone.
+    // Skipped, but never silently. A catalog edited on a running host — the build override
+    // mounts the working tree over the image's copy — loses the flow from the shelf, from
+    // catalog_list and from every gate it governs, and this line is the only symptom.
     console.error(`catalog: ${owner}/${flow}/flow.json ${got.why}, skipping`);
   }
   return out;
@@ -179,18 +136,15 @@ export function catalogEntries(): CatalogEntry[] {
 
 /** One entry by flow name, or null.
  *
- * `includePlatform` is off by default, and that default is the guard. Filtering where a
- * thing is LOOKED UP rather than where it is LISTED is the difference between a guard and a
- * cosmetic: a filter applied only to a listing leaves every direct lookup able to reach the
- * entry anyway. Callers that genuinely want a platform entry — the package builder — ask for it. */
+ * DELIBERATE: `includePlatform` is off by default, and that default is the guard. Filtering
+ * where a thing is looked up rather than where it is listed is what makes it a guard: a filter
+ * on the listing alone leaves every direct lookup able to reach the entry. Callers that want a
+ * platform entry — the package builder — ask for it. */
 export function catalogEntry(flow: string, includePlatform = false): CatalogEntry | null {
   for (const e of catalogEntries()) {
     if (e.flow !== flow) continue;
-    // NOT INSTALLABLE — the question this is actually asking, and it is about
-    // ownership rather than shape. The field used to be `kind: "platform"` and this
-    // line used to carry a comment saying "ANY kind means not a flow", which was
-    // false: zz-skill-eval is shelved and has five stages, two documents and a gate.
-    // Shape is `documents` and lives nowhere else. See isFlow and CatalogManifest.shelved.
+    // Not installable — a question about ownership rather than shape. Shape is `documents`; see
+    // isFlow and CatalogManifest.shelved.
     if (e.manifest.shelved && !includePlatform) return null;
     return e;
   }
@@ -202,53 +156,35 @@ export function catalogManifest(flow: string, includePlatform = false): CatalogM
   return catalogEntry(flow, includePlatform)?.manifest ?? null;
 }
 
-/** IS THIS PACKAGE A FLOW? It is, if and only if it declares at least one document.
+/** Is this package a flow? It is, if and only if it declares at least one document.
  *
- * The one classifier, so that "what is this package" has one answer and no caller
- * reconstructs it. It replaces `stages.length > 0`, which was the rule for exactly the
- * reason this one is — the console had been guessing shape from contents, and a DECLARED
- * shape is what stops that — but which does not discriminate: `zz-access` is a surface, an
- * agent and an MCP door with no method, and it declared one stage whose name repeated its
- * own entry, so the rule called it a flow and the console gave it a stepper over a single
- * step that produced nothing.
+ * The one classifier, so "what is this package" has one answer and no caller reconstructs it.
+ * `documents` discriminates because a flow is a discipline over documents: gates, order, a
+ * closing document, a chain that refuses a write. A stage count does not. `stages` keeps its
+ * other jobs — `produces` hangs off it and the console's stepper walks it.
  *
- * `documents` discriminates because a flow is a discipline over documents: gates, order,
- * a closing document, a chain that refuses a write. A package with none of those has
- * nothing for the platform to govern, whatever its stage count. `stages` keeps every job
- * it already had — `produces` hangs off it, `stage-access.ts` reads a stage's `blocks`, the
- * console's stepper walks it — it simply no longer decides what the package IS.
+ * A flow must still declare stages, and manifestAt refuses one that does not. A package with
+ * stages and no documents is legal, which is what `zz-access` is.
  *
- * A flow must still declare stages, and manifestAt refuses one that does not: documents
- * with nothing to produce them is a flow nobody can run. The converse is a legal package
- * with no stages at all, which is what `zz-access` now is.
- *
- * A TYPE PREDICATE, not a plain boolean, because a flow's `documents` is exactly what every
- * caller reaches for next. Without the narrowing each one wrote its own
- * `(m.documents?.length ?? 0) > 0` so that TypeScript would let it read the field — which is
- * how one rule came to have four spellings, in the very initiative that exists to give it
- * one. `chainForFlow` then passes `m.documents` straight to `deriveChain` with no `?? []`
- * standing in for a case the predicate has already ruled out. */
+ * DELIBERATE: a type predicate, not a plain boolean, so callers can read `documents` without
+ * each rewriting the same `(m.documents?.length ?? 0) > 0` to narrow it. */
 export function isFlow(manifest: CatalogManifest): manifest is CatalogManifest & { documents: FlowDoc[] } {
   return (manifest.documents?.length ?? 0) > 0;
 }
 
-/** A FLOW'S DOCUMENTS AS THE PLATFORM ENFORCES THEM: what the manifest declares, plus the
+/** A flow's documents as the platform enforces them: what the manifest declares, plus the
  * handover every gating flow owes.
  *
- * DERIVED, NEVER CONFIGURED, so a flow written next week inherits it without its author
- * remembering — and derived HERE rather than in zz-core, because two readers need the same
- * answer. zz-core resolves the chain it gates writes against; the console draws the stepper,
- * counts the gates and decides whether an initiative is complete. The console read
- * `catalogManifest(flow).documents` raw, so it did not know the handover existed: it reported
- * `complete: true` on an initiative `initiative_status` was still answering
- * `action: "handover", waiting_on: "human"` for, and drew handover.md with no gate rule —
- * "we do not know" — beside a `status: draft` it could not explain.
+ * Derived, never configured, so a flow written next week inherits it. Derived here rather than
+ * in zz-core because two readers need the same answer: zz-core resolves the chain it gates
+ * writes against, and the console draws the stepper, counts the gates and decides whether an
+ * initiative is complete.
  *
  * Idempotent: a manifest that declares its own handover is left exactly as it is.
  *
- * Gated so somebody signs it, but never `closing` or `requiredForClose`: the flow's own
- * closing document still closes the flow, and that is what lets the handover be written
- * AFTER the close. */
+ * DELIBERATE: gated so somebody signs it, but never `closing` or `requiredForClose`. The flow's
+ * own closing document still closes the flow, which is what lets the handover be written after
+ * the close. */
 export function withHandover(documents: readonly FlowDoc[]): FlowDoc[] {
   const list = [...documents];
   if (!list.some((d) => d.gate) || list.some((d) => d.name === "handover.md")) return list;
@@ -265,26 +201,17 @@ export function withHandover(documents: readonly FlowDoc[]): FlowDoc[] {
   ];
 }
 
-/** WHICH PLUGIN SERVES A DOOR, from the only place that states it.
+/** Which plugin serves a door, from the only place that states it.
  *
- * A door IS a plugin's declared server — its `servers[].path` — so which plugin a call belongs
- * to is a fact about the DOOR the call arrived on, the same for every caller, and knowable
- * before the call is answered. It does not depend on who called, what they had loaded, or when.
+ * A door is a plugin's declared server — its `servers[].path` — so which plugin a call belongs to
+ * is a fact about the door the call arrived on: the same for every caller, and knowable before
+ * the call is answered. It does not depend on who called, what they had loaded, or when.
  *
- * Attribution used to be inferred from the caller's most recently read skill, which is a guess
- * about a person standing in for a fact about a tool. Measured on this deployment before the
- * change: `/eval` was 290/290 attributed and 290/290 WRONG — every evaluation call credited to
- * whichever skill that caller happened to read last — and three of five plugins had no events
- * at all. Everything built on telemetry inherited it.
+ * DELIBERATE: not `DOORS[].name` in the gateway, which looks like the same answer. That map's
+ * `name` is prose for a person reading the door index, not an identifier anything resolves.
  *
- * NOT `DOORS[].name` in the gateway, which is the other thing in this repository that looks
- * like this answer. That map's own docblock calls its `name` editorial — "access (behind the
- * ZZ Access agent)" is how a person finds a door in a client, not an identifier anything
- * resolves. The manifest is where a plugin declares its server, so the manifest is what says
- * whose server it is.
- *
- * Takes the surface as the telemetry spells it (`core`, `eval`, `manage`) or a full path.
- * Unknown comes back null and is written as null: never guessed at. */
+ * Takes the surface as the telemetry spells it (`core`, `eval`, `manage`) or a full path. Unknown
+ * comes back null and is written as null: never guessed at. */
 export function pluginForDoor(surface: string): string | null {
   if (!surface) return null;
   const path = surface.startsWith("/") ? surface : `/${surface}/mcp`;
@@ -296,8 +223,8 @@ export function pluginForDoor(surface: string): string | null {
   return null;
 }
 
-/** The optional plugins on the shelf. NOT every catalog entry: the platform's own required
- * plugins live here too, so that their description and skills have one home, but they ship as
+/** The optional plugins on the shelf. Not every catalog entry: the platform's own required
+ * plugins live here too, so their description and skills have one home, but they ship as
  * required plugins and must not be packaged a second time as optional ones. */
 export function installableFlows(): string[] {
   return catalogEntries()
@@ -305,12 +232,11 @@ export function installableFlows(): string[] {
     .map((e) => `${e.owner}/${e.flow}`);
 }
 
-/** Every catalog package that can GOVERN an initiative: the ones that declare documents.
+/** Every catalog package that can govern an initiative: the ones that declare documents.
  *
- * `isFlow` is the test, the same `documents` question the classifier asks, so there is one
- * answer to "is this a flow". Ownership does not enter into it: an initiative may be governed
- * by any flow the catalog has, because the platform keeps no record of which ones a team
- * installed. */
+ * `isFlow` is the test, so there is one answer to "is this a flow". Ownership does not enter into
+ * it: an initiative may be governed by any flow the catalog has, because the platform keeps no
+ * record of which ones a team installed. */
 export function governingFlows(): string[] {
   return catalogEntries()
     .filter((e) => isFlow(e.manifest))
@@ -326,21 +252,16 @@ export function skillText(flow: string, skill: string): string | null {
   return existsSync(p) ? readFileSync(p, "utf8") : null;
 }
 
-/** What a flow is called as a plugin.
+/** What a flow is called as a plugin: the trailing `-flow` is dropped.
  *
- * A command is `/<plugin>:<file>`, so the two names are typed together every time. Taken
- * literally from the catalog they repeat themselves: the flow `sdlc-flow` and the skill
- * `sdlc-deck` gave `/sdlc-flow:sdlc-deck`, which says "sdlc" twice and "flow" once more than
- * anyone needs. The trailing `-flow` is the same fact the namespace already carries.
+ * A command is `/<plugin>:<file>`, so the two names are typed together every time, and
+ * `sdlc-flow` with skill `sdlc-deck` would give `/sdlc-flow:sdlc-deck`.
  *
- * ONE RULE FOR EVERY READER: the packager names the plugin with it, the release registers it
- * under it, and a `flow:` subject tag resolves to the release through it.
+ * COUPLED: one rule for every reader — the packager names the plugin with it, the release
+ * registers it under it, and a `flow:` subject tag resolves to the release through it.
  *
- * The COMMAND half of that name used to be derived here too, by stripping the plugin's
- * prefix off the skill. It is declared now: see `declaredCommands` in the gateway's packager. The strip is gone rather
- * than kept as a default, because an entry skill is named after its plugin and nothing
- * survives the strip — so three of four front doors came out called `flow`, and none of them
- * said what it did. A fallback that names most things the same thing is not a fallback. */
+ * The command half of the name is declared, not derived: see `declaredCommands` in the gateway's
+ * packager. */
 export function pluginName(flow: string): string {
   return flow.endsWith("-flow") ? flow.slice(0, -"-flow".length) : flow;
 }

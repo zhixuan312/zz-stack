@@ -1,42 +1,30 @@
 /**
- * policies.ts — I-9's native semantic/provenance policy: the one thing `mutations.ts` (I-8)
- * deliberately left as an injected interface. This module decides WHAT a mutation writes —
- * which fields changed, whether that change earns a new `ContentRevision` or only an
- * `ArtifactEvent`, and what a cause has to resolve to before a mutation is allowed to happen
- * at all. The kernel's lock, etag and idempotency machinery is unaware of any of this.
+ * policies.ts — the native semantic/provenance policy `mutations.ts` leaves as an injected
+ * interface. It decides what a mutation writes: which fields changed, whether that change earns a
+ * new `ContentRevision` or only an `ArtifactEvent`, and what a cause must resolve to before a
+ * mutation is allowed at all. The kernel's lock, etag and idempotency machinery is unaware of it.
  *
- * THE COMMITTED/STAGED RECORD RESOLVER THE CONTRACT NAMES IS TWO THINGS, NOT A THIRD
- * INTERFACE. `PolicyContext.getHead` (I-8's) resolves anything already committed in this
- * owner's store; a plain `Map` built inside one policy call resolves anything this SAME
- * request is about to create (a source cited by the document that mints it, in one
- * transaction). Nothing here needs an injected resolver beyond those two, because a single
- * `Policy` invocation only ever produces one batch.
+ * The committed/staged resolver is two things: `PolicyContext.getHead` for anything already
+ * committed in this owner's store, and a plain `Map` built inside one policy call for anything this
+ * same request is about to create. A single `Policy` invocation only ever produces one batch.
  *
- * WHAT COUNTS AS A SOURCE, STRUCTURALLY. A `SourceArtifact` never carries a content revision
- * (the contract's own words); `ArtifactHead.revision === null` is exactly that fact, already
- * recorded by the kernel's replay. This module never re-derives "is this a source" any other
- * way — not from `artifact_class` on the request, which describes intent to CREATE one, not
- * an existing artifact's nature.
+ * `ArtifactHead.revision === null` is the only test for "is this a source" — never `artifact_class`
+ * on the request, which describes intent to create one.
  *
- * CANONICALIZATION IS THE ONLY DEFINITION OF "THE SAME CONTENT". `canonicalHash` and `isNoOp`
- * are exported because the frozen check pins their exact behaviour; `content_hash` on every
- * `ContentRevision` this module writes is `canonicalHash` of the SAME canonicalized payload
- * that revision stores — never the raw request — so a later no-op comparison is a single
- * hash equality against `ArtifactHead.content_hash`, with no need to re-fetch a full payload.
+ * Canonicalization is the only definition of "the same content": `content_hash` on every
+ * `ContentRevision` written here is `canonicalHash` of the same canonicalized payload that revision
+ * stores, so a no-op comparison is one hash equality against `ArtifactHead.content_hash`.
+ * COUPLED: `canonicalHash` and `isNoOp` are exported because `checks/tenant-revision-boundary.ts`
+ * pins their exact behaviour.
  *
- * SCOPE. `create`, `revise`, `move`, `attach_input`, `disposition_input` and
- * `correct_provenance` are native here. `approve`, `verify`, `set_knowledge_status`,
- * `publish`, `unpublish` and `supersede` are I-10's independent gate/knowledge/closure
- * transitions, bound through `decideTransition` below. Only `import_legacy` remains
- * unhandled — that is `migrate.ts`'s, not this task's.
+ * Native here: `create`, `revise`, `move`, `attach_input`, `disposition_input`,
+ * `correct_provenance`. Bound through `decideTransition` below: `approve`, `verify`,
+ * `set_knowledge_status`, `publish`, `unpublish`, `supersede`. `import_legacy` is `migrate.ts`'s.
  *
- * `PolicyContext.getHead` (I-8's, outside this task's edit surface) resolves only
- * `revision`/`content_hash`/`head_event_sequence` — no committed
- * revision's `cause_refs`/`sources`, no flow declaration. So: a state operation's class is the
- * CALLER's declared value, checked only structurally against `head.revision === null`;
- * `recordDigestOf` folds in `head_event_sequence` rather than the spec's provenance-set/flow-
- * contract digest (see its own comment); and `decideTransition` never authorizes by role —
- * `nativePolicy` passes `actor_authorized: true` since `ctx.actor` is already authenticated. */
+ * `PolicyContext.getHead` resolves only `revision`/`content_hash`/`head_event_sequence`. So a state
+ * operation's class is the caller's declared value checked only against `head.revision === null`;
+ * `recordDigestOf` folds in `head_event_sequence`; and `decideTransition` never authorizes by role —
+ * `nativePolicy` passes `actor_authorized: true` because `ctx.actor` is already authenticated. */
 import { randomUUID, createHash } from "node:crypto";
 
 import {
@@ -61,7 +49,7 @@ import { assertWithinInputLimit, InputTooLargeError } from "@zz/indexing";
 import type { ArtifactHead, Policy, PolicyContext, PolicyOutcome } from "./mutations.js";
 import { handleLifecycleTransition, handleSupersede } from "./transitions.js";
 
-// ── canonicalization: the one definition of "the same content" ─────────────────────────────
+// Canonicalization: the one definition of "the same content"
 
 function crlfToLf(value: string): string {
   return value.replace(/\r\n/g, "\n");
@@ -87,12 +75,11 @@ function canonicalTags(tags: unknown): string[] {
 }
 
 /**
- * The canonical form of a raw payload: every rule the spec names, in one place. `description`
- * absent becomes `""`, `resource` absent becomes `null`, tags are sorted and deduplicated,
- * `content_fields` keys are sorted recursively — and body whitespace, markdown and source
- * bytes are otherwise untouched. Loosely typed on purpose: a legacy or malformed payload must
- * canonicalize into SOMETHING that `SemanticPayloadSchema` can then accept or reject, rather
- * than throwing before validation gets a chance to name what is wrong.
+ * The canonical form of a raw payload: `description` absent becomes `""`, `resource` absent becomes
+ * `null`, tags are sorted and deduplicated, `content_fields` keys are sorted recursively, and body
+ * whitespace, markdown and source bytes are untouched. Loosely typed so a legacy or malformed
+ * payload canonicalizes into something `SemanticPayloadSchema` can accept or reject, rather than
+ * throwing before validation can name what is wrong.
  */
 function canonicalPayload(payload: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -110,10 +97,9 @@ function canonicalPayload(payload: Record<string, unknown>): Record<string, unkn
   return out;
 }
 
-/** Hand-built, not `JSON.stringify(sortedKeysObject)` — same reasoning as `record.ts`'s own
- *  `canonicalJson`: caller-controlled `content_fields` can carry an integer-looking string
- *  key, and V8's own object key iteration would silently reorder it ahead of this function's
- *  sort. Building the text by hand keeps key order under this function's control alone. */
+/** Hand-built, not `JSON.stringify` over a key-sorted object, like `record.ts`'s own `canonicalJson`:
+ *  caller-controlled `content_fields` can carry an integer-looking string key, and V8's object key
+ *  iteration would silently reorder it ahead of this function's sort. */
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value === "number" || typeof value === "boolean" || typeof value === "string") {
     return JSON.stringify(value);
@@ -127,23 +113,21 @@ function canonicalJson(value: unknown): string {
   return "null";
 }
 
-/** The check at `checks/tenant-revision-boundary.ts` pins this function's exact behaviour —
- *  see that file for the frozen cases (tag order/dupes, CRLF, sorted `content_fields`, and
- *  which single-field edits must change the hash). */
+/** COUPLED: `checks/tenant-revision-boundary.ts` pins this function's exact behaviour — tag order
+ *  and dupes, CRLF, sorted `content_fields`, and which single-field edits must change the hash. */
 export function canonicalHash(payload: Record<string, unknown>): string {
   return createHash("sha256").update(canonicalJson(canonicalPayload(payload)), "utf8").digest("hex");
 }
 
-/** `isNoOp(a, b)` is `canonicalHash` equality — the SAME predicate a real `revise` uses, just
- *  stated over two full payloads rather than a payload and a stored `content_hash`. The real
- *  kernel path only ever has the latter (`ArtifactHead` carries no payload), so `revise`
- *  below compares `canonicalHash(candidate) !== head.content_hash` directly; this export
- *  exists for a caller that legitimately holds both payloads, and for the frozen check. */
+/** `isNoOp(a, b)` is `canonicalHash` equality, stated over two full payloads. The kernel path has
+ *  only a payload and a stored hash, so `revise` below compares
+ *  `canonicalHash(candidate) !== head.content_hash` directly; this export is for the frozen check and
+ *  for a caller that legitimately holds both payloads. */
 export function isNoOp(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
   return canonicalHash(a) === canonicalHash(b);
 }
 
-// ── cause and citation resolution: committed heads, plus this request's own staged batch ───
+// Cause and citation resolution: committed heads, plus this request's own staged batch
 
 interface StagedRecord { readonly content_hash: string; readonly revision: number | null }
 
@@ -151,29 +135,15 @@ export function invalid(message: string): MutationError {
   return { committed: false, code: "INVALID_INPUT", message };
 }
 
-/** A reference resolves against whichever of the two record sets actually has it — never
- *  against `selfId`, which by definition has not been (and, for a new artifact, cannot yet
- *  have been) committed. That refusal is what turns a self-citing `cause_refs` entry into
- *  "does not resolve" rather than an accidental match.
+/** A reference resolves against whichever of the two record sets has it — never against `selfId`,
+ *  which by definition has not been committed, so a self-citing `cause_refs` entry does not resolve.
  *
- *  FOUR IDENTITY COMPONENTS, FOUR CHECKS. `owner_id` used to be the one field a caller could
- *  assert freely: this function compared artifact, revision and hash, and a ref naming a
- *  FOREIGN owner alongside this store's correct artifact/revision/hash resolved `true`. The
- *  request then committed, and the false assertion went permanently into the ContentRevision's
- *  `cause_refs` and the `created` event's — append-only records, so nothing later can correct
- *  it. `cause_refs` IS the provenance trail; an owner in it that is not the owner the artifact
- *  lives under points a future reader at another tenant's store.
+ *  Four identity components, four checks, `owner_id` included. `cause_refs` is append-only
+ *  provenance, so a ref naming a foreign owner would commit a false assertion nothing later can
+ *  correct. `handleSupersede` (transitions.ts) refuses the same field as `NOT_FOUND_OR_FORBIDDEN`.
  *
- *  AND THE KERNEL WAS INCONSISTENT WITH ITSELF, which is what makes this a defect rather than
- *  a design choice: `handleSupersede` (transitions.ts) already refuses a replacement whose
- *  `owner_id` is not `ctx.owner_id`, as `NOT_FOUND_OR_FORBIDDEN`. Two paths, one field, two
- *  answers.
- *
- *  It returns `false` rather than a distinct code deliberately — see `checkCauses` below:
- *  `resolveRef` cannot see WHY a reference failed, only that it did, and "found but not
- *  yours" is exactly the distinction that must not leak.
- *
- *  Found by the I-24 agent review, the first reader on this delivery who had built none of it. */
+ *  DELIBERATE: it returns `false` rather than a distinct code — "found but not yours" is the
+ *  distinction that must not leak. */
 export function resolveRef(
   ref: ArtifactRef, ctx: PolicyContext, staged: ReadonlyMap<string, StagedRecord>, selfId: string,
 ): boolean {
@@ -187,12 +157,9 @@ export function resolveRef(
 }
 
 /**
- * `cause_refs` in the order the Errors contract names them: empty is `CAUSE_REQUIRED`; a
- * cause naming the artifact this very request produces is the one cycle a single request can
- * reach, and is named as such (`CYCLE_REFUSED`) rather than left to fall through to the
- * generic "does not resolve"; anything left is `UNRESOLVED_CAUSE`, with no separate code for
- * "found but not yours" — `resolveRef` cannot see why a reference failed, only that it did,
- * which is what keeps that failure nonrevealing.
+ * `cause_refs` in the order the Errors contract names them: empty is `CAUSE_REQUIRED`; a cause naming
+ * the artifact this request produces is `CYCLE_REFUSED`; anything left is `UNRESOLVED_CAUSE`, with no
+ * separate code for "found but not yours".
  */
 function checkCauses(
   causeRefs: readonly ArtifactRef[], ctx: PolicyContext, staged: ReadonlyMap<string, StagedRecord>, selfId: string,
@@ -205,21 +172,13 @@ function checkCauses(
   }
   for (const ref of causeRefs) {
     if (!resolveRef(ref, ctx, staged, selfId)) {
-      // A CALLER CITING THEIR OWN ARTIFACT AT AN OLDER REVISION USED TO BE TOLD EXACTLY WHAT A
-      // CALLER CITING GARBAGE WAS TOLD, and the two are not the same mistake.
+      // `resolveRef` resolves against the head revision: a cause records what the author read, and
+      // what they read was the current version. That rule is invisible from the refusal, so an author
+      // who cited revision 1 after a revise to 2 otherwise gets "does not resolve" about a record
+      // that is committed, present and theirs.
       //
-      // `resolveRef` resolves against the HEAD revision. That is a real rule and it is
-      // deliberate — a cause records what the author actually read, and what they read was the
-      // current version — but it is invisible from the refusal, so an author who cited
-      // revision 1 after somebody revised the concept to revision 2 got "does not resolve to a
-      // known revision/hash" about a record that is committed, present and theirs. The I-24
-      // agent review hit exactly this and had to read the kernel to find out why.
-      //
-      // DISCLOSING IT LEAKS NOTHING, and that is true by construction rather than by care:
-      // `resolveRef` has already refused every ref whose `owner_id` is not this context's, so
-      // reaching this branch with a matching owner means the caller owns the store being
-      // described. The nonrevealing rule exists to stop a caller probing for ANOTHER tenant's
-      // artifact ids, and that path returns the generic message below, unchanged.
+      // Disclosing it leaks nothing: `resolveRef` has already refused every ref whose `owner_id` is
+      // not this context's, so a matching owner means the caller owns the store being described.
       if (ref.owner_id === ctx.owner_id) {
         const head = ctx.getHead(ref.artifact_id);
         if (head && head.revision !== ref.revision) {
@@ -236,16 +195,16 @@ function checkCauses(
   return null;
 }
 
-// ── same-batch source creation ──────────────────────────────────────────────────────────────
+// Same-batch source creation
 
 interface NewSourceInput {
   readonly artifact_id: string; readonly content: string; readonly original_path: string;
   readonly title: string; readonly media_type: string; readonly original_locator: string | null;
 }
 
-/** `undefined` is "no same-batch sources", a valid and common case; anything present but not
- *  shaped like a source-to-mint is `null`, which the caller reports as `INVALID_INPUT` rather
- *  than silently dropping malformed entries. */
+/** `undefined` is "no same-batch sources", a valid and common case; anything present but not shaped
+ *  like a source-to-mint is `null`, which the caller reports as `INVALID_INPUT` rather than silently
+ *  dropping malformed entries. */
 function parseNewSources(raw: unknown): NewSourceInput[] | null {
   if (raw === undefined) return [];
   if (!Array.isArray(raw)) return null;
@@ -270,8 +229,8 @@ interface StagedSourcesBuild {
 }
 
 /** Mints one immutable `SourceCapture` (plus its own `created` event, `revision: null`) per
- *  same-batch source, and returns the staged map the document minted alongside them resolves
- *  its `cause_refs`/`sources` against — the "staged" half of the committed/staged resolver. */
+ *  same-batch source, and returns the staged map the document minted alongside them resolves its
+ *  `cause_refs`/`sources` against — the "staged" half of the committed/staged resolver. */
 function buildStagedSources(newSources: readonly NewSourceInput[], ctx: PolicyContext, now: string): StagedSourcesBuild {
   const captures: SourceCapture[] = [];
   const events: ArtifactEvent[] = [];
@@ -296,7 +255,7 @@ function buildStagedSources(newSources: readonly NewSourceInput[], ctx: PolicyCo
   return { captures, events, blobs, staged };
 }
 
-// ── the semantic (create/revise) preparation shared by both ────────────────────────────────
+// The semantic (create/revise) preparation shared by both
 
 interface SemanticPreparation {
   readonly canonical: Record<string, unknown>;
@@ -310,11 +269,10 @@ function isMutationError(v: SemanticPreparation | MutationError): v is MutationE
 }
 
 /**
- * Everything `create` and `revise` share: canonicalize and validate the payload, mint any
- * same-batch sources, resolve every `sources` citation and every `cause_refs` entry against
- * the committed-plus-staged set. Returns the prepared pieces, or the one `MutationError` that
- * blocks publication — nothing here decides revision numbers, which differ between the two
- * callers.
+ * Everything `create` and `revise` share: canonicalize and validate the payload, mint any same-batch
+ * sources, resolve every `sources` citation and `cause_refs` entry against the committed-plus-staged
+ * set. Returns the prepared pieces, or the one `MutationError` that blocks publication. Revision
+ * numbers are the two callers' own.
  */
 function prepareSemanticChange(
   request: MutationRequest, ctx: PolicyContext, selfId: string, now: string,
@@ -322,29 +280,15 @@ function prepareSemanticChange(
   const rawPayload = request.payload;
   const canonical = canonicalPayload(rawPayload);
 
-  // THE 8-MiB KERNEL GATE, and until this line it did not exist as behaviour.
+  // The 8-MiB kernel gate, measured on the canonical payload. Every text a revision carries is in
+  // there — title, description, body, tags, resource, content_fields — so no field list here can
+  // drift out of step with `semanticFields`.
   //
-  // `assertWithinInputLimit` and `MAX_INPUT_BYTES` were built by I-14, exported, and
-  // mutation-tested by a frozen check — and every reference to either one in the whole
-  // checkout belonged to that check. `PAYLOAD_TOO_LARGE` has been one of the twelve declared
-  // mutation error codes since I-6 and was emitted by nothing. A contract with no
-  // implementation on both halves at once: the limit could not refuse anything and the code
-  // could not be returned. I-14 named the absence in its own commit — "NOT called from
-  // record.ts, whichever task owns it needs one line" — and no task was ever assigned it.
+  // DELIBERATE: before schema validation. Refusing an oversized payload does not depend on it also
+  // being well-formed, and the cheap byte count runs before any work proportional to the content.
   //
-  // MEASURED ON THE CANONICAL PAYLOAD, which is what the code is named after. Every text a
-  // revision carries is in there — title, description, body, tags, resource, content_fields —
-  // so no field list here can drift out of step with `semanticFields`. The JSON structure
-  // costs a few hundred bytes against a ceiling of eight million.
-  //
-  // BEFORE SCHEMA VALIDATION, deliberately: refusing an oversized payload should not depend on
-  // it also being well-formed, and the cheap byte count should run before any work proportional
-  // to the content.
-  //
-  // LEGACY CONTENT IS EXEMPT BY CONSTRUCTION, not by a flag. `import_legacy` never reaches this
-  // function — the dispatcher at the bottom of this file routes it out by name — so oversized
-  // material that predates the limit is preserved and indexed exactly as the migration
-  // exception requires, and there is no boolean anyone can pass to get a new write past it.
+  // `import_legacy` never reaches this function — the dispatcher at the bottom of this file routes it
+  // out by name — so legacy oversized material is exempt by construction rather than by a flag.
   try {
     assertWithinInputLimit(Buffer.byteLength(canonicalJson(canonical), "utf8"));
   } catch (err) {
@@ -388,7 +332,7 @@ function bodyBlob(canonical: Record<string, unknown>): { hash: string; bytes: Ui
   return { hash: createHash("sha256").update(bytes).digest("hex"), bytes };
 }
 
-// ── create ───────────────────────────────────────────────────────────────────────────────
+// Create
 
 function handleCreateSource(request: MutationRequest, ctx: PolicyContext, artifactId: string, now: string): PolicyOutcome {
   const raw = request.payload;
@@ -457,7 +401,7 @@ function handleCreate(request: MutationRequest, ctx: PolicyContext): PolicyOutco
   };
 }
 
-// ── revise ───────────────────────────────────────────────────────────────────────────────
+// Revise
 
 function handleRevise(request: MutationRequest, ctx: PolicyContext, head: ArtifactHead): PolicyOutcome {
   const artifactId = request.artifact_id as string;
@@ -517,7 +461,7 @@ function parsePayload(canonical: Record<string, unknown>): ContentRevision["payl
   return SemanticPayloadSchema.parse(canonical);
 }
 
-// ── metadata-only operations: an event, never a revision ───────────────────────────────────
+// Metadata-only operations: an event, never a revision
 
 const STATE_EVENT_KIND: Partial<Record<MutationRequest["operation"], ArtifactEventKind>> = {
   move: "moved",
@@ -526,9 +470,9 @@ const STATE_EVENT_KIND: Partial<Record<MutationRequest["operation"], ArtifactEve
   correct_provenance: "provenance_corrected",
 };
 
-/** `governing_flow_slots`, when declared, names the paths a flow-bound role may occupy (this
- *  kernel tracks no flow binding of its own). Absent, a move is freeform; present, the target
- *  must stay in the same initiative and a declared slot, or it orphans a prerequisite/gate. */
+/** `governing_flow_slots`, when declared, names the paths a flow-bound role may occupy (this kernel
+ *  tracks no flow binding of its own). Absent, a move is freeform; present, the target must stay in
+ *  the same initiative and a declared slot, or it orphans a prerequisite or gate. */
 function moveRefusal(payload: Record<string, unknown>): MutationError | null {
   const from = typeof payload.from === "string" ? payload.from : null;
   const to = typeof payload.to === "string" ? payload.to : null;
@@ -551,13 +495,11 @@ function moveRefusal(payload: Record<string, unknown>): MutationError | null {
 }
 
 /**
- * `move`, `attach_input`, `disposition_input` and `correct_provenance` share one shape: they
- * never touch `payload`'s semantic fields, so `data` carries the caller's payload verbatim
- * and the head's own `revision`/`content_hash` pass through untouched — exactly the
- * "independently recorded event, not a synthetic content edit" the contract requires. A
- * provenance correction's own cause is checked the same way any other cause is: it must be
- * declared and must resolve, and nothing here touches `sources`/`cause_refs` already on file
- * against an earlier revision, so an original assertion is never erased by a later one.
+ * `move`, `attach_input`, `disposition_input` and `correct_provenance` share one shape: they never
+ * touch `payload`'s semantic fields, so `data` carries the caller's payload verbatim and the head's
+ * `revision`/`content_hash` pass through untouched. A provenance correction's own cause must be
+ * declared and must resolve like any other, and nothing here touches `sources`/`cause_refs` already
+ * on file against an earlier revision.
  */
 function handleStateEvent(request: MutationRequest, ctx: PolicyContext, head: ArtifactHead, kind: ArtifactEventKind): PolicyOutcome {
   const artifactId = request.artifact_id as string;
@@ -584,12 +526,12 @@ function handleStateEvent(request: MutationRequest, ctx: PolicyContext, head: Ar
   };
 }
 
-// ── I-10: the independent gate/knowledge/closure transition matrix ─────────────────────────
+// The independent gate/knowledge/closure transition matrix
 
-/** Everything `decideTransition` judges, flattened. Fields are plain `string`/`number`/
- *  `boolean` rather than the narrower `ArtifactClass`/`MutationOp` unions: the frozen check
- *  builds this object as a literal with no `as const`, and a narrower type would fail that
- *  check's own typecheck rather than exercise the decision. Unknown values refuse at runtime. */
+/** Everything `decideTransition` judges, flattened. DELIBERATE: fields are plain
+ *  `string`/`number`/`boolean` rather than the narrower `ArtifactClass`/`MutationOp` unions — the
+ *  frozen check builds this object as a literal with no `as const`, and a narrower type would fail
+ *  that check's typecheck rather than exercise the decision. Unknown values refuse at runtime. */
 interface TransitionContext {
   readonly artifact_class: string; readonly operation: string; readonly actor_authorized: boolean;
   readonly gate_declared: boolean; readonly current_revision: number; readonly expected_revision: number;
@@ -602,9 +544,9 @@ function refusedTransition(code: MutationError["code"]): TransitionDecision {
   return { accepted: false, code };
 }
 
-/** Which classes each lifecycle op accepts, before authorization/gate/revision checks — the
- *  spec's matrix as a table. `revise` appears only for the one fact owned here: a source
- *  never accepts one; every other class's `revise` is `handleRevise`'s decision. */
+/** Which classes each lifecycle op accepts, before authorization, gate and revision checks. `revise`
+ *  appears only for the one fact owned here: a source never accepts one; every other class's `revise`
+ *  is `handleRevise`'s decision. */
 const OPERATION_CLASSES: Readonly<Record<string, ReadonlySet<string>>> = {
   approve: new Set(["work_document"]),
   verify: new Set(["work_document", "knowledge_concept"]),
@@ -616,11 +558,10 @@ const OPERATION_CLASSES: Readonly<Record<string, ReadonlySet<string>>> = {
 
 const ARTIFACT_CLASSES = new Set(["source", "work_document", "knowledge_concept"]);
 
-/** The real subtype-policy decision: a class alone never authorizes a transition. Checked in
- *  the order the frozen check exercises it — structural class/operation refusals first (they
- *  hold regardless of authorization, gate or revision state), then authorization, then the
- *  gate declaration `approve` alone requires, then revision and digest binding. A wrong
- *  expected digest OR revision refuses — never one checked and the other assumed. */
+/** The real subtype-policy decision: a class alone never authorizes a transition. Checked in the
+ *  order the frozen check exercises it — structural class/operation refusals, then authorization,
+ *  then the gate declaration `approve` requires, then revision and digest binding. A wrong expected
+ *  digest or revision refuses; never one checked and the other assumed. */
 export function decideTransition(context: TransitionContext): TransitionDecision {
   const { artifact_class: artifactClass, operation } = context;
   if (!ARTIFACT_CLASSES.has(artifactClass)) return refusedTransition("INVALID_INPUT");
@@ -639,15 +580,11 @@ export function decideTransition(context: TransitionContext): TransitionDecision
   return { accepted: true };
 }
 
-/** The record digest a lifecycle transition binds to. The spec's formula also folds in the
- *  effective provenance-reference set and a work document's flow-contract digest; neither is
- *  reachable from `PolicyContext.getHead` (I-8's, outside this edit surface), which exposes
- *  only `content_hash`/`head_event_sequence` — no committed revision's `cause_refs` and no
- *  flow declaration. Folding `head_event_sequence` in is the safe substitute: EVERY committed
- *  event advances it, so this digest invalidates a stale approval/verification at least as
- *  often as the spec's formula would (never less) — at the named cost of also invalidating
- *  across an event the spec would have left alone (a bare `moved`), a false "re-approve this"
- *  rather than a false "still current". */
+/** The record digest a lifecycle transition binds to. The spec's formula also folds in the effective
+ *  provenance-reference set and a flow-contract digest, neither reachable from `PolicyContext.getHead`.
+ *  Folding `head_event_sequence` in invalidates a stale approval or verification at least as often as
+ *  the spec's formula would, at the cost of also invalidating across an event it would have left
+ *  alone (a bare `moved`) — a false "re-approve this" rather than a false "still current". */
 export function recordDigestOf(head: Pick<ArtifactHead, "content_hash" | "head_event_sequence">): string {
   return createHash("sha256").update(`${head.content_hash}:${head.head_event_sequence}`, "utf8").digest("hex");
 }

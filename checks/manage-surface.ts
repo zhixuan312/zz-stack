@@ -1,103 +1,58 @@
-// The /manage door: every tool it serves, cut by role, with the duplicates gone and one
-// exception kept. The counts are printed by the check below, where they are measured — this
-// line carried them as literals, on the file whose whole argument is that a number belongs
-// where it is derived.
+// The /manage door: every tool it serves, cut by role, with the duplicates gone. The counts
+// are printed by the check below, where they are measured.
 //
-// WHAT THE PLAN'S DRAFT OF THIS FILE COULD NOT SEE, measured against untouched code before a
-// line was changed. Three holes, all of which let a wrong implementation pass:
+// Three properties, each written to fail loudly rather than skip:
 //
-//  1. Its description scan was `registerTool\(\s*\n?\s*"name"[\s\S]{0,80}?description:`, and 80
-//     characters cannot span the comment block that sits between the name and `description:`
-//     on this door — which is most of the interesting tools, because a tool with a subtle
-//     reason to exist is exactly the one whose registration carries a note. Six of the 33 were
-//     never scanned at all: disconnect_block, my_teams, whoami, deactivate_person,
-//     list_catalog and my_client_setup. my_teams' text contained no "when", no "return" and no
-//     "refus" and would have produced three failures; it produced none. A CHECK THAT SILENTLY
-//     SKIPS IS WORSE THAN ONE THAT IS MERELY WEAK: a weak check fails honestly on what it
-//     examines, while a silent-skip reports success on what it never looked at. So the rule
-//     here is that the set of tools with a captured description must EQUAL the set of
-//     registrations, and the difference is named.
+//  1. The set of tools with a captured description must equal the set of registrations, and
+//     the difference is named. A description scan that misses a registration reports success
+//     on what it never looked at.
 //
-//  2. Its header said "16 for a member" and it asserted nothing whatever about visibility. The
-//     role split is the substance of AC-2.29 — it is what "a member sees exactly the 16 the
-//     spec froze" means — and it was the one property the check did not look at. Every
-//     registration's gate is parsed here and pinned per tier, in BOTH directions: a member must
-//     not see the other fourteen, and a superadmin must still see all thirty-one.
+//  2. Every registration's gate is parsed and pinned per tier, in both directions: a member
+//     must not see the gated tools, and a superadmin must see all of them.
 //
-//  3. Its deletion test asked whether three names appear among the registrations IN THESE THREE
-//     FILES. An implementation that moved `issue_my_access_token` into settings.ts, or left it
-//     registered on another door, passes that. Absence is asserted here over every service and
-//     package, with comments stripped, because a comment recording what a tool used to be is
-//     history and this repository's files legitimately carry a lot of it.
+//  3. The deleted duplicates are asserted absent over every service and package, with comments
+//     stripped, not merely absent from the three door files.
 //
-// THE COUNT IS 31 SINCE TASK I-38, AND THE 31st IS `knowledge_reindex`. It is the tool the
-// plan described as "arriving from the core door" and assigned to Task I-18, which delivered
-// two of its three tools and left this one where it was: moving it needs `reindexTeam` and
-// `indexDoc` reachable from the gateway, and a service cannot import another service. Task
-// I-38 — opened against this initiative after I-18 hit that blocker, so it postdates plan.md
-// and grepping the plan's 37 tasks for it correctly finds nothing — extracted them into
-// `@zz/indexing`, which both services import, and the tool moved.
-//
-// For most of this initiative this file asserted 30 and said so in this paragraph, because
-// asserting the end state early makes a check red for a reason that is not the task's, which
-// is how a gate teaches people to read past it. The move has landed, so the name is in SUPER
-// below AND in the `expected` set beside it — `knowledge_reindex` is a TOOL_ALIAS value and
-// not a MANAGE_ALIAS one, because the old name lived on /core, so the derivation from
-// MANAGE_ALIAS cannot produce it and it is named there explicitly.
-//
-// WHAT THIS FILE DELIBERATELY DOES NOT CHECK ABOUT IT. Its argument contract — `team?`,
-// `force?`, omitted meaning every team, an unknown slug refused by name — and the proof that
-// exactly one indexer exists both live in checks/core-surface-19.ts, section 4, which is the
-// file that tracked the tool's departure from /core. Two files asserting the same thing is
-// two files to edit the day it changes.
-//
-// WHY THE NAMES ARE DERIVED AND THE THREE TIERS ARE NOT. The name set is
-// `Object.values(MANAGE_ALIAS)` plus `whoami` plus the one arrival named above, so it is the
-// frozen rename table itself rather
-// than a list anybody maintains: add an entry to the table without renaming the tool and this
-// goes red on its own. The tiers cannot be derived — the spec froze "16 for a member" as a
-// number and never enumerated them — so they are written out below, and their union is
-// asserted against the derived set, which is what stops a name being quietly moved between
+// DELIBERATE: the names are derived and the tiers are not. The name set is
+// `Object.values(MANAGE_ALIAS)` plus the names below that never had an old name, so adding an
+// entry to the rename table without renaming the tool turns this red on its own. The tiers
+// cannot be derived from anything but the gates themselves, so they are written out below and
+// their union is asserted against the derived set, which stops a name being moved between
 // tiers to make the numbers work.
+//
+// COUPLED: knowledge_reindex's argument contract, and the proof that exactly one indexer
+// exists, are checks/core-surface.ts section 4's, not this file's.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { MANAGE_ALIAS } from "../packages/contracts/dist/index.js";
 
 const fail: string[] = [];
-// A LIST THAT GOES SHORT THE MOMENT A DOOR MODULE IS ADDED, and it did: the bug tools moved
-// into a module of their own when bug_delete joined them, and this check reported a superadmin
-// was no longer offered bug_list or bug_resolve — a door that had not changed at all. The list
-// is kept rather than derived because a walk of services/gateway/src would also sweep up /core
-// and the console, which are different doors; so the rule is that a new /manage module is added
-// HERE in the same commit that creates it, and the count below is what catches forgetting.
-//
-// THE BUG MODULE IS GONE FROM THIS LIST, not repointed at where it moved to. All four bug tools
-// are on /core now: the split had filing on one door and answering on another, which is ROLE
-// deciding a door rather than subject. Pointing this list at zz-core's module instead would
-// make the check read four /core tools as /manage's and assert a surface this door does not
-// have — which it did, for exactly one run, before this comment.
+// COUPLED: a new /manage module is added here in the same commit that creates it, or this
+// check reports a superadmin losing the tools that moved into it. The count below catches
+// forgetting. Kept rather than derived, because a walk of services/gateway/src would sweep up
+// /core and the console, which are different doors — and a module that has moved to another
+// door is removed from this list, never repointed at its new home.
 const FILES = ["services/gateway/src/access-door.ts", "services/gateway/src/admin.ts",
                "services/gateway/src/admin/flows.ts"];
 
 /** Source with comments removed. Not for the description scan — a description is a string
- *  literal and survives this — but for every question of the form "is this name still HERE",
- *  where a note explaining what something used to be called is an answer of "no". */
+ *  literal and survives this — but for every question of the form "is this name still here". */
 const decomment = (src: string) =>
   src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
 
-// ── every registration, with the role gate that gates it ────────────────────────────────
+// Every registration, with the role gate that gates it
 //
 // The gate is the text between the start of the line and `server.registerTool`, and it must be
-// EXACTLY one of three forms. Anything else — `if (!sup)`, `if (sup || lead)`, a gate computed
-// somewhere else — is a failure rather than a shrug, because the alternative is reading an
-// unrecognised gate as "ungated" and reporting a member who can see the whole door as correct.
+// exactly one of three forms. Anything else — `if (!sup)`, `if (sup || lead)`, a gate computed
+// elsewhere — fails, because reading an unrecognised gate as "ungated" would report a member
+// who can see the whole door as correct.
 const GATES: Record<string, string> = { "": "member", "if (sup) ": "sup", "if (lead) ": "lead" };
 const registered = new Map<string, string>();   // name -> tier
 for (const f of FILES) {
   const src = decomment(readFileSync(f, "utf8"));
-  // The name is matched permissively and JUDGED after, not matched by the shape it is
-  // supposed to have. A `[a-z0-9_]+` pattern does not fail on `credential_admin_DELETE` — it
-  // fails to MATCH it, and a registration the scan never saw is a registration it vouches for.
+  // The name is matched permissively and judged after: a `[a-z0-9_]+` pattern does not fail on
+  // `credential_admin_DELETE`, it fails to match it, and a registration the scan never saw is
+  // one it vouches for.
   for (const m of src.matchAll(/^[ \t]*(.*?)server\.registerTool\(\s*\n?\s*"([^"]+)"/gm)) {
     const [, prefix, name] = m;
     if (!/^[a-z][a-z0-9_]*$/.test(name)) {
@@ -114,40 +69,26 @@ for (const f of FILES) {
   }
 }
 
-// ── the three tiers the spec froze ──────────────────────────────────────────────────────
+// The three tiers
 //
-// DERIVED, and here is the derivation, because the spec froze "16 for a member" as a NUMBER and
-// never enumerated it: a member sees every ungated registration, which is the nine in
-// access-door.ts, the five in admin.ts, and catalog_list in admin/flows.ts. A lead adds the two
-// `if (lead)` registrations; a superadmin adds the eight `if (sup)` ones in admin.ts, one in
-// access-door.ts, and the three in admin/bugs.ts, which the door registers as one call. The numbers are not asserted against themselves — counting a list this file
-// also wrote proves nothing. What carries the weight is the set equality below, against the gates
-// parsed out of the source, and the cross-check against MANAGE_ALIAS above it.
+// A member sees every ungated registration; a lead adds the `if (lead)` ones; a superadmin
+// adds the `if (sup)` ones. The numbers are not asserted against themselves — counting a list
+// this file also wrote proves nothing. The weight is on the set equality below, against the
+// gates parsed out of the source, and the cross-check against MANAGE_ALIAS above it.
 const MEMBER = ["team_mine", "team_switch", "client_setup",
                 "whoami", "pat_issue", "pat_revoke", "pat_list", "team_list",
                 "catalog_list"];
 const LEAD = ["member_add", "member_remove"];
-// THE BUG TOOLS AND knowledge_reindex ARE NOT HERE ANY MORE, and that is the change rather
-// than an omission. They were superadmin-only on this door because answering for a whole
-// deployment is an operator's act — but the door a tool sits on is decided by its SUBJECT, and
-// role decides only who sees it. Filing a bug on /core while answering one lived here was the
-// clearest case of the two cuts being confused. All four are on /core now, still superadmin.
+// The bug tools and knowledge_reindex are on /core, still superadmin: a tool's door is decided
+// by its subject, and role decides only who sees it.
 const SUPER = ["person_list", "person_add", "enrolment_issue", "person_deactivate",
                "team_create", "team_archive"];
 
-// The tiers and the frozen table have to describe the same door. Without this, a name could be
+// The tiers and the rename table have to describe the same door. Without this, a name could be
 // dropped from a tier and from the rename table together and every count below would agree.
 //
-// THREE NAMES ARE NAMED AND NOT DERIVED, each for a reason worth stating rather than widening
-// this to "or anything". `knowledge_reindex` arrived from /core at Task I-38 and its rename
-// history is a TOOL_ALIAS entry, so MANAGE_ALIAS cannot produce it. `bug_list` and
-// `bug_resolve` were born on this door and have never been renamed, so there is no alias entry
-// to derive them from — a tool that has always had one name is invisible to a table of old
-// names, and a rename map is the wrong place to register a new tool.
-// `whoami` NAMED RATHER THAN DERIVED: MANAGE_ALIAS is a table of names that CHANGED, so a tool
-// that never had an old name cannot come out of it. The four that used to be named beside it —
-// knowledge_reindex and the three bug tools — are on /core now, so this door does not claim
-// them and neither does a tier below.
+// `whoami` is named rather than derived: MANAGE_ALIAS is a table of names that changed, so a
+// tool that never had an old name cannot come out of it.
 const expected = new Set([...Object.values(MANAGE_ALIAS), "whoami"]);
 const tiered = new Set([...MEMBER, ...LEAD, ...SUPER]);
 for (const n of expected) {
@@ -157,12 +98,11 @@ for (const n of tiered) {
   if (!expected.has(n)) fail.push(`${n} is in a tier above and is not a name MANAGE_ALIAS produces`);
 }
 
-// ── what each role actually sees ────────────────────────────────────────────────────────
+// What each role actually sees
 //
-// BOTH DIRECTIONS, per tier. Asserting only that a member sees the sixteen passes a door that
-// shows a member everything; asserting only that a superadmin sees thirty passes a door that
-// shows a member everything too. So each tier is checked as a set equality against what the
-// gates say, and the sets are named in the failure rather than counted.
+// Both directions, per tier: asserting only what a member sees, or only what a superadmin
+// sees, passes a door that shows a member everything. Each tier is a set equality against what
+// the gates say, and the sets are named in the failure rather than counted.
 const visibleTo = (role: string) => new Set([...registered.entries()]
   .filter(([, tier]) => tier === "member" || (role === "sup") ||
                         (role === "lead" && tier === "lead"))
@@ -183,29 +123,20 @@ for (const [who, got, want] of tierSets) {
   }
 }
 
-// ONE PLACE, because the first version of this spelled the number in the condition and again
-// in the sentence, and a mutation that changed the condition alone printed "/manage registers
-// 31 tools, expected 31" — a failure a reader cannot act on, on a check that was right.
-// 17, was 20. flow_install, flow_uninstall and install_list left with the install registry:
-// the platform cannot see what is on a person's machine, so it records no installs and
-// restricts none. Before that, 20 was 24 — bug_list, bug_resolve, bug_delete and
-// knowledge_reindex went to /core, because the subject decides the door and role decides who
-// sees it.
+// The size is written once, so the condition and the message cannot disagree.
 const DOOR_SIZE = 17;
 if (registered.size !== DOOR_SIZE) {
-  fail.push(`/manage registers ${registered.size} tools, expected ${DOOR_SIZE} ` +
-            `(34 until the third-party-server layer went, which took ten with it: ` +
-            `tool_grant, tool_revoke, block_connect, block_disconnect, platform_list and ` +
-            `the five credential tools). ` +
+  fail.push(`/manage registers ${registered.size} tools, expected ${DOOR_SIZE}. ` +
             `Registered: ${[...registered.keys()].sort().join(", ")}`);
 }
 
-// ── the three duplicates, absent EVERYWHERE and not merely here ─────────────────────────
+// The three duplicates, absent everywhere and not merely here
 //
 // Each is the same act as a survivor called with no arguments — `issue_my_access_token` is
-// `pat_issue`, `my_access_tokens` is `pat_list`, `revoke_my_access_token` is `pat_revoke`, and
-// admin.ts already lets a token's owner revoke it. They take no MANAGE_ALIAS entry on purpose:
-// folding them onto the survivors would merge two genuinely distinct telemetry series.
+// `pat_issue`, `my_access_tokens` is `pat_list`, `revoke_my_access_token` is `pat_revoke`.
+//
+// DELIBERATE: they take no MANAGE_ALIAS entry. Folding them onto the survivors would merge two
+// distinct telemetry series.
 const walk = (d: string, out: string[] = []) => {
   for (const e of readdirSync(d)) {
     if (["node_modules", "dist", ".git"].includes(e)) continue;
@@ -229,7 +160,7 @@ for (const f of [...walk("services"), ...walk("packages")]) {
 // A scan that reads nothing reports no failures, which is indistinguishable from a clean tree.
 if (scanned < 50) fail.push(`the deletion scan read only ${scanned} files; it is looking in the wrong place`);
 
-// ── no old name survives, and the shape holds ───────────────────────────────────────────
+// No old name survives, and the shape holds
 for (const old of Object.keys(MANAGE_ALIAS)) {
   if (registered.has(old)) fail.push(`${old} was not renamed — MANAGE_ALIAS says ${MANAGE_ALIAS[old]}`);
 }
@@ -241,14 +172,15 @@ for (const n of registered.keys()) {
   if (n === "whoami") continue;                       // the one exception, deliberately kept
   if (!NOUNS.some((x) => n.startsWith(`${x}_`))) fail.push(`${n} does not start with a noun`);
 }
-// Control: whoami must still be here. A convention sweep that renamed it broke the exception.
+// Control: whoami must still be here. The loop above skips it by name, so a rename would turn
+// the exception into a check that silently covers nothing.
 if (!registered.has("whoami")) fail.push("whoami was renamed; it is the shape's one exception");
 
-// ── AC-2.13: every description says when / returns / refuses ────────────────────────────
+// Every description says when / returns / refuses
 //
-// The scan takes the whole registration block and strips ITS comments, so the distance between
-// the name and `description:` stops mattering. Then the two name sets are compared, because the
-// failure this replaces was silence about the tools it never reached.
+// The scan takes the whole registration block and strips its comments, so the distance between
+// the name and `description:` does not matter. The two name sets are then compared, so a tool
+// the scan never reached is named rather than passed over.
 const described = new Set();
 for (const f of FILES) {
   const src = readFileSync(f, "utf8");
@@ -271,11 +203,8 @@ for (const n of registered.keys()) {
   }
 }
 
-// NO HAND-MAINTAINED COUNT OF THIS DOOR, AND IT IS NO LONGER ASSERTED HERE. This file carried
-// its own rule for it — a list of the number-words that happened to be wrong, held against
-// three named files — which is the same hand-maintained thing it was refusing, one level up.
-// checks/derived-counts.ts asks the question once, of everything git carries, by grammar
-// rather than by a list. The numbers this door has live BELOW, where they are measured.
+// COUPLED: prose counts of this door are checks/derived-counts.ts's question, asked once over
+// everything git carries. The numbers here are measured below, where they are printed.
 
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }
 console.log(`manage surface: ok — ${registered.size} tools, ${MEMBER.length} for a member, ` +

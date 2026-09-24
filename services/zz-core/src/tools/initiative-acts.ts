@@ -2,10 +2,10 @@
  * The acts: approving a document and revising an approved one. Opening and closing an
  * initiative are their own files, registered from here so the acts stay one registration.
  *
- * AN ACT IS THE ONLY THING THAT MAY MOVE THE FIELDS THE PLATFORM OWNS. `status`,
- * `approved_by`, `approved_at`, `outcome`, `closed_by` are stamped from the session and the
- * clock, and every write path refuses them typed by a caller — which is a rule that means
- * something only because these three are the exception and there is no fourth.
+ * An act is the only thing that may move the fields the platform owns. `status`,
+ * `approved_by`, `approved_at`, `outcome` and `closed_by` are stamped from the session and the
+ * clock, and every write path refuses them typed by a caller. `document_approve`,
+ * `document_revise` and `initiative_close` are the exceptions, and there is no fourth.
  *
  * `document_revise` exists because an approved document cannot be written over: the
  * approver's name would stand on bytes they never read. It bumps the version, returns the
@@ -35,14 +35,13 @@ import { registerInitiativeCloseTool } from "./initiative-close.js";
 import { registerInitiativeOpenTool } from "./initiative-open.js";
 
 export function registerInitiativeActTools(server: McpServer): void {
-  // OPENING IS THE FOURTH ACT, and it lives in its own file for one reason: this one is at
-  // 640 lines against the 700 the repository enforces, and a tool whose refusals are the
-  // point does not fit in sixty. It is registered from here rather than from server.ts so
-  // the acts stay one registration to the door — see initiative-open.ts for why the date is
-  // the platform's and why a missing flow is a choice.
+  // Opening is registered from here, in its own file because a tool whose refusals are the point
+  // does not fit beside these. Registered from here rather than from server.ts, so the acts stay
+  // one registration to the door — see initiative-open.ts for why the date is the platform's and
+  // why a missing flow is a choice.
   registerInitiativeOpenTool(server);
-  // CLOSING IS THE FIFTH, in its own file for the same reason: it is one subject — the act
-  // that writes the outcome a team's counts are read from — and this file is at the ceiling.
+  // Closing too, in its own file for the same reason: it is one subject, the act that writes the
+  // outcome a team's counts are read from.
   registerInitiativeCloseTool(server);
 
   server.registerTool(
@@ -77,31 +76,19 @@ export function registerInitiativeActTools(server: McpServer): void {
         return text(`ERROR: ${relPath} does not exist — approve records a verdict on a document that is already written`);
       }
       const chain = chainFor(root, relPath);
-      // ONLY A FLOW CAN SAY A DOCUMENT IS NOT ITS BUSINESS.
-      //
-      // This was `if (!chain.docs.has(parts[1]))` unconditionally, and a freeform initiative
-      // resolves to EMPTY_CHAIN, whose `docs` is an empty Set — so EVERY approval on a
-      // freeform initiative was refused, with an error naming a flow that does not exist.
-      // A gate is a person saying yes and the platform stamping it, not a manifest; an
-      // initiative that declared no chain has nothing to measure a document against, so
-      // whatever is in the folder is approvable. A flow that DID declare its documents still
-      // refuses one it never named — that is the flow's own discipline and it is untouched.
+      // DELIBERATE: only a flow can say a document is not its business. A freeform initiative
+      // resolves to EMPTY_CHAIN, so whatever is in its folder is approvable; a flow that declared its
+      // documents refuses one it never named.
       if (chain.documents.length && !chain.docs.has(parts[1])) {
         return text(`ERROR: ${parts[1]} is not a document this flow declares`);
       }
-      // AND DECLARING A DOCUMENT IS NOT GATING IT. This checked only that the flow NAMES the
-      // document, never that it ADJUDICATES it — so `document_approve` would stamp
-      // `status: approved` on explore.md, spec-audit.md and plan-audit.md, every one of which
-      // sdlc-flow declares without a gate. That is where 179 of the rows came from.
+      // Declaring a document is not gating it. An ungated document is finished by being written, and
+      // `approved` on one is a verdict the platform has nowhere to put.
       //
-      // Fixing `stampEnvelope` was only half of it: that stops the platform WRITING
-      // `status: draft` where no gate exists, and this stops a caller writing `approved` there.
-      // Without both, the correction is undone by the next agent who approves an audit report
-      // because a person said it looked fine — which is a real thing to say and not a verdict
-      // the platform has anywhere to put.
+      // COUPLED: `stampEnvelope` never writes a status where no gate exists, and this refuses a caller
+      // writing one. Without both, the next approval of an audit report undoes the other.
       //
-      // The refusal names the alternative, because the caller is not doing anything wrong: an
-      // ungated document is finished BY BEING WRITTEN, and saying so is the whole answer.
+      // The refusal names the alternative, because the caller is not doing anything wrong.
       const entry = chain.documents.find((d) => d.name === parts[1]);
       if (entry && entry.gate !== true) {
         return text(
@@ -120,37 +107,23 @@ export function registerInitiativeActTools(server: McpServer): void {
       const fixed = normalizeSections(chain, relPath, doc);
       const bad = documentGuards(chain, root, relPath, fixed.content, team, "document_approve");
       if (bad) return text(bad);
-      // READ BEFORE THE WRITE, because persistDocument logs and this asks about the log.
+      // DELIBERATE: read before the write — persistDocument logs, and this asks about the log.
       const fetched = shownSinceLastChange(root, relPath);
       persistDocument(chain, root, relPath, target, fixed.content, "document_approve");
       logActivity(root, relPath, { user: who.email, action: "document_approve", path: relPath, signer, fetched });
-      // AN APPROVAL IS A SEPARATE FACT FROM THE DOCUMENT, and the module asks for both: the
-      // spec and plan steps each require `1x document` AND `1x approval`. Recording only the
-      // write would leave every gated step permanently one requirement short, and recording
-      // only the approval would credit a step for a document nobody wrote. Two facts, two
-      // entries, because the declaration asks two questions.
+      // An approval is a separate fact from the document: a gated step requires `1x document` and
+      // `1x approval`, so recording only one leaves the step a requirement short or credits a
+      // document nobody wrote.
       await noteDocument(chain, relPath, "approval", who.email, team);
       return text(
         `${relPath} approved — recorded under ${signer}` +
         (on_behalf_of ? ` (on their behalf, by ${who.email})` : "") + ".\n" +
         (already ? "It was already approved; the record now carries this verdict instead.\n" : "") +
         (fixed.renamed.length ? `Renamed to the heading this flow declares: ${fixed.renamed.join(", ")}.\n` : "") +
-        // SAID, NOT REFUSED, and the wording is the whole point.
-        //
-        // What this catches is real and was invisible: an initiative closed with four of its
-        // six approvals carrying no `document_present` since the content last moved — an
-        // eleven-task plan among them, approved twice, fetched never. Nothing disagreed,
-        // because nothing was looking.
-        //
-        // It does not refuse, and it must not start to. `zz-platform` chose that, and there
-        // is a second reason on top: a refusal here lands on the ONE call whose job is to
-        // record a decision a person already made, so the cost of a false positive is a
-        // model telling somebody their own approval was rejected. A line the caller reads
-        // costs a fetch; a refusal costs the person's verdict.
-        //
-        // Addressed to the caller's next action rather than scolding the last one — the
-        // approval is already recorded, so "fetch it before the next gate" is the only
-        // advice that can still be taken.
+        // DELIBERATE: said, not refused. An approval with no `document_present` since the content last
+        // moved is flagged and never rejected: this call records a decision a person already made, so a
+        // false positive would tell somebody their own approval was rejected. Addressed to the next
+        // action, because the approval is already recorded.
         (fetched === false
           ? "\nNOT FETCHED: no `document_present` on this path since its content last changed, so " +
             "the record cannot show anyone saw these bytes before the verdict. The approval " +
@@ -159,11 +132,9 @@ export function registerInitiativeActTools(server: McpServer): void {
             "\"approve without checking with me\" waives their REVIEW, not the fetch, because " +
             "the fetch is the part that reaches the record.\n"
           : "") +
-        // TRUE ONLY OF THE FLIP. A snapshot is written when a document goes draft ->
-        // approved and on no other write (persist.ts), so re-approving an already-approved
-        // document — a second signer, a corrected name — froze nothing, while this sentence
-        // said the copy in `_versions/` was theirs. It still carries the PREVIOUS signer's
-        // verdict, which is the opposite of what a reader would take from it.
+        // True only of the flip. A snapshot is written when a document goes draft -> approved and on no
+        // other write (persist.ts), so re-approving an approved document freezes nothing and the copy in
+        // `_versions/` still carries the previous signer's verdict.
         (already
           ? "No new frozen copy was taken: the document was already approved, so the copy in " +
             "_versions/ is the one filed at the first approval. Downstream documents may now be " +
@@ -211,15 +182,9 @@ export function registerInitiativeActTools(server: McpServer): void {
       const refusedFm = frontmatterRefusal(content, "document_revise") ?? fieldRefusal(fields)
         ?? tagRefusal(tags);
       if (refusedFm) return text(refusedFm);
-      // WHAT CAUSED THIS VERSION, ASKED ONCE.
-      //
-      // A CONTENT CHANGE NAMES THE MATERIAL BEHIND IT.
-      //
-      // `self_edit` was the other route — a declaration of WHAT you edited, for a wording fix
-      // nobody caused — and it is gone. The rule it softened is the whole rule: a document does
-      // not change because somebody felt like it, and the next reader cannot tell a decision
-      // taken elsewhere from a second thought when the record says neither. A typo fix costs
-      // one `source_content` line naming what was wrong, and that line IS the evidence.
+      // What caused this version, asked once. A content change names the material behind it: the
+      // next reader cannot tell a decision taken elsewhere from a second thought when the record says
+      // neither. A typo fix costs one `source_content` line naming what was wrong.
       //
       // `note` says what changed, not what changed it, so it never satisfies this on its own.
       const causes = [
@@ -245,82 +210,35 @@ export function registerInitiativeActTools(server: McpServer): void {
       const target = await safePath(relPath);
       if (!existsSync(target)) return text(`ERROR: ${relPath} does not exist — document_write creates a document; document_revise changes one`);
       const chain = chainFor(root, relPath);
-      // A DOCUMENT THE FLOW DOES NOT DECLARE IS EXEMPT FROM ITS RULES, NOT REFUSED BY THEM —
-      // and this refused one, using the very condition that exempts it everywhere else.
-      //
-      // `write-guards.ts` writes `if (chain.documents.length && !chain.docs.has(parts[1]))
-      // return null;` at four separate guards: same test, and the action is to stand aside.
-      // Here the same test returned `ERROR: <name> is not a document this flow declares`, so
-      // on a governed initiative an undeclared document could be created by `document_write`
-      // and rewritten by it forever, and was the one document that could never record WHY it
-      // changed.
-      //
-      // That is the platform's own law inverted. "If someone's input changes a required
-      // document, that input becomes a source and the document goes to the next version" — and
-      // `document_revise` is the only call that refuses a change with no cause. Refusing it
-      // here did not enforce the flow; it removed the one route that keeps a record explaining
-      // itself, on exactly the documents a flow is not watching.
-      //
-      // Reported from a real session on 0.60.0: a standalone article the stakeholder
-      // deliberately chose over a spec, revised with their verbatim feedback as the cause, and
-      // the call answered `blog-zh-CN.md is not a document this flow declares`. The agent fell
-      // back to `source_add` plus an ordinary `document_write` — a change with its cause beside
-      // it instead of attached to it, which is the shape this tool exists to prevent.
+      // A document the flow does not declare is exempt from its rules, not refused by them — the same
+      // condition `write-guards.ts` uses to stand aside. `document_revise` is the only call that
+      // records why a document changed, so refusing it here would leave exactly the documents a flow
+      // is not watching unable to explain themselves.
       //
       // `document_approve` still refuses an undeclared document, and that stays right: there
       // is no gate on it, so there is no verdict to record. A revision is not a gate.
 
       const prevEnv = parseEnvelope(readFileSync(target, "utf8"));
-      // AN INITIATIVE CLOSES ONCE, and this was the way round that.
+      // A closed record may be corrected; what closed it may not be. An initiative closes once, on one
+      // verdict, and correcting what a report says is a different act from changing what it concluded.
       //
-      // initiative_close() refuses a second close by reading `outcome` off the document, and
-      // ledgerOnClose refuses a second row by reading it off the file on disk. document_revise
-      // DELETED that field — it clears the governance fields so the gate goes back to a
-      // person — while leaving `closed_by` and `accepted_by` standing. closeCheck fires only
-      // on content that HAS an outcome, so nothing refused it. One revision of the closing
-      // document reopened a closed initiative, left it stamped with who closed it and no
-      // outcome, and let initiative_close() run again and append a SECOND ledger row for the same work.
-      // _ledger.md is what the OKR grading and the cross-flow comparison count.
+      // COUPLED: `outcome` is carried forward below. initiative_close() reads it off the document to
+      // refuse a second close, and ledgerOnClose reads it off disk before appending a row.
       //
-      // Refused for the reason initiative_close() already gives, in the same words: a record's value is
-      // that it is not edited afterwards.
-      // A CLOSED RECORD MAY BE CORRECTED. WHAT CLOSED IT MAY NOT BE.
-      //
-      // This refused every revision of a closing document, and the reason it gave was true of
-      // the code as it stood then: document_revise DELETED `outcome`, which reopened the
-      // initiative and let initiative_close() append a second ledger row for the same work. That delete
-      // is gone — `outcome` is carried forward from the previous envelope now, and the line
-      // below makes that explicit rather than incidental — so the failure the refusal names
-      // cannot happen: initiative_close() reads `outcome` off the document and refuses a second close,
-      // and ledgerOnClose reads it off disk and returns before appending.
-      //
-      // What is left is the real rule, and it is narrower: an initiative closes ONCE, on ONE
-      // verdict. Correcting what a report SAYS is a different act from changing what it
-      // concluded, and refusing both cost the more useful one. A closed report whose numbers
-      // were wrong stayed wrong, and the only remedy on offer — a journal node beside it —
-      // is not read by anybody opening the report.
-      //
-      // Nothing here is a quiet overwrite. document_revise freezes the approved copy in
-      // `_versions/`, bumps the version, records a revision_note, and returns the document to
-      // draft so a PERSON approves the new text. The signed version stays retrievable and the
-      // ledger never moves.
+      // Nothing here is a quiet overwrite: the approved copy is frozen in `_versions/`, the version
+      // bumps, a revision_note is recorded, and a gated document goes back to a person.
       const closedOutcome = prevEnv.outcome;
       const prevVersion = parseInt(prevEnv.version || "1", 10) || 1;
       const nextVersion = prevVersion + 1;
       const wasApproved = prevEnv.status === "approved";
-      // DOES THE FROZEN COPY ACTUALLY EXIST? The messages below name a `_versions/` file as
-      // the text a person signed, and a snapshot is taken only on the draft -> approved FLIP
-      // (persist.ts). A document revised twice while closed goes approved -> approved both
-      // times, so the second revision reported "The text a person signed is frozen as
-      // …v2.md" about a file nothing had ever written — the platform pointing a reader at
-      // provenance that is not there, which is worse than saying nothing.
+      // Does the frozen copy exist? A snapshot is taken only on the draft -> approved flip
+      // (persist.ts), so a document revised twice while closed has none for the second revision, and
+      // the messages below must not name a file nothing wrote.
       const frozenRel = `${parts[0]}/_versions/${parts[1].replace(/\.md$/, "")}.v${prevVersion}.md`;
       const frozenExists = existsSync(join(root, frozenRel));
 
-      // The body, and only the body. This used to merge the caller's own frontmatter over
-      // the previous envelope and then override the owned fields, which left `stakeholder`,
-      // `tags` and `title` as YAML the model still composed — the third source the envelope
-      // is not supposed to have. They are named arguments now, like everywhere else.
+      // The body, and only the body. `stakeholder`, `tags` and `title` are named arguments, so the
+      // model never composes envelope YAML.
       const body = content;
       const linked = new Set<string>(
         (prevEnv.sources || "").split(",").map((x) => x.trim()).filter(Boolean));
@@ -333,17 +251,12 @@ export function registerInitiativeActTools(server: McpServer): void {
         }
         linked.add(src.trim());
       }
-      // WHAT ALREADY EXPLAINS THIS REVISION IS CITED, and the platform says so rather than
-      // trusting the caller to remember.
+      // What already explains this revision is cited. A source added after the version being
+      // replaced, whose `supports` names this document, is by its own declaration what this revision
+      // answers — an audit round is exactly that, and nothing here knows the word "audit".
       //
-      // A source declares in `supports` which documents it bears on, so a source added after
-      // the version being replaced, naming THIS document, is — by its own declaration — what
-      // this revision answers. An audit round is exactly that: the stage produces evidence,
-      // the evidence names the document it read, and the next version of that document cites
-      // it. Nothing here knows the word "audit"; it follows from what a source says.
-      //
-      // Refused rather than linked silently: what changed a gated document is the caller's
-      // claim to make, and a platform that adds causes nobody stated is writing the record.
+      // DELIBERATE: refused rather than linked silently. What changed a gated document is the caller's
+      // claim to make.
       const dir = join(root, parts[0]);
       const sourceDir = join(dir, "sources");
       const owed = (existsSync(sourceDir) ? readdirSync(sourceDir) : [])
@@ -362,18 +275,12 @@ export function registerInitiativeActTools(server: McpServer): void {
           "that does not name what changed it cannot be checked by anybody later.");
       }
 
-      // The input that caused the change is knowledge too: it is stored beside the document
-      // it changed, so v2 always says what made it differ.
+      // The input that caused the change is stored beside the document it changed, so v2 always says
+      // what made it differ.
       //
-      // PREPARED HERE, WRITTEN AFTER THE GUARDS PASS. It used to be written at this point,
-      // forty lines before documentGuards ran — so a revision the platform then REFUSED left
-      // the source on disk, indexed into zz.doc and logged to activity, while the caller was
-      // told the write had failed and reasonably believed nothing had happened. The store
-      // kept a source document for a revision that never occurred, and it sat uncommitted
-      // until some later act swept it into a commit under that act's name.
-      //
-      // Only the NAME is needed up here, because the document links to it by name. Nothing
-      // has to exist on disk for that.
+      // DELIBERATE: prepared here, written after the guards pass. Written earlier, a revision the
+      // platform then refused would leave the source on disk, indexed and logged, for a change that
+      // never happened. Only the name is needed up here, because the document links to it by name.
       let capturedSource: string | null = null;
       let pendingSource: { rel: string; doc: string } | null = null;
       if (source_content && source_content.trim()) {
@@ -392,61 +299,35 @@ export function registerInitiativeActTools(server: McpServer): void {
         linked.add(capturedSource);
       }
 
-      // ALWAYS TRUE BY HERE, and kept because the activity log is read by people who were not
-      // in this call: the refusal above spends the other case, so a version that reaches this
-      // line named its material. Links inherited from the previous version explain THAT
-      // version, not this one, so they are not consulted — a v1 with three sources does not
-      // make v2 explained.
+      // Always true by here — the refusal above spends the other case — and kept because the activity
+      // log is read by people who were not in this call. Links inherited from the previous version
+      // explain that version, not this one.
       const explained = causes.length > 0;
       const env: Record<string, string> = { ...prevEnv };
       if (stakeholder?.trim()) env.stakeholder = oneLine(stakeholder);
       if (title?.trim()) env.title = oneLine(title);
       const revTags = (tags ?? []).map((t) => t.trim()).filter(Boolean);
       if (revTags.length) env.tags = revTags.join(", ");
-      // Name checked by fieldRefusal above, like document_write's — this was the second copy of
-      // that predicate, and a rule with two copies is a rule that can be half-changed.
+      // Names checked by `fieldRefusal` above, the same predicate document_write uses.
       for (const [k, v] of Object.entries(fields ?? {})) {
         if (String(v).trim()) env[k.trim()] = oneLine(String(v));
       }
-      // `outcome` is CARRIED, not merely left alone. Deleting it was the whole defect — it is
-      // the field initiative_close() and ledgerOnClose both read to know an initiative was already
-      // closed — and "we happen not to touch it" is not a guarantee the next edit inherits.
-      // Written back from what the document said before this revision, every time.
+      // DELIBERATE: `outcome` is carried, not merely left alone. initiative_close() and ledgerOnClose
+      // both read it to know the initiative already closed, so it is written back from the previous
+      // envelope every time.
       if (closedOutcome) env.outcome = closedOutcome;
       env.version = String(nextVersion);
-      // A REVISION RETURNS THE GATE TO A PERSON — unless the initiative already closed, in
-      // which case the gate is not a live question any more.
+      // A revision returns the gate to a person — unless the initiative already closed. closeCheck
+      // holds that a closing document carrying an outcome must be approved, because the ledger row
+      // was written at that close. The signed text stays retrievable in `_versions/`, with the
+      // correction beside it.
       //
-      // Clearing the approval on a closed record produces a state the platform itself
-      // refuses: closeCheck holds that a closing document carrying an outcome must be
-      // approved, because the ledger row was written at that close and the document has to
-      // agree with it. So a revision that reset the status could never be written at all,
-      // which is how "a closed report cannot be corrected" survived as an accident of two
-      // guards meeting rather than as a rule anybody had decided.
-      //
-      // What replaces the signature is not nothing. document_revise freezes the approved copy
-      // in `_versions/` before writing, bumps the version, and records a revision_note saying
-      // what changed — so the text a person actually signed stays retrievable, and the
-      // correction is discoverable beside it rather than pretending to be the original.
-      // A STATUS EXISTS ONLY WHERE THE FLOW GATES THE DOCUMENT, and this was the third writer
-      // of that rule and the one that missed it.
-      //
-      // 0.44 made `status` a gate verdict: stampEnvelope writes one only where the manifest
-      // declares a gate, and document_approve refuses a document that carries none. This line
-      // put every revision back to `draft` regardless — so revising an ungated document minted
-      // exactly the state those two exist to prevent, on real work, and the doctor probe that
-      // watches for it rolled a release back rather than let it stand.
+      // COUPLED: a status exists only where the flow gates the document. stampEnvelope writes one only
+      // there, and document_approve refuses a document that carries none.
       const gatedHere = chain.documents.find((d) => d.name === parts[1])?.gate === true;
-      // AND THE CLOSED BRANCH IS INSIDE THE GATE RULE, not above it.
-      //
-      // `if (closedOutcome) env.status = "approved"` ran first and unconditionally, so a
-      // revision of a document that an initiative CLOSED ON but that no manifest gates wrote
-      // `status: approved` with no `approved_by` and no `approved_at` — an approval verdict
-      // on a document nobody can approve, which `document_approve` itself refuses to
-      // produce. That is exactly the state 0.44 removed and the doctor probe rolled a
-      // release back over, reached through a fourth writer. It is not a rare shape either:
-      // an abandoned close lands on the furthest document that exists, and on sdlc-flow that
-      // is usually the ungated explore.md.
+      // DELIBERATE: the closed branch sits inside the gate rule, not above it. An ungated document an
+      // initiative closed on — usually explore.md, on an abandoned sdlc-flow close — must not gain an
+      // approval verdict nobody can give.
       if (closedOutcome && gatedHere) {
         env.status = "approved";
       } else if (gatedHere) {
@@ -457,52 +338,31 @@ export function registerInitiativeActTools(server: McpServer): void {
         delete env.approved_by; delete env.approved_at; delete env.status;
       }
       env.updated_at = isoToday();
-      // `flow` and `type` are manifest facts, and stampEnvelope only ever ADDS them — it
-      // cannot correct one that is already there and wrong. Since `given` is the caller's
-      // whole frontmatter merged in, a revision could relabel which flow governs a document
-      // and therefore which gates, which required documents and which closing rule apply to
-      // it. The manifest decides both, every time.
+      // `flow` and `type` are manifest facts, and stampEnvelope only ever adds them, so the manifest
+      // decides both here every time: a revision cannot relabel which flow governs a document.
       if (chain.name) env.flow = chain.name;
       const role = chain.documents.find((d) => d.name === parts[1])?.role;
       if (role) env.type = role;
       if (linked.size) env.sources = [...linked].join(", ");
-      // CUT ON A WORD, AND SAY IT WAS CUT. This was `.slice(0, 200)`, which ends wherever the
-      // two-hundredth character lands — a spec audit found a stored note reading "...the
-      // migration prefix resolves from the repository, no", and nothing in the frontmatter, the
-      // response or the log said anything had been removed. A reader cannot tell a note that
-      // ended there from one that was truncated there, which is the same defect as an empty
-      // string standing in for "no value": the record holds something that looks whole and is
-      // not. It stays a truncation rather than becoming a refusal because the note describes a
-      // content change that has already been made — losing the revision over the label would be
-      // the worse trade — but a truncated note now reads as truncated.
+      // Cut on a word, and say it was cut: a truncated note must not look whole.
+      //
+      // DELIBERATE: a truncation, not a refusal. The content change is already made, and losing the
+      // revision over its label is the worse trade.
       if (note) env.revision_note = oneLine(note, 200);
       const doc = renderEnvelope(env,
         ["flow", "type", "title", "stakeholder", "tags", "version", "updated_at", "status", "sources", "revision_note"]) +
         "\n" + body.replace(/^\n+/, "");
-      // A revision is a write, and this was the one write path that checked nothing.
-      //
-      // Three of the checks are inert here by construction, and that is why the gap survived
-      // a reading: this tool forces `status: draft` and deletes approved_by, approved_at and
-      // outcome, so statusCheck, attributionCheck and closeCheck have nothing to fire on. The
-      // rest do. (The count of the whole set is not written here — see documentGuards.)
-      //
-      // sectionCheck exempts a GATED document in draft — half-written is allowed while it is
-      // being written. selection.md is not gated, so its declared sections are required on
-      // every write, and revising one was a way to delete `## What past work recorded` from
-      // a document that had it, with no refusal. The section a flow declares required is not
-      // less required in v2.
+      // A revision is a write, and goes through the same guards. statusCheck, attributionCheck and
+      // closeCheck are inert here by construction; the rest fire. sectionCheck exempts only a gated
+      // document in draft, so an ungated document's declared sections stay required in v2.
       const fixed = normalizeSections(chain, relPath, doc);
-      // `via` — document_revise is an ACT, and one whose whole job is to move the governance
-      // fields: status back to draft, the stale approval cleared. Without saying so it would
-      // be refused by the guard that exists to stop a model writing those by hand, which is
-      // the correct guard refusing the one caller that is allowed to.
+      // `via`: document_revise is an act whose job is to move the governance fields, so it passes the
+      // guard that refuses a model writing them by hand.
       const bad = documentGuards(chain, root, relPath, fixed.content, team, "document_revise");
       if (bad) return text(bad);
 
       // The revision is allowed, so the source that explains it is written now — before
-      // persistDocument, so both land in ONE commit. They are one act: a correction arrived
-      // and the document moved because of it, and a history that separates them invites the
-      // reader to wonder which caused which.
+      // persistDocument, so both land in one commit.
       if (pendingSource) {
         const srcTarget = await safePath(pendingSource.rel);
         mkdirSync(resolve(srcTarget, ".."), { recursive: true });
@@ -511,40 +371,25 @@ export function registerInitiativeActTools(server: McpServer): void {
         logActivity(root, pendingSource.rel,
           { user: who.email, action: "source_add", path: pendingSource.rel, supports: parts[1] });
       }
-      // Through persistDocument, like the other two paths, rather than a writeFileSync and
-      // an indexDoc of its own. Keeping a second copy of "how a document is written down" is
-      // how this tool came to be the only one that stamped nothing, snapshotted nothing and
-      // checked nothing: each step was added to the shared writer and this one did not get
-      // it. snapshotOnApproval and ledgerOnClose are inert here — a revision is a draft with
-      // the outcome cleared — and being inert in the shared path is the point.
+      // Through persistDocument, like the other two paths, so a revision is stamped, snapshotted and
+      // checked by the one shared writer. snapshotOnApproval and ledgerOnClose are inert here.
       persistDocument(chain, root, relPath, target, fixed.content, "revise");
-      // THE TWO FIELDS BELOW ARE A PAIR, and the pair is what carries the three states. A
-      // flag on its own collapses "no cause existed" and "the cause was not captured" into
-      // one identical false — and the second is the one worth counting, because it is the
-      // only one anybody can fix.
+      // The two fields below are a pair, and the pair carries three states: a flag alone collapses
+      // "no cause existed" and "the cause was not captured", and only the second can be fixed.
       //
-      // Deliberately ABOVE this call and not inside it. The gate check that holds both names
-      // to this payload reads a 600-character window either side of `action:
-      // "document_revise"`, so a comment inside the object naming them would satisfy the
-      // check on its own and keep passing after the field itself was deleted. A comment that
-      // can stand in for the thing it describes is how a check quietly stops checking.
+      // DELIBERATE: this comment sits above the call, not inside it. The gate check holding both names
+      // to this payload reads a window around `action: "document_revise"`, so a comment inside the
+      // object naming them would satisfy it after the fields were deleted.
       logActivity(root, relPath, {
         user: who.email, action: "document_revise", path: relPath,
         version: nextVersion, sources: [...linked].join(","), explained,
       });
-      // AND THE CONTROL LOOP IS TOLD, which it was not. A revision returns a gated document to
-      // draft and clears the approval on it; without this the loop went on counting that
-      // approval and reporting the step met, which is a verdict about a document nobody has
-      // agreed to. Nothing is deleted — the entry says which earlier one it withdraws.
+      // The control loop is told. A revision withdraws the approval it was counting; the entry says
+      // which earlier one it withdraws, and nothing is deleted.
       await noteRevision(chain, relPath, nextVersion, who.email, team);
       return text(
-        // SAY WHAT ACTUALLY HAPPENED. This announced "status draft" unconditionally, and on
-        // a closed record the status stays approved — so the one message a caller reads
-        // described the opposite of what was written.
-        // AND SAY IT ONLY WHERE THERE IS ONE TO SAY. An ungated document carries no status,
-        // so this printed the literal "status undefined" on every revision of every ungated
-        // or freeform document — the platform reporting a field it had just deliberately
-        // removed.
+        // The status is named only where one exists: a closed record stays approved, and an ungated
+        // document carries none.
         `${relPath} revised: v${prevVersion} -> v${nextVersion}` +
         (env.status ? `, status ${env.status}` : "") + ".\n" +
         (fixed.renamed.length
@@ -564,11 +409,8 @@ export function registerInitiativeActTools(server: McpServer): void {
           : "") +
         (capturedSource ? `The input behind it is stored as ${parts[0]}/${capturedSource}.\n` : "") +
         (linked.size ? `Linked sources: ${[...linked].join(", ")}\n` : "") +
-        // AND THE LAST LINE IS TRUE ONLY WHERE A GATE EXISTS TO BE PASSED AGAIN. On an
-        // ungated document nothing downstream is blocked — gateCheck treats an ungated
-        // prerequisite as satisfied by existing — and `document_approve` refuses that
-        // document outright, so the single instruction the caller was left with was one the
-        // platform would reject.
+        // The last line applies only where a gate exists to be passed again. On an ungated document
+        // nothing downstream waits, and document_approve refuses it.
         (closedOutcome
           ? "This initiative is closed, so nothing downstream is waiting on this document."
           : gatedHere

@@ -5,44 +5,37 @@ import { analyze } from "@zz/indexing";
 import { root, withoutComments} from "../read.ts";
 import { check } from "../run.ts";
 
-check("the recall trial's analyzer finds the same Han terms as zz-lexical-v2", () => {
-  // TWO IMPLEMENTATIONS OF ONE SEGMENTATION, AND THIS IS WHAT WATCHES THEM.
-  //
-  // `packages/contracts/src/recall-trial-corpus.ts` declares its own `trialAnalyze`, and its
-  // header says so: it emits "unigrams and adjacent Han bigrams the way `zz-lexical-v2` does".
-  // It has to. `@zz/contracts` sits BELOW `@zz/indexing` and cannot import the real analyzer
-  // from `packages/indexing/src/tenant-analysis.ts`, so the layering forces the copy and that
-  // part is legitimate. What was missing is anything holding the copy to the original —
-  // exactly the gap `rederivation-generation.ts` was written for one directory over, where
-  // two implementations of one weighting "is how the write path and the backfill drifted
-  // apart in the first place". A gate check may import from both packages; only
+check("the recall trial's analyzer finds the same Han terms as @zz/indexing's", () => {
+  // COUPLED: `packages/contracts/src/recall-trial-corpus.ts` declares its own `trialAnalyze`,
+  // emitting unigrams and adjacent Han bigrams the way `@zz/indexing` does. `@zz/contracts` sits
+  // below `@zz/indexing` and cannot import the real analyzer from
+  // `packages/indexing/src/tenant-analysis.ts`, so the layering forces the copy; this check is what
+  // holds the copy to the original. A gate check may import from both packages; only
   // `@zz/contracts` is layer-restricted.
   //
-  // CHECKED TWO WAYS, because neither alone is enough — the same pairing the precedent uses.
-  // The fixture must actually REACH this function, or the agreement below would be measured
-  // on a copy nothing calls; and the two must agree on real text, or the import would be
-  // ceremony. The first half is a source read because the coupling is a default parameter,
-  // which no value passed in can observe.
+  // Checked two ways, because neither alone is enough: the fixture must actually reach this
+  // function, or the agreement below would be measured on a copy nothing calls, and the two must
+  // agree on real text, or the import would be ceremony. The first half is a source read because
+  // the coupling is a default parameter, which no value passed in can observe.
   const corpus = withoutComments(readFileSync(join(root, "packages/contracts/src/recall-trial-corpus.ts"), "utf8"));
   if (!/analyzer:\s*TrialAnalyzer\s*=\s*trialAnalyze\b/.test(corpus)) {
     return "searchCorpus no longer defaults to trialAnalyze — the trial is searching with some "
          + "other analysis, and the agreement checked below is with a function nothing calls";
   }
 
-  // WHAT "THE SAME TERMS" MEANS HERE, AND WHY IT IS NOT STRICT EQUALITY.
+  // What "the same terms" means here, and why it is not strict equality.
   //
-  // The Han half is one rule and must agree in BOTH directions: neither analyzer may find a
-  // Han unigram or an adjacent-pair bigram the other cannot. That is the claim the fixture's
-  // header makes, and it is the claim that decides whether an unspaced Chinese question can be
-  // matched at all.
+  // The Han half is one rule and must agree in both directions: neither analyzer may find a Han
+  // unigram or an adjacent-pair bigram the other cannot. That is the claim that decides whether an
+  // unspaced Chinese question can be matched at all.
   //
-  // The Latin half is deliberately two different rules and equality there would be a lie that
+  // The Latin half is deliberately two different rules, and equality there would be a lie that
   // gets relaxed the first time it fires. `zz-lexical-v2` hands the backend every word run,
-  // unstemmed and unstopped, because the pinned `english` configuration does the stopping and
-  // the stemming; the fixture has no backend, so it lowercases, drops its own question-shaped
-  // words and reads ASCII runs only. So the direction that matters is containment: the trial
-  // must not be able to find a Latin term the real analyzer cannot. The reverse is the
-  // fixture's own narrowing and is not a defect.
+  // unstemmed and unstopped, because the pinned `english` configuration does the stopping and the
+  // stemming; the fixture has no backend, so it lowercases, drops its own question-shaped words
+  // and reads ASCII runs only. So the direction that matters is containment: the trial must not be
+  // able to find a Latin term the real analyzer cannot. The reverse is the fixture's own narrowing
+  // and is not a defect.
   const scalarsOf = (s: string): readonly string[] => Array.from(s);
   const isHan = (s: string): boolean => /\p{Script=Han}/u.test(s);
 
@@ -114,10 +107,10 @@ check("the recall trial's analyzer finds the same Han terms as zz-lexical-v2", (
            + "keeps apart";
     }
 
-    // ASCII-SCOPED, AND SAID SO RATHER THAN LEFT TO BE DISCOVERED. The fixture's Latin run is
-    // `[a-z0-9_]+` over lowercased text; `zz-lexical-v2`'s is `[\p{L}\p{N}_]`. On a non-ASCII
-    // Latin word the fixture truncates (`café` analyses to `caf`) and containment would fail.
-    // Every input above is ASCII on its Latin side, which is what this fixture's corpus is.
+    // ASCII-scoped, and said so rather than left to be discovered. The fixture's Latin run is
+    // `[a-z0-9_]+` over lowercased text; `zz-lexical-v2`'s is `[\p{L}\p{N}_]`. On a non-ASCII Latin
+    // word the fixture truncates (`café` analyses to `caf`) and containment would fail. Every input
+    // above is ASCII on its Latin side, which is what this fixture's corpus is.
     const realLatin = new Set(real.base.filter((t) => t.field === "latin").map((t) => t.term.toLowerCase()));
     const trialLatin = trial.filter((t) => scalarsOf(t).length > 0 && !isHan(scalarsOf(t)[0]));
     const unreachable = trialLatin.filter((w) => !realLatin.has(w));

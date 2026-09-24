@@ -1,27 +1,15 @@
 /**
- * compatibility-retrieval.ts — I-22's "wiring" and "registry" case groups: the ONE path a
- * request travels from a tool's entry to `search()` and back, and the corpus registry that
- * path is authorized against.
+ * The "wiring" and "registry" case groups: the one path a request travels from a tool's entry
+ * to `search()` and back, and the corpus registry that path is authorized against.
  *
- * WHY THESE CASES ARE THE POINT OF THIS SUITE. Until `searchTenantInformation` existed, every
- * piece of the retrieval stack — the four lanes, RRF fusion, the query grammar, cursors, the
- * pinned-read matcher, the response budget — was exercised only by a case that called it
- * directly. Four green suites and no request could reach any of it. These cases drive the
- * composed function, so what they prove is that the pieces FIT, which is the one property a
- * per-component suite structurally cannot report on.
+ * A fake store, not a database: a fixture connects to nothing. The client below evaluates the
+ * predicates each statement's own text carries rather than grepping for a column name, so a
+ * lane that selected `owner_id` and filtered on nothing fails these cases.
  *
- * A FAKE STORE, NOT A DATABASE, for the reason every retrieval case in this directory gives:
- * the data-safety constraint on this delivery forbids a fixture from connecting to anything,
- * and migration 070's tables do not exist on the deployment anyway. The client below EVALUATES
- * the predicates each statement's own text carries — it never greps for a column name — so a
- * lane that selected `owner_id` and filtered on nothing would fail these cases, which is the
- * whole reason I-16 wrote the first one this extends.
- *
- * WHAT IS THEREFORE NOT PROVEN HERE, named rather than implied: that the SQL is accepted by
- * PostgreSQL 17, that `to_bm25query` ranks anything, and that the registry aggregate returns
- * these counts against real partitions. Those need the pinned image (I-5/I-21) and the
- * benchmark (I-23). What IS proven is every decision this repository's own code makes between
- * the caller's words and the wire response.
+ * Not proven here: that the SQL is accepted by PostgreSQL 17, that `to_bm25query` ranks
+ * anything, or that the registry aggregate returns these counts against real partitions. Those
+ * need the pinned image and the benchmark. What is proven is every decision this repository's
+ * own code makes between the caller's words and the wire response.
  */
 import assert from "node:assert/strict";
 
@@ -48,14 +36,14 @@ const CONTEXT: TenantSearchContext = {
   caller_id: "someone@example.test", index_generation: "g-2026-09-20", cursor_key: "fixture-cursor-key",
 };
 
-// ── the predicate-evaluating fake store ────────────────────────────────────────────────────
+// The predicate-evaluating fake store
 
 type Row = Record<string, unknown>;
 
 /** `col = $n`, `col = any($n::t[])`, `col && $n::t[]` and `col <> all($n::t[])` — the four
  *  shapes every statement in this path binds with. The column name is captured without its
  *  alias (`\w+` stops at the dot), so `s.owner_id = $2` and `ai.owner_id = $2` both read as a
- *  filter on `owner_id`, which is what the fixture rows are keyed by. */
+ *  filter on `owner_id`, which is how the fixture rows are keyed. */
 function conjunctsOf(text: string): { kind: string; col: string; at: number }[] {
   const out: { kind: string; col: string; at: number }[] = [];
   for (const m of text.matchAll(/(\w+)\s*=\s*\$(\d+)\b(?!::)/g)) out.push({ kind: "eq", col: m[1], at: Number(m[2]) });
@@ -77,10 +65,10 @@ function satisfies(row: Row, text: string, params: readonly unknown[]): boolean 
 }
 
 /** The hydration statement's own tuple filter: `unnest($a::text[], $b::uuid[][, $c::int[]]) as
- *  want(corpus_key, artifact_id[, revision])`. Evaluated as the TUPLE it is, at whatever arity
+ *  want(corpus_key, artifact_id[, revision])`. Evaluated as the tuple it is, at whatever arity
  *  the statement declares — a row whose corpus matches one entry and whose artifact matches
  *  another does not satisfy it, and at history scope neither does a row whose revision is a
- *  different one of the same artifact's. The arity is READ OFF THE STATEMENT rather than fixed,
+ *  different one of the same artifact's. The arity is read off the statement rather than fixed,
  *  so a fixture cannot pass by being evaluated under the looser of the two shapes. */
 function satisfiesWantedPairs(row: Row, text: string, params: readonly unknown[]): boolean {
   const m = text.match(/unnest\(((?:\$\d+::\w+\[\](?:, )?)+)\) as want\(([^)]+)\)/);
@@ -112,7 +100,7 @@ function fakeStore(fixtures: Fixtures) {
       if (text.includes("artifact_projection_watermark")) return pick(fixtures.watermarks);
       if (text.includes("head_event_sequence")) return pick(fixtures.projections);
       if (text.includes("zz.artifact_edge")) {
-        // The graph LANE and the source-ref read are both edge queries; only the lane carries
+        // The graph lane and the source-ref read are both edge queries; only the lane carries
         // the seed-pair clause, and only the source-ref read filters on `kind = 'cites'`.
         const isLane = text.includes("as seed(owner_id, artifact_id)");
         return { rows: (fixtures.edges ?? []).filter((r) => satisfies(r, text, params) && (isLane ? false : r.kind === "cites")) as unknown as T[] };
@@ -124,7 +112,7 @@ function fakeStore(fixtures: Fixtures) {
   return { seen, client };
 }
 
-// ── the wiring fixture: one caller, one shelf it may read, one tenant it may not ───────────
+// The wiring fixture: one caller, one shelf it may read, one tenant it may not
 
 const REGISTRY_ROWS: Row[] = [
   { corpus_key: "team_a", owner_id: OWNER_A, scope: "current", artifacts: 3, published_artifacts: 0 },
@@ -171,7 +159,7 @@ function wiringFixtures(): Fixtures {
       projection("team_a", OWNER_A, ART_1),
       projection("team_a", OWNER_A, ART_2, { path: `${ART_2}.md` }),
       // The one an exclusion must remove: it matches the lexical lane and its body carries the
-      // word the caller asked NOT to see.
+      // word the caller asked not to see.
       projection("team_a", OWNER_A, ART_3, { path: `${ART_3}.md`, raw_body: "a widget, deprecated last year" }),
       projection("shelf", OWNER_S, ART_S, { path: `${ART_S}.md`, raw_body: "a widget on the shared shelf" }),
       projection("team_b", OWNER_B, ART_B, { path: `${ART_B}.md`, raw_body: "another tenant's widget" }),
@@ -183,19 +171,16 @@ function wiringFixtures(): Fixtures {
   };
 }
 
-/** THE RESPONSE IS READ BACK THROUGH THE PUBLISHED SCHEMA, never asserted into a local shape.
- *  `SearchResponseSchema.parse` narrows and validates in the same step, so every case below is
- *  reading a value the contract has already accepted rather than one a cast promised. */
+/** The response is read back through the published schema, never asserted into a local shape.
+ *  `SearchResponseSchema.parse` narrows and validates in the same step, so every case below
+ *  reads a value the contract has already accepted rather than one a cast promised. */
 const wireResponse = (wire: string) => SearchResponseSchema.parse(JSON.parse(wire));
 
 /**
- * THE CASE THE WHOLE TASK TURNS ON: one call, tool entry to `search()` and back, validated as
- * the spec's own `SearchResponse`.
+ * One call, tool entry to `search()` and back, validated as the spec's own `SearchResponse`.
  *
- * It asserts the three things only the composed path can be asked: that a response comes back
- * at all, that it is the wire shape the contract publishes, and that a candidate found by two
- * lanes carries both of them in `via` — fusion happening inside a real request rather than in a
- * fixture handed straight to `rrf`.
+ * Asserts that a response comes back at all, that it is the wire shape the contract publishes,
+ * and that a candidate found by two lanes carries both of them in `via`.
  */
 async function caseARequestTravelsToSearchAndBack(): Promise<void> {
   const { client, seen } = fakeStore(wiringFixtures());
@@ -221,10 +206,10 @@ async function caseARequestTravelsToSearchAndBack(): Promise<void> {
 }
 
 /**
- * ANOTHER TENANT'S CORPUS IS NEVER QUERIED — not filtered out of the results, never asked
+ * Another tenant's corpus is never queried — not filtered out of the results, never asked
  * about. `team_b` is private and owned by somebody else; `mixed` belongs to a shelf owner but
- * holds one artifact that is not published, so the all-not-any rule makes it private too.
- * Both have fixture rows that WOULD come back, which is what makes the absence meaningful.
+ * holds one artifact that is not published, so the all-not-any rule makes it private too. Both
+ * have fixture rows that would come back, which is what makes the absence meaningful.
  */
 async function caseUnauthorizedCorporaNeverReachALane(): Promise<void> {
   const { client, seen } = fakeStore(wiringFixtures());
@@ -244,11 +229,11 @@ async function caseUnauthorizedCorporaNeverReachALane(): Promise<void> {
 }
 
 /**
- * THE EXCLUSION THE LANES CANNOT PUSH DOWN IS STILL ENFORCED. `matchesArtifact` was a tested
- * pure function nothing called: no lane's predicate carries a phrase, an OR group or a NOT, so
- * a candidate whose body holds the word the caller excluded was ranked and returned. The
- * assertion is on the excluded artifact's absence AND on the others' presence, so removing the
- * `matchesArtifact` call fails it for that reason and not because the page got shorter.
+ * The exclusion the lanes cannot push down is still enforced: no lane's predicate carries a
+ * phrase, an OR group or a NOT, so without `matchesArtifact` a candidate whose body holds the
+ * excluded word is ranked and returned. The assertion is on the excluded artifact's absence and
+ * on the others' presence, so removing the call fails it for that reason rather than because
+ * the page got shorter.
  */
 async function caseAnExclusionSurvivesRanking(): Promise<void> {
   const { client } = fakeStore(wiringFixtures());
@@ -260,7 +245,7 @@ async function caseAnExclusionSurvivesRanking(): Promise<void> {
     "an artifact whose body carries the excluded term must not be returned — no lane predicate can refuse it, so the artifact-level matcher has to");
 }
 
-/** A filter the schema has a column for is pushed into EVERY lane's own statement; a filter it
+/** A filter the schema has a column for is pushed into every lane's own statement; a filter it
  *  has no column for is refused by name rather than silently dropped. */
 async function caseFiltersArePushedDownOrRefused(): Promise<void> {
   const { client, seen } = fakeStore(wiringFixtures());
@@ -306,17 +291,16 @@ async function caseTheQueryAdapterFeedsEachLaneItsOwnTerms(): Promise<void> {
 }
 
 /**
- * THE CURSOR THIS PATH EMITS IS ONE THE PINNED READER ACCEPTS. `source_refs_cursor` is minted
+ * The cursor this path emits is one the pinned reader accepts. `source_refs_cursor` is minted
  * by `encodeCursor` inside the composed response and redeemed by `decodeCursor` in a later
- * pinned read — two functions, one token, and nothing had ever passed one from the first to the
- * second. The case reads it back with the pinned reader's own decoder and checks the six fields
+ * pinned read. This reads it back with the pinned reader's own decoder and checks the six fields
  * the contract says a cursor pins, against the row the response was built from.
  */
 async function casePinnedReadsStayCompatibleWithTheEmittedCursor(): Promise<void> {
   const fixtures = wiringFixtures();
-  // The cap is written here as a NUMBER rather than imported: importing it would make this case
-  // adapt to whatever the cap became, and the disclosure it is testing is the one a reader was
-  // promised at twenty.
+  // DELIBERATE: the cap is written here as a number rather than imported — importing it would
+  // make this case adapt to whatever the cap became, and the disclosure under test is the one a
+  // reader was promised at twenty.
   const SOURCE_REF_CAP = 20;
   const many = Array.from({ length: SOURCE_REF_CAP + 1 }, (_, i) => ({
     source_owner_id: OWNER_A, source_artifact_id: ART_1, source_revision: 1, kind: "cites",
@@ -342,11 +326,11 @@ async function casePinnedReadsStayCompatibleWithTheEmittedCursor(): Promise<void
 }
 
 /**
- * THE PAGE IS BOUNDED BY WHAT THE CALLER ASKED FOR. `budgets(limit)` caps each LANE, not the
+ * The page is bounded by what the caller asked for. `budgets(limit)` caps each lane, not the
  * union of them, so `search()` hands back everything every lane in every authorized corpus
- * contributed, and `serializeResults` cuts on BYTES — 24000 of them. A `limit: 3` request over
- * a corpus of small documents therefore returned every candidate that fitted, which is not a
- * page, and `withheld_candidates` reported nothing withheld because nothing had been.
+ * contributed, and `serializeResults` cuts on bytes — 24000 of them. Without a bound on the
+ * requested limit, a `limit: 3` request over small documents returns every candidate that fits
+ * and `withheld_candidates` reports nothing withheld.
  */
 async function caseAPageIsBoundedByTheRequestedLimit(): Promise<void> {
   const ids = Array.from({ length: 9 }, (_, i) => `eeeeeeee-0000-4000-8000-${String(i).padStart(12, "0")}`);
@@ -370,12 +354,11 @@ async function caseAPageIsBoundedByTheRequestedLimit(): Promise<void> {
 }
 
 /**
- * A HISTORY RESULT CARRIES THE REVISION THAT WAS RANKED. `zz.search_history` holds one row per
- * revision and `resultKey` gives history identity its revision for exactly that reason — but
- * hydration matched on corpus and artifact alone, so every revision of the artifact came back
- * and the last row to arrive described the result. A candidate ranked at revision 2 was
- * returned with revision 7's body, content hash, etag and record digest: a correct-looking
- * answer about a different version of the document.
+ * A history result carries the revision that was ranked. `zz.search_history` holds one row per
+ * revision and `resultKey` gives history identity its revision; hydration matching on corpus and
+ * artifact alone returns every revision of the artifact, and the last row to arrive describes
+ * the result — a candidate ranked at revision 2 returned with revision 7's body, content hash,
+ * etag and record digest.
  */
 async function caseAHistoryResultCarriesTheRankedRevision(): Promise<void> {
   const historyRegistry = [{ corpus_key: "team_a", owner_id: OWNER_A, scope: "history", artifacts: 1, published_artifacts: 0 }];
@@ -395,11 +378,10 @@ async function caseAHistoryResultCarriesTheRankedRevision(): Promise<void> {
   assert.equal(result.ref.content_hash, HASH("2"));
   assert.equal(result.etag, "2:4", "and its etag describes that revision, not the artifact's head");
   assert.match(result.snippet, /as it was/, "and the body is that revision's own text");
-  // THE STATEMENT, TOO, because the two halves of this rule mask each other. Binding the
-  // revision keeps the extra rows from being fetched; keying the map by it keeps them from
-  // collapsing onto each other. Either one alone makes the assertions above pass, so a case
-  // that only read the response would report a half-fixed path as correct. This one fails if
-  // history hydration stops asking for the revision it ranked, whatever the map then does.
+  // The statement too, because the two halves of this rule mask each other: binding the
+  // revision keeps the extra rows from being fetched, and keying the map by it keeps them from
+  // collapsing onto each other. Either alone makes the assertions above pass, so this one fails
+  // if history hydration stops asking for the revision it ranked, whatever the map then does.
   const hydration = seen.find((s) => s.text.includes("head_event_sequence"));
   assert.ok(hydration, "the result must have been hydrated from somewhere");
   assert.match(hydration.text, /want\.revision = s\.revision/,
@@ -420,13 +402,13 @@ export const WIRING_CASES: Readonly<Record<string, () => Promise<void>>> = {
   the_query_adapter_feeds_each_lane_its_own_terms: caseTheQueryAdapterFeedsEachLaneItsOwnTerms,
 };
 
-// ── the registry group: where an entry comes from, and what makes it published ─────────────
+// The registry group: where an entry comes from, and what makes it published
 
 /**
- * AUDIENCE IS ALL, NOT ANY, AND FAIL-CLOSED. `search()` authorizes once per corpus and never
- * rechecks one artifact's publication state, so a corpus published because ONE of its
- * artifacts is would disclose every unpublished neighbour in it to a shared reader. Three
- * shapes, one rule: all published → published; one not → private; none → private.
+ * Audience is all, not any, and fail-closed. `search()` authorizes once per corpus and never
+ * rechecks one artifact's publication state, so a corpus published because one of its artifacts
+ * is would disclose every unpublished neighbour to a shared reader. Three shapes, one rule: all
+ * published → published; one not → private; none → private.
  */
 async function caseAudienceIsPublishedOnlyWhenEveryArtifactIs(): Promise<void> {
   const { client } = fakeStore({
@@ -465,12 +447,11 @@ async function caseAudienceComesFromLifecycleEventsNotTheNullColumn(): Promise<v
 }
 
 /**
- * TWO OWNERS IN ONE CORPUS ARE REFUSED AT LOAD, naming both. `resolveCorpora` refuses it too —
- * `assertOneOwnerPerIndex` runs on every call — and that refusal is correct and late: it cannot
- * say which corpus_key is misconfigured, because by then the rows that prove it are gone. The
- * isolation suite measures what this prevents: two owners sharing one partition share its term
- * and document frequencies, so each one's writes move the other's bm25 scores while every
- * returned row stays perfectly correct.
+ * Two owners in one corpus are refused at load, naming both. `resolveCorpora` refuses it too —
+ * `assertOneOwnerPerIndex` runs on every call — but cannot say which corpus_key is
+ * misconfigured, because by then the rows that prove it are gone. Two owners sharing one
+ * partition share its term and document frequencies, so each one's writes move the other's bm25
+ * scores while every returned row stays correct.
  */
 async function caseTwoOwnersInOneCorpusAreRefusedAtLoad(): Promise<void> {
   const { client } = fakeStore({

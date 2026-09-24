@@ -1,47 +1,33 @@
 /**
- * THE SIX HISTORICAL ROUNDS, IMPORTED WITH WHAT IS MISSING STILL MISSING.
+ * The six historical audit rounds, imported with what is missing still missing: three against
+ * one document and three against another.
  *
- * Six audit reports were written before any of this existed, three against one document and
- * three against another, and they are the only real material this contract has to import. The
- * temptation with a row like that is to complete it: an email is on the file, so write it into
- * the reviewer column; the bytes can still be read, so hash them and file the digest where a
- * signature would go. Both fill a column. Neither is a fact about the audit.
+ * DELIBERATE: `reviewer_identity` is the unavailable sentinel on every row, although
+ * `contributed_by` is present and identical on all six. That field names the account that
+ * filed the material with the platform, not who read the document and formed the findings, so
+ * promoting it would turn six reports with unknown reviewers into six apparently reviewed by
+ * one person. {@link LegacyAuditRow.provenance} says so in the row itself.
  *
- * WHAT `contributed_by` IS. It is the field source intake writes — the account that filed the
- * material with the platform. It is on all six reports and it is the same address on all six,
- * which is precisely what makes it attractive and precisely what makes it wrong: it says who
- * put the report in the store, not who read the document and formed the findings. Promoted
- * into `reviewer_identity`, it would turn six reports whose reviewers are unknown into six
- * reports apparently reviewed by one person, and the word "independent" in front of "review"
- * would then be measuring nothing. So every row here carries `reviewer_identity` as the
- * unavailable sentinel, and {@link LegacyAuditRow.provenance} says why in the row itself.
+ * DELIBERATE: no digest is written by default, because none of these rows has one. A hash
+ * computed today over bytes read today is evidence about today's bytes, not a historical
+ * signature. A caller with the bytes can pass them in; the digest is then computed here,
+ * labelled `computed_at_import`, and stamped with the moment it was observed and the byte
+ * count it covered.
  *
- * AND THE HASH. No digest is written by default, because none of these rows has one. A hash
- * computed today over bytes read today is evidence about today's bytes — useful, and not a
- * historical signature, and the difference is the whole of it. A caller that has the bytes can
- * pass them in: the digest is then computed here, labelled `computed_at_import`, stamped with
- * the moment it was observed and the byte count it covered. With no bytes, the digest is null
- * and the origin is unavailable, which is the honest pair and the one these rows ship with.
+ * DELIBERATE: H-S2 and H-P3 carry a null `supports`, preserved rather than filled from the
+ * round's subject. `supports` is what the platform reads to decide which document's next
+ * revision must cite this round, so a value nobody wrote is a link nobody made. The round's
+ * target is a separate field and is not empty: each report names its subject in its title.
  *
- * TWO ROWS HAVE NO `supports`. H-S2 and H-P3 were filed with that field empty, and the empty
- * is preserved rather than filled from the round's subject. `supports` is what the platform
- * reads to decide which document's next revision must cite this round — a value nobody wrote
- * is a link nobody made, and inventing it here would manufacture a citation chain that never
- * existed. The round's TARGET is a separate field and is not empty: each report names its own
- * subject in its own title, which is a record, not an inference.
- *
- * NOTHING IN THIS FILE IS DERIVED FROM ANOTHER FIELD. Every value below is transcribed from
- * the spec's historical mapping table, which was itself reconstructed from the six reports;
- * the per-field provenance map names the transcription source for each one. Where the table
- * says a thing is absent, the row says it is absent.
+ * Nothing here is derived from another field. Every value is transcribed from the spec's
+ * historical mapping table, and the per-field provenance map names the source for each one.
  */
 import { createHash } from "node:crypto";
 
 import { UNAVAILABLE, type AuditIdentity } from "./audit-identity.js";
 
 /** What the audited state was grounded against, where the report said so. `none` is a real
- *  answer that two of the six gave and is not the same as a grounding nobody recorded — these
- *  reports stated no grounding, which the table records verbatim. */
+ *  answer two of the six gave, and is not the same as a grounding nobody recorded. */
 export type RepositoryGrounding =
   | { readonly kind: "commit"; readonly value: string }
   | { readonly kind: "migration_head"; readonly value: string }
@@ -49,7 +35,7 @@ export type RepositoryGrounding =
 
 /** Where one field's value came from. Carried per field rather than per row because the row is
  *  a mixture: a title is a record, an empty envelope field is an absence, and a sentinel is a
- *  decision this import made and should have to justify in place. */
+ *  decision this import made. */
 export type FieldOrigin =
   | "spec_historical_mapping_table"
   | "declared_in_report_title"
@@ -58,8 +44,8 @@ export type FieldOrigin =
   | "not_recorded_by_any_report"
   | "computed_at_import";
 
-/** One imported round. The six identities are the first six fields, so a reader checking that
- *  every audit carries them is reading the shape rather than a promise about it. */
+/** One imported round. The six identities are the first six fields, inherited from
+ *  {@link AuditIdentity}. */
 export interface LegacyAuditRow extends AuditIdentity {
   readonly id: string;
   /** The document whose next revision had to cite this round — null where nobody wrote one. */
@@ -76,8 +62,8 @@ export interface LegacyAuditRow extends AuditIdentity {
 }
 
 /** The transcription, one entry per row of the spec's table. Held separately from the row
- *  builder so that what was copied from the record and what this module decided are two
- *  different pieces of text a reader can compare. */
+ *  builder, so what was copied from the record and what this module decided are two different
+ *  pieces of text. */
 interface LegacySeed {
   readonly id: string;
   readonly report_ref: string;
@@ -145,18 +131,17 @@ const SEEDS: readonly LegacySeed[] = Object.freeze([
   },
 ]);
 
-/** The bytes of one report, as a caller read them. Keyed by `report_ref` so a caller that
- *  could only retrieve four of the six gets four computed digests and two honest absences,
- *  rather than an all-or-nothing import. */
+/** The bytes of one report, as a caller read them. Keyed by `report_ref`, so a caller that
+ *  retrieved four of the six gets four computed digests and two absences rather than an
+ *  all-or-nothing import. */
 export type LegacySnapshotBytes = ReadonlyMap<string, string>;
 
-/** What each identity field's value is grounded in, and why the two sentinels are sentinels.
+/** What each identity field's value is grounded in.
  *
- *  `execution_id` and `attempt_id`: these rounds predate run identity entirely, so there is no
- *  execution to name. The round ordinal IS recorded — each report's own title says which round
- *  it was — but a round ordinal is not an attempt id inside an execution that never existed,
- *  and writing one would be this import inventing the container to put it in. Both are
- *  unavailable, and the round survives as `approval_version` plus the ordinal in the ref. */
+ *  DELIBERATE: `execution_id` and `attempt_id` are unavailable. These rounds predate run
+ *  identity, so there is no execution to name; the round ordinal is recorded in each report's
+ *  title, but an ordinal is not an attempt id inside an execution that never existed. The
+ *  round survives as `approval_version` plus the ordinal in the ref. */
 function provenanceOf(row: LegacySeed): Readonly<Record<string, FieldOrigin>> {
   return Object.freeze({
     execution_id: "not_recorded_by_any_report" as const,
@@ -175,19 +160,17 @@ function provenanceOf(row: LegacySeed): Readonly<Record<string, FieldOrigin>> {
 }
 
 /**
- * IMPORTING THE SIX, WITH OR WITHOUT THE BYTES.
+ * Imports the six, with or without the bytes.
  *
  * Called with nothing, every row comes back with a null digest and `unavailable` as its
- * origin, which is what these reports actually carry. Called with bytes, the digest is
- * computed here and labelled `computed_at_import` alongside the instant it was observed and
- * the number of bytes it covered — three fields together, because a digest with no observation
- * time is indistinguishable from one that has always been there, which is the exact confusion
- * the label exists to prevent.
+ * origin. Called with bytes, the digest is computed here and labelled `computed_at_import`
+ * alongside the instant it was observed and the number of bytes it covered — all three
+ * together, because a digest with no observation time is indistinguishable from one that has
+ * always been there.
  *
- * `completion` is the one identity these reports do supply themselves: each of the six carries
- * substantive findings and a conclusion-and-coverage record, so the round is recorded as
- * having concluded with findings. That is a statement about the report's own structure, not a
- * judgement about whether what it found was ever fixed.
+ * `completion` is the one identity these reports supply themselves: each carries substantive
+ * findings and a conclusion-and-coverage record, so the round is recorded as having concluded
+ * with findings. That describes the report's structure, not whether what it found was fixed.
  */
 export function importLegacyAudits(snapshots?: LegacySnapshotBytes): readonly LegacyAuditRow[] {
   const observedAt = new Date().toISOString();

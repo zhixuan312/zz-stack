@@ -1,21 +1,15 @@
 /**
- * judged-dataset.ts — what the judged dataset IS: its vocabulary (the declared counts, the
- * valid enums, the row shapes) and the deterministic generator that produces the exact bytes
- * committed at `testing/tenant-info/queries.jsonl` and `testing/tenant-info/qrels.jsonl`.
+ * judged-dataset.ts — what the judged dataset is: its vocabulary (the declared counts, the valid
+ * enums, the row shapes) and the deterministic generator that produces the exact bytes committed at
+ * `testing/tenant-info/queries.jsonl` and `testing/tenant-info/qrels.jsonl`.
  *
- * SPLIT OUT OF benchmark.ts DURING I-23, AND THE FROZEN CHECKS CHOSE WHICH HALF MOVED. That
- * file was 463 lines of an unexemptable 700-line ceiling with this task's evaluator, report
- * validator and real command still owed to it. Two frozen plan-authored checks import
- * `validateJudgments` and `evaluateTargets` from `benchmark.ts` BY PATH, and a frozen check is
- * not editable — so the symbols they pin stayed and the generator, which no frozen check
- * imports, is what left. `inventory.ts` records the identical decision from I-3, having
- * learned it the same way: splitting toward what reads tidiest broke a check on the first run.
+ * COUPLED: two frozen plan-authored checks import `validateJudgments` and `evaluateTargets` from
+ * `benchmark.ts` by path, and a frozen check is not editable — so those symbols stay there and the
+ * generator, which no frozen check imports, lives here.
  *
- * H1 SIGNS THE TWO FILES BY HASH, so this generator is not a throwaway script. A signature
- * over bytes nobody can reproduce is a rubber stamp; the gate check "the committed judged
- * dataset is exactly what its generator produces, byte for byte" is what turns it into a
- * review, and it can only exist because the producer is tracked beside the vocabulary that
- * describes it.
+ * H1 signs the two files by hash, so this generator is not a throwaway script: a signature over
+ * bytes nobody can reproduce is a rubber stamp, and the gate check "the committed judged dataset is
+ * exactly what its generator produces, byte for byte" is what turns it into a review.
  */
 
 /** The nine declared query categories and each one's exact case count — `testing/tenant-info/
@@ -67,23 +61,18 @@ export interface Qrel {
   readonly reviewer: string;
 }
 
-// ─────────────────── the generator: where the signed hashes can be re-derived ───────────────────
+// The generator: where the signed hashes can be re-derived
 
 /**
- * Rebuilds `testing/tenant-info/queries.jsonl` and `testing/tenant-info/qrels.jsonl` from
- * nothing but this function — no randomness, no clock, no filesystem read. H1 signs the two
- * files' hashes; a signature over bytes nobody can reproduce is a rubber stamp, not a review,
- * so the generator that PRODUCES those bytes is tracked here rather than left in a throwaway
- * script that leaves with whoever wrote it.
+ * Rebuilds `testing/tenant-info/queries.jsonl` and `testing/tenant-info/qrels.jsonl` from nothing
+ * but this function — no randomness, no clock, no filesystem read. H1 signs the two files' hashes,
+ * so the generator that produces those bytes is tracked here rather than left in a throwaway script.
  *
- * Each category's per-language dev/held-out counts are pre-computed, not derived at 80/20
- * here, because a naive `round(0.8 * n)` on ("natural-language", "en": 54) gives 43/11 —
- * matching that language's own count — while the CATEGORY total needs 72/18 once "zh" and
- * "mixed" are added back in; the three language subtotals have to be chosen together so they
- * both hit 60/20/20 of the category AND sum to that category's 80/20. Same story for
- * "lifecycle"/"scope-filter" (36/12/12 → 28/8, 10/2, 10/2) and "isolation" (24/8/8 →
- * 20/4, 6/2, 6/2): the even 80/20 split of the WHOLE category doesn't fall out of splitting
- * each language slice independently, so it is recorded per language rather than computed.
+ * Each category's per-language dev/held-out counts are pre-computed rather than derived at 80/20
+ * here: the three language subtotals have to be chosen together so they both hit 60/20/20 of the
+ * category and sum to that category's 80/20. A naive `round(0.8 * n)` on ("natural-language", "en":
+ * 54) gives 43/11, matching that language's own count, while the category total needs 72/18 once
+ * "zh" and "mixed" are added back in. The same holds for "lifecycle"/"scope-filter" and "isolation".
  */
 export function generateJudgedDataset(): { readonly queries: readonly JudgedQuery[]; readonly qrels: readonly Qrel[] } {
   interface LangSplit { readonly lang: "en" | "zh" | "mixed"; readonly dev: number; readonly held: number }
@@ -121,20 +110,19 @@ export function generateJudgedDataset(): { readonly queries: readonly JudgedQuer
   ];
 
   // The seven declared corpora (`inventory.ts`'s BASE_CORPORA) are not seven tenants:
-  // primary_{current,evidence,history} is ONE tenant's three corpora, other_team_a and
-  // other_team_b are one tenant each, and shared_* belongs to no tenant — it is the
-  // cross-tenant pool `scopes: ["own_team", "shared"]` already grants. Only a tenant corpus
-  // can plausibly be a caller's own context; only a corpus from a DIFFERENT tenant is a
-  // genuine isolation violation.
+  // primary_{current,evidence,history} is one tenant's three corpora, other_team_a and other_team_b
+  // are one tenant each, and shared_* belongs to no tenant — it is the cross-tenant pool
+  // `scopes: ["own_team", "shared"]` already grants. Only a tenant corpus can plausibly be a
+  // caller's own context; only a corpus from a different tenant is a genuine isolation violation.
   const TENANT_OF: Readonly<Record<string, string>> = {
     primary_current: "primary", primary_evidence: "primary", primary_history: "primary",
     other_team_a: "team_a", other_team_b: "team_b",
   };
   const TENANT_CORPORA = Object.keys(TENANT_OF);
-  // The smallest per-corpus record count `planCorpora` will accept for any tenant corpus
-  // (scale 0.1 — see `checks/tenant-info-corpus-shape.ts`, which exercises exactly that
-  // floor). Every ref ordinal stays under this, not under the full-scale 150,000, so a qrel
-  // resolves against whatever scale the fixture store actually gets generated at.
+  // The smallest per-corpus record count `planCorpora` will accept for any tenant corpus (scale 0.1;
+  // `checks/tenant-info-corpus-shape.ts` exercises that floor). Every ref ordinal stays under this,
+  // not under the full-scale 150,000, so a qrel resolves against whatever scale the fixture store
+  // is generated at.
   const SMALLEST_TENANT_CORPUS_SIZE = 15000;
 
   const QUERY_MODE_BY_CATEGORY: Readonly<Record<string, string>> = {
@@ -145,9 +133,9 @@ export function generateJudgedDataset(): { readonly queries: readonly JudgedQuer
 
   const pad6 = (n: number): string => String(n).padStart(6, "0");
 
-  // mulberry32 + FNV-1a seeding + a CJK-block codepoint draw, matching inventory.ts's
-  // textFixture exactly: a "zh"/"mixed" query is made of the same kind of seed-derived CJK
-  // characters as a "zh"/"mixed" fixture, not an English sentence wearing a language label.
+  // mulberry32 + FNV-1a seeding + a CJK-block codepoint draw, matching inventory.ts's textFixture
+  // exactly: a "zh"/"mixed" query is made of the same kind of seed-derived CJK characters as a
+  // "zh"/"mixed" fixture, not an English sentence wearing a language label.
   function mulberry32(seed: number): () => number {
     let a = seed >>> 0;
     return () => {
@@ -164,10 +152,10 @@ export function generateJudgedDataset(): { readonly queries: readonly JudgedQuer
   }
   const zhChar = (rand: () => number): string => String.fromCodePoint(0x4e00 + Math.floor(rand() * 0x5200));
 
-  // "exact-reference" and "identifier-part" are handed the real ref (in full, or the last 3
-  // digits of its ordinal) because naming the target identifier IS those two categories'
-  // premise. Every other category gets the query's own CASE NUMBER instead, never the ref —
-  // a retrieval run must not be able to read the correct answer off the query text.
+  // "exact-reference" and "identifier-part" are handed the real ref (in full, or the last 3 digits
+  // of its ordinal) because naming the target identifier is those two categories' premise. Every
+  // other category gets the query's own case number instead — a retrieval run must not be able to
+  // read the correct answer off the query text.
   const enTemplate = (category: string, corpus: string, caseNumber: number, ref: string, ordinal: number): string => {
     switch (category) {
       case "exact-reference": return `Show me the fixture record ${ref.replace(/\.txt$/, "")} exactly as filed.`;
@@ -267,9 +255,8 @@ export function generateJudgedDataset(): { readonly queries: readonly JudgedQuer
 }
 
 /** JSON Lines, one compact object per line, trailing newline — the exact shape
- *  `readFileSync(...).trim().split("\n").map(JSON.parse)` in the frozen check expects, and
- *  the shape `testing/tenant-info/queries.jsonl`/`qrels.jsonl` are committed in. Exported
- *  alongside `generateJudgedDataset` so a caller re-deriving H1's signed bytes — or a gate
- *  check confirming the committed files still match — never has to reinvent this line. */
+ *  `readFileSync(...).trim().split("\n").map(JSON.parse)` in the frozen check expects, and the shape
+ *  the two committed files are in. Exported alongside `generateJudgedDataset` so a caller
+ *  re-deriving H1's signed bytes never has to reinvent this line. */
 export const judgedDatasetToJsonl = (rows: readonly unknown[]): string =>
   `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`;

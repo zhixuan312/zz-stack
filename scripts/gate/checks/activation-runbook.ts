@@ -7,28 +7,22 @@ const NEEDED = ["operator", "runbook", "app_version", "store_version", "database
                 "restore_evidence", "parity_evidence", "switch_authorization"];
 
 /**
- * The two states a precondition may be in, and why this check reads `state` rather than
- * truthiness or a literal.
+ * The two states a precondition may be in, and why this check reads `state` rather than truthiness
+ * or a literal.
  *
- * IT USED TO ASK A QUESTION THE ARTIFACT NEVER ANSWERS. The clause here was
- * `preconditions.operator === "unassigned"`, and `operator` is an OBJECT —
- * `{state, name, assigned_by, requires, evidence, reading, would_unblock}`. A string compared
- * against an object is never equal, so the clause could not fire whatever the runbook said.
- * The runbook explains at length why it refuses the word: "unassigned" reads as a settled
- * administrative status, as though the vacancy had been reviewed and left open on purpose,
- * and what is true is that the decision has not been made. The clause was asking for a word
- * the artifact deliberately does not use.
+ * `preconditions.operator` is an object — `{state, name, assigned_by, requires, evidence, reading,
+ * would_unblock}` — so a clause comparing it against a string can never fire. The runbook also
+ * refuses the word "unassigned", which reads as a settled administrative status when what is true
+ * is that the decision has not been made.
  *
- * AND THE LOOP ABOVE ASKED ONLY WHETHER SOMETHING WAS THERE. `if (!rb.preconditions?.[k])`
- * is satisfied by `{}` for all eight, so a runbook that named every precondition and said
- * nothing about any of them passed. The clauses below ask what the check's own title asks:
- * is this complete, is it abortable, and can it authorize itself. A blocked precondition has
- * to say what would unblock it; a met one has to cite evidence; and an operator named by
- * nobody, or a grant with no time on it, is the self-authorizing shape by another route.
+ * `if (!rb.preconditions?.[k])` is satisfied by `{}` for all eight, so a runbook that named every
+ * precondition and said nothing about any of them passes. The clauses below ask what the check's
+ * own title asks: is this complete, is it abortable, and can it authorize itself. A blocked
+ * precondition has to say what would unblock it; a met one has to cite evidence; and an operator
+ * named by nobody, or a grant with no time on it, is the self-authorizing shape by another route.
  *
- * ALL EIGHT ARE BLOCKED TODAY and every one carries `requires` and `would_unblock`, so this
- * stays green on the honest artifact. What it now refuses is a precondition quietly marked
- * met to let a switch proceed.
+ * All eight are blocked today and every one carries `requires` and `would_unblock`. What this
+ * refuses is a precondition quietly marked met to let a switch proceed.
  */
 const STATE = new Set(["blocked", "met"]);
 

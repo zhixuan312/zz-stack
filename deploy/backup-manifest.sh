@@ -10,30 +10,16 @@
 # case reads that manifest, re-hashes every file it names, and only then looks at the restored
 # database.
 #
-# WHY THIS IS NOT PART OF backup.sh, which is the question to ask about any script that runs
-# beside one.
+# DELIBERATE: not part of backup.sh. backup.sh is the nightly cron job, and a failed step there
+# can cost the night's backup; the git bundles are the most complex step here and only a
+# rehearsal needs them. So this runs on demand, against a copy, and its failure destroys
+# nothing.
 #
-# backup.sh is a nightly cron job on the production host, and its own header records two
-# separate incidents where a step that failed took the good backups down with it — once a dead
-# step for a removed service, once a hardcoded compose project. It writes the three volumes and
-# the dump, which is what must happen every night at 03:17 whether or not anybody is
-# rehearsing a restore. The git bundles below are a different job with a different failure
-# profile: they run `git` inside a container, against every team's store, and a rehearsal is
-# the only thing that needs them. Putting them on the cron path would add the most complex step
-# in the set to the one script whose failure mode is deleting backups.
-#
-# So this runs on demand, against a COPY, and its failure destroys nothing.
-#
-# WHAT THE `git` COMPONENT ACTUALLY IS, said plainly because it would be easy to fake.
-#
-# Each team's store is a git repository (services/zz-core/src/persist.ts `commitStore` inits
-# one on the first write), and those repositories live inside the artifacts volume — so
-# zz-artifacts-<stamp>.tar.gz already contains their `.git` directories. A second archive of
-# the same bytes would be ceremony. `git bundle --all` is not the same bytes: it asks git to
-# verify and pack the reachable history, so it fails on a repository the tar captured
-# mid-write, and it produces the portable history export the spec means by "Git remains the
-# portable history/diff export" — a single file that clones on a laptop with nothing of ours
-# installed. That is a fact the tar cannot establish about itself.
+# The `git` component: each team's store is a git repository (persist.ts `commitStore` inits one
+# on the first write) inside the artifacts volume, so the artifacts tar already holds the `.git`
+# directories. `git bundle --all` is different: git verifies and packs the reachable history,
+# so it fails on a repository the tar caught mid-write, and it yields a portable history export
+# that clones with nothing of ours installed.
 set -euo pipefail
 
 SET_DIR="${1:-}"
@@ -49,10 +35,9 @@ env_get() {
   [ -f "$HERE/.env" ] || return 0
   sed -n "s/^$1=//p" "$HERE/.env" | tail -1 | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'\$//"
 }
-# THE COMPOSE PROJECT IS RESOLVED, NEVER TYPED — the same rule, read the same way, as
-# backup.sh and issue-first-pat.sh. The manifest records it, and the validator refuses a
-# locator carrying the literal `deploy_zz-artifacts`, because a volume name somebody typed is
-# wrong on every host whose project is not `deploy` and silently wrong on the one where it is.
+# The compose project is resolved, never typed, as in backup.sh and issue-first-pat.sh. The
+# manifest records it.
+# COUPLED: the validator refuses a locator carrying the literal `deploy_zz-artifacts`.
 PROJECT="${COMPOSE_PROJECT_NAME:-$(env_get COMPOSE_PROJECT_NAME)}"
 PROJECT="${PROJECT:-$(basename "$HERE")}"
 
@@ -73,11 +58,9 @@ for required in "$db_file" "$art_file" "$cred_file" "$conf_file"; do
   }
 done
 
-# ── the git component ──────────────────────────────────────────────────────────────────────
-#
-# Extract the artifacts archive into a scratch directory, bundle every store's history, and
-# archive the bundles. Nothing here touches the live volume: the input is the tar, so this can
-# run on any machine holding the off-host copy, which is the machine a rehearsal happens on.
+# The git component: extract the artifacts archive into a scratch directory, bundle every
+# store's history, and archive the bundles. The input is the tar, never the live volume, so this
+# runs on any machine holding the off-host copy.
 if [ ! -f "$SET_DIR/$git_file" ]; then
   echo "[$(date -u +%FT%TZ)] building portable git history -> $git_file"
   work="$(mktemp -d)"
@@ -89,8 +72,8 @@ if [ ! -f "$SET_DIR/$git_file" ]; then
   while IFS= read -r gitdir; do
     store="$(dirname "$gitdir")"
     name="$(basename "$store")"
-    # --all, so every ref travels, not just the branch that happens to be checked out.
-    # A repository the tar caught mid-write fails HERE, loudly, which is the point.
+    # --all, so every ref travels, not just the checked-out branch. A repository the tar caught
+    # mid-write fails here.
     git -C "$store" bundle create "$work/bundles/$name.bundle" --all >/dev/null 2>&1 || {
       echo "FAIL: $name's history does not bundle — the archived repository is incomplete." >&2
       echo "  This is a real finding about the backup, not a problem with this script." >&2
@@ -111,34 +94,20 @@ if [ ! -f "$SET_DIR/$git_file" ]; then
   echo "  $found store(s) bundled"
 fi
 
-# ── the manifest ───────────────────────────────────────────────────────────────────────────
-#
-# A locator is `protected:` plus the bare filename. No path, no host, no credential — the
-# validator refuses anything else, so a backup report cannot print a connection string on its
-# way to reporting a hash mismatch.
+# The manifest. A locator is `protected:` plus the bare filename: no path, no host, no
+# credential. COUPLED: the validator refuses anything else, so a backup report cannot print a
+# connection string.
 hash_of() { sha256sum "$SET_DIR/$1" | cut -d' ' -f1; }
 
-# WHAT `artifacts_include_canonical_record` ACTUALLY ASSERTS, and what it does not.
+# `artifacts_include_canonical_record` says the archive leaves no `.zz` record out, not that
+# every store has one.
 #
-# The spec's sentence is "include the .zz record in protected backup/export rather than
-# classifying it as disposable telemetry". That is an instruction about what an archive must
-# not LEAVE OUT. It is not a claim that every store has a `.zz/` — and conflating the two was a
-# real defect here. This check began as `grep -q '\.zz'`, which refuses an archive containing
-# no `.zz` anywhere, and that is precisely the shape of every backup taken before cutover day:
-# the live owner stores have no record layout at all until an operator creates one
-# (deploy/init-record-layout.sh, and RESTORE-AND-CUTOVER.md step 5a). So the script would have
-# refused every real production set it will ever be pointed at, and the only way past it would
-# have been to hand-edit a manifest — which is the fabrication this whole path exists to refuse.
-#
-# A PRE-LAYOUT SET IS STILL A COMPLETE RESTORE TARGET. `.zz/blobs` and `.zz/commits` are two
-# empty directories, derived rather than data: restoring this set and re-running the init
-# reaches the identical state. Nothing is lost by backing a store up before it has one.
-#
-# So the teeth moved to where something can actually be wrong: a store that HAS a `.zz/` in the
-# archive and is missing `blobs` or `commits`. That is the half-initialised state, and it
-# refuses every write exactly as a missing layout does (record.ts's `preflightRefusal` requires
-# all three) while looking initialised to anybody listing the directory. A backup of it restores
-# a deployment that cannot be written to.
+# DELIBERATE: an archive with no `.zz/` at all passes. A store has no record layout until an
+# operator creates one (deploy/init-record-layout.sh, RESTORE-AND-CUTOVER.md step 5a), and
+# `.zz/blobs` and `.zz/commits` are empty derived directories, so restoring such a set and
+# re-running the init reaches the identical state. What fails is a `.zz/` missing `blobs` or
+# `commits`: that half-initialised store refuses every write (record.ts's `preflightRefusal`
+# requires all three) while looking initialised.
 art_listing="$(tar tzf "$SET_DIR/$art_file")"
 zz_roots="$(grep -c '/\.zz/\|^\./\?\.zz/' <<<"$art_listing" || true)"
 if [ "${zz_roots:-0}" -eq 0 ]; then

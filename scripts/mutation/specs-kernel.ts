@@ -1,14 +1,14 @@
 /**
  * Defects planted in `@zz/contracts` — the kernel the behavioural checks call into.
  *
- * THESE REACH THE CHECK THROUGH THE BUILD, AND THAT IS LOAD-BEARING. `@zz/contracts` resolves
- * to `dist/index.js`, so a check importing it reads compiled output, not the source mutated
- * here. The gate's first check runs `npm run -s build`, which recompiles the package before
- * anything imports it — which is also why every mutation below is TYPE-VALID by construction.
- * `tsc -b` does not emit for a project with type errors, so a mutation that broke the types
- * would leave the previous `dist` in place, the check would read the OLD behaviour, and the
- * row would record "survived" for a defect that never reached it. Each row carries whether
- * the build failed for exactly that reason.
+ * These reach the check through the build. `@zz/contracts` resolves to `dist/index.js`, so a check
+ * importing it reads compiled output, not the source mutated here, and the gate's first check runs
+ * `npm run -s build` before anything imports it.
+ *
+ * DELIBERATE: every mutation below is type-valid by construction. `tsc -b` does not emit for a
+ * project with type errors, so a mutation that broke the types would leave the previous `dist` in
+ * place and the row would record "survived" for a defect that never reached the check. Each row
+ * carries whether the build failed.
  */
 import type { MutationSpec } from "./plant.ts";
 
@@ -55,9 +55,9 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/close-truthfulness.ts",
     target: "a close says only what is known and a handover claims only what it verified",
     subject: "packages/contracts/src/close.ts",
-    // Written as a negation rather than by naming the two outcome words, because
-    // @zz/contracts owns that vocabulary and a second spelling of it anywhere in this
-    // repository is what "the envelope vocabulary is defined once" exists to refuse.
+    // Written as a negation rather than by naming the two outcome words: @zz/contracts owns that
+    // vocabulary, and a second spelling of it is what "the envelope vocabulary is defined once"
+    // refuses.
     find: '  if (basis.disposition === "finished") return named(basis.accepted_by)',
     replace: '  if (basis.disposition === "finished") return !named(basis.accepted_by)',
     planted: "a close with no sign-off is derived as accepted and one with an acceptor as " +
@@ -301,10 +301,10 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
       "list, which is the growth the bound exists to stop",
   },
   {
-    // HALF ONE, AND IT FIRES ALONE. With the chain not consulted at all, an empty run is still
-    // refused — the last step's OWN rules are unmet — but the refusal names only that step, so
-    // the clause watching for an earlier step's id is what catches it. A complete run still
-    // grants and still evaluates clean, so half two cannot answer for this.
+    // Half one, and it fires alone. With the chain not consulted at all, an empty run is still
+    // refused — the last step's own rules are unmet — but the refusal names only that step, so the
+    // clause watching for an earlier step's id is what catches it. A complete run still grants, so
+    // half two cannot answer for this.
     check: "scripts/gate/checks/host-chain.ts",
     target: TRIAL_CHAIN,
     assertion: "an action is refused on an empty run AND the refusal names a step behind the one claimed",
@@ -316,11 +316,10 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
       "it that are still outstanding",
   },
   {
-    // HALF TWO, AND IT FIRES ALONE TOO. Any step that declares predecessors becomes
-    // permanently unsatisfiable, so a run driven to genuine completion is still refused. The
-    // empty run is refused as before and its refusal still names an earlier step, so half one
-    // passes — which is the point: a host that refuses everything passes a check watching only
-    // the refusal, and is worse than the broken one because nobody can ever finish.
+    // Half two, and it fires alone too. Any step that declares predecessors becomes permanently
+    // unsatisfiable, so a run driven to genuine completion is still refused, while the empty run is
+    // refused as before with a refusal naming an earlier step — so half one passes. A host that
+    // refuses everything passes a check watching only the refusal.
     check: "scripts/gate/checks/host-chain.ts",
     target: TRIAL_CHAIN,
     assertion: "the same action is GRANTED on a run driven to genuine completion, and the evaluation agrees",
@@ -404,9 +403,9 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
   },
   {
     check: "scripts/gate/checks/trial-analyzer-agreement.ts",
-    target: "the recall trial's analyzer finds the same Han terms as zz-lexical-v2",
+    target: "the recall trial's analyzer finds the same Han terms as @zz/indexing's",
     subject: "packages/contracts/src/recall-trial-corpus.ts",
-    assertion: "the trial's analyzer and zz-lexical-v2 find the same Han unigrams and adjacent bigrams",
+    assertion: "the trial's analyzer and @zz/indexing's find the same Han unigrams and adjacent bigrams",
     find: "      if (i + 1 < scalars.length) terms.push(scalars[i] + scalars[i + 1]);",
     replace: "      if (i + 2 < scalars.length) terms.push(scalars[i] + scalars[i + 2]);",
     planted: "the trial's copy of the analyzer pairs scalars the real one keeps apart and " +
@@ -414,13 +413,12 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
       "what is adjacent — the drift this check exists to notice",
   },
   {
-    // THE SECOND ASSERTION OF THE SAME CHECK, and the row above establishes the other one.
-    // That check makes two independent claims — that `searchCorpus` still DEFAULTS to the
-    // trial's analyzer, and that the analyzer still MEANS what the real one means — and a
-    // mutation to either says nothing about the other. The coupling is a default parameter,
-    // so no value a caller passes in can observe it; only the default itself can be moved.
+    // The second assertion of the same check; the row above establishes the other one. That check
+    // claims both that `searchCorpus` still defaults to the trial's analyzer and that the analyzer
+    // still means what the real one means, and a mutation to either says nothing about the other.
+    // The coupling is a default parameter, so only the default itself can be moved.
     check: "scripts/gate/checks/trial-analyzer-agreement.ts",
-    target: "the recall trial's analyzer finds the same Han terms as zz-lexical-v2",
+    target: "the recall trial's analyzer finds the same Han terms as @zz/indexing's",
     subject: "packages/contracts/src/recall-trial-corpus.ts",
     assertion: "searchCorpus still defaults to the trial's own analyzer, so the agreement above is with a function something calls",
     find: "  analyzer: TrialAnalyzer = trialAnalyze,",

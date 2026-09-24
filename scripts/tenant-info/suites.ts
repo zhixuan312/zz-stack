@@ -1,9 +1,8 @@
 /**
  * The ten tenant-info verification suites, and where each one's module is expected to live.
  *
- * The list is canonical: `cli.ts`'s UNKNOWN_SUITE error and `verify.ts`'s `resolveSuite` both
- * read it from here rather than keeping their own copy, so there is exactly one place a
- * future eleventh suite gets added.
+ * COUPLED: `cli.ts`'s UNKNOWN_SUITE error and `verify.ts`'s `resolveSuite` read the list from
+ * here rather than keeping their own copy, so a new suite is added in one place.
  */
 import { existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -24,10 +23,8 @@ export function suiteModulePath(name: string): string {
 }
 
 /**
- * Which of the ten suites actually have a module on disk, right now. Read fresh on every
- * call, never cached at import time — "no import-time side effects" applies to a filesystem
- * read as much as it applies to a spawned process, and the answer is only ever true for the
- * instant it was asked.
+ * Which of the ten suites have a module on disk, right now. DELIBERATE: read fresh on every
+ * call, never cached at import time — the answer is only true for the instant it was asked.
  */
 export function availableSuiteNames(): string[] {
   if (!existsSync(SUITE_DIR)) return [];

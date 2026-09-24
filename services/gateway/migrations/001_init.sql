@@ -1,34 +1,18 @@
--- 001_init.sql — the whole schema, as one file.
+-- 001_init.sql — the whole schema, as one file. The migrations it replaced are in git history.
 --
--- WHAT HAPPENED TO 002..074. They were applied, and then they were squashed into this file.
--- Seventy-four files described a schema by describing every step that reached it, and reading
--- the current shape of zz.event meant replaying nine migrations in your head.
---
--- THE NAME IS LOAD-BEARING AND MUST NOT CHANGE. `services/gateway/src/db.ts` records each file
--- it applies in `zz.schema_migration` BY NAME and skips what that table already lists. Every
--- deployment that ran the old 001 has the row `001_init.sql`, so every one of them SKIPS this
--- file and keeps the schema it already built; a fresh database has no such row and gets the
--- whole thing in one transaction. Renaming this file would re-run it against every live
+-- DELIBERATE: the name is load-bearing and must not change. `services/gateway/src/db.ts` records
+-- each file it applies in `zz.schema_migration` by name and skips what that table already lists.
+-- Every deployment that ran the old 001 carries the row `001_init.sql`, so every one of them
+-- skips this file and keeps the schema it already built; a fresh database has no such row and
+-- gets the whole thing in one transaction. Renaming this file re-runs it against every live
 -- deployment. There is no baseline marker, no version table beside the ledger, and no branch
--- anywhere choosing between the two: the ledger was already the mechanism.
+-- choosing between the two — the ledger is the mechanism.
 --
--- HOW IT WAS PRODUCED, AND HOW TO CHECK IT. The seventy-five files were replayed into an empty
--- database on this repository's own postgres image, exactly as db.ts applies them, and that
--- database was dumped. The dump was checked against the live deployment first: the two schemas
--- were byte-identical, 2,654 lines each, so this is the schema production is running and not a
--- reconstruction of it. Every table on the replay came out EMPTY except the ledger, which is
--- what establishes that the DML in twenty-four of those files was backfill — statements that
--- correct rows a fresh database does not have — and that nothing is lost by dropping them.
---
--- The old files are not gone, they are in the history: `git log -- services/gateway/migrations`
--- and `git show <commit>:services/gateway/migrations/042_event_team_backfill.sql` still answer
--- what any one of them did and why.
---
--- THE EXTENSIONS COME FIRST AND ARE DECLARED. pg_dump does not emit them -- they install into
--- this schema but belong to the database -- so they are written back here, with the directives
--- the runner reads. A cluster that cannot supply one DEFERS this file rather than failing
--- half-applied: see the deferral in db.ts for what that prevents and why not recording it is
--- the load-bearing half.
+-- DELIBERATE: the extensions come first and are declared. pg_dump does not emit them (they
+-- install into this schema but belong to the database) so they are written back here with the
+-- directives the runner reads. A cluster that cannot supply one defers this file rather than
+-- failing half-applied; db.ts does not record a deferred file, which is what lets it be
+-- retried.
 --
 -- requires-extension: citext
 -- requires-extension: pg_textsearch
@@ -632,7 +616,7 @@ COMMENT ON COLUMN zz.event.initiative IS 'Join key to zz.doc and zz.decision. Ca
 -- Name: COLUMN event.flow; Type: COMMENT; Schema: zz; Owner: -
 --
 
-COMMENT ON COLUMN zz.event.flow IS 'Team context: the team''s most recently installed flow, cached per call. NOT attribution — a team running two flows reads every row as whichever was installed last, and a call made outside any flow (a block usage skill) gets nothing. Use plugin / plugin_version for "which plugin owns this call". It is not on its way out: the migration that would have dropped it dropped team_slug and initiative with it, which runs.ts joins a team through, so that migration was deleted rather than applied.';
+COMMENT ON COLUMN zz.event.flow IS 'The flow the call''s initiative runs, as declared at initiative_open; empty for a call made outside any initiative. Not attribution: use plugin / plugin_version for which plugin owns this call.';
 
 
 --

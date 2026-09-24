@@ -129,7 +129,7 @@ is not yours.
 
 `sdlc-review` is the flow's last STAGE. There is no stage after it — you were present for
 the whole initiative, and closing it is yours to do directly, the way `zz-platform` describes
-every close: one `initiative_close()` call, never a block's own close. Say the one thing you know —
+every close: one `initiative_close()` call. Say the one thing you know —
 `initiative_close(initiative, "finished")` when it is done, which records YOU as the acceptor
 because closing it is saying so; `accepted_by: "<their name>"` when somebody else is the one who
 said it; `no_signoff_reason: "<one line>"` when nobody accepted it at all; or
@@ -141,8 +141,8 @@ and never reaches the ledger.
 
 **`review.md` must exist and be approved first.** It is the closing document AND it carries a
 gate, so the platform refuses the close until `document_approve("<initiative>/review.md")` is
-recorded — the spec used to close this flow, which meant an initiative could close on an
-agreement written before any code existed. Ask for the approval the way stage 4 asks for the
+recorded, so an initiative cannot close on an agreement written before any code existed. Ask
+for the approval the way stage 4 asks for the
 plan's, and write it down in the same turn.
 
 **The close is the end.** `initiative_status` reads `closed` from the moment the outcome is
@@ -187,8 +187,8 @@ second store nobody searches.
 
 ## The tools
 
-Three standalone tools used to ship here and ship in `zz-core` now: `/zz-core:deck`,
-`/zz-core:tldr` and `/zz-core:breakout`. None is about software delivery — turning a document
+Three standalone tools ship in `zz-core`, not here: `/zz-core:deck`, `/zz-core:tldr` and
+`/zz-core:breakout`. None is about software delivery — turning a document
 into a deck, compressing one, and running a bounded expert dialogue are operations on the
 platform's own nouns, useful with no flow installed at all — so they belong to the baseline
 everybody already has rather than to this flow.

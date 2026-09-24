@@ -1,21 +1,10 @@
 /**
- * ledger.ts — the repository's own edit-surface ownership ledger, the store walk, and the
- * manifest hashing a baseline capture is assembled from.
+ * The repository's own edit-surface ownership ledger, the store walk, and the manifest hashing a
+ * baseline capture is assembled from.
  *
- * `plan-approved.md`'s "Repository edit-surface ownership" table assigns every path this
- * initiative may touch to the task that owns it, and I-2's acceptance criterion reads "the
- * complete edit-surface ownership ledger is checked against that checkout, not inferred from a
- * filename's existence alone". `EDIT_SURFACE_LEDGER` is that table transcribed; `classify` is
- * the second half of that sentence, cross-checking `existsSync` against this initiative's own
- * commits rather than trusting that a file being present means this work put it there.
- *
- * IT HAS ALREADY EARNED ITS KEEP. Run against the checkout after I-1 it refused to report a
- * clean capture and named nine paths I-1 had created or regenerated that the approved edit
- * surface did not carry; the specification was revised to declare them. A detector loosened the
- * first time it is inconvenient reports success instead, which is the failure it exists to
- * prevent.
- *
- * Split out of inventory.ts at the 700-line ceiling during I-3.
+ * `EDIT_SURFACE_LEDGER` transcribes `plan-approved.md`'s "Repository edit-surface ownership"
+ * table. `classify` cross-checks `existsSync` against this initiative's own commits rather than
+ * trusting that a file being present means this work put it there.
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -24,32 +13,28 @@ import { join, relative, sep } from "node:path";
 interface LedgerEntry {
   readonly path: string;
   readonly task: string;
-  /** A second ledger row for a path another task already owns is not a collision — the plan
-   *  says explicitly "shared files can be extended by later listed tasks" and names several
-   *  (verify.ts by I-25, this very file by I-3 and I-13, the I-11 read adapters by I-18). This
-   *  row records that later touch rather than the path's primary ownership. */
+  /** A second ledger row for a path another task already owns is not a collision — the plan says
+   *  "shared files can be extended by later listed tasks". This row records that later touch
+   *  rather than the path's primary ownership. */
   readonly extension?: boolean;
   /** True for a row the plan names as a build output of a canonical source elsewhere in the
    *  ledger (a marketplace skill mirror) rather than a path anyone authors directly. */
   readonly generatedFrom?: string;
-  /** True for a row the plan lists as an EXISTING file I-22 re-verifies at final
+  /** True for a row the plan lists as an existing file I-22 re-verifies at final
    *  compatibility, not a file this initiative authors. */
   readonly verifyOnly?: boolean;
 }
 
-// Paths are written plainly. Most rows below name FUTURE tasks' outputs that do not exist yet,
+// Paths are written plainly. Most rows below name future tasks' outputs that do not exist yet,
 // which is the normal state of a ledger describing a plan partway through; `checks/literal-
-// paths-resolve.ts` exempts this file by name for exactly that reason, so the rows can read as
-// what they are instead of being assembled at runtime to slip past a check.
+// paths-resolve.ts` exempts this file by name for that reason.
 
 const braces = (task: string, prefix: string, names: readonly string[], suffix: string): LedgerEntry[] =>
   names.map((name) => ({ path: `${prefix}${name}${suffix}`, task }));
 
-/**
- * `plan-approved.md`'s "Repository edit-surface ownership" table, one row expanded per
- * declared path. Grouped by task in the plan's own order; a comment marks each source row so
- * a later diff against the plan is legible.
- */
+/** `plan-approved.md`'s "Repository edit-surface ownership" table, one row expanded per declared
+ *  path. Grouped by task in the plan's own order; a comment marks each source row so a later
+ *  diff against the plan is legible. */
 const EDIT_SURFACE_LEDGER: readonly LedgerEntry[] = [
   // I-1 — Safe command entry and check activation
   { path: "package.json", task: "I-1" },
@@ -230,7 +215,7 @@ const EDIT_SURFACE_LEDGER: readonly LedgerEntry[] = [
     ["documents-guards", "documents-schema", "documents-lifecycle", "data-sql", "deploy-ops", "image", "suites"],
     ".ts").map((e) => ({ ...e, verifyOnly: true })),
   ...braces("I-22", "checks/",
-    ["document-rules", "revise-cause", "definition-rules", "initiative-open", "core-surface-19",
+    ["document-rules", "revise-cause", "definition-rules", "initiative-open", "core-surface",
      "alias-maps", "verification-stages-write", "skill-renames"], ".ts").map((e) => ({ ...e, verifyOnly: true })),
   ...braces("I-22", "packages/tools/src/testing/",
     ["chain-check", "chain-shelf", "manifest-audit", "tool-report"], ".ts").map((e) => ({ ...e, verifyOnly: true })),
@@ -247,10 +232,8 @@ const EDIT_SURFACE_LEDGER: readonly LedgerEntry[] = [
   // I-23 — Full-scale benchmark and independent pass/fail evaluation
   { path: "checks/benchmark-report-completeness.ts", task: "I-23" },
   { path: "checks/benchmark-report-fixtures.ts", task: "I-23" },
-  // benchmark.ts was 463 lines of a 700-line ceiling with I-23's evaluator, report validator
-  // and real command still owed to it, so it became three files. The frozen checks chose the
-  // split: they pin `validateJudgments` and `evaluateTargets` to benchmark.ts BY PATH, so
-  // those stayed and everything no frozen check names is what moved.
+  // COUPLED: the frozen checks pin `validateJudgments` and `evaluateTargets` to benchmark.ts by
+  // path, so those stayed there and everything no frozen check names moved into these files.
   { path: "scripts/tenant-info/judged-dataset.ts", task: "I-23" },
   { path: "scripts/tenant-info/benchmark-report.ts", task: "I-23" },
   { path: "deploy/BENCHMARK-MEASUREMENT.md", task: "I-23" },
@@ -332,13 +315,10 @@ const TASK_COVERAGE: Readonly<Record<string, string>> = {
 };
 
 /**
- * The technical AC's "checked against that checkout, not inferred from a filename's
- * existence alone": for every ledger row, look up whether THIS initiative's own commits
- * (between `reviewReferenceSha` and HEAD) created or touched it, and let that — not just
- * `fs.existsSync` — decide `change`. A path a done task's commit does not touch is `missing`
- * even though some earlier, unrelated initiative may have left a file at that name; a path no
- * commit in range has produced yet is `pending`, which is the ledger simply describing the
- * plan's remaining work rather than reporting a defect.
+ * For every ledger row, whether this initiative's own commits (`reviewReferenceSha..HEAD`)
+ * created or touched it decides `change`, not `fs.existsSync`. A path a done task's commit does
+ * not touch is `missing` even if an earlier initiative left a file at that name; a path no commit
+ * in range has produced yet is `pending`.
  */
 export function buildEditSurface(repoRoot: string, reviewReferenceSha: string): EditSurfaceEntry[] {
   let commits: GitCommit[] = [];
@@ -384,10 +364,9 @@ export function buildEditSurface(repoRoot: string, reviewReferenceSha: string): 
 }
 
 /**
- * Every path this initiative's own commits (`reviewReferenceSha..HEAD`) have actually
- * changed, that the ledger does NOT declare — "an unlisted required edit is blocking" from
- * I-2's contract. Pattern rows (the one `<NNN>` migration) are matched by suffix so a real
- * migration filename does not read as unlisted.
+ * Every path this initiative's own commits (`reviewReferenceSha..HEAD`) have changed that the
+ * ledger does not declare. Pattern rows (the one `<NNN>` migration) are matched by suffix so a
+ * real migration filename does not read as unlisted.
  */
 export function unlistedChanges(repoRoot: string, reviewReferenceSha: string): string[] {
   const changed = execFileSync("git", ["diff", "--name-only", `${reviewReferenceSha}..HEAD`],
@@ -396,7 +375,7 @@ export function unlistedChanges(repoRoot: string, reviewReferenceSha: string): s
   return changed.filter((f) => !declared.has(f));
 }
 
-// ────────────────────────── store manifest (owner/path/byte/hash) ──────────────────────────
+// Store manifest (owner/path/byte/hash)
 
 interface FileManifestRow {
   readonly owner: string;
@@ -406,17 +385,15 @@ interface FileManifestRow {
 }
 
 /**
- * `ZZ_TENANT_INFO_STORE_ROOT` is expected to point at the store's `teams/` directory (see
- * `services/zz-core/src/paths.ts`'s `ARTIFACTS_DIR/teams/<slug>`) — each immediate child is
- * one team, which is the "owner" the spec's "complete owner/path/byte/hash manifests" and
- * `owner_inventory` mean: a tenant, not an OS file uid. `.git` and other dot-entries are
- * skipped, matching what the store itself refuses to write (see `paths.ts`'s `safeName`).
+ * `ZZ_TENANT_INFO_STORE_ROOT` points at the store's `teams/` directory (see
+ * `services/zz-core/src/paths.ts`'s `ARTIFACTS_DIR/teams/<slug>`). Each immediate child is one
+ * team, which is the "owner" of a manifest row: a tenant, not an OS file uid. `.git` and other
+ * dot-entries are skipped, matching what the store itself refuses to write.
  */
 export function walkStore(storeRoot: string): FileManifestRow[] {
   // A real `teams/` directory holds team-slug directories, never a literal child also named
-  // `teams` — that shape means the operator pointed `ZZ_TENANT_INFO_STORE_ROOT` one level too
-  // high (at `ARTIFACTS_DIR` instead of `ARTIFACTS_DIR/teams`), which would otherwise silently
-  // report a team named "teams" holding everyone's files instead of blocking on the mistake.
+  // `teams` — that shape means `ZZ_TENANT_INFO_STORE_ROOT` was pointed one level too high, which
+  // would otherwise report a team named "teams" holding everyone's files.
   if (existsSync(join(storeRoot, "teams"))) {
     throw new Error(`"${storeRoot}" contains a "teams" entry — point ZZ_TENANT_INFO_STORE_ROOT ` +
       'at the "teams" directory itself, not its parent');

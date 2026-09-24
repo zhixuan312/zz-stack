@@ -4,9 +4,10 @@
 #   docker compose up -d
 #   ./issue-first-pat.sh        # the one token that opens the platform
 #
-# then sign in to LibreChat and paste that token where each MCP server asks for it.
+# then give that token to your MCP client — `client_setup` on the access door prints the
+# configuration for it.
 #
-# THE VERSIONS ARE WRITTEN INTO THIS FILE, not asked of whoever installs it. This file
+# The versions are written into this file, not asked of whoever installs it. This file
 # and the images it names are one release: a person receiving it has no way to know what
 # to type, and asking them to would make the wrong answer possible. The release command
 # rewrites the literals below and ships the result.
@@ -15,19 +16,12 @@
 # no rebuild. ZZ_VERSION in the environment still overrides, which is
 # what the release script uses to switch a host and what makes a rollback one edit.
 #
-# TO DEVELOP against a checkout instead, layer the build override on top:
+# To develop against a checkout instead, layer the build override on top:
 #   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 # which builds both images from source and mounts ../catalog and ../skills over the
 # copies inside them, so editing a skill stays instant.
 services:
-  # The browser front end. It replaced Open WebUI, and the difference that mattered is
-  # not the UI: Open WebUI ran a chat loop, and an Operations scenario makes tens
-  # of sequential tool calls. Turns stalled with no output and no error, and there was no
-  # step budget, compaction or pruning to configure — the ceiling was architectural.
-  #
-  # LibreChat holds NO platform truth. Accounts and conversations are its own; who you
-  # are, which team is yours and what you may call are resolved by the gateway from the
-  # token each person supplies, exactly as Claude Code and Codex already do.
+  # The platform's store and tools. Reached from outside only through the gateway below.
   zz-core:
     image: ${ZZ_IMAGE:-ghcr.io/zhixuan312/zz-stack}:${ZZ_VERSION:-0.71.0}
     restart: unless-stopped
@@ -45,50 +39,36 @@ services:
       # settable — a knob a person can set in .env and that never reaches the container is
       # worse than no knob at all.
       - TRUSTED_PEERS=${TRUSTED_PEERS:-}
-      # The deployment's own timezone, which is what every DATE the platform stamps is local
-      # to. UTC put a Singapore morning's work under yesterday's date, every day.
+      # The deployment's own timezone: every date the platform stamps is local to it. Under UTC
+      # a morning east of Greenwich lands under yesterday's date.
       - ZZ_TZ=${ZZ_TZ:-}
-      # The judge — round_judge scores a plugin's work against its ruler, and it needs a
-      # model to do it with. Same endpoint the front end talks to, a DIFFERENT model: the
-      # base model is what the flows' own agents run on, and a ruler exactly as good as the
-      # thing it measures measures nothing. Without these the tool refuses rather than
-      # scoring, which is right — a judge that quietly became something else is the one
-      # failure this whole apparatus exists to prevent.
+      # The judge — round_judge scores a plugin's work against its ruler, and needs a model.
+      # DELIBERATE: a different model from the one the flows' agents run on; a ruler exactly as
+      # good as the thing it measures measures nothing. Unset, the tool refuses rather than
+      # scoring with something else.
       - LLM_BASE_URL=${LLM_BASE_URL:-}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - ZZ_JUDGE_MODEL=${ZZ_JUDGE_MODEL:-deepseek-v4.1-flash}
       - ZZ_JUDGE_THINKING=${ZZ_JUDGE_THINKING:-on}
-      # The TYPED judge — the one that answers shapes rather than sentences. A ruler dimension
-      # is a position on named levels, a recommendation is one word from a closed set, a
-      # threshold is a yes/no: each of those has a shape a general model can answer outside of,
-      # and this service cannot. It marks a ruler whose dimensions name their levels, and it
-      # decides the recommendation enum.
+      # The typed judge, which answers shapes rather than sentences: a position on named levels,
+      # one word from a closed set, a yes/no. It marks a ruler whose dimensions name their levels.
       #
-      # WITHOUT IT NOTHING FAILS. A deployment with no key keeps the reading judge for rulers
-      # written the old way, and reports the recommendation as absent WITH THE REASON rather
-      # than refusing to produce a report. A third party that can stop an evaluation existing
-      # is a dependency nobody agreed to.
+      # DELIBERATE: optional. With no key the reading judge marks every ruler, and the report
+      # names the recommendation as absent with the reason. A third party that can stop an
+      # evaluation existing is a dependency nobody agreed to.
       - TYPESAFE_API_KEY=${TYPESAFE_API_KEY:-}
       - TYPESAFE_MODEL=${TYPESAFE_MODEL:-jev-latest}
       - TYPESAFE_BASE_URL=${TYPESAFE_BASE_URL:-}
     volumes:
-      # /catalog and /skills now ship inside the image — see the root Dockerfile.
+      # /catalog and /skills ship inside the image — see the root Dockerfile.
       # docker-compose.build.yml mounts the working tree back over them for development.
       - zz-artifacts:/artifacts            # team/per-user .zz stores
-    # INTERNAL_BIND, not MCP_BIND. zz-core has no authentication of its own — the gateway
-    # is the authenticated door and /core/mcp is how anything outside reaches it. Publishing
-    # it beside the gateway on the same address made that premise false: this port answered
-    # tools/list unauthenticated, and document_read returned another team's approved spec to a
-    # caller who supplied nothing but an email header. Proven on the live host.
-    #
-    # One variable governed both, which is why widening the gateway's reach silently widened
-    # this one's. Loopback by default; the mocks' demo UIs are reachable through an SSH
-    # tunnel, which is how deploy/README already reaches Postgres.
+    # DELIBERATE: INTERNAL_BIND, never the gateway's bind. zz-core has no authentication of its
+    # own and trusts the identity headers it is sent, so published beyond loopback it would
+    # answer anyone as anyone. The gateway is the authenticated door; /core/mcp reaches this.
     ports: ["${INTERNAL_BIND:-127.0.0.1}:${ZZ_CORE_PORT:-8763}:8000"]
 
-  # RuleMill & bookit are mock building blocks — stand-ins for services other teams own.
-  # Same image, different SERVER_DIR, versioned separately from the platform because they
-  # change for reasons the platform has nothing to do with.
+  # The gateway: the one authenticated door. Same image as zz-core, a different SERVICE.
   cred-proxy:
     image: ${ZZ_IMAGE:-ghcr.io/zhixuan312/zz-stack}:${ZZ_VERSION:-0.71.0}
     restart: unless-stopped
@@ -96,35 +76,23 @@ services:
       postgres: {condition: service_healthy}
     environment:
       - SERVICE=gateway
-      # EMPTY means "use the block registry compiled into the image", which is where a
-      # block's url, credential header and tool subset are defined together.
-      # This used to default to `{}` — a value, not an absence — so every deployment that
-      # set nothing got a gateway with NO blocks, and the only way to have any was to
-      # hand-write a copy of the registry into .env, which then drifted from it.
-      - PLATFORMS=${PLATFORMS:-}
       # platform truth: zz schema in the shared postgres; superadmin seed
       # Falls back to the postgres this compose starts, for a fresh install that has set
       # nothing. An existing deployment sets TEAM_DB_URL and that always wins.
       - TEAM_DB_URL=${TEAM_DB_URL:-postgresql://${POSTGRES_USER:-zz}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD — openssl rand -hex 16}@postgres:5432/${POSTGRES_DB:-zz}}
-      # Deliberately EMPTY by default. db.ts falls back to TEAM_DB_URL, which is the same
-      # database — the platform's tables live in the `zz` SCHEMA of it. Giving this a
-      # literal default once broke the live gateway by naming a user/db the deployment did
-      # not use, so a value that had always been correct by deferring became wrong by
-      # guessing. A default is only safe where nothing better can exist.
+      # DELIBERATE: empty by default. db.ts falls back to TEAM_DB_URL, the same database — the
+      # platform's tables are its `zz` schema. A literal default here names a user or database
+      # the deployment may not have.
       - PLATFORM_DB_URL=${PLATFORM_DB_URL:-}
       - SUPERADMIN_EMAIL=${SUPERADMIN_EMAIL:-}
       # The first team. A deployment with a superadmin and no team looks healthy and
       # is not: teamFor() returns null, so every document lands in a per-user store
       # instead of the team's, and nobody notices until they go looking for it.
       - BOOTSTRAP_TEAM=${BOOTSTRAP_TEAM:-}
-      # What render_agent_definition names as the agent's model. One value, one file.
+      # The model the flows' own agents run on. The judge must not be this one.
       - PLATFORM_BASE_MODEL=${PLATFORM_BASE_MODEL:-}
-      # THE GATEWAY GENERATES TOO, since 0.21.0. zz-core has carried these for the
-      # judge since it existed; the gateway had the model name and neither of the
-      # two values that make it reachable, so /api/console/ask answered its own 503
-      # — "set LLM_BASE_URL, LLM_API_KEY" — on a host where both were set in .env
-      # all along. The variable existing and the container seeing it are different
-      # facts, and only the second one is the one that answers a request.
+      # The gateway generates too — /api/console/ask — so it needs the endpoint as well as the
+      # model name. Set in .env is not the same as seen by this container.
       - LLM_BASE_URL=${LLM_BASE_URL:-}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - GATEWAY_PUBLIC_URL=${GATEWAY_PUBLIC_URL:-}
@@ -132,13 +100,6 @@ services:
       # comma-separated. Normally empty: native clients redirect to 127.0.0.1, which is
       # allowed by rule (RFC 8252). Set this only for a browser front end.
       - OAUTH_REDIRECT_ORIGINS=${OAUTH_REDIRECT_ORIGINS:-}
-      # Delegated access: one OAuth client per block, so a person can sign in to that block
-      # themselves and the platform then calls it AS THEM. Unset for a block and it simply
-      # keeps using a stored key — nobody's access breaks by leaving these blank.
-      # What to ASK a block's authorization server for. Unset means ask for what the block's
-      # own protected-resource document advertises — right for a block that publishes its
-      # whole list, and wrong for a block whose resource names one scope while the
-      # client also holds offline_access. Without offline_access there is no refresh token.
       # The admin console's passkey sign-in. This one value IS the relying party: its
       # hostname becomes the RP ID and its origin the expected origin, so the two can never
       # be spelled apart. Unset and /auth/* answers 503 rather than guessing an origin from
@@ -151,39 +112,21 @@ services:
       - TRUSTED_FORWARD_HOST=${TRUSTED_FORWARD_HOST:-}
     volumes:
       - cred-data:/data
-      - zz-artifacts:/artifacts:ro    # the knowledge base at /app and /api/kb/* reads it
-    # The ONLY service that may be published beyond loopback: it authenticates every
-    # request itself, and Caddy proxies the public host to it.
+      - zz-artifacts:/artifacts:ro    # the console reads documents and knowledge from it
+    # The only service that may be published beyond loopback: it authenticates every request
+    # itself, and Caddy proxies the public host to it.
     ports: ["${GATEWAY_BIND:-127.0.0.1}:${CRED_PROXY_PORT:-8764}:8000"]
 
-  # The platform's database. NOT optional: every service above defaults to this host, and
-  # the gateway keeps teams, people, tokens, grants and the document index in it. The browser
-  # keeps its OWN accounts and conversations in mongodb, not here — which is why the backup
-  # takes both, and why losing this one loses the platform's record and not the chat history.
-  #
-  # It used to sit behind `profiles: [scale]`, so the documented install — `docker compose
-  # up -d`, which is also the whole premise of the release bundle — started three services
-  # pointing at a database container it had just declined to start. The comments beside
-  # those URLs said "falls back to the postgres this compose starts". It did not start it.
-  # The live host was fine because it runs `--profile scale` and sets every URL in .env, so
-  # the path that was tested and the path that ships were never the same path.
-  #
-  # The profile was about the front end's worker count, a knob that no longer exists in
-  # this stack at all. It was never about whether the platform has somewhere to keep data.
+  # The platform's database. Not optional and behind no profile: every service above defaults
+  # to it, and the gateway keeps teams, people, tokens, grants and the document index in it.
   postgres:
     image: ghcr.io/zhixuan312/zz-postgres:17.11-pgts1.4.0
     restart: unless-stopped
-    # SIZED TO THE HOST, because the image ships the specification's reference settings and
-    # this deployment is smaller than the reference. `shared_buffers = 8GB` is one of the five
-    # agreed values in deploy/postgres/postgresql.conf, and on a 3 GB machine PostgreSQL 17
-    # refuses to start at all -- "could not map anonymous shared memory ... currently
-    # 8845312000 bytes". It had never bitten before because the previous compose passed NO
-    # config file, so PostgreSQL 16 ran on the image's own 128 MB default and the contract
-    # value never once took effect.
+    # Sized to the host. The image ships the specification's reference settings, and
+    # `shared_buffers = 8GB` stops PostgreSQL 17 starting at all on a small machine.
     #
-    # Overridden here rather than in the conf the image ships, so the reference values stay
-    # readable beside the deployment's own, and an operator moving this to a larger host has
-    # one line to delete rather than a contract to reconstruct.
+    # DELIBERATE: overridden here, not in the conf the image ships, so the reference values stay
+    # readable and a larger host has one line to delete.
     command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf",
               "-c", "shared_buffers=512MB", "-c", "maintenance_work_mem=128MB"]
     environment:
@@ -191,28 +134,19 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD — openssl rand -hex 16}
       - POSTGRES_DB=${POSTGRES_DB:-zz}
     volumes:
-      # THE NAME CARRIES THE MAJOR VERSION, and that is not cosmetic. PostgreSQL 17 cannot
-      # start on a PostgreSQL 16 data directory; a shared name would either refuse to boot or
-      # -- worse -- invite somebody to "fix" it by deleting the cluster underneath it. The
-      # next major gets `postgres-data-18` and the same logical dump-and-restore, which is
-      # also what rebuilds every index under the new collation.
+      # DELIBERATE: the name carries the major version. A new major cannot start on the old
+      # one's data directory, and a shared name invites deleting the cluster to "fix" it. The
+      # next major gets `postgres-data-18` and a logical dump-and-restore, which also rebuilds
+      # every index under the new collation.
       #
-      # THE PG16 VOLUME IS GONE, and so is rolling back by editing this file. It was kept
-      # frozen for the first day after the 2026-09-21 cutover and removed once its logical
-      # dump had been restored into a throwaway database and diffed table by table against
-      # this cluster -- 33 tables, every row count equal or higher. Recovery is now FORWARD,
-      # from ~/zz-backups on the host: the hourly dumps are the record, and a restore into a
-      # fresh volume is the procedure. See deploy/RESTORE-AND-CUTOVER.md.
+      # Recovery is forward, from ~/zz-backups on the host: restore into a fresh volume. See
+      # deploy/RESTORE-AND-CUTOVER.md.
       - postgres-data-17:/var/lib/postgresql/data
     ports: ["${POSTGRES_BIND:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"]   # bind to a tailscale IP to make the DB tailnet-only
-    # The only healthcheck in this file, and it earns its place: it is what `depends_on`
-    # below waits on. Without it every service that talks to the database started at the
-    # same moment the database did — zz-core's boot reindex, which is what removes rows for
-    # files deleted while it was down, ran against a socket that was not listening yet,
-    # logged one line, and did not retry. A ghost row then answers confidently with
-    # something that is gone, which this file's own comments call the worst failure the
-    # store has. No arguments: pg_isready asks whether the server accepts connections, and
-    # a role name here would only be a second place to keep POSTGRES_USER in step.
+    # COUPLED: the `depends_on` above waits on this. zz-core's boot reindex, which removes rows
+    # for files deleted while it was down, does not retry, so it must not run before the
+    # database accepts connections. No arguments: a role name here would be a second place to
+    # keep POSTGRES_USER in step.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -q"]
       interval: 5s

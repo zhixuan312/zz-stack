@@ -32,9 +32,9 @@ Everything below assumes you are on the rehearsal host.
 on the production host:
 
 ```
-zz-db-<stamp>.sql.gz            the zz schema — principals, teams, PATs, installs, grants, events
+zz-db-<stamp>.sql.gz            the zz schema — principals, teams, PATs, events and every other table
 zz-artifacts-<stamp>.tar.gz     every team's documents and knowledge, plus the canonical .zz record once one exists (step 5a)
-zz-credentials-<stamp>.tar.gz   each person's building-block API keys
+zz-credentials-<stamp>.tar.gz   the gateway's own data: events it could not write to the database
 zz-config-<stamp>.tar.gz        deploy/.env, Caddyfile and docker-compose.yml
 ```
 
@@ -83,10 +83,8 @@ Each refusal is a real finding about the backup. None of them is a problem with 
 
 ## 3. Stand up the isolated PostgreSQL 17 database
 
-> **The pins are resolved; this paragraph used to say otherwise.** It read "every `*_verified`
-> flag is `false`" and stayed that way after the pins were filled in, which made a document
-> about what is safe to do assert the opposite of the file it cites. `deploy/postgres/
-> versions.lock.json` now carries eight of its nine `*_verified` flags `true` — the PostgreSQL
+> **The pins are resolved.** `deploy/postgres/versions.lock.json` carries eight of its nine
+> `*_verified` flags `true` — the PostgreSQL
 > version, the base image digest, the architecture, the `pg_textsearch` repository, commit and
 > source digest, the built image digest, and the text-configuration fingerprint.
 >
@@ -97,7 +95,7 @@ Each refusal is a real finding about the backup. None of them is a problem with 
 > named OKF exists in the tree. An unresolvable field is a finding about the specification, not
 > a gap in this build, so it does not block the image.
 >
-> Read the lock file rather than this paragraph if the two ever disagree again. The restore in
+> Read the lock file rather than this paragraph if the two ever disagree. The restore in
 > step 4 depends on none of it and can proceed on a stock PostgreSQL 17 image; only the
 > `pg_textsearch` half ever did.
 
@@ -140,22 +138,26 @@ docker run --rm -v zz-rehearsal-artifacts:/data -v ~/rehearsal/backup:/backup:ro
 
 ---
 
-## 5. Apply migration 070
+## 5. Apply the schema
 
 ```bash
 docker exec -i zz-rehearsal-db psql -U zz -d zz_rehearsal \
-  < <checkout>/zz-stack/services/gateway/migrations/070_artifacts_revisions_events_and_scoped_search.sql
+  < <checkout>/zz-stack/services/gateway/migrations/001_init.sql
 ```
 
-070's line 88 is `create extension if not exists pg_textsearch;` and line 89 the same for
-`pg_trgm`. Applied through `psql` as above, those run unconditionally — the `requires-extension:`
-directives in its header are read by the gateway's own migration runner
-(`services/gateway/src/db.ts`), which defers the file on a cluster that cannot supply them;
-piping the file straight into `psql` bypasses that and fails outright.
+`001_init.sql` is the whole schema in one file; migrations 002..074, including the artifacts,
+revisions, events and scoped-search tables this rehearsal needs, were squashed into it. Apply
+every other file in `services/gateway/migrations/` after it, in filename order.
 
-**So 070 applies in full on the step 3 image, and not at all on a stock PostgreSQL 17 one.**
-There is no partial path: `create extension` is the eighth statement in the file, so a stock
-image gets none of the tables. This is the ordering that decides what step 7 can unblock.
+Its lines 26-28 are `create extension if not exists citext / pg_textsearch / pg_trgm`. Applied
+through `psql` as above those run unconditionally — the `requires-extension:` directives in its
+header are read by the gateway's own migration runner (`services/gateway/src/db.ts`), which
+defers the file on a cluster that cannot supply them; piping it straight into `psql` bypasses
+that and fails outright.
+
+**So the schema applies in full on the step 3 image, and not at all on a stock PostgreSQL 17
+one.** There is no partial path: `create extension` is the second statement in the file, so a
+stock image gets none of the tables. This is the ordering that decides what step 7 can unblock.
 
 ---
 
@@ -301,27 +303,22 @@ Six cases across three suites are commonly described as waiting on this variable
 of two of them. The other four need something else as well, and this document cannot supply
 it.
 
-> **Read this before the table.** Every row below assumes migration 070 applied, and step 5
-> shows that needs the step 3 image. This paragraph used to add that the image needs
-> `versions.lock.json`'s pins resolved and that therefore "the answer in every row is no —
-> including the two marked Yes". **That premise no longer holds**: eight of the lock's nine
-> `*_verified` flags are `true`, and the ninth is unresolvable by design rather than
-> outstanding (see section 3). The pins are no longer the first domino.
->
-> What the table says stands on its own. The variable is necessary for the two marked Yes and
+> **Read this before the table.** Every row below assumes the schema applied, and step 5
+> shows that needs the step 3 image, whose pins are resolved (see section 3).
+> The variable is necessary for the two marked Yes and
 > sufficient for neither pair marked No, for the reasons in their own rows — a missing verified
 > BM25 DDL for the isolation pair, and no implementation at all for the migration pair.
 
 | Suite | Case | Does step 6 unblock it? |
 |---|---|---|
-| `rebuild` | `atomic_apply_against_isolated_database` | **Yes**, once 070 is applied. It needs nothing but the URL — it creates its own store root with `mkdtemp` and its own rows. |
-| `rebuild` | `real_rebuild_against_isolated_copy` | **Yes**, once 070 is applied. Same: URL only, own temporary store, own fixtures. |
+| `rebuild` | `atomic_apply_against_isolated_database` | **Yes**, once the schema is applied. It needs nothing but the URL — it creates its own store root with `mkdtemp` and its own rows. |
+| `rebuild` | `real_rebuild_against_isolated_copy` | **Yes**, once the schema is applied. Same: URL only, own temporary store, own fixtures. |
 | `isolation` | `real_pg17_statistical_isolation` | **No.** Needs step 3's image *and* verified `pg_textsearch` BM25 index and score-expression DDL, which this checkout does not carry. Stays `not_run` with that reason even when the variable is set. |
 | `isolation` | `real_pg17_bm25_score_expression` | **No.** Same gap. |
 | `migration` | `projection_parity_against_the_isolated_database` | **No.** These two are a hardcoded `NOT_RUN` map in `testing/tenant-info/migration.ts` and read no environment variable at all. They have no implementation behind them yet. |
 | `migration` | `copied_multi_owner_store_projection_replay` | **No.** Same — unimplemented, not unconfigured. |
 
-So: **2 of 6.** The image pins are resolved, so the two `rebuild` cases are reachable once 070
+So: **2 of 6.** The image pins are resolved, so the two `rebuild` cases are reachable once the schema
 is applied. The isolation pair is additionally blocked on the extension's verified BM25 DDL;
 the migration pair is blocked on
 code nobody has written. Neither of those is an environment problem and neither is closed by

@@ -1,25 +1,17 @@
 /**
- * benchmark-report.ts — the benchmark report itself: how one is assembled from what is
- * actually observable, written into a workspace with its raw evidence, and structurally
- * validated before anybody evaluates a number in it.
+ * The benchmark report: how one is assembled from what is actually observable, written into a
+ * workspace with its raw evidence, and structurally validated before anybody evaluates a number
+ * in it.
  *
- * Split out of benchmark.ts during I-23 at the 700-line ceiling. `checks/benchmark-report-
- * completeness.ts` pins `evaluateTargets` to `benchmark.ts` by path and is not editable, so
- * the evaluator and the judgment validator stayed there and the report — a separate subject,
- * and the only half that touches a filesystem — is what left.
+ * COUPLED: `checks/benchmark-report-completeness.ts` pins `evaluateTargets` to `benchmark.ts`
+ * by path, so the evaluator and the judgment validator live there, and the report — the only
+ * half that touches a filesystem — lives here.
  *
- * NOTHING IN THIS FILE MEASURES ANYTHING, AND THAT IS NOT A GAP THIS TASK LEFT OPEN. The reason
- * is narrower than it was: measured against the production cluster on 2026-09-21, PostgreSQL
- * 17.11 IS reachable, `pg_textsearch` 1.4.0 IS installed, and migration 070 HAS applied — the
- * tables it creates exist. What is still missing is what those two facts do not give you:
- * schema `zz` carries no bm25 index at all, and `zz.artifact` and all three
- * `zz.search_*_default` projections hold zero rows. An available extension is not an index,
- * and an applied DDL migration is not a populated projection.
- * So `assembleBenchmarkReport` records the thresholds the agreement fixes, the bindings it can
- * hash off disk, and eighteen blocked targets — each naming what would produce an observation.
- * It never writes a number nobody measured, not as a placeholder and above all not as a zero:
- * a fabricated benchmark report is structurally indistinguishable from a real one, which is
- * the single failure mode this file is built against.
+ * Nothing in this file measures anything. `assembleBenchmarkReport` records the thresholds the
+ * agreement fixes, the bindings it can hash off disk, and a blocked target for every
+ * observation it has no input for, each naming what would produce one. It never writes a number
+ * nobody measured, not as a placeholder and not as a zero: a fabricated benchmark report is
+ * structurally indistinguishable from a real one.
  */
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -34,16 +26,15 @@ import { safeWritePath } from "./workspace.ts";
 const TARGET_BY_KEY = new Map(RELEASE_TARGETS.map((t) => [t.key, t]));
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-// ─────────────── the structural validator: a well-formed report is not a passing one ───────────────
+// The structural validator: a well-formed report is not a passing one
 
 /** The spec's fixed reference workload and reference deployment. A report that restates either
  *  differently did not run the agreed workload, whatever its numbers say.
  *
- *  FROZEN, not merely `as const`. Both objects are placed directly into an assembled report,
+ *  Frozen, not merely `as const`. Both objects are placed directly into an assembled report,
  *  so a caller editing the report's `workload.requested` would otherwise be editing the
  *  agreement this validator compares against — and the comparison would then hold by
- *  definition. Measured: the fixture check's "wrong workload" case passed until these were
- *  frozen, because mutating the fixture mutated the constant it was being judged by. */
+ *  definition. */
 export const REFERENCE_WORKLOAD = Object.freeze({
   clients: 10, queries_per_second: 5, duration_minutes: 30, limit: 15,
   mix: Object.freeze({ current: 0.8, evidence: 0.1, history: 0.1 }),
@@ -68,10 +59,10 @@ const within = (actual: number, expected: number): boolean =>
   Math.abs(actual - expected) <= expected * TOLERANCE;
 
 /**
- * `{ok, errors}` for a benchmark report's STRUCTURE, kept deliberately apart from
+ * `{ok, errors}` for a benchmark report's structure, kept deliberately apart from
  * `evaluateTargets`, which judges its numbers. The real command runs this first, and a green
  * result here says nothing whatever about the release: a report can be perfectly well formed
- * and carry eighteen blocked targets, which is exactly the state this repository is in.
+ * and carry eighteen blocked targets.
  *
  * It refuses six shapes a plausible-looking report can take, each of which would otherwise
  * read as full-scale evidence:
@@ -80,7 +71,7 @@ const within = (actual: number, expected: number): boolean =>
  *     census, no index census and (for latency) no achieved workload stands behind it. A
  *     number measured against a small fixture set is not a number about the full corpora.
  *   · FORGED SCALE — observed corpus counts whose `method` is a manifest or a declaration.
- *     `testing/tenant-info/manifest.json` is the public DEFINITION of the corpora; copying its
+ *     `testing/tenant-info/manifest.json` is the public definition of the corpora; copying its
  *     figures into an `observed` field is a restatement of the plan, not a count of files.
  *   · PER-CORPUS DISTRIBUTION — a corpus whose mean/p95 body size or 1-MiB fixture count
  *     misses the contract. Checked corpus by corpus, because an overall average passes while
@@ -107,7 +98,7 @@ export function validateBenchmarkReport(report: unknown): { ok: boolean; errors:
   if (!isFilledString(report.generated_at)) errors.push("generated_at is missing");
   if (!isFilledString(report.generated_by)) errors.push("generated_by is missing");
 
-  // ── the eighteen targets, their thresholds and their verdicts ────────────────────────────
+  // The eighteen targets, their thresholds and their verdicts
   const targets = Array.isArray(report.targets) ? report.targets : [];
   const observed: Record<string, number> = {};
   const seen = new Set<string>();
@@ -143,7 +134,7 @@ export function validateBenchmarkReport(report: unknown): { ok: boolean; errors:
     if (!seen.has(definition.key)) errors.push(`target "${definition.key}" is absent from the report`);
   }
 
-  // ── the census, the index and the workload that have to stand behind any observation ─────
+  // The census, the index and the workload that have to stand behind any observation
   const census = isRecord(report.corpus_census) ? report.corpus_census : null;
   const index = isRecord(report.index_census) ? report.index_census : null;
   const workload = isRecord(report.workload) ? report.workload : null;
@@ -272,7 +263,7 @@ export function validateBenchmarkReport(report: unknown): { ok: boolean; errors:
     }
   }
 
-  // ── the bindings: what code, what runtime, which approved dataset ────────────────────────
+  // The bindings: what code, what runtime, which approved dataset
   const bindings = isRecord(report.bindings) ? report.bindings : null;
   const dataset = bindings && isRecord(bindings.dataset) ? bindings.dataset : null;
   let h1Signed = false;
@@ -311,7 +302,7 @@ export function validateBenchmarkReport(report: unknown): { ok: boolean; errors:
     errors.push("bindings.runtime binds no candidate runtime and says why nowhere");
   }
 
-  // The baseline profile measures the PRESERVED OLD EXECUTABLE. Its missing capabilities are
+  // The baseline profile measures the preserved old executable. Its missing capabilities are
   // the point of running it, so they are declared rather than quietly scored as zero: a lane
   // the old build never had is unsupported coverage, not a lane that performed badly.
   const coverage = isRecord(report.coverage) ? report.coverage : null;
@@ -331,14 +322,14 @@ export function validateBenchmarkReport(report: unknown): { ok: boolean; errors:
     }
   }
 
-  // ── the slices, where a denominator of zero is the shape that lies ───────────────────────
+  // The slices, where a denominator of zero is the shape that lies
   const quality = isRecord(report.quality) ? report.quality : null;
   if (!quality) errors.push("quality is missing");
   else {
     const definitions = isRecord(quality.definitions) ? quality.definitions : null;
     if (!definitions) errors.push("quality.definitions is missing");
     else {
-      // THE TWO LIMITS ARE THE AGREEMENT'S, NOT THE RUN'S. Quality is scored at limit 20 and
+      // The two limits are the agreement's, not the run's. Quality is scored at limit 20 and
       // latency is measured at limit 15; a run at limit 10 returns fewer candidates and so
       // scores a different recall, which is not a worse result at this workload but a number
       // about a different one. Restating either is how a report compares two things and calls
@@ -381,7 +372,7 @@ export function validateBenchmarkReport(report: unknown): { ok: boolean; errors:
     }
   }
 
-  // ── raw evidence, retained so I-25 can re-derive every summary above ─────────────────────
+  // Raw evidence, retained so I-25 can re-derive every summary above
   const raw = Array.isArray(report.raw_evidence) ? report.raw_evidence : null;
   if (!raw || raw.length === 0) {
     errors.push("raw_evidence is empty — even a report that measured nothing records what it looked for");
@@ -393,7 +384,7 @@ export function validateBenchmarkReport(report: unknown): { ok: boolean; errors:
     }
   }
 
-  // ── an observation with nothing behind it is not full-scale evidence ─────────────────────
+  // An observation with nothing behind it is not full-scale evidence
   const observedKeys = Object.keys(observed);
   if (observedKeys.length > 0) {
     if (!censused) {
@@ -414,7 +405,7 @@ export function validateBenchmarkReport(report: unknown): { ok: boolean; errors:
     }
   }
 
-  // ── the evaluation block must be what evaluateTargets actually returns ───────────────────
+  // The evaluation block must be what evaluateTargets actually returns
   const evaluation = isRecord(report.evaluation) ? report.evaluation : null;
   if (!evaluation) errors.push("evaluation is missing");
   else {
@@ -436,15 +427,14 @@ export function validateBenchmarkReport(report: unknown): { ok: boolean; errors:
   return { ok: errors.length === 0, errors };
 }
 
-// ────────────────────────── assembling and writing the report ──────────────────────────
+// Assembling and writing the report
 
 export type BenchmarkProfile = "baseline" | "acceptance";
 
 /**
  * The files an operator drops into `<workspace>/benchmark-inputs/<profile>/` after a real
  * reference run, one per section of the report. Each is optional and each absence becomes a
- * blocked section naming what is missing — which is how every section of this repository's
- * own report is currently filled. `deploy/BENCHMARK-MEASUREMENT.md` is the procedure that
+ * blocked section naming what is missing. `deploy/BENCHMARK-MEASUREMENT.md` is the procedure that
  * produces them.
  */
 const INPUT_FILES = {
@@ -533,7 +523,7 @@ function assembleBenchmarkReport(
   }
 
   const NOTHING_RAN = "no reference run has been executed from this checkout: PostgreSQL 17.11 and " +
-    "pg_textsearch 1.4.0 are reachable and migration 070 has applied, but schema zz carries no bm25 " +
+    "pg_textsearch 1.4.0 are reachable and the schema has applied, but schema zz carries no bm25 " +
     "index and zz.artifact and every zz.search_*_default projection hold zero rows, so there is " +
     "nothing indexed to measure against";
 
@@ -584,7 +574,7 @@ function assembleBenchmarkReport(
       code: {
         checkout_sha: checkoutSha(),
         benchmark_module_sha256: repoSha256("scripts/tenant-info/benchmark.ts"),
-        // The VALIDATOR is bound too, not just the evaluator. A change to what counts as a
+        // The validator is bound too, not just the evaluator. A change to what counts as a
         // well-formed report changes what this report means, and without this hash that change
         // is invisible to the binding I-25 re-checks.
         benchmark_report_module_sha256: repoSha256("scripts/tenant-info/benchmark-report.ts"),
@@ -599,7 +589,7 @@ function assembleBenchmarkReport(
     coverage: {
       candidate: {
         supported: ["four composed retrieval lanes", "three scopes", "mode-aware grammar", "cursor and freshness bounds"],
-        unsupported: ["lexical bm25 ranking — migration 070 has applied and its tables exist, but no bm25 index exists on any cluster and the projections are empty",
+        unsupported: ["lexical bm25 ranking — the schema has applied and its tables exist, but no bm25 index exists on any cluster and the projections are empty",
           "the live knowledge_search handler is deliberately not repointed at these tables"],
       },
       baseline: {
@@ -650,9 +640,8 @@ export interface BenchmarkReceipt {
  * The `benchmark` verb. Assembles the report, retains the raw evidence beside it, validates
  * the structure, and only then reads a verdict off the numbers.
  *
- * `ok` REQUIRES BOTH, AND THAT IS THE POINT OF THE WHOLE TASK. A structurally valid report is
- * not a passing one: this repository's own report validates cleanly and carries eighteen
- * blocked targets, and the verb exits nonzero on it. A caller that treated "the command
+ * `ok` requires both. A structurally valid report is not a passing one: a report can
+ * validate cleanly and carry eighteen blocked targets, and the verb exits nonzero on it. A caller that treated "the command
  * produced a well-formed report" as success would ship on a file that measured nothing.
  */
 export function runBenchmark(workspaceReal: string, profile: BenchmarkProfile): BenchmarkReceipt {

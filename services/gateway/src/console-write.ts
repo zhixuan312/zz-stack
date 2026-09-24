@@ -1,38 +1,29 @@
 /**
- * /api/console — the console's WRITE surface.
+ * /api/console — the console's write surface.
  *
- * console.ts is GET only, deliberately (see its own header): a read-only surface cannot be
- * driven by a forged cross-site form, and every act on the platform belongs in a flow,
- * through zz-core, as the caller. This file is those acts, each arriving from a button in the
- * console rather than a chat turn — the console's stepper shows a document is awaiting
- * approval, and there is no session an operator can carry into an agent's chat to press the
- * button for them.
+ * DELIBERATE: console.ts is GET only, so a read-only surface cannot be driven by a forged
+ * cross-site form. This file is the acts, each arriving from a button in the console rather
+ * than a chat turn.
  *
- * Copies POST /api/kb/sources (kb.ts), the proven browser-to-zz-core write path in this
- * codebase: collect the request's own `x-zz-*` headers, open an `Mcp` client against
- * `CORE_MCP_URL` with them attached, and call the tool. THE GATEWAY WRITES NO PLATFORM TABLE
- * ITSELF and never sets `approved_by` — zz-core reads the author from those headers and
- * trusts them because a peer allowlist admits only the gateway, and forwarding them is what
- * keeps the web from ever acting as somebody else. `on_behalf_of` is never sent for the same
- * reason: that field is for a verdict that is someone else's, and the console caller is
- * always approving as themselves.
+ * Each act collects the request's own `x-zz-*` headers, opens an `Mcp` client against
+ * `CORE_MCP_URL` with them attached, and calls the tool. The gateway
+ * writes no platform table itself and never sets `approved_by` — zz-core reads the author from
+ * those headers and trusts them because a peer allowlist admits only the gateway, so forwarding
+ * them is what keeps the web from acting as somebody else. `on_behalf_of` is never sent: that
+ * field is for a verdict that is someone else's, and the console caller approves as themselves.
  *
- * Authorised through console.ts's own `handler()`, not a copy of it — the same directory-or-
- * superadmin gate and the same `resolveScope` that decides which team a read sees. A write
- * needs a settled answer to "which team", not the platform-wide reading of it: `document_approve`
- * stamps one document belonging to one team, and there is no fleet-wide version of that
- * question for `?scope=platform` to answer, so this route refuses that case with a 400
- * rather than picking a team to log against that nobody asked for.
+ * Authorised through console.ts's own `handler()`, not a copy of it — the same
+ * directory-or-superadmin gate and the same `resolveScope` that decides which team a read sees.
+ * A write needs a settled answer to "which team": `document_approve` stamps one document
+ * belonging to one team, so `?scope=platform` is refused with a 400 rather than picking a team
+ * to log against.
  *
- * `revise` (Task I-23) is the same shape with one thing added in the middle: there is no
- * editor anywhere in this console (see the initiative that shipped it — "nobody hand-edits
- * document markdown in a browser") so a body to send zz-core does not exist until this
- * route makes one. It reads the document's discussion thread (never the request body — the
- * caller supplies nothing but the instruction to proceed), asks the platform's own model to
- * write the next version from it, and only THEN reaches `core.call("document_revise", …)`
- * exactly the way `document_approve` reaches `core.call("document_approve", …)` above. A generation failure
- * leaves the document untouched — nothing is written to zz-core until `generate()` has
- * already succeeded.
+ * `revise` is the same shape with one thing added in the middle: there is no editor in this
+ * console, so a body to send zz-core does not exist until this route makes one. It reads the
+ * document's discussion thread — never the request body, which carries nothing but the
+ * instruction to proceed — asks the platform's own model to write the next version from it, and
+ * only then calls `document_revise`. A generation failure leaves the document untouched:
+ * nothing is written until `generate()` has succeeded.
  */
 import type { Express, Request, Response } from "express";
 
@@ -49,22 +40,15 @@ import { withoutFrontmatter } from "./package/skills.js";
 /**
  * The revision prompt — the part of this route worth reading carefully.
  *
- * WHY THIS IS NOT "here's a document, make it better": a model handed a document and told
- * to incorporate feedback treats the whole document as a draft it is free to improve —
- * tightening a sentence nobody flagged, re-ordering a section, fixing a table it decided
- * looked wrong. That is invisible generosity from the model's side and an unreviewable diff
- * from the team's: whoever looks at the new draft has no way to tell which of forty changed
- * lines came from the conversation they just had and which came from the model deciding the
- * prose could be better. So the rule is stated twice, in different words: change only what
- * the discussion actually asks for, and leave everything else — including a disagreement
- * nobody resolved — exactly as it was. Silently picking a side in an open argument would be
- * worse than leaving the argument visible in the next round of discussion.
+ * Not "here's a document, make it better": a model handed a document and told to incorporate
+ * feedback treats the whole document as a draft it may improve, and the team cannot then tell
+ * which changed lines came from their conversation. So the rule is stated twice, in
+ * different words: change only what the discussion asks for, and leave everything else —
+ * including a disagreement nobody resolved — as it was.
  *
- * WHY NO FRONTMATTER: the platform writes the envelope (version, status, approval) itself,
- * deterministically, the same way for every caller of `document_revise` — that is the whole
- * reason the tool exists instead of a plain overwrite. A model asked to produce "a document"
- * reaches for frontmatter out of habit, and zz-core refuses a body that opens with one
- * (`frontmatterRefusal`), which is why the rule is spelled out rather than assumed.
+ * No frontmatter: the platform writes the envelope (version, status, approval) itself, and
+ * zz-core refuses a body that opens with one (`frontmatterRefusal`). A model asked to produce
+ * "a document" reaches for frontmatter out of habit, so the rule is spelled out.
  */
 const REVISE_SYSTEM_PROMPT =
   "You are the ZZ platform, authoring the next version of a governed document on behalf " +
@@ -84,12 +68,9 @@ const REVISE_SYSTEM_PROMPT =
   "discussion did not touch must still be present, verbatim.";
 
 /** Strips one Markdown code fence wrapping the whole answer, if the model added one despite
- *  rule 3 above — "markdown only" reads, to a model, as "format this as markdown", and a
- *  ```` ```markdown ... ``` ```` fence around an otherwise-correct answer is a habit no
- *  amount of prompt wording reliably suppresses. Only the OUTERMOST fence is removed, and
- *  only when it wraps the entire answer (open on the first line, close on the last) — a
- *  fence that is part of the document's own content (a spec quoting a code block) must
- *  survive untouched. */
+ *  rule 3 above. Only the outermost fence is removed, and only when it wraps the entire answer
+ *  (open on the first line, close on the last) — a fence that is part of the document's own
+ *  content must survive untouched. */
 function stripWrappingFence(body: string): string {
   const m = /^```[^\n]*\n([\s\S]*)\n```\s*$/.exec(body.trim());
   return m ? m[1] : body;
@@ -97,15 +78,12 @@ function stripWrappingFence(body: string): string {
 
 export function mountConsoleWrite(app: Express): void {
   // NOT A TOOL: handler()'s first argument is the human-readable label in "console <name>
-  // failed" and "could not read <name>" — its siblings are "an answer", "the thread" and
-  // "revise". Renaming it to the tool would make the error read "could not read
-  // document_approve", which is worse prose and out of step with every other route here.
+  // failed" and "could not read <name>".
   app.post("/api/console/documents/approve", handler("approve", async (req: Request, res: Response, scope: ResolvedScope) => {
     if (scope.kind !== "team") {
-      // Only `{ kind: "platform" }` reaches here otherwise (a refused scope already
-      // answered inside handler()), and the platform reading exists for fleet-wide
-      // dashboards — it names no team, so there is nothing for `zz.event`'s team column
-      // or the membership check below to be about.
+      // Only `{ kind: "platform" }` reaches here otherwise — a refused scope already answered
+      // inside handler(). The platform reading names no team, so there is nothing for
+      // `zz.event`'s team column or the membership check below to be about.
       res.status(400).json({ error: "approve needs one team — pass ?team=<slug>, not ?scope=platform" });
       return;
     }
@@ -127,22 +105,19 @@ export function mountConsoleWrite(app: Express): void {
     try {
       reply = await core.call("document_approve", { path: subject });
     } catch (err) {
-      // `Mcp.call` throws only for a transport or protocol failure — a refusal comes back
-      // as ordinary text beginning with ERROR, read below. So everything that lands here is
-      // "could not reach zz-core", never "zz-core said no", and the caller needs a status
-      // that says which one happened rather than a generic 500.
+      // `Mcp.call` throws only for a transport or protocol failure — a refusal comes back as
+      // ordinary text beginning with ERROR, read below. So everything that lands here is "could
+      // not reach zz-core", never "zz-core said no".
       res.status(502).json({ error: err instanceof McpError ? err.message : "zz-core unreachable" });
       return;
     }
-    // zz-core's refusal IS the diagnosis — not a member of the document's team, the path
+    // zz-core's refusal is the diagnosis — not a member of the document's team, the path
     // does not exist, the document is not one this flow declares — so it is carried back
     // unchanged rather than replaced with a generic message that would throw that away.
     if (/^ERROR/.test(reply)) { res.status(400).json({ error: reply }); return; }
-    // Written after the act succeeds, never before, and `via: "web"` is stated explicitly
-    // here rather than assumed from `document_approve` itself — document_approve() has callers that are not
-    // this console, and none of them should inherit a door marker they did not come
-    // through. See the gate check below this file's sibling check in scripts/gate.ts for
-    // what happens to FR-8 the day a route forgets this line.
+    // Written after the act succeeds, never before, and `via: "web"` is stated here rather
+    // than assumed from `document_approve` itself, which has callers that are not this console
+    // and must not inherit a door marker they did not come through.
     logEvent({ actor, teamSlug: scope.slug, kind: "document.approve", subject, detail: { via: "web" } });
     res.json({ ok: true, result: reply });
   }));
@@ -163,13 +138,11 @@ export function mountConsoleWrite(app: Express): void {
     const actor = req.zzIdentity!.email;
     const subject = `${initiative}/${path}`;
 
-    // THE THREAD, READ SERVER-SIDE — never the request body. There is no editor and no
-    // client-supplied content on this route (see the file header): the only thing a caller
-    // sends is `{ initiative, path }`, and what changes the document is whatever the team
-    // already said to each other, read fresh off `zz.discussion_message` through the SAME
-    // `fetchMessages` the GET route in discussion.ts uses — not a second query for the same
-    // rows. An empty thread names itself rather than reaching the model with nothing to
-    // work from.
+    // The thread, read server-side, never the request body: a caller sends only
+    // `{ initiative, path }`, and what changes the document is what the team said to each
+    // other, read off `zz.discussion_message` through the same `fetchMessages` the GET route in
+    // discussion.ts uses. An empty thread names itself rather than reaching the model with
+    // nothing to work from.
     const messages: ThreadMessage[] = await fetchMessages(platformDb(), scope.slug, initiative, path, undefined);
     if (messages.length === 0) {
       res.status(400).json({ error: "the discussion on this document is empty — there is nothing to revise from" });
@@ -192,21 +165,15 @@ export function mountConsoleWrite(app: Express): void {
       return;
     }
     // A missing document, or a path this flow does not declare, comes back as zz-core's own
-    // refusal text — carried back unchanged, same as approve's own reply below.
+    // refusal text — carried back unchanged, same as approve's own reply above.
     if (/^ERROR/.test(current)) { res.status(400).json({ error: current }); return; }
 
-    // A CLOSED INITIATIVE'S DOCUMENTS ARE THE RECORD, and this refuses to rewrite one.
+    // A closed initiative's documents are the record, and this refuses to rewrite one: the
+    // ledger row was written from this document at the close, so rewriting it afterwards is how
+    // a document and the ledger come to disagree about finished work.
     //
-    // Found by doing it on UAT: revising the closing document of a closed initiative moved
-    // its version while `outcome` and `closed_by` stayed on it. Nothing was corrupted —
-    // zz-core carries those forward deliberately, and its own comment records the incident
-    // where DELETING them reopened a closed initiative and let initiative_close() append a second
-    // ledger row for the same work. But the ledger row was written from this document at the
-    // close, and rewriting it afterwards is how a document and the ledger come to disagree
-    // about work that is finished.
-    //
-    // The console already hides the control for a closed document. Hiding is not enforcing:
-    // a request can still arrive, and the rule belongs where the act happens.
+    // The console hides the control for a closed document; hiding is not enforcing, and a
+    // request can still arrive.
     if ((parseEnvelope(current).outcome ?? "").trim()) {
       res.status(400).json({
         error: "this initiative is closed — its documents are the record the ledger was " +
@@ -216,9 +183,9 @@ export function mountConsoleWrite(app: Express): void {
       return;
     }
 
-    // QUOTED, NEVER PARAPHRASED (AC-7). The exact text handed to the model is the exact
-    // text that becomes `source_content` below, so the record of why the document changed
-    // is provably the conversation itself and not this route's own summary of it.
+    // Quoted, never paraphrased: the exact text handed to the model is the text that
+    // becomes `source_content` below, so the record of why the document changed is the
+    // conversation itself rather than this route's summary of it.
     const discussionText = messages
       .map((m) => `${m.author.name} (${m.author.email}):\n${m.body}`)
       .join("\n\n---\n\n");
@@ -234,21 +201,17 @@ export function mountConsoleWrite(app: Express): void {
           `${discussionText}\n\n` +
           "---\n\nWrite the complete revised document body reflecting what the discussion " +
           "above actually decided. Nothing else changes.",
-        // Generous on purpose: this rewrites a whole document, not a chat answer, and the
-        // ask feature's own defaults (generate.ts) are tuned for a short reply to a
-        // question. judge.ts and stakeholder.ts already run a call over a full document at
-        // 110s/120s (see generate.ts's own header) — a full rewrite gets the same headroom,
-        // not the 60s meant for a person watching a spinner over one paragraph. A truncated
-        // answer is still a failure either way: generate() itself refuses one (see its own
-        // `finish_reason: "length"` handling) before this route ever sees it.
+        // This rewrites a whole document, not a chat answer, so it gets the headroom judge.ts
+        // uses rather than generate.ts's defaults, which are tuned for a
+        // short reply. A truncated answer is a failure either way: generate() refuses one
+        // before this route sees it.
         maxTokens: 16_000,
         timeoutMs: 120_000,
       });
     } catch (err) {
       // generate()'s own contract: 503 when the endpoint has no LLM_* configured, 502 for a
-      // timeout, a bad provider answer, or a truncated/empty one. Either way NOTHING has
-      // been written yet — core.call("document_revise", …) below is the first write this
-      // route makes, and it is never reached from this branch.
+      // timeout, a bad provider answer, or a truncated or empty one. Nothing has been written
+      // yet — `document_revise` below is the first write this route makes.
       const status = (err as { status?: number }).status ?? 502;
       res.status(status).json({ error: err instanceof Error ? err.message : "generation failed" });
       return;
@@ -274,7 +237,7 @@ export function mountConsoleWrite(app: Express): void {
     logEvent({ actor, teamSlug: scope.slug, kind: "document.revise", subject, detail: { via: "web" } });
 
     // zz-core's own success text always opens "<path> revised: vN -> vM, status …" (see
-    // document_revise's registration) — read from THAT reply rather than a second round
+    // document_revise's registration) — read from that reply rather than a second round
     // trip back to zz-core to ask the version it just wrote.
     const version = /-> v(\d+)/.exec(reply)?.[1];
     res.json({ ok: true, version: version ? Number(version) : null });

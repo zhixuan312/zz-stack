@@ -4,15 +4,10 @@ import { readiness } from "@zz/contracts";
 import { root } from "../read.ts";
 import { check } from "../run.ts";
 
-// THE STAGE LIST COMES FROM THE FLOW MODULE THAT OWNS IT, never from the generic kernel.
-// An earlier form of this check imported `STAGES` from `@zz/contracts` — while Task I-20's
-// check forbids SDLC stage names anywhere in `packages/contracts/src` and fails on them.
-// Both run in one gate, so no implementation satisfied both: a kernel exporting the seven
-// names failed I-20, and a kernel without them failed this. `spec.md` puts stage identity in
-// the SDLC module and I-20's whole criterion is that no generic kernel module branches on a
-// stage, so the kernel was the wrong place to ask. `flow.json` already declares all seven.
-// Spelling them with different quotes to slip past I-20's regex would have made both checks
-// green and the architecture false, which I-20's own contract rules out in as many words.
+// DELIBERATE: the stage list is read from the flow module that owns it, never imported from
+// `@zz/contracts`. COUPLED: scripts/gate/checks/generic-host-genericity.ts forbids SDLC stage
+// names anywhere in `packages/contracts/src`, and both run in one gate — a kernel exporting
+// the seven names fails that check, and a kernel without them fails this one.
 const STAGES = JSON.parse(readFileSync(join(root, "catalog/sdlc/sdlc-flow/flow.json"), "utf8")).stages;
 
 check("readiness rests on evidence and gates, never on volume, rounds or a score", () => {

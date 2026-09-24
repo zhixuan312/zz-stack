@@ -1,55 +1,21 @@
-// The evaluation door is a DOOR: it is mounted, it serves its own tools and not the core
-// door's, the gateway routes to it and forwards to IT rather than to zz-core's other mount,
-// and the flow that owns it declares it.
+// The evaluation door is a door: it is mounted, it serves its own tools and not the core door's,
+// the gateway routes to it and forwards to it rather than to zz-core's other mount, and the flow
+// that owns it declares it.
 //
-// THIS CHECK OPENS REAL CLIENTS AND IMPORTS REAL CONSTANTS. The plan's own draft of this file
-// was measured against untouched code before a line of this was written: 7 of its 8 clauses
-// were red and the 8th was its `/core/mcp` control, so it could tell that the door was ABSENT.
-// It could not tell anything else, and the gaps were the ones that matter:
+// It opens real clients and imports real constants. `buildEvalServer` is imported from dist and
+// run, an `InMemoryTransport` pair carries a real `initialize` and a real `tools/list` between a
+// real `Client` and it, and what the door serves is read off that client. `CORE_URL` and `EVAL_URL`
+// are imported from the gateway's own module rather than matched in its source, so what is compared
+// is the value the running proxy would fetch, and `doorSurface` and `pluginForDoor` are called
+// rather than read.
 //
-//   - It read raw source with the comments in. `app.all("/eval/mcp"` inside a comment — inside
-//     THIS sentence, had it been in server.ts — satisfied it. The sibling check
-//     `eval-tools-moved.ts` fails exactly this way today: its `coreFactory.includes("plugin-eval")`
-//     matches the words "zz-plugin-eval" in a comment saying those tools have LEFT the core door.
-//   - Its whole test of what the door serves was that two `serveMcp` calls named two different
-//     identifiers. `function buildEvalServer() { return new McpServer(...) }` — a door mounted
-//     and serving nothing — passed every clause it had.
-//   - It never asked where the gateway's new route FORWARDS. Pointing `/eval/mcp` at `CORE_URL`
-//     gives every caller the core door's tools under the evaluation door's name, and the whole
-//     point of the door is that those two lists differ. That passed too.
+// What no clause here speaks to: the /manage door is built in the gateway's process, which has no
+// recordingDoor and writes no zz.plugin_tool row, so the recorded surface is this service's two
+// doors and not every tool the platform serves.
 //
-// So: `buildEvalServer` is imported from dist and run, an `InMemoryTransport` pair carries a
-// real `initialize` and a real `tools/list` between a real `Client` and it, and what the door
-// serves is read off that client. `CORE_URL` and `EVAL_URL` are IMPORTED from the gateway's
-// own module rather than matched in its source, so what this compares is the value the running
-// proxy would fetch. `blockOf` is CALLED, because the surface name the gateway records for this
-// door decides whether its traffic is filed as the platform's own or as a building block
-// nobody has ever granted.
-//
-// WHAT IT COVERS THAT IT ONCE SAID IT COULD NOT — SEE SECTION 9. The platform records its own
-// tool surface per service version (`zz.block_version` + `zz.block_tool`), and that record used
-// to be a set of NAMES: `zz.block_tool` was `(id, block_version_id, name, verdict, …)` with no
-// column for a door. Both doors are built at boot and both fill OWN_TOOLS, so the record was
-// complete and still could not say which door a name was on — and when the ten `plugin_*` tools
-// moved from /core to /eval, the recorded name set before and after was IDENTICAL, so the one
-// instrument this platform has for judging a tool surface answered NO CHANGE across the largest
-// surface change it has ever had. That was not a gap, it was a wrong answer wearing the shape of
-// a right one. Migration 052 adds `door`, `recordingDoor` writes it from the builder that knows
-// it, and `zz-tool plugin-surface` reads it back; section 9 holds all three ends of that, and the
-// green line now states what was asserted instead of what was missing.
-//
-// WHAT IS STILL NOT IN THAT RECORD, said on the green line rather than here alone: the /manage
-// door is built in the GATEWAY's process, which has no recordingDoor and writes no
-// zz.block_version row at all. So the platform's recorded surface is this service's two doors
-// and not every tool the platform serves. That is a different absence from the one above — those
-// tools are missing from the record entirely rather than present without a door — and no clause
-// in this file speaks to it.
-//
-// WHAT IT LEAVES TO checks/orientation.ts. That file owns every door's PARAGRAPH — the
-// `instructions` a client is handed at `initialize`, its length, the skill it points at, its
-// `NOT FOR:` line, and the nouns it claims against the nouns it serves. The eval door is a row
-// in its table. Asserting the same property in two files means two go red for one cause and
-// the second one teaches nothing.
+// COUPLED: every door's paragraph — its `instructions`, their length, the skill it points at, its
+// `NOT FOR:` line, and the nouns it claims against the nouns it serves — belongs to
+// checks/orientation.ts.
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -57,11 +23,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-// BEFORE ANY DYNAMIC IMPORT IN THIS FILE. @zz/catalog reads ZZ_CATALOG_DIR ONCE, at module
-// load, and defaults to `/catalog` — a path that exists in the container and not in a
-// checkout. Half the dynamic imports below pull it in transitively, so setting this beside
-// the call that needs it sets it long after the value was fixed, and `pluginForDoor` then
-// reports that no door has a plugin because it is reading an empty directory.
+// Before any dynamic import in this file. @zz/catalog reads ZZ_CATALOG_DIR once, at module load,
+// and defaults to `/catalog` — a path that exists in the container and not in a checkout. Half the
+// dynamic imports below pull it in transitively, so setting it beside the call that needs it is
+// too late and `pluginForDoor` then reports that no door has a plugin, reading an empty directory.
 process.env.ZZ_CATALOG_DIR ??= join(process.cwd(), "catalog");
 
 /** A caught value is never typed as an Error — narrow the shape actually being read rather
@@ -77,20 +42,16 @@ function errMessage(err: unknown): string {
 const fail: string[] = [];
 const blind: string[] = [];
 
-/** Read a path, or record that this scan went blind on it. A CHECK THAT THROWS HAS NO FAILURE
- *  PATH — "nothing found" and "nothing to find" are the same answer unless one of them says
- *  so, and several checks in this initiative have ended in a stack trace instead of the
- *  sentence they were written to print. */
+/** Read a path, or record that this scan went blind on it. A check that throws has no failure
+ *  path — "nothing found" and "nothing to find" are the same answer unless one of them says so. */
 const read = (p: string) => { try { return readFileSync(p, "utf8"); } catch { blind.push(p); return null; } };
 const listDir = (d: string) => { try { return readdirSync(d); } catch { blind.push(d); return []; } };
 
 /** Source with its comments taken out, tracking strings so a quoted `/*` cannot open one.
  *
- * A CHARACTER SCANNER, not a line-wise stripper, and the difference has already cost this
- * repository a false green: `services/gateway/src/server.ts` carries a LINE comment ending
- * "…/auth/*", which opens a block comment a line-wise stripper never closes — blanking the end
- * of the file, including the mounts a check was asserting over. A stripper that silently
- * empties the region it is asked about turns every assertion over that region green. */
+ * A character scanner, not a line-wise stripper: a line comment ending "…/auth/*" opens a block
+ * comment a line-wise stripper never closes, blanking the rest of the file — and a stripper that
+ * silently empties the region it is asked about turns every assertion over that region green. */
 const stripComments = (src: string) => {
   let out = "";
   let i = 0;
@@ -122,13 +83,9 @@ async function connectTo(server: McpServer) {
 }
 /** The tools a door actually serves, as a client sees them.
  *
- * GUARDED, BECAUSE THE EMPTY DOOR IS THE CASE THIS FILE EXISTS FOR. A server with no tool
+ * Guarded, because the empty door is the case this file exists for. A server with no tool
  * registered never declares the `tools` capability, so the SDK answers `tools/list` with
- * `-32601 Method not found` and the client THROWS. Measured: mounting the evaluation door and
- * registering nothing ended this check in a stack trace out of module scope rather than in the
- * sentence below — red, but red in the shape that reads as a broken check, which is how a
- * reader learns to distrust the one clause that mattered. No tools is an ANSWER, and clause 1
- * is what says so. */
+ * `-32601 Method not found` and the client throws. No tools is an answer, and clause 1 says so. */
 const surfaceOf = async (client: Client) => {
   try {
     return new Set((await client.listTools()).tools.map((t) => t.name));
@@ -144,7 +101,7 @@ const coreSrc = read(CORE_SRC_PATH);
 const evalSrc = read(EVAL_SRC_PATH);
 const gwSrc = read(GW_SRC_PATH);
 
-// ── The evaluation door, built by the function the service mounts ─────────────────────────
+// The evaluation door, built by the function the service mounts
 let evalClient = null;
 try {
   const { buildEvalServer } = await import("../services/zz-core/dist/eval-door.js");
@@ -153,18 +110,16 @@ try {
   fail.push(`the evaluation door could not be built or connected: ${errMessage(err)}`);
 }
 
-// ── The core door, built the way zz-core builds it ────────────────────────────────────────
+// The core door, built the way zz-core builds it
 //
-// Its tool modules are read out of server.ts's own imports rather than listed here, so this
-// opens the door as it is today and not as it was when this was written.
+// Its tool modules are read out of server.ts's own imports rather than listed here, so this opens
+// the door as it is today.
 let coreClient = null;
-// THE WORD buildServer PASSES TO recordingDoor, READ OFF THE SOURCE AND NOT TYPED HERE.
-// server.ts binds :8000 at module scope, so buildServer cannot be imported and this file has
-// always had to reconstruct it. The reconstruction now has to include the wrapper, because
-// section 9 reads what that wrapper recorded — and a check that supplied the word itself would
-// report a correctly recorded door for a service that records none. So the literal comes from
-// the call, and a buildServer that stops wrapping, or wraps without naming a door, leaves this
-// null and fails there rather than passing on the check's own guess.
+// The word buildServer passes to recordingDoor, read off the source and not typed here.
+// server.ts binds :8000 at module scope, so buildServer cannot be imported and this file
+// reconstructs it. Supplying the word here would report a correctly recorded door for a service
+// that records none, so a buildServer that stops wrapping, or wraps without naming a door, leaves
+// this null and fails below.
 const coreDoorWord =
   /recordingDoor\(\s*coreServer\([\s\S]*?\)\s*,\s*"([^"]+)"\s*\)/.exec(stripComments(coreSrc ?? ""))?.[1] ?? null;
 if (coreSrc && coreDoorWord === null) {
@@ -193,13 +148,11 @@ try {
 const evalTools = evalClient ? await surfaceOf(evalClient) : new Set<string>();
 const coreTools = coreClient ? await surfaceOf(coreClient) : new Set<string>();
 
-// ── 1. A door that is mounted and serves nothing is not a door ────────────────────────────
+// 1. A door that is mounted and serves nothing is not a door
 //
-// THE CLAUSE THE PLAN'S VERSION DID NOT HAVE, and the one failure this task is most likely to
-// ship: the mount is the easy half and it is the half that greps green. An empty factory
-// answers `initialize` perfectly and `tools/list` with `[]`, so every caller sees a door that
-// connects and offers nothing — which is indistinguishable, from the outside, from a door
-// whose tools failed to register.
+// The mount is the half that greps green. An empty factory answers `initialize` perfectly and
+// `tools/list` with `[]`, which is indistinguishable from outside from a door whose tools failed
+// to register.
 if (evalClient && evalTools.size === 0) {
   fail.push("the evaluation door is mounted and serves NO tools — it answers initialize and " +
             "offers nothing, which is what a dropped register call looks like from outside");
@@ -208,23 +161,20 @@ if (evalClient && evalTools.size === 0) {
 // against a core door that serves nothing at all.
 if (coreClient && coreTools.size === 0) fail.push("the core door served no tools — this scan is blind");
 
-// ── 2. The door serves exactly what its own modules register ──────────────────────────────
+// 2. The door serves exactly what its own modules register
 //
-// DERIVED FROM eval-door.ts's OWN IMPORTS, never listed here: a door that grows an eleventh
-// tool is opened by this check with that tool on it. What this catches is the half of a move
-// that is easy to leave undone — a module imported and never registered, or registered and
-// serving a name nothing declares.
+// Derived from eval-door.ts's own imports, never listed here, so a door that grows a tool is
+// opened by this check with that tool on it. What it catches is a module imported and
+// never registered, or a name served that nothing declares.
 if (evalSrc && evalClient) {
-  // ANY relative path, not just `./tools/`: Task I-20 relocates these three modules, and a
-  // check that pinned the directory they live in today would go red on a move that changes
-  // nothing about the door. `register\w+` is what selects a tool module — `./door.js` imports
-  // `recordingDoor` and is correctly not one.
+  // Any relative path, not just `./tools/`, so relocating these modules does not turn this red.
+  // `register\w+` is what selects a tool module — `./door.js` imports `recordingDoor` and is
+  // correctly not one.
   const mods = [...evalSrc.matchAll(/import \{ register\w+ \} from "(\.\/[\w/-]+)\.js"/g)]
     .map((m) => m[1].replace(/^\.\//, ""));
   if (!mods.length) {
-    // NOT "blind": this one is an answer. A door file that imports no tool module is a door
-    // with nothing to register, and saying "this check could not read something" about it
-    // would describe a broken check instead of an empty door.
+    // Not "blind": this one is an answer. A door file that imports no tool module is a door with
+    // nothing to register.
     fail.push(`${EVAL_SRC_PATH} imports no tool module at all, so there is nothing for the ` +
               "evaluation door to register — whatever is mounted there serves an empty list");
   } else {
@@ -248,16 +198,12 @@ if (evalSrc && evalClient) {
   }
 }
 
-// ── 2b. The door's tools reach the surface this platform records about itself ─────────────
+// 2b. The door's tools reach the surface this platform records about itself
 //
-// `recordingDoor` is what every door wraps its server in, and it does two things no caller can
-// see: it records each name in OWN_TOOLS against the door it is declared on, and it turns a
-// thrown `Refusal`
-// into this platform's refusal shape. A door built WITHOUT it serves a perfectly working tool
-// list — this file's clauses 1 to 3 all stay green — while its tools are missing from the row
-// a surface report about `platform` reads and its refusals arrive in a different shape from
-// every other refusal here. Both failures are silent, which is why this clause is not a grep
-// for the word: the builder above has already run, so OWN_TOOLS holds what that run declared.
+// `recordingDoor` records each name in OWN_TOOLS against the door it is declared on and turns a
+// thrown `Refusal` into this platform's refusal shape. A door built without it serves a working
+// tool list while its tools are missing from the surface record. The builder above has already run,
+// so OWN_TOOLS holds what that run declared; this is not a grep for the word.
 if (evalTools.size) {
   try {
     const { OWN_TOOLS } = await import("../services/zz-core/dist/door.js");
@@ -274,11 +220,11 @@ if (evalTools.size) {
   }
 }
 
-// ── 3. Two doors, two tool sets ───────────────────────────────────────────────────────────
+// 3. Two doors, two tool sets
 //
-// The reason the second door exists. `/core/mcp` is in the client package's REQUIRED baseline
-// plugin, so a tool served there is on every account on the platform; a tool served on both is
-// on every account AND counted twice by anything that reads a door's surface.
+// `/core/mcp` is in the client package's required baseline plugin, so a tool served there is on
+// every account on the platform; a tool served on both is on every account and counted twice by
+// anything that reads a door's surface.
 const both = [...evalTools].filter((t) => coreTools.has(t));
 if (both.length) {
   fail.push(`served by BOTH doors: ${both.sort().join(", ")} — the core door is in the required ` +
@@ -293,20 +239,19 @@ if (coreClient && evalClient && evalTools.size && coreTools.size) {
   }
 }
 
-// ── 4. The flow's own skills can reach the tools they instruct ────────────────────────────
+// 4. The flow's own skills can reach the tools they instruct
 //
-// COMPLETE AND UNREACHABLE is this platform's most expensive shape, because nothing fails: the
-// tool exists, the skill is well written, and the call is simply not on a surface that agent
-// carries. It is also the mutation clause 2 alone cannot catch — deleting a module's import
-// AND its registration shrinks what this check expects by exactly as much as it shrinks what
-// the door serves, and clause 2 stays green. The flow's skills are the outside witness.
+// Complete and unreachable: the tool exists, the skill is well written, and the call is not on a
+// surface that agent carries. Clause 2 alone cannot catch it — deleting a module's import and its
+// registration shrinks what that clause expects by exactly as much as it shrinks what the door
+// serves. The flow's skills are the outside witness.
 const FLOW_DIR = "catalog/zz/zz-plugin-eval";
 const skillsDir = `${FLOW_DIR}/skills`;
 const instructed = new Set<string>();
 for (const sk of listDir(skillsDir)) {
   const md = join(skillsDir, sk, "SKILL.md");
   if (!existsSync(md)) continue;
-  // Named as a CALL — `tool(` or `tool` in backticks — not merely mentioned in prose.
+  // Named as a call — `tool(` or `tool` in backticks — not merely mentioned in prose.
   for (const m of (read(md) ?? "").matchAll(/`(plugin_[a-z0-9_]+)[(`]/g)) instructed.add(m[1]);
 }
 if (!instructed.size) {
@@ -325,12 +270,12 @@ if (!instructed.size) {
   }
 }
 
-// ── 5. The mount, and the URL the gateway fetches, are the same path ──────────────────────
+// 5. The mount, and the URL the gateway fetches, are the same path
 //
-// IMPORTED, NOT MATCHED. `EVAL_URL` is the value the running proxy passes to `fetch`, so this
+// Imported, not matched. `EVAL_URL` is the value the running proxy passes to `fetch`, so this
 // compares zz-core's mount against what the gateway would actually request. A mount at
 // `/eval-mcp` behind a gateway fetching `/eval` is two correct-looking lines and a door that
-// answers 404 to every call, with nothing in either file that looks wrong.
+// answers 404 to every call.
 let EVAL_URL: string | null = null;
 try {
   ({ EVAL_URL } = await import("../services/gateway/dist/relay.js"));
@@ -362,12 +307,11 @@ if (coreSrc && mounts.get("buildServer") !== "/mcp") {
             `${JSON.stringify(mounts.get("buildServer") ?? null)})`);
 }
 
-// ── 6. The gateway routes the door, and forwards it to the right upstream ─────────────────
+// 6. The gateway routes the door, and forwards it to the right upstream
 //
-// COMMENT-STRIPPED, so a route described in prose cannot stand in for a route. And each door's
-// handler is required to name its OWN upstream and not the other's: `/eval/mcp` wired to
-// `CORE_URL` serves the core door's tools under the evaluation door's name, which is the one
-// outcome this whole task exists to prevent and which every clause about mounting is blind to.
+// Comment-stripped, so a route described in prose cannot stand in for a route. Each door's handler
+// is required to name its own upstream and not the other's: `/eval/mcp` wired to `CORE_URL` serves
+// the core door's tools under the evaluation door's name.
 const gwCode = stripComments(gwSrc ?? "");
 /** The text of one `app.all("<path>", …)` registration, to the start of the next one. */
 const routeFor = (path: string) => {
@@ -390,15 +334,12 @@ for (const [path, own, other] of [["/eval/mcp", "EVAL_URL", "CORE_URL"],
   }
 }
 
-// ── 7. The door is announced, and the flow that owns it declares it ───────────────────────
+// 7. The door is announced, and the flow that owns it declares it
 //
-// DOORS is unauthenticated and is how anyone who reaches this gateway learns what it offers;
-// the manifest is what puts the door into the `.mcp.json` of the plugin that ships the flow.
-// A door nobody can find and nobody installs is a door only this check knows about.
-// SHAPE CHANGED AT TASK I-33: DOORS was an array of `{ path: … }` a person typed, and is now a
-// record keyed by the express path each door is MOUNTED at, with `doorIndex()` reading the
-// mounted paths off the router. A regex still looking for the old shape would find nothing, so
-// not finding it is reported as this scan going BLIND rather than shrugged at.
+// DOORS is unauthenticated and is how anyone reaching this gateway learns what it offers; the
+// manifest is what puts the door into the `.mcp.json` of the plugin that ships the flow. DOORS is a
+// record keyed by the express path each door is mounted at, and a regex that no longer matches it
+// is reported as this scan going blind rather than shrugged at.
 const doorsBlock = /const DOORS: Record<[\s\S]*?> = \{([\s\S]*?)\n\};/.exec(gwCode)?.[1] ?? null;
 if (gwSrc && !doorsBlock) {
   blind.push(`${GW_SRC_PATH} — DOORS could not be located, so nothing about what the gateway ` +
@@ -426,32 +367,24 @@ if (mfRaw !== null) {
   }
 }
 
-// ── 8. The door's traffic is recorded as ours ─────────────────────────────────────────────
+// 8. The door's traffic is recorded as ours
 //
-// `blockOf` is CALLED, not read. The gateway files one telemetry row per tool call under a
-// surface name, and anything it does not recognise as the platform's own IS a building block —
-// the surface name is how `/p/<block>/mcp` is routed. So a new door whose name was never added
-// to that set does not merely get a wrong label: every evaluation call is recorded as traffic
-// to a third-party block nobody granted and no registry has heard of.
-// AND IT TAKES ITS PATHS FROM DOORS, NOT FROM A LIST OF ITS OWN. It was a literal array of the
-// same four paths written a second time — which is how a door gets added to the routes and not
-// to the telemetry: nothing fails, nothing is empty, and every call through it is filed under
-// `core`. Asserting "/eval/mcp appears in that array" only ever caught the door this task
-// added; asserting the array IS DOORS catches every door anybody adds after it.
+// `doorSurface` is called, not read. The gateway files one telemetry row per tool call under a
+// surface name, and anything it does not recognise falls through to `core`, so a door whose name
+// was never added has every call recorded as the core door's. The telemetry mount takes its paths
+// from DOORS rather than a second list of the same paths, so every door added after this one is
+// covered.
 if (!/app\.use\(Object\.keys\(DOORS\),/.test(gwCode)) {
   fail.push("the telemetry mount does not take its paths from DOORS, so what this gateway " +
             "serves and what it records are two lists again — and a door in the first and not " +
             "the second has every call through it filed under the core door's name");
 }
-// AND THE NAME IS CALLED FOR, NOT READ. Being in the mount list above is half of it: the
-// middleware asks a function which door a request came through, and that function falls
-// through to "core". A door in the list and absent from the function has every call recorded
-// under the core door's name — and `TOOL_ALIAS` is keyed by surface, so those names are then
-// resolved through the CORE map and land in a different series. Nothing fails, nothing is
-// empty, and every number about this door is quietly somebody else's. That is why
-// `doorSurface` is an exported function of the URL rather than a lambda inside server.ts:
-// reading a branch out of source proves the branch is written, never that it is the one that
-// runs.
+// And the name is called for, not read. The middleware asks a function which door a request came
+// through, and that function falls through to "core", so a door in the mount list and absent from
+// the function has every call recorded under the core door's name — and `TOOL_ALIAS` is keyed by
+// surface, so those names then resolve through the core map. `doorSurface` is an exported function
+// of the URL rather than a lambda inside server.ts, because reading a branch out of source proves
+// it is written, never that it is the one that runs.
 let doorSurfaceOfEval = "(never asked)";
 try {
   const { doorSurface } = await import("../services/gateway/dist/tool-telemetry.js");
@@ -467,19 +400,15 @@ try {
   }
   // The controls: the same function must still name the doors it already knew. A namer that
   // answered "eval" to everything would satisfy the clause above.
-  for (const [url, want] of [["/core/mcp", "core"], ["/manage/mcp", "manage"],
-                             ["/p/casebox/mcp", "casebox"]]) {
+  for (const [url, want] of [["/core/mcp", "core"], ["/manage/mcp", "manage"]]) {
     if (doorSurface(url) !== want) {
       fail.push(`doorSurface(${url}) is ${JSON.stringify(doorSurface(url))} and not ` +
                 `${JSON.stringify(want)} — the clause above then passes on a namer that ` +
                 "answers the same thing to every door");
     }
   }
-  // AND WHOSE CALLS THEY ARE. A door is a plugin's declared server, so this door's traffic
-  // belongs to the plugin whose manifest declares `/eval/mcp` — and to no other. This replaces
-  // a pair of `blockOf` clauses that asked whether the evaluation door was mistaken for a
-  // THIRD PARTY's server, a concept the platform no longer has; the question underneath was
-  // always "are this door's calls filed as somebody else's", and this answers it directly.
+  // And whose calls they are. A door is a plugin's declared server, so this door's traffic belongs
+  // to the plugin whose manifest declares `/eval/mcp`, and to no other.
   if (pluginForDoor(surface) !== "zz-plugin-eval") {
     fail.push(`pluginForDoor(${JSON.stringify(surface)}) is ` +
               `${JSON.stringify(pluginForDoor(surface))} and not "zz-plugin-eval" — every call ` +
@@ -490,7 +419,7 @@ try {
     fail.push("pluginForDoor no longer names the core door's plugin — the clause above then " +
               "passes on a function that answers the same thing to every door");
   }
-  // And it must not invent one. `admin` was a door and is not one now; no manifest claims it.
+  // And it must not invent one. `admin` is not a door; no manifest claims it.
   if (pluginForDoor("admin") !== null) {
     fail.push("pluginForDoor names a plugin for a surface no manifest declares — attribution " +
               "has to come back null rather than guess");
@@ -500,30 +429,21 @@ try {
             `door's calls are recorded was checked: ${errMessage(err)}`);
 }
 
-// ── 9. WHICH DOOR A TOOL IS ON REACHES THE SURFACE RECORD, AND A READER CAN SEE IT ────────
+// 9. Which door a tool is on reaches the surface record, and a reader can see it
 //
-// THIS IS WHAT THE "NOT COVERED" LINE AT THE BOTTOM OF THIS FILE USED TO SAY WAS MISSING, and
-// it was not a gap — it was a wrong answer. `zz.block_tool` was `(block_version_id, name, …)`,
-// so the platform's recorded surface was a SET OF NAMES. When the ten `plugin_*` tools moved
-// from the core door to this one, the recorded name set before and after was IDENTICAL, and
-// the one instrument this platform has for judging a tool surface answered NO CHANGE across
-// the largest surface change it has ever had. Silence would have been honest; "nothing moved"
-// is the sentence an instrument produces when it is working and there was nothing to find.
+// `zz.plugin_tool` carries a `door` column, `recordingDoor` writes it, and
+// `zz-tool plugin-surface` reads it back. Without that column the recorded surface is a set of
+// names, so moving tools between doors leaves it identical.
 //
-// Migration 052 adds `door`, `recordingDoor` writes it, and `zz-tool plugin-surface` reads it.
 // The three clauses below are those three halves, and each fails on its own:
 //
-//   a. THE WRITE, from the builds already run above. `OWN_TOOLS` is filled by the registration
-//      itself, so this is not a claim about the source — it is what the two real doors just
-//      recorded about themselves in this process.
-//   b. THE VOCABULARY. The word recorded has to be the gateway's own word for that door, or
-//      the recorded surface cannot be read against the recorded CALLS: `zz.event.tool_key` is
-//      `<surface>:<tool>` written from `doorSurface()`. Two vocabularies that agree today and
-//      are never compared are two vocabularies that disagree after the next rename.
-//   c. THE READ. `diffSurfaces` is driven over the exact before/after this task exists for —
-//      the same names, moved — and is required to report the moves. A check that only asserted
-//      the column exists would pass on a reader that ignores it, which is the state this task
-//      found the platform in, one level up.
+//   a. The write. `OWN_TOOLS` is filled by the registration itself, so this is what the two real
+//      doors just recorded about themselves in this process.
+//   b. The vocabulary. The word recorded has to be the gateway's own word for that door, or the
+//      recorded surface cannot be read against the recorded calls: `zz.event.tool_key` is
+//      `<surface>:<tool>` written from `doorSurface()`.
+//   c. The read. `diffSurfaces` is driven over the same names moved between doors and required to
+//      report the moves.
 if (evalTools.size && coreTools.size) {
   try {
     const { OWN_TOOLS } = await import("../services/zz-core/dist/door.js");
@@ -545,9 +465,9 @@ if (evalTools.size && coreTools.size) {
       }
     }
 
-    // (c) THE EXACT CASE, not a synthetic one: `before` is every name this service serves TODAY
-    // with all of them on the core door, which is precisely the surface recorded before the ten
-    // plugin tools moved. `after` is what the two builders recorded a moment ago.
+    // (c) The exact case, not a synthetic one: `before` is every name this service serves today
+    // with all of them on the core door, which is the surface recorded before the plugin tools
+    // moved. `after` is what the two builders recorded a moment ago.
     const after = [...OWN_TOOLS].map(([name, door]) => ({ name, door }));
     const before = after.map(({ name }) => ({ name, door: doorSurface("/core/mcp") }));
     const names = (xs: { name: string }[]) => xs.map((t) => t.name).sort().join(",");
@@ -570,10 +490,9 @@ if (evalTools.size && coreTools.size) {
                 "both sides — a fabricated finding is worse than a missed one");
     }
 
-    // THE CONTROL, AND IT IS THE HALF A GREEN READER CAN STILL GET WRONG. Rows written before
-    // 052 carry no door. `door ?? "core"` makes this same comparison read beautifully and
-    // reports every eval tool as having MOVED out of a door nothing ever recorded — a finding
-    // invented out of a null. So the reader is required to answer "not comparable" here.
+    // The control, and the half a green reader can still get wrong. A row whose door was never
+    // recorded carries null, and `door ?? "core"` would report every eval tool as having moved out
+    // of a door nothing ever recorded. The reader is required to answer "not comparable" here.
     const blind = diffSurfaces({ version: "pre-052", tools: after.map(({ name }) => ({ name, door: null })) },
                                { version: "after", tools: after });
     if (blind.moved.length) {
@@ -593,7 +512,7 @@ if (evalTools.size && coreTools.size) {
   }
 }
 
-// A path this check reads that has moved is this scan going blind, and it is said FIRST: every
+// A path this check reads that has moved is this scan going blind, and it is said first: every
 // assertion about that file passed on nothing.
 for (const p of new Set(blind)) {
   fail.unshift(`${p} could not be read — this check asserts over it, so those assertions ` +
@@ -603,8 +522,8 @@ for (const p of new Set(blind)) {
 for (const c of [evalClient, coreClient]) { try { await c?.close(); } catch { /* closing is not the assertion */ } }
 
 if (fail.length) { console.error([...new Set(fail)].join("\n")); process.exit(1); }
-// WHAT WAS ACTUALLY ASSERTED, ON THE GREEN LINE — the two doors by the tool counts a client
-// saw, so a reader can tell at a glance whether this ran against the surface they think it did.
+// What was actually asserted, on the green line — the two doors by the tool counts a client saw,
+// so a reader can tell at a glance whether this ran against the surface they think it did.
 console.log(`eval door: ok — zz-core serves two doors a client can open: /mcp ` +
             `(${coreTools.size} tools, none of them plugin_*) and ${new URL(EVAL_URL!).pathname} ` +
             `(${evalTools.size} tools, every one declared by a module it imports, every one in ` +

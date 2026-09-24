@@ -6,12 +6,10 @@ runs/
 *.env
 !*.env.example
 deploy/.env.*
-# ...but NOT the example, which is a source file, not a secret. `!*.env.example` above is
-# overridden by the line before this one — last match wins — so deploy/.env.example was
-# untracked: a clean clone had no configuration surface at all, and the release bundle tars
-# that file to satisfy the installer's very first command, `cp .env.example .env`.
+# DELIBERATE: the example is a source file, and last match wins, so it is re-included after the
+# line above. The release bundle ships it for the installer's first command,
+# `cp .env.example .env`.
 !deploy/.env.example
-hermes-data/
 **/data/
 zz-artifacts/
 credentials.json
@@ -34,8 +32,6 @@ dist/
 # documentation is kept locally, not published with the package
 docs/
 
-# The HTML reports and JSON `claude plugin eval` leaves behind. The RESULT is recorded in
-# zz.plugin_case_run by case_record, which is what gives it a timestamp; the directory
-# is a local by-product of the run that produced it.
+# The HTML reports and JSON `claude plugin eval` leaves behind: local by-products of a run.
 evals/results/
 **/evals/results/

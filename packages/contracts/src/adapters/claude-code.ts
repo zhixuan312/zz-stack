@@ -1,32 +1,25 @@
 /**
- * THE FIRST RUNTIME ADAPTER: the harness this platform already runs on, expressed through the
- * port rather than assumed by it.
+ * The first runtime adapter: the harness this platform runs on, expressed through the port.
  *
- * WHAT THIS DRIVES, said plainly before anything below is read as more than it is. It spawns
- * nothing. `@zz/contracts` is the leaf of this repository's dependency graph and has no
- * process, no socket and no filesystem; an adapter here that claimed to launch a harness would
- * be claiming something this package cannot do. What it models is the SHAPE of that harness's
- * feed — a line-delimited record of a session, each line carrying its own opaque identifier,
- * its parent's, an ISO timestamp and, on the turns that have one, a consumption block — and it
- * is driven by a scripted feed that advances one tick per {@link observe}. The script stands in
- * for elapsed time. It is the only thing here that is invented; every field name and every
- * relationship below was read off a real session record before it was written down.
+ * It spawns nothing. `@zz/contracts` is the leaf of this repository's dependency graph and has
+ * no process, no socket and no filesystem. What this models is the shape of the harness's feed
+ * — a line-delimited record of a session, each line carrying its own opaque identifier, its
+ * parent's, an ISO timestamp and, on the turns that have one, a consumption block — driven by
+ * a scripted feed that advances one tick per {@link observe}. The script stands in for elapsed
+ * time and is the only invented thing here.
  *
- * THE THREE THINGS THIS ADAPTER EXISTS TO GET RIGHT, each of which the platform had previously
- * got wrong somewhere:
+ * Three properties it exists to get right:
  *
- *   · THE LAST LINE IS NOT THE END. A session's record is written as the session goes; the
- *     process outlives its last line by however long the last step takes, and there is no line
- *     that means "and now it is over". So this adapter reports `last_activity_only` from lines
- *     alone and reaches `receipt_confirmed` only when the runtime's own exit record arrives —
- *     which the script deliberately delivers a tick AFTER the feed goes quiet, because that
- *     window is exactly where the mistake lives.
- *   · A STOP REQUEST IS NOT A STOP. Asking costs one signal and confirms nothing. This adapter
- *     answers `confirmed_stopped` only when it is holding the exit record, and names it.
- *   · DELEGATED WORK IS PAID FOR ONCE. A delegating turn's result carries a rollup for the
- *     whole delegated run AND the delegated run's own turns each carry their own block. Both
- *     numbers are correct; adding them is not. The rollup record is marked as containing its
- *     descendants and {@link summariseUsage} does the rest.
+ *   · The last line is not the end. A session's record is written as the session goes and no
+ *     line means "it is over", so this reports `last_activity_only` from lines alone and
+ *     reaches `receipt_confirmed` only when the runtime's own exit record arrives. The script
+ *     delivers that a tick after the feed goes quiet.
+ *   · A stop request is not a stop. `confirmed_stopped` is answered only while holding the
+ *     exit record, and names it.
+ *   · Delegated work is paid for once. A delegating turn's result carries a rollup for the
+ *     whole delegated run, and the delegated run's own turns each carry their own block; both
+ *     are correct and adding them is not. The rollup is marked as containing its descendants
+ *     and {@link summariseUsage} does the rest.
  */
 import {
   PORT_PROTOCOL, declarationDigest,
@@ -47,14 +40,13 @@ interface RawUsage {
 /**
  * One line of the session record.
  *
- * IDENTITY IS AN OPAQUE STRING and parentage is carried on the line; the feed is appended to
- * and read in arrival order; time is an ISO-8601 string. Every one of those is different in
- * the other adapter beside this file, and none of them is a fact about running work.
+ * Identity is an opaque string, parentage is carried on the line, the feed is appended to and
+ * read in arrival order, and time is an ISO-8601 string. None of those is a fact about running
+ * work — the other adapter beside this file differs on every one.
  *
- * `agentId` is carried here for the delegated turns, which is the one simplification: the real
- * record attributes a delegated run by its own session identifier and an adapter has to join
- * the two. Putting the identifier on the line keeps that attribution visible in one place
- * instead of spreading a join across this file.
+ * `agentId` is the one simplification: the real record attributes a delegated run by its own
+ * session identifier, and carrying it on the line keeps that attribution in one place instead
+ * of spreading a join across this file.
  */
 interface TranscriptLine {
   readonly uuid: string;
@@ -72,10 +64,9 @@ interface TranscriptLine {
 /**
  * The runtime's own end-of-work record. Arrives on its own channel, not as a line.
  *
- * `reason` is the RUNTIME's word for why the session ended, and the receipt below is built
- * from it alone. The adapter deliberately does not reason from "I asked it to stop, and then
- * it stopped" — a session that was going to end anyway ends the same way, and an adapter that
- * takes credit for it reports its own request back to itself as a result.
+ * `reason` is the runtime's word for why the session ended, and the receipt below is built
+ * from it alone. DELIBERATE: the adapter never reasons from "I asked it to stop, and then it
+ * stopped" — a session that was going to end anyway ends the same way.
  */
 interface ExitRecord {
   readonly at: string;
@@ -100,8 +91,8 @@ const DECLARATION: CapabilityDeclaration = {
   cancellation: {
     strongest: "confirmed_stopped",
     // The runtime takes the signal at a step boundary, so a step already in flight finishes
-    // first. A bound, not a promise: `settles_within_ms` is how long a caller must keep
-    // watching before absence of activity means anything, and it is still not a confirmation.
+    // first. `settles_within_ms` is a bound, not a promise: how long a caller must keep
+    // watching before absence of activity means anything, and still not a confirmation.
     settles_within_ms: 30_000,
     lease_expiry_proves_stop: false,
   },
@@ -189,14 +180,11 @@ function toEvent(line: TranscriptLine): ObservedEvent {
  * delegated turns by name — so the delegated work appears in the total exactly once, and the
  * total says which records it left out rather than leaving a reader to wonder.
  *
- * `parent_record_id` IS CONTAINMENT AND NOTHING ELSE, which is the one thing this function got
- * wrong the first time it was written and the reason the mistake is worth a paragraph. The
- * line's own `parentUuid` is a CONVERSATIONAL link: it says which turn came before, and the
- * turn after a delegation points at the delegation's result. Exporting that link as a
- * containment edge put every subsequent turn of the main session inside the rollup, and the
- * rule then excluded them all as already counted — a total that was quietly nine thousand
- * tokens light and looked exactly like a correct one. So nothing but a delegated turn gets a
- * parent here: a main-session turn is contained in nothing, and says so.
+ * DELIBERATE: `parent_record_id` is containment and nothing else. The line's own `parentUuid`
+ * is a conversational link — which turn came before — and the turn after a delegation points
+ * at the delegation's result, so exporting it as containment would put every later turn of the
+ * main session inside the rollup and exclude it as already counted. Nothing but a delegated
+ * turn gets a parent here.
  */
 function toUsageRecords(lines: readonly TranscriptLine[]): readonly UsageRecord[] {
   const rollupOf = new Map<string, string>();
@@ -221,9 +209,8 @@ function toUsageRecords(lines: readonly TranscriptLine[]): readonly UsageRecord[
     out.push({
       record_id: line.uuid,
       // A delegated turn hangs off the rollup that contains it; nothing else hangs off
-      // anything. Where the rollup has not been observed yet, the delegated turn is a root and
-      // is counted — the honest answer at that moment — and it moves under the rollup as soon
-      // as the result line arrives.
+      // anything. Before the rollup is observed the delegated turn is a root and is counted,
+      // and it moves under the rollup as soon as the result line arrives.
       parent_record_id: rollup ?? null,
       includes_descendants: false,
       input_tokens: usage.input_tokens,
@@ -261,8 +248,8 @@ export const claudeCodeAdapter: RuntimeAdapter = {
   },
 
   /** A work id, and nothing that could be mistaken for a result. The session identifier and
-   *  the start time come back at submission and are spawn metadata: they say a session was
-   *  opened, which is not a statement about what it did or whether it is still open. */
+   *  the start time are spawn metadata: a session was opened, which says nothing about what it
+   *  did or whether it is still open. */
   dispatch(request: DispatchRequest): DispatchAck {
     const id = `cc-${++issued}`;
     const session = `sess-${issued}`;
@@ -288,9 +275,8 @@ export const claudeCodeAdapter: RuntimeAdapter = {
     work.tick += 1;
     const lines = visible(work);
     const events = lines.map(toEvent);
-    // FROM THE FEED, NEVER FROM THE CLOCK. Both of these are statements about what the runtime
-    // recorded; reading them off the adapter's own clock would make the platform's latency
-    // look like the work's duration.
+    // From the feed, never from the clock: these are statements about what the runtime
+    // recorded, and the adapter's own clock would make platform latency look like duration.
     const first = lines[0]?.timestamp ?? null;
     const last = lines[lines.length - 1]?.timestamp ?? null;
     const elapsed = first !== null && last !== null
@@ -334,9 +320,8 @@ export const claudeCodeAdapter: RuntimeAdapter = {
       work_id: request.work_id,
       requested_at: new Date().toISOString(),
       // The signal is taken at a step boundary, so a step already under way finishes and
-      // writes its line. How long that takes is the runtime's published bound and nothing
-      // more; whether this particular worker is still writing is answered by observing it,
-      // not by the adapter that just sent the signal.
+      // writes its line. The bound is the runtime's published one; whether this worker is
+      // still writing is answered by observing it.
       settles_within_ms: CAPABILITIES.cancellation.settles_within_ms,
     };
   },

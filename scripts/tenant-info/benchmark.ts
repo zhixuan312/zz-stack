@@ -1,32 +1,21 @@
 /**
- * benchmark.ts — what a benchmark report must satisfy before anybody may read a release
- * verdict off it. Three pure functions, no I/O, no clock: `validateJudgments` (I-4's
- * judgment-validation export), `evaluateTargets` (I-23's independent pass/fail evaluator) and
- * `validateBenchmarkReport` (I-23's structural validator). The command that assembles a report
- * and writes it into a workspace is `benchmark-run.ts`; the judged dataset's vocabulary and
- * its generator are `judged-dataset.ts`. Both split out of this file during I-23 at the
- * 700-line ceiling, and the FROZEN CHECKS decided which half moved: `checks/tenant-info-qrels-
- * integrity.ts` imports `validateJudgments` from this path and `checks/benchmark-report-
- * completeness.ts` imports `evaluateTargets` from it, so those two stayed and everything no
- * frozen check pins by path is what left.
+ * benchmark.ts — what a benchmark report must satisfy before anybody may read a release verdict
+ * off it. Three pure functions, no I/O, no clock: `validateJudgments`, `evaluateTargets` and
+ * `validateBenchmarkReport`. The command that assembles a report and writes it into a workspace
+ * is `benchmark-run.ts`; the judged dataset's vocabulary and its generator are
+ * `judged-dataset.ts`.
  *
- * `validateJudgments` is the structural/count/family/ref-shape half of the qrels-integrity
- * technical AC that a coding worker can supply. It never resolves whether a fixture reference
- * exists in a live fixture store, and it never signs a relevance grade; both are the human
- * sign-off (H1), which was recorded on 2026-09-20 under the stakeholder's standing delegation
- * and which states in its own words that no human read the 600 rows.
+ * COUPLED: `checks/tenant-info-qrels-integrity.ts` imports `validateJudgments` from this path and
+ * `checks/benchmark-report-completeness.ts` imports `evaluateTargets` from it. Both are frozen
+ * checks that pin this module by path.
  *
- * `evaluateTargets` IS THE PART THAT CANNOT BE SATISFIED BY SILENCE. Its whole reason to exist
- * is that a report with no measurements in it must not evaluate to a pass: an absent target is
- * `blocked`, never `0`, never an omission a reader mistakes for success. `evaluateTargets({})`
- * returns all eighteen targets blocked and `passed: false`, which is the state this repository
- * is actually in. The reason is now narrower than it was: measured against the production
- * cluster on 2026-09-21, PostgreSQL 17.11 IS reachable and `pg_textsearch` 1.4.0 IS installed,
- * so the first of the three premises this comment used to rest on has become false. What still
- * blocks every one of the eighteen is the other two — `zz` carries no bm25 index at all, and
- * `zz.artifact` and all three `zz.search_*_default` projections hold zero rows. Availability of
- * the extension is not an index, and an applied DDL migration is not a populated projection;
- * conversion and rebuild are separately owned work that has not run.
+ * `validateJudgments` is the structural, count, family and ref-shape half of the qrels-integrity
+ * technical AC. It never resolves whether a fixture reference exists in a live fixture store and
+ * never signs a relevance grade; both are the human sign-off (H1).
+ *
+ * `evaluateTargets` cannot be satisfied by silence: a report with no measurements must not
+ * evaluate to a pass. An absent target is `blocked`, never `0`, so `evaluateTargets({})` returns
+ * all eighteen targets blocked and `passed: false`.
  */
 import { planCorpora } from "./inventory.ts";
 import {
@@ -59,15 +48,15 @@ function isAuthorizedFixtureRef(ref: unknown, corpusSizes: Readonly<Record<strin
 }
 
 /**
- * The structural/count/family/ref-shape half of I-4's technical AC — the half a coding worker
- * can supply. Checks, in order: every query has the required fields and valid enums; the
- * dataset holds the exact category/language counts and the exact 480/120 overall split; each
- * category's own 80/20 split holds; no `family` appears under more than one `split` (leakage);
- * every qrel points at a query that exists and a fixture ref this generator would actually
- * produce, with a grade of 0, 1 or 2; every answerable non-isolation query has at least one
- * relevant (grade > 0) judgment. It never touches a live fixture store and never signs a
- * relevance label — the qrels' `reviewer`/`rationale` fields are carried through, not
- * evaluated for authenticity, because that judgment belongs to H1, not to this function.
+ * The structural, count, family and ref-shape half of the qrels-integrity technical AC. Checks, in order: every
+ * query has the required fields and valid enums; the dataset holds the exact category and
+ * language counts and the exact 480/120 overall split; each category's own 80/20 split holds; no
+ * `family` appears under more than one `split` (leakage); every qrel points at a query that
+ * exists and a fixture ref this generator would produce, with a grade of 0, 1 or 2; every
+ * answerable non-isolation query has at least one relevant (grade > 0) judgment.
+ *
+ * It never touches a live fixture store and never signs a relevance label — the qrels'
+ * `reviewer` and `rationale` fields are carried through, not evaluated for authenticity.
  */
 export function validateJudgments(
   queries: readonly JudgedQuery[],
@@ -203,20 +192,17 @@ export function validateJudgments(
   return { ok: errors.length === 0, errors };
 }
 
-// ───────────────── the eighteen release targets, and the independent evaluator ─────────────────
+// The eighteen release targets, and the independent evaluator.
 
 /**
  * The spec's "Fixed capacity and release targets" table, one row per numeric target it fixes,
- * transcribed with its direction. THE DIRECTION IS THE WHOLE POINT: eleven of these are floors
- * a system must reach, four are ceilings it must stay under, and three must be exactly zero —
- * and a comparison written the wrong way round passes a system that fails. The three exact
- * zeros are separate from the ceilings because "at most zero" would accept a negative count,
- * which is not a measurement anybody can make and is therefore a broken instrument.
+ * transcribed with its direction. The direction is load-bearing: eleven are floors a system must
+ * reach, four are ceilings it must stay under, and three must be exactly zero, and a comparison
+ * written the wrong way round passes a system that fails. The three exact zeros are separate from
+ * the ceilings because "at most zero" would accept a negative count.
  *
- * `target` IS A THRESHOLD, NEVER AN OBSERVATION. Nothing in this table was measured; it is the
- * agreement's own numbers, and a report keeps the two in separate fields for exactly that
- * reason. The 0 beside `unauthorized_results` is what the release demands, not something
- * anybody counted.
+ * `target` is a threshold, never an observation. Nothing in this table was measured; it is the
+ * agreement's own numbers, and a report keeps the two in separate fields.
  */
 interface TargetDefinition {
   readonly key: string;
@@ -286,21 +272,18 @@ export interface TargetEvaluation {
 /**
  * The independent pass/fail evaluation, over the exact eighteen targets and nothing else.
  *
- * A MISSING OBSERVATION IS `blocked`, NEVER A ZERO AND NEVER AN OMISSION. That is the single
- * property this function exists for: `evaluateTargets({})` returns eighteen blocked keys and
- * `passed: false`, so an empty measurement set cannot be read as a pass by a caller who checks
- * only `failed`. A caller that ignores `blocked` still sees `passed: false`, because `passed`
- * requires both lists empty — there is no arrangement of silence that reaches a green verdict.
+ * A missing observation is `blocked`, never a zero and never an omission: `evaluateTargets({})`
+ * returns eighteen blocked keys and `passed: false`, so an empty measurement set cannot be read
+ * as a pass by a caller who checks only `failed`. `passed` requires both lists empty, so there is
+ * no arrangement of silence that reaches a green verdict.
  *
- * A NONFINITE OBSERVATION IS `failed`, NOT `blocked`, and the distinction is deliberate: NaN
- * or Infinity means the measuring instrument ran and produced garbage, which is a defect to
- * fix, whereas `blocked` means nobody has measured it yet, which is work to schedule. Filing
- * a broken instrument under "not yet measured" would hide it behind a runbook step.
+ * DELIBERATE: a nonfinite observation is `failed`, not `blocked`. NaN or Infinity means the
+ * instrument ran and produced garbage, which is a defect to fix; `blocked` means nobody has
+ * measured it yet, which is work to schedule.
  *
- * Comparisons are inclusive at the threshold — the agreement says "at least 0.95" and "at most
- * 750 ms", so exactly 0.95 and exactly 750 pass. Keys the table does not name are ignored
- * rather than rejected; a misspelled key still fails, because the target it was meant to be
- * stays missing and therefore blocked.
+ * Comparisons are inclusive at the threshold — "at least 0.95" and "at most 750 ms", so exactly
+ * 0.95 and exactly 750 pass. Keys the table does not name are ignored rather than rejected; a
+ * misspelled key still fails, because the target it was meant to be stays missing.
  */
 export function evaluateTargets(measurements: Readonly<Record<string, number>>): TargetEvaluation {
   const given: Readonly<Record<string, unknown>> = measurements ?? {};

@@ -1,37 +1,29 @@
 /**
  * Mutation specs for the second batch of `scripts/gate/checks/suites.ts` registrations.
  *
- * SUITES.TS TESTS NOTHING ITSELF. Every row here is registered by one line of the form
- * `check("<id>", runsCheck("<name>.ts"))` — or, for four of them, an inline `execFileSync`
- * of a compiled engine under `services/gateway/dist/`. The real subject is whatever that
- * script READS, so each spec below names the source, the manifest, the lockfile or the
- * markdown the runner reaches, never the runner. That is why every row carries an
- * `assertion`: this one check file ends up with ~95 rows, and a row that does not say which
- * claim it is about is unreadable in the report.
+ * suites.ts tests nothing itself: every row here is registered by one line of the form
+ * `check("<id>", runsCheck("<name>.ts"))`, or an inline `execFileSync` of a compiled engine
+ * under `services/gateway/dist/`. The real subject is whatever that script reads, so each spec
+ * below names the source, the manifest, the lockfile or the markdown the runner reaches, never
+ * the runner. Every row carries an `assertion`, because a row that does not say which claim it
+ * is about is unreadable in a report this long.
  *
- * THREE PAYLOADS ARE ASSEMBLED FROM PIECES RATHER THAN WRITTEN WHOLE, and the reason is
- * stated here rather than hidden at each site. This file lives under `scripts/`, which three
- * of the checks in this very batch scan line by line and without regard for quoting:
- * `strict-scripts-dir.ts` reports any widening to `any`, `insert-arity.ts` parses any
- * `insert into … values (…)` it finds, and `core-names.ts` reports any pre-rename tool name
- * in quoted or backticked form. A `replace` string is the defect a RUN plants for a few
- * seconds; written contiguously here it would be a defect this repository carries
- * permanently, and the ordinary gate would be red for it. Split only where one of those three
- * rules bites, never to get a spec past the check it is aimed at.
+ * Three payloads are assembled from pieces rather than written whole. This file lives under
+ * `scripts/`, which three checks in this batch scan line by line without regard for quoting:
+ * `strict-scripts-dir.ts` reports any widening to `any`, `insert-arity.ts` parses any `insert
+ * into … values (…)`, and `core-names.ts` reports any pre-rename tool name in quoted or
+ * backticked form. Split only where one of those three bites, never to get a spec past the
+ * check it is aimed at.
  *
- * TWO OF THIS BATCH'S IDS HAVE NO SUBJECT OUTSIDE A FROZEN FILE and belong in
- * `unexercisable.ts` rather than being invented here:
- *   - "every check this gate registers is a file git will carry" reads only suites.ts's own
- *     registrations and the imports under scripts/gate/, all frozen, and its failure mode is
- *     a file git does not track — which no find/replace can produce;
- *   - "gate-launch classification reads the syntax …" drives `isGateLaunchSource`, which
- *     lives in scripts/gate/read.ts and is frozen by construction.
+ * Two of this batch's ids have no subject outside a frozen file and live in
+ * `unexercisable.ts`: "every check this gate registers is a file git will carry", whose
+ * failure mode is a file git does not track, and "gate-launch classification reads the
+ * syntax …", which drives `isGateLaunchSource` in scripts/gate/read.ts.
  */
 import type { MutationSpec } from "./plant.ts";
 
-// WHICH MODULE REGISTERS THE TARGET, which is what `check_sha256` is computed over.
-// These were all `SUITES` while one file registered ninety-six checks; the split by
-// subject means a row now drifts only when the module its own check lives in moves.
+// COUPLED: which module registers the target is what `check_sha256` is computed over, so a row
+// drifts when the module its own check lives in moves.
 const SUITES_DATA = "scripts/gate/checks/suites-data.ts";
 const SUITES_SURFACE = "scripts/gate/checks/suites-surface.ts";
 const SUITES_TENANT = "scripts/gate/checks/suites-tenant.ts";
@@ -39,7 +31,7 @@ const SUITES = "scripts/gate/checks/suites.ts";
 const SUITES_TOOLING = "scripts/gate/checks/suites-tooling.ts";
 
 export const COV_SUITES_2: readonly MutationSpec[] = [
-  // ── the compiled engines under services/gateway/dist ───────────────────────────────────
+  // The compiled engines under services/gateway/dist
   {
     check: SUITES,
     target: "a door that refuses ends the request",
@@ -64,7 +56,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "the live value straight to the page",
   },
 
-  // ── the node floor, and the break-test that proves the floor check can fail ─────────────
+  // The node floor, and the break-test that proves the floor check can fail
   {
     check: SUITES_TOOLING,
     target: "the node floor check fails, and fails informatively, when the floor is not met",
@@ -77,7 +69,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "nothing anywhere tells them what to install",
   },
 
-  // ── the paths, the strictness and the lock that keep this tree buildable ────────────────
+  // The paths, the strictness and the lock that keep this tree buildable
   {
     check: SUITES_TOOLING,
     target: "every literal path a script or check names under scripts/ or checks/ is a file that exists, so an import, a spawn or a read cannot outlive its target",
@@ -106,8 +98,8 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
     target: "a lock regenerated from the converted tree comes back unchanged, byte for byte",
     assertion: "the committed plugins.lock.json is what regenerating it produces",
     subject: "plugins.lock.json",
-    find: "\"digest\": \"c68a7356\"",
-    replace: "\"digest\": \"c68a7350\"",
+    find: "\"digest\": \"b1497e6d\"",
+    replace: "\"digest\": \"b1497e61\"",
     planted: "zz-core's committed content digest no longer matches the content it is computed " +
       "from, so the lock describes a plugin that does not exist and every consumer keyed on " +
       "that digest is told it received something it did not",
@@ -124,7 +116,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "and the per-person cache key have collapsed into one number that answers neither question",
   },
 
-  // ── SQL and telemetry, read straight out of the source ─────────────────────────────────
+  // SQL and telemetry, read straight out of the source
   {
     check: SUITES_DATA,
     target: "an insert names as many values as it names columns",
@@ -149,7 +141,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "attribution report reads as confident and a share of it is invented",
   },
 
-  // ── the manifests and the names a client reads ─────────────────────────────────────────
+  // The manifests and the names a client reads
   {
     check: SUITES_SURFACE,
     target: "the manifest can express what the standard requires, and not what it replaced",
@@ -169,11 +161,10 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
     find: "`document_write` before you return",
     // SEAMED: a pre-rename tool name in backticks, which `core-names.ts` reports anywhere.
     replace: "`write" + "_file` before you return",
-    // REDACTED. The payload is a pre-rename tool or skill name, and this repository sweeps
-    // every tracked file for those — including `testing/mutation-report.json`, which `plant()`
-    // writes the RECONSTRUCTED string into. Seaming the source is not enough: the seam keeps
-    // the name out of THIS file and the report still carries it whole. `redact` base64-encodes
-    // it there, so the experiment stays exactly reproducible and neither file is the finding.
+    // REDACTED: the payload is a pre-rename tool or skill name, and this repository sweeps
+    // every tracked file for those, including `testing/mutation-report.json`, which `plant()`
+    // writes the reconstructed string into. Seaming the source keeps the name out of this file
+    // and the report still carries it whole, so `redact` base64-encodes it there.
     redact: true,
     planted: "the review skill tells the model to call a tool by its pre-rename spelling, which " +
       "no door registers any more. The model gets 'unknown tool' in the middle of the closing " +
@@ -189,11 +180,9 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
     find: "how_this_works: 'skill_read(\"zz-platform\")",
     // SEAMED: the retired skill name, which `skill-renames.ts` sweeps every tracked file for.
     replace: "how_this_works: 'skill_read(\"zz-back" + "bone\")",
-    // REDACTED. The payload is a pre-rename tool or skill name, and this repository sweeps
-    // every tracked file for those — including `testing/mutation-report.json`, which `plant()`
-    // writes the RECONSTRUCTED string into. Seaming the source is not enough: the seam keeps
-    // the name out of THIS file and the report still carries it whole. `redact` base64-encodes
-    // it there, so the experiment stays exactly reproducible and neither file is the finding.
+    // REDACTED, for the same reason as the row above: the payload is a pre-rename name, and
+    // `plant()` writes the reconstructed string into the tracked report. `redact` base64-encodes
+    // it there.
     redact: true,
     planted: "session_whoami points every flowless session at a skill that was renamed away and " +
       "no longer exists — so the single instruction a client which reads nothing else ever " +
@@ -233,7 +222,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "name that does not resolve and leaves the person worse off than the failure it replaced",
   },
 
-  // ── the tenant-info suites: the heavy end-to-end reads ─────────────────────────────────
+  // The tenant-info suites: the heavy end-to-end reads
   {
     check: SUITES_TENANT,
     target: "the judged dataset holds its exact category/language/split counts, no family leaks across dev and held-out, and every qrel resolves to an existing query and an authorized fixture ref",
@@ -305,7 +294,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "it through and a criterion collects a green tick for a case that never executed",
   },
 
-  // ── the deck, which is two HTML files and a shell check ────────────────────────────────
+  // The deck, which is two HTML files and a shell check
   {
     check: SUITES_SURFACE,
     target: "the deck chassis carries no slides and the guidebook carries all of them",

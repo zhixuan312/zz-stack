@@ -1,47 +1,35 @@
 /**
- * The dependency snapshot a decision is fenced against, and the verdict that says whether it
- * still holds.
+ * The dependency snapshot a decision is fenced against, and the verdict that says whether it still
+ * holds.
  *
- * THE WITHDRAWN ASSUMPTION THIS FILE EXISTS TO KILL: that a record-local digest is enough. A
- * target's own bytes, its content hash and its etag can all stand still while the thing the
- * decision actually rested on moves underneath it — the source set it was derived from, the
- * manifest that governed it, the qualification that made its assessor admissible, the
- * permission epoch that made the caller entitled to it. A digest over the record cannot see
- * any of that, because none of it is in the record. Pinning the record is pinning the wrong
- * object.
+ * The snapshot is over an explicit, closed set. A record-local digest is not enough: a target's
+ * bytes, content hash and etag can all stand still while the source set it was derived from, the
+ * manifest that governed it, the qualification that made its assessor admissible, or the permission
+ * epoch that made the caller entitled to it moves underneath it. So
+ * {@link DependencySnapshot.recordLocalDigest} is carried as a witness — reported, never compared.
  *
- * SO THE SNAPSHOT IS OVER AN EXPLICIT, CLOSED SET, and the record-local digest is carried as a
- * WITNESS rather than as a fence: {@link DependencySnapshot.recordLocalDigest} is reported and
- * never compared, so nothing downstream can mistake "the bytes are the same" for "the decision
- * still holds".
+ * Two things follow from the audit not being allowed to share the mechanism's blind spot, and both
+ * are load-bearing:
  *
- * THE TRAP THE AUDIT HERE IS SHAPED AROUND. If validity were decided by re-reading the keys
- * the snapshot happened to write, then a snapshot that silently dropped a dependency would
- * produce a validity check that could not notice the drop — a detector sharing its mechanism's
- * blind spot passes exactly when the mechanism is broken. Two things follow, and both are
- * load-bearing:
- *
- *   · {@link revalidate} iterates {@link DEPENDENCY_KINDS} — the closed set — and NOT the
+ *   · {@link revalidate} iterates {@link DEPENDENCY_KINDS} — the closed set — and not the
  *     snapshot's own entries. A kind with no entry is a coverage gap, and a coverage gap is a
  *     dependency that cannot be fenced, which pauses.
  *   · {@link auditCoverage} compares that closed set against the verbatim contract prose in
- *     {@link CONTRACT_INPUTS}, which is not derived from the set and cannot be edited by
- *     editing it. Dropping a kind leaves an unclaimed clause; inventing one leaves a phrase
- *     the contract never wrote. Its findings ride on the snapshot and PAUSE the verdict, so
- *     the audit changes outcomes rather than decorating a report.
+ *     {@link CONTRACT_INPUTS}, which is not derived from the set and cannot be edited by editing
+ *     it. Dropping a kind leaves an unclaimed clause; inventing one leaves a phrase the contract
+ *     never wrote. Its findings ride on the snapshot and pause the verdict.
  *
- * OPACITY. The verdict a host evaluates is {@link VersionPredicate}[]: a dependency name and a
- * token, compared for string equality and nothing else. Nothing here asks the host to know
- * what a manifest is, what a qualification means, or which stage of any flow it is serving.
+ * The verdict a host evaluates is {@link VersionPredicate}[]: a dependency name and a token,
+ * compared for string equality and nothing else.
  */
 
 // ---------------------------------------------------------------------------------------
 // The contract's own words, and the closed set derived from them
 
 /**
- * The Inputs clause of this boundary's contract, verbatim. It is the audit's independent
- * side: {@link DEPENDENCY_KINDS} is checked against THIS, so a dependency dropped from the set
- * shows up as a clause nothing claims. Edit this only to match a re-agreed contract.
+ * The Inputs clause of this boundary's contract, verbatim. {@link DEPENDENCY_KINDS} is checked
+ * against this, so a dependency dropped from the set shows up as a clause nothing claims. Edit only
+ * to match a re-agreed contract.
  */
 const CONTRACT_INPUTS =
   "a dependency snapshot covering artifact heads and etags, evidence-set membership, " +
@@ -59,9 +47,9 @@ interface DependencyKind {
 }
 
 /**
- * EVERY DEPENDENCY, ENUMERATED ONCE. A snapshot writes an entry for each of these, always —
- * a dependency a world says nothing about is recorded `absent`, never omitted, because an
- * omission is indistinguishable from a dependency nobody thought of.
+ * Every dependency, enumerated once. A snapshot writes an entry for each of these, always — a
+ * dependency a world says nothing about is recorded `absent`, never omitted, because an omission is
+ * indistinguishable from a dependency nobody thought of.
  */
 const DEPENDENCY_KINDS = [
   { name: "artifact_head", field: "head", phrase: "artifact heads" },
@@ -90,11 +78,9 @@ type DependencyField = (typeof DEPENDENCY_KINDS)[number]["field"];
 /**
  * One dependency's value as the world reports it.
  *
- * `uncertain` is the contract's "uncertain relevance invalidates the broader affected
- * objective rather than being omitted" — the value is pinned like any other AND marked as
- * widening, so when it moves the verdict says the whole objective is affected rather than one
- * narrow claim. `unfenceable` is the other representable outcome: the world knows the
- * dependency is live and cannot produce a token for it, which pauses rather than passing.
+ * `uncertain` is pinned like any other value and marked as widening, so when it moves the verdict
+ * says the whole objective is affected rather than one narrow claim. `unfenceable` means the world
+ * knows the dependency is live and cannot produce a token for it, which pauses rather than passing.
  */
 export type DependencyValue =
   | string
@@ -106,10 +92,9 @@ export type DependencyValue =
 /**
  * What a decision rested on, as the caller can describe it.
  *
- * EVERY FIELD IS OPTIONAL AND THAT IS NOT LAXITY. A decision genuinely rests on a subset; the
- * closed set is what makes the subset legible, because the fields left out are recorded as
- * `absent` by name rather than vanishing. `content_hash` is deliberately NOT one of the
- * dependency fields — it is the record-local digest, kept as a witness and never fenced on.
+ * Every field is optional: a decision rests on a subset, and the fields left out are recorded as
+ * `absent` by name rather than vanishing. `content_hash` is not one of the dependency fields — it
+ * is the record-local digest, kept as a witness and never fenced on.
  */
 export type DependencyWorld =
   & { readonly [K in DependencyField]?: DependencyValue }
@@ -144,13 +129,11 @@ export interface VersionPredicate {
 /**
  * One way the closed set and the contract prose disagree.
  *
- * `clause_ambiguous` is the audit checking its own granularity, and it is here because the
- * first version of this file did not have it and was SILENT on a planted fault. The contract
- * writes "qualification and the current permission epoch" as one comma-separated clause, so
- * splitting on commas alone left one clause claimed by two dependencies — and dropping either
- * of them left the clause still claimed, by the other. A clause no finer than the set it is
- * meant to police cannot police it. Clauses are now split on "and" as well, and a clause two
- * dependencies still share is reported rather than trusted.
+ * `clause_ambiguous` is the audit checking its own granularity. The contract writes "qualification
+ * and the current permission epoch" as one comma-separated clause, so splitting on commas alone
+ * leaves one clause claimed by two dependencies — and dropping either of them leaves the clause
+ * still claimed, by the other. Clauses are split on "and" as well, and a clause two dependencies
+ * still share is reported rather than trusted.
  */
 export interface CoverageFinding {
   readonly issue: "phrase_absent" | "clause_unclaimed" | "clause_ambiguous";
@@ -175,10 +158,10 @@ const isUncertain = (v: DependencyValue): v is { readonly uncertain: string | nu
   typeof v === "object" && v !== null && !Array.isArray(v) && "uncertain" in v;
 
 /**
- * The opaque token for a value. Sets are sorted, so the same membership in another order is
- * the same token and a member added or removed is a different one; a number is tagged
- * separately from the string that spells it, so an epoch of 2 and a revision string "2" can
- * never collide into a false "unchanged".
+ * The opaque token for a value. Sets are sorted, so the same membership in another order is the same
+ * token and a member added or removed is a different one; a number is tagged separately from the
+ * string that spells it, so an epoch of 2 and a revision string "2" cannot collide into a false
+ * "unchanged".
  */
 const tokenOf = (value: string | number | readonly string[]): string => {
   if (Array.isArray(value)) return `set:${[...value].map(String).sort().join("\u001f")}`;
@@ -189,9 +172,8 @@ const tokenOf = (value: string | number | readonly string[]): string => {
 /**
  * Whether the closed set and the contract prose still describe the same dependencies.
  *
- * TAKES ITS INPUTS RATHER THAN READING THE CONSTANTS, so a probe can hand it a mutilated set
- * and show the finding fire. An audit that can only ever be run on the one arrangement it
- * passes for is a constant with a function's name.
+ * Takes its inputs rather than reading the constants, so a probe can hand it a mutilated set and
+ * show the finding fire.
  */
 function auditCoverage(
   kinds: readonly DependencyKind[],
@@ -237,11 +219,9 @@ function auditCoverage(
 }
 
 /**
- * Pin a world.
- *
- * Runs before any assessment and holds no lock — it is a read of what the decision rested on,
- * and the whole protocol in `commit-boundary.ts` depends on this half being cheap enough to
- * do outside the fence.
+ * Pin a world. Runs before any assessment and holds no lock — it is a read of what the decision
+ * rested on, and the protocol in `commit-boundary.ts` depends on this half being cheap enough to do
+ * outside the fence.
  */
 export function snapshot(world: DependencyWorld): DependencySnapshot {
   const pins: DependencyPinEntry[] = [];
@@ -292,14 +272,12 @@ export function snapshot(world: DependencyWorld): DependencySnapshot {
  *   either way. The contract's word for this case is pause, and pausing is not passing.
  * `valid` — every dependency in the closed set is accounted for and every token still matches.
  *
- * INVALIDATED OUTRANKS PAUSED when both apply: a known move is the more actionable answer, and
- * both are equally not-valid, so nothing is softened by preferring it.
+ * `invalidated` outranks `paused` when both apply.
  */
 export type ValidityState = "valid" | "invalidated" | "paused";
 
-/** What {@link revalidate} concluded, in terms a host can act on without interpreting any of
- *  the dependency names. Not published, because its only producer is not: a verdict type a
- *  consumer can name and has no way to obtain is a surface that describes nothing. */
+/** What {@link revalidate} concluded, in terms a host can act on without interpreting any of the
+ *  dependency names. Not published, because its only producer is not. */
 interface ValidityVerdict {
   readonly state: ValidityState;
   /** Dependency names whose token no longer matches. */
@@ -314,15 +292,12 @@ interface ValidityVerdict {
 /**
  * Re-resolve a snapshot against the world as it is now.
  *
- * ITERATES THE CLOSED SET, NOT THE SNAPSHOT. That is the one design decision in this file
- * worth defending: reading the snapshot's own entries would make a snapshot with a hole
- * indistinguishable from a snapshot of a world with fewer dependencies, and the hole is
- * precisely what a validity check has to be able to see.
+ * DELIBERATE: iterates the closed set, not the snapshot. Reading the snapshot's own entries would
+ * make a snapshot with a hole indistinguishable from a snapshot of a world with fewer dependencies,
+ * and the hole is precisely what a validity check has to be able to see.
  *
- * NOT PUBLISHED. {@link stillValid} is the whole of what this module offers a caller, and it is
- * the form the one consumer asks in. Publishing the verdict as well would put a second, richer
- * answer on the door that nothing reads — and a reader would have to guess which of the two the
- * host is supposed to act on. The coverage probe below reaches it as a sibling, not as a door.
+ * Not published: {@link stillValid} is the whole of what this module offers a caller. The coverage
+ * probe below reaches this as a sibling, not as a door.
  */
 function revalidate(snap: DependencySnapshot, world: DependencyWorld): ValidityVerdict {
   const moved: string[] = [];
@@ -411,12 +386,9 @@ export interface CoverageProbeRow {
 
 /**
  * Four arrangements through {@link auditCoverage} and {@link revalidate}, to show the audit
- * distinguishes them.
- *
- * WITHOUT THE FAILING ROWS THIS FILE COULD NOT TELL A DETECTOR FROM A CONSTANT. Row 1 is the
- * real set and must come back clean; rows 2 and 3 are the two ways the set can stop describing
- * the contract; row 4 carries a coverage finding through to a paused verdict, which is what
- * makes the audit load-bearing rather than a report nobody reads.
+ * distinguishes them. Row 1 is the real set and must come back clean; rows 2 and 3 are the two ways
+ * the set can stop describing the contract; row 4 carries a coverage finding through to a paused
+ * verdict.
  */
 export function snapshotCoverageProbe(): readonly CoverageProbeRow[] {
   const world: DependencyWorld = { etag: "e1", sources: ["s1"] };
@@ -432,9 +404,9 @@ export function snapshotCoverageProbe(): readonly CoverageProbeRow[] {
   };
   const say = (f: readonly CoverageFinding[]): readonly string[] =>
     f.map((x) => `${x.issue}:${x.subject}`);
-  // Carrying the mutilated set's findings on an otherwise clean snapshot is how rows 2 and 3
-  // show what the audit COSTS: the verdict pauses, rather than the findings being printed
-  // somewhere while the grant redeems anyway.
+  // Carrying the mutilated set's findings on an otherwise clean snapshot is how rows 2 and 3 show
+  // what the audit costs: the verdict pauses, rather than the findings being printed somewhere while
+  // the grant redeems anyway.
   const carrying = (f: readonly CoverageFinding[]): ValidityState =>
     revalidate({ ...clean, coverage: f }, world).state;
   const droppedFindings = auditCoverage(dropped, CONTRACT_INPUTS);

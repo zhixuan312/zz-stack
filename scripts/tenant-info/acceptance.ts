@@ -1,25 +1,18 @@
 /**
- * acceptance.ts — everything `verify --finalize` has to go and FIND OUT, and the report it
+ * acceptance.ts — everything `verify --finalize` has to go and find out, and the report it
  * writes down.
  *
- * `verify.ts` holds the decision (`assessAcceptance`), which is a pure function of
- * observations and can therefore be driven by the ordinary gate over synthetic inputs. This
- * file holds the observing: it spawns the real commands, reads the real files, hashes them,
- * reconciles the frozen check set and the edit-surface ledger, and assembles the report the
- * decision is then taken over. The split is the reason the gate can check the decision without
- * ever reading an actual acceptance report — "the gate never reads this actual report" is the
- * contract's wording and a file boundary is how it is kept.
+ * COUPLED: `verify.ts` holds the decision (`assessAcceptance`), a pure function of observations
+ * that the ordinary gate drives over synthetic inputs. This file holds the observing: it spawns
+ * the real commands, reads the real files, hashes them, reconciles the frozen check set and the
+ * edit-surface ledger, and assembles the report the decision is taken over. The file boundary is
+ * what keeps the gate from ever reading an actual acceptance report.
  *
- * Split out of verify.ts at the 700-line ceiling, the same way I-23 split benchmark.ts: the
- * frozen check pins `assessAcceptance` to verify.ts BY PATH, so that stayed and everything no
- * frozen check names is what moved here.
- *
- * `verified: true` IS CONSTRUCTED HERE AND NOWHERE ELSE. `resolveEvidence` takes locators that
- * carry no trust field at all — an id and the paths to look in — reads the bytes, hashes them
- * and builds the flag itself. A caller who writes `verified: true` beside a plausible-looking
- * hash has asserted something no function in this delivery will believe: the assertion is not
- * an input to anything, because the input type has no room for it and the resolver constructs
- * a fresh object either way.
+ * DELIBERATE: `verified: true` is constructed here and nowhere else. `resolveEvidence` takes
+ * locators carrying no trust field at all — an id and the paths to look in — reads the bytes,
+ * hashes them and builds the flag itself. A caller writing `verified: true` beside a plausible
+ * hash asserts nothing: the input type has no room for it and the resolver constructs a fresh
+ * object either way.
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -38,7 +31,7 @@ const sha256 = (bytes: Buffer | string): string => createHash("sha256").update(b
 const git = (args: string[]): string =>
   execFileSync("git", args, { cwd: repoRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).trim();
 
-// ──────────────────────────────── the candidate's identity ────────────────────────────────
+// The candidate's identity.
 
 interface CandidateBinding {
   readonly source_tree_sha256: string;
@@ -51,18 +44,15 @@ interface CandidateBinding {
 }
 
 /**
- * A digest of the source tree this report is about — WORKING TREE, not `HEAD`.
+ * A digest of the source tree this report is about — working tree, not `HEAD`.
  *
- * "Compute repository SHA plus SHA-256 of the tested source tree including staged/unstaged
- * tracked changes and all declared new files. Do not rely on HEAD alone when work is
- * uncommitted." A digest over `HEAD` would identify a candidate nobody tested: this task's own
- * check file is untracked while it runs, and every edit below was uncommitted when the suites
- * were executed over it.
+ * Includes staged, unstaged and untracked declared files: a digest over `HEAD` would identify a
+ * candidate nobody tested, since this task's own check file is untracked while it runs.
  *
- * THE SAME BASIS `scripts/gate/run.ts` USES, deliberately and to the letter — `git ls-files
- * --cached --others --exclude-standard`, sorted, each entry hashed as `path\0filehash\n`. The
- * two digests are compared by `assessAcceptance`, and a binding computed a second way would
- * disagree with the gate's on every run for reasons that have nothing to do with the code.
+ * COUPLED: the same basis `scripts/gate/run.ts` uses, to the letter — `git ls-files --cached
+ * --others --exclude-standard`, sorted, each entry hashed as `path\0filehash\n`. The two digests
+ * are compared by `assessAcceptance`, and a binding computed a second way would disagree with
+ * the gate's on every run.
  */
 function sourceTreeSha256(): { sha256: string; basis: string; files: number } {
   const listed = git(["ls-files", "--cached", "--others", "--exclude-standard"])
@@ -81,11 +71,8 @@ function sourceTreeSha256(): { sha256: string; basis: string; files: number } {
 /**
  * The seven fields, each read from the thing itself.
  *
- * `runtime_image_digest` IS TAKEN FROM THE LOCK FILE AS IT STANDS, placeholder and all, and
- * the placeholder is reported rather than papered over. Synthesising a digest so the binding
- * "looks complete" would be the exact failure `deploy/postgres/versions.lock.json`'s own
- * header forbids — a syntactically valid, fabricated hash — and would hide the single fact a
- * reader of this report most needs: no image has ever been built from this lock.
+ * `runtime_image_digest` is the lock file's `built_image_digest` as it stands, never a
+ * synthesised one, and any pin the lock lists as unverified is reported in the notes.
  */
 function computeBinding(workspaceReal: string): { binding: CandidateBinding; notes: string[] } {
   const lockPath = join(repoRoot, "deploy/postgres/versions.lock.json");
@@ -94,9 +81,8 @@ function computeBinding(workspaceReal: string): { binding: CandidateBinding; not
   const tree = sourceTreeSha256();
   const notes = [`source_tree_sha256 covers ${tree.files} files (${tree.basis}), not HEAD`];
   if (unverified.length > 0) {
-    notes.push(`deploy/postgres/versions.lock.json declares ${unverified.length} unverified pins; ` +
-      "runtime_image_digest below is its built_image_digest, which is a placeholder — no image " +
-      "has been built from this lock and no registry has been reached");
+    notes.push(`deploy/postgres/versions.lock.json declares ${unverified.length} unverified pin(s); ` +
+      "see its unverified_fields");
   }
   return {
     binding: {
@@ -112,11 +98,11 @@ function computeBinding(workspaceReal: string): { binding: CandidateBinding; not
   };
 }
 
-// ─────────────────────────────────── resolving evidence ───────────────────────────────────
+// Resolving evidence.
 
-/** Where a piece of evidence is looked for. NO `sha256` AND NO `verified` — the resolver
- *  computes both, and a locator that could carry them would be a place for a caller to put a
- *  claim the resolver might one day read. */
+/** Where a piece of evidence is looked for. DELIBERATE: no `sha256` and no `verified` — the
+ *  resolver computes both, and a locator that could carry them would be a place for a caller to
+ *  put a claim the resolver might one day read. */
 interface EvidenceLocator {
   readonly id: string;
   /** The declared location first; any known producer location after it. */
@@ -135,12 +121,11 @@ interface ResolvedEvidence {
 }
 
 /**
- * Read each locator's file, hash it, and CONSTRUCT its verified flag.
+ * Read each locator's file, hash it, and construct its verified flag.
  *
- * The forged report this refuses is a real shape, not a hypothetical one: a hand-written
- * acceptance report naming ten protected evidence files with plausible 64-hex hashes and
- * `verified: true`, backed by nothing on disk. Every field of every entry below is built from
- * bytes this function read, so the only way to make one `verified` is to put the file there.
+ * Every field of every entry below is built from bytes this function read, so the only way to
+ * make one `verified` is to put the file there. A hand-written report naming protected evidence
+ * files with plausible 64-hex hashes resolves to nothing.
  */
 function resolveEvidence(
   locators: readonly EvidenceLocator[],
@@ -165,7 +150,7 @@ function resolveEvidence(
   });
 }
 
-// ──────────────────────────── running the things that must be run ────────────────────────
+// Running the things that must be run.
 
 interface CommandReceipt {
   readonly argv: readonly string[];
@@ -176,11 +161,11 @@ interface CommandReceipt {
 }
 
 /**
- * Run one command, record its ACTUAL exit code, and parse its receipt.
+ * Run one command, record its actual exit code, and parse its receipt.
  *
- * `parsed` IS THE COMMAND'S OWN JSON RECEIPT, and the status downstream comes off a field in
- * it — never off a word in the text. "Never create a pass from a report's own PASSED string"
- * is the contract's rule and a `String.includes` over stdout is precisely what it names.
+ * `parsed` is the command's own JSON receipt, and the status downstream comes off a field in it
+ * — never off a word in the text. A `String.includes` over stdout would create a pass from a
+ * report's own PASSED string.
  */
 function runCommand(argv: readonly string[], timeoutMs: number): CommandReceipt {
   const env = { ...process.env };
@@ -248,12 +233,10 @@ function runOrdinaryGate(workspaceReal: string): GateExecution {
 }
 
 /**
- * The break-tests, run one at a time, OUTSIDE the gate.
+ * The break-tests, run one at a time, outside the gate.
  *
- * The gate reports each of these with an explicitly empty receipt because running one inside
- * the gate is the recursion they exist to test for. "Separately exercise required independent
- * break-tests" is this task's half of that arrangement, and an empty receipt filled in from
- * nowhere is the omission it exists to prevent: each one below has a real exit code from a
+ * The gate reports each of these with an explicitly empty receipt, because running one inside
+ * the gate is the recursion they exist to test for. Each one below has a real exit code from a
  * real process.
  */
 function runBreakTests(declared: readonly { id: string; path: string }[]): {
@@ -268,14 +251,14 @@ function runBreakTests(declared: readonly { id: string; path: string }[]): {
   });
 }
 
-// ───────────────────────────────────── reconciliation ─────────────────────────────────────
+// Reconciliation.
 
 interface Reconciliation {
   readonly subject: string;
   readonly expected: number;
   readonly accounted: number;
-  /** The ones that did not reconcile, BY NAME. "These cannot be inferred from equal counts
-   *  alone" — so a reader never gets a pair of numbers and is left to find the difference. */
+  /** The ones that did not reconcile, named rather than counted: a pair of equal counts does
+   *  not identify them, and a reader must not be left to find the difference. */
   readonly outstanding: string[];
 }
 
@@ -307,16 +290,16 @@ function reconcileFrozenChecks(workspaceReal: string, executedIds: readonly stri
     if (!existsSync(frozen)) { drifted.push(`${entry.path} (no frozen copy at ${entry.frozen_as})`); continue; }
     if (!readFileSync(frozen).equals(bytes)) drifted.push(`${entry.path} (differs from the frozen copy)`);
   }
-  // ACTIVATION IS A SEPARATE QUESTION FROM IDENTITY. A frozen check can be byte-perfect and
-  // registered nowhere, which is the defect `checks/all-checks-wired.ts` exists for; the gate's
-  // own execution report is the only thing that can say a given check actually ran.
+  // Activation is a separate question from identity. A frozen check can be byte-perfect and
+  // registered nowhere — the defect `checks/all-checks-wired.ts` exists for — and the gate's own
+  // execution report is the only thing that can say a given check actually ran.
   const registered = readFileSync(join(repoRoot, "scripts/gate/checks/suites.ts"), "utf8");
   const unactivated = manifest.checks
     .filter((entry) => {
       const file = entry.path.replace(/^checks\//, "");
       if (!registered.includes(`"${file}"`)) return true;
       // Registered by filename; the gate names checks by their prose title, so the proof that
-      // it RAN is that some executed id owns that registration line.
+      // it ran is that some executed id owns that registration line.
       return executedIds.length === 0;
     })
     .map((entry) => entry.path);
@@ -331,10 +314,10 @@ function reconcileFrozenChecks(workspaceReal: string, executedIds: readonly stri
 /**
  * The edit-surface ledger against this working tree.
  *
- * TWO DIRECTIONS, BOTH REQUIRED. Every declared path is accounted for, AND nothing outside the
+ * Two directions, both required: every declared path is accounted for, and nothing outside the
  * declaration has been changed. `ledger.ts`'s own `unlistedChanges` answers the second question
- * over `reviewRef..HEAD` only, which is blind to exactly the state this task runs in — work
- * uncommitted, one check untracked — so the working tree is read here as well.
+ * over `reviewRef..HEAD` only, which is blind to uncommitted work and untracked files, so the
+ * working tree is read here as well.
  */
 function reconcileEditSurface(): { rows: Reconciliation[]; unlisted: string[] } {
   const reviewRef = git(["merge-base", "HEAD", "origin/master"]);
@@ -367,7 +350,7 @@ function reconcileEditSurface(): { rows: Reconciliation[]; unlisted: string[] } 
   };
 }
 
-// ──────────────────────────────── assembling the criteria ────────────────────────────────
+// Assembling the criteria.
 
 const SUITE_FOR_CRITERION: Readonly<Record<string, string>> = {
   "AC-1.1": "model", "AC-2.1": "persistence", "AC-2.2": "lifecycle", "AC-3.1": "okf",
@@ -413,7 +396,7 @@ interface AcceptanceFinalization {
 /**
  * `verify --finalize --profile acceptance`.
  *
- * ORDER MATTERS AND IT IS THE CONTRACT'S. The binding is computed first so every receipt below
+ * DELIBERATE: the order is the contract's. The binding is computed first so every receipt below
  * is bound to one candidate; the gate runs next, because a changed generated file during the
  * gate invalidates the snapshot everything after it was measured against; then the ten suites
  * and the benchmark, each as the exact command the approved spec names for its criterion; then
@@ -425,9 +408,9 @@ export async function finalize(workspaceReal: string): Promise<AcceptanceFinaliz
   findings.push(...notes);
 
   const gate = runOrdinaryGate(workspaceReal);
-  // THE SNAPSHOT IS RE-READ AFTER THE GATE, not assumed. The gate regenerates the marketplace
-  // tree; if that changed a byte, everything measured before it was measured against a
-  // different candidate and the report must say so rather than average the two.
+  // The snapshot is re-read after the gate, not assumed. The gate regenerates the marketplace
+  // tree; if that changed a byte, everything measured before it was measured against a different
+  // candidate and the report must say so rather than average the two.
   const afterGate = sourceTreeSha256().sha256;
   if (afterGate !== binding.source_tree_sha256) {
     findings.push(`the gate changed a generated file: source_tree_sha256 was ` +
@@ -443,7 +426,7 @@ export async function finalize(workspaceReal: string): Promise<AcceptanceFinaliz
   const frozen = reconcileFrozenChecks(workspaceReal, gate.executed_ids);
   const editSurface = reconcileEditSurface();
 
-  // ── the eleven commands the spec names, each run for real ────────────────────────────────
+  // The eleven commands the spec names, each run for real.
   const criteria: Record<string, CriterionRecord> = {};
   const locators: EvidenceLocator[] = [];
   const commandNotes: Record<string, string> = {};
@@ -459,9 +442,9 @@ export async function finalize(workspaceReal: string): Promise<AcceptanceFinaliz
       ? `${suite}: ${status}, cases that never ran: ${blockedCases.join(", ")}`
       : `${suite}: ${status}`;
     criteria[id] = {
-      // THE METHOD COMES FROM THE APPROVED SPEC'S MAP, not from a literal typed here. A
-      // criterion whose spec method is not `command` would then disagree with the command
-      // receipt beside it, and `assessAcceptance` would say so — which is the point.
+      // The method comes from the approved spec's map, not from a literal typed here. A
+      // criterion whose spec method is not `command` would disagree with the command receipt
+      // beside it, and `assessAcceptance` would say so.
       method: CRITERION_METHODS[id], status, exit_code: receipt.exit_code,
       evidence_ids: [id], receipt: argv.join(" "), basis: commandNotes[id],
     };
@@ -482,7 +465,7 @@ export async function finalize(workspaceReal: string): Promise<AcceptanceFinaliz
   };
   locators.push({ id: "AC-6.2", paths: [benchPath], declared: "raw/criteria/AC-6.2.json" });
 
-  // ── the nine protected prerequisites ─────────────────────────────────────────────────────
+  // The nine protected prerequisites.
   const artifacts = join(workspaceReal, "artifacts", "tenant-info-v4");
   for (const id of PREREQUISITE_IDS) {
     locators.push({ id, paths: [join(artifacts, id), join(workspaceReal, id)],
@@ -501,9 +484,9 @@ export async function finalize(workspaceReal: string): Promise<AcceptanceFinaliz
   const prerequisites: Record<string, { applicable: boolean; status: CriterionStatus; evidence_ids: string[]; basis: string }> = {};
   for (const id of PREREQUISITE_IDS) {
     const resolved = byId.get(id);
-    // H2 IS RESOLVED BY A RECORDED ZERO, NOT BY A SIGNATURE. `classification.json` with
-    // `selected_count: 0` and `review_required: false` is a complete answer — the plan says so
-    // in as many words — so the reviewer prerequisite is inapplicable rather than outstanding.
+    // H2 is resolved by a recorded zero, not by a signature. `classification.json` with
+    // `selected_count: 0` and `review_required: false` is a complete answer, so the reviewer
+    // prerequisite is inapplicable rather than outstanding.
     let applicable = true;
     let basis = resolved?.verified === true ? "present and hashed" : "no file on disk";
     if (id === "classification.json" && resolved?.verified === true && resolved.resolved_path !== null) {
@@ -523,7 +506,7 @@ export async function finalize(workspaceReal: string): Promise<AcceptanceFinaliz
     };
   }
 
-  // ── AC-6.1: two human decisions, read from the actual records ───────────────────────────
+  // AC-6.1: two human decisions, read from the actual records.
   const approval = byId.get("qrels-approval.json");
   const classification = byId.get("classification.json");
   const h1 = approval?.verified === true && approval.resolved_path !== null
@@ -538,7 +521,7 @@ export async function finalize(workspaceReal: string): Promise<AcceptanceFinaliz
       `${classification?.verified === true ? "resolved by the recorded classification inventory" : "has no classification inventory to resolve against"}`,
   };
 
-  // ── AC-8.2: the actual analytical record, and whether it is still about this code ────────
+  // AC-8.2: the actual analytical record, and whether it is still about this code.
   const transcript = byId.get("i24-agent-review-transcript.json");
   const agentReview = assessAgentReview(transcript, workspaceReal);
   criteria["AC-8.2"] = {
@@ -548,12 +531,10 @@ export async function finalize(workspaceReal: string): Promise<AcceptanceFinaliz
   };
   findings.push(...agentReview.findings);
 
-  // ── AC-8.1 is wider than its suite ───────────────────────────────────────────────────────
-  //
-  // "Existing consumers remain compatible, ALL REQUIRED CHECKS EXECUTE and NO DECLARED
-  // INTEGRATION PATH IS UNACCOUNTED FOR." The compatibility suite answers the first clause
-  // only; the other two are the gate, the frozen set, the break-tests and the ledger, and a
-  // criterion that reported its suite's verdict alone would be answering a third of itself.
+  // AC-8.1 is wider than its suite: "existing consumers remain compatible, all required checks
+  // execute and no declared integration path is unaccounted for". The compatibility suite answers
+  // the first clause only; the other two are the gate, the frozen set, the break-tests and the
+  // ledger.
   const reconciliations = [...frozen, ...editSurface.rows];
   const breakTestsFailed = breakTests.filter((test) => !test.passed);
   const wider: CriterionStatus[] = [criteria["AC-8.1"].status];
@@ -577,7 +558,7 @@ export async function finalize(workspaceReal: string): Promise<AcceptanceFinaliz
   for (const test of breakTestsFailed) findings.push(`independent break-test ${test.id} exited ${String(test.exit_code)}: ${test.detail}`);
   for (const failure of gate.failures) findings.push(`gate failure: ${JSON.stringify(failure)}`);
 
-  // ── the decision, and the report ─────────────────────────────────────────────────────────
+  // The decision, and the report.
   const assessed = assessAcceptance({
     criteria, prerequisites, binding, evidence,
     gate: {
@@ -624,13 +605,12 @@ export async function finalize(workspaceReal: string): Promise<AcceptanceFinaliz
 }
 
 /**
- * Whether I-24's analytical record still says something about THIS code.
+ * Whether I-24's analytical record still says something about this code.
  *
- * Review evidence is reusable "only when all relevant runtime/analyzer/dataset/spec bindings
- * still match, otherwise rerun". A transcript pins the runtime modules it exercised by hash;
- * if one of those has been rebuilt from changed source since, the record describes a system
- * that no longer exists, whatever it concluded. A transcript that carries its own `failed`
- * finding is not pass evidence either way.
+ * Review evidence is reusable only while every runtime, analyzer, dataset and spec binding still
+ * matches. A transcript pins the runtime modules it exercised by hash; if one has been rebuilt
+ * from changed source since, the record describes a system that no longer exists. A transcript
+ * carrying its own `failed` finding is not pass evidence either way.
  */
 function assessAgentReview(
   transcript: ResolvedEvidence | undefined,

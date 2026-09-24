@@ -1,22 +1,18 @@
 /**
  * What the platform tells the control loop when something actually happens.
  *
- * ONE PLACE, BECAUSE THERE ARE FOUR CALLERS. `document_write`, `document_revise`,
- * `document_approve` and `source_add` each complete a step for some flow, and four copies of
- * "work out the initiative, find the module, find the step, record it" would be four chances
- * to disagree about what counts as evidence. The disagreement would not be visible: each
- * caller would go on succeeding, and the run would simply be judged on a different set of
- * facts depending on which door the work came through.
+ * One place, because there are four callers: `document_write`, `document_revise`,
+ * `document_approve` and `source_add` each complete a step for some flow. Four copies of "work
+ * out the initiative, find the module, find the step, record it" would disagree invisibly — each
+ * caller would go on succeeding, and the run would be judged on a different set of facts
+ * depending on which door the work came through.
  *
- * IT RECORDS, IT NEVER REFUSES. Nothing here can stop a write that the document guards
- * already allowed. The loop's job is to answer questions about a run, not to become a second
- * veto beside `documentGuards` — that duplication is the thing this adoption removes. A
- * refusal, when one is owed, happens at the one place an action is claimed.
+ * DELIBERATE: it records, it never refuses. Nothing here can stop a write the document guards
+ * already allowed; a refusal, when one is owed, happens at the one place an action is claimed.
  *
- * A FAILURE HERE IS VISIBLE LATER, NOT SILENT. If the database is unreachable the evidence is
- * not recorded, and the loop will say the step's requirement is unmet — which is true of what
- * it was told. That is the right failure direction: a missing fact reads as missing rather
- * than as satisfied, and the sentence a person gets back names exactly what to record.
+ * A failure here is visible later, not silent. If the database is unreachable the evidence is not
+ * recorded, and the loop says the step's requirement is unmet — a missing fact reads as missing
+ * rather than as satisfied.
  */
 import type { Chain } from "../write-guards.js";
 
@@ -26,13 +22,12 @@ import { openRun, recordEvidence, runFor } from "./store.js";
 
 /** What kind of fact this is, in the vocabulary the reviewed module's steps accept.
  *
- *  `document` and `approval` are the two a stage producing an artifact asks for; `audit` is
- *  what a stage producing a SOURCE asks for. They are the module's words, not this file's. */
+ *  `document` and `approval` are the two a stage producing an artifact asks for; `audit` is what
+ *  a stage producing a source asks for. They are the module's words, not this file's. */
 export type Fact = "document" | "approval" | "audit";
 
 /** The initiative an initiative-relative path belongs to. `2026-09-20-x/spec.md` -> the first
- *  segment. Written once here because getting it wrong records evidence against a run that
- *  belongs to a different piece of work. */
+ *  segment. Getting it wrong records evidence against a run that belongs to different work. */
 function initiativeOf(relPath: string): string | null {
   const first = relPath.split("/")[0];
   return first && first !== relPath ? first : null;
@@ -55,24 +50,19 @@ export async function noteDocument(
 }
 
 /**
- * Record that a document was REVISED, which withdraws whatever approval it carried.
+ * Record that a document was revised, which withdraws whatever approval it carried.
  *
- * A REVISION IS A FACT AND SO IS THE APPROVAL IT REPLACES. `document_revise` files the signed
+ * A revision is a fact and so is the approval it replaces. `document_revise` files the signed
  * text in `_versions/`, bumps the version and returns a gated document to draft — the approval
- * really was given, so nothing deletes it, and it no longer stands, so nothing may count it.
- * The new entry says which earlier entry it withdraws and the log goes on only growing.
+ * really was given, so nothing deletes it, and it no longer stands, so nothing may count it. The
+ * new entry says which earlier entry it withdraws and the log goes on only growing.
  *
- * NOTHING RECORDED THIS AT ALL BEFORE. `document_write` and `document_approve` told the loop
- * what they did; `document_revise` told it nothing, so a run whose spec had been revised back
- * to draft went on reporting that step met. Measured by driving sdlc-flow's whole declared
- * procedure through the kernel and then revising: `close:initiative` granted, and granted
- * again after the revision. `documentGuards` still refuses such a close, which is exactly the
- * duplication this loop exists to replace — the loop being wrong is the problem, not a
- * harmless disagreement.
+ * Without this, a run whose spec had been revised back to draft goes on reporting that step met,
+ * and the loop grants `close:initiative` where `documentGuards` refuses it.
  *
- * THE WITHDRAWN ID IS DERIVED, not looked up: `document_approve` records `approval:<relPath>`
- * and this withdraws that same id. Deterministic, so a replay rebuilds the same graph, and it
- * costs nothing when the document was never approved — a withdrawal of nothing.
+ * The withdrawn id is derived, not looked up: `document_approve` records `approval:<relPath>` and
+ * this withdraws that same id. Deterministic, so a replay rebuilds the same graph, and it costs
+ * nothing when the document was never approved — a withdrawal of nothing.
  */
 export async function noteRevision(
   chain: Chain, relPath: string, version: number, by: string, team: string | null,
@@ -84,7 +74,7 @@ export async function noteRevision(
 }
 
 /**
- * Record that a source supporting a document was added — which is how an AUDIT evidences
+ * Record that a source supporting a document was added — which is how an audit evidences
  * itself, because the flow declares an audit stage as producing a source rather than a
  * document of its own.
  *
@@ -96,9 +86,9 @@ export async function noteSource(
 ): Promise<void> {
   const step = stepForSource(chain.stages as readonly DeclaredStage[], supports);
   if (!step) return;   // no stage produces a source supporting that document
-  // AN AUDIT IS ABOUT THE DOCUMENT IT AUDITED, which is the document the source supports —
-  // not the source file itself. The rule says `{kind: "audit", about: "document"}`, and the
-  // only document entry in the run that answers it is the one for the audited document.
+  // An audit is about the document it audited — the document the source supports, not the source
+  // file itself. The rule says `{kind: "audit", about: "document"}`, and the only document entry
+  // in the run that answers it is the one for the audited document.
   await note(chain, relPath, "audit", by, team, step, supports);
 }
 
@@ -115,11 +105,9 @@ async function note(
   const governed = moduleForFlow(await packaged(), chain.name);
   if (!governed) return;
 
-  // THE RUN IS OPENED IF IT IS NOT THERE. An initiative opened before this platform started
-  // telling the loop anything has no run, and its first write is the moment to give it one —
-  // otherwise the evidence has nowhere to go and the initiative stays permanently unjudgeable
-  // through no fault of the person doing the work. `openRun` is idempotent on
-  // (team, initiative), so this cannot produce a second run for one initiative.
+  // The run is opened if it is not there: an initiative with no run gets one at its first
+  // write.
+  // `openRun` is idempotent on (team, initiative), so this cannot produce a second run.
   const existing = await runFor(team, initiative);
   const runId = existing?.id ?? await openRun({
     team, initiative, module: governed.module, digest: governed.digest,
@@ -127,34 +115,22 @@ async function note(
   });
   if (!runId) return;
 
-  // THE BACK-REFERENCE IS THE WHOLE THING, and getting it wrong makes every gated step
+  // The back-reference is the whole thing, and getting it wrong makes every gated step
   // permanently unmeetable in a way nothing reports.
   //
-  // A completion rule carrying `about` is satisfied only by an entry whose `about` is the ID
-  // of another entry of the named kind — `met()` reads
-  // `evidence.some(p => p.kind === rule.about && p.id === e.about)`. Four of this flow's seven
-  // steps carry one: `{kind: "approval", about: "document"}` and `{kind: "audit", about:
-  // "document"}`. An approval recorded `about` a FILENAME satisfies nothing, because no entry
+  // A completion rule carrying `about` is satisfied only by an entry whose `about` is the id of
+  // another entry of the named kind — `met()` reads
+  // `evidence.some(p => p.kind === rule.about && p.id === e.about)`. An approval recorded `about` a filename satisfies nothing, because no entry
   // has that filename as its id.
   //
-  // This was written with `about: relPath` and committed, and the gate stayed green, and the
-  // door census stayed green, and nothing said a word — because no instrument here asks
-  // whether a real run can reach a grant. Driving one against a real database is what found
-  // it: the whole declared procedure, every document and approval recorded, still refused.
+  // So the id is derived from the document alone — not from the step, not from the fact — and an
+  // approval or an audit points at it. Deterministic, so a replay rebuilds the same graph, and
+  // stable across the two tools that record the two halves.
   //
-  // So the id is derived from the DOCUMENT alone — not from the step, not from the fact —
-  // and an approval or an audit points at it. Deterministic, so a replay rebuilds the same
-  // graph, and stable across the two tools that record the two halves.
-  // THE POINTER IS AN INITIATIVE-RELATIVE PATH, because that is what the document entry's id
-  // was built from. A `supports` value is the flow's own vocabulary — a bare `spec.md`, the
-  // name the manifest declares — while a document is recorded under `<initiative>/spec.md`.
-  // Pointing an audit at `doc:spec.md` when the document is `doc:<initiative>/spec.md` is a
-  // reference to nothing, and `met()` answers exactly as it should: the requirement is unmet.
-  //
-  // This was the SECOND defect in this one wiring, and the e2e found both. The first pointed
-  // at a filename where an id was owed; this one pointed at the right kind of thing in the
-  // wrong namespace. Neither is visible to a type, a build, or any check in this repository —
-  // both produce a platform that records diligently and answers wrongly.
+  // The pointer is an initiative-relative path, because that is what the document entry's id was
+  // built from. A `supports` value is the flow's own vocabulary — a bare `spec.md` — while a
+  // document is recorded under `<initiative>/spec.md`, and `doc:spec.md` is a reference to
+  // nothing.
   const supported = aboutDocument
     ? (aboutDocument.includes("/") ? aboutDocument : `${initiative}/${aboutDocument}`)
     : relPath;
@@ -172,10 +148,9 @@ async function note(
 
 /** The registered catalogue, imported lazily.
  *
- *  `reviewed-modules.ts` is data rather than behaviour, and importing it at the top of this
- *  file would put it in the module graph of every tool that records evidence. It is read once
- *  per call on a path that already touches the database, so the cost is nothing beside what
- *  it buys: this file stays importable by anything without dragging the whole allowlist in. */
+ *  `reviewed-modules.ts` is data rather than behaviour, and importing it at the top of this file
+ *  would put it in the module graph of every tool that records evidence. It is read once per call
+ *  on a path that already touches the database. */
 async function packaged(): Promise<Awaited<ReturnType<typeof load>>> { return load(); }
 async function load() {
   const m = await import("../reviewed-modules.js");

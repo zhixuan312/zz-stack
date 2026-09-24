@@ -1,53 +1,36 @@
 /**
- * THE CORPUS THE TRIAL SEARCHES, AND THE ANALYSIS IT IS SEARCHED WITH.
+ * The corpus the trial searches, and the analysis it is searched with.
  *
- * WHY A FIXTURE AND NOT THE LIVE HANDLER, STATED FIRST BECAUSE IT BOUNDS EVERYTHING BELOW.
- * `@zz/contracts` sits underneath the services — zz-core depends on this package and this
- * package never depends upward — so `services/zz-core/src/tenant-info/search.ts` and its
- * `serializeResults` cannot be reached from here, and a trial written in this package cannot
- * drive the live search. What the corpus below therefore establishes is that the TRAVERSAL
- * RULES hold: a lead is not a conclusion, a pinned citation does not follow the head, a
- * translation is not an original, an answer is written in the asker's language. It establishes
- * nothing at all about the live index, and `recall-trial.ts`'s header lists what that leaves
- * open by name rather than leaving a reader to infer it.
+ * A fixture, not the live handler: `@zz/contracts` sits underneath the services, so
+ * `services/zz-core/src/tenant-info/search.ts` cannot be reached from here. What the corpus
+ * establishes is that the traversal rules hold — a lead is not a conclusion, a pinned citation
+ * does not follow the head, a translation is not an original, an answer is written in the
+ * asker's language. It establishes nothing about the live index; `recall-trial.ts`'s header
+ * lists what that leaves open.
  *
- * SO THE FIXTURE IS BUILT TO BE AWKWARD, because a corpus arranged to suit the mechanism
- * proves only that the corpus behaves. Every document here is here to make one rule expensive:
+ * Each document makes one rule expensive:
  *
- *   doc/mig-zh          the old, never-reedited Chinese decision. It carries no Latin word at
- *                       all, so an English asker can only reach it through a relation — and
- *                       the strongest answer to an ENGLISH question is therefore quoted in
- *                       Chinese, which is what breaks any implementation that reads the
- *                       answer's language off whichever document matched.
- *   doc/mig-en-rendering  an English translation of that decision, registered as one. It is the
- *                       document an English lexical search actually lands on, it reads as an
- *                       answer, and it is refused as an original — the read of it fails BY
- *                       NAME rather than silently ranking lower.
- *   doc/mig-en-control  a genuine English document that matches every word of the English
- *                       question and says "nothing is decided yet". The control for the
- *                       monolingual path, and the abandoned-proposal trap in one document.
- *   doc/mig-zh-ops      a Chinese document that asserts an observed result and whose stored
- *                       body cannot be retrieved. The assertion is the flattering answer; the
- *                       read failure is the honest one.
- *   doc/schema-note     a Chinese node sharing exactly one bigram with the question. A
- *                       broadened hit that is worth reading and is never worth promoting.
- *   doc/mig-legacy      an imported runbook with NO revision history — only a current path. It
- *                       is readable and quotable and can never be pinned, whatever the episode
- *                       was allowed to do.
+ *   doc/mig-zh          the old Chinese decision, with no Latin word at all, so an English
+ *                       asker reaches it only through a relation — and the strongest answer to
+ *                       an English question is therefore quoted in Chinese.
+ *   doc/mig-en-rendering  an English translation of it, registered as one. Where an English
+ *                       lexical search lands, and the read of it fails by name.
+ *   doc/mig-en-control  a genuine English document matching every word of the English question
+ *                       and saying "nothing is decided yet".
+ *   doc/mig-zh-ops      a Chinese document asserting an observed result whose stored body
+ *                       cannot be retrieved.
+ *   doc/schema-note     a Chinese node sharing exactly one bigram with the question.
+ *   doc/mig-legacy      an imported runbook with no revision history, only a current path.
  *
- * THE ANALYSIS IS HAN-AWARE ON PURPOSE. `packages/indexing`'s `TEXT_SEARCH_CONFIG` pins
- * `{ latin: "english", han: "simple" }` precisely because a prose tokenizer cannot segment an
- * unspaced Han run: the whole of the Chinese question analyses to one token under it, matches
- * nothing, and comes back as a clean empty. A trial that quietly leaned on such a tokenizer
- * would be demonstrating that defect rather than the repair, so `trialAnalyze` below emits Han
- * unigrams and adjacent Han bigrams the way `zz-lexical-v2` does, and `searchCorpus` takes its
- * analyzer as a parameter so the probe can substitute the broken one and watch the difference.
- * `@zz/indexing` is NOT imported for it — this package has one dependency and adding a
- * workspace package to it to borrow a regex would invert the build for a fixture.
+ * The analysis is Han-aware. `packages/indexing`'s `TEXT_SEARCH_CONFIG` pins
+ * `{ latin: "english", han: "simple" }` because a prose tokenizer cannot segment an unspaced
+ * Han run, so `trialAnalyze` emits Han unigrams and adjacent Han bigrams the way
+ * `zz-lexical-v2` does, and `searchCorpus` takes its analyzer as a parameter so the probe can
+ * substitute the broken one. DELIBERATE: `@zz/indexing` is not imported for it — this package
+ * has one dependency, and adding a workspace package to borrow a regex would invert the build.
  *
- * STEMMING IS NOT REIMPLEMENTED. The `english` configuration stems; a prefix comparison stands
- * in for it here (`latinMatches`), and it is a stand-in rather than a model of it. That is one
- * of the things the trial does not establish.
+ * Stemming is not reimplemented: `latinMatches` is a prefix comparison standing in for the
+ * `english` configuration's stemmer.
  */
 import type { RecallClaimKind } from "./recall.js";
 
@@ -70,14 +53,14 @@ export interface TrialDocument {
   readonly title: string;
   readonly subject: "document" | "node";
   readonly shelf: "team" | "platform";
-  /** MUTABLE, and the one mutable thing in the corpus: superseding a document APPENDS a
+  /** Mutable, and the one mutable thing in the corpus: superseding a document appends a
    *  revision. Nothing in this module rewrites an existing entry, which is what lets
    *  `translationWasInserted` compare the originals against the snapshot taken at build. */
   revisions: TrialRevision[];
   /** The current path for a document imported with no revision history at all. */
   readonly head_text: string | null;
   readonly head_language: TrialLanguage;
-  /** What the document ASSERTS about itself. An assertion, never a grant: nothing here is
+  /** What the document asserts about itself. An assertion, never a grant: nothing here is
    *  honoured until the original text behind it has been read. */
   readonly claim_kind: RecallClaimKind;
   /** The document this one renders into another language, when it is a rendering. */
@@ -96,7 +79,7 @@ export interface TrialCorpus {
   readonly pristine: ReadonlyMap<string, ReadonlyMap<string, string>>;
 }
 
-// ── the analysis ───────────────────────────────────────────────────────────────────────────
+// The analysis
 
 const HAN = /\p{Script=Han}/u;
 const LATIN_RUN = /[a-z0-9_]+/g;
@@ -134,20 +117,16 @@ function latinWords(text: string): readonly string[] {
 
 /**
  * `zz-lexical-v2`'s shape: Han unigrams, overlapping adjacent Han bigrams, and Latin content
- * words. Over Unicode SCALARS (`Array.from`), so a supplementary-plane Han character is one
+ * words. Over Unicode scalars (`Array.from`), so a supplementary-plane Han character is one
  * term and not two surrogates' worth.
  *
- * EXPORTED SO THE AGREEMENT CAN BE MEASURED RATHER THAN ASSERTED IN THIS COMMENT. The header
- * above says this reproduces what `zz-lexical-v2` does, and `@zz/indexing` cannot be imported
- * from here to make that true by construction — the layering forbids it, and that part is
- * legitimate. What is not legitimate is a second implementation of one rule with nothing
- * watching the two: that is exactly how the write path and the backfill drifted apart, and
- * `scripts/gate/checks/rederivation-generation.ts` exists because of it. A gate check may
- * import from both packages, so the Han half of this function is checked against the real
- * analyzer's; this name is on the package door for that check and for no other caller.
+ * COUPLED: exported for `scripts/gate/checks/rederivation-generation.ts`, which may import
+ * both packages and checks the Han half of this function against the real analyzer's. The
+ * layering forbids importing `@zz/indexing` here, so without that check nothing would watch
+ * the two copies. This name is on the package door for it and for no other caller.
  *
- * THE LATIN HALF IS DELIBERATELY NARROWER AND IS NOT THE SAME RULE. `zz-lexical-v2` hands the
- * backend every word run unstemmed and unfiltered, and lets the pinned `english` configuration
+ * The Latin half is deliberately narrower and is not the same rule. `zz-lexical-v2` hands the
+ * backend every word run unstemmed and unfiltered and lets the pinned `english` configuration
  * stop and stem them. This fixture has no backend, so it lowercases, drops the question-shaped
  * words in {@link CARRIES_NO_TOPIC}, and reads ASCII runs only. Those are fixture decisions
  * about a corpus, not claims about the analyzer.
@@ -169,9 +148,9 @@ export function trialAnalyze(text: string): readonly string[] {
 export type TrialAnalyzer = (text: string) => readonly string[];
 
 /**
- * Whether the query was framed so the index CAN match the material's language, which is
- * exactly `RecallSearchReceipt.language_qualified`'s contract. Qualified iff every Han run of
- * two scalars or more produced at least one Han term SHORTER than the run — that is, iff the
+ * Whether the query was framed so the index can match the material's language, which is
+ * `RecallSearchReceipt.language_qualified`'s contract. Qualified iff every Han run of two
+ * scalars or more produced at least one Han term shorter than the run — that is, iff the
  * analyzer segmented it. A tokenizer that splits on whitespace hands back the run itself and
  * nothing shorter, so it reports unqualified and the episode may not claim a clean empty.
  */
@@ -203,12 +182,12 @@ function latinMatches(queryWord: string, documentWord: string): boolean {
   return short.length >= 5 && long.startsWith(short);
 }
 
-// ── the documents ──────────────────────────────────────────────────────────────────────────
+// The documents
 
 /**
- * THE CHINESE TEXT BELOW IS FIXTURE DATA, in the same sense the frozen check's Chinese query
- * is. The old document has to be written in the language it was written in, or the trial is
- * not the trial. Every comment, identifier and diagnostic in this package is English.
+ * The Chinese text below is fixture data, in the same sense the frozen check's Chinese query
+ * is: the old document has to be written in the language it was written in. Every comment,
+ * identifier and diagnostic in this package is English.
  */
 function documents(): TrialDocument[] {
   const doc = (
@@ -283,10 +262,9 @@ function documents(): TrialDocument[] {
 }
 
 /**
- * A FRESH CORPUS PER CALL, and it is not a style preference. `trial(…, { thenSupersede: true })`
- * appends a revision; a module-level corpus would carry that appended revision into every later
- * trial in the same process, and the frozen check runs four trials in a row. The factory is what
- * keeps the fourth from reading the second's mutation.
+ * DELIBERATE: a fresh corpus per call. `trial(…, { thenSupersede: true })` appends a revision,
+ * and a module-level corpus would carry that revision into every later trial in the same
+ * process — the frozen check runs four trials in a row.
  */
 export function trialCorpus(): TrialCorpus {
   const docs = documents();
@@ -295,7 +273,7 @@ export function trialCorpus(): TrialCorpus {
   return { documents: docs, pristine };
 }
 
-// ── addressing, reading, superseding ───────────────────────────────────────────────────────
+// Addressing, reading, superseding
 
 export function documentOf(corpus: TrialCorpus, id: string): TrialDocument | null {
   return corpus.documents.find((d) => d.id === id) ?? null;
@@ -320,10 +298,9 @@ export function documentIdOf(ref: string): string {
 /**
  * The citation an episode forms for a document it has just read.
  *
- * A DOCUMENT WITH NO REVISION HISTORY HAS ONLY A CURRENT PATH, whatever the episode was
- * allowed to address. That is the second, structural half of the current-path rule: the first
- * half is an episode restricted to `current_path`, and this one is a document that could not
- * be pinned by an episode with every permission in the world.
+ * A document with no revision history has only a current path, whatever the episode was
+ * allowed to address. That is the structural half of the current-path rule; the other half is
+ * an episode restricted to `current_path`.
  */
 export function citationFor(doc: TrialDocument, assurance: TrialAssurance): string {
   const head = headRevisionOf(doc);
@@ -332,10 +309,10 @@ export function citationFor(doc: TrialDocument, assurance: TrialAssurance): stri
 }
 
 /**
- * The result of opening a citation. A DISCRIMINATED UNION, and that is the whole enforcement
- * of "no conclusion without the original text": `text` and `language` exist only on the `ok`
+ * The result of opening a citation. A discriminated union, which is the whole enforcement of
+ * "no conclusion without the original text": `text` and `language` exist only on the `ok`
  * branch, so the single expression in `recall-trial.ts` that builds a quote can only build one
- * from a successful read. There is no other constructor of a quote in this trial.
+ * from a successful read.
  */
 export type TrialRead =
   | { readonly ok: true; readonly text: string; readonly language: TrialLanguage;
@@ -345,11 +322,10 @@ export type TrialRead =
 /**
  * Open the original text behind a citation.
  *
- * A TRANSLATION IS REFUSED BY NAME rather than ranked lower. `doc/mig-en-rendering` is
- * readable, well formed, and says exactly what the English asker wants to hear; what it is not
- * is the original text of anything. Returning it as a successful read is how a rendering
- * becomes the record, so the read of one fails and says why, and the failure travels with the
- * finding as an unresolved question.
+ * A translation is refused by name rather than ranked lower. `doc/mig-en-rendering` is
+ * readable, well formed and says exactly what the English asker wants to hear, and is not the
+ * original text of anything — so the read of one fails and says why, and the failure travels
+ * with the finding as an unresolved question.
  */
 export function readOriginalText(corpus: TrialCorpus, ref: string): TrialRead {
   const doc = documentOf(corpus, documentIdOf(ref));
@@ -377,7 +353,7 @@ export function readOriginalText(corpus: TrialCorpus, ref: string): TrialRead {
   return { ok: false, failure: `${doc.id} has neither a revision nor a current body` };
 }
 
-/** Append a new head and record what supersedes what. APPEND: the revision the episode already
+/** Append a new head and record what supersedes what. Append: the revision the episode already
  *  cited is left exactly as it was, which is the state `citationFollowedHead` measures against. */
 export function supersedeDocument(corpus: TrialCorpus, id: string, text: string): string | null {
   const doc = documentOf(corpus, id);
@@ -394,10 +370,10 @@ export function supersedeDocument(corpus: TrialCorpus, id: string, text: string)
 }
 
 /**
- * Whether anything has been written into a document's ORIGINAL text since the corpus was
+ * Whether anything has been written into a document's original text since the corpus was
  * built. Two faults, one answer: a revision that exists in the snapshot and reads differently
  * now has been rewritten, and a revision carrying the whole of a registered translation's text
- * has had a rendering spliced into it. A revision APPENDED after the snapshot — what
+ * has had a rendering spliced into it. A revision appended after the snapshot — what
  * supersession does — is not compared, because superseding a document is not editing it.
  */
 export function translationWasInserted(corpus: TrialCorpus, id: string): boolean {
@@ -416,10 +392,10 @@ export function translationWasInserted(corpus: TrialCorpus, id: string): boolean
   return false;
 }
 
-// ── the search ─────────────────────────────────────────────────────────────────────────────
+// The search
 
 /** One row as a search returns it: which document, which lanes reached it, and the excerpt the
- *  row carries. The excerpt is NOT the original text — it is what a row shows without anything
+ *  row carries. The excerpt is not the original text — it is what a row shows without anything
  *  being opened, and the probe uses it to build the quote the real trial refuses to build. */
 interface TrialHit {
   readonly doc_id: string;
@@ -452,9 +428,8 @@ function excerptOf(doc: TrialDocument): string {
  *
  *   `lexical`        three or more shared Han bigrams, or every content word of the query
  *                    present. Contiguous evidence, not a coincidence of common characters.
- *   `lexical-broad`  some overlap and not that much. NO document contained everything asked
- *                    for, which is precisely what the broad lane means upstream, so these rows
- *                    are leads.
+ *   `lexical-broad`  some overlap and not that much: no document contained everything asked
+ *                    for, which is what the broad lane means upstream, so these rows are leads.
  *   `evidence`       reached through a relation rather than through the query's vocabulary. A
  *                    translation and its original reach each other this way, in both
  *                    directions, and a row that shares no word with the question is a lead

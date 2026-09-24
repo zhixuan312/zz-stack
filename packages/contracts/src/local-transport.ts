@@ -1,35 +1,24 @@
 /**
- * WHERE A REQUEST IS ALLOWED TO GO, declared per profile and never inferred.
+ * Where a request is allowed to go, declared per profile and never inferred.
  *
- * The failure mode is a quiet one. A profile called `local-only` has its primary backend go
- * down; a transport helpfully retries against the configured cloud route; the run completes and
- * looks exactly like every other run. Nobody is told, because nothing failed. Whatever the
- * local-only profile existed to keep off a third party's hardware has just been sent there.
+ * Every endpoint in the register below carries its own `locality` and `data_profile`, written
+ * down when the profile was declared. Nothing reads a profile's name: an undeclared name
+ * resolves to `unresolved`, with `declared: false` and no endpoint, so a profile called
+ * `local-anything` that nobody declared gets no local endpoint.
  *
- * SO LOCALITY IS A FIELD, NOT A GUESS. Every endpoint in the register below carries its own
- * `locality` and `data_profile`, written down when the profile was declared. Nothing here reads
- * a profile's NAME to work out where it goes — and the proof of that is what an undeclared name
- * resolves to: `unresolved`, with `declared: false` and no endpoint at all. A profile called
- * `local-anything` that nobody declared gets no local endpoint, because a product name is
- * marketing and a declaration is a commitment.
+ * A fallback is a declaration too. `local-only`'s is local, so the route exists, is exercised
+ * when the primary is unavailable, and still does not leave the premises.
+ * `local-first-cloud-declared` reaches a cloud endpoint on the same path, and its declaration
+ * says so. What this separates is a cloud route somebody chose from one somebody arrived at.
  *
- * A FALLBACK IS A DECLARATION TOO. `local-only` has one — and it is local, which is the whole
- * demonstration: the route exists, it is exercised when the primary is unavailable, and it
- * still does not leave the premises. `local-first-cloud-declared` reaches a cloud endpoint on
- * the same path, and that is fine, because its declaration says so in the register where an
- * operator reading it can see it. The distinction this module enforces is between a cloud route
- * somebody chose and a cloud route somebody arrived at.
+ * A laptop is not infrastructure. `local-workstation` is declared and usable from a
+ * workstation; asked for by the server-side controller it resolves local, declared, and not
+ * usable, with the reason saying a production local profile needs a host-owned or
+ * independently managed endpoint.
  *
- * AND A LAPTOP IS NOT INFRASTRUCTURE. A backend on a worker's workstation is not reachable or
- * trusted by a server-side controller, whatever the network happens to allow on a given
- * afternoon. `local-workstation` is declared and usable — from a workstation. Asked for by the
- * server-side controller, it resolves local, declared, and NOT usable, with the reason saying a
- * production local profile needs a host-owned or independently managed endpoint.
- *
- * HANDLES, NEVER ADDRESSES. Every `endpoint_ref` below is a host-held handle in the same dotted
- * lowercase shape the profile register accepts. No URL, no authority, no credential, and
- * nothing in this module dereferences one — resolution answers WHICH endpoint, and the host
- * that holds the handle answers where it is.
+ * Handles, never addresses. Every `endpoint_ref` below is a host-held handle in the dotted
+ * lowercase shape the profile register accepts. Nothing here dereferences one — resolution
+ * answers which endpoint, and the host that holds the handle answers where it is.
  */
 
 /** Local, cloud, or nothing resolved. The third is not a failure to be smoothed over: it is
@@ -64,15 +53,14 @@ interface TransportProfile {
 }
 
 /**
- * THE DECLARED PROFILES. Four, each earning its place against one clause of the contract.
+ * The declared profiles. Four, each earning its place against one clause of the contract.
  *
- * `local-only` — a local primary AND a local fallback, so "does not fall back to the cloud" is
- *   demonstrated by a profile that genuinely falls back, rather than by one with nowhere to go.
- *   Its standby is independently managed: a real arrangement, and the reason that data profile
- *   is in the union at all.
+ * `local-only` — a local primary and a local fallback, so "does not fall back to the cloud" is
+ *   demonstrated by a profile that genuinely falls back. Its standby is independently managed,
+ *   which is why that data profile is in the union at all.
  * `local-workstation` — declared, and refused to a server-side controller.
  * `cloud-only` — the honest cloud profile, so `local` is a choice rather than the only word.
- * `local-first-cloud-declared` — a cloud fallback that is permitted BECAUSE it is written here.
+ * `local-first-cloud-declared` — a cloud fallback permitted because it is written here.
  */
 const REGISTER: ReadonlyMap<string, TransportProfile> = new Map([
   ["local-only", {
@@ -129,14 +117,13 @@ const resolved = (
 });
 
 /**
- * WHICH ENDPOINT THIS PROFILE REACHES, given that its primary may be down and given who is
+ * Which endpoint this profile reaches, given that its primary may be down and given who is
  * asking.
  *
- * WHEN NOTHING RESOLVES, `kind` STILL REPORTS THE PROFILE'S DECLARED LOCALITY. A local-only
- * profile whose primary is down and which declares no fallback has no endpoint — but it is
- * still a local-only profile, and reporting anything else would make "did this run stay local"
- * unanswerable exactly when the answer matters. `usable: false` is what stops the caller; the
- * locality is what tells them what they were promised.
+ * When nothing resolves, `kind` still reports the profile's declared locality: a local-only
+ * profile whose primary is down and which declares no fallback has no endpoint and is still a
+ * local-only profile. `usable: false` is what stops the caller; the locality is what tells them
+ * what they were promised.
  */
 export function resolveEndpoint(request: EndpointRequest): ResolvedEndpoint {
   const profile = REGISTER.get(request.profile);

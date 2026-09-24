@@ -1,18 +1,15 @@
 #!/usr/bin/env node
 /**
- * zz-doctor — does THIS machine reach the platform, and is what is installed here whole?
+ * zz-doctor — does this machine reach the platform, and is what is installed here whole?
  *
- * NOT `npm run doctor`. That one asks whether the deployment matches the checkout — six
- * layers, over the host, from inside this repository. This one asks the only question its
- * reader can act on: can the laptop I am sitting at talk to the platform, with the token it
- * has, through the plugins it installed? The person running this does not have the
- * repository. That is the whole reason it exists, and the reason it must never grow a check
- * that needs one.
+ * Not `npm run doctor`, which asks whether the deployment matches the checkout, from inside this
+ * repository. This one asks what its reader can act on: can the laptop I am sitting at talk to the
+ * platform, with the token it has, through the plugins it installed? The person running it does not
+ * have the repository, so it must never grow a check that needs one.
  *
- * Everything is derived from the machine. The token comes off disk in the same order the MCP
- * header helper reads it; the gateway URL comes out of the installed plugin rather than being
- * written here, because a hardcoded base tells you the platform the script was written
- * against is healthy, which is never the question.
+ * Everything is derived from the machine. The token comes off disk in the same order the MCP header
+ * helper reads it; the gateway URL comes out of the installed plugin rather than being written here,
+ * because a hardcoded base tells you the platform the script was written against is healthy.
  *
  * Exit 0 = nothing to do. 1 = at least one FAIL.
  */
@@ -29,9 +26,8 @@ const say = (level, subject, detail) => {
         warns++;
     console.log(`${level.padEnd(4)}  ${subject.padEnd(22)}  ${detail}`);
 };
-// ── 1. the token ───────────────────────────────────────────────────────────
-// This order is the header helper's, exactly. A doctor that looked somewhere else would pass
-// while every tool call returned 401, which is the failure it is here to catch.
+// 1. The token. This order is the header helper's, exactly: a doctor that looked somewhere else
+// would pass while every tool call returned 401.
 const tokenFile = join(homedir(), ".zz", "token");
 let token = "", source = "";
 const readable = (p) => { try {
@@ -110,9 +106,9 @@ else {
         say("FAIL", "plugins", `the baseline zz-core@${MARKETPLACE} is not installed, and everything ` +
             `else needs it. Run: claude plugin install zz-core@${MARKETPLACE}`);
     }
-    // One version across the shelf. Every plugin is stamped `<platform version>+<digest>` by the
-    // same build, so two numbers here means one plugin did not update — which shows up later as
-    // a skill that disagrees with the tool it is calling, a long way from its cause.
+    // One version across the shelf. Every plugin is stamped `<platform version>+<digest>` by the same
+    // build, so two numbers here means one plugin did not update — which shows up later as a skill
+    // that disagrees with the tool it is calling, a long way from its cause.
     const versions = [...new Set(mine.map((p) => p.version))];
     if (versions.length > 1) {
         say("WARN", "plugin versions", `${versions.join(" and ")} — these should all be one ` +
@@ -144,13 +140,12 @@ else {
     say("WARN", "gateway", `no installed plugin declares one, so checking the published ` +
         `gateway ${base} instead`);
 }
-// A door is probed with `tools/list`, and only its STATUS CODE is read.
+// A door is probed with `tools/list`, and only its status code is read.
 //
-// Not `initialize`: that would make this a second MCP client — it would have to name a
-// protocol version, and that string is written once in `packages/mcp-client` so it cannot
-// drift. The doors are stateless and answer a cold `tools/list`, and the status code is the
-// entire question here: 200 is a door that works, 401 is the token, 404 is a plugin pointing
-// at a path this gateway does not serve.
+// Not `initialize`: that would make this a second MCP client, naming a protocol version that is
+// written once in `packages/mcp-client` so it cannot drift. The doors are stateless and answer a
+// cold `tools/list`; 200 is a door that works, 401 is the token, 404 is a plugin pointing at a path
+// this gateway does not serve.
 const CLIENT = "zz-doctor";
 const PROBE = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
 /** A caught value is never typed as an Error — narrow the shape actually being read rather
@@ -161,12 +156,10 @@ function errName(e) {
 }
 /** Who the token belongs to — and the one call that puts this run in the telemetry.
  *
- * `tools/list` is a protocol method, not a tool, so a doctor built only from probes is a
- * thing that leaves NO TRACE: the platform would have no way to know anybody ever ran it, and
- * "how often does this fail for real people" is the question it exists to answer. `session_whoami`
- * is a tool call, recorded at the door like every other, tagged `zz-doctor` by the header
- * above — and it is not a call invented for the telemetry's sake: it answers the question a
- * person with a broken setup actually has, which is whether the platform knows who they are. */
+ * `tools/list` is a protocol method, not a tool, so a doctor built only from probes would leave no
+ * trace and the platform would have no way to know anybody ran it. `session_whoami` is a tool call,
+ * recorded at the door like every other and tagged `zz-doctor` by the header above, and it answers
+ * the question a person with a broken setup actually has: does the platform know who they are. */
 async function whoami(base) {
     try {
         const res = await fetch(`${base}/core/mcp`, {
@@ -211,9 +204,9 @@ async function probe(subject, url) {
     if (res.status === 200)
         return say("PASS", subject, `${url} answers`);
     if (res.status === 401 || res.status === 403) {
-        // A refusal with NO credential is a different sentence from a refusal WITH one, and the
-        // first line of this report already said which case it is. Repeating "your token is
-        // expired" at somebody who has no token sends them to check a file that is not there.
+        // A refusal with no credential is a different sentence from a refusal with one, and the first
+        // line of this report already said which case it is: repeating "your token is expired" at
+        // somebody who has no token sends them to check a file that is not there.
         return say("FAIL", subject, token
             ? `${url} refused this token (${res.status}) — it is expired, mistyped, or issued by a ` +
                 "different deployment. Ask for a new one"
@@ -226,9 +219,9 @@ async function probe(subject, url) {
     }
     say("FAIL", subject, `${url} answered ${res.status}`);
 }
-// The core door always, plus every door the installed plugins actually declare — those are
-// what this person's tools connect to, and a door that 404s is a plugin that silently has no
-// tools rather than an error anybody sees.
+// The core door always, plus every door the installed plugins declare — those are what this
+// person's tools connect to, and a door that 404s is a plugin that silently has no tools rather
+// than an error anybody sees.
 await probe("core door", `${base}/core/mcp`);
 const seen = new Set([`${base}/core/mcp`]);
 for (const s of declared) {

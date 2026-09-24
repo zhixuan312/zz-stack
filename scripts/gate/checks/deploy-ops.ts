@@ -1,9 +1,7 @@
 /**
  * What runs on the host between releases: the backups, the scheduled jobs, the monitor.
  *
- * These run unattended, which means their failure mode is silence. The backup that deleted
- * its own three good archives every night did so for weeks behind a cron job that reported
- * success, and no check here existed to disagree.
+ * These run unattended, so their failure mode is silence.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -15,16 +13,14 @@ import { check } from "../run.ts";
 check("the monitor treats its own silence as a failure", () => {
   const nothingToRun = unbuilt();
   if (nothingToRun) return nothingToRun;
-  // NOT ERRORING IS NOT SUCCEEDING, and a monitor is the first place that bites. A collector
-  // nobody scheduled does not fail — it produces "nothing wrong today" every day, which is
-  // worse than being down, because being down gets noticed.
+  // Not erroring is not succeeding. A collector nobody scheduled does not fail — it produces
+  // "nothing wrong today" every day, which is worse than being down, because being down gets
+  // noticed.
   //
-  // So watch-results returns 2 when it can see no activity at all, and says why: a platform
-  // with users does not have two silent windows in a row, so the likely explanation is that
-  // it is pointed somewhere wrong. An empty window must never read as an all-clear.
+  // So watch-results returns 2 when it can see no activity at all, and says why: an empty window
+  // must never read as an all-clear.
   //
-  // Run, not read. This is a claim about what the program DOES, and the version of it that
-  // returned 0 on no data would have passed any inspection of its source.
+  // Run, not read. This is a claim about what the program does.
   const tool = join(root, "packages/tools/dist/ops/watch-results.js");
   if (!existsSync(tool)) return "watch-results is not built";
   const stub = join(root, "node_modules/.zz-empty-psql.sh");
@@ -41,19 +37,11 @@ check("the monitor treats its own silence as a failure", () => {
 
 check("every archived volume is verified against a range, not one snapshot", () => {
   // backup.sh reads each archive back and matches its entry count against the volume it came
-  // from — "a backup that was never read is a guess". Both counts used to be taken AFTER the
-  // tar, so any write landing in between failed the whole backup with "holds N entries and
-  // volume holds M", on an archive that is a correct snapshot.
+  // from. Both counts taken after the tar fail the whole backup on any write landing in between,
+  // on an archive that is a correct snapshot — and the platform is running while this runs.
   //
-  // The platform is running while this runs, and a team's store is a git repository this
-  // release: one document write now creates several objects and a ref update where it used to
-  // create one file. The window is the same and what passes through it is several times
-  // larger. A nightly job that cries wolf is one people learn to ignore, which is the opposite
-  // of what a backup check is for.
-  //
-  // Held the way this file already reasons about its own pruning — "a fifth backup added above
-  // is pruned by having been added" — so a third volume cannot be archived without being
-  // verified, and cannot be verified against a single count.
+  // Held the way backup.sh already reasons about its own pruning, so a third volume cannot be
+  // archived without being verified, and cannot be verified against a single count.
   const src = readFileSync(join(root, "deploy/backup.sh"), "utf8");
   const bad = [];
 
@@ -69,27 +57,19 @@ check("every archived volume is verified against a range, not one snapshot", () 
     }
   }
   if (!checked.length) bad.push("backup.sh no longer calls check_archive — nothing reads an archive back");
-  // Three arguments — the volume, the archive, and the count taken BEFORE the tar — and that
-  // third one has to come from a count, not a literal.
+  // Three arguments — the volume, the archive, and the count taken before the tar — and that
+  // third one has to come from a count, not a literal. Read as whole quoted arguments and then
+  // unwrapped: matching `"$name"` with a lowercase character class skips `"$ARTIFACT_VOLUME"`,
+  // which silently makes the third argument the second.
   //
-  // Read as whole quoted arguments and then unwrapped. Matching `"$name"` directly with a
-  // lowercase character class skipped `"$ARTIFACT_VOLUME"`, so the third argument was
-  // silently the second and this half of the check never ran.
-  // A VOLUME IS CREATED BY BEING MOUNTED, so asking whether it exists has to come first.
-  // `docker run -v name:/data` makes a named volume that is not there — empty, silently —
-  // and then the count, the archive and the read-back all agree on zero and check_archive
-  // says "archived as empty, which is correct on a fresh install". A backup reporting
-  // success every night having captured nothing is the worst outcome this file has, and it
-  // is the one it was closest to: the script once hard-coded a prefix and "silently backed
-  // up nothing on any host whose project differed". Verified against the daemon: a name
-  // that did not exist before the mount existed after it.
+  // A volume is created by being mounted, so asking whether it exists has to come first.
+  // `docker run -v name:/data` makes a named volume that is not there — empty, silently — and
+  // then the count, the archive and the read-back all agree on zero.
   //
-  // INDIRECTLY TOO, and the first draft of this missed exactly that: the EARLIEST mount of
-  // the artifacts volume is `count_volume "$ARTIFACT_VOLUME"`, whose body mounts `$1`. A
-  // rule that only saw `-v "$ARTIFACT_VOLUME"` measured against the tar forty lines below
-  // and passed a guard moved after the call that would already have created the volume.
-  // Found by moving it there. So a helper that mounts a POSITIONAL is a mount, and calling
-  // it is mounting.
+  // COUPLED: a helper that mounts a positional is a mount, and calling it is mounting. The
+  // earliest mount of the artifacts volume is `count_volume "$ARTIFACT_VOLUME"`, whose body
+  // mounts `$1`; a rule that only saw `-v "$ARTIFACT_VOLUME"` would pass a guard placed after the
+  // call that already created the volume.
   const viaPositional = [...src.matchAll(/^([a-z_]+)\(\) \{([\s\S]*?)^\}/gm)]
     .filter(([, , body]) => /-v "\$[1-9]":/.test(body))
     .map(([, name]) => name);
@@ -113,10 +93,9 @@ check("every archived volume is verified against a range, not one snapshot", () 
     }
   }
   if (!mounted.length) return "backup.sh mounts no volume — this check needs rewriting";
-  // COMMENTS STRIPPED, because the paragraph that JUSTIFIES the guard names the command it
-  // uses — so removing the command and keeping the prose passed this. Twice in one sitting
-  // now: a check that reads the explanation of the code it guards is measuring the wrong
-  // text, and the explanation is always there precisely when the code is not.
+  // Comments stripped, because the paragraph that justifies the guard names the command it uses —
+  // so removing the command and keeping the prose would pass. A check that reads the explanation
+  // of the code it guards is measuring the wrong text.
   const code = src.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
   if (!/docker volume inspect/.test(code)) {
     bad.push("nothing asks the daemon whether a volume exists, so a misnamed one is " +
@@ -141,53 +120,34 @@ check("every archived volume is verified against a range, not one snapshot", () 
 });
 
 check("a deployment's database is asked for its own role and name", () => {
-  // `docker compose exec -T postgres psql -U zz -d zz` addresses THIS deployment's database
-  // and then types two values the deployment configures. POSTGRES_USER and POSTGRES_DB are
-  // settable and .env.example documents them as such, so on any host that sets either, the
-  // command fails — and the places it appears are the expensive ones: release.ts's migration
-  // probe is step 5, and step 5 rolls a release back. A good version undone by a name the
-  // script guessed.
+  // `docker compose exec -T postgres psql -U zz -d zz` addresses this deployment's database and
+  // then types two values the deployment configures. POSTGRES_USER and POSTGRES_DB are settable
+  // and .env.example documents them as such, so on any host that sets either the command fails —
+  // and release.ts's migration probe is step 5, which rolls a release back.
   //
-  // The half-applied version of this fix is what makes it worth a check. The paragraph above
-  // that probe had already argued the container must be addressed as a SERVICE rather than by
-  // a literal name — citing deploy/backup.sh's four nights of silent loss — and left `-U zz
-  // -d zz` in the same command. One assumption named and removed, its twin untouched, two
-  // lines apart.
-  //
-  // `docker compose exec` is the distinguishing mark and it is the true one: it means a
-  // deployment whose configuration lives in its own .env. A `docker exec` into a container
-  // the caller just started with `-e POSTGRES_USER=…` — release.ts's throwaway postgres for
-  // sql-check — configured that value itself and is right to repeat it.
+  // `docker compose exec` is the distinguishing mark: it means a deployment whose configuration
+  // lives in its own .env. A `docker exec` into a container the caller just started with
+  // `-e POSTGRES_USER=…` configured that value itself and is right to repeat it.
   const bad = [];
-  // THE GATE'S OWN SOURCE IS EXCLUDED, and the paragraphs above are why: they quote the
-  // command this looks for, so the check read its own explanation as a finding and named
-  // the gate as a deployment script. sql-check carries a SELF constant for exactly this — "a check that
-  // reads its own text as evidence reports a defect nobody can fix".
-  //
-  // Comment lines dropped as well, because the fix for the code is always accompanied by a
-  // paragraph quoting the code it replaced. Three checks in this file have now been fooled by
-  // prose describing the thing they hunt.
+  // DELIBERATE: the gate's own source is excluded and comment lines are dropped. The paragraphs
+  // above quote the command this looks for, so the check would otherwise read its own explanation
+  // as a finding and name the gate as a deployment script. sql-check carries a SELF constant for
+  // the same reason.
   for (const rel of sourceFiles(["deploy", "testing", "scripts"], [".sh", ".ts"])) {
     if (gateOwnSource(rel)) continue;
-    // Kept, so a finding can name the line somebody has to open. Stripping comments and
-    // joining string seams moves every offset, and the first version reported the position in
-    // the rewritten text — a real file, a real defect, and a line number pointing at neither.
+    // Kept, so a finding can name the line somebody has to open: stripping comments and joining
+    // string seams moves every offset.
     const original = readFileSync(join(root, rel), "utf8");
-    // Comment lines BLANKED rather than dropped, so every offset in here still matches the
-    // file. This is what a finding's line number is measured against: `original` alone put
-    // the first version's line on a comment quoting `-U zz -d zz` — the right file, and a
-    // line naming the paragraph about the defect instead of the defect.
+    // Comment lines blanked rather than dropped, so every offset in here still matches the file.
+    // This is what a finding's line number is measured against.
     const masked = original.split("\n")
       .map((l) => (/^\s*(#|\/\/|\*)/.test(l) ? " ".repeat(l.length) : l)).join("\n");
     const src = original.split("\n")
       .filter((l) => !/^\s*(#|\/\/|\*)/.test(l)).join("\n")
-      // ADJACENT TEMPLATE LITERALS JOINED FIRST. release.ts builds its ssh commands as
-      // `…` + `…` across several lines, so `docker compose exec` and the `psql` it runs sit
-      // on different source lines — and the first version of this check, which required both
-      // on one line, could not see the migration probe at all. That probe is the site the
-      // check was written for: a mutation putting `-U zz -d zz` back into it passed.
-      //
-      // Removing the seam is what makes the source read the way the shell will.
+      // DELIBERATE: adjacent template literals joined first, because a shell command is not a
+      // line. release.ts builds its ssh commands as `…` + `…` across several lines, so
+      // `docker compose exec` and the `psql` it runs sit on different source lines. Removing the
+      // seam makes the source read the way the shell will.
       .replace(/`\s*\+\s*\n?\s*`/g, "");
     for (const m of src.matchAll(/docker compose exec[^\n]*?psql\s+([^\n]*)/g)) {
       const flags = m[1];
@@ -199,9 +159,8 @@ check("a deployment's database is asked for its own role and name", () => {
         // maintenance database every server has by name and is not this deployment's own —
         // backup.sh's restore drill connects to it to CREATE the throwaway one.
         if (value.startsWith("$") || value === "postgres" || /^zz_restore/.test(value)) continue;
-        // The line in the FILE, not in the rewritten text. Stripping comments and joining
-        // string seams moves every offset, so reporting m.index named a real file, a real
-        // defect, and a line pointing at neither.
+        // The line in the file, not in the rewritten text: stripping comments and joining string
+        // seams moves every offset.
         const needle = `${flag} ${v[1]}${value}`;
         const at = masked.indexOf(needle);
         const line = at < 0 ? 0 : masked.slice(0, at).split("\n").length;
@@ -217,24 +176,18 @@ check("a deployment's database is asked for its own role and name", () => {
 check("a backup run that fails leaves nothing that reads as a backup", () => {
   // `cmd > "$db_file"` creates the file before cmd runs, and the two container tars write
   // straight to their final names — so any failure under `set -e` leaves files stamped with
-  // today's date, in $BACKUP_DIR, sorting NEWEST. backup.sh's own header records four nights
-  // in August 2026 of exactly that: 20-byte dumps left behind when the container name was
-  // wrong. The failure was loud in a log nobody reads; the DIRECTORY still looked right, and
-  // the directory is what somebody reads while the platform is down.
+  // today's date, in $BACKUP_DIR, sorting newest. The failure is loud in a log nobody reads; the
+  // directory is what somebody reads while the platform is down.
   //
-  // ONE LIST, WALKED TWICE. The prune at the end of that file already reasons this way — "a
-  // fifth backup added above is pruned by having been added" — and the cleanup needs the same
-  // property or a fifth backup is pruned and never cleaned up. So this holds the two walks to
-  // the same array rather than to two retyped lists that agree today.
+  // COUPLED: one list, walked twice. The prune at the end of backup.sh and the cleanup have to
+  // hold to the same array, or a fifth backup is pruned and never cleaned up.
   const src = readFileSync(join(root, "deploy/backup.sh"), "utf8");
   const bad = [];
 
-  // COMMENT LINES BLANKED, OFFSETS KEPT. The first draft of this check reported the trap as
-  // armed too late, and it was right about the position and wrong about what was there: the
-  // paragraph justifying the trap quotes `cmd > "$db_file"`, and prose about a write is not a
-  // write. Its neighbour above carries the same finding — "the explanation is always there
-  // precisely when the code is not" — so every index below is measured against code alone.
-  // Blanked to spaces rather than deleted, because these indices are compared with each other.
+  // Comment lines blanked, offsets kept. The paragraph justifying the trap quotes
+  // `cmd > "$db_file"`, and prose about a write is not a write, so every index below is measured
+  // against code alone. Blanked to spaces rather than deleted, because these indices are compared
+  // with each other.
   const code = src.split("\n")
     .map((l) => (/^\s*#/.test(l) ? " ".repeat(l.length) : l)).join("\n");
 
@@ -257,7 +210,7 @@ check("a backup run that fails leaves nothing that reads as a backup", () => {
     if (!written.includes(m)) bad.push(`FILES names $${m}, which nothing in backup.sh writes`);
   }
 
-  // The trap has to be armed BEFORE the first write, because the first write is the one that
+  // The trap has to be armed before the first write, because the first write is the one that
   // creates a file the run may not finish.
   const fn = /^cleanup\(\) \{([\s\S]*?)^\}/m.exec(src);
   if (!fn) bad.push("backup.sh defines no cleanup() — nothing removes a partial set");
@@ -281,7 +234,7 @@ check("a backup run that fails leaves nothing that reads as a backup", () => {
              "exists for leaves that file behind");
   }
 
-  // And the set is only real once it has been validated: `ok` has to be set AFTER the last
+  // And the set is only real once it has been validated: `ok` has to be set after the last
   // check and before the prune. Set it earlier and the trap stops protecting anything.
   const okAt = code.search(/^ok=1$/m);
   const lastCheck = code.lastIndexOf("check_archive \"$");
@@ -300,23 +253,13 @@ check("a backup run that fails leaves nothing that reads as a backup", () => {
 });
 
 check("a script the bundle ships needs nothing the host does not have", () => {
-  // THIS CHECK USED TO HAVE A DIFFERENT PREMISE, and the premise is what changed.
+  // A script that ships must run on a machine that has only docker, a shell, and the bundle. A
+  // host receives the release bundle and nothing else: no repository, no node, no npm, no dist/.
+  // Reaching for `npm run` there fails outright.
   //
-  // It read deploy/sync.sh to learn that the rsync excluded `dist/`, then looked for a host
-  // script running compiled output that the sync had not rebuilt — run-smoke-uat.sh ran the
-  // engine the host had last compiled rather than the one just synced, and a stale engine
-  // still starts, still talks, and still writes a verdict about code that is not there.
-  //
-  // sync.sh is gone (2026-09-11) and so is every source tree it left. A host now receives the
-  // release bundle and nothing else: no repository, no node, no npm, no dist/ at all. So the
-  // old question — "was this recompiled?" — cannot arise, and the real one is stricter and
-  // simpler: a script that SHIPS must run on a machine that has only docker, a shell, and the
-  // bundle. Reaching for `npm run` there does not run stale code; it fails outright.
-  //
-  // WHICH SCRIPTS SHIP is derived, never listed. deploy/README is the install, so a script it
-  // tells an operator to run is part of it — and one that calls `ssh` runs FROM a checkout
-  // AGAINST a host, so it stays behind. Same derivation the bundle check uses, for the same
-  // reason: a list here would be a list kept in step by hand.
+  // Which scripts ship is derived, never listed. deploy/README is the install, so a script it
+  // tells an operator to run is part of it — and one that calls `ssh` runs from a checkout
+  // against a host, so it stays behind.
   const readme = readFileSync(join(root, "deploy/README.md"), "utf8");
   const named = [...new Set([...readme.matchAll(/(?:\.\/|deploy\/)([A-Za-z0-9_.-]+\.sh|zz-tool)\b/g)]
     .map((m) => m[1]))];
@@ -326,18 +269,16 @@ check("a script the bundle ships needs nothing the host does not have", () => {
   for (const name of named) {
     const f = join(root, "deploy", name);
     if (!existsSync(f)) continue;
-    // CONTINUATIONS JOINED FIRST, because a shell command is not a line. zz-tool ends with
+    // Continuations joined first, because a shell command is not a line. zz-tool ends with
     //   exec docker compose run --rm --no-deps -T "${pass[@]}" \\
     //     --entrypoint node zz-core "/repo/packages/tools/dist/....js"
-    // and judging the second physical line alone reads `node` with no `docker` beside it —
-    // which is how this check's first version called the one script that does it RIGHT the
-    // one script that does it wrong.
+    // and judging the second physical line alone reads `node` with no `docker` beside it.
     const code = readFileSync(f, "utf8").split("\n").filter((l) => !/^\s*#/.test(l)).join("\n")
       .replace(/\\\n\s*/g, " ");
     if (/(^|[^a-zA-Z_-])ssh /.test(code)) continue;   // runs against a host, from a checkout
     shipped++;
     // `docker compose run`/`exec` is how a shipped script reaches compiled code legitimately:
-    // it executes INSIDE the image, which is the one place on that machine where dist/ exists.
+    // it executes inside the image, which is the one place on that machine where dist/ exists.
     // zz-tool is exactly that and must keep passing.
     const outside = code.split("\n").filter((l) =>
       /\bnpm (run|ci|install)\b|\bnpx \b|\btsc\b|(^|[^-\w])node /.test(l)

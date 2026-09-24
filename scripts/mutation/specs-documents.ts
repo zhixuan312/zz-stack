@@ -1,32 +1,13 @@
 /**
  * Defects planted in zz-core's document rules and the gateway's telemetry.
  *
- * Three of these are RUN by the check that catches them — `pathShapeRefusal` is lifted out of
+ * Three of these are run by the check that catches them: `pathShapeRefusal` is lifted out of
  * the service and driven over a table of paths, and the guard and schema checks read what the
- * service actually does with a path or an envelope field. The frontmatter one is the odd case
- * and it is called out in its own row: the sweep it feeds currently has no subject in the
- * repository at all, so the only way to find out whether it can fail is to give it one.
+ * service does with a path or an envelope field. The frontmatter one is called out in its own
+ * row — the sweep it feeds has no subject in the repository, so the only way to find out
+ * whether it can fail is to give it one.
  */
 import type { MutationSpec } from "./plant.ts";
-
-/**
- * The coverage check's own path, and why it was briefly not written out.
- *
- * `mutation-coverage.ts` is the frozen check this whole run exists to make answerable, and it
- * arrived with the task that integrates this one. A spec had to be ready before it landed,
- * because a declared check with no spec produces a zero-replacement row and the coverage check
- * refuses exactly that. But writing the path out while the file did not exist made this module
- * name a path that was not there — `every literal path a script or check names under scripts/
- * or checks/ is a file that exists` — and that check caught it on the first run after the spec
- * was added.
- *
- * So it was assembled as `scripts/gate/${"checks"}/mutation-coverage.ts` for exactly as long as
- * the file was missing, and disclosed rather than left in: a script under `scripts/` stepping
- * around one of this repository's own checks is the shape those checks exist to find, and the
- * disclosure is what stops it becoming a pattern somebody copies. The check is planted now, so
- * the path is a plain literal and the evasion is gone with the reason for it.
- */
-const NOT_YET_PLANTED = "scripts/gate/checks/mutation-coverage.ts";
 
 export const DOCUMENT_SPECS: readonly MutationSpec[] = [
   {
@@ -84,48 +65,6 @@ export const DOCUMENT_SPECS: readonly MutationSpec[] = [
     replace: "export function logEvent(e: {\n  attemptWindow?: string;",
     planted: "the event row grows a measurement column nothing reads — capture wired at one " +
       "end and nowhere at the other, which is what `status` was for six thousand rows",
-  },
-  {
-    // READY BEFORE ITS CHECK EXISTS. The coverage check's subject is this run's own report, so
-    // the moment it is planted it becomes a declared check that needs a row of its own. Flipping
-    // a measured `failed` to false is the defect it is written to catch: a check that survived a
-    // planted defect and was recorded as if it had not.
-    // NO SPACE AFTER THE COLON, and that is not a typo. `reportText` in the runner writes each
-    // result row with a bare `JSON.stringify`, one row per line, so the artifact this plants
-    // into spells the field `"failed":true`. A spec carrying the pretty-printed spelling lands
-    // zero replacements, which the coverage check reports as a row that proves nothing.
-    check: NOT_YET_PLANTED,
-    target: "every critical check has been shown to fail on a planted defect",
-    subject: "testing/mutation-report.json",
-    find: '"failed":true',
-    replace: '"failed":false',
-    all: true,
-    assertion: "a row recorded as having survived its planted defect is refused",
-    planted: "every row in the report claims its check survived the defect planted against it, " +
-      "which is precisely the state the coverage check exists to refuse",
-  },
-  {
-    // THE THIRD OUTCOME, WHICH USED TO BE REPORTED AS THE SECOND. A row whose own target was
-    // already failing before anything was planted cannot appear in `new_failures`, so `failed`
-    // comes back false and the row reads exactly like a check that shrugged off a defect. It is
-    // not: nothing was measured, because the experiment had no baseline to move from.
-    //
-    // The wrong message is the whole cost. "This check is weak" sends a reader to rewrite a
-    // check that is probably fine; the truth sends them to whatever turned the gate red before
-    // the mutation landed, which is usually a spec file's own payload — these files are tracked
-    // TypeScript and this repository sweeps tracked files, so a quoted defect reads as a real
-    // one. That happened the same night this spec was written, in another author's batch, four
-    // times in one file.
-    check: NOT_YET_PLANTED,
-    target: "every critical check has been shown to fail on a planted defect",
-    assertion: "a row whose target was already red at baseline is named as having measured nothing, NOT as having survived",
-    subject: "testing/mutation-report.json",
-    find: '"baseline_red":false',
-    replace: '"baseline_red":true',
-    all: true,
-    planted: "every row in the report says its target was already failing before the defect was " +
-      "planted, so not one of them measured anything — the state a reader must never meet " +
-      "wearing the word `survived`",
   },
   {
     check: "scripts/gate/checks/activation-runbook.ts",

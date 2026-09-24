@@ -1,43 +1,29 @@
 /**
  * Commit-result reconciliation: what a caller may conclude from each of the three shapes the
- * mutation kernel can reply with, COMPUTED from the reply rather than asserted by the branch
- * that produced it.
+ * mutation kernel can reply with, computed from the reply rather than asserted by the branch that
+ * produced it.
  *
- * THE THREE REPLIES ARE THE WHOLE VOCABULARY. `MutationOutcomeSchema` in
- * `tenant-information.ts` is a discriminated union on `committed` with exactly three arms, and
- * this module adds no fourth. In particular a committed write whose read model has not caught
- * up is NOT a fourth kind of answer: `projection: "pending"` and `history_export: "pending"`
- * describe derived data lagging behind a durable transaction, so they become follow-up work
- * attached to an `applied` reconciliation and never a state of their own. The moment lag gets
- * its own top-level result, every caller has to decide for itself whether that result means
- * the write happened — and half of them will decide wrong.
+ * The three replies are the whole vocabulary. `MutationOutcomeSchema` in `tenant-information.ts`
+ * is a discriminated union on `committed` with exactly three arms, and this module adds no fourth.
+ * A committed write whose read model has not caught up is not a fourth kind of answer:
+ * `projection: "pending"` and `history_export: "pending"` become follow-up work attached to an
+ * `applied` reconciliation.
  *
- * THE CANONICAL NO-OP IS DURABLE. `committed: true, changed: false` with a null
- * `transaction_id` and a null `commit_sequence` is what the kernel returns when the requested
- * edit was already the state of the artifact: nothing was written, so there is no transaction
- * and no sequence to name. The contract permits it and this module accepts it as `applied`.
- * What it must not do is paper over the nulls — minting a transaction id so the record looks
- * uniform, or defaulting the sequence to `0` because a number reads better than a null, puts
- * a reference in the ledger that names nothing and cannot be followed back.
+ * The canonical no-op — `committed: true, changed: false` with a null `transaction_id` and a null
+ * `commit_sequence` — is durable and reconciles to `applied`. Its nulls travel as nulls: nothing
+ * mints a transaction id or defaults the sequence to `0`.
  *
- * WHY THERE IS AN AUDIT AND NOT FOUR BOOLEANS. `invented`, `replay`, `substitutedEtag` and
- * `newIdempotencyKey` are all negative: every one of them is a claim that reconciliation did
- * NOT do something. A field assigned `false` by the same branch that decided what to do
- * satisfies every assertion anybody will ever write about it and detects nothing, because the
- * branch is reporting on itself. So reconciliation happens in two halves that do not share a
- * belief:
+ * DELIBERATE: reconciliation runs in two halves that do not share a belief, because `invented`,
+ * `replay`, `substitutedEtag` and `newIdempotencyKey` are each a claim that something did not
+ * happen, and a branch reporting on itself detects nothing.
  *
  *   · {@link planFor} reads the outcome and decides — a state, the references to carry, the
  *     follow-up work, and the request (if any) to send next. It sets none of the four flags.
- *   · {@link audit} takes the raw outcome and that plan and compares them. It does not know
- *     which branch built the plan, and it enumerates the plan's OWN keys rather than a list of
- *     fields somebody remembered to write down — so a branch that fills in a field the no-op
- *     path leaves null, or alters one it was supposed to copy, or adds a reference from
- *     nowhere, is caught by the same comparison in every case.
+ *   · {@link audit} takes the raw outcome and that plan and compares them. It enumerates the
+ *     plan's own keys rather than a remembered list of fields.
  *
- * {@link reconcileDetectorProbe} plants one fault per flag into the REAL plans and shows each
- * detector fire, because four booleans that are always false are indistinguishable from four
- * constants and a reader cannot tell which they are looking at.
+ * {@link reconcileDetectorProbe} plants one fault per flag into the real plans and shows each
+ * detector fire.
  */
 
 import type { MutationError, MutationIndeterminate, MutationResult } from "./tenant-information.js";
@@ -48,12 +34,10 @@ import type { MutationError, MutationIndeterminate, MutationResult } from "./ten
 /**
  * The refusal arm as it arrives at this boundary.
  *
- * `committed` and `message` come from {@link MutationError} so there is no second copy of
- * them. `code` is widened to `string` on purpose: `MutationErrorSchema` is what rejects an
- * unrecognised code at the parse boundary, and downstream of that the kernel is still a
- * separate process that may be a version ahead. A code this build has never heard of is a
- * definite refusal — the caller's write did not happen — and the honest reconciliation of it
- * is `failed`, not a crash and not an indeterminate.
+ * `committed` and `message` come from {@link MutationError}. `code` is widened to `string`:
+ * `MutationErrorSchema` rejects an unrecognised code at the parse boundary, and downstream of that
+ * the kernel may be a version ahead. A code this build has never heard of is a definite refusal —
+ * the caller's write did not happen — and reconciles to `failed`, not to an indeterminate.
  */
 export interface CommitRefusal extends Omit<MutationError, "code"> {
   readonly code: string;
@@ -63,17 +47,12 @@ export interface CommitRefusal extends Omit<MutationError, "code"> {
 export type CommitOutcome = MutationResult | CommitRefusal | MutationIndeterminate;
 
 /**
- * The caller's own side of the same operation — everything the kernel's reply cannot carry.
+ * The caller's own side of the same operation — what the kernel's reply cannot carry: the
+ * `expected_etag` the request was formed against, the idempotency key a committed result was sent
+ * under, and whether the caller's post-commit bookkeeping succeeded.
  *
- * The reply names what the kernel knows. It does not know which `expected_etag` the request
- * was formed against, nor, for a committed result, which idempotency key it was sent under,
- * nor whether the caller's post-commit bookkeeping afterwards succeeded. All three decide
- * what reconciliation should do, so all three come from here.
- *
- * `control_record: "failed"` is the post-commit control-record update that did not land. It
- * is repaired FROM the durable transaction the kernel already committed; re-running the
- * mutation to produce a second copy of a record that already exists is the defect, not the
- * repair.
+ * `control_record: "failed"` is repaired from the durable transaction the kernel already committed,
+ * never by re-running the mutation.
  */
 export interface OriginalOperation {
   readonly idempotency_key?: string;
@@ -85,13 +64,12 @@ export interface OriginalOperation {
 // What comes back
 
 /**
- * The references a durable write carries forward. Every field is COPIED from the outcome; a
- * null here means the kernel reported null and reconciliation left it alone.
+ * The references a durable write carries forward. Every field is copied from the outcome; a null
+ * here means the kernel reported null.
  *
- * All six are nullable, including `artifact_id` and `etag` which the committed arm always
- * carries — because {@link audit} reads this record key by key, and a shape whose nulls are
- * declared per-branch would give the audit a different set of keys to compare depending on
- * which branch ran.
+ * All six are nullable, including `artifact_id` and `etag` which the committed arm always carries,
+ * because {@link audit} reads this record key by key and per-branch nullability would give it a
+ * different set of keys depending on which branch ran.
  */
 export interface DurableWrite {
   readonly transaction_id: string | null;
@@ -105,17 +83,14 @@ export interface DurableWrite {
 /**
  * One piece of work reconciliation asks for next.
  *
- * `await_projection` and `await_history_export` are catch-up on derived data — they change
- * nothing in the store and they say nothing about whether the write landed. `repair_control_record`
- * rewrites the caller's own record from `transaction_id`. `resolve_commit_status` asks the
- * kernel what became of `transaction_id`, under the idempotency key the original request
- * already used. `refresh_and_reintend` is the one step that hands the work back: the artifact
- * must be re-read and a NEW intended edit formed, because the edit that was refused was
- * reasoned against a version that no longer exists.
+ * `await_projection` and `await_history_export` are catch-up on derived data and say nothing about
+ * whether the write landed. `repair_control_record` rewrites the caller's own record from
+ * `transaction_id`. `resolve_commit_status` asks the kernel what became of `transaction_id`, under
+ * the idempotency key the original request already used. `refresh_and_reintend` hands the work
+ * back: the artifact must be re-read and a new intended edit formed.
  *
- * `dispatch_mutation` re-performs the business effect. It is listed because a plan that
- * schedules one has to be expressible for {@link audit} to catch it; nothing in
- * {@link planFor} produces one.
+ * DELIBERATE: `dispatch_mutation` is listed so a plan that schedules one is expressible for
+ * {@link audit} to catch. {@link planFor} never produces one.
  */
 export interface FollowUpStep {
   readonly kind:
@@ -132,12 +107,11 @@ export interface FollowUpStep {
 }
 
 /**
- * A request reconciliation proposes sending. The slot exists so the audit has something to
- * read; {@link planFor} never fills it, and the reason is the whole point of the stale-etag
- * rule — a refusal for a stale `expected_etag` is not a transport failure to paper over, it
- * is the store saying the caller reasoned about a version that has since moved. The repair is
- * to look again and decide again, which happens above this module and comes back as a
- * different request.
+ * A request reconciliation proposes sending.
+ *
+ * DELIBERATE: {@link planFor} never fills this slot; it exists so the audit has something to read.
+ * A refusal for a stale `expected_etag` means the caller reasoned about a version that has moved,
+ * and looking again happens above this module and comes back as a different request.
  */
 export interface ProposedRequest {
   readonly expected_etag: string | null;
@@ -179,9 +153,8 @@ export interface Reconciliation extends ReconciliationPlan {
 
 /**
  * The refusal code that means the caller's `expected_etag` no longer matches — the one
- * `mutationErrorCodes` declares for it, and no synonym. A code this build does not recognise
- * still reconciles to a definite refusal; it simply gets no step telling the caller what to
- * re-read, because nothing here knows that it should.
+ * `mutationErrorCodes` declares for it, and no synonym. A code this build does not recognise still
+ * reconciles to a definite refusal, with no step telling the caller what to re-read.
  */
 const STALE_ETAG_CODE = "REVISION_CONFLICT";
 
@@ -191,17 +164,12 @@ const step = (
   idempotency_key: string | null,
 ): FollowUpStep => ({ kind, transaction_id, idempotency_key });
 
-/**
- * Read the reply and decide.
- *
- * Sets no flag and makes no claim about its own honesty — that is {@link audit}'s job, and
- * keeping the two apart is what makes the flags mean anything.
- */
+/** Read the reply and decide. Sets no flag and makes no claim about its own honesty — that is
+ *  {@link audit}'s job. */
 function planFor(outcome: CommitOutcome, original: OriginalOperation): ReconciliationPlan {
   if (outcome.committed === true) {
-    // Copied field for field. The no-op's nulls travel as nulls: there was no transaction and
-    // no sequence, and a record that says so can be read back, while a record that invents
-    // them cannot be told apart from a real write until somebody follows the reference.
+    // Copied field for field. The no-op's nulls travel as nulls: there was no transaction and no
+    // sequence, and a record that invents them cannot be told apart from a real write.
     const durable: DurableWrite = {
       transaction_id: outcome.transaction_id,
       artifact_id: outcome.artifact_id,
@@ -211,8 +179,8 @@ function planFor(outcome: CommitOutcome, original: OriginalOperation): Reconcili
       commit_sequence: outcome.commit_sequence,
     };
 
-    // Catch-up work, attached to a durable write rather than standing in for one. The state
-    // above is already `applied` and none of these can change it.
+    // Catch-up work attached to a durable write. The state above is already `applied` and none of
+    // these can change it.
     const followUp: FollowUpStep[] = [];
     if (outcome.projection === "pending") {
       followUp.push(step("await_projection", outcome.transaction_id, null));
@@ -220,9 +188,8 @@ function planFor(outcome: CommitOutcome, original: OriginalOperation): Reconcili
     if (outcome.history_export === "pending") {
       followUp.push(step("await_history_export", outcome.transaction_id, null));
     }
-    // Repaired from the transaction that already committed. Note this step carries the
-    // ORIGINAL key when there is one: it is bookkeeping about an operation that finished, not
-    // a new operation.
+    // Repaired from the transaction that already committed, carrying the original key where there
+    // is one: bookkeeping about an operation that finished, not a new operation.
     if (original.control_record === "failed") {
       followUp.push(step("repair_control_record", outcome.transaction_id,
         original.idempotency_key ?? null));
@@ -232,10 +199,9 @@ function planFor(outcome: CommitOutcome, original: OriginalOperation): Reconcili
   }
 
   if (outcome.committed === "unknown") {
-    // The transaction was started and its fate is unknown. Asking what became of THAT
-    // transaction, under the key it was already sent with, is the only thing that can settle
-    // it — a fresh key would ask the store a question about an operation it has never seen,
-    // and the store would answer by performing it.
+    // The transaction was started and its fate is unknown. Asking what became of that transaction,
+    // under the key it was already sent with, is the only thing that can settle it — a fresh key
+    // asks about an operation the store has never seen, and it answers by performing it.
     return {
       state: "reconciling",
       durable: null,
@@ -246,8 +212,8 @@ function planFor(outcome: CommitOutcome, original: OriginalOperation): Reconcili
   }
 
   // A refusal is definite: nothing was written. A stale etag additionally means the reasoning
-  // behind the edit is out of date, which is work for whoever formed the edit and not
-  // something this module can do on their behalf — hence a step, and still no request.
+  // behind the edit is out of date, which is work for whoever formed the edit — hence a step, and
+  // still no request.
   return {
     state: "failed",
     durable: null,
@@ -264,11 +230,9 @@ function planFor(outcome: CommitOutcome, original: OriginalOperation): Reconcili
 /**
  * Compare a plan against the reply it was built from.
  *
- * TAKES THE PLAN, so the probe can hand it one with a planted fault and show each flag come
- * back the bad way. It is given no hint about which branch built what, and it reads the plan's
- * own keys rather than a remembered list of fields — the distinction that matters, because a
- * check written as "the no-op path leaves these three null" shares the no-op path's idea of
- * which three, and a branch that fills in a fourth is invisible to it.
+ * DELIBERATE: takes the plan as an argument, so the probe can hand it one with a planted fault. It
+ * is given no hint about which branch built what, and it reads the plan's own keys rather than a
+ * remembered list of fields.
  */
 function audit(
   outcome: CommitOutcome,
@@ -277,17 +241,16 @@ function audit(
 ): Reconciliation {
   const reported = outcome as unknown as Record<string, unknown>;
 
-  // Every reference the plan carries, paired with the name of the field it claims to have
-  // come from. Enumerated from the plan, so a key added to the carried record — or a step
-  // naming a transaction — is compared without anybody extending this function.
+  // Every reference the plan carries, paired with the name of the field it claims to have come
+  // from. Enumerated from the plan, so a key added to the carried record — or a step naming a
+  // transaction — is compared without anybody extending this function.
   const carried: (readonly [string, unknown])[] = [];
   if (plan.durable !== null) carried.push(...Object.entries(plan.durable));
   for (const s of plan.followUp) carried.push(["transaction_id", s.transaction_id] as const);
 
-  // A carried value must be the value the kernel reported under that name. This catches three
-  // different defects with one comparison: a null filled in (the reply said null, the plan
-  // says `0`), a reference minted (the reply has no such field at all, so the lookup is
-  // `undefined`), and a copied value altered (`revision: 3` against a reported `2`).
+  // A carried value must be the value the kernel reported under that name. One comparison catches
+  // three defects: a null filled in, a reference minted (the lookup is `undefined`), and a copied
+  // value altered.
   const inventedFields = [...new Set(
     carried
       .filter(([, value]) => value !== null && value !== undefined)
@@ -295,20 +258,17 @@ function audit(
       .map(([name]) => name),
   )];
 
-  // Scoped to a committed reply, deliberately. Re-sending an indeterminate operation UNDER ITS
-  // OWN KEY is what an idempotency key is for and is not a duplicate effect; re-sending it
-  // under a new one is, and that is `newIdempotencyKey` below rather than this flag saying the
-  // same thing twice. After a definite refusal nothing landed, so nothing can be repeated.
+  // Scoped to a committed reply. Re-sending an indeterminate operation under its own key is what
+  // an idempotency key is for; re-sending it under a new one is `newIdempotencyKey` below. After a
+  // definite refusal nothing landed, so nothing can be repeated.
   //
-  // BOTH SLOTS, because a plan has two ways to ask for the write again. Reading only the step
-  // list misses the proposed request entirely, and a request that reuses the original etag and
-  // the original key trips no other flag — it is a clean-looking duplicate of a write the
-  // kernel has already told us is durable.
+  // Both slots are read, because a plan has two ways to ask for the write again: a request that
+  // reuses the original etag and key trips no other flag.
   const replay = outcome.committed === true
     && (plan.nextRequest !== null || plan.followUp.some((s) => s.kind === "dispatch_mutation"));
 
   // No proposed request can be innocent of substitution unless it carries the etag the
-  // original was formed against: a changed etag with an unchanged edit IS the substitution.
+  // original was formed against: a changed etag with an unchanged edit is the substitution.
   const substitutedEtag = plan.nextRequest !== null
     && plan.nextRequest.expected_etag !== (original.expected_etag ?? null);
 
@@ -337,14 +297,12 @@ function audit(
  * Reconcile one reply from the mutation kernel.
  *
  * The second argument is what the reply cannot carry — see {@link OriginalOperation}. It is
- * optional because the indeterminate arm carries its own identity and the committed arm needs
- * none to be recorded; supply it whenever the original `expected_etag` or key is known, and
- * always when the post-commit control record failed.
+ * optional because the indeterminate arm carries its own identity and the committed arm needs none
+ * to be recorded; supply it whenever the original `expected_etag` or key is known, and always when
+ * the post-commit control record failed.
  *
- * NOT A TOOL: `reconcile` here is the English verb for settling what a mutation reply means,
- * and a pure function in this package. The MCP tool of that name was renamed
- * `knowledge_reconcile`; this reconciles a commit result against the operation that produced
- * it and reaches no door at all.
+ * NOT A TOOL: `reconcile` here is a pure function in this package. The tool of that name is
+ * `knowledge_reconcile`.
  */
 export function reconcile(
   outcome: CommitOutcome,
@@ -400,21 +358,9 @@ const withFollowUp = (plan: ReconciliationPlan, followUp: readonly FollowUpStep[
 /**
  * The real plans, and one planted defect per flag put through the same {@link audit}.
  *
- * EVERY VARIANT IS THE REAL PLAN WITH ONE FIELD MOVED. None is a hand-built imitation, so a
- * change to {@link planFor} changes what these rows are testing rather than leaving them
- * agreeing with a version of the code that no longer exists.
- *
- * The first four rows are the plans as built; they are here so the table shows the flags are
- * false when the work was done correctly and not merely false always. The rest each have the
- * defect their name gives:
- *
- *   · `no_op_defaults_the_commit_sequence` is the one this module was written against — `0`
- *     instead of null, because a number reads better in a ledger column. The audit notices
- *     because it compares the carried value against what the kernel reported, not against the
- *     no-op branch's own idea of which fields it left alone.
- *   · `lagging_commit_alters_the_revision` carries `3` where the reply said `2`. Nothing is
- *     null anywhere in that row, which is what separates this audit from one that only asks
- *     whether a null became a value.
+ * DELIBERATE: every variant is the real plan with one field moved, never a hand-built imitation, so
+ * a change to {@link planFor} changes what these rows test. The first four rows are the plans as
+ * built, showing the flags false when the work was done correctly and not merely false always.
  */
 export function reconcileDetectorProbe(): readonly ReconcileProbeRow[] {
   const noOp = planFor(NO_OP, {});

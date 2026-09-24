@@ -39,10 +39,9 @@ lost an acknowledged write, no latency figure repairs that.
 read off the host. A run on a smaller box is a run of a different workload; report it as such
 rather than comparing it to these targets.
 
-**Prerequisite:** `deploy/postgres/versions.lock.json` still carries nine `unverified_fields`.
-Resolve every one of them — the real base image digest, the real `pg_textsearch` commit and
-source hash, the built image digest — before any figure produced here means anything. A
-benchmark against an image nobody can identify binds to nothing.
+**Prerequisite:** every pin in `deploy/postgres/versions.lock.json` is verified — its
+`unverified_fields` is empty — before any figure produced here means anything. A benchmark
+against an image nobody can identify binds to nothing.
 
 ---
 

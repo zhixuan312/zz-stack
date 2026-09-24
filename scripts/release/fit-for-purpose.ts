@@ -1,28 +1,23 @@
 /**
  * Step 1a — the one step in this release nothing computes for you.
  *
- * WHAT IT ASKS. Does each plugin's tool surface deliver the purpose its manifest states?
- * `purpose` is the sentence that decides whether a capability belongs in THIS plugin or the
- * next one (ARCHITECTURE.md §3b), and the gate already refuses a plugin that declares none.
- * What the gate cannot do is read the purpose, read the tools, and say the second delivers the
- * first — that is a judgement about meaning, and a check claiming to compute it would be
- * asserting a verdict it did not reach. So this prints both sides and stops.
+ * Does each plugin's tool surface deliver the purpose its manifest states? `purpose` is the
+ * sentence that decides whether a capability belongs in this plugin or the next (ARCHITECTURE.md
+ * §3b), and the gate already refuses a plugin that declares none. Reading the purpose, reading the
+ * tools and saying the second delivers the first is a judgement about meaning, so this prints both
+ * sides and stops.
  *
- * WHY IT STOPS RATHER THAN WARNS. A review step that prints and carries on is a review step
- * nobody does twice. The attestation is a flag, not a prompt, because this script runs from a
- * terminal and from CI and a `readline` would behave differently in the two. The flag says a
- * person looked; it says nothing about what they concluded, and nothing here records a verdict.
+ * The attestation is a flag, not a prompt, because this script runs from a terminal and from CI
+ * and a `readline` would behave differently in the two. The flag says a person looked; it says
+ * nothing about what they concluded, and nothing here records a verdict.
  *
- * WHY IT IS BEFORE THE BUILD. Same rule as the credential check below it: after production is
- * live is the wrong place to find out. This reads the checkout only — no host, no token, no
- * probe — so it is free to run and cannot produce an `unknown`.
+ * It runs before the build, and reads the checkout only — no host, no token, no probe — so it is
+ * free to run and cannot produce an `unknown`.
  *
- * WHY THE DOOR MAP IS WRITTEN OUT. There is nothing on a manifest that says which SOURCE
- * registers the tools behind a door — the mount happens in the gateway, long after the
- * registrations — so the honest options are a table here or a guess. A door this table does not
- * know REFUSES the release rather than printing an empty tool list: an empty list beside a
- * purpose reads as "this plugin ships no tools", which is the one answer a reviewer must never
- * be handed by accident.
+ * DELIBERATE: the door map is written out. Nothing on a manifest says which source registers the
+ * tools behind a door — the mount happens in the gateway, long after the registrations — so the
+ * honest options are a table here or a guess. A door this table does not know refuses the release
+ * rather than printing an empty tool list, which would read as "this plugin ships no tools".
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -104,11 +99,10 @@ export function fitForPurpose(attested: boolean): void {
             "does not know what registers it. Add it to DOORS there — a reviewer handed an " +
             "empty tool list would read it as a plugin that ships none.");
       }
-      // EVERY NAME THE DOOR CAN REGISTER, not the list one caller sees. `/manage/mcp` is built
-      // per request and its tool list IS the caller's role, so a role-shaped list would ask the
-      // reviewer to pick a role before they had seen the surface. The superset is the thing
-      // being judged for fit: a tool that does not belong on the door does not belong on it at
-      // any role.
+      // Every name the door can register, not the list one caller sees. `/manage/mcp` is built per
+      // request and its tool list is the caller's role, so a role-shaped list would ask the
+      // reviewer to pick a role before they had seen the surface. A tool that does not belong on
+      // the door does not belong on it at any role.
       log(`    ${path} — ${tools.length} tool(s) across every role: ${tools.join(", ")}`);
     }
     for (const s of m.stages ?? []) {

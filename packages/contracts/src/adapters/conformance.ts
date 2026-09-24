@@ -1,34 +1,27 @@
 /**
- * EVERY RUNTIME ADAPTER THIS RELEASE SHIPS, and the one protocol all of them are driven
+ * Every runtime adapter this release ships, and the one protocol all of them are driven
  * through.
  *
- * WHAT MAKES A PORTABILITY CLAIM EVIDENCE. Two adapters and a shared type are not evidence —
- * the type compiles whatever the second adapter does, and a second adapter written by copying
- * the first will pass anything the first passes. What makes it evidence is a single protocol
- * that drives both through the whole sequence — declare, bind, submit, watch, stop, continue,
- * account — and asserts the port's rules about the answers rather than the answers themselves.
- * Where the two runtimes genuinely differ, the protocol asserts each adapter against ITS OWN
- * declaration: an adapter that says it can confirm a stop has to confirm one, and an adapter
- * that says it cannot must never produce the confirmed answer. Neither assertion can be
- * satisfied by imitating the other adapter, which is the property that was wanted.
+ * One protocol drives both adapters through the whole sequence — declare, bind, submit, watch,
+ * stop, continue, account — asserting the port's rules about the answers rather than the
+ * answers themselves. Where the two runtimes differ, it asserts each adapter against its own
+ * declaration: one that says it can confirm a stop has to confirm one, and one that says it
+ * cannot must never produce the confirmed answer. Neither assertion can be satisfied by
+ * imitating the other adapter.
  *
- * THE NAME SCAN, AND WHY IT IS REPORTED RATHER THAN JUDGED. Shared material must not carry the
- * first runtime's vocabulary — its tool names, the shape of its record on disk — or the port is
- * that runtime with extra steps. Two surfaces are scanned for those names:
+ * The name scan covers two surfaces, and only one fails a run:
  *
- *   · THE SHARED VOCABULARY — every constant the port publishes. A hit here fails the run for
- *     every adapter, because it is the platform's own material that leaked.
- *   · THE ADAPTER'S OWN SURFACE — every string it produced during this run, every key of every
- *     object it produced, and the source text of its six operations. A hit here is REPORTED in
- *     {@link ConformanceReport.usedClaudeToolNames} and does not fail the run, because the
- *     first runtime's adapter is supposed to speak its runtime's language. That is precisely
- *     what gives an empty result for a second adapter its meaning: run this against the first
- *     adapter and the list is not empty. An always-empty list would be evidence of nothing.
+ *   · the shared vocabulary — every constant the port publishes. A hit fails the run for every
+ *     adapter, because it is the platform's own material that leaked.
+ *   · the adapter's own surface — every string it produced during this run, every key of every
+ *     object it produced, and the source text of its six operations. A hit is reported in
+ *     {@link ConformanceReport.usedClaudeToolNames} and does not fail the run: the first
+ *     runtime's adapter is supposed to speak its runtime's language, and running this against
+ *     it yields a non-empty list, which is what gives an empty one meaning.
  *
- * WHAT THE SCAN CANNOT SEE, said rather than left to be discovered: the source half reads the
- * six operations' own bodies, not the module-private helpers they call. A name moved one call
- * deeper is invisible to it. The produced-value half has no such limit and is the half that
- * actually fires here.
+ * The source half reads the six operations' own bodies, not the module-private helpers they
+ * call, so a name moved one call deeper is invisible to it. The produced-value half has no
+ * such limit.
  */
 import { batchQueueAdapter } from "./batch-queue.js";
 import { claudeCodeAdapter } from "./claude-code.js";
@@ -134,7 +127,7 @@ export function runConformance(adapter: RuntimeAdapter): ConformanceReport {
     return finish(`the shared port vocabulary carries first-runtime names: ${leaked.join(", ")}`);
   }
 
-  // ── what it says it is ────────────────────────────────────────────────────────────────
+  // What it says it is
   for (const op of RUNTIME_OPERATIONS) {
     if (typeof adapter[op] !== "function") return finish(`${op} is not implemented`);
   }
@@ -148,11 +141,10 @@ export function runConformance(adapter: RuntimeAdapter): ConformanceReport {
   if (caps.protocol !== PORT_PROTOCOL) {
     return finish(`this adapter implements ${caps.protocol}, and this port is ${PORT_PROTOCOL}`);
   }
-  // THE IDENTITY IS RECOMPUTED, NOT READ. An identity an adapter states is an identity that
-  // survives an edit to the thing it identifies — which is the whole failure a version number
-  // was meant to prevent and the one it reliably causes. Rebuilt field by field rather than by
-  // stripping two keys, so that a field added to the declaration later fails to compile here
-  // instead of quietly falling out of the identity.
+  // The identity is recomputed, not read: an identity an adapter states is one that survives an
+  // edit to the thing it identifies. Rebuilt field by field rather than by stripping two keys,
+  // so a field added to the declaration later fails to compile here instead of quietly falling
+  // out of the identity.
   const declared: CapabilityDeclaration = {
     adapter: caps.adapter,
     event_format: caps.event_format,
@@ -182,7 +174,7 @@ export function runConformance(adapter: RuntimeAdapter): ConformanceReport {
     return finish(`the declared cancellation capabilities and the strongest state (${strongest}) disagree`);
   }
 
-  // ── admission, which is what an unsupported capability is FOR ─────────────────────────
+  // Admission, which is what an unsupported capability is for
   const everything = track("admit_everything",
     admitToRuntime(caps, { task: "conformance", requires: RUNTIME_CAPABILITIES }));
   for (const capability of RUNTIME_CAPABILITIES) {
@@ -200,7 +192,7 @@ export function runConformance(adapter: RuntimeAdapter): ConformanceReport {
     return finish("admission refused work using only capabilities this adapter declares");
   }
 
-  // ── binding, and the identity that makes two runs comparable ──────────────────────────
+  // Binding, and the identity that makes two runs comparable
   const binding = track("load_method", adapter.load_method({ method: "m1", revision: "r1" }));
   if (binding.method !== "m1" || binding.revision !== "r1") {
     return finish("the binding does not name the method and revision that were asked for");
@@ -222,7 +214,7 @@ export function runConformance(adapter: RuntimeAdapter): ConformanceReport {
     return finish("binding the same method twice bound different assets");
   }
 
-  // ── submission returns an identifier, and only an identifier ──────────────────────────
+  // Submission returns an identifier, and only an identifier
   const first = track("dispatch", adapter.dispatch({ claim: "claim-1", contract: { of: "work" } }));
   if (!first.work_id) return finish("dispatch returned no work id");
   if ("completed" in first || "receipt" in first) {
@@ -231,7 +223,7 @@ export function runConformance(adapter: RuntimeAdapter): ConformanceReport {
   const second = adapter.dispatch({ claim: "claim-2", contract: {} });
   if (second.work_id === first.work_id) return finish("two dispatches share a work id");
 
-  // ── watching, where the last thing seen must stay the last thing seen ─────────────────
+  // Watching, where the last thing seen must stay the last thing seen
   let latest: Observation | null = null;
   let sawActivityWithoutReceipt = false;
   let sawRunning = false;
@@ -287,7 +279,7 @@ export function runConformance(adapter: RuntimeAdapter): ConformanceReport {
     return finish("a completion receipt is declared and was never produced");
   }
 
-  // ── stopping: a request is a request ──────────────────────────────────────────────────
+  // Stopping: a request is a request
   adapter.observe({ work_id: second.work_id });
   const outcomes: readonly CancelOutcome[] = [
     track("cancel_in_flight", adapter.cancel({ work_id: second.work_id, because: "no longer needed" })),
@@ -319,7 +311,7 @@ export function runConformance(adapter: RuntimeAdapter): ConformanceReport {
     return finish("requesting a stop is declared and never demonstrated, or the reverse");
   }
 
-  // ── continuing ────────────────────────────────────────────────────────────────────────
+  // Continuing
   const resumed = track("resume", adapter.resume({ work_id: first.work_id }));
   if (supported.has("resume_after_stop") !== (resumed.state === "resumed")) {
     return finish("continuing work is declared and never demonstrated, or the reverse");
@@ -332,7 +324,7 @@ export function runConformance(adapter: RuntimeAdapter): ConformanceReport {
     return finish("continuing is unsupported and does not say why");
   }
 
-  // ── accounting, counted once ──────────────────────────────────────────────────────────
+  // Accounting, counted once
   const usage = latest.usage;
   if (supported.has("usage_accounting") && usage === null) {
     return finish("consumption is declared and was never reported");
@@ -351,9 +343,9 @@ export function runConformance(adapter: RuntimeAdapter): ConformanceReport {
     if ((usage.completeness === "floor_only") !== (usage.excluded_as_unresolvable.length > 0)) {
       return finish("the accounting's completeness does not match what it could not resolve");
     }
-    // AN ADAPTER THAT SEES BOTH A PARENT'S ROLLUP AND ITS CHILDREN'S OWN RECORDS HAS TO HAVE
-    // EXCLUDED SOMETHING. This is the double-counting rule with teeth: declaring the capability
-    // and then counting every record is exactly the defect, and it is invisible in the total.
+    // An adapter that sees both a parent's rollup and its children's own records has to have
+    // excluded something. Declaring the capability and then counting every record is the
+    // double-counting defect, and it is invisible in the total.
     if (supported.has("subagent_usage_records") && !usage.excluded_as_rolled_up.length) {
       return finish("delegated records are declared and nothing was excluded as already counted");
     }

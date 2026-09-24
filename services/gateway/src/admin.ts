@@ -1,20 +1,14 @@
 /**
- * Agentic platform management: the administrative half of /manage/mcp.
+ * Agentic platform management: the administrative half of /manage/mcp. There is no separate
+ * admin door.
  *
- * There is no separate admin door. There used to be — /admin/mcp — and it authorised
- * nothing: any member could open it, see every tool on it, and be refused by each one in
- * turn. A door that admits everyone is not a boundary, it is a second URL. So the tools
- * moved onto the door every person already has, and what changed is only which of them are
- * REGISTERED for a given caller: `registerAdminTools` below reads the caller's role once
- * and offers a member the tools their role carries rather than a list of refusals.
+ * `registerAdminTools` reads the caller's role once and registers only the tools that role
+ * carries, so a member sees their tools rather than a list of refusals.
  *
- * That filter is ergonomics. The boundary is unchanged and is where it always was — in the
- * handlers, each of which resolves authority from the platform db on its own.
- *
- * Every tool resolves the caller's authority from the platform db (never
- * from headers), audits into the event stream, and destructive operations
- * demand a confirm parameter that repeats the target. Nothing here writes into
- * a front end's own tables: the registry is the truth, and clients read it.
+ * DELIBERATE: that filter is ergonomics, not the boundary. Every handler resolves the
+ * caller's authority from the platform db — never from headers — audits into the event
+ * stream, and demands a confirm parameter repeating the target when destructive. Nothing
+ * here writes into a front end's own tables: the registry is the truth and clients read it.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { mintPat } from "@zz/contracts";
@@ -27,36 +21,25 @@ import { addMember, archiveTeam, createTeam, removeMember } from "./admin/teams.
 import { platformDb } from "./db.js";
 import { auditAdmin, callerIdentity as caller, isSuper, isTeamAdmin, sha256, type Identity, TEAM_SLUG } from "./identity.js";
 /** The administrative tools, registered onto /manage/mcp according to what the caller's role
- *  can actually execute.
+ *  can execute.
  *
- * TWO PREDICATES, AND THEY ARE THE HANDLERS' OWN. `isSuper` and `isTeamAdmin` are the exact
- * functions the guarded bodies call, not a second reading of `platformRole` — which matters
- * most for tokens. A superadmin holding a member-scope or team-bound PAT is NOT super for
- * this request (`isSuper` says so), so they cannot execute the platform tools and must not
- * be offered them either. Visibility has to be the same set as executability; deriving both
- * from one function is how it stays that way rather than drifting into a list that lies.
+ * COUPLED: the filter uses `isSuper` and `isTeamAdmin`, the same functions the guarded
+ * handlers call, not a second reading of `platformRole`. A superadmin holding a member-scope
+ * or team-bound PAT is not super for this request, so visibility stays the same set as
+ * executability.
  *
- * And the filter is NOT the authorisation. Every handler below still resolves the caller and
- * checks for itself, because `lead` is "administers SOME team" while the act is always about
- * ONE named team — member_add for a team you do not lead is a refusal a visible tool must
- * still make, with its reason. */
+ * DELIBERATE: the filter is not the authorisation. `lead` means "administers some team"
+ * while every act is about one named team, so each handler still resolves the caller and
+ * refuses with its own reason. */
 export function registerAdminTools(server: McpServer, id: Identity | null): void {
   const sup = !!id && isSuper(id);
   const lead = sup || (!!id && id.teams.some((t) => isTeamAdmin(id, t.slug)));
 
   server.registerTool("whoami", {
-    // What ONLY this tool says. Three tools answer some form of "who am I" — session_whoami on
-    // /core for an agent doing work, team_mine beside this one for a person managing their own
-    // access — and this one described itself as "role and team memberships", which is what
-    // team_mine already returns. Described that way it reads as a third copy, and a model
-    // choosing between them has no reason to prefer any.
-    //
-    // It has a second job now: it is the answer to "why is that tool not in my list?". This
-    // door registers only the tools a caller's role can execute, so a missing tool is a
-    // statement about the caller, and this is the tool that reads that statement back.
-    //
-    // It is the only one that says HOW the caller authenticated and what their token is
-    // scoped to, which is the answer to "why was I refused" and is answered by nothing else.
+    // What only this tool says, against session_whoami on /core and team_mine beside it: how
+    // the caller authenticated and what their token is scoped to. That is the answer to "why
+    // was I refused" and to "why is that tool not in my list", since this door registers only
+    // the tools a caller's role can execute.
     description:
       "WHEN you were refused and need to know why — including a tool that is not in your " +
       "list at all, which means your role does not carry it. RETURNS how the platform " +
@@ -113,15 +96,9 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   });
 
   if (sup) server.registerTool("person_deactivate", {
-    // The caveat is on the RETURN too, and it needs to be here as well: an agent chooses a
-    // tool by its description and reads the return only after calling it. "What this does
-    // not do" is not a footnote when the thing it does not do is leave live credentials at
-    // a third party for somebody who has left.
     description:
       "WHEN somebody leaves, or their access must stop. RETURNS confirmation that they can " +
-      "no longer authenticate. What it does NOT do is the part that matters: it never " +
-      "touches the building-block keys stored under their address, which the platform goes " +
-      "on injecting on their behalf — remove those separately with credential_admin_delete. " +
+      "no longer authenticate, with their live tokens revoked. " +
       "REFUSES anyone but a superadmin, and refuses unless confirm repeats the same email.",
     inputSchema: { email: z.string().email(), confirm: z.string() },
   }, async ({ email, confirm }) => {
@@ -147,9 +124,8 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   if (sup) server.registerTool("team_archive", {
     description:
       "WHEN a team is finished and should stop granting anyone anything. RETURNS " +
-      "confirmation: its members lose it from their access and its block grants stop " +
-      "counting, while its flow installs and grants are KEPT, so team_create on the same " +
-      "slug brings it back whole. REFUSES anyone but a superadmin, and refuses unless " +
+      "confirmation: its members lose it from their access, while its memberships and its " +
+      "store are KEPT, so team_create on the same slug brings it back whole. REFUSES anyone but a superadmin, and refuses unless " +
       "confirm repeats the team slug.",
     inputSchema: { team: z.string(), confirm: z.string() },
   }, async ({ team, confirm }) => {
@@ -188,10 +164,9 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
 
   server.registerTool("pat_issue", {
     description:
-      "WHEN somebody needs to connect an MCP client — Claude Code, Codex, Hermes — to this " +
-      "platform, or an automation needs its own credential. RETURNS the token plaintext " +
-      "EXACTLY ONCE: it cannot be read back, so it has to be stored now. A labelled token " +
-      "The token carries whatever its holder may do — there is no lesser kind. REPLACES any " +
+      "WHEN somebody needs to connect an MCP client to this platform, or an automation needs " +
+      "its own credential. RETURNS the token plaintext EXACTLY ONCE: it cannot be read back, so " +
+      "it has to be stored now. The token carries whatever its holder may do — there is no lesser kind. REPLACES any " +
       "earlier one with the same label, because a purpose has one current credential. REFUSES " +
       "issuing for anybody but yourself without superadmin or team-admin authority, and " +
       "refuses to bind a token to a team its holder is not in — that token would " +
@@ -201,7 +176,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
       team: z.string().optional().describe(
         "CONFINE this token to one team — for automation that should never touch another, " +
         "not for a person who works in several. A person needs ONE token: they pick the " +
-        "team by picking that team's agent, and a bound token would take that choice away " +
+        "team with team_switch, and a bound token would take that choice away " +
         "and refuse every other team they are in."),
       label: z.string().optional(),
       expires_in_days: z.number().int().positive().max(3650).optional().describe(
@@ -217,11 +192,9 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
       if (!team || !teamAuthority(id, team)) return text("ERROR: issuing for others needs superadmin, or team admin with team specified");
     }
     const db = platformDb();
-    // A BOUND TOKEN CANNOT ISSUE A WIDER ONE. `pat_issue` with no arguments is the ordinary
-    // self-issue path, and it skipped every authority branch — so an automation token confined
-    // to one team minted itself an UNBOUND token carrying its holder's whole membership and
-    // whatever platform role they have. Every guarantee the binding makes ends there, and
-    // nothing in the record would say a narrower token had been traded for a wider one.
+    // A bound token cannot issue a wider one. `pat_issue` with no arguments is the ordinary
+    // self-issue path, so without this a token confined to one team mints an unbound token
+    // carrying its holder's whole membership.
     if (id.patTeam && team !== id.patTeam) {
       return text(
         `ERROR: this token is bound to team '${id.patTeam}', so it cannot issue a token that ` +
@@ -233,11 +206,9 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     if (!pid) return text(`ERROR: no principal '${target}'`);
     const tid = team ? await teamId(db, team) : null;
     if (team && !tid) return text(`ERROR: no active team '${team}' — team_create on the same slug restores an archived one`);
-    // AND THE HOLDER HAS TO BE IN IT. A bound token names the one team it may act in, and
-    // identity refuses one whose holder is not a member — so issuing it for somebody outside
-    // the team produced a token that authenticated nowhere, handed over with "store it now".
-    // A tool that reports success and returns something dead is the shape member_remove was
-    // fixed for six tools up.
+    // And the holder has to be in it. Identity refuses a bound token whose holder is not a
+    // member of the named team, so issuing one for somebody outside it returns a token that
+    // authenticates nowhere.
     if (tid) {
       const inTeam = await db.query(
         "select 1 from membership where team_id = $1 and principal_id = $2", [tid, pid]);
@@ -248,27 +219,17 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
       }
     }
     const token = mintPat();
-    // `expires_at` was ENFORCED and never written: resolvePat has always refused a token
-    // past its expiry, and nothing could issue one, so every token on the platform lived
-    // for ever and the check could not fire. Half a feature is the shape this repository
-    // has learned to distrust — the dropped platform_credential table was the same thing in
-    // the other direction, a column implying a property nobody provided.
+    // COUPLED: resolvePat refuses a token past `expires_at`. Without this write the column
+    // stays null, every token lives for ever, and that check can never fire.
     const expiry = expires_in_days
       ? new Date(Date.now() + expires_in_days * 86_400_000).toISOString()
       : null;
-    // ONE LIVE TOKEN PER PERSON PER LABEL. A label names a PURPOSE — "librechat — someone@…"
-    // — and a purpose has one current credential, not a pile of them.
+    // One live token per person per label: a label names a purpose, and a purpose has one
+    // current credential. Otherwise a provisioner that mints on every run leaves a pile of
+    // indistinguishable tokens, and revoking that person's access means finding all of them.
     //
-    // Nothing replaced anything before, and the provisioner mints on every run: production
-    // held 34 live tokens labelled `librechat — sam@example.com`, 28 for
-    // test_user_1, seven for each smoke account. Every one of them opens every door that
-    // person can open, and none of them is distinguishable from the current one — so
-    // "revoke their access" meant finding all 34, and missing one meant not having revoked
-    // it. A credential nobody can enumerate is a credential nobody can withdraw.
-    //
-    // An UNLABELLED token is exempt: "" is not a purpose, so two of them are two tokens
-    // rather than one replaced twice, and a caller who wants a second deliberate token can
-    // still have one by leaving the label off or naming it differently.
+    // DELIBERATE: an unlabelled token is exempt. "" is not a purpose, so a caller who wants a
+    // second deliberate token leaves the label off or names it differently.
     const replaced = label
       ? (await db.query("delete from pat where principal_id = $1 and label = $2", [pid, label])).rowCount ?? 0
       : 0;
@@ -302,12 +263,9 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     if (!id) return text("ERROR: no platform identity");
     if (confirm !== pat_id) return text("ERROR: confirm must repeat the pat id exactly");
     const db = platformDb();
-    // The bound team comes back with the owner, in the query that was already being made.
-    // pat_issue records it and this did not, so a team admin watching their team's activity
-    // saw a token appear for their team and never saw it withdrawn — the asymmetry falling on
-    // the half that matters more, since a revocation is what somebody checks after a leak.
-    // Every other paired act here — create/archive team, add/remove member, install/uninstall
-    // flow, grant/revoke tool — records the team on both halves.
+    // COUPLED: the bound team is selected here so the revocation records it, as pat_issue
+    // does. Every paired act here — create/archive team, add/remove member, issue/revoke
+    // token — records the team on both halves.
     const r = await db.query<{ email: string; team: string | null }>(
       `select p.email, t.slug as team from pat
          join principal p on p.id = pat.principal_id
@@ -354,22 +312,17 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   }, async () => {
     const id = await caller();
     if (!id) return text("ERROR: no platform identity");
-    // A member sees the teams they belong to; a superadmin sees all of them. This listed
-    // every team and its member count to anyone with an identity, while person_list — the
-    // same kind of question about the same people — required superadmin.
+    // A member sees the teams they belong to; a superadmin sees all of them.
     const mine = id.teams.map((t) => t.slug);
-    // WHO MADE IT, and when. `created_by` has been written on every team since the schema
-    // was created and read by nothing, so "who set this team up" was a question only the
-    // database could answer. A `not null` provenance column that no query selects is a fact
-    // recorded where nobody can reach it.
+    // Who made it, and when: `created_by` is written on every team, and this is the query
+    // that reads it back.
     const columns =
       `select t.slug, t.name, t.status, t.created_at, c.email as created_by,
               count(m.principal_id)::int as members
          from team t left join membership m on m.team_id = t.id
          left join principal c on c.id = t.created_by`;
-    // isSuper, not platformRole. A superadmin IS every team — that is the rule and it is
-    // right — but the rule was written here a second time, in a form that cannot see a
-    // token's team binding, so a token stamped with one team listed all of them.
+    // isSuper, not platformRole: only isSuper can see a token's team binding, so a token
+    // stamped with one team does not list them all.
     const r = isSuper(id)
       ? await platformDb().query(`${columns} group by t.id, c.email order by t.slug`)
       : await platformDb().query(
@@ -379,10 +332,6 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     }))));
   });
 
-  // render_harness_config USED TO BE HERE, and the door split was the only thing keeping it
-  // alive. Its own description said so: "for your OWN setup use client_setup on /manage;
-  // this door is for rendering someone else's." Two tools, one job, told apart by which URL
-  // you reached them at. With one door there is one tool — client_setup now takes an
-  // optional `email`, superadmin-only for anyone but yourself, which is the whole of what
-  // this added.
+  // Rendering someone else's setup is client_setup's optional `email`, superadmin-only for
+  // anyone but yourself. There is no second tool for it.
 }

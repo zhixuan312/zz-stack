@@ -1,28 +1,21 @@
 /**
  * Defects planted for the third batch of `scripts/gate/checks/suites.ts`'s registered checks.
  *
- * SUITES.TS TESTS NOTHING ITSELF. Every row here names `suites.ts` as its `check` because that
- * is the file registering the check, but the rule being measured lives in a standalone script
- * at the repository root under `checks/`, which `runsCheck` spawns and fails on a non-zero
- * exit. So each spec's real subject is whatever THAT script reads: a source module, a lock
- * file, a manifest, a skill's frontmatter, a tsconfig.
+ * Every row names `suites.ts` as its `check` because that is the file registering the check,
+ * but the rule being measured lives in a standalone script under `checks/`, which `runsCheck`
+ * spawns and fails on a non-zero exit. So each spec's real subject is whatever that script
+ * reads: a source module, a lock file, a manifest, a skill's frontmatter, a tsconfig.
  *
- * WHICH IS WHY EVERY ROW CARRIES AN `assertion`. This one file ends up with the great majority
- * of the gate's rows, and a table of ninety-odd lines all reading
- * `scripts/gate/checks/suites.ts` tells a reader nothing about what was actually broken. The
- * assertion is the sentence that distinguishes them.
+ * Every row carries an `assertion`, because a table of ninety-odd rows all reading
+ * `scripts/gate/checks/suites.ts` tells a reader nothing about what was broken.
  *
- * THE DEFECT GOES IN THE DATA, NOT IN THE JUDGE. `checks/*.ts` is not frozen the way
- * `scripts/gate/` is, so a spec could break the script rather than the thing it judges — and
- * that would measure the wrong object. Every row below plants in what the script READS. The
- * one exception is deliberate and says so: the registry check's subject IS a file under
- * `checks/`, because what that check judges is the contents of that directory.
+ * DELIBERATE: the defect goes in the data, not in the judge. `checks/*.ts` is not frozen the
+ * way `scripts/gate/` is, so a spec could break the script rather than the thing it judges.
+ * Every row below plants in what the script reads; the one exception says so where it sits.
  */
 import type { MutationSpec } from "./plant.ts";
 
-// WHICH MODULE REGISTERS THE TARGET, which is what `check_sha256` is computed over.
-// These were all `SUITES` while one file registered ninety-six checks; the split by
-// subject means a row now drifts only when the module its own check lives in moves.
+// Which module registers the target, which is what `check_sha256` is computed over.
 const SUITES = "scripts/gate/checks/suites.ts";
 const SUITES_DATA = "scripts/gate/checks/suites-data.ts";
 const SUITES_SURFACE = "scripts/gate/checks/suites-surface.ts";
@@ -47,22 +40,11 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
     target: "the version that shipped has a changelog section of its own",
     assertion: "a tagged release has a section under its own version, not under Unreleased",
     subject: "CHANGELOG.md",
-    // NOT A VERSION NUMBER, AND THIS FILE IS THE FOURTH PLACE TO LEARN IT. `specs-cov-build.ts`,
-    // `specs-cov-catalog.ts` and `specs-cov-deploy.ts` each carry a paragraph about a spec that
-    // pinned `0.62.4` and stopped landing; this one pinned `0.62.4` too and was missed. It is a
-    // worse case than theirs, because theirs stopped LANDING — zero replacements, which the
-    // coverage check refuses out loud. This one kept landing on a section the check deliberately
-    // does not read. Its own comment says so: "THE CURRENT VERSION, not every tag". So the plant
-    // succeeded, the check was right to ignore it, and the row read CAUGHT for nine releases on
-    // the strength of one measurement taken when 0.62.4 WAS the current version. Nothing
-    // re-measures a row whose check file has not moved; this one surfaced only because suites.ts
-    // was edited for an unrelated reason, and then it SURVIVED.
-    //
-    // THE ANCHOR IS THE HEADING FORM, WHICH NO RELEASE REWRITES. The check asks whether
-    // CHANGELOG.md carries `## [<the version in package.json>]`. Taking the brackets off every
-    // heading makes that false whatever the version is, so this lands on every release for ever
-    // — which is the property the three files above went looking for and found in JSON's
-    // last-duplicate-key rule. Markdown has no such rule; the stable thing here is the syntax.
+    // DELIBERATE: the anchor is the heading form, never a version number. The check asks
+    // whether CHANGELOG.md carries `## [<the version in package.json>]`, and it reads only the
+    // current version's section — a pinned version number would land on a section the check
+    // does not read and survive. Taking the brackets off every heading makes the check false
+    // whatever the version is, so this lands on every release.
     find: "## [",
     replace: "## ",
     all: true,
@@ -92,10 +74,8 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
     subject: "package.json",
     find: '"rollback": "node scripts/release.ts --rollback"',
     // SEAMED. The payload is a tooling path that deliberately does not exist, which is what
-    // `checks/literal-paths-resolve.ts` hunts for. Its own rule declines this one — the path is
-    // not quote-delimited on both sides, and it sits inside an outer unclosed quote, either of
-    // which exempts it — but a payload whose whole point is an absent path is not worth leaving
-    // to a rule's two exemptions holding.
+    // `checks/literal-paths-resolve.ts` hunts for. Its own rule would exempt this one, but a
+    // payload whose whole point is an absent path is not left to an exemption holding.
     replace: '"rollback": "node scripts/release.mj' + 's --rollback"',
     planted: "`npm run rollback` points at a .mjs file the TypeScript conversion removed, so " +
       "the one command somebody types when a release has gone wrong fails with a module-not-" +
@@ -163,7 +143,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
     all: true,
     planted: "both run rollups coalesce an unmeasured byte total back to 0, so a run whose " +
       "calls were never measured is indistinguishable from a run that transferred nothing — " +
-      "the confident zero migration 051 exists to remove, back in both directions",
+      "the confident zero the schema exists to prevent, back in both directions",
   },
   {
     check: SUITES_SURFACE,
@@ -223,7 +203,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       '            why: "no flow governs this initiative — pass `flow` to document_write on " +\n' +
       '                 "the first document" },',
     planted: "an initiative somebody assembled by hand is told to declare a flow, which is the " +
-      "instruction FR-30 removed: a flow cannot be adopted after an initiative exists, so the " +
+      "instruction the platform removed: a flow cannot be adopted after an initiative exists, so the " +
       "platform is naming a next stage it invented and pointing the caller at a door that no " +
       "longer opens",
   },
@@ -252,9 +232,9 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
     replace: "name: zz-back" + "bone",
     // REDACTED. The payload is a pre-rename tool or skill name, and this repository sweeps
     // every tracked file for those — including `testing/mutation-report.json`, which `plant()`
-    // writes the RECONSTRUCTED string into. Seaming the source is not enough: the seam keeps
-    // the name out of THIS file and the report still carries it whole. `redact` base64-encodes
-    // it there, so the experiment stays exactly reproducible and neither file is the finding.
+    // writes the reconstructed string into, so seaming the source is not enough. `redact`
+    // base64-encodes it there, so the experiment stays reproducible and neither file is the
+    // finding.
     redact: true,
     planted: "the platform skill announces itself under its pre-rename name again, in the " +
       "frontmatter skill_read resolves by, so the rename is a directory that moved and a name " +
@@ -317,7 +297,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
   },
   {
     check: SUITES_TENANT,
-    target: "zz-lexical-v2 handles empty text, CRLF, a forced long-token split with no " +
+    target: "the text analyzer handles empty text, CRLF, a forced long-token split with no " +
       "whitespace to prefer, a full 1-MiB mixed-language body and a phrase at a passage " +
       "boundary, and the 8-MiB kernel gate refuses new input while preserving legacy larger " +
       "content",
@@ -369,11 +349,10 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "acceptance report then reads as ready with a human judgement nobody made",
   },
   {
-    /* THE ONE ROW WHOSE SUBJECT IS A FILE UNDER `checks/`, and it is not an exception to the
-     * rule that the defect goes in the data. What this check judges IS the contents of that
-     * directory: which files are there, and what each of them does. So a check file is the
-     * data here, and this plants in the property the classifier reads rather than in the
-     * classifier. */
+    /* The one row whose subject is a file under `checks/`, and not an exception to the rule
+     * that the defect goes in the data: what this check judges is the contents of that
+     * directory, so a check file is the data here. This plants in the property the classifier
+     * reads rather than in the classifier. */
     check: SUITES,
     target: "every check in checks/ is registered here, or named here with a reason",
     assertion: "a check that reaches a deployment is still recognised as host-dependent",

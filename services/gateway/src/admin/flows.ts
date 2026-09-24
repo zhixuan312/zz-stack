@@ -1,12 +1,10 @@
 /**
- * The shelf and the client package: what the catalog offers, and the setup text that carries
- * it into somebody's terminal.
+ * The shelf and the client package: what the catalog offers, and the setup text that carries it
+ * into somebody's terminal.
  *
- * THERE IS NO INSTALL REGISTRY. The platform used to record which flows each team had
- * "installed" and gate the package on it. It cannot see what is on a person's machine, so the
- * record was a claim it could not back and the gate a restriction it could not enforce. The
- * shelf is the same for everyone, zz-core and zz-access are required, and every other plugin is
- * a person's own choice.
+ * There is no install registry. The platform cannot see what is on a person's machine. The shelf
+ * is the same for everyone, zz-core and zz-access are required, and every other plugin is a
+ * person's own choice.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { catalogManifest, installableFlows } from "@zz/catalog";
@@ -16,12 +14,9 @@ import { buildClientPackage, PLATFORM_VERSION, type ClientPackage } from "../cli
 import { callerIdentity as caller } from "../identity.js";
 import { describePackage } from "../package/describe.js";
 
-/** No default, deliberately.
- *
- * It used to fall back to this deployment's own tailnet address. A client package is a file
- * a person installs, and every URL inside it has to be the address they will actually
- * reach — so on any install that did not set GATEWAY_PUBLIC_URL, everyone would have been
- * handed a package pointing at our host, and nothing would have said so. */
+/** No default, deliberately. A client package is a file a person installs, and every URL inside
+ *  it has to be the address they will actually reach — a fallback to this deployment's own
+ *  address hands everyone a package pointing at our host with nothing saying so. */
 const publicBase = (): string => {
   const base = (process.env.GATEWAY_PUBLIC_URL || "").trim();
   if (!base) {
@@ -38,10 +33,9 @@ function clientPackageFor(target: string): ClientPackage {
 }
 /** Render a person's client setup as instructions they can follow.
  *
- * Note what is NO LONGER here: the "paste into CLAUDE.md" stanza. Those files
- * are engine-global, so a flow placed there rewrites how the person's whole
- * engine behaves on every unrelated task, and two installed flows collide in
- * one file. The package installs and uninstalls as a unit instead. */
+ *  No "paste into CLAUDE.md" stanza: those files are engine-global, so a flow placed there
+ *  rewrites how the person's whole engine behaves on every unrelated task, and two installed
+ *  flows collide in one file. The package installs and uninstalls as a unit. */
 export async function renderClientSetup(target: string): Promise<string> {
   return describePackage(clientPackageFor(target), target);
 }

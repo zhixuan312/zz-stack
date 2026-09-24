@@ -4,10 +4,6 @@
  * Which tools each door serves and under which nouns, which plugin owns which skill, what a
  * document must carry before it may be gated, and what the written record says about all of
  * it. The two bash suites are here too: they are about the deck skill's own shipped assets.
- *
- * Split out of `suites.ts`, which registered ninety-six checks in one file — so any edit to
- * it drifted ninety-four mutation rows, because `check_sha256` is computed per FILE. Grouping
- * by subject keeps that blast radius to the group somebody is actually working on.
  */
 import { check } from "../run.ts";
 import { runsCheck, runsShell } from "../suite-runner.ts";
@@ -33,8 +29,8 @@ check("a revision names its cause — one route or the other, never neither and 
 check("a document read takes a list and a version, and history never vouches for the present",
       runsCheck("document-reads.ts"));
 
-check("the two tools that left the core door are gone from it and from every caller",
-      runsCheck("core-surface-19.ts"));
+check("the core door serves exactly its tools, and a removed tool is gone from every caller",
+      runsCheck("core-surface.ts"));
 
 check("the core door introduces itself to a client that reads nothing else, and the pointer survives",
       runsCheck("orientation.ts"));

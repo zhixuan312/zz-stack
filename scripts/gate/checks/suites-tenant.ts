@@ -1,14 +1,7 @@
 /**
- * Tenant information: the record, its retrieval, and the evidence a release needs.
-
- * The largest group by some way, and the one with the most rows in the mutation report — the
+ * Tenant information: the record, its retrieval, and the evidence a release needs — the
  * artifact kernel and its hashes, the corpus and lane arithmetic, the analyzer, the migration
- * and its losslessness, the benchmark and acceptance reports. Grouped together because a change
- * to the record's shape tends to move several of them at once.
- *
- * Split out of `suites.ts`, which registered ninety-six checks in one file — so any edit to
- * it drifted ninety-four mutation rows, because `check_sha256` is computed per FILE. Grouping
- * by subject keeps that blast radius to the group somebody is actually working on.
+ * and its losslessness, the benchmark and acceptance reports.
  */
 import { check } from "../run.ts";
 import { runsCheck } from "../suite-runner.ts";
@@ -61,7 +54,7 @@ check("a legacy import through the real importer and the real kernel keeps every
 check("bounded overlapping passages cover every UTF-8 byte with no truncation at any size, identifier analysis keeps exact spellings alongside derived lowercase parts, and a derivation fingerprint changes independently on every one of its named fields",
       runsCheck("tenant-complete-text.ts"));
 
-check("zz-lexical-v2 handles empty text, CRLF, a forced long-token split with no whitespace to prefer, a full 1-MiB mixed-language body and a phrase at a passage boundary, and the 8-MiB kernel gate refuses new input while preserving legacy larger content",
+check("the text analyzer handles empty text, CRLF, a forced long-token split with no whitespace to prefer, a full 1-MiB mixed-language body and a phrase at a passage boundary, and the 8-MiB kernel gate refuses new input while preserving legacy larger content",
       runsCheck("tenant-passage-analysis.ts"));
 
 check("a migration needing an extension declares it, and the runner still defers rather than taking the database down", runsCheck("migration-extension-declared.ts"));
@@ -96,11 +89,10 @@ check("a benchmark report is refused when its scale is forged, its corpus distri
 check("gate-launch classification reads the syntax — a spawner named in a comment, a string or a regex literal is not a launch, and an aliased or namespaced one still is",
       runsCheck("tenant-checks-registered.ts"));
 
-// THE ORDINARY GATE NEVER READS THE ACTUAL ACCEPTANCE REPORT, and this line is the closest it
-// comes to the subject. `assessAcceptance` is a pure function of synthetic observations, so
-// running it here costs nothing and proves nothing about whether this delivery is ready — it
-// proves only that the decision function refuses the eight shapes of bad report below. The
-// real report is assembled, hashed and judged by `verify --finalize`, which runs OUTSIDE this
-// gate precisely so that a gate can never come to depend on its own final verdict.
+// DELIBERATE: the ordinary gate never reads the actual acceptance report. `assessAcceptance`
+// runs here over synthetic observations, so this proves only that the decision function
+// refuses the eight shapes of bad report — never that a delivery is ready. The real report is
+// assembled, hashed and judged by `verify --finalize`, outside this gate, so that a gate can
+// never depend on its own final verdict.
 check("the acceptance decision needs all thirteen criteria, the spec's own method for each, a matching binding, verified evidence and a gate that actually executed — and a wholly failed report is still structurally valid",
       runsCheck("acceptance-covers-every-criterion.ts"));

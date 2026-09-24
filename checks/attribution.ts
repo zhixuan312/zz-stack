@@ -6,9 +6,7 @@ const tel = readFileSync("services/gateway/src/tool-telemetry.ts", "utf8");
 if (!/\bplugin\s*:/.test(tel) || !/plugin_version|pluginVersion/.test(tel)) {
   fail.push("tool-telemetry does not write plugin / plugin_version");
 }
-// The door's owning plugin, from the catalog, must be what resolves a plugin. This asserted a
-// `plugin_version_skill` join, and passed after that join was gone only because a comment
-// still named the table.
+// The door's owning plugin, from the catalog, must be what resolves a plugin.
 if (!/const plugin = pluginForDoor\(/.test(tel)) {
   fail.push("plugin is not resolved from the door through pluginForDoor");
 }
@@ -19,7 +17,7 @@ if (pluginFromFlow) fail.push("plugin is derived from flowFor() — the initiati
 if (/plugin\s*:[^,\n]*x-zz-client/.test(tel) || /plugin\s*:[^,\n]*detail\.client/.test(tel)) {
   fail.push("plugin is populated from x-zz-client — that is the client program, not the plugin");
 }
-// Control: `flow` itself must STILL be written. A check that removed it would be too broad.
+// Control: `flow` itself must still be written; a check that removed it would be too broad.
 if (!/\bflow\s*:/.test(tel)) fail.push("flow stopped being recorded; it remains valid team context");
 // A null plugin must be reachable rather than defaulted.
 if (/plugin\s*:\s*[^,\n]*\?\?\s*["'`]/.test(tel)) {

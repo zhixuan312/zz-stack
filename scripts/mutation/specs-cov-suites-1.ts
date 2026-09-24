@@ -1,64 +1,40 @@
 /**
  * Defects aimed at the suites registered by `scripts/gate/checks/suites.ts`.
  *
- * THAT FILE TESTS NOTHING ITSELF. Every check in it is one line — `check("<id>",
- * runsCheck("<name>.ts"))` — which spawns `checks/<name>.ts` at the repository root and fails
- * if it exits non-zero. So the subject of a row here is never `suites.ts` and almost never the
- * spawned script either: it is whatever that script READS — a source module, a manifest, a
- * migration, a skill's prose. A defect in the thing being judged is a better measurement than
- * a defect in the judge.
+ * Each check there is one line that spawns `checks/<name>.ts` and fails on a non-zero exit,
+ * so a row's subject here is almost never the spawned script: it is whatever that script
+ * reads — a source module, a manifest, a migration, a skill's prose.
  *
- * EVERY ROW CARRIES AN `assertion`. One file registers ~95 checks and a report row that only
- * names `scripts/gate/checks/suites.ts` tells a reader nothing about which suite went red or
- * which of its claims did.
+ * Every row carries an `assertion`, because one module registers dozens of checks and a row
+ * naming only the module says nothing about which suite went red.
  *
- * SOME OF THESE REACH THEIR CHECK THROUGH THE BUILD. `@zz/contracts`, `@zz/indexing` and both
- * services are imported from `dist/`, so a mutation to their `src/` is only visible after
- * `npm run -s build` — which `mutation-run.ts` runs as its own process before the gate. Each
- * such mutation is type-valid by construction: `tsc -b` emits nothing for a project with type
- * errors, the check would then read the PREVIOUS dist, and the row would record "survived"
- * for a defect that never arrived.
+ * DELIBERATE: every mutation that reaches its check through `dist/` is type-valid. `tsc -b`
+ * emits nothing for a project with type errors, so the check would read the previous dist and
+ * the row would record "survived" for a defect that never arrived.
  */
 import type { MutationSpec } from "./plant.ts";
 
 /** Every row in this file is registered by the same module. */
-// WHICH MODULE REGISTERS THE TARGET, which is what `check_sha256` is computed over.
-// These were all `SUITES` while one file registered ninety-six checks; the split by
-// subject means a row now drifts only when the module its own check lives in moves.
+// COUPLED: `check_sha256` is computed over the module that registers the target, so a row
+// drifts when that module changes.
 const SUITES = "scripts/gate/checks/suites.ts";
 const SUITES_DATA = "scripts/gate/checks/suites-data.ts";
 const SUITES_SURFACE = "scripts/gate/checks/suites-surface.ts";
 const SUITES_TENANT = "scripts/gate/checks/suites-tenant.ts";
 const SUITES_TOOLING = "scripts/gate/checks/suites-tooling.ts";
 
-/* THREE TOKENS BELOW ARE SPLIT ACROSS A CONCATENATION, AND THAT IS NOT STYLE.
+/* DELIBERATE: the three tokens below are split across a concatenation, and that is not
+ * style. This file is under `scripts/` and ends in `.ts`, which is the tree three of the
+ * checks it plants for walk, and all three read string literals. Written whole, each token
+ * turns its own check red on the unmutated tree, so every row here would read `baseline_red`.
  *
- * This file lives under `scripts/` and ends in `.ts`, which is exactly the tree three of the
- * checks it plants for walk — and all three read string literals, because a defect in a
- * literal is a defect. Written whole, `.mjs` inside an `endsWith(...)` makes
- * `checks/no-mjs-filters.ts` red, `block_skills` makes `checks/core-surface-19.ts` red, and
- * `checks/docs-current.mjs` makes `checks/literal-paths-resolve.ts` red — on the UNMUTATED
- * tree, so the rows would read `baseline_red` and the gate would be red for every session
- * that pulled this file. Measured, not argued: all three were run against this file and
- * reported exactly those lines.
- *
- * Joining them at runtime keeps the planted text byte-identical and keeps the token out of
- * the source. Do not "tidy" these back into one literal. */
+ * Joining them at runtime keeps the planted text byte-identical and the token out of the
+ * source. Do not tidy them back into one literal. */
 const MJS = ".m" + "js";
 const MERGED_AWAY = "block_" + "skills";
 
 export const COV_SUITES_1: readonly MutationSpec[] = [
-  {
-    check: SUITES,
-    target: "a hostile document cannot become script in a reader's browser",
-    assertion: "author text inside a quoted attribute cannot close it",
-    subject: "services/gateway/src/markdown.ts",
-    find: `.replace(/"/g, "&quot;").replace(/'/g, "&#39;");`,
-    replace: `.replace(/'/g, "&#39;");`,
-    planted: "the renderer stops escaping double quotes, so a link destination ends the " +
-      "href attribute and opens an event handler of its own — a document a reader merely " +
-      "opens runs script in the page that holds their platform token",
-  },
+
   {
     check: SUITES,
     target: "the pure document rules do what they say",
@@ -157,10 +133,9 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
     check: SUITES_DATA,
     target: "the record's own columns exist, and a gap is nullable",
     assertion: "a token column a provider never reported stays nullable",
-    // THE SCHEMA, not the migration that added the column. 050 was squashed into 001_init.sql
-    // with the other seventy-three, so this planted into a file that is no longer there and
-    // landed zero replacements -- which the coverage check reports as a row proving nothing.
-    // The spelling is pg_dump's, four spaces and one before the type.
+    // The schema, not the migration that added the column: a squashed migration is a file
+    // that is no longer there, and planting into one lands zero replacements, a row proving
+    // nothing. The spelling is pg_dump's, four spaces and one before the type.
     subject: "services/gateway/migrations/001_init.sql",
     find: "    input_tokens integer,",
     replace: "    input_tokens integer NOT NULL DEFAULT 0,",
@@ -176,7 +151,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
     find: "? Math.trunc(v) : null;",
     replace: "? Math.trunc(v) : 0;",
     planted: "the judge records a token count the provider never sent as zero, which is the " +
-      "exact conflation migration 050 was written to prevent — spend that was not reported " +
+      "exact conflation the column was added to prevent — spend that was not reported " +
       "becomes spend that did not happen",
   },
   {
@@ -192,15 +167,14 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
   },
   {
     check: SUITES_SURFACE,
-    target: "the two tools that left the core door are gone from it and from every caller",
+    target: "the core door serves exactly its tools, and a removed tool is gone from every caller",
     assertion: "a deleted tool name survives nowhere, prose included",
     subject: "skills/zz-platform/SKILL.md",
     find: "| skills | `/core/mcp` | `skill_list` `skill_read` |",
     replace: `| skills | \`/core/mcp\` | \`${MERGED_AWAY}\` \`skill_read\` |`,
-    // REDACTED. The payload is a pre-rename tool name, and this repository sweeps every tracked
-    // file for those — including testing/mutation-report.json, which plant() writes the
-    // RECONSTRUCTED string into. Seaming the source keeps the name out of THIS file and the
-    // report still carries it whole. redact base64-encodes it there.
+    // REDACTED: the payload is a pre-rename tool name, which this repository sweeps every
+    // tracked file for — including the mutation report, which plant() writes the
+    // reconstructed string into. `redact` base64-encodes it there.
     redact: true,
     planted: "the platform skill's door table names the listing tool that was merged away " +
       "into `skill_list(owner?)` and is registered by no door, so an agent that follows the " +

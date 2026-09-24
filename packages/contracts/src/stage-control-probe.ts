@@ -1,29 +1,22 @@
 /**
- * PLANTING EACH FAULT THIS CONTROLLER CLAIMS TO CATCH, AND WATCHING THE DETECTOR FIRE.
+ * Planting each fault this controller claims to catch, and watching the detector fire.
  *
- * A sibling task in this initiative shipped a detector that shared its mechanism's assumption,
- * and so fell silent at exactly the moment the mechanism broke — green forever, proving
- * nothing. Every rule below is therefore exercised twice: once on a subject where the detector
- * must stay SILENT, and once with a specific fault planted, where it must FIRE. A row whose
- * `fires` is false is a finding about this module, not about its subject.
+ * Every rule below is exercised twice: once on a subject where the detector must stay silent,
+ * and once with a specific fault planted, where it must fire. A row whose `fires` is false is a
+ * finding about this module, not about its subject.
  *
- * THE SILENT HALF IS THE HALF THAT MATTERS HERE, and more than usually so. This controller's
- * job is mostly refusal, and a controller that refused everything would satisfy every faulted
- * column in the table while being completely useless. So the healthy column of the four
- * volume rows is the twelve-byte evidenced correction: the smallest possible change, which
- * ADVANCES, because it carries its evidence and closed its gap. A rule that let half a
- * megabyte through would also block that fix, and both halves are the same defect.
+ * The silent half matters most here, because this controller's job is mostly refusal and a
+ * controller that refused everything would satisfy every faulted column while being useless. The
+ * healthy column of the four volume rows is the twelve-byte evidenced correction, which
+ * advances: a rule that let half a megabyte through would also block that fix.
  *
- * THE FIXTURE PROFILE IS SEVEN GENERIC STEPS AND THAT IS DELIBERATE. This package is below the
- * layer that binds a flow's declared steps to contracts, and it has no step vocabulary of its
- * own — the profile here is built out of `s1`..`s7` to show that a seven-step profile resolves
- * every one of its contracts through the one controller, without this file knowing or being
- * able to know what any real flow calls them. What the real flow declares is checked where the
- * declaration lives, against the catalog, not here.
+ * DELIBERATE: the fixture profile is seven generic steps, `s1`..`s7`. This package is below the
+ * layer that binds a flow's declared steps to contracts and has no step vocabulary of its own;
+ * what a real flow declares is checked against the catalog, not here.
  *
- * NOTHING HERE IS A MEASUREMENT. The byte counts, the confidence and the score are invented
- * inputs chosen to be individually enormous, so that "each is insufficient ON ITS OWN" is what
- * the table actually shows.
+ * Nothing here is a measurement. The byte counts, the confidence and the score are invented
+ * inputs chosen to be individually enormous, so that "each is insufficient on its own" is what
+ * the table shows.
  */
 import {
   episodeKey,
@@ -70,18 +63,16 @@ const row = (
   fires: healthy[0] && faulted[0],
 });
 
-// ── the fixtures ───────────────────────────────────────────────────────────────────────────
+// The fixtures
 
 const PROFILE_REF = "fixture://profile/seven-step";
 
 /** Seven bound contracts. Each step after the first requires the one before it to have left
- *  evidence behind, which is what makes the missing-entry-evidence row a real entry and not a
- *  contrived one.
+ *  evidence behind, which is what makes the missing-entry-evidence row a real entry.
  *
- *  THE SECOND STEP DEMANDS RATIFICATION AND THE REST DEMAND A RECORD, so the two standards are
- *  both under test here rather than one of them being a constant nothing exercises. A profile
- *  whose every requirement sat at the same standard would pass identically against an
- *  implementation that ignored the field. */
+ *  The second step demands ratification and the rest demand a record, so both standards are
+ *  under test: a profile whose every requirement sat at one standard would pass identically
+ *  against an implementation that ignored the field. */
 const STEP_CONTRACTS: readonly StepContract[] = Object.freeze(
   Array.from({ length: 7 }, (_, i): StepContract => Object.freeze({
     step: `s${i + 1}`,
@@ -109,7 +100,7 @@ const SMALL_CORRECTION = readiness({
 
 const SUBJECT: AuditEpisode = Object.freeze({ subjectRef: "fixture://doc/7", criteriaRef: "fixture://criteria/a" });
 
-// ── the rows ───────────────────────────────────────────────────────────────────────────────
+// The rows
 
 /** The four observations that are not grounds, each planted alone. */
 function noiseRows(): StageControlProbeRow[] {
@@ -211,20 +202,20 @@ function controllerRows(): StageControlProbeRow[] {
     identity: IDENTITY, step: "s2", revision: 0, waivers: [],
     evidenceHeld: [{ kind: "ground-from-s1", standard: "ratified" }],
   });
-  // s2 demands RATIFICATION, so a recorded holding of the very kind it names is not enough —
+  // s2 demands ratification, so a recorded holding of the very kind it names is not enough —
   // and the refusal has to say which of the two situations this is.
   const unratified = c.admit({
     identity: IDENTITY, step: "s2", revision: 0, waivers: [],
     evidenceHeld: [{ kind: "ground-from-s1", standard: "recorded" }],
   });
-  // s3 demands only a RECORD, and the same recorded holding satisfies it. Both rows run
+  // s3 demands only a record, and the same recorded holding satisfies it. Both rows run
   // against one controller, so neither can be explained by a difference in anything else.
   const recorded = c.admit({
     identity: IDENTITY, step: "s3", revision: 0, waivers: [],
     evidenceHeld: [{ kind: "ground-from-s2", standard: "recorded" }],
   });
   // The ground nobody will now produce, discharged on a named fact rather than refused for
-  // ever — and a waiver naming a DIFFERENT kind discharges nothing.
+  // ever — and a waiver naming a different kind discharges nothing.
   const WAIVER = { kind: "ground-from-s1", ground: "the execution this step belongs to was concluded" };
   const waived = c.admit({ identity: IDENTITY, step: "s2", revision: 0, evidenceHeld: [], waivers: [WAIVER] });
   const misaimed = c.admit({
@@ -296,10 +287,9 @@ function controllerRows(): StageControlProbeRow[] {
       [stateOf(reopened) === "needs_revisit" && stateOf(fresh) === "not_established",
         "settling it again with a gap open computes needs_revisit, while a step that never " +
         "held stays not_established"]),
-    // THE HEALTHY HALF IS THE ONE THAT COSTS SOMETHING HERE. An implementation that demanded
-    // ratification of everything would fire on the faulted column and be unusable: it would
-    // refuse, for ever, every step whose ground nothing ever ratifies — and "for ever" is
-    // exact, because no further act exists that could change the answer.
+    // The healthy half is the one that costs something here: an implementation demanding
+    // ratification of everything would fire on the faulted column and refuse, for ever, every
+    // step whose ground nothing ever ratifies.
     row("evidence subject to no ratification is judged by a ratification that never comes",
       [recorded.admitted,
         "a step demanding a record is admitted on a recorded holding, with nothing to approve " +

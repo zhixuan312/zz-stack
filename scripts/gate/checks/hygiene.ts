@@ -3,8 +3,7 @@
  *
  * Nothing exported that nobody imports, no statement written twice in a row, no comment
  * repeating itself, no doc comment attached to nothing, no protocol spelled out in two
- * places. Individually small; together they are what keeps a second copy of a rule from
- * existing long enough to drift from the first.
+ * places.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -25,16 +24,12 @@ function errMessage(err: unknown): string {
 }
 
 check("an async guard in a ?? chain is awaited", () => {
-  // A PROMISE IS NEVER NULL, so `a() ?? b()` where b is async ends the chain at b — and
-  // everything after b is unreachable. It fails silently in the worst way: the outer await
-  // resolves b's promise, b returns null for most inputs, every write passes, and the guards
-  // below the line are deployed, exercised and absent. Two of them were, for a whole
-  // deployment cycle, and the only symptom was a write that should have been refused going
-  // through.
+  // A promise is never null, so `a() ?? b()` where b is async ends the chain at b and
+  // everything after b is unreachable: the outer await resolves b's promise and every write
+  // past that point passes unguarded.
   //
-  // Narrow on purpose. This checks the ?? chains that DECIDE A REFUSAL — the ones where a
-  // missing await means a guard does nothing — by finding async functions in the file and
-  // then looking for them unawaited on a `??` line.
+  // DELIBERATE: narrow. Only the `??` chains that decide a refusal — an async function
+  // declared in the file, named unawaited on a `??` line.
   const bad: string[] = [];
   // Named per service rather than per file: an unawaited guard is a defect wherever in the
   // service it is written, and zz-core is more than one file.
@@ -52,61 +47,37 @@ check("an async guard in a ?? chain is awaited", () => {
 });
 
 check("nothing is exported that nobody imports", () => {
-  // The compiler finds an unused import and an unused local; it cannot find a symbol that
-  // is exported and imported nowhere, because an export is a legitimate public surface as
-  // far as tsc is concerned. In a repo with no external consumers it is dead code with a
-  // door on it — admin.ts carried three: adminEvent, referenced nowhere at all, and
-  // flowsFor and publicBase, exported while only ever called from the file defining them.
-  // CONSUMERS LIVE UNDER checks/ AND testing/ TOO, and leaving them out made this check report
-  // correct code as dead. A plan-authored gate check imports the symbol it was written to
-  // exercise; when that check is the only tracked caller — which is the normal case for a
-  // helper whose production use is internal to the file defining it — the export looked
-  // unimported and the gate went red on work that was right. Measured on I-3: `planCorpora`
-  // and `textFixture`, exported because the frozen check for that task imports them by name.
-  // Every other exclusion in this check carries a story; this omission carried none, which is
-  // what a blind spot looks like from the inside.
+  // tsc does not report a symbol that is exported and imported nowhere: an export is a
+  // legitimate public surface as far as the compiler is concerned. In a repo with no external
+  // consumers it is dead code with a door on it.
+  //
+  // Consumers live under checks/ and testing/ too — a gate check is often the only tracked
+  // caller of a helper whose production use is internal to the file defining it.
   const sources = [];
   sources.push(...sourceFiles(["services", "packages"], [".ts"])
     .filter((f) => !f.endsWith(".d.ts")).map((f) => join(root, f)));
-  // COMMENTS STRIPPED, or this file's own prose keeps symbols alive. gate.ts discusses
-  // nearly every export in the repository by name, and it is one of the consumers scanned —
-  // so "is this symbol mentioned anywhere else" was answered by a paragraph ABOUT it. Proven:
-  // making ENVELOPE_BLOCK genuinely probe-only left this check green, because three comments
-  // here say the word.
+  // Comments stripped, or this file's own prose keeps symbols alive: the gate names nearly
+  // every export in the repository and is itself one of the consumers scanned.
   //
-  // String literals stay. `functionBody(src, "stakeholderCanAnswer")` is a real coupling —
-  // rename the function and this file breaks — so a literal naming a symbol is a use. A
-  // sentence about it is not.
+  // String literals stay. A check reaching a symbol by name — `functionBody(src, "someExport")`
+  // — is a real coupling, so a literal naming a symbol counts as a use; a sentence does not.
   const text = new Map(sources.map((p) => [p, withoutComments(readFileSync(p, "utf8"))]));
-  // The gate is a consumer too. A symbol exported so this file can exercise it — the
-  // identity port's resolver, whose ORDERING is the thing worth testing — is used, and
-  // calling it dead would push the test back into reading the code instead of running it.
-  // Kept out of `sources` so nothing here is judged for its own exports.
+  // The gate is a consumer too: a symbol exported so a check can exercise it is used. These
+  // trees are kept out of `sources`, so nothing here is judged for its own exports.
   //
-  // RECURSIVE, which is the correction "the configuration surface is documented" already
-  // made and this one did not: scripts/probes/ is where two consumers live, and a flat
-  // readdir has never seen them. envelope-shape.ts is the only importer of ENVELOPE_BLOCK
-  // outside the services today — it stays live here because zz-core imports it too, so the
-  // gap was latent rather than firing. Latent is the wrong thing to leave: this check's
-  // finding is "delete this", and a probe-only export would have been reported as dead code
-  // somebody then removed.
+  // The walk is recursive — scripts/probes/ holds consumers a flat readdir never sees.
   for (const f of sourceFiles(["scripts", "checks", "testing"], [".ts"])) {
     text.set(join(root, f), withoutComments(readFileSync(join(root, f), "utf8")));
   }
 
-  // THE CONSOLE IS THE SAME REPOSITORY'S PRODUCT AND HAD NO SUCH CHECK. It is a sibling
-  // checkout with its own build, so this walks its tree directly — the same arrangement the
-  // LLM-client boundary check uses, for the same reason: sourceFiles() answers only for what
-  // THIS repo's git tracks. Fifty-seven symbols had accumulated behind that gap, and eight
-  // whole primitives — a DataTable named in five other files, every mention a comment.
-  //
-  // Its own conventions, and each is load-bearing:
+  // The console is a sibling checkout with its own build, so this walks its tree directly:
+  // sourceFiles() answers only for what this repo's git tracks. Its conventions:
   //   · app/ holds Next.js routes, whose `default`, `metadata` and friends are consumed by the
   //     framework rather than by an import. Judging them dead deletes every page.
   //   · components/ui/index.ts is a barrel of `export * from './x'`, which names no symbol —
   //     so a file it re-exports is reachable through it, and the barrel's own re-exports are
   //     not exports to judge.
-  //   · tests/ are consumers. Excluding them called a tested helper dead.
+  //   · tests/ are consumers.
   const dash = join(root, "..", "zz-stack-dashboard");
   const dashFiles: string[] = [];
   if (existsSync(dash)) {
@@ -120,10 +91,8 @@ check("nothing is exported that nobody imports", () => {
     };
     walk(dash);
   } else {
-    // SAME SILENCE, DIFFERENT SHAPE. Skipping the sibling inside a loop reports its absence no
-    // more than `return null` did in console.ts — and here it matters more, because this check
-    // calls an export dead when nothing names it, and the console is one of the things that
-    // could have named it.
+    // Skipping the sibling silently would let this check call an export dead while the
+    // console is one of the things that could have named it.
     note("    unimported exports: ../zz-stack-dashboard is not checked out beside this " +
          "repository, so console imports did not count towards reachability here.");
   }
@@ -140,13 +109,10 @@ check("nothing is exported that nobody imports", () => {
     }
   }
   const FRAMEWORK = /^(default|metadata|generateMetadata|generateStaticParams|dynamic|revalidate|viewport)$/;
-  // NEXT'S ROOT ENTRY POINTS, which the framework loads BY FILENAME and never imports.
-  //
-  // The `app/` exemption above covers route exports and misses these, because they do not live
-  // under `app/` — so `middleware.ts`, which is the only place a Next app can touch a request
-  // before it is routed, read as dead code the moment it was written. Keyed by filename and
-  // matched against the exact symbol Next looks for, rather than exempting the file outright:
-  // a helper that really is unused, exported from the same file, is still caught.
+  // Next's root entry points, which the framework loads by filename and never imports; the
+  // `app/` exemption above misses them because they do not live under `app/`. Keyed by
+  // filename and matched against the exact symbol Next looks for, so an unused helper
+  // exported from the same file is still caught.
   const NEXT_ENTRY: Record<string, RegExp> = {
     "middleware.ts": /^(middleware|config)$/,
     "instrumentation.ts": /^(register|onRequestError)$/,
@@ -155,7 +121,7 @@ check("nothing is exported that nobody imports", () => {
     const rel = file.slice(dash.length + 1);
     if (rel.startsWith("tests/") || /(^|\/)index\.tsx?$/.test(rel)) continue;
     const isRoute = rel.startsWith("app/");
-    // Reachable through the ui barrel: the barrel names the MODULE, never the symbols.
+    // Reachable through the ui barrel: the barrel names the module, never the symbols.
     const viaBarrel = [...dashText].some(([b, bs]) =>
       /(^|\/)index\.tsx?$/.test(b.slice(dash.length + 1))
       && new RegExp(`from\\s+["']\\./${(rel.split("/").pop() ?? "").replace(/\.tsx?$/, "")}["']`).test(bs));
@@ -172,62 +138,23 @@ check("nothing is exported that nobody imports", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-check("the platform model is one name, however many places name it", () => {
-  // Four places carry the model and all four have to move together: the front end's model
-  // list, its titleModel, its tokenConfig block — which is keyed BY the model name — and
-  // PLATFORM_BASE_MODEL, which the smoke engine reads and render_agent_definition stamps
-  // onto every agent it builds.
-  //
-  // Three of the four are in a file that is mounted read-only and is not hot-reloadable, and
-  // the fourth is an environment variable. `${VAR}` would collapse the two value positions,
-  // but tokenConfig's model name is a YAML KEY and cannot be one — and a tokenConfig that
-  // generic window and caps the conversation at 115.5K, under a ninth of what the model
-  // holds, which a long agentic run reaches while the tool schemas alone are most of it.
-  //
-  // So where the format refuses one declaration, the gate enforces one name. Silent drift
-  // becomes a build failure, which is the harm actually being prevented.
-  const env = readFileSync(join(root, "deploy/.env.example"), "utf8");
-  const declared = /^PLATFORM_BASE_MODEL=(.+)$/m.exec(env)?.[1]?.trim();
-  if (!declared) return "deploy/.env.example does not set PLATFORM_BASE_MODEL";
-  const found = {
-  };
-  const bad = Object.entries(found)
-    .filter(([, v]) => v !== declared)
-    .map(([k, v]) => `${k} says ${v ? `"${v}"` : "nothing"}`);
-  return bad.length
-    ? `PLATFORM_BASE_MODEL is "${declared}" but ${bad.join("; ")} — all four move together ` +
-      "or the front end runs one model with another's context window"
-    : null;
-});
-
 check("the MCP protocol is written once", () => {
-  // Six Python scripts each carried their own MCP client — the smoke harness, the conformance
-  // measurer, the chain probe, the block probe, the credential batcher and the provisioner —
-  // and a seventh copy sat in release.ts. They had already drifted: FOUR protocol versions
-  // between them (2025-06-18, 2025-03-26, 2024-11-05 twice) and three ways of reading a
-  // streamable-HTTP answer. Nothing had broken, because the gateway accepts all of them; the
-  // day it stops accepting the oldest, the failure lands in whichever copy nobody remembered.
+  // Two things must not be duplicated: the protocol version, one string wherever a handshake
+  // is built, and the reading of a streamable-HTTP answer, where taking the first `data:`
+  // frame returns a progress notification and calls it the answer.
   //
-  // TWO things must not be duplicated, and they are different:
+  // A file that does neither is not a second client, however much of the protocol it
+  // mentions: services/gateway compares a request's method against "initialize" to tell a
+  // handshake from a tool call, where a client builds one.
   //
-  //   the VERSION — one string, wherever a handshake is built. release.ts still builds one,
-  //   deliberately: its probes use curl to assert a status code over real HTTPS from outside,
-  //   which is a stronger claim than "our own client can talk to it". What it may not do is
-  //   name the version itself, and it now reads it from the client's source.
-  //
-  //   the READING of a streamable-HTTP answer — a `data:` frame is where the three Python
-  //   copies actually disagreed, and where the subtle bug lived: taking the FIRST frame
-  //   returns a progress notification and calls it the answer.
-  //
-  // A file that does neither is not a second client, however much of the protocol it mentions.
-  // services/gateway ANSWERS a handshake for its credential-required stub and echoes the
-  // caller's version back; a server compares against "initialize" where a client builds it.
+  // DELIBERATE: release.ts builds a handshake of its own — its probes assert a status code
+  // over real HTTPS with curl — but reads the version from the client's source.
   const VERSION_LITERAL = /protocolVersion"?\s*:\s*"\d{4}-\d{2}-\d{2}"/;
   const BUILDS = /method:\s*"initialize"/;
   const READS_SSE = /(^|[^.\w])data:\s/;
   const bad: string[] = [];
   for (const f of sourceFiles(["."], [".ts"])) {
-    if (f === join("packages", "mcp-client", "src", "index.ts")) continue;   // the one place it IS written
+    if (f === join("packages", "mcp-client", "src", "index.ts")) continue;   // the one place it is written
     // This file contains every pattern it searches for, by construction. So does any linter.
     if (gateOwnSource(f)) continue;
     const src = readFileSync(join(root, f), "utf8");
@@ -242,16 +169,10 @@ check("the MCP protocol is written once", () => {
 
 check("every doc comment is attached to something", () => {
   // A `/** … */` block followed immediately by another one documents nothing: the first is
-  // stranded and the compiler is perfectly happy, so it survives every build. They arrive
-  // by insertion — somebody adds a function between a comment and the function it
-  // described, and the comment stays where it was.
+  // stranded and the compiler is happy, so it survives every build. They arrive by insertion,
+  // when a declaration goes in between a comment and the thing it described.
   //
-  // Seven of them had accumulated. The worst named a parameter: `skipIfHash makes a rebuild
-  // cheap` sat 115 lines from indexDoc, attached to an interface that has no parameters at
-  // all, while indexDoc itself had no comment. Two of the seven were created in this
-  // release by inserting ownershipCheck and commitStore.
-  //
-  // Only `/**` blocks. A `/* ── section ── */` band is a heading and is meant to sit above
+  // Only `/**` blocks. A `/* Section */` band is a heading and is meant to sit above
   // the first thing under it.
   const bad: string[] = [];
   for (const f of sourceFiles(["."], [".ts"])) {
@@ -263,26 +184,18 @@ check("every doc comment is attached to something", () => {
         if (i === closedAt + 1) bad.push(`${f}:${closedAt + 1} documents nothing`);
         openedAsDoc = true;
       } else if (/^\s*\/\*/.test(line)) {
-        // A PLAIN block comment right after a doc comment strands it just as surely: the
-        // declaration takes whichever comment sits immediately above it, and that is now the
-        // plain one. @zz/contracts had exactly this — a one-line doc comment on parseCaller,
-        // then a longer block explaining the header names, then the function.
+        // A plain block comment right after a doc comment strands it just as surely: the
+        // declaration takes whichever comment sits immediately above it.
         if (i === closedAt + 1) bad.push(`${f}:${closedAt + 1} documents nothing`);
         openedAsDoc = false;
       }
       if (/\*\/\s*$/.test(line) && openedAsDoc) { closedAt = i; openedAsDoc = false; }
     }
-    // THE SECOND SHAPE. A block separated from its symbol by a BLANK LINE is the same defect
-    // arriving differently: a JSDoc block belongs against what it describes, so a gap means
-    // either the symbol it described is gone or somebody put one between them.
+    // The second shape: a block separated from its symbol by a blank line. The gap means
+    // either the symbol it described is gone or somebody put something between them.
     //
-    // admin.ts carried a paragraph about "the model every generated agent preset sits on"
-    // over `presetId`, because the constant it described had been inlined into
-    // render_agent_definition and the explanation stayed behind. The first shape could not
-    // see it: nothing followed it but a blank line.
-    //
-    // A file header is the exception and the only one — it opens the file and documents the
-    // module, so the blank line before the imports is right.
+    // DELIBERATE: a file header is the one exception — it documents the module, so the blank
+    // line before the imports is right.
     for (let i = 0; i < lines.length; i++) {
       if (!lines[i].trim().startsWith("/**")) continue;
       const from = i;
@@ -298,17 +211,12 @@ check("every doc comment is attached to something", () => {
 });
 
 check("a markdown table row is built, never assembled", () => {
-  // zz-core appends three tables — the outcome ledger, the journal log and the journal index
-  // — and each assembled its own row. Two escaped their variable fields and the ledger did
-  // not, so an initiative folder named `a|b`, which safePath permits, produced a row every
-  // parser reads as initiative "a" and outcome "b". That ledger is what the smoke suite's
-  // whole verdict rests on and what zz-okr grades key results from, and the model cannot
-  // write it — but it could shape it, by choosing a folder name.
+  // Every cell of a markdown row has to be escaped, or an initiative folder named `a|b` —
+  // which safePath permits — produces a row a parser reads as two cells. tableRow escapes
+  // every cell; this refuses a table that assembles its own.
   //
-  // A row is built by tableRow now, which escapes every cell. This refuses a fourth table
-  // assembling its own, which is how the third one came to differ from the other two.
-  // zz-core, not one file in it: tableRow moved into document-rules.ts when the pure document
-  // rules were split out, and `export const` is what a moved symbol looks like.
+  // COUPLED: tableRow lives in zz-core's document-rules.ts. The match is against the whole
+  // service's source rather than one file, and accepts it with or without `export`.
   const f = "zz-core";
   const src = withoutComments(zzCoreSource());
   if (!/(export )?const tableRow = /.test(src)) return `${f}: tableRow is gone — the one row builder with it`;
@@ -316,9 +224,8 @@ check("a markdown table row is built, never assembled", () => {
   const lines = src.split("\n");
   lines.forEach((ln, i) => {
     if (/^\s*(\/\/|\*|\/\*)/.test(ln)) return;
-    // tableRow is the one place that may assemble one — that is what it is for. Exempted by
-    // what it IS rather than by line number, the way "the platform database is reached one
-        // way" exempts lib/psql.ts.
+    // DELIBERATE: tableRow may assemble one — that is what it is for. Exempted by what it
+    // is rather than by line number.
     if (/const tableRow = /.test(lines[i - 1] ?? "") || /const tableRow = /.test(ln)) return;
     // A template literal that opens a markdown row and interpolates something.
     if (/`\|\s+\$\{/.test(ln)) bad.push(`${f}:${i + 1} assembles a table row instead of calling tableRow`);
@@ -329,34 +236,27 @@ check("a markdown table row is built, never assembled", () => {
 });
 
 check("a plugin is named the same way wherever it is named", () => {
-  // A flow named `ops-flow` ships as the plugin `sm`: pluginName drops the trailing -flow, and
-  // the marketplace, the install line and the command namespace all take that name.
-  //
-  // The update line did not. It interpolated the FLOW name, so a person following the setup
-  // text ran `claude plugin update ops-flow@zz-platform` for a plugin called `sm` — install
-  // and update, in one file, naming the same thing two ways. That is the same failure as the
-  // /zz: commands, and it survived in the same file after those were found.
-  const src = gatewaySource();
+  // A flow named `sdlc-flow` ships as the plugin `sdlc`: pluginName drops the trailing -flow,
+  // and the marketplace, the install line, the update line and the command namespace all take
+  // the plugin name, never the flow name.
   const bad: string[] = [];
-  for (const [i, line] of src.split("\n").entries()) {
-    if (/^\s*(\/\/|\*)/.test(line)) continue;
-    if (/\$\{[^}]*\bf\.flow\}@zz-platform/.test(line) || /\$\{[^}]*\.flow\}@zz-platform/.test(line)) {
-      bad.push(`client-package.ts:${i + 1} names a plugin by its flow — use pluginName()`);
-    }
+  for (const f of sourceFiles(["services/gateway/src"], [".ts"])) {
+    readFileSync(join(root, f), "utf8").split("\n").forEach((line, i) => {
+      if (/^\s*(\/\/|\*)/.test(line)) return;
+      if (/\$\{[^}]*\.flow\}@(\$\{MARKETPLACE\}|zz-stack)/.test(line)) {
+        bad.push(`${f}:${i + 1} names a plugin by its flow — use pluginName()`);
+      }
+    });
   }
   return bad.length ? bad.join("; ") : null;
 });
 
 check("the audit criteria are written once", () => {
-  // sdlc-spec-audit and sdlc-plan-audit shared 165 IDENTICAL lines — the eleven prose failure
-  // modes, the evidence shapes, the JSON a round returns — with nothing holding them
-  // together. They were in sync the day this was found, and an edit to either would have
-  // left two auditors applying different standards with nobody able to say which was current.
+  // The generic half of both auditors — the eleven prose failure modes, the evidence shapes,
+  // the JSON a round returns — lives in sdlc-audit-criteria, and each auditor loads it rather
+  // than restating it.
   //
-  // Two auditors is deliberate: a spec and a plan fail in different ways, and one generic
-  // auditor finds the generic half of both. Two COPIES of the generic half is a different
-  // thing, and the platform already has the answer — a flow loads zz-platform rather than
-  // restating it.
+  // DELIBERATE: two auditors, not one. A spec and a plan fail in different ways.
   const dir = join(catalogRoot, "sdlc/sdlc-flow/skills");
   const shared = join(dir, "sdlc-audit-criteria/SKILL.md");
   if (!existsSync(shared)) return "sdlc-audit-criteria is missing — the shared criteria have nowhere to live";
@@ -373,19 +273,10 @@ check("the audit criteria are written once", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-// A source file with a control byte in it is a file every grep SKIPS.
-//
-// Three had one. block-conformance used a raw NUL as a Map-key separator, manifest-audit used
-// one to join two lists before comparing them, and markdown.ts opened a character range with
-// one — the regex that strips whitespace out of a URL before looking for a scheme, so that
-// `java script:` cannot hide one. All three worked. All three were also invisible: grep
-// reports "Binary file ... matches" and prints nothing, so every sweep over this repository,
-// including the ones that found the defects around them, silently skipped those files whole.
-// The sanitiser being one of them is the part that matters — a security-relevant line nobody
-// searching for it could find.
-//
-// Written as the escape \u0000 instead, the behaviour is identical and the byte is
-// readable. The rule is the general one: source is text, and a control byte makes it not text.
+// A source file with a control byte in it is a file every grep skips: grep reports
+// "Binary file ... matches" and prints nothing, so a sweep over the repository misses the
+// file whole. Written as the escape \u0000 instead, the behaviour is identical and the byte
+// is readable.
 check("every source file is text a search can read", () => {
   const bad: string[] = [];
   const exts = [".ts", ".js", ".md", ".json", ".sql", ".yml", ".yaml", ".sh"];
@@ -407,12 +298,8 @@ check("every source file is text a search can read", () => {
 check("the shared MCP client still behaves", () => {
   const nothingToRun = unbuilt();
   if (nothingToRun) return nothingToRun;
-  // Cases against a stub server, no gateway and no network — the engine prints how many on
-  // every run, which is why the number is not repeated here; it said "thirteen" while the
-  // engine reported seventeen. The six hand-rolled clients this replaced were never tested at
-  // all — they were verified by the scripts around them appearing to work, which is how three
-  // of them came to parse a streamable-HTTP answer three different ways without anybody
-  // noticing.
+  // Cases run against a stub server: no gateway and no network. The engine prints how many
+  // on every run, so the count is not repeated here.
   try {
     execFileSync("node", [join(root, "packages/tools/dist/testing/mcp-client-check.js")],
                  { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -425,21 +312,10 @@ check("the shared MCP client still behaves", () => {
 });
 
 check("imports run node, then packages, then this directory", () => {
-  // Not a taste rule: it is the order 42 of the 43 TypeScript files here already use, and the
-  // one that did not put `./identity.js` above `pg` — so a reader scanning db.ts's head for
-  // its external dependencies found a relative import where the package list should be.
-  // Stating it mechanically costs less than the next person deciding it again.
-  //
-  // GROUPS ONLY, deliberately. Within a group this repository does not sort — admin.ts reads
-  // ./blocks.js, ./db.js, ./identity.js, ./client-package.js — and inventing an
-  // alphabetical rule here would report four files as broken against a convention nobody
-  // adopted. A check must enforce the practice, not a tidier one it would prefer.
+  // DELIBERATE: groups only. Within a group this repository does not sort, so asserting an
+  // alphabetical order would report files as broken against a convention nobody adopted.
   const rank = (spec: string): number => (spec.startsWith("node:") ? 0 : spec.startsWith(".") ? 2 : 1);
   const findings = [];
-  // scripts/ TOO, and it is where the one violation was: this file imported ./manifests.ts
-  // above node:url — the gate breaking the rule the gate enforces, invisible because the walk
-  // stopped at packages/ and services/. Five of the six .mjs files here already followed it,
-  // which is the same majority the paragraph above cites for the TypeScript.
   for (const rel of [...sourceFiles(["packages", "services"], [".ts"]),
                      ...sourceFiles(["scripts"], [".ts"])]) {
     const src = readFileSync(join(root, rel), "utf8");
@@ -457,21 +333,10 @@ check("imports run node, then packages, then this directory", () => {
 });
 
 check("a flag given with nothing after it is refused, not read as absent", () => {
-  // parseArgs stores "" for `--actor` written with nothing after it — it will not swallow the
-  // next flag as a value — and `flags.get(name) ?? null` hands that "" straight through,
-  // because "" is not nullish. Every caller then tests it with `if (value)` and skips the
-  // filter in silence.
-  //
-  // For a flag naming a FILE that is a mistyped flag doing nothing: `--save` without a
-  // directory printed the report and saved nothing. For a flag that narrows a QUERY it is
-  // worse, because the tool still answers — `--actor` with no address reported on everybody
-  // while the operator read it as one evaluation run's calls, which is the single thing that
-  // flag exists to separate.
-  //
-  // tool-report had written the rule out and applied it to five flags. The two it missed were
-  // the two that decide what the report is ABOUT, three lines above the comment stating it,
-  // because the helper was local to the function rather than beside `required` where the
-  // question "what happens when an argument is missing" already lives.
+  // parseArgs stores "" for a flag written with nothing after it — it will not swallow the
+  // next flag as a value — and `flags.get(name) ?? null` hands that "" through, because "" is
+  // not nullish. A caller testing it with `if (value)` then skips the filter in silence, and
+  // a flag that narrows a query still answers, about everything.
   const bad: string[] = [];
 
   const cli = readFileSync(join(root, "packages/tools/src/lib/cli.ts"), "utf8");
@@ -507,18 +372,10 @@ check("a flag given with nothing after it is refused, not read as absent", () =>
     bad.push("optional() does not return a value that was actually given");
   }
 
-  // TWO WAYS TO READ A FLAG, and no third. Either it has a real DEFAULT, written
-  // `flags.get(x) || fallback` — there the tool still does the right thing against the right
-  // target — or it has none and goes through optional(), which refuses a flag given with
-  // nothing after it.
-  //
-  // The forms this replaces all read "" as absent, silently: `?? null` in tool-report, `?? ""`
-  // in probe-block, where `--expect` with no value skipped the allowlist comparison it exists
-  // for and exited 0; and a bare `get` in collect-turns, where `--since` with no value
-  // collected the whole store on the run the flag is documented to bound.
-  //
-  // Stated as a shape rather than a list of spellings, because the list was what let the
-  // second and third survive a fix to the first.
+  // Two ways to read a flag and no third: a real default, written `flags.get(x) || fallback`,
+  // or none, in which case it goes through optional(), which refuses a flag given with nothing
+  // after it. `?? null`, `?? ""` and a bare `get` all read "" as absent, so the check is
+  // stated as a shape rather than a list of those spellings.
   for (const rel of sourceFiles(["packages/tools"], [".ts"])) {
     if (rel.endsWith("lib/cli.ts")) continue;              // where optional() itself reads one
     readFileSync(join(root, rel), "utf8").split("\n").forEach((ln, i) => {
@@ -535,16 +392,9 @@ check("a flag given with nothing after it is refused, not read as absent", () =>
 });
 
 check("a function is never mistaken for what it returns", () => {
-  // `const bad = trackedFiles && [...trackedFiles()]` — the guard tested the FUNCTION, which
-  // is a declaration and therefore always truthy, and the fallback under it (`if (!bad) return
-  // null`, for a checkout with no git) could never run. Outside a checkout trackedFiles()
-  // returns null, `[...null]` throws, and the gate reported "trackedFiles is not iterable"
-  // instead of skipping a question it cannot answer — a graceful path that was complete and
-  // unreachable, in the check that says this repository ships one runtime.
-  //
-  // The shape is general and mechanical: a `function name(…)` declared in the file, used as a
-  // bare truthiness operand rather than called. Every real one in this repository is a call,
-  // so the pattern has no honest use here — a nullable helper is guarded on its RESULT.
+  // A `function name(…)` declared in the file and used as a bare truthiness operand rather
+  // than called: the guard tests the declaration, which is always truthy, so the fallback it
+  // protects is unreachable. A nullable helper is guarded on its result instead.
   const bad: string[] = [];
   for (const rel of sourceFiles(["services", "packages", "scripts"], [".ts"])) {
     const src = readFileSync(join(root, rel), "utf8");
@@ -552,7 +402,7 @@ check("a function is never mistaken for what it returns", () => {
       .map((m) => m[1]);
     if (!fns.length) continue;
     // `?` is deliberately not an operator here: `{ messages?: Message[] }` is an optional
-    // PROPERTY, and reading it as a ternary reported a type annotation as a defect.
+    // property, and reading it as a ternary reports a type annotation as a defect.
     const operand = new RegExp(`(?<![.\\w$])(${fns.join("|")})\\s*(?:&&|\\|\\||\\?\\?)`, "g");
     const tested = new RegExp(`\\b(?:if|while)\\s*\\(\\s*!?(${fns.join("|")})\\s*\\)`, "g");
     src.split("\n").forEach((ln, i) => {
@@ -568,13 +418,10 @@ check("a function is never mistaken for what it returns", () => {
 
 check("no statement is written twice in a row", () => {
   // Two identical adjacent statements: the second does nothing, and the pair reads as
-  // deliberate for as long as nobody looks. `if (NAMING.error) return NAMING.error;` sat
-  // twice in "no two flows collapse to the same command namespace" — harmless, and the same
-  // kind of debris this file refuses everywhere else, arriving by an edit that duplicated a
-  // line instead of moving it.
+  // deliberate for as long as nobody looks.
   //
-  // Statements only, so a repeated key in a data literal or a wrapped expression is not a
-  // subject; the terminating semicolon is what makes the line a whole one.
+  // DELIBERATE: statements only. The terminating semicolon is what makes the line a whole one,
+  // so a repeated key in a data literal or a wrapped expression is not a subject.
   const bad: string[] = [];
   for (const rel of sourceFiles(["services", "packages", "scripts"], [".ts"])) {
     const lines = readFileSync(join(root, rel), "utf8").split("\n");
@@ -589,18 +436,12 @@ check("no statement is written twice in a row", () => {
 });
 
 check("no comment repeats a line of itself", () => {
-  // The same debris as an adjacent duplicated statement, in the half of the file this
-  // repository puts most of its reasoning in — and invisible to that check, which skips
-  // comments by design because a `//` line has no terminating semicolon to mark it whole.
+  // The same debris as an adjacent duplicated statement, in comments: a rewritten paragraph
+  // left beside the original reads as emphasis until somebody compares the two. The statement
+  // check cannot see it, because a `//` line has no terminating semicolon.
   //
-  // tool-report carried a paragraph about `--fail-under` twice: the older wording and its
-  // replacement, one under the other, differing only in the last sentence. An edit that
-  // rewrites a paragraph and leaves the original beside it produces exactly that, and it reads
-  // as deliberate emphasis for as long as nobody compares the two.
-  //
-  // WITHIN ONE RUN of comment lines, so a rule quoted in two different places is not a
-  // subject — that is often the point. Forty characters, because a short line ("// ---", "//
-  // Two shapes:") legitimately repeats and says nothing when it does.
+  // DELIBERATE: within one run of comment lines, so a rule quoted in two different places is
+  // not a subject. Short lines are exempt — they legitimately repeat.
   const bad: string[] = [];
   for (const rel of sourceFiles(["services", "packages", "scripts"], [".ts"])) {
     const lines = readFileSync(join(root, rel), "utf8").split("\n");
@@ -629,27 +470,16 @@ check("no comment repeats a line of itself", () => {
   return bad.join("\n");
 });
 
-/* A CEILING, CHOSEN FROM THIS REPOSITORY RATHER THAN FROM TASTE.
+/* A ceiling on file size.
  *
- * 700 is the line above which every source file here was demonstrably more than one subject.
- * Measured, not picked: judge.ts is 627 lines with THREE exports and is one subject — split
- * it and you get fragments — while every file over 700 held a whole second thing. Every one
- * that did on 2026-09-11 was split into modules. How many, and what the largest file is
- * today, are deliberately NOT written here: a count in prose beside the thing that counts it
- * is the staleness this gate refuses in a skill, and it would age no better in a check. The
- * check below is the count.
+ * Line count finds "definitely too big"; it cannot find "more than one subject", and nothing
+ * here can.
  *
- * WHAT THIS DOES NOT CATCH, stated because a proxy presented as a judge is the failure this
- * whole gate exists to refuse: identity.ts is 619 lines with SEVENTEEN exports — cookies,
- * an adapter, middleware, authority predicates, slug helpers — and passes. Line count finds
- * "definitely too big". It cannot find "more than one subject", and nothing here can.
+ * DELIBERATE: no exemption list. A file that cannot get under the ceiling is telling you
+ * something; it is not asking for a waiver.
  *
- * NO EXEMPTION LIST. A list of files allowed to be large is a list nobody prunes, which is
- * the shape of defect the audit this rule came out of spent its time on. A file that cannot
- * get under the ceiling is telling you something; it is not asking for a waiver.
- *
- * .css, .html and .md are outside it. The rule is about code somebody has to reuse, and a
- * stylesheet or a document is neither read nor reused the way a module is.
+ * .css, .html and .md are outside it — a stylesheet or a document is not reused the way a
+ * module is.
  */
 check("no source file is larger than one subject usually is", () => {
   const LIMIT = 700;

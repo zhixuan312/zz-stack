@@ -1,9 +1,8 @@
 /**
  * Platform administration: people, enrolments and teams, across every tenant.
  *
- * Superadmin only, and that is the whole distinction from the team routes beside it. These
- * are the writes that create a tenant, retire a person, or change what every team can reach,
- * and none of them is something a team's own admin may do.
+ * Superadmin only, which is the whole distinction from the team routes beside it. These are the
+ * writes that create a tenant or retire a person.
  */
 import type { Express, Request, Response } from "express";
 
@@ -14,20 +13,10 @@ import { archiveTeam, createTeam } from "../admin/teams.js";
 import { addPerson, deactivatePerson, issueEnrolmentLink, listPeople } from "../admin/people.js";
 
 export function mountPlatformSettings(app: Express): void {
-  // --------------------------------------------------------- /platform/* (Task I-15, AC-5)
-  //
-  // A SUPERADMIN's write surface over the whole platform: add and deactivate people, create
-  // and archive teams, and grant or revoke a team's block access. Every route below calls
-  // one of the extracted admin.ts functions (`listPeople`, `addPerson`, `deactivatePerson`,
-  // `createTeam`, `archiveTeam`, `grantTool`, `revokeTool`), each guarded by `superOnly`
-  // INSIDE that function — the same discipline `teamAuthority` already gets in this file,
-  // and for the same reason: a route that compared `platformRole` here instead
-  // would pass this file's own review while quietly drifting from what the admin tools on
-  // `/manage/mcp` actually enforce.
-  //
-  // BLOCK ACCESS STAYS SUPERADMIN-ONLY. `grantTool`/`revokeTool`'s own comment (admin.ts)
-  // says access to a building block is a platform decision — there is no `/team/*` route
-  // above that reaches either of them, and none should ever be added; only this tier does.
+  // A superadmin's write surface over the whole platform: add and deactivate people, and create
+  // and archive teams. Every route calls one of the extracted admin functions, each guarded by
+  // `superOnly` inside that function rather than by a `platformRole` comparison here, so this
+  // file and `/manage/mcp` enforce one rule.
 
   /** Every principal, with the teams they are in, their role there, and who added them. */
   app.get("/api/console/settings/platform/people", (req: Request, res: Response) => {
@@ -66,13 +55,10 @@ export function mountPlatformSettings(app: Express): void {
 
   /** Mint an enrolment link so a principal can register a passkey.
    *
-   * NOT WRAPPED IN `redact()`, and it is the second exemption in this file after `POST
-   * /me/tokens`. The response carries a live one-time credential, exactly once, for the same
-   * reason a freshly issued token does — the person has to be able to send it to somebody.
-   * `redact()` would replace it with a marker and the route would report success while
-   * handing back nothing usable, which is the worst of both. The field is named `url` rather
-   * than anything the secret-name rule matches, so this is a deliberate exemption rather than
-   * a field that slipped past one; see redact.ts on why that rule fails closed.
+   * DELIBERATE: not wrapped in `redact()`, the second exemption in this file after
+   * `POST /me/tokens`. The response carries a live one-time credential the person has to be able
+   * to send on; `redact()` would replace it with a marker and report success while handing back
+   * nothing usable. The field is named `url` rather than anything the secret-name rule matches.
    */
   app.post("/api/console/settings/platform/enrolments", (req: Request, res: Response) => {
     void (async () => {
@@ -91,10 +77,9 @@ export function mountPlatformSettings(app: Express): void {
     });
   });
 
-  /** Deactivate a principal. `confirm` must repeat the email exactly — `deactivatePerson`'s
-   *  own rule (admin.ts), surfaced here rather than duplicated. The UI's own confirmation is
-   *  an inline swap (NFR-4, no modal); this is the gateway's independent check regardless of
-   *  what the browser sent. */
+  /** Deactivate a principal. `confirm` must repeat the email exactly — `deactivatePerson`'s own
+   *  rule (admin.ts), surfaced here rather than duplicated. This is the gateway's independent
+   *  check regardless of what the browser sent. */
   app.delete("/api/console/settings/platform/people", (req: Request, res: Response) => {
     void (async () => {
       const id = req.zzIdentity;

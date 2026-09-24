@@ -12,17 +12,9 @@ import { envNamesIn, firstOf, gateOwnSource, root, sourceFiles, trackedFiles } f
 import { check } from "../run.ts";
 
 check("the documented defaults are the actual defaults", () => {
-  // .env.example calls itself the whole configuration surface, and a check already says it
-  // is COMPLETE. Nothing said it was ACCURATE, and it was not: it documented WEB_PORT=8080,
-  // which was the previous front end's port — LibreChat listens on 3080, and compose
-  // defaults to it — so an operator uncommenting the line would publish the browser
-  // somewhere every other document says it is not. And WEB_BIND=0.0.0.0 against a compose
-  // default of 127.0.0.1, which is the insecure direction and disagreed with its own three
-  // sibling binds, all documented as loopback.
-  //
-  // A commented line in this file is read as "this is the default, here is where you change
-  // it". When it is not the default, it is worse than an undocumented knob: the operator has
-  // no reason to check.
+  // A commented line in .env.example is read as "this is the default, here is where you change
+  // it". When it disagrees with compose's own `${VAR:-default}`, the operator has no reason to
+  // check.
   const env = readFileSync(join(root, "deploy/.env.example"), "utf8");
   const compose = readFileSync(join(root, "deploy/docker-compose.yml"), "utf8");
   const defaults = new Map();
@@ -36,12 +28,9 @@ check("the documented defaults are the actual defaults", () => {
     if (!m) continue;
     const [, name, shown] = m;
     const real = defaults.get(name);
-    // Only where compose actually HAS a default. `${VAR:-}` is compose saying "pass this
-    // through, I have no default" — and .env.example is then documenting either the CODE's
-    // default (LOG_LEVEL's, say, and saying so is useful) or an
-    // example value (PLATFORMS, RULEMILL_PEERS). Neither is a claim about compose, and treating
-    // them as one made this check name six things that were all correct, which is how a
-    // check gets switched off.
+  // Only where compose actually has a default. `${VAR:-}` is compose saying "pass this through,
+  // I have no default", and .env.example is then documenting either the code's default or an
+  // example value — neither is a claim about compose.
     if (!real || shown === "" || real.has(shown)) continue;
     if ([...real].every((v) => v === "")) continue;
     // A default that is itself an interpolation cannot be compared textually.
@@ -52,21 +41,15 @@ check("the documented defaults are the actual defaults", () => {
 });
 
 check("the configuration surface is documented", () => {
-  // deploy/.env.example calls itself "the whole configuration surface". It was not: the
-  // three variables that decide what this deployment PUBLISHES — GATEWAY_BIND,
-  // INTERNAL_BIND, POSTGRES_BIND — were introduced by the fix for zz-core being reachable
-  // beyond loopback, and none of them was ever written down. So did OWU_BASE_MODEL, which
-  // chooses the model every agent on the platform runs on.
-  //
-  // An operator reads this file to find out what they may set. A knob missing from it does
-  // not read as undocumented; it reads as nonexistent.
+  // deploy/.env.example calls itself "the whole configuration surface". A knob missing from it
+  // does not read as undocumented to an operator; it reads as nonexistent.
   const envFile = join(root, "deploy/.env.example");
   const composeFile = join(root, "deploy/docker-compose.yml");
   if (!existsSync(envFile) || !existsSync(composeFile)) return "deploy/.env.example or docker-compose.yml is missing";
   const env = readFileSync(envFile, "utf8");
   const wanted = new Set<string>();
   for (const m of readFileSync(composeFile, "utf8").matchAll(/\$\{([A-Z][A-Z_0-9]*)/g)) wanted.add(m[1]);
-  // Also what the SERVICES read at runtime, which compose does not always pass explicitly.
+  // Also what the services read at runtime, which compose does not always pass explicitly.
   const readsOf = (dirs: string[]): Set<string> => {
     const out = new Set<string>();
     for (const rel of sourceFiles(dirs, [".ts"])) {
@@ -75,97 +58,57 @@ check("the configuration surface is documented", () => {
     return out;
   };
   for (const v of readsOf(["services"])) wanted.add(v);
-  // AND WHAT THE DEPLOY SCRIPTS READ OUT OF deploy/.env ITSELF, which nothing here saw.
-  // `env_get NAME` is a script asking THIS FILE for a value, so by construction the name is
-  // deployment configuration and belongs in it — unlike `${BACKUP_DIR:-…}`, which is a knob
-  // a person exports for one invocation and is excluded for the same reason packages/tools
-  // is excluded below.
+  // And what the deploy scripts read out of deploy/.env itself. `env_get NAME` is a script
+  // asking this file for a value, so the name is deployment configuration by construction —
+  // unlike `${BACKUP_DIR:-…}`, a knob a person exports for one invocation, excluded for the
+  // same reason packages/tools is excluded below.
   //
-  // COMPOSE_PROJECT_NAME is the one that was missing, and it is the expensive one: it
-  // decides what every volume on the host is NAMED, backup.sh reads it from here because
-  // compose offers volume names no other way, and its absence from this file is the shape
-  // of the four nights of silent backup loss in August 2026. Every other name read this way
-  // — POSTGRES_USER, POSTGRES_DB, SUPERADMIN_EMAIL — was already documented, which is what
-  // made the one exception invisible.
+  // COMPOSE_PROJECT_NAME arrives this way and is the expensive one: it decides what every
+  // volume on the host is named, and backup.sh reads it from here because compose offers volume
+  // names no other way.
   for (const rel of sourceFiles(["deploy"], [".sh"])) {
     for (const m of readFileSync(join(root, rel), "utf8").matchAll(/env_get ([A-Z][A-Z_0-9]*)/g)) {
       wanted.add(m[1]);
     }
   }
-  // packages/tools is deliberately NOT walked. It holds the operator and testing commands,
-  // and what they read — ZZ_PAT, LC_PASSWORD, SMOKE_TEAM, twenty more — is what a person
-  // exports for one invocation, not what a DEPLOYMENT is configured with. This file's own
-  // first line calls itself "the whole configuration surface", and a reader who found the
-  // smoke harness's turn limit in it would reasonably conclude it belonged in a running
-  // stack's .env. Each of those variables is documented where it is used: in the tool's own
-  // usage line, which is what somebody about to run it actually reads.
+  // DELIBERATE: packages/tools is not walked. It holds the operator and testing commands, and
+  // what they read — ZZ_PAT, ZZ_URL and the rest — is what a person exports
+  // for one invocation, not what a deployment is configured with. Each is documented in its
+  // tool's own usage line.
   for (const d of readdirSync(join(root, "packages"), { withFileTypes: true })) {
     if (!d.isDirectory() || d.name === "tools") continue;
     for (const v of readsOf([`packages/${d.name}`])) wanted.add(v);
   }
 
-  // A THIRD category, and the reason the two directions below are not simply inverses.
-  // ZZ_TOKEN and ZZ_URL are read by the ops scripts and by nothing the deployment runs.
-  // They do not belong in deploy/.env.example — that file is what compose reads, and an
-  // admin token has no business in it — but a document naming them is not naming a dead
-  // knob either. So they are excluded from both directions rather than forced into one.
-  // Recursive, because scripts/probes/ is where two of them live and a flat readdir has
-  // never seen it — so a variable read only by a probe counted as read by nothing, and would
-  // have been reported as a phantom the moment somebody documented it.
+  // A third category, and the reason the two directions below are not inverses. ZZ_TOKEN and
+  // ZZ_URL are read by the ops scripts and by nothing the deployment runs: they do not belong in
+  // deploy/.env.example, which is what compose reads, but a document naming them is not naming a
+  // dead knob either. So they are excluded from both directions rather than forced into one.
   //
-  // AND packages/tools, which is the other half of the same category and was missing. That
-  // directory is excluded from `wanted` twenty lines up, deliberately and for the reason
-  // written there — ZZ_PAT, LC_PASSWORD and ZZ_URL are what a person exports for one
-  // invocation, not what a deployment is configured with. "Excluded from both directions" is
-  // what the paragraph above promises; only one direction did it. So documenting the very
-  // command deploy/README.md tells an operator to run first, with its variables named the way
-  // this file names every other variable, reported three live knobs as dead ones.
+  // Recursive, because scripts/probes/ holds two of them. packages/tools is the other half of
+  // the same category, excluded from `wanted` above for the reason written there.
   const opsVars = new Set([...readsOf(["scripts"]), ...readsOf(["packages/tools"])]);
-  // OFFERED, not merely mentioned. This asked whether the NAME appears anywhere in the file,
-  // so a variable named only in a paragraph explaining something else counted as documented —
-  // and this file is full of such paragraphs. `# VAR=` is the form every knob here is offered
-  // in, and it is what an operator uncomments; prose about a variable is not an offer of it.
-  //
-  // The rule used to be spelled twice. A second check, "the configuration surface documents
-  // itself completely", asked the same question over compose's variables alone with exactly
-  // this stricter test — two checks for one rule, differing on what counts as documented,
-  // with the weaker one deciding for every variable the narrower one did not reach. Measured
-  // before merging: the two agree on every variable in the tree today, so this changes what
-  // is enforced and not what passes.
+  // Offered, not merely mentioned. `# VAR=` is the form every knob here is offered in and what
+  // an operator uncomments; prose about a variable is not an offer of it, and this file is full
+  // of prose.
   const offered = (v: string): boolean => new RegExp(`^#?\\s*${v}=`, "m").test(env);
   const missing = [...wanted].filter((v) => !offered(v)).sort();
 
-  // And the mirror, which is the same failure read from the other end. A knob missing from
-  // the docs reads as nonexistent; a knob documented after the code stopped reading it
-  // reads as available, and the operator who sets it gets the default with no complaint.
-  // deploy/README.md offered `MCP_BIND` for months after the variable became GATEWAY_BIND,
-  // so anyone following it left the gateway on loopback — where Caddy cannot reach it, and
-  // the failure looks like a hang rather than a misconfiguration.
+  // And the mirror: a knob documented after the code stopped reading it reads as available, and
+  // the operator who sets it gets the default with no complaint.
   //
-  // Both sources are closed sets, which is what makes this safe to check: .env.example's
-  // own assignments, and the backticked SHOUTING_CASE tokens in the deploy README, every
-  // one of which is an environment variable today.
+  // Both sources are closed sets, which is what makes this safe to check: .env.example's own
+  // assignments, and the backticked SHOUTING_CASE tokens in the deploy README, every one of
+  // which is an environment variable today.
   const named = new Set<string>();
   for (const m of env.matchAll(/^#?\s*([A-Z][A-Z_0-9]{3,})=/gm)) named.add(m[1]);
-  // A knob written WITHOUT the `=` was invisible to this mirror, and that is how a phantom
-  // survived: `# RULEMILL_URL / RULEMILL_WEB_URL / RULEMILL_INGRESS_BASE / RULEMILL_PEERS` offered four
-  // names in a format no other line in the file uses, and RULEMILL_URL was read by nothing,
-  // anywhere — not this repo, not zz-blocks, not compose. It existed only on the line
-  // offering it to operators. The three beside it were real, which is exactly what made it
-  // invisible to a person too.
+  // A knob written without the `=` is offered as a list — `# NAME / NAME / NAME` — or alone on
+  // its line, so the name is followed by a slash, a comma, or nothing.
   //
-  // Matched by FORMAT, not by word shape. A knob offered without `=` is offered as a list —
-  // `# NAME / NAME / NAME` — or alone on its line, so the name is followed by a slash, a
-  // comma, or nothing. Prose that opens with an emphasised word is followed by another
-  // word: this file says `# LEAVE IT UNSET unless…` and `# WRITTEN BY THE RELEASE…`, and
-  // neither offers a variable called LEAVE or WRITTEN.
-  //
-  // Anchoring to the start of the line also keeps mid-sentence mentions out. The example
-  // that prompted it was a paragraph explaining that compose passed one variable into a
-  // container under a different name — a real variable the front end read and we did not,
-  // described rather than offered. Both that front end and that variable are gone; the rule
-  // stands because prose about a variable is not the same as offering one, whatever the
-  // variable happens to be.
+  // Matched by that format rather than by word shape, and anchored to the start of the line.
+  // Prose opening with an emphasised word is followed by another word: `# LEAVE IT UNSET
+  // unless…` and `# WRITTEN BY THE RELEASE…` offer no variable called LEAVE or WRITTEN. A
+  // mid-sentence mention of a variable is not an offer of it either.
   for (const line of env.split("\n")) {
     if (!/^#\s*[A-Z][A-Z_0-9]{3,}\s*(\/|,|$)/.test(line)) continue;
     for (const m of line.matchAll(/\b([A-Z][A-Z_0-9]{3,})\b/g)) named.add(m[1]);
@@ -190,28 +133,20 @@ check("the configuration surface is documented", () => {
 });
 
 check("an environment default is not defeated by an empty variable", () => {
-  // An unset variable passed through compose as ${VAR:-} or exported bare in a shell arrives
-  // as the EMPTY STRING, which is not nullish. So `process.env.X ?? "a default"` hands back
-  // "" and the default never applies — and nothing errors, because "" is a value.
+  // An unset variable passed through compose as ${VAR:-} or exported bare in a shell arrives as
+  // the empty string, which is not nullish. So `process.env.X ?? "a default"` hands back "" and
+  // the default never applies — and nothing errors, because "" is a value.
   //
-  // @zz/mcp-http had it over its session TTL: Number("") is 0, so every MCP session would have
-  // been reclaimed two minutes into any conversation. (That TTL is gone — the doors are
-  // stateless now — but the shape it taught is why this check exists.) Four more sites had it.
-  // LC_BASE="" pointed every smoke request at nothing; SMOKE_LANE_DIR="" made
-  // join("", "s1.log") into "s1.log", so five lanes wrote their logs into whatever directory
-  // the run started in; ZZ_GATEWAY="" and CHAIN_FLOW="" the same way.
-  //
-  // `?? ""` is fine and common — the default IS the empty string, so nothing is defeated.
-  // What this refuses is `??` reaching for a value the empty string will never let it use.
+  // `?? ""` and `?? null` are fine: there the default is the absent value and nothing is
+  // defeated. What this refuses is `??` reaching for a value the empty string will never let it
+  // use.
   const bad: string[] = [];
   for (const f of sourceFiles(["services", "packages"], [".ts"])) {
     readFileSync(join(root, f), "utf8").split("\n").forEach((ln, i) => {
       if (/^\s*(\/\/|\*|\/\*)/.test(ln)) return;
-      // Two shapes, one rule. An environment variable arrives empty from compose; a FLAG
+      // Two shapes, one rule. An environment variable arrives empty from compose; a flag
       // arrives empty from `--since` written with no value, because parseArgs stores "" for a
-      // flag it saw without one. `--since` alone became an empty psql interval, `--base`
-      // alone made every URL relative. `?? null` and `?? ""` are fine: there the default IS
-      // the absent value and nothing is defeated.
+      // flag it saw without one.
       const empties: [RegExp, string][] = [
         [/process\.env\.([A-Z_][A-Z0-9_]*)\s*\?\?\s*(.+?)(?:[,;)]|$)/g, "an unset variable arrives as \"\""],
         [/flags\.get\(\s*"([a-z-]+)"\s*\)\s*\?\?\s*(.+?)(?:[,;)]|$)/g, "a flag written with no value arrives as \"\""],
@@ -229,12 +164,10 @@ check("an environment default is not defeated by an empty variable", () => {
 });
 
 check("the documented install has every value it refuses to start without", () => {
-  // The install is `cp .env.example .env` then `docker compose up -d`, and compose marks
-  // four variables `:?` — no default, hard failure, because a default for the front end's
-  // session and credential secrets would be a published secret every deployment shared.
-  // Right today, and nothing held it there: a fifth `:?` is one line, and the person who
-  // finds out is whoever runs the two documented commands on a fresh host and gets
-  // "CREDS_X is required" from a file they were told to copy as-is.
+  // The install is `cp .env.example .env` then `docker compose up -d`, and compose marks a secret
+  // `:?` — no default, hard failure, because a default would be a published secret every
+  // deployment shared. The person who finds a `:?` missing from .env.example is whoever runs the
+  // two documented commands on a fresh host.
   const compose = readFileSync(join(root, "deploy/docker-compose.yml"), "utf8");
   const required = [...new Set([...compose.matchAll(/\$\{([A-Z_]+):\?/g)].map((m) => m[1]))];
   if (!required.length) return null;   // nothing is mandatory: not a failure, just nothing to check
@@ -253,26 +186,20 @@ check("the documented install has every value it refuses to start without", () =
     : null;
 });
 
-// AN ENVIRONMENT VARIABLE READ BY A COMPUTED NAME IS A VARIABLE NOTHING CAN FIND.
+// An environment variable read by a computed name is a variable nothing can find.
 //
-// Two guarantees in this repository are built on being able to see the name in the source:
-// zz-tool forwards "the variables the tools read, and ONLY those", and .env.example is
-// checked against what the services read. Both find them by looking for `process.env.NAME`.
+// Two guarantees in this repository are built on seeing the name in the source: zz-tool forwards
+// "the variables the tools read, and only those", and .env.example is checked against what the
+// services read. Both find them by looking for `process.env.NAME`.
 //
-// A helper that took the name as a string and read `process.env[name]` hid three of the
-// smoke suite's settings from the first of those. Nothing failed — a run through zz-tool
-// would simply have used every default, silently, including the parallelism and the turn
-// budget, and the operator who exported them would have had no way to tell.
-//
-// The value is passed at the call site instead, so the name stays literal. That is a real
-// cost of one argument, and it buys a property two checks depend on.
+// DELIBERATE: the value is passed at the call site instead, so the name stays literal. That is a
+// real cost of one argument, and it buys a property two checks depend on.
 check("nothing reads the environment by a computed name", () => {
   const bad: string[] = [];
   for (const rel of sourceFiles(["services", "packages", "scripts"], [".ts"])) {
     if (gateOwnSource(rel)) continue;     // it has to spell the shape
-    // lib/cli.ts IS the accessor: envRequired takes the name so that a missing variable
-    // produces one sentence everywhere. The gate reads that shape too, so a name passed to
-    // it is as findable as a dotted one.
+    // lib/cli.ts is the accessor: envRequired takes the name so that a missing variable produces
+    // one sentence everywhere, and the gate reads that shape too.
     if (rel === join("packages", "tools", "src", "lib", "cli.ts")) continue;
     readFileSync(join(root, rel), "utf8").split("\n").forEach((raw, i) => {
       const line = raw.trim();
@@ -289,17 +216,11 @@ check("nothing reads the environment by a computed name", () => {
 });
 
 check("zz-tool forwards every variable the tools it runs actually read", () => {
-  // zz-tool runs a tool inside the published image with `docker compose run -e NAME`, and
-  // it forwards a NAMED LIST — deliberately, so an unset secret arrives unset rather than as
-  // an empty string a tool would treat as supplied. The cost of that choice is that the list
-  // has to keep up, and nothing was keeping it.
+  // zz-tool runs a tool inside the published image with `docker compose run -e NAME`, and it
+  // forwards a named list — deliberately, so an unset secret arrives unset rather than as an
+  // empty string a tool would treat as supplied. The cost is that the list has to keep up.
   //
-  // chain-check reads CHAIN_FLOW and the list did not carry it, so on a deploy host
-  // `CHAIN_FLOW=ops-flow zz-tool chain-check` silently checked a different flow. A wrong
-  // answer that looks like a right one is the worst failure a checking tool can have.
-  //
-  // Computed through the IMPORT GRAPH, because a tool reads variables its helpers read: the
-  // variable that went missing belonged to the entry file, but the next one may not.
+  // Computed through the import graph, because a tool reads the variables its helpers read.
   const toolSrc = join(root, "packages/tools/src");
   const wrapper = readFileSync(join(root, "deploy/zz-tool"), "utf8");
   const aliases = [...wrapper.matchAll(/\[[a-z-]+\]=([a-z-]+\/[a-z-]+)/g)].map((m) => m[1]);
@@ -330,17 +251,10 @@ check("zz-tool forwards every variable the tools it runs actually read", () => {
 });
 
 check("every switch a tool reads is one an operator can find", () => {
-  // `watch-results --health` pointed the stranded-event alert at a different gateway, and was
-  // in no usage block, no README and no runbook. So did `--mongo`, `--container`,
-  // `--compose-dir`, `--name` and `--require-closed`. Each is a real escape hatch with a
-  // working default, which is exactly why nobody noticed: the default keeps the tool running
-  // on the host it was written for, and the switch that makes it run anywhere else exists
-  // only for a reader of the source.
-  //
-  // A tool's own doc comment is the whole of its documentation here — `zz-tool --help` prints
-  // it — so a flag missing from it is a capability the platform has and cannot offer. Read
-  // from the code that consumes the flag rather than from a list, so adding one and not
-  // saying so fails here rather than being discovered by whoever needed it.
+  // A tool's own doc comment is the whole of its documentation here — `zz-tool --help` prints it
+  // — so a flag missing from it is a capability the platform has and cannot offer. Read from the
+  // code that consumes the flag rather than from a list, so adding one and not saying so fails
+  // here. Every such flag has a working default, which is what keeps it unnoticed.
   const bad: string[] = [];
   for (const rel of sourceFiles(["packages/tools/src"], [".ts"])) {
     const src = readFileSync(join(root, rel), "utf8");
@@ -353,26 +267,15 @@ check("every switch a tool reads is one an operator can find", () => {
 });
 
 check("an environment variable's default is one value, wherever it is spelled", () => {
-  // Thirteen variables carry a default in more than one file, and the format refuses a single
-  // declaration for most of them: compose cannot read release.ts, a bash script cannot import
-  // a node constant, and one compose file names the same image on two services. "The platform
-  // model is one name, however many places name it" already answers this shape — where one
-  // declaration is impossible, the gate enforces one VALUE — and this is that rule applied to
-  // every default rather than to the one somebody was bitten by.
+  // Several variables carry a default in more than one file, and the format refuses a single
+  // declaration for most of them: compose cannot read release.ts, a bash script cannot import a
+  // node constant, and one compose file names the same image on two services. Where one
+  // declaration is impossible, the gate enforces one value.
   //
-  // The sharp one was ZZ_DEPLOY_HOST. sync.sh used to refuse to rsync --delete onto production by
-  // comparing HOST against `${ZZ_DEPLOY_HOST:-<host>}`, and its comment claims it "asks that
-  // script's question rather than inventing a second answer to it". It is a second answer: the
-  // variable is shared and the default is retyped. Change release.ts's and the refusal guards
-  // the wrong host — and that script's own header records the accident it exists to prevent,
-  // an rsync --delete that removed a host's four secrets, "recoverable only because every
-  // container was still running with the values in its own environment".
-  //
-  // A DERIVATION IS NOT A SECOND SPELLING and must not be reported as one. build-image.sh
-  // takes ZZ_VERSION from package.json with a sed, and issue-first-pat.sh reads POSTGRES_USER
-  // out of the host's own .env — both are exactly right, and both sit beside a literal in
-  // compose. Anything containing a `$` is derived and skipped; what is compared is literal
-  // against literal.
+  // DELIBERATE: a derivation is not a second spelling and is not reported as one. build-image.sh
+  // takes ZZ_VERSION from package.json with a sed, and issue-first-pat.sh reads POSTGRES_USER out
+  // of the host's own .env. Anything containing a `$` is skipped; literal is compared against
+  // literal.
   const PATTERNS = [
     /process\.env\.([A-Z][A-Z0-9_]*)\s*\|\|\s*"([^"]*)"/g,   // node
     /\$\{([A-Z][A-Z0-9_]*):-([^}]*)\}/g,                     // compose, and shell's own form
@@ -385,7 +288,7 @@ check("an environment variable's default is one value, wherever it is spelled", 
       for (const re of PATTERNS) {
         for (const m of ln.matchAll(re)) {
           const [, name, value] = m;
-          if (!value || value.includes("$")) return;         // derived, which is the right thing
+          if (!value || value.includes("$")) return;         // derived, not a second spelling
           if (!seen.has(name)) seen.set(name, new Map());
           const byValue = seen.get(name);
           byValue.set(value, [...(byValue.get(value) ?? []), `${rel}:${i + 1}`]);
@@ -404,19 +307,14 @@ check("an environment variable's default is one value, wherever it is spelled", 
   return bad.join("\n");
 });
 
-/* AN ENVIRONMENT VARIABLE zz-tool CARRIES THAT NOTHING READS.
+/* An environment variable zz-tool carries that nothing reads.
  *
- * `zz-tool` forwards a fixed list of names into the container it runs a tool in. The list
- * costs nothing to be wrong — a name for a tool that no longer exists is simply never set —
- * so thirteen of twenty-five had accumulated: ten SMOKE_* for a testing engine no longer in
- * the tree, three for a front end removed on 2026-09-10, and one for nothing at all.
+ * `zz-tool` forwards a fixed list of names into the container it runs a tool in. The list costs
+ * nothing to be wrong — a name for a tool that no longer exists is simply never set — so fossils
+ * accumulate, and an operator reading the list cannot tell a live knob from a dead one.
  *
- * That is the same defect class as `the configuration surface is documented`, one layer out:
- * an operator reading the list cannot tell a live knob from a fossil, and neither can the
- * next person deciding whether it is safe to remove one.
- *
- * Source, not dist, and `process.env.NAME` or `env.NAME` either way — several tools read
- * through a destructured `env`. */
+ * Source, not dist, and `process.env.NAME` or `env.NAME` either way — several tools read through
+ * a destructured `env`. */
 check("every variable zz-tool forwards is read by a tool that exists", () => {
   const tool = readFileSync(join(root, "deploy/zz-tool"), "utf8");
   const block = /for v in ([\s\S]*?); do/.exec(tool);

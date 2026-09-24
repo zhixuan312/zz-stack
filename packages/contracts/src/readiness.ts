@@ -1,42 +1,29 @@
 /**
- * WHETHER A STEP MAY ADVANCE, DECIDED ON EVIDENCE AND RECORDED GATES AND ON NOTHING ELSE.
+ * Whether a step may advance, decided on evidence and recorded gates and nothing else.
  *
- * This module knows nothing about which step it is scoring. It is handed outcome evidence,
- * the gaps still open against that outcome, and whether the gates the step is subject to were
- * recorded — and it answers whether that is enough. It has no list of steps, no order, and no
- * vocabulary belonging to any one flow, which is the whole reason it can live below the layer
- * that binds a flow's declared steps to a contract: a scorer that recognised the step would be
- * a scorer that could treat one step's thin evidence as another step's sufficiency.
+ * This module knows nothing about which step it is scoring. It is handed outcome evidence, the
+ * gaps still open against that outcome, and whether the gates the step is subject to were
+ * recorded. It has no list of steps, no order, and no vocabulary belonging to any one flow, so
+ * it cannot treat one step's thin evidence as another step's sufficiency.
  *
- * FOUR OBSERVATIONS ARE RECORDED AND NEVER CONSULTED. Bytes added, rounds elapsed, a model's
- * own confidence, an aggregate score. Each is a real measurement of something, and not one of
- * them is a measurement of whether the work is done. Half a megabyte of added text with a gap
- * still open is half a megabyte with a gap still open; a score of 98 is a number a scorer
- * produced, not a fact anybody verified. They arrive on the same input because the callers
- * have them and hiding them would only mean they were consulted somewhere with no record —
- * so they are carried into {@link ReadinessVerdict.disregarded} by name, with the reason each
- * was set aside, and a reader can see that they were seen and refused.
+ * Four observations are recorded and never consulted: bytes added, rounds elapsed, a model's
+ * own confidence, an aggregate score. None measures whether the work is done. They arrive on
+ * the same input because the callers have them, and they are carried into
+ * {@link ReadinessVerdict.disregarded} by name with the reason each was set aside.
  *
- * AND THE CONVERSE, WHICH IS THE HALF THAT IS EASY TO LOSE. A twelve-byte correction that
- * carries its evidence and closes its gap ADVANCES. A rule written as "enough has changed"
- * fails in both directions at once — it passes padding and it blocks the one-line fix that was
- * the entire finding. Volume is not the measure in either direction.
+ * Volume is not the measure in either direction: a twelve-byte correction that carries its
+ * evidence and closes its gap advances.
  *
- * AN EPISODE IS KEYED BY WHAT IT AUDITS, NOT BY WHAT IT IS CALLED. {@link episodeKey} digests
- * the subject and the criteria and deliberately drops the label, so renaming an audit and
- * running it again lands on the same key and spends the same attempt budget. A caller's own
- * assertion that a run is "a retry" is an assertion, not recognition; it is carried as a
- * disregarded observation like the other four. A budget that resets because somebody typed a
- * new name is not a budget.
+ * An episode is keyed by what it audits, not by what it is called. {@link episodeKey} digests
+ * the subject and the criteria and drops the label, so renaming an audit and running it again
+ * lands on the same key and spends the same attempt budget.
  *
- * EXHAUSTION IS NEVER A PASS, and it is not a failure either — it is a budget reaching its end
- * with the question still open. {@link ReadinessVerdict.exhausted} says so in its own field and
- * adds a blocker rather than touching `advance`, because the two are different facts and a
- * caller that conflates them will ship on the day it runs out of attempts.
+ * Exhaustion is never a pass and is not a failure: {@link ReadinessVerdict.exhausted} says so
+ * in its own field and adds a blocker rather than touching `advance`.
  */
 import { createHash } from "node:crypto";
 
-/** What an audit episode is ABOUT. The label is what somebody called this run of it, and it is
+/** What an audit episode is about. The label is what somebody called this run of it, and it is
  *  excluded from the key on purpose — see {@link episodeKey}. */
 export interface AuditEpisode {
   readonly subjectRef: string;
@@ -56,10 +43,8 @@ export interface ObservedSignals {
 
 /** The episode an audit-bearing step is spending attempts inside.
  *
- *  `auditFindings` left undefined means NO COMPLETE AUDIT HAS REPORTED, which is a different
- *  state from an audit that reported zero findings, and neither is defaulted into the other.
- *  Zero findings from a complete audit is the strongest result available; no audit at all is
- *  the absence of a result. */
+ *  `auditFindings` left undefined means no complete audit has reported, which is a different
+ *  state from an audit that reported zero findings. Neither is defaulted into the other. */
 export interface AuditContext {
   readonly episode?: AuditEpisode;
   readonly priorEpisode?: AuditEpisode;
@@ -93,12 +78,11 @@ export interface ReadinessVerdict {
   /** True only while a complete audit's findings are still open AND attempts remain. A clean
    *  audit is never made to burn the rest of its budget to prove it was clean. */
   readonly mustSpendRemainingRounds: boolean;
-  /** True only when the episode's SUBJECT changed. A rename never resets a budget. */
+  /** True only when the episode's subject changed. A rename never resets a budget. */
   readonly budgetReset: boolean;
   /** Whether a complete audit has reported at all, and what it found. `not_reported` is not
-   *  `clean`: the distinction is only real if it is observable, and this is where it is
-   *  observed. A reader — or a probe — that could not tell them apart could not tell an
-   *  implementation that defaults a missing count to zero from one that does not. */
+   *  `clean`, and this is where that distinction becomes observable — including to a probe
+   *  telling an implementation that defaults a missing count to zero from one that does not. */
   readonly audit: "not_reported" | "clean" | "findings";
   readonly episodeKey: string | null;
   /** Null when either the budget or the attempts used is unknown — never zero by default. */
@@ -109,8 +93,7 @@ export interface ReadinessVerdict {
 /** The digest an episode's attempts are counted under: subject and criteria, never the label.
  *
  *  The separator is a newline and both halves are length-prefixed, so a subject ending in the
- *  separator cannot be re-split into a different pair — the same ambiguity a plain join has
- *  whenever the parts are caller-supplied text. */
+ *  separator cannot be re-split into a different pair. */
 export function episodeKey(episode: AuditEpisode): string {
   const part = (s: string): string => `${s.length}:${s}\n`;
   return createHash("sha256")
@@ -136,10 +119,9 @@ const WHY: Readonly<Record<string, string>> = Object.freeze({
 });
 
 /**
- * The judgement. `advance` is COMPUTED from three things and three things only: that outcome
- * evidence exists, that no gap is still open against it, and that the gates this step is
- * subject to were recorded. Every other field on the input either explains the budget or is
- * recorded as disregarded.
+ * The judgement. `advance` is computed from three things only: that outcome evidence exists,
+ * that no gap is still open against it, and that the gates this step is subject to were
+ * recorded. Every other input field either explains the budget or is recorded as disregarded.
  */
 export function readiness(input: ReadinessInput): ReadinessVerdict {
   const grounds: string[] = [];
@@ -158,9 +140,8 @@ export function readiness(input: ReadinessInput): ReadinessVerdict {
     blockers.push(`${input.gaps.length} gap(s) still open: ${input.gaps.join(", ")}`);
   }
 
-  // COMPUTED HERE, before anything about budgets is appended below. `advance` is the answer to
-  // "is the evidence sufficient", and a budget cannot make insufficient evidence sufficient or
-  // sufficient evidence insufficient.
+  // Computed before anything about budgets is appended below: a budget cannot make
+  // insufficient evidence sufficient, or sufficient evidence insufficient.
   const advance = blockers.length === 0;
 
   const key = input.episode ? episodeKey(input.episode) : null;
@@ -178,9 +159,9 @@ export function readiness(input: ReadinessInput): ReadinessVerdict {
       "reaching its end and is never a pass");
   }
 
-  // Open findings from a COMPLETE audit are work still owed, and another attempt is how it
-  // gets done — so the remaining attempts are owed too, while any remain. A clean audit owes
-  // nothing, and neither does an episode with no attempts left.
+  // Open findings from a complete audit are work still owed, so the remaining attempts are
+  // owed too while any remain. A clean audit owes nothing, and neither does an episode with no
+  // attempts left.
   const mustSpendRemainingRounds =
     input.auditFindings !== undefined && input.auditFindings > 0
     && input.gaps.length > 0 && attemptsRemaining !== 0;

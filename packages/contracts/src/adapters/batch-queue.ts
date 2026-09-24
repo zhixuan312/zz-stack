@@ -1,42 +1,25 @@
 /**
- * THE SECOND RUNTIME ADAPTER, and the only reason the port can be called a port.
+ * The second runtime adapter: a work queue where jobs are submitted, leased to a worker and
+ * metered per step. A fixture — it runs nothing, opens nothing and waits for nothing, and its
+ * feed is scripted, advancing one tick per {@link observe}.
  *
- * A SECOND ADAPTER THAT IS THE FIRST ONE UNDER NEW NAMES DEMONSTRATES NOTHING. It would pass
- * every check, and the first time a real second runtime arrived the platform would discover
- * which of its assumptions had been baked into a vocabulary nobody thought was a vocabulary.
- * So this one is deliberately unlike the first in the two places the port is most likely to
- * have been shaped around the first: what a unit of activity looks like, and what asking work
- * to stop can achieve.
+ * DELIBERATE: it is unlike the first adapter in the two places the port is most likely to
+ * have been shaped around the first, so that a second adapter is evidence the port is a port
+ * rather than the first one renamed. Each difference is one a caller has to write code for:
  *
- * WHAT IT MODELS. A work queue: jobs are submitted, leased to a worker, and metered per step.
- * It is a fixture — it runs nothing, opens nothing and waits for nothing, and its feed is
- * scripted and advances one tick per {@link observe}, exactly as the first adapter's does. What
- * makes it evidence is not that it is real. It is that the same conformance protocol, the same
- * method binding, the same claim and the same receipt rules drive it, and that every one of the
- * differences below is a difference a caller would have to write code for:
+ *   · An event is an ordinal, not an opaque identifier. Frames are numbered, ordered by that
+ *     number rather than by arrival, and stamped with an integer epoch. A frame has no
+ *     parentage, and nothing records a session.
+ *   · The feed is a replaced snapshot and it loses entries: each poll returns what the
+ *     bounded buffer still holds, and the ordinals show the gaps. Metering is kept
+ *     separately and is not dropped, so a lossy feed does not make consumption incomplete.
+ *   · Stopping is absent, not weaker. There is no channel to a leased worker, so `cancel`
+ *     answers `unsupported` rather than `requested`. The only lever is declining to renew
+ *     the lease, and the script keeps producing frames after a lease lapses.
+ *   · Continuing is absent too. Work resumes by being submitted again, from nothing.
  *
- *   · AN EVENT IS AN ORDINAL, NOT AN OPAQUE IDENTIFIER. Frames are numbered, ordered by that
- *     number rather than by arrival, and stamped with an integer epoch rather than a date
- *     string. There is no parentage on a frame and no record of a session anywhere.
- *   · THE FEED IS A REPLACED SNAPSHOT, AND IT LOSES ENTRIES. Each poll returns the frames the
- *     queue still holds in a bounded buffer; earlier ones are gone, and the ordinals show the
- *     gaps rather than hiding them. Metering is kept separately and is not dropped, which is
- *     why an incomplete activity feed here does not make the consumption figure incomplete.
- *   · STOPPING IS NOT AVAILABLE AT ALL. Not weaker: absent. The queue has no channel to a
- *     leased worker, so there is nothing to ask and no acknowledgement to receive. This
- *     adapter therefore answers `unsupported` — never `requested`, which would be an adapter
- *     reporting on a message it never sent. The only lever that exists is declining to renew
- *     the lease, and a lapsed lease is a queue that stopped waiting, not a worker that stopped
- *     working: the script keeps producing frames after the lease lapses, because that is what
- *     really happens.
- *   · CONTINUING IS NOT AVAILABLE EITHER. A job that ends is a job that ended; work resumes by
- *     being submitted again, from nothing.
- *
- * WHERE IT IS STRONGER THAN THE FIRST, which matters because a second adapter that is simply a
- * cut-down first one is also not evidence: this runtime knows exactly when a job is over. The
- * queue either holds the job or does not. So it issues a completion record the moment the job
- * leaves, with no quiet window in between — the mirror image of a runtime that records
- * everything its worker did and can never tell you it has finished.
+ * It is stronger than the first in one place: the queue either holds a job or does not, so it
+ * issues a completion record the moment the job leaves, with no quiet window.
  */
 import {
   PORT_PROTOCOL, declarationDigest,
@@ -85,11 +68,9 @@ const EVENT_FORMAT: EventFormatIdentity = {
 };
 
 /**
- * WHAT IS REFUSED IS SAID, NOT WORKED AROUND. Three capabilities are declared missing with the
- * reason each is missing, and `simulated: false` on every one of them is the port refusing the
- * only alternative: an adapter that answers as though it had the capability. A caller needing
- * any of the three is told before the work starts, by admission, rather than discovering it
- * from an answer that looked like the one it wanted.
+ * Three capabilities are declared missing, each with its reason, and `simulated: false` on
+ * every one. A caller needing any of them is told before the work starts rather than
+ * discovering it from an answer that looked like the one it wanted.
  */
 const DECLARATION: CapabilityDeclaration = {
   adapter: "batch-queue",
@@ -108,15 +89,15 @@ const DECLARATION: CapabilityDeclaration = {
   ],
   cancellation: {
     strongest: "unsupported",
-    // Null is unknown, and here it is unknown for a reason worth stating: with no channel to
-    // the worker there is nothing that would settle, so no bound on settling exists to give.
+    // Null is unknown: with no channel to the worker there is nothing that would settle, so
+    // there is no bound to give.
     settles_within_ms: null,
     lease_expiry_proves_stop: false,
   },
 };
 
-/** Identity derived from the declaration above, never typed beside it — the three refusals are
- *  part of what this adapter IS, so a change to any of them has to change what it is called. */
+/** Identity derived from the declaration above, never typed beside it: the three refusals are
+ *  part of what this adapter is, so changing one changes its identity. */
 const CAPABILITIES: RuntimeCapabilities = {
   ...DECLARATION,
   protocol: PORT_PROTOCOL,
@@ -141,9 +122,10 @@ interface Job {
 const world = new Map<string, Job>();
 let submitted = 0;
 
-/** The scripted frames for one job. The ordinals jump at the fourth entry: the queue dropped a
- *  frame under load and says so by leaving a hole rather than renumbering. The lease lapses
- *  partway through and the job keeps producing frames afterwards, which is the point. */
+/** The scripted frames for one job.
+ *
+ *  DELIBERATE: the ordinals jump at the fourth entry — a dropped frame leaves a hole rather
+ *  than being renumbered — and the job keeps producing frames after the lease lapses. */
 function frames(base: number): readonly StatusFrame[] {
   return [
     { seq: 1, epoch_ms: base, phase: "queued", step: 0, note: "accepted into the queue" },
@@ -161,9 +143,8 @@ function frames(base: number): readonly StatusFrame[] {
   ];
 }
 
-/** Flat metering, one row per step, nothing rolled up into anything. The same rule that
- *  excludes a delegated run's turns under the other adapter counts every row here exactly
- *  once, which is what makes it a rule rather than a special case. */
+/** Flat metering, one row per step, nothing rolled up. The rule that excludes a delegated
+ *  run's turns under the other adapter counts every row here exactly once. */
 function meters(): readonly MeterRow[] {
   return [
     { meter_id: "m1", step: 1, prompt_units: 3_100, emitted_units: 240 },
@@ -207,9 +188,8 @@ export const batchQueueAdapter: RuntimeAdapter = {
     return CAPABILITIES;
   },
 
-  /** Assets travel inside the job payload, addressed by slot. There is no path anywhere in
-   *  this runtime and nothing a caller could open; the digest is the whole identity, which is
-   *  why the port made the digest the identity and the locator the runtime's own business. */
+  /** Assets travel inside the job payload, addressed by slot. There is no path in this
+   *  runtime and nothing a caller could open, so the digest is the whole identity. */
   load_method(request: LoadMethodRequest): MethodBinding {
     const revision = request.revision ?? "head";
     const assets: readonly BoundAsset[] = [
@@ -243,9 +223,8 @@ export const batchQueueAdapter: RuntimeAdapter = {
                elapsed_at_least_ms: null, usage: null };
     }
     job.tick += 1;
-    // The buffer holds the last few frames the queue has produced. Everything earlier is gone
-    // and nothing can bring it back, so what comes out of here is a window rather than a
-    // history, and the numbers below are about the window.
+    // The buffer holds the last few frames produced; everything earlier is gone. What comes
+    // out is a window rather than a history, and the numbers below are about the window.
     const produced = job.frames.slice(0, Math.min(job.tick, job.frames.length));
     const held = produced.slice(-BUFFER);
     const events = held.map(toEvent);
@@ -275,10 +254,9 @@ export const batchQueueAdapter: RuntimeAdapter = {
     return { ...base, completeness: "running", receipt: null };
   },
 
-  /** Always `unsupported`, and the reason is the point rather than an apology: there is no
-   *  channel, so there is nothing to have asked. Answering `requested` here would report a
-   *  message that was never sent, and a caller would then wait out a settling time for a
-   *  signal that does not exist. */
+  /** DELIBERATE: always `unsupported`, never `requested`. There is no channel, so there is
+   *  nothing to have asked, and `requested` would make a caller wait out a settling time for
+   *  a signal that does not exist. */
   cancel(request: CancelRequest): CancelOutcome {
     return {
       state: "unsupported",

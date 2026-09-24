@@ -4,27 +4,12 @@
  *
  * The second case is the one worth testing: `learnings.md` belongs to no flow — the handover
  * is the platform's step, appended below every manifest — so it takes a different path
- * through stampEnvelope than every document a flow declares, and that path had no date in it
- * once the model stopped writing frontmatter.
+ * through stampEnvelope than every document a flow declares, and that path has to stamp the
+ * date itself.
  *
- * IT RUNS THE FUNCTION NOW. This asserted with regexes over the source, and admitted why:
- * "stampEnvelope is not exported, so this exercises the SHAPE through the source's own
- * rules". Two things were wrong with that.
- *
- * The slice was not the function. `src.slice(indexOf("function stampEnvelope("),
- * indexOf("function persistDocument("))` spans 953 lines — two dozen unrelated functions —
- * so every assertion was answered by whichever of them happened to contain the text. The
- * comment that used to sit here worried about exactly this and guarded the wrong half: it
- * checked that both markers EXIST and are ordered, which they are, while the region between
- * them was already a third of the file.
- *
- * And a regex over source tests the spelling, not the rule. gate.ts records the same lesson
- * about the acting-team check: "the earlier version tested for the literal
- * `every.includes(stored)` and failed the moment the rule moved, while the property it names
- * still held perfectly."
- *
- * So the body is brace-matched out, evaluated with its three collaborators injected, and
- * asked what it does to a document. Non-empty stdout is how this probe reports a failure.
+ * stampEnvelope is not exported, so its body is brace-matched out, evaluated with its three
+ * collaborators injected, and asked what it does to a document. A regex over the source would
+ * test the spelling rather than the rule. Non-empty stdout reports a failure.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -42,9 +27,8 @@ function errMessage(err: unknown): string {
 }
 
 const root = process.argv[2];
-// ZZ-CORE, NOT ONE FILE IN IT. stampEnvelope moved into write-guards.ts when the pure rules
-// were split out of a 6,000-line server.ts, and a probe keyed to that one path reported
-// "nothing was checked" — which is the honest failure, and still a failure.
+// Every file in zz-core/src, not one path: a probe keyed to the file stampEnvelope lives in
+// today reports "nothing was checked" the day it moves.
 const src = readdirSync(join(root, "services/zz-core/src"))
   .filter((f) => f.endsWith(".ts"))
   .map((f) => readFileSync(join(root, "services/zz-core/src", f), "utf8"))
@@ -84,14 +68,10 @@ try {
   process.exit(0);
 }
 
-// THE MANIFEST'S OWN SHAPE, including `documents` with each entry's gate. This fixture used
-// to carry only `docs` and `roles`, which is what a Chain looked like before the manifest's
-// document list reached it — and a stamp that reads `gate` cannot be tested by a chain that
-// has none.
-//
-// Two declared documents, differing ONLY in `gate`, and deliberately sharing a role: the rule
-// is that the MANIFEST decides adjudication, per flow and per document, so neither the role
-// nor the filename may be what the stamp keys on.
+// The manifest's own shape, including `documents` with each entry's gate. Two declared
+// documents differing only in `gate` and deliberately sharing a role, because the manifest
+// decides adjudication per document — neither the role nor the filename may be what the
+// stamp keys on.
 const chain = {
   name: "ops-flow",
   documents: [
@@ -103,7 +83,7 @@ const chain = {
 };
 const env = (doc: string) => parseEnvelope(doc);
 
-// A document the manifest DECLARES: the flow, the role, the gate lifecycle, and the date.
+// A document the manifest declares: the flow, the role, the gate lifecycle, and the date.
 {
   const out = stamp(chain, "i/spec.md", "# Spec\n\nbody\n");
   const e = env(out);
@@ -113,21 +93,12 @@ const env = (doc: string) => parseEnvelope(doc);
   }
 }
 
-// A document the manifest DECLARES WITHOUT A GATE. It gets the flow, the role, the version
-// and the date — but NO status, because a status records a gate verdict and this document's
-// manifest never asked anyone for one. An ungated document and a source are information:
-// provenance and a version, and no verdict.
+// A document the manifest declares without a gate: the flow, the role, the version and the
+// date, but no status, because a status records a gate verdict nobody was asked for.
+// Conditioning `status` on "the manifest declares this document" is one predicate too wide.
 //
-// This is the path the stamp used to get wrong. It conditioned `status` on "the manifest
-// declares this document", which is one predicate too wide — a manifest declares gated and
-// ungated documents alike. Measured on the deployment before the fix: 17 live documents
-// (explore.md, spec-audit.md, plan-audit.md) carried a verdict no manifest asked for, and an
-// ungated document could not be rewritten by document_write at all, because ownershipCheck
-// read the fresh envelope's absent status against the phantom one on disk as an attempt to
-// remove a platform-owned field.
-//
-// `version` is the control, and it is what stops this being satisfied by stamping nothing:
-// version is provenance rather than a verdict, so an ungated document still carries it.
+// `version` is the control, and it stops this being satisfied by stamping nothing: version is
+// provenance rather than a verdict, so an ungated document still carries it.
 {
   const out = stamp(chain, "i/spec-audit.md", "# Audit\n\nbody\n");
   const e = env(out);
@@ -144,7 +115,7 @@ const env = (doc: string) => parseEnvelope(doc);
   }
 }
 
-// A document NO manifest declares — learnings.md. It gets the date and nothing else: status
+// A document no manifest declares — learnings.md. It gets the date and nothing else: status
 // and version belong to a gate lifecycle it is not in, and type comes from a role it was
 // never given.
 {
@@ -162,8 +133,8 @@ const env = (doc: string) => parseEnvelope(doc);
   }
 }
 
-// updated_at is OVERWRITTEN, because the failure there is a confidently wrong date rather
-// than an absent one: a run stamped every document two days early and nothing caught it.
+// updated_at is overwritten, because the failure there is a confidently wrong date rather
+// than an absent one.
 {
   const out = stamp(chain, "i/spec.md", "---\nflow: ops-flow\nupdated_at: 26-08-2026\n---\n\n# Spec\n");
   if (env(out).updated_at !== TODAY) {
@@ -171,16 +142,12 @@ const env = (doc: string) => parseEnvelope(doc);
   }
 }
 
-// flow is ADD-ONLY: the first document's `flow:` is the INPUT that resolves the chain, so
-// overwriting it from the chain it produced could only turn a caller's declaration into
-// something else.
+// flow is add-only: the first document's `flow:` is the input that resolves the chain, so
+// overwriting it from the chain it produced turns a caller's declaration into something else.
 //
-// ASSERTED ON THE LINES, not on the value parseEnvelope returns. The value survives either
-// way — stampEnvelope puts what it adds ABOVE the existing frontmatter and parseEnvelope takes
-// the LAST value of a repeated key, so removing the guard leaves the caller's declaration
-// winning and adds a second `flow:` line above it. The document then states its flow twice,
-// which every reader of it resolves by luck of position. Found by a mutation that removed the
-// guard and did not fail.
+// Asserted on the lines, not on the value parseEnvelope returns: the stamp puts what it adds
+// above the existing frontmatter and parseEnvelope takes the last value of a repeated key, so
+// a missing guard leaves the right value and a second `flow:` line above it.
 {
   const out = stamp(chain, "i/spec.md", "---\nflow: declared-by-caller\n---\n\n# Spec\n");
   if (env(out).flow !== "declared-by-caller") {
@@ -194,10 +161,8 @@ const env = (doc: string) => parseEnvelope(doc);
   }
 }
 
-// type is SET, not merely added. ops-flow declares guide.md's role as `verification` and every
-// guide on the deployment carries `type: guide`, because a template once put it there — and
-// the index stores what the file says, so a search by the manifest's role misses the document
-// the manifest is describing.
+// type is set, not merely added: the index stores what the file says, so a type the manifest
+// did not give makes a search by the manifest's role miss the document it describes.
 {
   const out = stamp(chain, "i/spec.md", "---\nflow: ops-flow\ntype: something-else\n---\n\n# Spec\n");
   if (env(out).type !== "agreement") {

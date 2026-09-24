@@ -26,14 +26,10 @@ check("the judged corpus still has the census every retrieval target is measured
 });
 
 check("the judge's mark scale is declared once, and both readers of it agree", () => {
-  // TWO SPELLINGS OF ONE SCALE, NEITHER READING THE OTHER. The prompt named its ends with the
-  // literals `5 = ` and `1 = `; `judge-score.ts` rescaled the mean with `(qualMean - 1) / 4`.
-  // A ruler on any other scale would have been PROMPTED for one range and NORMALISED against
-  // another, silently, with every number downstream still looking ordinary.
-  //
-  // The same shape as the telemetry and the control loop naming different stages for one act,
-  // and as a search excluding a superseded row on two signals while counting it on one. Each
-  // half self-consistent; nothing asking whether they agree.
+  // Two spellings of one scale, neither reading the other. The prompt names its ends with the
+  // literals `5 = ` and `1 = `; `judge-score.ts` rescales the mean with `(qualMean - 1) / 4`. A
+  // ruler on any other scale would be prompted for one range and normalised against another,
+  // silently, with every number downstream still looking ordinary.
   const prompt = withoutComments(readFileSync(join(root, "services/zz-core/src/eval/judge.ts"), "utf8"));
   const score = withoutComments(readFileSync(join(root, "services/zz-core/src/eval/judge-score.ts"), "utf8"));
   const decl = withoutComments(readFileSync(join(root, "packages/contracts/src/bands.ts"), "utf8"));
@@ -46,14 +42,10 @@ check("the judge's mark scale is declared once, and both readers of it agree", (
   if (!/MARK_SCALE\.max/.test(prompt) || !/MARK_SCALE\.min/.test(prompt)) {
     return "the judge's prompt does not read MARK_SCALE for both ends of the scale it asks for";
   }
-  // THE RESCALE EXPRESSION, NOT THE FILE. The first draft of this clause asked whether
-  // `MARK_SCALE.min` appeared in `judge-score.ts` at all — and it does, inside
-  // `const SPAN = MARK_SCALE.max - MARK_SCALE.min`, so putting the literal back into the
-  // rescale left the check green. That is the same mistake this whole family of checks is
-  // about, made while writing a check about it, and it is the second time in one session: the
-  // superseded-result counter's first check tested a function body that carried the string in
-  // its TYPE ANNOTATION. What decides the answer is the expression, so the expression is what
-  // gets read.
+  // The rescale expression, not the file. Asking whether `MARK_SCALE.min` appears in
+  // `judge-score.ts` at all passes on `const SPAN = MARK_SCALE.max - MARK_SCALE.min`, leaving the
+  // check green with the literal back in the rescale. What decides the answer is the expression, so
+  // the expression is what gets read.
   const rescale = /const qual = qualMean === null[\s\S]{0,240}?;/.exec(score)?.[0] ?? "";
   if (!rescale) return "the qualitative rescale is gone or renamed — rewrite this check rather than leave it passing on its absence";
   if (!/MARK_SCALE\.min/.test(rescale)) {
@@ -64,10 +56,9 @@ check("the judge's mark scale is declared once, and both readers of it agree", (
   if (!/SPAN|MARK_SCALE\.max/.test(rescale)) {
     return "the rescale's span is a literal, so only one end of the scale is declared";
   }
-  // AND THE ONE THING THIS DOES NOT FIX, asserted so nobody reads the check as more than it is.
-  // The ruler's own columns are `five_means` and `one_means` — in the type, in the SQL and in
-  // the table — which encodes the same two numbers a third time. Moving the scale means
-  // migrating them, and this check exists partly to keep that statement true.
+  // And the one thing this does not fix, asserted so nobody reads the check as more than it is. The
+  // ruler's own columns are `five_means` and `one_means` — in the type, in the SQL and in the table
+  // — which encodes the same two numbers a third time. Moving the scale means migrating them.
   if (!/five_means/.test(prompt)) {
     return "the dimension no longer carries five_means — if the scale has genuinely moved, this "
          + "check and the comment beside MARK_SCALE both need rewriting rather than passing";

@@ -5,56 +5,15 @@
  *   node scripts/skill-versions.ts            # print the table
  *   node scripts/skill-versions.ts --write    # record the current state as the baseline
  *
- * WHY BOTH NUMBERS. A declared version is what a person cites — "ops-select v2 fixed it" — and
- * it is the only form that is orderable and arguable. It is also a CLAIM, and on the day this
- * was written every skill in this repository declared `version: 1.0`, including three that had
- * been edited four times that same day shipping five separate changes. Ten rounds of evidence
- * would have been filed under one version of a skill that had changed five times underneath
- * it, and every comparison drawn from it would have been wrong in the flattering direction.
+ * A declared version is a claim; the hash is what makes it true. This file records both, the
+ * gate compares them, and a skill whose text changed without its version changing is refused.
  *
- * So the hash is not an alternative to the version. It is what makes the version true: this
- * file records both, the gate compares them, and a skill whose text changed without its
- * version changing is refused. That turns "v2" from something somebody typed into something
- * the repository can vouch for.
- *
- * ── WHAT THE TWO DIGITS MEAN ─────────────────────────────────────────────────
- *
- * MAJOR.MINOR, and the split is not cosmetic — it is what decides which numbers may be
- * compared with which.
- *
- *   MAJOR  a person changed what the skill is FOR. New requirements, new scope, a different
- *          job. Only a human bumps this, because only a human decides that the thing being
- *          asked for has changed.
- *
- *   MINOR  the same job, done more reliably. This is what the improvement loop produces: the
- *          requirements did not move, the skill got better at meeting them.
- *
- * ── A SKILL ATTACHED TO A BLOCK CARRIES TWO VERSIONS ─────────────────────────
- *
- * A usage skill is written ON TOP of a block nobody here controls. The block changes on its
- * own schedule, and when it does, every trap the skill records and every assembly order it
- * teaches may have stopped being true — silently, because nothing on our side moved.
- *
- * So such a skill declares `block:` and `verified_against:`, and those are NOT its version.
- * Its own `version` is still MAJOR.MINOR and still means what it means everywhere else;
- * `verified_against` records the block version the claims were last checked against.
- *
- * NOT CONCATENATED INTO ONE STRING, which is the tempting shape — "block 3.4.7 plus our 1.2"
- * — and it breaks on contact with a block that answers a build
- * timestamp rather than a version. There is no sane concatenation of that with a revision number,
- * and none of it would order or compare. Two fields stay readable whatever a block answers.
- *
- * It also makes the drift DETECTABLE rather than remembered: the platform already records the
- * block's own version on every call, from the handshake, so "casebox now reports X and the skill
- * was verified against Y" is a query, not a memory. Every attached script or skill re-enters
- * the loop when the number underneath it moves.
- *
- * THE COMPARISON RULE FALLS OUT OF IT. A refusal rate under 2.3 against one under 2.7 is a
- * fair comparison: same intent, two attempts at executing it, and the difference is the
- * change. A rate under 1.5 against one under 2.0 is NOT — the second skill was asked for
- * something the first never was, and reading the difference as a regression blames a change
- * for work it was never doing. Reliability is comparable WITHIN a major and not across one,
- * and a report that ranks them together is comparing two different questions.
+ * MAJOR.MINOR decides which numbers may be compared with which. MAJOR means a person changed
+ * what the skill is for — new requirements, new scope, a different job — and only a human bumps
+ * it. MINOR means the same job done more reliably, which is what the improvement loop produces.
+ * Reliability is comparable within a major and not across one: a refusal rate under 2.3 against
+ * one under 2.7 is the same intent executed twice, while under 1.5 against under 2.0 is two
+ * different questions.
  */
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from "node:fs";
@@ -80,20 +39,15 @@ export function everySkill(base: string = root): string[] {
   };
   walk(join(base, "catalog"));
   walk(join(base, "skills"));
-  walk(join(base, "blocks"));
   return out.sort();
 }
 
-/** The name, the declared version, and the hash of the WHOLE file — frontmatter included,
+/** The name, the declared version, and the hash of the whole file — frontmatter included,
  * because the frontmatter is served to the model too and a change to `when_to_use` changes
  * when the skill is loaded at all. */
 interface SkillRecord {
   name: string;
   version: string;
-  /** Set when the skill is attached to a building block we do not control. */
-  block: string;
-  /** The block version its claims were last checked against. */
-  verifiedAgainst: string;
   sha: string;
 }
 
@@ -107,10 +61,6 @@ export function readSkill(file: string): SkillRecord {
   return {
     name: field("name") || file,
     version: field("version"),
-    /** Set when the skill is attached to a building block we do not control. */
-    block: field("block"),
-    /** The block version its claims were last checked against. */
-    verifiedAgainst: field("verified_against"),
     sha: createHash("sha256").update(text).digest("hex").slice(0, 12),
   };
 }
@@ -133,8 +83,7 @@ export const readLock = (): Record<string, LockedSkill> =>
   (existsSync(LOCK) ? JSON.parse(readFileSync(LOCK, "utf8")) : {});
 
 interface SkillState {
-  /** Set when this skill fails a rule outright — a malformed version, a missing lock entry,
-   *  a block declared without verifiedAgainst or the reverse. */
+  /** Set when this skill fails a rule outright — a malformed version or a missing lock entry. */
   bad?: string;
   /** Set when the content changed and the version moved to match — whether the move was
    *  across a major boundary or within one. */
@@ -142,21 +91,12 @@ interface SkillState {
   from?: string;
 }
 
-/** What this file says about one skill against the baseline. The gate imports it rather than
- * spelling the rule a second time — a check and the tool that fixes what it checks disagreeing
- * is worse than having neither. */
+/** What this file says about one skill against the baseline. COUPLED: the gate imports this
+ * rather than spelling the rule a second time — a check and the tool that fixes what it checks
+ * must not disagree. */
 export function stateOf(skill: SkillRecord, prev: Record<string, LockedSkill>): SkillState {
   const was = prev[skill.name];
   if (!WELL_FORMED.test(skill.version)) return { bad: `declares version ${JSON.stringify(skill.version)} — it must be MAJOR.MINOR` };
-  // A skill that names a block is standing on something it does not control. Which version it
-  // was checked against is the difference between a trap that is still true and one that was
-  // true once — and without it nothing can tell you which you are reading.
-  if (skill.block && !skill.verifiedAgainst) {
-    return { bad: `declares block: ${skill.block} but no verified_against — record the block version its claims were last checked against` };
-  }
-  if (skill.verifiedAgainst && !skill.block) {
-    return { bad: "declares verified_against but no block: — say which block the version belongs to" };
-  }
   if (!was) return { bad: "is not in skills.lock.json" };
   if (was.sha === skill.sha) return {};
   if (was.version === skill.version) return { bad: `changed but still declares ${skill.version}` };

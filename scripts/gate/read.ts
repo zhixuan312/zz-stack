@@ -1,31 +1,20 @@
 /**
  * Reading the repository: the gate's file and text helpers, and nothing that decides anything.
  *
- * WHY THESE ARE A MODULE. Every function here answers a question about a file or a string —
- * which files git tracks, what a source says with its comments removed, where one function's
- * body ends. None of them knows what a check is, none holds state beyond one cache, and
- * `scripts/gate.ts` was carrying all of them.
+ * Every function answers a question about a file or a string. None of them knows what a check is,
+ * and none holds state beyond one cache.
  *
- * `check` lives in `run.ts`, not here and no longer in the entry file. This paragraph used
- * to say it deliberately stayed behind, because the check keeping STATE.md's declared total
- * honest counted `^check(` in the entry file — which was true until every check moved into
- * `gate/checks/` and the count had to be taken across the modules instead. `gateCheckNames`
- * below is that count, and it is the reason a stale sentence here would have been expensive:
- * it described the mechanism a reader was being asked to trust.
- *
- * `root` is computed here rather than passed. This directory sits under `scripts/`, so the
- * repository root is two levels up, and a helper that took it as an argument would let two
- * callers disagree about where the repository is.
+ * `gateCheckNames` below reads the gate's checks across the modules in `scripts/gate/checks/`.
+ * `root` is computed here rather than passed, so two callers cannot disagree about where the
+ * repository is.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// THE COMPILER'S OWN PARSER, for `isGateLaunchSource` below. It is already this repository's
-// typechecker (`npm run build`, `npm run typecheck:tooling`) and already a devDependency, so
-// nothing new is installed to read a syntax tree — and the alternative, another regular
-// expression over source text, is the thing that function exists to stop being.
+// The compiler's own parser, for `isGateLaunchSource` below. It is already this repository's
+// typechecker and already a devDependency, so nothing new is installed to read a syntax tree.
 import ts from "typescript";
 
 const COMMENTS = /\/\*[\s\S]*?\*\/|\/\/[^\n]*/;
@@ -35,14 +24,12 @@ const REGEX = /(?<=[=(,:[!&|?{};]\s*)\/(?![*\/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-/** A JSON file's parsed contents, honestly `unknown` — every caller reads a specific file
- *  whose shape it alone knows, and asserting one shape here would be a cast wearing this
- *  function's name. Narrow with {@link asRecord} at the call site. */
+/** A JSON file's parsed contents, honestly `unknown` — every caller reads a specific file whose
+ *  shape it alone knows. Narrow with {@link asRecord} at the call site. */
 export const readJson = (p: string): unknown => JSON.parse(readFileSync(join(root, p), "utf8"));
 
-/** A JSON value narrowed to a plain object, for a caller that needs to read a named field
- *  without asserting the whole shape. `label` names the file in the error, because a JSON
- *  file that does not parse to an object is a real defect and should say which one. */
+/** A JSON value narrowed to a plain object, for a caller that needs one named field without
+ *  asserting the whole shape. `label` names the file in the error. */
 export function asRecord(v: unknown, label: string): Record<string, unknown> {
   if (v === null || typeof v !== "object" || Array.isArray(v)) {
     throw new Error(`${label} did not parse to an object`);
@@ -50,24 +37,11 @@ export function asRecord(v: unknown, label: string): Record<string, unknown> {
   return v as Record<string, unknown>;
 }
 
-/** A SUBJECT'S WHOLE SOURCE, AS ONE TEXT — the five below and nothing else read this way.
+/** A subject's whole source, as one text — the subjects below and nothing else read this way.
  *
- * WHY THESE EXIST. Fifty-six checks read `services/zz-core/src/server.ts` by path, so the
- * first time a function moved out of it — 308 lines of pure document rules, into a module a
- * test can finally reach — nine of them went red at once. None of those nine was about
- * server.ts; each was about a RULE that happens to live in zz-core, and a rule does not stop
- * being enforced because it moved file. The gateway repeated it exactly: seventeen red at
- * once when its credential store, access door and block proxy became modules, and not one of
- * them was a defect.
- *
- * So a check that asks "does zz-core do X" asks it of zz-core, not of one file in it — and a
- * check that genuinely means the entry file (the tool registry, the transport, the middleware
- * order) still names that file, and should.
- *
- * ONE FUNCTION, FIVE NAMES. These were five copies of the same two lines, which is the
- * duplication this gate refuses everywhere else; `also` is there because two of the five have
- * an entry file that does not sit in the directory the modules do.
- */
+ * A check that asks "does zz-core do X" asks it of zz-core, not of one file in it, so a rule moving
+ * between modules does not turn it red. A check that genuinely means the entry file still names it.
+ * `also` is for the subjects whose entry file does not sit in the directory the modules do. */
 const subjectSource = (dirs: string[], exts: string[], also: string[] = []) => (): string =>
   [...also, ...sourceFiles(dirs, exts)]
     .map((f) => readFileSync(join(root, f), "utf8")).join("\n");
@@ -78,82 +52,54 @@ export const contractsSource = subjectSource(["packages/contracts/src"], [".ts"]
 export const catalogSource = subjectSource(["packages/catalog/src"], [".ts"]);
 export const consoleSource = subjectSource(["services/gateway/src/console"], [".ts"],
   ["services/gateway/src/console.ts"]);
-// THE RELEASE INCLUDES THE DEPLOYMENT DESCRIPTION IT IS BUILT ON. scripts/deployment.ts holds
-// the address, the image names and the protocol reader — facts the release both uses and is
-// judged on ("does the release pin a build platform", "can it read the protocol it announces").
-// When they moved out of scripts/release/config.ts, two checks here went red and one of them
-// said "release.ts no longer defines mcpProtocol — this check cannot run" rather than passing,
-// which is the only reason the move was safe to make.
+// The release includes the deployment description it is built on: scripts/deployment.ts holds
+// the address, the image names and the protocol reader, which the release both uses and is
+// judged on.
 export const releaseSource = subjectSource(["scripts/release"], [".ts"],
   ["scripts/release.ts", "scripts/deployment.ts"]);
 
 /** The doctor as one text — its order, its runner, its layers, and the same deployment
- *  description. Sixth of these, and the argument has not changed: a check that asks what the
- *  DOCTOR does asks it of the doctor, not of whichever module a probe happens to sit in. */
+ *  description. A check that asks what the doctor does asks it of the doctor, not of whichever
+ *  module a probe happens to sit in. */
 export const doctorSource = subjectSource(["scripts/doctor"], [".ts"],
   ["scripts/doctor.ts", "scripts/deployment.ts"]);
 
 /**
- * The gate's own source, which no check that scans the repository may read as evidence.
+ * The gate's own source, which no check that scans the repository may read as evidence: every check
+ * spells the pattern it hunts for, so a check walking this repository finds its own text and
+ * reports the gate for the thing the gate exists to forbid.
  *
- * Every check has to SPELL the pattern it hunts for — the credential path, the IPv4-mapped
- * fold, the envelope's own vocabulary — so a check that walks this repository finds its own
- * text and reports the gate for the thing the gate exists to forbid. Seven checks carried
- * `f === "scripts/gate.ts"` for exactly that reason, one copy each, which is the
- * duplication this gate refuses everywhere else. When the checks moved into modules all
- * seven went red at once and not one of them was about a real defect.
- *
- * NOT a general exemption. It says the gate's own text is not evidence ABOUT THE PLATFORM.
- * A rule the platform breaks is still caught, because platform code is not under this path.
+ * Not a general exemption — platform code is not under this path.
  */
 export const gateOwnSource = (rel: string): boolean =>
   rel === "scripts/gate.ts" || rel.startsWith("scripts/gate/");
 
-/** The captured text of a `check("…")` title read as SOURCE, turned into the string the check
- *  actually registers. One title in this gate is written `"the console\'s version …"` — a
- *  backslash a double-quoted literal does not need and JavaScript drops — so the name read off
- *  the file and the name `check()` was called with differed by one character. Nothing noticed
- *  while the only question asked of this list was how LONG it is; the execution report asks
- *  which names ran, and that comparison reported a check that ran as skipped. */
+/** The captured text of a `check("…")` title read as source, turned into the string the check
+ *  actually registers. A title carrying a backslash a double-quoted literal does not need reads
+ *  off the file one character different from the name `check()` was called with, and the
+ *  execution report compares those names. */
 const asWritten = (raw: string): string =>
   raw.replace(/\\(.)/g, (_, ch: string) => ({ n: "\n", t: "\t", r: "\r" }[ch] ?? ch));
 
 /**
- * Every check this gate registers, by name, in the order the modules declare them.
- *
- * Two checks and the report ask about the gate's own inventory — how many checks it has,
- * what they are called, and whether every module that wrote one is actually imported. All
- * three could read a single file until 2026-09-11; none of them can now, and a check that
- * kept reading `scripts/gate.ts` would find nothing there and pass on an empty set, which
- * is the quietest way a self-referential check can stop working.
+ * Every check this gate registers, by name, in the order the modules declare them. Read across
+ * `scripts/gate/checks/`, because two checks and the report ask about the gate's own inventory and
+ * a self-referential check pointed at a file that registers nothing passes on an empty set.
  */
 export const gateCheckNames = (): string[] =>
   sourceFiles(["scripts/gate/checks"], [".ts"])
     .flatMap((f) => [...readFileSync(join(root, f), "utf8").matchAll(/^check\("(.+?)",/gm)]
       .map((m) => asWritten(m[1])));
 
-// ── classifying a check file: does it LAUNCH the gate, or only talk about launching it ──────
+// Classifying a check file: does it launch the gate, or only talk about launching it? A check that
+// spawns `scripts/gate.ts` is a break-test, and registering one makes the gate invoke itself
+// forever.
 //
-// A check that spawns `scripts/gate.ts` is a break-test: registering one makes the gate invoke
-// itself, forever. Registration therefore has to tell the two kinds apart, and it used to do it
-// with a regular expression over the file's text with comments stripped. That regex was wrong
-// in both directions on files this repository actually contains.
+// DELIBERATE: this reads the syntax, not the text. No text rule sees `const launch = spawnSync`, an
+// argument built one line above the call, or that a `gate` word inside a string or regex literal is
+// data — and a file naming `execFileSync` and the gate's path inside its own pattern spawns nothing.
 //
-// FALSE POSITIVE, measured: `chain-check-wiring.ts` READS `scripts/gate.ts` to ask what the gate
-// is wired to, and names `execFileSync|spawnSync|execSync` inside its own pattern. Both halves
-// of "a spawner, and the gate's path" were true of a file that spawns nothing, and exempting it
-// would have taken a registered, working check out of the gate on a coincidence. The regex was
-// then narrowed to "the path INSIDE the call", which fixed that one file and is still text.
-//
-// FALSE NEGATIVE, structural: the same narrowing cannot see `const launch = spawnSync` or an
-// argument built one line above the call, and it cannot see that a `gate` word inside a string
-// literal or a regex literal is data. Stripping comments only removes one of the three places a
-// word can hide. This function reads the SYNTAX instead: a call expression whose callee actually
-// resolves to a `node:child_process` launcher through the file's own imports, and whose
-// statically-resolvable arguments actually name this repository's gate.
-//
-// IT IS PURE AND IMPORT-SAFE — one string in, one boolean out, no filesystem and no process — so
-// `checks/tenant-checks-registered.ts` can import it and drive it over source fixtures.
+// Pure and import-safe, so `checks/tenant-checks-registered.ts` drives it over source fixtures.
 
 const CHILD_PROCESS_SPECIFIERS = new Set(["child_process", "node:child_process"]);
 const LAUNCHERS = new Set(["exec", "execFile", "execFileSync", "execSync", "fork", "spawn", "spawnSync"]);
@@ -187,10 +133,9 @@ function literalsNameTheGate(literals: readonly string[]): boolean {
  * single-assignment `const` string/array bindings in the same file, name `npm run gate` or
  * `scripts/gate.ts`.
  *
- * WHAT IT DOES NOT SEE, named rather than implied: a launcher reached through `require()`, a
- * command assembled at runtime, or a spawn of something that spawns the gate. Static analysis
- * cannot prove those absent, which is why `scripts/gate.ts` ALSO carries a runtime guard that
- * refuses a nested gate before it writes anything.
+ * What it does not see: a launcher reached through `require()`, a command assembled at runtime,
+ * or a spawn of something that spawns the gate. COUPLED: `scripts/gate.ts` carries the runtime
+ * guard that refuses a nested gate before it writes anything.
  */
 export function isGateLaunchSource(sourceText: string): boolean {
   const source = ts.createSourceFile("gate-launch-probe.ts", sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
@@ -264,22 +209,17 @@ export function isGateLaunchSource(sourceText: string): boolean {
 /**
  * What git tracks, or null outside a checkout.
  *
- * "What counts as part of the repository" is a question the repository already answers, and
- * answering it any other way is how a gate fails over a file .gitignore excludes — which this
- * one has done, over a .DS_Store, in a check that was not wrong about the code and was wrong
- * about the repo. `runs/` and `docs/support/` are ignored and hold eighteen Python files from
- * the harness the smoke engine replaced; a check walking the tree finds them and has no reason
- * to think they are not ours.
+ * "What counts as part of the repository" is a question the repository already answers, and walking
+ * the tree instead finds what .gitignore excludes, such as `runs/` and `docs/support/`.
  */
 let TRACKED: Set<string> | null | undefined;
 
 export function trackedFiles(): Set<string> | null {
   if (TRACKED !== undefined) return TRACKED;
   try {
-    // Tracked AND untracked-but-not-ignored: everything .gitignore does not exclude. Tracked
-    // alone would hide a file somebody has written and not yet added — the gate would pass,
-    // they would commit, and CI would fail on the file the gate had declined to look at,
-    // which is a worse loop than the one this fixes.
+    // Tracked and untracked-but-not-ignored: everything .gitignore does not exclude. Tracked
+    // alone hides a file somebody has written and not yet added, so the gate passes, they commit,
+    // and CI fails on the file the gate declined to look at.
     TRACKED = new Set(execFileSync(
       "git", ["ls-files", "--cached", "--others", "--exclude-standard"],
       { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean));
@@ -293,11 +233,8 @@ export function trackedFiles(): Set<string> | null {
 /**
  * Every file under `dirs` whose name ends in one of `suffixes`, repo-relative.
  *
- * Checks here kept naming the three or four files somebody had in mind, and every one of
- * those lists has since been found short: the owned-fields check missed the file that emits
- * the router every client reads, the vocabulary check missed a tool that spelled the statuses
- * out, the date check looked at tool descriptions and not at skills. A list is the instances;
- * this is how a check says what it is actually about.
+ * A check that names the three or four files somebody had in mind states the instances; this is
+ * how a check says what it is actually about.
  */
 export function sourceFiles(dirs: string[], suffixes: string[]): string[] {
   const tracked = trackedFiles();
@@ -305,9 +242,7 @@ export function sourceFiles(dirs: string[], suffixes: string[]): string[] {
   const walk = (d: string): void => {
     if (!existsSync(d)) return;
     for (const e of readdirSync(d, { withFileTypes: true })) {
-      // Any dot-entry, not the three that happened to hurt. `.DS_Store` already taught this
-      // gate what counts as part of the repository, in a check that failed over a file
-      // .gitignore excludes and git has never tracked.
+      // DELIBERATE: every dot-entry is skipped, not only the ones that have caused trouble.
       if (["node_modules", "dist"].includes(e.name) || e.name.startsWith(".")) continue;
       const full = join(d, e.name);
       if (e.isDirectory()) walk(full);
@@ -321,7 +256,7 @@ export function sourceFiles(dirs: string[], suffixes: string[]): string[] {
   return out.sort();
 }
 
-/** The one sentence every RUN-something check gives when there is nothing to run. */
+/** The one sentence every run-something check gives when there is nothing to run. */
 export function unbuilt() {
   for (const d of ["packages/contracts/dist", "packages/tools/dist", "services/gateway/dist"]) {
     if (!existsSync(join(root, d))) {
@@ -335,10 +270,7 @@ export function unbuilt() {
 /**
  * The first `n` findings, and how many were not shown.
  *
- * Three checks capped their output silently. A port that dragged forty ghost citations across
- * looked like one that dragged eight: the reader fixes those, re-runs, and is surprised —
- * which is the same shape as a listing that quietly omits things, the thing this repository
- * refuses everywhere else. A cap is fine; a cap that does not report itself is not.
+ * A cap is fine; a cap that does not report itself makes forty findings look like eight.
  */
 export function firstOf(findings: string[], n = 8): string | null {
   const all = [...new Set(findings)];
@@ -358,13 +290,9 @@ interface ToolMatch {
 /**
  * Every tool a source registers, with its handler body, in order.
  *
- * Two things kept going wrong at each site that did this by hand. The name is written on the
- * same line as `registerTool(` for most tools and on the next line for the rest, and a regex
- * demanding the first form silently skipped the others — `knowledge_reindex` is written the
- * second way, and was invisible to both store-mutation checks for that reason. And the body was taken with
- * `indexOf("registerTool(", …)`, which returns -1 at the LAST tool, so `slice(from, -1)` gave
- * it the whole rest of the file: a mutating tool added at the end of a server would find some
- * other tool's writeGuard and pass.
+ * The name is written on the same line as `registerTool(` for most tools and on the next line
+ * for the rest, and both forms are matched. A body runs to the next `registerTool(`, or to the
+ * end of the source for the last tool in it.
  */
 export function toolsIn(src: string): ToolMatch[] {
   const starts = [...src.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)];
@@ -380,26 +308,14 @@ export function toolsIn(src: string): ToolMatch[] {
 export const ONE_LINE = (v: unknown): string => String(v).replace(/[\r\n]+/g, " ").trim();
 
 /**
- * A TypeScript function's BODY, lifted from source and stripped of its annotations, ready for
- * `new Function`. Null when the function is gone — which every caller reports rather than
- * quietly stopping.
+ * A TypeScript function's body, lifted from source and stripped of its annotations, ready for
+ * `new Function`. Null when the function is gone, which every caller reports. Source rather than
+ * dist, because the gate runs before `tsc -b` has necessarily produced anything.
  *
- * Two checks run a zz-core function on the input that broke it, because the properties they
- * hold are about what the code DOES and no arrangement of its source proves them. Source
- * rather than dist, for the reason NAMING gives: the gate runs before `tsc -b` necessarily
- * has produced anything.
- *
- * FINDING THE BODY IS THE WHOLE DIFFICULTY, and it went wrong twice in two different ways.
- * The first `{` after the name is not the body when the signature carries an inline object —
- * normalizeSections returns `{ content: string; renamed: string[] }` and envelopeFor takes
- * `opts: { flow?: string; ... }`, so a naive lifter extracted a TYPE, produced a callable
- * that parsed, and failed at run time with `renamed is not defined`. Then a fix that advanced
- * only when the next non-space character was `{` handled the return type and not the
- * parameter one, where `,\n): string {` sits in between.
- *
- * So: keep advancing while the gap between one block and the next contains ONLY what a
- * signature can contain. A gap holding `(`, `=` or a comment is a real statement, and the
- * block before it was the body.
+ * The first `{` after the name is not the body when the signature carries an inline object, so this
+ * keeps advancing while the gap between one block and the next contains only what a signature can
+ * contain. A gap holding `(`, `=` or a comment is a real statement, and the block before it was the
+ * body.
  */
 export function functionBody(src: string, name: string): string | null {
   const at = src.indexOf(`function ${name}(`);
@@ -432,14 +348,11 @@ export function functionBody(src: string, name: string): string | null {
 }
 
 /**
- * Every tool zz-core registers, with its handler body, extracted FILE BY FILE.
+ * Every tool zz-core registers, with its handler body, extracted file by file.
  *
- * NOT `toolsIn(zzCoreSource())`, and the difference has already cost a false finding. A tool
- * body runs to the next `registerTool(`, so the LAST tool in a file has none after it and its
- * body runs to the end of whatever it was concatenated with — `source_list` was reported as
- * judging a document without resolving its path, on evidence that belonged to the module that
- * happened to sort next. Bounded per file that cannot happen, which is also what lets the
- * registrations live in more than one file.
+ * DELIBERATE: not `toolsIn(zzCoreSource())`. A tool body runs to the next `registerTool(`, so the
+ * last tool in a concatenation takes the next module's text as its body and is judged on evidence
+ * that is not its own.
  */
 export function zzCoreTools() {
   return sourceFiles(["services/zz-core/src"], [".ts"])
@@ -453,15 +366,10 @@ export function toolAtLine(src: string, lineNo: number): string | null {
 }
 
 /**
- * The text between two markers, or null with a reason.
- *
- * Written as `src.slice(src.indexOf(a), src.indexOf(b))`, the end marker is searched from the
- * START OF THE FILE. When it happens to sit after the first, the slice is right — by luck.
- * Put another `// ------` band above cred-manage and the access-door check slices backwards,
- * finds no tools, and passes having examined nothing.
- *
- * Both markers must be present and in order, and a check that cannot find its region says so
- * instead of quietly checking an empty string.
+ * The text between two markers, or null with a reason. The end marker is searched from after the
+ * start marker: searched from the start of the file it can land before it, and the slice then runs
+ * backwards to an empty string a caller passes on having examined nothing. Both markers must be
+ * present and in order, and a check that cannot find its region says so.
  */
 export function between(src: string, startMark: string, endMark?: string): { text: string | null; why: string | null } {
   const from = src.indexOf(startMark);
@@ -481,22 +389,20 @@ export const scan = (src: string, parts: RegExp[]): string =>
   src.replace(new RegExp([REGEX, ...parts].map((r) => r.source).join("|"), "g"),
               (m) => (m.startsWith("/") && !m.startsWith("//") && !m.startsWith("/*") ? m : blankRun(m)));
 
-/** Comments gone, string literals INTACT — for a rule that looks for a literal. The strings
- * still have to be matched, or a `//` inside one is read as a comment; they are simply put
- * back rather than blanked. */
+/** Comments gone, string literals intact — for a rule that looks for a literal. The strings are
+ * still matched, or a `//` inside one is read as a comment; they are put back rather than
+ * blanked. */
 export const withoutComments = (src: string): string =>
   src.replace(new RegExp(`${REGEX.source}|${COMMENTS.source}|${STRINGS.source}`, "g"),
               (m) => (/^["'`]/.test(m) || (m.startsWith("/") && !m.startsWith("//") && !m.startsWith("/*"))
                         ? m : blankRun(m)));
 
-/** ONLY the comments, everything else blanked — the inverse of `withoutComments`, for a rule
- * about what a source SAYS rather than what it does. A comment is prose: it is read by the
- * next person exactly as a skill is, and a comment naming a tool nobody registers misleads
- * them exactly as a skill would.
+/** Only the comments, everything else blanked — the inverse of `withoutComments`, for a rule
+ * about what a source says rather than what it does.
  *
- * The SAME one alternation, so a `//` inside a string is still a string and a quote inside a
- * regex character class still cannot open one — and BLANKED, not deleted, so a line number
- * taken from the result is the line somebody opens.
+ * The same one alternation, so a `//` inside a string is still a string and a quote inside a
+ * regex character class cannot open one. Blanked, not deleted, so a line number taken from the
+ * result is the line somebody opens.
  */
 export const commentsOnly = (src: string): string => {
   const re = new RegExp(`${REGEX.source}|${COMMENTS.source}|${STRINGS.source}`, "g");
@@ -515,13 +421,9 @@ export const codeOnly = (src: string): string => scan(src, [COMMENTS, STRINGS]);
 /**
  * Every environment variable a source reads, by name.
  *
- * TWO shapes, because this codebase has two and both are findable: `process.env.NAME`, and
- * `envRequired("NAME", …)` — lib/cli.ts's accessor, which exists so a missing variable
- * produces one sentence rather than eight different ones. It reads `process.env[name]`
- * internally, so a check grepping for the dotted form alone could not see ZZ_PAT,
- * ZZ_GATEWAY or LC_PASSWORD in any tool that uses it. zz-tool forwards all three; it
- * forwards them because somebody remembered, and the check that is supposed to guarantee it
- * was passing on the ones nobody had to remember.
+ * Two shapes, because this codebase has both: `process.env.NAME`, and `envRequired("NAME", …)` —
+ * lib/cli.ts's accessor, which reads `process.env[name]` internally and is therefore invisible
+ * to a check grepping for the dotted form alone.
  */
 const ENV_READ = /process\.env\.([A-Z][A-Z_0-9]*)|envRequired\(\s*"([A-Z][A-Z_0-9]*)"/g;
 

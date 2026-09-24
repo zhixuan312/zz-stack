@@ -1,24 +1,16 @@
 /**
  * The record an initiative is opened with, and the two questions asked of it.
  *
- * WHY THERE IS A RECORD AT ALL. `chainFor` resolves a flow from a document's envelope or from
- * the team's single install, and a flow-driven initiative is an EMPTY FOLDER for exactly as
- * long as it takes to write its first document. In that window there is no envelope to read,
- * and on a team running two flows there is no single install to fall back on — so the
- * initiative a person just opened WITH a flow reads back as governed by nothing. That window
- * is not an edge: it is when `initiative_status` gets called, because it is when an agent
- * picks the work up. The record closes it and does nothing else.
+ * `chainFor` resolves a flow from a document's envelope, and an initiative is an empty folder
+ * until its first document is written. In that window there is no envelope to read, so without
+ * this record an initiative opened with a flow reads back as governed by nothing — which is
+ * exactly when `initiative_status` is called.
  *
- * WHAT IS *NOT* IN THE RECORD: whether the initiative was opened. That is the folder's own
- * existence, and there is deliberately no second source for it — a record that could disagree
- * with the filesystem is a record that eventually will, and the losing side would be the one
- * holding the documents. It also means no initiative written before this file existed is
- * retroactively unopened.
+ * DELIBERATE: the record does not say whether the initiative was opened. That is the folder's
+ * own existence, and a second source for it would eventually disagree with the filesystem.
  *
- * Its own module rather than a corner of the tool that writes it, because three unrelated
- * places read it — `chain.ts` resolving a flow, `document_write` refusing an unopened name,
- * and the tool itself — and a tool importing another tool to reach a shared rule is how two
- * copies of that rule start.
+ * COUPLED: read by chain.ts resolving a flow, by document_write refusing an unopened name,
+ * and by initiative_open itself — hence its own module rather than a corner of the tool.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -27,25 +19,22 @@ import { isoToday } from "./write-guards.js";
 
 /** The declaration, beside the documents rather than among them.
  *
- * Exported so `initiative_open` can log the event against this path and land the line in the
- * initiative's OWN activity log rather than the team-wide one — logActivity places a line by
- * the path it is given.
+ * Exported so `initiative_open` can log its event against this path and land the line in the
+ * initiative's own activity log rather than the team-wide one.
  *
- * A leading underscore, because every listing on this platform filters those out —
- * `initiative_status`, `chainFor`'s oldest-document walk and `document_list` all skip
- * `_`-prefixed entries. A record listed as a document would be reported as one with no
- * status, no gate and no place in any chain. */
+ * COUPLED: the leading underscore is what keeps it out of every listing — initiative_status,
+ * chainFor's oldest-document walk and document_list all skip `_`-prefixed entries. */
 export const OPEN_RECORD = "_open.json";
 
 interface OpenRecord {
   initiative: string;
-  /** Set only when an initiative holding NO document was abandoned — see recordAbandoned.
+  /** Set only when an initiative holding no document was abandoned — see recordAbandoned.
    *  Its presence is what `initiative_status` reads to stop offering a next move. */
   abandoned_by?: string;
   abandoned_at?: string;
-  /** The flow that governs this initiative, or null — which is a DECLARED freeform, not an
-   * unanswered question. Telling those two apart is the only reason this file is written for
-   * a freeform open as well. */
+  /** The flow that governs this initiative, or null, which is a declared freeform rather than
+   * an unanswered question. Telling the two apart is why this file is written for a freeform
+   * open as well. */
   flow: string | null;
   opened_by: string;
   opened_at: string;
@@ -53,11 +42,9 @@ interface OpenRecord {
 
 /** The name the platform composes: today's date, from the platform's own clock, then the slug.
  *
- * THE DATE IS THE PLATFORM'S, NEVER THE AGENT'S, and document-rules.ts records what the other
- * way costs: an agent inferred "today" from the newest stored row plus the digits in a run tag
- * and named a folder no later stamp could repair. There is no argument for the date here and
- * no way to pass one — `isoToday()` is the same clock and the same timezone `envelopeFor`
- * stamps `updated_at` from, so a document's date and its folder's cannot disagree. */
+ * DELIBERATE: there is no argument for the date and no way to pass one. `isoToday()` is the
+ * same clock and timezone `envelopeFor` stamps `updated_at` from, so a document's date and
+ * its folder's cannot disagree. */
 export function initiativeNameFor(slug: string): string {
   return `${isoToday()}-${slug.trim()}`;
 }
@@ -77,11 +64,9 @@ export function recordOpen(root: string, name: string, flow: string | null, who:
 
 /** Mark an initiative that holds no document as abandoned, on the record of its own opening.
  *
- * An outcome belongs ON a document, and this is the one case where there is none and never
- * will be: an initiative opened by mistake. Requiring a document there meant writing one a
- * stage never produced purely to satisfy a gate, which this platform refuses everywhere else,
- * so the initiative stayed open forever instead. The open record is the platform's own file
- * for this initiative, so it is where the platform records that the open was undone. */
+ * DELIBERATE: an outcome belongs on a document, and this is the one case where there is none
+ * and never will be. The alternative is writing a document no stage produced to satisfy a
+ * gate, so the open record carries it instead. */
 export function recordAbandoned(root: string, name: string, who: string): void {
   const rec = openRecord(root, name);
   if (!rec) return;
@@ -89,15 +74,14 @@ export function recordAbandoned(root: string, name: string, who: string): void {
                 `${JSON.stringify({ ...rec, abandoned_by: who, abandoned_at: isoToday() }, null, 2)}\n`);
 }
 
-/** The record, or null when there is none. Exported rather than a `declaredFlow(root, name)`
- * helper because the two facts it carries are NOT the same question: `flow: "sdlc-flow"` is a
- * declaration to resolve, and `flow: null` is a declaration that nothing governs this — which
- * a caller must be able to tell apart from "no record at all", or it cannot honour it.
+/** The record, or null when there is none.
  *
- * A malformed one is null rather than a throw. `initiative_status` is the one call
- * zz-platform tells every agent to make before continuing any work, and taking it down over
- * an unparseable byte in a file the platform wrote is the failure mode `envelopeOf`'s isFile()
- * test already exists to prevent on the document beside it. */
+ * DELIBERATE: the whole record is returned rather than a `declaredFlow(root, name)` helper.
+ * `flow: null` is a declaration that nothing governs this, and a caller has to tell it apart
+ * from no record at all.
+ *
+ * DELIBERATE: a malformed record is null rather than a throw. `initiative_status` is the call
+ * every agent makes before continuing work, and an unparseable byte must not take it down. */
 export function openRecord(root: string, name: string): OpenRecord | null {
   const file = join(root, name, OPEN_RECORD);
   if (!existsSync(file)) return null;
@@ -112,13 +96,10 @@ export function openRecord(root: string, name: string): OpenRecord | null {
 
 /** An initiative this slug would collide with, or null.
  *
- * THE SLUG IS WHAT IS TAKEN, NOT THE DATED NAME. Testing `<today>-<slug>` alone would let the
- * same work be opened again tomorrow under a second folder, and the two would then diverge
- * with no way to say which one anybody meant. `initiativeNameTaken` used to catch that on the
- * write path, in a form that could only see it once the first document had already been
- * composed and was about to be written into the wrong place.
+ * DELIBERATE: the slug is what is taken, not the dated name. Testing `<today>-<slug>` alone
+ * lets the same work be opened again tomorrow under a second folder.
  *
- * Anchored, so a slug that is a PREFIX of an existing one is free: `payment` is not taken by
+ * Anchored, so a slug that is a prefix of an existing one is free: `payment` is not taken by
  * `payment-retries`. */
 export function takenRefusal(root: string, slug: string): string | null {
   const v = slug.trim();
@@ -135,13 +116,9 @@ export function takenRefusal(root: string, slug: string): string | null {
   );
 }
 
-/** The refusal for a path whose initiative nobody opened, or null.
- *
- * THE WRITE NO LONGER CREATES. Three guards used to make it safe that it did — the name
- * shape, the taken check and the flow declaration — and all three ran on every write of every
- * document, because this path could not tell a creating write from any other. `initiative_open`
- * is that moment now, so each asks its question once, before there is a folder, where the
- * answer can still be acted on. What is left is a single existence test.
+/** The refusal for a path whose initiative nobody opened, or null. A single existence test:
+ * the name shape, the taken check and the flow declaration are `initiative_open`'s, asked
+ * once, before there is a folder.
  *
  * A path that is not an initiative document — a bare file at the root of the store — is not
  * this function's business and passes. */

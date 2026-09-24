@@ -1,11 +1,9 @@
 /**
  * Closing an initiative: the one act that ends it.
  *
- * ITS OWN FILE because it is its own subject and the acts file is at the repository's 700-line
- * ceiling. What makes this act different from the other three is that it writes the field a
- * team's counts are read from — `outcome` — and it writes it exactly once, on a document that
- * the flow names or, for an abandon that never reached that document, on the furthest one the
- * work did reach.
+ * It writes the field a team's counts are read from — `outcome` — exactly once, on the document the
+ * flow names or, for an abandon that never reached that document, on the furthest one the work did
+ * reach.
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -26,10 +24,10 @@ import { logActivity, persistDocument, putEnvelopeField } from "../persist.js";
 import { teamFor } from "../platform-db.js";
 import { packagedModules } from "../reviewed-modules.js";
 
-/** The action a completed flow grants. Written once: the module declares it on its closing
- *  step and this is the only place the service names it, so the two cannot drift into a claim
- *  for an action no step grants — which `actionClaim` would refuse with a sentence about the
- *  step rather than about the name, and a reader would go looking in the wrong file. */
+/** The action a completed flow grants. The module declares it on its closing step and this is the
+ *  only place the service names it.
+ *  COUPLED: rename it on that step too, or `actionClaim` refuses with a sentence about the step
+ *  rather than about the name, and a reader goes looking in the wrong file. */
 const CLOSE_ACTION = "close:initiative";
 
 export function registerInitiativeCloseTool(server: McpServer): void {
@@ -49,10 +47,9 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         "either.",
       inputSchema: {
         initiative: z.string().describe("The initiative folder, e.g. '2026-08-23-sample-queue'"),
-        // The stop word is the OUTCOME's, deliberately: what the caller says and what the
-        // ledger records are the same word for the same thing, and coupling them here means a
-        // rename cannot leave one behind. `finished` is this tool's own — the platform
-        // derives `delivered` or `accepted` from it and whether anybody signed off.
+        // The stop word is the outcome's, so what the caller says and what the ledger records are
+        // the same word and a rename cannot leave one behind. `finished` is this tool's own — the
+        // platform derives `delivered` or `accepted` from it and whether anybody signed off.
         disposition: z.enum(["finished", OUTCOME_STOPPED]).describe(
           `\`finished\`: the work was completed. \`${OUTCOME_STOPPED}\`: it stopped before it was.`),
         accepted_by: z.string().optional().describe(
@@ -76,14 +73,10 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       if (badName) return text(badName);
       const acceptor = (accepted_by ?? "").trim();
       const reason = (no_signoff_reason ?? "").trim();
-      // A CLOSE CANNOT NAME AN ACCEPTOR AND ALSO SAY NOBODY SIGNED OFF.
-      //
-      // Supplying both used to silently prefer the acceptor: the reason reached neither the
-      // document, the activity log, nor the response. Refused instead, and before the
-      // neither-supplied check below, so both forced-choice defects sit next to each other.
-      // Scoped to `finished`, like the check below it: `accepted_by`/`no_signoff_reason` exist
-      // to disambiguate a FINISHED close into `accepted` or `delivered`, and an `abandoned`
-      // close's outcome does not turn on either of them.
+      // A close cannot name an acceptor and also say nobody signed off. Refused rather than
+      // silently preferring the acceptor, and before the neither-supplied check below. Scoped to
+      // `finished`: `accepted_by`/`no_signoff_reason` disambiguate a finished close into `accepted`
+      // or `delivered`, and an `abandoned` close's outcome turns on neither.
       if (disposition === "finished" && acceptor && reason) {
         return text(
           "ERROR: `accepted_by` and `no_signoff_reason` are contradictory — one says who " +
@@ -91,41 +84,20 @@ export function registerInitiativeCloseTool(server: McpServer): void {
           "` / `" + reason + "`). Send the one that is true; a close that names an acceptor " +
           "needs no reason.");
       }
-      // AN ABANDON MUST NOT CONTRADICT THE RECORD.
+      // An abandon must not contradict the record. `abandoned` says the work stopped before it was
+      // done; when every gate the flow declares is approved and every document it requires to close
+      // exists, that sentence is false.
       //
-      // `abandoned` says the work stopped before it was done. When every gate the flow
-      // declares is approved AND every document it requires to close exists, that sentence is
-      // false, and the platform was writing it down anyway. Six initiatives on 2026-09-06
-      // carry it with all six stages ticked, three of three gates approved and a verification
-      // guide delivered — a page that reads "closed without finishing" above a row of green
-      // ticks, which is the platform contradicting itself in one screen.
-      //
-      // What produced them was a harness that offered every run the same exit on the same
-      // cycle after a transient block failure. That is our fault and not the platform's. But
-      // a record the platform cannot tell is wrong is a record it will keep taking, so the
-      // check belongs here rather than in whatever is driving.
-      //
-      // Refused, not silently corrected. `delivered` is a claim about the work and only the
-      // caller can make it — the platform's job is to say the two do not agree.
+      // Refused, not silently corrected: `delivered` is a claim about the work and only the caller
+      // can make it. The platform's job is to say the two do not agree.
       if (disposition === OUTCOME_STOPPED) {
         const chain = chainFor(root, join(initiative, "probe.md"));
         const dir = join(root, initiative);
-        // THE HANDOVER IS EXCLUDED, and leaving it in silently disabled this whole refusal.
-        //
-        // `chain.documents` now carries a derived `handover.md` for every flow that gates a
-        // document, and that document CANNOT exist at close time — zz-handover writes it
-        // after the close. So `frontmatterStatus` returned null for it, `every(...)` was
-        // permanently false, `gatesPassed` could never be true, and the refusal below could
-        // never fire — for all five qualifying flows. That is exactly the false-abandon
-        // defect the comment above records six initiatives hitting on 2026-09-06, reopened
-        // by the derivation that was supposed to be additive.
-        //
-        // documentGuards solves the same problem 4,200 lines up by skipping a gated document
-        // that is not on disk yet (`if (!existsSync(f)) continue`); this site was never given
-        // that guard. Skipping absent documents would also work, but naming the handover is
-        // the more honest fix: it is not a gate the flow's own work has to pass to be
-        // finished, it is what the platform asks for afterwards, so it does not belong in a
-        // question about whether the delivery was complete.
+        // DELIBERATE: `handover.md` is excluded from the gate set. It is derived onto
+        // `chain.documents` for every flow that gates a document and cannot exist at close time —
+        // zz-handover writes it after the close — so leaving it in makes `gatesPassed` permanently
+        // false and disables this refusal entirely. It is also not a gate the flow's own work has
+        // to pass to be finished; it is what the platform asks for afterwards.
         const gates = chain.documents.filter((d) => d.gate === true && d.name !== "handover.md");
         const gatesPassed = gates.length > 0 && gates.every(
           (d) => frontmatterStatus(join(dir, d.name)) === "approved");
@@ -148,30 +120,20 @@ export function registerInitiativeCloseTool(server: McpServer): void {
 
       // The close is performed below, once the closing document has been read: whether anybody
       // signed off, whether the work was already closed and whether its gates were recorded are
-      // facts ON the store, not only arguments to this call. It is performed BY
-      // `closeInitiative` in `@zz/contracts`, which is the one place the platform holds those
-      // rules — this file names none of the three outcome words and cannot.
+      // facts on the store, not only arguments to this call. `closeInitiative` in `@zz/contracts`
+      // performs it — this file names none of the three outcome words and cannot.
       const probe = join(initiative, "probe.md");
       const chain = chainFor(root, probe);
-      // A FREEFORM INITIATIVE CLOSES TOO, and the caller says on what.
+      // A freeform initiative closes too, and the caller says on what. There is no manifest to read
+      // a closing document off, and the outcome is the row a team's counts are built from, so it
+      // cannot sit on a document nobody chose. A flow that does declare one keeps answering for
+      // itself and `document` is ignored — except on an abandon whose closing document was never
+      // written, where there is nothing for the flow's answer to point at.
       //
-      // This refused outright when `chain.closingDoc` was empty — "the flow governing '<x>'
-      // declares no closing document" — and EMPTY_CHAIN's closingDoc is `""`, so no freeform
-      // initiative could ever be closed. The sentence also named a flow that does not exist.
-      //
-      // ASKED, NOT DERIVED. There is no manifest to read a closing document off, and the
-      // alternatives are all guesses: the newest file, the only file, a document the platform
-      // invents. The outcome is the row a team's counts are built from, so the one thing it
-      // cannot sit on is a document nobody chose. A flow that DOES declare one keeps answering
-      // for itself and `document` is ignored — except on an abandon whose closing document was
-      // never written, where there is nothing for the flow's answer to point at.
-      // AN ABANDON IS RECORDED WHEREVER THE WORK STOPPED.
-      //
-      // A flow's closing document is written by its LAST stage, so an initiative that stopped
-      // at the plan has none — and requiring it made "abandoned" mean "write the review you
-      // never did first". The close goes on the furthest declared document that exists
-      // instead: the record then sits at the point the work actually reached, which is what
-      // the word says. A caller may still name one with `document`.
+      // An abandon is recorded wherever the work stopped. A flow's closing document is written by
+      // its last stage, so an initiative that stopped at the plan has none; the close goes on the
+      // furthest declared document that exists instead. A caller may still name one with
+      // `document`.
       const stopped = disposition === OUTCOME_STOPPED;
       const dirOf = join(root, initiative);
       const furthest = stopped
@@ -184,19 +146,12 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         : named;
       if (!closingDoc) {
         if (stopped) {
-          // AN EMPTY INITIATIVE IS ABANDONED ON ITS OWN RECORD, not on a document nobody wrote.
-          //
-          // This refused: "an outcome is recorded ON a document, so there is nothing here to
-          // mark. Write the first one". That is right for work that PRODUCED something and
-          // wrong for the case it actually caught — an initiative opened by mistake, which has
-          // no documents by definition and never will. The two rules were each correct alone
-          // and together left no exit: it stayed open in initiative_status forever, or somebody
-          // manufactured a document a stage never produced, which this platform refuses
-          // everywhere else.
+          // An empty initiative is abandoned on its own record, not on a document nobody wrote —
+          // an initiative opened by mistake has no documents by definition and never will.
           //
           // `_open.json` is the platform's own record of the open, so it is where the platform
-          // records that the open was undone. No ledger row is appended: a team's counts are
-          // built from work that happened, and this is the record of work that did not.
+          // records that the open was undone. No ledger row is appended: a team's counts are built
+          // from work that happened, and this is the record of work that did not.
           const rec = openRecord(root, initiative);
           if (!rec) {
             return text(
@@ -208,33 +163,22 @@ export function registerInitiativeCloseTool(server: McpServer): void {
               `ERROR: ${initiative} holds documents but none its flow declares, so the close ` +
               "has nowhere it belongs by default. Name one: `document: \"<name>.md\"`.");
           }
-          // AND IT CLOSES ONCE, like every other initiative.
+          // And it closes once, like every other initiative. The kernel is what refuses, from the
+          // fact this reads back; no gate posture is passed, because an initiative holding no
+          // document declares no gate to anybody.
           //
-          // This path wrote `_open.json` again and answered success, so the one act the
-          // platform refuses to perform twice was performed twice here and nothing said so.
-          // It looked harmless because the second write is the same bytes — but "an
-          // initiative closes once" is a rule about the ACT, not about the diff, and a path
-          // exempt from it is a path where a caller cannot tell a close from a no-op.
-          //
-          // The kernel is the one that refuses, from the fact this reads back: no gate posture
-          // is passed because an initiative holding no document declares no gate to anybody.
-          //
-          // `abandoned_at` IS THE MARKER, AND IT MUST BE THE SAME ONE initiative_status READS.
-          // That branch tests `rec?.abandoned_at` and prints `abandoned_by ?? null` beside it,
-          // so the date is what says an abandon happened and the name is what says who. Asking
-          // `abandoned_by` here instead would have made the two disagree on a record carrying
-          // one and not the other — `openRecord` casts whatever JSON it finds and validates no
-          // field, so that record is a shape this platform can meet. The direction of the
-          // disagreement is what makes it worth a line: status would go on offering a close
-          // while this refused it, which is the platform instructing an act its own gate
-          // refuses — the trap gateCheck's comment records already paying for once.
+          // COUPLED: `abandoned_at` is the marker, and initiative_status reads the same one — that
+          // branch tests `rec?.abandoned_at` and prints `abandoned_by ?? null` beside it. Asking
+          // `abandoned_by` here instead makes the two disagree on a record carrying one and not the
+          // other (`openRecord` validates no field), and status would go on offering a close this
+          // refuses.
           const undo = closeInitiative({ disposition, already: Boolean(rec.abandoned_at) });
           if (!undo.ok) {
             return text(
               `ERROR: ${undo.refusals.join("; ")}.\n\n${initiative} holds no document and was ` +
               `already abandoned on ${rec.abandoned_at}` +
-              // Named only when the record names somebody. "abandoned by undefined" is not a
-              // fact about who did it, it is this sentence reporting its own missing field.
+              // Named only when the record names somebody: "abandoned by undefined" reports this
+              // sentence's own missing field, not who did it.
               `${rec.abandoned_by ? `, by ${rec.abandoned_by}` : ""}, on its own open record. ` +
               "Nothing here is left to mark. If that was wrong, record WHY as a journal " +
               "node against this initiative — a correction somebody can find beats a second " +
@@ -265,94 +209,55 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         return text(`ERROR: ${relPath} does not exist — a close is recorded ON a document, so it must be written first.`);
       }
       let doc = readFileSync(target, "utf8");
-      // AN INITIATIVE CLOSES ONCE.
+      // An initiative closes once. A second close overwrites `outcome` on the document while
+      // ledgerOnClose returns early when one is already there, so the document says the new word and
+      // the ledger goes on saying the first.
       //
-      // A second close overwrote `outcome` on the document, and ledgerOnClose returns early
-      // when one is already there — so the document said the new word and the team's ledger
-      // went on saying the first. The ledger is what the OKR grading and the cross-flow
-      // comparison COUNT, so "how many were accepted this quarter" and what the closing
-      // document says would disagree, with nothing to notice.
-      //
-      // Refused rather than reconciled: a record's value is that it is not edited afterwards,
-      // and an outcome that can be revised months later is one nobody can rely on having read.
-      // If a close was genuinely wrong, that is a fact about the record worth writing down —
-      // a journal node saying so, not a quiet overwrite.
+      // Refused rather than reconciled: an outcome that can be revised months later is one nobody
+      // can rely on having read. A close that was genuinely wrong is a journal node saying so.
       const already = parseEnvelope(doc).outcome;
-      // CLOSING IS THE SIGN-OFF, and the closer is the person who signed.
+      // Closing is the sign-off, and the closer is the person who signed. Every call carries a
+      // person's authority — a session is a principal, and an agent calls this under the authority
+      // of whoever it works for — so `initiative_close(finished)` is somebody saying the work is
+      // what they wanted. Silence means the closer accepted it, not that nobody did.
       //
-      // Every call carries a person's authority — a session is a principal, and an agent calls
-      // this under the authority of whoever it works for. So `initiative_close(finished)` IS
-      // somebody saying the work is what they wanted, and asking them to name themselves again
-      // was ceremony: three initiatives closed `delivered` — "nobody signed it off" — with the
-      // caller's own name on the close and on the approval of the very document it was written
-      // on. Silence means the closer accepted it, not that nobody did.
+      // Neither extra argument is required: `accepted_by` names somebody other than the closer, and
+      // `no_signoff_reason` is the deliberate route for a close nobody accepted, which records
+      // `delivered`.
       //
-      // Two arguments still mean what they always did, and neither is required: `accepted_by`
-      // names somebody OTHER than the closer, and `no_signoff_reason` is the deliberate route
-      // for a close nobody accepted — automation finishing a queue, work shipped while the
-      // stakeholder is away. That close records `delivered`, which is now what it says rather
-      // than what a caller forgot to say.
-      // AND ONLY A FINISHED CLOSE HAS ONE. `abandoned` says the work stopped before it was
-      // done, so there is nothing for anybody to have accepted — stamping the closer as the
-      // acceptor put "accepted_by" on a record whose outcome is that nobody got what they
-      // wanted, which is the contradiction this tool refuses in the other direction.
+      // Only a finished close has a sign-off. `abandoned` says the work stopped before it was done,
+      // so there is nothing for anybody to have accepted.
       const signedBy = disposition === OUTCOME_STOPPED || reason ? "" : (acceptor || who.email);
-      // THE KERNEL CLOSES THE WORK. This service reads the facts back and renders the sentence.
+      // The kernel closes the work. This service reads the facts back and renders the sentence.
       //
-      // It used to re-derive the outcome here — `stopped ? stopped : signedBy ? "accepted" :
-      // "delivered"` — under a comment claiming to be "the one place the platform DERIVES an
-      // outcome". That stopped being true when the rule landed in `@zz/contracts`, and calling
-      // `deriveOutcome` closed that half. THE OTHER HALF WAS STILL HERE: whether the work had
-      // already been closed, and whether its declared gates were recorded, are refusals
-      // `closeInitiative` models — so the platform held one rule in the kernel and two beside
-      // it, and the gate could only ever check the one it could see.
+      // `already` is a fact read back off the store, not an opinion: the kernel holds no filesystem,
+      // refuses on it, and never writes it.
       //
-      // `already` is a FACT READ BACK OFF THE STORE, not an opinion: the kernel holds no
-      // filesystem, refuses on it, and never writes it.
+      // COUPLED: `gatesRecorded` is deliberately not sent. `closeCheck`, one call below in
+      // documentGuards, owns that question through `admitEntry` — the flow's gated documents that
+      // were written, all approved, waived for a stop — and two implementations of one rule agree
+      // until the day one is edited. The write path is the right owner: a gate rule enforced here is
+      // one a second tool that writes an outcome would not inherit. The record's `gatePosture` is
+      // `unstated` as a result, which is what this call declares about gates.
       //
-      // WHAT IS DELIBERATELY NOT SENT, and it is the interesting half. `closeInitiative` also
-      // refuses over `gatesRecorded`, and this call does not supply it — not because the rule
-      // is unwanted but because it already has an owner, and a rule with two owners has none.
-      // `closeCheck`, one call below in documentGuards, answers exactly this question through
-      // `admitEntry`: the flow's gated documents that were written, all approved, waived for a
-      // stop. A copy here computed the same predicate from the same two functions, and two
-      // implementations of one rule agree until the day one is edited.
+      // The argument is `signedBy` and not `acceptor` because who counts as having signed off is a
+      // policy about authority and belongs here. The kernel's rule is the narrower one — does an
+      // acceptor exist.
       //
-      // THE WRITE PATH IS THE RIGHT OWNER, which is why the copy went rather than the original.
-      // documentGuards exists because these checks were once listed at each call site, so
-      // "every new write path started with none of them and got whichever ones its author
-      // remembered". A gate rule enforced HERE is a rule a second tool that writes an outcome
-      // would not inherit; enforced there, nothing can write a closed document past it. The
-      // record's `gatePosture` is `unstated` as a result, which is what this call honestly has
-      // to say about gates: it declares none, so there is nothing unrecorded to refuse over.
+      // The grant is for a finished close on a governed flow, and only then. `closeCheck` answers a
+      // document-level question: are the flow's gated documents written and approved. This answers a
+      // procedure-level one through the reviewed module: is the whole declared chain satisfied, back
+      // to the first step. The second subsumes the first for a flow that declares a module, and the
+      // first is the only answer available for the flows that do not.
       //
-      // WHAT IS STILL THIS SERVICE'S OWN, and why the argument is `signedBy` and not `acceptor`.
-      // Who counts as having signed off is a policy about AUTHORITY and it belongs here: closing
-      // is the sign-off, so the closer signs unless they name somebody else, and a
-      // `no_signoff_reason` says nobody did. `signedBy` above is that policy's answer. The
-      // kernel's rule is the narrower one — does an acceptor exist.
-      // THE GRANT, FOR A FINISHED CLOSE ON A GOVERNED FLOW — and only then.
+      // An abandon claims nothing. The work is being reported as unfinished, which is what an
+      // unsatisfied chain would have said anyway; what a grant gates is the claim that the flow was
+      // completed.
       //
-      // WHY THIS IS NOT THE DUPLICATION THIS INITIATIVE SPENT ITS LAST DAY REMOVING, which is
-      // the first question a reader should ask. `closeCheck` below answers a DOCUMENT-level
-      // question through `admitEntry`: are the flow's gated documents written and approved.
-      // This answers a PROCEDURE-level one through the reviewed module: is the whole declared
-      // chain satisfied, back to the first step. The second subsumes the first for a flow that
-      // declares a module, and the first is the only answer available for the flows that do
-      // not — most of them. Removing `closeCheck` would leave every ungoverned flow unguarded;
-      // keeping both where a module exists is a stricter requirement, not a second opinion on
-      // the same one.
-      //
-      // AN ABANDON CLAIMS NOTHING. Stopping never needed a grant and still does not: the work
-      // is being reported as unfinished, which is what an unsatisfied chain would have said
-      // anyway. What a grant gates is the claim that the flow was COMPLETED. This is the
-      // distinction `deriveOutcome` already encodes and the one the stakeholder named when
-      // they asked whether an initiative can be closed at any time. It can.
-      //
-      // A WAIVER IS READ BESIDE THE REFUSAL, NEVER FOLDED INTO IT. `standing.clear` is the two
-      // read together; `standing.unmet` stays the engine's own answer. So an initiative whose
-      // audit never happened and whose gap somebody signed for can finish, and the record goes
-      // on saying the audit is missing — because it is.
+      // A waiver is read beside the refusal, never folded into it. `standing.clear` is the two read
+      // together; `standing.unmet` stays the engine's own answer. So an initiative whose audit never
+      // happened and whose gap somebody signed for can finish, and the record goes on saying the
+      // audit is missing.
       if (disposition !== OUTCOME_STOPPED) {
         const governed = moduleForFlow(packagedModules, chain.name);
         if (governed && team) {
@@ -379,17 +284,14 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         already: Boolean(already),
       });
       if (!record.ok) {
-        // THE KERNEL REFUSED, AND THIS PUTS BACK WHAT IT COULD NOT KNOW.
+        // The kernel refused, and this puts back what it could not know: it holds no initiative
+        // name and no word already on the document. Its refusals are printed as it wrote them, and
+        // what this service adds is keyed on the fact it supplied rather than on the kernel's
+        // wording — a branch matching its prose would be a second copy of its rules and would go
+        // quiet the day one of them is reworded.
         //
-        // Its sentences are general on purpose: it holds no initiative name and no word already
-        // on the document. So its refusals are printed as it wrote them and what this service
-        // can add is added after them — keyed on the FACT IT SUPPLIED rather than on the
-        // kernel's wording, because a branch that matched its prose would be a second copy of
-        // its rules and would go quiet the day one of them is reworded.
-        //
-        // ONE FACT, SO ONE BRANCH. `already` is the only thing this call tells the kernel that
-        // the kernel cannot say back in full, and a list built to hold one string is a shape
-        // kept for a second entry nobody has.
+        // One fact, so one branch: `already` is the only thing this call tells the kernel that the
+        // kernel cannot say back in full.
         return text(`ERROR: ${record.refusals.join("; ")}.` + (already
           ? `\n\n${initiative} is already closed as \`${already}\`. The ledger row was appended ` +
             "at that close and is what the team's counts read, so changing the document now " +
@@ -398,11 +300,9 @@ export function registerInitiativeCloseTool(server: McpServer): void {
             "nobody can."
           : ""));
       }
-      // The kernel returns null rather than guessing at a disposition it does not know, and a
-      // null is one of the refusals above — so `ok` being true has already settled this. The
-      // schema refuses an unknown disposition before either of them. What is left is the
-      // compiler, which cannot see any of that, and a refusal is the only honest thing to write
-      // under a branch that says the outcome is missing.
+      // The kernel returns null rather than guessing at a disposition it does not know, and a null
+      // is one of the refusals above, so `ok` being true has already settled this. The schema
+      // refuses an unknown disposition before either of them. What is left is the compiler.
       const outcome = record.outcome;
       if (outcome === null) {
         return text(`ERROR: no outcome can be derived from a disposition of ${JSON.stringify(disposition)}.`);
@@ -423,13 +323,8 @@ export function registerInitiativeCloseTool(server: McpServer): void {
             ? "Nobody accepted it, because it stopped before it was done.\n"
             : `Nobody signed off — recorded reason: ${oneLine(reason)}.\n`) +
         "A ledger row was appended. The ledger is read by counting these, so the word matters.\n" +
-        // CLOSED IS COMPLETE. This said the opposite -- "one step remains", the handover, and
-        // "only then does initiative_status read closed". Both halves are gone: the close is
-        // terminal whatever it closed on, and status answers `closed` from this moment.
-        //
-        // The handover is OFFERED here rather than demanded, and the distinction is the whole
-        // point. A tool's own return text is documentation and rots like it; this one told
-        // people for months that they owed a document its own gate would refuse them.
+        // Closed is complete: the close is terminal whatever it closed on, and status answers
+        // `closed` from this moment. The handover is offered here rather than demanded.
         "Nothing further is owed. If this cycle taught something worth keeping, " +
         "`skill_read(\"zz-handover\")` mints it and writes handover.md — the close satisfies " +
         "that document's prerequisite, so it can be written even when the work stopped before " +

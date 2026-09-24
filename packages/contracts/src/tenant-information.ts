@@ -2,38 +2,28 @@
  * Tenant information and retrieval — the shared artifact, revision, event, mutation and
  * search contracts, as runtime schemas rather than as types alone.
  *
- * A TYPESCRIPT ANNOTATION IS NOT VALIDATION. Every one of the interfaces this module mirrors
- * describes untrusted boundary input somewhere in the tenant-information delivery — a JSON
- * mutation request from an MCP tool, a search query from the gateway, a record read back off
- * disk. `interface ArtifactRef { revision: number | null }` compiles against `{revision: 1.5}`
- * and against `{revision: -1}`; nothing at the type level rejects either. The zod schema is
- * what actually rejects them, at the one boundary where untrusted values become internal
- * records, and the exported TypeScript type is inferred FROM that schema so the two can never
- * drift apart the way a hand-maintained `interface` and a hand-maintained parser would.
+ * Every interface here describes untrusted boundary input — a JSON mutation request from an
+ * MCP tool, a search query from the gateway, a record read back off disk — so the zod schema
+ * is what rejects it and the exported TypeScript type is inferred from that schema.
  *
- * THE SEMANTIC FIELD LIST LIVES HERE ONCE. `semanticFields` below is the only place
- * SemanticPayload's field set is enumerated; every consumer that needs to know which fields
- * make a payload change (as opposed to a metadata/state operation) imports it from here. A
- * second hand-written list is how `description` was dropped from one of them during design —
- * recorded so nobody reintroduces the second list that caused it.
+ * COUPLED: `semanticFields` below is the only place SemanticPayload's field set is
+ * enumerated; every consumer that needs to tell a payload change from a state operation
+ * imports it rather than writing a second list.
  *
- * CITATION IDENTITY IS `(owner_id, artifact_id, revision-or-source-hash)`, never a bare node
- * number or a relative path — `ArtifactRefSchema` is that triple (plus an optional selector),
- * and `content_hash` is always validated as a full 64-character lowercase SHA-256, never a
- * mutable "latest" alias. `revision` is nullable in the schema because a reference INTO a
- * SourceArtifact carries no revision at all; the schema proves the shape, not the target
- * class — resolving a null-revision reference against an actual record, and refusing it for
- * anything other than a SourceArtifact, is authorization work done downstream (I-9, I-19),
- * not a property `safeParse` can establish on its own.
+ * Citation identity is `(owner_id, artifact_id, revision-or-source-hash)`, never a bare node
+ * number or a relative path. `ArtifactRefSchema` is that triple plus an optional selector, and
+ * `content_hash` is a full 64-character lowercase SHA-256, never a mutable "latest" alias.
+ * `revision` is nullable because a reference into a SourceArtifact carries none; resolving
+ * such a reference, and refusing it for anything but a SourceArtifact, is authorization work
+ * downstream rather than something `safeParse` can establish.
  */
 
 import { z } from "zod";
 
-// ── shared primitives ─────────────────────────────────────────────────────────────────────
+// Shared primitives
 //
-// Repeated across nearly every schema below, so each is written once: a bare UUID, a full
-// lowercase SHA-256 digest, a timezone-qualified ISO 8601 timestamp and the two integer
-// shapes ("at least one", "zero or more") that revisions, sequences and byte counts need.
+// Written once and reused: a bare UUID, a full lowercase SHA-256 digest, a timezone-qualified
+// ISO 8601 timestamp, and the two integer shapes revisions, sequences and byte counts need.
 
 const UuidSchema = z.string().uuid();
 const Sha256Schema = z.string().regex(/^[0-9a-f]{64}$/, "must be a full 64-character lowercase SHA-256 digest");
@@ -41,7 +31,7 @@ const TimestampSchema = z.string().datetime({ offset: true });
 const PositiveIntSchema = z.number().int().positive();
 const NonNegativeIntSchema = z.number().int().nonnegative();
 
-// ── vocabulary and ownership ──────────────────────────────────────────────────────────────
+// Vocabulary and ownership
 
 export const ArtifactClassSchema = z.enum(["source", "work_document", "knowledge_concept"]);
 export type ArtifactClass = z.infer<typeof ArtifactClassSchema>;
@@ -58,10 +48,9 @@ export type GateStatus = z.infer<typeof GateStatusSchema>;
 export const EdgeKindSchema = z.enum(["derived_from", "cites", "revision_of", "supersedes"]);
 export type EdgeKind = z.infer<typeof EdgeKindSchema>;
 
-/** `revision: null` is structural only — it says a reference does not carry one, which is
- *  true of a reference into a SourceArtifact. It does NOT prove the reference resolves to a
- *  source; that proof needs the actual record and belongs to authorized resolution, not to
- *  this schema. */
+/** `revision: null` is structural only: it says a reference does not carry one, which is true
+ *  of a reference into a SourceArtifact. It does not prove the reference resolves to a
+ *  source — that needs the actual record, and belongs to authorized resolution. */
 export const ArtifactRefSchema = z.object({
   owner_id: UuidSchema,
   artifact_id: UuidSchema,
@@ -72,10 +61,9 @@ export const ArtifactRefSchema = z.object({
 export type ArtifactRef = z.infer<typeof ArtifactRefSchema>;
 
 /**
- * The semantic fields, in SemanticPayload's own declared order — and the ONLY place that
- * order is written down. Editing only `description` is a semantic edit and creates a
- * revision; editing a field the platform schema declares state-only does not. Anything that
- * needs to tell those two apart imports this rather than re-enumerating the payload.
+ * The semantic fields, in SemanticPayload's own declared order, and the only place that order
+ * is written down. Editing one of them is a semantic edit and creates a revision; editing a
+ * field the platform schema declares state-only does not.
  */
 export const semanticFields = ["title", "description", "type", "tags", "body", "resource", "content_fields"] as const;
 
@@ -128,10 +116,9 @@ export const ContentRevisionSchema = z.object({
   legacy_unresolved_sources: z.array(LegacyUnresolvedSourceSchema),
   previous_revision: PositiveIntSchema.nullable(),
 }).superRefine((revision, ctx) => {
-  // Native versus lossless-import constraints: a native revision always names its own
-  // generator and carries no unresolved legacy declarations. Only import_legacy may leave
-  // the ORIGINAL actor/time unknown, because it is importing bytes the platform did not
-  // itself produce — its own import actor/time is a separate, known fact recorded elsewhere.
+  // A native revision names its own generator and carries no unresolved legacy declarations.
+  // Only import_legacy may leave the original actor/time unknown, because it is importing
+  // bytes the platform did not produce; the import's own actor and time are recorded apart.
   if (revision.origin_profile === "native") {
     if (revision.generated.by === null || revision.generated.at === null) {
       ctx.addIssue({
@@ -175,8 +162,7 @@ export type ArtifactEvent = z.infer<typeof ArtifactEventSchema>;
 
 /** The durable capture record for a SourceArtifact — reconstructible from a commit manifest,
  *  never re-derived from a re-rendered wrapper. `original_locator` is nullable because a
- *  mutable URL alone is not a native causal capture; when none was reviewable, it stays null
- *  rather than inventing one. */
+ *  mutable URL alone is not a causal capture; with none reviewable it stays null. */
 export const SourceCaptureSchema = z.object({
   owner_id: UuidSchema,
   artifact_id: UuidSchema,
@@ -191,12 +177,11 @@ export const SourceCaptureSchema = z.object({
 });
 export type SourceCapture = z.infer<typeof SourceCaptureSchema>;
 
-// ── mutation, persistence and derived data ────────────────────────────────────────────────
+// Mutation, persistence and derived data
 
 export const MutationOpSchema = z.enum([
-  // NOT A TOOL: `approve` here is persistArtifact's MutationOp — the kernel operation a
-  // work-document approval funnels through — not the `document_approve` MCP tool call that
-  // invokes it.
+  // NOT A TOOL: `approve` here is the kernel's MutationOp — the operation a
+  // work-document approval funnels through — not the `document_approve` tool that invokes it.
   "create", "revise", "approve", "verify",
   "set_knowledge_status", "move", "attach_input", "disposition_input",
   "correct_provenance", "supersede", "publish", "unpublish", "import_legacy",
@@ -204,9 +189,8 @@ export const MutationOpSchema = z.enum([
 export type MutationOp = z.infer<typeof MutationOpSchema>;
 
 /**
- * The twelve mutation error codes, in the order the spec's `MutationError.code` union
- * declares them. `MutationErrorSchema.code` is built from this list rather than a separate
- * literal union, so there is exactly one place a thirteenth code would have to be added.
+ * The mutation error codes. `MutationErrorSchema.code` is built from this list rather than a
+ * separate literal union, so there is one place a new code is added.
  */
 export const mutationErrorCodes = [
   "INVALID_INPUT", "NOT_FOUND_OR_FORBIDDEN", "SOURCE_IMMUTABLE",
@@ -216,10 +200,9 @@ export const mutationErrorCodes = [
 ] as const;
 
 /** Fields no caller payload may set, because authorization context — not caller input —
- *  supplies them: owner comes from the authenticated session, actor from the same context,
- *  gate/knowledge status from a dedicated operation, and platform identity is minted, never
- *  accepted. A payload naming one of these is rejected at the boundary rather than silently
- *  ignored, so an attempted override is visible as INVALID_INPUT and not as data loss. */
+ *  supplies them: owner and actor from the authenticated session, gate/knowledge status from
+ *  a dedicated operation, and platform identity is minted. A payload naming one is rejected
+ *  at the boundary rather than ignored, so an override surfaces as INVALID_INPUT. */
 const RESERVED_PAYLOAD_KEYS = ["owner_id", "owner", "actor", "gate", "gate_status", "identity"] as const;
 
 const MutationPayloadSchema = z.record(z.string(), z.unknown()).superRefine((payload, ctx) => {
@@ -234,10 +217,9 @@ const MutationPayloadSchema = z.record(z.string(), z.unknown()).superRefine((pay
 });
 
 /**
- * `.strict()`, deliberately: an unknown top-level field is exactly how a caller would try to
- * smuggle a platform-owned value (owner, actor, gate, identity) past the operation-specific
- * payload — MutationRequest declares its whole accepted shape, and anything else is refused
- * rather than passed through.
+ * DELIBERATE: `.strict()`. An unknown top-level field is how a caller smuggles a
+ * platform-owned value (owner, actor, gate, identity) past the operation-specific payload, so
+ * anything MutationRequest does not declare is refused rather than passed through.
  */
 export const MutationRequestSchema = z.object({
   operation: MutationOpSchema,
@@ -287,7 +269,7 @@ export const MutationOutcomeSchema = z.discriminatedUnion("committed", [
 ]);
 export type MutationOutcome = z.infer<typeof MutationOutcomeSchema>;
 
-// ── retrieval contract ────────────────────────────────────────────────────────────────────
+// Retrieval contract
 
 export const SearchResultSchema = z.object({
   ref: ArtifactRefSchema,
@@ -314,9 +296,9 @@ export const SearchResultSchema = z.object({
 });
 export type SearchResult = z.infer<typeof SearchResultSchema>;
 
-/** schema_version is a literal 2, not `number` — the public response's own disclosure that
- *  it is the structured, incomplete/reasons-carrying shape rather than the legacy
- *  explanatory-text response existing tools may still return alongside it. */
+/** schema_version is a literal 2, not `number`: it is the response's own disclosure that it
+ *  is the structured, reasons-carrying shape rather than the explanatory-text response some
+ *  tools still return alongside it. */
 export const SearchResponseSchema = z.object({
   schema_version: z.literal(2),
   results: z.array(SearchResultSchema),

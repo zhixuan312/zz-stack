@@ -14,8 +14,7 @@
 #             them back is what keeps editing a skill instant. Both are true, in
 #             different files, and which one applies is a flag rather than a guess.
 #
-# Builds the platform's own two services from this checkout. Blocks are somebody else's MCP
-# servers and are not built here — there is nothing to clone alongside.
+# Builds the platform's own two services from this checkout.
 #
 # An installer needs none of this, which is the whole point of the split.
 services:
@@ -26,7 +25,6 @@ services:
     volumes:
       - ../catalog:/catalog:ro
       - ../skills:/skills:ro
-      - ../blocks:/blocks:ro
 
   cred-proxy:
     build:
@@ -35,5 +33,4 @@ services:
     volumes:
       - ../catalog:/catalog:ro
       - ../skills:/skills:ro
-      - ../blocks:/blocks:ro
 

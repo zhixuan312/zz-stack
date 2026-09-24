@@ -1,22 +1,16 @@
 // A migration that needs an extension says so, and the runner defers it rather than failing.
 //
-// WHAT THIS PREVENTS IS NOT A CRASH. `services/gateway/src/db.ts` applies every unapplied
-// migration on every boot. When one throws it rolls back, un-sets the pool and rethrows — and
-// the caller logs "platform db init failed (continuing without it)" and starts the server
-// anyway, which is a deliberate choice made so a database problem does not take the platform
-// down. The consequence for a migration that cannot run on the deployed cluster is therefore
-// the whole platform serving with no database while reporting itself up.
+// What this prevents is not a crash. `services/gateway/src/db.ts` applies every unapplied
+// migration on every boot. When one throws it rolls back, un-sets the pool and rethrows — and the
+// caller logs "platform db init failed (continuing without it)" and starts the server anyway, a
+// deliberate choice so a database problem does not take the platform down. The consequence for a
+// migration that cannot run on the deployed cluster is the whole platform serving with no database
+// while reporting itself up.
 //
-// Measured on this deployment while writing the tenant-information migration: PostgreSQL 16.15
-// with exactly `citext` and `plpgsql` installed, and a migration needing `pg_textsearch` whose
-// PostgreSQL 17 image arrived in a later, separately rehearsed cutover — done on 2026-09-21.
-// The deployment now runs that image and defers nothing; this pair is what keeps the NEXT
-// extension from taking the platform down between the migration merging and the image shipping.
-//
-// TWO HALVES, BOTH REQUIRED. A migration naming `create extension` must carry a
-// `-- requires-extension: <name>` directive, and the runner must still read it. Either alone is
-// a guard that has stopped guarding: the directive with no reader is a comment, and the reader
-// with no directive is a mechanism nothing uses, which is how a mechanism gets deleted as dead.
+// COUPLED, and both halves are required: a migration naming `create extension` must carry a
+// `-- requires-extension: <name>` directive, and the runner must still read it. Either alone is a
+// guard that has stopped guarding — the directive with no reader is a comment, and the reader with
+// no directive is a mechanism nothing uses, which is how a mechanism gets deleted as dead.
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -34,13 +28,10 @@ if (!/pg_available_extensions/.test(runner)) {
   fail.push("services/gateway/src/db.ts no longer asks which extensions this cluster offers");
 }
 
-// EVERY DIRECTIVE, NOT THE FIRST. Driven against the runner's own exported function rather
-// than asserted about its source text, because this is a behaviour rather than a presence.
-//
-// The regression it guards is not hypothetical: the reader was `.exec(...)?.[1]` until
-// migration 070 came to need a second extension, so one requirement was checked and the file
-// was attempted anyway when the other was missing — the exact outage the deferral exists for,
-// re-entered through the guard itself.
+// Every directive, not the first. Driven against the runner's own exported function rather than
+// asserted about its source text, because this is a behaviour rather than a presence. A reader
+// written as `.exec(...)?.[1]` checks one requirement and attempts the file anyway when a second
+// is missing — the exact outage the deferral exists for, re-entered through the guard itself.
 const twoDirectives = "-- requires-extension: alpha\ncreate extension alpha;\n"
   + "-- requires-extension: beta\ncreate extension beta;\n";
 const read = requiredExtensions(twoDirectives);
@@ -62,8 +53,8 @@ for (const file of readdirSync(DIR).filter((f) => f.endsWith(".sql"))) {
   const code = sql.split("\n").filter((l) => !/^\s*--/.test(l)).join("\n");
   for (const m of code.matchAll(/create\s+extension\s+(?:if\s+not\s+exists\s+)?([a-z0-9_]+)/gi)) {
     const ext = m[1].toLowerCase();
-    // Two ship with PostgreSQL itself on every image this platform has ever run, so requiring a
-    // declaration for them would be ceremony rather than a guard.
+    // Both ship with the PostgreSQL image this platform runs, so a declaration for them would be
+    // ceremony rather than a guard.
     if (ext === "plpgsql" || ext === "citext") continue;
     const declared = new RegExp(`^--\\s*requires-extension:\\s*${ext}\\s*$`, "im").test(sql);
     if (!declared) {

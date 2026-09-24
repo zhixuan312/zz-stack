@@ -1,26 +1,19 @@
 /**
  * client-package — turn the catalog into the installable package a client takes.
  *
- * The rule this module exists to keep: **a client is told where the tools are
- * and what the entry skill is called, and nothing else.** No stage, no gate and
- * no document shape is ever rendered into a file here. The method is fetched at
- * run time with skill_read(), from the same catalog that serves the browser, so
- * a flow fixed on the server is live everywhere on the next message.
+ * A client is told where the tools are and what the entry skill is called, and nothing else.
+ * No stage, no gate and no document shape is rendered into a file here: the method is fetched
+ * at run time with skill_read(), from the same catalog that serves the browser, so a flow
+ * fixed on the server is live everywhere on the next message.
  *
- * It also never writes CLAUDE.md, AGENTS.md or SOUL.md. Those are engine-global
- * — in context for every task the person ever does — so a flow placed there
- * changes the behaviour of the whole engine, and two flows collide in one file.
- * Everything below installs and uninstalls as a unit instead.
+ * DELIBERATE: never writes CLAUDE.md, AGENTS.md or SOUL.md. Those are engine-global, so a flow
+ * placed there changes the whole engine and two flows collide in one file. Everything below
+ * installs and uninstalls as a unit instead.
  *
- * Distribution is a PUBLIC marketplace committed to this repository, which
- * `build-marketplace.ts` renders with the very function below. It used to be a tarball from
- * `/pkg/`, behind `Authorization: Bearer` — which put a credential in front of the tools a
- * person installs in order to obtain one. The shelf was never the boundary: every tool it
- * lists is a door at the gateway, and the door still refuses.
+ * Distribution is a public marketplace committed to this repository, which
+ * `build-marketplace.ts` renders with the function below. The shelf is not a boundary: every
+ * tool it lists is a door at the gateway, and the door still refuses.
  *
- * There is ONE client. Codex and Hermes were removed on 2026-09-12 because nobody ran
- * either, and with them went the tarball route, the archive writer, two more install stories
- * and a `clients` matrix that ran from the manifest through the database.
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -31,35 +24,27 @@ import { serviceVersion } from "@zz/mcp-http";
 import { digestOf } from "./package/describe.js";
 import { BASELINE, cardDescription, commandFile, entryCommand, headersHelper, platformPlugins, promoteCommands, routerSkill, shelfFlows, withoutFrontmatter } from "./package/skills.js";
 
-/** This platform's release version, read from the gateway's own manifest so there is one
- * number and no second place to forget to update.
- *
- * Through @zz/mcp-http's serviceVersion, which is that read. This file carried its own copy —
- * the same dirname, the same `join(here, "..", "package.json")`, the same "0.0.0" on failure —
- * so "there is one number" was true of the number and not of the code that finds it. The
- * comment beside serviceVersion records what a second answer to this question already cost:
- * three servers announcing three different wrong versions at the MCP handshake. */
+/** This platform's release version, read from the gateway's own manifest so there is one number
+ * and no second place to forget to update. Through @zz/mcp-http's serviceVersion, which is that
+ * read. */
 export const PLATFORM_VERSION: string = serviceVersion(import.meta.url);
 
 /** Where the Claude Code shelf is published, as `claude plugin marketplace add` takes it.
  *
- * The repository is the distribution: `build-marketplace.ts` renders the shelf into it and
- * the gate refuses a release whose committed copy has fallen behind. This is the one place
- * that name is written — the install, refresh and owner URL below all read it. */
+ * COUPLED: the repository is the distribution — `build-marketplace.ts` renders the shelf into
+ * it and the gate refuses a release whose committed copy has fallen behind. The install,
+ * refresh and owner URL below all read this one name. */
 const MARKETPLACE_REPO = "zhixuan312/zz-stack";
 
-/** What the shelf is CALLED, as `plugin@marketplace` ids spell it.
+/** What the shelf is called, as `plugin@marketplace` ids spell it. The same word as the
+ * repository, deliberately, so a person learns one name.
  *
- * The same word as the repository, deliberately: `marketplace add zhixuan312/zz-stack`
- * followed by `install zz@zz-platform` made a person learn two names for one shelf and
- * guess which belonged where. It is not the same word as the platform's own TEAM, which is
- * `zz-platform` (PLATFORM_TEAM, in identity.ts) — those were the two things the old name
- * ran together, and a marketplace and a team are not remotely the same object. */
+ * Not the same word as the platform's own team, which is `zz-platform` (PLATFORM_TEAM, in
+ * identity.ts). A marketplace and a team are different objects. */
 export const MARKETPLACE = "zz-stack";
 
 /** Who publishes this shelf. One object for the marketplace's `owner` and every plugin's
- * `author`, because they are the same claim and `claude plugin validate` asks for both —
- * two literals would be two places to disagree about who made this. */
+ * `author` — the same claim, and `claude plugin validate` asks for both. */
 const OWNER = { name: "ZZ Stack", url: `https://github.com/${MARKETPLACE_REPO}` };
 
 export interface PackageFile {
@@ -77,29 +62,16 @@ export interface ShelfFlow {
   agentName: string | null;
   /** One line from the entry skill: when this flow is the right one. */
   whenToUse: string;
-  /** Platform surfaces this flow's METHOD needs, beyond the baseline. A flow whose skills
-   * instruct an admin tool has to be able to reach one; without this the package shipped the
-   * instruction and not the tool. */
+  /** Platform surfaces this flow's method needs, beyond the baseline. A flow whose skills
+   * instruct an admin tool has to be able to reach one. */
   servers: { name: string; path: string }[];
 }
 
-/* The served-vs-local split lived here: SERVED_CLIENTS, ALL_CLIENTS and isLocalOnly.
+/** The platform's own skills, such as zz-platform. A tree of their own, beside the catalog
+ * rather than in it, because they are true wherever this runs and belong to nobody's flow.
  *
- * It existed because a browser has no local disk, so a flow running there had to fetch its
- * method from the platform — and a flow that ALSO shipped its skills as files to the same
- * team's terminals put two copies of one method in the world, which drift. With the browser
- * front end removed on 2026-09-10 and Codex and Hermes on 2026-09-12, every client is a
- * terminal that holds files, `isLocalOnly` was true for every flow it was ever asked about,
- * and the branch it guarded had one live side. Keeping the machinery would have been a
- * matrix with one cell. */
-
-/** The platform's OWN skills — zz-platform, zz-distil, zz-evolve, zz-kb-usage,
- * blocks-capabilities. A tree of their own, beside the catalog rather than in it,
- * because they are true wherever this runs and belong to nobody's flow.
- *
- * Overridable for the same reason `CATALOG_DIR` is: the gate builds real packages
- * on a developer's machine where `/skills` does not exist, and a hardcoded path
- * would make that probe silently produce a package missing every one of them.
+ * Overridable for the same reason `CATALOG_DIR` is: the gate builds real packages on a
+ * developer's machine where `/skills` does not exist.
  */
 const SKILLS_DIR = process.env.ZZ_SKILLS_DIR || "/skills";
 
@@ -113,7 +85,7 @@ function platformOwnSkills(prefix: string): PackageFile[] {
       else out.push({ path: `${prefix}/${rel}/${f.name}`, content: readFileSync(abs, "utf8") });
     }
   };
-  // Directories only, for the reason `residentSkills` states below.
+  // Directories only, for the reason `residentFiles` states below.
   for (const e of readdirSync(SKILLS_DIR, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     if (e.isDirectory()) walk(join(SKILLS_DIR, e.name), e.name);
   }
@@ -121,19 +93,11 @@ function platformOwnSkills(prefix: string): PackageFile[] {
 }
 
 
-/** What the baseline plugin carries: the router, the platform's own skills, and a command
- * for each skill its manifest declares one for.
+/** What the baseline plugin carries: the router, the platform's own skills, and a command for
+ * each skill its manifest declares one for. Its manifest is `catalog/zz/zz-core/flow.json`.
  *
- * The baseline got skills and no commands, so `doctor`, `update` and `migrate` — the three a
- * person types rather than a method loads — had no way to be typed. Flows have promoted their
- * declared commands since they existed; this is the same rule applied to the one plugin
- * everybody has, and now through the same function.
- *
- * `promoteCommands`, not a second promoter reading each skill's frontmatter. The baseline had
- * no manifest to put a commands map in, so each skill carried `command: doctor` itself; it has
- * one at `catalog/zz/zz-core/flow.json` now, so the map lives where every other package's map
- * lives. Its SKILLS are still the tree beside the catalog rather than that entry's `skills/` —
- * one of them is GENERATED per person and none of them can be read from a shared catalog. */
+ * DELIBERATE: its skills are the tree beside the catalog rather than that entry's `skills/`,
+ * plus the router, which is generated from the shelf's flows when the package is built. */
 function baselineFiles(flows: ShelfFlow[]): PackageFile[] {
   const skills = [
     { path: "skills/zz-router/SKILL.md", content: routerSkill(flows) },
@@ -147,16 +111,13 @@ function baselineFiles(flows: ShelfFlow[]): PackageFile[] {
 
 /** The baseline's marketplace card, addressed to whoever this package was built for.
  *
- * THE PROSE LIVES IN THE MANIFEST, like every other package's, and only the ADDRESS is spliced
- * in here — because the address is the one part that is not a property of the package: on the
- * gateway `target` is the person's email, and on the committed shelf it is "your team". This
- * sentence was a template literal here while the manifest said nothing, which was fine while
- * the baseline had no manifest; it has one now, and keeping both would leave the card a person
- * receives and the card the catalog declares free to drift apart.
+ * The prose lives in the manifest, like every other package's; only the address is spliced in
+ * here, because it is not a property of the package — on the gateway `target` is the person's
+ * email, and on the committed shelf it is "your team".
  *
- * THROWS rather than falling back. An empty card on the one plugin everybody must install is
- * the failure nobody notices, and catalog-manifest.ts already refuses a shelved entry with no
- * description — so reaching this line means the manifest is not the one that check read. */
+ * DELIBERATE: throws rather than falling back. catalog-manifest.ts already refuses a shelved
+ * entry with no description, so reaching this line means the manifest is not the one that
+ * check read. */
 function baselineCard(target: string): string {
   const said = catalogManifest(BASELINE, true)?.description;
   if (!said) {
@@ -164,24 +125,18 @@ function baselineCard(target: string): string {
       `${BASELINE} declares no description — the baseline's marketplace card is its manifest's, ` +
       "and there is nothing else to show a person choosing what to install.");
   }
-  // A FUNCTION, not a replacement string. `target` is the person's own email on the
-  // gateway, and `$&` or `$'` inside a replacement STRING are read as patterns — the
-  // defect security-boundary.ts found in nine sites that put somebody's words into
-  // somebody's document.
+  // DELIBERATE: a function, not a replacement string. `target` is the person's own email, and
+  // `$&` or `$'` inside a replacement string are read as patterns.
   return said.replace("ZZ platform baseline", () => `ZZ platform baseline for ${target}`);
 }
 
 /** Every file under one of a catalog entry's directories, as package files rooted at the same
  * name.
  *
- * `sub` was hard-coded to "skills" while the caller passed a `prefix` that was always that same
- * word. It stayed parameterised when the shelf briefly carried a second directory — `evals/`,
- * holding the cases `claude plugin eval` ran — and that half is gone, so "skills" is once again
- * the only thing any caller passes. It is left as an argument rather than folded back in
- * because the next directory the shelf carries will want the same treatment.
+ * `sub` is parameterised although "skills" is the only value any caller passes.
  *
- * Source and destination are the same word deliberately: a package that renamed the directory
- * on the way out would be a package whose layout the tool reading it cannot predict. */
+ * DELIBERATE: source and destination are the same word. A package that renamed the directory on
+ * the way out would be a package whose layout the tool reading it cannot predict. */
 function residentFiles(flow: string, sub: string): PackageFile[] {
   const e = catalogEntry(flow, true);
   if (!e) return [];
@@ -196,10 +151,8 @@ function residentFiles(flow: string, sub: string): PackageFile[] {
       else out.push({ path: `${prefix}/${rel}/${f.name}`, content: readFileSync(abs, "utf8") });
     }
   };
-  // DIRECTORIES only. This took every entry in skills/ and called readdirSync on it, so a
-  // stray file there — a README, an editor's leftover — threw ENOTDIR and took down package
-  // building for everyone running that flow, from a file that is not a skill and harms
-  // nothing else.
+  // Directories only: a stray file in skills/ — a README, an editor's leftover — makes
+  // readdirSync throw ENOTDIR and takes down package building for everyone running that flow.
   for (const e of readdirSync(root, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     if (e.isDirectory()) walk(join(root, e.name), e.name);
   }
@@ -221,20 +174,12 @@ export interface ClientPackage {
   flows: ShelfFlow[];
 }
 
-/* ── the package ─────────────────────────────────────────────────── */
 
 /** One installable unit inside the marketplace.
  *
- * The shelf used to hold a single plugin called `zz` carrying everything a person's team
- * had access to. That made selection impossible: install it and you got every block your
- * team was granted, wired into your runtime, whether your work touched them or not. A
- * person writing code got another team's MCP server because a colleague's
- * flow needed it.
- *
- * Now the marketplace lists many plugins and the runtime's own `plugin install` is the
- * chooser — no selector of ours to build, and the command is one people already know.
- * Each plugin declares only the MCP servers it actually needs, so a block arrives with the
- * flow that uses it or not at all. */
+ * The marketplace lists many plugins and the runtime's own `plugin install` is the chooser.
+ * Each plugin declares only the MCP servers it actually needs, so a server arrives with the flow
+ * that uses it or not at all. */
 export interface Plugin {
   name: string;
   description: string;
@@ -251,16 +196,14 @@ interface PackageInput {
 }
 
 export function buildClientPackage({ target, base }: PackageInput): ClientPackage {
-  // THE SAME SHELF FOR EVERYONE: the catalog's flows, never a team's record of installs.
+  // The same shelf for everyone: the catalog's flows, never a team's record of installs.
   const flows = shelfFlows();
   const files: PackageFile[] = [];
   const notes: string[] = [];
 
-  // ── what the shelf holds ───────────────────────────────────────────
-  //
   // Baseline first: the platform's own MCP and the router. Then the platform's other own
-  // plugins, which are REQUIRED like the baseline — zz-access is how a person gets a token at
-  // all. Then one OPTIONAL plugin per catalog flow: a person installs the ones they want.
+  // plugins, which are required like the baseline — zz-access is how a person gets a token at
+  // all. Then one optional plugin per catalog flow.
   const core = { name: "zz-core", url: `${base}/core/mcp` };
   const plugins: Plugin[] = [
     {
@@ -268,16 +211,8 @@ export function buildClientPackage({ target, base }: PackageInput): ClientPackag
       description: baselineCard(target),
       servers: [core],
       required: true,
-      // The one plugin whose content is generated rather than read: the router names the
-      // flows on the shelf.
-      // The hermes flavour differs only in frontmatter, and it is built HERE so there is one
-      // router in the package. Pushing a second copy in the hermes branch put two entries at
-      // the same tar path, and the one that won on extraction was the wrong one.
-      // MCP *AND* SKILLS. This carried the router and nothing else, so the five
-      // skills in `/skills` — the platform's own, zz-platform among them, which
-      // has been read 194 times through skill_read — shipped in no plugin at all.
-      // They were reachable over MCP and installable by nobody. This is the one
-      // plugin everybody must have, and what we are is our MCP and our method.
+      // The one plugin whose content is generated rather than read: the router names the flows
+      // on the shelf, and the package carries the platform's own skills as well as its MCP.
       files: baselineFiles(flows),
     },
     ...platformPlugins().map((pp): Plugin => {
@@ -295,16 +230,14 @@ export function buildClientPackage({ target, base }: PackageInput): ClientPackag
     ...flows.map((f): Plugin => {
       const skills = residentFiles(f.flow, "skills");
       const entry = skills.find((s) => s.path === `skills/${f.entry}/SKILL.md`);
-      // A skill a person invokes ON PURPOSE — the front door, and every other skill the
+      // A skill a person invokes on purpose — the front door, and every other skill the
       // manifest names in `commands` — becomes a command; it ships exactly once either way.
       // Stage skills are never promoted: they are reached through the flow, not typed.
       //
-      // BOTH HALVES HAVE TO HOLD for the entry. `entryCmd` is what the manifest says the
-      // front door is typed as, and it is undefined for a package that declares no command
-      // for its entry — there is no default to fall back to, and a flow reached only by
-      // loading its skill is a legal thing to be. `entry` is whether that skill actually
-      // shipped; when it did not, the command is still emitted, as a pointer that fetches
-      // the method at run time.
+      // Both halves have to hold for the entry. `entryCmd` is undefined for a package that
+      // declares no command for its entry, and there is no default. `entry` is whether that
+      // skill actually shipped; when it did not, the command is still emitted, as a pointer
+      // that fetches the method at run time.
       const entryCmd = entryCommand(f.flow, f.entry || f.flow);
       const asCommand = entryCmd !== undefined && entry !== undefined;
       const { commands: declaredCommands, promoted: declaredPromoted } =
@@ -327,21 +260,17 @@ export function buildClientPackage({ target, base }: PackageInput): ClientPackag
           ...declaredCommands,
           // Assets beside a promoted skill still travel: only its SKILL.md moves.
           ...skills.filter((sk) => !promoted.has(sk)),
-          // And the eval suite, for the reason residentFiles gives: a suite that did not travel
-          // with the plugin turns `claude plugin eval` into a baseline-only run with no
-          // comparison in it, which looks like a result and is not one.
         ],
       };
     }),
   ];
 
-  // The platform's own version, plus a digest of what THIS person's shelf contains.
+  // The platform's own version, plus a digest of what this person's shelf contains.
   //
-  // Two facts force this shape. The runtime caches an installed plugin in a directory named
-  // by its version, so a version that does not change means a changed file never reaches
-  // anyone — a fix to a skill would sit on the server forever. And the shelf differs per
-  // person, so the platform version alone cannot identify it. Semver build metadata is
-  // legal, is part of the directory name, and does not pretend to be a release.
+  // The runtime caches an installed plugin in a directory named by its version, so a version
+  // that does not change means a changed file never reaches anyone. The shelf differs per
+  // person, so the platform version alone cannot identify it. Semver build metadata is legal,
+  // is part of the directory name, and does not pretend to be a release.
   const version = `${PLATFORM_VERSION}+${digestOf(plugins)}`;
 
   files.push({
@@ -387,88 +316,50 @@ export function buildClientPackage({ target, base }: PackageInput): ClientPackag
   return {
     home: "~/.zz", files, flows, notes,
     install: [
-      // CREATED restricted, not restricted afterwards. `>` makes the file with the shell's
-      // umask — 644 on most machines — and the chmod lands after it already exists, so the
-      // person's platform token is world-readable for that window. server.ts made exactly
-      // this argument about the platform's own credential file ("setting it afterwards
-      // would leave a window where the new file is world-readable") and fixed it by
-      // creating with the mode; this is the same secret one layer out, on a machine that
-      // may well have other users.
-      //
-      // The chmod stays for what umask cannot cover: a ~/.zz or a token file left behind by
-      // an earlier install with looser permissions.
-      // THE SHELF FIRST, AND IT NEEDS NO TOKEN. It used to come from `${base}/pkg/…`, which
-      // put a credential in front of the tools a person installs to obtain one — so someone
-      // with no token was handed two `claude plugin` commands that failed on a directory
-      // that could not exist yet. The shelf is public because it was never the boundary:
+      // The shelf first, and it needs no token. It is public because it was never the boundary:
       // every tool below is a door at the gateway and the door still refuses.
       `claude plugin marketplace add ${MARKETPLACE_REPO}`,
       ...plugins.filter((pl) => pl.required)
         .map((pl) => `claude plugin install ${pl.name}@${MARKETPLACE} # required`),
       ``,
       `# Then the token — it is what every tool above actually authenticates with.`,
-      // CREATED restricted, not restricted afterwards. `>` makes the file with the shell's
-      // umask — 644 on most machines — and the chmod lands after it already exists, so the
-      // person's platform token is world-readable for that window. server.ts made exactly
-      // this argument about the platform's own credential file ("setting it afterwards
-      // would leave a window where the new file is world-readable") and fixed it by
-      // creating with the mode; this is the same secret one layer out, on a machine that
-      // may well have other users.
-      //
-      // The chmod stays for what umask cannot cover: a ~/.zz or a token file left behind by
-      // an earlier install with looser permissions.
+      // DELIBERATE: created restricted, not restricted afterwards. `>` makes the file with the
+      // shell's umask — 644 on most machines — so a chmod after the fact leaves the person's
+      // token world-readable for that window. The chmod stays for what umask cannot cover: a
+      // ~/.zz or a token file left behind by an earlier install with looser permissions.
       `(umask 077; mkdir -p ~/.zz) && chmod 700 ~/.zz`,
       `(umask 077; printf '%s' "$ZZ_TOKEN" > ~/.zz/token) && chmod 600 ~/.zz/token`,
       ``,
       `# Then take what you want, and nothing else. To see the shelf:`,
       `#   /plugins in Claude Code, then the Marketplaces tab, or`,
-      // node, not python3. Anyone running Claude Code has node — it is what Claude Code
-      // runs on — and may not have python3 at all. A one-liner in an install instruction
-      // is only useful if it runs on the machine reading it.
+      // DELIBERATE: node, not python3. Anyone running Claude Code has node and may not have
+      // python3 at all.
       `#   claude plugin list --available --json | node -e '`,
       `#     let s="";process.stdin.on("data",d=>s+=d).on("end",()=>JSON.parse(s).available`,
       `#       .filter(p=>(p.pluginId||"").includes("${MARKETPLACE}"))`,
       `#       .forEach(p=>console.log(p.name,"—",(p.description||"").slice(0,70))))'`,
-      // COMMENTED, so this block stays a menu rather than a script that chooses for you.
-      // These lines used to be live, directly under "take what you want, and nothing
-      // else" — so anyone who pasted the block installed every optional plugin, which is
-      // the exact thing the one-plugin-per-flow split exists to prevent. zz-admin came
-      // with it, and a plugin that can create teams must not arrive by default.
+      // DELIBERATE: commented out, so this block stays a menu rather than a script that
+      // chooses for you. Live, they install every optional plugin — including zz-admin, which
+      // can create teams.
       ``,
       `# Uncomment the ones you want:`,
       ...optional.map((n) => `# claude plugin install ${n}@${MARKETPLACE}`),
     ],
-    // EXTRACT ONTO NOTHING. `tar xz` writes what the archive holds and removes nothing it
-    // does not, so a plugin the platform has RETIRED stayed on the laptop for ever: the
-    // marketplace stopped listing it, `claude plugin list` went on showing it, and it went
-    // on pointing at whatever URL it was built with. Retiring zz-admin is exactly that —
-    // its door stops answering, and a stale copy turns a completed change into an MCP
-    // connection error on somebody's next session, with nothing saying why.
-    //
-    // Only the package directory is removed. `~/.zz/token` is a sibling of it, not a child,
-    // and it is the one thing here that cannot be re-fetched.
     // One command, because the shelf is a git clone rather than an archive unpacked over
-    // whatever was there before. That is what fixes the retirement problem this comment
-    // was written for: a plugin the platform has retired LEAVES the shelf on update, where
-    // `tar xz` could only ever add — so `zz-admin` stayed on laptops after it was folded
-    // into `zz-access`, listed by `claude plugin list` and pointing at a door that had
-    // stopped answering, with nothing saying why.
+    // whatever was there before: a plugin the platform has retired leaves the shelf on update.
     //
-    // AND IT IS NOT THE WHOLE JOB, which is why `/zz-access:update` leads. Refreshing the shelf
-    // updates NO plugin: each one is resolved against the marketplace's copy, so a person who
-    // runs only this is told, truthfully, that everything is up to date — at the version they
-    // already had. This text said exactly that one command for as long as it existed, which
-    // is the same failure mma shipped and had to name in its own release notes.
+    // `/zz-access:update` leads because refreshing the shelf updates no plugin — each one is
+    // resolved against the marketplace's copy, so a person who runs only the refresh is told,
+    // truthfully, that everything is up to date at the version they already had.
     refresh: [
       `/zz-access:update  # the shelf AND every plugin you have, in the order that works`,
       `# or, by hand — and the order is not optional:`,
       `claude plugin marketplace update ${MARKETPLACE}`,
       `claude plugin update zz-core@${MARKETPLACE} # ...and each plugin you installed`,
     ],
-    // Every plugin, not just the baseline. This said `uninstall zz` alone, so a person
-    // who followed it kept zz-access and every flow installed — pointing at a
-    // marketplace that had just been removed and a ~/.zz that had just been deleted.
-    // Optional ones first: the baseline is what they were installed on top of.
+    // Every plugin, not just the baseline: anything left installed points at a marketplace that
+    // has just been removed and a ~/.zz that has just been deleted. Optional ones first — the
+    // baseline is what they were installed on top of.
     remove: [
       ...optional.map((n) => `claude plugin uninstall ${n}`),
       `claude plugin uninstall zz`,
@@ -479,6 +370,5 @@ export function buildClientPackage({ target, base }: PackageInput): ClientPackag
 }
 
 
-/* ── delivery ────────────────────────────────────────────────────── */
 
 

@@ -45,9 +45,8 @@ export function resolveDashboard(): DashboardResolution {
   }
   const since = inDash(["log", "--oneline", `${lastTag}..HEAD`]).split("\n").filter(Boolean);
   if (since.length === 0) {
-    // It matters here: the console is what people look at, so a
-    // production that quietly kept the previous one while UAT moved is a difference nobody
-    // would attribute to the release.
+    // The console is what people look at, so a production still on the previous image while
+    // UAT has moved is a difference nobody would attribute to the release.
     if (dashArg) {
       if (published(`${DASH_IMAGE}:${dashArg}`)) {
         return { release: true, version: dashArg, current, lastTag, alreadyPublished: true,
@@ -69,9 +68,8 @@ export function resolveDashboard(): DashboardResolution {
 }
 
 /* What image the console is actually running, asked of compose rather than assumed from a
- * container name. The project name comes from the directory, so `zz-stack-dashboard-console-1`
- * is only what it is called while the path is what it is today — and the one thing this
- * function exists to catch is a console that is not the one anybody thinks it is.
+ * container name: the project name comes from the directory, so `zz-stack-dashboard-console-1`
+ * holds only while the path is what it is today.
  * Empty string means nothing is running there, which is a fact and not an error. */
 export function consoleImage() {
   return ssh(`cd ${DASH_REMOTE} 2>/dev/null && docker compose ps -q console 2>/dev/null | head -1 | ` +

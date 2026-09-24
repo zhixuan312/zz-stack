@@ -1,22 +1,16 @@
 /**
  * The disposable checkout every mutation is planted in, and the proof it came back clean.
  *
- * WHY A COPY AND NOT THIS CHECKOUT. A mutation here is a defect planted in real source, and
- * the gate's first check runs `npm run -s build` — so a faulted `packages/contracts/src`
- * would be compiled into `packages/contracts/dist`, which is what `@zz/contracts` resolves
- * to, which is what every other worker on this machine imports. One sibling did exactly that
- * earlier and rebuilt the shared package ten times on top of a faulted source. Nothing here
- * writes to the checkout it was launched from.
+ * A copy, never this checkout: the gate's first check runs `npm run -s build`, so a faulted
+ * `packages/contracts/src` would be compiled into `packages/contracts/dist`, which every other
+ * worker on this machine imports. Nothing here writes to the checkout it was launched from.
  *
- * WHY THE SIBLING SYMLINK. `scripts/gate/checks/console.ts` reads `join(root, "..",
- * "zz-stack-dashboard")` to find out who calls each gateway route. A copy without that
- * sibling beside it reports forty-three routes as uncalled, which is a fact about the copy
- * and not about the repository — the first baseline run found exactly that.
+ * COUPLED: `scripts/gate/checks/console.ts` reads `join(root, "..", "zz-stack-dashboard")`, so
+ * the copy needs that sibling linked beside it — without it the check reports every console
+ * route as uncalled, which is a fact about the copy.
  *
- * WHY THE COPY IS COMMITTED. The gate rebuilds `marketplace/` and then asks git whether it
- * changed, so a working tree with uncommitted catalog edits fails a check whose own message
- * says "now commit it". Committing inside the copy makes the snapshot self-consistent; it
- * changes nothing in the checkout this was launched from, which is never touched by git here.
+ * The copy is committed, because the gate rebuilds `marketplace/` and asks git whether it
+ * changed. That happens inside the copy only; git is never run against the source checkout.
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -24,8 +18,8 @@ import { existsSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, 
 import { basename, dirname, join, resolve, sep } from "node:path";
 
 /** Everything outside the tree a mutation can reach: dependencies and git's own store. Both
- *  are identical in the copy and the snapshot, so excluding them costs nothing and makes the
- *  restore a quarter of a second instead of several. */
+ *  are identical in the copy and the snapshot, so excluding them makes the restore a quarter
+ *  of a second instead of several. */
 const OUTSIDE = new Set(["node_modules", ".git"]);
 
 interface Workspace {
@@ -44,10 +38,8 @@ const git = (cwd: string, args: string[]): string =>
 
 /**
  * A sha256 over every file in `dir` except `node_modules` and `.git`, path and content both.
- *
- * The same shape as the gate's own `sourceTreeDigest`, and for the same reason: a digest that
- * covered content alone would not notice a file that moved, and a restore that puts the bytes
- * back under the wrong name is not a restore.
+ * The same shape as the gate's `sourceTreeDigest`: a digest over content alone would not
+ * notice a file that moved.
  */
 export function treeDigest(dir: string): string {
   const files: string[] = [];
@@ -69,7 +61,7 @@ export function treeDigest(dir: string): string {
 }
 
 /** Put `repo` back to exactly what `pristine` holds, and say what the tree hashes to now.
- *  `--delete` is what makes this a restore rather than an overlay: a mutation that ADDED a
+ *  `--delete` is what makes this a restore rather than an overlay: a mutation that added a
  *  file would otherwise survive its own experiment. */
 export function restore(ws: Workspace): string {
   execFileSync("rsync", ["-a", "--delete", "--exclude", "node_modules/", "--exclude", ".git/",
@@ -78,14 +70,12 @@ export function restore(ws: Workspace): string {
 }
 
 /** Every sibling of `source` that is a directory, linked beside the copy under its own name.
- *  Linked rather than copied: the checks that read a sibling only read it, and one of them is
- *  1.8GB. A copy without them answers a different question from the one the check asked. */
+ *  Linked rather than copied: the checks that read a sibling only read it, and copying one is slow. */
 function linkSiblings(source: string, into: string): void {
   const parent = dirname(source);
-  // `statSync`, not the Dirent: a Dirent reports a SYMLINK to a directory as a symlink and
-  // not as a directory, so a checkout whose siblings are themselves links had none of them
-  // carried across — and the check that reads one then reported forty-three routes as uncalled,
-  // which is the copy artifact this function exists to prevent.
+  // `statSync`, not the Dirent: a Dirent reports a symlink to a directory as a symlink rather
+  // than a directory, so a checkout whose siblings are themselves links carries none of them
+  // across.
   for (const e of readdirSync(parent)) {
     if (e === basename(source) || e.startsWith(".")) continue;
     const full = join(parent, e);
@@ -97,11 +87,11 @@ function linkSiblings(source: string, into: string): void {
 /**
  * A path with every symlink on it followed, as far as the filesystem actually goes.
  *
- * `resolve` alone is LEXICAL — it never consults the disk — so a work directory reached
- * through a link into the checkout resolved to the link's own name, did not look like the
- * checkout, and would have been deleted as if it were somewhere else. The deletion, of course,
- * follows the link. A work directory usually does not exist yet, which is why this walks up to
- * the nearest ancestor that does, resolves THAT, and puts the remaining names back on.
+ * `resolve` alone is lexical and never consults the disk, so a work directory reached through
+ * a link into the checkout resolves to the link's own name and does not look like the
+ * checkout — while the deletion follows the link. A work directory usually does not exist yet,
+ * so this walks up to the nearest ancestor that does, resolves that, and puts the remaining
+ * names back on.
  */
 function throughLinks(p: string): string {
   const target = resolve(p);
@@ -123,14 +113,11 @@ function throughLinks(p: string): string {
 /**
  * Whether two paths overlap — the same place, or one inside the other.
  *
- * BOTH SIDES ARE RESOLVED, AND THROUGH LINKS, and each half was learned the hard way. An
- * earlier form compared the strings it was given, so `--work .` was compared against an
- * absolute checkout path, found no overlap, and the deletion below ran with the repository as
- * the working directory; the tree was removed. The form after that resolved both sides
- * lexically and still passed a symlink whose target was the checkout — found by asking it
- * about a table of paths rather than by letting it fail to stop one.
+ * Both sides are resolved, and through links. Comparing the strings as given lets `--work .`
+ * find no overlap against an absolute checkout path and delete the repository; resolving both
+ * sides lexically still passes a symlink whose target is the checkout.
  *
- * Exported so it can go on being asked, rather than tested by triggering it.
+ * Exported so it can be asked directly rather than tested by triggering it.
  */
 export function overlaps(a: string, b: string): boolean {
   const x = throughLinks(a);
@@ -141,33 +128,28 @@ export function overlaps(a: string, b: string): boolean {
 /**
  * Build the workspace: copy, link the siblings, commit, snapshot.
  *
- * `cp -a` rather than a clone, because the checkout's UNCOMMITTED work is the thing under
- * test — a check file the author has written and not yet added is in `trackedFiles()` and so
- * is in the set this run has to cover.
+ * `cp -a` rather than a clone, because the checkout's uncommitted work is what is under test —
+ * a check file written and not yet added is in `trackedFiles()` and so is in the set this run
+ * has to cover.
  */
 export function makeWorkspace(source: string, at: string, prepare?: (repo: string) => void): Workspace {
-  // THE FIRST THING THIS FUNCTION DOES IS DELETE `at`, SO `at` IS JUDGED BEFORE THAT. A work
+  // This function's first act is to delete `at`, so `at` is judged before that. A work
   // directory that overlaps the checkout takes the checkout with it, and every other session's
-  // uncommitted work in it. Refused early and by exit code, the way the gate refuses a report
-  // path that resolves inside the repository.
+  // uncommitted work in it. Refused early and by exit code.
   if (overlaps(at, source)) {
     console.error(`  REFUSED — the work directory ${resolve(at)} overlaps the checkout ` +
       `${resolve(source)}. It is deleted and rebuilt on every run, so it must be somewhere ` +
       "else entirely — not the repository, not a parent of it, not a directory inside it.");
     process.exit(2);
   }
-  // AND A SECOND RUN IS REFUSED BEFORE THE DELETE, NOT DISCOVERED AFTER IT.
+  // A second run is refused before the delete, not discovered after it. The work directory
+  // defaults to one path, so two runs on one machine share it, and a second run started while
+  // a first is walking its rows removes the pristine snapshot the first restores from — which
+  // surfaces as an rsync failure inside `restore`.
   //
-  // The work directory defaults to one path, so two runs on one machine share it — and the
-  // first thing each does is delete it. A second run started while a first is walking its rows
-  // removes the pristine snapshot the first restores from, and the first dies at its next row
-  // with an rsync stack trace naming a directory that was there a second ago. Observed in this
-  // repository: a run was killed, a survivor kept writing, the next run raced it, and the
-  // failure read as a bug in `restore` rather than as two runs over one directory.
-  //
-  // A LOCK NAMING THE OWNER, and stale only when that process is genuinely gone — `kill(pid, 0)`
-  // throws ESRCH for a pid nobody holds, which is how a crashed run's lock is reclaimed without
-  // a timeout that would either be too short for a long pass or too long to be useful.
+  // The lock names its owner and is stale only when that process is genuinely gone:
+  // `kill(pid, 0)` throws ESRCH for a pid nobody holds, so a crashed run's lock is reclaimed
+  // without a timeout that would be either too short for a long pass or too long to be useful.
   const lock = `${resolve(at)}.lock`;
   if (existsSync(lock)) {
     const held = Number(readFileSync(lock, "utf8").trim());
@@ -189,7 +171,7 @@ export function makeWorkspace(source: string, at: string, prepare?: (repo: strin
   const repo = join(parent, basename(source));
   execFileSync("cp", ["-a", source, repo], { stdio: "pipe" });
   linkSiblings(source, parent);
-  // BEFORE the commit and before the snapshot, so whatever `prepare` writes is part of the
+  // Before the commit and before the snapshot, so whatever `prepare` writes is part of the
   // tree every mutation is restored to rather than something the first restore deletes.
   if (prepare) prepare(repo);
 
@@ -216,9 +198,9 @@ export function provenanceOf(source: string): { commit: string; dirty_paths: num
   return { commit, dirty_paths: dirty };
 }
 
-/** The check files this run must cover, by the command the frozen coverage check uses to
- *  decide the same question. NEVER a list typed here: a roster goes stale by gaining a file,
- *  and the failure is silent — it covers fewer checks than exist and reports success. */
+/** The check files this run must cover, by the command the gate's own file listing uses.
+ *  Never a list typed here: a roster goes stale by gaining a file,
+ *  and then covers fewer checks than exist while reporting success. */
 export function declaredChecks(repo: string): string[] {
   return git(repo, ["ls-files", "--cached", "--others", "--exclude-standard"])
     .split("\n")

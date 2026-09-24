@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-profile
-version: 0.7
+version: 0.8
 description: Stage 2 of plugin evaluation. Compute the evidence block — traces from this plugin version's real runs — with its sufficiency verdict and the coverage it was derived from. No model touches any of it.
 when_to_use: "The second stage of zz-plugin-eval, after locate has settled the plugin and version. Also the stage that decides whether there is enough to judge."
 ---
@@ -23,13 +23,6 @@ TRACES    6 usable runs · coverage 198/510                sufficient
 | block | sufficient at | why the line is there |
 |---|---|---|
 | traces | **5 usable runs** | a floor for a signal to exist, not a claim about power |
-
-**THERE WAS A SECOND BLOCK AND IT IS GONE.** `CASES` reported a with-plugin against
-no-plugin delta from a `claude plugin eval` suite. It never measured what it appeared to: no
-case declared a mock, so under the CLI's default no plugin server started and the plugin's
-tools were **not callable in either arm**. Every grader was a regex over tool NAMES or a
-judgement about an answer's shape — so a delta said the method's text had reached the agent and
-it used the right words, never that the plugin worked.
 
 **A thin trace block does not stop this flow.** Report it as thin and go on. The stop condition
 is `sufficient_for_judging: false` — and even then, `locate` and `profile` still ran and still

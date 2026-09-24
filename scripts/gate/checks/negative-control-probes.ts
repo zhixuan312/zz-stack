@@ -1,50 +1,31 @@
 /**
  * Running the negative-control probes.
  *
- * WHY THIS MODULE EXISTS. Nine modules in `@zz/contracts` exist for one purpose: to prove that a
- * detector can actually fail. Each plants a fault the real inputs cannot express, runs the real
- * code over it, and reports whether the detector noticed. Every one of them was run by hand
- * once, by the person who wrote it, and then by nobody — they were exported through the
- * contracts door and imported by no service, no tool and no check. The worker that adopted
- * `close.ts` put it exactly right while censusing its own module: it ran `closeProbe` by hand
- * throughout the task, and THAT WAS THE ONLY REASON IT KNEW ALL THIRTEEN DETECTORS FIRE. The
- * author of a probe knows it works because they ran it in their own session. Nobody else ever
- * will, and after today neither will they. That is what a gate is for, and it is why a probe
- * that proves a detector can fail, while nothing ever runs it, is itself dormant — the defect
- * the probes catch, one level up.
+ * Nine modules in `@zz/contracts` exist to prove a detector can actually fail: each plants a
+ * fault the real inputs cannot express, runs the real code over it, and reports whether the
+ * detector noticed. A probe nothing runs proves nothing, so this file runs all nine.
  *
- * ONE CHECK PER PROBE, AND NOT ONE CHECK OVER NINE. Three reasons, in the order that decides it.
- * `check` in `../run.ts` reports the FIRST failure string a body returns, so one body looping
- * over nine probes would name one broken probe and hide eight. `gateCheckNames` in `../read.ts`
- * discovers names with `/^check\("(.+?)",/gm`, so a name built in a loop is invisible to the
- * gate's own inventory and to the execution report — the count would drop by eight and the
- * report would no longer say which probe failed. And the last four probes do not share a row
- * shape with the first five, so their assertions could not be one function anyway. A new probe
- * of the common shape costs one line here.
+ * DELIBERATE: one check per probe, never one check over nine. `check` in `../run.ts` reports
+ * the first failure string a body returns, so a loop would name one broken probe and hide
+ * eight; `gateCheckNames` in `../read.ts` discovers names with `/^check\("(.+?)",/gm`, so a
+ * name built in a loop is invisible to the gate's inventory and to the execution report.
  *
- * WHAT EACH KIND IS ASSERTED AGAINST, because it differs and the difference is the point:
+ * What each kind is asserted against differs:
  *
- *   · Five probes return SELF-VERDICTING rows — `fires` is a boolean the probe computed. The
- *     check asserts every row fires, that the row count is the one measured when this was
- *     written, that the detector names are distinct, and that `fires` agrees with the prose the
- *     same row carries. That last is the only independent purchase available here: `healthy`
- *     and `faulted` spell "silent"/"MISFIRED" and "fires"/"MISSED", so a `fires` hardcoded true
- *     beside prose saying MISSED is caught. A probe that lies in both fields is not.
+ *   · Five probes return self-verdicting rows — `fires` is a boolean the probe computed. The
+ *     check asserts every row fires, the row count, distinct detector names, and that `fires`
+ *     agrees with the prose on the same row, which is the only independent purchase here.
  *
  *   · `rebindDetectorProbe` returns one rolled-up boolean over nine named scenarios. The check
  *     asserts the roll-up, the nine names, and three discriminations it reads off the scenarios
- *     itself, so the probe's own summary is not the only thing standing behind the verdict.
+ *     itself.
  *
- *   · Three probes return DESCRIPTIVE TABLES with no verdict in them at all: `fires` is prose
- *     for two of them and absent from the third. Their expected tables are restated here, keyed
- *     by variant name and never by index — `commit-boundary.ts` builds two of its variants by
- *     slicing the real protocol, and its own comment warns that reordering changes what they
- *     test. These three are the strongest checks in the file: the judgement lives here and the
- *     probe is only the fixture.
+ *   · Three probes return descriptive tables with no verdict in them. Their expected tables are
+ *     restated here, keyed by variant name and never by index, because `commit-boundary.ts`
+ *     builds two of its variants by slicing the real protocol.
  *
- * THE COUNTS ARE EXACT ON PURPOSE. A probe that quietly loses eighteen of its twenty-one rows
- * still passes "every row fires", and an empty one passes it vacuously. When a row is added or
- * removed deliberately, the failure names both numbers and the fix is that number.
+ * The counts are exact: a probe that loses rows still passes "every row fires", and an empty
+ * one passes it vacuously.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -57,11 +38,11 @@ import {
 import { firstOf, root, withoutComments } from "../read.ts";
 import { check } from "../run.ts";
 
-// ── the set itself, derived rather than typed ──────────────────────────────────────────────
+// The set itself, derived rather than typed
 
 const DOOR = "packages/contracts/src/control-loop.ts";
 
-/** The door's exported VALUE names, with `X as Y` resolved to the name the door publishes.
+/** The door's exported value names, with `X as Y` resolved to the name the door publishes.
  *  Type exports are dropped: `ProbeReport`, `CloseProbeRow` and their eight siblings all carry
  *  "Probe" in the name and none of them is a probe. */
 function doorValueNames(source: string): string[] {
@@ -91,33 +72,22 @@ function ownProbeImports(source: string): string[] {
 }
 
 /**
- * THE SET IS DERIVED, NOT TYPED, and this is the check that makes the other nine trustworthy.
+ * The set is derived, not typed, which is what makes the other nine checks trustworthy: it
+ * comes off the door — every exported value name ending in `Probe` — and is compared against
+ * the names this module imports. Add a probe to the door and this fails until it is wired;
+ * delete one and this fails until the import goes.
  *
- * A list of probe names written out by hand goes stale the moment somebody adds a probe: the
- * new one has no entry, nothing runs it, and the file that was supposed to end dormant probes
- * is the reason the next one is invisible. So the set comes off the door — every exported value
- * name ending in `Probe` — and is compared against the names this module imports. Add a probe
- * to the door and this fails until it is wired. Delete one and this fails until the import
- * goes. Neither state can be reached quietly.
+ * COUPLED: `noUnusedLocals` on `scripts/**` is doing half the work. An import no check below
+ * calls fails the typecheck, which is what binds the import list to the exercised set.
  *
- * WHY `noUnusedLocals` IS DOING HALF THE WORK. "Imported by this module" would be a weak
- * standard on its own — a name could be imported and never called. It cannot be here: the
- * tooling config compiles `scripts/**` with `noUnusedLocals`, so an import no check below calls
- * fails the typecheck before it reaches the gate. The compiler binds the import list to the
- * exercised set, which is why this check can read an import list and mean it.
- *
- * `Probe` AS THE CONVENTION is a judgement worth naming. It holds exactly today: nine value
- * names end in it and every one is a negative control, while the ten type names carrying
- * "Probe" are dropped by the value/type split above. A probe named against the convention
- * would be missed — so the convention is asserted here rather than assumed, by failing when
- * the door yields no probes at all.
+ * The `Probe` suffix is the convention, and a probe named against it would be missed, so the
+ * convention is asserted by failing when the door yields no probes at all.
  */
 check("every negative-control probe on the contracts door is run by this file", () => {
   const door = withoutComments(readFileSync(join(root, DOOR), "utf8"));
   const onDoor = doorValueNames(door).filter((n) => /Probe$/.test(n));
-  // A DOOR THIS CHECK CANNOT READ IS A FAILURE, not a pass on an empty set — the same rule
-  // `contracts-door.ts` states about its own census. The door moving or changing shape would
-  // otherwise retire this rule silently, which is the quietest way a check stops watching.
+  // A door this check cannot read is a failure, not a pass on an empty set: the door moving or
+  // changing shape would otherwise retire this rule silently.
   if (onDoor.length === 0) {
     return `${DOOR} yielded no exported value name ending in "Probe" — the door moved, changed ` +
       "shape, or the naming convention this check derives the set from has been abandoned";
@@ -140,7 +110,7 @@ check("every negative-control probe on the contracts door is run by this file", 
 });
 
 
-// ── the five probes that verdict their own rows ────────────────────────────────────────────
+// The five probes that verdict their own rows
 
 /** The row shape all five share. Declared here rather than imported because five modules
  *  export five structurally identical interfaces under five different names, and what this
@@ -155,10 +125,8 @@ interface FiringRow {
 /**
  * Every assertion a self-verdicting probe is held to. Returns the failure text, or null.
  *
- * THE ORDER MATTERS. Emptiness is tested before anything else because an empty table satisfies
- * "every row fires" — `[].every` is true — and that vacuous pass is the exact shape these
- * probes were built to expose in the code they exercise. Reporting it as "0 rows" rather than
- * as a silent success is the whole reason this helper exists rather than a one-line `every`.
+ * DELIBERATE: emptiness is tested first, because an empty table satisfies "every row fires" —
+ * `[].every` is true — and that vacuous pass is the shape these probes exist to expose.
  */
 function firing(rows: readonly FiringRow[], expected: number): string | null {
   if (rows.length === 0) {
@@ -209,7 +177,7 @@ check("the stage-control negative control fires on every planted fault", () =>
 check("the recall-trial negative control fires on every planted fault", () =>
   firing(recallTrialProbe(), 11));
 
-// ── the probe that rolls its scenarios up into one boolean ─────────────────────────────────
+// The probe that rolls its scenarios up into one boolean
 
 check("the profile-rebind negative control fires on every planted fault", () => {
   const report = rebindDetectorProbe();
@@ -225,9 +193,8 @@ check("the profile-rebind negative control fires on every planted fault", () => 
     return "the probe reports that not every detector fired across its nine scenarios: " +
       present.join(", ");
   }
-  // THREE DISCRIMINATIONS READ OFF THE SCENARIOS HERE, so `everyDetectorFires` — which the
-  // probe computes about itself — is not the only thing this check stands on. Each pairs the
-  // clean rebind against the one fault planted to break that detector and nothing else.
+  // Three discriminations read off the scenarios here, so `everyDetectorFires` — which the
+  // probe computes about itself — is not the only thing this check stands on.
   const s = report.scenarios;
   if (s.clean.inheritedCalibration !== false || s.rebadge.inheritedCalibration !== true) {
     return "the calibration detector does not separate a clean rebind from a rebadge: " +
@@ -244,15 +211,13 @@ check("the profile-rebind negative control fires on every planted fault", () => 
   return null;
 });
 
-// ── the three probes that return a table and leave the verdict to the reader ───────────────
+// The three probes that return a table and leave the verdict to the reader
 
 check("the commit-boundary negative control shows each field can come back the bad way", () => {
   const rows = boundaryDetectorProbe();
   /** Each variant, and the three contract fields as they must come back. The first is the real
-   *  protocol and is the control. The rest each break one thing: rows three and four are the
-   *  pair that matters most, because one loses a store from `covers` while `serialized` stays
-   *  true and the other loses `serialized` while `covers` stays non-empty — a check that read
-   *  either field alone would call one of them clean. */
+   *  protocol and is the control; the rest each break one thing. Rows three and four are the
+   *  pair a check reading either field alone would call clean. */
   const expected: readonly (readonly [string, boolean, readonly string[], boolean])[] = [
     ["the described protocol", true, ["permission_store", "document_store"], false],
     ["split_transaction", false, [], false],
@@ -268,9 +233,8 @@ check("the commit-boundary negative control shows each field can come back the b
   for (const [variant, serialized, covers, holds] of expected) {
     const got = rows.find((r) => r.variant === variant);
     if (!got) return `the probe no longer returns the variant "${variant}"`;
-    // `covers` is compared as a set. Its order follows the order of the protocol's steps, and
-    // two of these variants are built by slicing the real protocol, so an order-sensitive
-    // comparison would fail on a reordering that changed nothing this check is about.
+    // `covers` is compared as a set: its order follows the protocol's steps, so an
+    // order-sensitive comparison would fail on a reordering this check is not about.
     const gotCovers = [...got.covers].sort().join(",");
     const wantCovers = [...covers].sort().join(",");
     if (got.serialized !== serialized || gotCovers !== wantCovers
@@ -281,9 +245,8 @@ check("the commit-boundary negative control shows each field can come back the b
         `holdsLockAcrossModelCall=${holds}`;
     }
   }
-  // Each field must come back both ways somewhere in the table. A field that is constant across
-  // every variant is indistinguishable from a field nothing computes, and that is the reason
-  // this probe exists rather than a single row showing the real protocol passing.
+  // Each field must come back both ways somewhere in the table: a field constant across every
+  // variant is indistinguishable from a field nothing computes.
   const both = (values: readonly boolean[]): boolean =>
     values.includes(true) && values.includes(false);
   if (!both(rows.map((r) => r.serialized))) return "serialized is constant across every variant";
@@ -299,10 +262,9 @@ check("the commit-boundary negative control shows each field can come back the b
 check("the dependency-snapshot negative control shows the coverage audit can refuse", () => {
   const rows = snapshotCoverageProbe();
   /** Each arrangement, the finding it must produce, and the verdict that must follow. The first
-   *  is the real declared set and is the control: no finding, and a valid verdict. The other
-   *  three break the set three ways, and `paused` is what makes the audit load-bearing rather
-   *  than a report printed beside a grant that redeems anyway. `uncovered:1` is asserted rather
-   *  than "some uncovered count" because `uncovered:0` is a fixture that planted nothing. */
+   *  is the real declared set and is the control: no finding, and a valid verdict. `paused` is
+   *  what makes the audit load-bearing rather than a report printed beside a grant that
+   *  redeems anyway. `uncovered:1` is exact, because `uncovered:0` planted nothing. */
   const expected: readonly (readonly [string, string | null, string])[] = [
     ["the declared closed set against the contract clause", null, "valid"],
     ["one dependency dropped from the closed set", "clause_unclaimed:qualification", "paused"],
@@ -334,11 +296,9 @@ check("the dependency-snapshot negative control shows the coverage audit can ref
 check("the commit-reconciliation negative control shows each flag can come back the bad way", () => {
   const rows = reconcileDetectorProbe();
   /** Each variant: the state it must reach, the flags that must be raised, and the fields
-   *  `invented` must name. ANYTHING NOT LISTED MUST BE FALSE OR EMPTY — a planted fault that
-   *  tripped a second flag would mean the four flags are not independent, and the table would
-   *  no longer show which flag caught which fault. The first four are the real plans, and they
-   *  are here so the table shows the flags are false when the work was done correctly rather
-   *  than false always. */
+   *  `invented` must name. Anything not listed must be false or empty — a planted fault that
+   *  tripped a second flag would mean the four flags are not independent. The first four are
+   *  the real plans, so the table shows the flags false on correct work rather than always. */
   const flags = ["invented", "replay", "substitutedEtag", "newIdempotencyKey"] as const;
   const expected: readonly (readonly [string, string, readonly string[], readonly string[]])[] = [
     ["the canonical no-op", "applied", [], []],

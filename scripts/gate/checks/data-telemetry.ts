@@ -16,26 +16,13 @@ import { check } from "../run.ts";
 import { schemaColumns } from "../facts.ts";
 
 check("a tool that changes something records that it did", () => {
-  // Provenance is one of the platform's permanents, and principle 6 says evidence must be
-  // produced mechanically. A mutation nobody recorded is a fact about the platform that can
-  // only be recovered by reading the state it changed.
-  //
-  // credential_set and credential_delete were the gap, and the shape of it is what
-  // makes it worth a check: their OPERATOR twins — credential_admin_set,
-  // credential_admin_delete — both logged an event, so the same change to the same store was
-  // recorded when an operator made it and invisible when the person made it themselves. The
-  // audited path was the rare one; the unaudited path is how almost every key is stored. So
-  // "who holds a key for casebox, and since when" could only be answered by opening a file that
-  // holds those keys in plaintext.
-  //
-  // The key itself is never recorded, and that is not what this asks for: THAT a credential
-  // changed is provenance, its value is not.
-  const MUTATES = /\b(writeFileSync|appendFileSync|withCredentials\(|insert into|update zz\.|delete from)/i;
+  // A mutation nobody recorded is a fact about the platform recoverable only by reading the
+  // state it changed.
+  const MUTATES = /\b(writeFileSync|appendFileSync|insert into|update zz\.|delete from)/i;
   const RECORDS = /\b(logActivity\(|auditAdmin\(|logEvent\(|platformEvent\(|commitStore\()/;
   const bad: string[] = [];
-  // Every file that registers a tool, found by asking which ones do. Naming the three that
-  // register them today is a list that is correct until somebody adds a fourth door, and the
-  // whole subject of this check is a tool nobody thought to look at.
+  // Every file that registers a tool, found by asking which ones do rather than by listing
+  // today's doors — the subject of this check is a tool nobody thought to look at.
   for (const f of sourceFiles(["services"], [".ts"])) {
     const src = readFileSync(join(root, f), "utf8");
     for (const { name, body } of toolsIn(src)) {
@@ -47,39 +34,28 @@ check("a tool that changes something records that it did", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-// AN ALLOWLIST ENTRY NO TOOL CAN PRODUCE IS DEBRIS.
+// IDENTIFIER_ARGS decides which argument values the platform keeps. An entry no tool can
+// produce as a top-level argument is debris in the list that states what may be recorded.
 //
-// IDENTIFIER_ARGS decides which argument values the platform keeps. Two of its entries could
-// never appear: `open_only` is named by nothing anywhere in this repository, and `kr` exists
-// only nested inside okr_grade's `scores`, which identifiers() never sees because it reads
-// the TOP-LEVEL arguments. An entry that cannot be reached reads as a considered decision
-// and is only debris — and this list is where the reasoning about what may be recorded
-// lives, so debris in it is worse than debris elsewhere.
-//
-// The other direction is deliberately not checked. An argument absent from the list is
-// absent on purpose, and most of them are content: a query, a body, a title, an api_key.
+// DELIBERATE: the other direction is not checked. An argument absent from the list is absent
+// on purpose — most of them are content: a query, a body, a title, an api_key.
 check("every identifier the telemetry keeps is one a tool can send", () => {
   const src = readFileSync(join(root, "services/gateway/src/tool-telemetry.ts"), "utf8");
   const region = between(src, "const IDENTIFIER_ARGS = new Set([", "]);");
   if (!region.text) return `IDENTIFIER_ARGS cannot be located: ${region.why}`;
-  // EVERY quoted name, not the first on each line. The line-anchored version missed a second
-  // entry written beside another — the same blind spot as reading a one-line inputSchema,
-  // found the same way: by putting the defect back and watching the check not notice.
+  // Every quoted name, not the first on each line: two entries can share a line.
   const listed = [...region.text.matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
   if (listed.length === 0) return "IDENTIFIER_ARGS is empty — the extraction is broken";
 
-  // The TOP-LEVEL argument names every tool declares, which is what identifiers() iterates.
+  // The top-level argument names every tool declares, which is what identifiers() iterates.
   const declared = new Set();
   for (const f of sourceFiles(["services"], [".ts"])) {
     const text = readFileSync(join(root, f), "utf8");
     for (const t of toolsIn(text)) {
       const schema = between(t.body, "inputSchema:", "async (");
       if (!schema.text) continue;
-      // TOP LEVEL ONLY, by removing nested objects rather than by counting indentation.
-      // Anchoring to a line start looked equivalent and was not: knowledge_supersede writes
-      // its whole schema on one line, so both of its arguments vanished and `old_id` came
-      // back as an entry no tool declares. A check that reports a defect because it cannot
-      // read a formatting variant is the same failure as one that misses a defect.
+      // Top level only, by removing nested objects rather than by counting indentation: a
+      // whole schema can be written on one line.
       let flat = schema.text;
       for (let i = 0; i < 5; i++) {
         const next = flat.replace(/z\.object\(\{[^{}]*\}\)/g, "z.nested()");
@@ -96,22 +72,17 @@ check("every identifier the telemetry keeps is one a tool can send", () => {
 });
 
 check("telemetry keeps identifiers and never the team's own words", () => {
-  // The rule is IDENTIFIER versus CONTENT, not name versus value. A skill name, an
-  // initiative, a flow, a block, a path — the platform publishes those, and they identify
-  // things rather than say anything. A title, a body, a query, an email, a key are the
-  // team's own words about their own work, and they stay out of a table people read.
+  // The rule is identifier versus content, not name versus value. A skill name, an
+  // initiative, a flow, a path identify things the platform publishes. A title, a
+  // body, a query, an email, a key are the team's own words and stay out of the table.
   //
-  // The list has been wrong once already, in the way that matters: `confirm` sat in it
-  // looking like an enum, and person_deactivate defines confirm as an ECHO OF THE EMAIL —
-  // so the one value the list most deliberately excludes arrived under a safe-looking name.
-  // Nothing stopped that but somebody noticing.
-  //
-  // A denylist of names that are content BY DEFINITION, whatever a tool calls them. This is
-  // the half that can be stated without guessing; the identifier half stays a judgement.
+  // CONTENT below is a denylist of names that are content whatever a tool calls them — the
+  // half that can be stated without judgement. `confirm` is on it because person_deactivate
+  // defines it as an echo of the email.
   const src = readFileSync(join(root, "services/gateway/src/tool-telemetry.ts"), "utf8");
   const block = /const IDENTIFIER_ARGS = new Set\(\[([\s\S]*?)\]\)/.exec(src)?.[1];
   if (!block) return "IDENTIFIER_ARGS is no longer where this can read it";
-  // Comments in the block explain what was REMOVED; only live entries count.
+  // Comment lines inside the block name removed entries; only live entries count.
   const live = block.split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
   const kept = new Set([...live.matchAll(/"([a-z_]+)"/g)].map((m) => m[1]));
   const CONTENT = ["content", "body", "text", "title", "query", "q", "api_key", "key",
@@ -127,22 +98,11 @@ check("telemetry keeps identifiers and never the team's own words", () => {
 });
 
 check("a record that is counted is a record that is written once", () => {
-  // The ledger row is appended at the close and skipped if one is already there. The
-  // DOCUMENT had no such guard, so a second close overwrote its outcome while the ledger
-  // kept the first — and the ledger is what OKR grading and flow-compare COUNT. "How many
-  // were accepted this quarter" and what the closing document says would disagree, silently,
-  // and the disagreement is invisible from either side.
-  //
   // Both halves have to hold: the ledger appends once, and the close refuses a second one.
-  // Either alone is the divergence.
+  // Either alone lets the ledger's count and the closing document's outcome diverge.
   const src = zzCoreSource();
   const bad: string[] = [];
-  // THE GUARD, NOT THE COMMENT THAT EXPLAINS IT. This tested `/already closed once/` against
-  // the whole of zz-core, and that phrase exists in exactly one place: the trailing comment on
-  // `persist.ts`'s early return. The behaviour was never read. Deleting a correct comment would
-  // have turned this red for a reason that was never true, and the red would have arrived
-  // during housekeeping — measured by stripping comments from every subject source and running
-  // the gate, where this was the one check of 427 that went red.
+  // The guard, matched on the behaviour and not on a comment that explains it.
   //
   // Sliced first, stripped second: `withoutComments` shortens what it replaces, so stripping
   // before slicing moves every offset the slice depends on.
@@ -152,10 +112,8 @@ check("a record that is counted is a record that is written once", () => {
   } else if (!/parseEnvelope\([a-z]+\)\.outcome\)\s*return/.test(ledger)) {
     bad.push("ledgerOnClose no longer returns early on a document that already carries an outcome — a reclose would count twice");
   }
-  // The refusal, in initiative_close() itself: read the outcome already on the document and stop.
-  // From the one parser: `src.indexOf('\n    "initiative_close",')` found the newline registration form
-  // only, and reformatting initiative_close() would have sliced from -1 — the last character of the
-  // file — leaving an empty body and two failures about a rule nobody had touched.
+  // The refusal, in initiative_close() itself: read the outcome already on the document and
+  // stop. Located through zzCoreTools(), which is format-independent.
   const body = zzCoreTools().find((t) => t.name === "initiative_close")?.body;
   if (!body) return "initiative_close() is not registered — this check cannot find what it is about";
   if (!/const already = parseEnvelope\(doc\)\.outcome/.test(body) || !/is already closed as/.test(body)) {
@@ -165,48 +123,30 @@ check("a record that is counted is a record that is written once", () => {
 });
 
 check("the platform records its own surface, the way it records everybody else's", () => {
-  // WE ARE A BLOCK TOO, and for a long time the only one that could not be measured.
+  // The platform's own surface is recorded from the registerTool calls themselves, not from a
+  // hand-written list, so what is stored cannot drift from what is served.
   //
-  // `zz.block` has held a row for us since migration 024, which said why: our MCP "is not a
-  // block in the zz-blocks sense and never will be — but it IS an MCP surface like any other".
-  // What nothing did was record a VERSION, so a surface report about `platform` answered "no
-  // recorded surface" and the one instrument this platform has for judging a tool surface
-  // could be pointed at everyone except its author.
-  //
-  // Every other block is measured by probing it, because its surface is somebody else's to
-  // declare. Ours is declared by the registerTool calls themselves — so the recording hangs
-  // off those, and what we store cannot drift from what we serve. A second list built by hand
-  // would be a claim about the surface; this is the surface.
-  //
-  // The check is that the wiring survives, because its failure is silent: nothing breaks, no
-  // call refuses, and the only symptom is that a version leaves no row and "what moved since
-  // the last release" quietly answers nothing.
+  // The wiring's failure is silent — nothing breaks, no call refuses, a version just leaves
+  // no row — so it is checked here.
   const src = withoutComments(zzCoreSource());
   const bad: string[] = [];
   if (!/OWN_TOOLS\.set\(name, door\)/.test(src)) {
     bad.push("registerTool no longer records the name it is registering AND the door it is registering it on — the surface would be recorded from something other than what is served, or not at all");
   }
-  // ATTACHED TO A VERSION SOMEBODY ELSE WROTE. register-plugins creates zz.plugin_version at
-  // release, from the lock, with the digest that vouches for the content. Recording a surface
-  // only ever attaches tools to a row that already exists — a version nobody released has no
-  // surface to record, and creating the row here would put a version in the registry with
-  // nothing standing behind it.
+  // Attached to a version register-plugins already created at release. Recording a surface
+  // only ever selects an existing row; creating one here would register a version with no
+  // release standing behind it.
   if (!/select pv\.id::text as id from zz\.plugin_version pv/.test(src)) {
     bad.push("the surface is not attached to a released zz.plugin_version — either nothing is recorded, or this writes a version row that no release vouches for");
   }
-  // PER PLUGIN, FROM THE DOOR. A door IS a plugin's declared server, so the door a tool
-  // registered on says whose tool it is. Filed under one blanket row instead, the ten
-  // evaluation tools — which arrive only with zz-plugin-eval — were recorded as the
-  // platform's own.
+  // Per plugin, from the door: a door is a plugin's declared server, so the door a tool
+  // registered on says whose tool it is.
   if (!/pluginForDoor\(door\)/.test(src)) {
     bad.push("the surface is not filed per plugin — every tool this process serves lands under one registry row, and the evaluation door's tools stop being the evaluation plugin's");
   }
-  // THE DOOR IS IN THE ROW, AND IT IS IN THE SAME STATEMENT AS THE NAME. Migration 052 added
-  // the door column for one reason: a surface recorded as names alone answered NO CHANGE when
-  // ten tools moved from `/core/mcp` to `/eval/mcp`, because not one name changed. A writer
-  // that goes back to (version, name) restores that wrong answer silently — every row still
-  // appears, the column just stays null, and the reader correctly reports it as not comparable
-  // rather than as a fault. So the write is what is checked here.
+  // The door is in the row, in the same statement as the name. A surface recorded as names
+  // alone reports no change when a tool moves between doors, and the reader cannot tell a
+  // null column from a genuine match.
   if (!/insert into zz\.plugin_tool \(plugin_version_id, name, door\)/.test(src)) {
     bad.push("the surface row no longer carries the door it was served on — a surface recorded as names alone reports NO CHANGE when a tool moves between doors, which is the wrong answer this platform's largest surface change already got");
   }
@@ -217,30 +157,14 @@ check("the platform records its own surface, the way it records everybody else's
   if (!/on conflict \(plugin_version_id, name\) do nothing/.test(src)) {
     bad.push("the surface row is not per-version-and-once — rewriting it makes the history agree with today by construction, which is the one thing a history must not do");
   }
-  // Recorded at boot, AFTER a server has been built: the doors are stateless, so nothing has
-  // run a builder by then and the set of names would be empty.
+  // Every door's builder must run before the record is written: the doors are stateless, so
+  // until a builder runs the set of names is empty and that door's tools would be missing.
+  // The factory list is derived from the `serveMcp` mounts, so a door added tomorrow is
+  // covered on the day it is mounted.
   //
-  // EVERY DOOR, AND THE LIST IS DERIVED FROM THE MOUNTS. This named `buildServer` when that was
-  // the only factory there was. zz-core now serves two doors — `/mcp` and `/eval-mcp`, one
-  // process, two tool sets — and building only the first would record a platform that serves
-  // ten fewer tools than it does. That is worse than recording nothing: the surface report
-  // diffs a version against the one before it, so the release that merely MOVED those tools
-  // would report them deleted, and a diff that invents a finding is the one failure this
-  // instrument cannot have. So the factories come out of the `serveMcp` calls themselves, and
-  // a third door added tomorrow is covered by this check on the day it is mounted.
-  // Everything boot runs BEFORE the record is written. A builder called after it has filled
-  // nothing by the time the names are read, so "called at boot" is not the property — "called
-  // first" is, and an empty slice here makes every clause below fire rather than pass.
-  //
-  // MEASURED FROM THE TOP OF THE FILE, not from `app.listen`. The builders used to sit inside
-  // the listen callback and a window starting there saw them; they now run ABOVE `listen`,
-  // because the issuance guard has to read the registrations they fill and a refusal has to be
-  // able to stop the process coming up rather than throw at a bound socket. That is the same
-  // property this clause is about — built before recorded — satisfied EARLIER, and a window
-  // anchored at `listen` reported it as absent. Anchor on the record instead: it is the thing
-  // everything here has to precede.
-  // The CALL, not the declaration — `async function recordOwnSurface()` sits near the top of
-  // the file, and anchoring on the bare name put the window before everything.
+  // The window is the file above the `recordOwnSurface()` call — not `app.listen`, which the
+  // builders now run above, and not the bare name, which matches the declaration near the top
+  // of the file. An empty slice makes every clause below fire rather than pass.
   const at = src.search(/(?:await|void)\s+recordOwnSurface\(\)/);
   const built = at < 0 ? "" : src.slice(0, at);
   const factories = [...src.matchAll(/serveMcp\(app,\s*"[^"]+",\s*(\w+)\)/g)].map((m) => m[1]);
@@ -251,48 +175,26 @@ check("the platform records its own surface, the way it records everybody else's
     bad.push("boot never calls recordOwnSurface — nothing records the surface at all");
   }
   for (const factory of factories) {
-    // A CALL, never the declaration. The window now starts at the top of the file so it can see
-    // builders that run above `listen`, and `function buildServer(` lives up there too — so a
-    // bare `${factory}(` matched the declaration and this clause passed for a builder nobody
-    // called. That is the shape of defect this whole gate exists to refuse, introduced while
-    // widening the window; the lookbehind is what makes the widened window honest.
+    // The lookbehind matches a call and never the declaration, which is inside the window.
     if (!new RegExp(`(?<!function\\s)\\b${factory}\\(`).test(built)) {
       bad.push(`boot does not build ${factory} before recording the surface — the doors are stateless, so nothing else has, and that door's tools would be missing from the surface we record`);
     }
-    // AND IT BUILDS THE WHOLE SURFACE. A builder that cuts its tool list by the caller's role
-    // registers the MEMBER surface at boot, where there is no caller — so a release that merely
-    // gated a tool would be recorded as having deleted it. Matching `${factory}(` alone accepts
-    // `${factory}(false)`, which is that bug spelled out; the flag has to be true where the
-    // builder takes one.
+    // And it builds the whole surface. A builder that cuts its tool list by the caller's role
+    // records the member surface at boot, where there is no caller, so a tool that was merely
+    // gated reads as deleted.
     if (new RegExp(`\\b${factory}\\(\\s*false\\s*\\)`).test(built)) {
       bad.push(`boot builds ${factory} with its full-surface flag OFF — the surface recorded is the one a member sees, and a tool that was merely gated reads as deleted`);
     }
   }
 
-  // ── AND THE COLUMN THE WRITE DEPENDS ON, WITH NO ROW CLAIMING A DOOR NOBODY RECORDED ───
+  // And the column the write depends on, with no row claiming a door nobody recorded.
   //
-  // A writer naming a column no migration adds fails INSIDE the catch that makes recording
-  // deliberately non-fatal: the service starts, one line says it could not record its surface,
-  // and nothing is red. `schemaColumns()` replays every add and drop in order, so a later
-  // migration removing the column is caught by the same clause.
+  // A writer naming a column no migration adds fails inside the catch that makes recording
+  // non-fatal: the service starts and nothing is red. `schemaColumns()` replays every add and
+  // drop in order, so a later migration removing the column fails the same clause.
   //
-  // NOT NULL IS RIGHT HERE, and it was wrong on the table this replaces. `zz.block_tool` gained
-  // `door` by migration 052, on a table that already held rows written before anything knew the
-  // door — so a default or an `update … set door` there would have INVENTED the moves the first
-  // diff showed, every `plugin_*` name claiming to have started on the core door. That is NO
-  // CHANGE with the sign flipped, committed for good.
-  //
-  // `zz.plugin_tool` is a new table whose writer always knows the door, so the honest constraint
-  // is NOT NULL: there is no row here whose door nobody knew, and a nullable column would let
-  // one back in.
-  //
-  // ONE CLAUSE WAS DROPPED AND IT IS NOT COVERAGE. This also read
-  // `058_plugin_owns_its_surface.sql` for `where bt.door is not null`, the filter on the
-  // one-time carry-forward out of `zz.block_tool`. That move ran once, on every deployment, and
-  // its text is now squashed into 001_init.sql with the other seventy-three; editing an applied
-  // migration moves no row on any host, so the clause was guarding a sentence rather than a
-  // fact. What it was protecting — no row claiming a door nobody recorded — is what NOT NULL
-  // below enforces from here on, against every future writer rather than against one past one.
+  // `zz.plugin_tool`'s writer always knows the door, so `door` is NOT NULL — a nullable
+  // column would let back in a row whose door nobody recorded.
   const schema = "services/gateway/migrations/001_init.sql";
   const sql = (() => { try { return readFileSync(join(root, schema), "utf8"); } catch { return ""; } })();
   const door = /create table zz\.plugin_tool \(([\s\S]*?)\n\);/i.exec(sql)?.[1]
@@ -308,18 +210,9 @@ check("the platform records its own surface, the way it records everybody else's
 });
 
 check("every header the telemetry correlates on is actually sent", () => {
-  // `x-zz-client` was READ in step-trace.ts and WRITTEN nowhere, so the second half of the
-  // caller key was the empty string for every caller and the key was one half. Every process
-  // acting as one person then shared a single skill trace — the onboarding timer, the
-  // provisioner, zz-tool and that person's own chat session, all mutating it.
-  //
-  // Measured on UAT during a live round: 160 `render_agent_definition` rows from the
-  // 60-second timer were attributed to `ops-build 1.2` and 35 to `zz-knowledge 2.0`, and one
-  // document_write came out carrying one skill's name beside another skill's version. Those rows
-  // are what tool-report, evolve-report and step-score count.
-  //
-  // A header read but never set is invisible: nothing errors, the key still has two halves,
-  // and the numbers stay plausible. So the rule is checked rather than remembered.
+  // The caller key is the email plus `x-zz-client`. A header read but never sent is
+  // invisible — nothing errors, the key just collapses to its first half, and every process
+  // acting as one person shares one skill trace.
   const src = [
     "services/gateway/src/step-trace.ts",
     "packages/mcp-client/src/index.ts",
@@ -334,13 +227,10 @@ check("every header the telemetry correlates on is actually sent", () => {
 });
 
 check("a step's version comes from the skill, never from a file beside it", () => {
-  // FOUND IN THE TELEMETRY OF A LIVE ROUND. `skill_read(name, file: "references/…")` serves a
-  // supporting file, and the version was read out of whatever came back — so reading a
-  // reference inside the skill you are following blanked step_version for every call after it
-  // (seven casebox calls in one round), and reading a document TEMPLATE wrote the DOCUMENT's
-  // version under the skill's name. runs.ts joins step_version against zz.skill_version, so a
-  // blank matches nothing and those calls leave the per-version reports entirely — the numbers
-  // still look plausible, which is why nobody noticed.
+  // `skill_read(name, file: "references/…")` serves a supporting file, not the skill. A
+  // version taken from that file's bytes names a skill version that does not exist, and
+  // runs.ts joins step_version against zz.skill_version, so the call leaves every per-version
+  // report.
   const trace = withoutComments(readFileSync(join(root, "services/gateway/src/step-trace.ts"), "utf8"));
   const tel = withoutComments(readFileSync(join(root, "services/gateway/src/tool-telemetry.ts"), "utf8"));
   const bad: string[] = [];
@@ -362,25 +252,14 @@ check("a step's version comes from the skill, never from a file beside it", () =
 });
 
 check("an initiative that does not exist yet is not cached as an initiative with no flow", () => {
-  // THE ASYMMETRY IS THE WHOLE CHECK. `flowFor` answers which flow an initiative runs, and
-  // `tool-telemetry.ts` spends that answer on `owedBy` — which stage of the manifest owes the
-  // document being written. A flow it HAS found cannot change: the platform decides `flow` at
-  // `initiative_open` and offers no way to adopt one afterwards, so caching a hit is free.
+  // The asymmetry is the whole check. A flow `flowFor` has found cannot change — the platform
+  // decides `flow` at `initiative_open` and offers no way to adopt one afterwards — so
+  // caching a hit is free. A miss is the answer for an initiative that does not exist yet,
+  // and the next thing that happens is somebody creating it, so a cached miss outlives what
+  // it described and every call for the rest of the TTL is attributed as flowless.
   //
-  // Caching a MISS is not. The miss is the answer for an initiative that does not exist yet,
-  // and the next thing that happens is somebody creating it — so the cached absence outlives
-  // the thing it described, and for the rest of the TTL every call is attributed as though the
-  // initiative had no flow.
-  //
-  // AND THE FLOW'S OWN FIRST INSTRUCTION WALKS INTO IT. sdlc-flow opens with "ask the platform
-  // where the initiative stands before anything else", so the opening sequence is a status
-  // call on a slug that does not exist, then the open, then the first document — all inside
-  // one TTL. Measured by driving exactly that on this deployment: status at 0s, explore.md
-  // written at 29s with no step on its event, spec.md at 116s — past the TTL — carrying
-  // `sdlc-spec`. Same caller, same initiative; the only difference was the clock.
-  //
-  // It never failed loudly because `stepName` falls back to the traced skill, so the row is
-  // written and only the STAGE is missing — on precisely the calls that open a piece of work.
+  // It fails quietly: `stepName` falls back to the traced skill, so the row is written and
+  // only the stage is missing.
   const src = readFileSync(join(root, "services/gateway/src/step-trace.ts"), "utf8");
   const at = src.indexOf("export async function flowFor");
   if (at < 0) return "flowFor is gone, and with it the only thing that says which stage owes a document";
@@ -396,17 +275,12 @@ check("an initiative that does not exist yet is not cached as an initiative with
 });
 
 check("the telemetry and the control loop name the same stage for the same act", () => {
-  // ONE ACT MUST NOT HAVE TWO STEPS, and it had. The two sides of this platform each derive
-  // "which stage does this complete" from the flow's manifest, and they read DIFFERENT fields
-  // to do it: the telemetry reads `documents[].stage`, the evidence side reads which stage
-  // `produces` that document. Two spellings of one answer, and nothing compared them.
+  // Both sides derive which stage an act completes from the flow's manifest, reading
+  // different fields: the telemetry reads `documents[].stage`, the evidence side reads which
+  // stage `produces` that document. Neither table says the other exists, so they cannot
+  // disagree out loud.
   //
-  // Measured while driving sdlc-flow end to end: a spec-audit round recorded through
-  // `source_add` was filed by `zz.event` as `zz-platform` — the skill the agent happened to
-  // have read last — and by `zz.control_evidence` as `sdlc-spec-audit`. An approval was filed
-  // the same two ways. Neither table says the other exists, so neither could disagree out loud.
-  //
-  // THE SUBJECT IS EVERY REGISTERED FLOW, not a fixture, because a fixture agrees with itself.
+  // The subject is every registered flow, not a fixture — a fixture agrees with itself.
   const probe = `
     import { stageOwing } from ${JSON.stringify(join(root, "services/gateway/dist/call-attribution.js"))};
     import { stepForDocument, stepForSource } from ${JSON.stringify(join(root, "services/zz-core/dist/host/enrolment.js"))};
@@ -455,20 +329,13 @@ check("the telemetry and the control loop name the same stage for the same act",
 });
 
 check("the answer that names an initiative is actually captured, and an error names nothing", () => {
-  // A FIX THAT COULD NEVER RUN. `initiative_open` takes a `slug` and composes the name from the
-  // platform's clock, so its ARGUMENTS never carry the initiative — which is why a block exists
-  // to read it from the ANSWER, carrying a comment saying exactly that. It sat behind
-  // `if (served !== null)`, and `served` was `loading.length ? "" : null`: the response body was
-  // captured only on a request that also read a skill. `initiative_open` never does. The fix was
-  // written, committed, and executed zero times.
+  // `initiative_open` takes a `slug` and composes the name from the platform's clock, so its
+  // arguments never carry the initiative and it has to be read from the answer — which means
+  // the response body must be captured on requests that load no skill.
   //
-  // Measured before this check existed: 110 `initiative_open` events on the deployment, 20
-  // carrying an initiative, 17 of those naming one that exists.
-  //
-  // AND THE ARGUMENT SCAN FILLED THE GAP WITH SOMETHING WORSE. `initiative_status` on a slug
-  // nobody opened answers `{"error": "no such initiative"}` — not an MCP error, so the row is
-  // recorded `ok` — and the scan took the slug from the arguments and kept it for the rest of
-  // the conversation. 436 events across the store name an initiative that was never created.
+  // The argument scan is the other half: `initiative_status` on a slug nobody opened answers
+  // `{"error": "no such initiative"}`, which is not an MCP error, so the row is recorded `ok`
+  // and the scan would teach the trace a name that was never created.
   const tel = withoutComments(readFileSync(join(root, "services/gateway/src/tool-telemetry.ts"), "utf8"));
   const attr = readFileSync(join(root, "services/gateway/src/call-attribution.ts"), "utf8");
   if (/let served = loading\.length \? "" : null;/.test(tel)) {
@@ -495,25 +362,13 @@ check("the answer that names an initiative is actually captured, and an error na
 });
 
 check("an initiative is carried forward within a team, never across a switch between two", () => {
-  // A SLUG IS UNIQUE PER `(team_id, slug)`, NOT GLOBALLY — `zz.initiative` says so — and the
-  // trace Map is keyed by caller alone. So a slug named under one team stayed in the trace and
-  // was stamped on the next call whatever team it was made under. 11 rows, six initiatives,
-  // all between the same person's two teams, cleared from the store on 2026-09-23.
+  // A slug is unique per `(team_id, slug)`, not globally, and the trace Map is keyed by
+  // caller alone — so a slug named under one team can be stamped onto a call made under
+  // another. `initiative_status` on another team's initiative succeeds and its answer teaches
+  // the trace that slug, so a team switch is not the only way in.
   //
-  // THE WAY IN WAS A CROSS-TEAM READ. `initiative_status` on another team's initiative
-  // succeeds and the answer teaches the trace the slug — `runs.ts` calls these "cross-team
-  // echoes from a successful initiative_status". The first `manage:team_switch` ever called
-  // is itself one of the 11 rows, and ten of them predate it, so a switch is a second way in
-  // rather than the cause. The comparison below holds on either.
-  //
-  // `flowFor` in the SAME FILE already joins the initiative to the team and returns nothing
-  // when they disagree, so the flow column was honest while the initiative column beside it
-  // was not. That is why no check caught it: every component was self-consistent, and the
-  // disagreement only existed between them.
-  //
-  // THE EXPRESSION THAT DECIDES, not the block around it. A check that merely finds `team`
-  // somewhere in `currentStep` passes on a declaration that is never compared, which is how
-  // two checks written earlier this session failed to discriminate.
+  // The clauses match the expression that decides, not the block around it: a `team`
+  // declared in `currentStep` and never compared would pass anything looser.
   const trace = withoutComments(readFileSync(join(root, "services/gateway/src/step-trace.ts"), "utf8"));
   const tel = withoutComments(readFileSync(join(root, "services/gateway/src/tool-telemetry.ts"), "utf8"));
   const bad: string[] = [];
@@ -534,22 +389,12 @@ check("an initiative is carried forward within a team, never across a switch bet
 });
 
 check("a field that has held an empty string is written as absent, not as two spellings of nothing", () => {
-  // `??` COALESCES NULL AND UNDEFINED AND NOT `""`, which is how one column comes to hold two
-  // spellings of the same absence while its index holds one.
+  // `??` coalesces null and undefined and not `""`, which is how one column comes to hold two
+  // spellings of the same absence, neither joinable to `zz.skill`.
   //
-  // `step` was cleaned at its source on 2026-09-19 — 1,713 rows carried `''` against 943
-  // carrying null, every one unjoinable to `zz.skill`, and the reconcile re-scanned the skill
-  // tables 1,695 times a pass to resolve one of them. The comment recording that sits four
-  // lines above `Trace.initiative`, which had the identical defect and did not get the fix:
-  // a skill loaded before any initiative is known wrote `initiative: ""` into a fresh trace.
-  // Measured 2026-09-23: 381 rows, every one a `skill_read` at the start of a conversation,
-  // and cleared from the store that same day once this fix had shipped. The count is kept here
-  // because it is the size of what the check prevents, not a description of the store today.
-  //
-  // BOTH LINES OF DEFENCE, because either alone has already failed once. The trace says absent
-  // by being undefined; the writer refuses an empty string at the one place every row is
-  // written. A source that regresses is caught by the writer, and a second field that grows
-  // the same habit is caught by neither unless it is added here.
+  // Both lines of defence are checked: the trace says absent by being undefined, and the
+  // writer refuses an empty string at the one place every row is written. A second field that
+  // grows the same habit is caught by neither unless it is added to the loop below.
   const trace = withoutComments(readFileSync(join(root, "services/gateway/src/step-trace.ts"), "utf8"));
   const ev = withoutComments(readFileSync(join(root, "services/gateway/src/events.ts"), "utf8"));
   const bad: string[] = [];

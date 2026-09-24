@@ -1,17 +1,13 @@
 /**
- * The three things zz-core writes ALONGSIDE a document's index row: the journal's event, the
+ * The three things zz-core writes alongside a document's index row: the journal's event, the
  * journal's human-readable log, and the envelope a source document is written with.
  *
- * THE INDEXER ITSELF IS NOT HERE ANY MORE. `indexDoc`, `reindexTeam`, `reindexAllTeams` and
- * the store walk moved to `@zz/indexing` at Task I-38, because `knowledge_reindex` moved to
- * `/manage` and the gateway serves that door — a service cannot import another service, and
- * two copies of an indexer agree only until the day one of them is edited. Every caller in
- * this service imports them from the package; there is no second definition to drift from.
+ * COUPLED: the indexer itself is `@zz/indexing` — `indexDoc`, `reindexTeam`,
+ * `reindexAllTeams` and the store walk — imported rather than defined here, so there is no
+ * second definition.
  *
- * What stayed is what is zz-core's alone. `platformEvent` writes `zz.event`, which the
- * gateway's console reads and zz-core's knowledge tools are the only writers of;
- * `journalLog` and `sourceDocument` are shapes two of those tools produce. None of it is
- * indexing, and none of it is anything the gateway has a use for.
+ * What is here is zz-core's alone: `platformEvent` writes `zz.event`, and `journalLog` and
+ * `sourceDocument` are shapes its knowledge tools produce.
  */
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -19,53 +15,36 @@ import { join } from "node:path";
 import { renderEnvelope, tableRow } from "./document-rules.js";
 import { db } from "./platform-db.js";
 
-/** The knowledge base's own log, in the platform's event table.
+/** The knowledge base's own log, in the platform's event table, which the console reads.
+ * `journalLog` beside this writes `_knowledge/log.md`, the on-disk journal, which the console
+ * cannot open.
  *
- * `journalLog` beside this writes `_knowledge/log.md` — a real append-only journal, and the
- * right thing for anyone reading a team's store on disk. It is invisible to the console,
- * which reads Postgres and has no way to open a team's files, so "what has this team
- * learned lately, and who wrote it down" had no answer any screen could show.
+ * DELIBERATE: not a `tool_call` row. A tool_call carries no actor because it measures a
+ * skill; a journal entry names who recorded or read what.
  *
- * NOT A `tool_call` ROW. Those already exist for these tools and cannot serve: a tool_call
- * deliberately carries NO ACTOR — "no address on a measurement", see tool-telemetry.ts —
- * because it measures a skill, not a person. A journal entry is the opposite kind of record:
- * who recorded what, when, and now who READ what.
+ * DELIBERATE: searches are entries too. `knowledge_add` and `knowledge_supersede` each leave
+ * three records and a search would otherwise leave none, so "which nodes does anyone read"
+ * would have no answer.
  *
- * READS ARE ENTRIES TOO, and this paragraph used to argue the opposite — that a tool_call row
- * could not be filtered honestly because it would sweep in `knowledge_search`, "which are not
- * log entries at all". That was the wrong line to draw. A search is the only act in the
- * knowledge base that had no record anywhere: `knowledge_add` and `knowledge_supersede` each
- * wrote three (this table, `_knowledge/log.md`, the store's git history) and a search wrote
- * none, so "which nodes does anyone actually read" — the question that says whether any of
- * this is worth keeping — had no answer at all. The distinction that matters is not read
- * versus write, it is whether the row names a PERSON; a tool_call deliberately does not, and
- * all three of these do.
+ * DELIBERATE: searches are logged only here, never in `journalLog` — a read line per search
+ * would bury the entries that record decisions in the file a person reads top to bottom.
  *
- * ONLY HERE, never in `journalLog`. That file is the on-disk journal a person reads top to
- * bottom, and a searchable store gets searched far more often than it gets written to — a
- * read line per search would bury the eleven entries that record decisions.
+ * COUPLED: team_id and team_slug both. Console views join through `team_id`, and the id is
+ * resolved inside the INSERT so it cannot drift from the slug beside it.
  *
- * team_id AND team_slug, both. The slug alone is what zz.event carried for a week while
- * every console view that joins through `team_id` read empty — see 042_event_team_backfill.
- * The id is resolved in the INSERT so it cannot drift from the slug beside it.
+ * The actor is folded in the statement. tool-report, evolve-report and watch-results all
+ * group on this column, and one person spelled two ways breaks all three.
  *
- * THE ACTOR IS FOLDED IN THE STATEMENT. `who.email` arrives canonical from `parseCaller`,
- * but this column is grouped on by tool-report, evolve-report and watch-results, and one
- * person spelled two ways breaks all three — so every writer of it folds, whatever the
- * value's provenance. Cheap insurance on a column with that property.
- *
- * FIRE AND FORGET, catching everything: a journal entry that failed to write must never be
- * the reason a node the person already minted reports failure. */
+ * Fire and forget, catching everything: a journal entry that failed to write must never make
+ * a node the person already minted report failure. */
 export function platformEvent(e: {
   actor: string;
-  /** The FULL kind, `<noun>.<verb>`, because this writes rows for more than one noun now.
-   *  It took an action and prefixed `knowledge.` itself, which meant a second noun needed a
-   *  second function — and a second function writing the same table is the parallel
-   *  implementation this platform keeps removing. */
+  /** The full kind, `<noun>.<verb>`: this writes rows for more than one noun, and prefixing
+   *  a fixed noun here would need a second function writing the same table. */
   kind: string;
-  /** What the row is ABOUT, which is the `subject` column it lands in: the node id for an add
-   *  or a supersede, the query itself for a search, the bug id for a resolve. Named for the
-   *  column rather than for one of the actions — it was `node`, which a search has none of. */
+  /** What the row is about, which is the `subject` column it lands in: the node id for an
+   *  add or a supersede, the query itself for a search, the bug id for a resolve. Named for
+   *  the column rather than for any one action. */
   subject: string;
   team: string | null; detail: Record<string, unknown>;
 }): void {
@@ -75,9 +54,8 @@ export function platformEvent(e: {
     `insert into zz.event (actor, team_slug, team_id, kind, subject, detail)
      values (lower($1), $2, (select id from zz.team where slug = $2), $3, $4, $5)`,
     [e.actor, e.team, e.kind, e.subject, JSON.stringify(e.detail)],
-  // LOGGED. This is the platform journal: a row dropped here leaves no trace anywhere, so a
-  // database that refuses every insert looks identical to one recording them all — and what
-  // goes missing is the provenance that the evaluation track and every report read back.
+  // Logged: a row dropped here leaves no trace anywhere, so a database refusing every
+  // insert would look identical to one recording them all.
   ).catch((err) => console.error("platform journal insert failed:", err));
 }
 /** Append a row to the journal's human-readable log. It is markdown, so it
@@ -96,23 +74,19 @@ export interface KbRow {
   outcome: string | null; approved_by: string | null; approved_at: string | null;
   updated_at: string; title: string; tags: string[] | null; evidence: string[] | null;
   superseded_by: string | null; rank: number; snippet: string;
-  /** WHICH SHELF the row is on. A knowledge search deliberately spans the caller's team AND
+  /** Which shelf the row is on. A knowledge search deliberately spans the caller's team AND
    * the platform's journal, and dropping this made the two indistinguishable in the answer —
    * so a path that came back could not be read back. */
   team_slug: string;
 }
-/** A source document, which two tools write.
+/** A source document, written by source_add and by document_revise — same `type: source`,
+ * same fields, same readers, so one builder rather than two hand-built envelopes.
  *
- * source_add attaches material a person brought; document_revise captures the words that
- * caused a version. Same `type: source`, same fields, same readers — and two hand-built
- * envelopes, of which ONE escaped its title. document_revise's interpolated `source_title`
- * raw, so a title carrying a newline did not corrupt the source's envelope, it added fields
- * to it: `supports` decides which approved documents initiative_status flags for refinement,
- * and `type` is what knowledge_search filters on, so a source could be indexed as a spec.
+ * Through renderEnvelope, so every value is folded to one line whatever a caller sends. A
+ * title carrying a newline otherwise adds fields to the envelope: `supports` decides which
+ * approved documents initiative_status flags, and `type` is what knowledge_search filters on.
  *
- * Through renderEnvelope, so every value is folded to one line whatever a caller sends and
- * whatever field is added here next. `supports` stays comma-joined because that is how the
- * readers split it, and both callers validate their entries before they arrive. */
+ * COUPLED: `supports` stays comma-joined because that is how its readers split it. */
 export function sourceDocument(
   opts: { title: string; by: string; day: string; supports: string; content: string },
 ): string {

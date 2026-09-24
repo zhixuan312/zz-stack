@@ -1,27 +1,19 @@
 /**
- * Defects planted against the checks that hold the CATALOG and the CONSOLE together.
+ * Defects planted against the checks that hold the catalog and the console together.
  *
- * WHAT THESE FOUR CHECK FILES HAVE IN COMMON is that none of them reads the thing it is
- * about directly. A manifest is a promise made in JSON to code sitting in another package; a
- * lock file is a promise about content nobody re-derives at read time; the console is a
- * separate repository whose only tie to this one is a route string and a version. Nothing
- * inside either half fails when the two drift — the flow simply does something other than
- * what its manifest says, and the person reading the manifest is the last to find out. So
- * every defect below is planted in the PROMISE or in the thing it describes, never in the
- * check that compares them.
+ * None of those four check files reads its subject directly: a manifest is a promise made in
+ * JSON to code in another package, a lock file is a promise about content nobody re-derives at
+ * read time, and the console is a separate repository tied to this one by a route string and a
+ * version. So every defect below is planted in the promise or in the thing it describes, never
+ * in the check that compares them.
  *
- * THREE ASSERTIONS IN THESE FILES COULD NOT BE PLANTED AGAINST and are reported separately
- * rather than dropped: a selection stage's past-work bullet (no flow declares a `selection`
- * document and no skill carries the bullet, so the clause needs two files changed at once
- * and a spec changes one), the smoke engine's manifest lookup (its subject list is every
- * `scenarios.json` under `catalog/`, and there are none), and the console's compose literal
- * (every byte it reads lives in `../zz-stack-dashboard`, outside this tree).
+ * One assertion cannot be planted against: the console's compose literal, because every byte it
+ * reads lives in `../zz-stack-dashboard`, outside this tree.
  */
 import type { MutationSpec } from "./plant.ts";
 
 const SDLC = "catalog/sdlc/sdlc-flow";
 const ACCESS = "catalog/zz/zz-access";
-const CORE = "catalog/zz/zz-core";
 const EVAL = "catalog/zz/zz-plugin-eval";
 const LOCK = "plugins.lock.json";
 const INITIATIVES = "services/gateway/src/console/initiatives.ts";
@@ -35,7 +27,7 @@ const EVAL_PURPOSE =
   "changes what it measures.";
 
 export const COV_CATALOG: readonly MutationSpec[] = [
-  // ── catalog-stages.ts ──────────────────────────────────────────────────────────────────
+  // catalog-stages.ts
   {
     check: "scripts/gate/checks/catalog-stages.ts",
     target: "a document's requirement is met by the only thing its target can offer",
@@ -57,35 +49,6 @@ export const COV_CATALOG: readonly MutationSpec[] = [
     planted: "explore.md points at a stage the flow does not declare, so the console's " +
       "stepper draws a step for a document nothing produces and the document's own stage " +
       "resolves to nothing",
-  },
-  {
-    check: "scripts/gate/checks/catalog-stages.ts",
-    target: "a stage's blocks are ones its flow carries",
-    subject: `${SDLC}/flow.json`,
-    find: `      "name": "sdlc-execute",\n      "produces": "nothing"`,
-    replace: `      "name": "sdlc-execute",\n      "produces": "nothing",\n      "blocks": [\n        "zz-core"\n      ]`,
-    planted: "a stage is granted authority to call a block its flow does not carry. The proxy " +
-      "would allow the call and the agent has no tool to make it with, which reads to whoever " +
-      "is watching as the block being broken rather than as a manifest that never agreed with " +
-      "itself",
-    caveat: "the state this plants cannot exist in a manifest the platform accepts. " +
-      "`CatalogManifest` is `.strict()`, FlowStage's shape is `{ name, produces(, supports) }` " +
-      "and neither `stages[].blocks` nor the `tools` list this check compares it against is a " +
-      "declared key — so the manifest is REFUSED by the one reader, and the check's clause " +
-      "fires only because it reads the raw JSON itself. The row shows the rule fires; it does " +
-      "not show the state can occur. Worth raising on its own: contracts' own comment says a " +
-      "stage is 'able to declare which building blocks it may call', and no schema key and no " +
-      "`stage-access.ts` exist to make that true",
-  },
-  {
-    check: "scripts/gate/checks/catalog-stages.ts",
-    target: "every flow that declares stages ships scenarios, or says why not",
-    subject: `${CORE}/flow.json`,
-    find: `  "libraries": [`,
-    replace: `  "stages": [\n    {\n      "name": "zz-platform",\n      "produces": "nothing"\n    }\n  ],\n  "libraries": [`,
-    planted: "the baseline declares a stage and ships no driven scenario for it, and it is on " +
-      "no exemption list — so a method arrives with nothing that would notice the day it stops " +
-      "working, which is the hole a count of scenarios reads straight past",
   },
   {
     check: "scripts/gate/checks/catalog-stages.ts",
@@ -128,7 +91,7 @@ export const COV_CATALOG: readonly MutationSpec[] = [
       "so a rule the platform sets can be taken over by a file in a team's own store",
   },
 
-  // ── catalog-manifest.ts ────────────────────────────────────────────────────────────────
+  // catalog-manifest.ts
   {
     check: "scripts/gate/checks/catalog-manifest.ts",
     target: "no two flows collapse to the same command namespace",
@@ -166,10 +129,10 @@ export const COV_CATALOG: readonly MutationSpec[] = [
     check: "scripts/gate/checks/catalog-manifest.ts",
     target: "a flow.json is validated wherever it is read",
     subject: "scripts/release/fit-for-purpose.ts",
-    // SPLIT ACROSS TWO LINES HERE, and that is not formatting. This file is under `scripts/`,
-    // so the check being measured scans it — and a single line carrying `manifest`,
-    // `JSON.parse(` and the cast together satisfies all three of its predicates, which would
-    // make it red at BASELINE and the row unable to be caught. The planted text is identical.
+    // DELIBERATE: split across two lines. This file is under `scripts/`, so the check being
+    // measured scans it, and one line carrying `manifest`, `JSON.parse(` and the cast together
+    // satisfies all three of its predicates — red at baseline, and the row uncatchable. The
+    // planted text is identical.
     find: `      const f = join(cat, owner, pkg, "flow.json");\n` +
       `      if (existsSync(f)) out.push({ owner, pkg, m: JSON.parse(readFileSync(f, "utf8")) });`,
     replace: `      const manifest = join(cat, owner, pkg, "flow.json");\n` +
@@ -206,17 +169,14 @@ export const COV_CATALOG: readonly MutationSpec[] = [
     check: "scripts/gate/checks/catalog-manifest.ts",
     target: "plugins.lock.json says what the catalog ships, on both version and digest",
     subject: LOCK,
-    // ANCHORED ON THE KEY THAT FOLLOWS THE VERSION, NOT ON THE NUMBER. This pinned `0.62.4`
-    // and stopped landing six releases ago.
+    // DELIBERATE: anchored on the bare key that follows the version, not on a version number
+    // or a digest value — both change, and the anchor stops landing.
     //
-    // AND THE ORDER MATTERS, which the first attempt got backwards. `JSON.parse` keeps the
-    // LAST of two duplicate keys, so an injected `"version"` before the real one loses and the
-    // row SURVIVED — the plant landed and measured nothing. `"digest"` is the line after
-    // `"version"` in every block of this lock, so injecting there puts the wrong value second.
-    //
-    // THE KEY, NOT ITS VALUE. Anchoring on `"digest": "ed4e9c86"` would have been the same
-    // mistake one field along — a digest changes whenever content does. `all: true` over the
-    // bare key lands in every block and needs no occurrence to be unique.
+    // The order matters. `JSON.parse` keeps the last of two duplicate keys, so an injected
+    // `"version"` before the real one loses and the row survives, having measured nothing.
+    // `"digest"` is the line after `"version"` in every block of this lock, so injecting there
+    // puts the wrong value second. `all: true` over the bare key lands in every block and
+    // needs no occurrence to be unique.
     all: true,
     find: `    "digest": "`,
     replace: `    "version": "0.0.1",\n    "digest": "`,
@@ -237,7 +197,7 @@ export const COV_CATALOG: readonly MutationSpec[] = [
       "events through it and reports the result as fact",
   },
 
-  // ── console.ts ─────────────────────────────────────────────────────────────────────────
+  // console.ts
   {
     check: "scripts/gate/checks/console.ts",
     target: "the initiatives route reads the team filter its caller sends",
@@ -272,7 +232,7 @@ export const COV_CATALOG: readonly MutationSpec[] = [
     replace: `kind: "document.approve", subject, detail: {}`,
     planted: "the approval a person presses in the browser leaves an audit row that does not " +
       "say a browser pressed it. The row exists and names the actor and the act, so nothing " +
-      "looks missing — and FR-8's requirement that every console act record the web door is " +
+      "looks missing — and the rule that every console act records the web door is " +
       "gone for the one act that most needs it",
   },
   {
@@ -302,11 +262,10 @@ export const COV_CATALOG: readonly MutationSpec[] = [
     check: "scripts/gate/checks/console.ts",
     target: "every route this gateway serves has a caller",
     subject: INITIATIVES,
-    // THE NEW PATH IS SPLIT SO THIS FILE DOES NOT CONTAIN IT. The check greps `scripts/**` for
-    // a route's path to decide whether anything calls it, and excludes only the gate's own
-    // tree — so a spec file spelling the orphaned path would vouch for the route it just
-    // orphaned. That is the exact failure the check's own prose records ("restoring the
-    // deleted route left it green"), arriving through the runner that measures it.
+    // DELIBERATE: the new path is split so this file does not contain it. The check greps
+    // `scripts/**` for a route's path to decide whether anything calls it and excludes only
+    // the gate's own tree, so a spec file spelling the orphaned path would vouch for the route
+    // it just orphaned.
     find: `app.get("/api/console/initiatives", handler("initiatives"`,
     replace: `app.get("/api/console/initiative` + `-index", handler("initiatives"`,
     planted: "the initiatives list is served at a path nothing asks for. The console still " +
@@ -314,7 +273,7 @@ export const COV_CATALOG: readonly MutationSpec[] = [
       "and the gateway carries a route with no caller in either repository",
   },
 
-  // ── plugin-declaration.ts ──────────────────────────────────────────────────────────────
+  // plugin-declaration.ts
   {
     check: "scripts/gate/checks/plugin-declaration.ts",
     target: "a plugin manifest says what the plugin is for",
@@ -327,19 +286,17 @@ export const COV_CATALOG: readonly MutationSpec[] = [
       "nothing written to argue against",
   },
 
-  // ── two ids filed under console.ts by the coverage split, registered elsewhere ─────────
-  // `cov-catalog.json` and `uncovered-by-file.json` both list these under console.ts, which
-  // only MENTIONS them in prose. They are registered in hygiene.ts and docs-integrity.ts, and
-  // `check` names the file that registers each — the report's drift detection hashes that
-  // file, so pointing it at console.ts would make the row's own provenance a lie.
+  // Two ids filed under console.ts by the coverage split, registered elsewhere
+  // `cov-catalog.json` and `uncovered-by-file.json` list these under console.ts, which only
+  // mentions them in prose. They are registered in hygiene.ts and docs-integrity.ts, and
+  // `check` names the file that registers each: the report's drift detection hashes that file.
   {
     check: "scripts/gate/checks/hygiene.ts",
     target: "nothing is exported that nobody imports",
     subject: "services/gateway/src/console/catalog.ts",
-    // THE SYMBOL'S NAME IS SPLIT so it never occurs whole in this file. The check asks whether
-    // any OTHER file names the export, and it reads `scripts/**` — so a spec file spelling the
-    // name would be the importer that keeps it alive, and the row would survive a defect it
-    // had itself concealed.
+    // DELIBERATE: the symbol's name is split so it never occurs whole in this file. The check
+    // asks whether any other file names the export and it reads `scripts/**`, so a spec file
+    // spelling the name would be the importer that keeps it alive.
     find: `function disk` + `Plugins(): DiskPlugin[] {`,
     replace: `export function disk` + `Plugins(): DiskPlugin[] {`,
     planted: "a helper that only its own file calls is given a public door. The compiler has " +

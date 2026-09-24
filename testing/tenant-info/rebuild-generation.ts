@@ -1,34 +1,21 @@
 /**
- * rebuild-generation.ts — I-15's "generation" case group: `packages/indexing/src/
- * tenant-rebuild.ts`'s own walk, split out of `rebuild.ts` at the ceiling (that file was
- * already at 526 of a measured, unexemptable 700 before this group existed) — the same reason
- * `persistence-coordination.ts` exists beside `persistence.ts`. `rebuild.ts`'s registry
+ * The "generation" case group for `packages/indexing/src/tenant-rebuild.ts`'s walk. `rebuild.ts`
  * imports `GENERATION_CASES` from here.
  *
- * WHAT THIS FILE PROVES, IN TWO HALVES.
+ * Offline, most of this file: `checkStoreAvailability`/`readOrderedCommits` read nothing but a
+ * temporary `.zz/` tree this file builds and, in the corruption cases, damages afterward. The
+ * missing-mount and corrupt-chain cases assert not only that `rebuildGeneration` reports
+ * "blocked" but that the `ProjectionClient` received zero calls — a rebuild that cannot read the
+ * source must never touch the target.
  *
- * OFFLINE (no database, most of this file): `checkStoreAvailability`/`readOrderedCommits`
- * read nothing but a temporary `.zz/` tree this file builds and, in the corruption cases,
- * deliberately damages afterward — never this repository, never a deployment volume. The
- * missing-mount and corrupt-chain cases assert not merely that `rebuildGeneration` reports
- * "blocked", but that the `ProjectionClient` it was handed received ZERO calls: the property
- * this whole task exists to guarantee is that a rebuild which cannot read the source never
- * touches the target, and a case that only checks the return value would miss a version of the
- * bug where availability is checked, found wanting, and something downstream writes anyway.
- * `genesis_ready_with_zero_commits` is the deliberate counter-case: a real, available store
- * that has simply never had a commit is the ONE legitimate "empty", and must report `ready`
- * with `applied: 0` — a case list without it invites someone to "harden" the empty path later
- * and break every brand-new tenant.
+ * `genesis_ready_with_zero_commits` is the counter-case: a real, available store that has never
+ * had a commit is the one legitimate empty, and must report `ready` with `applied: 0`.
  *
- * ISOLATED DATABASE (`real_rebuild_against_isolated_copy`, one case, gated exactly like
- * `rebuild.ts`'s own `atomic_apply_against_isolated_database`): a real owner store built
- * through the real `mutate()`/`nativePolicy` kernel, copied to a second directory with every
- * file's mtime rewritten, rebuilt twice into the same isolated database (the second rebuild
- * following a hand-reset of that owner's rows — the isolated copy an operator provides IS the
- * "fresh database" this task's contract names, and reusing the connection across two resets is
- * how one case proves two independent rebuilds of the SAME canonical source agree, without a
- * second live database to provision). Absent `ZZ_TENANT_INFO_ISOLATED_DB_URL`, it fails loudly
- * naming the variable, never silently skips.
+ * `real_rebuild_against_isolated_copy` needs a database, gated like `rebuild.ts`'s own
+ * `atomic_apply_against_isolated_database`: a real owner store built through the
+ * `mutate()`/`nativePolicy` kernel, copied with every file's mtime rewritten, rebuilt twice into
+ * the same isolated database with a hand-reset of that owner's rows in between. Absent
+ * `ZZ_TENANT_INFO_ISOLATED_DB_URL` it fails loudly naming the variable, never silently skips.
  */
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
@@ -73,7 +60,7 @@ function callRecordingClient(): ProjectionClient & { readonly calls: string[] } 
   };
 }
 
-// ── offline: mount/readiness validation runs before anything touches the target ────────────
+// Offline: mount/readiness validation runs before anything touches the target
 
 async function caseMissingZzDirBlocksAndTouchesNothing(): Promise<void> {
   const root = await mkdtemp(join(tmpdir(), "zz-rebuild-nomount-"));
@@ -110,9 +97,8 @@ async function caseMissingSubdirsBlocksAndTouchesNothing(): Promise<void> {
   }
 }
 
-/** The one legitimate empty store: available, real, never touched by a commit. Without this
- *  case, "harden the empty path" reads as a safe cleanup and breaks genesis for every new
- *  tenant — see this file's header. */
+/** The one legitimate empty store: available, real, never touched by a commit. Hardening the
+ *  empty path breaks genesis for every new tenant. */
 async function caseGenesisReadyWithZeroCommits(): Promise<void> {
   await withRoot(async (root) => {
     const client = callRecordingClient();
@@ -129,7 +115,7 @@ async function caseGenesisReadyWithZeroCommits(): Promise<void> {
   });
 }
 
-// ── offline: a database outage is reported unavailable/pending, never an empty assertion ──
+// Offline: a database outage is reported unavailable/pending, never an empty assertion
 
 async function caseDatabaseOutageIsUnavailableNeverEmpty(): Promise<void> {
   await withRoot(async (root) => {
@@ -142,7 +128,7 @@ async function caseDatabaseOutageIsUnavailableNeverEmpty(): Promise<void> {
   });
 }
 
-// ── offline: hand-built commit chains, verified and then deliberately damaged ──────────────
+// Offline: hand-built commit chains, verified and then deliberately damaged
 
 async function commitEmpty(root: string, sequence: number, previousHash: string | null): Promise<{ hash: string }> {
   const manifest: PreparedManifestInput = {
@@ -162,9 +148,8 @@ async function caseCleanChainReadsInOrderRegardlessOfDirectoryOrder(): Promise<v
     const first = await commitEmpty(root, 1, null);
     await commitEmpty(root, 2, first.hash);
     await commitEmpty(root, 3, (await readManifest(root, 2)).manifest_hash);
-    // Out-of-order replay: the directory listing order must not matter — only the parsed
-    // sequence does. A reversing wrapper proves `readOrderedCommits` sorts rather than trusts
-    // whatever order the filesystem happens to hand back.
+    // Out-of-order replay: only the parsed sequence matters, not the directory listing order. A
+    // reversing wrapper proves `readOrderedCommits` sorts rather than trusts the filesystem.
     const reversedIo: RebuildIO = {
       exists: (p) => access(p).then(() => true, () => false),
       readdir: async (p) => (await readdir(p)).reverse(),
@@ -273,7 +258,7 @@ async function caseDuplicateSequenceIsCorruptAndBlocks(): Promise<void> {
   });
 }
 
-// ── offline: the shared projection policy — classification and path derivation ─────────────
+// Offline: the shared projection policy — classification and path derivation
 
 function fixtureManifest(overrides: Partial<RawCommitManifest>): RawCommitManifest {
   return {
@@ -311,15 +296,9 @@ async function caseClassifiesBySourceCaptureVersusRevisionType(): Promise<void> 
   });
   assert.equal(classifyArtifact(source, artifactId), "source");
 
-  // THE COLLISION THIS CASE USED TO DOCUMENT IS GONE, and the two assertions below are why.
-  // The class was inferred from `payload.type` until the record began carrying it: anything
-  // whose type matched one of the four native knowledge words was called a knowledge_concept.
-  // This repository's own fixture is exactly that trap — `testing/tenant-info/model.ts` builds
-  // a work_document with `type: "Decision"` — so a rebuild wrote the wrong
-  // `zz.artifact.artifact_class` for it, and AC-4.1 asks a replay to restore identical semantic
-  // identity. Now the `created` event carries `data.artifact_class`, written once by the policy
-  // that decided it, and the same payload type classifies either way depending only on what was
-  // actually recorded.
+  // The `created` event carries `data.artifact_class`, so the same payload type classifies
+  // either way depending only on what was recorded. `testing/tenant-info/model.ts` builds a
+  // work_document with `type: "Decision"`, which inference from `payload.type` gets wrong.
   const decisionAsWork = fixtureManifest({
     revisions: [revisionFixture(artifactId, "Decision")], events: [createdEvent("work_document")],
   });
@@ -332,8 +311,8 @@ async function caseClassifiesBySourceCaptureVersusRevisionType(): Promise<void> 
   assert.equal(classifyArtifact(decisionAsKnowledge, artifactId), "knowledge_concept",
     "the same payload type is a knowledge concept when that is what was recorded");
 
-  // AND AN UNRECORDED CLASS IS REFUSED, not guessed. A rebuild that fills a NOT NULL column
-  // with its best idea has silently decided something only the writer knew.
+  // And an unrecorded class is refused, not guessed: a rebuild that fills a NOT NULL column with
+  // its best idea has decided something only the writer knew.
   const unrecorded = fixtureManifest({
     revisions: [revisionFixture(artifactId, "notes")],
     events: [{ ...createdEvent("work_document"), data: {} }],
@@ -346,8 +325,7 @@ async function casePathFromFileChangesThenCapturesThenKnownThenRefuses(): Promis
   const known = new Map<string, string>();
   // One classes map across the whole case, the way the real walk keeps one: the `created` event
   // appears in the first commit only, and every later commit names the artifact without
-  // restating what it is. This case is about PATH resolution; carrying the class is what lets
-  // it stay about that.
+  // restating what it is.
   const classes = new Map<string, ArtifactClass>();
 
   const created = {
@@ -378,15 +356,14 @@ async function casePathFromFileChangesThenCapturesThenKnownThenRefuses(): Promis
 
   const unknownArtifact = randomUUID();
   const stranded = fixtureManifest({ revisions: [revisionFixture(unknownArtifact, "notes")] });
-  // EITHER REFUSAL IS THE RIGHT ONE. A commit naming an artifact this walk has never seen has
-  // neither a path nor a recorded class, and which check reaches it first is an ordering detail
-  // rather than a property worth pinning. What matters is that it is refused rather than
-  // defaulted — pinning one message would make a later reorder look like a regression.
+  // Either refusal is the right one: a commit naming an artifact this walk has never seen has
+  // neither a path nor a recorded class, and which check reaches it first is an ordering detail.
+  // What matters is that it is refused rather than defaulted.
   assert.throws(() => toProjectionManifest(stranded, new Map(), new Map()),
     /no known materialized path|no recorded artifact_class/);
 }
 
-// ── offline: parity comparison is a pure equality over two maps ────────────────────────────
+// Offline: parity comparison is a pure equality over two maps
 
 async function caseParityComparesSemanticMapsExactly(): Promise<void> {
   const before = new Map([["a", "h1"], ["b", "h2"]]);
@@ -402,30 +379,20 @@ async function caseParityComparesSemanticMapsExactly(): Promise<void> {
   assert.equal(compareGenerations(before, extra).ok, false, "an artifact present in only one generation is a mismatch, not a pass");
 }
 
-// ── isolated database: the real round trip this task's contract insists on ─────────────────
+// Isolated database: the real round trip
 
 /**
- * Everything this owner has in the derived database, deleted CHILDREN FIRST.
+ * Everything this owner has in the derived database, deleted children first.
  *
- * This was four deletes written inline, twice, and it named `zz.artifact` without naming the
- * two tables that reference it: `zz.artifact_event` and `zz.artifact_revision` both carry a
- * foreign key to (owner_id, artifact_id) with no ON DELETE clause, so the delete was refused —
- * "update or delete on table artifact violates foreign key constraint
- * artifact_event_owner_id_artifact_id_fkey".
+ * `zz.artifact_event` and `zz.artifact_revision` both carry a foreign key to
+ * (owner_id, artifact_id) with no ON DELETE clause, so deleting `zz.artifact` first is refused.
  *
- * Nobody had seen it because this case is gated on an isolated PostgreSQL 17 that did not exist
- * until today: the reset was written, reviewed and shipped without once being executed against
- * the schema it deletes from.
- *
- * ORDER MATTERS AND IS THE POINT, so it is written once here rather than transcribed at each
- * call site — a second copy is how the first one came to be missing two tables.
+ * The order is the point, so it is written once here rather than transcribed at each call site.
  */
 async function resetOwnerProjections(client: ProjectionClient, owner: string): Promise<void> {
-  // The order is the foreign-key graph read out of the schema, not guessed one refusal at a
-  // time:  edge -> event -> artifact,  identifier -> passage,  revision -> artifact.
-  // `zz.artifact_edge` is keyed by BOTH ends and has no `owner_id` column at all — an edge
-  // belongs to two artifacts, not one — so it is deleted by its own columns rather than by the
-  // name every other table happens to share.
+  // The order is the foreign-key graph read out of the schema: edge -> event -> artifact,
+  // identifier -> passage, revision -> artifact. `zz.artifact_edge` is keyed by both ends and
+  // has no `owner_id` column at all, so it is deleted by its own columns.
   await client.query(
     "delete from zz.artifact_edge where source_owner_id=$1 or target_owner_id=$1", [owner]);
   for (const table of [
@@ -444,7 +411,7 @@ async function caseRealRebuildAgainstIsolatedCopy(): Promise<void> {
     throw new Error(
       "ZZ_TENANT_INFO_ISOLATED_DB_URL is not set. This case replays a real owner store through " +
       "rebuildGeneration into a real database and runs only against an operator-provided " +
-      "isolated copy migration 070 is already applied to — never inferred from TEAM_DB_URL/ " +
+      "isolated copy the schema is already applied to — never inferred from TEAM_DB_URL/ " +
       "PLATFORM_DB_URL, and never run here. Set it and rerun `verify --suite rebuild --profile " +
       "integration --cases generation` to exercise it.");
   }
@@ -458,12 +425,8 @@ async function caseRealRebuildAgainstIsolatedCopy(): Promise<void> {
     // query below to find it — the property `passagesOf`'s no-truncation guarantee exists for.
     const longBody = `${"filler word ".repeat(3000)}zzuniquetailtermnine\n`;
 
-    // A CAUSE FIRST, because the policy requires one and this fixture did not have it. Every
-    // native create needs at least one explicitly declared cause — "inherited citations alone
-    // do not satisfy a new cause" — so `cause_refs: []` was refused CAUSE_REQUIRED and this
-    // case failed the first time it ever ran. It had never run: it is gated on an isolated
-    // PostgreSQL 17 that did not exist until today, so the fixture was written, reviewed and
-    // shipped without once being executed.
+    // A cause first: every native create needs at least one explicitly declared cause, and
+    // inherited citations alone do not satisfy it — `cause_refs: []` is refused CAUSE_REQUIRED.
     const source = await mutate({
       root, auth, policy: nativePolicy,
       request: {

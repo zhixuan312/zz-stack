@@ -12,24 +12,24 @@
     "sha": "c7eb0a109e8b"
   },
   "sdlc-flow": {
-    "version": "2.5",
-    "sha": "7ebef54afafe"
+    "version": "2.6",
+    "sha": "caca158c6842"
   },
   "sdlc-investigate": {
     "version": "1.2",
     "sha": "7b4dfc8ef68c"
   },
   "sdlc-method": {
-    "version": "1.12",
-    "sha": "5cec69cb6bda"
+    "version": "1.13",
+    "sha": "d73583d8eb53"
   },
   "sdlc-plan-audit": {
     "version": "2.3",
     "sha": "0f79ad5f88d0"
   },
   "sdlc-plan": {
-    "version": "1.12",
-    "sha": "dd5a741f3898"
+    "version": "1.13",
+    "sha": "7ffd2b6589b6"
   },
   "sdlc-recall": {
     "version": "1.9",
@@ -52,12 +52,12 @@
     "sha": "c50c03718254"
   },
   "zz-access": {
-    "version": "2.5",
-    "sha": "54e579e57350"
+    "version": "2.6",
+    "sha": "a40c67ebf69f"
   },
   "zz-admin": {
-    "version": "2.7",
-    "sha": "c5e53a49db29"
+    "version": "2.8",
+    "sha": "118accd960db"
   },
   "zz-doctor": {
     "version": "1.3",
@@ -76,8 +76,8 @@
     "sha": "f80733547fcd"
   },
   "zz-plugin-eval": {
-    "version": "1.0",
-    "sha": "0f2f26d089d4"
+    "version": "1.1",
+    "sha": "e81e09dcf3e1"
   },
   "zz-plugin-judge": {
     "version": "0.4",
@@ -88,32 +88,32 @@
     "sha": "641a2d2e8a99"
   },
   "zz-plugin-profile": {
-    "version": "0.7",
-    "sha": "4eeb3b6a2bc7"
+    "version": "0.8",
+    "sha": "8648c947e0fa"
   },
   "zz-plugin-report": {
-    "version": "1.3",
-    "sha": "f44fb2bf7512"
+    "version": "1.4",
+    "sha": "2a2858e7af68"
   },
   "zz-authoring": {
     "version": "1.1",
     "sha": "60f258ebec54"
   },
   "zz-breakout": {
-    "version": "1.5",
-    "sha": "44950226bab5"
+    "version": "1.6",
+    "sha": "8ec4136f1e82"
   },
   "zz-deck": {
-    "version": "2.2",
-    "sha": "564cc938a102"
+    "version": "2.3",
+    "sha": "ad14925b6473"
   },
   "zz-handover": {
-    "version": "2.9",
-    "sha": "5335aaade5e2"
+    "version": "2.10",
+    "sha": "20fda0ac1218"
   },
   "zz-platform": {
-    "version": "3.44",
-    "sha": "dac29055d623"
+    "version": "3.45",
+    "sha": "0865806b8518"
   },
   "zz-tldr": {
     "version": "1.2",

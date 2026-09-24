@@ -1,20 +1,14 @@
 /**
- * WHAT EACH PLUGIN IS, computed from the catalog alone — no request, no caller, no database.
+ * What each plugin is, computed from the catalog alone — no request, no caller, no database.
  *
- * A plugin declares a version in its flow.json and nothing has ever checked it:
- * `scripts/set-version.ts` bumps every manifest in the workspace and never touches `catalog/`.
- * So a plugin's content could move under a frozen number indefinitely, and an evaluation of
- * "plugin X at version V" that cannot say what V contained is an evaluation of nothing.
+ * A content hash beside the declared version is what makes the version true: without it a
+ * plugin's content can move under a frozen number, and an evaluation of "plugin X at version
+ * V" cannot say what V contained. `skills.lock.json` is the same argument one level down.
  *
- * `skills.lock.json` already solves this one level down, and its own header says why: "the hash
- * is not an alternative to the version. It is what makes the version true: this file records
- * both, the gate compares them, and a skill whose text changed without its version changing is
- * refused." This is that argument applied to the unit people actually install.
- *
- * NO REQUEST, and that constraint shapes the whole module. It is called by a release script and
- * by the gate, both of which run on a laptop with no gateway, no identity and no database —
- * which is also why the two directory constants live HERE rather than in client-package.ts.
- * That file needs a caller to do anything; this one must not.
+ * DELIBERATE: no request, no caller. This is called by the release script and by the gate,
+ * both of which run on a laptop with no gateway, no identity and no database — which is why
+ * the two directory constants live here rather than in client-package.ts, which needs a
+ * caller to do anything.
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -41,53 +35,26 @@ interface PluginLockEntry {
   version: string;
   /** This plugin's own content identity — see digestOfPlugin. Not the shelf's. */
   digest: string;
-  /** The eval suite this version shipped with, or "" when it has none. A Δ measured against
-   *  four cases and a Δ measured against one are not the same measurement, so a score has to be
-   *  able to name the suite it was taken against. */
+  /** The skills this plugin ships, each with its declared version and content hash. */
   skills: PluginSkill[];
 }
 
 /** Every file under one directory, as package files rooted at `prefix`.
  *
- * DIRECTORIES only at the top level, the same rule client-package.ts keeps and for the same
- * reason its comment gives: a stray file there — a README, an editor's leftover — once threw
- * ENOTDIR and took package building down for everyone, from a file that is not a skill.
- *
- * AND A SUITE'S OUTPUT IS NOT PART OF ITS IDENTITY.
- *
- * `evals/results/` holds what running the suite produced — one directory per run, different on
- * every machine, and `.gitignore`d for exactly that reason. This walk had no exclusions, so it
- * hashed them into the committed `plugins.lock.json`, and the consequence was invisible to
- * whoever ran it: the digest reproduced fine on the machine that wrote it and could not be
- * reproduced anywhere else. A fresh clone recomputed a different value and was told "CHANGED
- * WITHOUT A VERSION BUMP — bump the version in its flow.json", which names the wrong cause
- * entirely; no version bump fixes a digest that depends on files git does not carry.
- *
- * The exclusion is STRUCTURAL rather than a `.gitignore` read, because this file is compiled
- * into the image, where there is no git and no working tree to ask. The principle holds in both
- * places and needs neither: a digest over a suite covers the cases, never the run.
- *
- * EXPORTED, because the digest was only half the problem. client-package.ts walks the same tree
- * to build the package a person actually installs, and it had no exclusion either — so the
- * baseline plugin shipped one developer's local run output to every installer: 264KB of
- * aggregate-result.json, HTML reports and trace files, read through readFileSync(.., "utf8").
- * Fixing the hash and leaving the package would have been the same defect wearing a different
- * hat. One constant, imported, so the next tree that walks evals/ cannot quietly disagree. */
-const OUTPUT_DIR = "results";
-
+ * COUPLED: directories only at the top level, the same rule client-package.ts keeps. A stray
+ * file there throws ENOTDIR and takes package building down.
+ */
 function walkTree(root: string, prefix: string): PackageFile[] {
   if (!existsSync(root)) return [];
   const out: PackageFile[] = [];
   const walk = (dir: string, rel: string): void => {
     for (const f of readdirSync(dir, { withFileTypes: true })) {
-      if (f.name === OUTPUT_DIR) continue;
       const abs = join(dir, f.name);
       if (f.isDirectory()) walk(abs, `${rel}/${f.name}`);
       else out.push({ path: `${prefix}/${rel}/${f.name}`, content: readFileSync(abs, "utf8") });
     }
   };
   for (const e of readdirSync(root, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-    if (e.name === OUTPUT_DIR) continue;
     if (e.isDirectory()) walk(join(root, e.name), e.name);
   }
   return out;
@@ -112,9 +79,9 @@ function lockedSkills(root: string, names: string[], plugin: string): PluginSkil
   return names.map((name) => {
     const row = lock[name];
     if (!row) {
-      // Named rather than skipped. A member silently dropped from a plugin's membership is a
-      // member the profile cannot resolve an event to, and the symptom arrives much later as
-      // "this plugin was never used".
+      // Named rather than skipped: a member silently dropped from a plugin's membership is
+      // one the profile cannot resolve an event to, and it surfaces much later as "this
+      // plugin was never used".
       throw new Error(
         `skill "${name}" ships in plugin "${plugin}" and is absent from ${SKILLS_LOCK} — run ` +
         "`node scripts/skill-versions.ts --write`");
@@ -125,11 +92,9 @@ function lockedSkills(root: string, names: string[], plugin: string): PluginSkil
 
 /** The platform's version, from the gateway's own manifest.
  *
- * Resolved from `repoRoot` rather than through `serviceVersion(import.meta.url)`, which looks
- * exactly one directory up for a package.json. This module compiles to `dist/package/`, one
- * level deeper than `client-package.js` does, so that call finds nothing and returns its
- * "0.0.0" fallback — a wrong version that looks like a real one. The path below is right from a
- * checkout and from inside the image, both of which have the manifest where it says. */
+ * DELIBERATE: resolved from `repoRoot`, not through `serviceVersion(import.meta.url)`, which
+ * looks exactly one directory up. This module compiles to `dist/package/`, one level deeper
+ * than client-package.js, so that call returns its "0.0.0" fallback. */
 function platformVersion(repoRoot: string): string {
   const f = join(repoRoot, "services", "gateway", "package.json");
   if (!existsSync(f)) throw new Error(`cannot read the platform version: ${f} does not exist`);
@@ -138,32 +103,22 @@ function platformVersion(repoRoot: string): string {
 
 /** Every evaluable plugin, with its content identity and what it contained.
  *
- * `repoRoot` is where skills.lock.json lives; it is passed rather than derived because the gate
- * and the release script know their own root and this module must not guess at one.
+ * `repoRoot` is where skills.lock.json lives. It is passed rather than derived: the gate and
+ * the release script know their own root, and this module must not guess at one.
  */
 export function pluginLock(repoRoot: string): PluginLockEntry[] {
   const out: PluginLockEntry[] = [];
 
-  // ── the catalog-resident plugins ───────────────────────────────────
-  //
-  // THE BASELINE IS SKIPPED HERE AND ADDED BELOW, because it is the one entry whose manifest
-  // and whose content live in different places. Taking it from this loop would lock a plugin
-  // whose `skills/` and `evals/` directories do not exist — an empty digest, no members, and a
-  // second entry of the same name beside the real one.
+  // The catalog-resident plugins. The baseline is skipped here and added below: its manifest
+  // is catalog-resident and its content is not, so taking it from this loop locks a plugin
+  // whose `skills/` does not exist — an empty digest and a duplicate entry.
   for (const e of catalogEntries()) {
     if (e.flow === BASELINE) continue;
     const name = pluginName(e.flow);
-    // ONE RELEASE VERSION FOR EVERY PLUGIN, and it is the platform's own.
-    //
-    // A manifest used to declare its own, and the two answers disagreed in the open: flow.json
-    // said zz-access 2.3.0, zz-plugin-eval 0.4.0 and sdlc 0.3.0 while every one of them SHIPPED
-    // as 0.43.0, because client-package stamps PLATFORM_VERSION into the plugin.json a person
-    // actually installs. The registry recorded the manifest's number, so "which version is
-    // installed" had two answers — and evaluation, which compares versions, read the one
-    // nobody was running.
-    //
-    // zz-core never had a manifest version at all and was fine, which is the tell: these
-    // plugins are released together, out of one repository, at one number.
+    // COUPLED: one release version for every plugin, the platform's own, because
+    // client-package stamps PLATFORM_VERSION into the plugin.json a person installs. A
+    // manifest declaring its own gives "which version is installed" two answers, and
+    // evaluation compares versions.
     const version = PLATFORM_VERSION;
     const skillFiles = walkTree(join(e.dir, "skills"), "skills");
     out.push({
@@ -180,21 +135,13 @@ export function pluginLock(repoRoot: string): PluginLockEntry[] {
     });
   }
 
-  // ── zz-core, the one plugin everybody installs ─────────────────────
+  // zz-core, the one plugin everybody installs. Its manifest is catalog-resident and its
+  // content is not — client-package.ts synthesises it per caller.
   //
-  // Its CONTENT is not catalog-resident: client-package.ts synthesises it per caller. Its
-  // manifest is — `catalog/zz/zz-core/flow.json` — which is why the loop above skips it rather
-  // than never seeing it. Excluding it altogether would be the easy call and the wrong one: it
-  // is the plugin every account carries, so it is the one most worth knowing about.
-  //
-  // What makes it tractable is that its per-caller half is exactly one file. `routerSkill(flows)`
-  // is GENERATED from this person's installed flows and is never on disk, so walking SKILLS_DIR
-  // excludes it by construction rather than by a filter somebody has to remember. Commands are
-  // derived from the skills too, so they add nothing a skill change would not already move.
-  //
-  // What is left is stable content: the platform's own skills, plus its eval suite. Include the
-  // router and the digest differs per person, the gate fails for everybody at once, and the
-  // number means nothing.
+  // DELIBERATE: the per-caller half is excluded by walking SKILLS_DIR. `routerSkill(flows)`
+  // is generated from the person's installed flows and never on disk, and commands are
+  // derived from the skills. Hashing the router makes the digest differ per person, which
+  // fails the gate for everybody and means nothing.
   const zzSkills = walkTree(SKILLS_DIR, "skills");
   if (zzSkills.length) {
     out.push({
@@ -202,8 +149,8 @@ export function pluginLock(repoRoot: string): PluginLockEntry[] {
       version: platformVersion(repoRoot),
       digest: digestOfPlugin({
         name: BASELINE,
-        // The description interpolates the caller's target, so it is deliberately NOT hashed:
-        // it is addressed to a person, not part of what the plugin is.
+        // DELIBERATE: not hashed. The description interpolates the caller's target — it is
+        // addressed to a person, not part of what the plugin is.
         description: "",
         required: true,
         servers: [{ name: "zz-core", url: "" }],

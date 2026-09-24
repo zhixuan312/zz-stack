@@ -1,24 +1,19 @@
 /**
- * Every parameter the search predicate BINDS is one its SQL REFERENCES.
+ * Every parameter the search predicate binds is one its SQL references.
  *
- * WHAT THIS CATCHES, and it had already happened. `put()` appends to the bound array as a
- * side effect of being called. An ASCII fragment was built with `put(clause.text)` and then
- * thrown away, because that clause goes down the `asciiRaw` path instead — so the builder
- * bound `$2`, referenced `$1` and `$3`, and PostgreSQL refused to parse the statement at all:
- * `could not determine data type of parameter $2`, for EVERY ascii query, which is every
- * query this platform actually receives. `knowledge_search` was one call away from answering
- * nothing to anybody.
+ * `put()` appends to the bound array as a side effect of being called, so a fragment built
+ * with `put(clause.text)` and then thrown away leaves the builder binding `$2` while
+ * referencing `$1` and `$3`. PostgreSQL then refuses to parse the statement at all: `could not
+ * determine data type of parameter $2`.
  *
- * WHY THE TWO EXISTING CHECKS DID NOT SEE IT. `legacy-han-retrieval` and
- * `text-search-config-agreement` both read the predicate's TEXT — does it contain this
- * substring, does it name that configuration — and a statement can satisfy every assertion
- * about what its text contains while being unparseable. Neither executes a predicate, and
- * neither counts what it bound. This check asks the one question that is about the
- * relationship between the two halves, and it needs no database to ask it: the set of numbers
- * the SQL references must be exactly 1..args.length.
+ * COUPLED: `legacy-han-retrieval` and `text-search-config-agreement` read the predicate's text
+ * — does it contain this substring, does it name that configuration — and a statement can
+ * satisfy every such assertion while being unparseable. This check asks the relationship
+ * between the two halves instead, and needs no database: the set of numbers the SQL references
+ * must be exactly 1..args.length.
  *
- * RUNS the builder against `dist` rather than reading it: a service's own relative imports
- * carry the `.js` suffix NodeNext wants, which resolve only there. A probe that cannot run is
+ * Runs the builder against `dist` rather than reading it: a service's relative imports carry
+ * the `.js` suffix NodeNext wants, which resolve only there. A probe that cannot run is
  * reported as that, never as a failure of the thing it was probing.
  */
 import { execFileSync } from "node:child_process";

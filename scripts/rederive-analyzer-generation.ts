@@ -1,20 +1,15 @@
 #!/usr/bin/env node
 /**
- * Rederive `zz.doc`/`zz.knowledge_node` under the current analyzer generation — Task I-13's
- * worker. `packages/indexing`'s `rederiveAll`/`rederiveCorpus` do the actual walk; this script
- * only supplies the connection, the generation pair, and the caller-known route this pass'
- * own `CorpusRebuildRecord.route` field asks for (`tenant-projections.ts`'s own rule: "only
- * the caller knows that mapping").
+ * Rederive `zz.doc`/`zz.knowledge_node` under the current analyzer generation.
+ * `packages/indexing`'s `rederiveAll`/`rederiveCorpus` do the walk; this script supplies the
+ * connection, the generation pair, and the caller-known route `CorpusRebuildRecord.route` asks
+ * for.
  *
- * DRY RUN IS THE DEFAULT AND IT NEVER WRITES. Bare, this prints `planRebuild`'s own plan and
- * each corpus's current row count and does nothing else — no connection is even asked to run a
- * rederivation. `--write` is the only path that calls `rederiveAll`, matching this repository's
- * existing `backfill-eval-axes.ts`.
+ * Dry run is the default and never writes: bare, this prints `planRebuild`'s plan and each
+ * corpus's current row count. `--write` is the only path that calls `rederiveAll`.
  *
- * NEVER POINT THIS AT PRODUCTION FROM AN UNATTENDED RUN. A real rederivation is an operational
- * act with its own authorization, exactly like `backfill-eval-axes.ts`'s own — this script
- * only reads `TEAM_DB_URL`/`DATABASE_URL` from the environment and never assumes which
- * database that is.
+ * A real rederivation is an operational act with its own authorization. This script reads
+ * `TEAM_DB_URL`/`DATABASE_URL` from the environment and never assumes which database that is.
  *
  *   node scripts/rederive-analyzer-generation.ts            # plan only, writes nothing
  *   node scripts/rederive-analyzer-generation.ts --write     # actually rederive

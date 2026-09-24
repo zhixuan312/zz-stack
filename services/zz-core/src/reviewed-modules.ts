@@ -1,33 +1,26 @@
 /**
  * What this release packages and approves for the generic host.
  *
- * CONTENT, NOT KERNEL, and that is why it sits here rather than under `host/`. Everything in
- * that directory is the mechanism — what a registration is, what a digest proves, how a run's
- * steps are evaluated — and it holds for every procedure a host will ever run. A module BODY
- * is the opposite: it is one procedure, with one flow's steps, evidence kinds and completion
- * rules written into it. Keeping the two apart is what lets the mechanism be judged on its own
- * terms, and what stops one flow's vocabulary from becoming a branch in code that serves all
- * of them.
+ * Content, not kernel, which is why it sits here rather than under `host/`. That directory is
+ * the mechanism — what a registration is, what a digest proves, how a run's steps are evaluated
+ * — and holds for every procedure a host will ever run. A module body is one procedure, with
+ * one flow's steps, evidence kinds and completion rules written into it.
  *
- * ONE MODULE, AND IT IS A PROCEDURE THIS PLATFORM ALREADY RUNS. `sdlc-flow` is the delivery
- * discipline declared in `catalog/sdlc/sdlc-flow/flow.json` — seven stages, three gated
- * documents, two audits — restated in the vocabulary the host understands. The manifest is
- * still the authority on the ORDER and the GATES; what it does not carry, and what a control
- * loop needs, is what each step accepts as evidence, what count of it completes the step, and
- * what completing it makes claimable. Those are the authored half of this body, and they are
- * the half the word "reviewed" refers to.
+ * One module: `sdlc-flow`, the delivery discipline declared in
+ * `catalog/sdlc/sdlc-flow/flow.json`, restated in the vocabulary the host understands. COUPLED: the manifest stays the authority on
+ * the order and the gates; what it does not carry is what each step accepts as evidence, what
+ * count of it completes the step, and what completing it makes claimable. Those are the
+ * authored half, and the half "reviewed" refers to.
  *
- * WRITTEN DOWN, NOT READ FROM `/catalog`. The registry's own words are that a body is a file
- * that shipped; a body assembled at boot from a mounted directory is instead a function of
- * `ZZ_CATALOG_DIR`, and its digest would be checked against a number recorded for some other
- * mount. So the body is a literal here, and the gate holds it in step with the manifest —
- * drift fails the build rather than the process.
+ * DELIBERATE: the body is a literal here rather than read from `/catalog`. A body assembled at
+ * boot from a mounted directory is a function of `ZZ_CATALOG_DIR`, and its digest would be
+ * checked against a number recorded for some other mount. The gate holds this literal in step
+ * with the manifest, so drift fails the build rather than the process.
  *
- * ADDING ONE, when there is another: put the body in `bodies`, run `moduleDigest` over it, and
- * record that digest in `allowlist` beside the id. The digest is written down rather than
- * computed here on purpose — a digest derived from the body it is checked against would match
- * every body, including one edited after it was reviewed. An id with no entry beside it is
- * refused, and so is a body that appears in `bodies` without one.
+ * Adding one: put the body in `bodies`, run `moduleDigest` over it, and record that digest in
+ * `allowlist` beside the id. DELIBERATE: the digest is written down rather than computed here —
+ * one derived from the body it checks would match every body, including one edited after it was
+ * reviewed. An id with no entry beside it is refused, and so is a body with no entry.
  */
 import type { ProcedureStep, ReviewedModule } from "@zz/contracts";
 
@@ -82,20 +75,17 @@ function audits(id: string, after: string[], method: string, grants: string[]): 
 /**
  * The delivery procedure, as the host reads one.
  *
- * `enrolment.requires` IS EMPTY, AND THAT IS THE TRUTH RATHER THAN A DEFAULT. `initiative_open`
- * refuses a flow the catalog does not carry; it asks nothing about the caller. Whether this
- * flow may be run is a property of the deployment's shelf, not of anybody's profile, so a
- * required attribute here would be an authority this platform does not actually check.
+ * `enrolment.requires` is empty, and that is the truth rather than a default. `initiative_open`
+ * refuses a flow the catalog does not carry and asks nothing about the caller, so a required
+ * attribute here would be an authority this platform does not check.
  *
- * `sdlc-execute` ACCEPTS NOTHING AND COMPLETES ON NOTHING, because the manifest says it
+ * `sdlc-execute` accepts nothing and completes on nothing, because the manifest says it
  * `produces: "nothing"` and the platform records nothing for it. A step whose predecessor has
- * completed is satisfied; inventing a `change` or `commit` kind nothing writes would have made
- * the procedure look better and the record false.
+ * completed is satisfied.
  *
- * THE METHOD LINES ARE ONE SENTENCE EACH, and deliberately short. Every byte of this body is
- * under the digest, so prose copied out of a skill would make the approval expire every time
- * somebody edited that skill's wording. The sentence names the skill; the skill carries the
- * method.
+ * DELIBERATE: the method lines are one sentence each. Every byte of this body is under the
+ * digest, so prose copied out of a skill would expire the approval every time somebody edited
+ * that skill's wording. The sentence names the skill; the skill carries the method.
  */
 const sdlcDelivery: ReviewedModule = {
   id: "sdlc-flow",

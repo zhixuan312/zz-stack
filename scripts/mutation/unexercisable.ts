@@ -1,20 +1,14 @@
 /**
  * Assertions this run could not plant against, and why — recorded rather than dropped.
  *
- * A SPEC THAT QUIETLY DISAPPEARS IS THE WORST OUTCOME AVAILABLE. When a clause loses its
- * subject the tempting move is to delete its spec, and the artifact then shows a check fully
- * covered by however many rows remain. Nothing says an assertion went unexercised. That is
- * the same silence this whole run exists to break, so the entries live here and are carried
- * into the report beside the rows.
+ * When a clause loses its subject, deleting its spec makes the artifact show a check fully
+ * covered by however many rows remain, with nothing saying an assertion went unexercised. The
+ * entries live here instead and are carried into the report beside the rows.
  *
- * THEY ARE NOT ROWS, AND THAT IS FORCED RATHER THAN CHOSEN. `mutation-coverage.ts` refuses
- * any row whose `replacements` is zero — correctly, because a mutation that did not land is
- * indistinguishable from a check that survived it. So an honest "this could not be planted"
- * cannot be expressed as a row without turning the gate red on a finding. It is expressed
- * here instead: outside `results`, where the frozen check does not read, and in front of any
- * reader who opens the artifact.
+ * DELIBERATE: they are not rows. A row whose `replacements` is zero reads exactly like a check
+ * that survived its defect, so "this could not be planted" is expressed outside `results`.
  *
- * DORMANT IS NOT BROKEN. Every entry below names a clause that is correct and would fire the
+ * Dormant is not broken: every entry below names a clause that is correct and would fire the
  * day its subject exists again. What is missing is the data, not the rule.
  */
 
@@ -28,17 +22,14 @@ interface Unexercisable {
   /** What would have to become true for it to be plantable again. */
   readonly plantable_when: string;
   /**
-   * The check file's sha256 WHEN THIS ENTRY WAS WRITTEN, so a reader can tell whether the
+   * The check file's sha256 when this entry was written, so a reader can tell whether the
    * entry still describes the file it names.
    *
-   * WRITTEN BY HAND, AND THAT IS THE POINT. A digest the runner filled in at write time would
-   * match on every run and prove nothing; this one is a claim about the bytes an author
-   * actually read. `mutation-run.ts` compares it to the live file and stamps `stale` beside
-   * it, the same treatment a row gets — which is what a teammate pointed out these entries
-   * were missing while the rows had it. A row about a check that moved announces itself; an
-   * entry that pasted an OBSERVED OUTPUT, as the console one does, could go on asserting what
-   * it saw with nothing comparing it to anything. A record of a real run is stronger evidence
-   * and weaker provenance than a planted mutation, because nothing re-derives it.
+   * DELIBERATE: written by hand. A digest the runner filled in at write time would match on
+   * every run and prove nothing; this one is a claim about the bytes an author read.
+   * `mutation-run.ts` compares it to the live file and stamps `stale` beside it, the same
+   * treatment a row gets. Nothing re-derives an entry, so without this a pasted observation
+   * could go on asserting what it saw with nothing comparing it to anything.
    */
   readonly observed_check_sha256: string;
 }
@@ -115,21 +106,5 @@ export const UNEXERCISABLE: readonly Unexercisable[] = [
       "sibling-less gate run recorded above, which is stronger than a planted mutation because " +
       "it exercises the real condition rather than a stand-in for it.",
     observed_check_sha256: "e45f3536ccf9e899d0e54f7c3b8970f97dc2c9f198bc668e8c5e14514f28f804",
-  },
-  {
-    check: "scripts/gate/checks/suites-tooling.ts",
-    assertion: "the checks a stricter tooling project superseded are gone, not merely duplicated, " +
-      "and the incident they existed to prevent is still on record",
-    why: "the delegated script `checks/bespoke-checks-gone.ts` reads exactly two things, and " +
-      "both are frozen: `scripts/gate/checks/build.ts` at its line 6, for the two deleted " +
-      "registrations and the 0.26.1 incident narrative, and every sibling under " +
-      "`scripts/gate/checks/` at lines 13-14, to prove those checks were not merely moved " +
-      "elsewhere. `plant()` refuses that whole directory, because a run that edited a check " +
-      "would be measuring itself. Verified by reading the script rather than by accepting the " +
-      "claim: those are its only two reads.",
-    plantable_when: "the 0.26.1 incident narrative, or the registrations this check forbids, " +
-      "live anywhere outside `scripts/gate/checks/`. Nothing else moves it — the only other " +
-      "lever is the judge itself, which is the thing being judged.",
-    observed_check_sha256: "bcb4f725d0065812e542d9f378a884a1e3a9f67d77e7c5fbc30edf6858aebc55",
   },
 ];

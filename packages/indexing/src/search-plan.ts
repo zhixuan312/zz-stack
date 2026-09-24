@@ -1,33 +1,23 @@
 /**
- * `planSearch` — the scope-restriction plan a native retrieval call would follow, worked out
- * without touching a database.
+ * `planSearch` — the scope-restriction plan a native retrieval call would follow, worked out without
+ * touching a database.
  *
- * TASK I-12'S CONTRACT (← AC-8.4): an initiative, flow or tag restriction is applied
- * server-side to EVERY lane, neighbour expansion, broadening pass, count and dereference,
- * before ranking and caps — and where the mapping is not implemented, the call refuses with a
- * typed `unsupported_filter` rather than answering with the restriction silently dropped. "A
- * scope restriction is never dropped to make a call succeed" is the Contract's own line, twice.
+ * An initiative, flow or tag restriction is applied server-side to every lane, neighbour expansion,
+ * broadening pass, count and dereference, before ranking and caps. Where the mapping is not
+ * implemented the call refuses with a typed `unsupported_filter`: a scope restriction is never
+ * dropped to make a call succeed.
  *
- * WHY THIS IS A PLAN AND NOT A QUERY. `lanesFor` (`tenant-projections.ts`, I-11) is, by its own
- * header, "the routing decision a real retrieval call would make BEFORE it queries anything" —
- * pure, synchronous, no `ProjectionClient` involved. This function is the next step in that
- * same planning phase, not a live retrieval path: `services/zz-core/src/tenant-info/search.ts`
- * (`searchTenantInformation`) is the actual database-bound composition, and its own header
- * records why nothing calls it yet — migration 070's tables exist on this deployment and hold
- * zero rows, and `applyCommit`/`rebuildGeneration` have no production callers. This function
- * plans what a live call SHOULD do with a caller's scope filters, stage by stage; it issues no
- * statement, and nothing here is evidence that scoped native retrieval works end to end.
+ * A plan, not a query. `lanesFor` (`tenant-projections.ts`) is the routing decision a real retrieval
+ * call would make before it queries anything, and this is the next step in that same planning
+ * phase. `services/zz-core/src/tenant-info/search.ts` is the database-bound composition. Nothing
+ * here issues a statement, and nothing here is evidence that scoped native retrieval works end to
+ * end.
  *
- * WHY `initiative` AND `flow` REFUSE TODAY. `searchTenantInformation`'s own `hardPredicatesFrom`
- * already made this exact call for the live path and documented it: migration 070's
- * `zz.search_current`/`evidence`/`history` — the tables every lane in `lanes.ts` queries — carry
- * `type` and `tags` columns but no `initiative` or `flow` column for a lane to filter on.
- * `zz.doc_artifact` carries `initiative` (never `flow` — no native table does), but nothing in
- * the lane, neighbour, broadening or count/dereference stages this task scopes joins to it, and
- * there is no live-wiring task this one depends on that does either. Inventing that join here —
- * in a pure, synchronous function with no database client to run it against — would be exactly
- * the kind of unmapped filter this Contract forbids answering as if it had been applied. So both
- * refuse, the same way, until a mapping genuinely exists: honoured server-side or not at all.
+ * `initiative` and `flow` refuse today because `zz.search_current`/`evidence`/
+ * `history` — the tables every lane in `lanes.ts` queries — carry `type` and `tags` but no
+ * `initiative` or `flow` column. `zz.doc_artifact` carries `initiative` and no native table carries
+ * `flow`, and nothing in the lane, neighbour, broadening or count stages joins to it. COUPLED:
+ * `searchTenantInformation`'s `hardPredicatesFrom` makes the same call for the live path.
  */
 import { parseQuery, type QueryClause } from "./query-grammar.js";
 import { lanesFor } from "./tenant-projections.js";
@@ -40,17 +30,14 @@ interface PlanFilters {
 
 interface StagePlan {
   readonly name: string;
-  /** Which of the caller's scope restrictions this stage applies server-side, BEFORE ranking
-   *  and caps. `tag` is the only member because `tag` is the only scope filter with a native
-   *  mapping: `initiative` and `flow` are refused outright above, so a stage that reported
-   *  them "applied" would be reporting work no stage had done — this field said exactly that,
-   *  unconditionally and for both, on every stage it ever built. `false` means the caller did
-   *  not restrict by tag, not that a restriction was dropped. */
+  /** Which of the caller's scope restrictions this stage applies server-side, before ranking and
+   *  caps. `tag` is the only member because `tag` is the only scope filter with a native mapping;
+   *  `initiative` and `flow` are refused outright above, so a stage reporting them applied would be
+   *  reporting work no stage had done. `false` means the caller did not restrict by tag, not that a
+   *  restriction was dropped. */
   readonly appliedFilters: { readonly tag: boolean };
-  /** Always `false` here: this planning layer has no ranking and no cap to filter a pool
-   *  after — see this file's own header. A stage that ever set this `true` would be reporting
-   *  exactly the shape of defect the Contract names by name ("never filters a truncated
-   *  pool"), so nothing in this module has a code path that could set it otherwise. */
+  /** Always `false` here: this planning layer has no ranking and no cap to filter a pool after, so
+   *  nothing in this module has a code path that could set it otherwise. */
   readonly filteredAfterCap: false;
 }
 
@@ -59,9 +46,7 @@ interface PlanSearchResult {
    *  server-side today. Absent on every other return. */
   readonly status?: "unsupported_filter";
   readonly reason?: string;
-  /** Never populated by this task — "final deliverable content is not in this plan" is this
-   *  task's own boundary. Present in the shape so a later, database-bound caller has somewhere
-   *  to put real results without this function's return shape changing under it. */
+  /** Never populated here: this is a plan, not a query. */
   readonly items?: readonly never[];
   readonly lanes: readonly StagePlan[];
   readonly neighbours: readonly StagePlan[];
@@ -101,10 +86,9 @@ function unmappedScopeFilter(filters: PlanFilters): "initiative" | "flow" | unde
 }
 
 /** An unquoted positive term — the one clause kind the legacy broadening pass
- *  (`services/zz-core/src/tools/knowledge-search.ts`'s own `mayRelax`) ever relaxes. A quoted
- *  phrase, an exclusion and an explicit `OR` alternation all stay mandatory whether or not
- *  broadening was asked for, exactly as that Contract already reads — this applies the same
- *  rule to the AST `lanesFor` itself already parses, rather than re-deriving it. */
+ *  (`services/zz-core/src/tools/knowledge-search.ts`'s `mayRelax`) ever relaxes. A quoted phrase, an
+ *  exclusion and an explicit `OR` alternation all stay mandatory whether or not broadening was
+ *  asked for. */
 function hasRelaxableClause(clauses: readonly QueryClause[]): boolean {
   return clauses.some((c) => c.kind === "term");
 }
@@ -112,21 +96,17 @@ function hasRelaxableClause(clauses: readonly QueryClause[]): boolean {
 const NO_STAGES: readonly StagePlan[] = [];
 
 /**
- * Plans the scope restriction for one query: which native lanes it reaches (`lanesFor`, I-11),
- * whether a neighbour-expansion or broadening pass would run over them, and whether the
- * caller's `filters` can be honoured server-side at every one of those stages plus the count
- * and dereference pass that follows — all before this function is ever asked to rank or cap
- * anything, because it never does either.
+ * Plans the scope restriction for one query: which native lanes it reaches (`lanesFor`), whether a
+ * neighbour-expansion or broadening pass would run over them, and whether the caller's `filters`
+ * can be honoured server-side at every one of those stages plus the count and dereference pass that
+ * follows. It never ranks or caps anything.
  *
- * REFUSES WHOLE, NEVER PARTIALLY. If ANY requested filter has no server-side mapping today,
- * the entire call returns `status: "unsupported_filter"` with no stages and no items — never a
- * result with that one restriction quietly missing from some of them. See this file's own
- * header for which filters that is today, and why.
+ * Refuses whole, never partially: if any requested filter has no server-side mapping today, the
+ * entire call returns `status: "unsupported_filter"` with no stages and no items.
  *
- * "RECORDED AS NOT APPLICABLE, NEVER AS ZERO RESULTS" — `lanesFor`'s own rule, inherited here:
- * a query no lane reaches gets an empty `lanes` array and empty `neighbours`/`counts` arrays
- * beside it (nothing to expand or count when nothing was found to expand or count from),
- * rather than a stage fabricated for a pass that would never run.
+ * A query no lane reaches gets an empty `lanes` array and empty `neighbours`/`counts` arrays beside
+ * it — recorded as not applicable, never as zero results — rather than a stage fabricated for a
+ * pass that would never run.
  */
 export function planSearch(input: {
   readonly query: string;
@@ -144,11 +124,10 @@ export function planSearch(input: {
   }
 
   const lanes = lanesFor(input.query);
-  // Every filter reaching this point was already confirmed mappable above, so it is carried
-  // into every stage below without exception. What a stage reports is what the CALLER asked
-  // for: a tag restriction reaches every lane, neighbour expansion, broadening pass and count
-  // alike, and a call that restricted nothing reports nothing applied rather than claiming a
-  // restriction it was never given.
+  // Every filter reaching this point was already confirmed mappable above, so it is carried into
+  // every stage below without exception. What a stage reports is what the caller asked for: a call
+  // that restricted nothing reports nothing applied rather than claiming a restriction it was never
+  // given.
   const appliedFilters = { tag: filters.tag !== undefined } as const;
   const stage = (name: string): StagePlan => ({ name, appliedFilters, filteredAfterCap: false });
 

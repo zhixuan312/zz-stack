@@ -1,24 +1,17 @@
 /**
  * manifest-audit — the platform's mechanical outcome audit (generic).
  *
- * Reads the FLOW's manifest (flow.json) and audits a team store against the discipline the
- * flow itself declares — the platform never hardcodes any flow's chain. Pure code; PASS
- * means the artifacts mechanically prove the flow ran right, FAIL names the defect.
+ * Reads the flow's manifest (flow.json) and audits a team store against the discipline the flow
+ * itself declares; the platform never hardcodes any flow's chain. Pure code; PASS means the
+ * artifacts mechanically prove the flow ran right, FAIL names the defect.
  *
  *   npm run audit -- --manifest catalog/<owner>/<flow>/flow.json \
  *                    --store /var/lib/docker/volumes/zz_zz-artifacts/_data/teams/<team>
  *                    [--require-closed]   # an initiative still open is a FAIL, for CI
  *
- * IT IMPORTS THE ENVELOPE PARSER. This used to carry a second implementation of it — "the
- * Python half of ONE envelope parser" — held to the TypeScript original by a gate check that
- * compared three regexes as string literals. That is the best a cross-language duplicate can
- * do, and it was not good enough: the two had already drifted once, this half closing on
- * `\n---\s*\n` where the platform closes on `\n---`, so a document ending exactly at its
- * fence had a full envelope to the platform and no envelope at all to the audit.
- *
- * There is one parser now. An audit that reads an envelope differently from the platform
- * that wrote it reports defects the platform does not have and misses the ones it does, and
- * the only way to be sure it cannot is to run the same code.
+ * COUPLED: the envelope parser is imported from @zz/contracts, never reimplemented here. An audit
+ * that reads an envelope differently from the platform that wrote it reports defects the platform
+ * does not have and misses the ones it does.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -45,10 +38,9 @@ function frontmatter(path: string): Record<string, string> {
 }
 
 /**
- * (defects, closed). Whether it CLOSED is reported separately from whether what exists is
+ * (defects, closed). Whether it closed is reported separately from whether what exists is
  * well-formed, because almost every check below applies only to a closed initiative — so an
- * unfinished one skips them and looks identical to a clean pass. A round that left three
- * initiatives open reported "6/6 initiatives clean".
+ * unfinished one skips them and looks identical to a clean pass.
  */
 function auditInitiative(
   folder: string,
@@ -62,30 +54,21 @@ function auditInitiative(
   const outcome = closingFm.outcome ?? "";
   const closed = Boolean(outcome);
 
-  // `outcome: accepted` is a claim about what a PERSON said, and this audit used to read
-  // only whether the word was there. A live smoke run closed an initiative as accepted, with
-  // a ledger row, while the scripted stakeholder had accepted nothing — and this audit called
-  // it PASS, because nothing in the artifacts distinguished their verdict from the agent's
-  // account of one. The platform refuses such a close now; the audit has to be able to see it
-  // too, or it passes the one defect it exists to catch.
-  //
-  // EVERY outcome is somebody's verdict, not only `accepted`. Reading the name only on
-  // `accepted` left `delivered` — the same finished initiative, the same ledger row — as a
-  // close this audit would pass while it named nobody. `abandoned` is a decision too, and
-  // "who decided to stop" is exactly what a ledger row gets read to answer later.
+  // `outcome` is a claim about what a person said, so this reads who said it rather than only
+  // whether the word is there. Every outcome is somebody's verdict, not only `accepted`:
+  // `delivered` is the same finished initiative with the same ledger row, and `abandoned` is a
+  // decision too — "who decided to stop" is what a ledger row gets read to answer later.
   if (outcome) {
-    // THE WORD ITSELF. Every rule below is written against a known outcome, so a word that is
-    // not one of them fell through all of them and the initiative was reported PASS — while
-    // the audit's whole purpose is to catch a store edited outside the platform, which is the
-    // only way an unknown outcome can get there. `superseded` was an outcome until this
-    // release and would still have passed silently.
+    // The word itself. Every rule below is written against a known outcome, so a word that is not
+    // one of them falls through all of them and the initiative is reported PASS — while this
+    // audit exists to catch a store edited outside the platform, which is the only way an unknown
+    // outcome gets there.
     if (!(OUTCOMES as readonly string[]).includes(outcome)) {
       problems.push(`${closing} carries outcome: '${outcome}', which is not an outcome this ` +
                     `platform records (${OUTCOMES.join(", ")})`);
     }
-    // `closed_by` is stamped by the close ACT and is the audit's evidence that the outcome
-    // was recorded rather than typed. An outcome with no closed_by is a hand-written close,
-    // which is the one shape this audit exists to catch.
+    // `closed_by` is stamped by the close act and is the evidence that the outcome was recorded
+    // rather than typed. An outcome with no closed_by is a hand-written close.
     const closer = closingFm.closed_by ?? "";
     if (!closer) {
       problems.push(`${closing} carries outcome: ${outcome} with no closed_by — written by hand rather than recorded by initiative_close()`);
@@ -105,41 +88,34 @@ function auditInitiative(
     }
   }
 
-  // AN INITIATIVE THAT STOPPED IS NOT A DEFECTIVE ONE, and the platform says so in as many
-  // words: "an initiative that was dropped is precisely one whose gates were never passed, so
-  // requiring them here would leave two options — approve a plan nobody agreed to, or leave
-  // the initiative open forever". closeCheck exempts every gate but the closing document's own
-  // when the outcome is a stop.
-  //
-  // This audit did not, and it exists to be believed. Measured on a store holding one
-  // correctly abandoned ops-flow initiative, it reported four defects, two of which the
-  // platform does not have: `intent.md gate never recorded` on a gate the platform exempts,
-  // and `missing plan.md` on a gated document the platform never requires to exist. That is
-  // the failure this file's own docstring names about carrying a second copy of a rule —
-  // reporting defects nobody has and missing the ones they do.
+  // An initiative that stopped is not a defective one: one that was dropped is precisely one whose
+  // gates were never passed, so requiring them here would leave two options — approve a plan
+  // nobody agreed to, or leave the initiative open forever.
+  // COUPLED: closeCheck exempts every gate but the closing document's own when the outcome is a
+  // stop, and this audit has to exempt the same ones or it reports defects the platform does not
+  // have.
   const stopped = outcome === OUTCOME_STOPPED;
   for (const d of docs) {
     const f = join(folder, d.name);
     if (!existsSync(f)) {
-      // What a close DEPENDS on. closeCheck requires every `requiredForClose` document to
-      // exist whatever the outcome, and initiative_close() refuses outright when the closing document is
-      // not written. A GATED document that was never written is requiredForClose's business,
-      // not the gate's — that is closeCheck's own division, and this had merged the two.
+      // What a close depends on. closeCheck requires every `requiredForClose` document to exist
+      // whatever the outcome, and initiative_close() refuses outright when the closing document is
+      // not written. A gated document that was never written is requiredForClose's business, not
+      // the gate's.
       if (closed && (d.requiredForClose || d.closing)) {
         problems.push(`missing ${d.name} (closed initiative)`);
       }
       continue;
     }
     const status = frontmatter(f).status ?? "";
-    // From the contract, not spelled again here. A second copy of the status vocabulary is a
-    // copy that can disagree with the platform's, and this audit exists to be believed.
+    // From the contract, not spelled again here: a second copy of the status vocabulary is one
+    // that can disagree with the platform's.
     if (status && !(STATUSES as readonly string[]).includes(status)) {
       problems.push(`${d.name} status invalid: '${status}' (expected ${STATUSES.join(" or ")})`);
     }
-    // The closing document's OWN gate holds whatever the outcome — closeCheck applies it
-    // before the stop exemption, because a close is itself a write to that document and a
-    // signature has to cover the bytes it signed. Every other gate is exempt once the work
-    // stopped.
+    // The closing document's own gate holds whatever the outcome — closeCheck applies it before
+    // the stop exemption, because a close is itself a write to that document and a signature has
+    // to cover the bytes it signed. Every other gate is exempt once the work stopped.
     if (d.gate && closed && (!stopped || d.closing) && status !== "approved") {
       problems.push(`${d.name} gate never recorded (status=${status || "missing"})`);
     }
@@ -170,11 +146,9 @@ function stageOrder(store: string, stages: string[]): string[] {
       first.set(skill, e.ts ?? "");
     }
   }
-  // A stage may legitimately appear twice — sdlc-flow audits after the spec and again after
-  // the plan — and this compared the declared list against a list sorted by FIRST load, where
-  // a repeat can only ever sort next to its twin. So a perfectly ordered sdlc-flow run
-  // reported "stage first-load order violated". The claim is about first loads, so the
-  // declared order has to be reduced to first mentions too.
+  // A stage may legitimately appear twice — sdlc-flow audits after the spec and again after the
+  // plan — and a repeat can only sort next to its twin in a list ordered by first load. The claim
+  // is about first loads, so the declared order is reduced to first mentions too.
   const declared = [...new Set(stages)];
   const seen = declared.filter((s) => first.has(s));
   const byTime = [...seen].sort((a, b) => (first.get(a) ?? "").localeCompare(first.get(b) ?? ""));
@@ -190,23 +164,17 @@ function main(argv: string[]): number {
   const store = required(args, "store", "the team store directory to audit");
   const requireClosed = args.flags.has("require-closed");
 
-  // Through @zz/catalog's reader. This audit exists to be believed, and a manifest it accepted
-  // where the platform would not is one it would audit a store against rules the platform
-  // never enforced — reporting defects nobody has and missing the ones they do, which is the
-  // exact argument its own docstring makes about carrying a second envelope parser.
-  //
-  // `CatalogManifest.parse` did the validating and threw a ZodError when it failed, so an
-  // operator who pointed --manifest at the wrong file got a wall of JSON instead of a
-  // sentence. Same schema, same strictness, a reason they can act on.
+  // Through @zz/catalog's reader. A manifest this audit accepted where the platform would not is
+  // one it would audit a store against rules the platform never enforced. Same schema, same
+  // strictness, and a sentence an operator can act on rather than a ZodError's wall of JSON.
   const read = manifestAt(manifestPath);
   if (!read.manifest) die(`--manifest ${manifestPath} ${read.why}`);
   const manifest = read.manifest;
   const docs = manifest.documents ?? [];
-  // No fallback. This file's first claim is that the platform never hardcodes any flow's
-  // chain, and defaulting to one flow's filename was exactly that. It could only ever hide
-  // the manifest bug that produced it: a flow closing on outcome.md would be audited against
-  // a spec.md that does not exist, find no outcome, conclude the initiative is open, and skip
-  // every gate check there is. The release gate already requires this field.
+  // No fallback. Defaulting to one flow's filename would hardcode a flow's chain and could only
+  // hide the manifest bug that produced it: a flow closing on outcome.md would be audited against
+  // a spec.md that does not exist, find no outcome, conclude the initiative is open, and skip every
+  // gate check. The release gate already requires this field.
   const closing = docs.find((d) => d.closing)?.name;
   if (!closing) {
     console.log(`AUDIT: ${manifestPath} declares no closing document — nothing can be audited`);
@@ -217,9 +185,8 @@ function main(argv: string[]): number {
     return 2;
   }
 
-  // Dot-entries are not initiatives. A team's store is a git repository, so every one of them
-  // holds a `.git` — and this audited it: `AUDIT .git: FAIL(no activity telemetry)`, on a
-  // store where nothing was wrong, in a tool whose exit code is read as an acceptance check.
+  // Dot-entries are not initiatives. A team's store is a git repository, so every one holds a
+  // `.git`, and auditing it reported `no activity telemetry` on a store where nothing was wrong.
   const folders = readdirSync(store)
     .filter((n) => !n.startsWith("_") && !n.startsWith(".") && statSync(join(store, n)).isDirectory())
     .sort()
@@ -229,7 +196,7 @@ function main(argv: string[]): number {
   let failed = 0;
   let openCount = 0;
   for (const folder of folders) {
-    // The store directory IS the team slug — the same name the platform refuses in
+    // The store directory is the team slug — the same name the platform refuses in
     // approved_by and accepted_by, so the audit needs no second source for it.
     const { problems, closed } = auditInitiative(folder, docs, closing, basename(store));
     if (problems.length) {
@@ -242,26 +209,24 @@ function main(argv: string[]): number {
       console.log(`AUDIT ${basename(folder)}: PASS`);
     }
   }
-  // Counted apart from the initiatives. Stage order is a property of the STORE — one verdict
-  // for the whole run — and folding it into `failed` subtracted it from the count of clean
-  // initiatives, so three clean initiatives plus one out-of-order stage reported "2/3 closed
-  // and clean" and named no third initiative as the one at fault.
+  // Counted apart from the initiatives. Stage order is a property of the store — one verdict for
+  // the whole run — and folding it into `failed` subtracts it from the count of clean initiatives
+  // while naming no initiative as the one at fault.
   let storeProblems = 0;
   for (const p of stageOrder(store, (manifest.stages ?? []).map((s) => s.name))) {
     storeProblems++;
     console.log(`AUDIT stage-order: FAIL(${p})`);
   }
 
-  // Exit non-zero when anything failed. It printed FAIL and returned success, so anything
-  // calling it as a command — which is how it is named as an acceptance check — read every
-  // run as a pass. A verification tool that cannot fail is not one.
+  // Exit non-zero when anything failed. This is named as an acceptance check, and a verification
+  // tool that prints FAIL and returns success cannot fail.
   const clean = folders.length - failed - openCount;
   const tail = openCount ? `, ${openCount} still open` : "";
   console.log(`AUDIT: ${clean}/${folders.length} initiatives closed and clean${tail}` +
               (storeProblems ? `, and ${storeProblems} problem(s) with the store itself` : ""));
-  // An open initiative is not a defect in itself — a flow in progress is exactly that. It IS
-  // a defect after a smoke round, where every scenario was driven to acceptance, so the
-  // caller says which it is rather than this file guessing.
+  // An open initiative is not a defect in itself — a flow in progress is exactly that. It is a
+  // defect where every initiative was meant to be driven to a close, so the caller says which it
+  // is rather than this file guessing.
   if (openCount && requireClosed) {
     console.log("AUDIT: FAIL — --require-closed was given and some initiatives never closed");
     return 1;

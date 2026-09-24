@@ -1,10 +1,9 @@
 /**
- * LAYER 1 — does this checkout agree with itself?
+ * Layer 1 — does this checkout agree with itself?
  *
- * Nothing here touches a network. It is first because every later layer compares the
- * deployment against what this checkout DECLARES, and a checkout that disagrees with itself
- * makes every one of those comparisons meaningless — you would be diffing the host against a
- * claim the repository has not settled.
+ * Nothing here touches a network. It runs first because every later layer compares the
+ * deployment against what this checkout declares, and a checkout that disagrees with itself
+ * makes those comparisons meaningless.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -38,9 +37,9 @@ probe("the version has a changelog section", () => {
     : `CHANGELOG.md has no "## [${version()}]" section — whatever is on this checkout ships undescribed`;
 });
 
-// THE TAG, WHICH IS THE ONLY THING THAT SAYS THIS VERSION WAS EVER RELEASED. A checkout at
-// 0.26.1 with no v0.26.1 tag is either mid-release or a bump nobody finished, and the two
-// look identical from inside the repository — so this reports rather than refuses.
+// The tag is the only thing that says this version was ever released. A checkout with no
+// matching tag is either mid-release or a bump nobody finished, and the two look identical
+// from inside the repository, so this reports rather than refuses.
 probe("the tag for this version exists", () => {
   const tags = safe(() => run("git", ["tag", "--list", `v${version()}`], { cwd: root }));
   if (tags) return null;

@@ -1,36 +1,28 @@
 /**
- * observation-manifest.ts — what a piece of work left behind, captured as a baseline manifest, a
- * final manifest, the change between them, and the frozen state of every declared check.
+ * What a piece of work left behind: a baseline manifest, a final manifest, the change between
+ * them, and the frozen state of every declared check.
  *
- * THE ONE INVARIANT THIS FILE EXISTS FOR: completeness is reported, never assumed. Every way this
- * capture can fall short of "here is everything the work did" lands in {@link CaptureReason} and
- * moves {@link ManifestCapture.completeness} off `complete`. Nothing is dropped quietly, and the
- * record never reads, later and to someone who was not there, like a capture that saw everything.
+ * The invariant: completeness is reported, never assumed. Every way this capture can fall short
+ * of "everything the work did" lands in {@link CaptureReason} and moves
+ * {@link ManifestCapture.completeness} off `complete`.
  *
- * AN IGNORED OUTPUT IS STILL AN OUTPUT. The walk underneath this file never consults git — see
- * `observation-walk.ts` for why and for the proof obligation that comes with it. A generated
- * bundle, a build artifact or a report written outside version control is part of what the work
- * did, and a manifest that omitted them would be silently incomplete while looking whole.
+ * The walk underneath this file never consults git — see `observation-walk.ts`. A generated
+ * bundle or a report written outside version control is part of what the work did.
  *
- * WHY `includesIgnored` IS COMPUTED AND NOT DECLARED. The flag is a reduction over the exclusion
- * rules actually in force and the skips actually recorded: it is true because no rule and no skip
- * came from git's ignore list. A `true` written into the record would keep saying so on the day
- * somebody adds ignore filtering underneath it, which is the failure mode this whole capture is
- * about. `ManifestCaptureOptions.includeIgnored` is typed `true` on purpose — the module does not
- * implement ignore filtering, so asking for it is a compile error rather than a request that
- * would have to be refused at runtime.
+ * DELIBERATE: `includesIgnored` is computed, not declared — a reduction over the exclusion
+ * rules in force and the skips recorded, so it stops being true the day somebody adds ignore
+ * filtering underneath it. `ManifestCaptureOptions.includeIgnored` is typed `true` because this
+ * module implements no ignore filtering, so asking for `false` is a compile error rather than a
+ * runtime refusal.
  *
- * THE CAPTURE GOES THROUGH THE RUNTIME ADAPTER, NOT BESIDE IT. When the caller names the work,
- * it names it as {@link ObservedWork}: an identifier and the port's own `observe` operation,
- * together in one field so neither half can arrive without the other. What that observation says
- * is carried into the record rather than interpreted away — a final manifest taken while the
- * runtime reports the work still `running` is provably not final, and the record says so instead
- * of presenting a mid-flight snapshot as a result.
+ * The caller names work as {@link ObservedWork}: an identifier and the port's own `observe`
+ * operation in one field, so neither half can arrive without the other. What the observation
+ * says is carried into the record rather than interpreted — a final manifest taken while the
+ * runtime reports the work `running` is not final, and the record says so.
  *
- * AN INDEPENDENT RERUN PROVES ITS OWN RESULT NOW. Nothing here is cached and no manifest is
- * carried between calls. A capture with no supplied baseline takes one now, reports
- * `baselineSource` as such, and records that no change set could be established — because a
- * baseline read at the same instant as the final manifest can only ever report nothing changed.
+ * Nothing here is cached and no manifest is carried between calls. A capture with no supplied
+ * baseline takes one now, reports `baselineSource` as `captured_now`, and records that no
+ * change set could be established.
  */
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -59,8 +51,8 @@ import {
  *               open, a walk that stopped at a safety valve, or a runtime that says the work has
  *               not finished. The gap has no known shape.
  *
- * `bounded` is not a softer `incomplete` and must never be read as `complete`. It is the answer
- * for a capture that stated its own limits, which is the whole of what this vocabulary buys.
+ * `bounded` is not a softer `incomplete` and is never `complete`: it is the answer for a capture
+ * that stated its own limits.
  */
 type CaptureCompleteness = "complete" | "bounded" | "incomplete";
 
@@ -97,8 +89,8 @@ type CaptureReasonKind =
 
 /**
  * One shortfall, with the path it is about when it is about one and the count when it stands for
- * many. Stamped entries and excluded directories aggregate into a single reason with a count —
- * one reason per file would bury the reasons that name a single unreadable path.
+ * many. Stamped entries and excluded directories aggregate into a single counted reason, so
+ * they do not bury the reasons that name a single unreadable path.
  */
 interface CaptureReason {
   readonly kind: CaptureReasonKind;
@@ -108,9 +100,8 @@ interface CaptureReason {
 }
 
 /**
- * The shortfalls whose shape a reader cannot recover from this record. Listed rather than
- * decided per site, so `completeness` is one reduction over the reasons actually present and not
- * a flag somebody remembered to set.
+ * The shortfalls whose shape a reader cannot recover from this record. Listed here rather than
+ * decided per site, so `completeness` is one reduction over the reasons present.
  */
 const UNKNOWABLE_GAPS: readonly CaptureReasonKind[] = Object.freeze([
   "inaccessible",
@@ -125,12 +116,11 @@ const UNKNOWABLE_GAPS: readonly CaptureReasonKind[] = Object.freeze([
 ]);
 
 /** At most this many unreadable paths are named individually; the rest become one counted
- *  reason, because a truncation nobody mentions is the defect this module is about. */
+ *  `reasons_truncated` reason. */
 const MAX_NAMED_FAILURES = 50;
 
-/** The one exclusion shipped by default. `.git` is not an output of the work — it is the store
- *  the outputs would be recorded in — and excluding it by name is a statement the record makes,
- *  not an ignore rule it consulted. */
+/** The one exclusion shipped by default. `.git` is excluded by name, which the record states,
+ *  rather than by an ignore rule it consulted. */
 const DEFAULT_EXCLUSIONS: readonly ManifestExclusion[] = Object.freeze([
   Object.freeze({
     directoryName: ".git",
@@ -153,10 +143,9 @@ interface DeclaredCheckInput {
 /**
  * One check as this capture froze it.
  *
- * `hash` is frozen in the sense that matters: taken once, at capture time, over the check's
- * SOURCE where the source could be read and over its DECLARATION where it could not, with
- * `hashedOver` saying which. It never moves with the result — a check that passes and then fails
- * has the same hash, which is what makes "the same check ran" a question the record can answer.
+ * `hash` is taken once, at capture time, over the check's source where the source could be read
+ * and over its declaration where it could not; `hashedOver` says which. It never moves with the
+ * result, so a check that passes and then fails has the same hash.
  */
 interface CapturedCheck {
   readonly id: string;
@@ -168,7 +157,7 @@ interface CapturedCheck {
 }
 
 /** How one path differs between the two manifests. `unchanged` is not a member: unchanged paths
- *  are counted, not listed, and the acceptance criterion asks for the ones that changed. */
+ *  are counted, not listed. */
 interface FileChange {
   readonly path: string;
   readonly change: "added" | "modified" | "removed";
@@ -196,12 +185,10 @@ export interface ManifestCaptureOptions {
    * A result for a check the caller did not name, and the default result for declared checks
    * that carry none.
    *
-   * PRESENCE IS THE SIGNAL, deliberately: `{ roots }` says nothing about checks and yields no
-   * check records, while `{ roots, checkResult: undefined }` is a caller offering a result it
-   * does not have, which is a fact worth keeping. The second synthesises one check whose state
-   * is `unknown`, because {@link asCheckState} maps an unrecognised value to the one honest
-   * answer. A capture that silently discarded the offer would leave the strongest rule this
-   * task has — never `passed`, never `failed` — with nothing in the record exercising it.
+   * DELIBERATE: presence is the signal, not the value. `{ roots }` says nothing about checks
+   * and yields no check records; `{ roots, checkResult: undefined }` is a caller offering a
+   * result it does not have, and synthesises one check whose state is `unknown`, because
+   * {@link asCheckState} maps an unrecognised value there and never to `passed` or `failed`.
    */
   readonly checkResult?: unknown;
   readonly work?: ObservedWork;
@@ -251,10 +238,9 @@ function captureCheck(
     : `declaration:${createHash("sha256").update(`${input.id}|${input.path ?? ""}`)
         .digest("hex")}`;
 
-  // The three branches are the whole distinction this vocabulary carries. A result the caller
-  // offered is read as data and lands wherever `asCheckState` puts it — which is `unknown` for
-  // anything unrecognised, and never `passed` and never `failed`. With no result offered, the
-  // record can still state a fact about ITSELF: the file is there, or only the name is.
+  // A result the caller offered is read as data and lands wherever `asCheckState` puts it —
+  // `unknown` for anything unrecognised, never `passed` and never `failed`. With no result
+  // offered, the record states a fact about itself: the file is there, or only the name is.
   let state: CheckState;
   let why: string;
   if (hasResult) {
@@ -278,8 +264,7 @@ function captureCheck(
 
 /**
  * The digest of the terms a manifest was taken under, so two manifests can say whether they are
- * comparable at all. Written out in a fixed order rather than through a generic stable
- * stringifier: the fields are known here, and an order that cannot drift needs no sorter.
+ * comparable. Written out in a fixed order rather than through a stable stringifier.
  */
 function schemeOf(
   roots: readonly string[],
@@ -296,8 +281,8 @@ function schemeOf(
   return createHash("sha256").update(terms).digest("hex").slice(0, 16);
 }
 
-/** Compare two manifests path by path. Both directions, so a removal is as visible as an
- *  addition — a capture that only reported what appeared would miss a deleted output. */
+/** Compare two manifests path by path, in both directions, so a removal is as visible as an
+ *  addition. */
 function classifyChanges(
   baseline: Readonly<Record<string, string>>,
   final: Readonly<Record<string, string>>,
@@ -317,9 +302,10 @@ function classifyChanges(
   return { changes, unchanged };
 }
 
-/** Everything the runtime observation adds to the record, in the port's own four arms. Each arm
- *  is answered separately, because collapsing them is how "the feed went quiet" starts reading
- *  like "the work finished". */
+/** Everything the runtime observation adds to the record, in the port's own four arms.
+ *
+ *  DELIBERATE: each arm is answered separately. Collapsing them makes "the feed went quiet"
+ *  read as "the work finished". */
 function readObservation(observation: Observation): CaptureReason[] {
   switch (observation.completeness) {
     case "receipt_confirmed":
@@ -354,8 +340,7 @@ function readObservation(observation: Observation): CaptureReason[] {
  * Capture what the declared roots hold now, what changed since a baseline, and the frozen state
  * of every declared check.
  *
- * Synchronous and uncached by design: a capture is a statement about a moment, and a moment that
- * arrives from somewhere else is somebody else's moment.
+ * DELIBERATE: synchronous and uncached. A capture is a statement about the moment it runs.
  */
 export function captureManifest(options: ManifestCaptureOptions): ManifestCapture {
   const limits: CaptureLimits = { ...DEFAULT_CAPTURE_LIMITS, ...options.limits };
@@ -363,9 +348,8 @@ export function captureManifest(options: ManifestCaptureOptions): ManifestCaptur
   const walked = walkRoots(options.roots, limits, exclusions);
   const reasons: CaptureReason[] = [];
 
-  // The measured flag. Both halves are reductions over real data: the rules in force, and the
-  // skips those rules actually produced. Neither is a literal, and either one turning up a git
-  // source is enough to say the record hides generated outputs.
+  // Both halves are reductions over real data: the rules in force, and the skips those rules
+  // produced. Either one carrying a git source means the record hides generated outputs.
   const includesIgnored =
     exclusions.every((rule) => rule.source !== "git_ignore")
     && walked.skips.every((skip) => skip.source !== "git_ignore");
@@ -420,9 +404,8 @@ export function captureManifest(options: ManifestCaptureOptions): ManifestCaptur
     });
   }
 
-  // Through the port, or not at all. There is no fallback observation: a capture with no runtime
-  // named says so and stays a statement about the filesystem, rather than answering about a
-  // process it was never given.
+  // DELIBERATE: through the port or not at all. There is no fallback observation — a capture
+  // with no runtime named says so and stays a statement about the filesystem.
   let observation: Observation | null = null;
   if (options.work) {
     observation = options.work.observe({ work_id: options.work.id });
@@ -447,10 +430,9 @@ export function captureManifest(options: ManifestCaptureOptions): ManifestCaptur
         + "the final manifest and no change between two moments is established by this record",
     });
   }
-  // A baseline taken under other terms is not a baseline for these manifests, and comparing the
-  // two would produce a change set that is wrong while reading as established — every large
-  // file `modified` because the hashing threshold moved, or a whole excluded subtree `added`.
-  // The comparison is refused rather than published: no changes, and the record says why.
+  // DELIBERATE: a baseline taken under other terms yields no change set at all. Comparing them
+  // would report every large file `modified` because the hashing threshold moved, or a whole
+  // excluded subtree `added`, and read as established.
   const comparable = baseline.scheme === final.scheme;
   if (!comparable) {
     reasons.push({

@@ -1,22 +1,21 @@
-// `zz-lexical-v1`'s own regression suite, alongside the plan-authored `tenant-complete-text.ts`.
+// The text analyzer's own regression suite, alongside the plan-authored `tenant-complete-text.ts`.
 //
-// `tenant-complete-text.ts` is the frozen, hash-verified form of I-14's technical AC and is
-// never edited here. This file exists because the task that produced it also asked for
-// explicit coverage `tenant-complete-text.ts` does not carry: empty text, CRLF, a forced
-// long-token split with no whitespace anywhere to prefer, a full 1-MiB body with a
-// whitespace-delimited tail term, a phrase deliberately placed where a passage boundary would
-// fall without the built-in overlap, and the identifier/fingerprint properties the frozen
-// check only samples one case of each.
+// COUPLED: `tenant-complete-text.ts` is the frozen, hash-verified form of I-14's technical AC
+// and is never edited here. This file carries the coverage it does not: empty text, CRLF, a
+// forced long-token split with no whitespace anywhere to prefer, a full 1-MiB body with a
+// whitespace-delimited tail term, a phrase placed where a passage boundary would fall without
+// the built-in overlap, and the identifier/fingerprint properties the frozen check samples one
+// case of each.
 import assert from 'node:assert/strict';
 import {
   passagesOf, identifierTokens, derivationFingerprint,
   PASSAGE_MAX_SCALARS, MAX_INPUT_BYTES, assertWithinInputLimit, InputTooLargeError,
 } from '../packages/indexing/dist/tenant-analysis.js';
 
-// ── empty text ───────────────────────────────────────────────────────────────────────────────
+// Empty text
 assert.deepEqual(passagesOf(''), []);
 
-// ── CRLF ─────────────────────────────────────────────────────────────────────────────────────
+// CRLF
 // Windows line endings are two ASCII bytes and a whitespace scalar apiece — nothing here is
 // specific to CRLF, and that is the point: the general byte-offset machinery must not need a
 // special case for it.
@@ -37,7 +36,7 @@ assert.deepEqual(passagesOf(''), []);
   assert.ok(ps.some((p) => p.text.includes('zzcrlftail')));
 }
 
-// ── forced long-token split ──────────────────────────────────────────────────────────────────
+// Forced long-token split
 // One uninterrupted run with no whitespace anywhere near it — the "oversized uninterrupted
 // run" the contract names. There is nothing to prefer, so every split is forced at the scalar
 // ceiling, and the result must still be byte-accurate, still bounded, and still cover every
@@ -57,7 +56,7 @@ assert.deepEqual(passagesOf(''), []);
   assert.equal(ps[ps.length - 1].end, buf.length);
 }
 
-// ── a 1-MiB body, whitespace-delimited tail ─────────────────────────────────────────────────
+// A 1-MiB body, whitespace-delimited tail
 // Independent of `tenant-complete-text.ts`'s own 1-MiB-scale fixture: this one is sized to an
 // exact byte target and mixes English and Chinese, so the "no 200,000-character truncation"
 // property is checked again, on different content, rather than trusting one fixture for it.
@@ -81,17 +80,14 @@ assert.deepEqual(passagesOf(''), []);
   assert.equal(ps[ps.length - 1].end, buf.length);
 }
 
-// ── a phrase at what would be a passage boundary without overlap ───────────────────────────
+// A phrase at what would be a passage boundary without overlap
 // Filler sized to land the ideal (no-overlap) boundary in the middle of the marker phrase, so
-// this fails if the 512-scalar overlap this task's contract requires is ever removed or
-// shrunk to zero: the phrase would then be split across two passages and appear whole in
-// neither.
+// this fails if the 512-scalar overlap the contract requires is removed or shrunk to zero: the
+// phrase would then be split across two passages and appear whole in neither.
 //
-// "Metadata/body field boundaries remain explicit" (this task's contract, Data mapping) is a
-// property of how a caller COMPOSES the text handed to `passagesOf` — which field a byte range
-// came from — not of `passagesOf` itself, which only ever sees one string. That composition is
-// projection-write work (`tenant-projections.ts`'s header: populating `zz.artifact_passage`
-// is a later task), so it is not exercised here.
+// "Metadata/body field boundaries remain explicit" is a property of how a caller composes the
+// text handed to `passagesOf`, not of `passagesOf` itself, which only ever sees one string.
+// That composition is projection-write work, so it is not exercised here.
 {
   const phrase = 'zzboundaryphrase marker';
   const fillerLen = PASSAGE_MAX_SCALARS - Math.floor(phrase.length / 2);
@@ -102,7 +98,7 @@ assert.deepEqual(passagesOf(''), []);
     'a phrase spanning where a passage boundary would fall must still be found whole');
 }
 
-// ── identifier analysis beyond the frozen check's one sample ───────────────────────────────
+// Identifier analysis beyond the frozen check's one sample
 {
   // Acronym-to-word and a trailing digit, together — the frozen check only exercises a
   // trailing `v2`, not an acronym run immediately followed by a capitalized word.
@@ -119,7 +115,7 @@ assert.deepEqual(passagesOf(''), []);
   assert.ok(!identifierTokens('a..b/-c').includes(''));
 }
 
-// ── derivation fingerprint: every named field is load-bearing, not only `analyzer` ─────────
+// Derivation fingerprint: every named field is load-bearing, not only `analyzer`
 {
   const base = { content_hash: 'b'.repeat(64), record_format: 1, parser: 1, analyzer: 1, passage: 1, projection: 1 };
   const h0 = derivationFingerprint(base);
@@ -131,7 +127,7 @@ assert.deepEqual(passagesOf(''), []);
   assert.notEqual(h0, derivationFingerprint({ ...base, projection: 2 }));
 }
 
-// ── the 8 MiB kernel gate, and its one named exception ──────────────────────────────────────
+// The 8 MiB kernel gate, and its one named exception
 {
   const overLimit = MAX_INPUT_BYTES + 1;
   assert.throws(() => assertWithinInputLimit(overLimit), InputTooLargeError);

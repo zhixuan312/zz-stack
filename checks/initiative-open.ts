@@ -2,51 +2,19 @@
 /**
  * Opening is explicit and dated by the platform, and freeform is a first-class answer.
  *
- * WHY THIS IS NOT THE FILE THE PLAN AUTHORED. That one was six regular expressions over the
- * text of three source files, and the decisive one —
- *
- *     if (!/next_move[^\n]*null|null[^\n]*next_move/.test(status))
- *
- * — is satisfied by any COMMENT containing those two words near each other. The
- * implementation of this task necessarily writes such a comment: the whole point of
- * `next_move: null` is that it needs explaining, so the explanation goes in the file, and the
- * explanation alone turns that assertion green. `/isoToday|today/` over `initiative-acts.ts`
- * was ALREADY GREEN before this task began — that file imports `isoToday` for
- * `document_approve`. Measured against untouched code the plan's form reported 5 failures of
- * 6; the two that mattered most were the two a sentence could fix.
- *
- * AND THE SAME SHAPE HID TWO REAL BUGS FROM THE SAME GREP. The contract's own sentence —
- * "a freeform initiative accepts every document operation, gate and close that a governed one
- * does" — was FALSE when this task started. `document_approve` and `document_revise` tested
- * `!chain.docs.has(...)` against EMPTY_CHAIN's empty Set and refused every act on a freeform
- * initiative; `initiative_close` refused every freeform close because `closingDoc` was `""`;
- * `snapshotOnApproval` filed no frozen copy and `ledgerOnClose` appended no row. A grep for
- * that sentence would have matched the PROMISE — in the plan, and in the comments this task
- * necessarily writes — while the code did the exact opposite of it. That is the argument for
- * driving the code rather than reading it, in its most concrete form available.
- *
- * So this one RUNS the code, the way `checks/document-reads.ts` and `checks/attest-shown.ts`
- * do:
+ * This check runs the code rather than grepping its source:
  *   - `initiativeState`, exported from initiative-status.ts and taking `root` explicitly, is
- *     driven over a fixture store. IN BOTH DIRECTIONS, which is the half a null-only check
- *     cannot see: a freeform initiative must answer null, AND a flow-driven one must still
- *     answer its real next document. An implementation that returns null always satisfies the
- *     first and is completely broken.
+ *     driven over a fixture store, in both directions: a freeform initiative must answer null,
+ *     and a flow-driven one must still answer its real next document.
  *   - the real zod schemas, harvested by handing `registerInitiativeOpenTool` a stub server.
- *     `flow` being OPTIONAL is a fact about a schema; no sentence about freeform can make
- *     `z.string()` accept `undefined`.
  *   - `initiativeNameFor` against `isoToday`, both loaded from dist, so "the date is the
  *     platform's" is an equality rather than a grep for the word.
  *   - `slugRefusal`, `takenRefusal`, `recordOpen`, `openRecord` and `unopenedRefusal` called
- *     directly, each asserted to fire AND not to fire. (This list named a sixth,
- *     `declaredFlowContent`, which is defined nowhere in this repository and which nothing
- *     below calls — a docstring claiming coverage that could not exist.)
+ *     directly, each asserted to fire and not to fire.
  *
- * WHAT IS NOT DRIVEN, and why. The handler resolves
- * through `userRoot()`, which is rooted at the hard-coded `/artifacts`. So the two assertions
- * about the WRITE path are source-level over comment-stripped text, labelled as such in
- * section 7, and each is written to fail on the specific defect the contract names rather
- * than on the absence of a word.
+ * The write path is not driven: the handler resolves through `userRoot()`, rooted at the
+ * hard-coded `/artifacts`. Its two assertions are source-level over comment-stripped text,
+ * labelled as such in section 7.
  *
  * Run: node checks/initiative-open.ts   (also run by scripts/gate.ts)
  */
@@ -55,10 +23,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-// THE CATALOG, BEFORE ANY IMPORT. @zz/catalog reads CATALOG_DIR into a module-level const at
-// load time and it defaults to the deployment's `/catalog` mount, which does not exist here.
-// Section 4b drives the real `chainFor` against a real flow manifest, and without this it
-// would resolve nothing and pass for the wrong reason.
+// The catalog is set before any import: @zz/catalog reads CATALOG_DIR into a module-level
+// const at load time, defaulting to the deployment's `/catalog` mount, which does not exist
+// here. COUPLED: section 4b drives the real `chainFor` against a real flow manifest, and
+// without this it would resolve nothing and pass for the wrong reason.
 process.env.ZZ_CATALOG_DIR = join(process.cwd(), "catalog");
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
@@ -76,24 +44,20 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
 
 /** Every path this check reads goes through here.
  *
- * A SCAN THAT GOES BLIND MUST NOT READ AS A SCAN THAT FOUND NOTHING WRONG. Three checks in
- * this initiative have had unreachable failure paths, and the shape is always the same: a
- * file moves or a directory is renamed, the read yields nothing, and every assertion over it
- * passes on the empty string. Recorded FIRST, because a missing path invalidates everything
- * below it rather than adding one more line to a list. Copied from checks/core-surface-19.ts,
- * which arrived at it the same way. */
+ * A scan that goes blind must not read as a scan that found nothing wrong: a file that moves
+ * yields an empty string, and every assertion over it passes. Recorded first, because a
+ * missing path invalidates everything below it. */
 const blind: string[] = [];
 const readSrc = (p: string) => {
   try { return readFileSync(p, "utf8"); }
   catch { blind.push(p); return ""; }
 };
 
-// ── 1. The tool is on the core door, and its schema says what the contract says ───────────
+// 1. The tool is on the core door, and its schema says what the contract says
 //
-// Registered through `registerInitiativeActTools`, NOT through its own registrar: what a
-// client is offered is what server.ts wires up, and a tool defined in a file nothing calls is
-// a tool nobody can reach. Stubbing the acts registrar answers reachability and registration
-// in one, and does not care which file the definition lives in.
+// Registered through `registerInitiativeActTools`, not through its own registrar: what a
+// client is offered is what server.ts wires up. Stubbing the acts registrar answers
+// reachability and registration in one, whichever file the definition lives in.
 interface ZodLike { safeParse: (v: unknown) => { success: boolean } }
 interface ToolDef { inputSchema?: Record<string, ZodLike>; [key: string]: unknown }
 
@@ -108,30 +72,27 @@ if (!def) {
   const shape = def.inputSchema ?? {};
   is(shape.slug?.safeParse("payment-retries").success,
      "initiative_open does not take a `slug`");
-  // A MISSING FLOW IS NOT AN ERROR. This is the schema-level half of "freeform is a choice":
-  // `z.string()` refuses undefined and `z.string().optional()` does not, and no amount of
-  // prose about freeform being first-class changes which one is written.
+  // A missing flow is not an error: `z.string()` refuses undefined and
+  // `z.string().optional()` does not.
   is(shape.flow?.safeParse(undefined).success === true,
      "initiative_open's `flow` is not optional — a freeform open is refused by the schema " +
      "before any handler runs, which makes freeform an omission rather than a choice");
   is(shape.flow?.safeParse("sdlc-flow").success, "initiative_open's `flow` refuses a flow name");
-  // THE DATE IS THE PLATFORM'S: there must be no way to pass one. An argument that accepts a
-  // date is the defect document-rules.ts:64-71 records, restored under a new name.
+  // The date is the platform's: there must be no way to pass one.
   const dateish = Object.keys(shape).filter((k) => /date|day|today|when|stamp/i.test(k));
   is(dateish.length === 0,
      `initiative_open takes ${dateish.join(", ")} — the date is the platform's, and an ` +
      "argument for it is the one thing document-rules.ts:64-71 says must not exist");
 }
 
-// ── 2. The name the platform composes ────────────────────────────────────────────────────
+// 2. The name the platform composes
 is(rec.initiativeNameFor("payment-retries") === `${isoToday()}-payment-retries`,
    `initiativeNameFor produced ${rec.initiativeNameFor("payment-retries")}, not ` +
    `${isoToday()}-payment-retries — the folder is not stamped from the platform's own clock`);
 is(rec.initiativeNameFor("  spaced  ") === `${isoToday()}-spaced`,
    "a slug's surrounding whitespace reaches the folder name");
-// THE FUNCTION TAKES NO DATE. An argument for one is the defect document-rules.ts records —
-// an agent inferring "today" — restored under a new name, and the arity is the only statement
-// of that a comment cannot contradict.
+// The function takes no date. Arity is the only statement of that a comment cannot
+// contradict.
 is(rec.initiativeNameFor.length === 1,
    `initiativeNameFor takes ${rec.initiativeNameFor.length} arguments — the date must come ` +
    "from the platform's clock inside it, never from a caller");
@@ -147,7 +108,7 @@ is(typeof slugRefusal("") === "string", "an empty slug is accepted");
 is(slugRefusal("payment-retries") === null,
    "an ordinary slug is refused — slugRefusal refuses more than the contract names");
 
-// ── 3. The store, and the two directions of next_move ────────────────────────────────────
+// 3. The store, and the two directions of next_move
 const root = mkdtempSync(join(tmpdir(), "zz-open-"));
 
 /** The shape chain.ts derives. Built inline because EMPTY_CHAIN is not exported and
@@ -178,14 +139,14 @@ const GOVERNED = chainOf("sdlc-flow", [
 const doc = (fields: Record<string, string>, body: string) =>
   `---\n${Object.entries(fields).map(([k, v]) => `${k}: ${v}`).join("\n")}\n---\n\n${body}\n`;
 
-// ── 3a. FREEFORM: a folder somebody assembled by hand ────────────────────────────────────
+// 3a. Freeform: a folder somebody assembled by hand
 const FREE = "2026-09-14-hand-assembled";
 mkdirSync(join(root, FREE, "sources"), { recursive: true });
 writeFileSync(join(root, FREE, "notes.md"), doc({ title: "Notes" }, "# Notes\n\nWhat we found."));
 writeFileSync(join(root, FREE, "decision.md"), doc({ title: "Decision" }, "# Decision"));
 
 const free = initiativeState(root, FREE, EMPTY, EMPTY.documents);
-// STRICTLY null. `undefined` would serialise away entirely and the caller would read a
+// Strictly null. `undefined` would serialise away entirely and the caller would read a
 // response with no `next_move` key at all, which is a missing answer rather than an answer.
 is(free.next_move === null,
    `a freeform initiative's next_move is ${JSON.stringify(free.next_move)}, not null — the ` +
@@ -193,17 +154,16 @@ is(free.next_move === null,
 is(typeof free.next_move_absent === "string" && free.next_move_absent.trim().length > 20,
    "next_move is null with no stated reason — a caller cannot tell `freeform, and that is " +
    "fine` from `the platform failed to compute one`, and those want opposite reactions");
-// A freeform initiative is not DEGRADED: it still reports its documents.
+// A freeform initiative is not degraded: it still reports its documents.
 is(free.documents.map((d: { name: string }) => d.name).sort().join(",") === "decision.md,notes.md",
    `a freeform initiative lists ${JSON.stringify(free.documents.map((d: { name: string }) => d.name))} — its ` +
    "documents are not reported, so freeform is being treated as an empty initiative");
 
-// 3a-ii. A CLOSED freeform initiative is CLOSED, and the listing has to be able to see it.
-//
-// There is no manifest naming a closing document, so the outcome is read off whichever
-// document carries one — the same document initiative_close was told to write it on.
-// Reporting null here makes every freeform close invisible: the no-argument listing filters
-// on `next_move?.action === "closed"`, so the initiative would be reported as open for good.
+// 3a-ii. A closed freeform initiative is closed, and the listing has to see it. There is no
+// manifest naming a closing document, so the outcome is read off whichever document carries
+// one — the same document initiative_close was told to write it on. The no-argument listing
+// filters on `next_move?.action === "closed"`, so reporting null here would make every
+// freeform close invisible.
 writeFileSync(join(root, FREE, "decision.md"),
   doc({ title: "Decision", outcome: "delivered", closed_by: "cy@zz.test" }, "# Decision"));
 const freeClosed = initiativeState(root, FREE, EMPTY, EMPTY.documents);
@@ -216,16 +176,16 @@ is(freeClosed.closed_by === "cy@zz.test",
 is(freeClosed.next_move?.action === "closed",
    `a closed freeform initiative's next_move is ${JSON.stringify(freeClosed.next_move)} — the ` +
    "no-argument listing filters on `closed`, so this one is reported as open for good");
-// Restore the fixture to its OPEN state; everything after this reads it as freeform-and-open.
+// Restore the fixture to its open state; everything after this reads it as freeform-and-open.
 writeFileSync(join(root, FREE, "decision.md"), doc({ title: "Decision" }, "# Decision"));
 is(initiativeState(root, FREE, EMPTY, EMPTY.documents).next_move === null,
    "an OPEN freeform initiative is reported closed — the outcome scan is matching a document " +
    "that carries none");
 
-// ── 3b. GOVERNED: the same function must still name the real next document ───────────────
+// 3b. Governed: the same function must still name the real next document
 //
-// THIS IS THE ASSERTION A NULL-ALWAYS IMPLEMENTATION FAILS. Everything in 3a is satisfied by
-// `return { next_move: null }` for every initiative on the platform.
+// This is the assertion a null-always implementation fails; everything in 3a is satisfied by
+// `return { next_move: null }`.
 const GOV = "2026-09-14-governed";
 mkdirSync(join(root, GOV), { recursive: true });
 
@@ -252,20 +212,15 @@ is(gov.next_move?.action === "write_document" && gov.next_move?.document === "pl
    `once spec.md is approved the next move is ${JSON.stringify(gov.next_move)}, not plan.md — ` +
    "the flow's declared ORDER is not being walked");
 
-// ── 3c. A STAGE THAT PRODUCES A SOURCE IS A STAGE ────────────────────────────────────────
+// 3c. A stage that produces a source is a stage
 //
-// sdlc-flow declares seven stages and four documents. The two audit rounds produce a SOURCE
-// supporting the document they audited rather than a document of their own, so a walk over
-// the manifest's `documents` cannot see them: with spec.md approved, `next_move` answered
-// "write plan.md" and never once named the spec audit.
+// sdlc-flow declares seven stages and four documents. The two audit rounds produce a source
+// supporting the document they audited rather than a document of their own, so a walk over the
+// manifest's `documents` cannot see them.
 //
-// The close did not agree. The reviewed module governing this flow asks each audit step for
-// `1x audit`, so an agent that followed this answer through every document reached
-// `initiative_close` and was refused for a round nothing had told it to run — two authorities
-// over one flow, and the one an agent is told to trust was the one that did not know.
-//
-// Found by driving the flow end to end against the live deployment, which is the only place
-// the disagreement shows: each half is self-consistent.
+// COUPLED: `services/zz-core/src/reviewed-modules.ts` asks each audit step for `1x audit`, and
+// `initiative_close` refuses a close with a round unrun. next_move and the close must name the
+// same rounds.
 const AUDITED = ((): Chain => {
   const c = chainOf("sdlc-flow", [
     { name: "spec.md", role: "spec", gate: true, closing: true },
@@ -290,8 +245,7 @@ is(aud.next_move?.action === "add_source" && aud.next_move?.document === "spec.m
    "— the flow declares sdlc-spec-audit between spec and plan, and a walk over documents alone " +
    "cannot see a stage that evidences itself with a source");
 
-// AND IT STOPS ASKING once the round is on the record, which is the half a check that only
-// watched the refusal would pass while making the flow unfinishable.
+// And it stops asking once the round is on the record.
 writeFileSync(join(root, AUD, "sources", "spec-audit.md"),
   doc({ title: "Spec audit round 1", supports: "spec.md" }, "No blocking findings."));
 aud = initiativeState(root, AUD, AUDITED, AUDITED.documents);
@@ -299,8 +253,8 @@ is(aud.next_move?.action === "write_document" && aud.next_move?.document === "pl
    `with the audit source recorded the next move is ${JSON.stringify(aud.next_move)} — the ` +
    "stage is satisfied and the walk must move on to the next document the flow declares");
 
-// A STAGE WHOSE DOCUMENT IS NOT YET FINISHED IS NOT OWED. Auditing a document nobody has
-// agreed to audits a draft, and the document's own stage is unmet first in any case.
+// A stage whose document is not yet finished is not owed: the document's own stage is unmet
+// first.
 const DRAFTED = "2026-09-14-audited-draft";
 mkdirSync(join(root, DRAFTED, "sources"), { recursive: true });
 writeFileSync(join(root, DRAFTED, "spec.md"), doc({ title: "Spec", status: "draft" }, "# Spec"));
@@ -309,15 +263,10 @@ is(drafted.next_move?.action === "await_approval" && drafted.next_move?.document
    `with spec.md still draft the next move is ${JSON.stringify(drafted.next_move)} — the audit ` +
    "of an unapproved document must not be demanded ahead of its gate");
 
-// ── 3d. A CLOSED INITIATIVE'S ANSWER SAYS WHAT IS TRUE OF ITS OWN HANDOVER ───────────────
+// 3d. A closed initiative's answer says what is true of its own handover
 //
-// `next_move.why` was one static sentence for every closed initiative: "if the cycle taught
-// something worth keeping, skill_read(\"zz-handover\") mints it and writes handover.md". It said
-// that to an initiative whose handover.md was already written, approved and signed — telling
-// somebody to do a thing they had done, in the one field that exists to say what is left.
-//
-// The information was in scope the whole time: `states` holds the document and `isHandover`
-// identifies it, two branches further down the same function.
+// `next_move.why` is derived from the handover's own state, not stated once for every closed
+// initiative: `states` holds the document and `isHandover` identifies it.
 const CLOSING = ((): Chain => {
   const c = chainOf("sdlc-flow", [
     { name: "spec.md", role: "spec", gate: true, closing: true },
@@ -344,7 +293,7 @@ is(!/skill_read/.test(clo.next_move?.why ?? "") && /verdict/.test(clo.next_move?
    `a closed initiative whose handover is written and unapproved was told ` +
    `${JSON.stringify(clo.next_move?.why)} — it is not being asked to write one again`);
 
-// (c) approved — say so, and name who signed it. THE HALF THAT WAS WRONG.
+// (c) approved — say so, and name who signed it.
 writeFileSync(join(root, CLO, "handover.md"),
   doc({ title: "Handover", status: "approved", approved_by: "ada@zz.test", approved_at: "2026-09-14" }, "# H"));
 clo = initiativeState(root, CLO, CLOSING, CLOSING.documents);
@@ -353,7 +302,7 @@ is(/recorded/.test(clo.next_move?.why ?? "") && /ada@zz\.test/.test(clo.next_mov
    `a closed initiative with an APPROVED handover was told ${JSON.stringify(clo.next_move?.why)} ` +
    "— it was being told to write a document it had already signed");
 
-// ── 4. The open record: written, invisible as a document, and read by chainFor ───────────
+// 4. The open record: written, invisible as a document, and read by chainFor
 const GOVERNED_NAME = `${isoToday()}-with-a-flow`;
 const written = rec.recordOpen(root, GOVERNED_NAME, "sdlc-flow", "ada@zz.test");
 is(written.flow === "sdlc-flow" && written.opened_by === "ada@zz.test"
@@ -366,18 +315,17 @@ is(rec.openRecord(root, GOVERNED_NAME)?.flow === "sdlc-flow",
 const FREEFORM_NAME = `${isoToday()}-opened-freeform`;
 is(rec.recordOpen(root, FREEFORM_NAME, null, "bo@zz.test").flow === null,
    "a freeform open records something other than null for its flow");
-// A DECLARED FREEFORM AND NO RECORD AT ALL ARE DIFFERENT FACTS, and the resolver has to be
-// able to tell them apart: one is a person saying nothing governs this, the other is silence.
-// A `declaredFlow(): string | null` helper collapses both to null and the single-flow
-// fallback below then overrules the first of them.
+// A declared freeform and no record at all are different facts, and the resolver has to tell
+// them apart: one is a person saying nothing governs this, the other is silence. A helper
+// collapsing both to null lets the single-flow fallback below overrule the first.
 is(rec.openRecord(root, FREEFORM_NAME)?.flow === null,
    "an initiative opened deliberately freeform reads back as governed by something");
 is(rec.openRecord(root, `${isoToday()}-never-opened`) === null,
    "an initiative with no record reports one");
 
-// The record must not be mistaken for a document. Every listing on this platform filters
-// `_`-prefixed entries, and a record reported as a document would appear with no status, no
-// gate and no place in any chain. Asked of what recordOpen actually wrote, not of a constant.
+// The record must not be mistaken for a document. Every listing filters `_`-prefixed entries,
+// and a record reported as a document would appear with no status, no gate and no place in any
+// chain. Asked of what recordOpen actually wrote, not of a constant.
 is(readdirSync(join(root, FREEFORM_NAME)).every((f) => f.startsWith("_")),
    `opening wrote ${JSON.stringify(readdirSync(join(root, FREEFORM_NAME)))} into the folder — ` +
    "anything without a leading underscore is listed as one of the team's documents");
@@ -388,14 +336,13 @@ is(openedFree.documents.map((d: { name: string }) => d.name).join(",") === "note
    " — the platform's own record is being reported as one of the team's documents");
 is(openedFree.next_move === null, "an initiative opened deliberately freeform is given a next move");
 
-// ── 4b. WHAT THE RECORD IS FOR, driven through the real resolver ─────────────────────────
+// 4b. What the record is for, driven through the real resolver
 //
-// This is the strongest assertion in the file. `chainFor` resolves a flow from a document's
-// envelope or from the team's single install; a flow-driven initiative is an EMPTY FOLDER
-// until its first document lands, so in that window neither source can answer — and that
-// window is exactly when a resuming agent calls initiative_status. `chainForTeam(null)`
-// returns null with no database, so the ONLY thing that can produce a named chain here is
-// the record written above.
+// `chainFor` resolves a flow from a document's envelope. A flow-driven initiative is an empty
+// folder until its first document lands, so in that window no envelope can answer — and that
+// is exactly when a resuming agent calls
+// initiative_status. `chainFor` returns an unnamed chain with no record, so only the record
+// written above can produce a named chain here.
 const resolved = chainFor(root, `${GOVERNED_NAME}/x.md`);
 is(resolved.name === "sdlc-flow",
    `chainFor answered ${JSON.stringify(resolved.name)} for an initiative opened WITH a flow ` +
@@ -404,25 +351,16 @@ is(resolved.name === "sdlc-flow",
 is(resolved.documents.length > 0,
    "the chain resolved off the open record declares no documents, so there is nothing to " +
    "compute a next move over and a governed initiative still answers like a freeform one");
-// The control, in the other direction: an initiative opened freeform must NOT acquire one.
+// The control, in the other direction: an initiative opened freeform must not acquire one.
 is(chainFor(root, `${FREEFORM_NAME}/x.md`).name === null,
    "an initiative opened freeform resolves to a named chain — the record is being read as a " +
    "declaration where it declares nothing, which is the platform choosing a flow for somebody");
 
-// 4c. A DECLARED FREEFORM OUTRANKS EVERY FALLBACK, which is where the real hole was.
+// 4c. A declared freeform outranks every fallback.
 //
 // `flow: null` in the record is a person saying nothing governs this work. chainFor's last
-// two resorts do not know that on their own: the oldest-document walk takes whatever `flow:`
-// it finds in an envelope, and `chainForTeam` gives a team with exactly ONE installed flow
-// that flow for any initiative naming none. So a deliberately freeform initiative on a
-// single-flow team was governed by it — every write judged against a chain nobody asked for,
-// stages named off a manifest the person declined. One install is not consent; it is the only
-// thing there was to guess with, and chain.ts:75-82 calls guessing here a wrong answer rather
-// than a fallback.
-//
-// The team fallback needs a database and cannot run in the gate, so the ENVELOPE fallback
-// stands in for it: same position in the function, same question — does a declared freeform
-// survive something further down that would happily answer?
+// resort does not know that on its own: the oldest-document walk takes whatever `flow:` it
+// finds in an envelope. A stray envelope inside a declared-freeform initiative must not win.
 const STRAY = `${isoToday()}-freeform-with-a-stray-envelope`;
 mkdirSync(join(root, STRAY), { recursive: true });
 rec.recordOpen(root, STRAY, null, "cy@zz.test");
@@ -431,8 +369,8 @@ writeFileSync(join(root, STRAY, "notes.md"),
 is(chainFor(root, `${STRAY}/other.md`).name === null,
    "an initiative opened deliberately freeform picked up a flow from a fallback further down " +
    "chainFor — a `flow: null` record is a person declining a flow, and anything that overrules " +
-   "it adopts one on their behalf at open time, which is what FR-30 forbids doing afterwards");
-// And the control for THAT: without a record, the envelope must still answer, or this
+   "it adopts one on their behalf at open time, which is adopting a flow after the fact");
+// And the control for that: without a record, the envelope must still answer, or this
 // short-circuit has broken resolution for every initiative written before the record existed.
 const LEGACY = `${isoToday()}-no-record-at-all`;
 mkdirSync(join(root, LEGACY), { recursive: true });
@@ -441,18 +379,14 @@ is(chainFor(root, `${LEGACY}/other.md`).name === "sdlc-flow",
    "an initiative with NO open record no longer resolves its flow from its own documents — " +
    "every initiative written before the record existed just became ungoverned");
 
-// 4d. THE DECLARATION SURVIVES A LOST LOG LINE.
+// 4d. The declaration survives a lost log line.
 //
-// `logActivity` swallows every failure by design — persist.ts:135, "telemetry must never
-// break the operation it describes" — and an append that fails creates no file at all
-// (verified: an unwritable directory produces no throw and no log). So the flow declaration
-// cannot live only in the activity log: chainFor returns EMPTY_CHAIN for a record that says
-// freeform, and a lost line would silently convert an initiative somebody governed into one
-// governed by nothing, permanently, with nothing anywhere saying so — a failure "in the
-// direction that looks like success", which is the phrase chain.ts uses for exactly this.
+// `logActivity` (persist.ts) swallows every failure by design, and an append that fails
+// creates no file at all, so the flow declaration cannot live only in the activity log: a lost
+// line would convert an initiative somebody governed into one governed by nothing.
 //
 // Driven by deleting the log and re-asking. The event is still logged beside the record,
-// because the open IS an event; what this asserts is that nothing READS the declaration from
+// because the open is an event; what this asserts is that nothing reads the declaration from
 // there.
 rmSync(join(root, GOVERNED_NAME, "activity.jsonl"), { force: true });
 is(chainFor(root, `${GOVERNED_NAME}/x.md`).name === "sdlc-flow",
@@ -460,7 +394,7 @@ is(chainFor(root, `${GOVERNED_NAME}/x.md`).name === "sdlc-flow",
    "being read out of best-effort telemetry, so an append that silently failed leaves an " +
    "initiative somebody governed reporting as freeform for the rest of its life");
 
-// ── 5. The slug is what is taken ─────────────────────────────────────────────────────────
+// 5. The slug is what is taken
 is(rec.takenRefusal(root, "hand-assembled") !== null,
    "a slug an existing initiative already uses is accepted — two folders with the same slug " +
    "and different dates diverge, and nothing downstream can say which one was meant");
@@ -468,13 +402,13 @@ is(/2026-09-14-hand-assembled/.test(rec.takenRefusal(root, "hand-assembled") ?? 
    "the taken refusal does not NAME the existing initiative, so the caller cannot continue it");
 is(rec.takenRefusal(root, "something-nobody-opened") === null,
    "an unused slug is refused as taken");
-// A slug that is a PREFIX of an existing one is not the same slug.
+// A slug that is a prefix of an existing one is not the same slug.
 rec.recordOpen(root, `${isoToday()}-payment-retries`, null, "ada@zz.test");
 is(rec.takenRefusal(root, "payment") === null,
    "`payment` is refused because `payment-retries` exists — a prefix match blocks slugs " +
    "nobody has taken");
 
-// ── 6. Neither write path creates any more: the refusal, driven ──────────────────────────
+// 6. Neither write path creates any more: the refusal, driven
 is(typeof rec.unopenedRefusal(root, `${isoToday()}-never-opened/spec.md`) === "string",
    "a write into an initiative nobody opened is accepted — the write still creates the " +
    "initiative, and initiative_open is decorative");
@@ -486,7 +420,7 @@ is(rec.unopenedRefusal(root, `${FREE}/anything.md`) === null,
 is(rec.unopenedRefusal(root, "README.md") === null,
    "a file at the root of the store is treated as an initiative document");
 
-// ── 7. Two source-level assertions, and what each catches ────────────────────────────────
+// 7. Two source-level assertions, and what each catches
 //
 // Neither can be run: `document_write` resolves through `safePath`, which resolves through
 // `userRoot`, which is rooted at the hard-coded `/artifacts`. Comments are stripped first, so
@@ -496,40 +430,37 @@ const stripped = (p: string) => readSrc(p)
   .replace(/\/\*[\s\S]*?\*\//g, "");
 const arts = stripped("services/zz-core/src/tools/artifacts.ts");
 
-// THE GUARDS MOVED, they were not copied. Two creation guards left on the write path is two
-// places a rule about creating can be changed independently — which is the shape of the
-// defect `documentGuards`' own header comment describes ("a guard added later cannot land on
-// one path only").
+// COUPLED: the guards moved out of `services/zz-core/src/tools/artifacts.ts`, they were not
+// copied. Two creation guards on the write path is two places a rule about creating can be
+// changed independently — see `documentGuards`.
 for (const g of ["initiativeNameShape", "initiativeNameTaken"]) {
   is(!new RegExp(`\\b${g}\\b`).test(arts),
      `artifacts.ts still calls ${g} — the creation guards must LEAVE document_write, not be ` +
      "duplicated onto both paths: opening is the only thing that creates an initiative now");
 }
 // Control: the guard has to have landed somewhere, or it was deleted rather than moved.
-// Section 6 proves the refusal works; this proves the write paths are callers of it. TWICE,
-// because `source_add` is the second creation path and it is the easy one to miss —
-// `mkdirSync(..., {recursive:true})` builds `<initiative>/sources/` for a folder that does
-// not exist, so attaching material used to conjure the initiative document_write is refused
-// for, leaving a half-initiative nobody opened.
+// Twice, because `source_add` is the second creation path — `mkdirSync(..., {recursive:true})`
+// builds `<initiative>/sources/` for a folder that does not exist, conjuring the initiative
+// document_write is refused for.
 is((arts.match(/unopenedRefusal\s*\(/g) ?? []).length >= 2,
    "artifacts.ts calls unopenedRefusal " +
    `${(arts.match(/unopenedRefusal\s*\(/g) ?? []).length} time(s) — both document_write and ` +
    "source_add create, so both must ask");
 
-// `document_write` MUST NOT TAKE A FLOW. Asked of the real schema, not the source: an
-// argument that declares a flow on a document is the adopt-a-flow tool FR-30 forbids, reached
-// through a parameter instead of a verb.
+// `document_write` must not take a flow. Asked of the real schema, not the source: an argument
+// that declares a flow on a document is the adopt-a-flow tool the platform refuses, reached through a
+// parameter instead of a verb.
 const arttools = new Map<string, ToolDef>();
 registerArtifactTools({ registerTool: (name: string, def: ToolDef) => arttools.set(name, def) });
 is(arttools.get("document_write")?.inputSchema?.flow === undefined,
    "document_write still takes a `flow` argument — an initiative opened freeform acquires a " +
    "manifest on its next document, and the gates that manifest declares land on documents " +
-   "already written and unapproved. FR-30 forbids adopting a flow after the fact.");
+   "already written and unapproved. A flow is never adopted after the fact.");
 is(arttools.get("document_write")?.inputSchema?.content !== undefined,
    "document_write no longer takes `content` — this check is reading the wrong tool");
 
-// NO ADOPT-A-FLOW TOOL, per FR-30. Asserted over every source file rather than over the
-// tools directory: a registration moved one directory sideways is still a registration.
+// No adopt-a-flow tool: a flow is decided at initiative_open or never. Asserted over every source file rather than over the tools
+// directory: a registration moved one directory sideways is still a registration.
 const walk = (d: string): string[] => {
   let entries: string[];
   try { entries = readdirSync(d); } catch { blind.push(d); return []; }
@@ -545,18 +476,16 @@ is(swept.length > 20,
    "gone blind, and an absence asserted over nothing is not an absence");
 for (const p of swept) {
   if (/registerTool\(\s*\n?\s*"initiative_adopt"/.test(readSrc(p))) {
-    fail.push(`an adopt-a-flow tool is registered in ${p}; FR-30 forbids one — retrofitting a ` +
+    fail.push(`an adopt-a-flow tool is registered in ${p} — retrofitting a ` +
               "manifest onto documents written without it is a migration dressed as a verb");
   }
 }
 
-// ── 8. "Freeform accepts every operation a governed one does" — the half that was false ──
+// 8. "Freeform accepts every operation a governed one does"
 //
-// The contract states it and nothing enforced it. Three guards keyed off `chain.docs`, which
-// is an EMPTY SET for a freeform initiative, so each one silently changed meaning: the two
-// value guards below went quiet, and the membership tests in document_approve, document_revise
-// and initiative_close refused outright. A sentence in a plan cannot tell those apart from a
-// working feature — only running them can.
+// Three guards key off `chain.docs`, which is an empty set for a freeform initiative: the two
+// value guards below go quiet, and the membership tests in document_approve, document_revise
+// and initiative_close refuse outright unless written to allow it.
 
 // 8a. The value guards, driven. `statusCheck` and `outcomeCheck` are pure functions of a
 // chain, a path and text, so both directions are one call each.
@@ -573,15 +502,15 @@ is(wg.statusCheck(freeChain, `${FREE}/notes.md`, "---\nstatus: draft\n---\n") ==
    "statusCheck refuses `status: draft` on a freeform document");
 is(wg.outcomeCheck(freeChain, `${FREE}/notes.md`, "---\noutcome: delivered\n---\n") === null,
    "outcomeCheck refuses `outcome: delivered` on a freeform document");
-// And a flow's OWN declaration must still exempt a document it never named, or the change
+// And a flow's own declaration must still exempt a document it never named, or the change
 // widened the guards instead of un-silencing them.
 is(wg.statusCheck(GOVERNED, `${GOV}/stray.md`, "---\nstatus: nearly\n---\n") === null,
    "statusCheck now judges a document the flow never declared — the declaration must narrow " +
    "the guard, and its absence must not switch it off; those are different rules");
 
 // 8b. The three membership tests, source-level and labelled. Each handler resolves through
-// `userRoot()`, so the CONDITION is read rather than run — but read after comments are
-// stripped, and asserted on its exact shape rather than on a word.
+// `userRoot()`, so the condition is read rather than run — after comments are stripped, and
+// asserted on its exact shape rather than on a word.
 const acts = stripped("services/zz-core/src/tools/initiative-acts.ts");
 const bare = [...acts.matchAll(/if \(\s*!chain\.docs\.has\(/g)].length;
 is(bare === 0,
@@ -621,8 +550,8 @@ is(!/chain\.closingDoc && parts\[1\] !== chain\.closingDoc/.test(persist),
    "refuses an outcome typed by hand, initiative_close writes exactly one, and the " +
    "already-closed test stops a second row");
 
-// FIRST, ahead of everything else: if a path could not be read, every assertion over it
-// passed on the empty string and this run measured less than it appears to have measured.
+// First, ahead of everything else: if a path could not be read, every assertion over it passed
+// on the empty string.
 if (blind.length) {
   console.error(
     `could not read ${blind.join(", ")} — this check scans it, so every assertion about it ` +

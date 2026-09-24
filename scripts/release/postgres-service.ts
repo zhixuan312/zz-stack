@@ -2,35 +2,28 @@
  * The database the release rehearses against is the database production runs.
  *
  * Two release steps start a throwaway PostgreSQL: the SQL check in `build.ts`, which migrates
- * an empty database with the image that is about to ship and then PREPAREs every SQL literal
- * in the tree against the schema those migrations leave behind, and the tool-chain walk in
- * `tool-chain.ts`, which stands the whole platform up and calls it. Both hardcoded
- * `postgres:16-alpine`.
+ * an empty database with the image about to ship and then PREPAREs every SQL literal in the
+ * tree against the resulting schema, and the tool-chain walk in `tool-chain.ts`, which stands
+ * the whole platform up and calls it.
  *
- * THAT MADE THE STRONGEST CHECK IN THE RELEASE BLIND TO THE NEWEST MIGRATION. Migration 070
- * declares `-- requires-extension: pg_textsearch`, `postgres:16-alpine` cannot supply it, and
- * `db.ts` therefore DEFERS it — correctly, because a migration attempted where its extension
- * is absent throws, un-sets the pool, and leaves the platform serving with no database while
- * reporting itself healthy. So the rehearsal skipped 070 and 071, the search partitions and
- * the BM25 index were never created, and `sql-check` then EXCUSED every query naming a
- * relation those migrations would have made. The check reported a pass, and the DDL it was
- * supposed to prove had not run anywhere but production.
+ * Both must rehearse on the image the deployment actually runs. A migration declaring
+ * `-- requires-extension:` is deferred by `db.ts` where the extension is absent — correctly,
+ * since attempting it throws, un-sets the pool, and leaves the platform serving with no
+ * database while reporting itself healthy — so an image that cannot supply the extension
+ * silently skips those migrations, `sql-check` excuses every query naming a relation they would
+ * have created, and the check passes on DDL that ran nowhere but production.
  *
- * The fix is not better arithmetic about how many migrations to expect. It is to rehearse on
- * the image the deployment actually runs, where nothing is deferred and the whole schema is
- * real. `deploy/docker-compose.yml` is where that image is named, so it is read from there
- * rather than written down a second time — a tag in two files is a tag that drifts, and the
- * drift is silent until a release rehearses against a database the deployment stopped using.
+ * COUPLED: `deploy/docker-compose.yml` names that image, and it is read from there rather than
+ * written down a second time. A tag in two files drifts silently until a release rehearses
+ * against a database the deployment stopped using.
  *
- * THE COMMAND COMES WITH IT, for the same reason and one more. The image ships the
- * specification's reference settings, including `shared_buffers = 8GB`; compose overrides
- * that to a value this host can actually map. A plain `docker run` of the image would take
- * the 8 GB and fail to start with "could not map anonymous shared memory" on any machine
- * smaller than the reference — including the one releases are cut from.
+ * The command comes with it. The image ships the specification's reference settings, including
+ * `shared_buffers = 8GB`, and compose overrides that to a value the host can map; a plain
+ * `docker run` of the image would take the 8 GB and fail to start with "could not map anonymous
+ * shared memory" on any machine smaller than the reference.
  *
- * A tiny targeted reader rather than a YAML library: `yaml` resolves in this tree only as
- * somebody else's transitive dependency and is not in `package.json`, and reaching for an
- * undeclared module is how a release breaks on an unrelated upgrade. This wants two fields
+ * DELIBERATE: a targeted reader rather than a YAML library. `yaml` resolves in this tree only
+ * as somebody else's transitive dependency and is not in `package.json`. This wants two fields
  * from one known service, and `scripts/gate/checks/deploy-compose.ts` reads the same file the
  * same way.
  */
@@ -39,17 +32,15 @@ import { join } from "node:path";
 
 /**
  * Reads the `postgres` service out of the deployment's compose file: the image reference
- * exactly as compose names it, tag included, and the argv compose passes it (`[]` when
- * compose sets none).
+ * exactly as compose names it, tag included, and the argv compose passes it (`[]` when compose
+ * sets none).
  *
- * Throws rather than returning a default. There is no sensible fallback: a release that
- * cannot tell which database the deployment runs must stop, because every quiet alternative
- * — guessing a tag, falling back to the official image — rehearses against something that is
- * not the deployment and reports a pass for it.
+ * Throws rather than returning a default. A release that cannot tell which database the
+ * deployment runs must stop — guessing a tag or falling back to the official image rehearses
+ * against something that is not the deployment and reports a pass for it.
  *
- * The shape is written inline rather than as an exported interface. Both callers destructure
- * it, so a named type would be an export nobody imports — which this repository's gate
- * refuses, and is right to: a type exported for tidiness is a second place to change.
+ * DELIBERATE: the shape is inline rather than an exported interface. Both callers destructure
+ * it, so a named type would be an export nobody imports, which this repository's gate refuses.
  */
 export function postgresService(repoRoot: string): { image: string; command: string[] } {
   const path = join(repoRoot, "deploy/docker-compose.yml");

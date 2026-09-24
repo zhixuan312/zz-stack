@@ -1,31 +1,25 @@
 /**
- * PLANTING EACH FAULT THESE RULES CLAIM TO CATCH, AND WATCHING THE DETECTOR FIRE.
+ * Planting each fault these rules claim to catch, and watching the detector fire.
  *
  * Every rule below is exercised twice: once on a healthy subject, where the detector must stay
- * SILENT, and once with one specific fault planted, where it must FIRE. A detector that only
- * ever ran against healthy material has been watched doing nothing and proves nothing — which
- * is the failure this whole task is about, one layer down.
+ * silent, and once with one specific fault planted, where it must fire. A detector that only ever
+ * ran against healthy material has been watched doing nothing.
  *
- * THE SILENT HALF MATTERS AS MUCH AS THE OTHER ONE HERE, because almost every rule in this
- * subject is a refusal, and a module that refused everything would satisfy every faulted
- * column in the table while being useless. So the healthy column carries the things that must
- * still work: a genuinely recorded transition IS reported as observed, an inference with a
- * real basis IS kept rather than discarded, a finding with a passing verification behind it
- * DOES close, and a digest computed over bytes somebody actually read IS written down.
+ * The silent half matters as much as the other: almost every rule in this subject is a refusal,
+ * and a module that refused everything would satisfy every faulted column while being useless. So
+ * the healthy column carries the things that must still work — a genuinely recorded transition is
+ * reported as observed, an inference with a real basis is kept, a finding with a passing
+ * verification behind it closes, and a digest computed over bytes somebody read is written down.
  *
- * WHERE EACH FAULT LIVES. Two kinds. Most are planted in the SUBJECT — a row carrying a digest
- * labelled as historic, a finding carrying a withdrawal that names an assessment, an event
- * recorded without the run that recorded it — and the real function under test is what reports
- * them. Two are planted in a faulted LOCAL COPY of the computation itself (`closesFinding`,
- * `deriveFromActivity`), because the rules they break are rules about what the function may
- * do, and a subject cannot violate those. Those two copies are never exported and nothing
- * calls them but this file; they exist so that "the real one does not do this" is a comparison
- * rather than an assertion.
+ * Two kinds of fault. Most are planted in the subject, and the real function under test is what
+ * reports them. Two are planted in a faulted local copy of the computation itself
+ * (`closesFinding`, `deriveFromActivity`), because the rules they break are rules about what the
+ * function may do and a subject cannot violate those. Those copies are never exported and nothing
+ * calls them but this file.
  *
- * NOTHING HERE IS A MEASUREMENT. The ids, the stage tokens and the timestamps are invented
- * fixtures. The stage tokens are deliberately `s1`/`s2` — this package has no stage vocabulary
- * and a probe that borrowed one would be demonstrating the opposite of what it is here to
- * show.
+ * Nothing here is a measurement: the ids, the stage tokens and the timestamps are invented
+ * fixtures. DELIBERATE: the stage tokens are `s1`/`s2` — this package has no stage vocabulary and
+ * a probe that borrowed one would demonstrate the opposite of what it is here to show.
  */
 import {
   applyAssessment,
@@ -78,12 +72,11 @@ const row = (
   fires: healthy[0] && faulted[0],
 });
 
-// ── the two faulted local copies ───────────────────────────────────────────────────────────
+// The two faulted local copies
 
-/** THE FAULT THE REAL `applyAssessment` CANNOT HAVE: a mapping from an assessment's value to a
- *  disposition. Written out in full because it is worth seeing how short it is — this is the
- *  entire distance between a reading and a verdict, and it is four lines somebody could add in
- *  a hurry while making a report look tidier. */
+/** The fault the real `applyAssessment` cannot have: a mapping from an assessment's value to a
+ *  disposition. Written out in full because it is four lines — the entire distance between a
+ *  reading and a verdict. */
 function closesFinding(finding: Finding, assessment: Assessment): FindingDisposition {
   if (assessment.question_id === "repeats_finding" && assessment.value === "false") {
     return "resolved";
@@ -91,9 +84,9 @@ function closesFinding(finding: Finding, assessment: Assessment): FindingDisposi
   return finding.disposition;
 }
 
-/** THE FAULT THE REAL `observedTransitions` CANNOT HAVE: a derivation of a transition from
- *  linked sources and approval order. It is plausible, it produces a number, and every value
- *  in the row it builds is guessed from material that says something else. */
+/** The fault the real `observedTransitions` cannot have: a derivation of a transition from linked
+ *  sources and approval order. It is plausible, it produces a number, and every value in the row
+ *  it builds is guessed from material that says something else. */
 function deriveFromActivity(
   linkedSources: readonly string[],
   approvals: readonly { readonly at: string }[],
@@ -106,7 +99,7 @@ function deriveFromActivity(
   })];
 }
 
-// ── fixtures ───────────────────────────────────────────────────────────────────────────────
+// Fixtures
 
 /** A required test that has been declared and nothing more — the honest starting state, and
  *  the one a reading must not be able to move. */
@@ -157,17 +150,16 @@ const RECORDED: TransitionEvent =
   Object.freeze({ kind: "stage_transition", from: "s2", to: "s1", run: "r1" });
 const FRAGMENT: TransitionEvent = Object.freeze({ kind: "stage_transition", from: "s2", to: "s1" });
 
-/** The address the intake field really holds is the account that FILED the six reports. A
- *  placeholder stands in for it here: the fault being planted is the promotion of an intake
- *  field into a reviewer column, and the promotion is the fault whatever the address is. */
+/** The address the intake field really holds is the account that filed the six reports. A
+ *  placeholder stands in for it: the fault being planted is the promotion of an intake field into
+ *  a reviewer column, and that is the fault whatever the address is. */
 const INTAKE_ADDRESS = "intake@example.invalid";
 
-/** THE FAULT, AND IT IS NOT INVENTED. This is the digest an earlier export task recorded for
- *  the first of the six reports, copied as it stands. It is SIXTY-THREE hex characters, and a
- *  sha256 is sixty-four — so the string cannot be the digest it is filed as, and the row below
- *  carries it with no record of when or over what it was computed. Both halves of that are why
- *  the import writes no digest by default: an unlabelled hash invites exactly this, a value
- *  that reads as a signature and cannot be checked against anything. */
+/** The fault, and it is not invented: the digest an earlier export task recorded for the first of
+ *  the six reports, copied as it stands. It is sixty-three hex characters and a sha256 is
+ *  sixty-four, so the string cannot be the digest it is filed as, and the row below carries it
+ *  with no record of when or over what it was computed. That is why the import writes no digest
+ *  by default — an unlabelled hash reads as a signature and cannot be checked against anything. */
 const RECORDED_ELSEWHERE_63 = "bdc919a2ea64ac460d4370b9d2ee45d5ab3010c53a4456098703bccd9e3bde0";
 
 const FAULTED_HISTORIC_HASH: readonly LegacyAuditRow[] = importLegacyAudits().map((r) =>
@@ -183,7 +175,7 @@ const FAULTED_PROMOTED_REVIEWER: readonly LegacyAuditRow[] = importLegacyAudits(
 const SNAPSHOT_BYTES = new Map(
   importLegacyAudits().map((r) => [r.report_ref, `fixture bytes for ${r.id}`]));
 
-// ── the detectors ──────────────────────────────────────────────────────────────────────────
+// The detectors
 
 function noAssessmentCloses(): AuditIdentityProbeRow {
   const real: AssessedFinding = applyAssessment(OPEN_FINDING, ASSESSMENT);
@@ -230,12 +222,10 @@ function verifiedResolutionStillWorks(): AuditIdentityProbeRow {
     [closed.closed && closed.finding.disposition === "resolved"
       && closed.finding.resolution !== null,
      "a passing verification closes the finding and the reference is on the record"],
-    // THE REFUSAL IS READ, NOT ONLY THE RECORD. This used to assert that the finding came
-    // back open and carrying nothing, which a function that ignored its argument entirely
-    // would also satisfy — and for a while that is close to what `resolveFinding` did: it
-    // returned the finding untouched and said nothing, so a caller could not tell a refusal
-    // from a close that worked. The record still has to be right, and now the caller has to
-    // have been told, naming the check it cited and the state that check was actually in.
+    // The refusal is read, not only the record. Asserting only that the finding came back open
+    // and carrying nothing is satisfied by a function that ignores its argument entirely, so the
+    // caller also has to have been told — naming the check it cited and the state that check was
+    // actually in.
     [!notClosed.closed && notClosed.finding.disposition === "open"
       && notClosed.finding.resolution === null
       && notClosed.refusal.includes("run-2") && notClosed.refusal.includes("unrun"),

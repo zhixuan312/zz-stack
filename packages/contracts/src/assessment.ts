@@ -1,70 +1,46 @@
 /**
- * THE SEMANTIC-ASSESSMENT PORT — what a bounded question is, what an answer to one is, and the
+ * The semantic-assessment port: what a bounded question is, what an answer to one is, and the
  * one function that turns a provider's raw reply into a record this platform may act on.
  *
- * WHAT THIS FILE IS FOR IS WHAT IT REFUSES TO INVENT. A model that returns a label and nothing
- * else has told us one thing. The temptation — and it is the whole reason this module exists —
- * is to write that label down as a probability of 1.0, or to fill an empty confidence column
- * with 0.5 so a downstream threshold has a number to compare against. Both manufacture evidence
- * nobody produced, and both are indistinguishable, one table later, from a measurement. So:
+ * Nothing here invents a number:
  *
  *   · a label with no probability yields `signals: []`, never zero and never 0.5;
- *   · a distribution is only ever COPIED from a channel the adapter declares native, never
- *     constructed here — there is no code path in this file that builds a one-hot vector;
- *   · a confidence number the model generated, whether it arrives as "0.91" or as 0.91, is
- *     `self_reported`. The JSON type of a token the model emitted says nothing about where the
- *     number came from, and only the adapter knows which channel carried it.
+ *   · a distribution is only ever copied from a channel the adapter declares native — no code
+ *     path in this file builds a one-hot vector;
+ *   · a confidence the model generated, whether it arrives as "0.91" or as 0.91, is
+ *     `self_reported`. Only the adapter knows which channel carried it.
  *
- * AND WHAT IT REFUSES TO CONFLATE. A timeout is `unavailable`: the transport failed and nobody
- * assessed anything. Semantic uncertainty is `unknown` for a predicate and `null` for a
- * category or ordinal: the assessor looked and could not tell. Collapsing the first into the
- * second turns a failed network call into a considered judgement, which is how a run that never
- * happened comes to look like one that found nothing. `value` is null for every status but
- * `answered`, so no reader has to know the difference to stay safe.
+ * A timeout is `unavailable`: the transport failed and nobody assessed anything. Semantic
+ * uncertainty is `unknown` for a predicate and `null` for a category or ordinal. `value` is
+ * null for every status but `answered`.
  *
- * THE INTERPRETER PRODUCES THE VALUE, NOT THE VENDOR. `interpret` reads the raw reply as
- * untrusted data — `unknown`, validated field by field — and applies the question's own
- * `answer_spec`. A category or ordinal key the question never declared is `invalid_response`,
- * not a new option; an out-of-range score is `invalid_response`, not a clamped one; a reply
- * from a model other than the exact identity the profile declared is `invalid_response`, not a
- * substitution. None of those may authorize a semantic advance, and `authorizesSemanticAdvance`
- * derives that from the recorded status alone. There is no field on any shape here through
- * which a model can assert its own answer is actionable.
+ * `interpret` reads the raw reply as untrusted data — `unknown`, validated field by field — and
+ * applies the question's own `answer_spec`. An undeclared key is `invalid_response`, not a new
+ * option; an out-of-range score is `invalid_response`, not a clamped one; a reply from a model
+ * other than the pinned identity is `invalid_response`, not a substitution.
+ * `authorizesSemanticAdvance` derives actionability from the recorded status alone.
  *
- * ONE DELIBERATE DIVERGENCE FROM THE APPROVED CONTRACT, stated rather than hidden, in the shape
- * of the `raw_response_ref` divergence recorded for the retrieval receipt. The approved type
- * declares `request_id`, `question_digest`, `evidence_snapshot_id`, `profile_digest`,
- * `interpretation_profile_ref` and `requested_model` as `string`. Those six are facts about an
- * INVOCATION — which request, against which pinned evidence snapshot, under which approved
- * profile. Interpretation is a pure function of a question and a payload and knows none of
- * them; only the adapter that made the call does. Typing them `string` would have forced this
- * module to write `""` into every one of them, and an empty string in a digest column is a
- * fabricated identity that reads exactly like a real one. They are `string | null` here, the
- * adapter supplies them through `AssessmentCall`, and null means "this interpretation was
- * performed without a call envelope" rather than "no such thing existed". `identity_assurance`
- * needs no widening: its declared `"unverified"` is already the honest value when nothing
- * verified the identity.
+ * DELIBERATE: six envelope fields the approved contract declares `string` are `string | null`
+ * here — `request_id`, `question_digest`, `evidence_snapshot_id`, `profile_digest`,
+ * `interpretation_profile_ref`, `requested_model`. They are facts about an invocation, which
+ * interpretation does not know, and `""` in a digest column reads exactly like a real identity.
+ * The adapter supplies them through `AssessmentCall`; null means "interpreted without a call
+ * envelope".
  */
 
-// ── the registered question families ───────────────────────────────────────────────────────
+// The registered question families
 
 /**
- * THE NINE SHARED QUESTION FAMILIES. Every checkpoint any method declares names one of these,
- * and thirteen shipped skills already cite them by these exact spellings in their Checkpoints
- * tables. This constant is the registration those citations point at: before it existed the
- * names were agreed in prose and compared against nothing.
+ * The nine shared question families. Every checkpoint any method declares names one of these,
+ * and shipped skills cite them by these exact spellings.
  *
- * TYPED `readonly string[]`, NOT `as const`, AND THAT IS LOAD-BEARING. A caller checking
- * whether a name it holds is registered has a `string`, and `readonly ["a", "b"].includes(s)`
- * rejects a `string` argument outright — the literal union narrows `includes`'s own parameter.
- * So the frozen tuple would typecheck only for callers who already knew the answer, and the
- * membership test this constant exists to serve would not compile. `Object.freeze` gives the
+ * DELIBERATE: typed `readonly string[]` rather than `as const`. A caller testing membership
+ * holds a `string`, and `readonly ["a", "b"].includes(s)` rejects a `string` argument outright
+ * — the literal union narrows `includes`'s own parameter. `Object.freeze` gives the
  * immutability; the widened type gives the question.
  *
- * WHY NINE AND NOT SIX. The approved table groups three rows by shared meaning —
- * `needs_fact`/`needs_verification`/`needs_analysis` in one row, `missing_user_input`/
- * `changes_commitment` in another. Counting rows counts groupings, not names; the names are
- * what a checkpoint cites and what an adapter renders, so the registry holds all nine.
+ * Nine names, not six: the approved table groups three rows by shared meaning, and it is the
+ * names a checkpoint cites and an adapter renders.
  */
 export const QUESTION_FAMILIES: readonly string[] = Object.freeze([
   /** Does a passage support, contradict, leave unclear, or bear no relation to a claim. */
@@ -87,7 +63,7 @@ export const QUESTION_FAMILIES: readonly string[] = Object.freeze([
   "actionability",
 ]);
 
-// ── the question ───────────────────────────────────────────────────────────────────────────
+// The question
 
 /** What shape of answer a question admits, and the exact keys that answer may use. The keys
  *  are the question's own: an adapter may render them however its transport requires, but it
@@ -116,25 +92,24 @@ export interface SemanticQuestion {
 }
 
 /**
- * THE HALF OF A QUESTION INTERPRETATION ACTUALLY DEPENDS ON. `interpret` maps a payload onto
- * declared keys; the digest, the subjects, the evidence ids and the instruction belong to the
- * request that was sent and are recorded by the adapter that sent it. Narrowing the parameter
- * to what the function reads means a caller holding only a question's answer contract can
- * still validate a reply, and a full `SemanticQuestion` is accepted unchanged.
+ * The half of a question interpretation depends on. `interpret` maps a payload onto declared
+ * keys; the digest, the subjects, the evidence ids and the instruction belong to the request
+ * that was sent and are recorded by the adapter that sent it. A full `SemanticQuestion` is
+ * accepted unchanged.
  */
 export type AskedQuestion = Pick<SemanticQuestion, "question_id" | "answer_spec">;
 
-// ── the assessment ─────────────────────────────────────────────────────────────────────────
+// The assessment
 
 /** The normalized answer. `unknown` for a predicate and `null` for a category or ordinal are
- *  SEMANTIC uncertainty — the assessor answered and could not tell — and never a transport
+ *  semantic uncertainty — the assessor answered and could not tell — and never a transport
  *  failure, which is `unavailable` with no value at all. */
 export type SemanticValue =
   | { readonly kind: "predicate"; readonly value: "true" | "false" | "unknown" }
   | { readonly kind: "category"; readonly key: string | null }
   | { readonly kind: "ordinal"; readonly level_key: string | null };
 
-/** Where a number came from. THE CHANNEL DECLARES THIS, never the JavaScript type of the
+/** Where a number came from. The channel declares this, never the JavaScript type of the
  *  field: a float in the model's own JSON is still a token the model generated, so it is
  *  `self_reported`. `native_distribution` and `native_score` are reserved for a channel the
  *  adapter reports as the provider's own primitive, and `empirical_calibration` for a number a
@@ -184,24 +159,20 @@ export interface SemanticAssessment {
   readonly failure_reason: string | null;
 }
 
-/** Why no reply arrived. Every one of them is a transport fact rather than a reading, and all
- *  of them are `unavailable` for the same reason: the absence of an answer is not an answer.
+/** Why no reply arrived. Every one is a transport fact rather than a reading, and all of them
+ *  are `unavailable`: the absence of an answer is not an answer.
  *
- *  A QUESTION A REPLY LEFT OUT IS NOT ON THIS LIST, and it used to be. Reading one batch's body
- *  is the supplier adapter's subject, not this port's — the adapter records one result per
- *  question ASKED and names what is missing, and it is what a caller actually holds. A second
- *  vocabulary for the same absence, on a union nothing in this port could write, was a variant
- *  waiting to mean something slightly different from the one that is real. */
+ *  A question a reply left out is not on this list. The supplier adapter records one result per
+ *  question asked and names what is missing; this port has no way to write such a variant. */
 export type CallFailure = "timeout" | "network" | "rate_limited" | "server_error" | "cancelled";
 
 /**
- * WHAT THE ADAPTER KNOWS AND THE INTERPRETER CANNOT. Everything here is supplied by the caller
- * that actually made the request: the envelope it recorded, the identity it observed, and the
- * mappings the approved profile qualified it to apply. Nothing here is derived from the reply.
+ * What the adapter knows and the interpreter cannot: the envelope it recorded, the identity it
+ * observed, and the mappings the approved profile qualified it to apply. Nothing here is
+ * derived from the reply.
  *
  * The two mappings are the reason a raw number is ever turned into a value. Without them a
- * score stays a score and the status is `unsupported` — which is a smaller claim than a level
- * nobody validated, and the one the approved contract asks for.
+ * score stays a score and the status is `unsupported`.
  */
 export interface AssessmentCall {
   /** Set when no reply arrived. Wins over any payload: a partial body after a timeout is not
@@ -233,11 +204,10 @@ export interface AssessmentCall {
   };
 }
 
-// ── reading an untrusted payload ───────────────────────────────────────────────────────────
+// Reading an untrusted payload
 
 /** A plain decimal, and nothing else. `Number("")` and `Number(" ")` are both 0, so parsing a
- *  confidence with `Number` alone invents a zero through the back door for any reply that left
- *  the field blank — the exact fabrication this module exists to prevent. */
+ *  confidence with `Number` alone invents a zero for any reply that left the field blank. */
 const DECIMAL = /^[+-]?\d+(?:\.\d+)?$/;
 
 function asRecord(raw: unknown): Readonly<Record<string, unknown>> | null {
@@ -249,12 +219,10 @@ function has(rec: Readonly<Record<string, unknown>>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(rec, key);
 }
 
-/** PRESENT AND CARRYING SOMETHING. JSON `null` is how a provider says a field is absent, and
- *  this platform's rule for that is already written: absence stays null or unknown. So a null
- *  confidence is a confidence nobody reported — not a malformed number, and emphatically not a
- *  zero. The one place null is an ANSWER rather than an absence is a category or ordinal key,
- *  where the approved value type declares it to mean the assessor could not tell; those two
- *  branches read the field directly and say so. */
+/** Present and carrying something. JSON `null` is how a provider says a field is absent, so a
+ *  null confidence is a confidence nobody reported — not a malformed number and not a zero.
+ *  The one place null is an answer is a category or ordinal key, where the value type declares
+ *  it to mean the assessor could not tell; those two branches read the field directly. */
 const given = (rec: Readonly<Record<string, unknown>>, key: string): boolean =>
   has(rec, key) && rec[key] !== null;
 
@@ -274,7 +242,7 @@ function declaredKeys(spec: AnswerSpec): readonly string[] {
   return ["true", "false"];
 }
 
-// ── building the record ────────────────────────────────────────────────────────────────────
+// Building the record
 
 const NO_SIGNALS: readonly StatisticalSignal[] = Object.freeze([]);
 
@@ -299,8 +267,8 @@ function record(
     evidence_snapshot_id: call?.evidence_snapshot_id ?? null,
     profile_digest: call?.profile_digest ?? null,
     status,
-    // THE INVARIANT, ENFORCED HERE RATHER THAN TRUSTED TO EVERY BRANCH: only `answered` carries
-    // a value. Any other status with one would read as a judgement that was never made.
+    // The invariant, enforced here rather than in every branch: only `answered` carries a
+    // value. Any other status with one would read as a judgement that was never made.
     value: status === "answered" ? value : null,
     signals: Object.freeze(signals.slice()),
     raw_response_ref: call?.raw_response_ref ?? null,
@@ -328,8 +296,8 @@ function readSignals(
     if (n < 0 || n > 1) return { signals, distribution, error: `the confidence ${n} is outside 0..1` };
     signals.push({
       name: "confidence",
-      // NEVER `native_distribution`, whatever its JavaScript type. A number the model wrote is
-      // a number the model wrote.
+      // Never `native_distribution`, whatever its JavaScript type: a number the model wrote
+      // is a number the model wrote.
       origin: "self_reported",
       meaning: "the assessor's own stated confidence, generated as part of its reply",
       values: Object.freeze({ confidence: n }),
@@ -373,23 +341,22 @@ function readSignals(
   return { signals, distribution, error: null };
 }
 
-// ── interpretation ─────────────────────────────────────────────────────────────────────────
+// Interpretation
 
 /**
- * TURN ONE RAW REPLY INTO ONE RECORD. The raw reply is `unknown` on purpose: it is vendor
- * output, and a static type here would only describe what an honest provider sends while the
- * validation below is what actually has to hold.
+ * Turn one raw reply into one record. The raw reply is `unknown` on purpose: it is vendor
+ * output, and the validation below is what has to hold.
  *
- * The order of the decisions matters and is the contract's own: a recorded failure outranks any
- * payload, an identity mismatch outranks a well-formed answer from the wrong model, and a key
- * the question never declared is rejected before anything is read from it.
+ * The order of the decisions is the contract's own: a recorded failure outranks any payload,
+ * an identity mismatch outranks a well-formed answer from the wrong model, and a key the
+ * question never declared is rejected before anything is read from it.
  */
 export function interpret(question: AskedQuestion, raw?: unknown, call?: AssessmentCall): SemanticAssessment {
   const rec = raw === undefined || raw === null ? null : asRecord(raw);
   const reported = rec !== null && typeof rec.model === "string" ? rec.model : null;
   const env: Envelope = { question, call, observed: reported ?? call?.resolved_identity ?? null };
 
-  // A TIMEOUT IS TRANSPORT, NOT SEMANTICS, and it is decided before the payload is looked at:
+  // A timeout is transport, not semantics, and it is decided before the payload is looked at:
   // a body that arrived after the call was abandoned describes nothing this run may use.
   if (call?.failure) {
     const why = call.failure_detail ? `${call.failure}: ${call.failure_detail}` : call.failure;
@@ -402,8 +369,9 @@ export function interpret(question: AskedQuestion, raw?: unknown, call?: Assessm
     return record(env, raw === undefined || raw === null ? "unavailable" : "invalid_response", null, NO_SIGNALS, why);
   }
 
-  // AN EXACT IDENTITY IS EXACT. A profile that pinned one and got another was served by a model
-  // whose qualification nothing here establishes, so the reply is invalid however well formed.
+  // An exact identity is exact. A profile that pinned one and got another was served by a
+  // model whose qualification nothing here establishes, so the reply is invalid however well
+  // formed.
   if (call?.expected_identity && env.observed !== null && env.observed !== call.expected_identity) {
     return record(env, "invalid_response", null, NO_SIGNALS,
       `the reply came from ${env.observed}, not the pinned ${call.expected_identity}`);
@@ -445,9 +413,8 @@ function predicate(
     return record(env, "answered", { kind: "predicate", value: primitive }, signals, null);
   }
 
-  // A DISTRIBUTION IS NOT AN ANSWER UNTIL A QUALIFIED MAPPING SAYS WHERE THE LINES ARE. Picking
-  // them here would be this module deciding what counts as confident enough, which is precisely
-  // the profile decision it must not make.
+  // A distribution is not an answer until a qualified mapping says where the lines are.
+  // Picking them here would be this module making the profile's decision.
   if (distribution && Object.prototype.hasOwnProperty.call(distribution, "true")) {
     const bounds = env.call?.predicate_bounds;
     if (!bounds) {
@@ -474,9 +441,8 @@ function category(
 ): SemanticAssessment {
   if (has(rec, "category")) {
     const key = rec.category;
-    // THE ONE NULL THAT IS AN ANSWER. The approved value type declares a null key to mean the
-    // assessor could not tell, so discarding it as malformed would lose a real judgement and
-    // push the caller towards a key nobody chose.
+    // The one null that is an answer: the value type declares a null key to mean the assessor
+    // could not tell, so discarding it as malformed would lose a real judgement.
     if (key === null) return record(env, "answered", { kind: "category", key: null }, signals, null);
     if (typeof key !== "string" || !spec.options.some((o) => o.key === key)) {
       return record(env, "invalid_response", null, NO_SIGNALS,
@@ -484,8 +450,8 @@ function category(
     }
     return record(env, "answered", { kind: "category", key }, signals, null);
   }
-  // Taking the largest probability as the answer is rounding a distribution into a label. It is
-  // a mapping, it has to be qualified, and none is defined for categories.
+  // Taking the largest probability as the answer is rounding a distribution into a label. It
+  // is a mapping, it has to be qualified, and none is defined for categories.
   if (distribution) {
     return record(env, "unsupported", null, signals,
       "only a distribution arrived, and no qualified mapping turns one into a declared key");
@@ -520,8 +486,8 @@ function ordinal(
 
   const range = env.call?.score_range;
   if (!range) {
-    // AN UNVALIDATABLE NUMBER IS NOT RECORDED. Writing it down anyway would put a figure with
-    // no declared scale beside figures that have one, and nothing on the row would say which.
+    // An unvalidatable number is not recorded: a figure with no declared scale beside figures
+    // that have one, with nothing on the row to say which.
     return record(env, "unsupported", null, NO_SIGNALS,
       "a raw score arrived and no profile declares the scale it is on, so it cannot be validated");
   }
@@ -538,8 +504,8 @@ function ordinal(
   }];
 
   const mapping = env.call?.ordinal_mapping;
-  // THE RAW SCORE IS RETAINED RATHER THAN ROUNDED. Without a qualified mapping the number is
-  // real and the level is not, so the number is what gets written down.
+  // The raw score is retained rather than rounded. Without a qualified mapping the number is
+  // real and the level is not.
   if (!mapping) {
     return record(env, "unsupported", null, scored,
       "a score arrived and no qualified mapping turns it into one of this question's levels");
@@ -556,18 +522,15 @@ function ordinal(
   return record(env, "answered", { kind: "ordinal", level_key: reached.level_key }, scored, null);
 }
 
-// ── what the host may do with one ──────────────────────────────────────────────────────────
+// What the host may do with one
 
 /**
- * MAY THIS ASSESSMENT CARRY A SEMANTIC ADVANCE. Derived here from the recorded status and
- * nothing else, so that the answer is a property of what was actually established rather than
- * a flag on the reply — no shape in this file gives a model anywhere to assert its own answer
- * is actionable, and this function reads no such field.
+ * May this assessment carry a semantic advance. Derived from the recorded status and nothing
+ * else, so the answer is a property of what was established rather than a flag on the reply.
  *
- * ENUMERATED POSITIVELY: only `answered` may be consumed. An unrecognised status added later
- * defaults to refusing, which is the safe direction. What an `unknown` predicate or a null key
- * then means for a particular advance is the trusted host's policy and is decided against its
- * qualification records, not here.
+ * Enumerated positively: only `answered` may be consumed, so an unrecognised status added
+ * later refuses. What an `unknown` predicate or a null key then means for a particular advance
+ * is the trusted host's policy, decided against its qualification records.
  */
 export function authorizesSemanticAdvance(assessment: SemanticAssessment): boolean {
   return assessment.status === "answered" && assessment.value !== null;

@@ -1,16 +1,14 @@
 /**
  * The gate's own refusals, driven from outside and watched until they fail.
  *
- * WHY THESE ARE NOT CHECKS. Both refusals here are about the gate as a PROCESS — one refuses a
- * gate started inside a gate, the other a report path that resolves into the repository — and a
- * check that exercised either would have to launch a gate, which is the recursion the first one
- * exists to stop. `scripts/gate/run.ts` says so in as many words: it is exercised from outside.
- * This is outside.
+ * Not checks: both refusals are about the gate as a process — one refuses a gate started inside
+ * a gate, the other a report path that resolves into the repository — and a check exercising
+ * either would have to launch a gate, which is the recursion the first one stops.
  *
- * EVERY PROBE CARRIES ITS VALID PATH. A refusal that fires for everything is not a guard, it is
- * a broken gate, and the two are indistinguishable from the refusal alone. The control for both
- * is an ordinary run — no `ZZ_GATE_RUNNING`, a report path outside the tree — which must exit 0
- * and write its report; the mutation run's own baseline is that same control at full length.
+ * Every probe carries its valid path. A refusal that fires for everything is indistinguishable
+ * from a working guard when read from the refusal alone, so the control for both is an ordinary
+ * run — no `ZZ_GATE_RUNNING`, a report path outside the tree — which must exit 0 and write its
+ * report.
  */
 import { spawnSync, execFileSync } from "node:child_process";
 import { existsSync, unlinkSync } from "node:fs";
@@ -82,16 +80,12 @@ export function probeGuards(repo: string, outsidePath: string): GuardProbe[] {
 /**
  * The guard this runner may not drive itself, driven by the plan owner and recorded verbatim.
  *
- * `report()` refuses an INCOMPLETE run — a module under `gate/checks/` that `gate.ts` never
+ * `report()` refuses an incomplete run — a module under `gate/checks/` that `gate.ts` never
  * imports keeps its `check(` lines where the count can find them and registers nothing. Making
- * it fail means removing an import from `scripts/gate.ts`, which this task's rules forbid this
- * runner's author from editing, in a copy as much as anywhere. So it was driven by the person
- * the rule does not bind, in a disposable copy, restored from a saved original rather than
- * from git, and the receipt is carried here with that attribution attached.
- *
- * IT IS RECORDED AS DRIVEN BECAUSE IT WAS. An artifact still saying nobody has watched a guard
- * fail, after somebody has, is a stale premise — the same defect this initiative spent the day
- * finding in checks that had stopped describing their own subjects.
+ * it fail means removing an import from `scripts/gate.ts`, which this runner's author may not
+ * edit, in a copy as much as anywhere. So it was driven by the person the rule does not bind, in
+ * a disposable copy, restored from a saved original rather than from git, and the receipt is
+ * carried here with that attribution attached.
  */
 const EXTERNALLY_DRIVEN: GuardProbe & { readonly driven_by: string } = {
   probe: "GATE INCOMPLETE — a check module on disk that gate.ts never imports is caught",
@@ -112,9 +106,8 @@ const EXTERNALLY_DRIVEN: GuardProbe & { readonly driven_by: string } = {
  * The `guards` block for the report: what this run probed, what was driven externally, and
  * nothing carried forward that a later run has since answered.
  *
- * CALLED BY EVERY RUN, not only a `--guards` one. A top-up rebuilds the report object from
- * scratch, so a block it did not carry forward would silently vanish from the artifact — the
- * same shape as a `--only` run shortening the results it was supposed to add to.
+ * Called by every run, not only a `--guards` one: a top-up rebuilds the report object from
+ * scratch, so a block it did not carry forward would vanish from the artifact.
  */
 export function guardsBlock(existing: unknown, fresh: readonly GuardProbe[] | null): unknown {
   const prior = existing && typeof existing === "object" ? existing as Record<string, unknown> : {};

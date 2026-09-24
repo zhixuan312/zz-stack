@@ -1,22 +1,12 @@
 /**
- * model.ts — I-9's "semantic-policy" case group: `policies.ts`'s native `Policy` bound into
- * the real `mutate()` kernel, exercised against a fresh temporary owner-store, exactly the
- * way `persistence.ts` exercises I-7/I-8. `scripts/tenant-info/suites.ts` reserves the name
- * "model" at this path, so `verify --suite model` dynamic-imports it and calls `run`.
+ * The "semantic-policy" case group: `policies.ts`'s native `Policy` bound into the real
+ * `mutate()` kernel, exercised against a fresh temporary owner-store.
+ * COUPLED: `scripts/tenant-info/suites.ts` reserves the name "model" at this path, so
+ * `verify --suite model` dynamic-imports it and calls `run`.
  *
- * EVERY FIXTURE LIVES UNDER A FRESH `mkdtemp` OUTSIDE THIS CHECKOUT, exactly as `persistence.ts`
- * requires — see that file's header for why. Nothing here ever points at a deployment volume
- * or this repository.
- *
- * WHAT THESE CASES ACTUALLY PROVE, per the plan's own list: a create makes revision 1; a
- * semantic edit (including a description-only one) makes the next sequential revision; a
- * canonical no-op — byte-identical, or only reordered tags — makes none, but still advances
- * the etag with its own event; returning to an earlier revision's exact bytes still mints a
- * new, higher revision number; a source created in its own transaction and one created in the
- * SAME batch as the document that cites it both resolve as valid causes; a source is refused
- * a revision of its own; a cause naming the wrong hash, an empty `cause_refs`, and a cause
- * naming the artifact it would itself belong to are each refused BY THE POLICY — this file
- * never adjusts a fixture to make a deliberately-broken request pass.
+ * Every fixture lives under a fresh `mkdtemp` outside this checkout. Nothing here points at a
+ * deployment volume or this repository, and no fixture is adjusted to make a deliberately
+ * broken request pass.
  */
 import assert from "node:assert/strict";
 import { randomUUID, createHash } from "node:crypto";
@@ -67,7 +57,7 @@ async function withRoot(body: (root: string) => Promise<void>): Promise<void> {
   }
 }
 
-// ── fixtures: a source in its own transaction, and a document that cites it ────────────────
+// Fixtures: a source in its own transaction, and a document that cites it
 
 async function seedSource(root: string): Promise<{ id: string; hash: string; etag: string }> {
   const result = await runMutate(root, req({
@@ -89,7 +79,7 @@ async function seedDocument(root: string): Promise<{ id: string; etag: string; h
   return { id: result.artifact_id, etag: result.etag, hash: result.content_hash, revision: 1, cause };
 }
 
-// ── the case group ───────────────────────────────────────────────────────────────────────
+// The case group
 
 async function caseCreateMakesRevisionOne(): Promise<void> {
   await withRoot(async (root) => {
@@ -188,7 +178,7 @@ async function caseReturnToOldContentMakesNewSequentialRevision(): Promise<void>
 
 async function caseAttachBeforeDocument(): Promise<void> {
   await withRoot(async (root) => {
-    // The source and the document that cites it are minted in two SEPARATE transactions —
+    // The source and the document that cites it are minted in two separate transactions —
     // "attach before document" in the ordering sense, as against the same-batch case below.
     const doc = await seedDocument(root);
     const attach = await runMutate(root, req({
@@ -233,7 +223,7 @@ async function caseSameBatchSourceCreation(): Promise<void> {
     if (result.committed !== true) return;
     assert.equal(result.revision, 1, "the document minted alongside its own source must still land at revision 1");
 
-    // The staged source is durably committed, not discarded after this transaction: a LATER,
+    // The staged source is durably committed, not discarded after this transaction: a later,
     // separate revise can still cite it by the same id/hash.
     const again = await runMutate(root, req({
       operation: "revise", artifact_id: result.artifact_id, expected_etag: result.etag,
@@ -257,7 +247,7 @@ async function caseSourceIsImmutableOnceCreated(): Promise<void> {
 async function caseSourceHashChangeIsRefused(): Promise<void> {
   await withRoot(async (root) => {
     const source = await seedSource(root);
-    // Deliberately the WRONG hash for this source — the policy must refuse it outright, not
+    // DELIBERATE: the wrong hash for this source — the policy must refuse it outright, not
     // have this fixture quietly substitute the real hash to make the request pass.
     const badCause = refFor(source.id, null, "0".repeat(64));
     const result = await runMutate(root, req({ cause_refs: [badCause] }));
@@ -275,26 +265,15 @@ async function caseMissingCauseIsRefused(): Promise<void> {
 }
 
 /**
- * A CAUSE THAT ASSERTS A FOREIGN OWNER IS REFUSED, and every other identity component is
- * correct so that only the owner field can be what refuses it.
+ * A cause asserting a foreign owner is refused, with every other identity component correct so
+ * that only the owner field can be what refuses it.
  *
- * WHAT THIS CAUGHT. `resolveRef` compared artifact, revision and hash and never `owner_id`, so
- * a caller could name this store's real artifact while asserting somebody else's owner — and
- * the request COMMITTED. The false assertion then lived permanently in the ContentRevision's
- * `cause_refs` and in the `created` event's, both append-only, so nothing later could correct
- * it. `cause_refs` is the provenance trail: an owner in it that is not the owner the artifact
- * lives under points a future reader at another tenant's store.
+ * `resolveRef` must compare `owner_id` as well as artifact, revision and hash, on both
+ * resolution paths: the staged map when the artifact is in the same batch, and `getHead`
+ * otherwise. A false owner that commits lives permanently in the ContentRevision's
+ * `cause_refs` and in the `created` event's, both append-only.
  *
- * It was found by the I-24 agent review — the first reader on this delivery who had built none
- * of it — and no suite here noticed, which is why this case exists rather than only the fix.
- *
- * BOTH RESOLUTION PATHS, because there were two doors. `resolveRef` answers from the staged
- * map when the artifact is in this same batch and from `getHead` otherwise; checking only one
- * would leave the other open. `same_batch_source_creation` above proves the staged path is
- * genuinely reachable, so the second half of this case is not hypothetical.
- *
- * UNRESOLVED_CAUSE, not a "wrong owner" code, and deliberately: `checkCauses` cannot see WHY a
- * reference failed, only that it did. "Found, but not yours" is exactly the distinction that
+ * DELIBERATE: the code is `UNRESOLVED_CAUSE`, not a "wrong owner" code. "Found, but not yours"
  * must not leak to a caller probing for another tenant's artifact ids.
  */
 async function caseForeignOwnerCauseIsRefused(): Promise<void> {
@@ -342,18 +321,13 @@ async function caseForeignOwnerCauseIsRefused(): Promise<void> {
 }
 
 /**
- * A STALE-REVISION CAUSE IS REFUSED, AND THE REFUSAL SAYS WHICH REVISION IS CURRENT — while a
- * ref this owner cannot see stays generic.
+ * A stale-revision cause is refused and the refusal names the current revision, while a ref
+ * this owner cannot see stays generic. Naming the revision discloses nothing an owner cannot
+ * already read; a generic message everywhere would refuse a committed, present record in the
+ * same words as a fabricated hash.
  *
- * Both halves matter and they pull in opposite directions. The generic message exists so a
- * caller cannot probe for another tenant's artifact ids by reading refusals; the specific one
- * exists because telling an owner "you cited revision 1, the current revision is 2" about
- * their own store discloses nothing they cannot already read, and without it a real,
- * committed, present record is refused in the same words as a fabricated hash. The I-24 agent
- * review hit that ambiguity and had to read the kernel to resolve it.
- *
- * The safety is structural: `resolveRef` refuses every foreign-owner ref before this branch is
- * reachable, so a matching owner here means the caller owns the store being described.
+ * `resolveRef` refuses every foreign-owner ref before this branch is reachable, so a matching
+ * owner here means the caller owns the store being described.
  */
 async function caseStaleRevisionCauseNamesTheCurrentRevision(): Promise<void> {
   await withRoot(async (root) => {
@@ -472,15 +446,15 @@ export async function run({ cases }: { cases?: string }): Promise<SuiteOutcome> 
   return { passed: Object.values(results).every((r) => r.status === "passed"), detail: { status: "ran", cases: results } };
 }
 
-// ── I-11: createAdapterFixture — real registered handlers, real kernel, disposable store ───
+// createAdapterFixture — real registered handlers, real kernel, disposable store
 //
-// `checks/tenant-single-writer.ts` (frozen) imports this by name. It wraps `persist.ts`'s own
-// captureSource/writeDocument/patchDocument/approveDocument/readDocumentBody — the real
-// adapters, bound to the real `mutate()`/`nativePolicy` kernel — over a fresh `makeStoreRoot()`
-// this fixture alone owns; it supplies only the `auth` port those functions accept, never a
-// second mutate()/policy call of its own. `seedDocument` captures one real fixture source and
-// keeps it as the default cause for every edit made afterward, so a check exercising `patch`/
-// `approve` never has to (and never may) pass an empty `cause_refs` to get past CAUSE_REQUIRED.
+// COUPLED: `checks/tenant-single-writer.ts` (frozen) imports this by name. It wraps
+// `persist.ts`'s captureSource/writeDocument/patchDocument/approveDocument/readDocumentBody —
+// the real adapters, bound to the real `mutate()`/`nativePolicy` kernel — over a fresh
+// `makeStoreRoot()` this fixture owns, supplying only the `auth` port those functions accept
+// and never a second mutate()/policy call. `seedDocument` captures one real fixture source and
+// keeps it as the default cause for every later edit, so a check exercising `patch`/`approve`
+// never passes an empty `cause_refs` to get past CAUSE_REQUIRED.
 
 interface AdapterRef {
   readonly ref: ArtifactRef;
@@ -495,15 +469,15 @@ interface AdapterFixture {
     readonly ref: ArtifactRef; readonly body: string;
     readonly expected_etag?: string; readonly idempotency_key: string;
   }): Promise<MutationOutcomeView>;
-  // NOT A TOOL: this fixture method mirrors the kernel's own `approve` MutationOp — the MCP
-  // tool it will eventually stand behind is document_approve.
+  // NOT A TOOL: this fixture method mirrors the kernel's own `approve` MutationOp; the MCP
+  // tool is document_approve.
   approve(request: {
     readonly ref: ArtifactRef; readonly record_digest: string;
     readonly expected_etag?: string; readonly idempotency_key: string;
   }): Promise<MutationOutcomeView>;
   // `string | undefined`, not `string`: the frozen check reads `.artifact_id` straight off a
-  // `MutationOutcomeView` (optional on the type, since it does not apply to every outcome)
-  // with no narrowing of its own — `undefined` is refused here at runtime, not at the type.
+  // `MutationOutcomeView`, where it is optional, with no narrowing. `undefined` is refused
+  // here at runtime, not at the type.
   read(artifactId: string | undefined): Promise<{ readonly body: string }>;
   // NOT A TOOL: releases this fixture's own disposable store — no door registers a `close`.
   close(): Promise<void>;

@@ -1,17 +1,15 @@
 /**
  * Writing a document down, and the four records that go with it.
  *
- * `persistDocument` is the only way bytes reach the store THROUGH THE TOOLS REGISTERED TODAY
- * (document_write/patch, source_add, and the initiative acts) — see this file's bottom
- * section for the second, kernel-routed way bytes reach a DISPOSABLE store, and why it is not
- * yet the same tools' way of reaching this one. It remains one function for the tools above
- * because each of the things it does afterwards was once a line somebody had to remember: the
- * version snapshot taken at an approval, the activity entry, the ledger row on a close, and
- * the commit that makes the store a history a team can walk away with.
+ * `persistDocument` is the only way bytes reach the store through the tools registered today
+ * (document_write/patch, source_add, the initiative acts). It also takes the version snapshot
+ * at an approval, writes the activity entry, appends the ledger row on a close, and commits.
+ * The kernel-routed adapters at the bottom of this file reach a disposable store and are not
+ * wired into those tools.
  *
- * THE ENVELOPE IS STAMPED HERE AND NOWHERE ELSE. `status`, `approved_by`, `approved_at`,
- * `outcome`, `closed_by` are the platform's to write, which is the whole reason a model may
- * not send them — a second writer would make that rule advisory.
+ * The envelope is stamped here and nowhere else: `status`, `approved_by`, `approved_at`,
+ * `outcome` and `closed_by` are the platform's to write, which is why a model may not send
+ * them.
  */
 import { execFile } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -34,17 +32,13 @@ import { nativePolicy } from "./tenant-info/policies.js";
 
 import { type Chain, isoToday, stampEnvelope } from "./write-guards.js";
 
-/** Mechanical version snapshot: the moment a flow document's status flips
- * to approved, copy the APPROVED content to _versions/<doc>.v<N>.md. The
- * model never writes these; provenance gets a frozen copy per approval. */
+/** When a flow document's status flips to approved, copy the approved content to
+ * _versions/<doc>.v<N>.md. The model never writes these. */
 function snapshotOnApproval(chain: Chain, root: string, relPath: string, target: string, newContent: string): void {
   try {
     const parts = relPath.replace(/^\/+/, "").split("/");
-    // A FLOW'S DECLARATION NARROWS THIS; ITS ABSENCE DOES NOT SWITCH IT OFF. Unconditionally
-    // this returned for every document of a freeform initiative, so an approval there filed
-    // no frozen copy at all — the approver's name stood on bytes with nothing recording what
-    // they were. Provenance the platform cannot show is the failure this function exists to
-    // prevent, and "no manifest" is not a reason to stop preventing it.
+    // DELIBERATE: a flow's declaration narrows this; its absence does not switch it off. A
+    // freeform initiative has no manifest, and an approval there still files a frozen copy.
     if (parts.length !== 2) return;
     if (chain.documents.length && !chain.docs.has(parts[1])) return;
     if (parseEnvelope(newContent).status !== "approved") return;
@@ -52,80 +46,55 @@ function snapshotOnApproval(chain: Chain, root: string, relPath: string, target:
       ? parseEnvelope(readFileSync(target, "utf8")).status
       : undefined;
     if (oldStatus === "approved") return; // only on the flip
-    // Through parseEnvelope like every other envelope read. This was a bare regex with /m
-    // over the WHOLE document, so a line beginning `version:` anywhere in the body — a code
-    // block, a quoted frontmatter example — was read as the document's version, and it took
-    // the FIRST match where parseEnvelope takes the last. A snapshot then landed under the
-    // wrong v<N>, which either invents a version nobody wrote or overwrites the one that
-    // was there.
+    // Through parseEnvelope, not a bare regex: `^version:` with /m over the whole document
+    // matches a line in the body, and takes the first match where parseEnvelope takes the last.
     const declaredV = parseEnvelope(newContent).version ?? "";
     const v = /^\d+$/.test(declaredV) ? declaredV : "1";
     const snapshot = parts[1].replace(/\.md$/, "") + ".v" + v + ".md";
     const dir = join(root, parts[0], "_versions");
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, snapshot), newContent);
-    // INDEXED BY THE PATH THAT WROTE IT.
+    // Indexed by the path that wrote it, so a frozen approval is searchable without a manual
+    // knowledge_reindex. indexDoc derives `superseded_by` from exactly this path shape.
     //
-    // Snapshots reached disk and stopped there. Nothing put a row in zz.doc for one, so the
-    // only way a frozen approval became searchable was somebody remembering to run
-    // knowledge_reindex(force) by hand — and the initiative that found this has snapshots on
-    // disk and zero indexed rows, which is what "somebody remembers" looks like over time.
-    // indexDoc already knows what a snapshot IS: it derives `superseded_by` from exactly this
-    // path shape. It was simply never called with one at the moment one was written.
+    // The file is the record and the index is derived from it, so a failure here must not fail
+    // the write — indexDoc swallows its own errors and reports them, as logActivity does.
     //
-    // The file is the record and the index is derived from it, so a failure here must not
-    // fail the write. indexDoc swallows its own errors and reports them, the same way
-    // logActivity does — a snapshot that is written but unindexed is a stale row, while a
-    // snapshot refused over an index fault is a lost approval.
-    //
-    // This one snapshot, not a rebuild of the team: the write path knows precisely what it
-    // changed, and reindexing everything on every approval would make an approval's cost
-    // grow with the size of the store.
+    // This one snapshot, not a rebuild of the team: an approval's cost must not grow with the
+    // size of the store.
     void indexDoc(root, `${parts[0]}/_versions/${snapshot}`, newContent);
   } catch {
     /* snapshots must never break the write */
   }
 }
-/** Replace a field's line INSIDE the frontmatter, leaving the body alone.
+/** Replace a field's line inside the frontmatter, leaving the body alone.
  *
- * A bare `doc.replace(/^status: .*$/m, …)` is applied to the whole document, so it rewrites
- * whichever line comes first — and in a journal node or an OKR sheet the body is full of
- * lines that begin with a word and a colon. The OKR grader already lost this once with a narrower
- * pattern: `^status: active$` matched the first grading only, so a second pass left the
- * envelope carrying the FIRST average while the body carried the new scores. Scoping the
- * replacement is what makes "the envelope says X" true of the envelope. */
+ * A bare `doc.replace(/^status: .*$/m, …)` is applied to the whole document and rewrites
+ * whichever line comes first, and a journal node has body lines that begin with a word and a
+ * colon. */
 export function setEnvelopeField(doc: string, field: string, value: string): string {
   const m = doc.match(ENVELOPE_BLOCK);
   if (!m) return doc;
   const line = new RegExp(`^${field}:.*$`, "m");
   if (!line.test(m[1])) return doc;
-  // FUNCTION replacements, both of them. A string replacement interprets $$, $&, $` and $'
-  // — and `value` here is not always the platform's own: initiative_close() passes the model's
-  // `accepted_by` through putEnvelopeField below. `$'` means "everything after the match",
-  // so one of those in a name silently duplicates the rest of the document into its envelope.
+  // Function replacements, both of them: a string replacement interprets $$, $&, $` and $',
+  // and `value` is not always the platform's own — initiative_close() passes the model's
+  // `accepted_by` through putEnvelopeField below, so `$'` in a name duplicates the rest of the
+  // document into its envelope.
   //
-  // ONE LINE, for the other half of the same problem. That comment already said the value can
-  // be the model's and stopped at the substitution patterns, which are the milder failure: a
-  // newline does not corrupt a field, it ADDS one, and parseEnvelope takes the LAST value of a
-  // repeated key. Measured through document_approve(): `on_behalf_of: "Dana Reyes\nflow: other\noutcome:
-  // accepted"` wrote a flow the platform had not chosen and an outcome nobody had derived —
-  // through the tool whose description says the platform writes those fields and a
-  // hand-written one is refused. ownershipCheck cannot see it either, because approve and
-  // close pass `via` and that check returns null on `via` by design.
-  //
-  // Here rather than at the four call sites. initiative_close() already spelled `oneLine(reason)` at one
-  // of them and not at `accepted_by` directly above it, which is what a rule kept as a
-  // call-site habit looks like just before it is forgotten.
+  // oneLine() for the other half: a newline in a value adds a field rather than corrupting
+  // one, and parseEnvelope takes the last value of a repeated key, so `"Dana Reyes\nflow:
+  // other"` sets a flow the platform never chose. Applied here rather than at the four call
+  // sites. ownershipCheck cannot catch it: approve and close pass `via`, and that check returns
+  // null on `via`.
   return doc.replace(m[0], () => m[0].replace(line, () => `${field}: ${oneLine(value)}`));
 }
 /** Set an envelope field, adding it when it is not already there.
  *
- * setEnvelopeField only REPLACES: it returns the document untouched when the field is
- * absent, which is right for a rewrite and wrong for a stamp. The governance fields are
- * stamped by the platform onto documents that have never carried them, so the stamp needs
- * the other half. Insert at the end of the frontmatter block, never the top: a reader scans
- * frontmatter for `flow` and `type` first, and pushing them down to make room for a status
- * line makes the envelope harder to read for no gain. */
+ * setEnvelopeField only replaces: it returns the document untouched when the field is absent,
+ * and the governance fields are stamped onto documents that have never carried them. The
+ * insert goes at the end of the frontmatter block, so `flow` and `type` stay at the top where
+ * a reader scans for them. */
 export function putEnvelopeField(doc: string, field: string, value: string): string {
   const m = doc.match(ENVELOPE_BLOCK);
   if (!m) return doc;
@@ -155,32 +124,16 @@ export function logActivity(root: string, relPath: string | null, entry: Record<
 function ledgerOnClose(root: string, relPath: string, content: string): void {
   try {
     const parts = relPath.replace(/^\/+/, "").split("/");
-    // WHICHEVER DOCUMENT CARRIES THE OUTCOME, when no flow named one. A freeform initiative
-    // has `closingDoc === ""`, so this returned every time and a freeform close appended no
-    // ledger row — and the ledger is what the team's counts read, so those closes were
-    // invisible to every total built on it. initiative_close is the only thing that can write
-    // an `outcome` (outcomeCheck refuses one typed by hand), so the document it stamps is the
-    // one that closed the initiative.
+    // A document directly inside an initiative folder; nothing else closes one.
     if (parts.length !== 2) return;
-    // AND WHICHEVER DOCUMENT CARRIES IT WHEN A FLOW *DID* NAME ONE — the same argument, which
-    // was only ever applied to half the cases.
+    // Whichever document carries the outcome, whatever a flow named as its closing document:
+    // an initiative abandoned part-way is closed on the furthest document that exists, because
+    // the closing one was never written.
     //
-    // `if (chain.closingDoc && parts[1] !== chain.closingDoc) return;` stood here, and an
-    // initiative abandoned part-way is exactly the close that does not land on the closing
-    // document: `initiative_close` records an abandon on the FURTHEST document that exists,
-    // because the closing one never got written — that is what abandoning means. So the one
-    // outcome the ledger most needs was the one it never received, while initiative_close
-    // told the caller in as many words that "a ledger row was appended". Live on this
-    // deployment: xuan/2026-09-13-platform-surface-redesign, abandoned on plan.md, absent
-    // from the ledger the team's counts are totalled from.
-    //
-    // Nothing is loosened by dropping it. `outcomeCheck` refuses an `outcome` typed by hand,
-    // so only initiative_close can put one there; it writes exactly one; and the
-    // already-closed test below stops a second row. The presence of the outcome IS the
-    // signal, which is what the paragraph above already concluded for freeform.
-    // Through parseEnvelope: both of these scanned the whole document, so a closing document
-    // that merely mentioned `outcome:` in its body — quoting the rule, or showing an
-    // example — appended a ledger row for an initiative nobody had closed.
+    // The outcome is the signal. outcomeCheck refuses one typed by hand, so only
+    // initiative_close can write it; it writes exactly one; and the already-closed test below
+    // stops a second row. Read through parseEnvelope, so a body that merely mentions
+    // `outcome:` appends nothing.
     const outcome = parseEnvelope(content).outcome;
     if (!outcome) return;
     const prev = existsSync(join(root, parts[0], parts[1]))
@@ -209,49 +162,25 @@ function ledgerOnClose(root: string, relPath: string, content: string): void {
       writeFileSync(ledger,
         "| closed | initiative | outcome | e2e hours | writes | patches |\n|---|---|---|---|---|---|\n");
     }
-    // ESCAPED, like every other table this file writes. journalLog and the journal index both
-    // pass their variable fields through tableCell and this row did not — so an initiative
-    // folder named `a|b`, which safePath permits, appended a row a parser reads as initiative
-    // "a" and outcome "b". The ledger is the record the smoke suite's whole verdict rests on,
-    // "a row the model cannot write"; the model cannot write it, and it could still shape it
-    // by choosing a folder name.
+    // Escaped through tableRow, like every other table this file writes: an initiative folder
+    // named `a|b`, which safePath permits, would otherwise append a row a parser reads as two
+    // cells.
     appendFileSync(ledger, tableRow(isoToday(), parts[0], outcome, hours, writes, patches));
   } catch { /* the ledger must never break a close */ }
 }
-/** The team's store IS a git repository, and every act that changes it is a commit.
+/** The team's store is a git repository, and every act that changes it is a commit.
  *
- * The store has been a directory on a volume: real writes, real approval snapshots in
- * `_versions/`, and no way to answer "what changed between the approval and the close"
- * except by diffing two snapshots the platform happened to take. git answers that for every
- * write, and answers it in a format that outlives this platform — which is the point,
- * because the documents belong to the team and not to us. A team that leaves takes its
- * repository and loses nothing.
+ * The actor is the git author, so attribution travels with the repository and is readable by
+ * `git log` on a machine with nothing of ours installed.
  *
- * The actor is the git author. Provenance already lives in `zz.event` and in the envelope;
- * putting it in the commit too means the attribution travels with the repository, readable
- * by `git log` on a laptop with nothing of ours installed.
+ * DELIBERATE: `add -A` rather than the one path. Journal nodes, sources and the ledger are
+ * written by other tools, and staging everything keeps one commit path instead of a call at
+ * every writeFileSync. The churn that would drown the history is excluded at init
+ * instead, by STORE_GITIGNORE below.
  *
- * WHY `add -A` RATHER THAN THE ONE PATH: documents are not the only thing a team owns.
- * Journal nodes, OKRs, sources and the ledger are written by five other tools, and a
- * repository holding the documents but not the knowledge is a repository that answers half
- * the questions. Staging everything means one commit path instead of a call sprinkled at
- * every writeFileSync — which is how two of them end up disagreeing about what a commit is.
- *
- * The churn that would drown it is excluded at init instead: `activity.jsonl` is appended on
- * every skill load and already lives in `zz.event`, and a commit per read is noise that
- * makes the history useless for the thing it exists for.
- *
- * NEVER throws and never blocks. The file is on disk before this runs; a git failure must
- * leave a team with their document and a missing commit, not a refused write — exactly as
- * the ledger must never break a close.
- *
- * AND IT SAYS SO WHERE SOMEBODY LOOKS. This docstring used to end "failures land in the
- * activity log, which is where a silent degradation becomes something a person can see", and
- * nothing anywhere reads `git_failed` — not the reports, not the monitor, not the release
- * checks. That is not hypothetical: the released image shipped without git for some time, so
- * every document write on production succeeded, logged this line, and left every team's store
- * with no history at all. The container log is where an operator looks when something is
- * wrong with a service, so the failure goes there too. */
+ * Never throws and never blocks: the file is on disk before this runs, so a git failure leaves
+ * a team with their document and a missing commit rather than a refused write. Failures go to
+ * the container log as well as the activity log, because nothing reads `git_failed`. */
 const STORE_GITIGNORE = [
   "# Mechanical telemetry, appended on every call and already held in zz.event.",
   "# A commit per skill load would bury the history this repository exists for.",
@@ -265,9 +194,8 @@ export function commitStore(root: string, actor: string, action: string, subject
       if (err) {
         const why = `${args[0]}: ${String(err.message).slice(0, 160)}`;
         logActivity(root, null, { user: actor, action: "git_failed", detail: why });
-        // The store's history is what a team keeps when they leave this platform, and it can
-        // stop being written without a single request failing. Somebody has to be able to see
-        // that, and the activity log is read by nothing.
+        // The history can stop being written without a single request failing, and the
+        // activity log is read by nothing.
         console.error(`git_failed in ${root}: ${why}`);
         return;
       }
@@ -277,13 +205,12 @@ export function commitStore(root: string, actor: string, action: string, subject
   const name = actor.split("@")[0] || "zz";
   const commit = (): void => run(["add", "-A"], () =>
     // --allow-empty: a write that changed nothing still happened, and a run of them with no
-    // commits reads as a store nobody touched. Empty commits are cheap and honest.
+    // commits reads as a store nobody touched.
     run(["-c", `user.name=${name}`, "-c", `user.email=${actor}`,
          "commit", "--allow-empty", "-m", `${action}: ${subject}`]));
   if (existsSync(join(root, ".git"))) return commit();
-  // The first act on a team's store initialises it. `-b main` rather than whatever the host
-  // configured as its default: a branch name that varies by machine is a branch name that
-  // breaks the day this repository gains a remote.
+  // The first act on a team's store initialises it. `-b main` rather than the host's default:
+  // a branch name that varies by machine breaks the day this repository gains a remote.
   try {
     writeFileSync(join(root, ".gitignore"), STORE_GITIGNORE);
   } catch { /* unwritable root: init will fail too, and that failure is the one worth logging */ }
@@ -291,16 +218,9 @@ export function commitStore(root: string, actor: string, action: string, subject
 }
 /** Everything that happens once a mutation is allowed, in the order it must happen.
  *
- * Both write paths did these steps inline and document_patch was missing one of them, silently
- * skipping the envelope stamp, so a document written before its flow was known stayed
- * unstamped however often it was edited. (The count is not written here for the reason
- * documentGuards gives above: the list has grown twice since and the number had not.)
- *
- * `act` has no default on purpose. It becomes the commit message in the team's own
- * repository, and the question that repository exists to answer — what happened between the
- * approval and the close — cannot be answered by a log in which an approval and a typo fix
- * both read "write". A default would let the next write path be added without anyone
- * choosing; without one, the compiler asks. */
+ * `act` has no default. It becomes the commit message in the team's own repository, and a log
+ * in which an approval and a typo fix both read "write" cannot answer what happened between
+ * the approval and the close. Without a default, the compiler asks. */
 export function persistDocument(chain: Chain, root: string, relPath: string, target: string,
                          content: string, act: string): string {
   const stamped = stampEnvelope(chain, relPath, content);
@@ -308,41 +228,25 @@ export function persistDocument(chain: Chain, root: string, relPath: string, tar
   snapshotOnApproval(chain, root, relPath, target, stamped);
   ledgerOnClose(root, relPath, stamped);
   writeFileSync(target, stamped);
-  // The ACT, not "write". The store is a git repository so that a team can ask what
-  // happened between the approval and the close, and a log in which an approval and a typo
-  // fix both read "write" cannot answer that. Every other commit here names its act.
+  // The act, not "write": every commit here names its act.
   commitStore(root, parseCaller(requestHeaders()).email, act, relPath);
   void indexDoc(root, relPath, stamped);
   return stamped;
 }
 
-// ── I-11: adapters that route through the tenant-info mutation kernel ──────────────────────
+// Adapters that route through the tenant-info mutation kernel
 //
-// THESE ARE NOT WIRED INTO document_write/document_patch/document_approve/source_add ABOVE,
-// and that gap is reported rather than papered over. `mutate()` (I-8's `tenant-info/
-// mutations.ts`) refuses NOT_FOUND_OR_FORBIDDEN for any artifact_id it holds no commit for —
-// `readOwnerState` there replays only `.zz/commits/*.json` — and every one of the 527
-// documents on a live deployment has no such commit. Routing the tools above through
-// `mutate()` on that footing would answer every write to an existing document with a refusal —
-// the regression the safety directive names outright: "a document that is valid and writable
-// today must remain valid and writable."
+// These are not wired into document_write/document_patch/document_approve/source_add above.
+// `mutate()` (tenant-info/mutations.ts) refuses NOT_FOUND_OR_FORBIDDEN for any artifact_id it
+// holds no commit for — `readOwnerState` there replays only `.zz/commits/*.json` — and a
+// document the old write path created has none, so routing the tools above through `mutate()`
+// would answer every write to an existing document with a refusal. The adoption path at the
+// bottom of this file is the missing half.
 //
-// I-20 BUILT THE MISSING HALF, at the bottom of this file. Giving an existing document its
-// first commit is `import_legacy`, which `nativePolicy` (policies.ts) still excludes by design
-// and which `tenant-info/legacy-import.ts` now implements; `reviseDocumentAtPath` is the
-// path-addressed adapter that adopts before it revises, so a brownfield write succeeds instead
-// of refusing. The paragraph above is still why the tools are not switched over IN THIS FILE:
-// production authority for that cutover is a later task's, not an adapter's to take.
-//
-// What this task delivers instead: the one real, single-mutation-kernel entry point the
-// cutover task registers in place of the ad-hoc writes above, exercised end to end against a
-// disposable store by `createAdapterFixture()` in testing/tenant-info/model.ts (checks/
-// tenant-single-writer.ts). `auth` is the one port these functions accept — the caller
-// identity `parseCaller(requestHeaders())` resolves for the tools above is passed in here
-// instead, so a fixture can supply a fixed one. A clock and export ports are deliberately NOT
-// threaded through: `mutate()` derives `at` internally and never accepts a `CommitExports`
-// (`record.ts`'s own optional projectToDatabase/exportToGit), and both are I-8's file, outside
-// this task's edit surface — wiring either here would mean editing mutations.ts.
+// `auth` is the one port these functions accept: the caller identity
+// `parseCaller(requestHeaders())` resolves for the tools above is passed in here instead, so a
+// fixture can supply a fixed one. A clock and export ports are not threaded through — `mutate()`
+// derives `at` internally and never accepts a `CommitExports`.
 
 export interface ArtifactPorts {
   readonly root: string;
@@ -376,11 +280,8 @@ function documentPayload(seed: DocumentSeed): Record<string, unknown> {
 export type MutationOutcome = MutationResult | MutationError | MutationIndeterminate;
 
 /** A flat, always-shaped view of `MutationOutcome` for a caller that reads a field without
- *  first narrowing the discriminated union — exactly what a JSON reply to an MCP client (or a
- *  check exercising this adapter layer with no type guard of its own) needs. Every field the
- *  spec's structured mutation metadata names is present on the type; a field that does not
- *  apply to this particular outcome's `committed` value is simply absent, never a fabricated
- *  default standing in for it. */
+ *  first narrowing the discriminated union. A field that does not apply to this outcome's
+ *  `committed` value is absent, never a fabricated default. */
 export interface MutationOutcomeView {
   readonly committed: true | false | "unknown";
   readonly code?: string;
@@ -416,7 +317,7 @@ export async function captureSource(
   });
 }
 
-/** `document_write`'s eventual kernel entry point for a NEW document. `causeRefs` must
+/** `document_write`'s eventual kernel entry point for a new document. `causeRefs` must
  *  already resolve to a committed (or same-batch-staged) record — an empty list is refused
  *  CAUSE_REQUIRED by the kernel's own policy, never defaulted here. */
 export async function writeDocument(
@@ -451,7 +352,7 @@ export async function patchDocument(
   });
 }
 
-/** `document_approve`'s eventual kernel entry point. Binds to the revision AND record digest
+/** `document_approve`'s eventual kernel entry point. Binds to the revision and record digest
  *  the caller presents as current — `decideTransition` (policies.ts) refuses either one stale,
  *  never approving content or provenance the caller has not actually seen. */
 export async function approveDocument(
@@ -464,8 +365,8 @@ export async function approveDocument(
   return mutate({
     root: ports.root, auth: ports.auth, policy: nativePolicy,
     request: {
-      // NOT A TOOL: the kernel's own MutationOp value — the MCP tool this adapter will
-      // eventually stand behind is document_approve.
+      // NOT A TOOL: the kernel's own MutationOp value. The MCP tool this adapter will stand
+      // behind is document_approve.
       operation: "approve", artifact_id: request.artifact_id, expected_etag: request.expected_etag,
       idempotency_key: request.idempotency_key, artifact_class: "work_document",
       payload: {
@@ -477,23 +378,14 @@ export async function approveDocument(
   });
 }
 
-// ── I-20: the adoption path, and the adapter the cutover actually registers ────────────────
+// The adoption path, and the adapter the cutover registers
 //
-// WHAT I-11 REPORTED, AND WHY IT IS FIXED HERE RATHER THAN THERE. The block above says the
-// adapters are not wired into the registered tools because `mutate()` refuses any artifact_id
-// it holds no commit for, and every existing document is one. That was true and the gate could
-// not see it: every suite in this delivery creates its artifacts fresh, so no case ever wrote
-// to an artifact the store had not itself just made. A green suite that only tests greenfield
-// writes cannot see a cutover that breaks brownfield ones.
-//
-// `reviseDocumentAtPath` is the missing half. A registered tool holds a PATH — that is what
-// `document_patch("xuan/plan.md")` is given — and `legacyArtifactId` turns that path into the
-// one identity this platform will ever give those bytes. If the kernel already holds that
-// artifact, this is an ordinary revise at its current etag. If it does not, and the bytes are
-// sitting on disk where the old write path left them, they are ADOPTED first: one
-// `import_legacy` commit that archives the original bytes untouched and records where they
-// came from, and only then the revise. Nothing is created from nothing and nothing is refused
-// for having existed before this store did.
+// A registered tool holds a path — `document_patch("xuan/plan.md")` — and `legacyArtifactId`
+// turns that path into the one identity this platform will ever give those bytes. If the
+// kernel already holds that artifact, `reviseDocumentAtPath` is an ordinary revise at its
+// current etag. If it does not, and the bytes are on disk where the old write path left them,
+// they are adopted first: one `import_legacy` commit that archives the original bytes
+// untouched and records where they came from, and only then the revise.
 
 /** The legacy bytes for a locator, or `null` when the store holds no such file. The locator is
  *  checked with the importer's own rule before the path is opened — one rule, not a second
@@ -507,12 +399,12 @@ function readLegacyBytes(root: string, locator: string): Buffer | null {
 
 /**
  * Gives an artifact that predates this record store its first commit, from the bytes the old
- * write path left on disk. Returns `null` when there is nothing at that locator to adopt —
- * which is not an error: it is the ordinary answer for a document this store minted itself.
+ * write path left on disk. Returns `null` when there is nothing at that locator to adopt,
+ * which is the ordinary answer for a document this store minted itself.
  *
- * Calling it twice is free. The importer's idempotency key is a digest of the manifest id, the
- * locator and the original byte hash, so a second call presents the identical request under the
- * identical key and `mutate()` replays the first commit's result without writing anything.
+ * Calling it twice is free: the importer's idempotency key is a digest of the manifest id, the
+ * locator and the original byte hash, so a second call presents the identical request under
+ * the identical key and `mutate()` replays the first commit's result without writing.
  */
 export async function adoptLegacyDocument(ports: ArtifactPorts, locator: string): Promise<MutationOutcome | null> {
   const bytes = readLegacyBytes(ports.root, locator);
@@ -530,15 +422,14 @@ export async function adoptLegacyDocument(ports: ArtifactPorts, locator: string)
 }
 
 /**
- * THE PATH-ADDRESSED WRITE THE CUTOVER REGISTERS, and the only one that is safe to point
+ * The path-addressed write the cutover registers, and the only one that is safe to point
  * `document_patch`/`document_revise` at. Adopts first when the artifact has no commit here and
  * legacy bytes exist for it, then revises through the same `patchDocument` every native edit
  * uses.
  *
- * `expected_etag` STILL WINS WHEN THE CALLER HAS ONE. A caller that read the document through
- * this kernel presents the etag it saw and a stale one is refused exactly as before. The
- * fallback is only for the case where no etag can exist: the very first write to bytes this
- * store has just adopted, which no caller can have read a kernel etag for.
+ * `expected_etag` still wins when the caller has one, and a stale one is refused. The fallback
+ * covers only the first write to bytes this store has just adopted, which no caller can hold a
+ * kernel etag for.
  */
 export async function reviseDocumentAtPath(
   ports: ArtifactPorts,
@@ -551,28 +442,21 @@ export async function reviseDocumentAtPath(
   const artifactId = legacyArtifactId(ports.auth.owner_id, request.locator);
   const head = await readArtifactHead(ports.root, artifactId);
 
-  // THE FALLBACK ETAG COMES OFF THE ADOPTION, AND NOTHING ELSE, because the adoption is the
-  // one etag that does not move. `expected_etag` is part of what `requestHash` covers, so an
-  // adapter that synthesized the CURRENT head's etag would hand the kernel a different request
-  // every time the document changed — and a caller retrying a lost response under the same
-  // idempotency key would get IDEMPOTENCY_CONFLICT where it had earned a clean replay. The
-  // adoption replays off its own commit forever, so its etag is the same on the tenth call as
-  // on the first, and the retry is the replay it should be. Measured: the suite case
-  // `repeated_brownfield_write_is_one_write` went red on exactly that, with the current head's
-  // etag in this position.
+  // DELIBERATE: the fallback etag comes off the adoption and nothing else. `expected_etag` is
+  // part of what `requestHash` covers, so synthesizing the current head's etag would hand the
+  // kernel a different request every time the document changed, and a caller retrying a lost
+  // response under the same idempotency key would get IDEMPOTENCY_CONFLICT instead of a clean
+  // replay. The adoption replays off its own commit forever, so its etag never moves.
   //
-  // Adoption is only attempted when it could matter — the artifact has no commit, or the
-  // caller brought no etag and needs the one adoption establishes. A post-cutover caller that
-  // read the document and presents its etag never pays for this at all.
+  // Adoption is attempted only when it could matter: no commit, or no etag from the caller.
   let adopted: MutationOutcome | null = null;
   if (head === null || request.expected_etag === undefined) {
     adopted = await adoptLegacyDocument(ports, request.locator);
     if (adopted !== null && adopted.committed !== true) return adopted;
   }
   if (head === null && adopted === null) {
-    // No commit and no bytes: there is nothing here to revise and nothing to adopt. Saying so
-    // by name beats letting this fall through to the kernel's "expected_etag is required",
-    // which is true and tells the caller nothing about what is actually missing.
+    // No commit and no bytes: nothing to revise and nothing to adopt. Naming that beats
+    // falling through to the kernel's "expected_etag is required".
     return {
       committed: false, code: "NOT_FOUND_OR_FORBIDDEN",
       message: `no artifact for ${request.locator} in this store, and no legacy bytes at that path to adopt — writing a new document is writeDocument's act`,
@@ -586,11 +470,10 @@ export async function reviseDocumentAtPath(
 }
 
 /** `document_read`/`document_present`'s eventual kernel entry point for a pinned artifact_id:
- *  the materialized body `record.ts` already wrote to `documents/<artifact_id>.md` on the last
- *  committed create/revise. Revision, content_hash, record_digest and etag are NOT derivable
- *  here without `mutations.ts`'s owner-state replay (`readOwnerState`, unexported and outside
- *  this task's edit surface) — a caller that needs those already holds them on the
- *  `MutationResult` a create/revise/approve just returned; this only re-reads the bytes. */
+ *  the materialized body `record.ts` wrote to `documents/<artifact_id>.md` on the last
+ *  committed create/revise. Revision, content_hash, record_digest and etag are not derivable
+ *  here without `mutations.ts`'s unexported owner-state replay; a caller that needs those holds
+ *  them on the `MutationResult` a create/revise/approve just returned. */
 export function readDocumentBody(root: string, artifactId: string): { readonly body: string } | null {
   const target = join(root, "documents", `${artifactId}.md`);
   if (!existsSync(target)) return null;

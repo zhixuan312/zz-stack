@@ -1,30 +1,20 @@
 /**
  * Reporting a bug.
  *
- * WHY ON /core. zz-core owns "the record every flow writes into… a capability belongs here when
- * every flow needs it and no flow owns it". Anybody, in any flow, can hit something broken, and
- * no flow owns the act of saying so. It is not a credential or a question of authority, so it is
- * not /manage; it is not an evaluation, so it is not /eval.
+ * On /core because zz-core owns the record every flow writes into, and a capability belongs there
+ * when every flow needs it and no flow owns it: anybody, in any flow, can hit something broken. It
+ * is not a credential or a question of authority, so not /manage; not an evaluation, so not /eval.
  *
- * WHY NOT A KNOWLEDGE NODE. `knowledge_add` refuses an entry that cannot point at the initiative
- * it came from, and it is right to: a node without evidence is an opinion. A bug report is the
- * opposite shape — it arrives mid-task from somebody who was trying to do something else, usually
- * before anyone knows the cause, and its whole value is that it was captured at all. Held to the
- * journal's bar, most reports would be refused.
+ * Not a knowledge node: `knowledge_add` refuses an entry that cannot point at the initiative it came
+ * from, and a bug report is the opposite shape — it arrives mid-task from somebody who was trying to
+ * do something else, usually before anyone knows the cause.
  *
- * WHY NOT AN EVENT. zz.event is telemetry: machine-written, never authored, and carrying no actor
- * on a tool_call by design — "no address on a measurement". A bug report is authored, and it
- * belongs to the person who took the trouble to write it.
+ * Not an event: zz.event is telemetry, machine-written and carrying no actor on a tool_call by
+ * design. A bug report is authored, and belongs to the person who wrote it.
  *
- * READING AND CLOSING ARE NOT HERE, and that is the whole shape of it. Filing a report is
- * something anybody doing anything might need to do, which is what puts it on this door.
- * Reading every report on the deployment and deciding what came of one are operator acts — they
- * are about the platform rather than about the work somebody was doing when it broke — so they
- * live on /manage behind superadmin, beside `knowledge_reindex`, which is there for exactly the
- * same reason. A day-to-day caller files; an operator answers.
- *
- * The table is still read: `bug_list` and `bug_resolve` in the gateway's access door are its
- * readers, so this is not the write-only shape `zz.decision` was for months.
+ * Filing is something anybody doing anything might need to do; reading every report on the
+ * deployment and deciding what came of one are operator acts, so `registerBugAdminTools` offers
+ * them to a superadmin only, as `knowledge_reindex` is.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
@@ -40,11 +30,9 @@ const json = (v: unknown): ReturnType<typeof text> => text(JSON.stringify(v, nul
 const noDb = (): ReturnType<typeof text> =>
   text("ERROR: no platform database — bug reports are stored in it, so there is nowhere to put this one");
 
-/** The impact vocabulary, closed and enforced by 056's CHECK constraint.
- *
- *  `z.enum` rather than `z.string`, so a caller is refused at the door with the list rather
- *  than by Postgres with a constraint name. The database still checks: a schema that trusts its
- *  callers is a schema that holds whatever the next caller sends. */
+/** The impact vocabulary, closed and enforced by the schema's own CHECK constraint. `z.enum`
+ *  rather than `z.string`, so a caller is refused at the door with the list rather than by Postgres with a
+ *  constraint name. The database still checks. */
 const IMPACT = ["blocks_work", "wrong_result", "confusing", "cosmetic"] as const;
 
 export function registerBugTools(server: McpServer, platformVersion: string): void {
@@ -84,8 +72,8 @@ export function registerBugTools(server: McpServer, platformVersion: string): vo
          returning id::text as id`,
         [who, team, title.trim(), detail.trim(), impact ?? null,
          surface?.trim() || null, initiative?.trim() || null, platformVersion]);
-      // RECORDED, because this changes something. Filed against the initiative they name when
-      // they name one, so the report shows up beside the work it interrupted.
+      // Recorded, because this changes something. Filed against the initiative they name when they
+      // name one, so the report shows up beside the work it interrupted.
       logActivity(await userRoot(), initiative?.trim() ? `${initiative.trim()}/_open.json` : null,
         { user: who, action: "bug_report", bug: rows[0].id, title: title.trim() });
       return json({
@@ -101,35 +89,23 @@ export function registerBugTools(server: McpServer, platformVersion: string): vo
 }
 
 
-/** ANSWERING A BUG REPORT, on the same door it was filed through.
+/** Answering a bug report, on the same door it was filed through.
  *
- * These three lived on /manage, and the split was made by ROLE rather than by subject:
- * filing is everybody's, answering is an operator's, so the tools went to different doors.
- * That is role deciding a door, and it is the thing R8 forbids — apply the test and
- * `bug_report` and `bug_list` answer differently with nothing but the caller between them.
- * A bug is one subject and it lives where it is filed.
+ * Splitting by role — filing is everybody's, answering is an operator's — puts the tools on
+ * different doors, which is role deciding a door and what R8 forbids: apply the test and
+ * `bug_report` and `bug_list` answer differently with nothing but the caller between them. A bug is
+ * one subject and it lives where it is filed.
  *
- * `sup` is passed rather than assumed so every registration carries its own visible
- * `if (sup)`, the way the other doors write it: the gate parses those gates out of the SOURCE
- * to decide which role is offered what, and a module that guarded at its call site instead
- * would read to it as three tools handed to every member.
+ * `sup` is passed rather than assumed so every registration carries its own visible `if (sup)`: the
+ * gate parses those gates out of the source to decide which role is offered what, and a module that
+ * guarded at its call site would read to it as three tools handed to every member.
  *
- * SUPERADMIN, not team admin. A report is not team-scoped — the platform is one deployment, a
- * defect one team hits is one every team has — so the list is everybody's reports, and handing
- * that to a team's own admin shows them every other team's. */
+ * Superadmin, not team admin. A report is not team-scoped — the platform is one deployment, and a
+ * defect one team hits is one every team has — so the list is everybody's reports, and handing that
+ * to a team's own admin shows them every other team's. */
 export function registerBugAdminTools(server: McpServer, sup: boolean): void {
-  // ── the bugs people report ─────────────────────────────────────────────────────────────
-  //
-  // FILING IS ON /core AND ANSWERING IS HERE, which is the split that matters. Anybody doing
-  // anything might hit something broken, so `bug_report` is on the door everyone holds. Reading
-  // every report on the deployment, and deciding what came of one, are acts ABOUT the platform
-  // rather than about the work somebody was doing when it broke — the same reason
-  // `knowledge_reindex` sits above this rather than on /core.
-  //
-  // SUPERADMIN, not team admin. A report is not team-scoped: the platform is one deployment, a
-  // defect one team hits is one every team has, and the list is therefore everybody's reports.
-  // Handing that to a team's own admin would show them every other team's, which is a wider
-  // reading of "admin" than a team admin was given.
+  // Reading every report on the deployment, and deciding what came of one, are acts about the
+  // platform rather than about the work somebody was doing when it broke.
   if (sup) server.registerTool(
     "bug_list",
     {
@@ -168,9 +144,8 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
                 to_char(reported_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as reported_at
            from zz.bug where ${where.join(" and ")}
           order by reported_at desc limit ${limit ?? 25}`, args);
-      // COUNTED SEPARATELY FROM WHAT IS SHOWN. A list capped at 25 that says nothing about the
-      // cap reads as the whole answer, and "what is open before a release" is exactly the
-      // question where that matters.
+      // Counted separately from what is shown: a list capped at 25 that says nothing about the cap
+      // reads as the whole answer.
       const { rows: tally } = await db.query<{ status: string; n: string }>(
         "select status, count(*) as n from zz.bug group by status");
       return text(JSON.stringify({
@@ -207,7 +182,7 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
       const db = db_();
       if (!db) return noDb();
       const who = parseCaller(requestHeaders()).email;
-      // ONLY FROM open, so two operators closing the same report do not overwrite each other's
+      // Only from open, so two operators closing the same report do not overwrite each other's
       // reasoning — the second is told what the first decided instead of silently replacing it.
       const { rows } = await db.query<{ id: string }>(
         `update zz.bug set status = $2, resolution = $3, resolved_by = $4, resolved_at = now()
@@ -227,26 +202,23 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
     },
   );
 
-  // ── removing a row that was never a report ─────────────────────────────────────────────
+  // Removing a row that was never a report.
   //
-  // RESOLVE IS NOT DELETE, and keeping them apart is the whole design. `bug_resolve` is how
-  // this platform knows WHAT IT HAS FIXED: the row, its status and the sentence explaining the
-  // decision are the record, and they are kept for ever — including `not_a_bug`, which is a
-  // finding about something confusing rather than an admission that nothing happened.
+  // Resolve is not delete. `bug_resolve` is how this platform knows what it has fixed: the row, its
+  // status and the sentence explaining the decision are the record, kept for ever — including
+  // `not_a_bug`, which is a finding about something confusing rather than an admission that nothing
+  // happened.
   //
-  // THIS IS PURELY FOR THE FAKES. chain-check walks the tracker end to end against a live
-  // deployment — file, find, close, refuse a second close — and every run leaves a real row
-  // saying "Safe to close; it reports nothing real." Five accumulated beside two genuine
-  // reports before anybody looked. Those were never anybody's report, resolving them would put
-  // a fake decision in the record of what this platform has fixed, and a tracker whose open
-  // list is mostly probes is a tracker people stop reading. Until now the only way out was
-  // psql; this makes the same act accountable — logged, attributed, and no database handed to
-  // anyone.
+  // This is purely for the fakes. chain-check walks the tracker end to end against a live deployment
+  // — file, find, close, refuse a second close — and every run leaves a real row saying "Safe to
+  // close; it reports nothing real." Those were never anybody's report; resolving them would put a
+  // fake decision in the record of what this platform has fixed, and a tracker whose open list is
+  // mostly probes is one people stop reading. This makes the removal accountable — logged,
+  // attributed, and no database handed to anyone.
   //
-  // NOT AN UNDO for a decision you disagree with. bug_resolve already says to file what you now
-  // know as a new report naming the old id rather than overwriting somebody's reasoning;
-  // deleting the row is the louder version of that mistake. The tool cannot tell a fake from a
-  // real report and the person calling it can, so the description says which is which.
+  // Not an undo for a decision you disagree with: file what you now know as a new report naming the
+  // old id. The tool cannot tell a fake from a real report and the person calling it can, so the
+  // description says which is which.
   if (sup) server.registerTool(
     "bug_delete",
     {
@@ -267,7 +239,7 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
       const db = db_();
       if (!db) return noDb();
       const who = parseCaller(requestHeaders()).email;
-      // RETURNING the row, not just the id: this is the last moment its content exists, and an
+      // Returning the row, not just the id: this is the last moment its content exists, and an
       // operator who removed the wrong one needs to read what it said in order to re-file it.
       const { rows } = await db.query<{ id: string; title: string; reported_by: string; status: string }>(
         `delete from zz.bug where id = $1::uuid

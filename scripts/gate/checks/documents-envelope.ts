@@ -1,9 +1,8 @@
 /**
  * The envelope: who writes its fields, and the single place each decision lives.
  *
- * `flow`, `type`, `status`, `version`, `approved_by` — the platform stamps all of them, and
- * the whole governance story rests on a model never being able to write one. Every check
- * here is about that boundary holding in exactly one place.
+ * `flow`, `type`, `status`, `version`, `approved_by` — the platform stamps all of them and no
+ * model may write one. Every check here is about that boundary holding in one place.
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -22,23 +21,18 @@ function execStderr(err: unknown): string {
 import { envelopeFields, ownedFields } from "../facts.ts";
 
 check("one function decides what a document's envelope says", () => {
-  // The READING half of this rule lives in "nothing reads an envelope field except
-  // parseEnvelope", which covers every source rather than the four files this named. Two
-  // checks for one rule is the shape this repository refuses everywhere else, and here the
-  // narrower one would have decided wherever they disagreed.
-  //
-  // What is left is the WRITING half, which nothing else covers: an envelope value
-  // interpolated straight into `${k}: ${v}` is how a second `status:` line got into a
-  // document in the first place, after which initiative_status reported the gate as passed
-  // and named a fabricated approver while document_write still called the document draft.
+  // The reading half of this rule is "nothing reads an envelope field except parseEnvelope",
+  // which covers every source. What is left here is the writing half: an envelope value
+  // interpolated straight into `${k}: ${v}` is how a second `status:` line gets into a
+  // document, after which two readers disagree about whether the gate passed.
   const bad: string[] = [];
   for (const rel of sourceFiles(["services", "packages"], [".ts"])) {
     let inRenderer = false;
     readFileSync(join(root, rel), "utf8").split("\n").forEach((raw, i) => {
       const line = raw.trim();
       if (line.startsWith("//") || line.startsWith("*") || line.startsWith("/*")) return;
-      // `export ` too: the renderer moved into its own module when zz-core was split, and an
-      // exemption keyed to the unexported form stopped matching the one function it exists for.
+      // `export ` too: the renderer is exported, so an exemption keyed to the unexported
+      // form matches nothing.
       if (/^(export )?function renderEnvelope\b/.test(line)) inRenderer = true;   // the renderer itself
       else if (inRenderer && line === "}") inRenderer = false;
       if (inRenderer) return;
@@ -50,37 +44,22 @@ check("one function decides what a document's envelope says", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-// "ONE parser" only holds if nothing goes around it, and things kept going around it. Four
-// regexes read `status` before parseEnvelope existed; three more survived it — `version`
-// scanned the WHOLE document rather than the frontmatter, and two read `flow` — and all of
-// them took the FIRST match where parseEnvelope takes the LAST. An envelope with two of a
-// field therefore had two different truths at once, which is how initiative_status once
-// called a document approved while document_write called it draft.
-//
-// A field list rather than a guess at what a regex is for: it is exact, and the day the
-// envelope grows a field, adding it here is the same edit as adding it anywhere else.
+// "One parser" only holds if nothing goes around it. A hand-rolled regex takes the first
+// match where parseEnvelope takes the last, so an envelope carrying a field twice has two
+// truths at once — one reader calling a document approved while another calls it draft.
 check("nothing reads an envelope field except parseEnvelope", () => {
-  // FROM THE SCHEMA. This was twelve names written out here, and the envelope has eighteen —
-  // so `closed_by`, `no_signoff_reason`, `supports`, `sources`, `tags`, `date`, `added_at`
-  // and `title` could each be read by a hand-rolled regex and nothing would say so. The
-  // comment that stood here argued a list was fine because "adding a field here is the same
-  // edit as adding it anywhere else". It was not: eight fields were added elsewhere and not
-  // here, which is what a second copy always does.
+  // From the schema, not a hand-written list. A list here goes stale the first time a field
+  // is added to the envelope elsewhere.
   const FIELDS = envelopeFields();
   if (FIELDS.length < 10) return "the envelope schema could not be read from @zz/contracts";
-  // READS only — `.match`, `.exec`, `.test`. A `.replace` on an envelope field is a WRITE,
-  // and parseEnvelope is not its answer: the fix there is to scope the replacement to the
-  // frontmatter block so it cannot reach a body line that happens to start with the field
-  // name. That is done at each site rather than checked here, because this check cannot
+  // Reads only — `.match`, `.exec`, `.test`. A `.replace` on an envelope field is a write,
+  // and the fix there is to scope the replacement to the frontmatter block so it cannot reach
+  // a body line starting with the field name. Done at each site, because this check cannot
   // tell a scoped subject from an unscoped one.
   const field = new RegExp(String.raw`/\^(?:${FIELDS.join("|")}):`);
   const bad: string[] = [];
-  // ANY regex literal on an envelope field, not only one used on the same line. This asked
-  // for `.match`, `.exec` or `.test` beside it, so a pattern assigned to a constant and used
-  // three lines down was invisible — and a second, narrower copy of this same rule lived in
-  // "one function decides what a document's envelope says", which caught that shape across
-  // four files and only four. Two checks for one rule means the weaker one decides where
-  // they disagree; there is one now, and it is this.
+  // Any regex literal on an envelope field, not only one used on the same line: a pattern
+  // assigned to a constant and used three lines down is the shape a same-line test misses.
   for (const rel of sourceFiles(["services", "packages"], [".ts"])) {
     // The parser itself is where the regexes belong.
     if (rel === join("packages", "contracts", "src", "index.ts")) continue;
@@ -99,13 +78,8 @@ check("nothing reads an envelope field except parseEnvelope", () => {
 check("only an act may move the fields the platform owns", () => {
   // ownershipCheck refuses a write that introduces or changes status, approved_by,
   // approved_at, outcome or closed_by — unless the caller passes `via`, saying it is the act
-  // that legitimately moves them. That makes `via` a bypass, and a bypass is only safe while
-  // the list of callers holding it is exactly the list that should.
-  //
-  // Both directions have already bitten once each in the same afternoon: document_revise,
-  // whose entire job is to move status back to draft, was refused by the guard until it said
-  // so; and the guard itself was claimed in a tool description before it existed. A rule
-  // this easy to get backwards belongs in the gate rather than in someone's memory.
+  // that legitimately moves them. `via` is a bypass, so it is only safe while the list of
+  // callers holding it is exactly the list that should.
   const ACTS = ["document_approve", "initiative_close", "document_revise"];
   const src = zzCoreSource();
   const lines = src.split("\n");
@@ -115,11 +89,9 @@ check("only an act may move the fields the platform owns", () => {
     const call = lines.slice(i, i + 3).join(" ");
     const via = /documentGuards\([^)]*,\s*"([a-z_]+)"\s*\)/.exec(call);
     if (!via) continue;
-    // Which tool this call sits inside, from the one parser. Walking upward for a line that
-    // is exactly `  "name",` under a bare `registerTool(` only ever found the newline form —
-    // reformat approve to `registerTool("document_approve", {` and its guard call became "(unknown)",
-    // which this check reports as an act passing the wrong `via`. A confusing failure about a
-    // reformat, in the check that guards who may own a document's fields.
+    // Which tool this call sits inside, from the one parser. Walking upward for a bare
+    // `registerTool(` followed by a name line finds only the newline form, so a reformat to
+    // `registerTool("document_approve", {` would report the act as passing the wrong `via`.
     const tool = toolAtLine(src, i) ?? "(unknown)";
     holders.push({ tool, via: via[1], line: i + 1 });
   }
@@ -138,26 +110,13 @@ check("only an act may move the fields the platform owns", () => {
 check("the envelope vocabulary is defined once", () => {
   const nothingToRun = unbuilt();
   if (nothingToRun) return nothingToRun;
-  // status, outcome and the five platform-owned fields were literals in three places at
-  // once: const arrays in zz-core, a regex inside statusCheck, and a TypeScript interface in
-  // @zz/catalog describing the same manifest zz-core described again in a narrower local
-  // view. Nothing tied them together, so a word could be added in one and enforced in
-  // neither — and none of the three could be shown to somebody writing a flow from outside.
-  //
   // @zz/contracts holds the schema and everything else imports it. This check refuses a
   // second copy: the vocabulary as a literal list anywhere but the definition.
   const bad = [];
-  // EVERY source file, not a list of the four that had a copy. Named files are the instances
-  // somebody found; the rule is that the vocabulary lives in @zz/contracts and nowhere else.
-  // manifest-audit spelled the statuses out for as long as it existed and was never in the
-  // list — it imports parseEnvelope from the contract already, so nothing stopped it
-  // importing the words too.
-  // .mjs too, because THIS FILE is .mjs and had four copies of the vocabulary in it: the
-  // owned fields twice as a regex and once as a string, and the envelope's field list a
-  // fourth time. The check that refuses second copies could not see the file it lives in.
+  // Every source file, not a named list of the ones somebody found a copy in.
   const files = sourceFiles(["services", "packages", "scripts"], [".ts"])
     .filter((f) => !f.startsWith("packages/contracts/"));
-  // The words as a LITERAL SET — a list, an alternation, or a chain of comparisons against
+  // The words as a literal set — a list, an alternation, or a chain of comparisons against
   // each of them — rather than any mention of them.
   const COPIES = [
     /\[\s*"draft"\s*,\s*"approved"\s*\]/,
@@ -168,19 +127,18 @@ check("the envelope vocabulary is defined once", () => {
     /"delivered"[\s\S]{0,40}"accepted"|"accepted"[\s\S]{0,40}"delivered"/,
   ];
   for (const f of files) {
-    // This file has to SPELL the vocabulary to look for it, in COPIES just above. Exempted
-    // by name, the way the comment-record check exempts it for the same reason.
+    // This file has to spell the vocabulary to look for it, in copies just above. Exempted
+    // by name, the way the comment-record check exempts it.
     if (gateOwnSource(f)) continue;
     const lines = readFileSync(join(root, f), "utf8").split("\n");
     for (const [i, line] of lines.entries()) {
       if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue;    // comments quote the vocabulary to explain it
-      // A line held to the contract BY THE COMPILER is not a second copy. initiative_close() must name
-      // all three outcomes — it is where the platform derives which one applies — and it is
-      // annotated `(typeof OUTCOMES)[number]`, so a typo there fails the build.
-      // Over the whole STATEMENT, not the line: the annotation sits on the first line and the
-      // words spill onto the second, so a line-only test exempted the declaration and flagged
-      // its own continuation. Split ONCE — this sat inside the loop, re-splitting an
-      // eight-thousand-line file for every one of its lines.
+      // A line held to the contract by the compiler is not a second copy: initiative_close()
+      // names all three outcomes and is annotated `(typeof OUTCOMES)[number]`, so a typo
+      // there fails the build.
+      //
+      // Judged over the whole statement, not the line — the annotation sits on the first line
+      // and the words spill onto the second.
       let from = i;
       while (from > 0 && !/[;{}]\s*$/.test(lines[from - 1])) from -= 1;
       if (/\bOUTCOMES\b|\bSTATUSES\b|\bPLATFORM_OWNED\b/.test(lines.slice(from, i + 1).join(" "))) continue;
@@ -189,11 +147,9 @@ check("the envelope vocabulary is defined once", () => {
       }
     }
   }
-  // And both schemas must still EMIT. jsonSchema throws on a construct it has no rule for —
-  // deliberately, because publishing a schema weaker than the one being validated against
-  // would be worse than none. The cost of that choice is that adding a zod type to the
-  // envelope turns /schemas/envelope.json into a 500 at request time, on a public endpoint,
-  // while /health stays green. Emitting them here moves that to the gate.
+  // And both schemas must still emit. jsonSchema throws on a construct it has no rule for,
+  // so adding a zod type to the envelope turns /schemas/envelope.json into a 500 at request
+  // time on a public endpoint while /health stays green. Emitting here moves that to the gate.
   const emit = `
     import { Envelope, CatalogManifest, jsonSchema } from ${JSON.stringify(join(root, "packages/contracts/dist/index.js"))};
     const out = [];
@@ -220,17 +176,10 @@ check("the envelope vocabulary is defined once", () => {
 check("the model writes the body and the platform writes the envelope", () => {
   // Every envelope field comes either from a fact the platform holds — which flow governs
   // this initiative, what role the manifest gives the document, what day it is — or from an
-  // explicit act. "The model typed it into some YAML" was a third source, and the cost was
-  // countable: of 93 approved documents here, four had no approved_at and two no
-  // approved_by; two smoke runs signed a gate as `team_one`, a team slug; the first
-  // live run closed an initiative `accepted` that nobody had accepted. The ANONYMOUS
-  // blocklist exists to catch the worst of that, and its own comment admits there is no way
-  // to test whether a string is a person — it exists only because a model typed the field.
-  //
-  // So document_write and document_revise refuse content that opens with frontmatter, and a
-  // skill that still shows one in a fenced block is teaching a call that now fails on the
-  // first save. Both halves, together: the refusal without the templates would break every
-  // flow, and the templates without the refusal would drift straight back.
+  // explicit act. So document_write and document_revise refuse content that opens with
+  // frontmatter, and a skill still showing one in a fenced block teaches a call that fails on
+  // the first save. Both halves are checked together: the refusal without the templates
+  // breaks every flow, and the templates without the refusal drift back.
   const src = zzCoreSource();
   const bad: string[] = [];
   for (const tool of ["document_write", "document_revise"]) {
@@ -255,15 +204,10 @@ check("the model writes the body and the platform writes the envelope", () => {
 check("the envelope is stamped by what governs the document", () => {
   const nothingToRun = unbuilt();
   if (nothingToRun) return nothingToRun;
-  // Two paths through stampEnvelope, and the second one is easy to forget: a document the
-  // manifest DECLARES gets flow, type, status and version; a document it does not — and
-  // `learnings.md` is one, because the handover is the platform's step appended below every
-  // manifest — gets only the date. It used to get nothing at all, which was invisible while
-  // the model still wrote frontmatter and became a document with no date in it the moment
-  // that stopped. The index was fine throughout: it stamps now() itself. The FILE was not,
-  // and the file is what a team keeps when they walk away from us.
+  // Two paths through stampEnvelope: a document the manifest declares gets flow, type, status
+  // and version; a document it does not declare gets only the date.
   //
-  // Stamping status or version there would be worse than the gap: the platform asserting a
+  // DELIBERATE: status and version are not stamped on the second path. That would assert a
   // gate lifecycle for a document no flow governs.
   try {
     const out = execFileSync("node", [join(root, "scripts/probes/envelope-shape.ts"), root],
@@ -275,65 +219,39 @@ check("the envelope is stamped by what governs the document", () => {
 });
 
 check("nothing tells an agent to write a field the platform owns", () => {
-  // The five owned fields are stamped by document_approve() and initiative_close(), and a hand write is refused.
-  // "no skill template hands a model a field the platform owns" stops a skill TEMPLATE
-  // carrying one. This is the other half: the platform's
-  // own prose telling an agent to write one.
+  // The owned fields are stamped by document_approve() and initiative_close(), and a
+  // hand write is refused. "no skill template hands a model a field the platform owns" stops
+  // a skill template carrying one; this is the other half — the platform's own prose telling
+  // an agent to write one.
   //
-  // initiative_status is where it mattered. That tool computes "the next move" and is
-  // consulted every turn, and it said a gate "must be recorded in the frontmatter" and told
-  // the agent to "record the outcome on spec.md" — both of which the platform now refuses. An
-  // agent following the next_move it is told to trust would be refused by the very write it
-  // was sent to make, with no way to reconcile the two.
-  //
-  // Two more got past the first version of this check, and both say something about how to
-  // write it. gateCheck told the agent to "patch <doc>'s frontmatter (status: approved,
-  // approved_by, approved_at)" — the verb list did not have `patch`. The close-time gate
-  // error said "Record the approval — status: approved with approved_by and approved_at",
-  // built by concatenating four string literals, so no single LINE held both halves and a
-  // line-at-a-time scan could not see it. Messages are written across lines because they are
-  // long; the agent reads the joined sentence, so the check now reads it that way too.
+  // Judged on the joined sentence: a long message is built from several string literals, so
+  // no single line holds both halves of it.
   const OWNED = `(${ownedFields().join("|")})`;
   const TELLS = new RegExp("(record|write|set|put|add|patch|fill|stamp)\\b.{0,70}?\\b" + OWNED + "\\b", "is");
-  // The message the agent reads, not the expression that builds it. A long error is written
-  // as several literals joined by `+`, so the words either side of a join are separated in
-  // SOURCE by a quote, a plus and a newline that the reader never sees. Matching across that
-  // punctuation is what the earlier version could not do: "Record the " + "approval — status:
-  // approved" reads as one sentence and was stored as two strings, and a pattern that refused
-  // to cross a quote could not see the sentence at all.
+  // The message the agent reads, not the expression that builds it. The words either side of
+  // a `+` join are separated in source by a quote, a plus and a newline the reader never
+  // sees, so the pattern has to cross that punctuation.
   const spoken = (buf: string): string => [...buf.matchAll(/`([^`]*)`|"((?:[^"\\\\]|\\\\.)*)"|'((?:[^'\\\\]|\\\\.)*)'/g)]
     .map((m) => m[1] ?? m[2] ?? m[3] ?? "").join(" ");
   // Prose that names the rule rather than instructing a write: the platform is the subject,
   // or the sentence already points at the act that does the stamping.
   const DESCRIBES = /platform|refus|by hand|document_approve\(|initiative_close\(|is stamped|are stamped|stamps /i;
-  // Only text an AGENT READS. `status` is also a column on the `team` table and a filter in
-  // the index query, and `update team set status = 'archived'` is not an instruction to
-  // anyone — judging those by the same words called three correct lines defects. The bug this
-  // check exists for is always in a message: an ERROR, a tool description, or the `why` on a
-  // next_move. Scanning that surface is the question rather than a proxy for it.
+  // Only text an agent reads. `status` is also a column on the `team` table, and
+  // `update team set status = 'archived'` instructs nobody. The defect this check exists for
+  // is always in a message: an ERROR, a tool description, or the `why` on a next_move.
   const SPEAKS = /ERROR:|\.describe\(|description:|why:/;
-  // A SECOND shape, which the verb-and-field pattern cannot see: prose that locates the
-  // gate in the frontmatter rather than in the act. "A gate is not passed until the
-  // document's frontmatter says so" names no owned field and gives no instruction, and it
-  // was sitting in the generated agent preset — the prompt every LibreChat agent on this
-  // platform is built on — saying the opposite of what the platform now does. The router
-  // skill said it too. Both were true before document_approve() existed, which is exactly why this
-  // phrasing outlives the thing it described.
+  // A second shape the verb-and-field pattern cannot see: prose that locates the gate in the
+  // frontmatter rather than in the act. "A gate is not passed until the document's
+  // frontmatter says so" names no owned field and gives no instruction.
   const LOCATES = /\bgate\b[^.]{0,60}\bfrontmatter\b|\bfrontmatter\b[^.]{0,60}\b(approv|gate)/i;
-  // A THIRD shape, and the simplest — which is why it should have been the rule from the
-  // start. Since the model writes no frontmatter at all, ANY message telling it to put
-  // something there is wrong, whatever the field. Both patterns above are about the fields
-  // the platform OWNS, so flowDeclarationCheck's "Add `flow: <name>` to this document's
-  // frontmatter" slipped past both: `flow` is a caller ARGUMENT now, not an owned field.
+  // A third shape: the model writes no frontmatter at all, so any message telling it to put
+  // something there is wrong, whatever the field. The two patterns above cover only the
+  // fields the platform owns, and `flow` is a caller argument rather than one of them.
   const PUTS_IN_FRONTMATTER = /\b(add|put|set|write|record|include)\b[^.]{0,80}\bfrontmatter\b/i;
   const bad: string[] = [];
-  // EVERY service source, not the four somebody thought of. This list grew twice by being
-  // wrong: the three server files were scanned and client-package.ts — which EMITS the router
-  // every agent on every client reads — was not, and its text said "a gate passes only once
-  // the document's frontmatter records the approval", true before document_approve() existed and an
-  // instruction to do a refused thing after. kb.ts registers tools and writes refusals of its
-  // own and was never in the list either. A file that speaks to an agent is the rule; naming
-  // the files is a list that goes stale the next time one is added.
+  // Every service source, not a named list. client-package.ts emits the router every agent on
+  // every client reads, and a tool module writes refusals of its own: a file that speaks to an
+  // agent is the rule.
   for (const f of sourceFiles(["services"], [".ts"])) {
     const src = readFileSync(join(root, f), "utf8");
     const lines = src.split("\n");
@@ -346,24 +264,18 @@ check("nothing tells an agent to write a field the platform owns", () => {
       // expression ends, then judge the whole thing.
       if (/\+\s*$/.test(line.trim())) continue;
       const said = spoken(buf);
-      // client-package.ts is agent-facing END TO END — every literal in it is text written
-      // for another machine to read — so the ERROR:/description: markers that identify a
-      // message in a server file would exclude all of it. Widening the file list without
-      // this changed nothing, which is what testing the check rather than trusting it showed.
-      // admin.ts builds the generated agent preset — prose for a machine, with no ERROR: or
-      // description: to mark it — but it also runs SQL against the `principal` and `team`
-      // tables, whose own `status` column has nothing to do with a document's. Adding the
-      // file wholesale called `update team set status = 'archived'` a defect. So: prose in
-      // these files counts as a message, and a statement does not.
+      // client-package.ts is agent-facing end to end — every literal in it is text written
+      // for another machine — so the ERROR:/description: markers that identify a message in a
+      // server file would exclude all of it. admin.ts builds the generated agent preset, also
+      // prose with no marker, but it runs SQL against the `principal` and `team` tables whose
+      // own `status` column has nothing to do with a document's. So: prose in these files
+      // counts as a message, and a statement does not.
       const isSql = /\b(update|insert into|delete from|select)\s/i.test(buf);
       const alwaysProse = f.endsWith("client-package.ts") || (f.endsWith("admin.ts") && !isSql);
       const isMessage = alwaysProse || SPEAKS.test(buf);
-      // "Put X in the frontmatter" is wrong on its own terms, so it is judged WITHOUT the
-      // descriptive exemption. flowDeclarationCheck's sentence both instructed and explained
-      // — "Add `flow: <name>` to this document's frontmatter — the platform stamps every
-      // later document from it" — and the word `platform` in the second half exempted the
-      // first. An exemption for prose that names the rule must not cover a sentence that
-      // also gives the instruction.
+      // "Put X in the frontmatter" is wrong on its own terms, so it is judged without the
+      // descriptive exemption. An exemption for prose that names the rule must not cover a
+      // sentence that also gives the instruction.
       const flat = PUTS_IN_FRONTMATTER.test(said);
       const owned = (TELLS.test(said) || LOCATES.test(said)) && !DESCRIBES.test(said);
       if (isMessage && (flat || owned)) bad.push(`${f.split("/").pop()}:${start + 1}`);
@@ -376,28 +288,21 @@ check("nothing tells an agent to write a field the platform owns", () => {
 });
 
 check("where a frontmatter block starts and ends is spelled once", () => {
-  // EIGHT spellings across three packages, and they did not agree on how a block ENDS.
-  // parseEnvelope closed on `\n---`; zz-core's five on `\n---[ \t]*\n?`; indexDoc's body-strip
-  // on `\n---\n?`, which does not tolerate a trailing space on the fence; kb.ts's document
-  // read required a newline after it, so a document ending exactly at its closing fence had a
-  // full envelope to one and none at all to the other.
+  // Where a frontmatter block starts and ends is one fact, and the copies disagreed about how
+  // it ends: `\n---`, `\n---[ \t]*\n?`, `\n---\n?` and a form requiring a newline after the
+  // fence each read a fence written `--- `, or a document ending at its closing fence,
+  // differently. A skill's frontmatter and a document's envelope are different vocabularies
+  // inside the same syntax and share this one fact.
   //
-  // Consolidating those left three more that a search for `^---[ ` could not see, because
-  // they were written `^---[\s\S]` and `^---\n`: the sources panel's body strip, and
-  // client-package's two reads of a SKILL's frontmatter. A skill's frontmatter and a
-  // document's envelope are different vocabularies inside the same syntax, and where that
-  // block starts and ends is one fact — the copies that required `---\n` exactly parsed a
-  // fence written `--- ` differently from the ones that did not.
-  //
-  // Matched on the SHAPE — an anchored `---` in a pattern that then spans lines — rather than
+  // Matched on the shape — an anchored `---` in a pattern that then spans lines — rather than
   // on any one spelling, since spelling is what hid three of them.
   const bad: string[] = [];
   for (const rel of sourceFiles(["packages", "services"], [".ts"])) {
     if (rel === "packages/contracts/src/index.ts") continue;   // where it is defined
     readFileSync(join(root, rel), "utf8").split("\n").forEach((ln, i) => {
       if (/^\s*(\/\/|\*|\/\*)/.test(ln)) return;
-      // `/^---` … `[\s\S]` in one regex literal is a frontmatter BLOCK. A `/^---[ \t]*$/m`
-      // is a single LINE and a different question — @zz/catalog uses one to find the
+      // `/^---` … `[\s\S]` in one regex literal is a frontmatter block. A `/^---[ \t]*$/m`
+      // is a single line and a different question — @zz/catalog uses one to find the
       // separator in a hand-written prompt file, which is not an envelope at all.
       for (const m of ln.matchAll(/\/\^---[^/\n]*\/[a-z]*/g)) {
         if (!/\[\\s\\S\]/.test(m[0])) continue;

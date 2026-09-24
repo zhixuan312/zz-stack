@@ -26,6 +26,7 @@ import { packagedModules } from "./reviewed-modules.js";
 import { coreServer } from "./orientation.js";
 import { db } from "./platform-db.js";
 import { registerArtifactTools } from "./tools/artifacts.js";
+import { registerAssessTool } from "./tools/assess.js";
 import { registerBugAdminTools, registerBugTools } from "./tools/bugs.js";
 import { registerInitiativeActTools } from "./tools/initiative-acts.js";
 import { registerInitiativeStatusTools } from "./tools/initiative-status.js";
@@ -138,6 +139,7 @@ function buildServer(everything = false): McpServer {
   registerKnowledgeIndexTools(server, sup);
   registerInitiativeStatusTools(server);
   registerInitiativeActTools(server);
+  registerAssessTool(server);
   return server;
 }
 

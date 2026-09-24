@@ -352,12 +352,11 @@
       "skill": "sdlc-flow",
       "locator": "## Skill contract — **Work roles:** and **Checkpoints:** (present in all thirteen skills)",
       "claim": "The `semantic-assessment` role is asked the bounded questions below by registered question ID",
-      "enforcement_class": "convention",
-      "verified_by": "the agent running the stage, reading its own Checkpoints table",
-      "schema": null,
-      "handler": null,
-      "behavioural_test": null,
-      "note": "THE WORD `registered` IS NOT YET TRUE. Neither `semantic-assessment` nor any of the nine question IDs appears anywhere in this repository outside the thirteen SKILL.md files and one gate check — no registry, no enum, no handler. Recorded here as a convention so the gap is on the record rather than implied away by the word 'registered'.",
+      "enforcement_class": "platform",
+      "schema": "packages/contracts/src/assessment.ts::QUESTION_FAMILIES",
+      "handler": "services/zz-core/src/semantic.ts::assessFamily — refuses a family QUESTION_FAMILIES does not register, and records every answer in zz.assessment; reached by the assess tool (services/zz-core/src/tools/assess.ts) and, for changes_commitment and repeats_finding, by source_add when an audit round lands (services/zz-core/src/audit-rounds.ts::assessRound)",
+      "behavioural_test": "checks/audit-rounds.ts §7 — every registered family carries an instruction, an unregistered family is refused, and an unconfigured service answers unavailable with its reason",
+      "note": "Registered: the nine families are QUESTION_FAMILIES, each with the instruction the typed service is asked. Two checkpoints are asked by the platform itself when an audit round lands; every other checkpoint is asked by the stage that reaches it, through assess.",
       "enum": {
         "name": "question IDs cited in the thirteen skills' Checkpoints tables",
         "closed": true,
@@ -374,7 +373,9 @@
         ],
         "emitted_from": null,
         "emitted_from_note": "Nothing emits these. A later task builds QUESTION_FAMILIES and must adopt these exact spellings."
-      }
+      },
+      "test_drives": "services/zz-core/dist/semantic.js",
+      "report": "node checks/audit-rounds.ts"
     },
     {
       "rule_id": "explore.recall_leg_is_additive",
@@ -432,6 +433,30 @@
       "behavioural_test": "packages/tools/src/testing/chain-shelf.ts — calls the real `knowledge_search` over the live door with a query that is empty under AND by construction, and asserts BOTH halves: the note saying no document contains all the terms, and `via: [\"lexical-broad\"]` on the rows. Its control is the sibling call at chain-shelf.ts, the same probe node found by an ordinary AND match",
       "report": "npm run chain-check (chain-shelf is walked by the same run), scripts/release.ts",
       "note": "Requires a live deployment with a platform database and a team; the probe tolerates `no platform database` / `not in a team` as a legitimate refusal, so a run without either asserts nothing."
+    },
+    {
+      "rule_id": "audits.rounds_routed_by_evidence",
+      "skill": "sdlc-flow",
+      "locator": "### 3 & 5 · Two audits, each sequential, each routed by evidence",
+      "claim": "How many rounds is the platform's answer, not a count you keep.",
+      "enforcement_class": "flow_controller",
+      "schema": null,
+      "handler": "services/zz-core/src/audit-rounds.ts::auditMove, called by services/zz-core/src/tools/initiative-status.ts::initiativeState for every stage that produces a source; a round is a source whose envelope names its stage (services/zz-core/src/tools/artifacts.ts source_add)",
+      "behavioural_test": "checks/audit-rounds.ts §1-§5 — material is not a round, a round on the current version settles it, a revision owes the next round, a spent budget and a reopened agreement wait on the stakeholder, and a recorded decision releases both",
+      "test_drives": "services/zz-core/dist/tools/initiative-status.js",
+      "report": "node checks/audit-rounds.ts"
+    },
+    {
+      "rule_id": "method.stage_loads_reported_by_hook",
+      "skill": "sdlc-method",
+      "locator": "**How a loaded stage reaches the record.**",
+      "claim": "In Claude Code the baseline zz-core plugin carries a hook that reports every skill a session loads from this shelf",
+      "enforcement_class": "platform",
+      "schema": null,
+      "handler": "services/gateway/src/package/skills.ts::skillReportScript and SKILL_REPORT_HOOKS, shipped in the baseline by services/gateway/src/client-package.ts::buildClientPackage",
+      "behavioural_test": "scripts/gate/checks/marketplace.ts — the committed hook matches the Skill tool, names every shelf plugin, and prints nothing for a foreign skill or with no token",
+      "test_drives": "marketplace/zz-core/scripts/zz-skill-report.mjs",
+      "report": "npm run gate"
     }
   ]
 }

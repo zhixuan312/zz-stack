@@ -334,3 +334,67 @@ export function headersHelper(): string {
     "",
   ].join("\n");
 }
+
+/** The baseline plugin's hook: every skill a Claude Code session loads from this shelf is
+ *  reported to the platform as a `skill_read`, which is what attributes a step.
+ *
+ *  A flow's method asks a worker to load its stage with `skill_read`, but a Claude Code session
+ *  loads a plugin's skills locally, through its own Skill tool, and the platform never sees it:
+ *  across every sdlc initiative measured, ten of fourteen execute and review stages left no trace.
+ *  The hook makes the record independent of whether the agent remembered. It runs after the
+ *  tool, never blocks it, and prints nothing. */
+export const SKILL_REPORT_HOOKS = JSON.stringify({
+  hooks: {
+    PostToolUse: [{
+      matcher: "Skill",
+      hooks: [{ type: "command", command: '"${CLAUDE_PLUGIN_ROOT}"/scripts/zz-skill-report.mjs', timeout: 10 }],
+    }],
+  },
+}, null, 2) + "\n";
+
+/** The script the hook runs. `coreUrl` is the core door; `plugins` are the shelf's plugin names,
+ *  so a skill from any other marketplace is never reported and never refused. */
+export function skillReportScript(coreUrl: string, plugins: string[]): string {
+  return [
+    "#!/usr/bin/env node",
+    "// Reports a skill this session loaded from the ZZ shelf to the platform, as skill_read.",
+    "// Run by a PostToolUse hook on the Skill tool. Always exits 0 and prints nothing. The",
+    "// credential comes from zz-mcp-headers.sh beside this file — the same resolution the MCP",
+    "// connection uses, so there is one place a token is found.",
+    'import { execFileSync } from "node:child_process";',
+    'import { dirname, join } from "node:path";',
+    'import { fileURLToPath } from "node:url";',
+    "",
+    `const CORE = ${JSON.stringify(coreUrl)};`,
+    `const SHELF = new Set(${JSON.stringify(plugins)});`,
+    "",
+    "function headers() {",
+    '  try {',
+    '    const out = execFileSync(join(dirname(fileURLToPath(import.meta.url)), "zz-mcp-headers.sh"),',
+    '                             { encoding: "utf8", timeout: 3000 });',
+    '    return JSON.parse(out);',
+    '  } catch { return {}; }',
+    "}",
+    "",
+    'let raw = "";',
+    'process.stdin.on("data", (d) => { raw += d; }).on("end", async () => {',
+    "  try {",
+    '    const input = JSON.parse(raw || "{}").tool_input || {};',
+    '    const named = String(input.skill || input.name || input.command || "").replace(/^\\//, "").trim();',
+    '    const [plugin, name] = named.includes(":") ? named.split(":", 2) : ["", named];',
+    "    if (!name || !SHELF.has(plugin)) return;",
+    "    const h = headers();",
+    "    if (!h.Authorization) return;",
+    "    await fetch(CORE, {",
+    '      method: "POST",',
+    '      headers: { "content-type": "application/json", accept: "application/json, text/event-stream",',
+    '                 authorization: h.Authorization, "x-zz-client": "zz-hook" },',
+    '      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call",',
+    '                             params: { name: "skill_read", arguments: { name } } }),',
+    "      signal: AbortSignal.timeout(8000),",
+    "    }).then((r) => r.text()).catch(() => {});",
+    "  } catch { /* a report that cannot be made is not the session's problem */ }",
+    "});",
+    "",
+  ].join("\n");
+}

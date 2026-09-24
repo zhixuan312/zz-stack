@@ -12,7 +12,7 @@
 import type pg from "pg";
 
 import { ask, type Dim, matcher } from "./judge.js";
-import { ask as askTyped, configured as typedConfigured, type NoulQuestion } from "./typesafe.js";
+import { ask as askTyped, configured as typedConfigured, type NoulQuestion } from "../typed-service.js";
 
 /** What a threshold answer carries, whichever service produced it. `confidence` and
  *  `probabilities` are present only from the typed service — the reading judge answers a

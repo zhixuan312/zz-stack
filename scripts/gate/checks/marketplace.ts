@@ -8,6 +8,8 @@
  * installs last week's method.
  */
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { root } from "../read.ts";
 import { check } from "../run.ts";
@@ -37,4 +39,27 @@ check("the committed marketplace is what the catalog renders", () => {
   return `the committed shelf is stale — it has been rebuilt, now commit it:\n      ` +
     lines.slice(0, 12).join("\n      ") +
     (lines.length > 12 ? `\n      … and ${lines.length - 12} more` : "");
+});
+
+check("the baseline reports every shelf skill a session loads, and nothing from anywhere else", () => {
+  // Behaviour, not the file: the committed hook script is run with a skill from another
+  // marketplace and with no token, and must print nothing and exit 0 either way — a hook that
+  // prints or fails interrupts the session it is reporting on.
+  const hooks = JSON.parse(readFileSync(join(root, "marketplace/zz-core/hooks/hooks.json"), "utf8"));
+  const entry = hooks?.hooks?.PostToolUse?.[0];
+  if (entry?.matcher !== "Skill") return "the baseline's hook does not match the Skill tool";
+  if (!String(entry?.hooks?.[0]?.command ?? "").includes("scripts/zz-skill-report")) return "the hook does not run the skill-report script";
+  const script = join(root, "marketplace/zz-core/scripts/zz-skill-report.mjs");
+  const src = readFileSync(script, "utf8");
+  const shelf = JSON.parse(readFileSync(join(root, ".claude-plugin/marketplace.json"), "utf8")).plugins
+    .map((p: { name: string }) => p.name);
+  for (const name of shelf) if (!src.includes(`"${name}"`)) return `the hook does not report skills from ${name}`;
+  for (const skill of ["anthropic-skills:docx", "sdlc:sdlc-method"]) {
+    const out = execFileSync("node", [script], {
+      input: JSON.stringify({ tool_name: "Skill", tool_input: { skill } }),
+      env: { PATH: process.env.PATH ?? "", HOME: "/nonexistent" },
+      encoding: "utf8", timeout: 15_000,
+    });
+    if (out.trim()) return `the hook printed ${JSON.stringify(out.slice(0, 80))} for ${skill}`;
+  }
 });

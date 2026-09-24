@@ -35,8 +35,8 @@
  */
 import { jevAdapter, type JevAnswerOptions, type JevParseResult } from "@zz/contracts";
 
-import { Refusal } from "../refusal.js";
-import { db } from "../platform-db.js";
+import { Refusal } from "./refusal.js";
+import { db } from "./platform-db.js";
 
 /** Where the service lives. Overridable, because a self-hosted endpoint is the same contract. */
 const BASE = (process.env.TYPESAFE_BASE_URL || "https://api.typesafe.ai").replace(/\/+$/, "");

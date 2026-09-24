@@ -225,6 +225,13 @@ export const Envelope = z.object({
    *  and the knowledge base. COUPLED: RESERVED_ENVELOPE derives from these keys, so declaring
    *  it here is what stops a flow claiming the name. */
   contributed_by: z.string().optional(),
+  /** The flow stage a source is the output of, written by source_add when the caller names an
+   *  audit stage that produces a source supporting the document. Only a source carrying it is a
+   *  round of that stage; read by audit-rounds.ts, initiative_status and source_list. */
+  stage: z.string().optional(),
+  /** For an audit round: the version of the supported document the round read, written by
+   *  source_add. A document revised past it owes the next round. */
+  audits_version: z.string().optional(),
   /** Why a document was revised, in one line, written by document_revise.
    *  DELIBERATE: no code reads it. evolve-report counts revisions and sends a reader to the
    *  team's own store; only the count crosses the boundary. */

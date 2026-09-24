@@ -1,7 +1,7 @@
 ---
 name: sdlc-plan-audit
-version: 2.3
-description: Audit plan.md — the eleven prose failure modes plus the plan's own contract: AC traceability, task contracts, checks, the format the executor depends on, dependency order, the full-suite gate. Read-only. Dispatched, at most three rounds.
+version: 2.4
+description: Audit plan.md — the eleven prose failure modes plus the plan's own contract: AC traceability, task contracts, checks, the format the executor depends on, dependency order, the full-suite gate. Read-only. Dispatched, one round at a time; how many is routed by evidence.
 when_to_use: "plan.md is written and someone is about to execute it. Runs after sdlc-plan and before sdlc-execute. Dispatched by the main agent, one round at a time."
 ---
 
@@ -30,7 +30,7 @@ or `document_present` output, into what you return. Presenting a document in ful
 to the gate the main agent is asking somebody to sign, and this round is not that.
 
 **Your round is recorded as a SOURCE supporting `plan.md`** — `source_add(..., supports:
-"plan.md")`. It is the only thing standing between an unread plan and `sdlc-execute`
+"plan.md", stage: "sdlc-plan-audit")`. It is the only thing standing between an unread plan and `sdlc-execute`
 dispatching its tasks one by one, it is what tells anyone later that somebody who did not write
 the plan read it, and it is what the platform requires the next version of the plan to cite. It
 is not a document of the flow: an audit report is the material that makes a revision necessary.
@@ -111,8 +111,8 @@ because nothing else in the flow is positioned to see it.
 who owns the plan decides what to fix, and you present nothing to them. The consumer everything
 here is calibrated against is a low-judgement worker that follows the plan literally and will not
 stop to check. The `semantic-assessment` role answers the bounded questions below by question ID
-from the fixed set below. Nothing in this platform registers those IDs yet, so an implementation
-adopts these spellings rather than minting its own, and severity stays yours to calibrate.
+from the fixed set below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
+door, which records the answer and the model behind it, and severity stays yours to calibrate.
 
 **Checkpoints:**
 

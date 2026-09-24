@@ -14,7 +14,7 @@ import type pg from "pg";
 
 import { MARK_SCALE } from "@zz/contracts";
 
-import { configured as typedJudgeConfigured } from "./typesafe.js";
+import { configured as typedJudgeConfigured } from "../typed-service.js";
 import { JUDGE_BASE, JUDGE_MODEL, LLM_BASE, LLM_KEY, THINKING, typedJudgeName } from "./judge-model.js";
 import { markTyped } from "./judge-typed.js";
 import { applyThresholds } from "./judge-thresholds.js";

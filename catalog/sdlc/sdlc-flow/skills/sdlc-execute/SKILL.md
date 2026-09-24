@@ -1,6 +1,6 @@
 ---
 name: sdlc-execute
-version: 1.8
+version: 1.9
 description: Build what the approved plan describes — one subagent per task, in plan order, each making its task's contract true and its plan-authored checks pass. Main agent orchestrates and stays accountable for the sequence; the work itself is dispatched.
 when_to_use: "plan.md exists, has been audited, and the person has approved it. Implements its tasks. If there is no plan on disk, this is not the stage — the plan is what makes each task dispatchable. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -205,8 +205,8 @@ throws away finished work.
 decisions and what remains is the change itself. This agent keeps the sequence, owns the branch,
 freezes and activates the checks, runs them and the gate, and stays accountable for what changed.
 The person decides whether the work is committed. The `semantic-assessment` role answers the
-bounded questions below by question ID from the fixed set below. Nothing in this platform
-registers those IDs yet, so an implementation adopts these spellings rather than minting its own;
+bounded questions below by question ID from the fixed set below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
+door, which records the answer and the model behind it;
 it does not judge a check's result, which is deterministic.
 
 **Checkpoints:**

@@ -21,6 +21,7 @@ import { z } from "zod";
 import { chainFor } from "../chain.js";
 import { envelopeEditRefusal, fieldRefusal, frontmatterRefusal } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
+import { auditRoundOf, assessRound } from "../audit-rounds.js";
 import { noteDocument, noteSource } from "../host/observe.js";
 import { sourceDocument } from "../indexing.js";
 import { unopenedRefusal } from "../initiative-record.js";
@@ -30,6 +31,7 @@ import { teamFor } from "../platform-db.js";
 import { documentVersions, presentDocument, versionRefusal } from "../versions.js";
 
 import { envelopeFor, isoToday, normalizeSections } from "../write-guards.js";
+import { nextMoveLine } from "./initiative-status.js";
 
 export function registerArtifactTools(server: McpServer): void {
   server.registerTool(
@@ -103,7 +105,8 @@ export function registerArtifactTools(server: McpServer): void {
       await noteDocument(chain, path, "document",
                          parseCaller(requestHeaders()).email, team);
       return text(`written: ${path} (${written.length} chars)`
-        + (fixed.renamed.length ? `\nRenamed to the heading this flow declares: ${fixed.renamed.join(", ")}.` : ""));
+        + (fixed.renamed.length ? `\nRenamed to the heading this flow declares: ${fixed.renamed.join(", ")}.` : "")
+        + nextMoveLine(root, path.split("/")[0]));
     },
   );
 
@@ -335,9 +338,13 @@ export function registerArtifactTools(server: McpServer): void {
         content: z.string(),
         supports: z.union([z.string(), z.array(z.string())]).optional()
           .describe("Document(s) this material bears on, e.g. 'spec.md' or ['spec.md','plan.md']."),
+        stage: z.string().optional()
+          .describe("The flow stage this source is the output of, when it is one — an audit round " +
+                    "names its audit stage, e.g. 'sdlc-spec-audit'. Only a source naming its stage " +
+                    "counts as that stage's round."),
       },
     },
-    async ({ initiative, title, content, supports }) => {
+    async ({ initiative, title, content, supports, stage }) => {
       // The same guard the other initiative-taking tools apply. safePath below only
       // stops a path leaving the store, which is a different question from whether the name
       // is an initiative — and `join(root, initiative, d)` further down asks the second one.
@@ -373,15 +380,27 @@ export function registerArtifactTools(server: McpServer): void {
       if (unopened) return text(unopened);
       const target = await safePath(rel);
       if (existsSync(target)) return text(`ERROR: ${rel} already exists — sources are immutable; add a new file`);
+      // An audit round is a source that names the stage producing it and supports the document
+      // that stage audits. Anything else is material, however it is titled: a stakeholder's
+      // answers support spec.md too, and counting them as a round would let a spec pass its
+      // audit without anybody auditing it.
+      const governing = chainFor(root, `${initiative}/x.md`);
+      const round = auditRoundOf(governing, stage, list);
+      const auditsVersion = round
+        ? parseEnvelope(existsSync(join(root, initiative, round.document))
+            ? readFileSync(join(root, initiative, round.document), "utf8") : "").version || "1"
+        : undefined;
       const doc = sourceDocument(
-        { title, by: who.email, day: date, supports: list.join(", "), content });
+        { title, by: who.email, day: date, supports: list.join(", "), content,
+          stage: round ? round.stage : undefined, audits_version: auditsVersion });
       mkdirSync(resolve(target, ".."), { recursive: true });
       writeFileSync(target, doc);
       logActivity(root, rel, { user: who.email, action: "source_add", path: rel, supports: list.join(",") });
       commitStore(root, who.email, "source", rel);
       void indexDoc(root, rel, doc);
-      // which of the named documents were already approved when this landed?
-      const stale = list.filter((d) => {
+      // which of the named documents were already approved when this landed? An audit round
+      // lands on an approved document by design — the next move says what follows from it.
+      const stale = round ? [] : list.filter((d) => {
         const env = parseEnvelope(existsSync(join(root, initiative, d))
           ? readFileSync(join(root, initiative, d), "utf8") : "");
         return env.status === "approved";
@@ -389,29 +408,37 @@ export function registerArtifactTools(server: McpServer): void {
       // An audit evidences itself with a source, which is why this call is here and not in a
       // tool named for auditing: `sdlc-spec-audit` and `sdlc-plan-audit` are declared as
       // producing a source that supports the document they audited, and no document of their
-      // own. One `noteSource` per supported document — a source supporting two documents is
-      // evidence for both stages.
+      // own. Only a source naming its audit stage is that step's evidence; other material is
+      // recorded and flagged, and credits no step.
       //
-      // DELIBERATE: the chain is resolved from `<initiative>/x.md`, not from the source's own
+      // DELIBERATE: `governing` is resolved from `<initiative>/x.md`, not from the source's own
       // path. `chainFor` answers for a document the flow declares; a source lives under
-      // `sources/` and carries no `flow:`, so its own path returns EMPTY_CHAIN and
-      // `noteSource` would look the audit step up in an empty stage list and return silently.
-      // This is the form `initiative_open` uses to resolve a chain before any document exists.
-      const governing = chainFor(root, `${initiative}/x.md`);
+      // `sources/` and carries no `flow:`, so its own path returns EMPTY_CHAIN. This is the form
+      // `initiative_open` uses to resolve a chain before any document exists.
       const sourceTeam = await teamFor(who.email);
-      for (const supported of list) {
-        await noteSource(governing, rel, supported, who.email, sourceTeam);
-      }
+      if (round) await noteSource(governing, rel, round.document, who.email, sourceTeam);
+      // The round is assessed the moment it lands, so the next move can route on it: does it
+      // reopen something already agreed, and does it only repeat the round before it.
+      const assessed = round
+        ? await assessRound(root, initiative, rel, round.document, content, who.email)
+        : null;
+      const stageNote = stage && !round
+        ? `\n\nNOT COUNTED AS A ROUND: "${stage}" is not a stage of this flow that produces a source ` +
+          `supporting ${list.join(", ") || "nothing"}, so this was recorded as material only.`
+        : "";
       return text(
         `source recorded: ${rel}` +
         (list.length ? `\nsupports: ${list.join(", ")}` : "") +
+        (round ? `\nrecorded as a ${round.stage} round on ${round.document} v${auditsVersion}` : "") +
+        (assessed ? `\n${assessed}` : "") + stageNote +
         (stale.length
           ? `\n\nNote for whoever works on this next: ${stale.join(", ")} ` +
             `${stale.length > 1 ? "were" : "was"} already approved before this material arrived, so ` +
             `the approval does not cover it. initiative_status reports this under ` +
             `sources_after_approval. Whether to change the document is the team's call — if they ` +
             `decide to, document_revise bumps the version, links this source and re-opens the gate.`
-          : list.length ? "\n\nNo approved document is affected." : ""),
+          : list.length && !round ? "\n\nNo approved document is affected." : "") +
+        nextMoveLine(root, initiative),
       );
     },
   );
@@ -435,7 +462,7 @@ export function registerArtifactTools(server: McpServer): void {
         const env = parseEnvelope(readFileSync(join(dir, f), "utf8"));
         // COUPLED: `contributed_by` is the field source_add and document_revise write.
         return { path: `${initiative}/sources/${f}`, title: env.title || f,
-                 supports: env.supports || "",
+                 supports: env.supports || "", stage: env.stage || "",
                  contributed_by: env.contributed_by || "", added_at: env.added_at || "" };
       });
       return text(JSON.stringify({ initiative, sources: rows }, null, 2));

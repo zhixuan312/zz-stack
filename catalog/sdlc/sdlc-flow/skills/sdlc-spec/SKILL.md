@@ -1,6 +1,6 @@
 ---
 name: sdlc-spec
-version: 1.9
+version: 1.10
 description: Open the option space with the person, close it to confirmed decisions, and write the agreement at <initiative>/spec.md — what ships, why it is worth building, and what "done" means. Brainstorm and spec are one skill because they are one conversation. Main agent only.
 when_to_use: "Explore has established what is true and the person is ready to decide what to build. Covers both halves: deciding with them, and writing what was decided. If nothing has been established yet, run sdlc-explore first. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -488,8 +488,8 @@ cleanly and nobody agreed to.
 questions — a signature, a path, prior art, what was already settled — go to dispatched workers,
 one question each, and you come back with the answer rather than with the question. The writing is
 this agent's own; there is no worker to check. The `semantic-assessment` role answers the bounded
-questions below by question ID from the fixed set below. Nothing in this platform registers those
-IDs yet, so an implementation adopts these spellings rather than minting its own, and decides
+questions below by question ID from the fixed set below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
+door, which records the answer and the model behind it, and decides
 nothing the person owns.
 
 **Checkpoints:**

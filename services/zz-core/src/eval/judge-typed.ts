@@ -10,7 +10,7 @@
  * unparseable, and a written explanation cannot invent a score, because the score was fixed
  * before any prose was written.
  */
-import { ask as askTyped, type ScoreQuestion, toOneBased } from "./typesafe.js";
+import { ask as askTyped, type ScoreQuestion, toOneBased } from "../typed-service.js";
 import type { Dim, Mark } from "./judge.js";
 
 /** Mark one artifact against every qualitative dimension, as typed judgments.

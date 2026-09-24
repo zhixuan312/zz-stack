@@ -40,9 +40,9 @@ Not a ratchet. An audit that finds the spec rests on an unsettled decision sends
 |---|---|---|---|
 | 1 | `sdlc-explore` | `explore.md` | **main agent** — fans out, waits, synthesises |
 | 2 | `sdlc-spec` | `spec.md` | **main agent** → the person agrees |
-| 3 | `sdlc-spec-audit` | a SOURCE supporting `spec.md` | subagent per round, sequential, max 3 |
+| 3 | `sdlc-spec-audit` | a SOURCE supporting `spec.md` | subagent per round, sequential, rounds routed by evidence |
 | 4 | `sdlc-plan` | `plan.md` | **main agent** → the person approves |
-| 5 | `sdlc-plan-audit` | a SOURCE supporting `plan.md` | subagent per round, sequential, max 3 |
+| 5 | `sdlc-plan-audit` | a SOURCE supporting `plan.md` | subagent per round, sequential, rounds routed by evidence |
 | 6 | `sdlc-execute` | the change itself, and no document | subagent per plan item |
 | 7 | `sdlc-review` | `review.md` — and it closes the initiative | subagents |
 
@@ -84,7 +84,7 @@ halves loses exactly what was agreed.
 **The person agrees before anything proceeds.** Auditing a document nobody agreed to audits
 your own guess.
 
-### 3 & 5 · Two audits, each sequential, each stopping at three
+### 3 & 5 · Two audits, each sequential, each routed by evidence
 
 `sdlc-spec-audit` runs on the spec before anyone plans from it. `sdlc-plan-audit` runs on the
 plan before anyone builds from it. They are separate skills because a spec and a plan fail in
@@ -93,9 +93,26 @@ checks task contracts, check paths, dependency order and the full-suite gate. A 
 auditor finds the generic half of both and misses what actually breaks.
 
 **One round at a time, each reading what the last one produced** — parallel audit rounds
-re-find the same things. **Three rounds maximum per document.** A fourth means the document
-has a problem no audit will fix: take it back to the stage that wrote it and say what the
-audits kept finding.
+re-find the same things. A round is a source naming its stage —
+`source_add(..., supports: ["spec.md"], stage: "sdlc-spec-audit")` — and material without the
+stage is not a round, however it is titled.
+
+**How many rounds is the platform's answer, not a count you keep.** `initiative_status` — and
+the `Next move:` line every document call ends with — computes it from the record:
+
+| The record | Next move |
+|---|---|
+| no round yet | round 1 is owed |
+| the document was revised after the last round read it | the next round checks the revision |
+| the last round read the current version | the audit is settled; move on |
+| the last round reopens something the person agreed (the platform asks `changes_commitment` the moment the round lands) | the stakeholder decides |
+| three rounds are spent and the latest revision was never audited | the stakeholder decides |
+
+Three is a resource limit, never a pass: a spent budget does not mean the document is fine, so
+the person decides whether it proceeds unaudited or goes back to the stage that wrote it. Their
+decision is recorded as material supporting the document — `source_add` with no stage — and
+that is what lets the flow move on. If the audits keep finding the same thing, take the document
+back to its stage and say what they kept finding.
 
 ### 4 · Plan is yours, and then it is approved
 
@@ -246,8 +263,8 @@ step, and guessing at them is how a stage gets skipped.
 **Work roles:** the person decides at the three gates — agreement on `spec.md`, approval of
 `plan.md`, approval of `review.md` — and nothing substitutes for them there. Choosing the stage
 and reporting where the work stands are this agent's own. The `semantic-assessment` role is asked
-the bounded questions below by question ID from the fixed set below. Nothing in this platform
-registers those IDs yet, so an implementation adopts these spellings rather than minting its own;
+the bounded questions below by question ID from the fixed set below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
+door, which records the answer and the model behind it;
 it never picks the stage.
 
 **Checkpoints:**
@@ -256,7 +273,7 @@ it never picks the stage.
 |---|---|---|
 | Before routing to `sdlc-spec` | `needs_fact` | whether the ground is established enough to decide on, or `sdlc-explore` has to run first |
 | At each of the three gates | `missing_user_input` | whether the person's decision is recorded on the document, or exists only in the conversation |
-| After an audit round returns | `changes_commitment` | whether a finding reopens something the person already agreed, which sends the document back to the stage that wrote it |
+| After an audit round lands — asked by the platform itself in `source_add`, reading returned in its result | `changes_commitment` | whether a finding reopens something the person already agreed, which sends the document back to the stage that wrote it |
 
 **Action and exit paths:** the action is entering the next stage, or re-entering an earlier one
 when an audit sends a document back — the sequence is not a ratchet, and a return is the method

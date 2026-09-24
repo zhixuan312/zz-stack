@@ -1,6 +1,6 @@
 ---
 name: sdlc-investigate
-version: 1.2
+version: 1.3
 description: Answer one specific question about material inside this system — code, config, specs, data, documents — with grounded file:line citations and calibrated confidence. Read-only. Dispatched by sdlc-explore, one question per worker.
 when_to_use: "One convergent question about this system needs a grounded answer: how something works, where something lives, what something depends on. Dispatched by sdlc-explore as part of its fan-out, or reached directly when a single fact is blocking. Not for surveying a subject — that is the whole fan-out, not one worker."
 ---
@@ -168,8 +168,8 @@ named. An unknown rated `high` is not an unknown; it is an overstatement.
 perspectives and the synthesis are this agent's own. Nothing re-reads your citations, so no
 reviewing role stands behind you and the self-validation rubric is yours to run and mean. The
 `semantic-assessment` role answers the bounded questions below by question ID from the fixed set
-below. Nothing in this platform registers those IDs yet, so an implementation adopts these
-spellings rather than minting its own; it does not write the answer.
+below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
+door, which records the answer and the model behind it; it does not write the answer.
 
 **Checkpoints:**
 

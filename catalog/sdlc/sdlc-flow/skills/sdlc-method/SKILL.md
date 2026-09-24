@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.13
+version: 1.14
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -19,7 +19,7 @@ main agent runs the flow, and dispatches in exactly four places.
 | Dispatched | Shape | Why it is not yours |
 |---|---|---|
 | `sdlc-explore`'s fan-out | many workers, in parallel | breadth — one question per worker |
-| `sdlc-spec-audit` / `sdlc-plan-audit` | one worker per round, **sequential**, at most three | a reader who did not write the document |
+| `sdlc-spec-audit` / `sdlc-plan-audit` | one worker per round, **sequential**, rounds routed by evidence | a reader who did not write the document |
 | `sdlc-execute` | one worker per plan item | mechanical, and bounded by the plan |
 | `sdlc-review` | workers over what was built | a reviewer who did not write the code |
 
@@ -102,10 +102,11 @@ discover that later.
 Three things, in this order. A worker missing any of them writes something plausible and
 wrong.
 
-1. **Its instructions**: follow the stage's skill, and **load it with `skill_read("<stage>")`
-   as its first act, before anything else.** Do not paste the skill's text into the prompt —
-   it is hundreds of lines, and a pasted copy goes stale the next time the package updates.
-   The subagent inherits your tools and can load the skill itself.
+1. **Its instructions**: follow the stage's skill, and **load it as its first act, before
+   anything else** — through the runtime's own skill loader where it has one, `skill_read("<stage>")`
+   where it does not. Do not paste the skill's text into the prompt — it is hundreds of lines,
+   and a pasted copy goes stale the next time the package updates. The subagent inherits your
+   tools and can load the skill itself.
 2. **The payload**: the confirmed inputs verbatim — decisions, the approved spec, the plan
    item. Verbatim, not summarised. A summary is a second act of judgement the caller did
    not intend to make.
@@ -123,18 +124,17 @@ you are the only party who can still see those lines — keep them for the initi
 there is none to pass, say `rename_receipt: unavailable` rather than leaving the auditor to
 decide whether you forgot.
 
-**Why `skill_read` and not whatever your runtime offers.** A worker that loads the skill from
-its own plugin directory gets the same text and leaves no trace, and the platform attributes a
-step from the last `skill_read` it was asked for. So a stage loaded locally did not happen as
-far as the record is concerned. Measured on 2026-09-13: across every initiative this platform
-has ever recorded, `zz.event` holds not one `sdlc-spec-audit` or `sdlc-plan-audit` row — both
-audits, the two stages whose whole value is that somebody independent read the document, are
-invisible. `sdlc-recall`, `sdlc-investigate` and `sdlc-research` are dispatched exactly the same
-way and are all over the log, because those workers happen to call a platform tool that loads
-their skill first.
+**How a loaded stage reaches the record.** The platform attributes a step from the last skill
+loaded, and it must see the load to do that. In Claude Code the baseline `zz-core` plugin
+carries a hook that reports every skill a session loads from this shelf — through its own Skill
+tool, in the main session and in every subagent — so the record no longer depends on the agent
+remembering to call `skill_read`. Measured before the hook existed: ten of fourteen execute and
+review stages across every sdlc initiative left no trace, and on 2026-09-13 not one audit round
+had ever been attributed. A runtime without that hook reaches the same record by calling
+`skill_read`.
 
-What that costs is not bookkeeping. A return — the audit that sends a spec back, which this
-method exists to make possible — is a stage entered after a later one has run. With the audit
+What that buys is not bookkeeping. A return — the audit that sends a spec back, which this
+method exists to make possible — is a stage entered after a later one has run. With the stage
 missing there is no later stage, so an initiative that went spec → audit → spec reads as a
 straight line, and the one thing plugin evaluation most wants to know about this flow cannot be
 asked of it.
@@ -142,8 +142,8 @@ asked of it.
 **The honest limit, so nobody reads more into the record than is there:** the platform
 correlates a step with the calls that follow it per CALLER, and your subagents share your
 credential. So your calls and theirs interleave in one trace, and a step is only ever the last
-one anybody loaded. The instruction above makes a dispatched stage visible; it does not make the
-main agent's and the worker's calls separable.
+one anybody loaded. The hook makes a dispatched stage visible; it does not make the main agent's
+and the worker's calls separable.
 
 ## What you do when it returns
 
@@ -265,8 +265,8 @@ Delegation is an ordinary answer and it stands until they say otherwise.
 reading, or bounded volume — never a decision somebody is party to. This agent keeps the sequence,
 does the synthesis, and is the only thing between a worker's draft and a document someone builds
 on. The `semantic-assessment` role answers the bounded questions below by question ID from the
-fixed set below. Nothing in this platform registers those IDs yet, so an implementation adopts
-these spellings rather than minting its own; it does not decide what is dispatched.
+fixed set below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
+door, which records the answer and the model behind it; it does not decide what is dispatched.
 
 **Checkpoints:**
 

@@ -142,6 +142,10 @@ const TOOL_DOMAIN: Record<string, string> = {
   document_write: "work", initiative_close: "work", initiative_open: "work",
   initiative_status: "work", source_add: "work", source_list: "work",
   skill_list: "work", skill_read: "work", session_whoami: "work",
+  // A checkpoint a stage reaches while doing the work — one bounded question, answered as
+  // evidence for the stage's own decision and never as the decision. Scoring a plugin is
+  // Evaluation's.
+  assess: "work",
   // Knowledge — the journal, and rebuilding the index that stores it.
   knowledge_add: "knowledge", knowledge_search: "knowledge", knowledge_supersede: "knowledge",
   knowledge_reconcile: "knowledge", knowledge_reindex: "knowledge",
@@ -157,7 +161,7 @@ const TOOL_DOMAIN: Record<string, string> = {
   team_list: "access", team_mine: "access", team_switch: "access",
   member_add: "access", member_remove: "access",
   pat_issue: "access", pat_list: "access", pat_revoke: "access", whoami: "access",
-  // Evaluation — the only subject in which a model's judgement is admissible.
+  // Evaluation — the only subject in which a model's judgement becomes a score.
   plugin_locate: "evaluation", plugin_profile: "evaluation", plugin_conform: "evaluation",
   ruler_read: "evaluation", ruler_record: "evaluation", ruler_affirm: "evaluation",
   round_judge: "evaluation", round_scores: "evaluation", round_score: "evaluation",

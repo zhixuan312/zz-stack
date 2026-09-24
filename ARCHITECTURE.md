@@ -124,7 +124,9 @@ rule is what the directory means:
   `initiative-close.ts` are registered from `initiative-acts.ts`). Underneath them sit the
   layers every tool shares — `paths.ts`,
   `guards.ts`, `chain.ts`, `indexing.ts`, `persist.ts`, `platform-db.ts`, `skill-roots.ts`,
-  `refusal.ts` — each one thing the tools do, never a tool. A tool may use any layer; a layer
+  `refusal.ts`, `typed-service.ts` (the Jev client), `semantic.ts` (the checkpoint families and
+  their recorded answers) and `audit-rounds.ts` (which source is a round and what it owes next)
+  — each one thing the tools do, never a tool. A tool may use any layer; a layer
   may not know about a tool.
 - **`services/gateway/src/console/<resource>.ts` — one resource per file.** The routes that
   answer for overviews, teams, initiatives, knowledge, skills and the catalog, split the way

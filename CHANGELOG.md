@@ -33,6 +33,52 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.73.0] — 2026-09-24
+
+**sdlc now runs the way it is written.** Measured over every sdlc initiative on the platform,
+about a quarter of the rule checks that applied were not followed, and every miss was a rule
+held only by skill prose: audits skipped, rounds counted by hand, stages that left no trace,
+initiatives never closed, and a Jev checkpoint layer that no code ever called. This release
+moves those rules into the platform.
+
+### Added
+- **`assess` on `/core`.** Asks one of the nine semantic-assessment families (the checkpoint
+  IDs every sdlc skill cites) about one subject, through the typed service, and returns a
+  reading — yes, no, unclear or unavailable — with the probability behind it. Every answer is
+  recorded in `zz.assessment` with its question digest and the model that answered.
+- **Audit rounds are assessed as they land.** `source_add` asks `changes_commitment` (and, from
+  round 2, `repeats_finding`) about every audit round and returns the reading.
+- **The baseline plugin reports every skill a Claude Code session loads from the shelf.** A
+  `PostToolUse` hook on the Skill tool calls `skill_read`, so a stage loaded locally — which
+  is how Claude Code loads plugin skills — is on the record. Before this, most execute and
+  review stages were invisible.
+
+### Changed
+- **How many audit rounds is the platform's answer.** A round is a source that names its
+  stage — `source_add(..., stage: "sdlc-spec-audit")` — and records the version it read.
+  `initiative_status` owes the next round when the document was revised after the last round
+  read it, sends the work to the stakeholder when a round reopens an agreement or when three
+  rounds are spent on an unaudited revision, and moves on once the last round read the
+  current version. Three is a resource limit, never a pass.
+- **Document calls say what comes next.** `document_write`, `document_approve`,
+  `document_revise` and `source_add` end their result with the computed `Next move:` — an owed
+  round, a stakeholder decision, the close.
+- sdlc skills: rounds are routed by evidence, a worker loads its stage however its runtime loads
+  skills, and every checkpoint table points at `assess`. Versions: `sdlc-flow` 2.7,
+  `sdlc-method` 1.14, `sdlc-audit-criteria` 2.5, `sdlc-spec-audit` 2.4, `sdlc-plan-audit` 2.4,
+  `sdlc-plan` 1.14, `sdlc-spec` 1.10, `sdlc-explore` 1.9, `sdlc-execute` 1.9, `sdlc-review` 1.7,
+  `sdlc-recall` 1.10, `sdlc-research` 1.5, `sdlc-investigate` 1.3; `zz-platform` 3.46.
+- The typed-service client moved from `eval/typesafe.ts` to `typed-service.ts`: core calls it
+  now, not only evaluation.
+
+### Upgrade notes
+- **Breaking:** a source supporting `spec.md` or `plan.md` counts as an audit round only when
+  it names its stage. An initiative in flight whose rounds were recorded without `stage` is
+  asked for a round again, or for the stakeholder's decision recorded as a source.
+- Migration `076` adds `zz.assessment`; it applies on the gateway's next start.
+- Installed clients re-pull to get the hook and the skill changes: `/zz-access:update`, or
+  `claude plugin marketplace update zz-stack` then `claude plugin update` for each plugin.
+
 ## [0.72.1] — 2026-09-24
 
 **0.72.0 was deployed and rolled back, and is not a release.** Its verification refused it

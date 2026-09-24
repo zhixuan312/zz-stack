@@ -179,4 +179,10 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
   eitherOr("candidate_prove refuses a candidate_id nothing minted",
     await callEval("candidate_prove", { candidate_id: randomUUID(), idempotency_key: randomUUID() }),
     /no platform database|no candidate/);
+  // Fix dispatch on I-21: abandon: true reaches the SAME loadCandidate lookup before anything
+  // abandon-specific runs, so a random candidate_id refuses identically — exercised here so the
+  // tool's new argument is at least reachable through the door, not merely typed.
+  eitherOr("candidate_prove refuses abandon on a candidate_id nothing minted",
+    await callEval("candidate_prove", { candidate_id: randomUUID(), abandon: true, idempotency_key: randomUUID() }),
+    /no platform database|no candidate/);
 }

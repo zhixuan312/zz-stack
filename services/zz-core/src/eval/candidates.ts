@@ -284,6 +284,13 @@ export function registerCandidateTools(server: McpServer): void {
       // `not_improved`, whatever the candidate's own status column says — a second, independent
       // way into the SAME repeat-rejection set the status filter already builds, not a
       // replacement for it.
+      //
+      // FIX (dispatch, FR-28): REJECTED_CANDIDATE_STATUSES still names proof_failed — re-testing
+      // a hypothesis whose proof genuinely FAILED would reuse that proof, which FR-28 forbids —
+      // but deliberately NOT proof_not_established (migration 081): a candidate whose proof
+      // never resolved (insufficient_proof_cases, proof_unresolved, or an abandoned allocation)
+      // is an evidence gap, not a rejected idea, so its own hypothesis may be proposed again
+      // under a fresh improvement_start.
       const wantDigest = hypothesisDigest(hypothesis);
       const priorRejections = (await p.query<{ id: string; hypothesis: string; status: string }>(`
         select c.id::text as id, c.hypothesis, c.status
@@ -483,54 +490,58 @@ export function registerCandidateTools(server: McpServer): void {
     {
       description:
         "WHEN an improvement_run's own selected final candidate is ready for its sealed proof " +
-        "(Task I-21, FR-28, FR-43): opens the candidate's ONE proof allocation. A first call " +
-        "(candidate.status: selected) mints a fresh verifier_token (zz.replay_verifier_token, " +
-        "checked by replay_start/replay_read's own context: verifier gate) with no proposer/" +
-        "search capability, moves candidate.status to proving and improvement_run.status to " +
-        "proofing, and RETURNS { proof_status: null, verifier_token, token_already_issued, " +
-        "runs_required, status: 'proving' } — never resolving in the same call. The IMPROVE " +
-        "agent drives replay_start(context: 'verifier', verifier_token, split: 'proof') plus the " +
-        "launcher (packages/tools/src/replay/launch.ts --verifier-token) against every entry in " +
-        "runs_required. A LATER call against the same still-proving candidate reads back " +
-        "whatever proof-split zz.replay_run rows are now completed and scored: while any (case, " +
-        "side) pair is still short of the protocol's own minRepeats it RETURNS the same shape " +
-        "with an updated runs_required and no new verifier_token; once every case clears it (or " +
-        "the protocol's own liveness bound has passed) it computes pairedDecision (stats.ts) " +
-        "over the per-case deltas, re-screens the candidate through the search.leakage critic " +
-        "(FR-43's own 'no unresolved leakage'), and stores exactly one zz.candidate_evaluation " +
-        "(split: proof) row. RETURNS { proof_status: proof_passed|proof_failed|not_established, " +
-        "reason, release_eligible, candidate_evaluation_id, status } — never a per-case result " +
-        "(FR-28's own 'nothing per case'). proof_passed requires: an established, resolved proof " +
-        "score; pairedDecision verdict improves, OR an accepted pruning trade-off (negative " +
-        "complexity_delta with no evidence of regression); every critical guardrail passing; and " +
-        "no leakage — release_eligible is additionally true only when the base subject's plugin " +
-        "carries at least one release_owner (FR-47), otherwise proof_passed but " +
-        "release_eligible: false. Below the protocol's own proof-case minimum, or once every " +
-        "case clears minRepeats and the bootstrap interval still straddles mme at the liveness " +
-        "bound, RETURNS proof_status: not_established (reason: insufficient_proof_cases or " +
-        "proof_unresolved) instead. Every terminal proof_status (proof_passed/proof_failed/" +
-        "not_established alike) marks the allocation SPENT: candidate.status becomes " +
-        "proof_passed or proof_failed (migration 077's own vocabulary has no third value — an " +
-        "unestablished proof is exactly as spent as a failed one), improvement_run.status " +
-        "becomes ready_for_approval (passed, owners obtainable), closed (passed, no owners — a " +
-        "proposal-only outcome, FR-51) or proof_failed, and a resumed search restarts from the " +
-        "pre-proof history through a fresh improvement_start, never this same allocation. " +
-        "REFUSES a candidate_id nothing minted; a candidate whose own status is not one this " +
-        "candidate's own selection or an already-open allocation could have left it in — \"ERROR: " +
-        "only the selected candidate may open proof\"; a candidate already proof_passed or " +
-        "proof_failed — \"ERROR: proof allocation spent; a new allocation or new evidence is " +
-        "required\"; an improvement_run whose own eval_run bound no case_set_version_id; and a " +
-        "plugin with no bounded_semantic/generative_critic measure to ever score a replay with. " +
-        "A mutator whenever it actually writes (opening the allocation, or resolving it): writes " +
-        "through the FR-59 idempotency ledger — an interim runs_required response is not.",
-      inputSchema: { candidate_id: z.string(), idempotency_key: z.string().min(1) },
+        "(Task I-21, FR-28, FR-43; abandon: this dispatch): opens the candidate's ONE proof " +
+        "allocation. A first call (candidate.status: selected) mints a verifier_token with no " +
+        "proposer/search capability, moves candidate.status to proving and improvement_run.status " +
+        "to proofing, and RETURNS { proof_status: null, verifier_token, token_already_issued, " +
+        "runs_required, status: 'proving' } — never resolving in the same call. The IMPROVE agent " +
+        "drives replay_start(context: 'verifier', verifier_token, split: 'proof') plus the " +
+        "launcher (packages/tools/src/replay/launch.ts --verifier-token) against every " +
+        "runs_required entry. A LATER call against the same proving candidate reads back " +
+        "completed, scored proof-split zz.replay_run rows: short of minRepeats it RETURNS the " +
+        "same shape with updated runs_required; once every case clears it (or the liveness bound " +
+        "passes) it computes pairedDecision (stats.ts), re-screens for leakage (search.leakage), " +
+        "and stores one zz.candidate_evaluation (split: proof) row. RETURNS { proof_status: " +
+        "proof_passed|proof_failed|not_established, reason, release_eligible, " +
+        "candidate_evaluation_id, status } — never a per-case result. proof_passed requires an " +
+        "established score, pairedDecision improves (or an accepted pruning trade-off), every " +
+        "critical guardrail passing, and no leakage; release_eligible is additionally true only " +
+        "with a recorded release_owner (FR-47). Below the proof-case minimum, or an interval " +
+        "still straddling mme at the liveness bound, RETURNS not_established (reason: " +
+        "insufficient_proof_cases or proof_unresolved). Every terminal outcome SPENDS the " +
+        "allocation: candidate.status becomes proof_passed, proof_failed (a real rejection — " +
+        "candidate_record refuses to re-record this hypothesis), or proof_not_established " +
+        "(migration 081: an evidence gap from insufficient_proof_cases, proof_unresolved or " +
+        "abandon, never a rejected hypothesis, so REJECTED_CANDIDATE_STATUSES leaves it out and " +
+        "the same hypothesis may be re-recorded); improvement_run.status becomes " +
+        "ready_for_approval, closed (no owners, FR-51), or proof_failed. A resumed search " +
+        "restarts through a fresh improvement_start, never this allocation. abandon: true " +
+        "recovers an allocation stuck proving because the caller lost the response that opened " +
+        "it (no verifier_token holder, nothing else can resolve it): it revokes the token, " +
+        "cancels every still-registered proof-split replay_run it spawned, and resolves " +
+        "proof_not_established (reason: abandoned). REFUSES abandon on a selected candidate " +
+        "(never opened — nothing to abandon); on an already-spent candidate abandon is instead a " +
+        "NO-OP read-back of the current terminal state, never a refusal. REFUSES a candidate_id " +
+        "nothing minted; a candidate whose status is neither selected/proving nor already spent " +
+        "— \"ERROR: only the selected candidate may open proof\"; a non-abandon call against a " +
+        "spent candidate — \"ERROR: proof allocation spent; a new allocation or new evidence is " +
+        "required\"; an improvement_run whose eval_run bound no case_set_version_id; and a " +
+        "plugin with no bounded_semantic/generative_critic measure to score a replay with. A " +
+        "mutator whenever it actually writes (opening, resolving, or abandoning): writes through " +
+        "the FR-59 idempotency ledger — an interim runs_required response is not.",
+      inputSchema: {
+        candidate_id: z.string(), idempotency_key: z.string().min(1),
+        abandon: z.boolean().optional()
+          .describe("Recover an allocation stuck 'proving' because the caller lost the response " +
+                    "that opened it. Ignored on a candidate that was never opened."),
+      },
     },
-    async ({ candidate_id, idempotency_key }) => {
+    async ({ candidate_id, idempotency_key, abandon }) => {
       const p = db();
       if (!p) return noDb();
       const principal = parseCaller(requestHeaders()).email;
 
-      const outcome = await proveCandidate(p, candidate_id, idempotency_key, principal);
+      const outcome = await proveCandidate(p, candidate_id, idempotency_key, principal, abandon ?? false);
       if ("error" in outcome) return text(outcome.error);
 
       logActivity(await userRoot(), null, {

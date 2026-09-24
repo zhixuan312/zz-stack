@@ -43,10 +43,10 @@
   },
   "zz-plugin-eval": {
     "version": "0.75.2",
-    "digest": "370a031b",
+    "digest": "f1e3ea54",
     "skills": {
       "zz-plugin-define": "258b68148716",
-      "zz-plugin-eval": "353303d39663",
+      "zz-plugin-eval": "a83fe8fc25d0",
       "zz-plugin-judge": "10ea1a861ce5",
       "zz-plugin-locate": "641a2d2e8a99",
       "zz-plugin-profile": "d6091dbeb92e",

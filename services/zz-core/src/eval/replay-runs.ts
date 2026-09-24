@@ -268,7 +268,11 @@ async function selectCase(client: Db, caseSetId: string, split: string, caseId?:
 
 interface ClosingRun { id: string; team_slug: string; pat_id: string }
 
-async function closeRun(
+/** Exported for `candidate-prove.ts`'s own `candidate_prove(..., abandon: true)` (Task I-21 fix
+ *  dispatch, FR-28): abandoning an open proof allocation tears down every still-live replay_run
+ *  its verifier_token could have spawned the SAME way replay_close/sweepExpired already do —
+ *  never a second, ad hoc teardown that could drift from this one's own admin-event record. */
+export async function closeRun(
   p: Db, run: ClosingRun, status: string, actor: string, reason: string,
 ): Promise<{ archived: boolean; revoked: boolean }> {
   await p.query("update zz.replay_run set status = $2 where id = $1::uuid", [run.id, status]);

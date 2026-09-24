@@ -67,9 +67,15 @@ const IMPROVEMENT_RUN_STATUSES = [
   "open", "searching", "selected", "proofing", "proof_failed",
   "ready_for_approval", "released", "closed", "cancelled",
 ] as const;
+/** `proof_not_established` (migration 081, fix dispatch on I-21): a candidate whose sealed proof
+ *  never resolved to passed or failed — too few proof cases, an interval that never cleared mme
+ *  by the liveness bound, or the allocation's token holder abandoned it — is spent (the proof
+ *  allocation is used up either way) but is NOT a rejected hypothesis. Distinct from
+ *  `proof_failed` so `REJECTED_CANDIDATE_STATUSES` (proposer-bundle.ts) can bar the latter from
+ *  re-proposal without also barring an idea that was never actually tested. */
 const CANDIDATE_STATUSES = [
   "recorded", "rejected_precheck", "validating", "valid", "invalid", "selected",
-  "proving", "proof_passed", "proof_failed", "stale", "released",
+  "proving", "proof_passed", "proof_failed", "proof_not_established", "stale", "released",
 ] as const;
 /** zz.replay_run.status (077) — distinct from replay_case.status above: a case is either
  *  replayable or not, once; a run against it moves through its own execution lifecycle and can

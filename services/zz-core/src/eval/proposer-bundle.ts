@@ -17,13 +17,31 @@
  */
 import type pg from "pg";
 
-/** A candidate counts as a prior REJECTION for the repeat-hypothesis check and for this bundle
- *  when its status is one of these — the same set `candidates.ts`'s own duplicate-hypothesis
- *  refusal reads. `invalid`/`proof_failed` are later stages' own verdicts (candidate_validate/
- *  candidate_prove); `rejected_precheck` is the status this same repeat check itself implies for
- *  a hypothesis that never got past it. All three read as "this idea did not work," which is
- *  exactly what FR-38's regularized search needs to avoid proposing again. */
+/** A candidate counts as a prior REJECTION for `candidates.ts`'s own duplicate-hypothesis refusal
+ *  when its status is one of these. `invalid`/`proof_failed` are later stages' own verdicts
+ *  (candidate_validate/candidate_prove); `rejected_precheck` is the status this same repeat check
+ *  itself implies for a hypothesis that never got past it. All three read as "this idea did not
+ *  work," which is exactly what FR-38's regularized search needs to avoid proposing again.
+ *  Deliberately NOT `proof_not_established` (migration 081, fix dispatch on I-21) — an
+ *  unestablished proof is an evidence gap, not a rejected idea, so it does not block
+ *  `candidate_record`'s own repeat-hypothesis check the way a genuinely `proof_failed` one does.
+ *
+ *  NOT the same set this bundle's own `loadProposerBundle` below reads for
+ *  `prior_rejected_hypotheses` — see `PROOF_SIGNAL_STATUSES`, just below. That set excludes
+ *  `proof_failed` too: FR-28 forbids feeding a proof RESULT back into search, whether or not the
+ *  status also happens to block re-recording the hypothesis through `candidate_record`. */
 export const REJECTED_CANDIDATE_STATUSES = ["rejected_precheck", "invalid", "proof_failed"] as const;
+
+/** What `loadProposerBundle` treats as a prior rejection worth showing a proposer/search session
+ *  (FR-37's own "prior rejected hypotheses" side information) — deliberately narrower than
+ *  `REJECTED_CANDIDATE_STATUSES` above. `proof_failed` and `proof_not_established` are BOTH proof
+ *  signals: FR-28's "proof results must not be fed back into search" covers an unestablished
+ *  proof exactly as it covers a failed one, even though only `proof_failed` also blocks
+ *  `candidate_record`'s separate re-proposal check. Module-local: nothing outside this file's own
+ *  `loadProposerBundle` needs this distinction. */
+const PROOF_SIGNAL_STATUSES = ["proof_failed", "proof_not_established"] as const;
+const PROPOSER_VISIBLE_REJECTION_STATUSES = (REJECTED_CANDIDATE_STATUSES as readonly string[])
+  .filter((s) => !(PROOF_SIGNAL_STATUSES as readonly string[]).includes(s));
 
 // -------------------------------------------------------------------------------------------
 // Raw row shapes — exactly what `loadProposerBundle`'s queries hand to the pure builder below.
@@ -174,6 +192,11 @@ export async function loadProposerBundle(p: pg.Pool, improvementRunId: string): 
       detail: r.detail ?? {},
     }));
 
+  // FR-28: `prior_rejected_hypotheses` below is proposer/search-facing evidence, so it reads
+  // PROPOSER_VISIBLE_REJECTION_STATUSES — never REJECTED_CANDIDATE_STATUSES itself, which still
+  // names proof_failed for candidate_record's OWN, separate re-proposal refusal. A proof result
+  // (proof_failed or proof_not_established alike) must not be fed back into search; see the
+  // module note above both constants.
   const rejected = pluginRow
     ? (await p.query<{ candidate_id: string; hypothesis: string; status: string }>(`
         select c.id::text as candidate_id, c.hypothesis, c.status
@@ -181,7 +204,7 @@ export async function loadProposerBundle(p: pg.Pool, improvementRunId: string): 
           join zz.eval_subject_version sv on sv.id = c.base_subject_version_id
          where sv.plugin_id = $1::uuid and c.status = any($2::text[])
          order by c.created_at desc`,
-        [pluginRow.plugin_id, [...REJECTED_CANDIDATE_STATUSES]])).rows
+        [pluginRow.plugin_id, PROPOSER_VISIBLE_REJECTION_STATUSES])).rows
     : [];
 
   // FR-28/FR-30: this bundle is what a search/proposer session reads (improvement_start's own

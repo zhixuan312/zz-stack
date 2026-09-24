@@ -39,17 +39,31 @@
  * false replay that would hand back the wrong table's row under the other call's own response
  * shape.
  *
- * A candidate.status has no separate `not_established` value (migration 077's own check
- * constraint), so an unestablished proof — too few proof cases, or an interval that never
- * resolved by the liveness bound — is stored under `proof_failed` too: it is exactly as spent as
- * a statistically failed one, and `REJECTED_CANDIDATE_STATUSES` (`proposer-bundle.ts`) already
- * treats `proof_failed` as a hypothesis this plugin should not propose again, which is exactly
- * FR-28's "a resumed search restarts from the pre-proof history" — a fresh `improvement_start`
- * (a new `zz.improvement_run` row) is what resumes it, never this same allocation. NAMED
- * CONSEQUENCE, not resolved here: this also means a candidate whose proof failed only because
- * its case set had too few proof cases (`insufficient_proof_cases`, an evidence gap, not a
- * rejected idea) is barred from re-proposal exactly as a genuinely rejected hypothesis is — 077
- * gives this file no third status to keep the two apart.
+ * `candidate.status` DOES carry a separate `proof_not_established` value (migration 081, fix
+ * dispatch on this same task): an unestablished proof — too few proof cases
+ * (`insufficient_proof_cases`), an interval that never resolved by the liveness bound
+ * (`proof_unresolved`), or an allocation nobody could finish (`abandoned`, below) — is spent
+ * exactly as a statistically failed one is (`SPENT_STATUSES` covers all three; a second
+ * `candidate_prove` call against any of them refuses or reads back, never re-opens), but it is
+ * NOT a rejected hypothesis. `REJECTED_CANDIDATE_STATUSES` (`proposer-bundle.ts`) deliberately
+ * leaves `proof_not_established` out — an evidence gap is not FR-38's "already rejected idea" —
+ * so `candidate_record` refuses to re-record only a genuinely `proof_failed` hypothesis; a
+ * `proof_not_established` one may be proposed again under a fresh `improvement_start`
+ * (`zz.improvement_run` row), exactly as FR-28's "a resumed search restarts from the pre-proof
+ * history" already requires. `loadProposerBundle` (`proposer-bundle.ts`) goes one step further
+ * and excludes BOTH `proof_failed` and `proof_not_established` from what a proposer/search
+ * session ever reads back as `prior_rejected_hypotheses` — FR-28's "proof results must not be
+ * fed back into search" covers an unestablished proof exactly as it covers a failed one, even
+ * though `proof_not_established` alone does not block `candidate_record`'s own re-proposal.
+ *
+ * `candidate_prove(candidate_id, abandon: true, idempotency_key)` (this same fix dispatch, FR-28)
+ * is this file's recovery path for a lost response: if the caller of the call that opened proof
+ * (minted the verifier_token, moved `proving`) never saw its own reply, the allocation is stuck
+ * `proving` with a token nobody holds and no ordinary `candidate_prove` call ever resolves it —
+ * every remaining branch needs proof-split replay evidence nothing can now produce. `abandon`
+ * resolves it as `not_established, reason: "abandoned"` through the SAME `resolveOutcome`
+ * transaction every other terminal outcome uses (own idempotency phase, `cancelProofRuns` tears
+ * down whatever the token already spawned), so a later search needs a new allocation, per FR-28.
  */
 import { randomBytes } from "node:crypto";
 
@@ -67,6 +81,7 @@ import { registerEvaluator } from "./evaluators.js";
 import {
   lookupRow, withIdempotency, type IdempotencyOutcome, type IdempotencyRow, type MutatorOutcome,
 } from "./idempotency.js";
+import { closeRun } from "./replay-runs.js";
 import { pairedDecision, type PairedDecisionResult } from "./stats.js";
 import { Refusal } from "../refusal.js";
 
@@ -257,17 +272,22 @@ interface CandidateProveOutcome {
 }
 
 const OPEN_STATUSES = new Set(["selected", "proving"]);
-const SPENT_STATUSES = new Set(["proof_passed", "proof_failed"]);
+const SPENT_STATUSES = new Set(["proof_passed", "proof_failed", "proof_not_established"]);
 
 /** Records the proof allocation's terminal outcome — the ONE ledger write this call makes,
- *  whatever combination of leakage/statistics/guardrails/ownership decided it. `candidate.status`
- *  moves to `proof_passed`/`proof_failed` (migration 077's own vocabulary has no third value —
- *  see the module note on why `not_established` is stored as `proof_failed` too) and
- *  `improvement_run.status` moves to `ready_for_approval` (passed AND an owner exists to approve
- *  it), `closed` (passed but no release_owners are recorded for this base subject's plugin — a
- *  proposal-only outcome, FR-51) or `proof_failed` (any other terminal outcome) — the same "one
+ *  whatever combination of leakage/statistics/guardrails/ownership (or `abandonProof`) decided
+ *  it. `candidate.status` moves to `proof_passed`, `proof_not_established` (migration 081 —
+ *  `insufficient_proof_cases`, `proof_unresolved` and `abandoned` all land here: an evidence gap,
+ *  never a rejected hypothesis) or `proof_failed` (a real statistical/leakage/guardrail
+ *  rejection) — and `improvement_run.status` moves to `ready_for_approval` (passed AND an owner
+ *  exists to approve it), `closed` (passed but no release_owners are recorded for this base
+ *  subject's plugin — a proposal-only outcome, FR-51) or `proof_failed` (every other terminal
+ *  outcome, `not_established` included — 077 gives `zz.improvement_run` no third status and this
+ *  dispatch's contract is the candidate's own status column, not the run's) — the same "one
  *  transaction, both tables" shape `candidate-search.ts`'s own `runCandidateSearch` already uses
- *  for `selected`/`closed`. */
+ *  for `selected`/`closed`. `phase` defaults to `"resolve"`; `abandonProof` passes `"abandon"` so
+ *  the two calls never share a digest (see the module note and `readBackIfSameResolve`'s own
+ *  comment on why phases must not collide). */
 async function resolveOutcome(
   candidate: CandidateRow, idempotencyKey: string, principal: string,
   outcome: {
@@ -280,18 +300,21 @@ async function resolveOutcome(
     readonly dimension_scores: unknown;
     readonly statistics: unknown;
   },
+  phase: "resolve" | "abandon" = "resolve",
 ): Promise<CandidateProveOutcome> {
-  const candidateStatus = outcome.proof_status === "proof_passed" ? "proof_passed" : "proof_failed";
+  const candidateStatus = outcome.proof_status === "proof_passed" ? "proof_passed"
+    : outcome.proof_status === "not_established" ? "proof_not_established" : "proof_failed";
   const runStatus = outcome.proof_status === "proof_passed"
     ? (outcome.release_eligible ? "ready_for_approval" : "closed")
     : "proof_failed";
 
   const ledgerOutcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
-    // phase: "resolve" — never bare {candidate_id} — so a caller who reuses the OPEN call's own
-    // key here gets idempotency_conflict (a different digest under the same key) rather than a
-    // false replay against zz.replay_verifier_token's row id, which this call's own reader below
-    // would misread as a candidate_evaluation id. See the module note.
-    principal, "candidate_prove", idempotencyKey, { candidate_id: candidate.id, phase: "resolve" },
+    // phase: "resolve"/"abandon" — never bare {candidate_id} — so a caller who reuses the OPEN
+    // call's own key here, or an abandon key for an ordinary resolve or vice versa, gets
+    // idempotency_conflict (a different digest under the same key) rather than a false replay
+    // against zz.replay_verifier_token's row id, which this call's own reader below would misread
+    // as a candidate_evaluation id. See the module note.
+    principal, "candidate_prove", idempotencyKey, { candidate_id: candidate.id, phase },
     async (client): Promise<MutatorOutcome<{ id: string }>> => {
       // CAS, checked first: two concurrent resolving calls (two different candidate_prove
       // requests, each with its own idempotency_key, racing the SAME candidate) must produce at
@@ -383,8 +406,88 @@ async function readBackIfSameResolve(
   };
 }
 
+// -------------------------------------------------------------------------------------------
+// Abandon (this dispatch, FR-28): recovers an allocation stuck `proving` because the caller lost
+// the response that opened it — nobody holds the verifier_token, so no ordinary candidate_prove
+// call can ever plan or resolve it.
+
+/** Every proof-split replay_run this candidate's own verifier_token could have spawned and is
+ *  still `registered`/`running` — candidate-side by `candidate_id`, baseline-side by
+ *  `base_subject_version_id`, both narrowed to this run's own bound case set so a different
+ *  improvement_run's proof runs are never touched. Closed through `closeRun` (`replay-runs.ts`),
+ *  the SAME teardown `replay_close`/`sweepExpired` already use — never a second, ad hoc
+ *  teardown that could drift from that one's own admin-event record.
+ *
+ *  DELIBERATE: baseline-side runs are matched by `base_subject_version_id` alone, with no
+ *  verifier_token-scoped column to narrow further — a second candidate proving the SAME base
+ *  subject against the SAME case set at the same time would also lose its own still-registered
+ *  baseline runs here. Proof is a one-final-candidate-at-a-time allocation per improvement_run
+ *  (FR-42), so this is a real but narrow edge case this dispatch does not add a column to close. */
+async function cancelProofRuns(
+  p: pg.Pool, candidate: CandidateRow, caseSetId: string, principal: string,
+): Promise<void> {
+  const { rows } = await p.query<{ id: string; team_slug: string; pat_id: string }>(`
+    select rr.id::text as id, rr.team_slug, rr.pat_id::text as pat_id
+      from zz.replay_run rr
+      join zz.replay_case rc on rc.id = rr.case_id
+     where rc.case_set_id = $1::uuid and rc.split = 'proof'
+       and rr.status in ('registered', 'running')
+       and (rr.candidate_id = $2::uuid or rr.subject_version_id = $3::uuid)`,
+    [caseSetId, candidate.id, candidate.base_subject_version_id]);
+  for (const run of rows) await closeRun(p, run, "cancelled", principal, "abandoned");
+}
+
+/** The candidate's own latest proof `zz.candidate_evaluation` row, however it got there (a
+ *  normal resolve, or a prior abandon) — read back for `abandon`'s own no-op-on-already-spent
+ *  contract below, which answers the CURRENT terminal state whatever idempotency_key the caller
+ *  used to reach it, unlike `readBackIfSameResolve`'s own exact-retry match. */
+async function latestProofEvaluation(p: pg.Pool, candidateId: string): Promise<StoredProofEvaluation | null> {
+  return (await p.query<StoredProofEvaluation>(`
+    select id::text as id, aggregate_score from zz.candidate_evaluation
+     where candidate_id = $1::uuid and split = 'proof'
+     order by created_at desc limit 1`, [candidateId])).rows[0] ?? null;
+}
+
+/** `abandon: true` — see the module note. `selected` REFUSES (nothing was ever opened, so there
+ *  is no allocation to abandon); `proving` cancels whatever the token spawned and resolves the
+ *  allocation `not_established, reason: "abandoned"` through `resolveOutcome`'s own `"abandon"`
+ *  phase; an already-spent candidate (by this call or any other terminal path) is a NO-OP
+ *  read-back of its own current state, never a refusal — FR-28's "revokes the token" is already
+ *  true by the time a second abandon reaches it. */
+async function abandonProof(
+  p: pg.Pool, candidate: CandidateRow, idempotencyKey: string, principal: string,
+): Promise<CandidateProveOutcome | { error: string }> {
+  if (candidate.status === "selected") {
+    return { error: `ERROR: candidate ${candidate.id} has no open proof allocation to abandon — it was never opened` };
+  }
+  if (SPENT_STATUSES.has(candidate.status)) {
+    const stored = await latestProofEvaluation(p, candidate.id);
+    if (!stored) {
+      return { error: `ERROR: candidate ${candidate.id} is spent but its own proof evaluation cannot be read back` };
+    }
+    return {
+      proof_status: stored.aggregate_score.proof_status, reason: stored.aggregate_score.reason,
+      release_eligible: stored.aggregate_score.release_eligible, candidate_evaluation_id: stored.id,
+      verifier_token: null, token_already_issued: true, status: candidate.status,
+    };
+  }
+
+  // proving: cancel whatever the token already spawned before revoking it — cancelProofRuns
+  // needs the bound case set to scope its own query, and a context load failure here (the
+  // improvement_run or its evidence snapshot vanished mid-flight) still lets the allocation
+  // resolve; it only means nothing was left to cancel.
+  const ctx = await loadProofContext(p, candidate);
+  if (ctx.ok) await cancelProofRuns(p, candidate, ctx.caseSetId, principal);
+
+  return resolveOutcome(candidate, idempotencyKey, principal, {
+    proof_status: "not_established", reason: "abandoned", release_eligible: false,
+    decision: null, guardrails: null, resource_usage: null, dimension_scores: null,
+    statistics: { abandoned: true },
+  }, "abandon");
+}
+
 export async function proveCandidate(
-  p: pg.Pool, candidateId: string, idempotencyKey: string, principal: string,
+  p: pg.Pool, candidateId: string, idempotencyKey: string, principal: string, abandon = false,
 ): Promise<CandidateProveOutcome | { error: string }> {
   const candidate = await loadCandidate(p, candidateId);
   if (!candidate) return { error: `ERROR: no candidate ${candidateId}` };
@@ -392,6 +495,9 @@ export async function proveCandidate(
   if (!OPEN_STATUSES.has(candidate.status) && !SPENT_STATUSES.has(candidate.status)) {
     return { error: "ERROR: only the selected candidate may open proof" };
   }
+
+  if (abandon) return abandonProof(p, candidate, idempotencyKey, principal);
+
   if (SPENT_STATUSES.has(candidate.status)) {
     const replay = await readBackIfSameResolve(p, candidateId, idempotencyKey, principal);
     if (replay) return replay;

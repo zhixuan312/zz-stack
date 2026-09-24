@@ -94,3 +94,6 @@ check("the evaluator registry's question digest matches the plan header's formul
 
 check("the qualification ladder is earned bottom-up from evidence counts and a protocol's own thresholds, zero anchors always refuses, and a 0-total category never counts as cleared",
       runsCheck("eval-qualification-ladder.ts"));
+
+check("a run's overall score re-normalises across applicable and present dimensions, a missing required measure voids its dimension, unqualified evidence cannot establish, and a guardrail firing never moves the number",
+      runsCheck("eval-score-formula.ts"));

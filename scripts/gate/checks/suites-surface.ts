@@ -106,3 +106,6 @@ check("each replay role sees exactly its visibility classes, in chronological or
 
 check("team_create refuses a replay- slug for every caller, and provisionReplayTeam refuses a team-bound caller before touching the database",
       runsCheck("replay-team-pure.ts"));
+
+check("every dependency mode resolves to exactly one action with no fabricated or uncontrolled write, and a search context never sees a proof-split row",
+      runsCheck("eval-replay-safety.ts"));

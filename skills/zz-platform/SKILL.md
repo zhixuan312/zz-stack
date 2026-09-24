@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.54
+version: 3.55
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store outside a flow."
 ---
@@ -537,7 +537,7 @@ reading later can see one caused the other.
   | bugs | `/core/mcp` | `bug_report` `bug_list` `bug_resolve` `bug_delete` |
   | status | `/core/mcp` | `initiative_status` `knowledge_reconcile` `session_whoami` |
   | checkpoints | `/core/mcp` | `assess` — one semantic-assessment family asked about one subject, recorded with its provenance |
-  | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_register` `plugin_profile` `plugin_conform` `protocol_read` `protocol_record` `protocol_affirm` `evaluator_qualify` `round_judge` `round_scores` `round_score` `finding_record` `finding_decide` `failure_discover` `evaluation_start` `evaluation_assess` `evaluation_score` `replay_case_set_build` |
+  | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_register` `plugin_profile` `plugin_conform` `protocol_read` `protocol_record` `protocol_affirm` `evaluator_qualify` `round_judge` `round_scores` `round_score` `finding_record` `finding_decide` `failure_discover` `evaluation_start` `evaluation_assess` `evaluation_score` `replay_case_set_build` `replay_start` `replay_read` `replay_close` |
   | your own access | `/manage/mcp` | `whoami` `team_mine` `team_switch` `client_setup` `pat_issue` `pat_list` `pat_revoke` `catalog_list` `team_list` |
   | administration | `/manage/mcp` | `person_add` `person_list` `person_deactivate` `enrolment_issue` `team_create` `team_archive` `member_add` `member_remove` — only if your role carries them |
 

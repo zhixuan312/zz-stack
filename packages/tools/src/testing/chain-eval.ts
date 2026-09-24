@@ -126,4 +126,20 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
       subject_version_id: randomUUID(), protocol_version_id: randomUUID(),
       source_scope: { initiatives: ["chain-check-probe"] }, idempotency_key: randomUUID(),
     }), /no platform database|unknown subject_version_id/);
+  // Task I-16: a random case_set_id decides nothing and matches no case set — refused before
+  // any team is provisioned, the same way every other probe here is safe against any live
+  // state. subject_version_id (rather than candidate_id) satisfies the exactly-one check so
+  // the call reaches the case-set lookup at all.
+  eitherOr("replay_start refuses a case_set_id nothing minted",
+    await callEval("replay_start", {
+      case_set_id: randomUUID(), subject_version_id: randomUUID(), split: "evolve", repeats: 1,
+      idempotency_key: randomUUID(),
+    }), /no platform database|unknown case set/);
+  eitherOr("replay_read refuses a replay_run_id nothing minted",
+    await callEval("replay_read", { replay_run_id: randomUUID() }),
+    /no platform database|unknown replay_run_id/);
+  eitherOr("replay_close refuses a replay_run_id nothing minted",
+    await callEval("replay_close", {
+      replay_run_id: randomUUID(), status: "cancelled", idempotency_key: randomUUID(),
+    }), /no platform database|unknown replay_run_id/);
 }

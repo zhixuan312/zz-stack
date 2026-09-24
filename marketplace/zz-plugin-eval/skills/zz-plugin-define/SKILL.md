@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define
-version: 2.1
+version: 2.2
 description: Stage 3 of plugin evaluation, and the one gate that matters most. Derive what good means for THIS plugin from its own profile, write it into protocol.md, and get a person to agree it before anything is scored.
 when_to_use: "The third stage of zz-plugin-eval, after profile. Produces protocol.md, which is gated — protocol_affirm refuses to bind it until somebody approves it."
 ---
@@ -209,6 +209,13 @@ failure, and not this tool's fault to fix.
 met before it will admit a measure's evaluator into a case set — qualify every `bounded_semantic`/
 `generative_critic` evaluator this protocol version names before handing it off, not only the
 ones you expect to be asked about.
+
+Once a case set exists, `replay_start(case_set_id, subject_version_id, candidate_id, split,
+repeats, idempotency_key)` provisions one isolated run against one of its cases — reading this
+protocol version's own `replay.dependencies` back as `dependency_modes`. `replay_read(replay_run_id)`
+reads a run back, and `replay_close(replay_run_id, status, result, idempotency_key)` tears it
+down. None of that is this stage's job; it is named here only so a `replayMode` you write into
+`dependencies` above is understood against the tool that reads it.
 
 ## Pitfalls
 

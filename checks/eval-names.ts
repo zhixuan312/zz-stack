@@ -22,7 +22,10 @@ const fail = [];
 // `zz.eval_assessment` through the same ledger.
 // `replay-cases.ts` (Task I-14) holds `replay_case_set_build` for the same reason again: a
 // mutator writing `zz.replay_case_set`/`zz.replay_case`/`zz.replay_event` through the same ledger.
-const REGISTRATION_MODULES = ["subject", "observe", "discover", "protocol", "qualify", "evaluate", "replay-cases", "plugin-eval", "plugin-judge", "plugin-record"];
+// `replay-runs.ts` (Task I-16) holds `replay_start`/`replay_close` for the same reason once
+// more — mutators writing `zz.replay_run` through the same ledger — with `replay_read` beside
+// them because the three share one lifecycle and one file.
+const REGISTRATION_MODULES = ["subject", "observe", "discover", "protocol", "qualify", "evaluate", "replay-cases", "replay-runs", "plugin-eval", "plugin-judge", "plugin-record"];
 
 const registered = new Set<string>();
 for (const f of REGISTRATION_MODULES) {
@@ -56,7 +59,7 @@ const EXPECTED = new Set([
   "failure_discover",
   "evaluator_qualify",
   "evaluation_start", "evaluation_assess", "evaluation_score",
-  "replay_case_set_build",
+  "replay_case_set_build", "replay_start", "replay_read", "replay_close",
 ]);
 for (const want of EXPECTED) {
   if (!registered.has(want)) fail.push(`${want} is no longer registered on the eval door`);

@@ -19,9 +19,11 @@
  * new subject version comes from, so the identity every later stage joins against exists before
  * anything asks for it a second time.
  */
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { manifestAt } from "@zz/catalog";
@@ -250,6 +252,186 @@ function resolveLocalDir(path: string): { components: Component[] } | null {
   return components.length ? { components } : null;
 }
 
+/** `plugin_register`'s `source_kind: "git"` and `"package"` readers both shell out to a real
+ *  binary (git / npm / tar) against a caller-controlled locator, so every call here goes through
+ *  `tryExec`: argv arrays only, `--` ahead of the untrusted token so it can never be read as a
+ *  flag, a bounded timeout and a bounded output buffer. Neither git nor npm caps how much they
+ *  write to *disk*, so `directorySizeBytes` below is the actual backstop against an oversized or
+ *  bombed fetch — the buffer limit only bounds what a command prints. */
+const EXEC_TIMEOUT_MS = 120_000;
+const MAX_EXEC_OUTPUT_BYTES = 16 * 1024 * 1024;
+/** Generous for a plugin's own skills and servers, and still a real ceiling: a shallow git clone
+ *  or an npm tarball this large is almost certainly the wrong repository/package, not a slow one. */
+const MAX_SOURCE_BYTES = 200 * 1024 * 1024;
+
+type ExecResult = { ok: true; output: string } | { ok: false; error: string };
+
+/** One external command, run the way psql.ts's own `psqlText` does: no shell, so the locator can
+ *  never be interpolated into anything a shell parses, and the caller decides what "failed"
+ *  means for its own contract rather than this throwing past it. */
+function tryExec(cmd: string, args: string[], cwd?: string): ExecResult {
+  try {
+    const output = execFileSync(cmd, args, {
+      cwd, encoding: "utf8", timeout: EXEC_TIMEOUT_MS, maxBuffer: MAX_EXEC_OUTPUT_BYTES,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return { ok: true, output };
+  } catch (err) {
+    const e = err as { stderr?: string; stdout?: string; message?: string; killed?: boolean; signal?: string };
+    const timedOut = e.killed && e.signal ? ` (killed by ${e.signal} after ${EXEC_TIMEOUT_MS}ms)` : "";
+    return { ok: false, error: `${(e.stderr || e.stdout || e.message || "unknown error").trim().slice(-500)}${timedOut}` };
+  }
+}
+
+/** A temporary directory that is always removed, success or failure — `plugin_register`'s
+ *  contract for `git`/`package` requires the clone/extract scratch space to be gone afterwards,
+ *  whatever the outcome. */
+function withTempDir<T>(prefix: string, fn: (dir: string) => T): T {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  try {
+    return fn(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** The real size backstop (see the block comment above `EXEC_TIMEOUT_MS`): a recursive byte
+ *  count of what git/tar actually put on disk, stopping early once it is already over `limit` —
+ *  the caller only needs to know "too big", not the exact total for something it is about to
+ *  refuse. Symlinks are skipped rather than followed, so a crafted entry cannot point back out
+ *  of its own temporary directory and inflate — or escape — this count. */
+function directorySizeBytes(dir: string, limit: number): number {
+  let total = 0;
+  const walk = (d: string): void => {
+    for (const f of readdirSync(d, { withFileTypes: true })) {
+      if (total > limit) return;
+      if (f.isSymbolicLink()) continue;
+      const abs = join(d, f.name);
+      if (f.isDirectory()) { walk(abs); continue; }
+      total += statSync(abs).size;
+    }
+  };
+  walk(dir);
+  return total;
+}
+
+const oversizeError = (limit: number) =>
+  `the fetched source exceeds the ${Math.round(limit / (1024 * 1024))}MB size limit`;
+
+type SourceResolution = { components: Component[]; identityExtra: Record<string, unknown> } | { error: string };
+
+/** `source_kind: "git"`: `<url>` or `<url>#<ref>` — a branch, tag or commit. Cloned shallow
+ *  (`--depth 1`) into a temporary directory, resolved exactly like `local_dir`, and the ref it
+ *  actually landed on recorded as `resolved_commit` — the immutable half of FR-1's release
+ *  identity for a source that itself is not immutable (a branch moves; the commit it named at
+ *  capture time does not). */
+function resolveGit(locator: string): SourceResolution {
+  const hashAt = locator.lastIndexOf("#");
+  const url = hashAt === -1 ? locator : locator.slice(0, hashAt);
+  const ref = hashAt === -1 ? undefined : locator.slice(hashAt + 1) || undefined;
+  if (!url) return { error: "no repository URL was given before '#'" };
+
+  return withTempDir("zz-plugin-git-", (dir) => {
+    // The fast path: a shallow clone of exactly the named branch/tag, or of the default branch
+    // when no ref was given. `--` ends option parsing before the caller-controlled URL, so a
+    // locator that happens to start with '-' is read as a repository name and never as a flag.
+    const shallow = ref
+      ? tryExec("git", ["clone", "--quiet", "--depth", "1", "--branch", ref, "--", url, dir])
+      : tryExec("git", ["clone", "--quiet", "--depth", "1", "--", url, dir]);
+    if (!shallow.ok) {
+      if (!ref) return { error: shallow.error };
+      // `--branch` only resolves refs the remote advertises (branches and tags), so a commit SHA
+      // falls through to a full clone plus an explicit fetch of that one commit — still shallow
+      // at the object it lands on, just not at the clone step.
+      const full = tryExec("git", ["clone", "--quiet", "--", url, dir]);
+      if (!full.ok) return { error: full.error };
+      const fetch = tryExec("git", ["fetch", "--quiet", "--depth", "1", "--", "origin", ref], dir);
+      if (!fetch.ok) return { error: `ref ${ref} could not be fetched: ${fetch.error}` };
+      const checkout = tryExec("git", ["checkout", "--quiet", "FETCH_HEAD"], dir);
+      if (!checkout.ok) return { error: checkout.error };
+    }
+
+    const size = directorySizeBytes(dir, MAX_SOURCE_BYTES);
+    if (size > MAX_SOURCE_BYTES) return { error: oversizeError(MAX_SOURCE_BYTES) };
+
+    const head = tryExec("git", ["rev-parse", "HEAD"], dir);
+    if (!head.ok) return { error: head.error };
+
+    const resolved = resolveLocalDir(dir);
+    if (!resolved) return { error: "no SKILL.md and no flow.json were found in the cloned repository" };
+    return { components: resolved.components, identityExtra: { resolved_commit: head.output.trim() } };
+  });
+}
+
+/** `npm pack`'s own `--json` report for the tarball it just wrote — only the fields this reader
+ *  uses, not the package's full manifest. */
+interface NpmPackEntry {
+  filename: string;
+  integrity?: string;
+  shasum?: string;
+}
+
+/** `source_kind: "package"`: an npm spec (`name@version`, same syntax `npm install` takes).
+ *  Fetched with `npm pack` — never installed, so no `postinstall` script of the package's own
+ *  runs — extracted into a temporary directory and resolved like `local_dir`. The tarball's own
+ *  integrity hash is recorded, because a package version is otherwise mutable at the registry in
+ *  a way a git commit is not: republishing the same `name@version` under `npm unpublish` +
+ *  republish is rare but real, and the integrity is what makes a later locate notice it. */
+function resolvePackage(spec: string): SourceResolution {
+  return withTempDir("zz-plugin-package-", (dir) => {
+    const pack = tryExec("npm", [
+      "pack", "--json", "--pack-destination", dir, "--ignore-scripts", "--no-audit", "--no-fund", "--", spec,
+    ]);
+    if (!pack.ok) return { error: pack.error };
+
+    let entries: NpmPackEntry[];
+    try {
+      entries = JSON.parse(pack.output) as NpmPackEntry[];
+    } catch {
+      return { error: "npm pack did not answer with the JSON it was asked for" };
+    }
+    const entry = entries[0];
+    if (!entry?.filename) return { error: "npm pack produced no tarball" };
+
+    const extracted = join(dir, "extracted");
+    mkdirSync(extracted);
+    // `--` here too: the tarball path is ours, not the caller's, but the rule is "argv arrays,
+    // no shell interpolation of the locator" for this whole reader, applied uniformly rather
+    // than only where the untrusted string happens to land.
+    const untar = tryExec("tar", ["-xzf", join(dir, entry.filename), "-C", extracted]);
+    if (!untar.ok) return { error: untar.error };
+
+    const size = directorySizeBytes(extracted, MAX_SOURCE_BYTES);
+    if (size > MAX_SOURCE_BYTES) return { error: oversizeError(MAX_SOURCE_BYTES) };
+
+    // npm packs every tarball with its content under one top-level "package/" directory —
+    // npm-packlist's own convention, not this platform's — resolved straight through on the rare
+    // publisher whose tarball omits it.
+    const root = existsSync(join(extracted, "package")) ? join(extracted, "package") : extracted;
+    const resolved = resolveLocalDir(root);
+    if (!resolved) return { error: "no SKILL.md and no flow.json were found in the package" };
+    return {
+      components: resolved.components,
+      identityExtra: { tarball_integrity: entry.integrity ?? entry.shasum ?? null },
+    };
+  });
+}
+
+/** `plugin_register`'s three `source_kind` readers, behind one signature: `local_dir` reads the
+ *  path as given (no fetch, no temporary directory, no size limit — it is already local and
+ *  already the caller's own disk); `git` and `package` fetch first and clean up after
+ *  themselves whatever the outcome. Every branch returns either components to capture or the
+ *  contract's own `<reason>` half of `ERROR: source <locator> could not be read: <reason>`. */
+function resolveSource(kind: "local_dir" | "git" | "package", locator: string): SourceResolution {
+  if (kind === "local_dir") {
+    const resolved = resolveLocalDir(locator);
+    return resolved
+      ? { components: resolved.components, identityExtra: {} }
+      : { error: "no SKILL.md and no flow.json were found under this path" };
+  }
+  return kind === "git" ? resolveGit(locator) : resolvePackage(locator);
+}
+
 export function registerSubjectTools(server: McpServer): void {
   server.registerTool(
     "plugin_locate",
@@ -319,8 +501,11 @@ export function registerSubjectTools(server: McpServer): void {
       description:
         "WHEN a plugin needs to be evaluated and the catalog has never released it: IDENTIFY " +
         "it from its own source instead. It reads source_locator — for source_kind local_dir, " +
-        "the directory's own SKILL.md files, declared servers and flow manifest — and RETURNS " +
-        "the same subject_version_id shape plugin_locate comes back with, so plugin_locate, " +
+        "the directory's own SKILL.md files, declared servers and flow manifest; for git, a " +
+        "repository URL (optionally '#ref') shallow-cloned and read the same way, with the " +
+        "commit it landed on recorded; for package, an npm spec (name@version) fetched with " +
+        "npm pack and read from its extracted tarball, with the tarball's own integrity " +
+        "recorded — and RETURNS the same subject_version_id shape plugin_locate comes back with, so plugin_locate, " +
         "plugin_profile and plugin_conform all then work for this plugin with no catalog entry. " +
         "The row it captures is that subject's whole identity: unlike plugin_locate, a later " +
         "call for the same plugin/version reads this capture back rather than recomputing it, " +
@@ -367,12 +552,14 @@ export function registerSubjectTools(server: McpServer): void {
         return text(`ERROR: ${name} is a catalog plugin; it is registered by release`);
       }
 
-      const resolved = source_kind === "local_dir" ? resolveLocalDir(source_locator) : null;
-      if (!resolved) {
-        const reason = source_kind === "local_dir"
-          ? "no SKILL.md and no flow.json were found under this path"
-          : `source_kind "${source_kind}" is not yet resolvable`;
-        return text(`ERROR: source ${source_locator} could not be read: ${reason}`);
+      // Ahead of withIdempotency, and so ahead of the ledger's own proceed/replay decision — a
+      // replayed call re-clones/re-fetches only to have its result discarded below, the same
+      // cost local_dir already paid to re-read a directory before this task. Moving the fetch
+      // inside the ledger's transaction would mean holding a database connection open for a
+      // multi-second git clone or npm pack, which is the worse trade.
+      const resolved = resolveSource(source_kind, source_locator);
+      if ("error" in resolved) {
+        return text(`ERROR: source ${source_locator} could not be read: ${resolved.error}`);
       }
       const contentDigest = combinedDigest(resolved.components);
 
@@ -400,7 +587,7 @@ export function registerSubjectTools(server: McpServer): void {
             returning id::text as id`,
             [pluginRow.id, version, contentDigest, JSON.stringify(resolved.components),
              JSON.stringify({ kind: source_kind, locator: source_locator }),
-             JSON.stringify({ origin: "third_party" })])).rows[0];
+             JSON.stringify({ origin: "third_party", ...resolved.identityExtra })])).rows[0];
           return { result: row.id, result_table: "zz.eval_subject_version", result_id: row.id };
         },
       );

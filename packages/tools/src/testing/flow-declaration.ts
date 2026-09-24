@@ -19,7 +19,7 @@ import { manifestAt } from "@zz/catalog";
 /** A stage that leaves a source behind, and the document that source stands behind. An audit
  *  round is one: it writes no document of its own, so a probe looking for an audit document finds
  *  none and reports every audited initiative as un-audited. */
-export interface SourceStage { readonly produces?: string; readonly supports?: string }
+export interface SourceStage { readonly name?: string; readonly produces?: string; readonly supports?: string }
 
 interface FlowDeclaration {
   readonly documents: { name: string; sections?: string[]; gate?: boolean }[];

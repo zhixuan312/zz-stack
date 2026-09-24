@@ -316,7 +316,8 @@ async function main(): Promise<number> {
       await call("source_add", {
         initiative: INIT, title: `chain-check audit of ${stage.supports}`,
         content: "A round ran and found nothing blocking. Written by chain-check.",
-        supports: [stage.supports],
+        // A source is a round only when it names its stage; without it the audit step stays owed.
+        supports: [stage.supports], stage: stage.name,
       }), false);
   }
   // And only now does the close become the next move. Re-asked rather than assumed: the point of

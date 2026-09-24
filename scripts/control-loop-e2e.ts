@@ -114,8 +114,8 @@ async function main(): Promise<void> {
     early.text.includes("cannot claim close:initiative") && early.text.includes("needs 1 audit"),
     early.text) && ok;
 
-  await call("source_add", { initiative: name, title: "spec audit", content: "no blocking findings", supports: ["spec.md"] });
-  await call("source_add", { initiative: name, title: "plan audit", content: "no blocking findings", supports: ["plan.md"] });
+  await call("source_add", { initiative: name, title: "spec audit", content: "no blocking findings", supports: ["spec.md"], stage: "sdlc-spec-audit" });
+  await call("source_add", { initiative: name, title: "plan audit", content: "no blocking findings", supports: ["plan.md"], stage: "sdlc-plan-audit" });
 
   const { rows } = await pool.query(
     `select e.step_id, e.kind, e.about from zz.control_evidence e

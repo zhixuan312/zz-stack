@@ -109,3 +109,6 @@ check("team_create refuses a replay- slug for every caller, and provisionReplayT
 
 check("every dependency mode resolves to exactly one action with no fabricated or uncontrolled write, and a search context never sees a proof-split row",
       runsCheck("eval-replay-safety.ts"));
+
+check("the launcher builds every git/claude argv with no shell, a run-bound credential is refused any events role but actor, and a launch outside a shell-capable runtime refuses before touching a process",
+      runsCheck("replay-launch-pure.ts"));

@@ -44,6 +44,7 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { canonicalJson, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { visibleEvents } from "./replay-cases.js";
 import { platformEvent } from "../indexing.js";
 import { db } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
@@ -55,6 +56,11 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const REPLAY_CASE_SPLITS = EVAL_STATE_ENUMS.replayCaseSplit;
 const CLOSE_STATUSES = ["completed", "failed", "cancelled"] as const;
 const CONTEXTS = ["search", "verifier"] as const;
+// I-17's own addition (launch.ts, worker report): `replay_read`'s `role` argument, so the
+// launcher can read a case's events through the one function that already gates them by role
+// (`visibleEvents`) instead of a second, ad hoc filter living in packages/tools. Same three
+// names `visibleEvents` already recognises.
+const READ_ROLES = ["actor", "simulated_person", "evaluator"] as const;
 
 // How long a replay team's PAT — and the run it belongs to — lives before replay_start's own
 // expiry sweep (AC-29.1) reclaims it. Long enough for one case to run, short enough that a
@@ -114,6 +120,23 @@ export function dependencyAction(args: {
 export function sealedRows<T extends { split: string | null }>(rows: readonly T[], context: string): T[] {
   if (context === "search") return rows.filter((r) => r.split !== "proof");
   return rows.slice();
+}
+
+/** The launcher's own boundary (I-17, agreed with the orchestrator as a `replay_read`
+ *  extension rather than a new tool): a credential bound to a run's OWN reserved `replay-`
+ *  team is the credential the CANDIDATE session holds, and that session must only ever read
+ *  `actor` events — even if it reaches this door directly with the PAT it was handed, rather
+ *  than through the launcher's own fetch. `patTeam === teamSlug` is exactly that case: the
+ *  caller is acting AS the run's own team. Any other caller (the launching principal's own
+ *  unbound credential, reading for the simulated person or the verifier) is unrestricted here
+ *  — `requireContext`/`sealedRows` above still gate `evaluator` against a proof case and a
+ *  missing `verifier_token`, so this is additive, never a relaxation of either. Null means
+ *  allowed; a string is the refusal text. */
+export function roleReadGuard(patTeam: string | null, teamSlug: string, role: string): string | null {
+  if (patTeam !== teamSlug) return null;
+  if (role === "actor") return null;
+  return `ERROR: a credential scoped to its own replay run ('${teamSlug}') may only read ` +
+    `role: actor events, not role: ${role}`;
 }
 
 // -------------------------------------------------------------------------------------------
@@ -380,20 +403,30 @@ export function registerReplayRunTools(server: McpServer): void {
         "sandbox handle: reads one zz.replay_run row, joined to its case's split. RETURNS " +
         "{ replay_run_id, status, case_id, split, subject_version_id, candidate_id, " +
         "protocol_version_id, environment_digest, sandbox_ref, team_slug, score, guardrails, " +
-        "model_usage, cost, duration_ms, created_at } — the result fields answer null until " +
-        "status reaches a terminal value. Read-only; never writes. REFUSES an unknown " +
-        "replay_run_id; a verifier context with no valid verifier_token — candidate_prove " +
-        "(Task I-21) does not exist yet, so no verifier request can ever be admitted; and — " +
-        "ERROR: proof is sealed — a search context reading a run whose case is split: proof, " +
-        "which this tool never exposes to a search caller.",
+        "model_usage, cost, duration_ms, created_at, subject_plugin, subject_source_locator } — " +
+        "the result fields answer null until status reaches a terminal value; the subject_* " +
+        "fields are null for a candidate_id run or a plugin never located. Pass `role` " +
+        "(actor | simulated_person | evaluator, the same three replay-cases.ts's visibleEvents " +
+        "recognises) to also get `events`: the case's own events, filtered to that role and " +
+        "ordered by seq — the one path the launcher (Task I-17) or any other reader uses to see " +
+        "a case's timeline, so the FR-25/26 boundary is enforced here rather than re-decided by " +
+        "every caller. Read-only; never writes. REFUSES an unknown replay_run_id; a verifier " +
+        "context with no valid verifier_token — candidate_prove (Task I-21) does not exist yet, " +
+        "so no verifier request can ever be admitted; ERROR: proof is sealed — a search context " +
+        "reading a run whose case is split: proof, which this tool never exposes to a search " +
+        "caller; and a credential bound to this run's own reserved team asking for any role " +
+        "other than actor — that credential is the one the candidate session holds, and it may " +
+        "only ever read actor events.",
       inputSchema: {
         replay_run_id: z.string(),
         context: z.enum(CONTEXTS).default("search"),
         verifier_token: z.string().optional()
           .describe("Required when context is verifier — minted only by candidate_prove (Task I-21)."),
+        role: z.enum(READ_ROLES).optional()
+          .describe("Adds `events`, filtered to this role — actor | simulated_person | evaluator."),
       },
     },
-    async ({ replay_run_id, context, verifier_token }) => {
+    async ({ replay_run_id, context, verifier_token, role }) => {
       const p = db();
       if (!p) return noDb();
 
@@ -407,18 +440,34 @@ export function registerReplayRunTools(server: McpServer): void {
         environment_digest: string; sandbox_ref: string; team_slug: string;
         score: unknown; guardrails: unknown; model_usage: unknown; cost: string | null;
         duration_ms: string | null; created_at: string;
+        subject_plugin: string | null; subject_source_locator: unknown;
       }>(`
         select r.id::text as id, r.status, r.case_id::text as case_id, c.split,
                r.subject_version_id::text as subject_version_id, r.candidate_id::text as candidate_id,
                r.protocol_version_id::text as protocol_version_id, r.environment_digest, r.sandbox_ref,
-               r.team_slug, r.score, r.guardrails, r.model_usage, r.cost, r.duration_ms, r.created_at
-          from zz.replay_run r join zz.replay_case c on c.id = r.case_id
+               r.team_slug, r.score, r.guardrails, r.model_usage, r.cost, r.duration_ms, r.created_at,
+               pl.name as subject_plugin, sv.source_locator as subject_source_locator
+          from zz.replay_run r
+          join zz.replay_case c on c.id = r.case_id
+          left join zz.eval_subject_version sv on sv.id = r.subject_version_id
+          left join zz.plugin pl on pl.id = sv.plugin_id
          where r.id = $1::uuid`, [replay_run_id])).rows[0];
       if (!row) return text(`ERROR: unknown replay_run_id ${replay_run_id}`);
 
       const [visible] = sealedRows([row], context);
       if (!visible) return text(PROOF_SEALED);
-      return json(visible);
+
+      if (!role) return json(visible);
+
+      const patTeam = one(requestHeaders()["x-zz-pat-team"]) || null;
+      const guardErr = roleReadGuard(patTeam, visible.team_slug, role);
+      if (guardErr) return text(guardErr);
+
+      const rawEvents = (await p.query<{ seq: number; actor: string; visibility: string; kind: string; payload: unknown }>(
+        `select seq, actor, visibility, kind, payload from zz.replay_event where case_id = $1::uuid order by seq`,
+        [visible.case_id])).rows;
+      const events = visibleEvents(rawEvents, role);
+      return json({ ...visible, events });
     },
   );
 

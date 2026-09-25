@@ -54,6 +54,16 @@ check("every state the schema allows can actually be reached", () => {
   const droppedTables = new Set(
     [...sql.matchAll(/drop\s+table\s+(?:if\s+exists\s+)?(?:zz\.)?(\w+)/gi)].map((d) => d[1]),
   );
+  // Frozen history: tables kept only so their rows stay readable, with no writer left in the source
+  // (`zz.rubric` lost its writer with `ruler_record` in Task I-10, and the last source that named
+  // its `subject` states with `round_judge` in 0.76.0; `round_scores` still reads it). Every state such a column allows was reached when the row was written, and no guard
+  // branches on one now. Checked rather than trusted: a writer that comes back ends the exemption.
+  const FROZEN = ["rubric"];
+  for (const t of FROZEN) {
+    if (new RegExp(`(?:insert\\s+into|update)\\s+zz\\.${t}\\b`, "i").test(src)) {
+      unreachable.push(`zz.${t} is exempt as frozen history, and something writes it again — drop it from FROZEN`);
+    }
+  }
   // A third spelling, because `001_init.sql` is a pg_dump. The two forms above are how a person
   // writes an inline constraint -- `check (status in ('active','deactivated'))`; pg_dump renders
   // the same constraint as `CHECK ((status = ANY (ARRAY['active'::text, 'deactivated'::text])))`.
@@ -68,7 +78,7 @@ check("every state the schema allows can actually be reached", () => {
     const opens = [...before.matchAll(
       /(?:create\s+table\s+(?:if\s+not\s+exists\s+)?|alter\s+table\s+(?:only\s+)?)(?:zz\.)?(\w+)/gi)];
     const table = opens.length ? opens[opens.length - 1][1] : "";
-    if (table && droppedTables.has(table)) continue;
+    if (table && (droppedTables.has(table) || FROZEN.includes(table))) continue;
     if (table && dropped.has(`${table}_${col}_check`)) continue;
     if (table && droppedColumns.has(`${table}.${col}`)) continue;
     for (const lit of values.matchAll(/'([^']*)'/g)) {

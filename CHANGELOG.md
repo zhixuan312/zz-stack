@@ -92,6 +92,9 @@ zz-stack 0.76.0 · console 0.19.0
   `protocol_record`, `protocol_affirm` and `protocol.md`. Historical ruler rounds stay readable.
 - The skills `zz-plugin-locate`, `-profile`, `-define`, `-judge` and `-report`, replaced by
   the eight stage skills.
+- `round_judge` and `round_score`, the two legacy round writers on `/eval/mcp`, with the
+  `plugin_judge` and `round_recommend` aliases that resolved to them. `round_scores` stays as
+  the reader of historic rounds.
 
 ### Upgrade notes
 - **Ten migrations, 077 through 086**, apply on the gateway's next start. All are additive,
@@ -102,6 +105,7 @@ zz-stack 0.76.0 · console 0.19.0
   idempotency_key)`, and `finding_decide` requires `idempotency_key`.
 - Clients must re-pull the shelf for the new stage skills (see the commands at the end of the
   release).
+- `round_judge` and `round_score` are gone from /eval/mcp; score a plugin through `evaluation_start`/`evaluation_assess`/`evaluation_score`; `round_scores` still reads historic rounds.
 
 ## [0.75.0] — 2026-09-24
 

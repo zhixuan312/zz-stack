@@ -146,8 +146,8 @@ export function mountCatalog(app: Express): void {
                   from zz.plugin p
                   join zz.plugin_version pv on pv.plugin_id = p.id`),
       // The latest round that reached a verdict, one per plugin. `headroom_state is not null` is
-      // the definition of evaluated: a round is minted by round_judge and gets its verdict at
-      // round_score, so an abandoned round has marks but nothing to report, and showing the
+      // the definition of evaluated: a historic round was minted first and got its verdict in a
+      // later call, so an abandoned round has marks but nothing to report, and showing the
       // newest row regardless would put an empty score beside a perfectly good earlier one.
       //
       // Across versions, not within one: the answer is the last time anybody measured the

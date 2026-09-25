@@ -14,7 +14,7 @@
  * Computed, not asked. Every input is already on the round and no model is in the derivation.
  * The weights below are a judgement, written here rather than in a caller.
  */
-import { HEADROOM, MARK_SCALE, NOT_MEASURABLE, band, headroomState } from "@zz/contracts";
+import { MARK_SCALE, NOT_MEASURABLE, band, headroomState } from "@zz/contracts";
 
 /** The qualitative half against the quantitative half.
  *
@@ -113,21 +113,4 @@ export function headroom(score: number | null, unmetThresholds: number, genericF
   const named = unmetThresholds + genericFindings;
   const points = score === null ? null : Math.round((10 - score) * 100) / 100;
   return { points, named_changes: named, state: headroomState(points, named) };
-}
-
-/** The one line of prose the second axis is worth, for a tool response with room for it. Kept
- *  separate from the state, which is a closed value a table can print and a query can group by;
- *  keeping them in one field makes the state unusable. */
-export function headroomNote(h: Headroom): string {
-  if (h.state === HEADROOM.ABSENT) {
-    return "no score, so no distance from one — the round could not measure this plugin";
-  }
-  if (h.state === HEADROOM.NONE) return `at the ceiling — ${h.points} points short, nothing named`;
-  if (h.state === HEADROOM.UNEXPLAINED) {
-    return `${h.points} points below the ceiling and nothing named. Nobody has said why this ` +
-           "scored short, so whether a change is needed is not established — the next move is " +
-           "to find out, not to change something";
-  }
-  return `${h.points} points below the ceiling, with ${h.named_changes} named change` +
-         `${h.named_changes === 1 ? "" : "s"} on the record`;
 }

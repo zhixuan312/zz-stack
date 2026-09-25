@@ -18,7 +18,7 @@
  * A refusal group with no recorded text at all is the one shape the deterministic pass cannot
  * describe — for that, and only that, ONE generative-critic call proposes the description,
  * through `judge.ts`'s `ask()` (the platform's one existing way to reach a larger model outside
- * the typed service — the same reading judge `judge.ts`/`judge-thresholds.ts` fall back to),
+ * the typed service),
  * recorded in `zz.model_call` under its own `purpose` and, on the candidate itself, under
  * `evidence_refs.description_source`.
  *

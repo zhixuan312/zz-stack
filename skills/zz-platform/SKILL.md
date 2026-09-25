@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.63
+version: 3.64
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store outside a flow."
 ---
@@ -537,7 +537,7 @@ reading later can see one caused the other.
   | bugs | `/core/mcp` | `bug_report` `bug_list` `bug_resolve` `bug_delete` |
   | status | `/core/mcp` | `initiative_status` `knowledge_reconcile` `session_whoami` |
   | checkpoints | `/core/mcp` | `assess` — one semantic-assessment family asked about one subject, recorded with its provenance |
-  | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_register` `plugin_profile` `plugin_conform` `protocol_read` `protocol_record` `protocol_affirm` `evaluator_qualify` `round_judge` `round_scores` `round_score` `finding_record` `finding_decide` `failure_discover` `evaluation_start` `evaluation_assess` `evaluation_score` `replay_case_set_build` `replay_start` `replay_read` `replay_close` `replay_score` `improvement_start` `candidate_record` `candidate_validate` `candidate_search` `candidate_prove` `release_prepare` `release_apply` `release_record` `release_verify` `proposal_prepare` |
+  | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_register` `plugin_profile` `plugin_conform` `protocol_read` `protocol_record` `protocol_affirm` `evaluator_qualify` `round_scores` `finding_record` `finding_decide` `failure_discover` `evaluation_start` `evaluation_assess` `evaluation_score` `replay_case_set_build` `replay_start` `replay_read` `replay_close` `replay_score` `improvement_start` `candidate_record` `candidate_validate` `candidate_search` `candidate_prove` `release_prepare` `release_apply` `release_record` `release_verify` `proposal_prepare` |
   | your own access | `/manage/mcp` | `whoami` `team_mine` `team_switch` `client_setup` `pat_issue` `pat_list` `pat_revoke` `catalog_list` `team_list` |
   | administration | `/manage/mcp` | `person_add` `person_list` `person_deactivate` `enrolment_issue` `team_create` `team_archive` `member_add` `member_remove` — only if your role carries them |
 
@@ -566,7 +566,7 @@ writes a file indexes it in the same call.
 
 The evaluation tools belong to the evaluation plugin. They exist because an agent here has MCP
 tools and no shell: a stage that says "run this program" is a stage the agent cannot perform.
-Sixteen of them write. Six of those — `protocol_record`, `protocol_affirm`, `evaluator_qualify`,
+Most of them write. Six of those — `protocol_record`, `protocol_affirm`, `evaluator_qualify`,
 `finding_record`, `finding_decide` and `failure_discover` — record a fact or a decision and
 never a score. `evaluator_qualify` runs a protocol's own qualification policy over one
 evaluator version and records which of `unqualified` / `mechanically_qualified` /
@@ -574,18 +574,18 @@ evaluator version and records which of `unqualified` / `mechanically_qualified` 
 about whether an evaluator's answers can be trusted, never a mark against the plugin under
 evaluation. `failure_discover` mines one observation snapshot's own real evidence for candidate
 failure modes, before any protocol exists — it classifies who is at fault, never how good the
-plugin is. The seventh, `round_judge`, is one tool on that door that DOES score: it marks
-one subject per call against the (legacy) ruler in force and stores every mark. Running it
-again to "check" appends to a stored series rather than re-reading one. Three more —
-`evaluation_start`, `evaluation_assess` and `evaluation_score` — are EVALUATE's own
-protocol-driven run, replacing `round_judge` for a plugin that has a `zz.eval_protocol_version`
-rather than a legacy ruler: `evaluation_start` binds one protocol version to one plugin's own
+plugin is. Three more — `evaluation_start`, `evaluation_assess` and `evaluation_score` — are
+EVALUATE's own protocol-driven run, and the only path on that door that scores a plugin:
+`evaluation_start` binds one protocol version to one plugin's own
 observation snapshot into an immutable run, `evaluation_assess` runs every measure the protocol's
 dimensions name against the `subject_ref`s you give it, and `evaluation_score` reduces what was
 assessed into one deterministic score (`scoreRun`, pure — no model call) with its status,
 guardrails and a bootstrap interval. Only `evaluation_assess`'s own `bounded_semantic`/
 `generative_critic` measures call a model; everything else is arithmetic over what the platform
-already recorded. The eleventh, `replay_case_set_build`, derives FR-60's chronological,
+already recorded. Running them again to "check" appends to a stored series rather than
+re-reading one. `round_scores` only reads back a historic round from before the protocol
+lifecycle — its `zz.rubric*` marks and blind control; nothing mints a new one.
+`replay_case_set_build` derives FR-60's chronological,
 visibility-tagged replay cases from real closed initiatives and splits them evolve/validation/
 proof — it never scores anything either, only turns real work into the evidence a later
 candidate replays against. Two more — `improvement_start` and `candidate_record` — write
@@ -607,11 +607,11 @@ most one disjoint-file child per call, reduces validated candidates to a Pareto 
 the protocol's own liveness bound selects exactly one final candidate — never launching a replay
 or a proof itself. `candidate_prove` mints, resolves and spends the selected candidate's ONE sealed proof allocation, storing `proof_status` and whether it is release-eligible. `release_prepare` is the promotion boundary itself: called on a `proof_passed` candidate, it resolves required owners live from the base subject's own `release_owners`, records a `zz.release_attempt` (`prepared`), and writes `improvement.md` — the authority-bearing gate `release_apply` reads back. It applies no patch and touches no real repository; a third-party or not-yet-owned subject refuses `no_release_owners` and stays proposal-only. `release_apply` is the exactly-once compare-and-swap FR-49 asks for: it takes an advisory lock on the plugin, evaluates the prepared attempt against the plugin's CURRENTLY released subject, and on `apply` moves it to `applying` — guarded twice, by a compare-and-swap on that row and by migration 077's own partial unique index across every attempt the plugin's `release_prepare` calls ever wrote, so two concurrent calls produce at most one `applying`/`released` attempt. zz-core has no checkout of the plugin's repository, so applying the patch, running the gate and running the repository's release procedure happen in `zz-tool release-apply` (`packages/tools/src/release/apply.ts`), a CLI run by whoever has a shell, which reports back through `release_record` — `released` with the new subject version and release ref, or `failed` with the failing command's own output tail, leaving the repository at its pre-apply commit either way. `release_verify` is the automatic, no-gate check that follows a `released` attempt: it replays the candidate's own proof-equivalent held cases against the released subject and its prior version, computes the paired per-case deltas, and applies `rollbackDecision` — `established` on no regression, `not_established` with a named reason when the held cases or the statistics never resolve, or `rolled_back` on a required guardrail failure or a statistically established regression. A `rolled_back` verdict applies nothing itself; it hands back a `rollback_plan` for `zz-tool release-rollback` (`packages/tools/src/release/rollback.ts`) to run the repository's own rollback procedure against, reporting back through `release_record` (`status: rolled_back`) — the same server-decides/CLI-executes split, one more time — so the prior subject is current again and the candidate is marked `rolled_back`. `proposal_prepare` is the path a non-owned or not-yet-owned subject takes instead of `release_prepare` — the tool `release_prepare`'s own `no_release_owners` refusal points callers toward: it refuses outright when the base subject DOES record `release_owners` ("use `release_prepare`, not `proposal_prepare`"), and otherwise writes `proposal.md`, ungated, always regenerated fresh from the improvement_run's current findings and candidates — tested patches with their validation/proof evidence where a source existed to check out and test one against, findings-only behavioural proposals where it did not. It applies no patch and touches no real repository, on any subject, ever.
 
-**The judge is not the agent.** `round_judge` takes identifiers and nothing else: it cannot be
-handed a ruler, an artifact or a model. The ruler comes from the registry, the artifacts from
-the store, and the model is pinned by deployment configuration and named on every row. That is
-what makes one round comparable with the next — a judge that varied with the conversation would
-make every number incomparable with every other number.
+**The judge is not the agent.** `evaluation_assess` takes an `eval_run_id` and `subject_ref`s and
+nothing else: never a measure, an artifact's text or a model. The measures come from the bound
+protocol version, each ref is resolved server-side, and a model-backed measure asks the evaluator
+the protocol binds, recorded on every assessment. That is what makes one run comparable with the
+next — a judge that varied with the conversation would make every number incomparable.
 
 - **A tool NOT on that list belongs to another plugin, whatever it is called.** The test is
   which server it comes from, never what the verb sounds like: zz-core's `document_approve`

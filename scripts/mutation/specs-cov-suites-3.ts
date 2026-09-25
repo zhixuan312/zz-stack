@@ -214,7 +214,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
     subject: "services/zz-core/src/tools/initiative-acts.ts",
     find: 'import { shownSinceLastChange } from "../attest.js";',
     replace: 'import { shownSinceLastChange } from "../attest.js";\n' +
-      'import { SUBJECT_CAP } from "../eval/judge.js";\nvoid SUBJECT_CAP;',
+      'import { JUDGE_MODEL } from "../eval/judge-model.js";\nvoid JUDGE_MODEL;',
     planted: "a core document tool reaches into the evaluation flow's judge, so one flow's " +
       "judging machinery is loaded into every account's core door — and the directory the core " +
       "surface is scanned out of starts importing the modules that were moved off it",

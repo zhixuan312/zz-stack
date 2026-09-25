@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-eval
-version: 2.0
+version: 2.1
 description: "The front door to plugin evaluation and governed improvement. Eight stages — IDENTIFY, OBSERVE, DISCOVER, DEFINE/QUALIFY, EVALUATE, EXPLAIN, IMPROVE, PROMOTE/VERIFY — over one plugin at one exact content, against a protocol somebody agreed BEFORE any scoring. Load it whenever somebody wants a plugin graded, scored, marked down, or confirmed as good or bad, including when they have already reached a conclusion and want it checked. Also when a plugin-owned defect is worth searching for a proven fix, or a plugin needs release/rollback through its own authorized owners. Measurement never bends toward a change somebody already wanted; promotion never happens without the required owners' say-so."
 when_to_use: "Someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?'. Answering either from your own read is the failure this flow exists to prevent, so load it before agreeing or disagreeing. Also whenever a plugin is up for keeping, changing or retiring; a plugin-owned defect is worth fixing; or a candidate patch needs proving and releasing through its own owners. This is the entry point: start here rather than at a stage. IDENTIFY through EXPLAIN run on any client with no shell; IMPROVE and PROMOTE/VERIFY need Claude Code."
 ---
@@ -125,13 +125,14 @@ IMPROVE and PROMOTE/VERIFY need Claude Code (or an equivalent shell-capable runt
 to start anywhere else. Load the stage skill for the one you are on; each says exactly which
 tools to call, in what order, and what each refusal means.
 
-## Legacy readers, still live
+## Legacy reader, still live
 
-`round_judge`, `round_scores` and `round_score` remain for any plugin version whose
-`rubric_id` was set under the OLD five-stage ruler, before this flow's own protocol lifecycle
-existed — no tool records a new `zz.rubric` any more, so a version with no `rubric_id` scores
-through `protocol_read`/`protocol_record`/`protocol_affirm` instead. Nothing in this flow's own
-eight stages calls the legacy trio; they stay reachable purely for historical continuity.
+`round_scores` reads back a round a plugin version was marked in under the OLD five-stage
+ruler, before this flow's own protocol lifecycle existed — its `zz.rubric*` dimensions, its
+marks and its blind control, exactly as they were stored. It is history and nothing more:
+nothing mints a new round, and no stage of this flow calls it. A plugin is scored through
+`evaluation_start`/`evaluation_assess`/`evaluation_score`, against a protocol agreed through
+`protocol_read`/`protocol_record`/`protocol_affirm`.
 
 ## Facts come from tools; meaning comes from you
 

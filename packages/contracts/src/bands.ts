@@ -93,12 +93,11 @@ export function headroomState(points: number | null, named: number): string {
 /**
  * The platform's mark scale, declared once.
  *
- * The prompt spells the ends of the scale and `judge-score.ts` rescales a mean against them; a
- * ruler on any other scale would be prompted for one range and normalised against another,
- * silently, with every number downstream still looking ordinary.
+ * Every historic round's marks were given on this scale, and `judge-score.ts` rescales their mean
+ * against it; a rescale with a literal bound would normalise them against a range they were never
+ * given on, silently, with every number downstream still looking ordinary.
  *
- * COUPLED: the ruler's own columns are called `five_means` and `one_means`, in the type above,
- * in the SQL that reads them and in the table itself. This constant makes the two computed uses
- * agree; moving the scale still means migrating those names.
+ * COUPLED: the legacy ruler's own columns are called `five_means` and `one_means` in the table
+ * itself, so moving the scale still means migrating those names.
  */
 export const MARK_SCALE = { min: 1, max: 5 } as const;

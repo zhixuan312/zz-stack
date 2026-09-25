@@ -126,13 +126,14 @@ IMPROVE and PROMOTE/VERIFY need Claude Code (or an equivalent shell-capable runt
 to start anywhere else. Load the stage skill for the one you are on; each says exactly which
 tools to call, in what order, and what each refusal means.
 
-## Legacy readers, still live
+## Legacy reader, still live
 
-`round_judge`, `round_scores` and `round_score` remain for any plugin version whose
-`rubric_id` was set under the OLD five-stage ruler, before this flow's own protocol lifecycle
-existed — no tool records a new `zz.rubric` any more, so a version with no `rubric_id` scores
-through `protocol_read`/`protocol_record`/`protocol_affirm` instead. Nothing in this flow's own
-eight stages calls the legacy trio; they stay reachable purely for historical continuity.
+`round_scores` reads back a round a plugin version was marked in under the OLD five-stage
+ruler, before this flow's own protocol lifecycle existed — its `zz.rubric*` dimensions, its
+marks and its blind control, exactly as they were stored. It is history and nothing more:
+nothing mints a new round, and no stage of this flow calls it. A plugin is scored through
+`evaluation_start`/`evaluation_assess`/`evaluation_score`, against a protocol agreed through
+`protocol_read`/`protocol_record`/`protocol_affirm`.
 
 ## Facts come from tools; meaning comes from you
 

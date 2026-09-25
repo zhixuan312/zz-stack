@@ -60,10 +60,9 @@ function asEvaluatorDefinition(raw: unknown, measureKey: string): EvaluatorDefin
 }
 
 /** A `deterministic`/`outcome` measure's `definition.factPath` refused, by name, when it names no
- *  fact OBSERVE actually computes — the idea `plugin-facts.ts`'s own `readsRefusal` already
- *  applies for the legacy ruler (a quantitative line's `reads` dotted path checked against the
- *  profile sheet), replicated here against `observe-facts.ts`'s own `OBSERVATION_FACT_KEYS`
- *  instead: only the path's FIRST segment is checked against that list — a nested path underneath
+ *  fact OBSERVE actually computes — the idea the removed legacy ruler's quantitative lines were
+ *  held to (a `reads` dotted path checked against the profile sheet), applied here against
+ *  `observe-facts.ts`'s own `OBSERVATION_FACT_KEYS` instead: only the path's FIRST segment is checked against that list — a nested path underneath
  *  a resolved fact is `evaluate-measures.ts`'s own business at read time, not something this
  *  file's static, pre-observation check can validate. `null` on a valid measure; this file's own
  *  Fix dispatch note (I-29) is what this refusal answers. */

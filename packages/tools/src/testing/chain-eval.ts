@@ -21,13 +21,12 @@ interface EvalDeps {
 }
 
 export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Promise<void> {
-  // Whether this deployment has ever released plugin, run a judge round, or even holds a platform
-  // database is state this throwaway initiative does not create. So each call below is aimed at a
-  // refusal these tools document for exactly that case — "no released version is recorded",
-  // "declares no ruler", "is not an evaluation" — rather than at manufacturing a real release, an
-  // approved rubric and a scored round, which needs a live judge: round_judge takes about thirty
-  // seconds per subject. Getting this far exercises the door, the schema and every refusal branch
-  // that runs before a model is reached.
+  // Whether this deployment has ever released a plugin, holds a historic round, or even holds a
+  // platform database is state this throwaway initiative does not create. So each call below is
+  // aimed at a refusal these tools document for exactly that case — "no released version is
+  // recorded", "is not an evaluation" — rather than at manufacturing a real release and a scored
+  // run, which needs a live judge. Getting this far exercises the door, the schema and every
+  // refusal branch that runs before a model is reached.
   eitherOr("plugin_locate answers or refuses by a named cause",
     await callEval("plugin_locate", { plugin: PLUGIN }),
     /no platform database|no released version/);
@@ -57,9 +56,6 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
     await callEval("protocol_affirm", {
       protocol_version_id: randomUUID(), initiative: "chain-check-probe", idempotency_key: randomUUID(),
     }), /no platform database|unknown protocol_version_id/);
-  eitherOr("round_judge refuses a version that declares no ruler",
-    await callEval("round_judge", { plugin: PLUGIN, version: "0", rubric_id: "0" }),
-    /no platform database|declares no ruler/);
   eitherOr("round_scores refuses an eval_id nothing minted",
     await callEval("round_scores", { eval_id: randomUUID() }),
     /no platform database|is not an evaluation/);
@@ -67,13 +63,6 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
     await callEval("protocol_record", {
       subject_version_id: randomUUID(), protocol_body: {}, idempotency_key: randomUUID(),
     }), /no platform database|unknown subject_version_id|"code"/);
-  // round_score computes both axes from the round's own figures and asks the typed service one thing
-  // only — how strong the evidence is. On a throwaway stack there is no round to score, and there
-  // may be no key either; both are named refusals, and either proves the door serves the tool and
-  // reaches its argument checks before anything is spent.
-  eitherOr("round_score refuses an eval_id nothing minted",
-    await callEval("round_score", { eval_id: randomUUID() }),
-    /no platform database|no plugin evaluation|TYPESAFE_API_KEY/);
   // Task I-13: finding_record now binds to an eval_run_id (migration 078), not the legacy round's
   // eval_id — a random uuid is safe against any live state, the same way every other probe here is.
   eitherOr("finding_record refuses an eval_run_id nothing minted",

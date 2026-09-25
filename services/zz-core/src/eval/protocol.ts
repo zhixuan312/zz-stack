@@ -14,7 +14,7 @@
  * `protocol_affirm`'s binding mechanism, decided by this task (the plan states only the tool's
  * shape, not how a document's approval reaches this door): `protocol.md` lives in the artifact
  * store the same way `rulers.md` did — `<initiative>/protocol.md` under the caller's own team,
- * read straight off disk the way `plugin-facts.ts`'s `bodyOf` reads a judged document, because
+ * read straight off disk the way `subject-ref.ts`'s `bodyOf` reads a judged document, because
  * `document_approve` writes synchronously and the search index (`zz.doc`) is updated through a
  * fire-and-forget `indexDoc` call that can still be stale in the same turn. Binding an
  * `initiative` was not in the plan's own signature — added here because there is no other way to

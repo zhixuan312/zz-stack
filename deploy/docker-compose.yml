@@ -42,10 +42,10 @@ services:
       # The deployment's own timezone: every date the platform stamps is local to it. Under UTC
       # a morning east of Greenwich lands under yesterday's date.
       - ZZ_TZ=${ZZ_TZ:-}
-      # The judge — round_judge scores a plugin's work against its ruler, and needs a model.
-      # DELIBERATE: a different model from the one the flows' agents run on; a ruler exactly as
-      # good as the thing it measures measures nothing. Unset, the tool refuses rather than
-      # scoring with something else.
+      # The reading judge — failure_discover's critic proposes a description through it.
+      # DELIBERATE: a different model from the one the flows' agents run on; a critic exactly as
+      # good as the thing it reads describes nothing. Unset, the critic is skipped and the
+      # deterministic description stands, with the reason recorded.
       - LLM_BASE_URL=${LLM_BASE_URL:-}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - ZZ_JUDGE_MODEL=${ZZ_JUDGE_MODEL:-deepseek-v4.1-flash}

@@ -47,7 +47,7 @@ for (const f of REGISTRATION_MODULES) {
   const src = readFileSync(`services/zz-core/src/eval/${f}.ts`, "utf8");
   for (const m of src.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)) registered.add(m[1]);
 }
-for (const want of ["protocol_read", "protocol_record", "protocol_affirm", "round_judge",
+for (const want of ["protocol_read", "protocol_record", "protocol_affirm",
                     "round_scores", "finding_record"]) {
   if (!registered.has(want)) fail.push(`${want} is not registered`);
 }
@@ -63,13 +63,17 @@ for (const old of Object.keys(EVAL_ALIAS)) {
 for (const gone of ["ruler_read", "ruler_record", "ruler_affirm"]) {
   if (registered.has(gone)) fail.push(`${gone} is still registered — Task I-10 removed it`);
 }
+// 0.76.0: the two legacy round WRITERS are gone; `round_scores`, the reader, stays for history.
+for (const gone of ["round_judge", "round_score"]) {
+  if (registered.has(gone)) fail.push(`${gone} is still registered — 0.76.0 removed it`);
+}
 // The set, not the size. A count fails identically whether a tool was lost or one was added, and
 // says neither. A missing name is a tool that vanished; an unexpected one is a tool nobody wrote
 // into the door's own description.
 const EXPECTED = new Set([
   "plugin_locate", "plugin_profile", "plugin_conform", "plugin_register",
   "protocol_read", "protocol_record", "protocol_affirm",
-  "round_judge", "round_scores", "round_score",
+  "round_scores",
   "finding_record", "finding_decide",
   "failure_discover",
   "evaluator_qualify",

@@ -165,7 +165,7 @@ const TOOL_DOMAIN: Record<string, string> = {
   plugin_locate: "evaluation", plugin_profile: "evaluation", plugin_conform: "evaluation",
   plugin_register: "evaluation",
   protocol_read: "evaluation", protocol_record: "evaluation", protocol_affirm: "evaluation",
-  round_judge: "evaluation", round_scores: "evaluation", round_score: "evaluation",
+  round_scores: "evaluation",
   finding_record: "evaluation", finding_decide: "evaluation", failure_discover: "evaluation",
   evaluator_qualify: "evaluation",
   evaluation_start: "evaluation", evaluation_assess: "evaluation", evaluation_score: "evaluation",

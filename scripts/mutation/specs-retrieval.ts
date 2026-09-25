@@ -12,16 +12,16 @@ import type { MutationSpec } from "./plant.ts";
 export const RETRIEVAL_SPECS: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/judged-corpus-census.ts",
-    target: "the judge's mark scale is declared once, and both readers of it agree",
+    target: "the judge's mark scale is declared once, and the rescale reads it",
     assertion: "the rescale reads the declared scale's lower bound",
     subject: "services/zz-core/src/eval/judge-score.ts",
     find: "    ? null : Math.round(((qualMean - MARK_SCALE.min) / SPAN) * 1000) / 100;",
     replace: "    ? null : Math.round(((qualMean - 1) / SPAN) * 1000) / 100;",
     planted: "the arithmetic that turns a mark into a score goes back to a literal lower bound " +
-      "while the prompt that produced the mark reads the declared one — so a ruler on any " +
-      "other scale is prompted for one range and normalised against another, silently, with " +
-      "every number downstream still looking ordinary. SPAN stays used, so the tree compiles " +
-      "and only the property breaks",
+      "while the marks it rescales were given on the declared scale — so a round on any other " +
+      "scale is normalised against a range it was never given on, silently, with every number " +
+      "downstream still looking ordinary. SPAN stays used, so the tree compiles and only the " +
+      "property breaks",
   },
   {
     check: "scripts/gate/checks/analyzer-opacity-fixture.ts",

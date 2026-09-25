@@ -85,8 +85,8 @@ export interface MeasureAnswer {
 }
 
 /** Walks a dot-separated path over a plain object — the same "reach a figure on the sheet" idea
- *  `plugin-facts.ts`'s own `reaches` applies for the legacy ruler, rewritten here against
- *  OBSERVE's own facts map rather than the whole legacy profile sheet. `undefined` the moment the
+ *  the removed legacy ruler applied, rewritten here against OBSERVE's own facts map rather than
+ *  the whole legacy profile sheet. `undefined` the moment the
  *  path runs off the object (a non-object node, or a missing key) — never a thrown error, since a
  *  bad path is this function's caller's business to report, not this function's to crash over. */
 function getByPath(obj: unknown, path: string): unknown {

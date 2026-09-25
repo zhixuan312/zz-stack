@@ -73,13 +73,13 @@ interface ChoiceQuestion {
   /** option -> what that option means. The model cannot answer outside these keys. */
   criteria: Record<string, string>;
 }
-export interface ScoreQuestion {
+interface ScoreQuestion {
   type: "score";
   instructions: string;
   /** 2-10 level descriptions, ordered low to high. */
   criteria: string[];
 }
-export interface NoulQuestion {
+interface NoulQuestion {
   type: "noul";
   instructions: string;
 }
@@ -273,9 +273,8 @@ function meanConfidence(answers: Record<string, JevParseResult>): number | null 
 
 /** One row per call, in the table the reading judge already writes to.
  *
- *  COUPLED: the model column carries what was asked for, not what the supplier says it ran,
- *  because `judge-model.ts` matches these rows by rebuilding this same string from the
- *  environment. The resolved identity lives on each answer's record.
+ *  The model column carries what was asked for, not what the supplier says it ran; the
+ *  resolved identity lives on each answer's record.
  *
  *  Never throws: this is bookkeeping beside an answer already in hand, and a database hiccup
  *  must not turn a successful judgement into a lost one. */
@@ -295,12 +294,4 @@ async function record(
        usage?.output_tokens ?? null, durationMs, ok, attempts, confidence,
        note ? note.slice(0, 500) : null]);
   } catch { /* bookkeeping never costs an answer */ }
-}
-
-/** A score's position expressed on the platform's own 1-N scale.
- *
- * System One numbers its levels from zero and returns a continuous position between them, so a
- * three-level scale answers 0..2. Every mark this platform stores is 1-based. */
-export function toOneBased(score: number): number {
-  return Math.round((score + 1) * 100) / 100;
 }

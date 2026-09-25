@@ -14,10 +14,10 @@ size("TOOL_ALIAS", TOOL_ALIAS, 17);
 // alias pointing at a 404 turns "no such tool" into a call the client accepts and the
 // gateway refuses.
 size("MANAGE_ALIAS", MANAGE_ALIAS, 16);
-// Includes `round_recommend` -> `round_score`, so a caller working from the old name still
-// reaches the tool that replaced it. Task I-10 deleted the three ruler_* entries rather than
-// repointing them at protocol_* — see EVAL_ALIAS's own comment for why — dropping this from 7.
-size("EVAL_ALIAS", EVAL_ALIAS, 4);
+// Task I-10 deleted the three ruler_* entries rather than repointing them at protocol_*, and
+// 0.76.0 deleted `plugin_judge` and `round_recommend` with the round writers they resolved to —
+// see EVAL_ALIAS's own comment for why — dropping this from 7 to 2.
+size("EVAL_ALIAS", EVAL_ALIAS, 2);
 size("SKILL_ALIAS", SKILL_ALIAS, 2);
 
 const resolves: [Record<string, string>, string, string][] = [
@@ -28,7 +28,7 @@ const resolves: [Record<string, string>, string, string][] = [
   [TOOL_ALIAS, "reindex_knowledge", "knowledge_reindex"],
   [MANAGE_ALIAS, "add_person", "person_add"],
   [MANAGE_ALIAS, "my_client_setup", "client_setup"],
-  [EVAL_ALIAS, "plugin_judge", "round_judge"],
+  [EVAL_ALIAS, "plugin_scores", "round_scores"],
   [SKILL_ALIAS, "zz-backbone", "zz-platform"],
   [SKILL_ALIAS, "zz-knowledge", "zz-handover"],
 ];
@@ -42,7 +42,8 @@ for (const gone of ["issue_my_access_token", "my_access_tokens", "revoke_my_acce
 }
 // Task I-10: the ruler_* tools and the pre-rename names that once resolved to them are all
 // deleted, not renamed onto protocol_*. Neither half of that old rename may resolve.
-for (const gone of ["plugin_ruler", "plugin_ruler_record", "plugin_affirm"]) {
+for (const gone of ["plugin_ruler", "plugin_ruler_record", "plugin_affirm",
+                    "plugin_judge", "round_recommend"]) {
   if (EVAL_ALIAS[gone]) fail.push(`${gone} was deleted and must have no alias`);
 }
 // An unchanged tool must not resolve either.

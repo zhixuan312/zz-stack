@@ -8,7 +8,7 @@
  *
  * Two shapes an `eval_run`'s own `subject_ref` can take:
  *   - `<initiative>/<doc>.md` — a governed document, read off the artifact store the way
- *     `findings-doc.ts` writes one and `plugin-facts.ts`'s `bodyOf` reads one, team-scoped.
+ *     `findings-doc.ts` writes one and `bodyOf` below reads one, team-scoped.
  *   - a bare UUID — a `zz.event.run_id`, rendered from its own `zz.event` rows through
  *     `judge-trace.ts`'s `traceOf`, the platform's one existing "render a run as text" function —
  *     never a second renderer invented here.
@@ -19,10 +19,23 @@
  * exists to close, so resolving to nothing is never treated as "score it excluded" the way an
  * unqualified evaluator's answer is.
  */
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { ARTIFACTS_DIR } from "@zz/indexing";
 import type pg from "pg";
 
-import { bodyOf } from "./plugin-facts.js";
 import { traceOf } from "./judge-trace.js";
+import { sanitize } from "../paths.js";
+
+/** A governed document's body, out of the artifact store. Resolved here and never passed in, which
+ *  keeps what a measure is asked to judge out of the conversation: the caller names a ref. */
+function bodyOf(team: string, initiative: string, path: string): string | null {
+  try {
+    const f = join(ARTIFACTS_DIR, "teams", sanitize(team), initiative, path);
+    return existsSync(f) ? readFileSync(f, "utf8") : null;
+  } catch { return null; }
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

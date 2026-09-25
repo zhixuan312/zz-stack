@@ -1,12 +1,12 @@
 /**
  * The judge records what it consumed, and a gap stays a gap.
  *
- * DELIBERATE: this drives `markAll` rather than grepping judge.ts. A regex asserts that a
- * string appears, not that a completion is timed or that a failed one is still recorded, and it
- * cannot express "every path out of the fetch writes exactly one row" at all.
+ * DELIBERATE: this drives `ask` rather than grepping judge.ts. A regex asserts that a string
+ * appears, not that a completion is timed or that a failed one is still recorded, and it cannot
+ * express "every path out of the fetch writes exactly one row" at all.
  *
- * One `markAll` call per scenario, against a fake pool that records the `zz.model_call` inserts
- * and a `fetch` that answers however the scenario needs:
+ * One `ask` call per scenario — the one `failure_discover`'s critic makes — against a fake pool
+ * that records the `zz.model_call` inserts and a `fetch` that answers however the scenario needs:
  *
  *   whole      — a normal answer with no `usage` block: one row, ok, all three token columns
  *                null, because "the provider said nothing" is not "it cost nothing".
@@ -40,7 +40,7 @@ if (!existsSync(dist)) {
 process.env.LLM_BASE_URL = "https://example.invalid/v1";
 process.env.LLM_API_KEY = "not-a-key";
 
-const { markAll } = await import(pathToFileURL(dist.pathname).href);
+const { ask } = await import(pathToFileURL(dist.pathname).href);
 
 const fail: string[] = [];
 
@@ -50,38 +50,17 @@ function byName(sql: string, params: unknown[]): Record<string, unknown> {
   return Object.fromEntries(cols.map((c, i) => [c, params[i]]));
 }
 
-/** Enough of a pg.Pool for one round of one subject. Every statement markAll issues is
- *  answered by shape; the model_call inserts are kept. */
+/** Enough of a pg.Pool for one call. The model_call inserts are kept; `ask` issues nothing else. */
 function pool(rows: Record<string, unknown>[]) {
   return {
     query: async (sql: string, params: unknown[]) => {
-      if (/insert into zz\.model_call/i.test(sql)) { rows.push(byName(sql, params)); return { rows: [], rowCount: 0 }; }
-      if (/insert into zz\.eval_subject/i.test(sql)) return { rows: [{ id: "11111111-1111-1111-1111-111111111111" }], rowCount: 1 };
-      if (/insert into zz\.eval\b/i.test(sql)) return { rows: [{ id: "22222222-2222-2222-2222-222222222222" }], rowCount: 1 };
+      if (/insert into zz\.model_call/i.test(sql)) rows.push(byName(sql, params));
       return { rows: [], rowCount: 0 };
     },
   };
 }
 
-const DIM = {
-  dim_id: "33333333-3333-3333-3333-333333333333",
-  name: "Evidence", five_means: "cited", one_means: "asserted",
-  kind: "qualitative", threshold: "", threshold_reason: "",
-};
-
-const MARKING = {
-  versionColumn: "plugin_version_id",
-  versionId: "44444444-4444-4444-4444-444444444444",
-  noun: "plugin", name: "zz-core", version: "1.0.0",
-  rubricId: "55555555-5555-5555-5555-555555555555", rubricVersion: "1",
-  dims: [DIM], kind: "document",
-  items: [{ key: "k", label: "a document", runId: null, docId: "66666666-6666-6666-6666-666666666666",
-            team: "t", init: "i", path: "p.md" }],
-  control: async () => ({ text: "", truncated: 0 }),
-  facts: null,
-};
-
-const ANSWER = JSON.stringify({ marks: [{ dimension: "Evidence", score: 4, cite: "c", why: "w" }] });
+const ANSWER = JSON.stringify({ description: "the tool refused a malformed path" });
 
 /** The one shape every stub below answers with — never a real Response, so the global is
  *  overwritten through an untyped write and restored through the typed one. */
@@ -89,13 +68,17 @@ type FetchStub = () => Promise<{
   ok: boolean; status: number; text: () => Promise<string>; json: () => Promise<unknown>;
 }>;
 
-/** One round, with `fetch` replaced for the duration. Returns the model_call rows it wrote. */
+/** One call, with `fetch` replaced for the duration. Returns the model_call rows it wrote. A
+ *  failed call throws by design — the caller falls back — so the throw is expected here and only
+ *  the rows are asserted. */
 async function round(stub: FetchStub) {
   const rows: Record<string, unknown>[] = [];
   const real = globalThis.fetch;
   (globalThis as Record<string, unknown>).fetch = stub;
   try {
-    await markAll(pool(rows), MARKING, false, 1, null, () => "the document body");
+    await ask(pool(rows), "zz-core", "the system prompt", "the failure group", "failure-discover");
+  } catch {
+    // Asserted through the rows below: every path out of the fetch still writes exactly one.
   } finally {
     globalThis.fetch = real;
   }
@@ -126,7 +109,7 @@ const eq = (scenario: string, row: Record<string, unknown>, col: string, want: u
   const row = one(await round(answers({ choices: [{ finish_reason: "stop", message: { content: ANSWER } }] })), "whole");
   if (row) {
     eq("whole", row, "ok", true);
-    eq("whole", row, "purpose", "plugin-judge");
+    eq("whole", row, "purpose", "failure-discover");
     eq("whole", row, "plugin", "zz-core");
     if (!row.model) fail.push("whole: no model name on the row");
     for (const c of ["input_tokens", "output_tokens", "cache_read_tokens"]) {
@@ -160,7 +143,7 @@ const eq = (scenario: string, row: Record<string, unknown>, col: string, want: u
 // Truncated: a failure that cost tokens is still evidence.
 {
   const row = one(await round(answers({
-    choices: [{ finish_reason: "length", message: { content: "{\"marks\"" } }],
+    choices: [{ finish_reason: "length", message: { content: "{\"description\"" } }],
     usage: { prompt_tokens: 7, completion_tokens: 16000 },
   })), "truncated");
   if (row) {

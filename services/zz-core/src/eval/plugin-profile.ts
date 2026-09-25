@@ -23,14 +23,6 @@ const USABLE_RUNS_FLOOR = 5;
  *  timestamps stays the only query, whichever way the caller asked for the window. */
 export interface EvidenceWindow { readonly from: string; readonly to: string }
 
-/** Every run this platform has ever recorded — Postgres's own unbounded timestamptz literals, so
- *  `between $3 and $4` needs no second, window-less branch. `plugin_profile` (observe.ts) always
- *  resolves a real range; this is for the one caller outside OBSERVE that judges a plugin's whole
- *  history rather than one bounded evidence window — `round_judge`'s quantitative dimensions,
- *  through `plugin-facts.ts`'s `factObject` — named explicitly at that call site, never
- *  defaulted here. */
-export const UNBOUNDED_WINDOW: EvidenceWindow = { from: "-infinity", to: "infinity" };
-
 interface PluginTraces {
   runs: number;
   usable_runs: number;
@@ -178,8 +170,8 @@ export async function pluginTraces(
    *  door. It decides where this plugin's evidence lives; see RUNS_ON_DOOR. */
   servesOwnDoor: boolean,
   /** The resolved range every query below is bounded to (Task I-7). Required, never defaulted —
-   *  a caller judging a plugin's whole history names `UNBOUNDED_WINDOW` itself rather than this
-   *  function silently choosing "everything" for an omitted argument. */
+   *  a caller wanting a plugin's whole history names `{ from: "-infinity", to: "infinity" }`
+   *  itself rather than this function silently choosing "everything" for an omitted argument. */
   window: EvidenceWindow,
 ): Promise<PluginTraces> {
   const RUNS_OF = servesOwnDoor ? RUNS_ON_DOOR : RUNS_BY_SKILL;
@@ -269,7 +261,7 @@ export async function pluginTraces(
   //
   // Task I-7: both branches are now bounded to `window` and replay-excluded, the same as every
   // other query here — an observation snapshot is a statement about one window, and a door
-  // plugin's "was this ever called" question belongs to `UNBOUNDED_WINDOW`, named at the call
+  // plugin's "was this ever called" question belongs to an unbounded window named at the call
   // site, rather than to a special case inside this function.
   const useSource = toolCallEvents(servesOwnDoor);
   const useRows = (await pool.query<{ tool: string; calls: string; refusals: string;
@@ -304,8 +296,7 @@ export async function pluginTraces(
   //
   // Only a door that writes documents has a document record to report. The figures below are the
   // store's — every document on the platform — which is zz-core's record and nobody else's, so
-  // the test is the one usageDocs applies: has this door recorded a call to a tool that writes a
-  // document. A door that only reads them has not produced them.
+  // the test is: has this door recorded a call to a tool that writes a document. A door that only reads them has not produced them.
   const writesDocuments = servesOwnDoor && use.some((u) =>
     ["document_write", "document_patch", "document_revise"].includes(u.tool.split(":").pop() ?? ""));
   // Scoped to the initiatives THIS window's own door traffic actually touched, and with any

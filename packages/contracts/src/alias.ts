@@ -66,12 +66,14 @@ export const MANAGE_ALIAS: Record<string, string> = Object.freeze({
  * once resolved to, and `protocol_*` is a different measurement object with a different shape —
  * a genuinely new series, not the old one under a new name. The platform's own precedent for
  * exactly this (MANAGE_ALIAS's deleted `issue_my_access_token` and friends) is "deleted rather
- * than renamed, so they take no entry: aliasing them would merge two series." */
+ * than renamed, so they take no entry: aliasing them would merge two series."
+ *
+ * `plugin_judge` and `round_recommend` went the same way in 0.76.0: the tools they resolved to,
+ * `round_judge` and `round_score`, were deleted rather than renamed, and the protocol lifecycle
+ * (`evaluation_*`) is a different measurement, not the old one under a new name. */
 export const EVAL_ALIAS: Record<string, string> = Object.freeze({
-  plugin_judge: "round_judge",
   plugin_scores: "round_scores",
   plugin_finding_record: "finding_record",
-  round_recommend: "round_score",
 });
 /** The two skill renames. Consumed wherever a `zz.event.step` value is resolved against a
  * skill name, because that column holds the name as a string rather than a version id. */

@@ -70,7 +70,7 @@ const EVAL_INSTRUCTIONS =
   "  replay_*  derive replay cases and start, read, close a run\n" +
   "  improvement_*  open an optimization run against plugin-owned findings\n" +
   "  candidate_*  persist a proposed patch before it executes\n" +
-  "  release_*  prepare a proved candidate's promotion package\n\n" +
+  "  release_*  prepare, apply, record a candidate's promotion\n\n" +
   "Everything else is on /core/mcp and not here: documents and their gates, your team's " +
   "knowledge store, skills, sources, and who you are — session_whoami there answers today's " +
   "date and which team you are acting for.\n\n" +

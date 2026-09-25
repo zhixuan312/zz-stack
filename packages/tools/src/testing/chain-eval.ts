@@ -192,4 +192,17 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
     await callEval("release_prepare", {
       candidate_id: randomUUID(), initiative: "chain-check-probe", idempotency_key: randomUUID(),
     }), /no platform database|no candidate/);
+  // Task I-23: same shape again — a random candidate_id resolves no candidate row before either
+  // tool ever reaches the advisory lock or the database's live state, so both are safe against
+  // whatever this deployment has or has not released.
+  eitherOr("release_apply refuses a candidate_id nothing minted",
+    await callEval("release_apply", {
+      candidate_id: randomUUID(), approved_patch_digest: "chain-check-probe-digest",
+      initiative: "chain-check-probe", idempotency_key: randomUUID(),
+    }), /no platform database|no candidate/);
+  eitherOr("release_record refuses a release_attempt_id nothing minted",
+    await callEval("release_record", {
+      release_attempt_id: randomUUID(), status: "failed", failure_tail: "chain-check-probe",
+      idempotency_key: randomUUID(),
+    }), /no platform database|no release_attempt/);
 }

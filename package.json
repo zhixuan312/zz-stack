@@ -27,6 +27,7 @@
     "watch-results": "node packages/tools/dist/ops/watch-results.js",
     "call": "node packages/tools/dist/ops/call.js",
     "replay": "node packages/tools/dist/replay/launch.js",
+    "release-apply": "node packages/tools/dist/release/apply.js",
     "check:sql": "node packages/tools/dist/testing/sql-check.js",
     "check:identity": "node services/gateway/dist/identity-check.js",
     "check:scope": "node services/gateway/dist/scope-check.js",

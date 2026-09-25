@@ -22,6 +22,16 @@
  * `proof_passed`; the rest of the order (`approval_required`, `digest_mismatch`,
  * `stale_baseline`) belongs to `release_apply`, once an approved document and a live current
  * subject both exist to check the rest of it against.
+ *
+ * `release_apply` and `release_record` (Task I-23, FR-49, AC-49.1) are this same file's other two
+ * tools, registered below. Their own decision/CAS/replay logic lives in `release-apply.ts` — the
+ * same split `release_prepare` above already keeps against `release-rules.ts` and
+ * `improvement-doc.ts` — so this file stays only registration and description. zz-core has no
+ * checkout of the plugin's repository, so applying the patch, hashing it, committing, running the
+ * gate and running the repository's release procedure are NOT done here: `release_apply` decides
+ * and locks; `packages/tools/src/release/apply.ts`, a CLI run by the IMPROVE agent (which has a
+ * shell), does the git and process work and reports back through `release_record`. The same
+ * server-decides/CLI-executes split replay and candidate-build already use.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
@@ -31,6 +41,10 @@ import { z } from "zod";
 
 import { writeImprovementDoc, type ProofEvaluationRow } from "./improvement-doc.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import {
+  describeApplyOutcomeForReplay, describeRecordOutcomeForReplay, planApply, recordRelease,
+  type ApplyResult, type RecordResult,
+} from "./release-apply.js";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
 import { db } from "../platform-db.js";
@@ -190,6 +204,120 @@ export function registerReleaseTools(server: McpServer): void {
             document: null, document_refused: written } satisfies PrepareResult
         : { release_attempt_id: releaseAttemptId, required_owners: requiredOwners,
             document: written.path } satisfies PrepareResult);
+    },
+  );
+
+  server.registerTool(
+    "release_apply",
+    {
+      description:
+        "WHEN improvement.md has been approved for a candidate release_prepare already recorded " +
+        "a promotion package for (FR-49, the compare-and-swap): takes an advisory lock on the " +
+        "candidate's own plugin, evaluates releaseDecision against the plugin's CURRENTLY " +
+        "released subject — this eval system's own most recent released attempt for the plugin, " +
+        "or its catalog-released head if this system has never released it — and, only on apply, " +
+        "moves the newest prepared release_attempt to applying, guarded twice over: a " +
+        "compare-and-swap on that exact row, and migration 077's own partial unique index across " +
+        "every attempt release_prepare ever wrote for this candidate, so two concurrent calls " +
+        "produce at most one applying/released attempt. RETURNS { status: applying|refused, " +
+        "reason, release_attempt_id, patch: {diff, patch_digest} | null, plan: {plugin, " +
+        "declared_version, base_subject_version_id, branch} | null } — patch/plan are null on a " +
+        "refusal. Nothing here applies a patch, runs a gate or creates a release: zz-core has no " +
+        "checkout of the plugin's repository, so packages/tools/src/release/apply.ts — a CLI the " +
+        "IMPROVE agent runs next, with patch.diff and plan.branch — does that, and reports back " +
+        "through release_record. REFUSES no_release_owners/not_eligible (recomputed live, though " +
+        "release_prepare already checked both at prepare time), approval_required (no approved " +
+        "improvement.md quoting this exact digest yet — NOT terminal, the attempt stays prepared " +
+        "and a later call may still find it approved), digest_mismatch (approved_patch_digest " +
+        "does not match the candidate's own recorded patch_digest), stale_baseline (the plugin's " +
+        "currently released subject has moved since this candidate's own base — rebase, " +
+        "re-validate, re-prove and re-approve before trying again), an unknown candidate_id, a " +
+        "candidate with no prepared release_attempt, an unresolvable currently-released subject " +
+        "(call plugin_locate for this plugin's released version first), and a deployment with no " +
+        "platform database. A mutator: writes through the FR-59 idempotency ledger.",
+      inputSchema: {
+        candidate_id: z.string(),
+        approved_patch_digest: z.string(),
+        initiative: z.string().describe("The initiative improvement.md was written into, so its approval can be read back."),
+        idempotency_key: z.string().min(1),
+      },
+    },
+    async ({ candidate_id, approved_patch_digest, initiative, idempotency_key }) => {
+      const p = db();
+      if (!p) return noDb();
+
+      const principal = parseCaller(requestHeaders()).email;
+      const outcome: IdempotencyOutcome<ApplyResult> = await withIdempotency(
+        principal, "release_apply", idempotency_key, { candidate_id, approved_patch_digest, initiative },
+        (client) => planApply(client, candidate_id, approved_patch_digest, initiative),
+      );
+      const result = outcome.replayed
+        ? await describeApplyOutcomeForReplay(p, outcome.result_id)
+        : outcome.result;
+
+      logActivity(await userRoot(), null, {
+        user: principal, action: "release_apply", candidate_id,
+        release_attempt_id: result.release_attempt_id, status: result.status,
+        reason: result.reason, replayed: outcome.replayed,
+      });
+      return json(result);
+    },
+  );
+
+  server.registerTool(
+    "release_record",
+    {
+      description:
+        "WHEN packages/tools/src/release/apply.ts has finished applying a candidate's patch — " +
+        "successfully, through the gate and the repository's own release procedure, or not: " +
+        "records the outcome release_apply's own applying attempt was left waiting for. On " +
+        "status: released, requires release_ref (the tag/ref the release procedure created) and " +
+        "released_subject_version_id (the new subject version the CLI resolved, typically by " +
+        "calling plugin_locate again after the real release), moves the release_attempt to " +
+        "released and the candidate to released. On status: failed, requires failure_tail (the " +
+        "failing command's own output tail) and moves the release_attempt to failed — the " +
+        "repository is already back at its pre-apply commit by the time this is called, per the " +
+        "CLI's own contract; this only records that it happened. RETURNS { status, " +
+        "release_attempt_id, released_subject_version_id, release_ref }. REFUSES not_applying — " +
+        "an unknown release_attempt_id, or one that is not currently applying (already " +
+        "released/refused/failed, or release_apply was never called for it) — a released call " +
+        "naming a released_subject_version_id whose plugin does not match the candidate's own " +
+        "base subject's plugin, a released call missing release_ref or " +
+        "released_subject_version_id, a failed call missing failure_tail, and a deployment with " +
+        "no platform database. A mutator: writes through the FR-59 idempotency ledger.",
+      inputSchema: {
+        release_attempt_id: z.string(),
+        status: z.enum(["released", "failed"]),
+        release_ref: z.string().optional(),
+        released_subject_version_id: z.string().optional(),
+        failure_tail: z.string().optional(),
+        idempotency_key: z.string().min(1),
+      },
+    },
+    async ({ release_attempt_id, status, release_ref, released_subject_version_id, failure_tail, idempotency_key }) => {
+      const p = db();
+      if (!p) return noDb();
+
+      const principal = parseCaller(requestHeaders()).email;
+      const outcome: IdempotencyOutcome<RecordResult> = await withIdempotency(
+        principal, "release_record", idempotency_key,
+        { release_attempt_id, status, release_ref, released_subject_version_id, failure_tail },
+        (client) => recordRelease(client, {
+          release_attempt_id, status,
+          release_ref: release_ref ?? null,
+          released_subject_version_id: released_subject_version_id ?? null,
+          failure_tail: failure_tail ?? null,
+        }),
+      );
+      const result = outcome.replayed
+        ? await describeRecordOutcomeForReplay(p, outcome.result_id)
+        : outcome.result;
+
+      logActivity(await userRoot(), null, {
+        user: principal, action: "release_record", release_attempt_id: result.release_attempt_id,
+        status: result.status, replayed: outcome.replayed,
+      });
+      return json(result);
     },
   );
 }

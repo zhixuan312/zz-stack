@@ -1,7 +1,7 @@
 {
   "name": "sdlc",
   "description": "Software delivery: explore the ground, agree a spec, audit it, plan it, audit that, build it, review the code, then close it and hand it to zz-handover.",
-  "version": "0.75.2+7801e39c",
+  "version": "0.75.2+c8bc1234",
   "author": {
     "name": "ZZ Stack",
     "url": "https://github.com/zhixuan312/zz-stack"

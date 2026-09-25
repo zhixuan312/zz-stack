@@ -1,7 +1,8 @@
 /**
  * `candidate_validate`'s own planning + statistics (Task I-19, AC-40.1, AC-41.1): everything
- * between `candidate_record`'s ledger row and a stored `zz.candidate_evaluation` — build+gate
- * isolation (`candidate-build.ts`), which replay runs are still missing, and the paired
+ * between `candidate_record`'s ledger row and a stored `zz.candidate_evaluation` — the build it
+ * asks the local CLI for and consumes (`candidate-build-rules.ts`), which replay runs are still
+ * missing, and the paired
  * bootstrap decision (`stats.ts`) once every validation case has enough of them. `candidates.ts`
  * keeps only the tool's own registration and description; every decision this contract asks for
  * lives here, so it can be read and reasoned about on its own.
@@ -30,14 +31,16 @@
  * plans its own runs as counts, never case ids, so the per-case `runs_required` shape stays here.
  *
  * The leakage screen (FR-38, `candidate-leakage.ts`) runs here, on the first call against a
- * `recorded` candidate, before it is built — `screenBeforeBuild`.
+ * `recorded` candidate, before any build is asked for — `screenBeforeBuild`.
+ *
+ * The status walk this file owns: `recorded` → (screen) → `awaiting_build`, answered with
+ * `build_required`; the CLI records the build (`candidate_build_record`, candidate-build.ts); the
+ * next call consumes it → `valid` (and plans replays in the same call), `invalid`, or back to
+ * `recorded` on a timeout. `validating` is only this call's own hold while it works.
  */
 import type pg from "pg";
 
-import {
-  applyCandidatePatch, buildAndGate, createCandidateWorktree, discoverRepoRoot,
-  linkWorkspaceDependencies, removeCandidateWorktree, VALIDATING_LEASE_MS, type BuildOutcome, type Worktree,
-} from "./candidate-build.js";
+import { BUILD_LEASE_MS, buildRequired, judgeBuild, VALIDATING_LEASE_MS } from "./candidate-build-rules.js";
 import { loadDimensions } from "./evaluate.js";
 import type { GuardrailResult } from "./evaluate-measures.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
@@ -56,12 +59,16 @@ interface CandidateRow {
   readonly improvement_run_id: string;
   readonly base_subject_version_id: string;
   readonly complexity_delta: number;
+  readonly patch_digest: string;
+  readonly build_requested_at: Date | null;
+  readonly build_recorded_at: Date | null;
 }
 
 async function loadCandidate(p: pg.Pool, candidateId: string): Promise<CandidateRow | null> {
   const row = (await p.query<CandidateRow>(`
     select id::text as id, status, improvement_run_id::text as improvement_run_id,
-           base_subject_version_id::text as base_subject_version_id, complexity_delta
+           base_subject_version_id::text as base_subject_version_id, complexity_delta, patch_digest,
+           build_requested_at, build_recorded_at
       from zz.candidate where id = $1::uuid`, [candidateId])).rows[0];
   return row ?? null;
 }
@@ -344,59 +351,12 @@ export function summariseDimensions(baseline: readonly SideRun[], candidateSide:
 }
 
 // -------------------------------------------------------------------------------------------
-// Build + gate isolation.
-
-/** `null` on success; an error object on failure — the caller returns it to the MCP client
- *  as-is, never through `withIdempotency` (the contract's own "never replayed"): a build/gate
- *  failure is reported fresh on every call, not cached as a ledger replay. Writes NO status
- *  itself: the candidate stays `validating` (the caller's lock) until the caller's own `finally`
- *  writes the resting status — a `valid` written here, mid-call, dropped the lock while the rest
- *  of the call still ran, and let a second call in. `retryable` tells the caller whether the
- *  candidate itself was judged (`invalid` — a real build/gate failure) or whether nothing was
- *  judged at all (a timeout — not this candidate's fault, so it goes back to `recorded`). */
-async function buildCandidateInIsolation(
-  p: pg.Pool, candidate: CandidateRow,
-): Promise<{ error: string; retryable: boolean } | null> {
-  const repoRoot = discoverRepoRoot();
-  if (!repoRoot) {
-    return { error: "ERROR: this deployment has no git checkout to build a candidate's own worktree from", retryable: true };
-  }
-  const patchRow = (await p.query<{ diff: string | null }>(
-    "select patchset->>'diff' as diff from zz.candidate where id = $1::uuid", [candidate.id])).rows[0];
-  if (!patchRow?.diff) {
-    return { error: `ERROR: candidate ${candidate.id} carries no patchset.diff to build`, retryable: true };
-  }
-
-  let worktree: Worktree | undefined;
-  try {
-    worktree = createCandidateWorktree(repoRoot, candidate.id);
-    linkWorkspaceDependencies(repoRoot, worktree.path);
-    applyCandidatePatch(worktree.path, patchRow.diff);
-    const attempt: BuildOutcome = buildAndGate(worktree.path);
-    if (attempt.ok) return null;
-    if (attempt.stage === "timeout") {
-      // Not the candidate's fault — refuse rather than mark it invalid on an environment that
-      // never finished judging it. retryable: true, so the caller's own CAS lock (fix 5) hands
-      // the candidate back to 'recorded' rather than stranding it 'validating'.
-      return {
-        error: `ERROR: ${attempt.command} did not finish in time building candidate ${candidate.id} — try again`,
-        retryable: true,
-      };
-    }
-    return {
-      error: `ERROR: candidate ${candidate.id} failed its own ${attempt.stage}, which invalidates it. ` +
-        `Failing command tail follows:\n${attempt.output}`,
-      retryable: false,
-    };
-  } finally {
-    if (worktree) removeCandidateWorktree(repoRoot, worktree);
-  }
-}
+// Leakage screen, the call's hold, and the build it asks for.
 
 /** Screens a `recorded` candidate for leakage (candidate-leakage.ts) and records the answer.
  *  Returns the refusal text when the critic says `yes` — the caller then rests the candidate at
  *  `rejected_precheck`, with the reason on `expected_effect._rejection_reason` where
- *  `candidate_search` reports it from — or null to go on to the build. */
+ *  `candidate_search` reports it from — or null to go on to ask for the build. */
 async function screenBeforeBuild(p: pg.Pool, candidateId: string, principal: string): Promise<string | null> {
   const row = (await p.query<{
     hypothesis: string; diff: string | null; touched_components: TouchedComponent[] | null; patch_digest: string;
@@ -417,40 +377,48 @@ async function screenBeforeBuild(p: pg.Pool, candidateId: string, principal: str
   return `ERROR: candidate ${candidateId} is rejected_precheck — ${verdict.reason}`;
 }
 
-/** Fix 5: `candidate_validate` never wrote `'validating'` (a legal status per migration 002's own
- *  check constraint, but nothing before this fix ever set it), so two concurrent calls against
- *  the same `recorded` candidate both read `status = 'recorded'`, both called
- *  `buildCandidateInIsolation`, and both raced `createCandidateWorktree`'s own deterministic
- *  (`candidateId`-keyed) path — the second `git worktree add` colliding with, or silently
- *  clobbering, the first's in-flight build.
- *
- *  A single `WITH ... FOR UPDATE` statement — one round trip, one implicit transaction, no
- *  explicit `BEGIN` spanning the (potentially ten-plus-minute) build — is the compare-and-set:
- *  it locks the row, reads its CURRENT status, and only WRITES `'validating'` when that status
- *  is still `recorded` or `valid`. A concurrent second caller's own attempt at the same statement
- *  blocks on the row lock until the first commits, then finds zero matching rows (the first
- *  caller already moved it to `'validating'`) and updates nothing — `null` here, a named refusal
- *  in the caller, never a silent block for the whole build's duration. */
-async function acquireValidatingLock(p: pg.Pool, candidateId: string): Promise<"recorded" | "valid" | null> {
-  const row = (await p.query<{ prior_status: string }>(`
+/** What the call locked the candidate from: `recorded` (screen it, ask for its build), `valid`
+ *  (plan and reduce), or `built` — an `awaiting_build` candidate whose build the CLI recorded,
+ *  taken together with that record, which the same statement clears so it is consumed once. */
+type Prior =
+  | { readonly status: "recorded" | "valid" }
+  | { readonly status: "built"; readonly build: unknown };
+
+/** Fix 5: two concurrent calls against the same candidate must not both proceed. A single
+ *  `WITH ... FOR UPDATE` statement — one round trip, one implicit transaction, no explicit
+ *  `BEGIN` spanning the leakage question or the planning — is the compare-and-set: it locks the
+ *  row, reads its CURRENT status, and only writes `'validating'` when that status is still one
+ *  this call may take. A concurrent second caller blocks on the row lock until the first commits,
+ *  then finds zero matching rows and updates nothing — `null` here, a named refusal in the
+ *  caller. The build columns are cleared in the same write: a recorded build is read exactly
+ *  once, by the call that took it. */
+async function acquireValidatingLock(p: pg.Pool, candidateId: string): Promise<Prior | null> {
+  const row = (await p.query<{ prior_status: string; build_result: unknown }>(`
     with prior as (
-      select status from zz.candidate where id = $1::uuid and status in ('recorded', 'valid') for update
+      select status, build_result from zz.candidate
+       where id = $1::uuid
+         and (status in ('recorded', 'valid') or (status = 'awaiting_build' and build_recorded_at is not null))
+         for update
     )
-    update zz.candidate c set status = 'validating', validating_since = now()
+    update zz.candidate c
+       set status = 'validating', validating_since = now(),
+           build_requested_at = null, build_requested_by = null, build_result = null, build_recorded_at = null
       from prior
      where c.id = $1::uuid
-    returning prior.status as prior_status`, [candidateId])).rows[0];
+    returning prior.status as prior_status, prior.build_result`, [candidateId])).rows[0];
   if (!row) return null;
-  return row.prior_status as "recorded" | "valid";
+  if (row.prior_status === "awaiting_build") return { status: "built", build: row.build_result };
+  return { status: row.prior_status as "recorded" | "valid" };
 }
 
-/** The lease on `validating` (migration 002's `validating_since`): the hold above is released by
- *  the call's own `finally`, which a process killed mid-build (SIGKILL, a redeploy) never runs.
- *  A hold older than `VALIDATING_LEASE_MS` — longer than any build and gate can take — is such a
- *  process, and its candidate goes back to where it can be validated again: `valid` when its
- *  build already passed (a stored validation verdict exists), `recorded` otherwise, which
- *  screens and builds it again. Scoped to one candidate (`candidate_validate`) or one run
- *  (`candidate_search`, whose generations never settle while a candidate is `validating`). */
+/** The two leases this file keeps (migration 002). `validating`: the hold above is released by
+ *  the call's own `finally`, which a process killed mid-call (SIGKILL, a redeploy) never runs; a
+ *  hold older than `VALIDATING_LEASE_MS` is such a process, and its candidate goes back to `valid`
+ *  when a stored validation verdict exists, `recorded` otherwise. `awaiting_build`: a build lease
+ *  (`BUILD_LEASE_MS`) that ended with nothing recorded goes back to `recorded`, so the next call
+ *  asks for a fresh build — a recorded build is kept until a call consumes it. Scoped to one
+ *  candidate (`candidate_validate`) or one run (`candidate_search`, whose generations never
+ *  settle while a candidate is held). */
 export async function releaseStaleValidating(
   p: pg.Pool, scope: { readonly candidateId: string } | { readonly improvementRunId: string },
 ): Promise<void> {
@@ -464,6 +432,12 @@ export async function releaseStaleValidating(
      where c.${column} = $1::uuid and c.status = 'validating'
        and c.validating_since < now() - make_interval(secs => $2)`,
     [id, VALIDATING_LEASE_MS / 1000]);
+  await p.query(`
+    update zz.candidate c
+       set status = 'recorded', build_requested_at = null, build_requested_by = null
+     where c.${column} = $1::uuid and c.status = 'awaiting_build' and c.build_recorded_at is null
+       and c.build_requested_at < now() - make_interval(secs => $2)`,
+    [id, BUILD_LEASE_MS / 1000]);
 }
 
 // -------------------------------------------------------------------------------------------
@@ -489,25 +463,32 @@ interface ValidateOutcome {
  *  `checks/eval-paired-stats.ts` uses. */
 const RESAMPLES = 2000;
 
+type BuildRequired = ReturnType<typeof buildRequired>;
+
 export async function validateCandidate(
   p: pg.Pool, candidateId: string, idempotencyKey: string, principal: string,
-): Promise<ValidateOutcome | { error: string }> {
+): Promise<ValidateOutcome | BuildRequired | { error: string }> {
   // Before the status gate below, so a hold whose process died is repaired rather than refused.
   await releaseStaleValidating(p, { candidateId });
   const candidate = await loadCandidate(p, candidateId);
   if (!candidate) return { error: `ERROR: no candidate ${candidateId}` };
-  if (candidate.status !== "recorded" && candidate.status !== "valid") {
+  // Asked for, not yet recorded: the same instruction again, never a refusal — the agent that
+  // lost the first answer reads the command from this one.
+  if (candidate.status === "awaiting_build" && !candidate.build_recorded_at && candidate.build_requested_at) {
+    return buildRequired(candidateId, candidate.patch_digest, new Date(candidate.build_requested_at));
+  }
+  if (!["recorded", "valid", "awaiting_build"].includes(candidate.status)) {
     return {
-      error: `ERROR: candidate_validate is only callable for status in (recorded, valid); ` +
+      error: `ERROR: candidate_validate is only callable for status in (recorded, awaiting_build, valid); ` +
         `candidate ${candidateId} is ${candidate.status}`,
     };
   }
 
-  // Fix 5: locks the row for the rest of this call (build, plan, statistics, store) against a
-  // second concurrent candidate_validate on the SAME candidate — see acquireValidatingLock's own
-  // note for why this is one statement rather than a held transaction.
-  const priorStatus = await acquireValidatingLock(p, candidateId);
-  if (!priorStatus) {
+  // Fix 5: locks the row for the rest of this call (screen, consume, plan, statistics, store)
+  // against a second concurrent candidate_validate on the SAME candidate — see
+  // acquireValidatingLock's own note for why this is one statement rather than a held transaction.
+  const prior = await acquireValidatingLock(p, candidateId);
+  if (!prior) {
     const now = await loadCandidate(p, candidateId);
     return {
       error: `ERROR: candidate ${candidateId} is not available for candidate_validate right now ` +
@@ -518,20 +499,28 @@ export async function validateCandidate(
   // What status this call leaves the candidate in when it returns, written in the `finally`
   // below — defaults to what it was before this call locked it (the safe fallback on a thrown
   // exception this function did not anticipate), and is narrowed as the call actually progresses.
-  let finalStatus: string = priorStatus;
+  // A consumed build that a thrown exception interrupts goes back to `recorded`: its record is
+  // already cleared, and a candidate is never `valid` on a build nobody judged.
+  let finalStatus: string = prior.status === "built" ? "recorded" : prior.status;
   try {
-    if (priorStatus === "recorded") {
-      // FR-38's leakage screen, before anything is built — see candidate-leakage.ts for why a
-      // clear `yes` alone rejects here while proof holds the stricter bar.
+    if (prior.status === "recorded") {
+      // FR-38's leakage screen, before any build is asked for — see candidate-leakage.ts for why
+      // a clear `yes` alone rejects here while proof holds the stricter bar.
       const leaked = await screenBeforeBuild(p, candidate.id, principal);
       if (leaked) {
         finalStatus = "rejected_precheck";
         return { error: leaked };
       }
-      const built = await buildCandidateInIsolation(p, candidate);
-      if (built) {
-        finalStatus = built.retryable ? "recorded" : "invalid";
-        return { error: built.error };
+      // The build itself is the local CLI's (candidate-build-rules.ts's module note); the
+      // `finally` below starts its lease, held by this caller.
+      finalStatus = "awaiting_build";
+      return buildRequired(candidateId, candidate.patch_digest, new Date());
+    }
+    if (prior.status === "built") {
+      const verdict = judgeBuild(candidateId, candidate.patch_digest, prior.build);
+      if (verdict.next !== "valid") {
+        finalStatus = verdict.next;
+        return { error: verdict.error };
       }
     }
     // Written by the `finally` below, never mid-call: the row stays 'validating' — locked
@@ -626,8 +615,12 @@ export async function validateCandidate(
     // The ONE status write this call makes: whatever it decided the candidate's resting status
     // is — and the one thing standing between a thrown exception (a DB error mid-plan, say) and
     // a candidate stuck 'validating' forever.
-    await p.query(
-      "update zz.candidate set status = $2, validating_since = null where id = $1::uuid and status = 'validating'",
-      [candidateId, finalStatus]);
+    await p.query(`
+      update zz.candidate
+         set status = $2::text, validating_since = null,
+             build_requested_at = case when $2::text = 'awaiting_build' then now() end,
+             build_requested_by = case when $2::text = 'awaiting_build' then $3::text end
+       where id = $1::uuid and status = 'validating'`,
+      [candidateId, finalStatus, principal]);
   }
 }

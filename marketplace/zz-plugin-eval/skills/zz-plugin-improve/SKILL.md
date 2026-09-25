@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-improve
-version: 0.7
+version: 0.9
 description: Stage 7 of zz-plugin-eval (IMPROVE). Search for a proven candidate patch against plugin-owned findings — propose, validate by replay, search to one deterministic winner, prove it sealed — then hand off to promotion for an owned subject or write an owner-facing proposal for one this team cannot release.
 when_to_use: "The seventh stage of zz-plugin-eval, after EXPLAIN. Runs for every branch except one with no plugin-owned actionable finding at all, which skips it with one call and closes. REQUIRES a shell-capable runtime (Claude Code) that can run npm/zz-tool commands and launch isolated sessions — refuses to start anywhere else. Every stage before this one runs with no shell at all (FR-54)."
 ---
@@ -9,8 +9,8 @@ when_to_use: "The seventh stage of zz-plugin-eval, after EXPLAIN. Runs for every
 
 **Stop here if your runtime cannot run a shell command.** Everything up through EXPLAIN is
 MCP-only calls a bare client can make (FR-54). From here on, replay and candidate execution are
-launched BY the agent running this stage — `npm run replay`, `zz-tool release-apply`, `zz-tool
-release-rollback` — and none of that exists without a shell. If you are running in a context with
+launched BY the agent running this stage — `npm run candidate-build`, `npm run replay`,
+`zz-tool release-apply`, `zz-tool release-rollback` — and none of that exists without a shell. If you are running in a context with
 no shell access, stop and say so; do not simulate what these commands would do.
 
 ## First: is there anything to search for?
@@ -104,20 +104,48 @@ candidate_validate(candidate_id, idempotency_key)
 
 **First call on a `recorded` candidate:** asks the leakage critic first (FR-38) — a patch that
 reads as hard-coded against evidence it should not have, or a rejected hypothesis restated,
-becomes `rejected_precheck` and the call REFUSES with the critic's reason. Otherwise it builds its
-own worktree from this checkout, applies the patchset, runs the repository's build and gate in
-isolation. **A build/gate failure moves the
-candidate to `invalid` and REFUSES with the failing command's own output tail** — never
-replayed, never partially scored; fix it and record a fresh candidate (`invalid` is not
-re-triable in place).
+becomes `rejected_precheck` and the call REFUSES with the critic's reason. Otherwise the candidate
+moves to `awaiting_build` and the call RETURNS `{ candidate_id, status: 'awaiting_build',
+build_required: { patch_digest, lease_expires_at, command } }`. **The platform never builds a
+candidate** — you do, locally, with the command it printed:
 
-**Once valid (or on a later call):** reads every completed, scored validation-split
+```
+npm run candidate-build -- --candidate <candidate_id> --repo <path-to-a-checkout>
+```
+
+It needs the gateway (`ZZ_URL` or `--gateway <url>`) and your own platform token (`$ZZ_TOKEN`,
+`$ZZ_TOKEN_FILE` or `~/.zz/token`) — nothing on the command line. It reads the candidate
+(`candidate_read`), fetches the base subject exactly as the replay launcher does below (a catalog
+plugin: `--repo` cloned at `v<declared_version>`; a third-party one: its captured source), applies
+the patch, and for a catalog plugin installs the clone's own locked dependencies (`npm ci`) and
+runs the repository's build and gate in that clone inside the same OS sandbox a replay session
+runs in; for a third-party plugin the check is that the patch applies cleanly. Before cloning it
+checks this host can run every tool the build and gate need (`npm`, `git`, `docker compose`, …)
+inside that sandbox. It records the result itself (`candidate_build_record`) and exits 0 on a
+passed build, 1 on a failed one it recorded, 2 when it recorded nothing — no working sandbox, a
+tool the host check could not run, a release tag `--repo` lacks, or a refusal; fix that and run
+it again. Only you — the principal whose
+`candidate_validate` asked — can record the build, and only within the lease (60 minutes); a lease
+that ends with nothing recorded returns the candidate to `recorded`, and the next
+`candidate_validate` asks again. Calling `candidate_validate` before the build is recorded just
+prints the same `build_required` again.
+
+**Then call `candidate_validate` again.** It consumes the recorded build: **a failed apply,
+build or gate moves the candidate to `invalid` and REFUSES with the failing command's own output
+tail** — never replayed, never partially scored; fix it and record a fresh candidate (`invalid`
+is not re-triable in place). A build that timed out, or that a problem on this host stopped
+(`stage: host` — a docker daemon or registry out of reach), returns it to `recorded`: nothing
+about the patch was judged. Fix the host, validate again and rerun the build. A passed build makes it `valid`, and the same call goes on as below.
+
+**Once valid (the call that consumed a passed build, or any later call):** reads every completed, scored validation-split
 `zz.replay_run`, pairs candidate against baseline by case, and — once every case has at least
 `minRepeats` completed runs on BOTH sides — computes the paired bootstrap verdict. Otherwise
 RETURNS `{ case_set_id, candidate_evaluation_id: null, verdict: null, runs_required: [{case_set_id,
 case_id, side, subject_version_id, candidate_id, count}] }` — the exact `(case, side)` pairs still
-short. **This tool never launches a replay itself.** For each `runs_required` entry, every
-argument below is that entry's own field (`repeats` is its `count`):
+short. **This tool never launches a replay itself.** Call `replay_start` once per
+`runs_required` entry, with `repeats: count` — one call is one run, and the next
+`candidate_validate` asks again for what is still short. Every argument below is that entry's own
+field:
 
 ```
 replay_start(case_set_id, subject_version_id? | candidate_id?, split: "validation", case_id, repeats, context: "search", idempotency_key)
@@ -271,6 +299,11 @@ opened, so `proposal_prepare` below can still report it, whatever proof said. A 
 candidate with NO release owners reaches `status: closed` (a proposal-eligible outcome, not
 nothing-to-promote) either way — leave that one for `proposal_prepare` below.
 
+**Lost the `verifier_token` (a new conversation, a lost response)?** Call
+`candidate_prove(candidate_id, rotate_token: true, idempotency_key)`: it revokes the token and
+returns a new one for the same allocation, and the proof runs already registered stay counted.
+Reach for `abandon` only when the allocation itself cannot finish.
+
 **`abandon: true`** recovers an allocation stuck `proving` because you lost the response that
 opened it — no `verifier_token` holder, nothing else can resolve it. It revokes the token,
 cancels whatever proof runs it spawned, and resolves
@@ -319,6 +352,9 @@ launcher command would have done.
 ❌ **Searching on an eval_run that bound no case set.** `candidate_validate` refuses every
 candidate from it; the case set is EVALUATE's to build and bind, and a run without one goes back
 there. It also refuses a case set with no replayable validation-split case.
+
+❌ **Waiting for `candidate_validate` to build the candidate.** It never does; run the
+`npm run candidate-build` command its `build_required` prints, then call it again.
 
 ❌ **Closing a replay_run the launcher already closed.** `npm run replay` always calls
 `replay_close` itself, success or failure.

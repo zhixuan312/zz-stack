@@ -57,6 +57,7 @@ import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from ".
 import { writeBranchFacts } from "./protocol.js";
 import { releaseActorRefusal } from "./release-record.js";
 import { verifyReduction } from "./release-rules.js";
+import { rotateVerifierToken } from "./replay-verifier.js";
 import { Refusal } from "../refusal.js";
 
 // -------------------------------------------------------------------------------------------
@@ -295,9 +296,29 @@ function terminalOutcome(attempt: AttemptRow): VerifyOutcome {
  *  second column to CAS against — see the module note on why `verification` alone carries this
  *  file's whole state. */
 async function ensureVerifierToken(
-  attempt: AttemptRow, caseSetId: string, idempotencyKey: string, principal: string,
+  attempt: AttemptRow, caseSetId: string, idempotencyKey: string, principal: string, rotate: boolean,
 ): Promise<{ token: string | null; alreadyIssued: boolean }> {
-  if (attempt.verification?.verifier_token_id) return { token: null, alreadyIssued: true };
+  const current = attempt.verification?.verifier_token_id;
+  if (current && rotate) {
+    // A conversation that lost the plaintext gets a new token for the same allocation, the old
+    // one revoked — never the old hash back. The caller already passed releaseActorRefusal.
+    const rotated: IdempotencyOutcome<{ id: string; token: string }> = await withIdempotency(
+      principal, "release_verify", idempotencyKey, { release_attempt_id: attempt.id, phase: "rotate" },
+      async (client): Promise<MutatorOutcome<{ id: string; token: string }>> => {
+        const fresh = await rotateVerifierToken(client, current);
+        if (!fresh) {
+          throw new Refusal(`ERROR: release_attempt ${attempt.id}'s verifier_token is no longer live (revoked or ` +
+            "expired) — nothing to rotate; verification ends by its own liveness bound");
+        }
+        await client.query(
+          `update zz.release_attempt set verification = coalesce(verification, '{}'::jsonb) || $2::jsonb where id = $1::uuid`,
+          [attempt.id, JSON.stringify({ verifier_token_id: fresh.id })]);
+        return { result: fresh, result_table: "zz.replay_verifier_token", result_id: fresh.id };
+      },
+    );
+    return { token: rotated.replayed ? null : rotated.result.token, alreadyIssued: rotated.replayed };
+  }
+  if (current) return { token: null, alreadyIssued: true };
 
   const opened: IdempotencyOutcome<{ id: string; token: string }> = await withIdempotency(
     principal, "release_verify", idempotencyKey, { release_attempt_id: attempt.id, phase: "open" },
@@ -416,7 +437,7 @@ const RESAMPLES = 2000;
 
 export async function verifyRelease(
   p: pg.Pool, releaseAttemptId: string, idempotencyKey: string, principal: string,
-  initiative?: string,
+  initiative?: string, rotateToken = false,
 ): Promise<VerifyOutcome | { error: string }> {
   const attempt = await loadAttempt(p, releaseAttemptId);
   if (!attempt) return { error: `ERROR: no release_attempt ${releaseAttemptId}` };
@@ -502,7 +523,7 @@ export async function verifyRelease(
         statistics: { runs_required: plan.runs_required, liveness_bound_reached: true },
       });
     }
-    const ensured = await ensureVerifierToken(attempt, ctx.caseSetId, idempotencyKey, principal);
+    const ensured = await ensureVerifierToken(attempt, ctx.caseSetId, idempotencyKey, principal, rotateToken);
     return {
       verdict: null, reason: null, evidence: null, rollback_plan: null,
       runs_required: plan.runs_required, ...subjects, verifier_token: ensured.token,

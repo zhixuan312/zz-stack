@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-discover
-version: 0.1
+version: 0.2
 description: Stage 3 of zz-plugin-eval (DISCOVER). Mine one OBSERVE snapshot's own real refusals and stage returns for candidate failure modes, before any protocol exists — so DEFINE/QUALIFY freezes questions worth asking, not questions invented from nothing.
 when_to_use: "The third stage of zz-plugin-eval, after OBSERVE has written an observation_snapshot_id. Always run before DEFINE/QUALIFY on a subject whose protocol is being created or revised — reuse skips it. No shell required."
 ---
@@ -10,8 +10,13 @@ when_to_use: "The third stage of zz-plugin-eval, after OBSERVE has written an ob
 One call, over one snapshot:
 
 ```
-failure_discover(observation_snapshot_id, idempotency_key)
+failure_discover(observation_snapshot_id, idempotency_key, initiative)
 ```
+
+`observation_snapshot_id` is `initiative_status`'s `records["zz-plugin-observe"]` in a new
+conversation. Pass `initiative`: it records that DISCOVER ran, which is what moves
+`initiative_status`'s `next_move` on to DEFINE/QUALIFY. Run it once per snapshot — a second call
+under a new key mints a second, duplicate candidate set.
 
 **Why this runs before a protocol exists, not after.** A protocol's `failureTaxonomy` is
 supposed to name the ways this plugin actually goes wrong. Writing it from imagination, then

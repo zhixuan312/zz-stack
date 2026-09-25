@@ -300,3 +300,45 @@ export function unopenedRefusal(root: string, relPath: string): string | null {
     "supports, and documents, gates, approvals and closing all still work without one."
   );
 }
+
+/** What each `produces: "record"` stage of an initiative minted — the ids a later stage needs
+ *  and, being in no document, could otherwise only find in the conversation that ran it. A stage
+ *  that starts in a new conversation reads them back through `initiative_status` (`records`),
+ *  and `next_move` names the first record stage that has none yet.
+ *
+ *  Keyed by stage, then by id name. Latest wins, per id: a stage run again (a second profile,
+ *  a re-score) supersedes what it recorded before, which is what "resume from the initiative"
+ *  must mean. Nothing here decides a branch — branch facts are `_facts.json`, append-only.
+ *
+ *  DELIBERATE: not exported. `recordsFor`/`writeStageRecord` are the only two touching it. */
+const RECORDS_FILE = "_records.json";
+
+export function recordsFor(root: string, initiative: string): Record<string, Record<string, string>> {
+  const file = join(root, initiative, RECORDS_FILE);
+  if (!existsSync(file)) return {};
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const out: Record<string, Record<string, string>> = {};
+    for (const [stage, ids] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!ids || typeof ids !== "object" || Array.isArray(ids)) continue;
+      out[stage] = Object.fromEntries(Object.entries(ids as Record<string, unknown>)
+        .filter((e): e is [string, string] => typeof e[1] === "string"));
+    }
+    return out;
+  } catch {
+    // Unreadable is "nothing recorded": every id in it can be minted again by the stage that
+    // owns it, unlike a branch fact, whose loss would let the opposite branch be recorded.
+    return {};
+  }
+}
+
+/** Merge `ids` into `stage`'s record. Temp file then rename, as `writeFacts` does. */
+export function writeStageRecord(root: string, initiative: string, stage: string, ids: Record<string, string>): void {
+  const records = recordsFor(root, initiative);
+  records[stage] = { ...(records[stage] ?? {}), ...ids };
+  const file = join(root, initiative, RECORDS_FILE);
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(records, null, 2)}\n`);
+  renameSync(tmp, file);
+}

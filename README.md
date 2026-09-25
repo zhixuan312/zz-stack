@@ -188,7 +188,14 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             it refuses to run against production by name, because it writes an initiative,
             four documents, two sources and a close. Not a gate check: the gate is offline and
             proves things about the source, and this asks whether a run recorded through the
-            platform reaches a grant, which no offline check can answer), manifests.ts (where the packages are, read by
+            platform reaches a grant, which no offline check can answer),
+            eval-flow-e2e.ts (walks the whole zz-plugin-eval flow, zz-core as the subject,
+            through the real doors of a scratch stack it stands up and tears down — every
+            stage in a fresh conversation, every id from a call or the initiative, replays
+            through the real launcher and a release and rollback through the real CLIs; the
+            two model endpoints and the session binary are stubs. Needs docker, so not a gate
+            check; eval-flow-e2e/ holds the stack, the stub, the stages and the release
+            commands), manifests.ts (where the packages are, read by
             both), mutation-run.ts (run on demand, never by the gate: plants a
             defect in what each gate check examines, in a disposable copy of this
             checkout, and records whether the check noticed — mutation/ holds the

@@ -31,6 +31,7 @@ import { entryOf, serversOf } from "./plugin-eval.js";
 import { retractedVersions } from "./release-retracted.js";
 import { newestVersion } from "./release-rules.js";
 import { resolveSource } from "./subject-source.js";
+import { recordStage } from "./stage-record.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
@@ -230,9 +231,12 @@ export function registerSubjectTools(server: McpServer): void {
         plugin: z.string(),
         version: z.string().optional().describe("Omit for the newest released version."),
         idempotency_key: z.string().min(1),
+        initiative: z.string().optional().describe(
+          "The initiative this evaluation runs in: records subject_version_id as its IDENTIFY record, " +
+          "which initiative_status hands to a stage started in a new conversation."),
       },
     },
-    async ({ plugin, version, idempotency_key }) => {
+    async ({ plugin, version, idempotency_key, initiative }) => {
       const pool = db();
       if (!pool) return noDb();
 
@@ -271,7 +275,8 @@ export function registerSubjectTools(server: McpServer): void {
         { user: principal, action: "plugin_locate", plugin, version: resolved.declaredVersion,
           subject_version_id: subjectVersionId, replayed: outcome.replayed });
 
-      return json(await subjectResponse(pool, subjectVersionId));
+      const recorded = await recordStage(initiative, "zz-plugin-identify", { subject_version_id: subjectVersionId });
+      return json({ ...await subjectResponse(pool, subjectVersionId), ...recorded });
     },
   );
 
@@ -303,6 +308,8 @@ export function registerSubjectTools(server: McpServer): void {
         source_kind: z.enum(["local_dir", "git", "package"]),
         source_locator: z.string(),
         idempotency_key: z.string().min(1),
+        initiative: z.string().optional().describe(
+          "The initiative this evaluation runs in: records subject_version_id as its IDENTIFY record."),
         // Not accepted — named here only so a caller that supplies one is not silently
         // stripped before the handler below can refuse it. See the contract's "authority
         // field" refusal.
@@ -312,7 +319,7 @@ export function registerSubjectTools(server: McpServer): void {
         release_owners: z.unknown().optional(),
       },
     },
-    async ({ name, version, source_kind, source_locator, idempotency_key,
+    async ({ name, version, source_kind, source_locator, idempotency_key, initiative,
              origin, owner_team, evolvable, release_owners }) => {
       if (origin !== undefined || owner_team !== undefined || evolvable !== undefined
           || release_owners !== undefined) {
@@ -401,7 +408,8 @@ export function registerSubjectTools(server: McpServer): void {
         { user: principal, action: "plugin_register", plugin: name, version,
           subject_version_id: subjectVersionId, replayed: outcome.replayed });
 
-      return json(await subjectResponse(pool, subjectVersionId));
+      const recorded = await recordStage(initiative, "zz-plugin-identify", { subject_version_id: subjectVersionId });
+      return json({ ...await subjectResponse(pool, subjectVersionId), ...recorded });
     },
   );
 }

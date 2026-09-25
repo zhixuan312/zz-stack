@@ -12,7 +12,7 @@
  *     patches touch disjoint files (FR-39, this task's own invariant: "composition only merges
  *     candidates touching disjoint files"), recorded exactly the way `candidate_record`
  *     (`candidates.ts`) records a proposed one — its own digest, its own `parent_ids`, `status:
- *     'recorded'`, ready for the SAME `candidate_validate` call (leakage screen, build, replay)
+ *     'recorded'`, ready for the SAME `candidate_validate` calls (leakage screen, local build, replay)
  *     any other candidate goes through. It joins the search's current generation
  *     (`search-rules.ts`), never "its parents' generation + 1" — composition depth is not a
  *     search round — and only when `generationCapRefusal` would let `candidate_record` add one
@@ -298,6 +298,8 @@ interface ViewCore {
    *  generation a new one joins, 0 once `maxGenerations` is used up — the same rule
    *  `generationCapRefusal` refuses by, so the number never promises a slot the record refuses. */
   readonly edit_budget: number;
+  /** The generation a newly recorded candidate joins — `generation` + 1 once it has settled. */
+  readonly joins: number;
 }
 
 function generationOf(
@@ -352,7 +354,7 @@ function computeViewCore(
   const explore_components = stalled ? untouchedComponents(manifest, candidates) : [];
 
   const edit_budget = generationsExhausted ? 0 : Math.max(policy.maxCandidatesPerGeneration - gen.nextCount, 0);
-  return { generation, stopped, frontier_ids, rejected, selected_id, explore_components, edit_budget };
+  return { generation, stopped, frontier_ids, rejected, selected_id, explore_components, edit_budget, joins: gen.next };
 }
 
 function nextGuidance(view: ViewCore, status: string, policy: SearchPolicy): string {
@@ -371,9 +373,13 @@ function nextGuidance(view: ViewCore, status: string, policy: SearchPolicy): str
       `for generation ${view.generation + 1}, directed at untouched components: ` +
       `${view.explore_components.join(", ")}.`;
   }
-  return `generation ${view.generation}: propose up to ${policy.maxCandidatesPerGeneration} ` +
-    "candidates for this generation via candidate_record, call candidate_validate on each, " +
-    "then call candidate_search again.";
+  // Named by the generation a new candidate JOINS: once the current one has settled, "this
+  // generation" was a generation candidate_record no longer records into, and the count of
+  // generations still to validate before selection was nowhere in the answer.
+  return `generation ${view.joins}: propose up to ${view.edit_budget} candidate(s) for generation ` +
+    `${view.joins} via candidate_record, call candidate_validate on each, then call candidate_search ` +
+    `again. Selection runs once ${policy.maxGenerations} generations each hold a validated ` +
+    `candidate (the protocol's maxGenerations) or ${policy.wallClockHours}h have passed.`;
 }
 
 // -------------------------------------------------------------------------------------------
@@ -511,7 +517,8 @@ export async function runCandidateSearch(
     };
   }
 
-  // A candidate whose validating process died mid-build would keep its generation unsettled
+  // A candidate whose validating process died mid-call, or whose build lease ran out with nothing
+  // recorded, would keep its generation unsettled
   // forever; its lease is released first (candidate-validate.ts).
   await releaseStaleValidating(p, { improvementRunId });
 

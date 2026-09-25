@@ -38,6 +38,7 @@ import {
   pluginTraces, unboundedRunsClause, type EvidenceWindow,
 } from "./plugin-profile.js";
 import { withIdempotency, canonicalJson, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { recordStage } from "./stage-record.js";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
 import { Refusal } from "../refusal.js";
@@ -241,9 +242,12 @@ export function registerObserveTools(server: McpServer): void {
           z.object({ last_runs: z.number().int().positive() }),
         ]),
         idempotency_key: z.string().min(1),
+        initiative: z.string().optional().describe(
+          "The initiative this evaluation runs in: records observation_snapshot_id as its OBSERVE record, " +
+          "which initiative_status hands to a stage started in a new conversation."),
       },
     },
-    async ({ subject_version_id, evidence_window, idempotency_key }) => {
+    async ({ subject_version_id, evidence_window, idempotency_key, initiative }) => {
       const pool = db();
       if (!pool) return noDb();
 
@@ -281,7 +285,9 @@ export function registerObserveTools(server: McpServer): void {
         logActivity(await userRoot(), null,
           { user: principal, action: "plugin_profile", plugin, version: declaredVersion,
             observation_snapshot_id: outcome.result.id, replayed: false });
-        return json(respond(outcome.result.id, plugin, declaredVersion, window, observation));
+        const recorded = await recordStage(initiative, "zz-plugin-observe",
+          { subject_version_id, observation_snapshot_id: outcome.result.id });
+        return json({ ...respond(outcome.result.id, plugin, declaredVersion, window, observation), ...recorded });
       }
 
       // Replay: recompute over the ROW'S OWN stored window, not necessarily this call's — a
@@ -304,8 +310,10 @@ export function registerObserveTools(server: McpServer): void {
         { user: principal, action: "plugin_profile", plugin, version: declaredVersion,
           observation_snapshot_id: stored.id, replayed: true,
           evidence_digest_drifted: freshDigest !== stored.evidence_digest });
-      return json(respond(stored.id, plugin, declaredVersion, storedWindow, recomputed,
-        { stored_evidence_digest: stored.evidence_digest, drifted: freshDigest !== stored.evidence_digest }));
+      const recorded = await recordStage(initiative, "zz-plugin-observe",
+        { subject_version_id, observation_snapshot_id: stored.id });
+      return json({ ...respond(stored.id, plugin, declaredVersion, storedWindow, recomputed,
+        { stored_evidence_digest: stored.evidence_digest, drifted: freshDigest !== stored.evidence_digest }), ...recorded });
     },
   );
 }

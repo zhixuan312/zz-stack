@@ -39,7 +39,31 @@ export function makeSessionHome(extra: { replayToken?: string; gatewayUrl?: stri
   const configDir = join(root, ".claude");
   mkdirSync(configDir);
   mkdirSync(join(root, "tmp"));
-  return { root, configDir, env: candidateEnv(process.env, { home: root, configDir, ...extra }) };
+  const env = candidateEnv(process.env, { home: root, configDir, ...extra });
+  const tools = developerToolsDir();
+  if (tools) env.PATH = `${tools}${delimiter}${env.PATH ?? ""}`;
+  return { root, configDir, env };
+}
+
+let developerTools: string | null | undefined;
+
+/** macOS only: the directory the real `git` (and the other developer tools) live in, put first
+ *  on a sandboxed process's PATH. `/usr/bin/git` is an `xcrun` shim that writes its lookup cache
+ *  to the operator's own temporary directory — found through `confstr`, never `$TMPDIR`, so the
+ *  session's own `TMPDIR` (candidateEnv) does not move it — and the sandbox denies that directory,
+ *  so every shimmed call printed `couldn't create cache file ... xcrun_db` into the session's and
+ *  the gate's output. Calling the real binary skips the shim. Letting the sandbox write that cache
+ *  instead is refused on purpose: it maps tool names to binaries for every later `xcrun` call the
+ *  operator makes. Resolved once per process, outside any sandbox. */
+function developerToolsDir(): string | null {
+  if (developerTools !== undefined) return developerTools;
+  developerTools = null;
+  if (process.platform !== "darwin") return developerTools;
+  try {
+    const git = execFileSync("xcrun", ["-f", "git"], { encoding: "utf8", timeout: 15_000, stdio: ["ignore", "pipe", "ignore"] }).trim();
+    if (git && existsSync(git)) developerTools = dirname(git);
+  } catch { /* no command line tools — nothing shimmed to skip */ }
+  return developerTools;
 }
 
 // -------------------------------------------------------------------------------------------
@@ -150,8 +174,9 @@ export function runGrouped(
 /** One sandboxed process, writable only where `paths.writable` says, and never the `.git`
  *  gitfile inside one of those — it names the launcher's repository, which the launcher reads
  *  with `git` outside the sandbox (git.ts). `paths.readable` adds read-only paths for this one
- *  process: the tree for the install step, the launcher's repository for the candidate's git. */
-function execSandboxed(
+ *  process: the tree for the install step, the launcher's repository for the candidate's git.
+ *  Also how `npm run candidate-build` (candidate/build.ts) runs a candidate's build and gate. */
+export function execSandboxed(
   sandbox: SandboxContext, paths: { writable: readonly string[]; readable?: readonly string[] }, bin: string, args: string[],
   opts: { cwd: string; env: Record<string, string>; timeout: number; maxBuffer?: number },
 ): string {

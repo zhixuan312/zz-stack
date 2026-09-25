@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-eval
-version: 2.3
+version: 2.4
 description: "The front door to plugin evaluation and governed improvement. Eight stages — IDENTIFY, OBSERVE, DISCOVER, DEFINE/QUALIFY, EVALUATE, EXPLAIN, IMPROVE, PROMOTE/VERIFY — over one plugin at one exact content, against a protocol somebody agreed BEFORE any scoring. Load it whenever somebody wants a plugin graded, scored, marked down, or confirmed as good or bad, including when they have already reached a conclusion and want it checked. Also when a plugin-owned defect is worth searching for a proven fix, or a plugin needs release/rollback through its own authorized owners. Measurement never bends toward a change somebody already wanted; promotion never happens without the required owners' say-so."
 when_to_use: "Someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?'. Answering either from your own read is the failure this flow exists to prevent, so load it before agreeing or disagreeing. Also whenever a plugin is up for keeping, changing or retiring; a plugin-owned defect is worth fixing; or a candidate patch needs proving and releasing through its own owners. This is the entry point: start here rather than at a stage. IDENTIFY through EXPLAIN run on any client with no shell; IMPROVE and PROMOTE/VERIFY need Claude Code."
 ---
@@ -84,8 +84,18 @@ branch. On every other branch, the initiative closes on `findings.md` or `propos
 the platform resolves this from release_mode through each document's own `when`, not from
 which stage an agent happened to stop at.
 
+**Every stage can start in a new conversation.** IDENTIFY, OBSERVE, DISCOVER and EVALUATE write
+no document, so each records what it minted on the initiative instead — pass `initiative` to the
+call that finishes the stage (`plugin_locate`/`plugin_register`, `plugin_profile`,
+`failure_discover`, `evaluation_score`). `initiative_status` hands it back as `records`, keyed by
+stage — `records["zz-plugin-identify"].subject_version_id`,
+`records["zz-plugin-observe"].observation_snapshot_id`, `records["zz-plugin-evaluate"].eval_run_id`
+— and while a record stage ahead of the next document has recorded nothing, `next_move` answers
+`action: run_stage` naming it. From IMPROVE on, `findings.md` carries the eval run and the
+tools resolve the rest from the initiative.
+
 **A fact this flow has not yet decided reads `resolve_branch`, not an error.** Call
-`initiative_status` between DISCOVER and DEFINE/QUALIFY's own `protocol_read` and it answers
+`initiative_status` after DISCOVER has recorded and before DEFINE/QUALIFY's own `protocol_read` and it answers
 `resolve_branch: protocol.md` — protocol_action is not yet recorded, so the platform cannot yet
 say whether protocol.md applies. That is expected, not a stall: run the stage `next_move` names
 next and it resolves.

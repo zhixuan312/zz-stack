@@ -18,6 +18,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { serviceVersion } from "@zz/mcp-http";
 
 import { recordingDoor } from "./door.js";
+import { registerCandidateBuildTools } from "./eval/candidate-build.js";
 import { registerCandidateTools } from "./eval/candidates.js";
 import { registerEvaluationTools } from "./eval/evaluate.js";
 import { registerFailureDiscoverTools } from "./eval/discover.js";
@@ -68,7 +69,7 @@ const EVAL_INSTRUCTIONS =
   "and score it\n" +
   "  replay_*  derive replay cases and start, begin, read, close a run\n" +
   "  improvement_*  open an optimization run against plugin-owned findings\n" +
-  "  candidate_*  persist a proposed patch before it executes\n" +
+  "  candidate_*  persist a proposed patch before it executes, record its local build\n" +
   "  release_*  prepare, apply, record a candidate's promotion\n" +
   "  proposal_*  write an owner-facing proposal nobody here can promote\n\n" +
   "Everything else is on /core/mcp and not here: documents and their gates, your team's " +
@@ -107,6 +108,7 @@ export function buildEvalServer(): McpServer {
   registerReplayCloseTools(server);
   registerReplayScoreTools(server);
   registerCandidateTools(server);
+  registerCandidateBuildTools(server);
   registerReleaseTools(server);
   return server;
 }

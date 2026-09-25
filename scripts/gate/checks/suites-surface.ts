@@ -147,6 +147,12 @@ check("no replay session can read the launcher's process: a fresh PID namespace 
       runsCheck("replay-bwrap-pid.ts"));
 check("a third-party subject is fetched at its captured identity, its git host re-checked, and replayed only when its content and tree digests match",
       runsCheck("replay-third-party.ts"));
+check("a candidate's patch applies into the launcher's clone with no filter the tree names ever running, and a diff that does not match leaves the tree unchanged",
+      runsCheck("replay-apply-patch.ts"));
+check("candidate_validate never builds: it asks for a build, only the requesting principal records one for the candidate's own patch within the lease, and the next call consumes it once",
+      runsCheck("candidate-build-contract.ts"));
+check("npm run candidate-build clones the base release, installs its own lockfile, builds and gates it inside the sandbox with no credential in reach, never blames the patch for a host problem, checks a third-party patch applies, and records the verdict",
+      runsCheck("candidate-build-live.ts"));
 
 check("complexityDelta is lines added minus lines removed plus 20 per added component minus 20 per removed one",
       runsCheck("eval-complexity.ts"));
@@ -223,6 +229,12 @@ check("pluginDirComponents leaves a tests fixture SKILL.md out of a catalog capt
       runsCheck("catalog-unshipped-skills.ts"));
 check("release_prepare and proposal_prepare take only the initiative: the eval_run from its findings.md, the one proof_passed candidate (none or several refused by name), the newest improvement run",
       runsCheck("eval-prepare-from-initiative.ts"));
+check("a record stage's ids come back from initiative_status in a new conversation, and next_move names the first record stage that has none",
+      runsCheck("eval-stage-records.ts"));
+check("a qualification control passes when the evaluator answers what the other plugin's numbers say, same-sign counts included",
+      runsCheck("eval-qualify-controls.ts"));
+check("a lost verifier_token is rotated for the same allocation: the old row revoked, the new one bound to the same candidate, case set and released subject",
+      runsCheck("eval-verifier-rotate.ts"));
 
 check("a waiver covers only its own step's unmet rule of exactly its kind — never a kind it is a substring of, one named in an about tail, or another step's same-kind gap",
       runsCheck("store-waivers.ts"));

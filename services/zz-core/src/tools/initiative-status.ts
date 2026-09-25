@@ -17,7 +17,7 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { auditMove } from "../audit-rounds.js";
-import { factsFor, openRecord } from "../initiative-record.js";
+import { factsFor, openRecord, recordsFor } from "../initiative-record.js";
 import { chainFor } from "../chain.js";
 import { safeName, userRoot } from "../paths.js";
 import { Refusal } from "../refusal.js";
@@ -175,6 +175,7 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
   // FR-58 (Task I-26): read once, against every document's own `when` — `_facts.json` is
   // per-initiative, never per-flow, so it cannot live on the cached `chain` the way `docs` does.
   const facts = factsFor(root, name);
+  const records = recordsFor(root, name);
   const appliesOf = (docName: string): Applicability => {
     const spec = docs.find((d) => d.name === docName);
     return spec?.when ? documentApplies(spec, facts) : "applies";
@@ -208,7 +209,7 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
   const closedBy = closingEnv.closed_by || null;
 
   // the next move, in the flow's own declared order
-  let next: { action: string; document?: string; waiting_on: string; why: string };
+  let next: { action: string; document?: string; stage?: string; waiting_on: string; why: string };
   if (outcome) {
     // The platform appends the handover to every flow, whatever the flow declares, so what
     // gets captured does not depend on the flow author. It is not verified mid-flow: execute
@@ -287,11 +288,27 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
       .map((st) => auditMove(root, name, st.name ?? "", st.supports as string,
                              Number(envelopeOf(join(dir, st.supports as string)).version) || 1))
       .find((m): m is NonNullable<typeof m> => m !== null);
+    // A stage that produces a `record` writes no document, so `pending` cannot see it. The first
+    // such stage ahead of the pending document's own stage that has recorded nothing is what runs
+    // next — without this a fresh conversation got the same answer before IDENTIFY as after
+    // DISCOVER. Each record stage's tool writes its record when handed the initiative.
+    const stages = chain.stages ?? [];
+    const writtenAt = pending ? stages.findIndex((st) => st.name === docs.find((d) => d.name === pending.name)?.stage) : -1;
+    const unrecorded = stages.slice(0, writtenAt < 0 ? stages.length : writtenAt)
+      .find((st) => st.produces === "record" && !records[st.name]);
     if (awaiting) {
       next = {
         action: "await_approval", document: awaiting.name, waiting_on: "stakeholder",
         why: `${awaiting.name} is ${awaiting.status ?? "unwritten"}; call document_approve("${name}/${awaiting.name}") ` +
              "once the stakeholder agrees — nothing downstream may be written until that gate is recorded",
+      };
+    } else if (unrecorded) {
+      // NOT A TOOL: `run_stage` is `next_move.action`'s own vocabulary, like `resolve_branch`.
+      next = {
+        action: "run_stage", stage: unrecorded.name, waiting_on: "agent",
+        why: `${unrecorded.name} produces a record and has recorded nothing for this initiative — ` +
+             `skill_read("${unrecorded.name}") and run it, passing initiative: "${name}" to the ` +
+             "call that records it; what it records appears here under `records`",
       };
     } else if (owedAudit) {
       // NOT A TOOL: `add_source` and `decide` are members of `next_move.action`'s own
@@ -360,7 +377,9 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
            documents: states, outcome, closed_by: closedBy, sources: sourceFiles.length,
            // reported, never enforced: material that landed after an approval may warrant
            // a revision — the team decides, and document_revise is how they do it
-           sources_after_approval: needsRefinement, next_move: next,
+           sources_after_approval: needsRefinement,
+           // Omitted when empty: only a flow with `produces: "record"` stages writes any.
+           records: Object.keys(records).length ? records : undefined, next_move: next,
            // Undefined rather than absent, so the two returns of this function have one
            // shape and a caller can read the field without knowing which branch answered.
            next_move_absent: undefined as string | undefined };

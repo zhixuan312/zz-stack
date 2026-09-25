@@ -154,11 +154,21 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
   eitherOr("replay_score refuses a replay_run_id nothing minted",
     await callEval("replay_score", { replay_run_id: randomUUID(), idempotency_key: randomUUID() }),
     /no platform database|unknown replay_run_id/);
-  // A random candidate_id decides nothing and matches no candidate — refused before this
-  // deployment's own checkout is ever touched, so this probe never spends a build or a gate run.
+  // A random candidate_id decides nothing and matches no candidate — refused before any leakage
+  // question or build lease, the same way every other probe here is safe against any live state.
   eitherOr("candidate_validate refuses a candidate_id nothing minted",
     await callEval("candidate_validate", { candidate_id: randomUUID(), idempotency_key: randomUUID() }),
     /no platform database|no candidate/);
+  // 0.76.0: the two doors npm run candidate-build uses. A random candidate_id reads nothing and
+  // records nothing — candidate_build_record refuses inside its ledger transaction, before any write.
+  eitherOr("candidate_read refuses a candidate_id nothing minted",
+    await callEval("candidate_read", { candidate_id: randomUUID() }),
+    /no platform database|unknown candidate_id/);
+  eitherOr("candidate_build_record refuses a candidate_id nothing minted",
+    await callEval("candidate_build_record", {
+      candidate_id: randomUUID(), patch_digest: "chain-check-probe-digest",
+      result: { ok: false, stage: "build", log_tail: "chain-check probe" }, idempotency_key: randomUUID(),
+    }), /no platform database|unknown candidate_id/);
   // Task I-20: a random improvement_run_id decides nothing and matches no run — refused before
   // its own eval_run/subject is ever resolved, the same way improvement_start's probe above is
   // safe against any live state.

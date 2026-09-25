@@ -202,7 +202,10 @@ export function registerProtocolTools(server: McpServer): void {
         "new_evidence_surface fired, or none. A newest version protocol_affirm never bound is " +
         "never reuse: it answers create (no version was ever affirmed) or revise, plus " +
         "awaiting_affirmation: { version, content_digest } — with no trigger, get that version's " +
-        "protocol.md approved and affirmed rather than recording another. Computed entirely from live state — no document, " +
+        "protocol.md approved and affirmed rather than recording another. Also RETURNS " +
+        "open_candidates: every DISCOVER candidate of this plugin still at status candidate " +
+        "({ id, description, prevalence, owner_kind }) — the ids a failureTaxonomy entry's " +
+        "candidateId/mergedCandidateIds fold in. Computed entirely from live state — no document, " +
         "no protocol_body — from the plugin plugin_locate/plugin_register already IDENTIFY'd. " +
         "Pass `initiative` to record protocol_action as that initiative's durable branch fact " +
         "(FR-58) — omit it and nothing is recorded, which the response says. A fact already set " +
@@ -257,6 +260,16 @@ export function registerProtocolTools(server: McpServer): void {
               "protocol_record never edits a version in place.",
         };
       }
+      // What DISCOVER left for this stage to fold in or leave uncited, read here rather than
+      // carried from DISCOVER's own reply: a DEFINE opened in a new conversation has no other
+      // door to them, and re-running failure_discover would mint a duplicate set.
+      response.open_candidates = (await p.query<{ id: string; description: string; prevalence: unknown; owner_kind: string }>(`
+        select c.id::text as id, c.description, c.prevalence, c.owner_kind
+          from zz.eval_failure_mode_candidate c
+          join zz.eval_observation_snapshot os on os.id = c.observation_snapshot_id
+          join zz.eval_subject_version sv on sv.id = os.subject_version_id
+         where sv.plugin_id = $1::uuid and c.status = 'candidate'
+         order by c.created_at`, [subject.pluginId])).rows;
       if (!initiative) return json({ ...response, facts_recorded: false });
       const written = await writeBranchFacts(initiative, { protocol_action: response.protocol_action as string });
       return json(typeof written === "string"

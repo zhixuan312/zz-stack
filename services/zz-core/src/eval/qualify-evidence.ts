@@ -18,9 +18,9 @@
  *     the evaluator's answer flipped with it — proof it is reading the number, not repeating a
  *     memorised answer.
  *   - Controls are another plugin's own real evidence (never a mutation): the same fact,
- *     unmutated, read off the most recently observed OTHER plugin. `failed_as_expected` means the
- *     evaluator's answer on foreign evidence did NOT match what would satisfy THIS plugin's own
- *     anchor — proof the evaluator is reading the number in front of it rather than a plugin name.
+ *     unmutated, read off the most recently observed OTHER plugin. A control passes (the
+ *     response's `failed_as_expected`) when the evaluator answers what the FOREIGN number says —
+ *     proof it reads the number in front of it rather than an answer it holds for this plugin.
  *   - Stability is the first anchor, asked three times; `agreeing` counts the modal answer.
  *   - Labels come only through the protocol's `qualification.labelMappings`, matched by this
  *     evaluator's own `stable_key` — see `parseLabelMappings`/`mappingFor`. The correlation this
@@ -111,12 +111,13 @@ function faultOf(anchor: Anchor, vocabulary: AnchorVocabulary): Anchor {
 }
 
 /** The same fact key, read off a DIFFERENT plugin's own real (unmutated) snapshot — the
- *  contract's "controls come from other plugins' artifacts". `null` when the foreign snapshot
- *  never recorded this fact (a zero denominator) — that fact key simply contributes no control. */
-function controlOf(anchor: Anchor, foreign: SnapshotRow): { subject: string } | null {
+ *  contract's "controls come from other plugins' artifacts" — with the answer ITS numbers call
+ *  for. `null` when the foreign snapshot never recorded this fact (a zero denominator) — that
+ *  fact key simply contributes no control. */
+export function controlOf(anchor: Anchor, foreign: SnapshotRow, vocabulary: AnchorVocabulary): { subject: string; expected: string } | null {
   const fact = factValue(anchor.key, foreign);
   if (!fact) return null;
-  return { subject: FACT_STATEMENTS[anchor.key](fact.n, fact.d) };
+  return { subject: FACT_STATEMENTS[anchor.key](fact.n, fact.d), expected: fact.n > 0 ? vocabulary.positive : vocabulary.zero };
 }
 
 /** What one asked answer reduces to, in whatever vocabulary the evaluator's own kind speaks: a
@@ -185,16 +186,17 @@ export async function gatherCountedEvidence(opts: {
 
   let controlsFailedAsExpected = 0;
   let controlsTotal = 0;
-  if (opts.foreignSnapshot) {
+  if (opts.foreignSnapshot && opts.vocabulary) {
     for (const a of anchors) {
-      const control = controlOf(a, opts.foreignSnapshot);
+      const control = controlOf(a, opts.foreignSnapshot, opts.vocabulary);
       if (!control) continue;
       controlsTotal += 1;
       const answer = await ask(control.subject);
-      // The control is EXPECTED to fail against this plugin's own anchor's expected answer: a
-      // reading evaluator answers what the foreign number actually says, which need not be what
-      // this plugin's own anchor expected.
-      if (answer !== a.expected) controlsFailedAsExpected += 1;
+      // Passed when the evaluator answers what the FOREIGN number says. Measuring it against this
+      // plugin's own anchor instead failed every truthful evaluator whenever the other plugin's
+      // count had the same sign as this one's — two plugins both in use, the ordinary case — and
+      // capped every measure at mechanically_qualified for reading correctly.
+      if (answer === control.expected) controlsFailedAsExpected += 1;
     }
   }
 
@@ -213,6 +215,56 @@ export async function gatherCountedEvidence(opts: {
       planted_faults: { passed: faultsKilled, total: faultsTotal },
       controls: { passed: controlsFailedAsExpected, total: controlsTotal },
       stability: { passed: agreeing, total: 3 },
+    },
+    asked,
+  };
+}
+
+/** A platform-owned evaluator's own known answers — for an evaluator no protocol measure defers
+ *  to, and so no snapshot fact can anchor. `anchors` carry the answer each text truly has;
+ *  `faults` are the same content re-attributed so the true answer flips with it; `controls` are
+ *  material of another kind, whose answer must NOT be the anchor's. The texts live beside the
+ *  evaluator's own question (`replay-derive.ts`), so a change to one is a change to both. */
+export interface KnownAnswers {
+  readonly anchors: readonly { readonly subject: string; readonly expected: string }[];
+  readonly faults: readonly { readonly subject: string; readonly expected: string }[];
+  readonly controls: readonly { readonly subject: string; readonly notExpected: string }[];
+}
+
+/** The same four counted categories `gatherCountedEvidence` returns, over known answers instead
+ *  of snapshot facts: anchors must match, faults must match their flipped answer, controls must
+ *  differ from the answer they are the opposite of, and the first anchor is asked three times. */
+export async function gatherKnownAnswerEvidence(opts: {
+  evaluatorVersionId: string; principal: string; known: KnownAnswers;
+}): Promise<{
+  counts: { anchors: LadderCounts; planted_faults: LadderCounts; controls: LadderCounts; stability: LadderCounts };
+  asked: AskedEvaluatorAnswer[];
+}> {
+  const asked: AskedEvaluatorAnswer[] = [];
+  const ask = async (subject: string): Promise<string | null> => {
+    const answer = await askEvaluatorQuestion({
+      evaluator_version_id: opts.evaluatorVersionId, subject_text: subject, askedBy: opts.principal,
+    });
+    asked.push(answer);
+    return normalizeAnswer(answer.result);
+  };
+  const count = async (items: readonly { subject: string }[], passes: (i: number, a: string | null) => boolean): Promise<LadderCounts> => {
+    let passed = 0;
+    for (let i = 0; i < items.length; i += 1) if (passes(i, await ask(items[i].subject))) passed += 1;
+    return { passed, total: items.length };
+  };
+  const { anchors, faults, controls } = opts.known;
+  const anchorCounts = await count(anchors, (i, a) => a === anchors[i].expected);
+  const faultCounts = await count(faults, (i, a) => a === faults[i].expected);
+  const controlCounts = await count(controls, (i, a) => a !== null && a !== controls[i].notExpected);
+  const stability: (string | null)[] = [];
+  if (anchors.length) for (let i = 0; i < 3; i += 1) stability.push(await ask(anchors[0].subject));
+  const modal = new Map<string | null, number>();
+  for (const a of stability) modal.set(a, (modal.get(a) ?? 0) + 1);
+  return {
+    counts: {
+      anchors: anchorCounts, planted_faults: faultCounts, controls: controlCounts,
+      stability: { passed: stability.length ? Math.max(...modal.values()) : 0, total: stability.length },
     },
     asked,
   };

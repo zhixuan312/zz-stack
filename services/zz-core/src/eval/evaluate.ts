@@ -42,6 +42,7 @@ import {
 } from "./evaluate-measures.js";
 import { bootstrapInterval, resolveUncertainty } from "./evaluate-interval.js";
 import { canonicalJson, decideBeforeWork, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { recordStage } from "./stage-record.js";
 import { resolveProtocol, unaffirmedRefusal } from "./qualify.js";
 import { scoreRun } from "./score.js";
 import { resolveSubjectRef } from "./subject-ref.js";
@@ -419,9 +420,14 @@ export function registerEvaluationTools(server: McpServer): void {
         "guardrail_status, coverage } and stores the same on zz.eval_run, moving run_status to " +
         "'completed'. REFUSES an eval_run_id nothing minted and a run with no assessment recorded " +
         "against it. A mutator: writes through the FR-59 idempotency ledger.",
-      inputSchema: { eval_run_id: z.string(), idempotency_key: z.string().min(1) },
+      inputSchema: {
+        eval_run_id: z.string(), idempotency_key: z.string().min(1),
+        initiative: z.string().optional().describe(
+          "The initiative this evaluation runs in: records eval_run_id as its EVALUATE record, which " +
+          "initiative_status hands to EXPLAIN when it starts in a new conversation."),
+      },
     },
-    async ({ eval_run_id, idempotency_key }) => {
+    async ({ eval_run_id, idempotency_key, initiative }) => {
       const p = db();
       if (!p) return noDb();
       const run = await loadRunContext(p, eval_run_id);
@@ -548,9 +554,10 @@ export function registerEvaluationTools(server: McpServer): void {
       });
       const coverage = (await p.query<{ coverage: unknown }>(
         "select coverage from zz.eval_run where id = $1::uuid", [eval_run_id])).rows[0]?.coverage ?? null;
+      const recorded = await recordStage(initiative, "zz-plugin-evaluate", { eval_run_id });
       return json({
         eval_run_id, overall_score: scored.overall, score_status: scored.status,
-        score_interval, dimension_scores, guardrail_status: scored.guardrail_status, coverage,
+        score_interval, dimension_scores, guardrail_status: scored.guardrail_status, coverage, ...recorded,
       });
     },
   );

@@ -26,7 +26,8 @@ import type pg from "pg";
 import { z } from "zod";
 
 import {
-  gatherCountedEvidence, labelEvidence, mappingFor, parseLabelMappings, type SnapshotRow,
+  gatherCountedEvidence, gatherKnownAnswerEvidence, labelEvidence, mappingFor, parseLabelMappings,
+  type KnownAnswers, type SnapshotRow,
 } from "./qualify-evidence.js";
 import { qualificationState, resolveThresholds, type LadderEvidence } from "./qualify-ladder.js";
 import {
@@ -205,7 +206,7 @@ export interface GatheredQualification {
  *  `replay_case_set_build` records inside its own ledger transaction. */
 export async function gatherQualification(
   p: pg.Pool, protocolVersionId: string, evaluatorVersionId: string, measureId: string | null,
-  protocol: ProtocolContext, stableKey: string, principal: string,
+  protocol: ProtocolContext, stableKey: string, principal: string, known?: KnownAnswers,
 ): Promise<GatheredQualification> {
   const measure = await resolveMeasure(p, measureId);
   const { thresholds } = resolveThresholds(protocol.policy?.thresholds);
@@ -213,10 +214,14 @@ export async function gatherQualification(
   const snapshot = measure ? await latestSnapshot(p, protocol.pluginId, false) : null;
   const foreignSnapshot = measure && snapshot ? await latestSnapshot(p, protocol.pluginId, true) : null;
 
-  const { counts, asked } = await gatherCountedEvidence({
-    evaluatorVersionId, principal, snapshot, foreignSnapshot,
-    vocabulary: measure?.vocabulary ?? null,
-  });
+  // A platform-owned evaluator no measure defers to has no snapshot fact to anchor on; its own
+  // known answers stand in, or it could never climb past `no_anchors`.
+  const { counts, asked } = !measure && known
+    ? await gatherKnownAnswerEvidence({ evaluatorVersionId, principal, known })
+    : await gatherCountedEvidence({
+      evaluatorVersionId, principal, snapshot, foreignSnapshot,
+      vocabulary: measure?.vocabulary ?? null,
+    });
   const mappings = parseLabelMappings(protocol.policy?.labelMappings ?? []);
   const labels = measure
     ? await labelEvidence(p, measure.measureId, evaluatorVersionId, mappingFor(mappings, stableKey))

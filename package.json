@@ -14,6 +14,7 @@
     "build:marketplace": "node scripts/build-marketplace.ts",
     "clean": "tsc -b --clean",
     "gate": "node scripts/gate.ts",
+    "eval-flow-e2e": "node scripts/eval-flow-e2e.ts",
     "doctor": "node scripts/doctor.ts",
     "tenant-info": "node scripts/tenant-info/cli.ts",
     "set-version": "node scripts/set-version.ts",
@@ -27,6 +28,7 @@
     "watch-results": "node packages/tools/dist/ops/watch-results.js",
     "call": "node packages/tools/dist/ops/call.js",
     "replay": "node packages/tools/dist/replay/launch.js",
+    "candidate-build": "node packages/tools/dist/candidate/build.js",
     "release-apply": "node packages/tools/dist/release/apply.js",
     "release-rollback": "node packages/tools/dist/release/rollback.js",
     "check:sql": "node packages/tools/dist/testing/sql-check.js",
@@ -42,6 +44,7 @@
   "devDependencies": {
     "@zz/contracts": "*",
     "@zz/indexing": "*",
+    "@zz/mcp-client": "*",
     "typescript": "^5.6.0",
     "@types/node": "^22.7.0"
   },

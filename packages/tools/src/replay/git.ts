@@ -50,10 +50,10 @@ type Repo = Pick<Worktree, "path" | "gitDir">;
  *  then the subcommand, under an allowlisted environment (`GIT_HARDENED_ARGS`, `hardenedGitEnv`,
  *  plan.ts). Nothing in the tree is read as configuration and no token of the launcher's reaches
  *  a git process. `repo` null is a command that makes the repository (`clone`, `init`). */
-function gitRaw(repo: Repo | null, cwd: string, args: string[]): string {
+function gitRaw(repo: Repo | null, cwd: string, args: string[], env = hardenedGitEnv(process.env)): string {
   const at = repo ? [`--git-dir=${repo.gitDir}`, `--work-tree=${repo.path}`] : [];
   return execFileSync("git", [...GIT_HARDENED_ARGS, ...at, ...args], {
-    cwd, env: hardenedGitEnv(process.env), encoding: "utf8", timeout: GIT_EXEC_TIMEOUT_MS, stdio: ["ignore", "pipe", "pipe"],
+    cwd, env, encoding: "utf8", timeout: GIT_EXEC_TIMEOUT_MS, stdio: ["ignore", "pipe", "pipe"],
   });
 }
 /** git in `repo`, trimmed — `third-party.ts`'s fetch and snapshot use it too. */
@@ -102,15 +102,18 @@ export const untrackedFiles = (dir: string): string[] =>
  *  per run (`provisionReplayTeam` derives it from `sha256(runId)`), so this needs no randomness
  *  of its own to stay unique across concurrent runs, and a deterministic path is exactly what
  *  lets a retry find and remove what a crashed earlier attempt for the SAME run left behind —
- *  a random suffix minted fresh on every call could never be rediscovered by a later one. */
-export function worktreePathFor(teamSlug: string): string {
+ *  a random suffix minted fresh on every call could never be rediscovered by a later one.
+ *  `base` is the directory under the system temporary directory the tree sits in: `zz-replay`
+ *  for a replay; the candidate build (candidate/build.ts) gives each build its own, because a
+ *  gate run there reads `../zz-stack-dashboard` beside the tree. */
+export function worktreePathFor(teamSlug: string, base = "zz-replay"): string {
   // Real path: the OS sandbox (sandbox.ts) matches `/private/var/...`, not the `/var` symlink.
-  return join(realpathSync(tmpdir()), "zz-replay", worktreeDirName(teamSlug));
+  return join(realpathSync(tmpdir()), base, worktreeDirName(teamSlug));
 }
 
 /** The run's repository, beside its tree — under the system temporary directory the sandbox
  *  denies, and never bound back writable, so no session can change what the launcher's git reads. */
-const gitDirFor = (teamSlug: string): string => `${worktreePathFor(teamSlug)}.git`;
+const gitDirFor = (teamSlug: string, base?: string): string => `${worktreePathFor(teamSlug, base)}.git`;
 
 /** Where a held tree sits: beside its own path, under the system temporary directory the sandbox
  *  denies, and inside no session's writable path — Seatbelt's `subpath` is by whole components,
@@ -119,8 +122,8 @@ const HELD = ".held";
 
 /** The run's two paths, with whatever a crashed earlier attempt left at them removed and the
  *  tree's directory created empty. */
-export function freshRepo(teamSlug: string): Repo {
-  const repo = { path: worktreePathFor(teamSlug), gitDir: gitDirFor(teamSlug) };
+export function freshRepo(teamSlug: string, base?: string): Repo {
+  const repo = { path: worktreePathFor(teamSlug, base), gitDir: gitDirFor(teamSlug, base) };
   for (const p of [repo.path, `${repo.path}${HELD}`, repo.gitDir]) if (existsSync(p)) rmSync(p, { recursive: true, force: true });
   mkdirSync(repo.path, { recursive: true });
   return repo;
@@ -155,8 +158,8 @@ export function holdWorktree<T extends Repo>(repo: T): T {
  *  and falling back to `HEAD` would measure whatever the operator happens to have checked out.
  *  A crashed earlier attempt for the same team slug is removed first, so a retry never collides
  *  with its own predecessor. */
-export function createWorktree(repoRoot: string, teamSlug: string, declaredVersion: string): Worktree {
-  const repo = freshRepo(teamSlug);
+export function createWorktree(repoRoot: string, teamSlug: string, declaredVersion: string, base?: string): Worktree {
+  const repo = freshRepo(teamSlug, base);
   try {
     gitRaw(null, dirname(repo.gitDir), gitCloneArgv(resolve(repoRoot), repo.gitDir));
     gitIn(repo, ["config", "core.bare", "false"]);
@@ -211,8 +214,14 @@ export function applyPatch(repo: Repo, diff: string): void {
   const dir = mkdtempSync(join(tmpdir(), "zz-replay-patch-"));
   const patchPath = join(dir, "candidate.patch");
   writeFileSync(patchPath, diff.endsWith("\n") ? diff : `${diff}\n`, "utf8");
+  // DELIBERATE: `git apply` runs without `GIT_ATTR_SOURCE`. Probed on git 2.50.1 (Apple Git-155):
+  // `git apply` with that variable set to any tree segfaults (SIGSEGV, no output), so every
+  // candidate patch failed to apply. The first layer `hardenedGitEnv` names still stands — no
+  // configuration git reads here defines a `filter.<name>.*`, so an in-tree attribute naming one
+  // resolves to nothing; `eol`/`ident` attributes may now rewrite line endings of the patched files.
+  const { GIT_ATTR_SOURCE: _attrSource, ...env } = hardenedGitEnv(process.env);
   try {
-    gitIn(repo, gitApplyArgv(patchPath));
+    gitRaw(repo, repo.path, gitApplyArgv(patchPath), env);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

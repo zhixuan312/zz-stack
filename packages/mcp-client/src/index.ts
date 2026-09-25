@@ -9,6 +9,13 @@
  * release, and a dependency there is a dependency at the worst possible moment.
  */
 
+/** The failures of a reused keep-alive socket the server had already closed. */
+const STALE_SOCKET = new Set(["UND_ERR_SOCKET", "ECONNRESET", "EPIPE"]);
+const causeCode = (err: unknown): string => {
+  const cause = err instanceof Error ? (err as Error & { cause?: { code?: unknown } }).cause : undefined;
+  return typeof cause?.code === "string" ? cause.code : "";
+};
+
 /** One protocol version, announced by every caller. */
 const PROTOCOL = "2025-06-18";
 
@@ -118,12 +125,20 @@ export class Mcp {
     // AbortSignal.timeout rather than a bare fetch: a server that accepts the connection and then
     // says nothing would hang the whole run with no output.
     let res: Response;
+    const send = (): Promise<Response> => fetch(this.url, {
+      method: "POST",
+      headers: { ...this.#head, ...extra },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(this.#timeoutMs),
+    });
     try {
-      res = await fetch(this.url, {
-        method: "POST",
-        headers: { ...this.#head, ...extra },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(this.#timeoutMs),
+      res = await send().catch((err: unknown) => {
+        // Once more when the pooled connection was already dead: a caller that blocked its own
+        // event loop for longer than the server's keep-alive (a release CLI running a gate and a
+        // release command synchronously) reuses a socket the server has since closed, and the
+        // request fails before it was ever sent. Any other failure is reported as it is.
+        if (!STALE_SOCKET.has(causeCode(err))) throw err;
+        return send();
       });
     } catch (err) {
       throw new McpError(`cannot reach ${this.url}: ${(err as Error).message}`);

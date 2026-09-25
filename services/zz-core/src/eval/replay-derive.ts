@@ -30,6 +30,7 @@ import { safeName } from "../paths.js";
 import { documentVersions } from "../versions.js";
 import { canonicalJson } from "./idempotency.js";
 import type { EvaluatorDefinition } from "./evaluators.js";
+import type { KnownAnswers } from "./qualify-evidence.js";
 import { askEvaluatorQuestion, type AskedEvaluatorAnswer } from "../semantic.js";
 import {
   gatherQualification, resolveEvaluator as resolveEvaluatorStableKey, type GatheredQualification,
@@ -62,6 +63,32 @@ export const SOURCE_KIND_EVALUATOR: EvaluatorDefinition = {
   answer_schema: { type: "choice", criteria: SOURCE_KIND_MEANING },
   polarity: {},
   model_policy: {},
+};
+
+/** The evaluator's own known answers (qualify-evidence.ts `KnownAnswers`): no protocol measure
+ *  defers to it, so no snapshot fact can anchor it, and without these its qualification stopped at
+ *  `no_anchors` on every deployment — every case `not_replayable`, and no candidate anywhere ever
+ *  had a validation case to replay. Each fault is its anchor's content in the other voice, so a
+ *  reader answering from the topic rather than from who is speaking is caught. */
+const SOURCE_KIND_KNOWN_ANSWERS: KnownAnswers = {
+  anchors: [
+    { subject: "TITLE: brief\n\nI want the monthly export to default to CSV. My team opens it in a " +
+        "spreadsheet and nobody here reads JSON.", expected: "person_statement" },
+    { subject: "TITLE: spec audit round 2\n\nAudit round 2 of spec.md: two blocking findings. FR-3 has no " +
+        "acceptance criterion; the rollback section names no owner.", expected: "agent_record" },
+  ],
+  faults: [
+    { subject: "TITLE: review note\n\nThe review recorded that the export was changed to default to CSV " +
+        "after the implementation pass; tests were updated to match.", expected: "agent_record" },
+    { subject: "TITLE: decision\n\nI have decided FR-3 does not need an acceptance criterion, and I will " +
+        "own the rollback myself.", expected: "person_statement" },
+  ],
+  controls: [
+    { subject: "TITLE: execution log\n\nTask 4 executed: build passed, 12 checks green, one retry on the " +
+        "migration step.", notExpected: "person_statement" },
+    { subject: "TITLE: answer\n\nYes — I'd rather ship it on Friday; my manager signed off on the risk.",
+      notExpected: "agent_record" },
+  ],
 };
 
 type SourceKind = "person_statement" | "agent_record";
@@ -271,14 +298,18 @@ export function meetsOperational(state: string): boolean {
   return (QUALIFICATION_RANK[state] ?? -1) >= QUALIFICATION_RANK.operationally_qualified;
 }
 
+/** The newest recorded state, or null when there is none — or when the newest one is the
+ *  `no_anchors` row every build recorded before this evaluator had known answers of its own. That
+ *  row measured nothing, and read as-is it would keep a protocol's cases unreplayable forever. */
 async function currentQualificationState(
   p: pg.Pool, protocolVersionId: string, evaluatorVersionId: string,
 ): Promise<string | null> {
-  const row = (await p.query<{ state: string }>(`
-    select state from zz.eval_evaluator_qualification
+  const row = (await p.query<{ state: string; reason: string | null }>(`
+    select state, evidence->>'reason' as reason from zz.eval_evaluator_qualification
      where evaluator_version_id = $1::uuid and protocol_version_id = $2::uuid
      order by qualified_at desc limit 1`, [evaluatorVersionId, protocolVersionId])).rows[0];
-  return row?.state ?? null;
+  if (!row || row.reason === "no_anchors") return null;
+  return row.state;
 }
 
 /** FR-60 rule 1, in full: read the evaluator's current qualification against this protocol
@@ -301,8 +332,9 @@ export async function resolveQualification(
   if (!establish) return { state: EVAL_STATE_ENUMS.qualificationState[0], pending: null };
   const stableKey = await resolveEvaluatorStableKey(p, evaluatorVersionId) ?? SOURCE_KIND_EVALUATOR.stable_key;
   // No measure: the source-kind evaluator is the platform's own, never one a protocol measure
-  // defers to, so its qualification has no anchor vocabulary to read (`no_anchors`).
-  const pending = await gatherQualification(p, protocolVersionId, evaluatorVersionId, null, protocol, stableKey, principal);
+  // defers to, so it is qualified against its own known answers rather than snapshot facts.
+  const pending = await gatherQualification(
+    p, protocolVersionId, evaluatorVersionId, null, protocol, stableKey, principal, SOURCE_KIND_KNOWN_ANSWERS);
   return { state: pending.state, pending };
 }
 

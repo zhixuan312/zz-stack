@@ -445,27 +445,29 @@ export function registerReleaseTools(server: McpServer): void {
         "the interval is still unresolved, while replays are still missing, and before the " +
         "liveness bound. " +
         "A mutator: writes through the FR-59 idempotency " +
-        "ledger once evidence resolves; a pending runs_required read makes no ledger write. Pass " +
-        "`initiative` to record release_mode: not_applicable as that initiative's durable branch " +
-        "fact (FR-58) on a rolled_back verdict — the one outcome this call reaches with nothing " +
-        "left standing to promote. In practice release_prepare already set release_mode: " +
-        "promotable for this initiative before this attempt could exist, so the fact is usually " +
-        "already recorded and this is a no-op; omit `initiative` and nothing is recorded either way.",
+        "ledger once evidence resolves; a pending runs_required read makes no ledger write. " +
+        "`initiative` records release_mode: not_applicable (FR-58) on a rolled_back verdict — " +
+        "usually a no-op, since release_prepare already set promotable. Lost the verifier_token? " +
+        "rotate_token: true revokes it and returns a new one for the same attempt while runs are " +
+        "still required; runs already registered stay counted.",
       inputSchema: {
         release_attempt_id: z.string(),
         idempotency_key: z.string().min(1),
         initiative: z.string().optional().describe(
           "Record release_mode: not_applicable as this initiative's durable branch fact on a " +
           "rolled_back verdict. Omit to read only."),
+        rotate_token: z.boolean().optional().describe(
+          "Revoke the verifier_token already issued for this attempt and return a new one — for a " +
+          "conversation that no longer holds it. Only while runs are still required."),
       },
     },
-    async ({ release_attempt_id, idempotency_key, initiative }) => {
+    async ({ release_attempt_id, idempotency_key, initiative, rotate_token }) => {
       const p = db();
       if (!p) return noDb();
 
       const principal = parseCaller(requestHeaders()).email;
       const result: VerifyOutcome | { error: string } =
-        await verifyRelease(p, release_attempt_id, idempotency_key, principal, initiative);
+        await verifyRelease(p, release_attempt_id, idempotency_key, principal, initiative, rotate_token ?? false);
       if ("error" in result) return text(result.error);
 
       logActivity(await userRoot(), null, {

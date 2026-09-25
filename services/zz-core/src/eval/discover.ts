@@ -67,6 +67,7 @@ import { JUDGE_MODEL } from "./judge-model.js";
 import {
   decideBeforeWork, withIdempotency, type IdempotencyOutcome, type MutatorOutcome,
 } from "./idempotency.js";
+import { recordStage } from "./stage-record.js";
 import { askEvaluatorQuestion, insertEvaluatorAnswer, type AskedEvaluatorAnswer } from "../semantic.js";
 import { NOT_CONFIGURED } from "../typed-service.js";
 import { logActivity } from "../persist.js";
@@ -455,9 +456,12 @@ export function registerFailureDiscoverTools(server: McpServer): void {
       inputSchema: {
         observation_snapshot_id: z.string(),
         idempotency_key: z.string().min(1),
+        initiative: z.string().optional().describe(
+          "The initiative this evaluation runs in: records that DISCOVER ran over this snapshot, " +
+          "which initiative_status reads to route the next stage."),
       },
     },
-    async ({ observation_snapshot_id, idempotency_key }) => {
+    async ({ observation_snapshot_id, idempotency_key, initiative }) => {
       const pool = db();
       if (!pool) return noDb();
 
@@ -496,7 +500,8 @@ export function registerFailureDiscoverTools(server: McpServer): void {
         user: principal, action: "failure_discover", plugin: snapshot.plugin,
         observation_snapshot_id, candidate_count: result.candidates.length, replayed: outcome.replayed,
       });
-      return json(result);
+      const recorded = await recordStage(initiative, "zz-plugin-discover", { observation_snapshot_id });
+      return json({ ...result, ...recorded });
     },
   );
 }

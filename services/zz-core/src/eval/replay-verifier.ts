@@ -32,6 +32,8 @@
  * `user_oracle` timeline the launcher needs to drive the simulated person); that window is the
  * part of FR-30 this design does not close.
  */
+import { randomBytes } from "node:crypto";
+
 import { sha256, type Db } from "@zz/contracts";
 
 /** The allocation a presented verifier_token resolves to. */
@@ -166,4 +168,29 @@ export function sealProofRead<T extends {
 }>(row: T): T {
   if (row.split !== "proof") return row;
   return { ...row, case_id: null, score: null, guardrails: null, model_usage: null, cost: null, duration_ms: null };
+}
+
+/** A new verifier_token for the SAME allocation — candidate, case set, released subject and
+ *  expiry copied from `currentId`'s row — with that row revoked in the same transaction. For a
+ *  conversation that lost the plaintext: the hash is all the platform keeps, so the only way to
+ *  hand a token back is to mint another. Runs already registered under the old row stay counted,
+ *  since both tools read runs by subject and case set, never by allocation; a run still starting
+ *  under the old token is refused by `liveAllocationRefusal`. Null when `currentId` is no longer
+ *  live (already revoked, or expired). */
+export async function rotateVerifierToken(client: Db, currentId: string): Promise<{ id: string; token: string } | null> {
+  const revoked = (await client.query<{ candidate_id: string; case_set_id: string | null; released: string | null; expires_at: string }>(`
+    update zz.replay_verifier_token set revoked_at = now()
+     where id = $1::uuid and revoked_at is null and expires_at > now()
+     returning candidate_id::text as candidate_id, case_set_id::text as case_set_id,
+               released_subject_version_id::text as released, to_json(expires_at)#>>'{}' as expires_at`,
+    [currentId])).rows[0];
+  if (!revoked) return null;
+  const token = randomBytes(32).toString("hex");
+  const row = (await client.query<{ id: string }>(`
+    insert into zz.replay_verifier_token
+      (token_hash, candidate_id, case_set_id, released_subject_version_id, expires_at, created_at)
+    values ($1, $2::uuid, $3::uuid, $4::uuid, $5, now()) returning id::text as id`,
+    [sha256(token), revoked.candidate_id, revoked.case_set_id, revoked.released, revoked.expires_at])).rows[0];
+  if (!row) throw new Error("insert into zz.replay_verifier_token produced no row");
+  return { id: row.id, token };
 }

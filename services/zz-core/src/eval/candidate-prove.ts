@@ -99,7 +99,7 @@ import { pairedDecision, type PairedDecisionResult } from "./stats.js";
 import { db } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
 import { insertEvaluatorAnswer, type AskedEvaluatorAnswer } from "../semantic.js";
-import { abandonProof } from "./candidate-prove-abandon.js";
+import { abandonProof, rotateProofToken } from "./candidate-prove-abandon.js";
 
 // -------------------------------------------------------------------------------------------
 // Candidate + its proof policy.
@@ -515,7 +515,7 @@ export async function proofSplitOf(p: pg.Pool, candidateId: string): Promise<"sp
 
 export async function proveCandidate(
   p: pg.Pool, candidateId: string, idempotencyKey: string, principal: string, abandon = false,
-  initiative?: string,
+  initiative?: string, rotateToken = false,
 ): Promise<CandidateProveOutcome | { error: string }> {
   const candidate = await loadCandidate(p, candidateId);
   if (!candidate) return { error: `ERROR: no candidate ${candidateId}` };
@@ -620,9 +620,14 @@ export async function proveCandidate(
   // evidence is read-only — no ledger row, the same as candidate_validate's own runs_required
   // branch — resolution is the only write.
   const plan = await planProof(p, candidate, ctx.caseSetId, caseIds, ctx.policy.minRepeats);
+  // `rotate_token`: a conversation that lost the plaintext gets a new token for this same
+  // allocation, the old one revoked — without it, `abandon` was the only way on, and it spends
+  // the case set's proof split whenever a run was registered.
+  const rotated = rotateToken ? await rotateProofToken(p, candidateId, idempotencyKey, principal) : null;
+  if (rotated && typeof rotated === "object") return rotated;
   const stillProving = (runs_required: ProofRunsRequired): CandidateProveOutcome => ({
     proof_status: null, reason: null, release_eligible: false, candidate_evaluation_id: null,
-    verifier_token: null, token_already_issued: true, runs_required, status: "proving",
+    verifier_token: rotated, token_already_issued: !rotated, runs_required, status: "proving",
   });
   if (plan.kind === "pending") return stillProving(plan.runs_required);
 

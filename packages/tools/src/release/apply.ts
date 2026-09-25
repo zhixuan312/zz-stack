@@ -65,10 +65,11 @@ import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { Mcp } from "@zz/mcp-client";
 
+import { cloneConsoleSibling } from "../candidate/tree.js";
 import { commitOf, fetchTags, git, gitQuiet, releaseRefFor, resolveBase, tagsContaining } from "./git.js";
 import { die, optional, parseArgs, platformToken, required } from "../lib/cli.js";
 import { splitCommand } from "../lib/shell.js";
@@ -78,6 +79,10 @@ const RELEASE_TIMEOUT_MS = 20 * 60_000;
 /** The failing command's own output tail — enough to act on, never a whole log. */
 const OUTPUT_TAIL_CHARS = 4000;
 const DEFAULT_GATE_CMD = "npm run gate -- --quiet";
+/** Run before the gate, whatever `--gate-cmd` says: the clone's own lock, never the operator's
+ *  installed set, and no package script — the same install `npm run candidate-build` runs. */
+const INSTALL_CMD = ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"] as const;
+const BUILD_CMD = ["npm", "run", "build"] as const;
 const DEFAULT_CLIENT = "zz-release-apply";
 
 const sha256 = (s: string): string => createHash("sha256").update(s, "utf8").digest("hex");
@@ -192,6 +197,9 @@ async function applyMain(mcp: Mcp, args: ReturnType<typeof parseArgs>): Promise<
       failure_tail: tail.slice(-OUTPUT_TAIL_CHARS), idempotency_key: failedKey(attemptId),
     });
     console.log(`release_record (failed) -> ${said}`);
+    // The reason, here as well as in the record: an operator reading this output was otherwise
+    // told only that it failed.
+    console.error(`why: ${tail.slice(-OUTPUT_TAIL_CHARS)}`);
   };
 
   // Hashed before the repository is touched, on the bytes this process actually received.
@@ -227,6 +235,21 @@ async function applyMain(mcp: Mcp, args: ReturnType<typeof parseArgs>): Promise<
     ]);
     const candidateCommit = git(path, ["rev-parse", "HEAD"]);
 
+    // A fresh worktree carries neither the locked dependencies nor a build, and the gate reads
+    // both, and the console checkout it expects beside the repository. Without them the default
+    // gate refused every release, whatever the patch said.
+    // Shared by every attempt's worktree; anything there that is not a checkout (a link whose
+    // target is gone, a clone interrupted half-way) is replaced rather than trusted.
+    const sibling = join(dirname(path), "zz-stack-dashboard");
+    if (!existsSync(join(sibling, ".git"))) {
+      rmSync(sibling, { recursive: true, force: true });
+      // None beside --repo is not refused here: the gate fails on it and names the repository.
+      if (!cloneConsoleSibling(repoRoot, path)) console.error(`no zz-stack-dashboard checkout beside ${repoRoot} to clone for the gate`);
+    }
+    for (const [what, argv] of [["install", INSTALL_CMD], ["build", BUILD_CMD]] as const) {
+      const prepared = runCommand(path, argv, GATE_TIMEOUT_MS);
+      if (!prepared.ok) { await recordFailed(`${what} (${argv.join(" ")}) failed: ${prepared.output}`); return 1; }
+    }
     const gate = runCommand(path, gateCmd, GATE_TIMEOUT_MS);
     if (!gate.ok) { await recordFailed(gate.output); return 1; }
     const release = runCommand(path, releaseCmd, RELEASE_TIMEOUT_MS);

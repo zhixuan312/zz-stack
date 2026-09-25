@@ -1,223 +1,154 @@
 /**
- * `candidate_validate`'s own build+gate isolation step (Task I-19, contract's own words:
- * "builds the candidate in isolation and runs the gate in its worktree"): a candidate's
- * patchset is proven against THIS repository's own build and gate — not merely against the
- * plugin it patches — before a single replay case is ever spent on it. A build/gate failure
- * here is what makes a candidate `invalid`; nothing downstream of this file ever replays one.
- *
- * Mirrors `packages/tools/src/replay/git.ts`'s worktree lifecycle (argv-only `execFileSync`, a
- * deterministic path so a crashed attempt can be found and cleared by the next one) rather than
- * importing it: `zz-core` carries no dependency on `packages/tools` (a service-to-CLI-tool
- * boundary this task does not cross), so the same small pattern is repeated here, scoped to its
- * own `refs/candidate-validate/<candidate_id>` namespace so the two callers' refs can never
- * collide.
- *
- * DELIBERATE: `node_modules` is never reinstalled. `npm ci`/`npm install` inside every
- * candidate's own isolated worktree would cost real network time on every validate call, for
- * dependencies that never changed. Every ordinary package is symlinked straight from the live
- * checkout's own `node_modules`; every `@zz/*` workspace package is re-linked to point at THIS
- * WORKTREE's own copy instead — npm's own workspace symlinks are relative
- * (`@zz/contracts -> ../../packages/contracts`), so linking `node_modules` itself wholesale
- * would resolve every `@zz/*` import back into the LIVE checkout, silently building against the
- * pre-patch source for exactly the packages a candidate is most likely to have touched.
- *
- * DELIBERATE: no `repoRoot` argument. `candidate_validate`'s own signature (the plan's contract)
- * carries only `candidate_id`/`idempotency_key` — this file discovers the checkout from where
- * the service process runs (`git rev-parse --show-toplevel`), and a deployment with none (a
- * production container built from a tarball, say) gets a clean refusal rather than a crash: the
- * caller reports it as "cannot build here" the same way `db()` returning null already reports
- * "no platform database" elsewhere in this service.
+ * The two doors `npm run candidate-build` (packages/tools/src/candidate/build.ts) goes through:
+ * `candidate_read`, which hands it the patch and the base subject exactly as `replay_read` hands
+ * the replay launcher a run's (the same field names, so the CLI reuses the launcher's clone and
+ * third-party fetch unchanged), and `candidate_build_record`, which takes the build's result back.
+ * `candidate_validate` (candidate-validate.ts) asks for the build and consumes the record; every
+ * decision about who may record what, and what a record means, is in candidate-build-rules.ts.
  */
-import { execFileSync } from "node:child_process";
-import {
-  existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readlinkSync, rmSync, symlinkSync, unlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { parseCaller, REPLAY_TEAM_PREFIX } from "@zz/contracts";
+import { requestHeaders, text } from "@zz/mcp-http";
+import { z } from "zod";
 
-const GIT_TIMEOUT_MS = 60_000;
-const BUILD_TIMEOUT_MS = 10 * 60_000;
-const GATE_TIMEOUT_MS = 15 * 60_000;
-/** The longest one validation build can legitimately hold a candidate `validating`: the build
- *  and gate timeouts, plus 20 minutes for the git steps, dependency linking and the leakage
- *  question asked before them. `candidate-validate.ts` treats an older hold as a process that
- *  died mid-build. COUPLED to the three timeouts above. */
-export const VALIDATING_LEASE_MS = BUILD_TIMEOUT_MS + GATE_TIMEOUT_MS + 20 * 60_000;
-/** The contract's own words: "the failing command's own output tail" — enough to act on, never
- *  the whole log (a runaway gate can print megabytes). */
-const OUTPUT_TAIL_CHARS = 4000;
+import { BUILD_LEASE_MS, BUILD_STAGES, buildRecordRefusal } from "./candidate-build-rules.js";
+import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { platformEvent } from "../indexing.js";
+import { db } from "../platform-db.js";
+import { Refusal } from "../refusal.js";
 
-export interface Worktree { readonly ref: string; readonly path: string; readonly commit: string }
+const json = (v: unknown) => text(JSON.stringify(v, null, 2));
+const noDb = () => text("ERROR: this deployment has no platform database, so no candidate build can be read or recorded");
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const one = (v: string | string[] | undefined): string => (Array.isArray(v) ? v[0] : v) ?? "";
+/** The failing command's own output tail — enough to act on, never a whole log. COUPLED: the
+ *  CLI trims to the same bound before it sends. */
+const LOG_TAIL_MAX = 4000;
 
-/** `{ ok: false }` distinguishes a genuine command failure (exit code, real output) from a
- *  timeout — a build that never finished is not a build that finished badly, and
- *  `candidate_validate` refuses rather than marking `invalid` on one (a slow environment is not
- *  the candidate's own fault). */
-export type BuildOutcome =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly stage: "build" | "gate"; readonly output: string }
-  | { readonly ok: false; readonly stage: "timeout"; readonly command: string };
-
-function git(cwd: string, args: string[]): string {
-  return execFileSync("git", args, { cwd, encoding: "utf8", timeout: GIT_TIMEOUT_MS, stdio: ["ignore", "pipe", "pipe"] }).trim();
-}
-function gitQuiet(cwd: string, args: string[]): void {
-  try { execFileSync("git", args, { cwd, timeout: GIT_TIMEOUT_MS, stdio: "ignore" }); }
-  catch { /* nothing there to remove, or already gone — both are the success case here */ }
+function callerOf(): { principal: string; patTeam: string | null } {
+  return { principal: parseCaller(requestHeaders()).email, patTeam: one(requestHeaders()["x-zz-pat-team"]) || null };
 }
 
-/** `null` for a process not running from inside a git checkout — the caller's own clean
- *  refusal, never a thrown error this deep. */
-export function discoverRepoRoot(startDir: string = process.cwd()): string | null {
-  try {
-    return execFileSync("git", ["rev-parse", "--show-toplevel"],
-      { cwd: startDir, encoding: "utf8", timeout: GIT_TIMEOUT_MS, stdio: ["ignore", "pipe", "pipe"] }).trim();
-  } catch {
-    return null;
-  }
+interface BuildRow {
+  status: string; patch_digest: string; build_requested_by: string | null;
+  build_requested_at: Date | null; build_recorded_at: Date | null;
 }
 
-function worktreePathFor(candidateId: string): string {
-  return join(tmpdir(), "zz-candidate-validate", candidateId);
-}
-function refFor(candidateId: string): string {
-  return `refs/candidate-validate/${candidateId}`;
-}
+export function registerCandidateBuildTools(server: McpServer): void {
+  server.registerTool(
+    "candidate_read",
+    {
+      description:
+        "WHEN npm run candidate-build starts (or anyone needs one candidate's recorded patch): " +
+        "RETURNS { candidate_id, status, patch_digest, candidate_patchset: { diff, files }, " +
+        "subject_plugin, subject_source_locator, subject_declared_version, subject_release_digest, " +
+        "subject_content_digest, subject_release_identity, build_requested_at, " +
+        "build_lease_expires_at, build_recorded_at } — the base subject under the same names replay_read uses, so " +
+        "the build clones v<subject_declared_version> for a catalog subject, or fetches a " +
+        "third-party one at its captured identity, exactly as the replay launcher does. " +
+        "build_lease_expires_at is null unless the candidate is awaiting_build; build_recorded_at is " +
+        "set once its build is recorded and not yet consumed. Read-only. " +
+        "REFUSES an unknown candidate_id; a credential scoped to a reserved replay- team (a " +
+        "candidate session's); and a deployment with no platform database.",
+      inputSchema: { candidate_id: z.string() },
+    },
+    async ({ candidate_id }) => {
+      const p = db();
+      if (!p) return noDb();
+      if (!UUID_RE.test(candidate_id)) return text(`ERROR: unknown candidate_id ${candidate_id}`);
+      const caller = callerOf();
+      if (caller.patTeam?.startsWith(REPLAY_TEAM_PREFIX)) {
+        return text(`ERROR: candidate_read refuses a credential scoped to a reserved replay team ('${caller.patTeam}')`);
+      }
+      // COUPLED: replay_read's subject join (replay-runs.ts), keyed on the candidate instead of a run.
+      const row = (await p.query<{
+        candidate_id: string; status: string; patch_digest: string;
+        candidate_patchset: { diff: string; files?: string[] };
+        subject_plugin: string | null; subject_source_locator: unknown;
+        subject_declared_version: string | null; subject_release_digest: string | null;
+        subject_content_digest: string | null; subject_release_identity: Record<string, unknown> | null;
+        build_requested_at: Date | null; build_recorded_at: Date | null;
+      }>(`
+        select c.id::text as candidate_id, c.status, c.patch_digest, c.patchset as candidate_patchset,
+               pl.name as subject_plugin, sv.source_locator as subject_source_locator,
+               sv.declared_version as subject_declared_version,
+               sv.release_identity->>'released_digest' as subject_release_digest,
+               sv.content_digest as subject_content_digest, sv.release_identity as subject_release_identity,
+               c.build_requested_at, c.build_recorded_at
+          from zz.candidate c
+          join zz.eval_subject_version sv on sv.id = c.base_subject_version_id
+          left join zz.plugin pl on pl.id = sv.plugin_id
+         where c.id = $1::uuid`, [candidate_id])).rows[0];
+      if (!row) return text(`ERROR: unknown candidate_id ${candidate_id}`);
+      const awaiting = row.status === "awaiting_build" && row.build_requested_at;
+      return json({
+        ...row,
+        build_requested_at: awaiting ? new Date(row.build_requested_at!).toISOString() : null,
+        build_lease_expires_at: awaiting ? new Date(new Date(row.build_requested_at!).getTime() + BUILD_LEASE_MS).toISOString() : null,
+        build_recorded_at: row.build_recorded_at ? new Date(row.build_recorded_at).toISOString() : null,
+      });
+    },
+  );
 
-/** Fix 6, mirrored from `packages/tools/src/replay/git.ts`'s own `ensureDashboardSibling` (see
- *  that file's note): `candidate_validate` runs the repository gate inside this candidate's own
- *  worktree, and the gate's "every route this gateway serves has a caller" check resolves the
- *  console's sibling checkout relative to wherever it is running from — a fresh worktree with no
- *  sibling of its own fails that check for a reason that has nothing to do with the candidate's
- *  patch. Every worktree this file creates shares the same parent
- *  (`tmpdir()/zz-candidate-validate`), so one symlink there makes `../zz-stack-dashboard`
- *  resolve from every candidate's worktree under it. */
-function ensureDashboardSibling(repoRoot: string, parentDir: string): void {
-  const real = resolve(repoRoot, "..", "zz-stack-dashboard");
-  if (!existsSync(real)) return;
-  const link = join(parentDir, "zz-stack-dashboard");
-  try {
-    const stat = lstatSync(link);
-    if (stat.isSymbolicLink() && readlinkSync(link) === real) return;
-    unlinkSync(link);
-  } catch {
-    // ENOENT: nothing there yet — fall through to create it.
-  }
-  symlinkSync(real, link);
-}
+  server.registerTool(
+    "candidate_build_record",
+    {
+      description:
+        "WHEN npm run candidate-build has built (or failed to build) an awaiting_build candidate: " +
+        "records { ok, stage, log_tail, commands } against it, with the digest of the patch the " +
+        "build actually applied, for the next candidate_validate to consume — ok makes the " +
+        "candidate valid there, stage apply/install/build/gate makes it invalid, stage timeout or " +
+        "host (a problem on the building host, never the patch's) returns it to recorded. zz-core " +
+        "never builds a candidate itself. RETURNS { candidate_id, recorded: " +
+        "true, ok, stage }. REFUSES an unknown candidate_id; a credential scoped to a reserved " +
+        "replay- team (a candidate session's); any principal but the one whose candidate_validate " +
+        "asked for the build; a candidate not awaiting_build; a build lease (60 minutes from " +
+        "that candidate_validate) already expired; a patch_digest that is not the candidate's; a " +
+        "build already recorded under another idempotency_key; and a deployment with no platform " +
+        "database. A mutator: writes through the FR-59 idempotency ledger.",
+      inputSchema: {
+        candidate_id: z.string(),
+        patch_digest: z.string().min(1),
+        result: z.object({
+          ok: z.boolean(),
+          stage: z.enum(BUILD_STAGES).optional(),
+          log_tail: z.string().max(LOG_TAIL_MAX).optional(),
+          commands: z.array(z.string()).max(8).optional(),
+        }).refine((r) => r.ok || r.stage !== undefined, { message: "a failed build names its stage" }),
+        idempotency_key: z.string().min(1),
+      },
+    },
+    async ({ candidate_id, patch_digest, result, idempotency_key }) => {
+      const p = db();
+      if (!p) return noDb();
+      if (!UUID_RE.test(candidate_id)) return text(`ERROR: unknown candidate_id ${candidate_id}`);
+      const caller = callerOf();
 
-function clearStaleWorktree(repoRoot: string, candidateId: string): void {
-  const path = worktreePathFor(candidateId);
-  gitQuiet(repoRoot, ["worktree", "remove", "--force", path]);
-  if (existsSync(path)) rmSync(path, { recursive: true, force: true });
-  gitQuiet(repoRoot, ["update-ref", "-d", refFor(candidateId)]);
-}
-
-/** Pins a worktree to `ref` (default `HEAD` — the candidate's base is whatever this checkout
- *  currently holds; a candidate names no ref of its own in the plan's contract) and adds a
- *  detached worktree at a path deterministic in `candidateId`, so a crashed earlier attempt for
- *  the SAME candidate is found and cleared rather than colliding. */
-export function createCandidateWorktree(repoRoot: string, candidateId: string, ref = "HEAD"): Worktree {
-  clearStaleWorktree(repoRoot, candidateId);
-  const commit = git(repoRoot, ["rev-parse", ref]);
-  const worktreeRef = refFor(candidateId);
-  git(repoRoot, ["update-ref", worktreeRef, commit]);
-  const path = worktreePathFor(candidateId);
-  const parent = join(tmpdir(), "zz-candidate-validate");
-  mkdirSync(parent, { recursive: true });
-  ensureDashboardSibling(repoRoot, parent);
-  try {
-    git(repoRoot, ["worktree", "add", "--quiet", "--detach", path, worktreeRef]);
-  } catch (err) {
-    gitQuiet(repoRoot, ["update-ref", "-d", worktreeRef]);
-    throw err;
-  }
-  return { ref: worktreeRef, path, commit };
-}
-
-export function removeCandidateWorktree(repoRoot: string, worktree: Worktree): void {
-  gitQuiet(repoRoot, ["worktree", "remove", "--force", worktree.path]);
-  if (existsSync(worktree.path)) rmSync(worktree.path, { recursive: true, force: true });
-  gitQuiet(repoRoot, ["update-ref", "-d", worktree.ref]);
-}
-
-/** `git apply`, argv only — the diff text never reaches `execFileSync`'s argv as a string, only
- *  a private temporary file's path does, mirroring `packages/tools/src/replay/git.ts`'s own
- *  `applyPatch`. A missing trailing newline is added to the written copy (`git apply` reads the
- *  file format strict), never to the digested/recorded diff itself. */
-export function applyCandidatePatch(worktreePath: string, diff: string): void {
-  const dir = mkdtempSync(join(tmpdir(), "zz-candidate-patch-"));
-  const patchPath = join(dir, "candidate.patch");
-  writeFileSync(patchPath, diff.endsWith("\n") ? diff : `${diff}\n`, "utf8");
-  try {
-    git(worktreePath, ["apply", "--whitespace=nowarn", patchPath]);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-/** See the module note: every ordinary dependency is symlinked straight from the live
- *  checkout's `node_modules`; every `@zz/*` workspace package is re-linked to point at this
- *  worktree's own copy of that package instead of following the live checkout's relative
- *  symlink back to itself. Skips whatever the worktree's own (empty, freshly checked-out) tree
- *  does not otherwise have — a workspace package `@zz/x` whose worktree copy does not exist
- *  (should not happen; every workspace is tracked) is left unlinked rather than pointed at
- *  nothing. */
-export function linkWorkspaceDependencies(repoRoot: string, worktreePath: string): void {
-  const liveModules = join(repoRoot, "node_modules");
-  if (!existsSync(liveModules)) return; // nothing installed to link — build/gate will say so
-  const worktreeModules = join(worktreePath, "node_modules");
-  mkdirSync(worktreeModules, { recursive: true });
-
-  for (const entry of readdirSync(liveModules, { withFileTypes: true })) {
-    if (entry.name === "@zz") continue; // handled per-package below
-    symlinkSync(join(liveModules, entry.name), join(worktreeModules, entry.name));
-  }
-
-  const liveScope = join(liveModules, "@zz");
-  if (!existsSync(liveScope)) return;
-  const worktreeScope = join(worktreeModules, "@zz");
-  mkdirSync(worktreeScope, { recursive: true });
-  for (const pkg of readdirSync(liveScope, { withFileTypes: true })) {
-    if (!pkg.isSymbolicLink()) continue;
-    // The live checkout's own relative link, e.g. "../../packages/contracts" — resolved against
-    // where it actually lives (liveScope), never against the worktree, to find which workspace
-    // directory this package name maps to.
-    const liveTarget = resolve(liveScope, readlinkSync(join(liveScope, pkg.name)));
-    const relativeToRepo = liveTarget.startsWith(`${repoRoot}/`) ? liveTarget.slice(repoRoot.length + 1) : null;
-    if (!relativeToRepo) continue; // an unexpected link shape — left unlinked rather than guessed at
-    const worktreeTarget = join(worktreePath, relativeToRepo);
-    if (existsSync(worktreeTarget)) symlinkSync(worktreeTarget, join(worktreeScope, pkg.name));
-  }
-}
-
-function runCommand(cwd: string, cmd: string, args: string[], timeoutMs: number): { ok: boolean; timedOut: boolean; output: string } {
-  try {
-    const output = execFileSync(cmd, args, {
-      cwd, encoding: "utf8", timeout: timeoutMs, stdio: ["ignore", "pipe", "pipe"],
-    });
-    return { ok: true, timedOut: false, output };
-  } catch (err) {
-    const e = err as { stderr?: string; stdout?: string; message?: string; killed?: boolean; signal?: string };
-    return {
-      ok: false, timedOut: Boolean(e.killed && e.signal),
-      output: (e.stderr || e.stdout || e.message || "unknown error").trim(),
-    };
-  }
-}
-
-/** `npm run build` then, only if it passed, `npm run gate -- --quiet` — the exact two commands
- *  this repository's own worker_rules ask a human or an agent to run before calling anything
- *  finished, run here against the candidate's own isolated worktree instead. */
-export function buildAndGate(worktreePath: string): BuildOutcome {
-  const build = runCommand(worktreePath, "npm", ["run", "build"], BUILD_TIMEOUT_MS);
-  if (build.timedOut) return { ok: false, stage: "timeout", command: "npm run build" };
-  if (!build.ok) return { ok: false, stage: "build", output: build.output.slice(-OUTPUT_TAIL_CHARS) };
-
-  const gate = runCommand(worktreePath, "npm", ["run", "gate", "--", "--quiet"], GATE_TIMEOUT_MS);
-  if (gate.timedOut) return { ok: false, stage: "timeout", command: "npm run gate -- --quiet" };
-  if (!gate.ok) return { ok: false, stage: "gate", output: gate.output.slice(-OUTPUT_TAIL_CHARS) };
-
-  return { ok: true };
+      const outcome: IdempotencyOutcome<{ ok: boolean; stage: string | null }> = await withIdempotency(
+        caller.principal, "candidate_build_record", idempotency_key, { candidate_id, patch_digest, result },
+        async (client): Promise<MutatorOutcome<{ ok: boolean; stage: string | null }>> => {
+          const row = (await client.query<BuildRow>(`
+            select status, patch_digest, build_requested_by, build_requested_at, build_recorded_at
+              from zz.candidate where id = $1::uuid for update`, [candidate_id])).rows[0];
+          if (!row) throw new Refusal(`ERROR: unknown candidate_id ${candidate_id}`);
+          const now = (await client.query<{ now: Date }>("select now() as now")).rows[0].now;
+          const refused = buildRecordRefusal(caller, row, patch_digest, new Date(now));
+          if (refused) throw new Refusal(refused);
+          const stored = { ...result, stage: result.ok ? undefined : result.stage, patch_digest };
+          await client.query(
+            "update zz.candidate set build_result = $2::jsonb, build_recorded_at = now() where id = $1::uuid",
+            [candidate_id, JSON.stringify(stored)]);
+          platformEvent({
+            actor: caller.principal, kind: "candidate.build_recorded", subject: candidate_id, team: null,
+            detail: { ok: result.ok, stage: stored.stage ?? null, patch_digest },
+          });
+          return { result: { ok: result.ok, stage: stored.stage ?? null }, result_table: "zz.candidate", result_id: candidate_id };
+        },
+      );
+      if (!outcome.replayed) return json({ candidate_id, recorded: true, ...outcome.result });
+      // A replay reads what the first call stored — nothing else ever writes build_result while
+      // the candidate awaits its build, and a consumed one was this same record.
+      return json({ candidate_id, recorded: true, ok: result.ok, stage: result.ok ? null : result.stage ?? null });
+    },
+  );
 }

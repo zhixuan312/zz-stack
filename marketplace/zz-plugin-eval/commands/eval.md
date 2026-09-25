@@ -85,8 +85,18 @@ branch. On every other branch, the initiative closes on `findings.md` or `propos
 the platform resolves this from release_mode through each document's own `when`, not from
 which stage an agent happened to stop at.
 
+**Every stage can start in a new conversation.** IDENTIFY, OBSERVE, DISCOVER and EVALUATE write
+no document, so each records what it minted on the initiative instead — pass `initiative` to the
+call that finishes the stage (`plugin_locate`/`plugin_register`, `plugin_profile`,
+`failure_discover`, `evaluation_score`). `initiative_status` hands it back as `records`, keyed by
+stage — `records["zz-plugin-identify"].subject_version_id`,
+`records["zz-plugin-observe"].observation_snapshot_id`, `records["zz-plugin-evaluate"].eval_run_id`
+— and while a record stage ahead of the next document has recorded nothing, `next_move` answers
+`action: run_stage` naming it. From IMPROVE on, `findings.md` carries the eval run and the
+tools resolve the rest from the initiative.
+
 **A fact this flow has not yet decided reads `resolve_branch`, not an error.** Call
-`initiative_status` between DISCOVER and DEFINE/QUALIFY's own `protocol_read` and it answers
+`initiative_status` after DISCOVER has recorded and before DEFINE/QUALIFY's own `protocol_read` and it answers
 `resolve_branch: protocol.md` — protocol_action is not yet recorded, so the platform cannot yet
 say whether protocol.md applies. That is expected, not a stall: run the stage `next_move` names
 next and it resolves.

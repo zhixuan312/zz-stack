@@ -322,15 +322,26 @@ create table zz.candidate (
     touched_owners jsonb not null,
     proposer_identity jsonb not null,
     status text not null check (status in
-        ('recorded', 'rejected_precheck', 'validating', 'valid', 'invalid', 'selected',
+        ('recorded', 'rejected_precheck', 'awaiting_build', 'validating', 'valid', 'invalid', 'selected',
          'proving', 'proof_passed', 'proof_failed', 'proof_not_established', 'stale', 'released',
          'rolled_back')),
     created_at timestamp with time zone not null,
-    -- The lease on 'validating': candidate_validate holds that status for the length of a build
-    -- and gate, without a transaction, so a process killed mid-build (SIGKILL, redeploy) never
-    -- runs the call's finally. candidate_validate and candidate_search return a hold older than
-    -- the build and gate timeouts plus a margin to where it can be validated again.
-    validating_since timestamp with time zone null
+    -- The lease on 'validating': candidate_validate holds that status for the length of one
+    -- call, without a transaction, so a process killed mid-call (SIGKILL, redeploy) never runs
+    -- the call's finally. candidate_validate and candidate_search return a hold older than the
+    -- lease to where it can be validated again.
+    validating_since timestamp with time zone null,
+    -- 'awaiting_build': candidate_validate screened the candidate and asked for a build, which
+    -- the local CLI (npm run candidate-build) runs and records through candidate_build_record —
+    -- zz-core itself never builds a candidate. build_requested_at starts the build lease and
+    -- build_requested_by is the only principal who may record into it; a lease that expires
+    -- with nothing recorded returns the candidate to 'recorded'. build_result is the recorded
+    -- { ok, stage, log_tail, patch_digest, commands }, consumed (and cleared) by the next
+    -- candidate_validate.
+    build_requested_at timestamp with time zone null,
+    build_requested_by text null,
+    build_result jsonb null,
+    build_recorded_at timestamp with time zone null
 );
 
 comment on column zz.candidate.status is
@@ -564,7 +575,7 @@ comment on column zz.eval_finding.kind is
 -- any external work by each mutator (plugin_register, plugin_profile, finding_decide,
 -- replay_close, protocol_record, protocol_affirm, evaluator_qualify, failure_discover,
 -- evaluation_start, evaluation_assess, evaluation_score, finding_record, replay_case_set_build,
--- replay_start, improvement_start, candidate_record, candidate_validate, candidate_search,
+-- replay_start, improvement_start, candidate_record, candidate_validate, candidate_build_record, candidate_search,
 -- candidate_prove, release_prepare, release_apply, release_verify); read by the same call on
 -- retry to return the original result or refuse idempotency_conflict.
 create table zz.eval_idempotency (

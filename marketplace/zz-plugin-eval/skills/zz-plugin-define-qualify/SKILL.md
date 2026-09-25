@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define-qualify
-version: 0.4
+version: 0.5
 description: Stage 4 of zz-plugin-eval (DEFINE/QUALIFY), and the one gate that matters most. Derive what good means for THIS plugin from its own profile and DISCOVER's candidates, write it into protocol.md, get a person to agree it, then qualify every model-backed evaluator it names before anything is scored.
 when_to_use: "The fourth stage of zz-plugin-eval, after DISCOVER. Conditional: protocol_read decides create/revise/reuse, and this stage only writes when it says create or revise. Produces protocol.md, gated — protocol_affirm refuses to bind it until somebody approves it. No shell required."
 ---
@@ -10,6 +10,11 @@ when_to_use: "The fourth stage of zz-plugin-eval, after DISCOVER. Conditional: p
 ```
 protocol_read(subject_version_id, initiative?)                create, reuse or revise?
 ```
+
+`subject_version_id` is `initiative_status`'s `records["zz-plugin-identify"]` in a new
+conversation. `protocol_read` also returns `open_candidates` — every DISCOVER candidate of this
+plugin still at `status: candidate`, with its `id`, `description`, `prevalence` and `owner_kind` —
+which is where the ids you fold into `failureTaxonomy` below come from.
 
 `protocol_read` decides nothing for you: `create` means this plugin has no protocol yet;
 `reuse` means the newest version is affirmed and still compatible and there is nothing to write;
@@ -207,7 +212,8 @@ version does not have (naming the keys it does), a key two dimensions of an olde
 and a `deterministic`/`outcome`/`human` measure, which is never qualified. It runs the protocol's own `QualificationPolicy` over four evidence
 categories — **anchors** (known answers derived from OBSERVE's own snapshot facts), **planted
 faults** (the same facts, sign-flipped, killed when the evaluator's answer flips with them),
-**controls** (the same facts read off another plugin's own real snapshot, never a mutation) and
+**controls** (the same facts read off another plugin's own real snapshot, never a mutation —
+passed when the evaluator answers what THAT plugin's numbers say) and
 **stability** (one anchor asked three times) — plus **labels**, only where the protocol's
 `qualification.labelMappings` names this evaluator's `stable_key`.
 
@@ -218,6 +224,12 @@ planted_faults, controls, stability, labels } }` — `state` is one of `unqualif
 `definition.qualification` names no `{positive, zero}` vocabulary yet, or the plugin has no
 OBSERVE snapshot to derive an anchor from — not a call failure, and not this tool's fault to fix.
 **Never refuses on thin evidence** — it always writes a row, honestly stating how thin.
+
+**Controls need another plugin's snapshot.** They read the most recently observed OTHER plugin;
+when this deployment has profiled no other plugin, every measure answers with `controls.total: 0`
+and stops at `mechanically_qualified`. Before qualifying, observe one other plugin —
+`plugin_locate` and `plugin_profile` for it, WITHOUT `initiative`, since it is not the subject of
+this evaluation.
 
 **Qualify every `bounded_semantic`/`generative_critic` measure this protocol version names**
 before handing off, not only the ones you expect to be asked about — `evaluation_score` reads

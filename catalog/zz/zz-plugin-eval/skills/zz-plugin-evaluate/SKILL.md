@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-evaluate
-version: 0.3
+version: 0.4
 description: Stage 5 of zz-plugin-eval (EVALUATE). Bind an approved protocol version to a subject's own observation snapshot, run every measure the protocol names against real evidence, and reduce the result to one deterministic overall score with its status, coverage and guardrails. No recommendation — that is EXPLAIN.
 when_to_use: "The fifth stage of zz-plugin-eval, once a protocol version is affirmed (or was already reusable). Produces no document — its output is durable score data EXPLAIN reads. No shell required."
 ---
@@ -11,8 +11,14 @@ when_to_use: "The fifth stage of zz-plugin-eval, once a protocol version is affi
 replay_case_set_build(subject_version_id, protocol_version_id, source_scope: {initiatives: [...]} | {flow, closed_between: [from, to]}, idempotency_key)
 evaluation_start(subject_version_id, protocol_version_id, observation_snapshot_id, case_set_version_id?, idempotency_key)
 evaluation_assess(eval_run_id, subject_refs[], idempotency_key)
-evaluation_score(eval_run_id, idempotency_key)
+evaluation_score(eval_run_id, idempotency_key, initiative)
 ```
+
+In a new conversation, `subject_version_id` and `observation_snapshot_id` are
+`initiative_status`'s `records["zz-plugin-observe"]` — the snapshot OBSERVE recorded, never a
+fresh `plugin_profile` — and `protocol_version_id` is `protocol_read(subject_version_id)`'s. Pass
+`initiative` to `evaluation_score`: it records `eval_run_id` as this stage's record, which is how
+EXPLAIN finds the run.
 
 Four calls, in this order, once each per evaluation. `evaluation_start` atomically binds a
 protocol version and an observation snapshot (and a `case_set_version_id`) into one immutable

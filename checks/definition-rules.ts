@@ -173,6 +173,7 @@ const TOOL_DOMAIN: Record<string, string> = {
   replay_start: "evaluation", replay_begin: "evaluation", replay_read: "evaluation", replay_close: "evaluation",
   replay_score: "evaluation",
   improvement_start: "evaluation", candidate_record: "evaluation", candidate_validate: "evaluation",
+  candidate_read: "evaluation", candidate_build_record: "evaluation",
   candidate_search: "evaluation", candidate_prove: "evaluation", release_prepare: "evaluation",
   release_apply: "evaluation", release_record: "evaluation", release_verify: "evaluation",
   proposal_prepare: "evaluation",

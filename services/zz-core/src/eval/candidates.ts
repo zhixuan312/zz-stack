@@ -13,8 +13,8 @@
  * evidence and the run that opens it are the same call — a later task (I-28) is what tells an
  * agent HOW to read it, not what assembles it.
  *
- * `candidate_validate` (Task I-19, AC-40.1, AC-41.1) is this file's third tool: it builds a
- * candidate's own worktree and runs the repository gate against it, plans which validation
+ * `candidate_validate` (Task I-19, AC-40.1, AC-41.1) is this file's third tool: it asks the
+ * local `npm run candidate-build` for the candidate's build and consumes it, plans which validation
  * replay runs are still missing, and stores the paired bootstrap verdict once enough of them
  * exist — `candidate-validate.ts` carries every one of those decisions; this file only wires the
  * tool's own registration to it.
@@ -511,12 +511,13 @@ export function registerCandidateTools(server: McpServer): void {
         "WHEN a recorded or already-valid candidate is ready to be checked against its own base " +
         "(Task I-19, AC-40.1/AC-41.1): on a first call (status: recorded) first asks the " +
         "search.leakage critic (FR-38) — a clear yes rests it at rejected_precheck and REFUSES " +
-        "with the critic's reason — then builds the candidate's " +
-        "own worktree from this checkout, applies its patchset and runs the repository build and " +
-        "gate against it in isolation before anything else touches it. On a build or gate " +
-        "failure the candidate's status becomes invalid and this call REFUSES with the failing " +
-        "command's own output tail — never replayed, never a partial score. On success (or on an " +
-        "already-valid candidate) it reads every validation-split replay case in the plugin's own " +
+        "with the critic's reason — otherwise moves it to awaiting_build and RETURNS { candidate_id, " +
+        "status: 'awaiting_build', build_required: { patch_digest, lease_expires_at, command } }: " +
+        "zz-core never builds; run the printed npm run candidate-build (it records through " +
+        "candidate_build_record), then call again — the same answer comes back until a build is " +
+        "recorded. The next call consumes it: a failed apply/install/build/gate makes the candidate invalid " +
+        "and REFUSES with the failing command's own output tail; a timeout or host failure returns it to recorded. " +
+        "On a passed build (or an already-valid candidate) it reads every validation-split replay case in the plugin's own " +
         "bound case set, pairs completed, scored zz.replay_run rows by case for the candidate " +
         "against its own base_subject_version_id, and, once every case has at least the " +
         "protocol's own minRepeats completed and scored runs on BOTH sides, calls the pure " +
@@ -531,14 +532,13 @@ export function registerCandidateTools(server: McpServer): void {
         "repeat per case per side — never a run this tool launches itself: replay_start " +
         "(case_id-steerable) and the launcher run the replay, this tool only plans and reads " +
         "back. Never reads a proof or evolve case. A candidate held 'validating' longer than " +
-        "any build and gate can take (its process died mid-build) is first returned to valid or " +
-        "recorded; a retried build reuses the patch's earlier leakage answer. REFUSES a " +
-        "candidate_id nothing minted; a status outside (recorded, valid) — including another " +
-        "call's live 'validating' hold; a malformed search_policy; a deployment with no git checkout to build from; an " +
+        "one call can take (its process died) is first returned to valid or recorded, and an " +
+        "awaiting_build lease that expired unrecorded to recorded; a retry reuses the patch's " +
+        "earlier leakage answer. REFUSES a candidate_id nothing minted; a status outside (recorded, " +
+        "awaiting_build, valid) — including another call's live 'validating' hold; a malformed search_policy; an " +
         "improvement_run whose own eval_run bound no case_set_version_id; and a case set with no " +
         "replayable validation-split case. A mutator once it has a verdict to store: writes " +
-        "through the FR-59 idempotency ledger — a build/gate failure and an interim " +
-        "runs_required response are not.",
+        "through the FR-59 idempotency ledger — build_required, a build failure and an interim runs_required response are not.",
       inputSchema: { candidate_id: z.string(), idempotency_key: z.string().min(1) },
     },
     async ({ candidate_id, idempotency_key }) => {
@@ -548,6 +548,7 @@ export function registerCandidateTools(server: McpServer): void {
 
       const outcome = await validateCandidate(p, candidate_id, idempotency_key, principal);
       if ("error" in outcome) return text(outcome.error);
+      if ("build_required" in outcome) return json(outcome);
 
       logActivity(await userRoot(), null, {
         user: principal, action: "candidate_validate", candidate_id,
@@ -672,19 +673,19 @@ export function registerCandidateTools(server: McpServer): void {
       inputSchema: {
         candidate_id: z.string(), idempotency_key: z.string().min(1),
         abandon: z.boolean().optional()
-          .describe("Recover an allocation stuck 'proving' because the caller lost the response " +
-                    "that opened it. Ignored on a candidate that was never opened."),
+          .describe("Resolve an allocation stuck 'proving' as not_established (abandoned). Ignored on a candidate never opened."),
+        rotate_token: z.boolean().optional().describe("Lost the verifier_token? Revoke it and get a new one for the same allocation."),
         initiative: z.string().optional().describe(
           "Record release_mode: not_applicable as this initiative's durable branch fact once " +
           "this allocation resolves with nothing to promote or propose. Omit to read only."),
       },
     },
-    async ({ candidate_id, idempotency_key, abandon, initiative }) => {
+    async ({ candidate_id, idempotency_key, abandon, initiative, rotate_token }) => {
       const p = db();
       if (!p) return noDb();
       const principal = parseCaller(requestHeaders()).email;
 
-      const outcome = await proveCandidate(p, candidate_id, idempotency_key, principal, abandon ?? false, initiative);
+      const outcome = await proveCandidate(p, candidate_id, idempotency_key, principal, abandon ?? false, initiative, rotate_token ?? false);
       if ("error" in outcome) return text(outcome.error);
 
       logActivity(await userRoot(), null, {

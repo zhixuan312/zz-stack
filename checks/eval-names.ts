@@ -28,7 +28,9 @@ const fail = [];
 // `replay_close` and the new `replay_begin` once both gained the lifecycle guard they share.
 // `candidates.ts` (Task I-18/I-19) holds `improvement_start`/`candidate_record`/`candidate_validate`
 // for the same reason again: mutators writing `zz.improvement_run`/`zz.candidate`/
-// `zz.candidate_evaluation` through the same ledger.
+// `zz.candidate_evaluation` through the same ledger. `candidate-build.ts` (0.76.0) holds
+// `candidate_read`/`candidate_build_record`, the two doors the local `npm run candidate-build`
+// goes through now that zz-core never builds a candidate itself.
 // `replay-score.ts` (Task I-19) holds `replay_score` for the same reason once more: a mutator
 // writing `zz.eval_assessment`/`zz.replay_run` through the same ledger — a replay run's own
 // scoring path, distinct from `replay-runs.ts`'s lifecycle tools beside it.
@@ -41,7 +43,7 @@ const fail = [];
 // to the same file once more: the non-owned-subject path release_prepare's own no_release_owners
 // refusal points callers toward, writing `proposal.md` (proposal-doc.ts) through the same ledger,
 // anchored on `zz.improvement_run`'s own already-existing row rather than a new one.
-const REGISTRATION_MODULES = ["subject", "observe", "discover", "protocol", "qualify", "evaluate", "replay-cases", "replay-runs", "replay-close", "replay-score", "plugin-eval", "plugin-judge", "plugin-record", "candidates", "release"];
+const REGISTRATION_MODULES = ["subject", "observe", "discover", "protocol", "qualify", "evaluate", "replay-cases", "replay-runs", "replay-close", "replay-score", "plugin-eval", "plugin-judge", "plugin-record", "candidates", "candidate-build", "release"];
 
 const registered = new Set<string>();
 for (const f of REGISTRATION_MODULES) {
@@ -80,7 +82,7 @@ const EXPECTED = new Set([
   "evaluator_qualify",
   "evaluation_start", "evaluation_assess", "evaluation_score",
   "replay_case_set_build", "replay_start", "replay_begin", "replay_read", "replay_close", "replay_score",
-  "improvement_start", "candidate_record", "candidate_validate", "candidate_search", "candidate_prove",
+  "improvement_start", "candidate_record", "candidate_validate", "candidate_read", "candidate_build_record", "candidate_search", "candidate_prove",
   "release_prepare", "release_apply", "release_record", "release_verify",
   "proposal_prepare",
 ]);

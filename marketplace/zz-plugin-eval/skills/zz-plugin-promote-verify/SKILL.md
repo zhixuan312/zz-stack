@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-promote-verify
-version: 0.7
+version: 0.8
 description: Stage 8 of zz-plugin-eval (PROMOTE/VERIFY), the promotion boundary. Once IMPROVE has a proof-passed, owned candidate, prepare and gate the exact patch, apply it only after every required owner approves, record what happened, and run the automatic no-gate post-release check with its own objective rollback rule.
 when_to_use: "The eighth and last stage of zz-plugin-eval, reached only when release_mode is promotable — a candidate IMPROVE selected reached proof_passed against an owned subject. REQUIRES a shell-capable runtime that can run zz-tool commands against a real repository checkout. Never reached on a proposal_only or not_applicable branch."
 ---
@@ -63,7 +63,11 @@ recording it is in none either.
 release_apply(candidate_id, approved_patch_digest, initiative, idempotency_key)
 ```
 
-Only an owner-team member may call it. Takes an advisory lock on the candidate's own plugin,
+**`zz-tool release-apply` (below) makes this call itself — do not make it first.** A
+`release_apply` you call over MCP moves the attempt to `applying`, and the CLI's own call then
+refuses release_in_progress against the attempt you just opened, which stays stranded until it
+goes stale. What follows is what that call decides, so you can read the CLI's output. Only an
+owner-team member may make it. Takes an advisory lock on the candidate's own plugin,
 evaluates against the plugin's CURRENTLY released version (the newest, by semver, registered in
 `zz.plugin_version`, leaving out any version a rollback retracted — a newer registered version is
 `stale_baseline` even if nobody ever located it), and — only on apply — moves the `prepared`
@@ -92,8 +96,8 @@ zz-tool release-apply --candidate <id> --repo <throwaway-clone> --initiative <in
 
 Applies exactly the approved patch on a fresh `plan.branch` created at the base subject's release
 commit — `plan.base_ref`, else `--base-ref`; it records `failed` without touching anything when
-neither names a commit the clone has — runs the repository's own gate, then its own release
-command, locates the new subject AT `--release-version`, and reports back with `release_ref` = the
+neither names a commit the clone has — installs the clone's locked dependencies and builds it,
+runs the repository's own gate, then its own release command, locates the new subject AT `--release-version`, and reports back with `release_ref` = the
 commit `--release-tag` names — only once that tag is published (on origin, or local in a clone
 with no remote) and contains the candidate's commit; otherwise the attempt stays applying and the
 CLI prints the `--reconcile` command. The branch is kept on success; it holds the candidate's
@@ -153,7 +157,11 @@ reason, evidence, rollback_plan, runs_required?, verifier_token?, status }` — 
 `candidate_prove`, `runs_required` is `{ case_set_id, baseline, candidate }` while short — COUNTS,
 never case ids: `baseline` replays of the prior subject (the candidate's base) and `candidate`
 replays of the released one, named beside it as `prior_subject_version_id` and
-`released_subject_version_id`. Run each, one at a time, exactly as IMPROVE's own proof loop:
+`released_subject_version_id`. The `verifier_token` comes back once, on the call that mints it;
+a conversation that no longer holds it — a new one, or a lost response — calls
+`release_verify(release_attempt_id, rotate_token: true, idempotency_key)`, which revokes it and
+returns a new one for the same attempt; runs already registered stay counted. Run each, one at a
+time, exactly as IMPROVE's own proof loop:
 
 ```
 replay_start(case_set_id, subject_version_id: <prior_subject_version_id or released_subject_version_id>, split: "proof", context: "verifier", verifier_token, repeats, idempotency_key)
@@ -170,6 +178,9 @@ npm run replay -- --run <replay_run_id> --repo <path> --token-file "$d/replay" -
 rm -rf "$d"
 ```
 
+`--repo` must carry BOTH release tags, the prior subject's and the one `zz-tool release-apply`
+just published — the clone the release was cut in has both; any other checkout needs `git fetch
+--tags` first, or the launcher closes the run `failed` for a tag it cannot check out.
 The launcher refuses a token file anyone but you can read. It also needs the gateway —
 `ZZ_URL` in its environment or `--gateway <url>` — and your own platform token, the one the
 zz-tool CLIs read (`$ZZ_TOKEN`, the file `$ZZ_TOKEN_FILE` names, or `~/.zz/token`), plus a model

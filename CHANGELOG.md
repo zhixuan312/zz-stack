@@ -104,6 +104,24 @@ zz-stack 0.76.0 · console 0.19.0
   additive, except that `zz.assessment.family`/`reading` and `zz.eval_finding.eval_id`/`scope`
   become nullable. `075` and `076` are now absorbed into `001_init.sql`: a deployment that ran
   them keeps their rows in `zz.schema_migration`, and `npm run doctor` counts them as covered.
+- **`candidate_validate` no longer builds a candidate.** The released image has no checkout to
+  build one in, and a candidate's patch is code that must not run on the platform host. The first
+  call now screens for leakage and answers `{ status: 'awaiting_build', build_required: {
+  patch_digest, lease_expires_at, command } }`; IMPROVE runs the printed `npm run
+  candidate-build -- --candidate <id> --repo <checkout>` locally, which clones the base release,
+  installs the clone's own locked dependencies (`npm ci --ignore-scripts`, never the operator's
+  `node_modules`), applies the patch, runs the build and gate inside the replay sandbox and
+  records the result through the new `candidate_build_record`; the next `candidate_validate`
+  consumes it (`valid`; `invalid` on a failed apply, install, build or gate; back to `recorded`
+  on a timeout or a `host` failure). A host problem never invalidates a candidate: the CLI checks
+  every tool the build and gate need inside the sandbox before cloning and records nothing when
+  one is missing, and a docker daemon or registry out of reach mid-build is recorded as `host`.
+  A third-party subject's check is that its patch applies. `candidate_read` is new too. A caller that
+  expected the first call to build must run the CLI between the two calls. Migration 002 adds the
+  `awaiting_build` status and `zz.candidate.build_requested_at`/`build_requested_by`/
+  `build_result`/`build_recorded_at`.
+- The replay launcher's `git apply` no longer sets `GIT_ATTR_SOURCE`: with it set, git 2.50.1
+  (Apple Git-155) segfaults on `apply`, so every candidate replay failed before its session began.
 - **`ZZ_CATALOG_OWNER_TEAM` is now required** by `register-plugins`, which refuses to run
   without it. It names the team that owns this repository's catalog. Set it in `deploy/.env`.
 - `finding_record` now takes `(eval_run_id, finding{kind, pattern, owner_kind, ...},

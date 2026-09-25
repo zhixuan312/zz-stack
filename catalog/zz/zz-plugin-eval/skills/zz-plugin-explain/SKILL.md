@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-explain
-version: 0.2
+version: 0.3
 description: Stage 6 of zz-plugin-eval (EXPLAIN). Record what EVALUATE's own score and assessments actually found — strengths, defects, unknowns, each with an owner — and let findings.md regenerate itself from the current record. Ungated measurement output, never an approval gate.
 when_to_use: "The sixth stage of zz-plugin-eval, once evaluation_score has completed. Produces findings.md — ungated, and every branch of this flow reaches it before anything else happens. No shell required."
 ---
@@ -11,6 +11,9 @@ when_to_use: "The sixth stage of zz-plugin-eval, once evaluation_score has compl
 finding_record(eval_run_id, finding, idempotency_key, initiative?)
 finding_decide(decisions: [{ finding_id, decision: applied | rejected, note }], idempotency_key)
 ```
+
+`eval_run_id` is `initiative_status`'s `records["zz-plugin-evaluate"].eval_run_id` in a new
+conversation — EVALUATE recorded it when it scored.
 
 **`findings.md` writes itself, and this stage does not paste it through `document_present`
 the way `protocol.md` is.** Pass `initiative` on `finding_record` and the document at

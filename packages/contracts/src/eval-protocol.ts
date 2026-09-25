@@ -74,7 +74,7 @@ const IMPROVEMENT_RUN_STATUSES = [
  *  `proof_failed` so `REJECTED_CANDIDATE_STATUSES` (proposer-bundle.ts) can bar the latter from
  *  re-proposal without also barring an idea that was never actually tested. */
 const CANDIDATE_STATUSES = [
-  "recorded", "rejected_precheck", "validating", "valid", "invalid", "selected",
+  "recorded", "rejected_precheck", "awaiting_build", "validating", "valid", "invalid", "selected",
   "proving", "proof_passed", "proof_failed", "proof_not_established", "stale", "released",
   // Migration 002: release_record's rollback path marks the candidate whose release it undid.
   "rolled_back",

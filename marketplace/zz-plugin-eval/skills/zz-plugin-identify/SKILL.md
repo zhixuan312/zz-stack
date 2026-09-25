@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-identify
-version: 0.2
+version: 0.3
 description: Stage 1 of zz-plugin-eval (IDENTIFY). Settle which plugin is being evaluated, at which exact content — catalog release or third-party capture — before any other tool on the door will resolve anything against it. Writes an immutable subject_version.
 when_to_use: "The first stage of zz-plugin-eval, once an initiative exists. Never on its own — every later stage takes the subject_version_id this settles. No shell required."
 ---
@@ -10,7 +10,7 @@ when_to_use: "The first stage of zz-plugin-eval, once an initiative exists. Neve
 One call, one question: **what exactly is being evaluated?**
 
 ```
-plugin_locate(plugin, version?, idempotency_key)
+plugin_locate(plugin, version?, idempotency_key, initiative)
 ```
 
 is IDENTIFY for a catalog plugin — `sdlc`, `zz-core`, `zz-access`, `zz-plugin-eval` itself.
@@ -21,12 +21,14 @@ newest protocol version if one exists, affirmed or not and with no compatibility
 still applies is DEFINE/QUALIFY's `protocol_read`, never this. It is a mutator — it upserts `zz.eval_subject_version` through the FR-59 idempotency
 ledger, so a retried call with the same `idempotency_key` replays the same row rather than
 minting a second one. Omit `version` for the newest released one. REFUSES a plugin this
-platform has never released.
+platform has never released. Pass `initiative`: it records `subject_version_id` as this stage's
+record, which `initiative_status` hands every later stage under `records["zz-plugin-identify"]`
+— the way a stage started in a new conversation finds the subject.
 
 ## A plugin the catalog has never released
 
 ```
-plugin_register(name, version, source_kind, source_locator, idempotency_key)
+plugin_register(name, version, source_kind, source_locator, idempotency_key, initiative)
 ```
 
 is IDENTIFY for everything else — another team's plugin, a third party's, anything read from a

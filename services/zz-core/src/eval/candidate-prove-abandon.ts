@@ -19,6 +19,9 @@ import type pg from "pg";
 
 import { proofSplitOf, resolveOutcome, SPENT_STATUSES, type CandidateProveOutcome, type CandidateRow, type StoredProofEvaluation } from "./candidate-prove.js";
 import { closeRun } from "./replay-runs.js";
+import { rotateVerifierToken } from "./replay-verifier.js";
+import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { Refusal } from "../refusal.js";
 
 /** Every proof-split replay_run THIS candidate's own verifier_token allocations spawned and is
  *  still `registered`/`running` — candidate-side and baseline-side alike, scoped by
@@ -113,4 +116,28 @@ export async function abandonProof(
     decision: null, guardrails: null, resource_usage: null, dimension_scores: null,
     statistics: { abandoned: true }, observed: "count",
   }, "abandon", initiative);
+}
+
+/** `candidate_prove(candidate_id, rotate_token: true, ...)`: the other way out of a lost response,
+ *  and the one that keeps the allocation. A new verifier_token for the same candidate and case
+ *  set, the old one revoked (`rotateVerifierToken`); proof runs already registered stay counted.
+ *  Without it `abandon` was the only way on, and it spends the case set's proof split whenever a
+ *  run was registered. Returns the new plaintext, null on a same-key replay, or the refusal. */
+export async function rotateProofToken(
+  p: pg.Pool, candidateId: string, idempotencyKey: string, principal: string,
+): Promise<string | null | { error: string }> {
+  const live = (await p.query<{ id: string }>(`
+    select id::text as id from zz.replay_verifier_token
+     where candidate_id = $1::uuid and released_subject_version_id is null and revoked_at is null
+     order by created_at desc limit 1`, [candidateId])).rows[0];
+  if (!live) return { error: `ERROR: candidate ${candidateId} holds no live verifier_token to rotate — abandon: true resolves the allocation` };
+  const out: IdempotencyOutcome<{ id: string; token: string }> = await withIdempotency(
+    principal, "candidate_prove", idempotencyKey, { candidate_id: candidateId, phase: "rotate" },
+    async (client): Promise<MutatorOutcome<{ id: string; token: string }>> => {
+      const fresh = await rotateVerifierToken(client, live.id);
+      if (!fresh) throw new Refusal(`ERROR: candidate ${candidateId}'s verifier_token was revoked or expired meanwhile`);
+      return { result: fresh, result_table: "zz.replay_verifier_token", result_id: fresh.id };
+    },
+  );
+  return out.replayed ? null : out.result.token;
 }

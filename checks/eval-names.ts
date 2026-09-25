@@ -36,7 +36,10 @@ const fail = [];
 // `release_apply`/`release_record` to the same file: two more mutators through the same ledger,
 // on the same `zz.release_attempt` row. Task I-24 adds `release_verify` to the same file again:
 // the post-release check, writing `zz.candidate_evaluation` (split: post_release) and the same
-// `zz.release_attempt.verification` through the same ledger.
+// `zz.release_attempt.verification` through the same ledger. Task I-25 adds `proposal_prepare`
+// to the same file once more: the non-owned-subject path release_prepare's own no_release_owners
+// refusal points callers toward, writing `proposal.md` (proposal-doc.ts) through the same ledger,
+// anchored on `zz.improvement_run`'s own already-existing row rather than a new one.
 const REGISTRATION_MODULES = ["subject", "observe", "discover", "protocol", "qualify", "evaluate", "replay-cases", "replay-runs", "replay-score", "plugin-eval", "plugin-judge", "plugin-record", "candidates", "release"];
 
 const registered = new Set<string>();
@@ -74,6 +77,7 @@ const EXPECTED = new Set([
   "replay_case_set_build", "replay_start", "replay_read", "replay_close", "replay_score",
   "improvement_start", "candidate_record", "candidate_validate", "candidate_search", "candidate_prove",
   "release_prepare", "release_apply", "release_record", "release_verify",
+  "proposal_prepare",
 ]);
 for (const want of EXPECTED) {
   if (!registered.has(want)) fail.push(`${want} is no longer registered on the eval door`);

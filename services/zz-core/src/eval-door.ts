@@ -42,8 +42,8 @@ import { registerSubjectTools } from "./eval/subject.js";
  *
  * COUPLED: checks/orientation.ts derives the noun set from the live `tools/list` and compares it
  * with this text in both directions, so the paragraph below has to change in the same commit as
- * a registration under a new prefix. This door serves eleven nouns — plugin, protocol, round,
- * finding, failure, evaluator, evaluation, replay, improvement, candidate and release.
+ * a registration under a new prefix. This door serves twelve nouns — plugin, protocol, round,
+ * finding, failure, evaluator, evaluation, replay, improvement, candidate, release and proposal.
  *
  * It names the other door on purpose: everyone holding this one also holds `/core/mcp`. */
 const EVAL_INSTRUCTIONS =
@@ -57,20 +57,21 @@ const EVAL_INSTRUCTIONS =
   "  plugin_*   identify the plugin an evaluation is about, profile what its runs did, and " +
   "read it against the conformance standard\n" +
   "  protocol_*  read whether this plugin's protocol is still compatible, record a new " +
-  "version, and bind a person's approval of it\n" +
+  "version, bind approval\n" +
   "  round_*    score one version against the legacy ruler, read its marks back, conclude " +
   "it: two axes, no recommendation\n" +
   "  finding_*  record what a round or an EVALUATE run concluded, close it when applied or " +
   "rejected\n" +
   "  failure_*  mine an observation snapshot for failure modes, before any protocol exists\n" +
-  "  evaluator_*  qualify one evaluator version against a protocol's qualification policy, " +
-  "before its answers count\n" +
+  "  evaluator_*  qualify one evaluator version against a protocol's policy, before its " +
+  "answers count\n" +
   "  evaluation_*  bind a protocol version and an observation snapshot into one run, assess " +
-  "and score it — distinct from round_* above\n" +
+  "and score it\n" +
   "  replay_*  derive replay cases and start, read, close a run\n" +
   "  improvement_*  open an optimization run against plugin-owned findings\n" +
   "  candidate_*  persist a proposed patch before it executes\n" +
-  "  release_*  prepare, apply, record a candidate's promotion\n\n" +
+  "  release_*  prepare, apply, record a candidate's promotion\n" +
+  "  proposal_*  write an owner-facing proposal nobody here can promote\n\n" +
   "Everything else is on /core/mcp and not here: documents and their gates, your team's " +
   "knowledge store, skills, sources, and who you are — session_whoami there answers today's " +
   "date and which team you are acting for.\n\n" +

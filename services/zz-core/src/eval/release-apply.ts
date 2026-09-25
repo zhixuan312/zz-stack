@@ -255,6 +255,24 @@ export async function planApply(
       "no longer resolves to a plugin");
   }
 
+  // Task I-25's own fix on this file: a THIRD-PARTY/not-yet-owned candidate never gets a
+  // prepared release_attempt in the first place — release_prepare's own no_release_owners
+  // branch (release.ts) refuses it before ever inserting one — so the loadPreparedAttempt check
+  // below would otherwise report "no prepared release_attempt for candidate ..." for a candidate
+  // that could NEVER have one, hiding the real, more specific reason (this module's own header
+  // comment already promised "REFUSES no_release_owners/not_eligible, recomputed live" — this is
+  // what makes that promise true). Checked here, live off zz.plugin.release_owners, ahead of the
+  // advisory lock AND the attempt lookup, so a non-owned candidate is refused the same way
+  // whatever stale zz.release_attempt rows do or do not exist for it.
+  const ownerRow = (await client.query<{ release_owners: string[] }>(
+    "select release_owners from zz.plugin where id = $1::uuid", [subject.plugin_id])).rows[0];
+  if (!ownerRow || ownerRow.release_owners.length === 0) {
+    throw new Refusal(
+      `ERROR: no_release_owners — candidate ${candidateId}'s own base subject records no ` +
+      "release_owners, so it cannot be promoted. It may still receive an owner-facing proposal " +
+      "— call proposal_prepare instead, naming this candidate's own improvement_run_id.");
+  }
+
   // Every concurrent release_apply for THIS plugin blocks here until the one ahead of it commits
   // or rolls back, so the decision below is always made against a state nothing else in flight
   // can still change out from under it. `hashtext` over a namespaced string, not the bare uuid:

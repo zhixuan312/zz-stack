@@ -212,4 +212,11 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
     await callEval("release_verify", {
       release_attempt_id: randomUUID(), idempotency_key: randomUUID(),
     }), /no platform database|no release_attempt/);
+  // Task I-25: a random improvement_run_id decides nothing and matches no run — refused before
+  // any subject or ownership is ever resolved, the same way improvement_start's own probe above
+  // is safe against any live state.
+  eitherOr("proposal_prepare refuses an improvement_run_id nothing minted",
+    await callEval("proposal_prepare", {
+      improvement_run_id: randomUUID(), initiative: "chain-check-probe", idempotency_key: randomUUID(),
+    }), /no platform database|no improvement_run/);
 }

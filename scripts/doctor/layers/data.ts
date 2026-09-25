@@ -138,6 +138,12 @@ probe("no initiative in the store was left behind by a probe", () => {
 //
 // `handover.md` is the platform's own, appended gated to every flow that gates anything, so it is
 // expected to carry one wherever it appears.
+//
+// DELIBERATE: a closed initiative is not read. It ran under the manifest of its day, and a flow
+// that later stops gating a document (0.76.0's findings.md) does not make an approval somebody
+// really gave into a false one. Rewriting its frontmatter would erase who agreed and when; and a
+// closed initiative's status feeds no gate anyone can still pass. What this protects is a live
+// initiative whose document claims an agreement its flow never asks for.
 probe("no document carries a status its flow does not gate", () => {
   const gated = new Map<string, boolean>();
   for (const f of run("bash", ["-c", `ls ${root}/catalog/*/*/flow.json`]).split("\n").filter(Boolean)) {
@@ -148,7 +154,9 @@ probe("no document carries a status its flow does not gate", () => {
   if (!gated.size) throw new Error("no flow manifest in this checkout declares a document");
   const rows = psql(
     "select flow, regexp_replace(path,'^.*/',''), status from zz.doc " +
-    "where status <> '' and path not like '\\_versions/%'").split("\n").filter(Boolean);
+    "where status <> '' and path not like '\\_versions/%' " +
+    "and not exists (select 1 from zz.doc c where c.team_slug = zz.doc.team_slug " +
+    "and c.initiative = zz.doc.initiative and c.outcome <> '')").split("\n").filter(Boolean);
   const bad: string[] = [];
   for (const line of rows) {
     const [flow, name, status] = line.split("|");

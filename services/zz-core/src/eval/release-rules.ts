@@ -7,7 +7,7 @@
  * refusal order and reasons there rather than restated here.
  *
  * `releaseDecision` is FR-49's own compare-and-swap read as a pure function of five facts:
- * whether any owner is required at all, whether proof established release eligibility, whether
+ * whether any owner is required at all, whether the candidate is still releasable, whether
  * every required owner has approved, whether the digest actually being applied is the one that
  * was approved, and whether the currently released subject is still the candidate's own
  * `base_subject_version_id`. The order matters and is checked in exactly this sequence, stopping
@@ -20,20 +20,17 @@
  * `release_prepare` (`release.ts`) does not call `releaseDecision`: at prepare time nothing has
  * been approved yet, so `approval_required` would fire on every legitimate call. Its own gate is
  * the first branch of this same order alone — `no_release_owners` — plus a `not_eligible` refusal
- * for a candidate that has not itself reached `proof_passed`. `release_apply`
+ * for a candidate that is not `valid` (built and gated). `release_apply`
  * (`release-apply.ts`) evaluates the whole order, and builds three of its five inputs with the
  * helpers below: `approvedOwners` (who approved, by membership), `newestVersion` (which version
  * is currently released) and `applyingRefusal` (whether another attempt already holds the plugin).
  *
- * `verifyReduction` is `release_verify`'s whole decision once every held case has its repeats, and
- * `rollbackDecision` is the FR-50 rule inside it: the same percentile-bootstrap interval
- * `candidate_prove` uses (`pairedDecision`, `stats.ts`), with `mme` fixed at 0 — FR-50's own
- * "below 0", any established regression — and the protocol's own `confidence`, the SAME value the
- * reduction's unresolved check used, so one interval decides both. A guardrail failure decides on
- * its own, ahead of the statistics and without a resolved interval: FR-50 names a required-
- * guardrail failure and a statistically established regression as two independent triggers.
- */
-import { pairedDecision } from "./stats.js";
+ * `verifyDecision` is `release_verify`'s whole decision (FR-50, 002): a released improvement is
+ * judged on real use, never on replays. Until the released subject has the protocol's
+ * `minPostReleaseRuns` real runs, and an evaluation over them, it waits. Then a failed critical
+ * guardrail rolls back, and so does a released score more than `regressionBand` below the base
+ * subject's own; anything else is established. No rollback without evidence: with no base score
+ * to compare against, the verdict is `not_established`, never a rollback. */
 
 interface ReleaseDecisionInput {
   /** Whether the plugin's currently released subject is still the candidate's own base. */
@@ -42,7 +39,8 @@ interface ReleaseDecisionInput {
   readonly patch_digest: string;
   readonly required_owners: readonly string[];
   readonly approvals: readonly string[];
-  readonly proof_eligible: boolean;
+  /** Whether the candidate is still `valid` — built and gated, not yet released. */
+  readonly releasable: boolean;
 }
 
 type ReleaseDecisionReason =
@@ -60,7 +58,7 @@ type ReleaseDecisionResult =
  *  already passed. Pure: the same five facts always produce the same verdict. */
 export function releaseDecision(input: ReleaseDecisionInput): ReleaseDecisionResult {
   if (input.required_owners.length === 0) return { kind: "refuse", reason: "no_release_owners" };
-  if (!input.proof_eligible) return { kind: "refuse", reason: "not_eligible" };
+  if (!input.releasable) return { kind: "refuse", reason: "not_eligible" };
   const unapproved = input.required_owners.some((owner) => !input.approvals.includes(owner));
   if (unapproved) return { kind: "refuse", reason: "approval_required" };
   if (input.patch_digest !== input.approved_patch_digest) return { kind: "refuse", reason: "digest_mismatch" };
@@ -151,79 +149,43 @@ export function applyingRefusal(
 }
 
 // -------------------------------------------------------------------------------------------
-// release_verify's reduction and FR-50's rollback rule.
+// release_verify's decision and FR-50's rollback rule.
 
-interface RollbackDecisionInput {
-  readonly deltas: readonly number[];
-  readonly guardrail_failed: boolean;
-  readonly resamples: number;
-  readonly seed: string;
-  readonly confidence: number;
+interface VerifyInput {
+  /** Real runs of the released subject so far. */
+  readonly post_release_runs: number;
+  readonly min_post_release_runs: number;
+  /** The newest completed evaluation of the released subject over at least that many runs, under
+   *  the base's protocol version, or null when there is none yet. */
+  readonly released: { readonly overall: number | null; readonly guardrail_status: string | null } | null;
+  /** The base subject's own newest established or provisional score under the same protocol. */
+  readonly base_overall: number | null;
+  readonly regression_band: number;
 }
 
-/** FR-50: true when a required guardrail has already failed, or when the released version's own
- *  paired per-case deltas against its predecessor show a bootstrap interval, at the protocol's own
- *  confidence, entirely below zero — an established regression, never merely "not an established
- *  improvement" (an interval that straddles zero is not itself grounds for rollback). */
-export function rollbackDecision(input: RollbackDecisionInput): boolean {
-  if (input.guardrail_failed) return true;
-  const decision = pairedDecision(
-    input.deltas, 0, { resamples: input.resamples, seed: input.seed, confidence: input.confidence });
-  return decision.upper < 0;
-}
-
-interface VerifyReductionInput {
-  readonly deltas: readonly number[];
-  readonly guardrail_status: "pass" | "fail" | "not_established";
-  /** Whether every held case has its repeats on both sides. Incomplete evidence can still roll
-   *  back on a guardrail the runs collected so far already failed — nothing else. */
-  readonly evidence_complete: boolean;
-  readonly liveness_bound_reached: boolean;
-  readonly resamples: number;
-  readonly seed: string;
-  readonly confidence: number;
-}
-
-type PairedDecision = ReturnType<typeof pairedDecision>;
-
-type VerifyReduction =
-  | { readonly kind: "pending" }
-  | { readonly kind: "escalate"; readonly decision: PairedDecision }
+type VerifyDecision =
+  | { readonly kind: "pending"; readonly reason: "awaiting_post_release_runs"; readonly runs_needed: number }
+  | { readonly kind: "pending"; readonly reason: "awaiting_evaluation" | "released_score_not_established" }
   | {
       readonly kind: "resolve";
       readonly verdict: "established" | "rolled_back" | "not_established";
-      readonly reason: string;
-      /** Null only when no case had its repeats yet — a guardrail rollback on partial evidence. */
-      readonly decision: PairedDecision | null;
+      readonly reason: "guardrail_failed" | "regression_beyond_band" | "no_regression_beyond_band" | "no_base_score";
+      /** released − base, when both exist. */
+      readonly delta: number | null;
     };
 
-/** `release_verify`'s whole verdict, over whatever runs have been collected so far. The
- *  guardrails are read FIRST and over incomplete evidence too: a failed guardrail rolls back
- *  whatever the interval says, resolved or not, complete or not — waiting for more repeats (or
- *  for the liveness bound) while a released subject is visibly failing a required guardrail is the
- *  one delay FR-50 does not allow. Anything else on incomplete evidence is `pending`: the caller
- *  asks for the missing runs, or resolves `replays_unavailable` at the liveness bound. An
- *  unmeasured guardrail is missing evidence (`not_established`), never a failure. Only then does
- *  an unresolved interval either escalate one more repeat or, at the liveness bound, resolve
- *  `not_established` — no rollback without evidence. */
-export function verifyReduction(input: VerifyReductionInput): VerifyReduction {
-  const opts = { resamples: input.resamples, seed: input.seed, confidence: input.confidence };
-  const decision = input.deltas.length ? pairedDecision(input.deltas, 0, opts) : null;
-  if (input.guardrail_status === "fail") {
-    return { kind: "resolve", verdict: "rolled_back", reason: "guardrail_failed", decision };
+/** See the module note. The guardrail is read before the score: a released subject visibly
+ *  failing a critical guardrail rolls back whatever its overall number says. */
+export function verifyDecision(input: VerifyInput): VerifyDecision {
+  if (input.post_release_runs < input.min_post_release_runs) {
+    return { kind: "pending", reason: "awaiting_post_release_runs", runs_needed: input.min_post_release_runs - input.post_release_runs };
   }
-  if (!input.evidence_complete) return { kind: "pending" };
-  if (input.guardrail_status === "not_established") {
-    return { kind: "resolve", verdict: "not_established", reason: "guardrails_not_established", decision };
-  }
-  if (!decision) return { kind: "resolve", verdict: "not_established", reason: "no_paired_cases", decision };
-  if (decision.verdict === "unresolved") {
-    return input.liveness_bound_reached
-      ? { kind: "resolve", verdict: "not_established", reason: "verification_unresolved", decision }
-      : { kind: "escalate", decision };
-  }
-  const regressed = rollbackDecision({ ...opts, deltas: input.deltas, guardrail_failed: false });
-  return regressed
-    ? { kind: "resolve", verdict: "rolled_back", reason: "regression_established", decision }
-    : { kind: "resolve", verdict: "established", reason: "no_regression_established", decision };
+  if (!input.released) return { kind: "pending", reason: "awaiting_evaluation" };
+  const delta = input.released.overall !== null && input.base_overall !== null ? input.released.overall - input.base_overall : null;
+  if (input.released.guardrail_status === "fail") return { kind: "resolve", verdict: "rolled_back", reason: "guardrail_failed", delta };
+  if (input.released.overall === null) return { kind: "pending", reason: "released_score_not_established" };
+  if (input.base_overall === null) return { kind: "resolve", verdict: "not_established", reason: "no_base_score", delta: null };
+  return delta! < -input.regression_band
+    ? { kind: "resolve", verdict: "rolled_back", reason: "regression_beyond_band", delta }
+    : { kind: "resolve", verdict: "established", reason: "no_regression_beyond_band", delta };
 }

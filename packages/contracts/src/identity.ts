@@ -100,8 +100,7 @@ export function mintPat(): string {
  *  digest, without importing the gateway's own copy (services/gateway/src/identity.ts), which
  *  is gateway-local and stays that way. Two files computing the same digest of the same string
  *  is not drift, because there is nothing to disagree about; this is that one shared spelling
- *  for code that lives outside the gateway, such as pat.ts's issuePat and replay-team.ts's
- *  run8. */
+ *  for code that lives outside the gateway, such as pat.ts's issuePat. */
 export const sha256 = (s: string): string => createHash("sha256").update(s).digest("hex");
 
 /**

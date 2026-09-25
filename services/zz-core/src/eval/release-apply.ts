@@ -6,9 +6,9 @@
  *
  * Design point, stated once, here: zz-core runs server-side in a container with no checkout of
  * the plugin's repository. The server owns the decision, the lock/CAS and the record; a local CLI
- * with a shell (`packages/tools/src/release/apply.ts`) does the git work — the same split replay
- * (`replay-runs.ts` + `packages/tools/src/replay/launch.ts`) already draws — and reports back
- * through `release_record`.
+ * with a shell (`packages/tools/src/release/apply.ts`) does the git work — the same split the
+ * candidate build (`candidate_validate` + `npm run candidate-build`) already draws — and reports
+ * back through `release_record`.
  *
  * The "currently released subject" FR-49 compares against is not a column anywhere. It is the
  * head of `zz.plugin_version` ALONE — every release registers there, this eval system's own
@@ -146,17 +146,6 @@ async function baseRefFor(runner: Queryable, baseSubjectId: string): Promise<str
     "select release_identity->>'resolved_commit' as commit from zz.eval_subject_version where id = $1::uuid",
     [baseSubjectId])).rows[0];
   return identity?.commit ?? null;
-}
-
-/** Live, not the `release_eligible` flag frozen onto the candidate's own status at proof time:
- *  release_apply may run long after proof, so this reads the stored proof evaluation fresh. */
-async function proofEligible(runner: Queryable, candidateId: string): Promise<boolean> {
-  const row = (await runner.query<{ aggregate_score: { release_eligible?: boolean } }>(`
-    select aggregate_score
-      from zz.candidate_evaluation
-     where candidate_id = $1::uuid and split = 'proof'
-     order by created_at desc limit 1`, [candidateId])).rows[0];
-  return !!row?.aggregate_score?.release_eligible;
 }
 
 /** What `planApply` reads of `<initiative>/improvement.md`: its gate status, its signer and its
@@ -331,7 +320,6 @@ export async function planApply(
 
   // One query at a time: `client` is a single PoolClient, which queues concurrent queries anyway
   // and warns that doing so is deprecated.
-  const eligible = await proofEligible(client, candidateId);
   const approvals = await improvementApprovals(client, doc, attempt);
   const head = await currentReleasedHead(client, subject.plugin_id);
   if (!head) {
@@ -354,7 +342,7 @@ export async function planApply(
     patch_digest: candidate.patch_digest,
     required_owners: attempt.required_owners,
     approvals,
-    proof_eligible: eligible,
+    releasable: candidate.status === "valid",
   });
 
   if (decision.kind === "refuse") {

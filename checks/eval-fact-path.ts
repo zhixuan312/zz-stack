@@ -79,7 +79,7 @@ const unresolved = await answerMeasure({
 assert.equal(unresolved.excluded, true);
 assert.match(unresolved.excluded_reason ?? "", /names no fact this observation snapshot carries/);
 
-// -- a snapshot with no facts at all (a replay/verify context) excludes ------------------------
+// -- a snapshot with no facts at all excludes ---------------------------------------------------
 const noFacts = await answerMeasure({
   measure: measure("tool_coverage", { factPath: "tool_coverage" }), snapshot: snapshot(null),
   subjectRef: "s", principal: "p", qualificationOf: noQualification,

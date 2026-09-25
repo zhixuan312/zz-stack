@@ -71,6 +71,11 @@ export const ssh = (script: string): string => run("ssh", ["-o", "ConnectTimeout
  * rather than reporting that it could not be checked. */
 export const envToken = () => cfg(process.env.ZZ_TOKEN, DOTENV.get("ZZ_TOKEN"));
 
+/* The token the live chain check walks with: a superadmin's, because bug_list, bug_resolve and
+ * knowledge_reindex are offered to no other role. Separate from ZZ_TOKEN, which every other probe
+ * is content with at admin. Same sources, same rule: no fallback. */
+export const probeToken = () => cfg(process.env.ZZ_PROBE_TOKEN, DOTENV.get("ZZ_PROBE_TOKEN"));
+
 /* The deployment's address.
  *
  * DELIBERATE: no default, ever. Callers send a bearer token to whatever this returns, so a

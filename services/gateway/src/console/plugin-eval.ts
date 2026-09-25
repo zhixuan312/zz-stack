@@ -19,18 +19,8 @@
  * Query shapes mirror `services/zz-core/src/eval/findings-doc.ts` (`loadEvalRun`, `loadSubject`,
  * `loadProtocol`, `loadEvaluatorTrust`, `loadFindings`) — that file is the other reader of this
  * exact evidence, and drifting the two would mean the dashboard and findings.md disagree about
- * what one eval_run means. Candidate/release/cost data has no existing reader to mirror; those
+ * what one eval_run means. Candidate/release data has no existing reader to mirror; those
  * queries are new here.
- *
- * FR-28 (sealed proof): a candidate's proof-split `zz.candidate_evaluation` row carries
- * `aggregate_score`/`dimension_scores`/`statistics` that must never reach a search context —
- * and a dashboard viewer is exactly such a context, with no isolation of its own. This route
- * never selects those numbers for `split = 'proof'`; proof answers with a verdict word alone
- * (`proof_passed` | `proof_failed` | `proof_not_established` | `proving` | never proved) — from
- * `zz.candidate.status` while the candidate is in proof, and from the proof row's one
- * `aggregate_score->>'proof_status'` key once it has moved past it (released, rolled back,
- * stale). That is what "Proof shows only pass or fail" (this task's own console rule) means at
- * the data layer, not only at render time.
  */
 import type { Express } from "express";
 
@@ -161,8 +151,8 @@ export function mountPluginEval(app: Express): void {
                decision, decision_note
           from zz.eval_finding where eval_run_id = $1::uuid order by created_at`, [run.id]),
       // Evolution starts here: every improvement search this run's findings seeded (FR-34).
-      db.query<{ id: string; status: string }>(`
-        select id::text as id, status from zz.improvement_run where eval_run_id = $1::uuid order by created_at`,
+      db.query<{ id: string }>(`
+        select id::text as id from zz.improvement_run where eval_run_id = $1::uuid order by created_at`,
         [run.id]),
     ]);
 
@@ -226,48 +216,21 @@ function findingOut(f: {
   };
 }
 
-/** Evolution's own evidence: every candidate the run's improvement searches produced, with
- *  validation's real numbers (never sealed — FR-40 lets search reuse them freely) and proof
- *  reduced to a verdict word (see this file's own header note on FR-28). Cost/latency is
- *  `zz.replay_run` summed per candidate over every split EXCEPT proof: a proof run's cost and
- *  duration are a function of the sealed cases it ran, and a per-candidate total that moves with
- *  them is a side channel onto the proof set a search context must never see. */
+/** Evolution's own evidence: every candidate the run's improvement runs recorded, with how its
+ *  local build and gate went, and where its release stands — including the verdict real use
+ *  gave it after release (`release_verify`). */
 async function loadCandidates(db: ReturnType<typeof platformDb>, improvementRunIds: string[]) {
-  const [candidateRows, validationRows, proofRows, usageRows, releaseRows] = await Promise.all([
+  const [candidateRows, releaseRows] = await Promise.all([
     db.query<{
-      id: string; generation: number; hypothesis: string; status: string; complexity_delta: number;
+      id: string; hypothesis: string; status: string; complexity_delta: number;
       touched_components: unknown; touched_owners: string[]; base_subject_version_id: string;
-      created_at: string;
+      build_result: { ok?: boolean; stage?: string } | null; created_at: string;
     }>(`
-      select id::text as id, generation, hypothesis, status, complexity_delta, touched_components,
-             touched_owners, base_subject_version_id::text as base_subject_version_id,
+      select id::text as id, hypothesis, status, complexity_delta, touched_components,
+             touched_owners, base_subject_version_id::text as base_subject_version_id, build_result,
              to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
-        from zz.candidate where improvement_run_id = any($1::uuid[]) order by generation, created_at`,
+        from zz.candidate where improvement_run_id = any($1::uuid[]) order by created_at`,
       [improvementRunIds]),
-    // Validation only — see the module header: a proof-split row is never read for its numbers.
-    db.query<{ candidate_id: string; aggregate_score: { mean_delta: number; lower: number; upper: number; verdict: string }; guardrails: unknown }>(`
-      select distinct on (candidate_id) candidate_id::text as candidate_id, aggregate_score, guardrails
-        from zz.candidate_evaluation
-       where split = 'validation'
-         and candidate_id in (select id from zz.candidate where improvement_run_id = any($1::uuid[]))
-       order by candidate_id, created_at desc`, [improvementRunIds]),
-    // Proof: the verdict key and nothing else — never the interval, deltas or dimension scores
-    // beside it (the header's FR-28 note).
-    db.query<{ candidate_id: string; proof_status: string | null }>(`
-      select distinct on (candidate_id) candidate_id::text as candidate_id,
-             aggregate_score->>'proof_status' as proof_status
-        from zz.candidate_evaluation
-       where split = 'proof'
-         and candidate_id in (select id from zz.candidate where improvement_run_id = any($1::uuid[]))
-       order by candidate_id, created_at desc`, [improvementRunIds]),
-    db.query<{ candidate_id: string; cost: string | null; avg_duration_ms: string | null; runs: string }>(`
-      select rr.candidate_id::text as candidate_id, sum(rr.cost)::text as cost,
-             avg(rr.duration_ms)::text as avg_duration_ms, count(*)::text as runs
-        from zz.replay_run rr
-        join zz.replay_case rc on rc.id = rr.case_id
-       where rr.candidate_id in (select id from zz.candidate where improvement_run_id = any($1::uuid[]))
-         and rc.split <> 'proof'
-       group by rr.candidate_id`, [improvementRunIds]),
     db.query<{
       candidate_id: string; status: string; reason: string | null; release_ref: string | null;
       released_declared_version: string | null; verification: { verdict?: string; reason?: string | null } | null;
@@ -281,34 +244,18 @@ async function loadCandidates(db: ReturnType<typeof platformDb>, improvementRunI
        order by ra.created_at desc`, [improvementRunIds]),
   ]);
 
-  const validationByCandidate = new Map(validationRows.rows.map((v) => [v.candidate_id, v]));
-  const proofByCandidate = new Map(proofRows.rows.map((p) => [p.candidate_id, p.proof_status]));
-  const usageByCandidate = new Map(usageRows.rows.map((u) => [u.candidate_id, u]));
   // Newest attempt per candidate: a rebased candidate (FR-49 stale_baseline) can carry more than
   // one, and the page shows where release stands NOW, not its whole history in this tile.
   const releaseByCandidate = new Map<string, (typeof releaseRows.rows)[number]>();
   for (const r of releaseRows.rows) if (!releaseByCandidate.has(r.candidate_id)) releaseByCandidate.set(r.candidate_id, r);
 
   return candidateRows.rows.map((c) => {
-    const v = validationByCandidate.get(c.id);
-    const usage = usageByCandidate.get(c.id);
     const release = releaseByCandidate.get(c.id);
     return {
-      id: c.id, generation: c.generation, hypothesis: c.hypothesis, status: c.status,
+      id: c.id, hypothesis: c.hypothesis, status: c.status,
       complexityDelta: c.complexity_delta, touchedComponents: c.touched_components,
       touchedOwners: c.touched_owners ?? [], createdAt: c.created_at,
-      validation: v ? { meanDelta: v.aggregate_score.mean_delta, lower: v.aggregate_score.lower,
-        upper: v.aggregate_score.upper, verdict: v.aggregate_score.verdict, guardrails: v.guardrails } : null,
-      // "not_proved" — nothing here means a candidate that never reached candidate_prove, kept
-      // distinct from the enum's own proof_not_established (FR-28's own too-few-cases/unresolved
-      // outcome). A status past proof (released, rolled_back, stale) no longer says how proof
-      // went, so the proof row's verdict answers instead.
-      proof: PROOF_STATUSES.has(c.status)
-        ? c.status
-        : PROOF_VERDICTS[proofByCandidate.get(c.id) ?? ""] ?? "not_proved",
-      cost: usage?.cost === undefined || usage.cost === null ? null : Number(usage.cost),
-      durationMsAvg: usage?.avg_duration_ms === undefined || usage.avg_duration_ms === null ? null : Number(usage.avg_duration_ms),
-      replayRuns: usage ? Number(usage.runs) : 0,
+      build: c.build_result ? { ok: c.build_result.ok === true, stage: c.build_result.stage ?? null } : null,
       release: release ? {
         status: release.status, reason: release.reason,
         releasedDeclaredVersion: release.released_declared_version, releaseRef: release.release_ref,
@@ -318,10 +265,3 @@ async function loadCandidates(db: ReturnType<typeof platformDb>, improvementRunI
     };
   });
 }
-
-const PROOF_STATUSES = new Set(["proving", "proof_passed", "proof_failed", "proof_not_established"]);
-/** candidate-prove.ts's stored `proof_status` words, mapped onto the candidate-status vocabulary
- *  the page reads — the same mapping candidate-prove.ts applies when it sets `candidate.status`. */
-const PROOF_VERDICTS: Record<string, string> = {
-  proof_passed: "proof_passed", proof_failed: "proof_failed", not_established: "proof_not_established",
-};

@@ -94,7 +94,7 @@ function open(flow: string, facts: Record<string, string> | null) {
 
 // 3. promotable: closes on improvement.md, which is gated and the declared closing document
 {
-  const i = open("zz-plugin-eval", { protocol_action: "reuse", improvement_mode: "search", release_mode: "promotable" });
+  const i = open("zz-plugin-eval", { protocol_action: "reuse", improvement_mode: "release", release_mode: "promotable" });
   i.write("findings.md", {});
   i.write("improvement.md", {});
   const draft = i.close("improvement.md", FINISHED);

@@ -97,7 +97,11 @@ async function main(): Promise<void> {
     opened.text) && ok;
 
   const doc = async (p: string, content: string) => call("document_write", { path: `${name}/${p}`, content });
-  const sign = async (p: string) => call("document_approve", { path: `${name}/${p}` });
+  // An approval is refused until the current content was presented.
+  const sign = async (p: string) => {
+    await call("document_present", { path: `${name}/${p}` });
+    return call("document_approve", { path: `${name}/${p}` });
+  };
 
   await doc("explore.md", "## Background\nx\n\n## Current state\nx\n\n## Rough direction\nx\n");
   await doc("spec.md", "## Context\nx\n\n## Problem\nx\n\n## Goals & Requirements\nx\n\n## Alternatives\nx\n\n## Approach, Method & Structure\nx\n\n## Verification Plan\nx\n\n## Risks & Mitigations\nx\n\n## Stakeholders & Work\nx\n");

@@ -98,9 +98,10 @@ catalog/    the flows and platform capabilities, one directory per owner. A
                                 observe, discover, define-qualify (the gate: a versioned
                                 protocol agreed before any scoring), evaluate (a 0–10
                                 score with coverage and uncertainty), explain, then —
-                                for a plugin we own — improve (replayed, proven
-                                candidates) and promote-verify (a gated release with
-                                rollback); a plugin we do not own gets proposal.md
+                                for a plugin we own — improve (a candidate patch, built
+                                and gated locally) and promote-verify (a gated release,
+                                judged on real use afterwards, rolled back if worse); a
+                                plugin we do not own gets proposal.md
 skills/     the baseline plugin's skills, served whatever flow a team runs. They
             live here rather than under the baseline's catalog entry, beside the
             generated router skill rather than in the catalog. Two are
@@ -119,7 +120,7 @@ skills/     the baseline plugin's skills, served whatever flow a team runs. They
             first two — never typed, loaded by both, and the one place the rules
             they share are written down. What an
             evaluation calls for is not edited in place: for a plugin we own,
-            the IMPROVE stage proves a candidate patch on sealed replays and
+            the IMPROVE stage builds and gates a candidate patch locally and
             improvement.md's approval authorises the release-apply CLI to ship
             exactly that patch, because /catalog and /skills are read-only
             wherever the platform runs; a plugin we do not own gets proposal.md.
@@ -192,9 +193,9 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             platform reaches a grant, which no offline check can answer),
             eval-flow-e2e.ts (walks the whole zz-plugin-eval flow, zz-core as the subject,
             through the real doors of a scratch stack it stands up and tears down — every
-            stage in a fresh conversation, every id from a call or the initiative, replays
-            through the real launcher and a release and rollback through the real CLIs; the
-            two model endpoints and the session binary are stubs. Needs docker, so not a gate
+            stage in a fresh conversation, every id from a call or the initiative, a candidate built
+            through the real candidate-build CLI, a release, post-release use and a rollback
+            through the real CLIs; the model endpoints are stubs. Needs docker, so not a gate
             check; eval-flow-e2e/ holds the stack, the stub, the stages and the release
             commands), manifests.ts (where the packages are, read by
             both), mutation-run.ts (run on demand, never by the gate: plants a

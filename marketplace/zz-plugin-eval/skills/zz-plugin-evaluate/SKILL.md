@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-evaluate
-version: 0.4
+version: 0.5
 description: Stage 5 of zz-plugin-eval (EVALUATE). Bind an approved protocol version to a subject's own observation snapshot, run every measure the protocol names against real evidence, and reduce the result to one deterministic overall score with its status, coverage and guardrails. No recommendation — that is EXPLAIN.
 when_to_use: "The fifth stage of zz-plugin-eval, once a protocol version is affirmed (or was already reusable). Produces no document — its output is durable score data EXPLAIN reads. No shell required."
 ---
@@ -8,8 +8,7 @@ when_to_use: "The fifth stage of zz-plugin-eval, once a protocol version is affi
 # zz-plugin-evaluate
 
 ```
-replay_case_set_build(subject_version_id, protocol_version_id, source_scope: {initiatives: [...]} | {flow, closed_between: [from, to]}, idempotency_key)
-evaluation_start(subject_version_id, protocol_version_id, observation_snapshot_id, case_set_version_id?, idempotency_key)
+evaluation_start(subject_version_id, protocol_version_id, observation_snapshot_id, idempotency_key)
 evaluation_assess(eval_run_id, subject_refs[], idempotency_key)
 evaluation_score(eval_run_id, idempotency_key, initiative)
 ```
@@ -20,34 +19,17 @@ fresh `plugin_profile` — and `protocol_version_id` is `protocol_read(subject_v
 `initiative` to `evaluation_score`: it records `eval_run_id` as this stage's record, which is how
 EXPLAIN finds the run.
 
-Four calls, in this order, once each per evaluation. `evaluation_start` atomically binds a
-protocol version and an observation snapshot (and a `case_set_version_id`) into one immutable
-`zz.eval_evidence_snapshot`, and opens one `zz.eval_run` at `run_status: 'pending'` against it.
-RETURNS `{ eval_run_id, evidence_snapshot_id, run_status }`. REFUSES an observation snapshot
-belonging to a DIFFERENT subject than `subject_version_id` names — never silently scoring one
-plugin's evidence against another's identity — and, like `replay_case_set_build`, a protocol
-version `protocol_affirm` has not bound to an approved `protocol.md` (named, with its version):
-go back to DEFINE/QUALIFY and finish the approval.
+Three calls, in this order, once each per evaluation. `evaluation_start` atomically binds a
+protocol version and an observation snapshot into one immutable `zz.eval_evidence_snapshot`, and
+opens one `zz.eval_run` at `run_status: 'pending'` against it. RETURNS `{ eval_run_id,
+evidence_snapshot_id, run_status }`. REFUSES an observation snapshot belonging to a DIFFERENT
+subject than `subject_version_id` names — never silently scoring one plugin's evidence against
+another's identity — and a protocol version `protocol_affirm` has not bound to an approved
+`protocol.md` (named, with its version): go back to DEFINE/QUALIFY and finish the approval.
 
-## The case set — built before `evaluation_start`, bound by it
-
-`case_set_version_id` is the `case_set_id` `replay_case_set_build` returned. The binding happens
-here and nowhere else: IMPROVE validates and proves every candidate against the case set THIS
-eval_run bound, and `candidate_validate` refuses a run that bound none. So build it first
-whenever the plugin has closed initiatives to replay, even though nothing in this stage replays
-anything — an eval_run started without one can score, but can never carry a search.
-
-`replay_case_set_build` derives FR-60's chronological cases from real closed initiatives —
-classifying each source person_statement/`agent_record`, building actor/`user_oracle`/
-evaluation_oracle timelines, splitting every replayable case `evolve`/`validation`/`proof` by
-`sha256(seed, case_digest)`. RETURNS `{ case_set_id, version, counts: {evolve, validation, proof,
-not_replayable}, minimums_met, source_kind_qualification }`. FR-57's bootstrap minimums are 5
-evolve, 10 validation, 10 proof — below a minimum, search may still run, but `candidate_prove`
-will record `not_established, reason: insufficient_proof_cases` and the candidate is not
-release-eligible. Unchanged source material reuses the existing case set rather than minting a
-redundant one. Omit `case_set_version_id` only when there is no closed initiative to build from,
-and say so: no candidate for this run's findings can then be validated or proved, and IMPROVE
-sends a run that needs a search back here for a new one.
+This score is also the baseline a released improvement is judged against: PROMOTE/VERIFY
+evaluates the released subject's own real runs under the same protocol version, the same way,
+and compares the two numbers.
 
 ## `subject_refs` — what the measures actually read
 
@@ -92,8 +74,8 @@ not_established`:
 - Both must be true, plus every required guardrail resolved, for `score_status: established`.
 
 `guardrail_status` never disappears inside the average: a critical guardrail's own numeric value
-is still visible for diagnosis, but release eligibility downstream is false unless every required
-guardrail reads `pass`.
+is still visible for diagnosis, and a released improvement whose own evaluation fails one is
+rolled back (PROMOTE/VERIFY).
 
 ## Say the status before you say the number
 
@@ -122,8 +104,7 @@ stored — assess more evidence first if the coverage is what you want to change
 `score_status` short of one), `dimension_scores`, `guardrail_status` and `coverage` — the durable
 record EXPLAIN turns into `findings.md`.
 
-**Required evidence:** `replay_case_set_build`'s `case_set_id` and `counts` (or the stated reason
-there was nothing to build from). `evaluation_start`'s `eval_run_id`. `evaluation_assess`'s own
+**Required evidence:** `evaluation_start`'s `eval_run_id`. `evaluation_assess`'s own
 `assessment_count`/`measures_assessed`, for every `subject_ref` actually judged. `evaluation_score`'s
 full response, read and carried forward verbatim — never a number re-derived by hand from the
 dimension detail.
@@ -131,8 +112,7 @@ dimension detail.
 **Allowed unknowns:** whether this run's evidence is enough to establish a score — `score_status`
 answers that from the protocol's own thresholds, not from your own read of how it feels.
 
-**Action and exit paths:** the action is `replay_case_set_build`, then `evaluation_start`
-binding its case set, then `evaluation_assess` against
+**Action and exit paths:** the action is `evaluation_start`, then `evaluation_assess` against
 every subject_ref worth judging, then `evaluation_score`. The exit is EXPLAIN
 (`zz-plugin-explain`), always, whatever `score_status` came back.
 

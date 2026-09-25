@@ -22,11 +22,11 @@ import {
  *  nothing to capture — no SKILL.md and no flow.json — which `plugin_register` turns into the
  *  contract's "source could not be read" refusal rather than minting a subject with an empty
  *  component set. Both walks, and their symlink refusals, are @zz/catalog's, shared with the
- *  replay launcher: `pluginDirComponents` for the components the digest is over, and
+ *  candidate build: `pluginDirComponents` for the components the digest is over, and
  *  `pluginTreeDigest` for everything else a plugin ships (hooks, commands, agents, `.mcp.json`,
- *  server code), recorded as `release_identity.tree_digest` for the launcher to check.
+ *  server code), recorded as `release_identity.tree_digest` for the build to check.
  *
- *  Refused first, by name, whatever the kind: a source the launcher would always refuse to replay
+ *  Refused first, by name, whatever the kind: a source the build would always refuse to fetch
  *  (`gitInstruction`, the same function it calls) — a `.git` anywhere, or a `.gitattributes`
  *  assigning a filter, git-lfs included. `ownGit` is a git clone's own `.git`. A catalog
  *  directory is digested without what the image leaves out (`IMAGE_UNSHIPPED`) — both digests,
@@ -35,7 +35,7 @@ function resolveLocalDir(
   path: string, opts: { ownGit?: boolean; catalog?: boolean } = {},
 ): { components: PluginComponent[]; treeDigest: string } | { error: string } | null {
   const instruction = gitInstruction(path, { ownGit: opts.ownGit });
-  if (instruction) return { error: `${instruction}, which git would run commands from; such a source is never replayed` };
+  if (instruction) return { error: `${instruction}, which git would run commands from; such a source is never fetched` };
   const unshipped = opts.catalog ? IMAGE_UNSHIPPED : undefined;
   const got = pluginDirComponents(path, unshipped);
   if ("error" in got) return got;
@@ -109,8 +109,8 @@ async function tryExec(cmd: string, args: string[], cwd?: string, env?: NodeJS.P
 
 /** git 2.40+ reads `.gitattributes` from the empty tree instead of the clone, so the checkout
  *  writes each file's bytes exactly as committed — no eol conversion, no `ident` — and so the
- *  `tree_digest` recorded here is over the same bytes the replay launcher's own checkout writes
- *  (it sets the same variable, packages/tools/src/replay/plan.ts). An older git ignores it. */
+ *  `tree_digest` recorded here is over the same bytes the candidate build's own checkout writes
+ *  (it sets the same variable, packages/tools/src/candidate/git.ts). An older git ignores it. */
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 /** Every git invocation carries these, ahead of the subcommand. `publicHttpsUrl` judged the URL
  *  the caller gave; these keep git itself from wandering off it — no transport but https (so no

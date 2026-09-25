@@ -20,30 +20,21 @@ const fail = [];
 // `evaluate.ts` (Task I-13) holds `evaluation_start`/`evaluation_assess`/`evaluation_score` for
 // the same reason once more: three mutators writing `zz.eval_evidence_snapshot`/`zz.eval_run`/
 // `zz.eval_assessment` through the same ledger.
-// `replay-cases.ts` (Task I-14) holds `replay_case_set_build` for the same reason again: a
-// mutator writing `zz.replay_case_set`/`zz.replay_case`/`zz.replay_event` through the same ledger.
-// `replay-runs.ts` (Task I-16) holds `replay_start`/`replay_close` for the same reason once
-// more — mutators writing `zz.replay_run` through the same ledger — with `replay_read` beside
-// them because the three share one lifecycle and one file. `replay-close.ts` took
-// `replay_close` and the new `replay_begin` once both gained the lifecycle guard they share.
 // `candidates.ts` (Task I-18/I-19) holds `improvement_start`/`candidate_record`/`candidate_validate`
-// for the same reason again: mutators writing `zz.improvement_run`/`zz.candidate`/
-// `zz.candidate_evaluation` through the same ledger. `candidate-build.ts` (0.76.0) holds
-// `candidate_read`/`candidate_build_record`, the two doors the local `npm run candidate-build`
-// goes through now that zz-core never builds a candidate itself.
-// `replay-score.ts` (Task I-19) holds `replay_score` for the same reason once more: a mutator
-// writing `zz.eval_assessment`/`zz.replay_run` through the same ledger — a replay run's own
-// scoring path, distinct from `replay-runs.ts`'s lifecycle tools beside it.
+// for the same reason again: mutators writing `zz.improvement_run`/`zz.candidate` through the
+// same ledger. `candidate-build.ts` (0.76.0) holds `candidate_read`/`candidate_build_record`, the
+// two doors the local `npm run candidate-build` goes through now that zz-core never builds a
+// candidate itself.
 // `release.ts` (Task I-22) holds `release_prepare` for the same reason again: a mutator writing
 // `zz.release_attempt` through the same ledger, plus `improvement.md`. Task I-23 adds
 // `release_apply`/`release_record` to the same file: two more mutators through the same ledger,
 // on the same `zz.release_attempt` row. Task I-24 adds `release_verify` to the same file again:
-// the post-release check, writing `zz.candidate_evaluation` (split: post_release) and the same
-// `zz.release_attempt.verification` through the same ledger. Task I-25 adds `proposal_prepare`
+// the post-release check on real use, writing `zz.release_attempt.verification` through the
+// same ledger. Task I-25 adds `proposal_prepare`
 // to the same file once more: the non-owned-subject path release_prepare's own no_release_owners
 // refusal points callers toward, writing `proposal.md` (proposal-doc.ts) through the same ledger,
 // anchored on `zz.improvement_run`'s own already-existing row rather than a new one.
-const REGISTRATION_MODULES = ["subject", "observe", "discover", "protocol", "qualify", "evaluate", "replay-cases", "replay-runs", "replay-close", "replay-score", "plugin-eval", "plugin-judge", "plugin-record", "candidates", "candidate-build", "release"];
+const REGISTRATION_MODULES = ["subject", "observe", "discover", "protocol", "qualify", "evaluate", "plugin-eval", "plugin-judge", "plugin-record", "candidates", "candidate-build", "release"];
 
 const registered = new Set<string>();
 for (const f of REGISTRATION_MODULES) {
@@ -70,6 +61,7 @@ for (const gone of ["ruler_read", "ruler_record", "ruler_affirm"]) {
 for (const gone of ["round_judge", "round_score"]) {
   if (registered.has(gone)) fail.push(`${gone} is still registered — 0.76.0 removed it`);
 }
+
 // The set, not the size. A count fails identically whether a tool was lost or one was added, and
 // says neither. A missing name is a tool that vanished; an unexpected one is a tool nobody wrote
 // into the door's own description.
@@ -81,8 +73,7 @@ const EXPECTED = new Set([
   "failure_discover",
   "evaluator_qualify",
   "evaluation_start", "evaluation_assess", "evaluation_score",
-  "replay_case_set_build", "replay_start", "replay_begin", "replay_read", "replay_close", "replay_score",
-  "improvement_start", "candidate_record", "candidate_validate", "candidate_read", "candidate_build_record", "candidate_search", "candidate_prove",
+  "improvement_start", "improvement_stop", "candidate_record", "candidate_validate", "candidate_read", "candidate_build_record",
   "release_prepare", "release_apply", "release_record", "release_verify",
   "proposal_prepare",
 ]);

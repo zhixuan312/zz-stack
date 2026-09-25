@@ -31,9 +31,20 @@ import { PLAIN_TOKEN, platformPath, safeName, safePath, tagRefusal, titleSlug, u
 import { commitStore, logActivity, persistDocument } from "../persist.js";
 import { teamFor } from "../platform-db.js";
 import { documentVersions, presentDocument, versionRefusal } from "../versions.js";
+import { asksPart, PART_LIMIT, partHeader, presentPart, slicePart } from "../document-parts.js";
 
 import { envelopeFor, isoToday, normalizeSections } from "../write-guards.js";
 import { nextMoveLine } from "./initiative-status.js";
+
+/** The part of a long document to return. COUPLED: document-parts.ts slicePart reads these. */
+const PART_INPUT = {
+  section: z.string().optional()
+    .describe("Return only the part under this heading (its text, without the #s), down to the next heading of the same or a higher level."),
+  offset: z.number().int().nonnegative().optional()
+    .describe("Start at this character — the `Next: offset N` a previous part named."),
+  limit: z.number().int().positive().optional()
+    .describe(`At most this many characters (default ${PART_LIMIT}).`),
+};
 
 export function registerArtifactTools(server: McpServer): void {
   server.registerTool(
@@ -124,7 +135,10 @@ export function registerArtifactTools(server: McpServer): void {
         "approval N landed instead of the current document — document_present lists which " +
         "versions exist. A search result that came back with `shelf: \"platform\"` " +
         "lives in the journal every team shares, not in yours: pass `scope: \"platform\"` " +
-        "with the same path to read it.",
+        "with the same path to read it. A document too long for one result — over about " +
+        `${PART_LIMIT} characters — is read in parts: \`section\` by heading, or \`offset\` and ` +
+        "`limit` in characters. A part states the file's total size, which characters it is, " +
+        "and the offset to continue from.",
       inputSchema: {
         path: z.union([z.string(), z.array(z.string())])
           .describe("One path, or an array of paths read in the order given."),
@@ -136,9 +150,10 @@ export function registerArtifactTools(server: McpServer): void {
         scope: z.enum(["team", "platform"]).optional()
           .describe("Which shelf the path is on. Omit for your team's own store; " +
                     "\"platform\" for the shared journal, as knowledge_search reports it."),
+        ...PART_INPUT,
       },
     },
-    async ({ path, version, scope }) => {
+    async ({ path, version, scope, section, offset, limit }) => {
       // Refused before the loop, not once per entry. The shared journal holds no gated
       // documents, so it files no approvals and has no `_versions/`; answering per entry
       // would read as a missing file rather than as a request that does not apply.
@@ -172,7 +187,15 @@ export function registerArtifactTools(server: McpServer): void {
             rows.push({ rel, body: `ERROR: ${rel} does not exist${hint}` });
             continue;
           }
-          rows.push({ rel: readRel, body: readFileSync(target, "utf8") });
+          const bytes = readFileSync(target, "utf8");
+          // DELIBERATE: parts only when asked. Unasked, the answer is the bytes and nothing else —
+          // console-write.ts parses the envelope off that string and hands the whole of it to a
+          // model to revise, so a part there would truncate the document it writes back.
+          const ask = { section, offset, limit };
+          if (!asksPart(ask)) { rows.push({ rel: readRel, body: bytes }); continue; }
+          const part = slicePart(bytes, ask);
+          rows.push({ rel: readRel, body: typeof part === "string" ? part
+            : `${partHeader(readRel, part, "the whole file, frontmatter included", bytes)}\n\n${part.text}` });
         } catch (err) {
           // safePath throws a Refusal for a path that walks out of the store or is the wrong
           // shape. Caught here so it becomes a row rather than ending the call and discarding
@@ -216,15 +239,20 @@ export function registerArtifactTools(server: McpServer): void {
         "in a SEPARATE call once the write has returned, never alongside the write in one " +
         "batch: parallel calls have no order between them, and a fetch that runs first " +
         "answers truthfully that the document is not there yet. " +
-        "Paths are relative to the store — `<initiative>/spec.md`.",
+        "Paths are relative to the store — `<initiative>/spec.md`. A body longer than " +
+        `${PART_LIMIT} characters comes back in parts, as does any \`section\`, \`offset\` or ` +
+        "`limit` you ask for: each part says which characters of how many it is. A document " +
+        "counts as presented — and document_approve accepts it — once the parts presented " +
+        "since its last change cover every character of it.",
       inputSchema: {
         path: z.union([z.string(), z.array(z.string())])
           .describe("One path, or an array of paths presented in the order given."),
         version: z.number().int().positive().optional()
           .describe("Show the copy filed at approval N instead of the current document."),
+        ...PART_INPUT,
       },
     },
-    async ({ path, version }) => {
+    async ({ path, version, section, offset, limit }) => {
       const root = await userRoot();
       const user = parseCaller(requestHeaders()).email;
       const single = !Array.isArray(path);
@@ -256,7 +284,13 @@ export function registerArtifactTools(server: McpServer): void {
               "document_list to see what the store does hold, then ask again by full path.");
           continue;
         }
-        out.push(presentDocument(root, rel, version, user));
+        // Whole when it fits and no part was asked for; otherwise one part, which records a
+        // `shown_part` and counts as presented only once the parts cover the body.
+        const ask = { section, offset, limit };
+        const long = !asksPart(ask) && readFileSync(target, "utf8").length > PART_LIMIT;
+        out.push(asksPart(ask) || long
+          ? presentPart(root, rel, version, user, ask)
+          : presentDocument(root, rel, version, user));
       }
       return text(out.join("\n\n────────\n\n"));
     },

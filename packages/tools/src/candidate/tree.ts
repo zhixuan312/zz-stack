@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, readdirSync, realpathSync, symlinkSync } from "n
 import { userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
-import { GIT_EXEC_TIMEOUT_MS, GIT_HARDENED_ARGS, hardenedGitEnv } from "../replay/plan.js";
+import { GIT_EXEC_TIMEOUT_MS, GIT_HARDENED_ARGS, hardenedGitEnv } from "./git.js";
 
 /** The operator's docker CLI plugins, linked into the build's own home: the gate runs
  *  `docker compose config` (no daemon), and docker finds `compose` only under

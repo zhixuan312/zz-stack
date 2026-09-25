@@ -26,7 +26,6 @@
     "tool-report": "node packages/tools/dist/testing/tool-report.js",
     "watch-results": "node packages/tools/dist/ops/watch-results.js",
     "call": "node packages/tools/dist/ops/call.js",
-    "replay": "node packages/tools/dist/replay/launch.js",
     "candidate-build": "node packages/tools/dist/candidate/build.js",
     "release-apply": "node packages/tools/dist/release/apply.js",
     "release-rollback": "node packages/tools/dist/release/rollback.js",

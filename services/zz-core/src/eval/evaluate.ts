@@ -4,10 +4,9 @@
  * measure the protocol's dimensions name, and reducing the result to `scoreRun`'s one number.
  *
  * `evaluation_start` is the only writer of `zz.eval_evidence_snapshot` (Task I-7's
- * `zz.eval_observation_snapshot` bound to a `zz.eval_protocol_version`, and optionally a
- * `zz.replay_case_set` — replay itself is a later task, so `case_set_version_id` is accepted and
- * stored and nothing here reads a case out of it yet) and of `zz.eval_run` at `run_status =
- * 'pending'`.
+ * `zz.eval_observation_snapshot` bound to a `zz.eval_protocol_version`) and of `zz.eval_run` at
+ * `run_status = 'pending'`. `release_verify` (release-verify.ts) reads the same runs back: a
+ * released subject is judged by an evaluation of its real post-release runs, started here.
  *
  * `evaluation_assess` runs every measure of every dimension against every `subject_ref` the
  * caller names, through `evaluate-measures.ts`'s `answerMeasure`, and writes one
@@ -90,12 +89,7 @@ async function loadRunContext(p: pg.Pool, evalRunId: string): Promise<RunContext
   return row ?? null;
 }
 
-// Exported (this one and `latestQualification`/`loadProtocolPolicy`/`qualificationMet` below):
-// Task I-19's `replay-score.ts` scores a replay_run under the SAME protocol dimensions/measures
-// a real eval_run scores under — a second query building the same DimensionRow[] shape would
-// drift the day one of these queries changes and the other does not, so replay-score.ts imports
-// these rather than re-deriving them.
-export async function loadDimensions(p: pg.Pool, protocolVersionId: string): Promise<DimensionRow[]> {
+async function loadDimensions(p: pg.Pool, protocolVersionId: string): Promise<DimensionRow[]> {
   const dims = (await p.query<Omit<DimensionRow, "measures">>(`
     select id::text as id, key, canonical_kind, weight::float8 as weight, required, applicable,
            not_applicable_reason
@@ -116,7 +110,7 @@ async function loadSnapshotFacts(p: pg.Pool, observationSnapshotId: string): Pro
   return row ?? { usable_run_count: 0, total_run_count: 0, coverage: null, facts: null };
 }
 
-export async function latestQualification(
+async function latestQualification(
   p: pg.Pool, evaluatorVersionId: string, protocolVersionId: string,
 ): Promise<{ id: string; state: string } | null> {
   const row = (await p.query<{ id: string; state: string }>(`
@@ -130,13 +124,11 @@ interface ProtocolPolicy {
   qualification: QualificationPolicy | null; bootstrap: boolean; uncertainty: Record<string, unknown>;
   /** `improvement.criticalGuardrails`, parsed by `parseCriticalGuardrails` — the ONLY guardrail
    *  mechanism (Task I-29's own fix dispatch). Read here, alongside `qualification_policy`/
-   *  `scoring_policy`, so evaluation_score and replay_score (which both already call this
-   *  function) share one query and one parse rather than each reading `improvement_policy` a
-   *  second way. */
+   *  `scoring_policy`, so one query and one parse serve evaluation_score. */
   criticalGuardrails: CriticalGuardrail[];
 }
 
-export async function loadProtocolPolicy(p: pg.Pool, protocolVersionId: string): Promise<ProtocolPolicy> {
+async function loadProtocolPolicy(p: pg.Pool, protocolVersionId: string): Promise<ProtocolPolicy> {
   const row = (await p.query<{ qualification_policy: unknown; scoring_policy: unknown; improvement_policy: unknown }>(`
     select qualification_policy, scoring_policy, improvement_policy
       from zz.eval_protocol_version where id = $1::uuid`,
@@ -160,7 +152,7 @@ export async function loadProtocolPolicy(p: pg.Pool, protocolVersionId: string):
  *  `qualification_met` as false regardless of what any individual qualification row says — a
  *  bootstrap protocol's run can be `provisional` at best until a later, non-bootstrap protocol
  *  revision clears it (score.ts's own status rule then does the rest). */
-export async function qualificationMet(
+async function qualificationMet(
   p: pg.Pool, dims: DimensionRow[], protocolVersionId: string, policy: ProtocolPolicy,
 ): Promise<boolean> {
   if (policy.bootstrap) return false;
@@ -200,8 +192,7 @@ export function registerEvaluationTools(server: McpServer): void {
     {
       description:
         "WHEN a protocol version and an observation snapshot are ready to be scored together: " +
-        "atomically binds them (and, where replay is used, a case_set_version_id) into one " +
-        "immutable zz.eval_evidence_snapshot, and opens one zz.eval_run at run_status='pending' " +
+        "atomically binds them into one immutable zz.eval_evidence_snapshot, and opens one zz.eval_run at run_status='pending' " +
         "against it. RETURNS { eval_run_id, evidence_snapshot_id, run_status }. REFUSES an " +
         "observation_snapshot_id nothing minted; a protocol_version_id nothing minted, or one " +
         "protocol_affirm has not bound to an approved protocol.md (named, with its version); and an " +
@@ -212,11 +203,10 @@ export function registerEvaluationTools(server: McpServer): void {
         "rather than opening a second one.",
       inputSchema: {
         subject_version_id: z.string(), protocol_version_id: z.string(),
-        observation_snapshot_id: z.string(), case_set_version_id: z.string().optional(),
-        idempotency_key: z.string().min(1),
+        observation_snapshot_id: z.string(), idempotency_key: z.string().min(1),
       },
     },
-    async ({ subject_version_id, protocol_version_id, observation_snapshot_id, case_set_version_id, idempotency_key }) => {
+    async ({ subject_version_id, protocol_version_id, observation_snapshot_id, idempotency_key }) => {
       const p = db();
       if (!p) return noDb();
       if (!UUID_RE.test(subject_version_id)) return text("ERROR: unknown subject_version_id");
@@ -235,36 +225,29 @@ export function registerEvaluationTools(server: McpServer): void {
       if (!protocol) return text("ERROR: unknown protocol_version_id");
       const unaffirmed = unaffirmedRefusal(protocol_version_id, protocol);
       if (unaffirmed) return text(unaffirmed);
-      if (case_set_version_id) {
-        const cs = (await p.query<{ id: string }>(
-          "select id::text as id from zz.replay_case_set where id = $1::uuid", [case_set_version_id])).rows[0];
-        if (!cs) return text("ERROR: unknown case_set_version_id");
-      }
 
       const principal = parseCaller(requestHeaders()).email;
       const outcome: IdempotencyOutcome<{ eval_run_id: string; evidence_snapshot_id: string; run_status: string }> =
         await withIdempotency(
           principal, "evaluation_start", idempotency_key,
-          { subject_version_id, protocol_version_id, observation_snapshot_id, case_set_version_id: case_set_version_id ?? null },
+          { subject_version_id, protocol_version_id, observation_snapshot_id },
           async (client): Promise<MutatorOutcome<{ eval_run_id: string; evidence_snapshot_id: string; run_status: string }>> => {
-            const digest = sha256(canonicalJson(
-              { observation_snapshot_id, protocol_version_id, case_set_version_id: case_set_version_id ?? null }));
+            const digest = sha256(canonicalJson({ observation_snapshot_id, protocol_version_id }));
             const ins = await client.query<{ id: string }>(`
               insert into zz.eval_evidence_snapshot
-                (observation_snapshot_id, subject_version_id, protocol_version_id, case_set_version_id,
+                (observation_snapshot_id, subject_version_id, protocol_version_id,
                  coverage, content_digest, created_at)
-              values ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::jsonb, $6, now())
-              on conflict (observation_snapshot_id, protocol_version_id, case_set_version_id) do nothing
+              values ($1::uuid, $2::uuid, $3::uuid, $4::jsonb, $5, now())
+              on conflict (observation_snapshot_id, protocol_version_id) do nothing
               returning id::text as id`,
-              [observation_snapshot_id, subject_version_id, protocol_version_id, case_set_version_id ?? null,
+              [observation_snapshot_id, subject_version_id, protocol_version_id,
                JSON.stringify(snapshot.coverage), digest]);
             let evidenceSnapshotId = ins.rows[0]?.id;
             if (!evidenceSnapshotId) {
               const sel = await client.query<{ id: string }>(`
                 select id::text as id from zz.eval_evidence_snapshot
-                 where observation_snapshot_id = $1::uuid and protocol_version_id = $2::uuid
-                   and case_set_version_id is not distinct from $3::uuid`,
-                [observation_snapshot_id, protocol_version_id, case_set_version_id ?? null]);
+                 where observation_snapshot_id = $1::uuid and protocol_version_id = $2::uuid`,
+                [observation_snapshot_id, protocol_version_id]);
               evidenceSnapshotId = sel.rows[0]?.id;
             }
             if (!evidenceSnapshotId) throw new Error("could not resolve zz.eval_evidence_snapshot id");

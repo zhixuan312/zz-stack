@@ -144,6 +144,10 @@ probe("no initiative in the store was left behind by a probe", () => {
 // really gave into a false one. Rewriting its frontmatter would erase who agreed and when; and a
 // closed initiative's status feeds no gate anyone can still pass. What this protects is a live
 // initiative whose document claims an agreement its flow never asks for.
+//
+// Pre-deploy: its two sides are this checkout's manifests and documents already live, and the deploy
+// changes neither, so it is asked before the deploy — 0.76.0 was deployed and rolled back over this
+// one disagreement, which was already true of the data before a single container moved.
 probe("no document carries a status its flow does not gate", () => {
   const gated = new Map<string, boolean>();
   for (const f of run("bash", ["-c", `ls ${root}/catalog/*/*/flow.json`]).split("\n").filter(Boolean)) {
@@ -172,7 +176,7 @@ probe("no document carries a status its flow does not gate", () => {
          `never put to anyone. stampEnvelope writes one only where the manifest declares a ` +
          `gate, so rows like these predate that and need their frontmatter corrected and the ` +
          `team reindexed.`;
-});
+}, { predeploy: true });
 
 probe("no event names an initiative that does not exist in that event's own team", () => {
   // DELIBERATE: not count-bounded, unlike the probe below. The history behind this one was cleaned

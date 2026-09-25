@@ -220,56 +220,6 @@ export async function gatherCountedEvidence(opts: {
   };
 }
 
-/** A platform-owned evaluator's own known answers — for an evaluator no protocol measure defers
- *  to, and so no snapshot fact can anchor. `anchors` carry the answer each text truly has;
- *  `faults` are the same content re-attributed so the true answer flips with it; `controls` are
- *  material of another kind, whose answer must NOT be the anchor's. The texts live beside the
- *  evaluator's own question (`replay-derive.ts`), so a change to one is a change to both. */
-export interface KnownAnswers {
-  readonly anchors: readonly { readonly subject: string; readonly expected: string }[];
-  readonly faults: readonly { readonly subject: string; readonly expected: string }[];
-  readonly controls: readonly { readonly subject: string; readonly notExpected: string }[];
-}
-
-/** The same four counted categories `gatherCountedEvidence` returns, over known answers instead
- *  of snapshot facts: anchors must match, faults must match their flipped answer, controls must
- *  differ from the answer they are the opposite of, and the first anchor is asked three times. */
-export async function gatherKnownAnswerEvidence(opts: {
-  evaluatorVersionId: string; principal: string; known: KnownAnswers;
-}): Promise<{
-  counts: { anchors: LadderCounts; planted_faults: LadderCounts; controls: LadderCounts; stability: LadderCounts };
-  asked: AskedEvaluatorAnswer[];
-}> {
-  const asked: AskedEvaluatorAnswer[] = [];
-  const ask = async (subject: string): Promise<string | null> => {
-    const answer = await askEvaluatorQuestion({
-      evaluator_version_id: opts.evaluatorVersionId, subject_text: subject, askedBy: opts.principal,
-    });
-    asked.push(answer);
-    return normalizeAnswer(answer.result);
-  };
-  const count = async (items: readonly { subject: string }[], passes: (i: number, a: string | null) => boolean): Promise<LadderCounts> => {
-    let passed = 0;
-    for (let i = 0; i < items.length; i += 1) if (passes(i, await ask(items[i].subject))) passed += 1;
-    return { passed, total: items.length };
-  };
-  const { anchors, faults, controls } = opts.known;
-  const anchorCounts = await count(anchors, (i, a) => a === anchors[i].expected);
-  const faultCounts = await count(faults, (i, a) => a === faults[i].expected);
-  const controlCounts = await count(controls, (i, a) => a !== null && a !== controls[i].notExpected);
-  const stability: (string | null)[] = [];
-  if (anchors.length) for (let i = 0; i < 3; i += 1) stability.push(await ask(anchors[0].subject));
-  const modal = new Map<string | null, number>();
-  for (const a of stability) modal.set(a, (modal.get(a) ?? 0) + 1);
-  return {
-    counts: {
-      anchors: anchorCounts, planted_faults: faultCounts, controls: controlCounts,
-      stability: { passed: stability.length ? Math.max(...modal.values()) : 0, total: stability.length },
-    },
-    asked,
-  };
-}
-
 // ---------------------------------------------------------------------------------------------
 // Labels — selection is pure (pinned alongside the ladder in this task's own check); the query
 // that feeds it is real SQL that finds nothing until EVALUATE exists. See this file's header.

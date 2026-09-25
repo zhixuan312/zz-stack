@@ -51,7 +51,7 @@ const REF = "0123456789abcdef0123456789abcdef01234567";
 
 interface Scenario {
   candidate?: Rows; subject?: Rows; teams?: Record<string, string[]>; applying?: Rows;
-  prepared?: Rows; eligible?: boolean; retracted?: string[]; versions?: string[];
+  prepared?: Rows; retracted?: string[]; versions?: string[];
   captured?: Record<string, string>; casRows?: Rows; casError?: { code: string };
 }
 
@@ -63,13 +63,12 @@ function applyClient(sc: Scenario) {
   const updates: { text: string; values: unknown[] }[] = [];
   const row = { status: "prepared", reason: null as unknown };
   const client = stub([
-    [/from zz\.candidate where id/, () => sc.candidate ?? [{ id: CAND, status: "proof_passed", base_subject_version_id: BASE, patch_digest: DIGEST, patchset: { diff: "x" } }]],
+    [/from zz\.candidate where id/, () => sc.candidate ?? [{ id: CAND, status: "valid", base_subject_version_id: BASE, patch_digest: DIGEST, patchset: { diff: "x" } }]],
     [/pl\.release_owners/, () => sc.subject ?? [{ plugin_id: "p1", plugin: "demo", release_owners: ["xuan"], declared_version: "1.1.0" }]],
     [/from zz\.membership/, (v) => (sc.teams ?? { [OWNER]: ["xuan"] })[String(v[0])]?.map((slug) => ({ slug })) ?? []],
     [/pg_advisory_xact_lock/, () => []],
     [/where plugin_id = \$1::uuid and status = 'applying'/, () => sc.applying ?? []],
     [/status = 'prepared' and \(\$2::uuid is null/, (v) => prepared.filter((a) => v[1] === null || a.id === v[1])],
-    [/from zz\.candidate_evaluation/, () => [{ aggregate_score: { release_eligible: sc.eligible ?? true } }]],
     [/status = 'rolled_back'/, () => (sc.retracted ?? []).map((declared_version) => ({ declared_version }))],
     [/from zz\.plugin_version pv/, (v) => (sc.versions ?? ["1.1.0"]).filter((x) => !(v[1] as string[]).includes(x)).map((version) => ({ version }))],
     [/from zz\.eval_subject_version\s+where plugin_id/, (v) => {
@@ -158,7 +157,8 @@ assert.equal((await run({ versions: ["1.1.0", "1.2.0"], retracted: ["1.2.0"] }).
   assert.equal(out.result_id, A_NEW);
 }
 assert.equal((await run({}, OWNER, approvedDoc(A_OLD, STRANGER)).done).result.reason, "approval_required", "a non-member approver signs for nobody");
-assert.equal((await run({ eligible: false }).done).result.reason, "not_eligible");
+assert.equal((await run({ candidate: [{ id: CAND, status: "released", base_subject_version_id: BASE, patch_digest: DIGEST, patchset: { diff: "x" } }] }).done).result.reason,
+  "not_eligible", "a candidate no longer valid (already released) is not releasable");
 {
   const c = applyClient({});
   const out = await planApply(c.client, CAND, "e".repeat(64), "i", OWNER, approvedDoc(A_OLD));

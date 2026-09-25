@@ -93,9 +93,13 @@ for (const [door, tools] of [["/core/mcp", coreTools], ["/eval/mcp", [...evalToo
   }
 }
 
-// 2. release.ts invokes it.
+// 2. release.ts invokes it, through scripts/release/chain-live.ts, which runs the built chain-check.
 const rel = readFileSync("scripts/release.ts", "utf8");
-if (!/chain-check/.test(rel)) fail.push("release.ts does not invoke chain-check");
+const live = readFileSync("scripts/release/chain-live.ts", "utf8");
+if (!/from "\.\/release\/chain-live\.ts"/.test(rel) || !/chainCheck\(\)/.test(rel)) {
+  fail.push("release.ts does not invoke chain-check (chainCheck from release/chain-live.ts)");
+}
+if (!/testing\/chain-check\.js/.test(live)) fail.push("scripts/release/chain-live.ts does not run chain-check");
 
 // 3. Control: the offline gate must not invoke it. This check fails in both directions.
 const gate = readFileSync("scripts/gate.ts", "utf8");

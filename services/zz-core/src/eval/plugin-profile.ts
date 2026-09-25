@@ -75,31 +75,21 @@ interface PluginTraces {
 }
 
 /** The runs belonging to one plugin version, through its recorded skill membership, bounded to
- *  the caller's window and with any `replay-*` team's runs excluded (Task I-7's invariant: those
- *  teams exist for replay-case sandboxes, and their runs are not real use of this plugin).
+ *  the caller's window.
  *
  * DELIBERATE: through zz.plugin_version_skill and not through zz.event.step_version, which is
  * stamped only when a skill is served whole through skill_read. The membership is written at
- * release, which is the only moment anybody knows what a plugin version contained.
- *
- * `left join`, not `join`: a run with no initiative (never opened one, or the join target has
- * since gone) still belongs to this plugin's history and must not silently drop out because it
- * has no team to test the exclusion against — only a run traced to an actual `replay-*` team is
- * excluded, never one this join simply cannot resolve. */
+ * release, which is the only moment anybody knows what a plugin version contained. */
 const RUNS_BY_SKILL = `
   from zz.run r
   join zz.plugin_version_skill pvs on pvs.skill_version_id = r.skill_version_id
   join zz.plugin_version pv on pv.id = pvs.plugin_version_id
   join zz.plugin p on p.id = pv.plugin_id
-  left join zz.initiative i on i.id = r.initiative_id
-  left join zz.team t on t.id = i.team_id
  where p.name = $1 and pv.version = $2
-   and r.started_at between $3 and $4
-   and (t.slug is null or t.slug not like 'replay-%')`;
+   and r.started_at between $3 and $4`;
 
-/** The other kind of plugin, and the other place its evidence lives — bounded and replay-excluded
- *  the same way RUNS_BY_SKILL is, through the door event itself rather than a team join (a door
- *  call is stamped with its own `team_slug`, so no second join is needed to find it).
+/** The other kind of plugin, and the other place its evidence lives — bounded the same way
+ *  RUNS_BY_SKILL is, through the door event itself.
  *
  * A flow is a sequence of stages delivering one initiative, so what it did is the runs of its own
  * skills — RUNS_BY_SKILL above. A plugin that serves a door is a backbone, used all day by every
@@ -115,8 +105,7 @@ const RUNS_ON_DOOR = `
   from zz.run r
  where exists (select 1 from zz.event e
                 where e.run_id = r.id and e.plugin = $1 and e.plugin_version = $2
-                  and e.ts between $3 and $4
-                  and (e.team_slug is null or e.team_slug not like 'replay-%'))
+                  and e.ts between $3 and $4)
    and r.started_at between $3 and $4`;
 
 /** The exact event population `use` is aggregated over: `$1`=plugin, `$2`=version, `$3`/`$4`=the
@@ -127,8 +116,7 @@ export function toolCallEvents(servesOwnDoor: boolean): string {
   return servesOwnDoor
     ? `from zz.event e
         where e.plugin = $1 and e.plugin_version = $2 and e.kind = 'tool_call'
-          and e.ts between $3 and $4
-          and (e.team_slug is null or e.team_slug not like 'replay-%')`
+          and e.ts between $3 and $4`
     : `from zz.event e
         where e.run_id in (select r.id ${RUNS_BY_SKILL})
           and e.kind = 'tool_call'`;
@@ -144,16 +132,12 @@ export function unboundedRunsClause(servesOwnDoor: boolean): string {
   return servesOwnDoor
     ? `from zz.run r
         where exists (select 1 from zz.event e
-                       where e.run_id = r.id and e.plugin = $1 and e.plugin_version = $2
-                         and (e.team_slug is null or e.team_slug not like 'replay-%'))`
+                       where e.run_id = r.id and e.plugin = $1 and e.plugin_version = $2)`
     : `from zz.run r
         join zz.plugin_version_skill pvs on pvs.skill_version_id = r.skill_version_id
         join zz.plugin_version pv on pv.id = pvs.plugin_version_id
         join zz.plugin p on p.id = pv.plugin_id
-        left join zz.initiative i on i.id = r.initiative_id
-        left join zz.team t on t.id = i.team_id
-       where p.name = $1 and pv.version = $2
-         and (t.slug is null or t.slug not like 'replay-%')`;
+       where p.name = $1 and pv.version = $2`;
 }
 
 export async function pluginTraces(
@@ -259,7 +243,7 @@ export async function pluginTraces(
   // reached the door is use of this plugin whether or not the reconciler has since tied it to a
   // run.
   //
-  // Task I-7: both branches are now bounded to `window` and replay-excluded, the same as every
+  // Task I-7: both branches are now bounded to `window`, the same as every
   // other query here — an observation snapshot is a statement about one window, and a door
   // plugin's "was this ever called" question belongs to an unbounded window named at the call
   // site, rather than to a special case inside this function.
@@ -299,8 +283,8 @@ export async function pluginTraces(
   // the test is: has this door recorded a call to a tool that writes a document. A door that only reads them has not produced them.
   const writesDocuments = servesOwnDoor && use.some((u) =>
     ["document_write", "document_patch", "document_revise"].includes(u.tool.split(":").pop() ?? ""));
-  // Scoped to the initiatives THIS window's own door traffic actually touched, and with any
-  // `replay-*` team's documents excluded — the store-wide query this replaced counted every
+  // Scoped to the initiatives THIS window's own door traffic actually touched — the store-wide
+  // query this replaced counted every
   // document on the platform, which made `record` a fact about zz-core's whole install rather
   // than about the window an observation snapshot is supposed to be a statement over.
   // Its own 3-value param array, not `params`: Postgres infers a parameter's type from where it
@@ -317,12 +301,10 @@ export async function pluginTraces(
            where e.plugin = $1 and e.kind = 'tool_call'
              and e.ts between $2 and $3
              and e.initiative is not null and e.initiative <> ''
-             and (e.team_slug is null or e.team_slug not like 'replay-%')
         ),
         live as (select * from zz.doc d
                   where d.path not like '\\_versions/%'
-                    and d.initiative in (select initiative from touched)
-                    and d.team_slug not like 'replay-%'),
+                    and d.initiative in (select initiative from touched)),
         rev as (select l.evidence,
                        exists (select 1 from zz.doc v
                                 where v.team_slug = l.team_slug and v.initiative = l.initiative

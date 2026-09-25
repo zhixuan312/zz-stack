@@ -2,9 +2,9 @@
  * `zz-tool release-rollback` (Task I-24, FR-50, AC-50.1): the git-and-process half of an
  * automatic rollback, run by whoever has a shell — the IMPROVE agent, or a person by hand. This
  * mirrors `packages/tools/src/release/apply.ts`'s own split exactly: `release_verify` (the MCP
- * tool, `services/zz-core/src/eval/release-verify.ts`) owns the decision — the replay plan, the
- * paired statistics, `rollbackDecision` — and hands back a `rollback_plan` on a `rolled_back`
- * verdict; zz-core runs server-side with no checkout of the plugin's repository, so THIS file is
+ * tool, `services/zz-core/src/eval/release-verify.ts`) owns the decision — the released
+ * subject's score on real use after release against its base's, and the rollback rule — and hands
+ * back a `rollback_plan` on a `rolled_back` verdict; zz-core runs server-side with no checkout of the plugin's repository, so THIS file is
  * what actually runs the repository's own rollback procedure and reports back through
  * `release_record`.
  *
@@ -42,7 +42,7 @@
  *
  * `release_record` for `rolled_back` is keyed on the attempt, so a lost response retries as a
  * replay. If `release_verify`'s own current verdict is not `rolled_back` (established, not_established,
- * or still pending more replay evidence), there is nothing for this CLI to do — it says so and
+ * or still pending more post-release evidence), there is nothing for this CLI to do — it says so and
  * exits 0 without touching the repository or calling release_record; running it again once
  * evidence resolves is the correct way to find out whether a rollback is now due. If the rollback
  * command itself fails, this file logs the failure and exits non-zero WITHOUT calling
@@ -146,7 +146,6 @@ interface VerifyResponse {
   reason: string | null;
   evidence: unknown;
   rollback_plan: { plugin: string; declared_version: string; prior_subject_version_id: string; branch: string } | null;
-  runs_required?: { case_set_id: string; baseline: number; candidate: number };
   status: string;
 }
 
@@ -173,11 +172,10 @@ async function cliMain(argv: string[]): Promise<number> {
   console.log(`release_verify -> verdict: ${verify.verdict ?? "pending"}${verify.reason ? ` (${verify.reason})` : ""}`);
 
   if (verify.verdict !== "rolled_back") {
-    // Nothing to do — established, not_established, or still pending more replay evidence (the
-    // module note's own contract: this CLI never drives replay itself).
+    // Nothing to do — established, not_established, or still pending more post-release evidence
+    // (the module note's own contract: this CLI never gathers evidence itself).
     console.log(verify.verdict === null
-      ? `release_verify still needs more evidence (${verify.runs_required?.baseline ?? 0} prior and ` +
-        `${verify.runs_required?.candidate ?? 0} released replays) — nothing to roll back yet`
+      ? "release_verify has not decided yet — nothing to roll back yet"
       : `release_verify's own verdict is ${verify.verdict} — no rollback due`);
     return 0;
   }

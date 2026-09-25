@@ -24,7 +24,7 @@ export function evalRunIn(findingsMd: string | null, initiative: string): string
   if (!evalRunId) {
     return {
       error: `ERROR: no_eval_run — ${initiative}/findings.md does not exist or records no eval_run_id; ` +
-        "EXPLAIN writes it (finding_record with this initiative) before IMPROVE opens a search",
+        "EXPLAIN writes it (finding_record with this initiative) before IMPROVE opens an improvement run",
     };
   }
   return evalRunId;
@@ -37,38 +37,47 @@ async function evalRunOf(initiative: string): Promise<string | { error: string }
   return evalRunIn(existsSync(target) ? readFileSync(target, "utf8") : null, initiative);
 }
 
-/** The one candidate of this initiative's improvement runs that reached `proof_passed`. Refused by
- *  name when there is none, or when there is more than one (listing them) — a proof spends its case
- *  set, so two passes on one eval_run means something outside this flow wrote them. */
-export async function proofPassedCandidateOf(p: pg.Pool, initiative: string): Promise<string | { error: string }> {
+/** The candidate this initiative releases: a `valid` one (built and gated) of its improvement
+ *  runs. With `candidateId`, that one, refused by name unless it is `valid` and on this eval_run;
+ *  without, the only one, refused by name when there is none or when there are several (listing
+ *  them — pass `candidate_id` to choose). */
+export async function releasableCandidateOf(
+  p: pg.Pool, initiative: string, candidateId?: string,
+): Promise<string | { error: string }> {
   const evalRunId = await evalRunOf(initiative);
-  return typeof evalRunId === "string" ? proofPassedCandidateOn(p, initiative, evalRunId) : evalRunId;
+  return typeof evalRunId === "string" ? releasableCandidateOn(p, initiative, evalRunId, candidateId) : evalRunId;
 }
 
-/** `proofPassedCandidateOf` once the eval_run is known — exported for its check. */
-export async function proofPassedCandidateOn(
-  p: pg.Pool, initiative: string, evalRunId: string,
+/** `releasableCandidateOf` once the eval_run is known — exported for its check. */
+export async function releasableCandidateOn(
+  p: pg.Pool, initiative: string, evalRunId: string, candidateId?: string,
 ): Promise<string | { error: string }> {
   const ids = (await p.query<{ id: string }>(`
     select c.id::text as id
       from zz.candidate c join zz.improvement_run ir on ir.id = c.improvement_run_id
-     where ir.eval_run_id = $1::uuid and c.status = 'proof_passed'
+     where ir.eval_run_id = $1::uuid and c.status = 'valid'
      order by c.created_at`, [evalRunId])).rows.map((r) => r.id);
+  if (candidateId) {
+    if (ids.includes(candidateId)) return candidateId;
+    return {
+      error: `ERROR: not_eligible — candidate ${candidateId} is not a valid (built and gated) candidate of ` +
+        `${initiative}'s improvement runs (eval_run ${evalRunId}); candidate_validate decides that in IMPROVE`,
+    };
+  }
   if (ids.length === 1) return ids[0];
   return {
     error: ids.length === 0
       ? `ERROR: not_eligible — no candidate of ${initiative}'s improvement runs (eval_run ${evalRunId}) ` +
-        "has reached proof_passed; candidate_prove decides that in IMPROVE"
+        "is valid; candidate_validate makes one valid once its build and gate pass in IMPROVE"
       : `ERROR: ambiguous_candidate — ${ids.length} candidates of ${initiative}'s improvement runs ` +
-        `reached proof_passed (${ids.join(", ")}); resolve which one stands before preparing a release`,
+        `are valid (${ids.join(", ")}); pass candidate_id naming the one to release`,
   };
 }
 
 /** The initiative's improvement run. DELIBERATE: the newest one, not a refusal when there are
- *  several — a `not_established` proof sends IMPROVE to a fresh `improvement_start` on the same
- *  eval_run (candidate_prove's own contract), so two runs is the ordinary resumed search, and
- *  refusing it would leave a non-owned subject no way to its proposal. Refused by name when there
- *  is none. */
+ *  several — IMPROVE may open a fresh `improvement_start` on the same eval_run, and refusing
+ *  that would leave a non-owned subject no way to its proposal. Refused by name when there is
+ *  none. */
 export async function improvementRunOf(p: pg.Pool, initiative: string): Promise<string | { error: string }> {
   const evalRunId = await evalRunOf(initiative);
   return typeof evalRunId === "string" ? improvementRunOn(p, initiative, evalRunId) : evalRunId;
@@ -83,6 +92,6 @@ export async function improvementRunOn(
      where eval_run_id = $1::uuid order by created_at desc limit 1`, [evalRunId])).rows[0];
   return row?.id ?? {
     error: `ERROR: no_improvement_run — ${initiative}'s eval_run ${evalRunId} has no improvement run; ` +
-      "improvement_start opens one (or, with nothing plugin-owned to search, skip: true closes without a proposal)",
+      "improvement_start opens one (or, with nothing plugin-owned to improve, skip: true closes without a proposal)",
   };
 }

@@ -5,17 +5,16 @@
  *
  * Every answer is read off the question and the state text, never off the call order: an answer
  * that depends on how many calls came before it passes a walk for a reason nobody can name. The
- * rules are TRUTHFUL where the text carries a truth (a counted sentence says N of D; a source is
- * in the first person or it is not) and MARKED where it cannot: a replay's text is only the stand-in
- * session's own output, so the candidate patch carries `CANDIDATE_MARKER` and the stand-in echoes
- * `RELEASED_MARKER` when the tree it ran in already has the patch committed.
+ * rules are TRUTHFUL where the text carries a truth (a counted sentence says N of D) and MARKED
+ * where it cannot: the use the walk seeds after the release carries `RELEASED_MARKER` in its
+ * documents, and every judgement of a text carrying it comes back poor — the released version
+ * regresses on purpose, because rolling it back is part of what the walk exercises.
  *
  * Probabilities stay out of 0.35–0.65, where semantic.ts reads a yes/no as `unclear`.
  */
 import { appendFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 
-export const CANDIDATE_MARKER = "EVAL-FLOW-CANDIDATE";
 export const RELEASED_MARKER = "EVAL-FLOW-RELEASED";
 
 const OWNER_KINDS = ["plugin", "dependency", "platform", "environment", "user_input", "unknown"];
@@ -35,30 +34,20 @@ function choice(keys: string[], pick: string): Answer {
 
 /** One question, one answer, and the family it was recognised as. */
 function answer(state: string, q: Question): { family: string; a: Answer } {
-  const text = q.instructions ?? "";
   const keys = q.criteria && typeof q.criteria === "object" && !Array.isArray(q.criteria)
     ? Object.keys(q.criteria) : [];
-  // The leakage screen quotes the diff, which carries the marker: matched before the markers.
-  if (text.startsWith("Below is one candidate patch")) return { family: "leakage", a: noul(0.05) };
   if (q.type === "choice" && OWNER_KINDS.every((k) => keys.includes(k))) {
     return { family: "discover.owner_kind", a: choice(keys, "plugin") };
-  }
-  if (q.type === "choice" && keys.includes("person_statement")) {
-    const subject = state.slice(state.indexOf("SUBJECT:"));
-    const first = /\b(I|I'm|I've|my|we|our)\b/.test(subject);
-    return { family: "replay.source_kind", a: choice(keys, first ? "person_statement" : "agent_record") };
   }
   const counted = COUNTED.exec(state);
   if (counted) {
     return { family: "qualify.counted_fact", a: noul(Number(counted[2]) > 0 ? 0.95 : 0.05) };
   }
-  if (state.includes("TRANSCRIPT (the session's own final reply)")) {
-    const artifacts = state.slice(state.indexOf("ARTIFACTS ("));
-    if (artifacts.includes(CANDIDATE_MARKER)) return { family: "replay.candidate", a: noul(0.95) };
-    // The released tree regresses in the walk on purpose: release_verify's guardrail rule is
-    // the only road to `rolled_back`, and the rollback is part of what is exercised.
-    if (state.includes(RELEASED_MARKER)) return { family: "replay.released", a: noul(0.2) };
-    return { family: "replay.baseline", a: noul(0.7) };
+  // Use of the released version: judged poor, whatever the question — see the module note.
+  if (state.includes(RELEASED_MARKER)) {
+    if (q.type === "score") return { family: "released", a: { type: "score", score: 0, confidence: 0.9 } };
+    if (q.type === "choice" && keys.length) return { family: "released", a: choice(keys, keys[keys.length - 1]) };
+    return { family: "released", a: noul(0.1) };
   }
   if (q.type === "choice" && keys.length) return { family: "choice.other", a: choice(keys, keys[0]) };
   if (q.type === "score") {

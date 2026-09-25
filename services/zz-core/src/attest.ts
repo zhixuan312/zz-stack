@@ -16,8 +16,8 @@ const CHANGED = new Set(["document_write", "document_patch", "document_revise"])
 
 /** Was this document fetched back since the last time its content changed?
  *
- * Returns a fact; `document_approve` reports it. No approval is refused over it — the record
- * makes the gap visible and does not close it.
+ * Returns a fact; `document_approve` refuses on `false` — "present it first" — and approves on
+ * `true` or `null`.
  *
  * Since the last content change, not "at this version". A `document_patch` does not bump
  * `version`, so a document can be shown at v1, patched eight times and approved while the log

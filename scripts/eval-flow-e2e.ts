@@ -14,17 +14,18 @@
  *   npm run eval-flow-e2e -- --keep       leave the stack up afterwards, for reading
  *
  * What is real: postgres (the deployment's own image), zz-core and the gateway from the current
- * tree, the registries a release writes, every door, the replay launcher inside its OS sandbox,
- * `zz-tool release-apply` and `release-rollback`. What is not: the two model endpoints (a
- * deterministic stub on loopback, eval-flow-e2e/stub-model.ts), the session binary the launcher
- * runs (a stand-in `claude`, as the replay checks use), and the release/rollback commands (stubs
- * that tag, push to a bare origin and register, eval-flow-e2e/release.ts).
+ * tree, the registries a release writes, every door, `npm run candidate-build` inside its OS
+ * sandbox, `zz-tool release-apply` and `release-rollback`, and the post-release judgement on real
+ * use the walk seeds after deploying the release. What is not: the two model endpoints (a
+ * deterministic stub on loopback, eval-flow-e2e/stub-model.ts), the release/rollback commands
+ * (stubs that tag, push to a bare origin and register, eval-flow-e2e/release.ts), and the deploy
+ * (zz-core restarted announcing the released version, eval-flow-e2e/stack.ts).
  *
  * It needs docker and runs for minutes, so it is not a gate check.
  *
  * Loopback only. The walk is handed its gateway, token and database by the stack it stood up, and
  * checks them against the same fail-closed allowlist scripts/control-loop-e2e.ts uses — this
- * writes forty initiatives, a release and a rollback into whatever it is pointed at.
+ * writes sixteen initiatives, a release and a rollback into whatever it is pointed at.
  */
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -71,18 +72,17 @@ async function walk(stack: Stack): Promise<void> {
   const d = await defineQualify(w);
   lap(`4 DEFINE/QUALIFY protocol ${d.protocol}; ${Object.entries(d.qualified).map(([k, v]) => `${k}=${v}`).join(", ")}`);
   const e = await evaluate(w);
-  lap(`5 EVALUATE       eval_run ${e.evalRun}, case set ${e.caseSet} ${JSON.stringify(e.counts)}, ` +
-    `overall ${String(e.score.overall_score)} (${String(e.score.score_status)})`);
+  lap(`5 EVALUATE       eval_run ${e.evalRun}, overall ${String(e.score.overall_score)} (${String(e.score.score_status)})`);
   lap(`6 EXPLAIN        defect ${(await explain(w)).defect}`);
   const i = await improve(w, stack);
-  lap(`7 IMPROVE        candidate ${i.candidate}, ${i.replays} replays, ${i.proof}`);
-  const p = await promoteVerify(w, stack);
-  lap(`8 PROMOTE/VERIFY released ${p.released}, verify ${p.verdict}, ${p.replays} replays, rolled back, closed`);
+  lap(`7 IMPROVE        candidate ${i.candidate}, built and gated ${i.build}`);
+  const p = await promoteVerify(w, stack, tag);
+  lap(`8 PROMOTE/VERIFY released ${p.released}, ${p.runs} real runs, verify ${p.verdict} (${p.reason}), rolled back, closed`);
 }
 
 function report(ok: boolean, stubLog: string): void {
   console.log("\n  transcript (stage · tool · what came back):");
-  // A run of identical silent calls (the replay_starts of one round) prints once, with its count.
+  // A run of identical silent calls prints once, with its count.
   const rows = transcript.filter((x) => x.stage !== "seed");
   for (let i = 0; i < rows.length; i += 1) {
     const r = rows[i];

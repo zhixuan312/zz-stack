@@ -4,21 +4,14 @@
  * candidate. Pure, so `checks/candidate-build-contract.ts` proves every branch with no database.
  *
  * The split (the spec's own: the server owns decisions, locks and records; a local CLI does git
- * and process work — the same one replay and release already keep): zz-core never builds a
- * candidate. A released image has no checkout to build one in, and a candidate's patch is
- * arbitrary code that must not run on the platform host. So `candidate_validate`, after the
- * leakage screen, moves a `recorded` candidate to `awaiting_build` and answers `build_required`
- * with the exact command; `npm run candidate-build` (packages/tools/src/candidate/build.ts)
- * clones the base subject, applies the patch and runs the build and gate inside the replay
- * sandbox, then reports through `candidate_build_record`; the next `candidate_validate` consumes
- * that record.
+ * and process work — the same one release already keeps): zz-core never builds a candidate. A
+ * released image has no checkout to build one in, and a candidate's patch is arbitrary code that
+ * must not run on the platform host. So `candidate_validate` moves a `recorded` candidate to
+ * `awaiting_build` and answers `build_required` with the exact command; `npm run candidate-build`
+ * (packages/tools/src/candidate/build.ts) clones the base subject, applies the patch and runs the
+ * build and gate inside an OS sandbox, then reports through `candidate_build_record`; the next
+ * `candidate_validate` consumes that record, and a passed build makes the candidate releasable.
  */
-import { REPLAY_TEAM_PREFIX } from "@zz/contracts";
-
-/** One `candidate_validate` call's hold on `validating` — it no longer builds, so this only has
- *  to outlast a leakage question and the replay planning after it. A hold older than this is a
- *  process that died mid-call (`releaseStaleValidating`, candidate-validate.ts). */
-export const VALIDATING_LEASE_MS = 10 * 60_000;
 
 /** How long an `awaiting_build` candidate waits for its build to be recorded: the time to start
  *  the CLI, plus its clone, its build and its gate. COUPLED: `BUILD_TIMEOUT_MS` and
@@ -56,26 +49,17 @@ interface BuildRow {
   readonly build_recorded_at: Date | null;
 }
 
-/** Null when `caller` may record `patchDigest`'s build into `row`; otherwise the refusal. In
- *  order: a candidate session's credential (bound to a reserved `replay-` team) never records a
- *  build — a patch under test could otherwise vouch for itself; only the principal whose
- *  `candidate_validate` asked for the build records it; only while it is still asked for, once,
- *  inside the lease; and only for the patch the candidate actually recorded. */
-export function buildRecordRefusal(
-  caller: { readonly principal: string; readonly patTeam: string | null },
-  row: BuildRow, patchDigest: string, now: Date,
-): string | null {
-  if (caller.patTeam?.startsWith(REPLAY_TEAM_PREFIX)) {
-    return `ERROR: candidate_build_record refuses a credential scoped to a reserved replay team ` +
-      `('${caller.patTeam}') — that is a candidate session's; npm run candidate-build records with your own`;
-  }
+/** Null when `principal` may record `patchDigest`'s build into `row`; otherwise the refusal. In
+ *  order: only while the build is still asked for; only the principal whose `candidate_validate`
+ *  asked for it; once; inside the lease; and only for the patch the candidate actually recorded. */
+export function buildRecordRefusal(principal: string, row: BuildRow, patchDigest: string, now: Date): string | null {
   if (row.status !== "awaiting_build") {
     const where = row.status;
     return `ERROR: this candidate is ${where}, not awaiting_build — only a build candidate_validate asked for can be recorded`;
   }
-  if (row.build_requested_by !== caller.principal) {
+  if (row.build_requested_by !== principal) {
     return `ERROR: candidate_build_record is for ${row.build_requested_by ?? "the principal whose candidate_validate asked for the build"}, ` +
-      `not ${caller.principal}`;
+      `not ${principal}`;
   }
   if (row.build_recorded_at) {
     return "ERROR: a build is already recorded for this candidate — call candidate_validate to consume it";
@@ -91,8 +75,8 @@ export function buildRecordRefusal(
   return null;
 }
 
-/** What a consumed build makes of the candidate. `valid` goes on to replay planning in the same
- *  call; the other two refuse, with the text the caller returns. */
+/** What a consumed build makes of the candidate. `valid` is releasable; the other two refuse,
+ *  with the text the caller returns. */
 type BuildVerdict =
   | { readonly next: "valid" }
   | { readonly next: "invalid" | "recorded"; readonly error: string };

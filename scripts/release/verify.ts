@@ -40,3 +40,21 @@ export function verifyLive() {
     unknown: findings.filter((f) => f.verdict === "unknown").map((f) => `${f.layer}/${f.probe}: ${f.detail}`),
   };
 }
+
+/**
+ * The same probes, asked BEFORE the deploy: only the ones registered `predeploy: true`, whose
+ * verdict the deploy cannot change (scripts/doctor/run.ts `probe`). 0.76.0 was built, pushed,
+ * deployed and rolled back over one of these, whose disagreement was already true before a
+ * container moved.
+ *
+ * Both non-ok verdicts stop the release there. `wrong` is what step 5 would roll back on; `unknown`
+ * means the host could not be read, and step 5 would then leave the new version live and untagged.
+ */
+export function verifyPredeploy({ quiet = false }: { quiet?: boolean } = {}) {
+  const findings = diagnose({ predeploy: true });
+  if (!quiet) report();
+  return {
+    wrong: findings.filter((f) => f.verdict === "wrong").map((f) => `${f.layer}/${f.probe}: ${f.detail}`),
+    unknown: findings.filter((f) => f.verdict === "unknown").map((f) => `${f.layer}/${f.probe}: ${f.detail}`),
+  };
+}

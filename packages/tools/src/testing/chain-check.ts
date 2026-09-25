@@ -228,6 +228,11 @@ async function main(): Promise<number> {
       true, /carries no gate/);
   }
 
+  // An approval signs bytes somebody was shown: refused until the current content was presented.
+  check("document_approve() refuses a document not presented since its last change",
+    await call("document_approve", { path: `${INIT}/${FIRST_GATED}`, on_behalf_of: "Chain Check" }),
+    true, /present it first/);
+  await call("document_present", { path: `${INIT}/${FIRST_GATED}` });
   check("document_approve() records a verdict on a document that exists",
     await call("document_approve", { path: `${INIT}/${FIRST_GATED}`, on_behalf_of: "Chain Check" }), false);
   check("document_approve() refuses a document that does not",
@@ -277,6 +282,7 @@ async function main(): Promise<number> {
     if (settled.has(name)) continue;
     check(`write ${name}`, await writeDoc(`${INIT}/${name}`, name), false);
     if (gatedName.has(name)) {
+      await call("document_present", { path: `${INIT}/${name}` });
       check(`approve ${name}`, await call("document_approve", { path: `${INIT}/${name}`, on_behalf_of: "Chain Check" }), false);
     }
   }

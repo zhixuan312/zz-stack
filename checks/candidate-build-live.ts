@@ -27,7 +27,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
-const { detectSandbox } = await load("packages/tools/dist/replay/session.js");
+const { detectSandbox } = await load("packages/tools/dist/candidate/sandbox.js");
 const host = await load("packages/tools/dist/candidate/host.js");
 const { IMAGE_UNSHIPPED, pluginContentDigest, pluginDirComponents, pluginTreeDigest } = await load("packages/catalog/dist/index.js");
 

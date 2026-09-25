@@ -24,7 +24,10 @@ Two questions are only visible from the whole:
 and report from evidence alone; IMPROVE only ever starts from a `plugin`-owned finding EXPLAIN
 already recorded, never from a hunch. **Promotion is authority-bound, not measurement-bound.**
 A candidate may propose a fix to anything; only the plugin's own required owners, through the
-platform's ordinary approval mechanism, ever let it touch a real repository.
+platform's ordinary approval mechanism, ever let it touch a real repository. **A release is
+judged on real use.** Nothing replays past initiatives to prove a candidate first: a candidate
+that builds and gates is released once approved, evaluated on its own real runs afterwards, and
+rolled back if it measures worse than the version it replaced.
 
 **It is a platform capability, not a stage of anybody's delivery.** An agent in the middle of
 shipping something does not stop and evaluate the plugin it is shipping with — that is a
@@ -65,7 +68,7 @@ EVALUATE -> EXPLAIN -> findings.md [NO GATE, always]
 IMPROVEMENT LOOP
 IMPROVE -> proposal.md [NO GATE, conditional] or the promotion boundary below
 
-PROMOTE/VERIFY -> improvement.md [GATE, conditional, closing] -> release -> verify -> rollback if warranted
+PROMOTE/VERIFY -> improvement.md [GATE, conditional, closing] -> release -> verify on real use -> rollback if warranted
 ```
 
 Three durable, deterministic branch facts drive which conditional stage runs and which document
@@ -74,8 +77,8 @@ applies (FR-52, FR-58) — never a model's confidence:
 | fact | values | set by |
 |---|---|---|
 | protocol_action | `create` \| `reuse` \| `revise` | `protocol_read`, DEFINE/QUALIFY |
-| improvement_mode | `skip` \| `search` \| `proposal` | `improvement_start`, IMPROVE |
-| release_mode | `not_applicable` \| proposal_only \| `promotable` | `improvement_start(skip: true, ...)`, `candidate_search`/`candidate_prove` (nothing to promote), `release_prepare`, `proposal_prepare`, IMPROVE/PROMOTE-VERIFY |
+| improvement_mode | `skip` \| `release` \| `proposal` | `improvement_start`, IMPROVE |
+| release_mode | `not_applicable` \| proposal_only \| `promotable` | `improvement_start(skip: true, ...)`, `improvement_stop` (nothing worth releasing), `release_prepare`, `proposal_prepare`, IMPROVE/PROMOTE-VERIFY |
 
 `protocol.md` is gated only when protocol_action is `create`/`revise` — `reuse` skips
 DEFINE/QUALIFY entirely. `findings.md` is always ungated and always written — every branch
@@ -111,8 +114,8 @@ next and it resolves.
 | 4 | `zz-plugin-define-qualify` | **what good means for this plugin, and whether its judges can be trusted** — gated |
 | 5 | `zz-plugin-evaluate` | the deterministic overall score, against the approved protocol |
 | 6 | `zz-plugin-explain` | `findings.md` — ungated, and every branch reaches it |
-| 7 | `zz-plugin-improve` | a proven candidate, an owner-facing proposal, or nothing plugin-owned to search |
-| 8 | `zz-plugin-promote-verify` | `improvement.md` — gated and closing on the promotable branch; release, verify, roll back if warranted |
+| 7 | `zz-plugin-improve` | a built and gated candidate, an owner-facing proposal, or nothing plugin-owned to improve |
+| 8 | `zz-plugin-promote-verify` | `improvement.md` — gated and closing on the promotable branch; release, verify on real use, roll back if warranted |
 
 After a close, the close is an act rather than a stage — one `initiative_close()` call — and the
 platform then reports `action: handover`, which `zz-handover` writes cold, afterwards. The close
@@ -130,10 +133,10 @@ belongs in `findings.md` as an observation, never in the score.
 
 IDENTIFY through EXPLAIN are runnable by any client with no shell — every durable state change
 in those five stages goes through this door's own MCP tools alone. IMPROVE is where that
-changes: replay and candidate execution are isolated agent sessions the IMPROVE stage's own
-runtime launches (`npm run replay`, `zz-tool release-apply`, `zz-tool release-rollback`), so
-IMPROVE and PROMOTE/VERIFY need Claude Code (or an equivalent shell-capable runtime) and refuse
-to start anywhere else. Load the stage skill for the one you are on; each says exactly which
+changes: a candidate is built and gated in a sandbox on the agent's own host (`npm run
+candidate-build`), and released or rolled back through the repository's own procedures
+(`zz-tool release-apply`, `zz-tool release-rollback`), so IMPROVE and PROMOTE/VERIFY need Claude
+Code (or an equivalent shell-capable runtime) and refuse to start anywhere else. Load the stage skill for the one you are on; each says exactly which
 tools to call, in what order, and what each refusal means.
 
 ## Legacy reader, still live
@@ -161,9 +164,8 @@ line. Where a threshold belongs is yours. What the number *is* is never yours.
 is the honest answer — report it and move on.
 
 ❌ **Scoring before `protocol.md` is approved.** `protocol_affirm` refuses without an approved
-document quoting the exact version's `content_digest`, and until it binds, `evaluator_qualify`,
-`replay_case_set_build` and `evaluation_start` refuse that protocol version by name — the
-refusal is the gate working.
+document quoting the exact version's `content_digest`, and until it binds, `evaluator_qualify`
+and `evaluation_start` refuse that protocol version by name — the refusal is the gate working.
 
 ❌ **Starting IMPROVE with no shell.** Nothing before it needs one; everything from it on does.
 
@@ -177,34 +179,35 @@ which from release_mode, not from a guess about which stage an agent stopped at.
 ## Skill contract
 
 **Outcome:** a plugin measured and, where a plugin-owned defect and an owned subject both exist,
-a proven and released improvement — or an honest stop at whichever boundary the evidence or the
-ownership actually drew: a thin trace block, an unqualified evaluator, nothing plugin-owned to
-search, a subject this team cannot release. This skill writes no document of its own; routing to
-the right stage skill is its whole product.
+a released improvement judged on real use — or an honest stop at whichever boundary the evidence
+or the ownership actually drew: a thin trace block, an unqualified evaluator, nothing plugin-owned
+to improve, a patch that never passed its gate, a subject this team cannot release. This skill
+writes no document of its own; routing to the right stage skill is its whole product.
 
 **Required evidence:** `initiative_status`'s own `next_move`, said out loud before routing on
 it. Which durable branch facts (protocol_action, improvement_mode, release_mode) are already
 set, read from the tool that set them, never assumed from which stage an agent happens to be on.
 At each gate, the approval recorded on the document, never a recollection of the conversation.
 
-**Allowed unknowns:** what DEFINE/QUALIFY will decide the protocol says; what IMPROVE's search
-will find or fail to prove; whether a subject is owned before IDENTIFY has said so. None of
+**Allowed unknowns:** what DEFINE/QUALIFY will decide the protocol says; whether IMPROVE's
+candidate will pass its gate, or real use will keep it; whether a subject is owned before
+IDENTIFY has said so. None of
 these has to be settled to route the next stage, and guessing at them is how a stage gets
 skipped.
 
 **Work roles:** a person opens this flow and approves `protocol.md`/`improvement.md` at their
 gates — nothing substitutes for them there, and nothing opens the flow on their behalf
 (`disable-model-invocation: true` is the platform's own enforcement of that). Choosing the stage
-and calling its tools in order is this agent's own. Scoring, qualification and selection are
+and calling its tools in order is this agent's own. Scoring, qualification and the release verdict are
 code and typed evaluators, never the routing agent's own reading, per "the one hard rule" above.
 
 **Action and exit paths:** the action is load the stage skill `initiative_status` names next,
 follow it exactly, and return here to route once it finishes. The exits are the two closes:
-`findings.md`/`proposal.md` alone (no plugin-owned finding, a non-owned subject, or nothing
-proven), or `improvement.md` (an owned, proven, approved, released candidate) — followed, either
+`findings.md`/`proposal.md` alone (no plugin-owned finding, a non-owned subject, or nothing worth
+releasing), or `improvement.md` (an owned, approved, released and verified candidate) — followed, either
 way, by `zz-handover` once the cycle is closed.
 
 **Degraded behaviour:** a plugin nobody has used, a protocol that cannot qualify its own
-evaluators yet, a search that proves nothing — each is a real, complete outcome this flow
+evaluators yet, a candidate that never passes its gate, a release real use rolls back — each is a real, complete outcome this flow
 reports honestly at the stage that found it, never smoothed over by routing past it to the next
 one.

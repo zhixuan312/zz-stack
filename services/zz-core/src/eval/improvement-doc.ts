@@ -8,9 +8,10 @@
  * lands it. Nothing here invents a second write path.
  *
  * Unlike `writeFindingsDoc`, this module takes no database handle — `release_prepare` has
- * already loaded everything the body needs (the candidate, its base subject, its resolved
- * owners, its sealed proof evaluation) before calling this, so the document write is pure
- * rendering plus the platform's own file-store side effects, nothing else.
+ * already loaded everything the body needs (the candidate and its build, its base subject and
+ * that subject's own score, its resolved owners, the protocol's release policy) before calling
+ * this, so the document write is pure rendering plus the platform's own file-store side
+ * effects, nothing else.
  *
  * The body MUST quote `patch_digest` verbatim and cite `release_attempt_id` exactly once (the
  * closing line `renderBody` writes) — `release_apply` (`release-apply.ts`) counts an approval only
@@ -39,16 +40,13 @@ import { persistDocument } from "../persist.js";
 import { teamFor } from "../platform-db.js";
 import { envelopeFor, normalizeSections } from "../write-guards.js";
 
-/** The proof-split `zz.candidate_evaluation` row `release_prepare` reads back — the same shape
- *  `candidate-prove.ts`'s own `resolveOutcome` writes, read here rather than re-derived. */
-export interface ProofEvaluationRow {
-  readonly aggregate_score: {
-    proof_status: string; reason: string; release_eligible: boolean;
-    mean_delta: number | null; lower: number | null; upper: number | null; verdict: string | null;
-  };
-  readonly dimension_scores: unknown;
-  readonly guardrails: { status?: string } | null;
-  readonly statistics: unknown;
+/** What the base subject scored in the evaluation this improvement was proposed from — the
+ *  number `release_verify` compares the released subject against. */
+export interface BaseScore {
+  readonly eval_run_id: string;
+  readonly overall_score: number | null;
+  readonly score_status: string | null;
+  readonly guardrails: readonly { key: string; threshold: number; value: number | null; status: string }[];
 }
 
 interface ImprovementDocInput {
@@ -61,14 +59,17 @@ interface ImprovementDocInput {
   readonly hypothesis: string;
   readonly complexity_delta: number;
   readonly required_owners: readonly string[];
-  readonly proof: ProofEvaluationRow;
+  readonly build: { ok?: boolean; stage?: string; commands?: readonly string[] } | null;
+  readonly base: BaseScore;
+  readonly policy: { readonly minPostReleaseRuns: number; readonly regressionBand: number };
 }
 
 function renderBody(initiative: string, data: ImprovementDocInput): string {
-  const { aggregate_score, guardrails, dimension_scores, statistics } = data.proof;
-  const interval = aggregate_score.lower === null || aggregate_score.upper === null
-    ? "not computed"
-    : `[${aggregate_score.lower.toFixed(4)}, ${aggregate_score.upper.toFixed(4)}] (mean ${(aggregate_score.mean_delta ?? 0).toFixed(4)})`;
+  const commands = data.build?.commands?.length ? data.build.commands.map((c) => `\`${c}\``).join(", ") : "none recorded";
+  const guardrails = data.base.guardrails.length
+    ? data.base.guardrails.map((g) =>
+      `- \`${g.key}\` — must stay at or above ${g.threshold}; the base scored ${g.value ?? "—"} (${g.status})`).join("\n")
+    : "- This protocol names no critical guardrail.";
   return [
     `# Improvement — ${data.plugin} ${data.declared_version}`,
     "",
@@ -84,18 +85,17 @@ function renderBody(initiative: string, data: ImprovementDocInput): string {
     "## Patch",
     `- Patch digest: \`${data.patch_digest}\``,
     "",
-    "## Proof result",
-    `- Status: **${aggregate_score.proof_status}**`,
-    `- Reason: ${aggregate_score.reason}`,
-    `- Release eligible: ${aggregate_score.release_eligible ? "yes" : "no"}`,
-    `- 95% paired bootstrap interval of the per-case delta: ${interval}, verdict: ${aggregate_score.verdict ?? "—"}`,
+    "## Build",
+    `- Result: **${data.build?.ok ? "passed" : "not passed"}** — the patch applied to the base release, ` +
+    "installed, built and passed the repository's own gate inside an OS sandbox (`npm run candidate-build`).",
+    `- Commands: ${commands}`,
     "",
-    "## Score change",
-    `\`\`\`json\n${JSON.stringify(dimension_scores, null, 2)}\n\`\`\``,
+    "## Baseline score",
+    `- eval_run_id: \`${data.base.eval_run_id}\``,
+    `- Overall: ${data.base.overall_score ?? "not established"} (${data.base.score_status ?? "no status"})`,
     "",
     "## Guardrails",
-    `- Status: **${guardrails?.status ?? "not_established"}**`,
-    `\`\`\`json\n${JSON.stringify(statistics, null, 2)}\n\`\`\``,
+    guardrails,
     "",
     "## Owners",
     `- Required owners: ${data.required_owners.length ? data.required_owners.join(", ") : "none"}`,
@@ -104,15 +104,15 @@ function renderBody(initiative: string, data: ImprovementDocInput): string {
     `Once every required owner above approves this document at the patch digest quoted above ` +
     `(\`${data.patch_digest}\`), \`release_apply\` compares the currently released subject with ` +
     `\`${data.base_subject_version_id}\`; if they differ it refuses \`stale_baseline\` and this ` +
-    "candidate must be rebased, re-validated, re-proved and re-approved. Otherwise it applies " +
-    "exactly this patch digest, runs the repository/release gates, and records the new subject " +
-    "version.",
+    "candidate must be rebased, rebuilt and re-approved. Otherwise it applies exactly this patch " +
+    "digest, runs the repository/release gates, and records the new subject version.",
     "",
     "## Rollback plan",
-    "Post-release verification (`release_verify`) runs the approved protocol against the exact " +
-    "released subject. A required guardrail failure or a statistically established regression " +
-    "(`rollbackDecision`, the same `pairedDecision` machinery this proof used) automatically " +
-    "restores the prior released version, recorded as a release event with its own evidence.",
+    `The release is judged on real use (\`release_verify\`). Once the released subject has ` +
+    `${data.policy.minPostReleaseRuns} real runs, they are evaluated under the same protocol version ` +
+    "as the baseline score above. A failed critical guardrail, or an overall score more than " +
+    `${data.policy.regressionBand} below the baseline, rolls the release back to ` +
+    `${data.plugin} ${data.declared_version}; otherwise the release is established.`,
     "",
     `release_attempt_id: \`${data.release_attempt_id}\` — initiative \`${initiative}\`.`,
     "",
@@ -120,8 +120,8 @@ function renderBody(initiative: string, data: ImprovementDocInput): string {
 }
 
 /** Writes `<initiative>/improvement.md`, gated (FR-48, FR-53: gated whenever `release_mode =
- *  promotable` and a final candidate has established proof — which is exactly the state
- *  `release_prepare` only ever calls this from). Returns the written path and byte count, or a
+ *  promotable` and a candidate is built and gated — which is exactly the state `release_prepare`
+ *  only ever calls this from). Returns the written path and byte count, or a
  *  refusal string — never throws, the same contract `documentGuards` itself answers in. */
 export async function writeImprovementDoc(
   initiative: string, data: ImprovementDocInput,

@@ -11,7 +11,7 @@
  * DELIBERATE: zz-core and the gateway run from `node:24` with the throwaway repository mounted,
  * not from a release image built for the purpose: the mounted tree IS the release the walk
  * evaluates (tag `v<version>`), already built on the host, so a run costs no image build, and
- * the services' code and the clone every replay and candidate build fetches are one commit.
+ * the services' code and the clone every candidate build fetches are one commit.
  *
  * Nothing here touches another container: every name carries this process's own prefix, and
  * the teardown removes exactly what `up` created.
@@ -53,7 +53,7 @@ export const sh = (cmd: string, args: string[], cwd?: string, env?: NodeJS.Proce
   })).trim();
 
 /** A child process run WITHOUT blocking this one: the model stub answers from this process's own
- *  event loop, and a replay or a release calls zz-core, which calls the stub. A synchronous spawn
+ *  event loop, and a candidate build or a release calls zz-core, which calls the stub. A synchronous spawn
  *  here would deadlock the walk against itself. */
 export function spawnAsync(cmd: string, args: string[], opts: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number }):
   Promise<{ code: number; out: string }> {
@@ -98,9 +98,15 @@ function seedRepository(work: string, version: string): { seed: string; origin: 
   sh("npm", ["run", "--silent", "build"], seed);
   sh("node", ["scripts/skill-versions.ts", "--write"], seed);
   sh("node", ["scripts/plugin-versions.ts", "--write"], seed);
-  // The release is what the gate would pass: locks and shelf regenerated from the tree, as a
-  // release commit carries them.
+  // The release is what the gate would pass: locks and shelf regenerated from the tree, and the
+  // changelog's unreleased entries under the version's own heading, as a release commit carries
+  // them.
   sh("node", ["scripts/build-marketplace.ts"], seed);
+  const changelog = join(seed, "CHANGELOG.md");
+  const notes = readFileSync(changelog, "utf8");
+  if (!notes.includes(`## [${version}]`)) {
+    writeFileSync(changelog, notes.replace(/^## \[Unreleased\]$/m, `## [Unreleased]\n\n## [${version}] — eval-flow-e2e seed`));
+  }
   git("add", "-A");
   git("commit", "-q", "-m", `zz-stack ${version} (eval-flow-e2e seed)`);
   git("tag", `v${version}`);
@@ -205,6 +211,18 @@ async function waitForAsync(what: string, attempt: () => Promise<boolean>, limit
 export async function restartGateway(stack: Stack): Promise<void> {
   sh("docker", ["restart", `${stack.prefix}-gw`]);
   await waitForAsync("the gateway after its restart", () => coreAnswers(stack));
+}
+
+/** The operator deploying a release: zz-core restarted reporting `version`, so every door call
+ *  after it is stamped with the released version, the way real use of a deployed release is.
+ *  The code stays the tree under evaluation — the walk's candidate changes a skill's words, which
+ *  no door call reads — only the version it announces moves. */
+export async function deployRelease(stack: Stack, version: string): Promise<void> {
+  const pkg = join(stack.seed, "services", "zz-core", "package.json");
+  const parsed = JSON.parse(readFileSync(pkg, "utf8")) as Record<string, unknown>;
+  writeFileSync(pkg, `${JSON.stringify({ ...parsed, version }, null, 2)}\n`);
+  sh("docker", ["restart", `${stack.prefix}-core`]);
+  await waitForAsync("zz-core after the deploy", () => coreAnswers(stack));
 }
 
 export function down(stack: Pick<Stack, "prefix" | "work">): void {

@@ -4,8 +4,8 @@
     "sha": "2c32186e1ee1"
   },
   "sdlc-execute": {
-    "version": "1.9",
-    "sha": "a1ca6456f2d6"
+    "version": "1.10",
+    "sha": "d0fe01eb21b1"
   },
   "sdlc-explore": {
     "version": "1.9",
@@ -20,16 +20,16 @@
     "sha": "e1fbe3c441de"
   },
   "sdlc-method": {
-    "version": "1.15",
-    "sha": "28fee2265e79"
+    "version": "1.16",
+    "sha": "afd52c39d758"
   },
   "sdlc-plan-audit": {
-    "version": "2.4",
-    "sha": "01ac97643a07"
+    "version": "2.5",
+    "sha": "d295becb459d"
   },
   "sdlc-plan": {
-    "version": "1.14",
-    "sha": "0724614e9a00"
+    "version": "1.15",
+    "sha": "adcb886ead96"
   },
   "sdlc-recall": {
     "version": "1.10",
@@ -72,40 +72,40 @@
     "sha": "a5d73e2d40eb"
   },
   "zz-plugin-define-qualify": {
-    "version": "0.5",
-    "sha": "f2f17d3f1b03"
+    "version": "0.6",
+    "sha": "2c1fc03379e3"
   },
   "zz-plugin-discover": {
     "version": "0.2",
     "sha": "c1aa0b1efc30"
   },
   "zz-plugin-eval": {
-    "version": "2.4",
-    "sha": "6717712a41d4"
+    "version": "2.5",
+    "sha": "ebad285aea69"
   },
   "zz-plugin-evaluate": {
-    "version": "0.4",
-    "sha": "5ad3e1081b84"
+    "version": "0.5",
+    "sha": "c6f1bf1dbd82"
   },
   "zz-plugin-explain": {
-    "version": "0.3",
-    "sha": "5485a54f793f"
+    "version": "0.4",
+    "sha": "f78027925f93"
   },
   "zz-plugin-identify": {
     "version": "0.3",
     "sha": "43922e8fc94f"
   },
   "zz-plugin-improve": {
-    "version": "0.9",
-    "sha": "0306999a2d7f"
+    "version": "0.10",
+    "sha": "b07afbe310ae"
   },
   "zz-plugin-observe": {
     "version": "0.2",
     "sha": "f2cb98fea501"
   },
   "zz-plugin-promote-verify": {
-    "version": "0.8",
-    "sha": "28b35346c1ed"
+    "version": "0.9",
+    "sha": "5b280a81685d"
   },
   "zz-authoring": {
     "version": "1.1",
@@ -124,8 +124,8 @@
     "sha": "d07ca4b6f509"
   },
   "zz-platform": {
-    "version": "3.70",
-    "sha": "aca0ae85d9c4"
+    "version": "3.71",
+    "sha": "c63c42beae3b"
   },
   "zz-tldr": {
     "version": "1.2",

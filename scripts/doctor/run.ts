@@ -28,6 +28,7 @@ type ProbeFn = (ctx: Record<string, unknown>) => string | null;
 interface ProbeEntry {
   name: string;
   fn: ProbeFn;
+  predeploy: boolean;
 }
 
 interface Layer {
@@ -68,10 +69,16 @@ export function layer(name: string, question: string, owns: string[] = []): void
 }
 
 /** Register a probe. `fn` returns null when the two sides agree, or a string saying how they
- *  disagree. It must not throw to mean "wrong" — a throw is always `unknown`. */
-export function probe(name: string, fn: ProbeFn): void {
+ *  disagree. It must not throw to mean "wrong" — a throw is always `unknown`.
+ *
+ *  `predeploy` marks a probe whose verdict the deploy itself cannot change: read-only, and asking
+ *  only this checkout and the data already live. Its post-deploy answer is its pre-deploy answer,
+ *  so a release asks it BEFORE deploying and refuses there, rather than deploying and rolling back
+ *  over it (0.76.0). A probe that reads what the new release writes or runs — migrations applied,
+ *  the skill registry, rows the running code emits — is never one. */
+export function probe(name: string, fn: ProbeFn, { predeploy = false }: { predeploy?: boolean } = {}): void {
   if (!current) throw new Error(`probe("${name}") was registered before any layer() — the entry file's import order decides which layer a probe lands in`);
-  current.probes.push({ name, fn });
+  current.probes.push({ name, fn, predeploy });
 }
 
 
@@ -85,9 +92,9 @@ export function probe(name: string, fn: ProbeFn): void {
 const MINE = new Set(["ReferenceError"]);
 
 /** Run one layer's probes and record what each of them turned out to be. */
-function runLayer(l: Layer, ctx: Record<string, unknown>): Finding[] {
+function runLayer(l: Layer, ctx: Record<string, unknown>, predeploy: boolean): Finding[] {
   const results: Finding[] = [];
-  for (const p of l.probes) {
+  for (const p of l.probes.filter((x) => !predeploy || x.predeploy)) {
     let r: Finding;
     try {
       const detail = p.fn(ctx);
@@ -103,10 +110,16 @@ function runLayer(l: Layer, ctx: Record<string, unknown>): Finding[] {
   return results;
 }
 
-/** Run the named layers in the order they were declared. `only` filters by layer name. */
-export function diagnose({ only = null, ctx = {} }:
-    { only?: string[] | null; ctx?: Record<string, unknown> } = {}): Finding[] {
-  const chosen = only ? layers.filter((l) => only.includes(l.name)) : layers;
+/** Run the named layers in the order they were declared. `only` filters by layer name, and
+ *  `predeploy` to the probes marked valid before a deploy.
+ *
+ *  Each run starts from no findings: a release asks the pre-deploy subset and, minutes later, the
+ *  full set in the same process, and the second report must not carry the first one's rows. */
+export function diagnose({ only = null, ctx = {}, predeploy = false }:
+    { only?: string[] | null; ctx?: Record<string, unknown>; predeploy?: boolean } = {}): Finding[] {
+  findings.length = 0;
+  const chosen = (only ? layers.filter((l) => only.includes(l.name)) : layers)
+    .filter((l) => !predeploy || l.probes.some((p) => p.predeploy));
   const unknownNames = (only || []).filter((n) => !layers.some((l) => l.name === n));
   if (unknownNames.length) {
     throw new Error(`no such layer: ${unknownNames.join(", ")}. Layers are: ${layers.map((l) => l.name).join(", ")}`);
@@ -120,7 +133,7 @@ export function diagnose({ only = null, ctx = {} }:
                       detail: "this layer registered no probes — it is reading nothing" });
       continue;
     }
-    for (const r of runLayer(l, ctx)) {
+    for (const r of runLayer(l, ctx, predeploy)) {
       // Downstream, not independent. If the host is running last release's image, the contract
       // layer will disagree with the source, correctly. Later layers still run, because knowing
       // how they disagree is most of a diagnosis; they are tagged with what explains them.
@@ -133,6 +146,10 @@ export function diagnose({ only = null, ctx = {} }:
 }
 
 export const layerNames = (): string[] => layers.map((l) => l.name);
+/** The registered probes as `layer/probe`, optionally only the pre-deploy ones — what a check
+ *  reads to prove the subset without reaching a host. */
+export const probeNames = ({ predeploy = false }: { predeploy?: boolean } = {}): string[] =>
+  layers.flatMap((l) => l.probes.filter((p) => !predeploy || p.predeploy).map((p) => `${l.name}/${p.name}`));
 export const layerOwns = (name: string): string[] => layers.find((l) => l.name === name)?.owns ?? [];
 const layerQuestion = (name: string): string => layers.find((l) => l.name === name)?.question ?? "";
 

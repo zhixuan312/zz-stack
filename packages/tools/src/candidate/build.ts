@@ -4,21 +4,20 @@
  * `build_required`. zz-core owns the decision, the lease and the record
  * (services/zz-core/src/eval/candidate-build-rules.ts); it has no checkout to build in and must
  * not run a candidate's code, so this CLI does it here — the same server-decides/CLI-executes
- * split replay (`replay/launch.ts`) and release (`release/apply.ts`) keep.
+ * split release keeps (`release/apply.ts`).
  *
  *   npm run candidate-build -- --candidate <id> --repo <path-to-a-checkout> [--gateway <url>]
  *     [--build-cmd "<command>"] [--gate-cmd "<command>"]
  *
- * It reads the candidate (`candidate_read`, the base subject under replay_read's own names),
- * fetches the base subject exactly as the replay launcher does — a catalog subject cloned
+ * It reads the candidate (`candidate_read`), fetches its base subject — a catalog subject cloned
  * standalone from `--repo` at `v<declared_version>` and checked against its captured digest, a
- * third-party one fetched at its captured identity (`replay/git.ts`, `replay/third-party.ts`) —
- * applies the patch, and for a catalog subject installs the clone's own locked dependencies
- * (`npm ci --ignore-scripts`) and runs the build and the gate in it inside the replay sandbox
- * (`replay/sandbox.ts`): nothing under the operator's home or checkout is readable but a clone of
- * the console (`tree.ts`), nothing is writable but the clone and a throwaway home, and no
- * credential of this process reaches the build's environment. A third-party subject is somebody else's plugin with no build of this
- * repository's to run: its check is that the patch applies cleanly.
+ * third-party one fetched at its captured identity (`git.ts`, `third-party.ts`) — applies the
+ * patch, and for a catalog subject installs the clone's own locked dependencies
+ * (`npm ci --ignore-scripts`) and runs the build and the gate in it inside the OS sandbox
+ * (`sandbox.ts`): nothing under the operator's home or checkout is readable but a clone of the
+ * console (`tree.ts`), nothing is writable but the clone and a throwaway home, and no credential
+ * of this process reaches the build's environment. A third-party subject is somebody else's
+ * plugin with no build of this repository's to run: its check is that the patch applies cleanly.
  *
  * Then it records the result through `candidate_build_record`, with the digest of the patch it
  * actually applied. A candidate failure (the patch does not apply, its install, build or gate
@@ -34,21 +33,20 @@
  * — `platformToken`), never on the command line, and never passed on to the build.
  */
 import { createHash } from "node:crypto";
-import { realpathSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rmSync } from "node:fs";
 
 import { Mcp, McpError } from "@zz/mcp-client";
 
 import { die, optional, parseArgs, platformToken, required } from "../lib/cli.js";
 import { splitCommand } from "../lib/shell.js";
-import { applyPatch, createWorktree, gitIn, readReleaseLock, removeWorktree, type Worktree } from "../replay/git.js";
-import { idempotencyKey, releaseLockMismatch } from "../replay/plan.js";
 import {
-  detectSandbox, execSandboxed, makeSessionHome, removeSessionHome, sandboxContext, type SandboxContext,
-} from "../replay/session.js";
-import { fetchThirdParty, pinGitPlan, sourceKind, thirdPartyPlan } from "../replay/third-party.js";
+  applyPatch, buildDirFor, createWorktree, gitIn, readReleaseLock, releaseLockMismatch, removeWorktree, type Worktree,
+} from "./git.js";
 import { DEFAULT_BUILD_CMD, DEFAULT_GATE_CMD, hostFailure, preflightCommands } from "./host.js";
+import {
+  detectSandbox, execSandboxed, makeBuildHome, removeBuildHome, sandboxContext, type BuildHome, type SandboxContext,
+} from "./sandbox.js";
+import { fetchThirdParty, pinGitPlan, sourceKind, thirdPartyPlan } from "./third-party.js";
 import { cloneConsoleSibling, linkDockerPlugins } from "./tree.js";
 
 /** COUPLED: `BUILD_LEASE_MS` (candidate-build-rules.ts, 60 minutes) must hold all three, the
@@ -72,7 +70,7 @@ const COMMIT_IDENTITY = ["-c", "user.name=zz-candidate-build", "-c", "user.email
 
 /** `candidate_read`'s answer, the fields this CLI reads — a local mirror, never imported from
  *  `services/zz-core/dist`: `packages/tools` crosses that boundary only over MCP. The subject
- *  fields carry replay_read's names, so `sourceKind`/`thirdPartyPlan` read them unchanged. */
+ *  fields are the ones `sourceKind`/`thirdPartyPlan` (third-party.ts) read. */
 interface CandidateRead {
   readonly candidate_id: string;
   readonly status: string;
@@ -105,17 +103,13 @@ interface BuildOpts {
 const tail = (s: string): string => s.slice(-LOG_TAIL_CHARS);
 const sha256 = (s: string): string => createHash("sha256").update(s, "utf8").digest("hex");
 
-/** Each build's own directory under the system temporary directory, deterministic in the
- *  candidate so a crashed earlier attempt is found and replaced. The tree's parent is this
- *  build's alone, so the console clone beside it is too. */
-function buildBase(candidateId: string): { slug: string; base: string } {
-  const slug = `cb-${sha256(candidateId).slice(0, 16)}`;
-  return { slug, base: join("zz-candidate-build", slug) };
-}
+/** Deterministic per (purpose, candidate, lease), so a retried record after a lost response
+ *  replays the first through the FR-59 ledger instead of minting a second one. */
+const idempotencyKey = (...parts: readonly string[]): string => sha256(parts.join("\u0000"));
 
-/** The base subject, fetched exactly as the replay launcher fetches it. Throws on anything that
- *  is this host's problem rather than the candidate's. */
-async function fetchBase(read: CandidateRead, repoRoot: string, slug: string, base: string): Promise<Worktree> {
+/** The base subject, at exactly the bytes it was captured as. Throws on anything that is this
+ *  host's problem rather than the candidate's. */
+async function fetchBase(read: CandidateRead, repoRoot: string, slug: string): Promise<Worktree> {
   if (!read.subject_plugin) throw new Error("candidate-build: the candidate's base subject names no located plugin");
   if (sourceKind(read) !== "catalog") {
     const plan = thirdPartyPlan(read);
@@ -125,7 +119,7 @@ async function fetchBase(read: CandidateRead, repoRoot: string, slug: string, ba
   if (!read.subject_declared_version || !read.subject_release_digest) {
     throw new Error("candidate-build: candidate_read carried no subject_declared_version/subject_release_digest");
   }
-  const tree = createWorktree(repoRoot, slug, read.subject_declared_version, base);
+  const tree = createWorktree(repoRoot, slug, read.subject_declared_version);
   const mismatch = releaseLockMismatch(readReleaseLock(tree.path), read.subject_plugin,
     read.subject_declared_version, read.subject_release_digest);
   if (mismatch) {
@@ -135,9 +129,8 @@ async function fetchBase(read: CandidateRead, repoRoot: string, slug: string, ba
   return tree;
 }
 
-type Home = ReturnType<typeof makeSessionHome>;
 interface Sandboxed {
-  readonly sandbox: SandboxContext; readonly home: Home; readonly env: Record<string, string>;
+  readonly sandbox: SandboxContext; readonly home: BuildHome; readonly env: Record<string, string>;
   /** Host tools under the operator's home, re-allowed by exact path (`linkDockerPlugins`). */
   readonly tools: readonly string[];
 }
@@ -168,20 +161,20 @@ async function buildCandidate(read: CandidateRead, opts: BuildOpts): Promise<Bui
       "a candidate's build is its own code and never runs unsandboxed");
   }
   const catalog = sourceKind(read) === "catalog";
-  const { slug, base } = buildBase(read.candidate_id);
-  const baseDir = join(realpathSync(tmpdir()), base);
+  // Each build's own directory, deterministic in the candidate so a crashed earlier attempt is
+  // found and replaced.
+  const slug = `cb-${sha256(read.candidate_id).slice(0, 16)}`;
+  const baseDir = buildDirFor(slug);
   rmSync(baseDir, { recursive: true, force: true });
   let tree: Worktree | undefined;
-  const home = makeSessionHome();
+  const home = makeBuildHome();
   try {
     const tools = linkDockerPlugins(home.root);
-    // No model credential either: the build has no model to reach, and `candidateEnv` keeps one
-    // for a replay session.
-    const { ANTHROPIC_API_KEY: _k, CLAUDE_CODE_OAUTH_TOKEN: _o, ...env } = home.env;
+    const env = home.env;
     const box: Sandboxed = { sandbox: sandboxContext(tool, opts.repoRoot, "npm"), home, env, tools };
     if (catalog) preflight(box, opts);
 
-    tree = await fetchBase(read, opts.repoRoot, slug, base);
+    tree = await fetchBase(read, opts.repoRoot, slug);
     try {
       applyPatch(tree, read.candidate_patchset.diff);
     } catch (err) {
@@ -192,9 +185,9 @@ async function buildCandidate(read: CandidateRead, opts: BuildOpts): Promise<Bui
     // Committed before anything runs: the gate reads the clone through git, and a patch left in
     // the working tree reads as uncommitted work — scripts/gate/checks/marketplace.ts's
     // `git status --porcelain -- marketplace` failed every skill-editing candidate as "shelf is
-    // stale". By the launcher's hardened git (replay/git.ts: no hooks, no fsmonitor, no in-tree
-    // attributes or config), outside the sandbox, under a fixed identity, as a fetched
-    // third-party source is snapshotted.
+    // stale". By the hardened git (git.ts: no hooks, no fsmonitor, no in-tree attributes or
+    // config), outside the sandbox, under a fixed identity, as a fetched third-party source is
+    // snapshotted.
     gitIn(tree, ["add", "-A", "--", "."]);
     gitIn(tree, [...COMMIT_IDENTITY, "commit", "-q", "--no-verify", "--allow-empty", "-m", `candidate ${read.candidate_id}`]);
 
@@ -223,7 +216,7 @@ async function buildCandidate(read: CandidateRead, opts: BuildOpts): Promise<Bui
     return { ok: true, commands };
   } finally {
     if (tree) removeWorktree(tree);
-    removeSessionHome(home);
+    removeBuildHome(home);
     rmSync(baseDir, { recursive: true, force: true });
   }
 }

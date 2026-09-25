@@ -33,11 +33,11 @@
  * findings-only behavioural proposals and says so, rather than an empty section pretending
  * nothing was found.
  *
- * Distinct from "no source" is "no tested candidate yet": a subject WITH a real source_locator
- * whose improvement_run simply never got a candidate to `selected` or a proof-terminal status
- * (search still running, or every candidate rejected) — that case is reported on its own terms
- * ("no candidate reached tested evidence"), never folded into the "no source" framing, because a
- * later call against the same improvement_run_id can still pick up real evidence once one lands.
+ * Distinct from "no source" is "no built candidate yet": a subject WITH a real source_locator
+ * whose improvement_run never got a candidate through its build (still building, or every
+ * candidate invalid) — that case is reported on its own terms ("no candidate has been built"),
+ * never folded into the "no source" framing, because a later call against the same
+ * improvement_run_id can still pick up a built candidate once one lands.
  */
 import { existsSync, readFileSync } from "node:fs";
 
@@ -54,7 +54,7 @@ import { teamFor } from "../platform-db.js";
 import { envelopeFor, normalizeSections } from "../write-guards.js";
 
 interface ImprovementRunRow {
-  readonly id: string; readonly eval_run_id: string; readonly status: string;
+  readonly id: string; readonly eval_run_id: string;
 }
 
 interface ProposalSubjectRow {
@@ -72,26 +72,17 @@ interface CandidateRow {
   readonly id: string; readonly status: string; readonly hypothesis: string;
   readonly complexity_delta: number; readonly patch_digest: string; readonly diff: string;
   readonly touched_components: unknown; readonly touched_owners: readonly string[];
+  readonly build_result: { ok?: boolean; stage?: string; commands?: string[] } | null;
 }
 
-interface EvaluationRow {
-  readonly candidate_id: string; readonly split: "validation" | "proof";
-  readonly aggregate_score: {
-    verdict?: string; mean_delta?: number; lower?: number; upper?: number;
-    proof_status?: string; reason?: string; release_eligible?: boolean;
-  };
-}
-
-/** Every candidate status worth showing a reader — cleared validation (or later), the contract's
- *  own "selected/proved candidates" — never a bare `recorded`/`rejected_precheck`/`validating`
- *  candidate, which carries no tested evidence to report. */
-const REPORTABLE_STATUSES = new Set([
-  "valid", "selected", "proving", "proof_passed", "proof_failed", "proof_not_established", "released",
-]);
+/** Every candidate status worth showing a reader: one whose patch was built and checked
+ *  (`valid`) — never a bare `recorded`/`awaiting_build` candidate, which carries no tested
+ *  evidence, or an `invalid` one, whose patch did not even apply or build. */
+const REPORTABLE_STATUSES = new Set(["valid"]);
 
 async function loadImprovementRun(p: pg.Pool, id: string): Promise<ImprovementRunRow | null> {
   const row = (await p.query<ImprovementRunRow>(`
-    select id::text as id, eval_run_id::text as eval_run_id, status
+    select id::text as id, eval_run_id::text as eval_run_id
       from zz.improvement_run where id = $1::uuid`, [id])).rows[0];
   return row ?? null;
 }
@@ -115,18 +106,9 @@ async function loadFindings(p: pg.Pool, evalRunId: string): Promise<FindingRow[]
 async function loadCandidates(p: pg.Pool, improvementRunId: string): Promise<CandidateRow[]> {
   return (await p.query<CandidateRow>(`
     select id::text as id, status, hypothesis, complexity_delta, patch_digest,
-           coalesce(patchset->>'diff', '') as diff, touched_components, touched_owners
-      from zz.candidate where improvement_run_id = $1::uuid order by generation, created_at`,
+           coalesce(patchset->>'diff', '') as diff, touched_components, touched_owners, build_result
+      from zz.candidate where improvement_run_id = $1::uuid order by created_at`,
     [improvementRunId])).rows;
-}
-
-async function loadEvaluations(p: pg.Pool, candidateIds: readonly string[]): Promise<EvaluationRow[]> {
-  if (!candidateIds.length) return [];
-  return (await p.query<EvaluationRow>(`
-    select distinct on (candidate_id, split) candidate_id::text as candidate_id, split, aggregate_score
-      from zz.candidate_evaluation
-     where candidate_id = any($1::uuid[]) and split in ('validation', 'proof')
-     order by candidate_id, split, created_at desc`, [candidateIds])).rows;
 }
 
 /** `subject.source_locator.kind` is `"unrecorded"`, missing, or the column itself is null — see
@@ -143,28 +125,10 @@ function renderFindings(findings: readonly FindingRow[]): string {
     `${f.owner_ref ? ` ${f.owner_ref}` : ""}, decision: ${f.decision})`).join("\n");
 }
 
-function evidenceFor(
-  evaluations: readonly EvaluationRow[], candidateId: string, split: "validation" | "proof",
-): EvaluationRow | null {
-  return evaluations.find((e) => e.candidate_id === candidateId && e.split === split) ?? null;
-}
-
-function renderInterval(s: EvaluationRow["aggregate_score"]): string {
-  return s.lower != null && s.upper != null
-    ? `[${s.lower.toFixed(4)}, ${s.upper.toFixed(4)}] (mean ${(s.mean_delta ?? 0).toFixed(4)})`
-    : "not computed";
-}
-
-function renderValidation(ev: EvaluationRow | null): string {
-  if (!ev) return "not run";
-  return `verdict **${ev.aggregate_score.verdict ?? "—"}**, interval ${renderInterval(ev.aggregate_score)}`;
-}
-
-function renderProof(ev: EvaluationRow | null): string {
-  if (!ev) return "not run";
-  const s = ev.aggregate_score;
-  return `status **${s.proof_status ?? "—"}** (${s.reason ?? "no reason recorded"}), ` +
-    `release eligible: ${s.release_eligible ? "yes" : "no"}, interval ${renderInterval(s)}`;
+function renderBuild(b: CandidateRow["build_result"]): string {
+  if (!b) return "not built";
+  const commands = b.commands?.length ? ` (${b.commands.join("; ")})` : "";
+  return b.ok ? `passed${commands}` : `failed at ${b.stage ?? "an unnamed stage"}${commands}`;
 }
 
 /** A fence the diff cannot close: CommonMark ends a fenced block at the first line of at least
@@ -176,7 +140,7 @@ function fenceFor(body: string): string {
   return "`".repeat(Math.max(3, longest + 1));
 }
 
-function renderCandidate(c: CandidateRow, evaluations: readonly EvaluationRow[]): string {
+function renderCandidate(c: CandidateRow): string {
   const diff = c.diff || "(no diff recorded)";
   const fence = fenceFor(diff);
   return [
@@ -186,8 +150,7 @@ function renderCandidate(c: CandidateRow, evaluations: readonly EvaluationRow[])
     `- Patch digest: \`${c.patch_digest}\``,
     `- Touched components: ${JSON.stringify(c.touched_components ?? [])}`,
     `- Touched owners (recorded at candidate_record time): ${c.touched_owners.length ? c.touched_owners.join(", ") : "none"}`,
-    `- Validation evidence: ${renderValidation(evidenceFor(evaluations, c.id, "validation"))}`,
-    `- Proof evidence: ${renderProof(evidenceFor(evaluations, c.id, "proof"))}`,
+    `- Build (npm run candidate-build): ${renderBuild(c.build_result)}`,
     "- Patch (inert — never applied by this platform):",
     `${fence}diff`,
     diff,
@@ -195,9 +158,7 @@ function renderCandidate(c: CandidateRow, evaluations: readonly EvaluationRow[])
   ].join("\n");
 }
 
-function renderCandidatesSection(
-  sourceAvailable: boolean, reportable: readonly CandidateRow[], evaluations: readonly EvaluationRow[],
-): string {
+function renderCandidatesSection(sourceAvailable: boolean, reportable: readonly CandidateRow[]): string {
   if (!sourceAvailable) {
     return "No source was available for this subject (`source_locator` names no readable " +
       "local_dir/git/package origin), so IMPROVE stopped after diagnosis. The findings above " +
@@ -205,23 +166,22 @@ function renderCandidatesSection(
       "patch, because there was nothing to check out and test one against.";
   }
   if (!reportable.length) {
-    return "No candidate from this improvement_run has reached tested evidence yet (cleared " +
-      "validation or later). The findings above stand on their own until one does.";
+    return "No candidate from this improvement_run has been built and checked yet. The findings " +
+      "above stand on their own until one is.";
   }
-  return reportable.map((c) => renderCandidate(c, evaluations)).join("\n\n");
+  return reportable.map((c) => renderCandidate(c)).join("\n\n");
 }
 
 function renderBody(
   initiative: string, improvementRunId: string, evalRunId: string, subject: ProposalSubjectRow,
   findings: readonly FindingRow[], sourceAvailable: boolean, reportable: readonly CandidateRow[],
-  evaluations: readonly EvaluationRow[],
 ): string {
   return [
     `# Proposal — ${subject.plugin} ${subject.declared_version} — not released by ZZ Stack`,
     "",
     "**Not released by ZZ Stack.** This is an owner-facing proposal only (FR-51): evaluation, " +
-    "diagnosis and, where source access permitted it, an isolated candidate patch with its own " +
-    "validation/proof evidence. Nothing described here has been applied to any repository, and " +
+    "diagnosis and, where source access permitted it, a candidate patch checked in an isolated " +
+    "build. Nothing described here has been applied to any repository, and " +
     "this platform has no authority to apply it.",
     "",
     "## Subject",
@@ -237,7 +197,7 @@ function renderBody(
     renderFindings(findings),
     "",
     "## Candidates",
-    renderCandidatesSection(sourceAvailable, reportable, evaluations),
+    renderCandidatesSection(sourceAvailable, reportable),
     "",
     "## Ownership and promotion",
     "- Release owners: none recorded — this subject cannot be promoted through this platform. " +
@@ -278,13 +238,12 @@ export async function writeProposalDoc(
     loadFindings(p, run.eval_run_id), loadCandidates(p, improvementRunId),
   ]);
   const reportable = candidates.filter((c) => REPORTABLE_STATUSES.has(c.status));
-  const evaluations = await loadEvaluations(p, reportable.map((c) => c.id));
   const sourceAvailable = hasSource(subject.source_locator);
   const candidatesIncluded = sourceAvailable ? reportable.map((c) => c.id) : [];
 
   const body = renderBody(
     initiative, improvementRunId, run.eval_run_id, subject, findings, sourceAvailable,
-    sourceAvailable ? reportable : [], evaluations);
+    sourceAvailable ? reportable : []);
   const root = await userRoot();
   const path = `${initiative}/proposal.md`;
   const unopened = unopenedRefusal(root, path);

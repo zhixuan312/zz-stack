@@ -106,56 +106,28 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
     await callEval("evaluation_score", {
       eval_run_id: randomUUID(), idempotency_key: randomUUID(),
     }), /no platform database|unknown eval_run_id/);
-  // Task I-14: a random subject_version_id decides nothing and matches no subject — refused
-  // before source_scope is ever resolved, the same way every other probe here is safe against
-  // any live state. source_scope still has to be well-formed for the schema to accept the call
-  // at all, so it names a real (but nonexistent) initiative rather than an empty scope.
-  eitherOr("replay_case_set_build refuses a subject_version_id nothing minted",
-    await callEval("replay_case_set_build", {
-      subject_version_id: randomUUID(), protocol_version_id: randomUUID(),
-      source_scope: { initiatives: ["chain-check-probe"] }, idempotency_key: randomUUID(),
-    }), /no platform database|unknown subject_version_id/);
-  // Task I-16: a random case_set_id decides nothing and matches no case set — refused before
-  // any team is provisioned, the same way every other probe here is safe against any live
-  // state. subject_version_id (rather than candidate_id) satisfies the exactly-one check so
-  // the call reaches the case-set lookup at all.
-  eitherOr("replay_start refuses a case_set_id nothing minted",
-    await callEval("replay_start", {
-      case_set_id: randomUUID(), subject_version_id: randomUUID(), split: "evolve", repeats: 1,
-      idempotency_key: randomUUID(),
-    }), /no platform database|unknown subject_version_id|unknown case set/);
-  eitherOr("replay_read refuses a replay_run_id nothing minted",
-    await callEval("replay_read", { replay_run_id: randomUUID() }),
-    /no platform database|unknown replay_run_id/);
-  eitherOr("replay_begin refuses a replay_run_id nothing minted",
-    await callEval("replay_begin", { replay_run_id: randomUUID(), idempotency_key: randomUUID() }),
-    /no platform database|unknown replay_run_id/);
-  eitherOr("replay_close refuses a replay_run_id nothing minted",
-    await callEval("replay_close", {
-      replay_run_id: randomUUID(), status: "cancelled", idempotency_key: randomUUID(),
-    }), /no platform database|unknown replay_run_id/);
   // Task I-18: a random eval_run_id decides nothing and matches no run — refused before any
   // finding is ever read, the same way every other probe here is safe against any live state.
   eitherOr("improvement_start refuses an eval_run_id nothing minted",
     await callEval("improvement_start", {
       eval_run_id: randomUUID(), finding_ids: [randomUUID()], idempotency_key: randomUUID(),
     }), /no platform database|no eval_run/);
+  // An initiative nobody opened has no findings.md, so no improvement run to stop — refused
+  // before any branch fact is written, safe against any live state.
+  eitherOr("improvement_stop refuses an initiative with no findings.md eval_run",
+    await callEval("improvement_stop", { initiative: "chain-check-probe", idempotency_key: randomUUID() }),
+    /no platform database|no_eval_run/);
   // A random improvement_run_id decides nothing and matches no run — refused before
   // base_subject_version_id is ever resolved.
   eitherOr("candidate_record refuses an improvement_run_id nothing minted",
     await callEval("candidate_record", {
-      improvement_run_id: randomUUID(), base_subject_version_id: randomUUID(), parents: [],
+      improvement_run_id: randomUUID(), base_subject_version_id: randomUUID(),
       hypothesis: "chain-check probe hypothesis", expected_effect: {},
       patchset: { diff: "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n" },
       idempotency_key: randomUUID(),
     }), /no platform database|no improvement_run/);
-  // Task I-19: a random replay_run_id decides nothing and matches no run — refused before any
-  // measure is ever assessed, the same way every other probe here is safe against any live state.
-  eitherOr("replay_score refuses a replay_run_id nothing minted",
-    await callEval("replay_score", { replay_run_id: randomUUID(), idempotency_key: randomUUID() }),
-    /no platform database|unknown replay_run_id/);
-  // A random candidate_id decides nothing and matches no candidate — refused before any leakage
-  // question or build lease, the same way every other probe here is safe against any live state.
+  // A random candidate_id decides nothing and matches no candidate — refused before any build
+  // lease, the same way every other probe here is safe against any live state.
   eitherOr("candidate_validate refuses a candidate_id nothing minted",
     await callEval("candidate_validate", { candidate_id: randomUUID(), idempotency_key: randomUUID() }),
     /no platform database|no candidate/);
@@ -169,24 +141,6 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
       candidate_id: randomUUID(), patch_digest: "chain-check-probe-digest",
       result: { ok: false, stage: "build", log_tail: "chain-check probe" }, idempotency_key: randomUUID(),
     }), /no platform database|unknown candidate_id/);
-  // Task I-20: a random improvement_run_id decides nothing and matches no run — refused before
-  // its own eval_run/subject is ever resolved, the same way improvement_start's probe above is
-  // safe against any live state.
-  eitherOr("candidate_search refuses an improvement_run_id nothing minted",
-    await callEval("candidate_search", { improvement_run_id: randomUUID(), idempotency_key: randomUUID() }),
-    /no platform database|no improvement_run/);
-  // Task I-21: a random candidate_id decides nothing and matches no candidate — refused before
-  // any proof context (its own improvement_run, case set or protocol) is ever resolved, the same
-  // way candidate_validate's probe above is safe against any live state.
-  eitherOr("candidate_prove refuses a candidate_id nothing minted",
-    await callEval("candidate_prove", { candidate_id: randomUUID(), idempotency_key: randomUUID() }),
-    /no platform database|no candidate/);
-  // Fix dispatch on I-21: abandon: true reaches the SAME loadCandidate lookup before anything
-  // abandon-specific runs, so a random candidate_id refuses identically — exercised here so the
-  // tool's new argument is at least reachable through the door, not merely typed.
-  eitherOr("candidate_prove refuses abandon on a candidate_id nothing minted",
-    await callEval("candidate_prove", { candidate_id: randomUUID(), abandon: true, idempotency_key: randomUUID() }),
-    /no platform database|no candidate/);
   // Task I-22: an initiative nobody opened has no findings.md, so no eval_run to resolve a
   // candidate from — refused before any subject or owner is ever resolved, safe against any live
   // state.
@@ -208,8 +162,8 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
       idempotency_key: randomUUID(),
     }), /no platform database|no release_attempt/);
   // Task I-24: same shape once more — a random release_attempt_id resolves no row before this
-  // tool ever plans a replay or touches the case-set/protocol lookups, so the probe is safe
-  // against whatever this deployment has or has not verified.
+  // tool ever counts a real run or reads an evaluation, so the probe is safe against whatever
+  // this deployment has or has not verified.
   eitherOr("release_verify refuses a release_attempt_id nothing minted",
     await callEval("release_verify", {
       release_attempt_id: randomUUID(), idempotency_key: randomUUID(),

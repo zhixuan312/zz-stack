@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-explain
-version: 0.3
+version: 0.4
 description: Stage 6 of zz-plugin-eval (EXPLAIN). Record what EVALUATE's own score and assessments actually found — strengths, defects, unknowns, each with an owner — and let findings.md regenerate itself from the current record. Ungated measurement output, never an approval gate.
 when_to_use: "The sixth stage of zz-plugin-eval, once evaluation_score has completed. Produces findings.md — ungated, and every branch of this flow reaches it before anything else happens. No shell required."
 ---
@@ -50,15 +50,15 @@ direction cannot be contradicted, which means it can never be wrong, which means
 measurement.
 
 **Say where the change happens.** The catalog is read-only wherever this platform runs: nothing
-in EVALUATE or EXPLAIN edits a plugin. A `plugin`-owned finding is a candidate for IMPROVE's own
-search — a repository edit, proposed as a patch, proved before promotion, and released by
-whoever owns it. `expected_effect` is the hypothesis IMPROVE's proposer reads; write it as
+in EVALUATE or EXPLAIN edits a plugin. A `plugin`-owned finding is where IMPROVE starts — a
+repository edit, proposed as a patch, built and gated, released by whoever owns it, and judged
+on real use afterwards. `expected_effect` is the hypothesis IMPROVE's proposer reads; write it as
 precisely as you would want a candidate's own `hypothesis` field to read.
 
 ## A FINDING STAYS OPEN UNTIL SOMEBODY CLOSES IT
 
-A `deferred` finding stays open — it is what IMPROVE reads as `finding_ids` when it opens a
-search, and what a reader later needs to know is still unresolved. Once somebody has acted (or
+A `deferred` finding stays open — it is what IMPROVE reads as `finding_ids` when it opens an
+improvement run, and what a reader later needs to know is still unresolved. Once somebody has acted (or
 decided not to):
 
 ```
@@ -99,7 +99,7 @@ opens a stale document.
 `findings.md` is ungated measurement output — nothing here approves it, and nothing blocks on it
 being approved. Every branch of this flow reaches IMPROVE next: a subject with no plugin-owned,
 actionable finding calls `improvement_start(skip: true, ...)` there and the initiative closes on
-`findings.md` itself; one with findings opens a real search or an owner-facing proposal. This
+`findings.md` itself; one with findings opens a real improvement run or an owner-facing proposal. This
 stage never decides which — it only makes sure every real finding this run produced is on the
 record before IMPROVE reads it.
 
@@ -113,7 +113,7 @@ output every branch of this flow shares.
 about what was found that is not backed by a recorded row. `finding_decide`'s response for any
 finding closed in this pass, with its note.
 
-**Allowed unknowns:** whether a `plugin`-owned finding will actually start a search — that is
+**Allowed unknowns:** whether a `plugin`-owned finding will actually start an improvement — that is
 IMPROVE's call, against `improvement_start`'s own eligibility rule (FR-34), not this stage's.
 
 **Action and exit paths:** the action is record every finding the score supports, with ownership

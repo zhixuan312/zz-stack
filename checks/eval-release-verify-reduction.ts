@@ -1,73 +1,51 @@
 #!/usr/bin/env node
-// release_verify's reduction: guardrails are read before the interval, so a failed guardrail rolls
-// back even while the interval is unresolved and the liveness bound is not reached; the protocol's
-// own confidence is the one both the unresolved check and rollbackDecision use.
+// release_verify's decision (002): a release is judged on real use. It waits for the protocol's
+// minimum of real runs, then for an evaluation of them; a failed critical guardrail rolls back
+// before the score is read; a released score more than the regression band below the base rolls
+// back; no base score to compare against is not_established, never a rollback.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
-const { verifyReduction, rollbackDecision } =
+const { verifyDecision } =
   await import(pathToFileURL(join(process.cwd(), "services/zz-core/dist/eval/release-rules.js")).href);
 
-const straddling = [-1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1];
-const base = { resamples: 2000, seed: "s", confidence: 0.95, liveness_bound_reached: false, evidence_complete: true };
-const pick = (r: { kind: string; verdict?: string; reason?: string }) => (r.kind !== "resolve" ? { kind: r.kind } : { kind: r.kind, verdict: r.verdict, reason: r.reason });
+const base = {
+  post_release_runs: 5, min_post_release_runs: 5, regression_band: 0.1, base_overall: 0.7,
+  released: { overall: 0.7, guardrail_status: "pass" },
+};
 
-assert.deepEqual(pick(verifyReduction({ ...base, deltas: straddling, guardrail_status: "fail" })),
-  { kind: "resolve", verdict: "rolled_back", reason: "guardrail_failed" },
-  "a failed guardrail rolls back while the interval is unresolved and the bound is not reached");
-assert.deepEqual(pick(verifyReduction({ ...base, deltas: straddling, guardrail_status: "fail", liveness_bound_reached: true })),
-  { kind: "resolve", verdict: "rolled_back", reason: "guardrail_failed" });
-// Incomplete evidence: a guardrail the runs collected so far already failed rolls back — before
-// any missing run arrives, and before the liveness bound — even with no case paired yet; anything
-// else waits for the missing runs.
-const partial = { ...base, evidence_complete: false };
-assert.deepEqual(pick(verifyReduction({ ...partial, deltas: [], guardrail_status: "fail" })),
-  { kind: "resolve", verdict: "rolled_back", reason: "guardrail_failed" },
-  "a visibly failing guardrail on partial evidence does not wait for the missing runs");
-assert.equal(verifyReduction({ ...partial, deltas: [], guardrail_status: "fail" }).decision, null);
-assert.deepEqual(pick(verifyReduction({ ...partial, deltas: straddling.slice(0, 3), guardrail_status: "fail", liveness_bound_reached: true })),
-  { kind: "resolve", verdict: "rolled_back", reason: "guardrail_failed" });
-for (const guardrail_status of ["pass", "not_established"]) {
-  assert.deepEqual(pick(verifyReduction({ ...partial, deltas: Array(12).fill(-1), guardrail_status })), { kind: "pending" },
-    `incomplete evidence with guardrails ${guardrail_status} waits for the missing runs`);
-}
-assert.deepEqual(pick(verifyReduction({ ...base, deltas: [], guardrail_status: "pass" })),
-  { kind: "resolve", verdict: "not_established", reason: "no_paired_cases" });
-assert.deepEqual(pick(verifyReduction({ ...base, deltas: straddling, guardrail_status: "not_established" })),
-  { kind: "resolve", verdict: "not_established", reason: "guardrails_not_established" });
-assert.deepEqual(pick(verifyReduction({ ...base, deltas: straddling, guardrail_status: "pass" })),
-  { kind: "escalate" }, "unresolved before the bound asks for one more repeat");
-assert.deepEqual(pick(verifyReduction({ ...base, deltas: straddling, guardrail_status: "pass", liveness_bound_reached: true })),
-  { kind: "resolve", verdict: "not_established", reason: "verification_unresolved" });
-assert.deepEqual(pick(verifyReduction({ ...base, deltas: Array(12).fill(-1), guardrail_status: "pass" })),
-  { kind: "resolve", verdict: "rolled_back", reason: "regression_established" });
-assert.deepEqual(pick(verifyReduction({ ...base, deltas: Array(12).fill(0.2), guardrail_status: "pass" })),
-  { kind: "resolve", verdict: "established", reason: "no_regression_established" });
+assert.deepEqual(verifyDecision({ ...base, post_release_runs: 3 }),
+  { kind: "pending", reason: "awaiting_post_release_runs", runs_needed: 2 }, "too few real runs names how many are still needed");
+assert.deepEqual(verifyDecision({ ...base, post_release_runs: 3, released: { overall: 0.1, guardrail_status: "fail" } }).kind, "pending",
+  "nothing is decided on fewer real runs than the protocol's minimum");
+assert.deepEqual(verifyDecision({ ...base, released: null }), { kind: "pending", reason: "awaiting_evaluation" });
+assert.deepEqual(verifyDecision({ ...base, released: { overall: 0.9, guardrail_status: "fail" } }),
+  { kind: "resolve", verdict: "rolled_back", reason: "guardrail_failed", delta: 0.9 - 0.7 },
+  "a failed critical guardrail rolls back whatever the score says");
+assert.deepEqual(verifyDecision({ ...base, released: { overall: null, guardrail_status: "fail" } }).verdict, "rolled_back",
+  "a failed guardrail rolls back even with no overall score");
+assert.deepEqual(verifyDecision({ ...base, released: { overall: null, guardrail_status: "pass" } }),
+  { kind: "pending", reason: "released_score_not_established" });
+assert.deepEqual(verifyDecision({ ...base, base_overall: null }),
+  { kind: "resolve", verdict: "not_established", reason: "no_base_score", delta: null }, "no rollback without evidence");
+const verdictAt = (overall: number) => verifyDecision({ ...base, released: { overall, guardrail_status: "pass" } });
+assert.equal(verdictAt(0.55).verdict, "rolled_back", "0.15 below the base is beyond a 0.1 band");
+assert.equal(verdictAt(0.55).reason, "regression_beyond_band");
+assert.equal(verdictAt(0.65).verdict, "established", "0.05 below the base is inside the band");
+assert.equal(verdictAt(0.6).verdict, "established", "exactly the band is not beyond it");
+assert.equal(verdictAt(0.9).reason, "no_regression_beyond_band");
+assert.equal(verifyDecision({ ...base, released: { overall: 0.7, guardrail_status: "not_established" } }).verdict, "established",
+  "an unmeasured guardrail is not a failed one");
 
-// One confidence: deltas whose interval clears zero at 80% but not at 99% resolve a regression at
-// 0.8 and escalate at 0.99, and rollbackDecision agrees with the reduction at each.
-const edgy = [-0.9, -0.8, -0.7, -1.0, 0.6, 0.4, -0.9, 0.8, 0.3, -0.7, -0.5, 0.2];
-assert.equal(verifyReduction({ ...base, confidence: 0.8, deltas: edgy, guardrail_status: "pass" }).verdict, "rolled_back");
-assert.equal(verifyReduction({ ...base, confidence: 0.99, deltas: edgy, guardrail_status: "pass" }).kind, "escalate");
-for (const confidence of [0.8, 0.99]) {
-  const r = verifyReduction({ ...base, confidence, deltas: edgy, guardrail_status: "pass" });
-  const rolled = rollbackDecision({ deltas: edgy, guardrail_failed: false, resamples: 2000, seed: "s", confidence });
-  assert.equal(r.kind === "resolve" && r.verdict === "rolled_back", rolled, `confidence ${confidence}`);
-}
-// Post-release verification gets no exemption from verifier-token binding (001): the
-// token it mints names the case set and the released subject, and what it asks the agent to run
-// is counts per side, never a proof case id.
-import { readFileSync } from "node:fs";
-const verifySrc = readFileSync("services/zz-core/src/eval/release-verify.ts", "utf8");
-assert.match(verifySrc, /insert into zz\.replay_verifier_token\s*\(token_hash, candidate_id, case_set_id, released_subject_version_id,/,
-  "release_verify mints a verifier token not bound to its case set and released subject");
-assert.match(verifySrc, /interface VerifyRunsRequired \{ readonly case_set_id: string; readonly baseline: number; readonly candidate: number \}/,
-  "release_verify's runs_required is not counts per side");
-assert.doesNotMatch(verifySrc, /runs_required[^\n]*case_id/, "release_verify hands out a proof case id");
-// The guardrail rollback precedes both pending answers: verifyReduction is asked before the
-// liveness-bound replays_unavailable resolve and before the verifier token is handed out.
-const reduceAt = verifySrc.indexOf("const reduced = verifyReduction(");
-assert.ok(reduceAt > 0 && reduceAt < verifySrc.indexOf('reason: "replays_unavailable"') &&
-  reduceAt < verifySrc.indexOf("await ensureVerifierToken(attempt"),
-  "release_verify returns a pending answer before summarising the guardrails collected so far");
+// The released evaluation is read under the base's own protocol version and over at least the
+// minimum of real runs, and a pending answer hands back every argument the next calls need.
+const src = readFileSync("services/zz-core/src/eval/release-verify.ts", "utf8");
+assert.match(src, /er\.subject_version_id = \$1::uuid and er\.protocol_version_id = \$2::uuid\s+and er\.run_status = 'completed' and os\.total_run_count >= \$3/,
+  "release_verify reads an evaluation of another protocol version, or of too few runs");
+assert.match(src, /score_status in \('established', 'provisional'\) and overall_score is not null/,
+  "release_verify compares against a base score that was never established or provisional");
+assert.match(src, /evaluation_required: \{\s*subject_version_id: releasedId, protocol_version_id: protocolVersionId,\s*evidence_window: \{ last_runs: runs \}/,
+  "a pending answer does not carry the arguments plugin_profile and evaluation_start need");
+assert.match(src, /WITHOUT `initiative`/, "the evaluation steps do not warn against overwriting the initiative's own records");
 console.log("ok eval-release-verify-reduction");

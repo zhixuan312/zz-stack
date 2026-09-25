@@ -1,15 +1,17 @@
 /**
  * Stages 7–8 of zz-plugin-eval — IMPROVE and PROMOTE/VERIFY — each in a conversation of its own,
- * with the shell steps their skills name run for real: every replay through `npm run replay`,
- * the release through `zz-tool release-apply`, the rollback through `zz-tool release-rollback`.
+ * with the shell steps their skills name run for real: the candidate's build through
+ * `npm run candidate-build`, the release through `zz-tool release-apply`, the rollback through
+ * `zz-tool release-rollback`. No replay: the released version is judged on the real use the walk
+ * seeds after deploying it.
  *
  * The same rule as walk.ts: every id comes from the operator, from a call this stage made, or
  * from the initiative (`initiative_status`, `findings.md`, `improvement.md`).
  */
-import { Conversation, obj, str, type Reply } from "./doors.ts";
-import { launch, standIn } from "./replay.ts";
-import { candidatePatch, releaseClone, releaseCommands, runCli, tagCommit, WORDINGS } from "./release.ts";
-import type { Stack } from "./stack.ts";
+import { Conversation, str, type Reply } from "./doors.ts";
+import { candidatePatch, releaseClone, releaseCommands, runCli, tagCommit, WORDING } from "./release.ts";
+import { seedUsage } from "./seed.ts";
+import { deployRelease, restartGateway, type Stack } from "./stack.ts";
 import { enter, type Walk } from "./walk.ts";
 
 /** A frontmatter field of a document read back through `document_read`. */
@@ -23,39 +25,7 @@ async function field(c: Conversation, path: string, name: string): Promise<{ val
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
 
-/** Runs the replays a `runs_required` asks for. A validation entry names its case and gets ONE
- *  `replay_start` with `repeats` set to its `count`, exactly as IMPROVE's skill words it — the
- *  next `candidate_validate` asks again for whatever is still short. A proof-shaped entry (no
- *  case: the skill says run them one at a time) gets one run per count. */
-async function runRequired(c: Conversation, stack: Stack, bin: string, entries: Reply[], split: string,
-  context: string, verifierToken?: string, repo: string = stack.seed): Promise<number> {
-  let n = 0;
-  for (const e of entries) {
-    const count = Number(e.count ?? 1);
-    for (let i = 0; i < (e.case_id ? 1 : count); i += 1) {
-      const args: Record<string, unknown> = { case_set_id: e.case_set_id, split, repeats: count, context, idempotency_key: c.key("start") };
-      if (e.case_id) args.case_id = e.case_id;
-      if (e.candidate_id) args.candidate_id = e.candidate_id; else args.subject_version_id = e.subject_version_id;
-      if (verifierToken) args.verifier_token = verifierToken;
-      const started = await c.call("eval", "replay_start", args);
-      const run = { replay_run_id: str(started, "replay_run_id", "replay_start"), token: str(started, "token", "replay_start") };
-      const launched = await launch(stack, bin, run, verifierToken, repo);
-      if (launched.status !== "completed") throw new Error(`replay ${run.replay_run_id} ${launched.status}: ${launched.out.slice(-1500)}`);
-      n += 1;
-    }
-  }
-  return n;
-}
-
-/** A proof-shaped `runs_required` — COUNTS per side, never case ids — expanded to entries. */
-function proofEntries(req: Reply, baseline: string, candidate: { candidate_id?: string; subject_version_id?: string }): Reply[] {
-  return [
-    { case_set_id: req.case_set_id, subject_version_id: baseline, count: Number(req.baseline ?? 0) },
-    { case_set_id: req.case_set_id, ...candidate, count: Number(req.candidate ?? 0) },
-  ].filter((e) => e.count > 0);
-}
-
-export async function improve(w: Walk, stack: Stack): Promise<{ candidate: string; replays: number; proof: string }> {
+export async function improve(w: Walk, stack: Stack): Promise<{ candidate: string; build: string }> {
   const { c } = await enter(w, "zz-plugin-improve", { action: "resolve_branch" });
   const findings = await field(c, `${w.initiative}/findings.md`, "eval_run_id");
   const evalRun = findings.value;
@@ -65,74 +35,49 @@ export async function improve(w: Walk, stack: Stack): Promise<{ candidate: strin
   if (defectIds.length !== 1) throw new Error(`findings.md ## Defects names ${defectIds.length} finding ids: ${defects.slice(0, 400)}`);
   const started = await c.call("eval", "improvement_start",
     { eval_run_id: evalRun, finding_ids: defectIds, initiative: w.initiative, idempotency_key: c.key("improve") },
-    { note: (r) => `improvement_run ${String(r.improvement_run_id)} case_set ${String(r.case_set_id)} mode ${JSON.stringify((r.facts as Reply | undefined)?.improvement_mode ?? null)}` });
+    { note: (r) => `improvement_run ${String(r.improvement_run_id)} mode ${JSON.stringify((r.facts as Reply | undefined)?.improvement_mode ?? null)}` });
   const run = str(started, "improvement_run_id", "improvement_start");
   const base = str(started, "base_subject_version_id", "improvement_start");
-  const bin = standIn(stack);
-  let replays = 0;
-  /** Record one candidate and validate it to a verdict: build it where build_required says, run
-   *  the replays runs_required names, and ask again. */
-  const propose = async (k: number): Promise<string> => {
-    const rec = await c.call("eval", "candidate_record", {
-      improvement_run_id: run, base_subject_version_id: base, parents: [],
-      hypothesis: `zz-platform saying "${WORDINGS[k]}" raises refusal_recovery_path`,
-      expected_effect: { measure: "refusal_recovery_path", direction: "up" },
-      patchset: { diff: candidatePatch(stack, k) }, idempotency_key: c.key("candidate"),
-    }, { note: (r) => `candidate ${String(r.candidate_id)} patch ${String(r.patch_digest).slice(0, 12)} generation ${String(r.generation)}` });
-    const candidate = str(rec, "candidate_id", "candidate_record");
-    for (let round = 0; ; round += 1) {
-      const v = await c.call("eval", "candidate_validate", { candidate_id: candidate, idempotency_key: c.key("validate") },
-        { note: (r) => `status ${String(r.status)} verdict ${String(r.verdict)} runs_required ${Array.isArray(r.runs_required) ? r.runs_required.length : 0}` });
-      if (v.verdict) { if (v.verdict !== "improves") throw new Error(`validation verdict ${String(v.verdict)}`); return candidate; }
-      if (v.status === "awaiting_build") {
-        // The platform never builds a candidate: the command build_required prints does, here.
-        const built = await runCli(stack, "candidate-build", ["--candidate", candidate, "--repo", stack.seed]);
-        c.note("npm run candidate-build", `exit ${built.code}: ${built.out.trim().split("\n").slice(-1)[0]?.slice(0, 200) ?? ""}`);
-        if (built.code !== 0) throw new Error(`npm run candidate-build exited ${built.code}:\n${built.out.slice(-3000)}`);
-        continue;
-      }
-      const req = Array.isArray(v.runs_required) ? v.runs_required as Reply[] : [];
-      if (!req.length || round > 12) throw new Error(`candidate_validate neither decided nor asked for runs: ${JSON.stringify(v).slice(0, 600)}`);
-      replays += await runRequired(c, stack, bin, req, "validation", "search");
-    }
-  };
-  const proposed = [await propose(0)];
-  // `next` decides whether to propose more, never a sense of "enough": the search selects only
-  // at the protocol's own liveness bound.
-  let selected = "";
-  for (let i = 0; !selected; i += 1) {
-    const s = await c.call("eval", "candidate_search", { improvement_run_id: run, idempotency_key: c.key("search"), initiative: w.initiative },
-      { note: (r) => `status ${String(r.status)} selected ${String(r.selected_id)} budget ${String(r.edit_budget)} next ${String(r.next).slice(0, 90)}` });
-    if (typeof s.selected_id === "string" && s.selected_id) { selected = s.selected_id; break; }
-    if (s.status === "closed") throw new Error(`the search closed with nothing selected: ${JSON.stringify(s).slice(0, 600)}`);
-    if (Number(s.edit_budget ?? 0) < 1 || i >= WORDINGS.length - 1) throw new Error(`the search asks for no candidate and selected none: ${JSON.stringify(s).slice(0, 600)}`);
-    proposed.push(await propose(proposed.length));
+
+  const rec = await c.call("eval", "candidate_record", {
+    improvement_run_id: run, base_subject_version_id: base,
+    hypothesis: `zz-platform saying "${WORDING}" raises refusal_recovery_path`,
+    expected_effect: { measure: "refusal_recovery_path", direction: "up" },
+    patchset: { diff: candidatePatch(stack) }, idempotency_key: c.key("candidate"),
+  }, { note: (r) => `candidate ${String(r.candidate_id)} patch ${String(r.patch_digest).slice(0, 12)}` });
+  const candidate = str(rec, "candidate_id", "candidate_record");
+
+  // The platform never builds a candidate: candidate_validate asks, the command it prints builds
+  // and gates it here, and the next call consumes what that command recorded.
+  let validated: Reply = {};
+  for (let round = 0; round < 3; round += 1) {
+    validated = await c.call("eval", "candidate_validate", { candidate_id: candidate, idempotency_key: c.key("validate") },
+      { note: (r) => `status ${String(r.status)} releasable ${String(r.releasable)}` });
+    if (validated.status === "valid") break;
+    if (validated.status !== "awaiting_build") throw new Error(`candidate_validate answered neither a build nor valid: ${JSON.stringify(validated).slice(0, 600)}`);
+    const built = await runCli(stack, "candidate-build", ["--candidate", candidate, "--repo", stack.seed]);
+    c.note("npm run candidate-build", `exit ${built.code}: ${built.out.trim().split("\n").slice(-1)[0]?.slice(0, 200) ?? ""}`);
+    if (built.code !== 0) throw new Error(`npm run candidate-build exited ${built.code}:\n${built.out.slice(-3000)}`);
   }
-  if (!proposed.includes(selected)) throw new Error(`candidate_search selected ${selected}, which this search never recorded`);
-  const candidate = selected;
-  // The first call mints the verifier token; a later one reads back what the proof runs showed,
-  // or asks for more (with the same token, which this conversation holds).
-  let token = "";
-  let proved: Reply = {};
-  for (let round = 0; round < 6; round += 1) {
-    proved = await c.call("eval", "candidate_prove", { candidate_id: candidate, idempotency_key: c.key("prove"), initiative: w.initiative },
-      { note: (r) => `status ${String(r.status)} proof ${String(r.proof_status)} release_eligible ${String(r.release_eligible)} runs_required ${JSON.stringify(r.runs_required ?? null)}` });
-    if (proved.proof_status) break;
-    if (typeof proved.verifier_token === "string" && proved.verifier_token) token = proved.verifier_token;
-    if (!token) throw new Error(`candidate_prove asked for runs and never handed this conversation a verifier_token: ${JSON.stringify(proved).slice(0, 400)}`);
-    replays += await runRequired(c, stack, bin, proofEntries(obj(proved, "runs_required", "candidate_prove"), base, { candidate_id: candidate }),
-      "proof", "verifier", token);
+  if (validated.status !== "valid" || validated.releasable !== true) {
+    throw new Error(`the candidate never became releasable: ${JSON.stringify(validated).slice(0, 600)}`);
   }
-  if (proved.proof_status !== "proof_passed" || proved.release_eligible !== true) {
-    throw new Error(`candidate_prove: ${JSON.stringify(proved).slice(0, 600)}`);
-  }
-  // IMPROVE ends by handing the proved candidate to promotion.
+  // IMPROVE ends by handing the releasable candidate to promotion.
   await c.call("eval", "release_prepare", { initiative: w.initiative, idempotency_key: c.key("prepare") },
     { note: (r) => `release_attempt ${String(r.release_attempt_id)} owners ${JSON.stringify(r.required_owners)} document ${String(r.document)}` });
-  return { candidate, replays, proof: String(proved.proof_status) };
+  return { candidate, build: JSON.stringify(validated.build ?? null).slice(0, 80) };
 }
 
-export async function promoteVerify(w: Walk, stack: Stack): Promise<{ released: string; verdict: string; replays: number }> {
+/** release_verify, from a conversation that knows nothing but the initiative. */
+async function verify(w: Walk, label: string): Promise<{ c: Conversation; v: Reply; attempt: string }> {
+  const c = new Conversation(w.url, w.pat, `zz-plugin-promote-verify (${label})`);
+  const attempt = (await field(c, `${w.initiative}/improvement.md`, "release_attempt_id")).value.replace(/`/g, "");
+  const v = await c.call("eval", "release_verify", { release_attempt_id: attempt, idempotency_key: c.key("verify") },
+    { note: (r) => `verdict ${String(r.verdict)} reason ${String(r.reason)} runs_needed ${String(r.runs_needed ?? "—")}` });
+  return { c, v, attempt };
+}
+
+export async function promoteVerify(w: Walk, stack: Stack, tag: string): Promise<{ released: string; verdict: string; reason: string; runs: number }> {
   const { c } = await enter(w, "zz-plugin-promote-verify", { action: "await_approval", document: "improvement.md" });
   const path = `${w.initiative}/improvement.md`;
   // The attempt and the candidate are the document's own frontmatter; the digest is quoted in
@@ -154,55 +99,64 @@ export async function promoteVerify(w: Walk, stack: Stack): Promise<{ released: 
     "--base-ref", tagCommit(stack, baseTag), "--base-tag", baseTag, "--gateway", stack.url]);
   c.note("zz-tool release-apply", `exit ${applied.code}: ${applied.out.trim().split("\n").slice(-2).join(" | ").slice(0, 200)}`);
   if (applied.code !== 0) throw new Error(`zz-tool release-apply exited ${applied.code}:\n${applied.out.slice(-3000)}`);
-  const bin = standIn(stack);
-  let replays = 0;
-  let verdict = "";
-  // Minted by the first call only; every later one answers token_already_issued with null, so
-  // the conversation that holds it keeps it for the escalation rounds.
-  let verifierToken = "";
-  let conv = c;
-  for (let round = 0; round < 6 && !verdict; round += 1) {
-    const v = await conv.call("eval", "release_verify", { release_attempt_id: attemptId, idempotency_key: conv.key("verify"), initiative: w.initiative },
-      { note: (r) => `verdict ${String(r.verdict)} reason ${String(r.reason)} runs_required ${JSON.stringify(r.runs_required ?? null)}` });
-    if (typeof v.verdict === "string" && v.verdict) { verdict = v.verdict; break; }
-    const req = obj(v, "runs_required", "release_verify");
-    if (typeof v.verifier_token === "string" && v.verifier_token) verifierToken = v.verifier_token;
-    if (!verifierToken) throw new Error(`release_verify asked for runs and no call has handed this conversation a verifier_token: ${JSON.stringify(v).slice(0, 400)}`);
-    const sides = [
-      { case_set_id: req.case_set_id, subject_version_id: str(v, "prior_subject_version_id", "release_verify"), count: Number(req.baseline ?? 0) },
-      { case_set_id: req.case_set_id, subject_version_id: str(v, "released_subject_version_id", "release_verify"), count: Number(req.candidate ?? 0) },
-    ].filter((e) => e.count > 0);
-    if (round === 0) {
-      // The conversation holding the first token ends before running anything: one released-side
-      // run failing a guardrail already rolls back, so a run here would leave nothing to resume.
-      // A fresh conversation finds the attempt in improvement.md, rotates the token, and finds the
-      // dropped one refused.
-      const dropped = verifierToken;
-      conv = new Conversation(w.url, w.pat, "zz-plugin-promote-verify (resumed)");
-      const resumedAttempt = (await field(conv, path, "release_attempt_id")).value.replace(/`/g, "");
-      const r = await conv.call("eval", "release_verify", { release_attempt_id: resumedAttempt, idempotency_key: conv.key("verify"),
-        initiative: w.initiative, rotate_token: true },
-      { note: (x) => `rotate_token: new token ${x.verifier_token ? "issued" : "NOT issued"}, runs_required ${JSON.stringify(x.runs_required ?? null)}` });
-      verifierToken = str(r, "verifier_token", "release_verify(rotate_token)");
-      const old = await conv.call("eval", "replay_start", { case_set_id: sides[0].case_set_id, subject_version_id: sides[0].subject_version_id,
-        split: "proof", repeats: 1, context: "verifier", verifier_token: dropped, idempotency_key: conv.key("stale") },
-      { refusal: /verifier_token/ });
-      if (!String(old.text ?? "").startsWith("ERROR")) throw new Error(`the dropped verifier_token still started a run: ${JSON.stringify(old).slice(0, 300)}`);
-      continue;
-    }
-    replays += await runRequired(conv, stack, bin, sides, "proof", "verifier", verifierToken, clone);
+
+  // Released, not yet used: release_verify waits for real use rather than deciding on none.
+  const waiting = await c.call("eval", "release_verify", { release_attempt_id: attemptId, idempotency_key: c.key("verify") },
+    { note: (r) => `verdict ${String(r.verdict)} reason ${String(r.reason)} runs_needed ${String(r.runs_needed ?? "—")}` });
+  if (waiting.verdict !== null || waiting.reason !== "awaiting_post_release_runs") {
+    throw new Error(`release_verify decided before the released version was used at all: ${JSON.stringify(waiting).slice(0, 600)}`);
   }
-  if (verdict !== "rolled_back") throw new Error(`release_verify answered ${verdict || "nothing"}; the stub regresses the released subject so the rollback runs`);
-  const rolled = await runCli(stack, "release-rollback", ["--release-attempt", attemptId, "--repo", clone,
+
+  // The operator deploys the release, and people use it — days, in real life; minutes here.
+  await deployRelease(stack, cmds.version);
+  const after = await seedUsage(stack.url, stack.pat, tag, "after");
+  await restartGateway(stack);   // reconcileRuns turns the event log into runs at boot
+  c.note("deploy + real use", `zz-core ${cmds.version} deployed, ${after.length} initiatives of use seeded`);
+
+  // A later conversation: enough real runs now, and nobody has evaluated them.
+  const asked = await verify(w, "after use");
+  if (asked.v.reason !== "awaiting_evaluation") {
+    throw new Error(`release_verify did not ask for an evaluation of the released version's real use: ${JSON.stringify(asked.v).slice(0, 600)}`);
+  }
+  const req = asked.v.evaluation_required as Reply | undefined;
+  if (!req) throw new Error(`release_verify asked for an evaluation and named none: ${JSON.stringify(asked.v).slice(0, 400)}`);
+  const subject = str(req, "subject_version_id", "release_verify.evaluation_required");
+  const protocol = str(req, "protocol_version_id", "release_verify.evaluation_required");
+  // Exactly the four EVALUATE calls the skill names, with the arguments release_verify handed
+  // back and no `initiative` on any of them.
+  const e = asked.c;
+  const profiled = await e.call("eval", "plugin_profile", {
+    subject_version_id: subject, evidence_window: req.evidence_window, idempotency_key: e.key("profile"),
+  }, { note: (r) => `snapshot ${String(r.observation_snapshot_id)} runs ${String(r.total_run_count)} usable ${String(r.usable_run_count)}` });
+  const started = await e.call("eval", "evaluation_start", {
+    subject_version_id: subject, protocol_version_id: protocol,
+    observation_snapshot_id: str(profiled, "observation_snapshot_id", "plugin_profile"), idempotency_key: e.key("start"),
+  }, { note: (r) => `eval_run ${String(r.eval_run_id)}` });
+  const evalRun = str(started, "eval_run_id", "evaluation_start");
+  const listed = await e.call("core", "document_list", {});
+  const refs = (String(listed.text ?? JSON.stringify(listed)).match(/\d{4}-\d{2}-\d{2}-[a-z0-9-]+-after-\d+\/spec\.md/g) ?? []).slice(0, 6);
+  if (refs.length < 5) throw new Error(`document_list named ${refs.length} post-release spec.md documents to judge`);
+  await e.call("eval", "evaluation_assess", { eval_run_id: evalRun, subject_refs: refs, idempotency_key: e.key("assess") },
+    { note: (r) => `${String(r.assessment_count)} assessments over ${refs.length} refs` });
+  await e.call("eval", "evaluation_score", { eval_run_id: evalRun, idempotency_key: e.key("score") },
+    { note: (r) => `overall ${String(r.overall_score)} status ${String(r.score_status)} guardrails ${String(r.guardrail_status)}` });
+
+  const decided = await verify(w, "decide");
+  const verdict = String(decided.v.verdict ?? "");
+  const evidence = (decided.v.evidence ?? {}) as Reply;
+  if (verdict !== "rolled_back") {
+    throw new Error(`release_verify answered ${verdict || "nothing"}; the stub regresses the released version so the rollback runs: ${JSON.stringify(decided.v).slice(0, 600)}`);
+  }
+  const rolled = await runCli(stack, "release-rollback", ["--release-attempt", decided.attempt, "--repo", clone,
     "--rollback-cmd", cmds.rollback, "--gateway", stack.url]);
-  conv.note("zz-tool release-rollback", `exit ${rolled.code}: ${rolled.out.trim().split("\n").slice(-2).join(" | ").slice(0, 200)}`);
+  decided.c.note("zz-tool release-rollback", `exit ${rolled.code}: ${rolled.out.trim().split("\n").slice(-2).join(" | ").slice(0, 200)}`);
   if (rolled.code !== 0) throw new Error(`zz-tool release-rollback exited ${rolled.code}:\n${rolled.out.slice(-3000)}`);
-  const closed = await conv.call("core", "initiative_close", { initiative: w.initiative, disposition: "finished",
+  const closed = await decided.c.call("core", "initiative_close", { initiative: w.initiative, disposition: "finished",
     no_signoff_reason: "the release was rolled back on its own verification; the evaluation itself is finished" },
     { note: (r) => String(r.text ?? JSON.stringify(r)).slice(0, 160) });
-  const after = await conv.call("core", "initiative_status", { initiative: w.initiative },
+  const status = await decided.c.call("core", "initiative_status", { initiative: w.initiative },
     { note: (r) => `next_move ${JSON.stringify(r.next_move)}` });
-  const next = obj(after, "next_move", "initiative_status");
-  if (next.action !== "closed") throw new Error(`after the close initiative_status says ${JSON.stringify(next)}: ${JSON.stringify(closed).slice(0, 300)}`);
-  return { released: cmds.version, verdict, replays };
+  const next = status.next_move as Reply | undefined;
+  if (next?.action !== "closed") throw new Error(`after the close initiative_status says ${JSON.stringify(next)}: ${JSON.stringify(closed).slice(0, 300)}`);
+  return { released: cmds.version, verdict, reason: String(decided.v.reason), runs: Number(evidence.post_release_runs ?? 0) };
 }

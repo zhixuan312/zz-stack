@@ -4,7 +4,7 @@
  *
  * Field names below are the protocol body's own, camelCase, one-to-one with spec v8's
  * `EvaluationProtocol` type. The schema (services/gateway/migrations/001_init.sql) stores this
- * same content under snake_case columns on `zz.eval_protocol_version` — `suites`, `replay_policy`,
+ * same content under snake_case columns on `zz.eval_protocol_version` — `suites`,
  * `qualification_policy`, `scoring_policy`, `improvement_policy` — mapped positionally by the
  * write path. This module never speaks snake_case.
  *
@@ -35,10 +35,6 @@ const EVALUATOR_TYPES = [
 /** Which suite a measure runs in — zz.eval_measure.suite (001) and Measure.suite below. */
 const SUITES = ["capability", "regression", "production"] as const;
 
-const REPLAY_MODES = [
-  "sandbox", "recorded", "simulated", "live_read_only", "non_replayable",
-] as const;
-
 /** zz.eval_evaluator_qualification.state (001) and
  *  QualificationPolicy.boundedSemanticMinimum below — the same ladder under two names: how sure
  *  an evaluator's verdict has to be before its qualification, or a protocol's minimum bar for
@@ -58,57 +54,32 @@ const OWNER_KINDS = [
 const FINDING_KINDS = ["strength", "defect", "unknown"] as const;
 
 const FAILURE_CANDIDATE_STATUSES = ["candidate", "accepted", "rejected", "merged"] as const;
-const REPLAY_CASE_STATUSES = ["replayable", "not_replayable"] as const;
-const REPLAY_CASE_SPLITS = ["evolve", "validation", "proof"] as const;
-const REPLAY_EVENT_VISIBILITIES = ["actor", "user_oracle", "evaluation_oracle"] as const;
 const EVAL_RUN_RUN_STATUSES = ["pending", "running", "completed", "failed", "cancelled"] as const;
 const EVAL_RUN_SCORE_STATUSES = ["established", "provisional", "not_established"] as const;
 const EVAL_RUN_GUARDRAIL_STATUSES = ["pass", "fail", "not_established"] as const;
-const IMPROVEMENT_RUN_STATUSES = [
-  "open", "searching", "selected", "proofing", "proof_failed",
-  "ready_for_approval", "released", "closed", "cancelled",
-] as const;
-/** `proof_not_established` (001, fix dispatch on I-21): a candidate whose sealed proof
- *  never resolved to passed or failed — too few proof cases, an interval that never cleared mme
- *  by the liveness bound, or the allocation's token holder abandoned it — is spent (the proof
- *  allocation is used up either way) but is NOT a rejected hypothesis. Distinct from
- *  `proof_failed` so `REJECTED_CANDIDATE_STATUSES` (proposer-bundle.ts) can bar the latter from
- *  re-proposal without also barring an idea that was never actually tested. */
+/** zz.candidate.status (002): recorded, then awaiting_build while the local CLI builds and gates
+ *  the patch, then valid (releasable) or invalid; release_record moves a valid one to released,
+ *  and a release that measured worse on real use to rolled_back. */
 const CANDIDATE_STATUSES = [
-  "recorded", "rejected_precheck", "awaiting_build", "validating", "valid", "invalid", "selected",
-  "proving", "proof_passed", "proof_failed", "proof_not_established", "stale", "released",
-  // Migration 001: release_record's rollback path marks the candidate whose release it undid.
-  "rolled_back",
+  "recorded", "awaiting_build", "valid", "invalid", "released", "rolled_back",
 ] as const;
-/** zz.replay_run.status (001) — distinct from replay_case.status above: a case is either
- *  replayable or not, once; a run against it moves through its own execution lifecycle and can
- *  fail or be cancelled independently of the case it replays. */
-const REPLAY_RUN_STATUSES = [
-  "registered", "running", "completed", "failed", "not_replayable", "cancelled",
-] as const;
-/** zz.candidate_evaluation.split (001) — distinct from replay_case.split above: a case
- *  is drawn once into evolve/validation/proof; a candidate's *evaluation* against the pool is
- *  scored as validation/proof/post_release, the third being a released candidate re-scored in
- *  production. */
-const CANDIDATE_EVALUATION_SPLITS = ["validation", "proof", "post_release"] as const;
 const RELEASE_ATTEMPT_STATUSES = [
   "prepared", "applying", "released", "refused", "failed", "rolled_back",
 ] as const;
 const ANSWER_KINDS = ["noul", "choice", "score"] as const;
 
-/** Every protocol-body enum — the field names inside Dimension, Measure, ReplayDependencyPolicy
- *  and QualificationPolicy below, not a migration's check constraints. One source for the
+/** Every protocol-body enum — the field names inside Dimension, Measure and QualificationPolicy
+ *  below, not a migration's check constraints. One source for the
  *  z.enum(...) calls in this file and for the dashboard that renders a protocol's own choices
  *  back to a person. */
 export const PROTOCOL_ENUMS = {
   canonicalKind: CANONICAL_KINDS,
   evaluatorType: EVALUATOR_TYPES,
   suite: SUITES,
-  replayMode: REPLAY_MODES,
   boundedSemanticMinimum: QUALIFICATION_STATES,
 } as const;
 
-/** Every state column migration 001 constrains, one array per column (two columns sharing a
+/** Every state column the migrations constrain, one array per column (two columns sharing a
  *  vocabulary — owner_kind, the qualification ladder — share one array rather than restate it).
  *  Every later writer takes its values from here; a value that only ever lived in the SQL CHECK
  *  is a state the gate's "every state the schema allows can actually be reached" check reports
@@ -116,16 +87,10 @@ export const PROTOCOL_ENUMS = {
 export const EVAL_STATE_ENUMS = {
   qualificationState: QUALIFICATION_STATES,
   failureCandidateStatus: FAILURE_CANDIDATE_STATUSES,
-  replayCaseStatus: REPLAY_CASE_STATUSES,
-  replayCaseSplit: REPLAY_CASE_SPLITS,
-  replayEventVisibility: REPLAY_EVENT_VISIBILITIES,
   scoreStatus: EVAL_RUN_SCORE_STATUSES,
   guardrailStatus: EVAL_RUN_GUARDRAIL_STATUSES,
   runStatus: EVAL_RUN_RUN_STATUSES,
-  improvementRunStatus: IMPROVEMENT_RUN_STATUSES,
   candidateStatus: CANDIDATE_STATUSES,
-  candidateEvaluationSplit: CANDIDATE_EVALUATION_SPLITS,
-  replayRunStatus: REPLAY_RUN_STATUSES,
   releaseAttemptStatus: RELEASE_ATTEMPT_STATUSES,
   ownerKind: OWNER_KINDS,
   answerKind: ANSWER_KINDS,
@@ -134,7 +99,7 @@ export const EVAL_STATE_ENUMS = {
 
 /** A free-form object whose shape spec v8 does not fix beyond "an object" — used wherever a
  *  field's contents are the writing stage's business (a measure's evaluator reference, a suite's
- *  own settings, a search's proof/release policy) and no reader depends on a fixed shape yet.
+ *  own settings) and no reader depends on a fixed shape yet.
  *  Guessing one here would be exactly the speculative abstraction this file's task boundary
  *  excludes: "final deliverable content is not in this plan." */
 const FreeformRecord = z.record(z.string(), z.unknown());
@@ -205,30 +170,6 @@ export const Dimension = z.object({
 export type Dimension = z.infer<typeof Dimension>;
 
 // -------------------------------------------------------------------------------------------
-// Replay — how a case's dependencies replay, and the three-way pool a case-set version splits
-// into. Mirrors zz.replay_case.split (evolve/validation/proof), never zz.candidate_evaluation's
-// own split — that vocabulary is disjoint and lives in EVAL_STATE_ENUMS.candidateEvaluationSplit.
-
-export const ReplayDependencyPolicy = z.object({
-  surface: z.string().min(1),
-  mode: z.enum(REPLAY_MODES),
-  matcher: FreeformRecord.nullable(),
-});
-export type ReplayDependencyPolicy = z.infer<typeof ReplayDependencyPolicy>;
-
-export const ThreeWaySplitPolicy = z.object({
-  evolve: z.number(),
-  validation: z.number(),
-  proof: z.number(),
-  min: z.object({
-    evolve: z.number(),
-    validation: z.number(),
-    proof: z.number(),
-  }),
-});
-export type ThreeWaySplitPolicy = z.infer<typeof ThreeWaySplitPolicy>;
-
-// -------------------------------------------------------------------------------------------
 // Qualification, establishment and uncertainty — how sure an evaluator has to be before its
 // verdict counts, and how a run's score earns "established" rather than "provisional".
 
@@ -250,39 +191,19 @@ export const UncertaintyPolicy = FreeformRecord;
 export type UncertaintyPolicy = z.infer<typeof UncertaintyPolicy>;
 
 // -------------------------------------------------------------------------------------------
-// Improvement search — how a candidate generation is bounded, how candidates are ranked, and
-// the free-form proof/release policies and named guardrails around them.
+// Improvement — how a released improvement is judged on real use, and the named guardrails it
+// must keep passing.
 
-export const SearchPolicy = z.object({
-  // Counts: a fractional or non-positive bound makes `generationCapRefusal` compare against a
-  // number no candidate count can meet the way the protocol meant.
-  maxGenerations: z.number().int().positive(),
-  maxCandidatesPerGeneration: z.number().int().positive(),
-  // A zero or negative bound expires every run before it starts.
-  wallClockHours: z.number().positive(),
-  // A repeat count: validation waits for this many scored runs per side, so a fraction is never met.
-  minRepeats: z.number().int().positive(),
-  // A negative mme would read a regression as meaningful improvement.
-  minMeaningfulEffect: z.number().nonnegative(),
-  // A confidence level: 0 or 1 makes the paired interval empty or unbounded.
-  confidence: z.number().gt(0).lt(1),
-  // A band width: a negative one makes "equivalent" impossible even for identical scores.
-  equivalenceBand: z.number().nonnegative(),
-  complexity: z.string().min(1),
+/** How `release_verify` judges a released improvement on real use (002). No replay and no proof:
+ *  once the released subject has `minPostReleaseRuns` real runs, a fresh evaluation of it under
+ *  the same protocol version is compared with the base subject's own score. */
+export const ReleasePolicy = z.object({
+  // A run count: a fraction is never met, and zero would judge a release on no use at all.
+  minPostReleaseRuns: z.number().int().positive(),
+  // How far below the base's overall score (0–10) the released one may land before it counts as
+  // a regression. Negative would roll back a release that scored the same as its base.
+  regressionBand: z.number().nonnegative(),
 });
-export type SearchPolicy = z.infer<typeof SearchPolicy>;
-
-export const CandidateSelectionPolicy = z.object({
-  order: z.array(z.string().min(1)).min(1),
-});
-export type CandidateSelectionPolicy = z.infer<typeof CandidateSelectionPolicy>;
-
-/** Spec v8 does not fix a proof-policy shape beyond "an object" — see FreeformRecord. */
-export const ProofPolicy = FreeformRecord;
-export type ProofPolicy = z.infer<typeof ProofPolicy>;
-
-/** Spec v8 does not fix a release-policy shape beyond "an object" — see FreeformRecord. */
-export const ReleasePolicy = FreeformRecord;
 export type ReleasePolicy = z.infer<typeof ReleasePolicy>;
 
 /** A named guardrail inside `improvement.criticalGuardrails` (Task I-29's own fix dispatch, FR-6,
@@ -320,11 +241,6 @@ export const EvaluationProtocol = z.object({
     regression: SuiteDefinition,
     production: SuiteDefinition,
   }),
-  replay: z.object({
-    dependencies: z.array(ReplayDependencyPolicy),
-    caseSelection: FreeformRecord,
-    splitPolicy: ThreeWaySplitPolicy,
-  }),
   qualification: QualificationPolicy,
   scoring: z.object({
     establishment: EstablishmentPolicy,
@@ -332,9 +248,6 @@ export const EvaluationProtocol = z.object({
   }),
   improvement: z.object({
     evolvable: z.boolean(),
-    search: SearchPolicy,
-    selection: CandidateSelectionPolicy,
-    proof: ProofPolicy,
     criticalGuardrails: z.array(Guardrail),
     release: ReleasePolicy,
   }),

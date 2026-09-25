@@ -2,8 +2,8 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "zz-plugin-eval",
   "agentName": "ZZ Plugin Evaluation",
-  "description": "Measure a whole plugin by what its real runs did, then — for plugins this team owns — search for a proven, authorized improvement. One protocol you agree, evidence, and a change only once a person approves it.",
-  "purpose": "To answer whether a plugin is worth having, from evidence the platform already holds — what its real runs did — against a protocol somebody agreed before the scoring started, and to turn a plugin-owned defect into a candidate patch with independent proof before anyone approves promoting it. Measurement never bends toward the change somebody already wanted; promotion never happens without the required owners' say-so.",
+  "description": "Measure a whole plugin by what its real runs did, then — for plugins this team owns — release an authorized improvement and judge it on real use. One protocol you agree, evidence, and a change only once a person approves it.",
+  "purpose": "To answer whether a plugin is worth having, from evidence the platform already holds — what its real runs did — against a protocol somebody agreed before the scoring started, and to turn a plugin-owned defect into a built and gated candidate patch, released only once its owners approve and rolled back if real use measures it worse. Measurement never bends toward the change somebody already wanted; promotion never happens without the required owners' say-so.",
   "entry": "zz-plugin-eval",
   "commands": {
     "eval": "zz-plugin-eval"
@@ -111,8 +111,8 @@
         "Candidate",
         "Base subject",
         "Patch",
-        "Proof result",
-        "Score change",
+        "Build",
+        "Baseline score",
         "Guardrails",
         "Owners",
         "Release plan",

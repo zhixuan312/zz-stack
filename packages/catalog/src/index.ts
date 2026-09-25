@@ -303,8 +303,8 @@ export function symlinkRefusal(path: string): { error: string } | null {
  *  has none, plus whatever `flow.json` beside it declares — never through zz.skill_version, which
  *  a third party never has a row in.
  *
- *  COUPLED: the one walk behind both `plugin_register` (zz-core, subject-source.ts) and the replay
- *  launcher (packages/tools), so a subject's recorded digest and the digest a replay checks out
+ *  COUPLED: the one walk behind both `plugin_register` (zz-core, subject-source.ts) and the
+ *  candidate-build CLI (packages/tools), so a subject's recorded digest and the digest a build checks out
  *  against are computed by the same code, and a symlink refused by one is refused by both.
  *
  *  An empty `components` is a directory with nothing to capture; each caller words that refusal
@@ -368,7 +368,7 @@ export function pluginContentDigest(components: readonly PluginComponent[]): str
 /** Every file a plugin directory ships, digested — hooks, commands, agents, `.mcp.json`, server
  *  code, everything `pluginDirComponents` does not look at. `pluginContentDigest` covers only the
  *  skills and the manifest, so a source whose hooks changed would still match it; this is what a
- *  replay compares to know it installs the bytes `plugin_register` saw.
+ *  candidate build compares to know it builds the bytes `plugin_register` saw.
  *
  *  sha256 over the sorted `<relative path>\0<sha256 of the bytes>` lines of every regular file.
  *  Content only, never modes or timestamps, which a copy or an extraction does not keep the same.
@@ -376,7 +376,7 @@ export function pluginContentDigest(components: readonly PluginComponent[]): str
  *  launcher refuses a fetched tree carrying one before it digests anything).
  *
  *  COUPLED: `plugin_register` (zz-core, subject-source.ts) records this as
- *  `release_identity.tree_digest`, and the replay launcher (packages/tools, third-party.ts)
+ *  `release_identity.tree_digest`, and the candidate-build CLI (packages/tools/src/candidate/third-party.ts)
  *  recomputes it over what it fetched.
  *
  *  DELIBERATE: a symlink, a FIFO, a socket or a device anywhere is refused, never followed and
@@ -411,7 +411,7 @@ export function pluginTreeDigest(dir: string, unshipped?: string): { digest: str
 /** What `COPY catalog /catalog` leaves out of the image, at any depth under the catalog: a flow's
  *  `tests` fixtures. A `local_dir` subject's `tree_digest` is over the files the platform can see,
  *  so it is taken without them on every host — the image, a checkout (`ZZ_CATALOG_DIR`) and the
- *  replay launcher's copy — or the three would never agree on a plugin that has tests.
+ *  candidate build's copy — or the three would never agree on a plugin that has tests.
  *
  *  COUPLED: the `.dockerignore` line that excludes `tests` anywhere under `catalog/`, which
  *  `scripts/gate/checks/image.ts` requires. */
@@ -427,7 +427,7 @@ const FILTER_ATTRIBUTE = /(^|\s)[-!]?filter(=|\s|$)/m;
  *  for `.git`. Symlinks are not followed; `pluginTreeDigest` refuses them.
  *
  *  COUPLED: the one rule behind both `plugin_register` (zz-core, subject-source.ts), which refuses
- *  such a source at registration, and the replay launcher (packages/tools, third-party.ts), which
+ *  such a source at registration, and the candidate-build CLI (packages/tools/src/candidate/third-party.ts), which
  *  refuses such a fetched tree before any git command reads it — so nothing registers that the
  *  launcher would always refuse. `ownGit` passes over `dir`'s own top-level `.git`: a clone
  *  `plugin_register` just made, whose metadata is git's own, not the source's. */
@@ -452,7 +452,7 @@ export function gitInstruction(dir: string, opts: { ownGit?: boolean } = {}, rel
 
 // -------------------------------------------------------------------------------------------
 // A git source's host. Here rather than in either reader because two of them fetch a caller's
-// URL: `plugin_register` on the platform host, and the replay launcher on the operator's.
+// URL: `plugin_register` on the platform host, and the candidate-build CLI on the operator's.
 
 /** Addresses a git fetch must never reach: loopback, private, carrier-grade NAT, link-local
  *  (cloud metadata lives there), benchmark, multicast and reserved space, in both families. An

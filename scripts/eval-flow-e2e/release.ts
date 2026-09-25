@@ -19,7 +19,6 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { live, sh, spawnAsync, TEAM, type Stack } from "./stack.ts";
-import { CANDIDATE_MARKER } from "./stub-model.ts";
 
 /** The version the stand-in release publishes: the base's patch number, plus one. */
 export const nextVersion = (v: string): string => v.replace(/(\d+)$/, (n) => String(Number(n) + 1));
@@ -28,31 +27,22 @@ export const nextVersion = (v: string): string => v.replace(/(\d+)$/, (n) => Str
  *  about refusals that do not say what to do next asks for. */
 const SKILL = "skills/zz-platform/SKILL.md";
 
-/** One wording per generation the search is taken through: each is its own hypothesis, since
- *  `candidate_record` refuses one it already saw rejected, and the search selects only once the
- *  protocol's maxGenerations each hold a validated candidate. */
-export const WORDINGS = [
-  "A refusal names its way out: make the call it names next, never the refused call again.",
-  "When a tool refuses, the refusal says which call gets past it; make that call before any other.",
-  "Read a refusal for the call it names and make that one; a refused call repeated unchanged is refused again.",
-  "A refusal is an instruction: the call it names is the next call, and the refused one is not retried as it was.",
-  "After a refusal, follow the call the refusal names; retrying the refused call unchanged never gets past it.",
-  "Every refusal names a way forward; take it, rather than repeating the call that was refused.",
-];
+/** The candidate's one change: the sentence the defect EXPLAIN recorded asks zz-platform to say. */
+export const WORDING = "A refusal names its way out: make the call it names next, never the refused call again.";
 
-export function candidatePatch(stack: Stack, k: number): string {
-  const dir = join(stack.work, `candidate-${k}`);
+export function candidatePatch(stack: Stack): string {
+  const dir = join(stack.work, "candidate");
   sh("git", ["clone", "-q", "--branch", `v${stack.version}`, stack.origin, dir]);
   execFileSync("cp", ["-R", join(stack.seed, "node_modules"), join(dir, "node_modules")]);
   const path = join(dir, SKILL);
   const before = readFileSync(path, "utf8");
   const bumped = before.replace(/^version: (\d+)\.(\d+)$/m, (_m, a: string, b: string) => `version: ${a}.${Number(b) + 1}`);
   if (bumped === before) throw new Error(`${SKILL} carries no version: line to bump`);
-  // Added to an existing line, not as new ones: zz-platform sits at the repository's 700-line
-  // ceiling, and a candidate the gate refuses for size never reaches a replay.
+  // Added to an existing line, not as new ones: zz-platform sits near the repository's 700-line
+  // ceiling, and a candidate the gate refuses for size is invalid before it is ever released.
   const anchor = "silence is not an override.\n";
   if (!bumped.includes(anchor)) throw new Error(`${SKILL} no longer has the line the candidate extends`);
-  writeFileSync(path, bumped.replace(anchor, `silence is not an override. ${WORDINGS[k]} <!-- ${CANDIDATE_MARKER} -->\n`));
+  writeFileSync(path, bumped.replace(anchor, `silence is not an override. ${WORDING}\n`));
   sh("npm", ["run", "--silent", "build"], dir);
   sh("node", ["scripts/skill-versions.ts", "--write"], dir);
   sh("node", ["scripts/plugin-versions.ts", "--write"], dir);

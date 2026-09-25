@@ -9,8 +9,7 @@
  * column carrying the whole map (observe-facts.ts's `OBSERVATION_FACT_KEYS`), so a measure now
  * names ANY of them by a dotted `definition.factPath`, normalised to `[0,1]` by a rule the measure
  * itself declares — see `deterministicAnswer`/`normalizeFactValue` below. `outcome` reads the same
- * way; it still has no replay/case data source of its own (a later task), so it is scored
- * identically to `deterministic` until one exists.
+ * way, and is scored identically to `deterministic`.
  *
  * One measure, one evaluator type, one answer:
  *   - `deterministic` / `outcome` read a NAMED fact off the run's bound observation snapshot, by
@@ -174,7 +173,7 @@ function excludedAnswer(reason: string): MeasureAnswer {
 
 /** deterministic / outcome: a named fact, read off the run's bound observation snapshot by a
  *  dotted `definition.factPath` — no model, no subject_ref (the same value for every subject_ref
- *  this run assesses, until a replay/case data source exists to vary it by). `protocol_record`
+ *  this run assesses). `protocol_record`
  *  (protocol-record.ts's own `factPathRefusal`) already refused a `factPath` naming no fact OBSERVE
  *  computes at all, at record time — so a resolution failure here means THIS snapshot in
  *  particular carries none (a snapshot with `facts: null`, or a path drift this file's own
@@ -187,8 +186,7 @@ function deterministicAnswer(measure: MeasureRow, snapshot: SnapshotFacts): Meas
   if (!snapshot.facts) {
     return excludedAnswer(
       `measure "${measure.key}"'s factPath "${factPath}" cannot be read — this run's observation ` +
-      "snapshot carries no facts (a context with no observation snapshot at all, such as a " +
-      "replay/verify run)");
+      "snapshot carries no facts");
   }
   const fact = asFactLike(getByPath(snapshot.facts, factPath));
   if (!fact) {
@@ -291,8 +289,7 @@ export async function answerMeasure(opts: {
   measure: MeasureRow; snapshot: SnapshotFacts; subjectRef: string; principal: string;
   qualificationOf: (evaluatorVersionId: string) => Promise<{ id: string; state: string } | null>;
   /** What a model-backed measure is actually asked to judge. Callers that have real content for
-   *  this subject_ref — replay-score.ts's own produced transcript/artifacts, for one — pass it
-   *  here; omitted, this falls back to the same templated sentence naming subjectRef this
+   *  this subject_ref pass it here; omitted, this falls back to the same templated sentence naming subjectRef this
    *  function has always asked with (evaluation_assess's own eval_run path: a NAMED fact off an
    *  observation snapshot is what deterministic/outcome measures read, and no richer subject
    *  text exists yet for its model-backed measures either — a pre-existing gap this task does
@@ -332,8 +329,8 @@ export function reduceMeasureAnswers(answers: readonly MeasureAnswer[]): number 
 
 // -------------------------------------------------------------------------------------------
 // Guardrails (Task I-29's own fix dispatch, FR-6, FR-20, FR-23): `improvement.criticalGuardrails`
-// is now the ONLY guardrail mechanism — evaluation_score, replay_score, candidate_prove and
-// release_verify all read it through the two functions below, rather than each scanning a
+// is now the ONLY guardrail mechanism — evaluation_score reads it through the two functions
+// below (and release_verify reads the result it stores), rather than each scanning a
 // per-measure `definition.guardrail` flag of its own (the duplicate this fix removes).
 
 /** One `Guardrail` (`@zz/contracts`) as this file evaluates it: a measure key and the threshold
@@ -345,7 +342,7 @@ export function reduceMeasureAnswers(answers: readonly MeasureAnswer[]): number 
  *  that schema's own validation. */
 export interface CriticalGuardrail { readonly key: string; readonly threshold: number }
 
-export interface GuardrailResult extends CriticalGuardrail {
+interface GuardrailResult extends CriticalGuardrail {
   readonly value: number | null;
   readonly status: "pass" | "fail" | "not_established";
 }
@@ -367,7 +364,7 @@ export function parseCriticalGuardrails(raw: unknown): CriticalGuardrail[] {
 
 /** A run's own critical guardrails, evaluated against whatever this run already reduced each
  *  named measure key to (`valueByMeasureKey` — the same `reduceMeasureAnswers` output
- *  `evaluation_score`/`replay_score` compute per measure for scoring, keyed by `MeasureRow.key`
+ *  `evaluation_score` computes per measure for scoring, keyed by `MeasureRow.key`
  *  rather than by `id`, because a protocol names its guardrails by measure key). A key the run
  *  never assessed at all (not present in the map) reads exactly as one whose every assessment was
  *  excluded — `not_established`, never a silently-passing `undefined`. Missing evidence is never

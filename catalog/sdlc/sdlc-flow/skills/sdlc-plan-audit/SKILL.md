@@ -1,7 +1,7 @@
 ---
 name: sdlc-plan-audit
-version: 2.4
-description: Audit plan.md — the eleven prose failure modes plus the plan's own contract: AC traceability, task contracts, checks, the format the executor depends on, dependency order, the full-suite gate. Read-only. Dispatched, one round at a time; how many is routed by evidence.
+version: 2.5
+description: Audit plan.md — the eleven prose failure modes plus the plan's own contract: AC traceability, task contracts, checks that compile, the format the executor depends on, dependency order and ownership, the walking skeleton, the full-suite gate. Read-only. Dispatched, one round at a time; how many is routed by evidence.
 when_to_use: "plan.md is written and someone is about to execute it. Runs after sdlc-plan and before sdlc-execute. Dispatched by the main agent, one round at a time."
 ---
 
@@ -49,19 +49,35 @@ plan fails here far more often than it fails as prose.
    with a technical AC and no contract is a wish.
 3. **Every task has a technical AC traced to a business AC** (`← AC-N.N`), written as a testable
    sentence rather than a goal.
-4. **Checks are real, or honestly absent.** A declared check's `Check:` path is a NEW dedicated
-   file — never the task's own `**Output:**` — and sits under a checks or tests directory. Every
-   `Run:` command is whitespace-delimited argv with **no shell metacharacters** and names a runner
-   the project actually has. A task with no deterministic check must say in its AC how the claim is
-   established instead: a missing Checks section is a statement, and a *silently* missing one is a
-   finding.
+4. **Checks are real, or honestly absent — and they compile.** A declared check's `Check:` path is
+   a NEW dedicated file — never the task's own `**Output:**` — and sits under a checks or tests
+   directory. Every `Run:` command is whitespace-delimited argv with **no shell metacharacters** and
+   names a runner the project actually has. A task with no deterministic check must say in its AC
+   how the claim is established instead: a missing Checks section is a statement, and a *silently*
+   missing one is a finding.
+
+   **Reading a check is not auditing it.** `sdlc-execute` freezes these bytes and no worker may
+   change them, so a check that does not compile fails its task however correct the work. Copy
+   each declared check's source to a scratch location OUTSIDE the checkout and run the cheapest
+   thing that proves it is well-formed: the project's typecheck or syntax check against it
+   (`tsc --noEmit`, `node --check`, `python -m py_compile`, the linter's parse). A check whose
+   imports name something the plan says a task will create is expected to fail on that import
+   and nothing else — say so. Any other compile error is a finding, quoted with the command and
+   the first error line. Where nothing can compile it here, report the check unverified rather
+   than passing it.
 5. **The format the executor depends on.** Phase headings are level-2
    `## Phase N — <name>: <what works at the end>`. Task headings are level-3 `### Task I-N:` with N
-   as an arabic digit, numbered straight through regardless of phase. `**Output:**` and
-   `**Dependencies:**` are one line each, immediately after the heading. `sdlc-execute` names a task
+   as an arabic digit, numbered straight through regardless of phase. `**Output:**`,
+   `**Dependencies:**` and `**Owns:**` are one line each, immediately after the heading. `sdlc-execute` names a task
    by that id when it dispatches, so an ambiguous or duplicated id makes a task undispatchable.
-6. **Dependency order holds.** No task depends on the output of a later one. Phases end where a
-   person could actually inspect the increment — a boundary nobody can review buys nothing.
+6. **Dependency order holds, and ownership is decided.** No task depends on the output of a later
+   one. Phases end where a person could actually inspect the increment — a boundary nobody can
+   review buys nothing. Every task declares `**Owns:**`, or none does; two tasks whose Owns overlap
+   depend on one another, directly or through others; no task owns a path listed under
+   `## Integration hotspots`; and a task that plainly writes something outside its Owns (a
+   registration, a changelog line) is a finding, because at execute it collides with a
+   parallel worker or with the integration step. Write out the waves you derived — the tasks
+   whose dependencies are done, taken together — so the owner sees what will run in parallel.
 7. **The full-suite gate exists**, as a section headed exactly `## Full-suite gate`, naming the
    project's real build, typecheck, test and lint entry points — or, for a deliverable with no
    suite, one line saying so and naming what stands in for it. Per-task checks prove each task did
@@ -74,6 +90,15 @@ plan fails here far more often than it fails as prose.
     the specific paths the plan names — do not enumerate the repository.
 11. **Granularity is human-sensible.** Roughly 2–6 tasks per phase, each a unit one person could
     finish in a sitting. A hundred trivial tasks and two mega-tasks are both findings.
+12. **A walking skeleton runs from Phase 0.** Phase 0 builds one command that runs the whole
+    deliverable end to end with stubs, and every later phase ends by running it. A plan whose
+    first end-to-end run is in its last phase is a finding: that is where every integration
+    defect will surface at once.
+13. **No volatile facts.** A migration number, a line count, exact SQL, a line number or a
+    mechanism the executor could choose, written as an instruction, is a finding unless the spec
+    fixes it — the tree will have moved by the time the task runs.
+14. **Every `command` AC names its evidence kind** — `check:`, `run:`, `probe:` or `test:` — the
+    kinds `sdlc-review`'s `## Acceptance evidence` table accepts.
 
 Add `plan-contract` to `criteriaCovered` when you have walked these.
 
@@ -88,7 +113,7 @@ nothing else in the flow is positioned to see it.
 
 ## Skill contract
 
-**Outcome:** one round's findings on `plan.md` — the eleven prose failure modes plus the eleven
+**Outcome:** one round's findings on `plan.md` — the eleven prose failure modes plus the fourteen
 points of the plan's own contract — registered with `source_add` as a SOURCE supporting that
 document, and handed back to the caller as one JSON block. This round writes no document of the
 flow and changes nothing in the plan.
@@ -123,7 +148,7 @@ door, which records the answer and the model behind it, and severity stays yours
 | On each finding, where the caller said what the last round raised | `repeats_finding` | whether this was already reported, so the round confirms the fix and looks instead for what the changes introduced |
 
 **Action and exit paths:** the action is the eleven failure modes one at a time, then the plan's
-eleven, then consolidation. Two exits, both taken every round: `source_add` carrying the prose
+fourteen, then consolidation. Two exits, both taken every round: `source_add` carrying the prose
 findings and naming `plan.md`, and the JSON block as your final text. The round loop, and the
 decision to send the plan back to `sdlc-plan`, belong to the caller. The exit that does not exist
 is repairing the plan yourself.

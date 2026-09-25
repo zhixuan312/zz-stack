@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define-qualify
-version: 0.5
+version: 0.6
 description: Stage 4 of zz-plugin-eval (DEFINE/QUALIFY), and the one gate that matters most. Derive what good means for THIS plugin from its own profile and DISCOVER's candidates, write it into protocol.md, get a person to agree it, then qualify every model-backed evaluator it names before anything is scored.
 when_to_use: "The fourth stage of zz-plugin-eval, after DISCOVER. Conditional: protocol_read decides create/revise/reuse, and this stage only writes when it says create or revise. Produces protocol.md, gated — protocol_affirm refuses to bind it until somebody approves it. No shell required."
 ---
@@ -50,8 +50,12 @@ you have a reason not to), `version` (this protocol's next number — `protocol_
 anything else; there is no edit), `pluginPurpose` (what `protocol_read`'s `purpose_changed`
 trigger compares against the catalog manifest's own `purpose`), `observableSurfaces` (the tool
 names `new_evidence_surface` checks this plugin's skills against), `failureTaxonomy` (below),
-`dimensions`, and four policy blocks — `suites`, `replay`, `qualification`, `scoring`,
-`improvement` — whose content this skill does not prescribe.
+`dimensions`, and four policy blocks — `suites`, `qualification`, `scoring`, `improvement` —
+whose content this skill does not prescribe, except one: `improvement.release` is
+`{ minPostReleaseRuns, regressionBand }`, how a released improvement is judged on real use —
+how many real runs of the released version before it is evaluated, and how far below the base
+score its overall may land before it is rolled back. `protocol_record` refuses a body without
+it; `release_prepare` and `release_verify` read nothing else.
 
 ## Dimensions and measures, and where the boundary lives
 
@@ -104,18 +108,15 @@ Inside a dimension, one or more **measures** actually produce a mark. Each carri
 Name a measure's own `key` (**measure keys are unique across the whole protocol** —
 `protocol_record` refuses a body that repeats one in any two dimensions, and a guardrail key that
 names no measure) and the threshold its normalised `[0,1]` value
-must meet or exceed. `evaluation_score`, `replay_score`, `candidate_prove` and `release_verify`
-all read this same list — nothing on a measure's own `definition` marks it as a guardrail. A
-guardrail bound to a `deterministic`/`outcome` measure reads `not_established` on every replay
-(a replay run carries no observation snapshot for that measure to read a fact off), which
-`candidate_prove`/`release_verify` correctly treat as missing evidence, never a failure — keep
-that in mind before naming a snapshot-only fact as a critical guardrail on a protocol whose
-`improvement.evolvable` is `true`.
+must meet or exceed. `evaluation_score` reads this same list — nothing on a measure's own
+`definition` marks it as a guardrail — and `release_verify` rolls a release back when the
+released subject's own evaluation fails one. An unmeasured guardrail reads `not_established`,
+which is missing evidence, never a failure.
 
 ## THE JUDGE IS HANDED THE ARTIFACT'S TEXT, AND NOTHING ELSE
 
 Before you write a `bounded_semantic`/`generative_critic` measure, name the artifact it will
-read — a document's markdown, a replay case's own transcript, a run's evidence — and ask: **is
+read — a document's markdown, a run's evidence — and ask: **is
 the answer IN that text?** If it lives in a row, a count, a status or a timestamp, **the measure
 is `deterministic`/`outcome`**, not semantic — a semantic measure asked a question the text
 cannot answer measures something other than its own name, and its noise spreads into every other
@@ -171,8 +172,7 @@ writes a new, immutable `zz.eval_protocol_version` and RETURNS `{ protocol_versi
 content_digest }`. It never edits a version in place — a body naming any version but this
 protocol's next one is refused. **Record before the person reads it, approve after.** Recording
 is not approving — until `protocol_affirm` binds a person's approval of `protocol.md` to this
-exact version, `evaluator_qualify`, `replay_case_set_build` and `evaluation_start` each refuse it
-by name.
+exact version, `evaluator_qualify` and `evaluation_start` each refuse it by name.
 
 `document_write` into the initiative as `protocol.md`, with the three sections the manifest
 declares, spelled exactly:
@@ -263,8 +263,8 @@ refuses it — the zod issue names which.
 
 **Outcome:** on `create`/`revise`, an approved `protocol.md` bound to an immutable
 `zz.eval_protocol_version`, with every model-backed measure's evaluator carrying its own
-qualification evidence — the one durable object EVALUATE scores against and IMPROVE's own search
-policy reads from. On `reuse`, nothing written; the newest version stands.
+qualification evidence — the one durable object EVALUATE scores against and PROMOTE/VERIFY's
+release policy reads from. On `reuse`, nothing written; the newest version stands.
 
 **Required evidence:** `protocol_read`'s own protocol_action and `triggers`. `protocol_record`'s
 `{protocol_version_id, content_digest}`, quoted verbatim in the document. The person's recorded

@@ -1,19 +1,23 @@
 ---
 name: zz-plugin-improve
-version: 0.9
-description: Stage 7 of zz-plugin-eval (IMPROVE). Search for a proven candidate patch against plugin-owned findings — propose, validate by replay, search to one deterministic winner, prove it sealed — then hand off to promotion for an owned subject or write an owner-facing proposal for one this team cannot release.
-when_to_use: "The seventh stage of zz-plugin-eval, after EXPLAIN. Runs for every branch except one with no plugin-owned actionable finding at all, which skips it with one call and closes. REQUIRES a shell-capable runtime (Claude Code) that can run npm/zz-tool commands and launch isolated sessions — refuses to start anywhere else. Every stage before this one runs with no shell at all (FR-54)."
+version: 0.10
+description: Stage 7 of zz-plugin-eval (IMPROVE). Turn plugin-owned findings into one candidate patch, build and gate it locally, and hand it to promotion for an owned subject — or write an owner-facing proposal for one this team cannot release. A released improvement is judged on real use afterwards, never by replaying past initiatives first.
+when_to_use: "The seventh stage of zz-plugin-eval, after EXPLAIN. Runs for every branch except one with no plugin-owned actionable finding at all, which skips it with one call and closes. REQUIRES a shell-capable runtime (Claude Code) that can run npm/zz-tool commands — refuses to start anywhere else. Every stage before this one runs with no shell at all (FR-54)."
 ---
 
 # zz-plugin-improve
 
 **Stop here if your runtime cannot run a shell command.** Everything up through EXPLAIN is
-MCP-only calls a bare client can make (FR-54). From here on, replay and candidate execution are
-launched BY the agent running this stage — `npm run candidate-build`, `npm run replay`,
-`zz-tool release-apply`, `zz-tool release-rollback` — and none of that exists without a shell. If you are running in a context with
-no shell access, stop and say so; do not simulate what these commands would do.
+MCP-only calls a bare client can make (FR-54). From here on, a candidate is built by the agent
+running this stage — `npm run candidate-build`, and later `zz-tool release-apply` and
+`zz-tool release-rollback` — and none of that exists without a shell. If you have no shell
+access, stop and say so; do not simulate what these commands would do.
 
-## First: is there anything to search for?
+**No replay, no proof, no search.** A candidate that applies, builds and passes the repository's
+own gate is releasable. Whether it is actually better is decided after release, on real use
+(`release_verify`, PROMOTE/VERIFY), and a release that measures worse is rolled back.
+
+## First: is there anything to improve?
 
 `eval_run_id` and every finding's id are in `<initiative>/findings.md` — the run's id under
 `## Score`, each finding's `id` beside it — so this stage can open in a fresh conversation.
@@ -28,9 +32,8 @@ improvement_start(eval_run_id, finding_ids: [], skip: true, initiative, idempote
 initiative closes on `findings.md` alone — `initiative_close(initiative, "finished", ...)`, no
 `improvement.md`, no `proposal.md` invented. REFUSES a non-empty `finding_ids` alongside `skip`,
 and REFUSES if a plugin-owned DEFECT or UNKNOWN for this `eval_run_id` is still `deferred` — name
-it and open the run with it instead. **A plugin-owned STRENGTH never blocks skip** — EXPLAIN
-records strengths with `owner_kind: plugin` too, but a strength carries no `expected_effect` and
-could never seed a candidate, so leaving one `deferred` is not a reason this call refuses.
+it and open the run with it instead. **A plugin-owned STRENGTH never blocks skip** — it carries
+no `expected_effect` and could never seed a candidate.
 
 **Otherwise:**
 
@@ -39,75 +42,50 @@ improvement_start(eval_run_id, finding_ids: [...plugin-owned, deferred...], init
 ```
 
 opens one durable `zz.improvement_run` and RETURNS `improvement_run_id`,
-`base_subject_version_id` (the subject every candidate is a patch against), `case_set_id` (the
-case set this eval_run bound), `search_policy` (the protocol's own liveness bound —
-`maxGenerations`, `maxCandidatesPerGeneration`, `wallClockHours` — FR-57's bootstrap defaults
-are 5/8/24) plus `proposer_bundle`. Keep the first three: every later call in this stage names
-them, and nothing else here returns `base_subject_version_id`. Records `improvement_mode: search` when
-the base subject records `release_owners`, `improvement_mode: proposal` when it does not — you
-never choose which; the tool derives it from ownership. REFUSES a finding owned by anything but
-`plugin`, a finding recorded against a different `eval_run_id`, and a protocol version whose
-`improvement.search` is missing or malformed — there is no fallback policy.
-
-**Every candidate is validated and proved against the case set THIS `eval_run_id` bound at
-`evaluation_start`** — EVALUATE builds it with `replay_case_set_build` and binds its `case_set_id`
-as `case_set_version_id`; `improvement_start` hands it back as `case_set_id`. Nothing in this stage
-binds one. **`case_set_id: null` means the eval_run bound none**, and it cannot carry a search:
-`candidate_validate` refuses every candidate from it. Before opening a search on
-such a run, go back to EVALUATE — build the case set, start a new eval_run bound to it, score it
-— and EXPLAIN, whose findings belong to that new run; then open the search with those.
+`base_subject_version_id` (the subject every candidate is a patch against) and `proposer_bundle`.
+Keep the first two: every later call in this stage names them. Records `improvement_mode:
+release` when the base subject records `release_owners`, `improvement_mode: proposal` when it
+does not — you never choose which; the tool derives it from ownership. REFUSES a finding owned by
+anything but `plugin`, and a finding recorded against a different `eval_run_id`.
 
 ## The proposer bundle — read this before proposing anything
 
-`proposer_bundle` (from `improvement_start`, and read back again from every later
-`candidate_search` call) is FR-37's own "actionable side information", assembled so the proposer
-never guesses blind: `failing_traces` (measure key, subject ref, the detail that failed),
-evaluator_critiques — a bounded_semantic/generative_critic's own note on why — `refusal_text`,
-`corrections`, `errors`, `cost_latency`, and `prior_rejected_hypotheses` — every candidate this
-plugin has already tried and lost, by hypothesis text, so a repeat idea is never proposed a
-second time. `non_trivial: false` means every section is empty — a proposer reading that bundle
-is reading nothing this run actually learned; say so rather than inventing a hypothesis from
-nothing.
+`proposer_bundle` is FR-37's own "actionable side information", assembled so the proposer never
+guesses blind: `failing_traces` (measure key, subject ref, the detail that failed),
+evaluator_critiques, `refusal_text`, `corrections`, `errors`, and `prior_rejected_hypotheses` —
+every candidate of this plugin that failed its build or gate, or was released and rolled back,
+by hypothesis text, so a repeat idea is never proposed a second time. `non_trivial: false` means
+every section is empty — say so rather than inventing a hypothesis from nothing.
 
 **Compose the actual patch yourself, as a unified diff.** Nothing here generates a patch for
-you — you read the bundle, the findings, and (later) `explore_components`, and write the fix, in
-whatever component the finding actually names: a skill, a prompt, a flow definition, a tool, code,
-schema, configuration, tests or documentation (FR-35 — any component necessary, never limited to
-`SKILL.md`).
+you — you read the bundle and the findings and write the fix, in whatever component the finding
+actually names: a skill, a prompt, a flow definition, a tool, code, schema, configuration, tests
+or documentation (FR-35 — any component necessary, never limited to `SKILL.md`). Keep it to the
+smallest change the finding asks for: it will be judged on real use, where a broad change is
+hard to attribute.
 
 ## Recording a candidate — before anything about it executes
 
 ```
-candidate_record(improvement_run_id, base_subject_version_id, parents: [], hypothesis, expected_effect, patchset: { diff }, idempotency_key)
+candidate_record(improvement_run_id, base_subject_version_id, hypothesis, expected_effect, patchset: { diff }, idempotency_key)
 ```
 
-`base_subject_version_id` is the one `improvement_start` returned. `patchset.diff` is a unified
-diff — the file list and added/removed state are derived from it,
-never supplied separately. RETURNS `{ candidate_id, generation, patch_digest, complexity_delta,
-touched_components, touched_owners, status: 'recorded' }`. **REFUSES a hypothesis whose
-normalised text already matches a candidate this plugin has already rejected (`rejected_precheck`,
-`invalid`, `proof_failed`) or whose latest validation verdict was `not_improved`** — naming the
-id and telling you which. That is FR-38's regularization working, not a bug to route around:
-propose something genuinely different, or explain in the new hypothesis what changed.
+`patchset.diff` is a unified diff against the base subject's own release — the file list and
+added/removed state are derived from it, never supplied separately. RETURNS `{ candidate_id,
+patch_digest, complexity_delta, touched_components, touched_owners, status: 'recorded' }`.
+**REFUSES a hypothesis whose normalised text already matches a candidate of this plugin that is
+`invalid` or `rolled_back`**, naming it. That is FR-38's regularization working, not a bug to
+route around: propose something genuinely different.
 
-`generation` is the search's own round, not lineage: a candidate joins the current generation
-until every candidate in it has a validation verdict (or was rejected), then the next one.
-`parents` (candidate ids) only records lineage. **REFUSES once the current generation already
-holds `maxCandidatesPerGeneration` candidates** — validate them first — and once `maxGenerations`
-generations hold a validated candidate (call `candidate_search` to select).
-
-## Validating — build, gate, then replay against baseline
+## Building and gating it — locally, never on the platform
 
 ```
 candidate_validate(candidate_id, idempotency_key)
 ```
 
-**First call on a `recorded` candidate:** asks the leakage critic first (FR-38) — a patch that
-reads as hard-coded against evidence it should not have, or a rejected hypothesis restated,
-becomes `rejected_precheck` and the call REFUSES with the critic's reason. Otherwise the candidate
-moves to `awaiting_build` and the call RETURNS `{ candidate_id, status: 'awaiting_build',
-build_required: { patch_digest, lease_expires_at, command } }`. **The platform never builds a
-candidate** — you do, locally, with the command it printed:
+**First call on a `recorded` candidate** moves it to `awaiting_build` and RETURNS `{
+candidate_id, status: 'awaiting_build', build_required: { patch_digest, lease_expires_at, command
+} }`. **The platform never builds a candidate** — you do, locally, with the command it printed:
 
 ```
 npm run candidate-build -- --candidate <candidate_id> --repo <path-to-a-checkout>
@@ -115,290 +93,105 @@ npm run candidate-build -- --candidate <candidate_id> --repo <path-to-a-checkout
 
 It needs the gateway (`ZZ_URL` or `--gateway <url>`) and your own platform token (`$ZZ_TOKEN`,
 `$ZZ_TOKEN_FILE` or `~/.zz/token`) — nothing on the command line. It reads the candidate
-(`candidate_read`), fetches the base subject exactly as the replay launcher does below (a catalog
-plugin: `--repo` cloned at `v<declared_version>`; a third-party one: its captured source), applies
-the patch, and for a catalog plugin installs the clone's own locked dependencies (`npm ci`) and
-runs the repository's build and gate in that clone inside the same OS sandbox a replay session
-runs in; for a third-party plugin the check is that the patch applies cleanly. Before cloning it
-checks this host can run every tool the build and gate need (`npm`, `git`, `docker compose`, …)
-inside that sandbox. It records the result itself (`candidate_build_record`) and exits 0 on a
-passed build, 1 on a failed one it recorded, 2 when it recorded nothing — no working sandbox, a
-tool the host check could not run, a release tag `--repo` lacks, or a refusal; fix that and run
-it again. Only you — the principal whose
+(`candidate_read`), fetches the base subject (a catalog plugin: `--repo` cloned at
+`v<declared_version>`; a third-party one: its captured source, checked against the digests it was
+captured at), applies the patch, and for a catalog plugin installs the clone's own locked
+dependencies (`npm ci`) and runs the repository's build and gate in that clone inside an OS
+sandbox (`sandbox-exec` on macOS, `bwrap` on Linux) with none of your credentials in reach; for a
+third-party plugin the check is that the patch applies cleanly. Before cloning it checks this
+host can run every tool the build and gate need. It records the result itself
+(`candidate_build_record`) and exits 0 on a passed build, 1 on a failed one it recorded, 2 when it
+recorded nothing — no working sandbox, a tool the host check could not run, a release tag `--repo`
+lacks, or a refusal; fix that and run it again. Only you — the principal whose
 `candidate_validate` asked — can record the build, and only within the lease (60 minutes); a lease
-that ends with nothing recorded returns the candidate to `recorded`, and the next
-`candidate_validate` asks again. Calling `candidate_validate` before the build is recorded just
-prints the same `build_required` again.
+that ends with nothing recorded returns the candidate to `recorded`. Calling `candidate_validate`
+before the build is recorded prints the same `build_required` again.
 
-**Then call `candidate_validate` again.** It consumes the recorded build: **a failed apply,
-build or gate moves the candidate to `invalid` and REFUSES with the failing command's own output
-tail** — never replayed, never partially scored; fix it and record a fresh candidate (`invalid`
-is not re-triable in place). A build that timed out, or that a problem on this host stopped
-(`stage: host` — a docker daemon or registry out of reach), returns it to `recorded`: nothing
-about the patch was judged. Fix the host, validate again and rerun the build. A passed build makes it `valid`, and the same call goes on as below.
+**Then call `candidate_validate` again.** It consumes the recorded build:
 
-**Once valid (the call that consumed a passed build, or any later call):** reads every completed, scored validation-split
-`zz.replay_run`, pairs candidate against baseline by case, and — once every case has at least
-`minRepeats` completed runs on BOTH sides — computes the paired bootstrap verdict. Otherwise
-RETURNS `{ case_set_id, candidate_evaluation_id: null, verdict: null, runs_required: [{case_set_id,
-case_id, side, subject_version_id, candidate_id, count}] }` — the exact `(case, side)` pairs still
-short. **This tool never launches a replay itself.** Call `replay_start` once per
-`runs_required` entry, with `repeats: count` — one call is one run, and the next
-`candidate_validate` asks again for what is still short. Every argument below is that entry's own
-field:
+- **passed** → `valid`, and it RETURNS `{ candidate_id, status: 'valid', patch_digest,
+  releasable: true, build, next }`. That candidate is releasable.
+- **a failed apply, install, build or gate** → `invalid`, and the call REFUSES with the failing
+  command's own output tail. `invalid` is not re-triable in place: fix the patch and record a new
+  candidate with a different hypothesis.
+- **a timeout, or a problem on this host** (`stage: host` — a docker daemon or registry out of
+  reach) → back to `recorded`: nothing about the patch was judged. Fix the host and validate
+  again.
 
-```
-replay_start(case_set_id, subject_version_id? | candidate_id?, split: "validation", case_id, repeats, context: "search", idempotency_key)
-```
+## Where this stage ends
 
-— the entry names `subject_version_id` on the `baseline` side and `candidate_id` on the
-`candidate` side, the other null; pass the one it names, never both — then, for the `worktree_ref`/`replay_run_id` it returns:
+**Owned subject, a candidate is valid:** the handoff to PROMOTE/VERIFY
+(`zz-plugin-promote-verify`). This stage ends once you call `release_prepare(initiative, ...)` —
+it finds the valid candidate from the initiative (pass `candidate_id` when more than one is
+valid) and records `release_mode: promotable`. Read that skill for the rest.
+
+**Owned subject, no candidate worth releasing** — every one failed its build or gate, or the
+findings name nothing a patch could fix:
 
 ```
-d=$(mktemp -d)
+improvement_stop(initiative, idempotency_key)
 ```
 
-Write `<token>` — the `token` `replay_start` returned — to `$d/replay` with your own
-file-writing tool. **Never with a shell command**: no `echo`, no `printf`, no heredoc. A token in
-a shell command is in that command's argv, where `ps`, shell history and a transcript of your
-tool calls keep it. Then:
+records `release_mode: not_applicable`; `initiative_close(initiative, "finished", ...)` then
+closes on `findings.md` alone. REFUSES while a candidate is `valid` (prepare it instead) and on a
+subject with no release owners (write its proposal instead).
 
-```
-chmod 600 "$d/replay"
-npm run replay -- --run <replay_run_id> --repo <path-to-a-checkout> --token-file "$d/replay"
-rm -rf "$d"
-```
-
-The launcher refuses a token file anyone but you can read. Remove the directory once it returns.
-
-**The launcher needs the gateway and your own platform token**, besides the run's token in the
-file: `ZZ_URL` in its environment or `--gateway <url>` on the command line, and the token the
-zz-tool CLIs read — `$ZZ_TOKEN`, the file `$ZZ_TOKEN_FILE` names, or `~/.zz/token`. It opens,
-reads and closes the run under that token; the run's own token only ever reaches the session.
-
-**The launcher needs a model credential in its own environment**: `ANTHROPIC_API_KEY`, or
-`CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token` mints one). Every session runs under a fresh
-`CLAUDE_CONFIG_DIR` with no login in it, so a `claude login` kept only in the macOS keychain never
-reaches a session. Without one of the two, the launcher refuses before it does anything and the
-run closes `failed` — set it and start a fresh run; do not retry the same one.
-
-It marks the run `running` and fetches the subject exactly as it was captured. A catalog plugin:
-`--repo` cloned standalone at the subject's own release tag (`v<declared_version>`). A
-third-party plugin `plugin_register` captured: its git source at the recorded
-`resolved_commit` (https only), its npm package re-packed and matched to the recorded
-`tarball_integrity`, or its `local_dir` copied from `--repo`'s own `catalog/`. Either way it
-refuses — closing the run `failed` — when what it fetched does not carry the digests the subject
-was captured at (skills and manifest, and every other file: hooks, commands, server code), or
-carries a `.git` or a `.gitattributes` naming a filter, so a non-owned subject's candidates are
-proven the same way an owned one's are before they reach `proposal.md`. A third-party subject
-registered before its identity recorded a `tree_digest` is refused: register it again under a
-new version. It installs the subject plugin into a
-session-local `CLAUDE_CONFIG_DIR` under a temporary `HOME`, with none of your own credentials in
-the sessions' environment, and runs every session inside an OS sandbox (`sandbox-exec` on macOS,
-`bwrap` on Linux) that cannot read your home directory or write outside its own. **With no
-working sandbox it refuses to start** — install bubblewrap, or run it outside any enclosing
-sandbox; there is no unsandboxed mode. It then runs the candidate/baseline session against `actor` events and a simulated
-person against `actor`+`user_oracle` events, scores it, and calls `replay_close` itself — you do
-not close a run the launcher already ran. A completed run's logs are deleted as it closes; a
-failed run's stay in `$TMPDIR/zz-replay-logs/` (the path is in the launcher's output) for you to
-read, and every launch removes any there older than 7 days. A run that completed but left a
-directory it could not remove still reports `completed` (exit 0) with a `cleanup_warning` naming
-what is left — the evidence landed; remove the leftover by hand, do not re-run. Repeat
-`candidate_validate` once enough runs land; it plans, it never executes.
-
-## Advancing the search
-
-```
-candidate_search(improvement_run_id, idempotency_key, initiative?)
-```
-
-Call this to move the search forward once you have proposed/validated what you can this
-generation. It composes at most one new child per call from two disjoint-file `valid`
-candidates, reduces everything with a validation evaluation to the Pareto frontier over
-(per-case pass vector, cost), and — once the protocol's own liveness bound is reached — selects
-exactly one final candidate by the protocol's deterministic selection policy, from the frontier
-members validation found `improves` (or an accepted pruning). It asks no model; the leakage
-screen already ran in `candidate_validate`. RETURNS `{
-generation, frontier_ids, rejected, selected_id, status, explore_components, edit_budget,
-proposer_bundle, next }`.
-
-**Read `next` and `explore_components` to decide what to do next**, not your own judgement of
-"enough": `next` says propose more (steered at `explore_components` — the base subject's own
-manifest components no candidate this run has touched yet, FR-38's own exploration
-requirement), validate what is already recorded, or stop. `edit_budget` is how many more
-candidates `candidate_record` would accept right now — the room left in the generation a new one
-joins, 0 once `maxGenerations` is used up.
-
-**`status: closed` with `selected_id: null` means no guardrail-passing, improving candidate was
-on the frontier by the bound.** On an OWNED subject that is genuinely nothing left — pass `initiative` on
-this call (or the one that produced this outcome) and `release_mode: not_applicable` is recorded
-for you; `initiative_close` then closes on `findings.md` alone, same as a `skip`. On a NON-owned
-subject, nothing is recorded here even with `initiative` passed — `proposal_prepare` below can
-still write up whatever candidates reached `valid`, selected or not; do not treat this as the
-end of the road for that branch.
-
-## Proving the selected candidate — sealed, opened once
-
-```
-candidate_prove(candidate_id, idempotency_key, abandon?, initiative?)
-```
-
-Only the candidate `candidate_search` left `selected` may open this, and only once (FR-28). A
-FIRST call mints a `verifier_token` bound to this one allocation (this candidate, this case
-set, the proof split), moves the candidate to `proving`, claims the case set's proof split (no
-other candidate opens those sealed cases while this one proves), and
-RETURNS `{ proof_status: null, verifier_token, runs_required: { case_set_id, baseline,
-candidate }, status: 'proving' }` — never resolving in the same call. `runs_required` is COUNTS
-per side, never case ids: you never learn which proof case a run used. Run them one at a time:
-
-```
-replay_start(case_set_id, candidate_id | subject_version_id, split: "proof", context: "verifier", verifier_token, repeats, idempotency_key)
-d=$(mktemp -d)
-```
-
-Write `<token>` to `$d/replay` and `<verifier_token>` to `$d/verifier` with your file-writing
-tool, never a shell command, then:
-
-```
-chmod 600 "$d/replay" "$d/verifier"
-npm run replay -- --run <replay_run_id> --repo <path> --token-file "$d/replay" --verifier-token-file "$d/verifier"
-rm -rf "$d"
-```
-
-`candidate_id` (the `selected_id`) for the candidate side, `improvement_start`'s
-`base_subject_version_id` for the baseline side, and `runs_required.case_set_id` for both. **Never pass `case_id`** — the proof case is drawn server-side, and a verifier
-`replay_start` naming one REFUSES; so does one outside the allocation (another case set,
-candidate or subject). Start the next run once the launcher returns: the draw skips a case with
-a run still live, so starting many at once runs out of cases. The `verifier_token` goes in
-a file the same way as the run's own token, never on the command line or in the environment. The
-launcher uses it for its own calls only; neither replay session sees it. Under the token,
-`replay_read` of a proof run returns no case id, score or cost, and `replay_score` answers
-`sealed: true` with no number — **do not use the token for anything but the launcher.**
-
-**A LATER call** against the same `proving` candidate reads back whatever proof-split runs
-completed and scored; once enough exist, it re-screens for leakage (an unclear or unavailable
-answer is `not_established, reason: leakage_unresolved` — never a pass), computes the paired
-verdict, and RETURNS `{ proof_status: proof_passed | proof_failed | not_established, reason,
-release_eligible, candidate_evaluation_id, status, proof_split: spent | released }` — **never a per-case result; search never
-sees a proof case or a proof result.** release_eligible is additionally true only when the base
-subject records release owners (FR-47).
-
-**Every terminal outcome ends THIS candidate's allocation (its token is revoked; it never
-re-opens). Whether the CASE SET's proof split was spent is a separate answer: `proof_split`.**
-`proof_passed` and `proof_failed` keep the case set's proof split spent, and so does
-`not_established` when any proof run existed (those runs observed the sealed cases): proving
-again then needs a new case set (new evidence), whichever candidate. A `not_established` where no
-proof run was ever registered, or where the only gap was an `unavailable` leakage answer,
-releases it (`proof_split: released`) — a fresh `improvement_start` may prove against the same
-case set. On an OWNED candidate, a
-`proof_failed` outcome leaves nothing left to promote or propose — pass `initiative` and
-`release_mode: not_applicable` is recorded for you. A `not_established` outcome records nothing:
-it is an evidence gap a fresh `improvement_start` in this initiative may resume from. On a NON-owned candidate, nothing is
-recorded even with `initiative` passed: the candidate already reached `valid` before proof ever
-opened, so `proposal_prepare` below can still report it, whatever proof said. A `proof_passed`
-candidate with NO release owners reaches `status: closed` (a proposal-eligible outcome, not
-nothing-to-promote) either way — leave that one for `proposal_prepare` below.
-
-**Lost the `verifier_token` (a new conversation, a lost response)?** Call
-`candidate_prove(candidate_id, rotate_token: true, idempotency_key)`: it revokes the token and
-returns a new one for the same allocation, and the proof runs already registered stay counted.
-Reach for `abandon` only when the allocation itself cannot finish.
-
-**`abandon: true`** recovers an allocation stuck `proving` because you lost the response that
-opened it — no `verifier_token` holder, nothing else can resolve it. It revokes the token,
-cancels whatever proof runs it spawned, and resolves
-`proof_not_established, reason: abandoned`
-(an evidence gap, not a rejected hypothesis — the SAME hypothesis may be proposed again under a
-fresh `improvement_start`). The case set stays spent if any proof run was registered, and is
-released if none was — `proof_split` says which. A second `abandon` call is a no-op read-back, never a refusal.
-
-## Owned subject, proof passed: promotion
-
-`release_eligible: true` is the handoff to PROMOTE/VERIFY (`zz-plugin-promote-verify`) —
-`release_prepare`, `improvement.md`, `release_apply` (`zz-tool release-apply`), `release_record`,
-`release_verify` (`zz-tool release-rollback`). Read that skill for the exact sequence; this stage
-ends once you call `release_prepare(initiative, ...)`, which finds the proof_passed candidate
-from the initiative and records `release_mode: promotable`.
-
-## Non-owned subject: write the proposal instead
+**Non-owned subject — write the proposal:**
 
 ```
 proposal_prepare(initiative, idempotency_key)
 ```
 
 **WHEN the base subject records no release owners** — a third-party or other-team plugin
-`plugin_register` captured. It finds the run itself from the initiative — the newest improvement
-run on the eval_run `findings.md` records, so a search resumed under a fresh `improvement_start`
-is the one reported. Writes `<initiative>/proposal.md`, ungated, always regenerated FRESH
-from the run's current findings and candidates: Subject, Findings, Candidates (every candidate
-that reached validation or later, with its hypothesis, patch digest and the diff itself as inert
-fenced markdown, when the subject's own source is readable — findings-only prose, no diff fence,
-when it is not), Ownership and promotion. RETURNS `{ document, candidates_included }`; on a
-refused write, `document: null` with document_refused naming why. **REFUSES `promotable` — a
-subject that DOES record release owners** (use `release_prepare` instead) — and records
-`release_mode: proposal_only`. Applies no patch and touches no real repository, ever, on this or
-any subject: it is a database read and a document write, nothing else. Like `findings.md`,
+`plugin_register` captured. It finds the newest improvement run on the eval_run `findings.md`
+records and writes `<initiative>/proposal.md`, ungated, always regenerated FRESH from the run's
+current findings and candidates: Subject, Findings, Candidates (every valid candidate, with its
+hypothesis, patch digest, build result and the diff itself as inert fenced markdown, when the
+subject's own source is readable — findings-only prose, no diff fence, when it is not),
+Ownership and promotion. RETURNS `{ document, candidates_included }`; on a refused write,
+`document: null` with document_refused naming why. **REFUSES `promotable` — a subject that DOES
+record release owners** (use `release_prepare` instead) — and records `release_mode:
+proposal_only`. Applies no patch and touches no real repository, ever. Like `findings.md`,
 `proposal.md` is ungated and regenerated by the tool itself — it does not paste through
 `document_present`, because nobody's approval is asked before it stands. Once written, the
-initiative closes on `proposal.md` — no promotion, ever, through this platform, for a subject
-this team does not own. `initiative_close(initiative, "finished", ...)` closes it; `zz-handover`
-is what writes cold afterwards, the same as every other close this flow reaches.
+initiative closes on `proposal.md` — `initiative_close(initiative, "finished", ...)`;
+`zz-handover` writes cold afterwards, as after every other close.
 
 ## Pitfalls
 
-❌ **Trying to run this stage with no shell.** Stop and say so; nothing here simulates what a
-launcher command would have done.
-
-❌ **Searching on an eval_run that bound no case set.** `candidate_validate` refuses every
-candidate from it; the case set is EVALUATE's to build and bind, and a run without one goes back
-there. It also refuses a case set with no replayable validation-split case.
+❌ **Trying to run this stage with no shell.** Stop and say so.
 
 ❌ **Waiting for `candidate_validate` to build the candidate.** It never does; run the
 `npm run candidate-build` command its `build_required` prints, then call it again.
 
-❌ **Closing a replay_run the launcher already closed.** `npm run replay` always calls
-`replay_close` itself, success or failure.
+❌ **Re-proposing a hypothesis `candidate_record` already refused.** The message names the
+earlier candidate; propose something genuinely different.
 
-❌ **Re-proposing a hypothesis `candidate_record` already refused.** It is regularization
-working, not a bug — the message names the earlier candidate; propose something genuinely
-different.
-
-❌ **Reading a proof result back into the search session.** Proof is sealed by design (FR-28); a
-`not_established` proof cannot be fed back into the same generation's search — a fresh
-`candidate_record`/`candidate_search` cycle is the only way forward.
-
-❌ **Forgetting `initiative` on the call that resolves nothing-to-promote.** release_mode stays
-undetermined and a finished close hits `branch_undetermined` forever.
+❌ **Leaving an owned subject with nothing releasable open.** Without `improvement_stop`,
+release_mode stays undetermined and a finished close hits `branch_undetermined`.
 
 ❌ **Calling `release_prepare` for a subject with no release owners.** It refuses
 `no_release_owners` and names `proposal_prepare` instead.
 
 ## Skill contract
 
-**Outcome:** one of three: an owned subject with a sealed, proof-passed candidate handed to
-PROMOTE/VERIFY; a non-owned (or exhausted) subject with an owner-facing `proposal.md`; or a
-subject with nothing plugin-owned to search, closed on `findings.md` alone. Every candidate this
-run tried, durably recorded with its hypothesis, patch digest, validation and (where reached)
-proof evidence — nothing about a search invisible to the next one.
+**Outcome:** one of four: an owned subject with a built, gated candidate handed to
+PROMOTE/VERIFY; an owned subject with nothing worth releasing, stopped with `improvement_stop`; a
+non-owned subject with an owner-facing `proposal.md`; or a subject with nothing plugin-owned to
+improve, closed on `findings.md` alone. Every candidate tried, durably recorded with its
+hypothesis, patch digest and build result.
 
 **Required evidence:** every terminal tool response read verbatim — `candidate_record`'s
-`patch_digest`/`complexity_delta`, `candidate_validate`'s verdict or `runs_required`,
-`candidate_search`'s `frontier_ids`/`selected_id`/`next`, `candidate_prove`'s `proof_status`/
-release_eligible. A launcher run's own exit status and output, for whether it actually ran the
-session it was asked to.
+`patch_digest`/`complexity_delta`, `candidate_validate`'s `status` and `build` or its refusal
+tail. The build command's own exit status and output.
 
-**Allowed unknowns:** which hypothesis will prove out — that is what the search is for. What
-`explore_components`/`next` will say next generation — read fresh each `candidate_search` call,
-never assumed from the last one.
+**Allowed unknowns:** whether the candidate improves the plugin — real use after release answers
+that, not this stage.
 
-**Action and exit paths:** the action is propose from the bundle, record, validate by replay,
-search to a selection, prove it sealed. Three exits: PROMOTE/VERIFY for a proved, owned
-candidate; a written `proposal.md` for a non-owned or exhausted one; a close on `findings.md`
-alone for nothing plugin-owned to search at all. `initiative` on the terminal call is what
-decides which document — `improvement.md` or `proposal.md` or neither — a finished close will
-later require.
+**Action and exit paths:** propose from the bundle, record, build and gate locally, then hand
+off. The four exits above; `initiative` on the terminal call is what decides which document —
+`improvement.md`, `proposal.md` or neither — a finished close will later require.
 
-**Degraded behaviour:** a case set below FR-57's own minimums still runs search and validation;
-only proof records `insufficient_proof_cases` and the candidate stops short of release-eligible.
-A liveness bound reached with no candidate cleared the equivalence band is a real, reportable
-`closed, selected_id: null` — not a reason to keep proposing past the protocol's own bound.
+**Degraded behaviour:** a host that cannot build (no sandbox, no docker) records nothing and
+judges nothing — fix the host, never record a build by hand. A patch that keeps failing its gate
+is an honest `improvement_stop`, not a reason to weaken the gate.

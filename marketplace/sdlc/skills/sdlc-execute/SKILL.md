@@ -1,7 +1,7 @@
 ---
 name: sdlc-execute
-version: 1.9
-description: Build what the approved plan describes — one subagent per task, in plan order, each making its task's contract true and its plan-authored checks pass. Main agent orchestrates and stays accountable for the sequence; the work itself is dispatched.
+version: 1.10
+description: Build what the approved plan describes — one subagent per task, one wave of tasks with disjoint ownership at a time, each making its task's contract true and its plan-authored checks pass. Main agent orchestrates and stays accountable for the sequence; the work itself is dispatched.
 when_to_use: "plan.md exists, has been audited, and the person has approved it. Implements its tasks. If there is no plan on disk, this is not the stage — the plan is what makes each task dispatchable. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
 
@@ -9,7 +9,7 @@ when_to_use: "plan.md exists, has been audited, and the person has approved it. 
 
 <!-- Design note: nothing here materialises a task's checks, scores them, or commits for
      you. The caller does all three — freeze every check up front, activate only the one
-     whose task is about to be dispatched, run them after each task, and let the person
+     whose task is about to be dispatched, run them after each wave, and let the person
      decide whether the work is committed. Three rules below are load-bearing because all
      three have cost real work: a check that could not RUN is not a check that FAILED, a
      task that fails the same way twice usually means the plan is wrong rather than the
@@ -19,8 +19,8 @@ when_to_use: "plan.md exists, has been audited, and the person has approved it. 
 **Read `sdlc-method` first.** This stage is unusual in the same way `sdlc-explore` is: the work
 is dispatched, the orchestration is not.
 
-**You keep the sequence and the accountability.** You dispatch one subagent per task, in plan
-order, and you are the one who says what changed. Two reasons this is not fully delegated: it
+**You keep the sequence and the accountability.** You dispatch one subagent per task, a wave at a
+time, and you are the one who says what changed. Two reasons this is not fully delegated: it
 touches the repository, and a plan is written before anyone knows what they do not know, so
 divergence from it is expected and someone has to notice.
 
@@ -34,7 +34,7 @@ approved, stop and say so.
 creates a branch or a worktree; work lands in the checkout you are in. On a non-git target,
 edits happen in place with no commit, and that is fine — say so rather than inventing a repo.
 
-**3. Freeze every check, then activate them one at a time.** For every task that declares a
+**3. Freeze every check, then activate them one wave at a time.** For every task that declares a
 `Check:` path with a fenced source block, freeze its exact bytes now — a verbatim copy kept
 **outside wherever the target's own checks get discovered** (a target with a gate that scans a
 `checks/` directory, a CI config, a test runner — whatever finds and runs them there), alongside
@@ -44,30 +44,40 @@ check and a worker that finds it inconvenient — nothing re-creates a weakened 
 plan afterwards.
 
 Freeze them all up front, before dispatching anything. Then, immediately before dispatching a
-task, **activate only that task's own check**: write its frozen bytes, unchanged, to its
-declared path. No other task's check is written yet — a check placed where checks get
+wave, **activate only the checks of that wave's own tasks**: write each one's frozen bytes, unchanged,
+to its declared path. No other task's check is written yet — a check placed where checks get
 discovered before its own task exists is a check discovery will surface against the wrong task,
 and a check some other automated rule may demand be registered before anyone has been told to
 register it.
 
-After the task finishes, and again before you dispatch the next one, compare the active file's
-bytes to its frozen copy. The worker may register the active check in the gate; it may not
-alter it, so treat any byte difference from your frozen copy as the task failing, whatever
+After the wave finishes, and again before you dispatch the next one, compare each active file's
+bytes to its frozen copy. Registering an active check is a hotspot edit — the worker reports the
+line and you apply it; nobody may alter the check, so treat any byte difference from your frozen copy as the task failing, whatever
 else it reports. Nothing computes that for you: you froze the copy and you make the
 comparison. A check
 that appears after the worker has been told what "done" means is a check the worker has already
 routed around — activating on time is exactly as load-bearing as activating only the one file.
 
-## Dispatching a task
+**4. Derive the waves and the hotspots.** Read every task's `**Owns:**` line and the plan's
+`## Integration hotspots` list. A wave is every task whose dependencies are all done; tasks in one
+wave run at the same time. Before dispatching anything, confirm that no two tasks in one wave own
+overlapping paths and no task owns a hotspot — where either holds, the plan left a race undecided,
+and it goes back to `sdlc-plan` rather than being settled by whichever worker finishes last.
+**A plan where no task declares Owns runs one task per wave**, in plan order: nobody decided who
+writes what, so nothing runs beside anything.
 
-One subagent per task, in plan order. Later tasks build on earlier ones, so **wait for each to
-finish before starting the next** — and re-read what it actually changed, not what it reported.
+## Dispatching a wave
+
+One subagent per task, every task of the wave dispatched together. Later waves build on earlier
+ones, so **wait for the whole wave to finish before starting the next** — and re-read what each
+task actually changed, not what it reported.
 
 Hand the worker:
 
 - **The task, verbatim from the plan** — its contract, its technical acceptance criterion, its
   dependencies, its output declaration. Not a summary. The contract is the whole brief.
 - **Its task id** (`I-N`), so its report can be matched to the task it was given.
+- **Its Owns and the hotspot list**, both verbatim. The worker writes only inside its Owns.
 - **The constraints below**, which are contractual rather than advisory.
 
 ### What the worker is told
@@ -84,6 +94,12 @@ If a contract defect blocks you — including a check that contradicts the contr
   check. Do not silently work around it, and do not weaken a check to force a pass.
 Reconciliation means satisfying the contract against the actual source, not matching the plan's
   symbols to what you find.
+You write ONLY paths inside your Owns. Other workers are writing other paths in this same checkout
+  right now: do not edit, format, revert, stage or commit anything outside your Owns, and do not
+  run anything that rewrites files you do not own (a regenerator, a formatter over the tree).
+You MUST NOT edit an integration hotspot. If your task needs one changed, report the exact lines
+  to add or change, per file, in your final report; the orchestrator applies them after the wave.
+Do not commit. The orchestrator commits once the wave is integrated.
 ```
 
 ### A broken platform tool is filed, not worked around
@@ -125,17 +141,28 @@ timeout did not fail — it did not run. Judge the task on its contract and on t
 actually executed, and **name the unverifiable ones** so someone can run them elsewhere.
 Conflating "unverifiable here" with "failed" throws away finished work.
 
-## After each task
+## After each wave — the integration step
 
-**Run the task's own checks yourself.** The worker's report is a claim; the check is the fact.
+**Check ownership first.** `git status` against the start of the wave: every changed path must sit
+inside the Owns of a task in this wave. A path nobody owned is the wave failing, whoever wrote it.
+
+**Run each task's own checks yourself.** The worker's report is a claim; the check is the fact.
+
+**Then integrate.** Apply the hotspot lines the workers reported — registration entries, changelog
+text, version stamps — yourself, in one pass, then run whatever regenerates generated files.
 
 **Then run the full-suite gate** — the commands the plan names under `## Full-suite gate`. Per-task
 checks prove the task did its own job. They cannot prove it left the rest of the project working,
 and **every check green with the suite red is the actual failure mode** of a plan executed task by
-task. Run the gate after every task, not only after the last one.
+task. Run the gate after every wave, not only after the last one.
 
-If the gate goes red, stop. Do not start the next task on a broken tree — the next worker will
-inherit the breakage and spend its turn on someone else's bug.
+**At the end of a phase, run the walking skeleton** — the Phase 0 command — and read its output.
+A phase whose tasks are green and whose skeleton no longer runs end to end is not done.
+
+Then commit the wave, if the person has agreed to commits along the way.
+
+If the gate or the skeleton goes red, stop. Do not start the next wave on a broken tree — the next
+workers will inherit the breakage and spend their turn on someone else's bug.
 
 ## When a task fails
 
@@ -167,15 +194,20 @@ reality is expected — but it is also not "done". Name the outstanding task ids
 
 ❌ **Starting before the plan is approved.** The gate is on the document, not in the chat.
 
-❌ **Dispatching all tasks at once.** They are sequential; later ones build on earlier ones.
+❌ **Dispatching past the wave.** A task whose dependencies are not done, or whose Owns overlap
+another running task's, waits for its own wave.
 
-❌ **Activating a check after dispatching its task, or activating more than the one whose turn it
-is.** Freeze every check first; activate one at a time, immediately before its own task, never
+❌ **Letting a worker touch a hotspot or a path outside its Owns.** It collides with the worker
+beside it or with the integration step, and the diff no longer says who changed what.
+
+❌ **Activating a check after dispatching its task, or activating any beyond the wave whose turn
+it is.** Freeze every check first; activate one wave at a time, immediately before its own tasks, never
 before.
 
 ❌ **Reading the worker's report instead of running the check.** The report is a claim.
 
-❌ **Skipping the full-suite gate between tasks.** This is the failure mode, not an optimisation.
+❌ **Skipping the full-suite gate between waves, or the skeleton at a phase end.** This is the
+failure mode, not an optimisation.
 
 ❌ **Re-dispatching the whole plan after one failure.** Scope it to what failed.
 
@@ -183,14 +215,15 @@ before.
 
 ## Skill contract
 
-**Outcome:** the change the approved plan describes, built one dispatched worker per task in plan
-order, each task's contract made true and each plan-authored check passing, with what changed
+**Outcome:** the change the approved plan describes, built one dispatched worker per task, a wave
+of tasks with disjoint ownership at a time, integrated after each wave, each task's contract made true and each plan-authored check passing, with what changed
 reported from the tree. This stage writes no document of the flow.
 
 **Required evidence:** the approval on `plan.md`, read from its frontmatter rather than from your
 memory of the conversation. Each task's checks run by you — the worker's report is a claim, the
-check is the fact. The full-suite gate after every task, not only after the last. The active
-check's bytes compared by you against its frozen copy after each task, where any byte difference
+check is the fact. Every changed path inside a task's Owns. The full-suite gate after every wave
+and the walking skeleton at every phase end, not only after the last. The active
+check's bytes compared by you against its frozen copy after each wave, where any byte difference
 means the task failed whatever else it reports. And `git diff --name-only` against where you started, not the
 union of what the workers said they did.
 
@@ -201,9 +234,10 @@ environment. What is never unknown is whether a check ran: one that dies on a de
 missing binary, a sandbox restriction or a bare timeout did not fail, and conflating the two
 throws away finished work.
 
-**Work roles:** one dispatched worker per task, sequential, because the plan already made the
-decisions and what remains is the change itself. This agent keeps the sequence, owns the branch,
-freezes and activates the checks, runs them and the gate, and stays accountable for what changed.
+**Work roles:** one dispatched worker per task, parallel within a wave, because the plan already
+made the decisions — including who writes what — and what remains is the change itself. This agent
+keeps the sequence, owns the branch, freezes and activates the checks, applies the hotspot edits,
+runs the checks, the gate and the skeleton, and stays accountable for what changed.
 The person decides whether the work is committed. The `semantic-assessment` role answers the
 bounded questions below by question ID from the fixed set below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
 door, which records the answer and the model behind it;
@@ -217,8 +251,10 @@ it does not judge a check's result, which is deterministic.
 | On a check that produced no verdict | `needs_verification` | whether it failed or could not run, and which environment could settle it |
 | When the same task fails the same way twice | `actionability` | whether the contract itself is wrong, which sends it back to `sdlc-plan` rather than to a third worker |
 
-**Action and exit paths:** the action is freeze every check up front, then per task: activate that
-one check, dispatch, run the task's checks, run the full-suite gate, compare the hash. Three
+**Action and exit paths:** the action is freeze every check up front, derive the waves, then per
+wave: activate its checks, dispatch its tasks together, check ownership, run the tasks' checks,
+integrate the hotspots, run the full-suite gate (and the skeleton at a phase end), compare the
+hashes. Three
 exits. Every task done, so report from the tree, ask about committing, and hand to `sdlc-review`.
 A contract defect, or the same failure twice, so back to `sdlc-plan` naming the unmet clause or
 the faulty check. The gate red, so stop — the next worker would inherit the breakage and spend its

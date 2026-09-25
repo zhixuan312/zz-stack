@@ -10,7 +10,7 @@ import type {
   ComplexityInput, ManifestComponent, PatchFile, PatchStats, TouchedComponent,
 } from "../services/zz-core/dist/eval/complexity.js";
 import type {
-  ProposerBundleRaw, RawAssessment, RawCostLatency, RawFinding, RawRejectedCandidate,
+  ProposerBundleRaw, RawAssessment, RawFinding, RawRejectedCandidate,
 } from "../services/zz-core/dist/eval/proposer-bundle.js";
 
 const complexity = await import(
@@ -96,7 +96,7 @@ assert.equal(
 assert.notEqual(hypothesisDigest("Retry the flaky call."), hypothesisDigest("Cache the flaky call."));
 
 // -- buildProposerBundle ---------------------------------------------------------------------
-const emptyRaw: ProposerBundleRaw = { findings: [], assessments: [], rejected: [], cost_latency: [] };
+const emptyRaw: ProposerBundleRaw = { findings: [], assessments: [], rejected: [] };
 const empty = buildProposerBundle(emptyRaw);
 assert.equal(empty.non_trivial, false, "nothing recorded yet is a trivial bundle");
 
@@ -110,12 +110,9 @@ const richAssessments: RawAssessment[] = [
   { measure_key: "m2", subject_ref: "s1", value: null, excluded_reason: "no comparable answer", detail: {} },
 ];
 const richRejected: RawRejectedCandidate[] = [
-  { candidate_id: "c1", hypothesis: "add a retry", status: "rejected_precheck" },
+  { candidate_id: "c1", hypothesis: "add a retry", status: "rolled_back" },
 ];
-const richCostLatency: RawCostLatency[] = [{ subject_ref: "s1", cost: 0.02, duration_ms: 1200 }];
-const richRaw: ProposerBundleRaw = {
-  findings: richFindings, assessments: richAssessments, rejected: richRejected, cost_latency: richCostLatency,
-};
+const richRaw: ProposerBundleRaw = { findings: richFindings, assessments: richAssessments, rejected: richRejected };
 const rich = buildProposerBundle(richRaw);
 assert.equal(rich.non_trivial, true);
 assert.equal(rich.failing_traces.length, 2, "both assessments score below the 0.5 threshold");
@@ -124,6 +121,7 @@ assert.equal(rich.errors.length, 1);
 assert.equal(rich.refusal_text.length, 1, "the refusal-shaped defect");
 assert.equal(rich.corrections.length, 1, "the other defect, not refusal-shaped");
 assert.equal(rich.prior_rejected_hypotheses.length, 1);
-assert.equal(rich.cost_latency.length, 1);
+assert.deepEqual([...bundle.REJECTED_CANDIDATE_STATUSES], ["invalid", "rolled_back"],
+  "a failed build and a release real use rolled back are the two ideas never proposed again");
 
 console.log("ok eval-candidates-pure");

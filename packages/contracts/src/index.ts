@@ -20,17 +20,9 @@ export { WHEN_FACT_NAMES, documentApplies,
 import { FlowDocWhen } from "./flow-when.js";
 
 // The one write path a platform access token goes through — pat_issue and pat_revoke call
-// these, and so does provisionReplayTeam/teardownReplayTeam below. Declared here rather than
-// depending on the `pg` package: `Db` is the minimal shape both services' pg.Pool satisfies.
+// these. Declared here rather than depending on the `pg` package: `Db` is the minimal shape
+// both services' pg.Pool satisfies.
 export { issuePat, revokePat, type Db } from "./pat.js";
-
-// Reserved teams for a replay run, reachable from zz-core's replay_start/replay_close: the
-// narrow, database-only path a shared package function gives across the service boundary,
-// with no internal HTTP endpoint invented for it.
-export {
-  provisionReplayTeam, teardownReplayTeam,
-  REPLAY_TEAM_PREFIX, REPLAY_REQUIRES_UNBOUND_CREDENTIAL,
-} from "./replay-team.js";
 
 export { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS, SKILL_ALIAS,
          FIXED_DOORS, DOORS_PRINTED, isDoor, NO_TOKEN_ONBOARDING, PLUGIN_ALIAS,
@@ -46,10 +38,8 @@ export { BANDS, NOT_MEASURABLE, band,
 export {
   PROTOCOL_ENUMS, EVAL_STATE_ENUMS,
   EvaluationProtocol, Dimension, Measure,
-  ReplayDependencyPolicy, ThreeWaySplitPolicy,
   QualificationPolicy, EstablishmentPolicy, UncertaintyPolicy,
-  SearchPolicy, CandidateSelectionPolicy,
-  ProofPolicy, ReleasePolicy, Guardrail, FailureMode,
+  ReleasePolicy, Guardrail, FailureMode,
 } from "./eval-protocol.js";
 
 // Types and the zod schemas that validate untrusted input against them. `semanticFields` and

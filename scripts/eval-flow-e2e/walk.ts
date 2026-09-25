@@ -132,27 +132,19 @@ export async function defineQualify(w: Walk): Promise<{ protocol: string; qualif
   return { protocol, qualified };
 }
 
-export async function evaluate(w: Walk): Promise<{ evalRun: string; caseSet: string; counts: unknown; score: Reply }> {
+export async function evaluate(w: Walk): Promise<{ evalRun: string; score: Reply }> {
   const { c, status } = await enter(w, "zz-plugin-evaluate", { action: "run_stage", stage: "zz-plugin-evaluate" });
   const subject = recorded(status, "zz-plugin-observe", "subject_version_id");
   const snapshot = recorded(status, "zz-plugin-observe", "observation_snapshot_id");
   const read = await c.call("eval", "protocol_read", { subject_version_id: subject });
   const protocol = str(read, "protocol_version_id", "protocol_read");
-  const who = await c.call("core", "session_whoami", {});
-  const today = str(who, "today", "session_whoami");
-  const built = await c.call("eval", "replay_case_set_build", {
-    subject_version_id: subject, protocol_version_id: protocol,
-    source_scope: { flow: "sdlc-flow", closed_between: ["2026-01-01", today] }, idempotency_key: c.key("cases"),
-  }, { note: (r) => `case_set ${String(r.case_set_id)} counts ${JSON.stringify(r.counts)} minimums_met ${String(r.minimums_met)} source_kind ${String(r.source_kind_qualification)}` });
-  const caseSet = str(built, "case_set_id", "replay_case_set_build");
-  if (built.minimums_met !== true) throw new Error(`the case set missed FR-57's minimums: ${JSON.stringify(built).slice(0, 600)}`);
   const started = await c.call("eval", "evaluation_start", {
     subject_version_id: subject, protocol_version_id: protocol, observation_snapshot_id: snapshot,
-    case_set_version_id: caseSet, idempotency_key: c.key("start"),
+    idempotency_key: c.key("start"),
   }, { note: (r) => `eval_run ${String(r.eval_run_id)}` });
   const evalRun = str(started, "eval_run_id", "evaluation_start");
   // The documents the tools under evaluation produced: the approved documents of the closed
-  // initiatives the case set was built from, found through the store's own listing.
+  // initiatives of real use, found through the store's own listing.
   const listed = await c.call("core", "document_list", {});
   const refs = (String(listed.text ?? JSON.stringify(listed)).match(/\d{4}-\d{2}-\d{2}-[a-z0-9-]+-use-\d+\/spec\.md/g) ?? []).slice(0, 6);
   if (refs.length < 5) throw new Error(`document_list named ${refs.length} spec.md documents to judge: ${String(listed.text ?? "").slice(0, 400)}`);
@@ -161,7 +153,7 @@ export async function evaluate(w: Walk): Promise<{ evalRun: string; caseSet: str
   const score = await c.call("eval", "evaluation_score", { eval_run_id: evalRun, idempotency_key: c.key("score"), initiative: w.initiative },
     { note: (r) => `overall ${String(r.overall_score)} status ${String(r.score_status)} guardrails ${String(r.guardrail_status)}` });
   if (score.record_refused) throw new Error(`evaluation_score did not record: ${String(score.record_refused)}`);
-  return { evalRun, caseSet, counts: built.counts, score };
+  return { evalRun, score };
 }
 
 export async function explain(w: Walk): Promise<{ defect: string }> {

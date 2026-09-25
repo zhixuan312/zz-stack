@@ -2,9 +2,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { DASH_IMAGE, DASH_SRC, HOST, REMOTE, envToken, initFrame, log, publicUrl, root, run, ssh } from "../deployment.ts";
+import { DASH_IMAGE, DASH_SRC, HOST, REMOTE, envToken, initFrame, log, probeToken, publicUrl, root, run, ssh } from "../deployment.ts";
 import { exportMode } from "./config.ts";
 import { consoleImage, resolveDashboard } from "./dashboard.ts";
+import { verifyPredeploy } from "./verify.ts";
 
 export function preflight(): void {
   function safe<T>(fn: () => T, fallback: T): T { try { return fn(); } catch { return fallback; } }
@@ -128,6 +129,36 @@ export function preflight(): void {
           : `http ${code} — this token is not valid for this deployment. Mint one on the ` +
             `host with issue-first-pat.sh and set it as ZZ_TOKEN in ${root}/.env.`);
   }
+
+  /* The live chain walks with a superadmin's token, because part of it is offered to no other
+   * role. Asked by listing /core/mcp's tools: a superadmin is offered knowledge_reindex, and a
+   * token that is not would skip those probes and leave the release UNVERIFIED after the deploy.
+   * COUPLED: chain-verdict.ts chainToken and chainOutcome report the same absences as unknown. */
+  const probe = probeToken();
+  const probeSrc = process.env.ZZ_PROBE_TOKEN ? "$ZZ_PROBE_TOKEN" : `${root}/.env`;
+  if (!probe) {
+    row(false, `probe token (${probeSrc})`, "no ZZ_PROBE_TOKEN — the live chain check's superadmin " +
+        "probes will report unknown and the release will go live UNTAGGED; set it to a superadmin's PAT");
+  } else if (!address) {
+    row(null, `probe token (${probeSrc})`, "present, but unverified without an address");
+  } else {
+    const listed = safe(() => run("curl", ["-s", "-m", "25",
+      "-H", `Authorization: Bearer ${probe}`, "-H", "content-type: application/json",
+      "-H", "accept: application/json, text/event-stream",
+      "-d", JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }), `${address}/core/mcp`]), "");
+    const sup = listed.includes('"knowledge_reindex"');
+    row(sup, `probe token (${probeSrc}) is a superadmin's on ${address}`,
+        sup ? null : "it is not offered knowledge_reindex — invalid here, or not a superadmin's. " +
+                     "The chain check would skip its superadmin probes.");
+  }
+
+  /* What step 5 would roll back on that is already true today: the doctor's pre-deploy probes,
+   * this checkout against the live data. The release refuses on these before it deploys. */
+  say("\n  pre-deploy probes (this checkout against live data)");
+  const pre = safe(() => verifyPredeploy({ quiet: true }), { wrong: [], unknown: ["the probes themselves threw"] });
+  for (const w of pre.wrong) row(false, w);
+  for (const u of pre.unknown) row(false, `could not run: ${u}`);
+  if (!pre.wrong.length && !pre.unknown.length) row(true, "every pre-deploy probe agrees");
 
   if (exportMode) { out.forEach((l) => console.log(l)); return; }
   say("\n  Nothing above was changed, pushed or deployed. The version is still yours to decide.\n");

@@ -48,8 +48,8 @@ export interface RecordResult {
 
 /** `release_record` and `release_verify` act only for the principal whose `release_apply` moved
  *  the attempt to applying, or for a member of one of its owner teams (`release-owners.ts`).
- *  Anyone else on the /eval door could otherwise record an outcome that never happened or mint a
- *  verifier token for a candidate they have no stake in. Null means allowed. */
+ *  Anyone else on the /eval door could otherwise record an outcome that never happened or decide
+ *  the fate of a release they have no stake in. Null means allowed. */
 export async function releaseActorRefusal(
   runner: Pick<pg.PoolClient, "query">,
   attempt: { readonly id: string; readonly applied_by: string | null; readonly required_owners: readonly string[] },

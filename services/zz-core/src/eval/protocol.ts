@@ -347,7 +347,7 @@ export function registerProtocolTools(server: McpServer): void {
         "this version is not approved — when the document does not exist, is not " +
         "status: approved, or does not quote this version's content_digest anywhere in its " +
         "body: a document approved for a DIFFERENT version of this protocol is not approved " +
-        "for this one. Until it binds, evaluator_qualify, replay_case_set_build and " +
+        "for this one. Until it binds, evaluator_qualify and " +
         "evaluation_start refuse this version by name. A mutator: writes through the FR-59 idempotency ledger.",
       inputSchema: {
         protocol_version_id: z.string(),

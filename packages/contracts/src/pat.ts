@@ -6,9 +6,9 @@
  * here assumes which one it is. Every statement is schema-qualified for that reason: zz-core's
  * pool carries no `search_path`, unlike the gateway's.
  *
- * COUPLED: the gateway's pat_issue and pat_revoke tools call these, and so does
- * provisionReplayTeam/teardownReplayTeam in replay-team.ts. One mint-and-store statement, one
- * revoke statement — a second copy of either would be a second credential mechanism.
+ * COUPLED: the gateway's pat_issue and pat_revoke tools call these. One mint-and-store
+ * statement, one revoke statement — a second copy of either would be a second credential
+ * mechanism.
  */
 import { mintPat, sha256 } from "./identity.js";
 

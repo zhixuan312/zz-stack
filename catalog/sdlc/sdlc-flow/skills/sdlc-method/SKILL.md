@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.15
+version: 1.16
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -20,7 +20,7 @@ main agent runs the flow, and dispatches in exactly four places.
 |---|---|---|
 | `sdlc-explore`'s fan-out | many workers, in parallel | breadth — one question per worker |
 | `sdlc-spec-audit` / `sdlc-plan-audit` | one worker per round, **sequential**, rounds routed by evidence | a reader who did not write the document |
-| `sdlc-execute` | one worker per plan item | mechanical, and bounded by the plan |
+| `sdlc-execute` | one worker per plan item, a wave of disjoint owners in parallel | mechanical, and bounded by the plan |
 | `sdlc-review`'s sweep | one worker per round, **sequential**, rounds routed by evidence | a reviewer who did not write the code |
 
 Everything else — `sdlc-explore` itself, `sdlc-spec`, `sdlc-plan`, `sdlc-review`'s acceptance
@@ -53,6 +53,23 @@ sound.
 
 **Volume.** `sdlc-execute` is one worker per plan item because the plan already made the
 decisions; what remains is the change itself.
+
+## Skeleton first, parallel by ownership
+
+**Run the whole thing from the first day.** A plan's Phase 0 is a walking skeleton — one command
+that runs the deliverable end to end with stubs — and every later phase ends by running it. Parts
+checked one at a time each pass while the faults live between them; a skeleton that runs daily
+finds each one the day it lands, not all of them in the last phase.
+
+**Parallel by plan, not by branches.** Each task declares `**Owns:**`, the paths it writes. Tasks
+whose dependencies are done run together as a wave in one checkout; overlapping owners must
+depend on one another, and shared files — registrations, changelogs, generated files — are
+`## Integration hotspots` that no task owns. Workers report hotspot lines; the orchestrator
+applies them, regenerates, runs the gate and commits after each wave. Who writes what is decided
+when the plan is written, because deciding it when two workers collide costs the work of both.
+
+**The plan says what and how-done, never a fact the tree will move under** — no migration
+numbers, line counts or exact SQL; the executor reads those from the repository.
 
 ## Why the rest are yours
 

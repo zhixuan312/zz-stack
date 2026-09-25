@@ -45,6 +45,7 @@ export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, 
     if (freeName) {
       check("a freeform initiative still takes a document",
         await writeDoc(`${freeName}/notes.md`, "hand-assembled"), false);
+      await call("document_present", { path: `${freeName}/notes.md` });
       check("a freeform initiative still records a gate",
         await call("document_approve", { path: `${freeName}/notes.md`, on_behalf_of: "Chain Check" }),
         false);

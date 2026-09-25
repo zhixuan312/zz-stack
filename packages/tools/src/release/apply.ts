@@ -5,7 +5,7 @@
  * the advisory lock and the record; zz-core runs server-side with no checkout of the plugin's
  * repository, so this CLI is what actually applies the patch, hashes it, commits, gates, and runs
  * the repository's own release procedure — the same server-decides/CLI-executes split
- * `packages/tools/src/replay/launch.ts` already uses for replay.
+ * `npm run candidate-build` (`packages/tools/src/candidate/build.ts`) already uses.
  *
  *   node packages/tools/dist/release/apply.js --candidate <id> --repo <path> \
  *     --initiative <slug> --digest <approved_patch_digest> --release-cmd "<command>" \

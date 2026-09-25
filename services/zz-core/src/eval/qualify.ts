@@ -26,8 +26,7 @@ import type pg from "pg";
 import { z } from "zod";
 
 import {
-  gatherCountedEvidence, gatherKnownAnswerEvidence, labelEvidence, mappingFor, parseLabelMappings,
-  type KnownAnswers, type SnapshotRow,
+  gatherCountedEvidence, labelEvidence, mappingFor, parseLabelMappings, type SnapshotRow,
 } from "./qualify-evidence.js";
 import { qualificationState, resolveThresholds, type LadderEvidence } from "./qualify-ladder.js";
 import {
@@ -44,10 +43,9 @@ const noDb = () => text("ERROR: this deployment has no platform database, so no 
 const MODEL_BACKED = new Set(["bounded_semantic", "generative_critic"]);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Exported for `replay-derive.ts` (Task I-14): `replay_case_set_build` resolves the SAME
- *  protocol context this tool does before deciding whether `replay.source_kind` needs qualifying
- *  — one resolver, so the two callers can never read a protocol's policy differently. */
-export interface ProtocolContext {
+/** What `resolveProtocol` answers — `evaluate.ts` resolves the same protocol context before it
+ *  scores, one resolver, so the two callers can never read a protocol's policy differently. */
+interface ProtocolContext {
   pluginId: string; policy: QualificationPolicy | null; version: number; affirmed: boolean;
 }
 
@@ -66,7 +64,7 @@ export async function resolveProtocol(p: pg.Pool, protocolVersionId: string): Pr
 
 /** FR-6's gate, read where it matters: `protocol_record` writes every version with
  *  `approved_document_path` null, and only `protocol_affirm` sets it, once a person approved the
- *  `protocol.md` quoting its digest. Nothing is qualified, replay-derived or scored against a
+ *  `protocol.md` quoting its digest. Nothing is qualified or scored against a
  *  version that never got there. No exemption for a bootstrap protocol (`zz-core.v1`): it is
  *  recorded through `protocol_record` like any other body and affirmed the same way —
  *  `scoring.establishment.bootstrap` only caps what its score may claim. */
@@ -77,8 +75,7 @@ export function unaffirmedRefusal(protocolVersionId: string, protocol: ProtocolC
     "nothing is qualified or scored against a protocol nobody agreed";
 }
 
-/** Exported for the same reason as `resolveProtocol` above. */
-export async function resolveEvaluator(p: pg.Pool, evaluatorVersionId: string): Promise<string | null> {
+async function resolveEvaluator(p: pg.Pool, evaluatorVersionId: string): Promise<string | null> {
   if (!UUID_RE.test(evaluatorVersionId)) return null;
   const row = (await p.query<{ stable_key: string }>(`
     select e.stable_key as stable_key
@@ -176,8 +173,8 @@ function respond(counted: LadderEvidence, state: string, reason: string | null, 
   };
 }
 
-/** Anything `recordQualification` writes through: a transaction's own client (the ledger
- *  transaction in `evaluator_qualify`, or the case-set build's in `replay-cases.ts`). Mirrors
+/** Anything `recordQualification` writes through: the ledger transaction's own client in
+ *  `evaluator_qualify`. Mirrors
  *  `idempotency.ts`'s own `Queryable` — an explicit generic signature, not
  *  `Pick<pg.Pool, "query">`, which TypeScript infers as a non-callable union over `Pool`'s
  *  overloads. */
@@ -187,7 +184,7 @@ interface Writer {
 
 /** One qualification run, decided and not yet written: the ladder's state, the evidence behind
  *  it, and every evaluator answer asked on the way, in ask order. */
-export interface GatheredQualification {
+interface GatheredQualification {
   readonly protocolVersionId: string;
   readonly evaluatorVersionId: string;
   readonly pluginId: string;
@@ -200,13 +197,10 @@ export interface GatheredQualification {
 /** The qualification run itself (FR-16), split in two so no model call ever runs inside a
  *  transaction: this half reads on the pool and asks every question (anchors, faults, controls,
  *  stability — up to nine calls of up to ~100s each) and writes nothing; `recordQualification`
- *  writes the answers and the row through the caller's transaction client. Two callers, the same
- *  split: `evaluator_qualify` below, and `replay-derive.ts`'s `resolveQualification` (FR-60 rule
- *  1's "runs `evaluator_qualify` for it first when no such qualification exists"), whose answers
- *  `replay_case_set_build` records inside its own ledger transaction. */
-export async function gatherQualification(
+ *  writes the answers and the row through `evaluator_qualify`'s ledger transaction client. */
+async function gatherQualification(
   p: pg.Pool, protocolVersionId: string, evaluatorVersionId: string, measureId: string | null,
-  protocol: ProtocolContext, stableKey: string, principal: string, known?: KnownAnswers,
+  protocol: ProtocolContext, stableKey: string, principal: string,
 ): Promise<GatheredQualification> {
   const measure = await resolveMeasure(p, measureId);
   const { thresholds } = resolveThresholds(protocol.policy?.thresholds);
@@ -214,14 +208,10 @@ export async function gatherQualification(
   const snapshot = measure ? await latestSnapshot(p, protocol.pluginId, false) : null;
   const foreignSnapshot = measure && snapshot ? await latestSnapshot(p, protocol.pluginId, true) : null;
 
-  // A platform-owned evaluator no measure defers to has no snapshot fact to anchor on; its own
-  // known answers stand in, or it could never climb past `no_anchors`.
-  const { counts, asked } = !measure && known
-    ? await gatherKnownAnswerEvidence({ evaluatorVersionId, principal, known })
-    : await gatherCountedEvidence({
-      evaluatorVersionId, principal, snapshot, foreignSnapshot,
-      vocabulary: measure?.vocabulary ?? null,
-    });
+  const { counts, asked } = await gatherCountedEvidence({
+    evaluatorVersionId, principal, snapshot, foreignSnapshot,
+    vocabulary: measure?.vocabulary ?? null,
+  });
   const mappings = parseLabelMappings(protocol.policy?.labelMappings ?? []);
   const labels = measure
     ? await labelEvidence(p, measure.measureId, evaluatorVersionId, mappingFor(mappings, stableKey))
@@ -235,7 +225,7 @@ export async function gatherQualification(
 /** The write half: every asked answer's `zz.assessment` row, then the one
  *  `zz.eval_evaluator_qualification` row — all through `writer`, so they commit or roll back
  *  together with the caller's ledger row. Database writes only; never asks. */
-export async function recordQualification(writer: Writer, g: GatheredQualification): Promise<QualifyResult> {
+async function recordQualification(writer: Writer, g: GatheredQualification): Promise<QualifyResult> {
   for (const answer of g.asked) await insertEvaluatorAnswer(writer, answer);
   const row = (await writer.query<{ id: string }>(`
     insert into zz.eval_evaluator_qualification

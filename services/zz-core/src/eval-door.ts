@@ -29,10 +29,6 @@ import { registerPluginRecordTools } from "./eval/plugin-record.js";
 import { registerProtocolTools } from "./eval/protocol.js";
 import { registerEvaluatorQualifyTools } from "./eval/qualify.js";
 import { registerReleaseTools } from "./eval/release.js";
-import { registerReplayCaseTools } from "./eval/replay-cases.js";
-import { registerReplayCloseTools } from "./eval/replay-close.js";
-import { registerReplayScoreTools } from "./eval/replay-score.js";
-import { registerReplayRunTools } from "./eval/replay-runs.js";
 import { registerSubjectTools } from "./eval/subject.js";
 
 /** What this door says about itself at `initialize`, before any tool is called.
@@ -44,8 +40,8 @@ import { registerSubjectTools } from "./eval/subject.js";
  *
  * COUPLED: checks/orientation.ts derives the noun set from the live `tools/list` and compares it
  * with this text in both directions, so the paragraph below has to change in the same commit as
- * a registration under a new prefix. This door serves twelve nouns — plugin, protocol, round,
- * finding, failure, evaluator, evaluation, replay, improvement, candidate, release and proposal.
+ * a registration under a new prefix. This door serves eleven nouns — plugin, protocol, round,
+ * finding, failure, evaluator, evaluation, improvement, candidate, release and proposal.
  *
  * It names the other door on purpose: everyone holding this one also holds `/core/mcp`. */
 const EVAL_INSTRUCTIONS =
@@ -67,10 +63,9 @@ const EVAL_INSTRUCTIONS =
   "answers count\n" +
   "  evaluation_*  bind a protocol version and an observation snapshot into one run, assess " +
   "and score it\n" +
-  "  replay_*  derive replay cases and start, begin, read, close a run\n" +
-  "  improvement_*  open an optimization run against plugin-owned findings\n" +
-  "  candidate_*  persist a proposed patch before it executes, record its local build\n" +
-  "  release_*  prepare, apply, record a candidate's promotion\n" +
+  "  improvement_*  open an improvement run against plugin-owned findings, or stop one\n" +
+  "  candidate_*  persist a proposed patch before it executes, record its local build and gate\n" +
+  "  release_*  prepare, apply, record a candidate's release, and judge it on real use after\n" +
   "  proposal_*  write an owner-facing proposal nobody here can promote\n\n" +
   "Everything else is on /core/mcp and not here: documents and their gates, your team's " +
   "knowledge store, skills, sources, and who you are — session_whoami there answers today's " +
@@ -103,10 +98,6 @@ export function buildEvalServer(): McpServer {
   registerFailureDiscoverTools(server);
   registerEvaluatorQualifyTools(server);
   registerEvaluationTools(server);
-  registerReplayCaseTools(server);
-  registerReplayRunTools(server);
-  registerReplayCloseTools(server);
-  registerReplayScoreTools(server);
   registerCandidateTools(server);
   registerCandidateBuildTools(server);
   registerReleaseTools(server);

@@ -43,50 +43,14 @@ import { basename, join } from "node:path";
 
 import { buildAndSmoke } from "./release/build.ts";
 import { ATTEST, fitForPurpose } from "./release/fit-for-purpose.ts";
-import { DASH_IMAGE, DASH_REMOTE, DASH_SRC, HOST, IMAGE, REMOTE, asExecError, die, envToken, log, publicUrl, root, run, ssh, step, warn } from "./deployment.ts";
+import { DASH_IMAGE, DASH_REMOTE, DASH_SRC, HOST, IMAGE, REMOTE, asExecError, die, envToken, log, probeToken, publicUrl, root, run, ssh, step, warn } from "./deployment.ts";
+import { chainCheck } from "./release/chain-live.ts";
 import { args, dryRun, preflightMode, rollbackMode, version } from "./release/config.ts";
 import { consoleImage, resolveDashboard } from "./release/dashboard.ts";
 import { preflight } from "./release/preflight.ts";
 import { writeRegistries } from "./release/registries.ts";
-import { purgeProbes } from "./release/probe-purge.ts";
 import { rollback } from "./release/rollback.ts";
-import { verifyLive } from "./release/verify.ts";
-
-/**
- * chain-check.ts, run against the live deployment rather than from scripts/gate.ts.
- *
- * verifyLive()'s `doors` and `contract` layers prove a tool answers and the surface matches
- * source; neither proves a tool completes what it claims to. chain-check.ts writes a document,
- * approves it, closes the initiative and supersedes a knowledge node for real, against this
- * deployment, with no model in the loop. It needs a running deployment and a real token, so it
- * is not in the gate, which is offline.
- *
- * COUPLED: the same three-verdict rule as the doctor's probes (scripts/doctor/run.ts) — a
- * missing credential is `unknown`, and only a run that happened and disagreed is `wrong`, the
- * one a release may roll back on.
- */
-function chainCheck() {
-  const gw = publicUrl();
-  const pat = envToken();
-  if (!gw || !pat) {
-    return { verdict: "unknown", detail: "chain-check: no ZZ_PUBLIC_URL/ZZ_TOKEN to walk the chain with" };
-  }
-  try {
-    run("node", [join(root, "packages/tools/dist/testing/chain-check.js")],
-        { env: { ...process.env, ZZ_GATEWAY: gw, ZZ_PAT: pat } });
-    return null;
-  } catch (err) {
-    // What chain-check itself printed, not the exception execFileSync wraps a nonzero exit
-    // in — its FAILED lines already name the tool and the rule.
-    const e = asExecError(err);
-    const out = `${e.stdout ?? ""}${e.stderr ?? ""}`;
-    const failing = out.split("\n").filter((l) => l.includes("FAILED:")).map((l) => l.trim());
-    return { verdict: "wrong",
-      detail: failing.length ? `chain-check: ${failing.join(" | ")}` : `chain-check exited nonzero: ${out.slice(-300)}` };
-  } finally {
-    purgeProbes();  // a chain check that failed still takes its initiative with it
-  }
-}
+import { verifyLive, verifyPredeploy } from "./release/verify.ts";
 
 if (preflightMode) { preflight(); process.exit(0); }
 
@@ -207,6 +171,27 @@ if (!dryRun && !envToken()) {
       `        Set ZZ_TOKEN in ${root}/.env (or inline).\n` +
       `        Checked before deploying on purpose: discovered afterwards, a missing token ` +
       `looks exactly like a dead deployment.`);
+}
+
+// The probe token is asked, never required. Absent, the live chain still runs with ZZ_TOKEN and
+// its superadmin probes come back `unknown: no probe token` in step 5 — which leaves the release
+// live and UNTAGGED — so it is said here, before anything is built, where it can still be set.
+if (!dryRun && !probeToken()) {
+  warn("  no ZZ_PROBE_TOKEN: the live chain check's superadmin probes (bug_list, bug_resolve,\n" +
+       "  knowledge_reindex) will report unknown, and step 5 will leave this release UNTAGGED.\n" +
+       `  Set ZZ_PROBE_TOKEN in ${root}/.env to a superadmin's PAT to verify them.`);
+}
+
+// The doctor's pre-deploy probes: disagreements already true of the live data against this
+// checkout, which step 5 would otherwise roll back on after a deploy (0.76.0). A probe that could
+// not read the host stops here too — step 5 would then leave the release live and untagged.
+if (!dryRun) {
+  step("1b", "pre-deploy probes");
+  const pre = verifyPredeploy();
+  if (pre.wrong.length || pre.unknown.length) {
+    die("the pre-deploy probes disagree with, or could not read, the live data — nothing was " +
+        "built or deployed:\n" + [...pre.wrong, ...pre.unknown].map((x) => `        - ${x}`).join("\n"));
+  }
 }
 
 const commit = run("git", ["rev-parse", "--short", "HEAD"], { cwd: root });

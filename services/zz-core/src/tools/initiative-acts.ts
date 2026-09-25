@@ -58,7 +58,9 @@ export function registerInitiativeActTools(server: McpServer): void {
         "approval that exists only in the chat does not exist, and the person must never be " +
         "the one who discovers that later. Do not ask them to confirm a second time, and do " +
         "not ask them to edit frontmatter. Use `on_behalf_of` only when the verdict is " +
-        "someone else's and they are not this session — a stakeholder who said it elsewhere.",
+        "someone else's and they are not this session — a stakeholder who said it elsewhere. " +
+        "Refused until the CURRENT content was presented: call `document_present` after the " +
+        "last write, patch or revise, in its own call, then approve.",
       inputSchema: {
         path: z.string().describe("e.g. '2026-08-23-sample-queue/spec.md'"),
         on_behalf_of: z.string().optional().describe(
@@ -101,6 +103,20 @@ export function registerInitiativeActTools(server: McpServer): void {
           "and carry on. Which documents gate is the flow manifest's answer, and it can differ " +
           "between flows: the same name may be gated in one and not in another.");
       }
+      // The one step an approval holds for: the bytes it signs were put in front of somebody.
+      // Approval is delegated to agents, so nothing else stands between an unread revision and a
+      // verdict on it. `false` only — `null` is a record that cannot answer (no activity log, or
+      // no recorded change to be "since"), and a refusal invented from a missing record would
+      // stop an approval over the platform's own gap. Asked before anything is read or written.
+      const fetched = shownSinceLastChange(root, relPath);
+      if (fetched === false) {
+        return text(
+          `ERROR: present it first — ${relPath} changed after it was last presented, so no ` +
+          "record shows anyone saw these bytes. Call `document_present` on it in its own call, " +
+          "put what it returns in front of the person, then approve. A long document comes back " +
+          "in parts; present every part. A standing \"approve without checking with me\" waives " +
+          "their review, not the present — the present is what the record keeps.");
+      }
       const signer = (on_behalf_of ?? "").trim() || who.email;
       let doc = readFileSync(target, "utf8");
       // COUPLED: release_apply (eval/release-apply.ts) counts this approval only for owner teams the
@@ -122,8 +138,6 @@ export function registerInitiativeActTools(server: McpServer): void {
       const fixed = normalizeSections(chain, relPath, doc);
       const bad = documentGuards(chain, root, relPath, fixed.content, team, "document_approve");
       if (bad) return text(bad);
-      // DELIBERATE: read before the write — persistDocument logs, and this asks about the log.
-      const fetched = shownSinceLastChange(root, relPath);
       persistDocument(chain, root, relPath, target, fixed.content, "document_approve");
       logActivity(root, relPath, { user: who.email, action: "document_approve", path: relPath, signer, fetched });
       // An approval is a separate fact from the document: a gated step requires `1x document` and
@@ -136,18 +150,6 @@ export function registerInitiativeActTools(server: McpServer): void {
         (already ? "It was already approved; the record now carries this verdict instead.\n" : "") +
         (acceptance.note ? `${acceptance.note}\n` : "") +
         (fixed.renamed.length ? `Renamed to the heading this flow declares: ${fixed.renamed.join(", ")}.\n` : "") +
-        // DELIBERATE: said, not refused. An approval with no `document_present` since the content last
-        // moved is flagged and never rejected: this call records a decision a person already made, so a
-        // false positive would tell somebody their own approval was rejected. Addressed to the next
-        // action, because the approval is already recorded.
-        (fetched === false
-          ? "\nNOT FETCHED: no `document_present` on this path since its content last changed, so " +
-            "the record cannot show anyone saw these bytes before the verdict. The approval " +
-            "stands — this is a note, not a refusal. Before the next gate, call " +
-            "`document_present` and put what it returns in front of the person; a standing " +
-            "\"approve without checking with me\" waives their REVIEW, not the fetch, because " +
-            "the fetch is the part that reaches the record.\n"
-          : "") +
         // True only of the flip. A snapshot is written when a document goes draft -> approved and on no
         // other write (persist.ts), so re-approving an approved document freezes nothing and the copy in
         // `_versions/` still carries the previous signer's verdict.

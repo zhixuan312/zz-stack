@@ -17,10 +17,19 @@
  * is a verdict on content, a report a verdict on shape, and a missing report is not a silent
  * pass.
  *
- * `### Task I-N:`, `Output` and `Dependencies` are this flow's conventions, not the document
- * kernel's — the kernel stores and gates documents of any shape.
+ * `**Owns:**` is what lets tasks run in parallel without branches: the paths a task writes. Tasks
+ * whose dependencies are done and whose Owns are disjoint form a wave. Two tasks owning an
+ * overlapping path with no dependency between them is a race the plan left undecided, and a path
+ * listed under `## Integration hotspots` (registration, changelog, generated files) is written by
+ * the integration step after each wave, never by a task. A plan where no task declares Owns runs
+ * one task per wave.
+ *
+ * `### Task I-N:`, `Output`, `Dependencies` and `Owns` are this flow's conventions, not the
+ * document kernel's — the kernel stores and gates documents of any shape.
  */
 import { createHash } from "node:crypto";
+
+import { executableWaves, ownershipViolations, type OwnedTask } from "./plan-ownership.js";
 
 // Deliberately narrow. Every pattern below matches something a writer can see in their own
 // text: a structural refusal a human cannot reproduce by looking at the line gets routed around
@@ -69,6 +78,12 @@ const OUTPUT_LINE = new RegExp(`${LINE_PREFIX}\\*\\*Outputs?\\s*:?\\s*\\*\\*\\s*
 const DEPENDENCIES_LINE =
   new RegExp(`${LINE_PREFIX}\\*\\*Dependenc(?:y|ies)\\s*:?\\s*\\*\\*\\s*:?\\s*(.*)$`, "i");
 
+/** `**Owns:** \`src/a.ts\`, \`src/b/**\`` — the paths a task writes, or `none`. */
+const OWNS_LINE = new RegExp(`${LINE_PREFIX}\\*\\*Owns\\s*:?\\s*\\*\\*\\s*:?\\s*(.*)$`, "i");
+
+/** The plan-level list of paths only the integration step writes. */
+const HOTSPOTS_HEADING = /^##\s+(?:Integration\s+)?hotspots\b/i;
+
 /** A task id anywhere in a dependency tail. Written as a scan rather than a strict grammar for
  *  the tail, because a grammar tight enough to reject noise rejects a real line with it the
  *  first time somebody writes a parenthetical after an id. */
@@ -109,7 +124,15 @@ export type PlanViolationKind =
   /** A dependency naming a task id that no heading in this document declares. */
   | "unknown_dependency"
   /** A ring of dependencies: no task in it can start first. */
-  | "dependency_cycle";
+  | "dependency_cycle"
+  /** Some tasks declare `**Owns:**` and this one does not, so nobody knows what it may write. */
+  | "missing_owns"
+  /** An `**Owns:**` line naming neither `none` nor any path. */
+  | "empty_owns"
+  /** Two tasks own an overlapping path and neither depends on the other: parallel writers. */
+  | "owns_overlap"
+  /** A task owns a path the plan lists under `## Integration hotspots`. */
+  | "owns_hotspot";
 
 /** One violation, attributed. `taskId` is null only where the violation belongs to the document
  *  rather than to a task (`no_tasks`, a heading too malformed to yield an id). `line` is 1-based
@@ -138,20 +161,24 @@ export interface PlanStructuralReport {
   readonly taskIds: readonly string[];
   readonly violations: readonly PlanViolation[];
   readonly order: readonly string[];
+  /** The paths `## Integration hotspots` lists; written only by the integration step. */
+  readonly hotspots: readonly string[];
+  /** Tasks grouped into waves that may run in parallel, in order. One task per wave when no task
+   *  declares Owns. Empty when the report is not ok. */
+  readonly waves: readonly (readonly string[])[];
 }
 
 // Reading the document
 
-interface ParsedTask {
-  readonly id: string;
-  readonly line: number;
+interface ParsedTask extends OwnedTask {
   /** Dependency ids as written, in document order, self-references and unknowns included —
    *  those are reported as violations, not quietly dropped before anyone sees them. */
   readonly declared: readonly string[];
 }
 
 function normaliseTail(tail: string): string {
-  return tail.trim().toLowerCase().replace(/[.;,]+$/, "");
+  // `none (runs after X)` is still none: a parenthetical explains, it does not add an edge.
+  return tail.trim().toLowerCase().replace(/\s*\(.*\)\s*$/, "").replace(/[.;,]+$/, "");
 }
 
 /**
@@ -240,7 +267,9 @@ function parseTasks(lines: readonly string[]): {
     violations.push(...readOutput(id, line, block));
     const dependencies = readDependencies(id, line, block);
     violations.push(...dependencies.violations);
-    tasks.push({ id, line, declared: dependencies.declared });
+    const owns = readOwns(id, line, block);
+    violations.push(...owns.violations);
+    tasks.push({ id, line, declared: dependencies.declared, owns: owns.paths });
   }
 
   if (tasks.length === 0 && violations.length === 0) {
@@ -275,6 +304,45 @@ function readOutput(id: string, headingLine: number, block: readonly string[]): 
     line: headingLine,
     detail: `task ${id} declares no "**Output:**"`,
   }];
+}
+
+/** Backticked paths when there are any, otherwise the comma-separated tail. */
+function readOwns(
+  id: string,
+  headingLine: number,
+  block: readonly string[],
+): { paths: string[] | null; violations: PlanViolation[] } {
+  for (let i = 0; i < block.length; i += 1) {
+    const match = OWNS_LINE.exec(block[i]);
+    if (!match) continue;
+    const tail = match[1];
+    if (NO_DEPENDENCIES.has(normaliseTail(tail))) return { paths: [], violations: [] };
+    const ticked = [...tail.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+    const paths = (ticked.length > 0 ? ticked : tail.split(","))
+      .map((p) => p.trim().replace(/^\.\//, "")).filter((p) => p !== "");
+    if (paths.length > 0) return { paths, violations: [] };
+    return {
+      paths: null,
+      violations: [{
+        kind: "empty_owns",
+        taskId: id,
+        line: headingLine + 1 + i,
+        detail: `task ${id} has an "**Owns:**" line naming neither \`none\` nor any path`,
+      }],
+    };
+  }
+  return { paths: null, violations: [] };
+}
+
+function readHotspots(lines: readonly string[]): string[] {
+  const start = lines.findIndex((line) => HOTSPOTS_HEADING.test(line));
+  if (start === -1) return [];
+  const paths: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (BLOCK_BOUNDARY.test(line)) break;
+    for (const m of line.matchAll(/`([^`]+)`/g)) paths.push(m[1].trim().replace(/^\.\//, ""));
+  }
+  return paths;
 }
 
 function readDependencies(
@@ -473,7 +541,10 @@ export function validatePlan(text: string, target?: string): PlanStructuralRepor
   }
 
   const ids = parsed.tasks.map((task) => task.id);
-  for (const ring of findCycles(ids, graph.edges)) {
+  const hotspots = readHotspots(source.text);
+  const rings = findCycles(ids, graph.edges);
+  if (rings.length === 0) violations.push(...ownershipViolations(parsed.tasks, graph.edges, hotspots));
+  for (const ring of rings) {
     const owner = parsed.tasks.find((task) => task.id === ring[0]);
     violations.push({
       kind: "dependency_cycle",
@@ -484,13 +555,16 @@ export function validatePlan(text: string, target?: string): PlanStructuralRepor
   }
 
   const order = executableOrder(ids, graph.edges);
+  const ok = violations.length === 0;
   return {
-    ok: violations.length === 0,
+    ok,
     target: target ?? `sha256:${digest}`,
     digest,
     taskIds: ids,
     violations: byLine(violations),
     order: order ?? [],
+    hotspots,
+    waves: ok && order ? executableWaves(parsed.tasks, graph.edges, order) : [],
   };
 }
 

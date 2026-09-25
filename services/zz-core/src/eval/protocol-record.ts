@@ -11,7 +11,7 @@
  *
  * Body field → migration 001 column, positionally, never renamed: `pluginPurpose` → `purpose`,
  * `observableSurfaces` → `observable_surfaces`, `failureTaxonomy` → `failure_taxonomy`, `suites`
- * → `suites`, `replay` → `replay_policy`, `qualification` → `qualification_policy`, `scoring` →
+ * → `suites`, `qualification` → `qualification_policy`, `scoring` →
  * `scoring_policy`, `improvement` → `improvement_policy`. `packages/contracts/src/eval-protocol.ts`
  * states the same mapping; nothing here restates the field names a third time.
  */
@@ -275,10 +275,10 @@ export async function recordProtocolVersion(
     versionRow = (await client.query<{ id: string }>(`
       insert into zz.eval_protocol_version
         (protocol_id, version, subject_compatibility, purpose, observable_surfaces,
-         failure_taxonomy, suites, replay_policy, qualification_policy, scoring_policy,
+         failure_taxonomy, suites, qualification_policy, scoring_policy,
          improvement_policy, content_digest, approved_document_path, created_at)
       values ($1::uuid, $2, $3::jsonb, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb,
-              $10::jsonb, $11::jsonb, $12, null, now())
+              $10::jsonb, $11, null, now())
       returning id::text as id`,
       [protocolId, body.version,
        // `subject_compatibility`: the one subject version this recording actually happened
@@ -286,7 +286,7 @@ export async function recordProtocolVersion(
        // column) are what decide whether a LATER subject version still fits it.
        JSON.stringify({ plugin_id: pluginId }),
        body.pluginPurpose, JSON.stringify(body.observableSurfaces), JSON.stringify(body.failureTaxonomy),
-       JSON.stringify(body.suites), JSON.stringify(body.replay), JSON.stringify(body.qualification),
+       JSON.stringify(body.suites), JSON.stringify(body.qualification),
        JSON.stringify(body.scoring), JSON.stringify(body.improvement), digest])).rows[0];
   } catch (err) {
     if ((err as { code?: string }).code === UNIQUE_VIOLATION) {

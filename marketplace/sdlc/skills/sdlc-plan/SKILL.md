@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.14
+version: 1.15
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -60,14 +60,33 @@ Group the implementation into **sequential phases that tell the build story**. E
 working increment a human could verify, and each carries one line: **what works at the end of it.**
 For example, a new endpoint:
 
-- **Phase 1 — Scaffold:** the endpoint accepts a request and returns a stub response end-to-end.
-- **Phase 2 — Source mapping:** each response section is populated from its source system — one task
-  per source (section 1 ← System A, section 2 ← System B).
-- **Phase 3 — Aggregate & respond:** the sections are combined into the real, spec-shaped output.
+- **Phase 0 — Skeleton:** the endpoint accepts a request and returns a stub response end-to-end,
+  run by one command.
+- **Phase 1 — Source mapping:** each response section is populated from its source system — one task
+  per source (section 1 ← System A, section 2 ← System B) — and the skeleton still runs.
+- **Phase 2 — Aggregate & respond:** the sections are combined into the real, spec-shaped output,
+  proved by running the skeleton.
 
 Phases are for human comprehension: they show how the solution comes together, stage by stage. A human
-executing the plan would build Phase 1, see it work, then Phase 2, and so on. Write phases as
+executing the plan would build Phase 0, see it run, then Phase 1, see it still run, and so on. Write phases as
 `## Phase N — <name>: <what works at the end>` headings; tasks live under them.
+
+### Phase 0 — the walking skeleton, run from the first day
+
+**Phase 0 is always an end-to-end harness that runs the whole deliverable**, with stubs wherever
+the real part does not exist yet: the endpoint that returns a canned body, the flow that walks
+every stage against placeholder documents, the report assembled from empty sections. Its
+`**Output:**` is the one command that runs it, and that command is the thing every later phase
+ends by running. A phase is not done because its tasks' checks are green; it is done when the
+skeleton still runs and one more stub in it has become real.
+
+The reason is where defects actually surface. Parts built and checked one at a time each pass,
+and the faults live between them — a stage that never hands its document to the next, a
+configuration nobody wired, a path one side renamed. A skeleton that runs from the first day
+finds those on the day they are introduced; a plan that first runs the whole thing in its last
+phase finds all of them at once, when every fix is expensive. When the deliverable genuinely
+cannot run end to end (a narrative document), Phase 0 is the assembled outline checked against
+the full acceptance set, and it says so in one line.
 
 ### Divide and conquer — human-executable granularity
 
@@ -98,6 +117,7 @@ artifact name, or a plain description), never HOW:
 
 **Output:** <what this task produces — a path, an artifact name, or a plain description>
 **Dependencies:** <what this task depends on — other task ids, approved inputs, or "none">
+**Owns:** <the paths or globs this task writes, each in backticks — or "none">
 
 **Technical acceptance criteria** (← AC-X.X): <one human-readable, testable statement of what "done"
 means for this task — the engineering translation of the cited business AC. e.g. "Given a request with
@@ -137,7 +157,7 @@ write, decide which method proves it and say so in the AC's own wording:
 
 | The claim… | Method | In the plan |
 |---|---|---|
-| a machine can settle it (a runner, a linter, a schema validator, a diff) | `command` | declare a **Check** — this is the only method that produces one |
+| a machine can settle it (a runner, a linter, a schema validator, a diff) | `command` | declare a **Check** — this is the only method that produces one — and name its evidence kind |
 | needs analysis that can be delegated and evidenced (does the section follow from the data? is this consistent with the source?) | `agent-review` | no Check; state what the reviewer must compare against |
 | needs authority or accountability (a professional sign-off, a decision only a named person may make) | `human` | no Check; name WHO must decide, and what they are deciding |
 
@@ -148,6 +168,21 @@ level: they say what each step must achieve on the way there. A contract criteri
 `agent-review` or `human` says nothing about whether an individual task admits a deterministic
 check — decide each task on its own merits. Treating the contract's methods as the plan's methods
 silently removes every check from the plan, which is a real failure this project has observed.
+
+**Name the evidence kind for every `command` claim.** `sdlc-review` establishes each task's
+technical AC in a `## Acceptance evidence` table whose evidence cell opens with one of four
+kinds, and the plan is where that is decided, not the review:
+
+| Kind | The AC is established by | Example in the AC's wording |
+|---|---|---|
+| `check:` | a gate or plan-authored check that passes | "…`check:plan-validator` passes" |
+| `run:` | running a command and reading its output, usually the skeleton | "…`run:` the Phase 0 harness prints the populated section" |
+| `probe:` | asking a live deployment | "…`probe:` the deployed door answers the new tool" |
+| `test:` | a test file in the suite | "…`test:` the new spec file passes" |
+
+A criterion whose only proof is somebody reading the code has no kind, and the review will record
+it `not_established`. Prefer `run:` against the skeleton over a `check:` that exercises one part
+alone — the skeleton is what proves the parts meet.
 
 Two rules that decide the hard cases:
 
@@ -172,13 +207,53 @@ these conventions explicitly and reports a break as a finding. Use them EXACTLY:
   Tasks are grouped by the `##` heading above them; a `#` phase heading breaks that grouping.
 - **Task headings are level-3, roman-numbered** — `### Task I-N: <title> (← AC-X.X)`. The `I-N`
   (roman-`I` + `-N`) is what `sdlc-execute` names when it dispatches a worker for one task.
-- **`**Output:**` and `**Dependencies:**` are each one line**, immediately after the heading:
+- **`**Output:**`, `**Dependencies:**` and `**Owns:**` are each one line**, immediately after the
+  heading:
   ```markdown
   **Output:** `out/quarterly-report.pdf`
   **Dependencies:** approved figures (Task I-2)
+  **Owns:** `out/quarterly-report.pdf`, `report/sections/**`
   ```
   Keep any declared check's `Check:` path a NEW dedicated destination — never the path named in
   `**Output:**`, which is the deliverable itself, not a check artifact.
+
+### State what and how-done, not volatile facts
+
+The plan is written days before a task runs, and facts about the tree move in between: another
+change takes the next migration number, a file grows past a line count, an interface gains a
+field, a decision to "build it in-process" meets a constraint nobody had found. A plan that
+hard-codes such a fact hands the executor an instruction that was true when written and false
+when read, and a literal worker follows it.
+
+So a task states **what must be true and how anyone will know** — never a migration number, a
+line count, exact SQL, a line number, or a mechanism the executor can choose. Write "a new
+migration adds column `x` to table `t`", not "migration 0147"; the executor reads the next
+number from the repository. Where a fact is genuinely fixed by the spec (a public name, a frozen
+value), keep it and say that the spec fixes it.
+
+### Parallel by ownership — `**Owns:**` and waves
+
+Tasks run in parallel in one checkout, not on separate branches, and what makes that safe is
+deciding up front who writes what. Every task declares `**Owns:**`: the paths or globs it writes,
+each in backticks, or `none`. A path owns everything beneath it; `*` stays within one segment and
+`**` crosses segments.
+
+- **A wave** is every task whose dependencies are done. `sdlc-execute` dispatches a wave in
+  parallel and waits for all of it before the next.
+- **Two tasks whose Owns overlap must depend on one another**, directly or through others. Two
+  independent tasks owning one file are two workers writing it at the same time; the plan either
+  orders them or splits the path.
+- **Hotspots are owned by no task.** Files every task needs to touch — a check registration list,
+  a changelog, generated or lock files, a version stamp — go in a plan section headed
+  `## Integration hotspots`, one backticked path per bullet. A task that needs a hotspot changed
+  reports the exact lines; the integration step after each wave makes those edits, regenerates,
+  runs the gate and commits.
+- **A task no other can run beside** — a repository-wide rename, a regeneration — owns what it
+  touches and is depended on by whatever overlaps it, which puts it in a wave of its own.
+
+When every task declares no Owns at all, the plan runs one task per wave, in order. That is a
+legitimate plan, only a slower one; a plan where some tasks declare Owns and others do not is
+not, because nobody knows what the silent ones may write.
 
 ### Close the plan with a full-suite gate
 
@@ -196,7 +271,7 @@ plan carries is required by something weaker, and the two are worth keeping apar
   under each are point 5 of that audit's contract, and a break comes back as a finding.
 - **`Goal`, `Architecture`, `Tech Stack`, `Ground truth at HEAD` and `File Structure` are this
   skill's convention and nothing checks them.** Not the platform, which does not declare them,
-  and not the audit, whose eleven points do not mention them. Write them because a reader needs
+  and not the audit, whose fourteen points do not mention them. Write them because a reader needs
   them, and never tell anyone they are enforced — a plan asserting an enforcement nobody wrote is
   the same defect the audit exists to find, one document earlier.
 
@@ -262,11 +337,12 @@ Work in this order (guidance for producing a good document, not a rigid ritual):
    deliverable — a plan whose phases follow no stated method is a list, not a method.
 2. **Skeleton in one write.** Send the BODY only — the platform writes the whole envelope,
    and content that opens with frontmatter is refused. Start at the title, then
-   a one-line **execution note** (`> **Execution:** implemented task-by-task by \`sdlc-execute\`,
-   one subagent per task; each task's declared checks gate it.`), then Goal,
-   Architecture, Tech Stack, Ground truth at HEAD, File Structure — followed by the phase headings each
-   with their "what works at the end" line, and every task heading with its `**Output:**` /
-   `**Dependencies:**` lines and `← AC` refs, leaving each task's body as a single
+   a one-line **execution note** (`> **Execution:** implemented by \`sdlc-execute\`, one
+   subagent per task and one wave at a time; each task's declared checks gate it and the Phase 0
+   skeleton runs at every phase end.`), then Goal, Architecture, Tech Stack, Ground truth at HEAD,
+   File Structure — followed by `## Phase 0` and the other phase headings each with their "what
+   works at the end" line, every task heading with its `**Output:**` / `**Dependencies:**` /
+   `**Owns:**` lines and `← AC` refs, leaving each task's body as a single
    `<!-- enrich: I-N -->` slot carrying THAT TASK'S OWN id. Do not reference another
    methodology's skills; this flow executes its own plans.
 
@@ -279,7 +355,8 @@ Work in this order (guidance for producing a good document, not a rigid ritual):
    order, with `document_patch("<initiative>/plan.md", find: "<!-- enrich: I-N -->", replace: "<the
    task's complete body>")` — the marker line is the `find`, and the task id is what makes it
    unique. Never rewrite the whole file. Continue until zero `<!-- enrich` markers remain.
-4. **Close** with a whole-deliverable gate and a Spec-coverage traceability table mapping every spec
+4. **Close** with `## Integration hotspots` (or one line saying there are none), a whole-deliverable
+   gate and a Spec-coverage traceability table mapping every spec
    AC to its task(s). The gate is whatever checks the FINISHED deliverable as a whole, rather than
    task by task — for a code project that is the test/build/lint suite; for a report it is the
    assembled document checked against the full acceptance set; for a configuration it is the
@@ -364,8 +441,10 @@ read last time.
 
 ## Skill contract
 
-**Outcome:** `plan.md` in the initiative — phases each stating what works at the end, `### Task
-I-N` headings numbered straight through with a one-line `**Output:**` and `**Dependencies:**`, a
+**Outcome:** `plan.md` in the initiative — a Phase 0 walking skeleton every later phase ends by
+running, phases each stating what works at the end, `### Task I-N` headings numbered straight
+through with a one-line `**Output:**`, `**Dependencies:**` and `**Owns:**`, an
+`## Integration hotspots` list, no volatile facts about the tree, a
 five-bullet contract and a technical acceptance criterion traced `← AC-N.N`, plan-authored checks
 wherever the claim is machine-decidable, a `## Full-suite gate` section and a spec-coverage
 traceability table — presented to the person and carrying their recorded approval.

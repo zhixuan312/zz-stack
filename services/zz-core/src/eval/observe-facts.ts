@@ -74,7 +74,7 @@ const N = (v: string | null | undefined): number => (v === null || v === undefin
 const F = (v: string | null | undefined): number | null => (v === null || v === undefined ? null : Number(v));
 
 /** Latency (p50/p90) and request/response byte averages, over the exact event population `use`
- *  was aggregated over (`toolCallEvents`) — same window, same replay exclusion, same denominator
+ *  was aggregated over (`toolCallEvents`) — same window, same denominator
  *  as every figure `pluginTraces` already reports. */
 export async function latencyAndByteFacts(
   pool: pg.Pool, plugin: string, version: string, servesOwnDoor: boolean, window: EvidenceWindow,
@@ -169,12 +169,10 @@ export async function outcomeAndApprovalFacts(
        where e.plugin = $1 and e.kind = 'tool_call'
          and e.ts between $2 and $3
          and e.initiative is not null and e.initiative <> ''
-         and (e.team_slug is null or e.team_slug not like 'replay-%')
     ),
     live as (select * from zz.doc d
               where d.path not like '\\_versions/%'
-                and d.initiative in (select initiative from touched)
-                and d.team_slug not like 'replay-%')
+                and d.initiative in (select initiative from touched))
     select count(*)::text as documents,
            count(*) filter (where outcome = 'delivered')::text as delivered,
            count(*) filter (where outcome = 'accepted')::text as accepted,
@@ -201,7 +199,7 @@ export async function outcomeAndApprovalFacts(
  *  one whose population happens to be empty).
  *
  * `zz.model_call` itself carries no version column — only `plugin` — so the join to `zz.event`
- * is load-bearing and not just for `team_slug`: without `e.plugin_version = $2` too, a second
+ * is load-bearing: without `e.plugin_version = $2`, a second
  * subject_version_id for the SAME plugin name (a different declared version, still in the same
  * window) would silently attribute the first version's token usage to itself. A model call this
  * join cannot resolve to an event (should not happen — every model_call.event_id is written by
@@ -216,8 +214,7 @@ export async function tokenAndCostFacts(
       from zz.model_call mc
       join zz.event e on e.id = mc.event_id
      where mc.plugin = $1 and e.plugin_version = $2
-       and mc.ts between $3 and $4
-       and (e.team_slug is null or e.team_slug not like 'replay-%')`,
+       and mc.ts between $3 and $4`,
     [plugin, version, window.from, window.to])).rows[0];
 
   const calls = N(row?.calls);

@@ -50,23 +50,16 @@ export function requestDigest(args: Record<string, unknown>): string {
 
 /** The shape `zz.eval_idempotency` stores and reads back — never the tool's actual result, only
  *  where to find it. Replaying a mutator means telling it which row its own first write already
- *  produced, not re-serving a cached response body this table never holds.
- *
- *  Exported, with `lookupRow` below, for `candidate-prove.ts` (Task I-21) alone: every OTHER
- *  caller of `withIdempotency` never sees a ledger row, only the `MutatorOutcome`/
- *  `IdempotencyOutcome` it hands back — `candidate_prove` is the one tool whose SAME logical
- *  request (`{candidate_id}`, no `phase` distinguishing which write it was) can arrive again
- *  after its candidate has already moved past the status that request's own branch requires, so
- *  it is also the one caller that must read the ledger back on its own, outside
- *  `withIdempotency`'s own proceed/replay/conflict decision, to tell "this exact call already
- *  happened" apart from "a fresh call arrived at a state its own key never wrote." */
-export interface IdempotencyRow {
+ *  produced, not re-serving a cached response body this table never holds. A caller of
+ *  `withIdempotency` never sees a ledger row, only the `MutatorOutcome`/`IdempotencyOutcome` it
+ *  hands back. */
+interface IdempotencyRow {
   readonly request_digest: string;
   readonly result_table: string;
   readonly result_id: string;
 }
 
-/** Not exported, for the same reason as `IdempotencyRow` above: it is `idempotencyDecision`'s own
+/** Not exported: it is `idempotencyDecision`'s own
  *  return shape, inlined into its signature. A caller of `withIdempotency` gets `proceed` folded
  *  into the ordinary call and `replay`/`conflict` turned into a result or a thrown `Refusal`; it
  *  never receives one of these directly and so never needs to name the type. */
@@ -111,7 +104,7 @@ interface Queryable {
   query<R extends pg.QueryResultRow = pg.QueryResultRow>(text: string, values?: unknown[]): Promise<pg.QueryResult<R>>;
 }
 
-export async function lookupRow(
+async function lookupRow(
   runner: Queryable,
   principal: string,
   tool: string,
@@ -135,8 +128,7 @@ function conflictRefusal(key: string, tool: string): Refusal {
 const UNIQUE_VIOLATION = "23505";
 
 /** The ledger's verdict on a request BEFORE a mutator does its slow work — for the tools that
- *  ask a model (`failure_discover`, `candidate_search`'s callers, `replay_score`,
- *  `evaluation_assess`). Those now ask outside the transaction, so without this a retry would
+ *  ask a model (`failure_discover`, `evaluator_qualify`, `evaluation_assess`). Those now ask outside the transaction, so without this a retry would
  *  re-ask every model before `withIdempotency` got to say "replay". Throws the same conflict
  *  refusal `withIdempotency` would. Advisory only: `withIdempotency` still decides again inside
  *  its transaction, so a race between this read and that one is settled there, never here. */

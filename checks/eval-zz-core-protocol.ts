@@ -8,12 +8,10 @@ const p = JSON.parse(readFileSync("catalog/zz/zz-plugin-eval/protocols/zz-core.v
 assert.equal(EvaluationProtocol.safeParse(p).success, true);
 const w = Object.fromEntries(p.dimensions.map((d: { canonicalKind: string; weight: number }) => [d.canonicalKind, d.weight]));
 assert.deepEqual(w, { effectiveness: 0.3, reliability: 0.2, constraint_adherence: 0.2, recovery_robustness: 0.1, efficiency: 0.1, generalization: 0.1 });
-const s = p.improvement.search;
-assert.equal(s.minRepeats, 3); assert.equal(s.minMeaningfulEffect, 0.3); assert.equal(s.confidence, 0.95);
-assert.equal(s.equivalenceBand, 0.1); assert.equal(s.maxGenerations, 5); assert.equal(s.maxCandidatesPerGeneration, 8);
-assert.equal(s.wallClockHours, 24); assert.equal(s.complexity, "lines_plus_20_per_component");
-assert.deepEqual(p.improvement.selection.order, ["lower_bound", "complexity", "latency", "cost", "id"]);
-assert.deepEqual(p.replay.splitPolicy, { evolve: 0.4, validation: 0.3, proof: 0.3, min: { evolve: 5, validation: 10, proof: 10 } });
+assert.deepEqual(p.improvement.release, { minPostReleaseRuns: 5, regressionBand: 0.5 },
+  "the reference protocol judges a release on five real runs and half a point (of ten) of regression band");
+assert.ok(!("replay" in p) && !("search" in p.improvement) && !("selection" in p.improvement) && !("proof" in p.improvement),
+  "the reference protocol still carries a replay, search, selection or proof policy");
 assert.equal(p.scoring.establishment.bootstrap, true);
 assert.equal(p.qualification.boundedSemanticMinimum, "operationally_qualified");
 console.log("ok eval-zz-core-protocol");

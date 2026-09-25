@@ -122,9 +122,8 @@ async function computeObservation(
     refusalDetail(pool, plugin, version, serves, window),
     pool.query<{ model: string }>(`
       select distinct mc.model
-        from zz.model_call mc join zz.event e on e.id = mc.event_id
+        from zz.model_call mc
        where mc.plugin = $1 and mc.ts between $2 and $3
-         and (e.team_slug is null or e.team_slug not like 'replay-%')
        order by mc.model`, [plugin, window.from, window.to]),
   ]);
 

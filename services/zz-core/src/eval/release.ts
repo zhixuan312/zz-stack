@@ -1,9 +1,8 @@
 /**
- * `release_prepare` (Task I-22, FR-45 to FR-48, AC-45.1 to AC-48.1): the one boundary a proved
- * candidate crosses before a real owned system is ever touched (FR-46). It resolves this
+ * `release_prepare` (Task I-22, FR-45 to FR-48, AC-45.1 to AC-48.1): the one boundary a built and
+ * gated candidate crosses before a real owned system is ever touched (FR-46). It resolves this
  * candidate's required owners LIVE off `subject.ts`'s own `zz.plugin.release_owners` column —
- * never off the `touched_owners`/`release_eligible` flag `candidate_prove` recorded at proof
- * time, which is why the plan's own FR-47 says `release_prepare` "records the resolved list so a
+ * never off the `touched_owners` `candidate_record` recorded, which is why the plan's own FR-47 says `release_prepare` "records the resolved list so a
  * future path-level resolver can replace this implementation without changing the gate
  * contract" — records the promotion package as a `zz.release_attempt` row (`prepared`), and
  * writes `<initiative>/improvement.md` (`improvement-doc.ts`) — the authority-bearing gate FR-48
@@ -18,8 +17,8 @@
  *
  * `releaseDecision` (`release-rules.ts`) is deliberately NOT called from here — see that file's
  * own module note. This tool's gate is only the first branch of that same refusal order
- * (`no_release_owners`) plus a `not_eligible` refusal for a candidate that never reached
- * `proof_passed` and a `not_owner` refusal for a caller in none of the owner teams; the rest of the order (`approval_required`, `digest_mismatch`,
+ * (`no_release_owners`) plus a `not_eligible` refusal for a candidate that is not `valid` (built
+ * and gated) and a `not_owner` refusal for a caller in none of the owner teams; the rest of the order (`approval_required`, `digest_mismatch`,
  * `stale_baseline`) belongs to `release_apply`, once an approved document and a live current
  * subject both exist to check the rest of it against.
  *
@@ -31,7 +30,7 @@
  * gate and running the repository's release procedure are NOT done here: `release_apply` decides
  * and locks; `packages/tools/src/release/apply.ts`, a CLI run by the IMPROVE agent (which has a
  * shell), does the git and process work and reports back through `release_record`. The same
- * server-decides/CLI-executes split replay and candidate-build already use.
+ * server-decides/CLI-executes split candidate-build already uses.
  *
  * `proposal_prepare` (Task I-25, FR-51, FR-53, AC-51.1) is this file's fifth and last tool: the
  * path `release_prepare`'s own `no_release_owners` refusal above points callers toward — "It may
@@ -42,9 +41,8 @@
  * refuses a subject WITH owners — "ERROR: promotable — use release_prepare, not proposal_prepare"
  * — because an ungated `proposal.md` written for an owned subject would sit in the store looking
  * like an approval document with no gate behind it, which FR-53's own "gated only when
- * release_mode = promotable" exists to prevent. The document write itself — findings, tested
- * patch where a source existed, validation/proof evidence, and the explicit "no repository write,
- * ever" guarantee — is `proposal-doc.ts`'s own job; this function only resolves the subject,
+ * release_mode = promotable" exists to prevent. The document write itself — findings, built
+ * patch where a source existed, and the explicit "no repository write, ever" guarantee — is `proposal-doc.ts`'s own job; this function only resolves the subject,
  * enforces the ownership mirror-guard, and threads the FR-59 idempotency ledger through a call
  * that writes no new database row of its own (`zz.improvement_run`'s own existing row is the
  * ledger's anchor — a plain re-select inside the transaction, never an insert — because
@@ -57,14 +55,14 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
-import { writeImprovementDoc, type ProofEvaluationRow } from "./improvement-doc.js";
+import { writeImprovementDoc, type BaseScore } from "./improvement-doc.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
-import { improvementRunOf, proofPassedCandidateOf } from "./initiative-run.js";
+import { improvementRunOf, releasableCandidateOf } from "./initiative-run.js";
 import { loadSubjectForEvalRun, writeProposalDoc } from "./proposal-doc.js";
 import { describeApplyOutcomeForReplay, planApply, type ApplyResult } from "./release-apply.js";
 import { prepareWithBranchFact } from "./release-prepare.js";
 import { describeRecordOutcomeForReplay, recordRelease, type RecordResult } from "./release-record.js";
-import { verifyRelease, type VerifyOutcome } from "./release-verify.js";
+import { loadReleasePolicy, verifyRelease, type VerifyOutcome } from "./release-verify.js";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
@@ -76,13 +74,17 @@ const noDb = () => text("ERROR: this deployment has no platform database, so no 
 interface CandidateRow {
   readonly id: string; readonly status: string; readonly base_subject_version_id: string;
   readonly patch_digest: string; readonly hypothesis: string; readonly complexity_delta: number;
+  readonly build_result: { ok?: boolean; stage?: string; commands?: string[] } | null;
+  /** The evaluation this candidate's improvement run was opened from. */
+  readonly eval_run_id: string;
 }
 
 async function loadCandidate(p: pg.Pool, candidateId: string): Promise<CandidateRow | null> {
   const row = (await p.query<CandidateRow>(`
-    select id::text as id, status, base_subject_version_id::text as base_subject_version_id,
-           patch_digest, hypothesis, complexity_delta
-      from zz.candidate where id = $1::uuid`, [candidateId])).rows[0];
+    select c.id::text as id, c.status, c.base_subject_version_id::text as base_subject_version_id,
+           c.patch_digest, c.hypothesis, c.complexity_delta, c.build_result, ir.eval_run_id::text as eval_run_id
+      from zz.candidate c join zz.improvement_run ir on ir.id = c.improvement_run_id
+     where c.id = $1::uuid`, [candidateId])).rows[0];
   return row ?? null;
 }
 
@@ -101,13 +103,21 @@ async function loadSubject(p: pg.Pool, subjectVersionId: string): Promise<Subjec
   return row ?? null;
 }
 
-async function loadLatestProof(p: pg.Pool, candidateId: string): Promise<ProofEvaluationRow | null> {
-  const row = (await p.query<ProofEvaluationRow>(`
-    select aggregate_score, dimension_scores, guardrails, statistics
-      from zz.candidate_evaluation
-     where candidate_id = $1::uuid and split = 'proof'
-     order by created_at desc limit 1`, [candidateId])).rows[0];
-  return row ?? null;
+/** The base's own score in the evaluation the improvement run was opened from, and the protocol
+ *  version it was scored under — the baseline improvement.md quotes and release_verify's own
+ *  comparison starts from. */
+async function loadBaseScore(p: pg.Pool, evalRunId: string): Promise<(BaseScore & { protocol_version_id: string }) | null> {
+  const row = (await p.query<{
+    id: string; overall: string | null; score_status: string | null; guardrails: BaseScore["guardrails"] | null;
+    protocol_version_id: string;
+  }>(`
+    select id::text as id, overall_score::text as overall, score_status, guardrails,
+           protocol_version_id::text as protocol_version_id
+      from zz.eval_run where id = $1::uuid`, [evalRunId])).rows[0];
+  return row ? {
+    eval_run_id: row.id, overall_score: row.overall === null ? null : Number(row.overall),
+    score_status: row.score_status, guardrails: row.guardrails ?? [], protocol_version_id: row.protocol_version_id,
+  } : null;
 }
 
 /** `candidate_id` and `patch_digest` are returned because `release_apply` (and `zz-tool
@@ -125,15 +135,15 @@ export function registerReleaseTools(server: McpServer): void {
     "release_prepare",
     {
       description:
-        "WHEN a candidate has reached proof_passed and is ready to cross the promotion boundary " +
-        "(FR-46, nothing before this touches the real repository): resolves the candidate from " +
-        "the initiative alone — the one candidate of its improvement runs (the eval_run its " +
-        "findings.md records) that reached proof_passed — then resolves required owners " +
-        "LIVE from the base subject's own release_owners (never the release_eligible flag " +
-        "candidate_prove recorded at proof time), records the promotion package as a " +
-        "zz.release_attempt row (prepared), and writes <initiative>/improvement.md — the " +
-        "authority-bearing gate FR-48 names, naming the exact candidate/patch digest, proof " +
-        "evidence, score change, guardrails, affected owners and the planned release/rollback. " +
+        "WHEN a candidate is valid (built and gated by candidate_validate) and ready to cross the " +
+        "promotion boundary (FR-46, nothing before this touches the real repository): resolves " +
+        "the candidate from the initiative — the one valid candidate of its improvement runs (the " +
+        "eval_run its findings.md records), or the one candidate_id names — then resolves " +
+        "required owners LIVE from the base subject's own release_owners, records the promotion " +
+        "package as a zz.release_attempt row (prepared), and writes <initiative>/improvement.md — " +
+        "the authority-bearing gate FR-48 names, naming the exact candidate/patch digest, its " +
+        "build, the base's own score and guardrails, the affected owners and the planned release " +
+        "and rollback (judged on real use after release, by the protocol's improvement.release). " +
         "RETURNS { candidate_id, release_attempt_id, patch_digest, required_owners, document } — " +
         "candidate_id and patch_digest are what release_apply takes (patch_digest as " +
         "approved_patch_digest); the candidate, attempt id and owners " +
@@ -144,8 +154,10 @@ export function registerReleaseTools(server: McpServer): void {
         "record a second attempt. Applies no patch, runs no " +
         "repository gate, creates no release — that is release_apply/release_verify, a later " +
         "stage this tool never reaches. REFUSES an initiative with no findings.md eval_run " +
-        "(no_eval_run), none of whose candidates reached proof_passed (not_eligible), or more " +
-        "than one of whose did (ambiguous_candidate, listing them); a caller who is not a member of one of the base subject's " +
+        "(no_eval_run), none of whose candidates is valid (not_eligible), or more than one of " +
+        "whose are with no candidate_id naming one (ambiguous_candidate, listing them); a " +
+        "candidate_id that is not a valid candidate of it (not_eligible); a protocol version with " +
+        "no usable improvement.release; a caller who is not a member of one of the base subject's " +
         "owner teams (not_owner); a base subject with no recorded release_owners — a " +
         "third-party or not-yet-owned subject, which stays proposal-only (no_release_owners); " +
         "a deployment with no platform database; and (FR-58, hard " +
@@ -154,24 +166,21 @@ export function registerReleaseTools(server: McpServer): void {
         "as promotable. A mutator: writes through the FR-59 idempotency ledger.",
       inputSchema: {
         initiative: z.string().describe(
-          "The initiative improvement.md is written into; its proof_passed candidate is the one prepared."),
+          "The initiative improvement.md is written into; its valid candidate is the one prepared."),
+        candidate_id: z.string().optional().describe(
+          "Which valid candidate to prepare, when the initiative's improvement runs hold more than one."),
         idempotency_key: z.string().min(1),
       },
     },
-    async ({ initiative, idempotency_key }) => {
+    async ({ initiative, candidate_id: named, idempotency_key }) => {
       const p = db();
       if (!p) return noDb();
 
-      const resolved = await proofPassedCandidateOf(p, initiative);
+      const resolved = await releasableCandidateOf(p, initiative, named);
       if (typeof resolved !== "string") return text(resolved.error);
       const candidate_id = resolved;
       const candidate = await loadCandidate(p, candidate_id);
       if (!candidate) return text(`ERROR: no candidate ${candidate_id}`);
-      if (candidate.status !== "proof_passed") {
-        return text(
-          `ERROR: not_eligible — candidate ${candidate_id} is ${candidate.status}, not ` +
-          "proof_passed; only a candidate whose sealed proof has passed may prepare a release");
-      }
 
       const subject = await loadSubject(p, candidate.base_subject_version_id);
       if (!subject) {
@@ -199,10 +208,10 @@ export function registerReleaseTools(server: McpServer): void {
           `${subject.plugin} (${requiredOwners.join(", ")}); only an owner may prepare its release`);
       }
 
-      const proof = await loadLatestProof(p, candidate_id);
-      if (!proof) {
-        return text(`ERROR: candidate ${candidate_id} has no recorded proof evaluation to prepare a release from`);
-      }
+      const base = await loadBaseScore(p, candidate.eval_run_id);
+      if (!base) return text(`ERROR: candidate ${candidate_id}'s eval_run ${candidate.eval_run_id} no longer exists`);
+      const policy = await loadReleasePolicy(p, base.protocol_version_id);
+      if ("error" in policy) return text(policy.error);
 
       // FR-58: release_prepare IS the promotable branch — a release_mode already set to
       // something else (proposal_only, from proposal_prepare or an improvement_start skip
@@ -247,7 +256,8 @@ export function registerReleaseTools(server: McpServer): void {
         plugin: subject.plugin, declared_version: subject.declared_version,
         base_subject_version_id: candidate.base_subject_version_id,
         patch_digest: candidate.patch_digest, hypothesis: candidate.hypothesis,
-        complexity_delta: candidate.complexity_delta, required_owners: requiredOwners, proof,
+        complexity_delta: candidate.complexity_delta, required_owners: requiredOwners,
+        build: candidate.build_result, base, policy,
       });
 
       logActivity(await userRoot(), null, {
@@ -295,7 +305,7 @@ export function registerReleaseTools(server: McpServer): void {
         "and a later call may still find it approved), digest_mismatch (approved_patch_digest " +
         "does not match the candidate's own recorded patch_digest), stale_baseline (the plugin's " +
         "currently released subject has moved since this candidate's own base — rebase, " +
-        "re-validate, re-prove and re-approve before trying again), an unknown candidate_id, a " +
+        "rebuild and re-approve before trying again), an unknown candidate_id, a " +
         "candidate with no prepared release_attempt, an improvement.md citing an attempt that is " +
         "not this candidate's prepared one, a plugin with no registered version, a current " +
         "version that is not newer than the base but was never captured (call plugin_locate for " +
@@ -350,7 +360,8 @@ export function registerReleaseTools(server: McpServer): void {
         "(why release_verify decided to roll back) and a recorded release_verify verdict of " +
         "rolled_back, and moves an ALREADY-released attempt to rolled_back, and its candidate to " +
         "rolled_back, retracting its version from what plugin_locate and release_apply read as " +
-        "current, so the prior subject is current again (FR-50). " +
+        "current, so the prior subject is current again (FR-50) — and candidate_record refuses " +
+        "its hypothesis from then on. " +
         "RETURNS { status, release_attempt_id, released_subject_version_id, release_ref }. " +
         "REFUSES not_owner — a caller who neither applied the attempt nor is in an owner team — " +
         "not_applying — an unknown release_attempt_id, or one that is not currently applying, for " +
@@ -410,69 +421,53 @@ export function registerReleaseTools(server: McpServer): void {
     {
       description:
         "WHEN an attempt release_record already moved to released is ready for its automatic, " +
-        "no-gate post-release check (FR-50, AC-50.1): replays the candidate's own proof-equivalent " +
-        "held cases (the SAME split: proof rows candidate_prove already sealed, reused here well " +
-        "after promotion, under a fresh verifier_token this call mints for the same candidate_id) " +
-        "against the released subject and its prior version, computes the paired per-case deltas " +
-        "of released against prior, and applies rollbackDecision. RETURNS { verdict: " +
-        "established|rolled_back|not_established|null, reason, evidence: { deltas_summary, " +
-        "guardrails } | null, rollback_plan: { plugin, declared_version, " +
-        "prior_subject_version_id, branch } | null, runs_required?, verifier_token?, " +
-        "token_already_issued?, status } — verdict stays null and runs_required: { case_set_id, " +
-        "baseline, candidate } counts the replays each side still needs (baseline = the prior " +
-        "subject, candidate = the released one; prior_subject_version_id and " +
-        "released_subject_version_id name both beside it) while evidence is incomplete, exactly like " +
-        "candidate_prove: run each with replay_start(context: verifier, verifier_token, split: " +
-        "proof, case_set_id, subject_version_id of that side) and NO case_id — the server draws " +
-        "the case; verifier_token carries the plaintext once, on the call that mints " +
-        "it, and null on every later call (token_already_issued: true instead). On rolled_back, " +
-        "this call records the verdict and rollback_plan but applies NOTHING itself and does not " +
-        "move release_attempt.status — packages/tools/src/release/rollback.ts (or a zz-tool " +
-        "release-rollback CLI) runs the repository's own rollback command (npm run rollback, " +
-        "stubbed in verification) against rollback_plan and reports back through release_record " +
+        "no-gate post-release check (FR-50, AC-50.1): judges the release on REAL use, never on " +
+        "replays. Counts the released subject's real runs; short of the protocol's " +
+        "improvement.release.minPostReleaseRuns it RETURNS verdict: null, reason: " +
+        "awaiting_post_release_runs and runs_needed — call again once real use has produced them. " +
+        "With enough runs it reads the newest completed evaluation of the released subject under " +
+        "the base's own protocol version, observed over at least that many runs; with none it " +
+        "RETURNS verdict: null, reason: awaiting_evaluation and evaluation_required: { " +
+        "subject_version_id, protocol_version_id, evidence_window, steps } — run plugin_profile, " +
+        "evaluation_start, evaluation_assess and evaluation_score with those arguments and NO " +
+        "initiative (it would overwrite this initiative's own OBSERVE/EVALUATE records), then call " +
+        "again (released_score_not_established asks the same when that evaluation scored no " +
+        "overall). Then decides, against the base subject's newest established/provisional score " +
+        "under the same protocol: a failed critical guardrail, or a released overall more than " +
+        "improvement.release.regressionBand below the base, is rolled_back; no base score to " +
+        "compare against is not_established (no rollback without evidence); otherwise " +
+        "established. RETURNS { verdict: established|rolled_back|not_established|null, reason, " +
+        "evidence: { post_release_runs, released_eval_run_id, released_overall, base_eval_run_id, " +
+        "base_overall, delta, regression_band, guardrail_status } | null, rollback_plan: { plugin, " +
+        "declared_version, prior_subject_version_id, branch } | null, released_subject_version_id, " +
+        "runs_needed?, evaluation_required?, status }. A decided verdict is recorded once and read " +
+        "back on every later call. On rolled_back, this call records the verdict and rollback_plan " +
+        "but applies NOTHING itself and does not move release_attempt.status — " +
+        "packages/tools/src/release/rollback.ts (zz-tool release-rollback) runs the repository's " +
+        "own rollback command against rollback_plan and reports back through release_record " +
         "(status: rolled_back), which is what actually restores the prior subject and marks the " +
         "candidate. REFUSES not_owner — a caller who neither applied this attempt nor is a member " +
-        "of one of its owner teams; not_released — an unknown release_attempt_id, or one release_record " +
-        "never moved to released; an attempt with no released_subject_version_id recorded; a " +
-        "candidate whose case set was never bound at evaluation_start; a protocol with no " +
-        "bounded_semantic/generative_critic measure (every replay would score overall: null); " +
-        "and a deployment with no platform database. Below the protocol's own minimum held-case " +
-        "count, missing replay evidence that never arrives, or an interval that never resolves, " +
-        "all by the protocol's own liveness bound, answer not_established with a named reason " +
-        "(insufficient_proof_cases / replays_unavailable / verification_unresolved) — never a " +
-        "rollback and never an indefinite wait (FR-50's own \"no rollback without evidence\"). " +
-        "A required guardrail the runs collected so far already failed rolls back at once — while " +
-        "the interval is still unresolved, while replays are still missing, and before the " +
-        "liveness bound. " +
-        "A mutator: writes through the FR-59 idempotency " +
-        "ledger once evidence resolves; a pending runs_required read makes no ledger write. " +
-        "`initiative` records release_mode: not_applicable (FR-58) on a rolled_back verdict — " +
-        "usually a no-op, since release_prepare already set promotable. Lost the verifier_token? " +
-        "rotate_token: true revokes it and returns a new one for the same attempt while runs are " +
-        "still required; runs already registered stay counted.",
+        "of one of its owner teams; not_released — an unknown release_attempt_id, or one " +
+        "release_record never moved to released; an attempt with no released_subject_version_id " +
+        "recorded; a protocol version with no usable improvement.release; and a deployment with " +
+        "no platform database. A mutator once it decides: writes through the FR-59 idempotency " +
+        "ledger; a pending answer makes no ledger write.",
       inputSchema: {
         release_attempt_id: z.string(),
         idempotency_key: z.string().min(1),
-        initiative: z.string().optional().describe(
-          "Record release_mode: not_applicable as this initiative's durable branch fact on a " +
-          "rolled_back verdict. Omit to read only."),
-        rotate_token: z.boolean().optional().describe(
-          "Revoke the verifier_token already issued for this attempt and return a new one — for a " +
-          "conversation that no longer holds it. Only while runs are still required."),
       },
     },
-    async ({ release_attempt_id, idempotency_key, initiative, rotate_token }) => {
+    async ({ release_attempt_id, idempotency_key }) => {
       const p = db();
       if (!p) return noDb();
 
       const principal = parseCaller(requestHeaders()).email;
-      const result: VerifyOutcome | { error: string } =
-        await verifyRelease(p, release_attempt_id, idempotency_key, principal, initiative, rotate_token ?? false);
+      const result: VerifyOutcome | { error: string } = await verifyRelease(p, release_attempt_id, idempotency_key, principal);
       if ("error" in result) return text(result.error);
 
       logActivity(await userRoot(), null, {
         user: principal, action: "release_verify", release_attempt_id,
-        verdict: result.verdict, status: result.status,
+        verdict: result.verdict, reason: result.reason, status: result.status,
       });
       return json(result);
     },
@@ -485,13 +480,13 @@ export function registerReleaseTools(server: McpServer): void {
         "WHEN an improvement_run's own base subject records no release_owners (FR-51, " +
         "AC-51.1) and its findings/candidates are ready to be written up for whoever actually " +
         "owns that plugin: resolves the improvement_run from the initiative alone — the newest run " +
-        "of the eval_run its findings.md records (a fresh improvement_start after a " +
-        "not_established proof supersedes the earlier one) — and writes <initiative>/proposal.md (proposal-doc.ts), ungated (FR-53's " +
+        "of the eval_run its findings.md records (a fresh improvement_start supersedes an earlier " +
+        "one) — and writes <initiative>/proposal.md (proposal-doc.ts), ungated (FR-53's " +
         "own \"a proposal_only branch writes ungated proposal.md\"), always regenerated FRESH " +
         "from the improvement_run's CURRENT findings and candidates on every call — never a " +
         "cached body from an earlier call, the same contract findings.md's own write already " +
-        "keeps. It includes every candidate that reached validation or later (hypothesis, patch " +
-        "digest, the diff itself as inert fenced markdown, validation/proof evidence) when the " +
+        "keeps. It includes every valid (built and checked) candidate (hypothesis, patch " +
+        "digest, the diff itself as inert fenced markdown, its build result) when the " +
         "base subject's own source_locator names a readable local_dir/git/package origin; when " +
         "it does not (an \"unrecorded\" or missing locator — the only shape a subject with no " +
         "source ever carries once plugin_register has validated everything it captures), the " +

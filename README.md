@@ -118,9 +118,11 @@ skills/     the baseline plugin's skills, served whatever flow a team runs. They
             are here rather than in a flow. zz-authoring is a library behind the
             first two — never typed, loaded by both, and the one place the rules
             they share are written down. What an
-            evaluation calls for is not a skill: the report specifies one change
-            and its expected effect, and a repository edit plus a release applies
-            it, because /catalog and /skills are read-only wherever this runs.
+            evaluation calls for is not edited in place: for a plugin we own,
+            the IMPROVE stage proves a candidate patch on sealed replays and
+            improvement.md's approval authorises the release-apply CLI to ship
+            exactly that patch, because /catalog and /skills are read-only
+            wherever the platform runs; a plugin we do not own gets proposal.md.
             What a round found is not in the catalog — findings.md lives in the
             initiative the evaluation ran as, with the scores in the platform's
             own tables, because a finding belongs to a moment and a version.

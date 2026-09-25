@@ -45,15 +45,24 @@
           "suite": "production",
           "required": true,
           "definition": {
-            "qualification": { "positive": "yes", "zero": "no" }
+            "qualification": {
+              "positive": "yes",
+              "zero": "no"
+            }
           },
           "evaluator": {
             "stable_key": "zz-core.document-gate-readiness",
             "kind": "noul",
             "question": "Read this document. Does it give a reader everything its flow's gate needs to decide -- every required section present and substantive -- with nothing the gate requires left for the reader to infer or chase down elsewhere?",
-            "answer_schema": { "type": "noul" },
-            "polarity": { "good_when": "yes" },
-            "model_policy": { "requestedModel": "typesafe/jev-latest" }
+            "answer_schema": {
+              "type": "noul"
+            },
+            "polarity": {
+              "good_when": "yes"
+            },
+            "model_policy": {
+              "requestedModel": "typesafe/jev-latest"
+            }
           }
         },
         {
@@ -62,14 +71,25 @@
           "weight": 0.4,
           "suite": "production",
           "required": true,
-          "definition": { "qualification": { "positive": "yes", "zero": "no" } },
+          "definition": {
+            "qualification": {
+              "positive": "yes",
+              "zero": "no"
+            }
+          },
           "evaluator": {
             "stable_key": "zz-core.knowledge-capture-effectiveness",
             "kind": "noul",
             "question": "Read this record of a decision or finding written toward the knowledge store. If a later initiative searched the knowledge store for this topic, would this record's own wording let that search surface it and let the reader reuse the decision without re-deriving it?",
-            "answer_schema": { "type": "noul" },
-            "polarity": { "good_when": "yes" },
-            "model_policy": { "requestedModel": "typesafe/jev-latest" }
+            "answer_schema": {
+              "type": "noul"
+            },
+            "polarity": {
+              "good_when": "yes"
+            },
+            "model_policy": {
+              "requestedModel": "typesafe/jev-latest"
+            }
           }
         }
       ]
@@ -89,7 +109,9 @@
           "weight": 0.4,
           "suite": "production",
           "required": true,
-          "definition": { "factPath": "usable_run_coverage" },
+          "definition": {
+            "factPath": "usable_run_coverage"
+          },
           "evaluator": null
         },
         {
@@ -98,14 +120,25 @@
           "weight": 0.3,
           "suite": "production",
           "required": true,
-          "definition": { "qualification": { "positive": "yes", "zero": "no" } },
+          "definition": {
+            "qualification": {
+              "positive": "yes",
+              "zero": "no"
+            }
+          },
           "evaluator": {
             "stable_key": "zz-core.refusal-explains-itself",
             "kind": "noul",
             "question": "Read this run. Where it refused a call or ended in an error, did the refusal name what was wrong and what the caller should do instead, rather than a bare or generic error?",
-            "answer_schema": { "type": "noul" },
-            "polarity": { "good_when": "yes" },
-            "model_policy": { "requestedModel": "typesafe/jev-latest" }
+            "answer_schema": {
+              "type": "noul"
+            },
+            "polarity": {
+              "good_when": "yes"
+            },
+            "model_policy": {
+              "requestedModel": "typesafe/jev-latest"
+            }
           }
         },
         {
@@ -114,7 +147,10 @@
           "weight": 0.3,
           "suite": "production",
           "required": true,
-          "definition": { "factPath": "tool_refusal_rate", "normalize": "inverted_rate" },
+          "definition": {
+            "factPath": "tool_refusal_rate",
+            "normalize": "inverted_rate"
+          },
           "evaluator": null
         }
       ]
@@ -134,14 +170,25 @@
           "weight": 0.5,
           "suite": "production",
           "required": true,
-          "definition": { "qualification": { "positive": "yes", "zero": "no" } },
+          "definition": {
+            "qualification": {
+              "positive": "yes",
+              "zero": "no"
+            }
+          },
           "evaluator": {
             "stable_key": "zz-core.document-frontmatter-conformance",
             "kind": "noul",
             "question": "Read this document. Does it carry the frontmatter and gate state the platform's document contract requires -- role, gate status, approval -- before anything downstream may treat it as approved?",
-            "answer_schema": { "type": "noul" },
-            "polarity": { "good_when": "yes" },
-            "model_policy": { "requestedModel": "typesafe/jev-latest" }
+            "answer_schema": {
+              "type": "noul"
+            },
+            "polarity": {
+              "good_when": "yes"
+            },
+            "model_policy": {
+              "requestedModel": "typesafe/jev-latest"
+            }
           }
         },
         {
@@ -150,14 +197,25 @@
           "weight": 0.5,
           "suite": "production",
           "required": true,
-          "definition": { "qualification": { "positive": "yes", "zero": "no" } },
+          "definition": {
+            "qualification": {
+              "positive": "yes",
+              "zero": "no"
+            }
+          },
           "evaluator": {
             "stable_key": "zz-core.bug-report-evidence-discipline",
             "kind": "noul",
             "question": "Read this bug report. Does it describe what happened and what was expected, in the reporter's own words and with real evidence, rather than a diagnosis or fix substituted for the evidence?",
-            "answer_schema": { "type": "noul" },
-            "polarity": { "good_when": "yes" },
-            "model_policy": { "requestedModel": "typesafe/jev-latest" }
+            "answer_schema": {
+              "type": "noul"
+            },
+            "polarity": {
+              "good_when": "yes"
+            },
+            "model_policy": {
+              "requestedModel": "typesafe/jev-latest"
+            }
           }
         }
       ]
@@ -177,14 +235,25 @@
           "weight": 1,
           "suite": "production",
           "required": true,
-          "definition": { "qualification": { "positive": "yes", "zero": "no" } },
+          "definition": {
+            "qualification": {
+              "positive": "yes",
+              "zero": "no"
+            }
+          },
           "evaluator": {
             "stable_key": "zz-core.refusal-recovery-path",
             "kind": "noul",
             "question": "Read this run. After a refusal or error occurred partway through it, is there a concrete next step recorded -- a retry, a corrected call, an escalation to a person -- rather than the run simply stopping with nothing named to do next?",
-            "answer_schema": { "type": "noul" },
-            "polarity": { "good_when": "yes" },
-            "model_policy": { "requestedModel": "typesafe/jev-latest" }
+            "answer_schema": {
+              "type": "noul"
+            },
+            "polarity": {
+              "good_when": "yes"
+            },
+            "model_policy": {
+              "requestedModel": "typesafe/jev-latest"
+            }
           }
         }
       ]
@@ -204,14 +273,25 @@
           "weight": 0.6,
           "suite": "production",
           "required": true,
-          "definition": { "qualification": { "positive": "yes", "zero": "no" } },
+          "definition": {
+            "qualification": {
+              "positive": "yes",
+              "zero": "no"
+            }
+          },
           "evaluator": {
             "stable_key": "zz-core.call-economy",
             "kind": "noul",
             "question": "Read this run's own sequence of tool calls. Did it reach its outcome without calling the same tool for the same purpose more times than the work actually needed?",
-            "answer_schema": { "type": "noul" },
-            "polarity": { "good_when": "yes" },
-            "model_policy": { "requestedModel": "typesafe/jev-latest" }
+            "answer_schema": {
+              "type": "noul"
+            },
+            "polarity": {
+              "good_when": "yes"
+            },
+            "model_policy": {
+              "requestedModel": "typesafe/jev-latest"
+            }
           }
         },
         {
@@ -220,7 +300,11 @@
           "weight": 0.4,
           "suite": "production",
           "required": true,
-          "definition": { "factPath": "latency_p50_ms", "normalize": "threshold", "max": 5000 },
+          "definition": {
+            "factPath": "latency_p50_ms",
+            "normalize": "threshold",
+            "max": 5000
+          },
           "evaluator": null
         }
       ]
@@ -240,7 +324,9 @@
           "weight": 0.5,
           "suite": "production",
           "required": true,
-          "definition": { "factPath": "tool_coverage" },
+          "definition": {
+            "factPath": "tool_coverage"
+          },
           "evaluator": null
         },
         {
@@ -249,14 +335,25 @@
           "weight": 0.5,
           "suite": "production",
           "required": true,
-          "definition": { "qualification": { "positive": "yes", "zero": "no" } },
+          "definition": {
+            "qualification": {
+              "positive": "yes",
+              "zero": "no"
+            }
+          },
           "evaluator": {
             "stable_key": "zz-core.cross-flow-reuse",
             "kind": "noul",
             "question": "Read this document. Is its guidance written so it would still make sense and apply usefully to a different initiative or team, rather than being phrased so it only makes sense inside this one case?",
-            "answer_schema": { "type": "noul" },
-            "polarity": { "good_when": "yes" },
-            "model_policy": { "requestedModel": "typesafe/jev-latest" }
+            "answer_schema": {
+              "type": "noul"
+            },
+            "polarity": {
+              "good_when": "yes"
+            },
+            "model_policy": {
+              "requestedModel": "typesafe/jev-latest"
+            }
           }
         }
       ]
@@ -276,23 +373,43 @@
   },
   "replay": {
     "dependencies": [
-      { "surface": "platform-db", "mode": "sandbox", "matcher": null },
+      {
+        "surface": "platform-db",
+        "mode": "sandbox",
+        "matcher": null
+      },
       {
         "surface": "typed-service-model-calls",
         "mode": "recorded",
-        "matcher": { "matchOn": ["evaluator_version_id", "question_digest", "subject_text_digest"] }
+        "matcher": {
+          "matchOn": [
+            "evaluator_version_id",
+            "question_digest",
+            "subject_text_digest"
+          ]
+        }
       },
-      { "surface": "knowledge-store-writes", "mode": "sandbox", "matcher": null }
+      {
+        "surface": "knowledge-store-writes",
+        "mode": "sandbox",
+        "matcher": null
+      }
     ],
     "caseSelection": {
-      "defaultSourceScope": { "flow": "sdlc-flow" },
+      "defaultSourceScope": {
+        "flow": "sdlc-flow"
+      },
       "note": "replay_case_set_build derives cases from this plugin's own closed initiatives per FR-60; no case set exists yet for this bootstrap protocol version."
     },
     "splitPolicy": {
       "evolve": 0.4,
       "validation": 0.3,
       "proof": 0.3,
-      "min": { "evolve": 5, "validation": 10, "proof": 10 }
+      "min": {
+        "evolve": 5,
+        "validation": 10,
+        "proof": 10
+      }
     }
   },
   "qualification": {
@@ -311,9 +428,15 @@
   "scoring": {
     "establishment": {
       "bootstrap": true,
-      "minCoverage": { "minUsableRuns": 5, "minSubjectRefs": 5 }
+      "minCoverage": {
+        "minUsableRuns": 5,
+        "minSubjectRefs": 5
+      }
     },
-    "uncertainty": { "level": 0.95, "iterations": 1000 }
+    "uncertainty": {
+      "level": 0.95,
+      "iterations": 1000
+    }
   },
   "improvement": {
     "evolvable": true,
@@ -328,15 +451,27 @@
       "complexity": "lines_plus_20_per_component"
     },
     "selection": {
-      "order": ["lower_bound", "complexity", "latency", "cost", "id"]
+      "order": [
+        "lower_bound",
+        "complexity",
+        "latency",
+        "cost",
+        "id"
+      ]
     },
     "proof": {
       "verifierIsolation": "fresh verifier session with no proposer/search capability, opened once per generation",
       "allocation": "opens the current generation's sealed proof allocation exactly once for the selected final candidate"
     },
     "criticalGuardrails": [
-      { "key": "usable_run_coverage", "threshold": 0.5 },
-      { "key": "document_gate_readiness", "threshold": 0.5 }
+      {
+        "key": "document_gate_readiness",
+        "threshold": 0.5
+      },
+      {
+        "key": "document_frontmatter_conformance",
+        "threshold": 0.5
+      }
     ],
     "release": {
       "approvalDocument": "improvement.md",

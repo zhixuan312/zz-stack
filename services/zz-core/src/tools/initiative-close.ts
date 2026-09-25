@@ -9,11 +9,11 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { OUTCOME_STOPPED, closeInitiative, parseCaller, parseEnvelope } from "@zz/contracts";
+import { documentApplies, OUTCOME_STOPPED, closeInitiative, parseCaller, parseEnvelope } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { OPEN_RECORD, openRecord, recordAbandoned } from "../initiative-record.js";
+import { factsFor, OPEN_RECORD, openRecord, recordAbandoned } from "../initiative-record.js";
 import { chainFor, frontmatterStatus } from "../chain.js";
 import { oneLine } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
@@ -93,21 +93,33 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       if (disposition === OUTCOME_STOPPED) {
         const chain = chainFor(root, join(initiative, "probe.md"));
         const dir = join(root, initiative);
+        // FR-58 (Task I-26): a gate or a requiredForClose document the branch has ruled out
+        // (`not_applicable`) is excluded here too, for the same reason handover.md is —
+        // without this, ANY flow declaring a conditional gate could never trip the refusal
+        // below: the ruled-out document never exists, `gatesPassed`/`requiredPresent` would
+        // read false forever, and the false-abandon refusal would never fire even when every
+        // APPLICABLE gate is passed and everything the branch actually required exists.
+        const facts = factsFor(root, initiative);
+        const ruledOut = (d: { name: string; when?: Record<string, string | string[]> }): boolean =>
+          !!d.when && documentApplies(d, facts) === "not_applicable";
         // DELIBERATE: `handover.md` is excluded from the gate set. It is derived onto
         // `chain.documents` for every flow that gates a document and cannot exist at close time —
         // zz-handover writes it after the close — so leaving it in makes `gatesPassed` permanently
         // false and disables this refusal entirely. It is also not a gate the flow's own work has
         // to pass to be finished; it is what the platform asks for afterwards.
-        const gates = chain.documents.filter((d) => d.gate === true && d.name !== "handover.md");
+        const gates = chain.documents
+          .filter((d) => d.gate === true && d.name !== "handover.md" && !ruledOut(d));
         const gatesPassed = gates.length > 0 && gates.every(
           (d) => frontmatterStatus(join(dir, d.name)) === "approved");
-        const requiredPresent = chain.closeRequires.length > 0
-          && chain.closeRequires.every((n) => existsSync(join(dir, n)));
+        const requiredForClose = chain.closeRequires
+          .filter((n) => !ruledOut(chain.documents.find((d) => d.name === n) ?? { name: n }));
+        const requiredPresent = requiredForClose.length > 0
+          && requiredForClose.every((n) => existsSync(join(dir, n)));
         if (gatesPassed && requiredPresent) {
           return text(
             `ERROR: ${initiative} does not look abandoned. Every gate this flow declares is ` +
             `approved (${gates.map((d) => d.name).join(", ")}) and everything it requires to ` +
-            `close exists (${chain.closeRequires.join(", ")}). \`${OUTCOME_STOPPED}\` says the ` +
+            `close exists (${requiredForClose.join(", ")}). \`${OUTCOME_STOPPED}\` says the ` +
             "work stopped before it was done, and the record says it was done — a reader would " +
             "meet \"closed without finishing\" above a row of ticks.\n\n" +
             "If it IS finished, close it as `finished`: with `accepted_by` when somebody said " +

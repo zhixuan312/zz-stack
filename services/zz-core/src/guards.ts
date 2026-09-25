@@ -12,9 +12,10 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { admitEntry, OUTCOME_STOPPED, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
+import { admitEntry, documentApplies, OUTCOME_STOPPED, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
 
 import { frontmatterStatus } from "./chain.js";
+import { factsFor } from "./initiative-record.js";
 import { attributionCheck, type Chain, outcomeCheck, sectionCheck, statusCheck } from "./write-guards.js";
 
 /** Why a stop discharges a close-time requirement, written once because two rules claim it.
@@ -67,6 +68,29 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
   // text, and a closing document approved yesterday would close on an unapproved draft today.
   const stop = env.outcome === OUTCOME_STOPPED;
   const self = chain.documents.find((d) => d.name === parts[1]);
+  // FR-58 (Task I-26): a document whose branch has not resolved yet — a named fact `when`
+  // depends on is absent from `_facts.json` — blocks a FINISHED close outright. The platform
+  // does not know whether it is required, so it cannot certify that every required gate is
+  // recorded; `branch_undetermined` is refused by name, the same way `stale_baseline` names its
+  // own refusal elsewhere in this initiative's contract. An ABANDONED close is unaffected: the
+  // work stopped, and stopping asks no branch to have been decided — the same exemption
+  // STOPPED_GROUND already gives the gates below.
+  const facts = factsFor(root, parts[0]);
+  if (!stop) {
+    const undetermined = chain.documents.find(
+      (d) => d.when && documentApplies(d, facts) === "undetermined");
+    if (undetermined) {
+      const missing = Object.keys(undetermined.when!).filter((f) => !facts[f]);
+      return (
+        `ERROR: branch_undetermined — ${undetermined.name} declares \`when\` over ` +
+        `${missing.join(", ")}, and _facts.json does not record ${missing.length === 1 ? "it" : "them"} ` +
+        `yet, so the platform cannot say whether ${undetermined.name} is required before ` +
+        `${parts[0]} closes. Run the stage that decides the branch first. If the ` +
+        `work stopped rather than finished, initiative_close(initiative, "${OUTCOME_STOPPED}") ` +
+        "does not ask for it."
+      );
+    }
+  }
   // Judged from `content` — the text being written — and never from the copy on disk, which
   // this write supersedes. No waiver: a stop does not discharge this one.
   const own = admitEntry(
@@ -125,12 +149,21 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
   // Existence, not approval, which is what `recorded` says and why the two loops are separate
   // questions. A `requiredForClose` document written and left in draft satisfies this and is
   // judged — if it is gated — by the gates above.
+  //
+  // FR-58 (Task I-26): unlike `written` above — which is filtered to gates that exist, so a
+  // not_applicable one is excluded from the REQUIRED side by construction — `closeRequires` is
+  // required by name regardless of whether it was ever written. Without this filter, a
+  // requiredForClose document the branch ruled out would be reported missing forever: it never
+  // exists, and there is no other reason to hold it, on a branch where the contract itself
+  // says it never applied.
+  const requiredClose = chain.closeRequires.filter((need) =>
+    documentApplies(chain.documents.find((d) => d.name === need) ?? { name: need }, facts) !== "not_applicable");
   const needed = admitEntry(
-    chain.closeRequires.map((need) => ({ kind: need, standard: "recorded" })),
-    chain.closeRequires
+    requiredClose.map((need) => ({ kind: need, standard: "recorded" })),
+    requiredClose
       .filter((need) => existsSync(join(root, parts[0], need)))
       .map((need) => ({ kind: need, standard: "recorded" })),
-    stop ? chain.closeRequires.map((need) => ({ kind: need, ground: STOPPED_GROUND })) : [],
+    stop ? requiredClose.map((need) => ({ kind: need, ground: STOPPED_GROUND })) : [],
   );
   if (!needed.admitted) {
     const [unmet] = needed.unmet;
@@ -220,6 +253,38 @@ function closedOnSomeDocument(root: string, initiative: string): boolean {
     .some((f: string) => f.endsWith(".md") &&
                  !!parseEnvelope(readFileSync(join(root, initiative, f), "utf8")).outcome);
 }
+/** May this document be written at all, given the branch the initiative is on (FR-58, Task
+ *  I-26) — distinct from `gateCheck` below, which asks whether an EARLIER document's gate has
+ *  passed. A document with no `when` is unaffected: this returns null for it, the same silence
+ *  it has always gotten.
+ *
+ *  `not_applicable`: the branch has ruled this document out, and a document ruled out is never
+ *  written — there is nothing to revise it into either, so this refuses `document_revise` the
+ *  same as `document_write`.
+ *  `undetermined`: the branch has not resolved yet; the contract calls this "not writable yet",
+ *  not a refusal about approval or ownership. */
+function applicabilityCheck(chain: Chain, root: string, relPath: string): string | null {
+  const parts = relPath.replace(/^\/+/, "").split("/");
+  if (parts.length !== 2) return null;
+  const doc = chain.documents.find((d) => d.name === parts[1]);
+  if (!doc?.when) return null;
+  const facts = factsFor(root, parts[0]);
+  const applic = documentApplies(doc, facts);
+  if (applic === "applies") return null;
+  if (applic === "not_applicable") {
+    return (
+      `ERROR: ${parts[1]} does not apply on this branch — its \`when\` (${JSON.stringify(doc.when)}) ` +
+      `does not match the facts recorded in _facts.json (${JSON.stringify(facts)}). A document a ` +
+      "branch rules out is never written, on this branch."
+    );
+  }
+  const missing = Object.keys(doc.when).filter((f) => !facts[f]);
+  return (
+    `ERROR: ${parts[1]} is not writable yet — its \`when\` names ${missing.join(", ")}, and ` +
+    `_facts.json does not record ${missing.length === 1 ? "it" : "them"} yet, so the platform ` +
+    `cannot say whether ${parts[1]} applies. Run the stage that decides the branch first.`
+  );
+}
 /** May this document be written, given what the document before it has reached.
  *
  * COUPLED: the decision is `admitEntry`'s, from @zz/contracts — a requirement is met when
@@ -234,6 +299,10 @@ function gateCheck(chain: Chain, root: string, relPath: string): string | null {
   if (parts.length !== 2) return null;
   const dep = chain.requires[parts[1]];
   if (!dep) return null;
+  // FR-58 (Task I-26): a dependency the branch has ruled out is discharged, not missing — the
+  // ground below is what lets a document downstream of a not_applicable one still be written.
+  const depDoc = chain.documents.find((d) => d.name === dep);
+  const depApplic = depDoc?.when ? documentApplies(depDoc, factsFor(root, parts[0])) : "applies";
   // A non-gated prerequisite is satisfied by existing. `gate: false` says no approval is
   // required, so nothing ever approves such a document and its status stays `draft` for the
   // life of the initiative — demanding `approved` here would make the next document
@@ -258,9 +327,17 @@ function gateCheck(chain: Chain, root: string, relPath: string): string | null {
     // nobody will now write; it says nothing about one written and left in draft, and
     // discharging that too would let a closed initiative write over a gate a person was
     // still owed a say in.
-    !exists && closedOnSomeDocument(root, parts[0])
-      ? [{ kind: dep, ground: `this initiative is closed, and the close settled ${dep} by landing its outcome elsewhere` }]
-      : [],
+    [
+      ...(!exists && closedOnSomeDocument(root, parts[0])
+        ? [{ kind: dep, ground: `this initiative is closed, and the close settled ${dep} by landing its outcome elsewhere` }]
+        : []),
+      // FR-58 (Task I-26): a dependency the branch has ruled out is never going to exist, on
+      // this branch — without this ground every document downstream of it would be
+      // permanently unwritable, on the one branch where the contract says it never applied.
+      ...(depApplic === "not_applicable"
+        ? [{ kind: dep, ground: `${dep} does not apply on this branch (\`when\`: ${JSON.stringify(depDoc!.when)})` }]
+        : []),
+    ],
   );
   if (admission.admitted) return null;
   // One requirement went in, so at most one comes back. Absent and unratified are the two
@@ -339,6 +416,7 @@ export function documentGuards(chain: Chain, root: string, relPath: string, cont
   return ownershipCheck(root, relPath, content, via)
     ?? closedDocumentGuard(root, relPath, via)
     ?? approvedDocumentGuard(chain, root, relPath, via)
+    ?? applicabilityCheck(chain, root, relPath)
     ?? gateCheck(chain, root, relPath)
     ?? closeCheck(chain, root, relPath, content)
     ?? statusCheck(chain, relPath, content)

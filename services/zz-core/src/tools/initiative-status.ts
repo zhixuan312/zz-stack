@@ -11,12 +11,13 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { OUTCOME_STOPPED, parseCaller, parseEnvelope, type FlowDoc } from "@zz/contracts";
+import { documentApplies, OUTCOME_STOPPED, parseCaller, parseEnvelope, type Applicability,
+         type FlowDoc } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { auditMove } from "../audit-rounds.js";
-import { openRecord } from "../initiative-record.js";
+import { factsFor, openRecord } from "../initiative-record.js";
 import { chainFor } from "../chain.js";
 import { safeName, userRoot } from "../paths.js";
 import { logActivity } from "../persist.js";
@@ -31,6 +32,10 @@ interface DocState {
    *
    * COUPLED: chain.ts appends the handover's sections outside any flow manifest. */
   sections?: string[];
+  /** FR-58 (Task I-26): set only for a document that declares `when` — a reader asking "where
+   *  is protocol.md" deserves an answer, and a document with no `when` needs none: it always
+   *  applies, which is exactly today's behaviour. */
+  applies?: Applicability;
 }
 
 /** A document's frontmatter, or {} when there is no document there.
@@ -166,6 +171,13 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
         "want its order and its gates enforced.",
     };
   }
+  // FR-58 (Task I-26): read once, against every document's own `when` — `_facts.json` is
+  // per-initiative, never per-flow, so it cannot live on the cached `chain` the way `docs` does.
+  const facts = factsFor(root, name);
+  const appliesOf = (docName: string): Applicability => {
+    const spec = docs.find((d) => d.name === docName);
+    return spec?.when ? documentApplies(spec, facts) : "applies";
+  };
   const states: DocState[] = docs.map((d) => {
     const env = envelopeOf(join(dir, d.name));
     return {
@@ -174,6 +186,7 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
       approved_by: env.approved_by || undefined, approved_at: env.approved_at || undefined,
       requires: d.requires,
       sections: d.sections?.length ? d.sections : undefined,
+      applies: d.when ? documentApplies(d, facts) : undefined,
     };
   });
   // The close is wherever initiative_close wrote it. A flow can move its closing document, so
@@ -227,7 +240,16 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
     // non-gated document — `gate: false` means no approval is required, so its status stays
     // `draft` for the life of the initiative — so a gated target must be approved and an
     // ungated one need only exist.
+    //
+    // FR-58 (Task I-26): a requirement ruled out by the branch (`not_applicable`) is met without
+    // existing at all — it was excluded, not merely unwritten. A requirement whose own branch is
+    // `undetermined` is the opposite: NOT met, because the platform has not yet decided whether
+    // it is required — a different wait from "unapproved", which `pending` below tells apart.
+    // COUPLED: `gateCheck` in guards.ts applies the same two rules to a write, not just a read.
     const requirementMet = (docName: string): boolean => {
+      const applic = appliesOf(docName);
+      if (applic === "not_applicable") return true;
+      if (applic === "undetermined") return false;
       const t = states.find((x) => x.name === docName);
       if (!t) return false;
       return t.gate ? t.status === "approved" : t.exists;
@@ -238,7 +260,11 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
     // close was ever considered. Excluded by role, so a flow declaring its own handover gets
     // the same treatment. The closed branch above owns this document entirely — it is the
     // only place that can know the outcome it reports on.
-    const flowDocs = states.filter((d) => !isHandover(d));
+    //
+    // A document the branch has ruled out is excluded from the search entirely (FR-58): it is
+    // never "the next document this flow declares", never awaited, never owed an audit — the
+    // same as if the flow had simply never declared it.
+    const flowDocs = states.filter((d) => !isHandover(d) && appliesOf(d.name) !== "not_applicable");
     const pending = flowDocs.find((d) => !d.exists && (!d.requires || requirementMet(d.requires)));
     const awaiting = flowDocs.find((d) => d.exists && d.gate && d.status !== "approved");
     // A stage that produces a source is a stage, and `states` is built from the manifest's
@@ -249,9 +275,14 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
     //
     // COUPLED: read from the manifest's stages, in their declared order, the same rule
     // `enrolment.ts` follows for the evidence side. The two answers about one flow have to agree.
+    //
+    // `requirementMet` alone is not enough here: it reads `not_applicable` as discharged
+    // (true), which is right for a document another one merely *requires*, but an audit of a
+    // ruled-out document is not owed at all — it is excluded explicitly, first.
     const owedAudit = (chain.stages ?? [])
       .filter((st): st is Extract<typeof st, { produces: "source" }> => st.produces === "source")
-      .filter((st) => Boolean(st.supports) && requirementMet(st.supports as string))
+      .filter((st) => Boolean(st.supports) && appliesOf(st.supports as string) !== "not_applicable"
+                     && requirementMet(st.supports as string))
       .map((st) => auditMove(root, name, st.name ?? "", st.supports as string,
                              Number(envelopeOf(join(dir, st.supports as string)).version) || 1))
       .find((m): m is NonNullable<typeof m> => m !== null);
@@ -265,17 +296,35 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
       // NOT A TOOL: `add_source` and `decide` are members of `next_move.action`'s own
       // vocabulary, not tool names. The `why` beside each names the call to make.
       next = owedAudit;
+    } else if (pending && appliesOf(pending.name) === "undetermined") {
+      // FR-58 (Task I-26): `pending` is the next document in the flow's order, but its OWN
+      // branch has not resolved — not a fact about approval or about a stage owing evidence,
+      // so neither `write_document` nor `await_approval` fits. `resolve_branch` is the fourth
+      // agent-facing verb, beside `write_document`, `add_source` and `decide`.
+      const missing = Object.keys(docs.find((d) => d.name === pending.name)?.when ?? {})
+        .filter((fact) => !facts[fact]);
+      next = {
+        action: "resolve_branch", document: pending.name, waiting_on: "agent",
+        why: `${pending.name} declares \`when\` over ${missing.join(", ")}, and _facts.json ` +
+             `does not record ${missing.length === 1 ? "it" : "them"} yet — the stage that ` +
+             `decides the branch has to run before ${pending.name} can be written one way or ` +
+             "the other",
+      };
     } else if (pending) {
       next = { action: "write_document", document: pending.name, waiting_on: "agent",
                why: `${pending.name} is the next document this flow declares` };
     } else {
-      const missing = chain.closeRequires.filter((n) => !existsSync(join(dir, n)));
+      // A `requiredForClose` document the branch has ruled out is not owed either — the same
+      // FR-58 exclusion `flowDocs` applies above, applied here to `closeRequires`.
+      const missing = chain.closeRequires
+        .filter((n) => appliesOf(n) !== "not_applicable")
+        .filter((n) => !existsSync(join(dir, n)));
       next = missing.length
         ? { action: "write_document", document: missing[0], waiting_on: "agent",
             why: `${missing[0]} is required before this initiative can close` }
         // NOT A TOOL: `next_move.action` is its own vocabulary — declare_flow,
-        // write_document, await_approval, handover, closed, close — not tool names. The
-        // `why` beside it names the tool to call.
+        // write_document, await_approval, add_source, decide, resolve_branch, handover, closed,
+        // close — not tool names. The `why` beside it names the tool to call.
         : { action: "close", document: chain.closingDoc, waiting_on: "agent",
             // Every gate being recorded is a statement about approvals; acceptance is a
             // different act by a different person, so the `why` has to name both.

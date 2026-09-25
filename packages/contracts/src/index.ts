@@ -11,6 +11,14 @@ import { z } from "zod";
 export { actingTeam, addressResolver, mintPat, parseCaller, PAT_TOKEN,
          peerAddress, sha256 } from "./identity.js";
 
+// Conditional documents in the flow contract (FR-52, FR-58, Task I-26): a document may declare
+// `when` over the durable branch facts an initiative has settled, and `documentApplies` is the
+// one reader every gate/close/status computation calls. FlowDocWhen is imported below, into
+// FlowDoc's own shape, rather than merely re-exported — see the field.
+export { WHEN_FACT_NAMES, documentApplies,
+         type WhenFactName, type FlowDocWhen, type Applicability } from "./flow-when.js";
+import { FlowDocWhen } from "./flow-when.js";
+
 // The one write path a platform access token goes through — pat_issue and pat_revoke call
 // these, and so does provisionReplayTeam/teardownReplayTeam below. Declared here rather than
 // depending on the `pg` package: `Db` is the minimal shape both services' pg.Pool satisfies.
@@ -295,6 +303,10 @@ export const FlowDoc = z.object({
    *  DELIBERATE: optional. A flow whose documents do not map onto stages is a real shape, and
    *  where this is absent the console says so rather than guessing a position. */
   stage: z.string().optional(),
+  /** FR-52, FR-58 (Task I-26): this document applies only on the branch its facts describe.
+   *  Absent, this document behaves exactly as it always has — see `documentApplies` in
+   *  ./flow-when.js, the one function that reads this field. */
+  when: FlowDocWhen.optional(),
 }).strict();
 export type FlowDoc = z.infer<typeof FlowDoc>;
 

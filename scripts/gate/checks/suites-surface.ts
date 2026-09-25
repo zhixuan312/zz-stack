@@ -41,6 +41,12 @@ check("opening is explicit and dated by the platform, and freeform gets no next 
 check("audit rounds follow evidence, a spent budget or a reopened agreement waits on the stakeholder",
       runsCheck("audit-rounds.ts"));
 
+check("a document's `when` decides applicability by code from durable facts, never by confidence",
+      runsCheck("flow-when.ts"));
+
+check("a not_applicable document is discharged everywhere and an undetermined one blocks a finished close",
+      runsCheck("flow-when-status.ts"));
+
 check("the /manage door is cut by role, the duplicates are gone, and the exception is kept",
       runsCheck("manage-surface.ts"));
 

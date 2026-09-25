@@ -94,6 +94,41 @@ export function openRecord(root: string, name: string): OpenRecord | null {
 }
 
 
+/** Where a flow's durable branch facts live (FR-58, Task I-26): `protocol_action`,
+ *  `improvement_mode`, `release_mode`. Written by the eval service (Task I-27) and read by
+ *  every caller that resolves a conditional document's `when` — never written here, the same
+ *  division `_open.json` above draws between the tool that opens an initiative and the one
+ *  that reads it back. Underscore-prefixed, so no listing treats it as a document.
+ *
+ *  DELIBERATE: not exported. `factsFor` below is the one reader; a second module reaching for
+ *  the filename itself would be reading `_facts.json` a second way. */
+const FACTS_FILE = "_facts.json";
+
+/** An initiative's durable branch facts, or `{}` when none are recorded yet.
+ *
+ * No `_facts.json` is not an error — it is every named fact reading `undetermined`
+ * (`documentApplies`, ./flow-when.js) rather than this call throwing. Read the way
+ * `_assessments/` is read in semantic.ts: JSON.parse, and a malformed or non-object file is
+ * `{}` too, for the reason `openRecord` above swallows one — `initiative_status` is called
+ * between a partial write and the next one and must not go down computing a next move over it.
+ * A non-string value under a fact name is dropped rather than coerced: `documentApplies` compares
+ * strings, and a caller-written number or object is not one. */
+export function factsFor(root: string, initiative: string): Record<string, string> {
+  const file = join(root, initiative, FACTS_FILE);
+  if (!existsSync(file)) return {};
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+    if (!parsed || typeof parsed !== "object") return {};
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === "string") out[k] = v;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 /** An initiative this slug would collide with, or null.
  *
  * DELIBERATE: the slug is what is taken, not the dated name. Testing `<today>-<slug>` alone

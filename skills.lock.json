@@ -76,8 +76,8 @@
     "sha": "258b68148716"
   },
   "zz-plugin-eval": {
-    "version": "1.10",
-    "sha": "a83fe8fc25d0"
+    "version": "1.11",
+    "sha": "b63725e13feb"
   },
   "zz-plugin-judge": {
     "version": "0.5",
@@ -112,8 +112,8 @@
     "sha": "20fda0ac1218"
   },
   "zz-platform": {
-    "version": "3.59",
-    "sha": "50e282acb590"
+    "version": "3.60",
+    "sha": "680e184f7231"
   },
   "zz-tldr": {
     "version": "1.2",

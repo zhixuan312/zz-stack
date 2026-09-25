@@ -185,4 +185,11 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
   eitherOr("candidate_prove refuses abandon on a candidate_id nothing minted",
     await callEval("candidate_prove", { candidate_id: randomUUID(), abandon: true, idempotency_key: randomUUID() }),
     /no platform database|no candidate/);
+  // Task I-22: a random candidate_id decides nothing and matches no candidate — refused before
+  // any subject or owner is ever resolved, the same way candidate_prove's own probe above is
+  // safe against any live state.
+  eitherOr("release_prepare refuses a candidate_id nothing minted",
+    await callEval("release_prepare", {
+      candidate_id: randomUUID(), initiative: "chain-check-probe", idempotency_key: randomUUID(),
+    }), /no platform database|no candidate/);
 }

@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-eval
-version: 1.10
+version: 1.11
 description: "The front door to plugin evaluation, and the place a judgement about a plugin is settled rather than offered. Five stages — locate, profile, define, judge, report — over one plugin at one released version, against a ruler somebody agreed BEFORE any scoring. Load it whenever somebody wants a plugin graded, scored, marked down, or confirmed as good or bad, including when they have already reached a conclusion and want it checked: an opinion given straight back is the thing this exists to replace. Evidence about whether a plugin does the job it claims; never a change to the plugin."
 when_to_use: "Someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?'. Answering either from your own read is the failure this flow exists to prevent, so load it before agreeing or disagreeing. Also whenever a plugin is up for keeping, changing or retiring, or somebody asks whether installing it beats not installing it. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code)."
 ---
@@ -169,7 +169,7 @@ it drives validation, but against sealed proof cases search never saw. A later c
 same `proving` candidate reads back whatever proof-split runs are now `completed` and scored;
 once every case has enough of them it re-screens the candidate for leakage, calls the same
 `pairedDecision` bootstrap, and answers `proof_status: proof_passed | proof_failed |
-not_established` plus `release_eligible` — never a per-case result. Every terminal answer spends
+not_established` plus whether it is release-eligible — never a per-case result. Every terminal answer spends
 the allocation: `candidate.status` becomes `proof_passed`, `proof_failed`, or
 `proof_not_established` for an unresolved proof (too few proof cases, an interval that never
 cleared the liveness bound, or an abandoned allocation) — an evidence gap, not a rejected

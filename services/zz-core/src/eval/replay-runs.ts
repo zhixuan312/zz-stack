@@ -32,6 +32,15 @@
  * `platformEvent` (`../indexing.js`), the same path every other admin write in this service uses.
  * Task I-15 provisioned and tore down a team with no such record; this task is what closes that
  * gap, so an access review reading `zz.event` sees a replay team's whole life, not half of it.
+ *
+ * Migration 082 (Task I-22, fix dispatch on a defect Task I-21 left): `replay_start` now stamps
+ * every verifier-context `zz.replay_run` row with `verifier_allocation_id`, the exact
+ * `zz.replay_verifier_token` row its own `verifier_token` argument resolved to. Before this, a
+ * baseline-side proof run (no `candidate_id` of its own) was distinguishable from another
+ * candidate's own baseline-side proof runs only by `base_subject_version_id` — nothing at all
+ * when two candidates prove the SAME base subject against the SAME case set concurrently. This
+ * column is what lets `candidate-prove.ts`'s own `cancelProofRuns` scope an abandon to exactly
+ * the one allocation it opened.
  */
 import { randomUUID } from "node:crypto";
 
@@ -142,20 +151,31 @@ export function roleReadGuard(patTeam: string | null, teamSlug: string, role: st
 // -------------------------------------------------------------------------------------------
 // verifier_token — real validation against a table only candidate_prove writes a row into.
 
-async function verifyVerifierToken(p: Db, token: string | undefined): Promise<boolean> {
-  if (!token) return false;
+/** The `zz.replay_verifier_token` row id a presented token names, or null when it is missing,
+ *  revoked or expired — real validation, not a stub (Task I-16's own module note). Its id, not a
+ *  bare boolean: migration 082's own fix dispatch (this task) needs the exact allocation a
+ *  verifier-context `replay_start` call is acting under, so `cancelProofRuns`
+ *  (`candidate-prove.ts`) can cancel only the runs THIS allocation spawned, never a different
+ *  candidate's own proof runs that happen to share a base subject or case set. */
+async function verifierAllocationId(p: Db, token: string | undefined): Promise<string | null> {
+  if (!token) return null;
   const row = (await p.query<{ id: string }>(
-    `select id from zz.replay_verifier_token
+    `select id::text as id from zz.replay_verifier_token
       where token_hash = $1 and revoked_at is null and expires_at > now()`,
     [sha256(token)])).rows[0];
-  return !!row;
+  return row?.id ?? null;
 }
 
-/** Null on an admitted context, the refusal text otherwise. Shared by replay_start and
- *  replay_read — the only two tools the plan's Errors clause names as taking `context`. */
-async function requireContext(p: Db, context: string, verifierToken: string | undefined): Promise<string | null> {
-  if (context !== "verifier") return null;
-  return (await verifyVerifierToken(p, verifierToken)) ? null : VERIFIER_REFUSED;
+/** Shared by replay_start and replay_read — the only two tools the plan's Errors clause names as
+ *  taking `context`. A search context is always admitted, with no allocation of its own.
+ *  `replay_start` alone uses `verifierAllocationId` on the `ok` branch — see this module's own
+ *  header note (migration 082) — replay_read only needs the admit/refuse verdict. */
+async function requireContext(
+  p: Db, context: string, verifierToken: string | undefined,
+): Promise<{ ok: true; verifierAllocationId: string | null } | { ok: false; error: string }> {
+  if (context !== "verifier") return { ok: true, verifierAllocationId: null };
+  const id = await verifierAllocationId(p, verifierToken);
+  return id ? { ok: true, verifierAllocationId: id } : { ok: false, error: VERIFIER_REFUSED };
 }
 
 // -------------------------------------------------------------------------------------------
@@ -363,8 +383,8 @@ export function registerReplayRunTools(server: McpServer): void {
       const p = db();
       if (!p) return noDb();
 
-      const ctxErr = await requireContext(p, context, verifier_token);
-      if (ctxErr) return text(ctxErr);
+      const ctx = await requireContext(p, context, verifier_token);
+      if (!ctx.ok) return text(ctx.error);
       if (context === "search" && split === "proof") return text(PROOF_SEALED);
       if (!!subject_version_id === !!candidate_id) {
         return text(
@@ -423,10 +443,12 @@ export function registerReplayRunTools(server: McpServer): void {
           await client.query(
             `insert into zz.replay_run
                (id, case_id, subject_version_id, candidate_id, protocol_version_id,
-                environment_digest, sandbox_ref, status, principal, team_slug, pat_id, expires_at, created_at)
-             values ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, 'registered', $8, $9, $10::uuid, $11, now())`,
+                environment_digest, sandbox_ref, status, principal, team_slug, pat_id, expires_at,
+                verifier_allocation_id, created_at)
+             values ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, 'registered', $8, $9,
+                     $10::uuid, $11, $12::uuid, now())`,
             [runId, chosen.id, subject_version_id ?? null, candidate_id ?? null, protocol.protocolVersionId,
-             digest, worktreeRef, principal, teamSlug, patId, expiresAt]);
+             digest, worktreeRef, principal, teamSlug, patId, expiresAt, ctx.verifierAllocationId]);
 
           platformEvent({
             actor: principal, kind: "replay_team.provisioned", subject: runId, team: teamSlug,
@@ -493,8 +515,8 @@ export function registerReplayRunTools(server: McpServer): void {
       const p = db();
       if (!p) return noDb();
 
-      const ctxErr = await requireContext(p, context, verifier_token);
-      if (ctxErr) return text(ctxErr);
+      const ctx = await requireContext(p, context, verifier_token);
+      if (!ctx.ok) return text(ctx.error);
       if (!UUID_RE.test(replay_run_id)) return text(`ERROR: unknown replay_run_id ${replay_run_id}`);
 
       const row = (await p.query<{

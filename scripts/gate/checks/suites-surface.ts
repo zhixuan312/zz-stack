@@ -130,3 +130,6 @@ check("producedSubjectText renders two different produced records into two diffe
 
 check("paretoFrontier keeps exactly the non-dominated candidates on (pass vector, cost) and selectFinal breaks ties by lower complexity, lower latency, lower cost, then ascending id, excluding a guardrail failure outright",
       runsCheck("eval-selection.ts"));
+
+check("releaseDecision applies only when every required owner approved the exact approved digest against the exact base subject, refusing no_release_owners, not_eligible, approval_required, digest_mismatch and stale_baseline in that order, and rollbackDecision is true on a guardrail failure or an established regression alone",
+      runsCheck("eval-release-rules.ts"));

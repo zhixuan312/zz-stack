@@ -27,6 +27,7 @@ import { registerPluginJudgeTools } from "./eval/plugin-judge.js";
 import { registerPluginRecordTools } from "./eval/plugin-record.js";
 import { registerProtocolTools } from "./eval/protocol.js";
 import { registerEvaluatorQualifyTools } from "./eval/qualify.js";
+import { registerReleaseTools } from "./eval/release.js";
 import { registerReplayCaseTools } from "./eval/replay-cases.js";
 import { registerReplayScoreTools } from "./eval/replay-score.js";
 import { registerReplayRunTools } from "./eval/replay-runs.js";
@@ -41,8 +42,8 @@ import { registerSubjectTools } from "./eval/subject.js";
  *
  * COUPLED: checks/orientation.ts derives the noun set from the live `tools/list` and compares it
  * with this text in both directions, so the paragraph below has to change in the same commit as
- * a registration under a new prefix. This door serves nine nouns — plugin, protocol, round,
- * finding, failure, evaluator, evaluation, improvement and candidate.
+ * a registration under a new prefix. This door serves eleven nouns — plugin, protocol, round,
+ * finding, failure, evaluator, evaluation, replay, improvement, candidate and release.
  *
  * It names the other door on purpose: everyone holding this one also holds `/core/mcp`. */
 const EVAL_INSTRUCTIONS =
@@ -57,19 +58,19 @@ const EVAL_INSTRUCTIONS =
   "read it against the conformance standard\n" +
   "  protocol_*  read whether this plugin's protocol is still compatible, record a new " +
   "version, and bind a person's approval of it\n" +
-  "  round_*    score one version against the legacy ruler, read its marks back, and " +
-  "conclude it: two axes, no recommendation\n" +
-  "  finding_*  record what a round or an EVALUATE run concluded, and close each one when " +
-  "somebody applies or rejects it\n" +
-  "  failure_*  mine an observation snapshot for candidate failure modes, before any " +
-  "protocol exists\n" +
-  "  evaluator_*  qualify one evaluator version against a protocol's own qualification " +
-  "policy, before its answers count\n" +
+  "  round_*    score one version against the legacy ruler, read its marks back, conclude " +
+  "it: two axes, no recommendation\n" +
+  "  finding_*  record what a round or an EVALUATE run concluded, close it when applied or " +
+  "rejected\n" +
+  "  failure_*  mine an observation snapshot for failure modes, before any protocol exists\n" +
+  "  evaluator_*  qualify one evaluator version against a protocol's qualification policy, " +
+  "before its answers count\n" +
   "  evaluation_*  bind a protocol version and an observation snapshot into one run, assess " +
   "and score it — distinct from round_* above\n" +
   "  replay_*  derive replay cases and start, read, close a run\n" +
   "  improvement_*  open an optimization run against plugin-owned findings\n" +
-  "  candidate_*  persist a proposed patch before it executes\n\n" +
+  "  candidate_*  persist a proposed patch before it executes\n" +
+  "  release_*  prepare a proved candidate's promotion package\n\n" +
   "Everything else is on /core/mcp and not here: documents and their gates, your team's " +
   "knowledge store, skills, sources, and who you are — session_whoami there answers today's " +
   "date and which team you are acting for.\n\n" +
@@ -105,5 +106,6 @@ export function buildEvalServer(): McpServer {
   registerReplayRunTools(server);
   registerReplayScoreTools(server);
   registerCandidateTools(server);
+  registerReleaseTools(server);
   return server;
 }

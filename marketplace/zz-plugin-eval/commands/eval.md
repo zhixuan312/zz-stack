@@ -170,7 +170,7 @@ it drives validation, but against sealed proof cases search never saw. A later c
 same `proving` candidate reads back whatever proof-split runs are now `completed` and scored;
 once every case has enough of them it re-screens the candidate for leakage, calls the same
 `pairedDecision` bootstrap, and answers `proof_status: proof_passed | proof_failed |
-not_established` plus `release_eligible` — never a per-case result. Every terminal answer spends
+not_established` plus whether it is release-eligible — never a per-case result. Every terminal answer spends
 the allocation: `candidate.status` becomes `proof_passed`, `proof_failed`, or
 `proof_not_established` for an unresolved proof (too few proof cases, an interval that never
 cleared the liveness bound, or an abandoned allocation) — an evidence gap, not a rejected

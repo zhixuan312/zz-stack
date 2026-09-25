@@ -411,30 +411,43 @@ async function readBackIfSameResolve(
 // the response that opened it — nobody holds the verifier_token, so no ordinary candidate_prove
 // call can ever plan or resolve it.
 
-/** Every proof-split replay_run this candidate's own verifier_token could have spawned and is
- *  still `registered`/`running` — candidate-side by `candidate_id`, baseline-side by
- *  `base_subject_version_id`, both narrowed to this run's own bound case set so a different
- *  improvement_run's proof runs are never touched. Closed through `closeRun` (`replay-runs.ts`),
- *  the SAME teardown `replay_close`/`sweepExpired` already use — never a second, ad hoc
- *  teardown that could drift from that one's own admin-event record.
+/** Every proof-split replay_run THIS candidate's own verifier_token allocation spawned and is
+ *  still `registered`/`running` — candidate-side and baseline-side alike, scoped by
+ *  `verifier_allocation_id` (migration 082, this task's own fix dispatch) rather than by
+ *  `candidate_id`/`base_subject_version_id`. Closed through `closeRun` (`replay-runs.ts`), the
+ *  SAME teardown `replay_close`/`sweepExpired` already use — never a second, ad hoc teardown
+ *  that could drift from that one's own admin-event record.
  *
- *  DELIBERATE: baseline-side runs are matched by `base_subject_version_id` alone, with no
- *  verifier_token-scoped column to narrow further — a second candidate proving the SAME base
- *  subject against the SAME case set at the same time would also lose its own still-registered
- *  baseline runs here. Proof is a one-final-candidate-at-a-time allocation per improvement_run
- *  (FR-42), so this is a real but narrow edge case this dispatch does not add a column to close. */
+ *  FIXED (was DELIBERATE, Task I-21's own defect this dispatch closes): baseline-side runs used
+ *  to be matched by `base_subject_version_id` alone, with no verifier_token-scoped column to
+ *  narrow further — a second candidate proving the SAME base subject against the SAME case set
+ *  at the same time would then also lose its own still-registered baseline runs here.
+ *  `verifier_allocation_id` is stamped by `replay_start` from the exact `verifier_token`
+ *  presented (`replay-runs.ts`'s own `requireContext`), so it identifies one allocation and
+ *  nothing wider — two concurrent allocations against the same base subject and case set now
+ *  cancel only their own runs. */
 async function cancelProofRuns(
-  p: pg.Pool, candidate: CandidateRow, caseSetId: string, principal: string,
+  p: pg.Pool, verifierAllocationId: string, principal: string,
 ): Promise<void> {
   const { rows } = await p.query<{ id: string; team_slug: string; pat_id: string }>(`
     select rr.id::text as id, rr.team_slug, rr.pat_id::text as pat_id
       from zz.replay_run rr
-      join zz.replay_case rc on rc.id = rr.case_id
-     where rc.case_set_id = $1::uuid and rc.split = 'proof'
-       and rr.status in ('registered', 'running')
-       and (rr.candidate_id = $2::uuid or rr.subject_version_id = $3::uuid)`,
-    [caseSetId, candidate.id, candidate.base_subject_version_id]);
+     where rr.verifier_allocation_id = $1::uuid
+       and rr.status in ('registered', 'running')`,
+    [verifierAllocationId]);
   for (const run of rows) await closeRun(p, run, "cancelled", principal, "abandoned");
+}
+
+/** The candidate's own currently open (not yet revoked) `zz.replay_verifier_token` id — the same
+ *  allocation `candidate_prove`'s own "open" phase minted and `resolveOutcome` revokes on
+ *  resolution. Null when nothing was ever minted (an abandon against a `selected` candidate is
+ *  already refused before this is ever called) or the token row itself is gone. */
+async function activeVerifierAllocationId(p: pg.Pool, candidateId: string): Promise<string | null> {
+  const row = (await p.query<{ id: string }>(`
+    select id::text as id from zz.replay_verifier_token
+     where candidate_id = $1::uuid and revoked_at is null
+     order by created_at desc limit 1`, [candidateId])).rows[0];
+  return row?.id ?? null;
 }
 
 /** The candidate's own latest proof `zz.candidate_evaluation` row, however it got there (a
@@ -472,12 +485,13 @@ async function abandonProof(
     };
   }
 
-  // proving: cancel whatever the token already spawned before revoking it — cancelProofRuns
-  // needs the bound case set to scope its own query, and a context load failure here (the
-  // improvement_run or its evidence snapshot vanished mid-flight) still lets the allocation
-  // resolve; it only means nothing was left to cancel.
-  const ctx = await loadProofContext(p, candidate);
-  if (ctx.ok) await cancelProofRuns(p, candidate, ctx.caseSetId, principal);
+  // proving: cancel whatever the token already spawned before revoking it — scoped to this
+  // candidate's own open allocation (migration 082), never to a case set or base subject a
+  // different candidate's own allocation could share. A missing allocation id (the token row
+  // itself vanished mid-flight) still lets the abandon resolve; it only means nothing was left
+  // to cancel.
+  const verifierAllocationId = await activeVerifierAllocationId(p, candidate.id);
+  if (verifierAllocationId) await cancelProofRuns(p, verifierAllocationId, principal);
 
   return resolveOutcome(candidate, idempotencyKey, principal, {
     proof_status: "not_established", reason: "abandoned", release_eligible: false,

@@ -53,6 +53,28 @@ check("the build context cannot carry a stale dist into the image", () => {
   return missing.length ? `.dockerignore does not exclude: ${missing.join("; ")}` : null;
 });
 
+check("every .gitignore pattern is mirrored in .dockerignore, so no ignored file enters the image", () => {
+  // A release checks the tree is clean, and `git status` does not show ignored files: a `*.pem`
+  // or `.env` lying in the build context reaches a published image unless .dockerignore drops it
+  // too. Translated to Docker's rules: a .gitignore pattern with no slash but a trailing one
+  // matches at any depth, a .dockerignore pattern only at the root — so `x` or `x/` needs `**/x`,
+  // and one with an inner slash is anchored in both. A negation re-includes; excluding more from
+  // the image is the safe direction, so negations are not mirrored.
+  const lines = (f: string) => readFileSync(join(root, f), "utf8").split("\n")
+    .map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
+  const docker = new Set(lines(".dockerignore"));
+  const missing: string[] = [];
+  for (const pattern of new Set(lines(".gitignore"))) {
+    if (pattern.startsWith("!")) continue;
+    const bare = pattern.replace(/\/+$/, "");
+    const anchored = bare.replace(/^\//, "");
+    const want = bare.includes("/") ? anchored : `**/${bare}`;
+    // A plain `x` or an anchored `x` also covers the root-only case; `**/x` covers every depth.
+    if (!docker.has(want)) missing.push(`${pattern} (needs '${want}')`);
+  }
+  return missing.length ? `.dockerignore does not mirror: ${missing.join(", ")}` : null;
+});
+
 check("the image installs from the manifests, then copies the source", () => {
   // Manifests are copied before the source, so a change to source does not invalidate the install
   // layer. Interleaved, every source edit reinstalls the whole dependency tree to compile one line.

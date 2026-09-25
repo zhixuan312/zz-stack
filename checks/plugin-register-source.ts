@@ -6,7 +6,11 @@
  *   1. local_dir: a directory under the catalog root is read, with the `tree_digest` of every file
  *      it ships recorded; one outside it (`/etc`, a `..`
  *      escape) is refused, and so is one whose top-level `skills` or `flow.json` is a symlink —
- *      the shape a cloned repository or extracted tarball would use to walk the host.
+ *      the shape a cloned repository or extracted tarball would use to walk the host — or that
+ *      carries a symlink or a FIFO anywhere. So is a source the replay launcher would always
+ *      refuse (`gitInstruction`, @zz/catalog, shared with it): a `.git` at any depth, or a
+ *      `.gitattributes` assigning a filter (git-lfs's `filter=lfs`). A git or package source goes
+ *      through the same reader after its fetch, so the rule is proven here once, offline.
  *   2. git: anything but https is refused (file://, http://, ssh, ext::), and so is https to a
  *      loopback, private, link-local or IPv4-mapped host — `localhost` by name included. A public
  *      host's clone is pinned to the addresses that were checked (`http.curloptResolve`), so a
@@ -17,6 +21,7 @@
  *
  * Run: node checks/plugin-register-source.ts   (also run by scripts/gate.ts)
  */
+import { execFileSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -54,6 +59,21 @@ try {
   mkdirSync(join(linked, "flow-link"));
   symlinkSync("/etc/hosts", join(linked, "flow-link", "flow.json"));
   await refused("local_dir", join(linked, "flow-link"), /flow\.json is a symlink/);
+  // A plugin with one skill, and one thing wrong with it.
+  const bad = async (name: string, plant: (dir: string) => void, why: RegExp) => {
+    const dir = join(linked, name);
+    mkdirSync(join(dir, "skills", "greet"), { recursive: true });
+    writeFileSync(join(dir, "skills", "greet", "SKILL.md"), "---\nname: greet\n---\nSay hello.\n");
+    plant(dir);
+    await refused("local_dir", dir, why);
+  };
+  await bad("lfs", (d) => writeFileSync(join(d, ".gitattributes"), "*.md filter=lfs diff=lfs merge=lfs -text\n"),
+    /\.gitattributes assigns a git filter/);
+  await bad("nested-git", (d) => { mkdirSync(join(d, "skills", "greet", ".git")); writeFileSync(join(d, "skills", "greet", ".git", "config"), "[core]\n"); },
+    /skills\/greet\/\.git is git metadata/);
+  await bad("deep-link", (d) => { mkdirSync(join(d, "hooks")); symlinkSync("/etc/hosts", join(d, "hooks", "leak")); },
+    /hooks\/leak is a symlink/);
+  await bad("fifo", (d) => execFileSync("mkfifo", [join(d, "pipe")]), /pipe is not a regular file/);
 } finally {
   rmSync(linked, { recursive: true, force: true });
 }

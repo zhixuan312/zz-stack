@@ -7,8 +7,10 @@
 //     `.gitattributes` sending every file through that filter is refused before any git command
 //     runs, nothing it names runs, and nothing is left behind — while the SAME tree under plain
 //     `git init` + `git add -A` runs the filter, so the vector is real here;
-//   - a `.gitattributes` assigning a filter is refused without any `.git`, and a `.git` at any
-//     depth or in any case is refused in a local_dir;
+//   - a `.gitattributes` assigning a filter is refused without any `.git`, a tracked one in a
+//     local_dir is refused too, and a `.git` at any depth or in any case is refused by the one
+//     shared rule (`gitInstruction`, @zz/catalog) — never copied from a local_dir, whose copy is
+//     only what git tracks, and refused at registration (checks/plugin-register-source.ts);
 //   - a clean package is fetched, and its tree digest (`pluginTreeDigest`, @zz/catalog) covers
 //     every file — hooks included — skips only `.git`, and refuses a symlink or a FIFO.
 import assert from "node:assert/strict";
@@ -22,7 +24,7 @@ import { pathToFileURL } from "node:url";
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const tp = await load("packages/tools/dist/replay/third-party.js");
 const git = await load("packages/tools/dist/replay/git.js");
-const { pluginContentDigest, pluginDirComponents, pluginTreeDigest } = await load("packages/catalog/dist/index.js");
+const { gitInstruction, pluginContentDigest, pluginDirComponents, pluginTreeDigest } = await load("packages/catalog/dist/index.js");
 
 const scratch = realpathSync(mkdtempSync(join(tmpdir(), "zz-fetched-tree-")));
 const slug = `fetched-tree-check-${process.pid}`;
@@ -99,15 +101,29 @@ try {
     gone();
   }
 
-  // ---- a local_dir with a `.GIT` two levels down: refused, whatever its case.
+  // ---- a `.GIT` two levels down: git metadata to the shared rule, whatever its case, and the
+  // clone's own top-level `.git` only when the caller says the tree is its clone.
   const repo = join(scratch, "repo");
   const local = plugin(join(repo, "catalog", "acme"), {});
   mkdirSync(join(local, "skills", "greet", ".GIT"));
   writeFileSync(join(local, "skills", "greet", ".GIT", "config"), "[core]\n");
+  assert.equal(gitInstruction(local), "skills/greet/.GIT is git metadata");
+  rmSync(join(local, "skills", "greet", ".GIT"), { recursive: true });
+  mkdirSync(join(local, ".git"));
+  assert.equal(gitInstruction(local), ".git is git metadata");
+  assert.equal(gitInstruction(local, { ownGit: true }), null, "a clone's own .git is git's, not the source's");
+  rmSync(join(local, ".git"), { recursive: true });
+
+  // ---- a local_dir whose tracked `.gitattributes` assigns a filter: copied, then refused.
+  writeFileSync(join(local, ".gitattributes"), "*.md filter=lfs\n");
+  const rg = (...args: string[]) => execFileSync("git", args, { cwd: repo, stdio: "ignore", env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null" } });
+  rg("init", "-q");
+  rg("add", "catalog");
   const localTree = pluginTreeDigest(local);
   const localDigest = pluginContentDigest(pluginDirComponents(local).components);
   assert.throws(() => tp.fetchThirdParty({ kind: "local_dir", locator: "/catalog/acme/package", rel: "acme/package",
-    digest: localDigest, treeDigest: localTree.digest }, repo, slug), /skills\/greet\/\.GIT is git metadata/);
+    digest: localDigest, treeDigest: localTree.digest }, repo, slug), /\.gitattributes assigns a git filter/);
+  assert.equal(existsSync(canary), false);
   gone();
 
   // ---- a clean package: fetched, digests match, committed in the launcher's own repository.

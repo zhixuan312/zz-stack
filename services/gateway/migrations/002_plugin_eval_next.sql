@@ -443,10 +443,11 @@ create table zz.release_attempt (
     verification jsonb null,
     rolled_back boolean not null default false,
     created_at timestamp with time zone not null,
-    -- Why a refused or failed attempt ended that way. A replayed release_apply/release_record call
-    -- reconstructs its answer by reading this row back (zz.eval_idempotency stores only
-    -- result_table/result_id), so the row itself has to carry it — one column for both the
-    -- refusal reason and the failure tail, so a reader never has two to reconcile.
+    -- Why an attempt ended the way it did: a refusal reason, a failure tail, a rollback reason, or
+    -- the operator's accepted override on a reconciled release. A replayed release_apply/
+    -- release_record call reconstructs its answer by reading this row back (zz.eval_idempotency
+    -- stores only result_table/result_id), so the row itself has to carry it — one column for all
+    -- of them, so a reader never has several to reconcile.
     reason text null,
     -- A partial unique index cannot join through zz.candidate, so the plugin is recorded on the
     -- row itself for release_attempt_applying_plugin_idx below.
@@ -467,7 +468,7 @@ create unique index release_attempt_applying_plugin_idx on zz.release_attempt (p
     where status = 'applying';
 
 comment on column zz.release_attempt.reason is
-  'Why this attempt is refused or failed: releaseDecision''s own reason on a refusal, or the failing command''s output tail (release_record) on a failure. Null for prepared/applying/released.';
+  'Why this attempt ended as it did: releaseDecision''s own reason on a refusal, the failing command''s output tail (release_record) on a failure, the operator''s reason on a rollback, or the accepted override (--reconcile --accept-tag-without-candidate-commit) on a reconciled release. Null for prepared/applying, and for a release proved without an override.';
 comment on column zz.release_attempt.plugin_id is
   'The plugin this attempt releases — the base subject''s own plugin, written by release_prepare. Keys release_attempt_applying_plugin_idx: at most one applying attempt per plugin.';
 comment on column zz.release_attempt.applied_by is

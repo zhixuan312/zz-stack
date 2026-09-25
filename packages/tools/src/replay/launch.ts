@@ -46,7 +46,9 @@ import { join } from "node:path";
 import { Mcp } from "@zz/mcp-client";
 
 import { die, optional, parseArgs, platformToken, required } from "../lib/cli.js";
-import { applyPatch, changedPaths, createWorktree, readReleaseLock, removeWorktree, type Worktree } from "./git.js";
+import {
+  applyPatch, changedPaths, createWorktree, holdWorktree, readReleaseLock, removeWorktree, type Worktree,
+} from "./git.js";
 import {
   assertRoleEvents, candidateMcpConfig, candidatePrompt, idempotencyKey, MAX_TURNS_CAP, NO_MCP_CONFIG,
   refuseBeforeIO, releaseLockMismatch, simulatedPersonPersona, stillAsking, type RuntimeEnv,
@@ -193,10 +195,10 @@ export function redact(s: string, secrets: readonly string[]): string {
  *  judged by where it really lands (`realpathSync`, which also catches a symlinked parent
  *  directory) and must stay inside the clone, and then opened `O_NOFOLLOW | O_NONBLOCK` and
  *  `fstat`ed — only a regular file is read, so a symlink swapped in after the check, a FIFO or a
- *  device is refused rather than followed or blocked on. Nothing the session started is still
- *  running by now to swap a path between the check and the read: each turn's whole process group
- *  is killed when the turn returns (`runGrouped`, session.ts). Exported for
- *  `checks/replay-produced-symlink.ts`. */
+ *  device is refused rather than followed or blocked on. Nothing the session started can swap a
+ *  path between the check and the read: `worktree` is the held tree (`holdWorktree`, git.ts),
+ *  renamed out of every sandbox's writable path, so a command that outlived its turn can no
+ *  longer change any path in it. Exported for `checks/replay-produced-symlink.ts`. */
 export function collectProduced(
   worktree: Pick<Worktree, "path" | "gitDir">, transcript: string, secrets: readonly string[],
 ): ProducedRecord {
@@ -487,6 +489,8 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
       }, worktree.path, logPath, gitView);
     }
 
+    // Held before it is read: past this line no process the session left can change a path in it.
+    worktree = holdWorktree(worktree);
     // produced is collected and persisted through replay_close BEFORE the verifier is ever
     // attempted — replay_score (the verifier) reads zz.replay_run.produced, and a run scored
     // before that column is written would find nothing there and refuse. Both calls go through

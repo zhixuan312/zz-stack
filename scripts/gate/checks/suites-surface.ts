@@ -137,8 +137,10 @@ check("the launcher's git reads only its own repository outside the tree, so no 
       runsCheck("replay-git-fsmonitor.ts"));
 check("a fetched third-party tree carrying a .git or a filter attribute is refused before any git command runs, and every file of it is digested",
       runsCheck("replay-fetched-tree.ts"));
-check("every sandboxed session process runs in its own process group, killed when it returns, so nothing it started is left when the tree is read",
+check("every sandboxed session process runs in its own process group, killed when it returns, so a background command that stays in the group is gone when the turn ends",
       runsCheck("replay-process-group.ts"));
+check("the launcher renames the tree out of every sandbox's writable path before reading it, so a command that outlived its turn (setsid) cannot change any path the launcher reads",
+      runsCheck("replay-hold-tree.ts"));
 check("collectProduced never follows a symlink out of the clone into what it ships as produced",
       runsCheck("replay-produced-symlink.ts"));
 check("no replay session can read the launcher's process: a fresh PID namespace under bwrap, no process-info outside the sandbox under Seatbelt",

@@ -30,4 +30,25 @@ deploy/.env
 deploy/.env.*
 dist/release
 *.tgz
-.DS_Store
+# Every .gitignore pattern, mirrored. A release checks the tree is clean, but `git status` does
+# not show ignored files, so without these a `*.pem` or `.env` lying under catalog/ or services/
+# would be baked into a published image — and anything extra under catalog/ moves the
+# `tree_digest` plugin_register records for a local_dir, which the replay launcher (copying only
+# what git tracks) could then never match. A .gitignore pattern with no slash but a trailing one
+# matches at any depth, and a .dockerignore pattern only at the root, hence `**/`.
+# COUPLED: scripts/gate/checks/image.ts fails when a .gitignore pattern has no line here.
+**/runs
+**/.env
+**/*.env
+**/data
+**/zz-artifacts
+**/credentials.json
+**/__pycache__
+**/*.pyc
+**/.DS_Store
+**/*.pem
+**/*.key
+**/.marketplace-staging
+**/docs
+evals/results
+**/evals/results

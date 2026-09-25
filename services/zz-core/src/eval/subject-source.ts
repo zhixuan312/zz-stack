@@ -14,7 +14,8 @@ import { join, sep } from "node:path";
 import { promisify } from "node:util";
 
 import {
-  CATALOG_DIR, type PluginComponent, pluginDirComponents, pluginTreeDigest, publicHttpsUrl, symlinkRefusal,
+  CATALOG_DIR, gitInstruction, IMAGE_UNSHIPPED, type PluginComponent, pluginDirComponents, pluginTreeDigest,
+  publicHttpsUrl, symlinkRefusal,
 } from "@zz/catalog";
 
 /** A reader's components and the digest of every file it ships, or null for a directory with
@@ -23,12 +24,22 @@ import {
  *  component set. Both walks, and their symlink refusals, are @zz/catalog's, shared with the
  *  replay launcher: `pluginDirComponents` for the components the digest is over, and
  *  `pluginTreeDigest` for everything else a plugin ships (hooks, commands, agents, `.mcp.json`,
- *  server code), recorded as `release_identity.tree_digest` for the launcher to check. */
-function resolveLocalDir(path: string): { components: PluginComponent[]; treeDigest: string } | { error: string } | null {
+ *  server code), recorded as `release_identity.tree_digest` for the launcher to check.
+ *
+ *  Refused first, by name, whatever the kind: a source the launcher would always refuse to replay
+ *  (`gitInstruction`, the same function it calls) — a `.git` anywhere, or a `.gitattributes`
+ *  assigning a filter, git-lfs included. `ownGit` is a git clone's own `.git`. A catalog
+ *  directory is digested without what the image leaves out (`IMAGE_UNSHIPPED`), so a checkout and
+ *  the image record the same digest. */
+function resolveLocalDir(
+  path: string, opts: { ownGit?: boolean; catalog?: boolean } = {},
+): { components: PluginComponent[]; treeDigest: string } | { error: string } | null {
+  const instruction = gitInstruction(path, { ownGit: opts.ownGit });
+  if (instruction) return { error: `${instruction}, which git would run commands from; such a source is never replayed` };
   const got = pluginDirComponents(path);
   if ("error" in got) return got;
   if (!got.components.length) return null;
-  const tree = pluginTreeDigest(path);
+  const tree = pluginTreeDigest(path, opts.catalog ? IMAGE_UNSHIPPED : undefined);
   if ("error" in tree) return tree;
   return { components: got.components, treeDigest: tree.digest };
 }
@@ -189,7 +200,7 @@ async function resolveGit(locator: string): Promise<SourceResolution> {
     const head = await git([], ["rev-parse", "HEAD"], dir);
     if (!head.ok) return { error: head.error };
 
-    const resolved = resolveLocalDir(dir);
+    const resolved = resolveLocalDir(dir, { ownGit: true });
     if (!resolved) return { error: "no SKILL.md and no flow.json were found in the cloned repository" };
     if ("error" in resolved) return resolved;
     return {
@@ -279,7 +290,7 @@ export async function resolveSource(kind: "local_dir" | "git" | "package", locat
   if (kind === "local_dir") {
     const dir = confinedLocalDir(locator);
     if (typeof dir !== "string") return dir;
-    const resolved = resolveLocalDir(dir);
+    const resolved = resolveLocalDir(dir, { catalog: true });
     if (!resolved) return { error: "no SKILL.md and no flow.json were found under this path" };
     return "error" in resolved
       ? resolved

@@ -2,9 +2,10 @@
 // Replay isolation, R3 item 5: `collectProduced` (launch.ts) checks each path the session left and
 // then reads it; a command the session left running in the background could swap the path for a
 // symlink in between. Every sandboxed process runs as its own process group and the whole group is
-// killed when it returns (`runGrouped`, session.ts), so by collection nothing of the session is
-// left. Proven live: a background child left by a stand-in `claude` is gone once `runTurn`
-// returns — and, as the control, the same script under a plain `execFileSync` leaves it running.
+// killed when it returns (`runGrouped`, session.ts). Proven live: a background child left by a
+// stand-in `claude` is gone once `runTurn` returns — and, as the control, the same script under a
+// plain `execFileSync` leaves it running. A command that leaves the group (`setsid`, as `claude`'s
+// own Bash tool does) is out of this kill's reach; checks/replay-hold-tree.ts proves what covers it.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";

@@ -374,13 +374,16 @@ export function pluginContentDigest(components: readonly PluginComponent[]): str
  *
  *  DELIBERATE: a symlink, a FIFO, a socket or a device anywhere is refused, never followed and
  *  never skipped — a skipped link is content the digest silently does not cover, and a followed
- *  one reads outside the directory. */
-export function pluginTreeDigest(dir: string): { digest: string } | { error: string } {
+ *  one reads outside the directory.
+ *
+ *  `unshipped` names entries left out at any depth, for a catalog directory the platform reads
+ *  from its image (`IMAGE_UNSHIPPED`). */
+export function pluginTreeDigest(dir: string, unshipped?: string): { digest: string } | { error: string } {
   if (!existsSync(dir) || !lstatSync(dir).isDirectory()) return { error: `${dir} is not a directory` };
   const lines: string[] = [];
   const walk = (d: string, rel: string): string | null => {
     for (const f of readdirSync(d, { withFileTypes: true })) {
-      if (f.name === ".git") continue;
+      if (f.name === ".git" || f.name === unshipped) continue;
       const path = rel ? `${rel}/${f.name}` : f.name;
       if (f.isSymbolicLink()) return `${path} is a symlink; a plugin's files are read only as real files and directories`;
       if (f.isDirectory()) {
@@ -396,6 +399,48 @@ export function pluginTreeDigest(dir: string): { digest: string } | { error: str
   const bad = walk(dir, "");
   if (bad) return { error: bad };
   return { digest: sha256(lines.sort().join("\n")) };
+}
+
+/** What `COPY catalog /catalog` leaves out of the image, at any depth under the catalog: a flow's
+ *  `tests` fixtures. A `local_dir` subject's `tree_digest` is over the files the platform can see,
+ *  so it is taken without them on every host — the image, a checkout (`ZZ_CATALOG_DIR`) and the
+ *  replay launcher's copy — or the three would never agree on a plugin that has tests.
+ *
+ *  COUPLED: the `.dockerignore` line that excludes `tests` anywhere under `catalog/`, which
+ *  `scripts/gate/checks/image.ts` requires. */
+export const IMAGE_UNSHIPPED = "tests";
+
+/** A `.gitattributes` line that sets, unsets or defines a macro over the `filter` attribute. */
+const FILTER_ATTRIBUTE = /(^|\s)[-!]?filter(=|\s|$)/m;
+
+/** The first entry under `dir` git would take as an instruction rather than content, named, or
+ *  null: a `.git` of any kind at any depth (a repository whose `config` names a filter driver, an
+ *  fsmonitor or a hooks path), or a `.gitattributes` that assigns a filter — git-lfs's
+ *  `filter=lfs` included. Names compared case-folded: a case-insensitive filesystem opens `.GIT`
+ *  for `.git`. Symlinks are not followed; `pluginTreeDigest` refuses them.
+ *
+ *  COUPLED: the one rule behind both `plugin_register` (zz-core, subject-source.ts), which refuses
+ *  such a source at registration, and the replay launcher (packages/tools, third-party.ts), which
+ *  refuses such a fetched tree before any git command reads it — so nothing registers that the
+ *  launcher would always refuse. `ownGit` passes over `dir`'s own top-level `.git`: a clone
+ *  `plugin_register` just made, whose metadata is git's own, not the source's. */
+export function gitInstruction(dir: string, opts: { ownGit?: boolean } = {}, rel = ""): string | null {
+  for (const f of readdirSync(dir, { withFileTypes: true })) {
+    const path = rel ? `${rel}/${f.name}` : f.name;
+    const name = f.name.toLowerCase();
+    if (name === ".git") {
+      if (opts.ownGit && !rel && f.name === ".git") continue;
+      return `${path} is git metadata`;
+    }
+    if (name === ".gitattributes" && f.isFile() && FILTER_ATTRIBUTE.test(readFileSync(join(dir, f.name), "utf8"))) {
+      return `${path} assigns a git filter`;
+    }
+    if (f.isDirectory()) {
+      const bad = gitInstruction(join(dir, f.name), {}, path);
+      if (bad) return bad;
+    }
+  }
+  return null;
 }
 
 // -------------------------------------------------------------------------------------------

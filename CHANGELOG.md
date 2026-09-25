@@ -82,6 +82,9 @@ zz-stack 0.76.0 · console 0.19.0
   design it cannot establish a score before the first real observation revises it.
 
 ### Changed
+- A control waiver on every gap of a predecessor step now counts that step as completed, so the
+  step after it is no longer blocked by '<before> has not completed'; a partly waived predecessor
+  still blocks.
 - **`zz-plugin-eval` is an eight-stage flow**: identify, observe, discover, define-qualify,
   evaluate, explain, improve and promote-verify. IMPROVE and PROMOTE-VERIFY need a shell;
   everything before them is MCP-only. `findings.md` is now ungated measurement output.
@@ -226,10 +229,27 @@ zz-stack 0.76.0 · console 0.19.0
   address only) and pins the fetch to the checked addresses. `npm pack` for a package source uses
   the operator's configured registry (`npm config get registry`, the URL only). A scoped
   `@scope:registry` is not carried. The launcher's git now keeps `HTTPS_PROXY`, `HTTP_PROXY`,
-  `NO_PROXY` (either case), `GIT_SSL_CAINFO`, `SSL_CERT_FILE` and `SSL_CERT_DIR`.
+  `NO_PROXY` (either case), `GIT_SSL_CAINFO`, `SSL_CERT_FILE`, `SSL_CERT_DIR` and
+  `NODE_EXTRA_CA_CERTS`.
 - Each replay session process runs in its own process group, and the group is killed when the
-  turn returns. A background command a session starts no longer outlives its turn, unless it
-  leaves the group with `setsid` on macOS.
+  turn returns. That does not reach `claude`'s own Bash tool, whose shell starts in a session of
+  its own (`setsid`). On Linux such a command still dies with the turn, because the session's
+  PID namespace dies with it. On macOS it can keep running, so the launcher renames the tree
+  out of the sandbox's writable path before reading it, and the session home before deleting
+  it. Nothing still running can then change a path the launcher reads.
+- `plugin_register` refuses a source with a symlink, FIFO, socket or device anywhere in it, and
+  names the path.
+- `plugin_register` also refuses a source the replay launcher would always refuse: a `.git` at
+  any depth (a package's `package/.git` included), or a `.gitattributes` that assigns a filter,
+  such as git-lfs's `filter=lfs`. Both use the same rule, `gitInstruction` in `@zz/catalog`.
+- A `local_dir` subject's `tree_digest` now leaves out `tests` directories, as the image does.
+  A platform that reads a checkout's catalog (`ZZ_CATALOG_DIR`) used to count them; a `local_dir`
+  subject it captured with a `tests` directory must be registered again under a new version.
+  The launcher copies only the files git tracks in `--repo`, so an untracked `.DS_Store` or swap
+  file no longer fails a replay, and a mismatch names the untracked files as the likely cause.
+  Every `.gitignore` pattern is now mirrored in `.dockerignore`, so an ignored file (a `.DS_Store`,
+  a `*.pem`, a `.env`) never enters the image, and the gate fails on a pattern left unmirrored.
+- The launcher's `npm pack` keeps the same proxy and CA variables as its git (one shared list).
 - `zz-plugin-improve` 0.4: token files are written with the agent's file-writing tool and
   `chmod 600`. The shell heredoc fallback is gone.
 

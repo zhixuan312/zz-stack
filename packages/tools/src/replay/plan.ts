@@ -155,14 +155,28 @@ export const GIT_HARDENED_ARGS = [
  *  same, so its recorded `tree_digest` is over the bytes this launcher's checkout writes. */
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
-/** Copied into a launcher git process when present: the process basics, and the proxy and CA
- *  settings a fetch may need to leave the host. Nothing that can hold a credential of the
- *  launcher's or name a git command. */
-const GIT_ENV_ALLOW = [
-  "PATH", "LANG", "LC_ALL", "SystemRoot",
+/** The proxy and CA settings a fetch may need to leave the host — git's (`GIT_SSL_CAINFO`,
+ *  OpenSSL's `SSL_CERT_*`) and npm's (it honours the proxy variables, and takes an extra CA from
+ *  `NODE_EXTRA_CA_CERTS`, never `SSL_CERT_FILE`). One list, so the launcher's git and its
+ *  `npm pack` (third-party.ts) reach the network the same way. Nothing here can hold a credential
+ *  of the launcher's or name a command. */
+const NETWORK_ENV_ALLOW = [
   "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy",
-  "GIT_SSL_CAINFO", "SSL_CERT_FILE", "SSL_CERT_DIR",
+  "GIT_SSL_CAINFO", "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS",
 ] as const;
+
+/** `source`'s values for `NETWORK_ENV_ALLOW`, the ones present. */
+export function networkEnv(source: Readonly<Record<string, string | undefined>>): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const key of NETWORK_ENV_ALLOW) {
+    const value = source[key];
+    if (value !== undefined) env[key] = value;
+  }
+  return env;
+}
+
+/** Copied into a launcher git process when present, beside `networkEnv`: the process basics. */
+const GIT_ENV_ALLOW = ["PATH", "LANG", "LC_ALL", "SystemRoot"] as const;
 
 /** The whole environment a launcher git process runs with — never the launcher's own, which can
  *  hold `ZZ_TOKEN`. No system or global config and no system attributes (a filter driver or
@@ -175,7 +189,7 @@ const GIT_ENV_ALLOW = [
  *  git 2.40+, `GIT_ATTR_SOURCE` also stops the attribute being read at all; an older git ignores
  *  the variable, and the first layer is what stands. */
 export function hardenedGitEnv(source: Readonly<Record<string, string | undefined>>): Record<string, string> {
-  const env: Record<string, string> = {};
+  const env = networkEnv(source);
   for (const key of GIT_ENV_ALLOW) {
     const value = source[key];
     if (value !== undefined) env[key] = value;

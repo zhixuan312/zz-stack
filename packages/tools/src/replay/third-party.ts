@@ -20,9 +20,13 @@
  *     `--repo`'s CURRENT content, pinned by `tree_digest` and `content_digest` together: a
  *     checkout whose copy of the plugin moved since capture — any file of it, not only its
  *     skills — fails the run, and the operator checks out the captured state to replay it.
+ *     Only the files git tracks are copied, less any under `tests` (`IMAGE_UNSHIPPED`): the
+ *     platform captured from its image, which a clean release tree built, so a `.DS_Store` or an
+ *     editor's swap file in the operator's checkout is not part of what was captured.
  *
- * Whatever the kind, the fetched tree is refused before any git command reads it (`unsafeEntry`)
- * when it carries a `.git` entry or a `.gitattributes` naming a filter — a package or a copied
+ * Whatever the kind, the fetched tree is refused before any git command reads it
+ * (`gitInstruction`, @zz/catalog — the rule `plugin_register` refuses the same source by) when
+ * it carries a `.git` entry or a `.gitattributes` naming a filter — a package or a copied
  * directory is somebody else's bytes, and git would take either as instructions. Then both
  * digests are recomputed with @zz/catalog's walks, the ones `plugin_register` used, the tree is
  * committed once into the launcher's own repository beside it (git.ts), so `changedPaths`
@@ -33,14 +37,21 @@
  * `git:` / `package:` / `local_dir:` ref `fetchThirdParty` returns — the launcher compares them.
  */
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readlinkSync, realpathSync, rmSync, symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join, sep } from "node:path";
+import { dirname, join, sep } from "node:path";
 
-import { pluginContentDigest, pluginDirComponents, pluginTreeDigest, publicHttpsUrl } from "@zz/catalog";
+import {
+  gitInstruction, IMAGE_UNSHIPPED, pluginContentDigest, pluginDirComponents, pluginTreeDigest, publicHttpsUrl,
+} from "@zz/catalog";
 
-import { exposeGitDir, freshRepo, gitIn, initGitDir, removeWorktree, type Worktree } from "./git.js";
-import { GIT_EXEC_TIMEOUT_MS } from "./plan.js";
+import {
+  exposeGitDir, freshRepo, gitIn, initGitDir, removeWorktree, trackedFiles, untrackedFiles, type Worktree,
+} from "./git.js";
+import { GIT_EXEC_TIMEOUT_MS, networkEnv } from "./plan.js";
 
 /** What `replay_read` hands back about a subject, the fields this file needs. */
 interface SubjectSource {
@@ -131,34 +142,11 @@ const FETCH_SAFE = ["-c", "protocol.allow=never", "-c", "protocol.https.allow=al
 
 const SNAPSHOT_IDENTITY = ["-c", "user.name=zz-replay", "-c", "user.email=zz-replay@localhost", "-c", "commit.gpgsign=false"];
 
-/** A `.gitattributes` line that sets, unsets or defines a macro over the `filter` attribute. */
-const FILTER_ATTRIBUTE = /(^|\s)[-!]?filter(=|\s|$)/m;
-
-/** The first entry in `dir` git would take as an instruction rather than content, or null: a
- *  `.git` of any kind at any depth (a repository whose `config` names a filter driver, an
- *  fsmonitor or a hooks path), or a `.gitattributes` that assigns a filter. Names compared
- *  case-folded — a case-insensitive filesystem opens `.GIT` for `.git`. Symlinks are not followed
- *  here; `pluginTreeDigest` refuses them next. */
-function unsafeEntry(dir: string, rel = ""): string | null {
-  for (const f of readdirSync(dir, { withFileTypes: true })) {
-    const path = rel ? `${rel}/${f.name}` : f.name;
-    const name = f.name.toLowerCase();
-    if (name === ".git") return `${path} is git metadata`;
-    if (name === ".gitattributes" && f.isFile() && FILTER_ATTRIBUTE.test(readFileSync(join(dir, f.name), "utf8"))) {
-      return `${path} assigns a git filter`;
-    }
-    if (f.isDirectory() && !f.isSymbolicLink()) {
-      const bad = unsafeEntry(join(dir, f.name), path);
-      if (bad) return bad;
-    }
-  }
-  return null;
-}
-
 /** The checks every fetched tree passes before anything else reads it: nothing git would obey,
- *  then every file's digest, then the skills-and-manifest digest. Throws the refusal. */
-function verifyTree(path: string, plan: FetchPlan): void {
-  const unsafe = unsafeEntry(path);
+ *  then every file's digest, then the skills-and-manifest digest. Throws the refusal; `why` adds
+ *  the likely cause to a tree-digest mismatch. */
+function verifyTree(path: string, plan: FetchPlan, why?: () => string): void {
+  const unsafe = gitInstruction(path);
   if (unsafe) {
     throw new Error(`launchReplay: the fetched source is refused — ${unsafe}, which git would run commands from`);
   }
@@ -166,7 +154,7 @@ function verifyTree(path: string, plan: FetchPlan): void {
   if ("error" in tree) throw new Error(`launchReplay: the fetched source cannot be digested — ${tree.error}`);
   if (tree.digest !== plan.treeDigest) {
     throw new Error(`launchReplay: the fetched source's files digest to ${tree.digest}, but the subject was ` +
-      `captured at ${plan.treeDigest} — refusing to replay a different plugin`);
+      `captured at ${plan.treeDigest} — refusing to replay a different plugin${why ? ` (${why()})` : ""}`);
   }
   const got = pluginDirComponents(path);
   if ("error" in got) throw new Error(`launchReplay: the fetched source cannot be digested — ${got.error}`);
@@ -212,7 +200,10 @@ function fetchPackage(plan: Extract<FetchPlan, { kind: "package" }>, dest: strin
   try {
     const registry = operatorRegistry(scratch);
     // A throwaway HOME: no `~/.npmrc` of the operator's (and no registry token in it) is read.
-    const env: Record<string, string> = { PATH: process.env.PATH ?? "", HOME: scratch, npm_config_cache: join(scratch, "cache") };
+    // The same proxy and CA variables the launcher's git keeps (`networkEnv`, plan.ts).
+    const env: Record<string, string> = {
+      ...networkEnv(process.env), PATH: process.env.PATH ?? "", HOME: scratch, npm_config_cache: join(scratch, "cache"),
+    };
     const out = exec("npm", ["pack", "--json", "--pack-destination", scratch, "--ignore-scripts", `--registry=${registry}`,
       "--", plan.spec], { cwd: scratch, env });
     const entry = (JSON.parse(out) as { filename?: string; integrity?: string; shasum?: string }[])[0];
@@ -233,7 +224,10 @@ function fetchPackage(plan: Extract<FetchPlan, { kind: "package" }>, dest: strin
   }
 }
 
-function copyLocalDir(plan: Extract<FetchPlan, { kind: "local_dir" }>, repoRoot: string, dest: string): void {
+/** The files git tracks in `--repo`'s copy of the catalog directory, less any under `tests`, into
+ *  `dest`. Returns the directory copied from. A tracked file missing from the working tree is
+ *  refused by name, and a symlink is copied as one, for `pluginTreeDigest` to refuse next. */
+function copyLocalDir(plan: Extract<FetchPlan, { kind: "local_dir" }>, repoRoot: string, dest: string): string {
   const catalog = realpathSync(join(repoRoot, "catalog"));
   let src: string;
   try {
@@ -242,7 +236,42 @@ function copyLocalDir(plan: Extract<FetchPlan, { kind: "local_dir" }>, repoRoot:
     throw new Error(`launchReplay: ${join(catalog, plan.rel)} does not exist in --repo's catalog`);
   }
   if (!src.startsWith(`${catalog}${sep}`)) throw new Error(`launchReplay: ${plan.rel} resolves outside --repo's catalog`);
-  cpSync(src, dest, { recursive: true, verbatimSymlinks: true });
+  let tracked: string[];
+  try {
+    tracked = trackedFiles(src);
+  } catch (err) {
+    throw new Error(`launchReplay: git cannot list the files it tracks in ${src} — a local_dir subject is copied from ` +
+      `a git checkout's tracked files: ${((err as { stderr?: string }).stderr ?? (err as Error).message).trim().slice(-300)}`);
+  }
+  for (const rel of tracked) {
+    if (rel.split("/").includes(IMAGE_UNSHIPPED)) continue;
+    const from = join(src, rel);
+    let st;
+    try {
+      st = lstatSync(from);
+    } catch {
+      throw new Error(`launchReplay: ${rel} is tracked in --repo's ${plan.rel} but missing from its working tree`);
+    }
+    const parent = realpathSync(dirname(from));
+    if (parent !== src && !parent.startsWith(`${src}${sep}`)) throw new Error(`launchReplay: ${rel} resolves outside --repo's ${plan.rel}`);
+    const to = join(dest, rel);
+    mkdirSync(dirname(to), { recursive: true });
+    if (st.isSymbolicLink()) symlinkSync(readlinkSync(from), to);
+    else if (st.isFile()) copyFileSync(from, to);
+    else throw new Error(`launchReplay: ${rel} in --repo's ${plan.rel} is not a regular file`);
+  }
+  return src;
+}
+
+/** Why a local_dir copy may digest differently from its capture: a tracked file changed since, or
+ *  files git does not track — never copied, but digested by a platform that read a checkout's
+ *  catalog (`ZZ_CATALOG_DIR`) or an image built from a tree that held them. Those are named. */
+function mismatchCause(src: string): string {
+  const moved = "a file git tracks in --repo differs from the captured one (check out the state it was captured at)";
+  const extra = untrackedFiles(src);
+  if (!extra.length) return moved;
+  const shown = extra.slice(0, 5).join(", ") + (extra.length > 5 ? `, and ${extra.length - 5} more` : "");
+  return `${moved}, or the capture saw files git does not track, which are never copied: ${shown}`;
 }
 
 /** The subject's source at exactly what it was captured as, in this run's tree, both digests
@@ -263,10 +292,14 @@ export function fetchThirdParty(plan: FetchPlan, repoRoot: string, teamSlug: str
       verifyTree(repo.path, plan);
       ref = `git:${plan.commit}`;
     } else {
+      let why: (() => string) | undefined;
       if (plan.kind === "package") fetchPackage(plan, repo.path);
-      else copyLocalDir(plan, repoRoot, repo.path);
+      else {
+        const src = copyLocalDir(plan, repoRoot, repo.path);
+        why = () => mismatchCause(src);
+      }
       // Before the first git command: a copied `.git/config` would otherwise be the one it reads.
-      verifyTree(repo.path, plan);
+      verifyTree(repo.path, plan, why);
       commit = snapshot(repo);
       ref = plan.kind === "package" ? `package:${plan.integrity}` : `local_dir:${plan.locator}`;
     }

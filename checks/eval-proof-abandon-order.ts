@@ -3,7 +3,11 @@
 // own commit, then cancels what it spawned, and counts the allocation's runs INSIDE the resolving
 // transaction — after locking the token rows, so a replay_start whose run insert is in flight is
 // waited for and counted. Reading "any proof run exists" before the revoke let a replay_start in
-// the gap draw a sealed case while the split was released. Driven against a stubbed pg.Pool.
+// the gap draw a sealed case while the split was released. Round-4 review: the cancel and the
+// count select the candidate's allocations by candidate_id, revoked or not — a retry after a
+// failed resolving transaction revokes nothing (the first attempt's revoke committed), and
+// counting only what it revoked released a split whose cases were drawn. Driven against a
+// stubbed pg.Pool.
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -16,9 +20,12 @@ const ALLOC = "70000000-0000-4000-8000-000000000001";
 type Result = { rows: Record<string, unknown>[]; rowCount: number };
 const statements: { on: "pool" | "tx"; sql: string; values: unknown[] }[] = [];
 let runsExist = false;
+let revokeFindsOpen = true;
 
 function answer(sql: string): Result {
-  if (/^update zz\.replay_verifier_token .* returning id/.test(sql)) return { rows: [{ id: ALLOC }], rowCount: 1 };
+  if (/^update zz\.replay_verifier_token set revoked_at/.test(sql)) return { rows: [], rowCount: revokeFindsOpen ? 1 : 0 };
+  // The allocation row outlives its revoke: selected by candidate_id, it is always there.
+  if (/^select id::text as id from zz\.replay_verifier_token where candidate_id/.test(sql)) return { rows: [{ id: ALLOC }], rowCount: 1 };
   if (/from zz\.replay_run rr/.test(sql)) return { rows: [], rowCount: 0 }; // nothing live left to cancel
   if (/from zz\.eval_idempotency/.test(sql)) return { rows: [], rowCount: 0 };
   if (/^update zz\.candidate set status/.test(sql)) return { rows: [], rowCount: 1 };
@@ -47,21 +54,26 @@ const candidate = {
   improvement_run_id: "10000000-0000-4000-8000-000000000001", touched_owners: [],
 };
 
-for (const executed of [true, false]) {
+for (const [executed, retry] of [[true, false], [false, false], [true, true], [false, true]]) {
   statements.length = 0;
   runsExist = executed;
-  const out = await abandonProof(db(), candidate, `abandon-${executed}`, "owner@example.test");
+  revokeFindsOpen = !retry;
+  const out = await abandonProof(db(), candidate, `abandon-${executed}-${retry}`, "owner@example.test");
   const at = (on: "pool" | "tx", re: RegExp) => statements.findIndex((s) => s.on === on && re.test(s.sql));
 
-  const revoke = at("pool", /^update zz\.replay_verifier_token set revoked_at = now\(\) .* returning id/);
+  const revoke = at("pool", /^update zz\.replay_verifier_token set revoked_at = now\(\)/);
   const cancel = at("pool", /from zz\.replay_run rr/);
   const begin = at("tx", /^BEGIN$/);
-  const lock = at("tx", /from zz\.replay_verifier_token where id = any\(.*\) for update/);
+  const lock = at("tx", /from zz\.replay_verifier_token where candidate_id = \$1::uuid for update/);
   const count = at("tx", /select exists .* from zz\.replay_run where verifier_allocation_id = any/);
   assert.ok(revoke >= 0 && revoke < cancel, "the token is revoked, on its own statement, before anything is cancelled");
   assert.ok(cancel < begin, "runs are cancelled before the resolving transaction");
   assert.ok(begin < lock && lock < count, "the runs are counted inside the transaction, after locking the token rows");
-  assert.deepEqual(statements[count].values, [[ALLOC]], "counted for the allocation the revoke returned");
+  assert.match(statements[cancel].sql, /select vt\.id from zz\.replay_verifier_token vt where vt\.candidate_id = \$1::uuid/,
+    "the cancel reaches every allocation of the candidate, not only what this call revoked");
+  assert.doesNotMatch(statements[cancel].sql, /revoked_at/, "the cancel is not narrowed to open tokens");
+  assert.deepEqual(statements[count].values, [[ALLOC]],
+    retry ? "a retry whose revoke found nothing open still counts the allocation" : "counted for the candidate's allocation");
   assert.ok(!statements.slice(0, revoke).some((s) => /replay_run/.test(s.sql)), "nothing reads the runs before the revoke");
 
   const evaluation = statements.find((s) => /insert into zz\.candidate_evaluation/.test(s.sql));

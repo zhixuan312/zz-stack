@@ -334,10 +334,11 @@ export async function resolveOutcome(
     readonly resource_usage: unknown;
     readonly dimension_scores: unknown;
     readonly statistics: unknown;
-    /** Whether any run of this allocation executed on a proof case (`proofSplitSpent`) — or
-     *  the allocations whose runs decide it, counted inside this transaction after the token is
-     *  revoked (`abandonProof`), so a run registered before the count is always seen. */
-    readonly observed: boolean | { readonly allocations: readonly string[] };
+    /** `true` when the caller measured runs on the proof cases (`proofSplitSpent`); `"count"`
+     *  when that is decided here, inside this transaction after the token is revoked, over every
+     *  allocation this candidate ever held — revoked or not, so a retry whose earlier revoke
+     *  already committed still sees the runs that revoke's allocations drew (`anyRunOf`). */
+    readonly observed: true | "count";
     /** The proof-time leakage answer, recorded in this transaction so it rolls back with it. */
     readonly leakage_assessment?: AskedEvaluatorAnswer;
   },
@@ -352,8 +353,8 @@ export async function resolveOutcome(
   // screenLeakage's own reading rule: no reading from the critic is `unavailable`.
   const leakageReading = outcome.leakage_assessment
     ? outcome.leakage_assessment.result.reading ?? "unavailable" : null;
-  let splitSpent = typeof outcome.observed === "boolean"
-    ? proofSplitSpent(outcome.proof_status, outcome.observed, leakageReading) : true;
+  let splitSpent = outcome.observed === true
+    ? proofSplitSpent(outcome.proof_status, true, leakageReading) : true;
 
   const ledgerOutcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
     // phase: "resolve"/"abandon" — never bare {candidate_id} — so a caller who reuses the OPEN
@@ -395,8 +396,8 @@ export async function resolveOutcome(
         "update zz.replay_verifier_token set revoked_at = now() where candidate_id = $1::uuid and revoked_at is null",
         [candidate.id]);
       let statistics = outcome.statistics;
-      if (typeof outcome.observed !== "boolean") {
-        const observed = await anyRunOf(client, outcome.observed.allocations);
+      if (outcome.observed === "count") {
+        const observed = await anyRunOf(client, candidate.id);
         splitSpent = proofSplitSpent(outcome.proof_status, observed, leakageReading);
         statistics = { ...(outcome.statistics as Record<string, unknown>), proof_runs_executed: observed };
       }
@@ -427,7 +428,7 @@ export async function resolveOutcome(
     },
   );
   const candidateEvaluationId = ledgerOutcome.replayed ? ledgerOutcome.result_id : ledgerOutcome.result.id;
-  const proofSplit = ledgerOutcome.replayed && typeof outcome.observed !== "boolean"
+  const proofSplit = ledgerOutcome.replayed && outcome.observed === "count"
     ? await proofSplitOf(db() as pg.Pool, candidate.id) : splitSpent ? "spent" : "released";
 
   // FR-58: `release_mode: not_applicable` is append-only, so it is written only when this
@@ -481,20 +482,25 @@ async function readBackIfSameResolve(
   };
 }
 
-/** True once any of these allocations has a run at all, whatever its status: `replay_start`
- *  draws a sealed proof case and binds it to a session when it registers the run, and a run
- *  already `cancelled` may have been running when it was. Conservative on purpose — a sealed
- *  proof errs toward spent.
+/** True once any allocation this candidate ever held has a run at all, whatever its status:
+ *  `replay_start` draws a sealed proof case and binds it to a session when it registers the run,
+ *  and a run already `cancelled` may have been running when it was. Conservative on purpose — a
+ *  sealed proof errs toward spent.
  *
- *  The token rows are locked FOR UPDATE first: a `replay_start` whose run insert is in flight
- *  holds a KEY SHARE lock on its token row through the `verifier_allocation_id` foreign key until
- *  it commits, so this waits for that run and then counts it, rather than reading past it. */
-async function anyRunOf(client: Pick<pg.PoolClient, "query">, allocations: readonly string[]): Promise<boolean> {
+ *  Selected by `candidate_id`, never by `revoked_at is null`: an abandon whose resolving
+ *  transaction failed (idempotency_conflict, a dropped connection) has already committed its
+ *  revoke, and a retry that counted only what IT revoked would count nothing and release a split
+ *  whose cases were drawn. The token rows are locked FOR UPDATE: a `replay_start` whose run insert
+ *  is in flight holds a KEY SHARE lock on its token row through the `verifier_allocation_id`
+ *  foreign key until it commits, so this waits for that run and then counts it. */
+async function anyRunOf(client: Pick<pg.PoolClient, "query">, candidateId: string): Promise<boolean> {
+  const allocations = (await client.query<{ id: string }>(
+    "select id::text as id from zz.replay_verifier_token where candidate_id = $1::uuid for update",
+    [candidateId])).rows.map((r) => r.id);
   if (!allocations.length) return false;
-  await client.query("select id from zz.replay_verifier_token where id = any($1::uuid[]) for update", [[...allocations]]);
   const row = (await client.query<{ any: boolean }>(
     "select exists (select 1 from zz.replay_run where verifier_allocation_id = any($1::uuid[])) as any",
-    [[...allocations]])).rows[0];
+    [allocations])).rows[0];
   return row?.any ?? false;
 }
 
@@ -542,7 +548,9 @@ export async function proveCandidate(
       proof_status: "not_established", reason: "insufficient_proof_cases", release_eligible: false,
       decision: null, guardrails: null, resource_usage: null, dimension_scores: null,
       statistics: { available_proof_cases: caseIds.length, required_minimum: ctx.minProofCases },
-      observed: false,
+      // Counted, not assumed false: a `proving` candidate reaches this too when its case set
+      // shrank below the minimum after opening, and its token may already have drawn cases.
+      observed: "count",
     }, "resolve", initiative);
   }
 

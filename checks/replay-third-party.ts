@@ -1,11 +1,14 @@
 #!/usr/bin/env node
-// Replay isolation, R2 item 5 and R3 item 2: a third-party subject (plugin_register's git,
-// package or local_dir source) is replayable — fetched at the identity it was captured at, its
+// Replay isolation, R2 item 5, R3 item 2 and R4 item 3: a third-party subject (plugin_register's
+// git, package or local_dir source) is replayable — fetched at the identity it was captured at, its
 // content digest AND its tree digest (every file) checked with the walks plugin_register used,
 // refused on any mismatch. The plan is proven on values; the fetch is proven live for local_dir
-// against a throwaway catalog (git and package fetch need the network — the package path is run
-// offline from a local tarball by checks/replay-fetched-tree.ts). A git host is re-checked on
-// this host before any fetch.
+// against a throwaway catalog in a throwaway git repository (git and package fetch need the
+// network — the package path is run offline from a local tarball by
+// checks/replay-fetched-tree.ts). A local_dir copy is the files git tracks, less `tests` — what the
+// platform's image carries — so an untracked `.DS_Store` in the operator's checkout changes
+// nothing, and a mismatch names the untracked files as the likely cause. A git host is re-checked
+// on this host before any fetch.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -16,7 +19,7 @@ import { pathToFileURL } from "node:url";
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const tp = await load("packages/tools/dist/replay/third-party.js");
 const git = await load("packages/tools/dist/replay/git.js");
-const { pluginContentDigest, pluginDirComponents, pluginTreeDigest } = await load("packages/catalog/dist/index.js");
+const { IMAGE_UNSHIPPED, pluginContentDigest, pluginDirComponents, pluginTreeDigest } = await load("packages/catalog/dist/index.js");
 
 const COMMIT = "a".repeat(40);
 const TREE = "b".repeat(64);
@@ -64,22 +67,36 @@ assert.deepEqual(await tp.pinGitPlan({ kind: "package", spec: "x", integrity: "i
 // checked, and a wrapping one-plugin marketplace in the session home.
 const repo = realpathSync(mkdtempSync(join(tmpdir(), "zz-3p-repo-")));
 const slug = `third-party-check-${process.pid}`;
+const g = (...args: string[]) => execFileSync("git", args, { cwd: repo, stdio: ["ignore", "pipe", "pipe"] });
 try {
   const src = join(repo, "catalog", "acme", "tool");
   mkdirSync(join(src, "skills", "greet"), { recursive: true });
   writeFileSync(join(src, "skills", "greet", "SKILL.md"), "---\nname: greet\n---\nSay hello.\n");
+  // Fixtures the image leaves out, tracked all the same.
+  mkdirSync(join(src, IMAGE_UNSHIPPED));
+  writeFileSync(join(src, IMAGE_UNSHIPPED, "case.md"), "a fixture\n");
+  g("init", "-q");
+  g("add", "catalog");
+  g("-c", "user.name=c", "-c", "user.email=c@example.invalid", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "catalog");
   const got = pluginDirComponents(src);
   assert.ok(!("error" in got));
   const digest = pluginContentDigest(got.components);
-  const tree = pluginTreeDigest(src);
+  // What plugin_register records for a catalog directory: without what the image leaves out.
+  const tree = pluginTreeDigest(src, IMAGE_UNSHIPPED);
   assert.ok(!("error" in tree));
   const treeDigest = tree.digest;
+  assert.notEqual(pluginTreeDigest(src).digest, treeDigest, "control: the fixtures would move the digest if counted");
+  // Finder's litter, never tracked: not copied, so not digested.
+  writeFileSync(join(src, ".DS_Store"), "junk");
+  writeFileSync(join(src, "skills", ".SKILL.md.swp"), "junk");
   const local = { kind: "local_dir", locator: "/catalog/x", rel: "acme/tool", digest, treeDigest };
 
   const wt = tp.fetchThirdParty(local, repo, slug);
   try {
     assert.equal(wt.ref, "local_dir:/catalog/x", "the ref is the one replay_start records: local_dir:<locator>");
     assert.equal(readFileSync(join(wt.path, "skills", "greet", "SKILL.md"), "utf8"), "---\nname: greet\n---\nSay hello.\n");
+    assert.equal(existsSync(join(wt.path, ".DS_Store")), false, "an untracked file is not copied");
+    assert.equal(existsSync(join(wt.path, IMAGE_UNSHIPPED)), false, "nor what the image leaves out");
     assert.deepEqual(git.changedPaths(wt), [], "the fetched source is committed, so nothing is reported as produced yet");
     writeFileSync(join(wt.path, "out.md"), "session output\n");
     assert.deepEqual(git.changedPaths(wt), ["out.md"], "what the session writes afterwards is what gets reported");
@@ -108,10 +125,24 @@ try {
   // Same skills, changed hook: the content digest still matches, the tree digest does not.
   mkdirSync(join(src, "hooks"));
   writeFileSync(join(src, "hooks", "hooks.json"), "{\"PreToolUse\": []}\n");
+  g("add", "catalog/acme/tool/hooks");
   assert.equal(pluginContentDigest(pluginDirComponents(src).components), digest, "the content digest never sees hooks");
-  assert.throws(() => tp.fetchThirdParty(local, repo, slug), /files digest to .* refusing to replay a different plugin/,
+  assert.throws(() => tp.fetchThirdParty(local, repo, slug),
+    /files digest to .* refusing to replay a different plugin \(a file git tracks in --repo differs/,
     "a checkout whose hooks moved since capture is refused");
+  g("rm", "-q", "--cached", "-r", "catalog/acme/tool/hooks");
+  // A capture that saw an untracked file (a platform reading a checkout's catalog): the mismatch
+  // names it, rather than leaving the operator with two opaque digests.
+  const withUntracked = { ...local, treeDigest: pluginTreeDigest(src, IMAGE_UNSHIPPED).digest };
+  assert.throws(() => tp.fetchThirdParty(withUntracked, repo, slug),
+    /the capture saw files git does not track, which are never copied: .*\.DS_Store.*skills\/\.SKILL\.md\.swp/,
+    "an untracked file behind a mismatch is named");
   rmSync(join(src, "hooks"), { recursive: true });
+
+  // A tracked file gone from the working tree is refused by name.
+  rmSync(join(src, "skills", "greet", "SKILL.md"));
+  assert.throws(() => tp.fetchThirdParty(local, repo, slug), /skills\/greet\/SKILL\.md is tracked .* missing from its working tree/);
+  writeFileSync(join(src, "skills", "greet", "SKILL.md"), "---\nname: greet\n---\nSay hello.\n");
 
   // A catalog entry that is a symlink out of the catalog is refused, never copied.
   const outside = realpathSync(mkdtempSync(join(tmpdir(), "zz-3p-outside-")));

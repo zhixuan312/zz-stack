@@ -8,7 +8,7 @@
  */
 import { execFileSync, spawnSync, type SpawnSyncOptionsWithStringEncoding } from "node:child_process";
 import {
-  appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync,
+  appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { delimiter, dirname, isAbsolute, join } from "node:path";
@@ -120,10 +120,14 @@ export function sandboxContext(tool: SandboxTool, repoRoot: string, claudeBin: s
  *  launch.ts) can swap a checked path for a symlink between the check and the read. `spawnSync`
  *  rather than `execFileSync`, which hides the child's pid.
  *
- *  What this cannot reach: a command that leaves the group itself (`setsid`). Under bwrap the
- *  fresh PID namespace covers that too — it dies with the session (sandbox.ts); under Seatbelt
- *  nothing does. And a background command that keeps this process's stdout open holds the turn
- *  until `timeout`, which then kills the group. Throws the way `execFileSync` does, with
+ *  What this cannot reach: a command that leaves the group itself (`setsid`) — and the real
+ *  `claude` starts its Bash tool's shell exactly that way. Under bwrap the fresh PID namespace
+ *  covers it: it dies with the session (sandbox.ts). Under Seatbelt nothing kills it, and nothing
+ *  outside this sandbox can tell its processes from the operator's own; so what it could still
+ *  write is taken away instead — the tree is renamed out of its writable path before the launcher
+ *  reads it (`holdWorktree`, git.ts), and so is the session home before it is deleted
+ *  (`removeSessionHome`). A background command that keeps this process's stdout open holds the
+ *  turn until `timeout`, which then kills the group. Throws the way `execFileSync` does, with
  *  `stdout`/`stderr` on the error. */
 export function runGrouped(
   file: string, argv: readonly string[], opts: { cwd: string; env: Record<string, string>; timeout: number; maxBuffer?: number },
@@ -159,8 +163,14 @@ function execSandboxed(
   return runGrouped(cmd.file, cmd.argv, opts);
 }
 
+/** Renamed out of the session's writable path first, as the tree is (`holdWorktree`, git.ts): a
+ *  command the session left running could otherwise swap a directory for a symlink under
+ *  `rmSync`'s walk. */
 export function removeSessionHome(home: SessionHome): void {
-  if (existsSync(home.root)) rmSync(home.root, { recursive: true, force: true });
+  if (!existsSync(home.root)) return;
+  const held = `${home.root}.held`;
+  renameSync(home.root, held);
+  rmSync(held, { recursive: true, force: true });
 }
 
 /** Adds a local marketplace pointed at `marketplaceRoot` (the pinned worktree's own repository

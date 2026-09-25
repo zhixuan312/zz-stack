@@ -24,7 +24,7 @@
  * team slug or a path can never be reinterpreted as a second argument.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -88,6 +88,16 @@ export function changedPaths(repo: Repo): string[] {
   return out;
 }
 
+/** The files git tracks under `dir`, relative to it — `ls-files` in the operator's own checkout,
+ *  under the same hardened flags and environment as every other launcher git call. */
+export const trackedFiles = (dir: string): string[] =>
+  gitRaw(null, dir, ["ls-files", "-z", "--", "."]).split("\0").filter(Boolean);
+
+/** The files under `dir` git does not track, ignored ones included — what a copy of the tracked
+ *  set leaves out, named when a digest disagrees. */
+export const untrackedFiles = (dir: string): string[] =>
+  gitRaw(null, dir, ["ls-files", "-z", "--others", "--", "."]).split("\0").filter(Boolean);
+
 /** Deterministic from `teamSlug` alone — never a random suffix. `team_slug` is already unique
  *  per run (`provisionReplayTeam` derives it from `sha256(runId)`), so this needs no randomness
  *  of its own to stay unique across concurrent runs, and a deterministic path is exactly what
@@ -102,13 +112,40 @@ export function worktreePathFor(teamSlug: string): string {
  *  denies, and never bound back writable, so no session can change what the launcher's git reads. */
 const gitDirFor = (teamSlug: string): string => `${worktreePathFor(teamSlug)}.git`;
 
+/** Where a held tree sits: beside its own path, under the system temporary directory the sandbox
+ *  denies, and inside no session's writable path — Seatbelt's `subpath` is by whole components,
+ *  so `<tree>` never covers `<tree>.held`. */
+const HELD = ".held";
+
 /** The run's two paths, with whatever a crashed earlier attempt left at them removed and the
  *  tree's directory created empty. */
 export function freshRepo(teamSlug: string): Repo {
   const repo = { path: worktreePathFor(teamSlug), gitDir: gitDirFor(teamSlug) };
-  for (const p of [repo.path, repo.gitDir]) if (existsSync(p)) rmSync(p, { recursive: true, force: true });
+  for (const p of [repo.path, `${repo.path}${HELD}`, repo.gitDir]) if (existsSync(p)) rmSync(p, { recursive: true, force: true });
   mkdirSync(repo.path, { recursive: true });
   return repo;
+}
+
+/** The tree, moved to where no session can write, before anything outside a sandbox reads it or
+ *  deletes it. A command the candidate ran through its Bash tool can outlive the turn: the real
+ *  `claude` starts that shell in a session of its own (`setsid`), outside the process group
+ *  `runGrouped` (session.ts) kills, and Seatbelt kills nothing. Left running, it could swap a
+ *  directory for a symlink between `collectProduced`'s check and its read, or under `rmSync`'s
+ *  walk. Seatbelt judges every write by the path the file has at that moment, so once the tree is
+ *  renamed out of the sandbox's writable path, nothing the session left can create, rename,
+ *  unlink or link anything in it — a directory it holds open included. Proven live by
+ *  `checks/replay-hold-tree.ts`. What stays possible: `write()` on a file it opened before the
+ *  rename, which changes bytes of a file it wrote anyway and reaches no path.
+ *
+ *  Under bwrap nothing is left to race: the session's PID namespace dies with its turn
+ *  (sandbox.ts). The tree is held there too — one path for both sandboxes. Never moved back: the
+ *  launcher reads the tree only after the last turn. Idempotent. */
+export function holdWorktree<T extends Repo>(repo: T): T {
+  if (repo.path.endsWith(HELD)) return repo;
+  const held = `${repo.path}${HELD}`;
+  if (existsSync(held)) rmSync(held, { recursive: true, force: true });
+  renameSync(repo.path, held);
+  return { ...repo, path: held };
 }
 
 /** Clones `repoRoot` into this run's repository and checks its tree out at `v<declaredVersion>` — the
@@ -147,9 +184,12 @@ export function readReleaseLock(worktreePath: string): unknown {
   return JSON.parse(readFileSync(join(worktreePath, "plugins.lock.json"), "utf8"));
 }
 
-/** Removes the tree and its repository. Always called from a `finally`; safe to call twice. */
+/** Removes the tree and its repository, the tree held first (`holdWorktree`) so no process a
+ *  session left can move anything under the walk. Always called from a `finally`; safe to call
+ *  twice. */
 export function removeWorktree(repo: Repo): void {
-  for (const p of [repo.path, repo.gitDir]) if (existsSync(p)) rmSync(p, { recursive: true, force: true });
+  const tree = existsSync(repo.path) ? holdWorktree(repo).path : repo.path;
+  for (const p of [tree, repo.gitDir]) if (existsSync(p)) rmSync(p, { recursive: true, force: true });
 }
 
 /** I-18: applies a recorded candidate's own unified diff into an already-created clone,

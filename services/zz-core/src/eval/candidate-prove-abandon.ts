@@ -11,16 +11,20 @@
  * whatever the token already spawned — so a later search needs a new allocation, per FR-28.
  * The token is revoked first, on its own commit, and the runs are counted inside the resolving
  * transaction: an abandon before any proof run was registered releases the case set's proof
- * split; one after keeps it spent (`proofSplitSpent`).
+ * split; one after keeps it spent (`proofSplitSpent`). Both the cancel and the count select the
+ * candidate's allocations by `candidate_id`, revoked or not, so a retry after a failed resolving
+ * transaction — whose own revoke finds nothing left open — still cancels and counts them.
  */
 import type pg from "pg";
 
 import { proofSplitOf, resolveOutcome, SPENT_STATUSES, type CandidateProveOutcome, type CandidateRow, type StoredProofEvaluation } from "./candidate-prove.js";
 import { closeRun } from "./replay-runs.js";
 
-/** Every proof-split replay_run THIS candidate's own verifier_token allocation spawned and is
+/** Every proof-split replay_run THIS candidate's own verifier_token allocations spawned and is
  *  still `registered`/`running` — candidate-side and baseline-side alike, scoped by
  *  `verifier_allocation_id` (migration 002) rather than by `candidate_id`/`base_subject_version_id`.
+ *  Every allocation the candidate ever held, revoked or not: an earlier abandon attempt may have
+ *  committed the revoke and then failed before resolving.
  *  Closed through `closeRun` (`replay-runs.ts`), the SAME teardown `replay_close`/`sweepExpired`
  *  already use — never a second, ad hoc teardown that could drift from that one's own admin-event
  *  record.
@@ -33,30 +37,26 @@ import { closeRun } from "./replay-runs.js";
  *  presented (`replay-runs.ts`'s own `requireContext`), so it identifies one allocation and
  *  nothing wider — two concurrent allocations against the same base subject and case set now
  *  cancel only their own runs. */
-async function cancelProofRuns(
-  p: pg.Pool, verifierAllocationId: string, principal: string,
-): Promise<void> {
+async function cancelProofRuns(p: pg.Pool, candidateId: string, principal: string): Promise<void> {
   const { rows } = await p.query<{ id: string; team_slug: string; pat_id: string }>(`
     select rr.id::text as id, rr.team_slug, rr.pat_id::text as pat_id
       from zz.replay_run rr
-     where rr.verifier_allocation_id = $1::uuid
+     where rr.verifier_allocation_id in
+           (select vt.id from zz.replay_verifier_token vt where vt.candidate_id = $1::uuid)
        and rr.status in ('registered', 'running')`,
-    [verifierAllocationId]);
+    [candidateId]);
   for (const run of rows) await closeRun(p, run, "cancelled", principal, "abandoned");
 }
 
 /** Revokes every still-open `zz.replay_verifier_token` of this candidate, committed on its own
- *  statement BEFORE anything else `abandon` does, and returns the allocation ids it revoked.
- *  From this commit on `verifierAllocation` (replay-verifier.ts) refuses the token, so no new
- *  proof run can start while the runs it already spawned are cancelled and counted. Empty when
- *  nothing was open (the token row vanished mid-flight) — the abandon still resolves; it only
- *  means nothing was left to cancel. */
-async function revokeVerifierTokens(p: pg.Pool, candidateId: string): Promise<string[]> {
-  const { rows } = await p.query<{ id: string }>(`
+ *  statement BEFORE anything else `abandon` does. From this commit on `verifierAllocation`
+ *  (replay-verifier.ts) refuses the token, so no new proof run can start while the runs it
+ *  already spawned are cancelled and counted. What it revoked is deliberately NOT what the
+ *  cancel and the count use: on a retry after a failed resolve it revokes nothing. */
+async function revokeVerifierTokens(p: pg.Pool, candidateId: string): Promise<void> {
+  await p.query(`
     update zz.replay_verifier_token set revoked_at = now()
-     where candidate_id = $1::uuid and revoked_at is null
-    returning id::text as id`, [candidateId]);
-  return rows.map((r) => r.id);
+     where candidate_id = $1::uuid and revoked_at is null`, [candidateId]);
 }
 
 /** The candidate's own latest proof `zz.candidate_evaluation` row, however it got there (a
@@ -105,12 +105,12 @@ export async function abandonProof(
   // transaction, after the revoke, whatever the run's status — cancelling does not undo a case a
   // session was already handed, and a count taken before the revoke would miss a run started in
   // the gap.
-  const allocations = await revokeVerifierTokens(p, candidate.id);
-  for (const allocation of allocations) await cancelProofRuns(p, allocation, principal);
+  await revokeVerifierTokens(p, candidate.id);
+  await cancelProofRuns(p, candidate.id, principal);
 
   return resolveOutcome(candidate, idempotencyKey, principal, {
     proof_status: "not_established", reason: "abandoned", release_eligible: false,
     decision: null, guardrails: null, resource_usage: null, dimension_scores: null,
-    statistics: { abandoned: true }, observed: { allocations },
+    statistics: { abandoned: true }, observed: "count",
   }, "abandon", initiative);
 }

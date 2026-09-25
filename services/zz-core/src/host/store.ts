@@ -176,6 +176,37 @@ function waiverCovers(waiver: StoredWaiver, sentence: string): boolean {
     .test(sentence);
 }
 
+/** The predecessor-chain sentence `evaluate` writes: `"<before> has not completed, and <step>
+ *  follows it"`. COUPLED: packages/contracts/src/host.ts, `evaluate`. */
+const CHAIN_SENTENCE = /^(.+) has not completed, and (.+) follows it$/;
+
+/** Whether everything that keeps `stepId` from completing is excused: each of its own unmet
+ *  sentences is waived, and every predecessor it waits on is itself excused (or ruled out). The
+ *  flat `unmet` list carries the whole trail — `evaluate` appends a predecessor's own sentences
+ *  after its chain sentence — so a step's gaps are read back as its own `"<step> needs …"`
+ *  sentences plus the chain sentences that end `"and <step> follows it"`. The graph is acyclic
+ *  (`refuseCycle`, host.ts), so the recursion ends; `memo` keeps a fan-in linear. */
+function stepExcused(
+  stepId: string, unmet: readonly string[], waivers: readonly StoredWaiver[],
+  ruledOutSteps: readonly string[], memo: Map<string, boolean>,
+): boolean {
+  if (ruledOutSteps.includes(stepId)) return true;
+  const known = memo.get(stepId);
+  if (known !== undefined) return known;
+  let excused = true;
+  for (const u of unmet) {
+    const chain = CHAIN_SENTENCE.exec(u);
+    if (chain) {
+      if (chain[2] === stepId && !stepExcused(chain[1]!, unmet, waivers, ruledOutSteps, memo)) excused = false;
+    } else if (u.startsWith(`${stepId} needs `) && !waivers.some((w) => waiverCovers(w, u))) {
+      excused = false;
+    }
+    if (!excused) break;
+  }
+  memo.set(stepId, excused);
+  return excused;
+}
+
 /** Read a verdict together with the waivers that cover it, and the steps a document's own
  *  branch applicability has already ruled out (FR-58, Task I-27) — the one reading of "clear",
  *  owed wherever a refusal is turned into an answer.
@@ -197,6 +228,12 @@ function waiverCovers(waiver: StoredWaiver, sentence: string): boolean {
  *  step A discharge step B's identical-kind gap carried up the predecessor chain — a signature
  *  standing for gaps nobody signed for.
  *
+ *  A chain sentence is discharged once its predecessor is excused (`stepExcused`): a predecessor
+ *  whose every gap is waived counts as completed, so the step after it is not held back by a
+ *  sentence no waiver could ever match. A predecessor only partly waived still blocks. The chain
+ *  sentence never enters `dischargedBy` — no waiver was signed for it; the ones that excused the
+ *  predecessor are already there.
+ *
  *  Exported for checks/store-waivers.ts. */
 export function withWaivers(
   verdict: ControlVerdict, waivers: readonly StoredWaiver[], ruledOutSteps: readonly string[] = [],
@@ -204,7 +241,12 @@ export function withWaivers(
   // A waiver that matches nothing is carried nowhere, so a stale waiver cannot make a real gap
   // look signed for.
   const covering = waivers.filter((w) => verdict.unmet.some((u) => waiverCovers(w, u)));
-  const afterWaivers = verdict.unmet.filter((u) => !waivers.some((w) => waiverCovers(w, u)));
+  const memo = new Map<string, boolean>();
+  const afterWaivers = verdict.unmet.filter((u) => {
+    if (waivers.some((w) => waiverCovers(w, u))) return false;
+    const chain = CHAIN_SENTENCE.exec(u);
+    return !(chain && stepExcused(chain[1]!, verdict.unmet, waivers, ruledOutSteps, memo));
+  });
   const stillOpen = afterWaivers.filter((u) => !ruledOutSteps.some((id) => u.startsWith(`${id} `)));
   return {
     satisfied: verdict.satisfied,

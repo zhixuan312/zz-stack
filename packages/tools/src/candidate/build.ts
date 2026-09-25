@@ -255,7 +255,7 @@ async function cliMain(argv: string[]): Promise<number> {
   const gateway = (optional(args, "gateway", "the gateway base, e.g. http://localhost:18000") ?? process.env.ZZ_URL ?? "")
     .replace(/\/+$/, "");
   if (!gateway) die("no gateway: pass --gateway or set ZZ_URL", 2);
-  const mcp = new Mcp(`${gateway}/eval/mcp`, { pat: platformToken(), client: DEFAULT_CLIENT });
+  const mcp = new Mcp(`${gateway}/eval/mcp`, { pat: platformToken(), client: DEFAULT_CLIENT, retryStaleSocket: true });
 
   const said = await mcp.call("candidate_read", { candidate_id: candidateId });
   if (/^ERROR[: ]/.test(said)) die(`candidate_read refused: ${said}`, 2);

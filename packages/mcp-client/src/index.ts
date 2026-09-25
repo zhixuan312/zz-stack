@@ -81,6 +81,10 @@ interface McpOptions {
   /** Extra headers sent on every request — the console forwards the caller's identity headers
    *  this way. */
   headers?: Record<string, string>;
+  /** Send a request once more when the pooled socket was already dead. Off by default: a
+   *  request that dies mid-flight may have been handled, so only a client whose every call is a
+   *  read or carries an idempotency key may turn this on — a retried keyed call replays. */
+  retryStaleSocket?: boolean;
 }
 
 /**
@@ -98,12 +102,14 @@ export class Mcp {
   readonly #head: Record<string, string>;
   readonly #client: string;
   readonly #timeoutMs: number;
+  readonly #retryStaleSocket: boolean;
   #session: string | null = null;
 
   constructor(url: string, opts: McpOptions = {}) {
     this.url = url.replace(/\/+$/, "");
     this.#client = opts.client ?? "zz";
     this.#timeoutMs = opts.timeoutMs ?? 120_000;
+    this.#retryStaleSocket = opts.retryStaleSocket ?? false;
     this.#head = {
       "Content-Type": "application/json",
       "User-Agent": UA,
@@ -133,11 +139,12 @@ export class Mcp {
     });
     try {
       res = await send().catch((err: unknown) => {
-        // Once more when the pooled connection was already dead: a caller that blocked its own
-        // event loop for longer than the server's keep-alive (a release CLI running a gate and a
-        // release command synchronously) reuses a socket the server has since closed, and the
-        // request fails before it was ever sent. Any other failure is reported as it is.
-        if (!STALE_SOCKET.has(causeCode(err))) throw err;
+        // Once more when the pooled connection was already dead and the caller opted in: a caller
+        // that blocked its own event loop for longer than the server's keep-alive (a release CLI
+        // running a gate and a release command synchronously) reuses a socket the server has
+        // since closed. Opt-in only, because the same error can arrive after the server handled
+        // the request — safe to resend only for reads and idempotency-keyed writes.
+        if (!this.#retryStaleSocket || !STALE_SOCKET.has(causeCode(err))) throw err;
         return send();
       });
     } catch (err) {

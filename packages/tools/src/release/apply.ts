@@ -385,7 +385,7 @@ async function cliMain(argv: string[]): Promise<number> {
   const args = parseArgs(argv);
   const gatewayUrl = (optional(args, "gateway", "the gateway base, e.g. http://localhost:18000") ?? process.env.ZZ_URL ?? "").replace(/\/+$/, "");
   if (!gatewayUrl) die("no gateway: pass --gateway or set ZZ_URL");
-  const mcp = new Mcp(`${gatewayUrl}/eval/mcp`, { pat: platformToken(), client: DEFAULT_CLIENT });
+  const mcp = new Mcp(`${gatewayUrl}/eval/mcp`, { pat: platformToken(), client: DEFAULT_CLIENT, retryStaleSocket: true });
   // NOT A TOOL: `reconcile` is this CLI's own flag, the mode that settles a stuck attempt.
   const reconcile = optional(args, "reconcile", "the release_attempt_id left applying to reconcile");
   return reconcile ? reconcileMain(mcp, args, reconcile) : applyMain(mcp, args);

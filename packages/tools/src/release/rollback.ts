@@ -165,7 +165,7 @@ async function cliMain(argv: string[]): Promise<number> {
   }
   const idempotencyKey = optional(args, "idempotency-key", "a fixed key, to retry this exact call idempotently") ?? randomUUID();
 
-  const mcp = new Mcp(`${gatewayUrl}/eval/mcp`, { pat: platformToken(), client: DEFAULT_CLIENT });
+  const mcp = new Mcp(`${gatewayUrl}/eval/mcp`, { pat: platformToken(), client: DEFAULT_CLIENT, retryStaleSocket: true });
 
   const verifySaid = await mcp.call("release_verify", { release_attempt_id: releaseAttemptId, idempotency_key: idempotencyKey });
   if (/^ERROR[: ]/.test(verifySaid)) die(`release_verify refused: ${verifySaid}`, 2);

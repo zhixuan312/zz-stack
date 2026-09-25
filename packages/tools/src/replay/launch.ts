@@ -415,8 +415,8 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
   const clientName = opts.clientName ?? DEFAULT_CLIENT;
   const ownPat = opts.ownPat ?? platformToken();
 
-  const candidateMcp = new Mcp(`${gatewayUrl}/eval/mcp`, { pat: token, client: clientName });
-  const ownMcp = new Mcp(`${gatewayUrl}/eval/mcp`, { pat: ownPat, client: clientName });
+  const candidateMcp = new Mcp(`${gatewayUrl}/eval/mcp`, { pat: token, client: clientName, retryStaleSocket: true });
+  const ownMcp = new Mcp(`${gatewayUrl}/eval/mcp`, { pat: ownPat, client: clientName, retryStaleSocket: true });
 
   // Never under `opts.repoRoot`: that is a real checkout, possibly shared with other work, and a
   // log file landing in it is a stray untracked file nobody asked for. `os.tmpdir()` outlives
@@ -603,7 +603,7 @@ async function cliMain(argv: string[]): Promise<number> {
 
   const base = (gatewayUrl ?? process.env.ZZ_URL ?? "").replace(/\/+$/, "");
   if (!base) die("no gateway: pass --gateway or set ZZ_URL");
-  const ownMcp = new Mcp(`${base}/eval/mcp`, { pat: platformToken(), client: DEFAULT_CLIENT });
+  const ownMcp = new Mcp(`${base}/eval/mcp`, { pat: platformToken(), client: DEFAULT_CLIENT, retryStaleSocket: true });
   const said = await ownMcp.call("replay_read", {
     replay_run_id: replayRunId,
     ...(verifierToken ? { context: "verifier", verifier_token: verifierToken } : {}),

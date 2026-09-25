@@ -63,6 +63,9 @@ function stub(req: IncomingMessage, res: ServerResponse): void {
     };
     if (tool === "gone_once" && !expired.has("gone_once")) { expired.add("gone_once"); gone(); return; }
     if (tool === "always_gone") { gone(); return; }
+    // The server handles the call and then the connection dies before the answer: the case a
+    // blanket retry would turn into a second write.
+    if (tool === "reset") { req.socket.destroy(); return; }
     if (tool === "multi") {
       json('{"jsonrpc":"2.0","id":2,"result":{"content":[{"text":"one"},{"text":"two"},{"text":"three"}]}}');
       return;
@@ -202,6 +205,23 @@ async function main(): Promise<number> {
 
   const joined = await new Mcp(url, { client: "mcp-client-check" }).call("multi");
   check("every text block is returned, not just the first", joined === "one\ntwo\nthree", joined);
+
+  // A reset connection is resent only by a client that opted in: the call may have been handled,
+  // so resending is safe only for reads and idempotency-keyed writes.
+  const countReset = (): number => SEEN.filter((x) => x.method === "tools/call").length;
+  for (const [optIn, attempts] of [[false, 1], [true, 2]] as const) {
+    const plain = new Mcp(url, { client: "mcp-client-check", retryStaleSocket: optIn });
+    await plain.call("plain");
+    const before = countReset();
+    try {
+      await plain.call("reset");
+      check(`a reset connection raises (retryStaleSocket: ${optIn})`, false, "no exception");
+    } catch (e) {
+      const sent = countReset() - before;
+      check(`a reset connection is sent ${attempts}x (retryStaleSocket: ${optIn})`,
+        e instanceof McpError && sent === attempts, `${String(e)} after ${sent} send(s)`);
+    }
+  }
 
   try {
     await new Mcp("http://127.0.0.1:1/unreachable", { timeoutMs: 2000 }).call("x");

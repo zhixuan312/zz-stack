@@ -11,9 +11,11 @@
  * DELIBERATE: the gate runs without --quiet. A passing check prints a line too, which is the
  * only way to tell "this check passed" from "the gate died before reaching it".
  *
- * The mutations are in zz-plugin-eval, a flow whose stages use all three kinds of `produces`.
- * SDLC_DOCS staying quiet through them asserts that what remains in that file is about sdlc
- * alone and does not fire on another flow's manifest.
+ * The mutations are in zz-plugin-eval, a flow whose current eight stages use two of the three
+ * kinds of `produces` (record and a document name); case 5 below plants the third ("nothing")
+ * rather than assuming a stage that already answers it. SDLC_DOCS staying quiet through them
+ * asserts that what remains in that file is about sdlc alone and does not fire on another
+ * flow's manifest.
  *
  * Case 4 is the one this file is about: a one-way check — resolve `produces` forward, confirm
  * the document exists — passes a manifest where a document points at a stage that produces
@@ -127,8 +129,11 @@ function measure(what: string, { fires = [], quiet = [] }: { fires?: string[]; q
   if (exec?.produces !== "nothing") fail.push(`sdlc-execute declares produces: ${exec?.produces} — the control assumes "nothing"`);
   const ev: Manifest = JSON.parse(original[EVAL]);
   const kinds = new Set((ev.stages ?? []).map((s: Stage) => s.produces));
-  if (!kinds.has("record") || !kinds.has("nothing")) {
-    fail.push(`zz-plugin-eval declares neither a "record" nor a "nothing" stage (${[...kinds].join(", ")}) — the control has no subject`);
+  // Only "record" is required of the untouched tree: zz-plugin-eval's current eight stages hold
+  // no "nothing" example of their own (four produce "record", four produce a document — see
+  // catalog/zz/zz-plugin-eval/flow.json), so case 5 below plants one rather than assuming it.
+  if (!kinds.has("record")) {
+    fail.push(`zz-plugin-eval declares no "record" stage (${[...kinds].join(", ")}) — the control has no subject`);
   }
   // A non-flow package, for the exemption control. zz-access must have no documents and no
   // stages, or the control is about something else.
@@ -140,17 +145,18 @@ function measure(what: string, { fires = [], quiet = [] }: { fires?: string[]; q
 }
 
 try {
-  // 1. A stage with no produces. Planted on zz-plugin-locate, whose produces is "nothing", so
+  // 1. A stage with no produces. Planted on zz-plugin-identify, whose produces is "record", so
   //    removing it orphans no document and this tests presence alone. `manifests-conform.ts`
   //    fires too, because it names zz-plugin-eval in a list of four; a fifth flow would be
   //    covered only by MINE.
-  mutate(EVAL, (m) => { delete (m.stages ?? []).find((s) => s.name === "zz-plugin-locate")!.produces; });
+  mutate(EVAL, (m) => { delete (m.stages ?? []).find((s) => s.name === "zz-plugin-identify")!.produces; });
   measure("a stage with no produces", { fires: [MINE, CONFORM], quiet: [SDLC_DOCS, DOC_STAGE] });
   restore();
 
-  // 2. `produces` naming a document the manifest does not declare. On the same "nothing" stage,
-  //    for the same reason: nothing is orphaned, so the only thing broken is the forward claim.
-  mutate(EVAL, (m) => { (m.stages ?? []).find((s) => s.name === "zz-plugin-locate")!.produces = "invented.md"; });
+  // 2. `produces` naming a document the manifest does not declare. On the same record-producing
+  //    stage, for the same reason: nothing is orphaned, so the only thing broken is the forward
+  //    claim.
+  mutate(EVAL, (m) => { (m.stages ?? []).find((s) => s.name === "zz-plugin-identify")!.produces = "invented.md"; });
   measure("produces naming a document the flow does not declare",
           { fires: [MINE], quiet: [SDLC_DOCS, CONFORM, DOC_STAGE] });
   restore();
@@ -162,22 +168,24 @@ try {
           { fires: [MINE], quiet: [SDLC_DOCS, CONFORM, DOC_STAGE] });
   restore();
 
-  // 4. The one-way case. findings.md points at a real stage — zz-plugin-judge, which produces
-  //    "record" — while zz-plugin-report goes on producing findings.md. Forward resolution
+  // 4. The one-way case. findings.md points at a real stage — zz-plugin-evaluate, which produces
+  //    "record" — while zz-plugin-explain goes on producing findings.md. Forward resolution
   //    passes and no document is orphaned; only reciprocity breaks.
-  mutate(EVAL, (m) => { (m.documents ?? []).find((d) => d.name === "findings.md")!.stage = "zz-plugin-judge"; });
+  mutate(EVAL, (m) => { (m.documents ?? []).find((d) => d.name === "findings.md")!.stage = "zz-plugin-evaluate"; });
   measure("a document naming a stage that produces something else",
           { fires: [MINE], quiet: [SDLC_DOCS, CONFORM, DOC_STAGE] });
   restore();
 
-  // 5. Control: "record" and "nothing" are answers. Swapped between the two non-document
-  //    values only, because changing a document-producing stage would orphan its document. Not
-  //    vacuous — a rule demanding a document name from every stage fires on both.
+  // 5. Control: "record" and "nothing" are both answers, not omissions. zz-plugin-eval's current
+  //    eight stages hold no "nothing" example of their own (four produce "record", four produce
+  //    a document), so this plants one: zz-plugin-observe's own "record" becomes "nothing", a
+  //    real value change on a non-document stage — changing a document-producing stage would
+  //    orphan its document instead. Not vacuous — a rule demanding a document name from every
+  //    stage fires on this exactly as it would on "record".
   mutate(EVAL, (m) => {
-    (m.stages ?? []).find((s) => s.name === "zz-plugin-locate")!.produces = "record";
-    (m.stages ?? []).find((s) => s.name === "zz-plugin-profile")!.produces = "nothing";
+    (m.stages ?? []).find((s) => s.name === "zz-plugin-observe")!.produces = "nothing";
   });
-  measure('CONTROL: "record" and "nothing" swapped between two non-document stages',
+  measure('CONTROL: a non-document stage answers "nothing" instead of "record"',
           { quiet: [MINE, SDLC_DOCS, CONFORM, DOC_STAGE] });
   restore();
 

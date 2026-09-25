@@ -1,0 +1,330 @@
+{
+  "protocolKey": "zz-core-reference-protocol",
+  "version": 1,
+  "pluginPurpose": "zz-core owns the record every flow writes into: identity, documents, gates, knowledge and telemetry, and what anybody reports broken. This protocol measures whether zz-core actually holds up that record so a decision a team made once stays durable, findable, and gated before anything downstream depends on it. It is the initiative's bootstrap reference protocol (FR-57, spec v8): sufficient to validate the architecture end to end, not a claim about zz-core's real quality — scoring.establishment.bootstrap=true keeps every run at best provisional until the first real post-close OBSERVE/DISCOVER cycle.",
+  "observableSurfaces": [
+    "mcp:bug_*",
+    "mcp:document_*",
+    "mcp:initiative_*",
+    "mcp:knowledge_*",
+    "mcp:skill_*",
+    "mcp:source_*",
+    "mcp:session_*",
+    "mcp:assess",
+    "stage_paths",
+    "step_returns",
+    "tool_refusals",
+    "dependency_failures",
+    "document_outcomes_and_approvals",
+    "latency_and_request_response_bytes",
+    "token_usage"
+  ],
+  "failureTaxonomy": [
+    "unattributed_refusal",
+    "dependency_failure",
+    "guardrail_refusal",
+    "unplaced_step",
+    "never_called_tool",
+    "stage_return_without_progress",
+    "missing_token_or_cost_accounting"
+  ],
+  "dimensions": [
+    {
+      "key": "effectiveness",
+      "name": "Effectiveness",
+      "canonicalKind": "effectiveness",
+      "weight": 0.3,
+      "required": true,
+      "applicable": true,
+      "notApplicableReason": null,
+      "measures": [
+        {
+          "key": "document_gate_readiness",
+          "evaluatorType": "bounded_semantic",
+          "weight": 0.6,
+          "suite": "production",
+          "required": true,
+          "definition": {
+            "qualification": { "positive": "yes", "zero": "no" },
+            "guardrail": true,
+            "guardrailThreshold": 0.5
+          },
+          "evaluator": {
+            "stable_key": "zz-core.document-gate-readiness",
+            "kind": "noul",
+            "question": "Read this document. Does it give a reader everything its flow's gate needs to decide -- every required section present and substantive -- with nothing the gate requires left for the reader to infer or chase down elsewhere?",
+            "answer_schema": { "type": "noul" },
+            "polarity": { "good_when": "yes" },
+            "model_policy": { "requestedModel": "typesafe/jev-latest" }
+          }
+        },
+        {
+          "key": "knowledge_capture_effectiveness",
+          "evaluatorType": "bounded_semantic",
+          "weight": 0.4,
+          "suite": "production",
+          "required": true,
+          "definition": { "qualification": { "positive": "yes", "zero": "no" } },
+          "evaluator": {
+            "stable_key": "zz-core.knowledge-capture-effectiveness",
+            "kind": "noul",
+            "question": "Read this record of a decision or finding written toward the knowledge store. If a later initiative searched the knowledge store for this topic, would this record's own wording let that search surface it and let the reader reuse the decision without re-deriving it?",
+            "answer_schema": { "type": "noul" },
+            "polarity": { "good_when": "yes" },
+            "model_policy": { "requestedModel": "typesafe/jev-latest" }
+          }
+        }
+      ]
+    },
+    {
+      "key": "reliability",
+      "name": "Reliability",
+      "canonicalKind": "reliability",
+      "weight": 0.2,
+      "required": true,
+      "applicable": true,
+      "notApplicableReason": null,
+      "measures": [
+        {
+          "key": "usable_run_coverage",
+          "evaluatorType": "deterministic",
+          "weight": 0.5,
+          "suite": "production",
+          "required": true,
+          "definition": { "factKey": "usable_run_coverage", "guardrail": true, "guardrailThreshold": 0.5 },
+          "evaluator": null
+        },
+        {
+          "key": "refusal_explains_itself",
+          "evaluatorType": "bounded_semantic",
+          "weight": 0.5,
+          "suite": "production",
+          "required": true,
+          "definition": { "qualification": { "positive": "yes", "zero": "no" } },
+          "evaluator": {
+            "stable_key": "zz-core.refusal-explains-itself",
+            "kind": "noul",
+            "question": "Read this run. Where it refused a call or ended in an error, did the refusal name what was wrong and what the caller should do instead, rather than a bare or generic error?",
+            "answer_schema": { "type": "noul" },
+            "polarity": { "good_when": "yes" },
+            "model_policy": { "requestedModel": "typesafe/jev-latest" }
+          }
+        }
+      ]
+    },
+    {
+      "key": "constraint_adherence",
+      "name": "Constraint Adherence",
+      "canonicalKind": "constraint_adherence",
+      "weight": 0.2,
+      "required": true,
+      "applicable": true,
+      "notApplicableReason": null,
+      "measures": [
+        {
+          "key": "document_frontmatter_conformance",
+          "evaluatorType": "bounded_semantic",
+          "weight": 0.5,
+          "suite": "production",
+          "required": true,
+          "definition": { "qualification": { "positive": "yes", "zero": "no" } },
+          "evaluator": {
+            "stable_key": "zz-core.document-frontmatter-conformance",
+            "kind": "noul",
+            "question": "Read this document. Does it carry the frontmatter and gate state the platform's document contract requires -- role, gate status, approval -- before anything downstream may treat it as approved?",
+            "answer_schema": { "type": "noul" },
+            "polarity": { "good_when": "yes" },
+            "model_policy": { "requestedModel": "typesafe/jev-latest" }
+          }
+        },
+        {
+          "key": "bug_report_evidence_discipline",
+          "evaluatorType": "bounded_semantic",
+          "weight": 0.5,
+          "suite": "production",
+          "required": true,
+          "definition": { "qualification": { "positive": "yes", "zero": "no" } },
+          "evaluator": {
+            "stable_key": "zz-core.bug-report-evidence-discipline",
+            "kind": "noul",
+            "question": "Read this bug report. Does it describe what happened and what was expected, in the reporter's own words and with real evidence, rather than a diagnosis or fix substituted for the evidence?",
+            "answer_schema": { "type": "noul" },
+            "polarity": { "good_when": "yes" },
+            "model_policy": { "requestedModel": "typesafe/jev-latest" }
+          }
+        }
+      ]
+    },
+    {
+      "key": "recovery_robustness",
+      "name": "Recovery & Robustness",
+      "canonicalKind": "recovery_robustness",
+      "weight": 0.1,
+      "required": true,
+      "applicable": true,
+      "notApplicableReason": null,
+      "measures": [
+        {
+          "key": "refusal_recovery_path",
+          "evaluatorType": "bounded_semantic",
+          "weight": 1,
+          "suite": "production",
+          "required": true,
+          "definition": { "qualification": { "positive": "yes", "zero": "no" } },
+          "evaluator": {
+            "stable_key": "zz-core.refusal-recovery-path",
+            "kind": "noul",
+            "question": "Read this run. After a refusal or error occurred partway through it, is there a concrete next step recorded -- a retry, a corrected call, an escalation to a person -- rather than the run simply stopping with nothing named to do next?",
+            "answer_schema": { "type": "noul" },
+            "polarity": { "good_when": "yes" },
+            "model_policy": { "requestedModel": "typesafe/jev-latest" }
+          }
+        }
+      ]
+    },
+    {
+      "key": "efficiency",
+      "name": "Efficiency",
+      "canonicalKind": "efficiency",
+      "weight": 0.1,
+      "required": true,
+      "applicable": true,
+      "notApplicableReason": null,
+      "measures": [
+        {
+          "key": "call_economy",
+          "evaluatorType": "generative_critic",
+          "weight": 1,
+          "suite": "production",
+          "required": true,
+          "definition": { "qualification": { "positive": "yes", "zero": "no" } },
+          "evaluator": {
+            "stable_key": "zz-core.call-economy",
+            "kind": "noul",
+            "question": "Read this run's own sequence of tool calls. Did it reach its outcome without calling the same tool for the same purpose more times than the work actually needed?",
+            "answer_schema": { "type": "noul" },
+            "polarity": { "good_when": "yes" },
+            "model_policy": { "requestedModel": "typesafe/jev-latest" }
+          }
+        }
+      ]
+    },
+    {
+      "key": "generalization",
+      "name": "Generalization",
+      "canonicalKind": "generalization",
+      "weight": 0.1,
+      "required": true,
+      "applicable": true,
+      "notApplicableReason": null,
+      "measures": [
+        {
+          "key": "tool_coverage",
+          "evaluatorType": "deterministic",
+          "weight": 0.5,
+          "suite": "production",
+          "required": true,
+          "definition": { "factKey": "tool_coverage" },
+          "evaluator": null
+        },
+        {
+          "key": "cross_flow_reuse",
+          "evaluatorType": "bounded_semantic",
+          "weight": 0.5,
+          "suite": "production",
+          "required": true,
+          "definition": { "qualification": { "positive": "yes", "zero": "no" } },
+          "evaluator": {
+            "stable_key": "zz-core.cross-flow-reuse",
+            "kind": "noul",
+            "question": "Read this document. Is its guidance written so it would still make sense and apply usefully to a different initiative or team, rather than being phrased so it only makes sense inside this one case?",
+            "answer_schema": { "type": "noul" },
+            "polarity": { "good_when": "yes" },
+            "model_policy": { "requestedModel": "typesafe/jev-latest" }
+          }
+        }
+      ]
+    }
+  ],
+  "suites": {
+    "capability": {
+      "description": "Whether zz-core's own tools behave correctly against known inputs. No capability case set exists yet for this bootstrap protocol version -- capability evidence starts once replay_case_set_build has run for zz-core."
+    },
+    "regression": {
+      "description": "Whether a later zz-core release keeps behaving the way earlier evidence showed. No regression case set exists yet for this bootstrap protocol version."
+    },
+    "production": {
+      "description": "Real zz-core /core/mcp door traffic, read by OBSERVE (plugin_profile) over a resolved evidence_window.",
+      "evidenceSource": "zz.eval_observation_snapshot"
+    }
+  },
+  "replay": {
+    "dependencies": [
+      { "surface": "platform-db", "mode": "sandbox", "matcher": null },
+      {
+        "surface": "typed-service-model-calls",
+        "mode": "recorded",
+        "matcher": { "matchOn": ["evaluator_version_id", "question_digest", "subject_text_digest"] }
+      },
+      { "surface": "knowledge-store-writes", "mode": "sandbox", "matcher": null }
+    ],
+    "caseSelection": {
+      "defaultSourceScope": { "flow": "sdlc-flow" },
+      "note": "replay_case_set_build derives cases from this plugin's own closed initiatives per FR-60; no case set exists yet for this bootstrap protocol version."
+    },
+    "splitPolicy": {
+      "evolve": 0.4,
+      "validation": 0.3,
+      "proof": 0.3,
+      "min": { "evolve": 5, "validation": 10, "proof": 10 }
+    }
+  },
+  "qualification": {
+    "boundedSemanticMinimum": "operationally_qualified",
+    "thresholds": {
+      "anchorPassRate": 0.8,
+      "stabilityRate": 1,
+      "faultKillRate": 0.8,
+      "controlCatchRate": 0.8,
+      "labelMinN": 20,
+      "labelTprMin": 0.7,
+      "labelTnrMin": 0.7
+    },
+    "labelMappings": []
+  },
+  "scoring": {
+    "establishment": {
+      "bootstrap": true,
+      "minCoverage": { "minUsableRuns": 5, "minSubjectRefs": 5 }
+    },
+    "uncertainty": { "level": 0.95, "iterations": 1000 }
+  },
+  "improvement": {
+    "evolvable": true,
+    "search": {
+      "maxGenerations": 5,
+      "maxCandidatesPerGeneration": 8,
+      "wallClockHours": 24,
+      "minRepeats": 3,
+      "minMeaningfulEffect": 0.3,
+      "confidence": 0.95,
+      "equivalenceBand": 0.1,
+      "complexity": "lines_plus_20_per_component"
+    },
+    "selection": {
+      "order": ["lower_bound", "complexity", "latency", "cost", "id"]
+    },
+    "proof": {
+      "verifierIsolation": "fresh verifier session with no proposer/search capability, opened once per generation",
+      "allocation": "opens the current generation's sealed proof allocation exactly once for the selected final candidate"
+    },
+    "criticalGuardrails": [
+      "usable_run_coverage",
+      "document_gate_readiness"
+    ],
+    "release": {
+      "approvalDocument": "improvement.md",
+      "ownerResolution": "plugin-level release_owners (FR-47); zz-core is catalog-owned, so its release_owners is this repository's owning team"
+    }
+  }
+}

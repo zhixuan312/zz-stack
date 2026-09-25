@@ -18,7 +18,6 @@ import { join } from "node:path";
 
 import { documentApplies, OUTCOME_STOPPED } from "@zz/contracts";
 
-import { db } from "./platform-db.js";
 import { Refusal } from "./refusal.js";
 import { isoToday } from "./write-guards.js";
 
@@ -177,17 +176,14 @@ export function factsForWrite(root: string, initiative: string, stopping: boolea
 const factsLockHeld = new AsyncLocalStorage<ReadonlySet<string>>();
 const inProcessFactsLocks = new Map<string, Promise<unknown>>();
 
-/** Run `fn` holding the one lock on this initiative's branch facts — for a read-check-write of
- *  `_facts.json` (`writeBranchFacts`, eval/protocol.ts, and release.ts), which two concurrent
- *  callers would otherwise both pass on the same old read and then both write.
- *
- *  Two layers: an in-process per-initiative queue, always, and inside it a session-level pg
- *  advisory lock on its own pooled client when there is a database, so every zz-core process
- *  sharing that database is serialized too.
+/** Run `fn` holding this process's lock on an initiative's branch facts — the in-process half of
+ *  a `_facts.json` read-check-write (`writeBranchFacts`, eval/protocol.ts, and release_prepare /
+ *  proposal_prepare, eval/release-prepare.ts), which two concurrent callers would otherwise both
+ *  pass on the same old read and then both write. With a database, the cross-process half is
+ *  `lockInitiativeFacts` below, taken by `fn` on the one transaction it writes through.
  *
  *  DELIBERATE: the queue comes first even with a database. Without it every waiter in this
- *  process would hold a pooled connection while blocked on the advisory lock, and a holder whose
- *  `fn` queries the database would wait for a connection its own waiters hold — the pool is four.
+ *  process would hold a pooled connection while blocked on the advisory lock — the pool is four.
  *  With it, one connection per initiative per process waits, at most.
  *
  *  DELIBERATE: reentrant within one async call chain (AsyncLocalStorage), so a caller holding the
@@ -201,7 +197,7 @@ export async function withInitiativeFactsLock<T>(initiative: string, fn: () => P
   if (held?.has(initiative)) return fn();
   const inner = () => factsLockHeld.run(new Set([...(held ?? []), initiative]), fn);
   const before = inProcessFactsLocks.get(initiative) ?? Promise.resolve();
-  const run = before.then(() => withFactsAdvisoryLock(initiative, inner));
+  const run = before.then(inner);
   const tail = run.catch(() => undefined);
   inProcessFactsLocks.set(initiative, tail);
   try {
@@ -211,28 +207,20 @@ export async function withInitiativeFactsLock<T>(initiative: string, fn: () => P
   }
 }
 
-/** The cross-process half of `withInitiativeFactsLock`: `fn` under a pg advisory lock, or `fn`
- *  alone when this deployment has no database and so no second process to exclude. */
-async function withFactsAdvisoryLock<T>(initiative: string, fn: () => Promise<T>): Promise<T> {
-  const p = db();
-  if (!p) return fn();
-  const client = await p.connect();
-  const key = `initiative_facts:${initiative}`;
-  // A connection whose lock or unlock failed goes back to the pool destroyed (`release(err)`),
-  // never reused: it may still hold a session lock nobody will release.
-  try {
-    await client.query("select pg_advisory_lock(hashtext($1))", [key]);
-  } catch (err) {
-    client.release(err as Error);
-    throw err;
-  }
-  try {
-    return await fn();
-  } finally {
-    const failed = await client.query("select pg_advisory_unlock(hashtext($1))", [key])
-      .then(() => undefined, (err: Error) => err);
-    client.release(failed);
-  }
+/** The cross-process half of the facts lock: a transaction-level pg advisory lock on `client`,
+ *  which must be inside an open transaction — every zz-core process sharing the database is
+ *  serialized on it, and it releases at that transaction's COMMIT or ROLLBACK.
+ *
+ *  DELIBERATE: transaction-level, on the caller's own client, never a session lock on a second
+ *  pooled connection. release_prepare writes its ledger row and its branch fact in one
+ *  transaction; a lock held on another connection for the length of that transaction is two
+ *  connections per call, and four such calls starve the pool. Re-taking it inside the same
+ *  transaction (`writeBranchFacts` under release_prepare) is a no-op, as pg advisory locks are
+ *  reentrant per session. */
+export async function lockInitiativeFacts(
+  client: { query(text: string, values?: unknown[]): Promise<unknown> }, initiative: string,
+): Promise<void> {
+  await client.query("select pg_advisory_xact_lock(hashtext($1))", [`initiative_facts:${initiative}`]);
 }
 
 /** Write the durable branch facts, replacing whatever `factsFor` would have read back.

@@ -96,16 +96,16 @@
     "sha": "634db2438a21"
   },
   "zz-plugin-improve": {
-    "version": "0.3",
-    "sha": "d8c8404ad772"
+    "version": "0.4",
+    "sha": "66626c1ee877"
   },
   "zz-plugin-observe": {
     "version": "0.1",
     "sha": "ff0b99352c0b"
   },
   "zz-plugin-promote-verify": {
-    "version": "0.3",
-    "sha": "f4bace156314"
+    "version": "0.4",
+    "sha": "36a43d896f80"
   },
   "zz-authoring": {
     "version": "1.1",

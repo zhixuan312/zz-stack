@@ -113,19 +113,24 @@ try {
   g(src, "add", "later.txt");
   g(src, "commit", "-q", "-m", "later");
 
-  const clone: { ref: string; path: string; commit: string } = git.createWorktree(src, slug, "0.76.0");
+  const clone: { ref: string; path: string; gitDir: string; commit: string } = git.createWorktree(src, slug, "0.76.0");
   wt = clone;
   assert.equal(clone.ref, "refs/tags/v0.76.0", "the clone's ref is the release tag replay_start records");
   assert.equal(clone.commit, tagged, "the clone sits at the release tag, not the source's HEAD");
   assert.equal(existsSync(join(clone.path, "later.txt")), false);
-  assert.equal(existsSync(join(clone.path, ".git", "objects", "info", "alternates")), false,
+  assert.ok(!clone.gitDir.startsWith(`${clone.path}/`), "the launcher's repository is outside the tree");
+  assert.equal(readFileSync(join(clone.path, ".git"), "utf8"), `gitdir: ${clone.gitDir}\n`,
+    "the tree carries only a gitfile naming it, for the session's own git");
+  assert.equal(existsSync(join(clone.gitDir, "objects", "info", "alternates")), false,
     "the clone borrows no object store from the source");
   assert.equal(g(clone.path, "remote"), "", "the clone keeps no remote pointing back at the source");
+  assert.equal(g(clone.path, "status", "--porcelain"), "", "the session's git sees a clean tree through the gitfile");
   assert.equal(g(src, "worktree", "list").split("\n").length, 1, "the source registers no worktree");
   assert.equal(g(src, "for-each-ref", "refs/replay/"), "", "the source gains no refs/replay/* ref");
   assert.deepEqual(git.readReleaseLock(clone.path), lock);
   git.removeWorktree(clone);
   assert.equal(existsSync(clone.path), false);
+  assert.equal(existsSync(clone.gitDir), false, "the repository goes with the tree");
 
   assert.throws(() => git.createWorktree(src, slug, "9.9.9"), /no release tag v9\.9\.9/,
     "a subject with no release tag is refused, never replaced by HEAD");

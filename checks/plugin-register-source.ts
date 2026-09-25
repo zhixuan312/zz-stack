@@ -3,7 +3,8 @@
  * What `plugin_register` may read (subject-source.ts's `resolveSource`), driven through the real
  * reader with no network: every refusal here is decided before git or npm runs.
  *
- *   1. local_dir: a directory under the catalog root is read; one outside it (`/etc`, a `..`
+ *   1. local_dir: a directory under the catalog root is read, with the `tree_digest` of every file
+ *      it ships recorded; one outside it (`/etc`, a `..`
  *      escape) is refused, and so is one whose top-level `skills` or `flow.json` is a symlink —
  *      the shape a cloned repository or extracted tarball would use to walk the host.
  *   2. git: anything but https is refused (file://, http://, ssh, ext::), and so is https to a
@@ -38,6 +39,8 @@ const refused = async (kind: string, locator: string, why: RegExp) => {
 const inside = await resolveSource("local_dir", join(process.cwd(), "catalog/zz/zz-plugin-eval"));
 if ("error" in inside || !inside.components.length) {
   fail.push(`a directory under the catalog root was not read: ${JSON.stringify(inside).slice(0, 200)}`);
+} else if (!/^[0-9a-f]{64}$/.test(String(inside.identityExtra.tree_digest))) {
+  fail.push(`a local_dir capture records no tree_digest for the replay launcher to check: ${JSON.stringify(inside.identityExtra)}`);
 }
 await refused("local_dir", "/etc", /only under the catalog root/);
 await refused("local_dir", join(process.cwd(), "catalog/../services"), /only under the catalog root/);

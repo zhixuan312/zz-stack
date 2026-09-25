@@ -1,10 +1,19 @@
 /**
- * The launcher's clone lifecycle (Task I-17): one standalone clone per run, detached at the
- * subject's own release tag. `git clone --no-hardlinks` and `remote remove origin` leave the
- * clone with its own object store and no pointer back at `opts.repoRoot` — nothing here ever runs
- * a command that writes to `repoRoot`'s `.git` (no `worktree add`, no `update-ref`), so neither the
- * launcher nor the `bypassPermissions` session running inside the clone can touch the operator's
- * real repository. See `plan.ts`'s git section for why a worktree was not good enough.
+ * The launcher's clone lifecycle (Task I-17): one standalone repository per run, its tree
+ * detached at the subject's own release tag. `git clone --bare --no-hardlinks` and `remote remove
+ * origin` leave it with its own object store and no pointer back at `opts.repoRoot` — nothing here
+ * ever runs a command that writes to `repoRoot`'s `.git` (no `worktree add`, no `update-ref`), so
+ * neither the launcher nor the `bypassPermissions` session running inside the tree can touch the
+ * operator's real repository. See `plan.ts`'s git section for why a worktree was not good enough.
+ *
+ * DELIBERATE: the repository lives BESIDE the tree (`<tree>.git`), never inside it, and every
+ * launcher git call names both (`--git-dir`, `--work-tree`). The tree holds bytes somebody else
+ * chose — a fetched package, a candidate session's writes — and a `.git/config` among them would
+ * be read as git configuration by any git that found it by discovery: a filter driver there runs
+ * as the operator on the next `git add` or `git status`. Given an explicit `--git-dir`, git never
+ * looks for one, and the only configuration it reads is the launcher's own. The one `.git` the
+ * tree does carry is a launcher-written gitfile (`exposeGitDir`), for the SESSION's git: it points
+ * at the repository, which the sandbox lets the candidate read but not write (session.ts).
  *
  * DELIBERATE: no `zz-stack-dashboard` symlink beside the clone any more. One used to point at the
  * operator's real console checkout so a gate run inside the replay could find its sibling — which
@@ -24,23 +33,51 @@ import {
   gitResolveTagArgv, gitStatusArgv, hardenedGitEnv, releaseRefFor, releaseTagFor, worktreeDirName,
 } from "./plan.js";
 
-/** The one way this launcher runs git: hardened flags ahead of the subcommand and an allowlisted
- *  environment (`GIT_HARDENED_ARGS`, `hardenedGitEnv`, plan.ts) — the clone's own `.git/config`
- *  is never trusted to name a command, and no token of the launcher's reaches a git process. */
-function gitRaw(cwd: string, args: string[]): string {
-  return execFileSync("git", [...GIT_HARDENED_ARGS, ...args], {
+export interface Worktree {
+  /** `refs/tags/v<declared_version>` for a catalog subject, the captured identity for a third
+   *  party — what `replay_start` recorded as the run's `sandbox_ref`/`worktree_ref`. */
+  readonly ref: string;
+  /** The tree the session works in. */
+  readonly path: string;
+  /** The launcher's repository for that tree, outside it. */
+  readonly gitDir: string;
+  readonly commit: string;
+}
+
+type Repo = Pick<Worktree, "path" | "gitDir">;
+
+/** The one way this launcher runs git: hardened flags, then the repository named explicitly,
+ *  then the subcommand, under an allowlisted environment (`GIT_HARDENED_ARGS`, `hardenedGitEnv`,
+ *  plan.ts). Nothing in the tree is read as configuration and no token of the launcher's reaches
+ *  a git process. `repo` null is a command that makes the repository (`clone`, `init`). */
+function gitRaw(repo: Repo | null, cwd: string, args: string[]): string {
+  const at = repo ? [`--git-dir=${repo.gitDir}`, `--work-tree=${repo.path}`] : [];
+  return execFileSync("git", [...GIT_HARDENED_ARGS, ...at, ...args], {
     cwd, env: hardenedGitEnv(process.env), encoding: "utf8", timeout: GIT_EXEC_TIMEOUT_MS, stdio: ["ignore", "pipe", "pipe"],
   });
 }
-const git = (cwd: string, args: string[]): string => gitRaw(cwd, args).trim();
-/** The same hardened git, for `third-party.ts`'s own fetch of a subject's source. */
-export const runGit = git;
+/** git in `repo`, trimmed — `third-party.ts`'s fetch and snapshot use it too. */
+export const gitIn = (repo: Repo, args: string[]): string => gitRaw(repo, repo.path, args).trim();
 
-/** The paths `git status` reports changed or new in the clone — what the session produced. A
+/** A fresh, empty launcher repository at `repo.gitDir`, for `repo.path`. Bare to create (so
+ *  nothing is written into the tree), then `core.bare=false` so the session's git, arriving
+ *  through the gitfile, sees an ordinary repository with a working tree. */
+export function initGitDir(repo: Repo): void {
+  gitRaw(null, dirname(repo.gitDir), ["init", "-q", "--bare", repo.gitDir]);
+  gitIn(repo, ["config", "core.bare", "false"]);
+}
+
+/** The gitfile the SESSION's git finds the repository through. Written last, once every check
+ *  of the tree's content has passed; the launcher's own git never reads it. */
+export function exposeGitDir(repo: Repo): void {
+  writeFileSync(join(repo.path, ".git"), `gitdir: ${repo.gitDir}\n`);
+}
+
+/** The paths `git status` reports changed or new in the tree — what the session produced. A
  *  rename's second NUL field (its old path) is skipped. Runs after the session, so every
- *  hardening in `gitRaw` is what makes reading the candidate's own repository safe. */
-export function changedPaths(worktreePath: string): string[] {
-  const fields = gitRaw(worktreePath, gitStatusArgv()).split("\0");
+ *  hardening in `gitRaw` is what makes reading the candidate's own tree safe. */
+export function changedPaths(repo: Repo): string[] {
+  const fields = gitRaw(repo, repo.path, gitStatusArgv()).split("\0");
   const out: string[] = [];
   for (let i = 0; i < fields.length; i += 1) {
     const f = fields[i];
@@ -49,14 +86,6 @@ export function changedPaths(worktreePath: string): string[] {
     if (f[0] === "R" || f[0] === "C") i += 1;
   }
   return out;
-}
-
-export interface Worktree {
-  /** `refs/tags/v<declared_version>` — the ref the clone was checked out from, and what
-   *  `replay_start` recorded as the run's `sandbox_ref`/`worktree_ref`. */
-  readonly ref: string;
-  readonly path: string;
-  readonly commit: string;
 }
 
 /** Deterministic from `teamSlug` alone — never a random suffix. `team_slug` is already unique
@@ -69,7 +98,20 @@ export function worktreePathFor(teamSlug: string): string {
   return join(realpathSync(tmpdir()), "zz-replay", worktreeDirName(teamSlug));
 }
 
-/** Clones `repoRoot` into this run's directory and detaches it at `v<declaredVersion>` — the
+/** The run's repository, beside its tree — under the system temporary directory the sandbox
+ *  denies, and never bound back writable, so no session can change what the launcher's git reads. */
+const gitDirFor = (teamSlug: string): string => `${worktreePathFor(teamSlug)}.git`;
+
+/** The run's two paths, with whatever a crashed earlier attempt left at them removed and the
+ *  tree's directory created empty. */
+export function freshRepo(teamSlug: string): Repo {
+  const repo = { path: worktreePathFor(teamSlug), gitDir: gitDirFor(teamSlug) };
+  for (const p of [repo.path, repo.gitDir]) if (existsSync(p)) rmSync(p, { recursive: true, force: true });
+  mkdirSync(repo.path, { recursive: true });
+  return repo;
+}
+
+/** Clones `repoRoot` into this run's repository and checks its tree out at `v<declaredVersion>` — the
  *  "install at an exact digest" half of the contract. Whatever the operator's checkout does
  *  after this call, the clone keeps the release commit for the whole life of the run. A missing
  *  tag throws: a subject whose release was never tagged in `repoRoot` cannot be replayed from it,
@@ -77,26 +119,24 @@ export function worktreePathFor(teamSlug: string): string {
  *  A crashed earlier attempt for the same team slug is removed first, so a retry never collides
  *  with its own predecessor. */
 export function createWorktree(repoRoot: string, teamSlug: string, declaredVersion: string): Worktree {
-  const path = worktreePathFor(teamSlug);
-  if (existsSync(path)) rmSync(path, { recursive: true, force: true });
-  // Only the parent: `git clone` creates the target directory itself.
-  const parent = dirname(path);
-  mkdirSync(parent, { recursive: true });
-  git(parent, gitCloneArgv(resolve(repoRoot), path));
+  const repo = freshRepo(teamSlug);
   try {
-    git(path, gitRemoveOriginArgv());
+    gitRaw(null, dirname(repo.gitDir), gitCloneArgv(resolve(repoRoot), repo.gitDir));
+    gitIn(repo, ["config", "core.bare", "false"]);
+    gitIn(repo, gitRemoveOriginArgv());
     const tag = releaseTagFor(declaredVersion);
     let commit: string;
     try {
-      commit = git(path, gitResolveTagArgv(tag));
+      commit = gitIn(repo, gitResolveTagArgv(tag));
     } catch {
       throw new Error(`launchReplay: ${repoRoot} has no release tag ${tag} — the subject's own ` +
         "release cannot be checked out, and no other commit is an acceptable stand-in for it");
     }
-    git(path, gitCheckoutDetachArgv(commit));
-    return { ref: releaseRefFor(declaredVersion), path, commit };
+    gitIn(repo, gitCheckoutDetachArgv(commit));
+    exposeGitDir(repo);
+    return { ref: releaseRefFor(declaredVersion), ...repo, commit };
   } catch (err) {
-    rmSync(path, { recursive: true, force: true });
+    removeWorktree(repo);
     throw err;
   }
 }
@@ -107,9 +147,9 @@ export function readReleaseLock(worktreePath: string): unknown {
   return JSON.parse(readFileSync(join(worktreePath, "plugins.lock.json"), "utf8"));
 }
 
-/** Removes the clone. Always called from a `finally`; safe to call twice. */
-export function removeWorktree(worktree: Worktree): void {
-  if (existsSync(worktree.path)) rmSync(worktree.path, { recursive: true, force: true });
+/** Removes the tree and its repository. Always called from a `finally`; safe to call twice. */
+export function removeWorktree(repo: Repo): void {
+  for (const p of [repo.path, repo.gitDir]) if (existsSync(p)) rmSync(p, { recursive: true, force: true });
 }
 
 /** I-18: applies a recorded candidate's own unified diff into an already-created clone,
@@ -127,12 +167,12 @@ export function removeWorktree(worktree: Worktree): void {
  *  was digested or stored. `git apply` reads the diff text file-format-strict and refuses a
  *  patch whose last hunk line has no trailing newline as "corrupt" (a bare `.join("\n")` never
  *  produces one), so one is added to the written copy when missing. */
-export function applyPatch(worktreePath: string, diff: string): void {
+export function applyPatch(repo: Repo, diff: string): void {
   const dir = mkdtempSync(join(tmpdir(), "zz-replay-patch-"));
   const patchPath = join(dir, "candidate.patch");
   writeFileSync(patchPath, diff.endsWith("\n") ? diff : `${diff}\n`, "utf8");
   try {
-    git(worktreePath, gitApplyArgv(patchPath));
+    gitIn(repo, gitApplyArgv(patchPath));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

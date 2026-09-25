@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-improve
-version: 0.3
+version: 0.4
 description: Stage 7 of zz-plugin-eval (IMPROVE). Search for a proven candidate patch against plugin-owned findings — propose, validate by replay, search to one deterministic winner, prove it sealed — then hand off to promotion for an owned subject or write an owner-facing proposal for one this team cannot release.
 when_to_use: "The seventh stage of zz-plugin-eval, after EXPLAIN. Runs for every branch except one with no plugin-owned actionable finding at all, which skips it with one call and closes. REQUIRES a shell-capable runtime (Claude Code) that can run npm/zz-tool commands and launch isolated sessions — refuses to start anywhere else. Every stage before this one runs with no shell at all (FR-54)."
 ---
@@ -111,28 +111,39 @@ replay_start(case_set_id, subject_version_id? | candidate_id?, split: "validatio
 both — then, for the `worktree_ref`/`replay_run_id` it returns:
 
 ```
-umask 077; d=$(mktemp -d)
-cat > "$d/replay" <<'TOKEN'
-<token>
-TOKEN
+d=$(mktemp -d)
+```
+
+Write `<token>` — the `token` `replay_start` returned — to `$d/replay` with your own
+file-writing tool. **Never with a shell command**: no `echo`, no `printf`, no heredoc. A token in
+a shell command is in that command's argv, where `ps`, shell history and a transcript of your
+tool calls keep it. Then:
+
+```
+chmod 600 "$d/replay"
 npm run replay -- --run <replay_run_id> --repo <path-to-a-checkout> --token-file "$d/replay"
 rm -rf "$d"
 ```
 
-`<token>` is the `token` `replay_start` returned. It goes into a file, never onto a command line
-or into the environment, where `ps`, shell history and `/proc` would keep it. Best: make the
-directory with `mktemp -d`, write the file with your own file-writing tool (not a shell command),
-then `chmod 600` it; the quoted heredoc above is the shell-only fallback. Remove the directory
-once the launcher returns. The launcher refuses a token file anyone but you can read.
+The launcher refuses a token file anyone but you can read. Remove the directory once it returns.
+
+**The launcher needs a model credential in its own environment**: `ANTHROPIC_API_KEY`, or
+`CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token` mints one). Every session runs under a fresh
+`CLAUDE_CONFIG_DIR` with no login in it, so a `claude login` kept only in the macOS keychain never
+reaches a session. Without one of the two, the launcher refuses before it does anything and the
+run closes `failed` — set it and start a fresh run; do not retry the same one.
 
 It marks the run `running` and fetches the subject exactly as it was captured. A catalog plugin:
 `--repo` cloned standalone at the subject's own release tag (`v<declared_version>`). A
 third-party plugin `plugin_register` captured: its git source at the recorded
 `resolved_commit` (https only), its npm package re-packed and matched to the recorded
 `tarball_integrity`, or its `local_dir` copied from `--repo`'s own `catalog/`. Either way it
-refuses — closing the run `failed` — when what it fetched does not carry the digest the subject
-was captured at, so a non-owned subject's candidates are proven the same way an owned one's are
-before they reach `proposal.md`. It installs the subject plugin into a
+refuses — closing the run `failed` — when what it fetched does not carry the digests the subject
+was captured at (skills and manifest, and every other file: hooks, commands, server code), or
+carries a `.git` or a `.gitattributes` naming a filter, so a non-owned subject's candidates are
+proven the same way an owned one's are before they reach `proposal.md`. A third-party subject
+registered before its identity recorded a `tree_digest` is refused: register it again under a
+new version. It installs the subject plugin into a
 session-local `CLAUDE_CONFIG_DIR` under a temporary `HOME`, with none of your own credentials in
 the sessions' environment, and runs every session inside an OS sandbox (`sandbox-exec` on macOS,
 `bwrap` on Linux) that cannot read your home directory or write outside its own. **With no
@@ -206,13 +217,14 @@ per side, never case ids: you never learn which proof case a run used. Run them 
 
 ```
 replay_start(case_set_id, candidate_id | subject_version_id, split: "proof", context: "verifier", verifier_token, repeats, idempotency_key)
-umask 077; d=$(mktemp -d)
-cat > "$d/replay" <<'TOKEN'
-<token>
-TOKEN
-cat > "$d/verifier" <<'TOKEN'
-<verifier_token>
-TOKEN
+d=$(mktemp -d)
+```
+
+Write `<token>` to `$d/replay` and `<verifier_token>` to `$d/verifier` with your file-writing
+tool, never a shell command, then:
+
+```
+chmod 600 "$d/replay" "$d/verifier"
 npm run replay -- --run <replay_run_id> --repo <path> --token-file "$d/replay" --verifier-token-file "$d/verifier"
 rm -rf "$d"
 ```

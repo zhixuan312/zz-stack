@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Round-2 review (finding 6): SearchPolicy's generation bounds are positive integers and its
-// minMeaningfulEffect is never negative; a dimension's weight must be positive only when the
-// dimension is applicable, because score.ts never reads an inapplicable dimension's weight.
+// minMeaningfulEffect is never negative; round 3 (finding 4): wallClockHours is positive,
+// minRepeats a positive integer, confidence inside (0, 1) and equivalenceBand never negative. A
+// dimension's weight must be positive only when the dimension is applicable, because score.ts
+// never reads an inapplicable dimension's weight.
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
@@ -15,9 +17,14 @@ const policy = {
 };
 assert.ok(SearchPolicy.safeParse(policy).success, "a sound policy parses");
 assert.ok(SearchPolicy.safeParse({ ...policy, minMeaningfulEffect: 0 }).success, "an mme of 0 is allowed");
+assert.ok(SearchPolicy.safeParse({ ...policy, equivalenceBand: 0, wallClockHours: 0.5 }).success,
+  "a zero band and a fractional hour bound are allowed");
 for (const [field, value] of [
   ["maxGenerations", 0], ["maxGenerations", 1.5], ["maxCandidatesPerGeneration", -1],
   ["maxCandidatesPerGeneration", 2.5], ["minMeaningfulEffect", -0.1],
+  // Round 3 (finding 4): the run bound, the repeat count, the confidence level and the band.
+  ["wallClockHours", 0], ["wallClockHours", -1], ["minRepeats", 0], ["minRepeats", 2.5],
+  ["confidence", 0], ["confidence", 1], ["confidence", 1.5], ["equivalenceBand", -0.01],
 ] as const) {
   assert.ok(!SearchPolicy.safeParse({ ...policy, [field]: value }).success, `${field}: ${value} is refused`);
 }

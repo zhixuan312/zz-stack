@@ -64,14 +64,21 @@ function publishedTagCommit(repoRoot: string, tag: string): { commit: string } |
 
 /** The `release_ref` to record for a release of `candidateCommit` published under `tag`: the
  *  tag's own commit, and only when the tag contains the candidate's commit — a tag that does not
- *  is some other release, never this one. */
+ *  is some other release, never this one. A refusal carries `published`, the tag's commit, when
+ *  the tag itself is published and only the ancestry failed: a release command that squashed or
+ *  rebased the candidate's commit publishes exactly that, and `--reconcile` lets an operator
+ *  accept it by name (`apply.ts`) rather than leave the attempt applying forever. */
 export function releaseRefFor(
   repoRoot: string, tag: string, candidateCommit: string,
-): { commit: string } | { refused: string } {
+): { commit: string } | { refused: string; published: string | null } {
   const published = publishedTagCommit(repoRoot, tag);
-  if ("refused" in published) return published;
+  if ("refused" in published) return { ...published, published: null };
   if (!isAncestor(repoRoot, candidateCommit, published.commit)) {
-    return { refused: `tag ${tag} (${published.commit}) does not contain the candidate's commit ${candidateCommit} — it is another release` };
+    return {
+      refused: `tag ${tag} (${published.commit}) does not contain the candidate's commit ${candidateCommit} — ` +
+        "it is another release, or the release command squashed or rebased the candidate's commit",
+      published: published.commit,
+    };
   }
   return published;
 }

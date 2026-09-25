@@ -57,7 +57,8 @@ import { z } from "zod";
 import { canonicalJson, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { visibleEvents } from "./replay-cases.js";
 import {
-  sealProofRead, verifierAllocation, verifierCaseDraw, verifierReadRefusal, verifierSide, verifierStartRefusal,
+  liveAllocationRefusal, sealProofRead, verifierAllocation, verifierCaseDraw, verifierReadRefusal, verifierSide,
+  verifierStartRefusal,
   type VerifierAllocation,
 } from "./replay-verifier.js";
 import { platformEvent } from "../indexing.js";
@@ -482,6 +483,11 @@ export function registerReplayRunTools(server: McpServer): void {
             protocol_version_id: protocol.protocolVersionId,
           }));
 
+          // Last, so the token lock is taken as late as possible and held only to commit.
+          if (allocation) {
+            const revoked = await liveAllocationRefusal(client, allocation.id);
+            if (revoked) throw new Refusal(revoked);
+          }
           await client.query(
             `insert into zz.replay_run
                (id, case_id, subject_version_id, candidate_id, protocol_version_id,

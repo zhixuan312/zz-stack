@@ -9,8 +9,9 @@
  * reason: "abandoned"` through the SAME `resolveOutcome` transaction (`candidate-prove.ts`)
  * every other terminal outcome uses, own idempotency phase, after `cancelProofRuns` tears down
  * whatever the token already spawned — so a later search needs a new allocation, per FR-28.
- * An abandon before any proof run was registered releases the case set's proof split; one after
- * keeps it spent (`proofSplitSpent`).
+ * The token is revoked first, on its own commit, and the runs are counted inside the resolving
+ * transaction: an abandon before any proof run was registered releases the case set's proof
+ * split; one after keeps it spent (`proofSplitSpent`).
  */
 import type pg from "pg";
 
@@ -44,27 +45,18 @@ async function cancelProofRuns(
   for (const run of rows) await closeRun(p, run, "cancelled", principal, "abandoned");
 }
 
-/** The candidate's own currently open (not yet revoked) `zz.replay_verifier_token` id — the same
- *  allocation `candidate_prove`'s own "open" phase minted and `resolveOutcome` revokes on
- *  resolution. Null when nothing was ever minted (an abandon against a `selected` candidate is
- *  already refused before this is ever called) or the token row itself is gone. */
-async function activeVerifierAllocationId(p: pg.Pool, candidateId: string): Promise<string | null> {
-  const row = (await p.query<{ id: string }>(`
-    select id::text as id from zz.replay_verifier_token
+/** Revokes every still-open `zz.replay_verifier_token` of this candidate, committed on its own
+ *  statement BEFORE anything else `abandon` does, and returns the allocation ids it revoked.
+ *  From this commit on `verifierAllocation` (replay-verifier.ts) refuses the token, so no new
+ *  proof run can start while the runs it already spawned are cancelled and counted. Empty when
+ *  nothing was open (the token row vanished mid-flight) — the abandon still resolves; it only
+ *  means nothing was left to cancel. */
+async function revokeVerifierTokens(p: pg.Pool, candidateId: string): Promise<string[]> {
+  const { rows } = await p.query<{ id: string }>(`
+    update zz.replay_verifier_token set revoked_at = now()
      where candidate_id = $1::uuid and revoked_at is null
-     order by created_at desc limit 1`, [candidateId])).rows[0];
-  return row?.id ?? null;
-}
-
-/** True once this allocation has any run at all, whatever its status: `replay_start` draws a
- *  sealed proof case and binds it to a session when it registers the run, and a run the sweep or
- *  an earlier teardown already `cancelled` may have been running when it was. Conservative on
- *  purpose — a sealed proof errs toward spent. */
-async function anyProofRunExecuted(p: pg.Pool, verifierAllocationId: string): Promise<boolean> {
-  const row = (await p.query<{ any: boolean }>(
-    "select exists (select 1 from zz.replay_run where verifier_allocation_id = $1::uuid) as any",
-    [verifierAllocationId])).rows[0];
-  return row?.any ?? false;
+    returning id::text as id`, [candidateId]);
+  return rows.map((r) => r.id);
 }
 
 /** The candidate's own latest proof `zz.candidate_evaluation` row, however it got there (a
@@ -104,22 +96,21 @@ export async function abandonProof(
     };
   }
 
-  // proving: cancel whatever the token already spawned before revoking it — scoped to this
-  // candidate's own open allocation (migration 082), never to a case set or base subject a
-  // different candidate's own allocation could share. A missing allocation id (the token row
-  // itself vanished mid-flight) still lets the abandon resolve; it only means nothing was left
-  // to cancel.
+  // proving: revoke the token first, so nothing new can start; then cancel whatever it already
+  // spawned — scoped to this candidate's own allocations (migration 082), never to a case set or
+  // base subject a different candidate's own allocation could share.
   //
   // Whether any run was drawn onto a proof case decides whether the case set's proof split is
-  // released (`proofSplitSpent`, candidate-prove-decide.ts). Read before cancelling, and counted
-  // whatever the status, since cancelling does not undo a case a session was already handed.
-  const verifierAllocationId = await activeVerifierAllocationId(p, candidate.id);
-  const observed = verifierAllocationId ? await anyProofRunExecuted(p, verifierAllocationId) : false;
-  if (verifierAllocationId) await cancelProofRuns(p, verifierAllocationId, principal);
+  // released (`proofSplitSpent`, candidate-prove-decide.ts). Counted inside the resolving
+  // transaction, after the revoke, whatever the run's status — cancelling does not undo a case a
+  // session was already handed, and a count taken before the revoke would miss a run started in
+  // the gap.
+  const allocations = await revokeVerifierTokens(p, candidate.id);
+  for (const allocation of allocations) await cancelProofRuns(p, allocation, principal);
 
   return resolveOutcome(candidate, idempotencyKey, principal, {
     proof_status: "not_established", reason: "abandoned", release_eligible: false,
     decision: null, guardrails: null, resource_usage: null, dimension_scores: null,
-    statistics: { abandoned: true, proof_runs_executed: observed }, observed,
+    statistics: { abandoned: true }, observed: { allocations },
   }, "abandon", initiative);
 }

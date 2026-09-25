@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-promote-verify
-version: 0.3
+version: 0.4
 description: Stage 8 of zz-plugin-eval (PROMOTE/VERIFY), the promotion boundary. Once IMPROVE has a proof-passed, owned candidate, prepare and gate the exact patch, apply it only after every required owner approves, record what happened, and run the automatic no-gate post-release check with its own objective rollback rule.
 when_to_use: "The eighth and last stage of zz-plugin-eval, reached only when release_mode is promotable — a candidate IMPROVE selected reached proof_passed against an owned subject. REQUIRES a shell-capable runtime that can run zz-tool commands against a real repository checkout. Never reached on a proposal_only or not_applicable branch."
 ---
@@ -91,7 +91,14 @@ command, locates the new subject AT `--release-version`, and reports back with `
 commit `--release-tag` names — only once that tag is published (on origin, or local in a clone
 with no remote) and contains the candidate's commit; otherwise the attempt stays applying and the
 CLI prints the `--reconcile` command. The branch is kept on success; it holds the candidate's
-commit:
+commit.
+
+**The release command must keep the candidate's commit in the tag's ancestry.** Merge
+`plan.branch` or tag on top of it; never squash or rebase it. A tag that does not contain the
+candidate's commit cannot be tied back to this candidate, so the attempt stays applying and blocks
+every later release of the plugin until someone reconciles it (below).
+
+What the CLI records:
 
 ```
 release_record(release_attempt_id, status: released, release_ref, released_subject_version_id, idempotency_key)
@@ -115,8 +122,14 @@ or recording is refused, or the process dies, the attempt stays applying and
 --release-version <version> --release-tag <tag> --repo <clone> [--commit <sha>]` records the truth
 later — `released` only if that version is registered AND the tag contains the candidate's branch
 commit (a version another release published is not this one); `failed` only if the version was
-never registered AND no tag carries that commit (a release that landed may register late). Anything
-else records nothing and says why. RETURNS `{ status, release_attempt_id,
+never registered AND no tag carries that commit AND the release tag is not published (a release
+that landed may register late). Anything else records nothing and says why. When the release
+command did squash or rebase the candidate's commit, and you have confirmed the published tag is
+this attempt's own release, add `--accept-tag-without-candidate-commit`: with the tag published and
+the version registered, it records `released` by the tag's commit, and the record's `reason` says
+the ancestry was accepted by the operator rather than proved. Never pass it for a tag you have not
+checked — it is the one path that records a release nothing ties to the candidate. `release_ref` is
+always a full 40-hex commit sha; anything else is refused. RETURNS `{ status, release_attempt_id,
 released_subject_version_id, release_ref }`.
 
 ## Verifying it — automatic, no gate, with its own rollback rule

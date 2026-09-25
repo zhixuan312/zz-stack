@@ -2,11 +2,11 @@
  * The launcher's process layer (Task I-17): a session-local `CLAUDE_CONFIG_DIR`, the plugin
  * installed into it from the pinned worktree, and one headless `claude -p` turn at a time —
  * proven against real flags by `testing/eval-step.sh`, not invented here. Every subprocess runs
- * through `execFileSync` with an argv array built in `plan.ts`; nothing here interpolates a
+ * through `execFileSync` or `spawnSync` with an argv array built in `plan.ts`; nothing here interpolates a
  * string into a shell. Every `claude` process runs inside the OS sandbox `sandbox.ts` describes;
  * this file is where the paths that sandbox needs are resolved against the real filesystem.
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync, type SpawnSyncOptionsWithStringEncoding } from "node:child_process";
 import {
   appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
@@ -114,10 +114,39 @@ export function sandboxContext(tool: SandboxTool, repoRoot: string, claudeBin: s
   return { tool, denyRead, allowRead };
 }
 
-/** One sandboxed `execFileSync`, writable only where `paths.writable` says, and never inside any
- *  of those a directory carries its own `.git` — the clone's, which the launcher later reads with
- *  `git` outside the sandbox (sandbox.ts's module note). `paths.readable` adds read-only paths for
- *  this one process (the clone, for the install step). */
+/** One process run as the leader of its own process group, and the whole group killed once it
+ *  returns — success, failure or timeout. A session's `claude` can leave a background command
+ *  running (`cmd &`), and one still running when the launcher reads the tree (`collectProduced`,
+ *  launch.ts) can swap a checked path for a symlink between the check and the read. `spawnSync`
+ *  rather than `execFileSync`, which hides the child's pid.
+ *
+ *  What this cannot reach: a command that leaves the group itself (`setsid`). Under bwrap the
+ *  fresh PID namespace covers that too — it dies with the session (sandbox.ts); under Seatbelt
+ *  nothing does. And a background command that keeps this process's stdout open holds the turn
+ *  until `timeout`, which then kills the group. Throws the way `execFileSync` does, with
+ *  `stdout`/`stderr` on the error. */
+export function runGrouped(
+  file: string, argv: readonly string[], opts: { cwd: string; env: Record<string, string>; timeout: number; maxBuffer?: number },
+): string {
+  // `detached` is missing from Node's `spawnSync` typings, and honoured at runtime all the same —
+  // probed on Node 24: the child's pgid is its own pid. Hence a variable, past the literal check.
+  const options: SpawnSyncOptionsWithStringEncoding & { detached: true } =
+    { ...opts, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], detached: true };
+  const res = spawnSync(file, argv, options);
+  try {
+    if (res.pid) process.kill(-res.pid, "SIGKILL");
+  } catch { /* ESRCH: nothing of the group is left */ }
+  if (res.error || res.status !== 0) {
+    const why = res.error?.message ?? (res.signal ? `killed by ${res.signal}` : `exited ${String(res.status)}`);
+    throw Object.assign(new Error(`${file} failed: ${why}`), { stdout: res.stdout ?? "", stderr: res.stderr ?? "" });
+  }
+  return res.stdout;
+}
+
+/** One sandboxed process, writable only where `paths.writable` says, and never the `.git`
+ *  gitfile inside one of those — it names the launcher's repository, which the launcher reads
+ *  with `git` outside the sandbox (git.ts). `paths.readable` adds read-only paths for this one
+ *  process: the tree for the install step, the launcher's repository for the candidate's git. */
 function execSandboxed(
   sandbox: SandboxContext, paths: { writable: readonly string[]; readable?: readonly string[] }, bin: string, args: string[],
   opts: { cwd: string; env: Record<string, string>; timeout: number; maxBuffer?: number },
@@ -127,7 +156,7 @@ function execSandboxed(
     denyRead: sandbox.denyRead, allowRead: [...sandbox.allowRead, ...(paths.readable ?? [])],
     writable: paths.writable, readOnly,
   }, bin, args, opts.cwd);
-  return execFileSync(cmd.file, cmd.argv, { ...opts, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  return runGrouped(cmd.file, cmd.argv, opts);
 }
 
 export function removeSessionHome(home: SessionHome): void {
@@ -141,6 +170,7 @@ export function removeSessionHome(home: SessionHome): void {
  *  the marketplace's own declared name, which `claude plugin install` needs as `plugin@name`. */
 export function installPlugin(
   claudeBin: string, home: SessionHome, sandbox: SandboxContext, marketplaceRoot: string, plugin: string,
+  readable: readonly string[] = [],
 ): string {
   const marketplaceJsonPath = join(marketplaceRoot, ".claude-plugin", "marketplace.json");
   if (!existsSync(marketplaceJsonPath)) {
@@ -150,7 +180,7 @@ export function installPlugin(
   const marketplaceName = declared.name || "zz-stack";
   const opts = { cwd: home.root, env: home.env, timeout: SESSION_EXEC_TIMEOUT_MS };
   // The clone sits under the denied temporary directory: readable for these two steps, never writable.
-  const paths = { writable: [home.root], readable: [marketplaceRoot] };
+  const paths = { writable: [home.root], readable: [marketplaceRoot, ...readable] };
   execSandboxed(sandbox, paths, claudeBin, claudeMarketplaceAddArgv(marketplaceRoot), opts);
   execSandboxed(sandbox, paths, claudeBin, claudeInstallArgv(plugin, marketplaceName), opts);
   return marketplaceName;
@@ -199,7 +229,7 @@ interface TurnResult { readonly lastText: string; readonly costUsd: number; read
  *  `testing/eval-step.sh`, which has run this exact invocation shape live. */
 export function runTurn(
   claudeBin: string, home: SessionHome, sandbox: SandboxContext, argvOpts: SessionArgvOpts, cwd: string,
-  logPath: string,
+  logPath: string, readable: readonly string[] = [],
 ): TurnResult {
   const argv = claudeSessionArgv(argvOpts);
   // Writable: the session's own home, and its working directory — the clone, for the candidate;
@@ -207,7 +237,7 @@ export function runTurn(
   const writable = [...new Set([home.root, cwd])];
   let raw: string;
   try {
-    raw = execSandboxed(sandbox, { writable }, claudeBin, argv,
+    raw = execSandboxed(sandbox, { writable, readable }, claudeBin, argv,
       { cwd, env: home.env, timeout: SESSION_EXEC_TIMEOUT_MS, maxBuffer: MAX_OUTPUT_BYTES });
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string; message?: string };

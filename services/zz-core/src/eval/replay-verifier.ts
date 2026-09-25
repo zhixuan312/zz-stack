@@ -61,6 +61,26 @@ export async function verifierAllocation(p: Db, token: string | undefined): Prom
   return row ?? null;
 }
 
+/** Null while `allocationId`'s token is still unrevoked, taken FOR SHARE inside `replay_start`'s
+ *  own transaction right before its run insert; otherwise the refusal. `verifierAllocation`
+ *  checked the token before the transaction opened, and an abandon (candidate-prove-abandon.ts)
+ *  can revoke it in between. This re-read closes that gap both ways:
+ *   - revoked first: the re-read sees it (read committed) and the start is refused;
+ *   - re-read first: the abandon's `update ... set revoked_at` waits on this lock until the start
+ *     commits, so the abandon's cancel and count that follow the revoke see the new run.
+ *
+ *  DELIBERATE: FOR SHARE, not FOR KEY SHARE. Setting `revoked_at` touches no key column, so the
+ *  revoke takes only FOR NO KEY UPDATE, which a KEY SHARE lock (the run's own foreign key takes
+ *  one) does not block — the revoke would commit past a start still in flight, and the abandon's
+ *  cancel would miss its run. */
+export async function liveAllocationRefusal(client: Db, allocationId: string): Promise<string | null> {
+  const row = (await client.query(
+    "select id from zz.replay_verifier_token where id = $1::uuid and revoked_at is null for share",
+    [allocationId])).rows[0];
+  return row ? null : "ERROR: verifier_token revoked while this replay_start was in flight — its proof " +
+    "allocation was abandoned or resolved, and no run was registered";
+}
+
 /** Null when a verifier-context `replay_start` stays inside `alloc`; otherwise the refusal. */
 export function verifierStartRefusal(alloc: VerifierAllocation, args: {
   readonly split: string; readonly case_set_id: string; readonly case_id?: string;

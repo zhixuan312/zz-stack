@@ -12,10 +12,11 @@
  *     session.ts, resolves that list);
  *   - except the few paths the session needs back (the `claude` install, when it lives under
  *     that home), which are re-allowed read-only;
- *   - nothing is writable except the session's own temporary home and the run's clone — and
- *     never the clone's own `.git` (`readOnly`): the launcher reads that clone with `git` after
- *     the session ends, and a `core.fsmonitor`, a hook or a filter driver planted in `.git/config`
- *     would run as the operator, outside any sandbox;
+ *   - nothing is writable except the session's own temporary home and the run's tree — and
+ *     never the tree's `.git` gitfile (`readOnly`), which names the launcher's repository beside
+ *     it. That repository is readable to the candidate (session.ts) and writable to nobody but the
+ *     launcher, whose git reads it after the session ends: a `core.fsmonitor`, a hook or a filter
+ *     driver written into it would run as the operator, outside any sandbox;
  *   - everything else (system libraries, network, process execution) is left as it is — the
  *     session must still reach its model and run the plugin's own tools.
  *
@@ -40,8 +41,8 @@ interface SandboxSpec {
   readonly allowRead: readonly string[];
   /** The only writable places: the session home and, for the candidate, the clone. Readable too. */
   readonly writable: readonly string[];
-  /** Under a writable path, yet never written: the clone's `.git`. Narrows, never widens, so it
-   *  is outside `assertNoWideningAllow`'s concern. Absent means none. */
+  /** Under a writable path, yet never written: the tree's `.git` gitfile. Narrows, never widens,
+   *  so it is outside `assertNoWideningAllow`'s concern. Absent means none. */
   readonly readOnly?: readonly string[];
 }
 

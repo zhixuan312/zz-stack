@@ -14,7 +14,7 @@
  *
  *   node packages/tools/dist/release/apply.js --reconcile <release_attempt_id> \
  *     --candidate <id> --plugin <name> --release-version <version> --release-tag <tag> \
- *     --repo <path> [--commit <sha>] [--gateway <url>]
+ *     --repo <path> [--commit <sha>] [--accept-tag-without-candidate-commit] [--gateway <url>]
  *
  * `--release-cmd` is deliberately required, with no default: the version bump, the changelog and
  * the branch/merge sequence are judgement work a script must not do on somebody's behalf, so "the
@@ -49,7 +49,15 @@
  * that version, so the release tag must also contain the candidate's branch commit. Not
  * registered is not enough for `failed` either: while any tag contains the branch commit the
  * release did land and may simply register late, so nothing is recorded yet. Only a version never
- * registered AND a commit no tag carries is `failed`, the truth, and the branch removed.
+ * registered AND a commit no tag carries AND no published release tag is `failed`, the truth,
+ * and the branch removed.
+ *
+ * `--release-cmd` must keep the candidate's commit in the release tag's ancestry: a command that
+ * squashes or rebases `plan.branch` publishes a tag nothing can tie back to the candidate, and
+ * the attempt stays applying. `--reconcile --accept-tag-without-candidate-commit` is the
+ * operator's explicit way out: only when the tag is published and the version registered, it
+ * records `released` by the tag's commit and says in the record's `reason` that the ancestry
+ * was accepted, not proved.
  * `released` is recorded under a key derived from the attempt, so a lost response is retried as
  * a replay rather than a second write.
  */
@@ -133,6 +141,9 @@ interface ApplyResponse {
 }
 
 const releasedKey = (attemptId: string): string => `release_record:${attemptId}:released`;
+/** `--reconcile`'s operator override for a release command that squashed or rebased the
+ *  candidate's commit out of the tag's ancestry — see `reconcileMain`. */
+const ACCEPT_FLAG = "accept-tag-without-candidate-commit";
 const failedKey = (attemptId: string): string => `release_record:${attemptId}:failed`;
 
 function reconcileHint(attemptId: string, candidateId: string, plugin: string, version: string, tag: string): string {
@@ -227,7 +238,10 @@ async function applyMain(mcp: Mcp, args: ReturnType<typeof parseArgs>): Promise<
     const releaseRef = releaseRefFor(repoRoot, releaseTag, candidateCommit);
     if ("refused" in releaseRef) {
       console.error(`the release command succeeded but its release is not confirmed: ${releaseRef.refused}\n` +
-        `The attempt is left applying; once the tag is published, run: ${hint}`);
+        (releaseRef.published
+          ? `The attempt is left applying. The tag is published but the release command dropped the ` +
+            `candidate's commit from its ancestry; if that tag is this release, run: ${hint} --${ACCEPT_FLAG}`
+          : `The attempt is left applying; once the tag is published, run: ${hint}`));
       return 1;
     }
     return await recordReleased(mcp, attemptId, plan.plugin, releaseVersion, releaseRef.commit, hint);
@@ -250,6 +264,7 @@ async function applyMain(mcp: Mcp, args: ReturnType<typeof parseArgs>): Promise<
  *  to finish it; it never falls back to `failed`, because the release already happened. */
 async function recordReleased(
   mcp: Pick<Mcp, "call">, attemptId: string, plugin: string, version: string, releaseRef: string, hint: string,
+  reason?: string,
 ): Promise<number> {
   const locateSaid = await mcp.call("plugin_locate", { plugin, version, idempotency_key: `plugin_locate:${attemptId}:${version}` });
   if (isRefusal(locateSaid)) {
@@ -260,7 +275,7 @@ async function recordReleased(
   const recordSaid = await mcp.call("release_record", {
     release_attempt_id: attemptId, status: "released",
     release_ref: releaseRef, released_subject_version_id: located.subject_version_id,
-    idempotency_key: releasedKey(attemptId),
+    ...(reason ? { reason } : {}), idempotency_key: releasedKey(attemptId),
   });
   console.log(`release_record (released) -> ${recordSaid}`);
   if (isRefusal(recordSaid)) {
@@ -283,6 +298,8 @@ export async function reconcileMain(
   const repoRoot = required(args, "repo", "the clone the attempt was applied in");
   const branch = `release/candidate-${candidateId}`;
   const hint = reconcileHint(attemptId, candidateId, plugin, version, releaseTag);
+  // A bare flag: parseArgs stores `--flag` alone as "", so presence is the test, never truthiness.
+  const acceptWithoutCommit = args.flags.has(ACCEPT_FLAG);
 
   removeWorktree(repoRoot, attemptId, null);
   const candidateCommit = commitOf(repoRoot, `refs/heads/${branch}`)
@@ -295,21 +312,39 @@ export async function reconcileMain(
   fetchTags(repoRoot);
 
   const locateSaid = await mcp.call("plugin_locate", { plugin, version, idempotency_key: `plugin_locate:${attemptId}:${version}` });
+  const releaseRef = releaseRefFor(repoRoot, releaseTag, candidateCommit);
   if (!isRefusal(locateSaid)) {
-    const releaseRef = releaseRefFor(repoRoot, releaseTag, candidateCommit);
-    if ("refused" in releaseRef) {
-      console.error(`${plugin} ${version} is registered, but this attempt's release is not confirmed: ` +
-        `${releaseRef.refused}. Nothing recorded — if another release published ${version}, this ` +
-        "attempt's own release has not landed yet; rerun once it is tagged, or name the right --release-tag");
-      return 1;
+    if (!("refused" in releaseRef)) return recordReleased(mcp, attemptId, plugin, version, releaseRef.commit, hint);
+    if (releaseRef.published && acceptWithoutCommit) {
+      return recordReleased(mcp, attemptId, plugin, version, releaseRef.published, hint,
+        `reconcile: accepted by the operator with --${ACCEPT_FLAG} — tag ${releaseTag} is published at ` +
+        `${releaseRef.published}, ${plugin} ${version} is registered, and the tag does not contain the ` +
+        `candidate's commit ${candidateCommit}; release_ref is the tag's commit`);
     }
-    return recordReleased(mcp, attemptId, plugin, version, releaseRef.commit, hint);
+    console.error(`${plugin} ${version} is registered, but this attempt's release is not confirmed: ` +
+      `${releaseRef.refused}. Nothing recorded — if another release published ${version}, this ` +
+      "attempt's own release has not landed yet; rerun once it is tagged, or name the right --release-tag" +
+      (releaseRef.published
+        ? `. If this attempt's own release command squashed or rebased the candidate's commit, so the ` +
+          `published tag is this release without it, rerun with --${ACCEPT_FLAG} to record it released ` +
+          "by the tag's commit"
+        : ""));
+    return 1;
   }
   const carriers = tagsContaining(repoRoot, candidateCommit);
   if (carriers.length) {
     console.error(`${plugin} ${version} is not registered yet, but the candidate's commit ${candidateCommit} is ` +
       `already inside tag(s) ${carriers.join(", ")} — the release landed and may register late, so ` +
       `failed would be a lie. Nothing recorded; once it is registered, run: ${hint}`);
+    return 1;
+  }
+  // A published release tag without the candidate's commit is a release that happened, perhaps
+  // squashed — registration may simply be late, so failed would be a lie here too.
+  if ("refused" in releaseRef && releaseRef.published) {
+    console.error(`${plugin} ${version} is not registered yet, but tag ${releaseTag} is published at ` +
+      `${releaseRef.published} — a release under that tag happened and may register late, so failed ` +
+      `would be a lie. Nothing recorded; once it is registered, run: ${hint}` +
+      (acceptWithoutCommit ? "" : ` --${ACCEPT_FLAG}, if that tag is this attempt's squashed release`));
     return 1;
   }
   gitQuiet(repoRoot, ["branch", "-D", branch]);

@@ -133,13 +133,17 @@ check("the launcher builds every git/claude argv with no shell, a run-bound cred
 
 check("a replay session's environment is an allowlist with no launcher credential in it, only the launching principal's own unbound credential may begin or close a live run, the run TTL outlasts the launcher's worst case, and the launcher installs a standalone clone of the subject's own release tag",
       runsCheck("replay-isolation-pure.ts"));
-check("the launcher's git never runs a command planted in the clone's .git/config, and the sandbox keeps .git read-only",
+check("the launcher's git reads only its own repository outside the tree, so no fsmonitor, hook or filter planted in the tree runs, and the sandbox keeps that repository and the tree's gitfile read-only",
       runsCheck("replay-git-fsmonitor.ts"));
+check("a fetched third-party tree carrying a .git or a filter attribute is refused before any git command runs, and every file of it is digested",
+      runsCheck("replay-fetched-tree.ts"));
+check("every sandboxed session process runs in its own process group, killed when it returns, so nothing it started is left when the tree is read",
+      runsCheck("replay-process-group.ts"));
 check("collectProduced never follows a symlink out of the clone into what it ships as produced",
       runsCheck("replay-produced-symlink.ts"));
 check("no replay session can read the launcher's process: a fresh PID namespace under bwrap, no process-info outside the sandbox under Seatbelt",
       runsCheck("replay-bwrap-pid.ts"));
-check("a third-party subject is fetched at its captured identity and replayed only when its content digest matches",
+check("a third-party subject is fetched at its captured identity, its git host re-checked, and replayed only when its content and tree digests match",
       runsCheck("replay-third-party.ts"));
 
 check("complexityDelta is lines added minus lines removed plus 20 per added component minus 20 per removed one",
@@ -172,7 +176,7 @@ check("release_verify reads guardrails before the interval and over incomplete e
 check("every refusal branch of planApply, recordRelease, releaseActorRefusal and improvementApprovalRefusal refuses by name, one query at a time, with release_apply bound to the attempt improvement.md cites and a registered-but-uncaptured newer version read as stale_baseline",
       runsCheck("eval-release-refusals.ts"));
 
-check("the release CLI starts from the recorded base or a --base-ref its base tag contains, records a release by a published tag's commit containing the candidate, and --reconcile records released only when that tag contains the branch commit and failed only when no tag carries it",
+check("the release CLI starts from the recorded base or a --base-ref its base tag contains, records a release by a published tag's commit containing the candidate, and --reconcile records released only when that tag contains the branch commit and failed only when no tag carries it and the release tag is not published",
       runsCheck("eval-release-git.ts"));
 
 check("a verifier_token reaches one proof allocation only: its own case set, candidate and base subject on the proof split, never a caller-named case, another allocation's run or an evaluator-role event, and a proof-split read blanks every per-case result field",
@@ -196,5 +200,19 @@ check("replay_case_set_build writes only inside its transaction: a qualification
 check("a resolved proof keeps the case set's proof split spent after a decision or after runs observed the cases, and releases it when no run executed or only the leakage answer was unavailable",
       runsCheck("eval-proof-split-release.ts"));
 
-check("SearchPolicy's generation bounds are positive integers and its minMeaningfulEffect is non-negative; only an applicable dimension needs a positive weight",
+check("SearchPolicy's generation bounds and minRepeats are positive integers, wallClockHours is positive, confidence lies inside (0, 1), and minMeaningfulEffect and equivalenceBand are non-negative; only an applicable dimension needs a positive weight",
       runsCheck("eval-search-policy-bounds.ts"));
+
+check("a release tag without the candidate's commit is never recorded on its own: --reconcile names --accept-tag-without-candidate-commit, which records released by the published tag's commit with a reason only once the version is registered, and failed is never recorded while the release tag is published",
+      runsCheck("eval-release-squash.ts"));
+
+check("release_prepare and proposal_prepare write the ledger row and the branch fact on one pooled connection, under a transaction-level advisory lock on it, concurrent prepares on one initiative hold one connection between them, and a conflicting fact rolls everything back",
+      runsCheck("eval-release-prepare-connection.ts"));
+
+check("candidate_prove(abandon) revokes the verifier_token before cancelling anything and counts the allocation's runs inside the resolving transaction, after locking the token rows, so the proof split is released only when no run exists",
+      runsCheck("eval-proof-abandon-order.ts"));
+check("a verifier replay_start re-reads its token FOR SHARE right before the run insert, so a start racing an abandon is counted or refused",
+      runsCheck("eval-replay-start-token-race.ts"));
+
+check("a waiver covers only its own step's unmet rule of exactly its kind — never a kind it is a substring of, one named in an about tail, or another step's same-kind gap",
+      runsCheck("store-waivers.ts"));

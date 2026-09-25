@@ -28,6 +28,8 @@ import { compareSemver } from "./release-rules.js";
 import { Refusal } from "../refusal.js";
 import { ownerMember } from "../release-owners.js";
 
+const RELEASE_REF = /^[0-9a-f]{40}$/;
+
 interface RecordArgs {
   readonly release_attempt_id: string;
   readonly status: "released" | "failed" | "rolled_back";
@@ -146,6 +148,14 @@ export async function recordRelease(
     if (!args.released_subject_version_id || !args.release_ref) {
       throw new Refusal("ERROR: status: released requires both release_ref and released_subject_version_id");
     }
+    // The commit the release tag names, as `git rev-parse` prints it. Anything else — a tag
+    // name, a `<plugin>@<version>` label, an abbreviated sha — is a ref the next release's
+    // `resolveBase` may not resolve, recorded as if it were one.
+    if (!RELEASE_REF.test(args.release_ref)) {
+      throw new Refusal(
+        `ERROR: release_ref ${args.release_ref} is not a full 40-hex commit sha — record the commit ` +
+        "the release tag names (git rev-parse <tag>^{commit}). The attempt stays applying");
+    }
     // Sequential: one PoolClient runs one query at a time.
     const released = await subjectOf(client, args.released_subject_version_id);
     const base = await subjectOf(client, attempt.base_subject_version_id);
@@ -162,11 +172,14 @@ export async function recordRelease(
         "attempt stays applying, so this call can be retried");
     }
 
+    // `reason` on a release is the operator's accepted override (`--reconcile
+    // --accept-tag-without-candidate-commit`), kept on the row so a reader sees the ancestry was
+    // accepted rather than proved.
     const applied = await client.query(`
       update zz.release_attempt
-         set status = 'released', release_ref = $2, released_subject_version_id = $3::uuid
+         set status = 'released', release_ref = $2, released_subject_version_id = $3::uuid, reason = $4
        where id = $1::uuid and status = 'applying' returning id`,
-      [attempt.id, args.release_ref, args.released_subject_version_id]);
+      [attempt.id, args.release_ref, args.released_subject_version_id, args.reason]);
     if (!applied.rows.length) {
       throw new Refusal(`ERROR: release_attempt ${attempt.id} left 'applying' before this call reached it`);
     }

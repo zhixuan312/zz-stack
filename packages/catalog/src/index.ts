@@ -5,6 +5,7 @@
  */
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { BlockList, isIP } from "node:net";
 import { basename, dirname, join } from "node:path";
 
 /** Where the shelf lives. `/catalog` in the image, which is where it ships.
@@ -22,7 +23,9 @@ export const CATALOG_DIR = process.env.ZZ_CATALOG_DIR || "/catalog";
  *
  * DELIBERATE: not re-exported from here. Both services already depend on @zz/contracts
  * directly, and a second module path to one definition is what this package exists to remove. */
-import { CatalogManifest as CatalogManifestSchema, type CatalogManifest, type FlowDoc, whyNot } from "@zz/contracts";
+import {
+  addressResolver, CatalogManifest as CatalogManifestSchema, type CatalogManifest, type FlowDoc, whyNot,
+} from "@zz/contracts";
 
 interface CatalogEntry {
   owner: string;
@@ -353,4 +356,97 @@ export function pluginDirComponents(dir: string): { components: PluginComponent[
  *  this digest however their components came back. */
 export function pluginContentDigest(components: readonly PluginComponent[]): string {
   return sha256([...components.map((c) => c.digest)].sort().join("\n"));
+}
+
+/** Every file a plugin directory ships, digested — hooks, commands, agents, `.mcp.json`, server
+ *  code, everything `pluginDirComponents` does not look at. `pluginContentDigest` covers only the
+ *  skills and the manifest, so a source whose hooks changed would still match it; this is what a
+ *  replay compares to know it installs the bytes `plugin_register` saw.
+ *
+ *  sha256 over the sorted `<relative path>\0<sha256 of the bytes>` lines of every regular file.
+ *  Content only, never modes or timestamps, which a copy or an extraction does not keep the same.
+ *  A `.git` entry at any depth is skipped: it is a clone's own metadata, never plugin content (the
+ *  launcher refuses a fetched tree carrying one before it digests anything).
+ *
+ *  COUPLED: `plugin_register` (zz-core, subject-source.ts) records this as
+ *  `release_identity.tree_digest`, and the replay launcher (packages/tools, third-party.ts)
+ *  recomputes it over what it fetched.
+ *
+ *  DELIBERATE: a symlink, a FIFO, a socket or a device anywhere is refused, never followed and
+ *  never skipped — a skipped link is content the digest silently does not cover, and a followed
+ *  one reads outside the directory. */
+export function pluginTreeDigest(dir: string): { digest: string } | { error: string } {
+  if (!existsSync(dir) || !lstatSync(dir).isDirectory()) return { error: `${dir} is not a directory` };
+  const lines: string[] = [];
+  const walk = (d: string, rel: string): string | null => {
+    for (const f of readdirSync(d, { withFileTypes: true })) {
+      if (f.name === ".git") continue;
+      const path = rel ? `${rel}/${f.name}` : f.name;
+      if (f.isSymbolicLink()) return `${path} is a symlink; a plugin's files are read only as real files and directories`;
+      if (f.isDirectory()) {
+        const bad = walk(join(d, f.name), path);
+        if (bad) return bad;
+        continue;
+      }
+      if (!f.isFile()) return `${path} is not a regular file`;
+      lines.push(`${path}\0${createHash("sha256").update(readFileSync(join(d, f.name))).digest("hex")}`);
+    }
+    return null;
+  };
+  const bad = walk(dir, "");
+  if (bad) return { error: bad };
+  return { digest: sha256(lines.sort().join("\n")) };
+}
+
+// -------------------------------------------------------------------------------------------
+// A git source's host. Here rather than in either reader because two of them fetch a caller's
+// URL: `plugin_register` on the platform host, and the replay launcher on the operator's.
+
+/** Addresses a git fetch must never reach: loopback, private, carrier-grade NAT, link-local
+ *  (cloud metadata lives there), benchmark, multicast and reserved space, in both families. An
+ *  IPv4-mapped address arrives here already folded to its IPv4 spelling (`addressResolver`), so
+ *  the IPv4 rules answer for it. */
+const BLOCKED = new BlockList();
+for (const [net, bits] of [
+  ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16],
+  ["172.16.0.0", 12], ["192.0.0.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["224.0.0.0", 3],
+] as const) BLOCKED.addSubnet(net, bits, "ipv4");
+for (const [net, bits] of [
+  ["::", 127], ["64:ff9b::", 96], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8],
+] as const) BLOCKED.addSubnet(net, bits, "ipv6");
+
+/** A git URL, refused unless it is https to a host that resolves only to public addresses.
+ *  Every address the name resolves to is checked, not the first: a resolver that answers one
+ *  public and one internal address would otherwise pass half the time.
+ *
+ *  COUPLED: resolved through `addressResolver` (@zz/contracts), the platform's one resolver and
+ *  one IPv4-mapped fold. An address that is still not a valid IP after the fold (a mapped address
+ *  in hex spelling) is refused rather than guessed at.
+ *
+ *  RETURNS the `http.curloptResolve` entry that pins git to exactly the addresses checked here.
+ *  Without it git resolves the name a second time, and a rebinding host answers that second
+ *  lookup with an internal address after passing this one with a public address. An IP-literal
+ *  host needs no pin: nothing is resolved. */
+export async function publicHttpsUrl(url: string): Promise<{ error: string } | { pin: string[] }> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { error: "the repository is not a URL; only https:// repositories are read" };
+  }
+  if (parsed.protocol !== "https:") return { error: `only https:// repositories are read, not ${parsed.protocol}` };
+  const host = parsed.hostname.replace(/^\[|\]$/g, "");
+  const addresses = await addressResolver([host], 0)();
+  if (!addresses) return { error: `the host ${host} does not resolve` };
+  const internal = [...addresses].some((a) =>
+    isIP(a) === 0 || BLOCKED.check(a, isIP(a) === 6 ? "ipv6" : "ipv4"));
+  if (internal) {
+    return { error: `the host ${host} resolves to a private, loopback or link-local address; only public hosts are read` };
+  }
+  if (isIP(host) !== 0) return { pin: [] };
+  // curl's CURLOPT_RESOLVE shape, `HOST:PORT:ADDR[,ADDR]`, an IPv6 address bracketed. Every
+  // checked address is listed, so git may still fail over between them, and only between them.
+  const port = parsed.port || "443";
+  const list = [...addresses].map((a) => (isIP(a) === 6 ? `[${a}]` : a)).join(",");
+  return { pin: ["-c", `http.curloptResolve=${host}:${port}:${list}`] };
 }

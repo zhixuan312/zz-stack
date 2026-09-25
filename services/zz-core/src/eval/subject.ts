@@ -374,17 +374,25 @@ export function registerSubjectTools(server: McpServer): void {
               `this source digests to ${contentDigest}. A registered version never changes content — ` +
               "register the changed source under a new version.");
           }
-          const row = (await client.query<{ id: string }>(`
+          const row = (await client.query<{ id: string; tree_digest: string | null }>(`
             insert into zz.eval_subject_version
               (plugin_id, declared_version, content_digest, component_manifest, source_locator,
                release_identity, captured_at)
             values ($1::uuid, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, now())
             on conflict (plugin_id, declared_version, content_digest)
               do update set component_manifest = excluded.component_manifest
-            returning id::text as id`,
+            returning id::text as id, release_identity->>'tree_digest' as tree_digest`,
             [pluginRow.id, version, contentDigest, JSON.stringify(resolved.components),
              JSON.stringify({ kind: source_kind, locator: source_locator }),
              JSON.stringify({ origin: "third_party", ...resolved.identityExtra })])).rows[0];
+          // The content digest covers only skills and the manifest; `tree_digest` is every file.
+          // Same skills with changed hooks, commands or server code is still changed content.
+          if (row.tree_digest !== resolved.identityExtra.tree_digest) {
+            throw new Refusal(
+              `ERROR: ${name}@${version} is already registered with tree digest ${row.tree_digest ?? "(none)"}, and ` +
+              `this source's files digest to ${resolved.identityExtra.tree_digest}. A registered version ` +
+              "never changes content — register the changed source under a new version.");
+          }
           return { result: row.id, result_table: "zz.eval_subject_version", result_id: row.id };
         },
       );

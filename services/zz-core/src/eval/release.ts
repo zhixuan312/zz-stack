@@ -51,9 +51,6 @@
  * `proposal.md` is always regenerated fresh from CURRENT candidate/finding state on every call,
  * the same "no cached response body" contract `findings.md`'s own write already keeps).
  */
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
@@ -63,14 +60,13 @@ import { z } from "zod";
 import { writeImprovementDoc, type ProofEvaluationRow } from "./improvement-doc.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { loadSubjectForEvalRun, writeProposalDoc } from "./proposal-doc.js";
-import { writeBranchFacts } from "./protocol.js";
 import { describeApplyOutcomeForReplay, planApply, type ApplyResult } from "./release-apply.js";
+import { prepareWithBranchFact } from "./release-prepare.js";
 import { describeRecordOutcomeForReplay, recordRelease, type RecordResult } from "./release-record.js";
 import { verifyRelease, type VerifyOutcome } from "./release-verify.js";
-import { factsFor, withInitiativeFactsLock } from "../initiative-record.js";
 import { logActivity } from "../persist.js";
-import { safeName, userRoot } from "../paths.js";
-import { db } from "../platform-db.js";
+import { userRoot } from "../paths.js";
+import { db, teamFor } from "../platform-db.js";
 import { memberTeams } from "../release-owners.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
@@ -102,24 +98,6 @@ async function loadSubject(p: pg.Pool, subjectVersionId: string): Promise<Subjec
       from zz.eval_subject_version sv join zz.plugin pl on pl.id = sv.plugin_id
      where sv.id = $1::uuid`, [subjectVersionId])).rows[0];
   return row ?? null;
-}
-
-/** FR-58's refuse-on-change rule, read-only: the refusal `writeBranchFacts` would give, asked
- *  BEFORE the idempotency ledger so a conflicting branch refuses with nothing written, while the
- *  fact itself is written only AFTER the ledger commits — a fact recorded for a call whose ledger
- *  transaction then failed would name a branch no row stands behind. COUPLED: every caller holds
- *  `withInitiativeFactsLock` across this check, its ledger write and `writeBranchFacts`; without
- *  it a concurrent release_prepare and proposal_prepare both pass the check and both commit. */
-async function branchFactRefusal(initiative: string, fact: string, value: string): Promise<string | null> {
-  const bad = safeName(initiative, "initiative");
-  if (bad) return bad;
-  const root = await userRoot();
-  if (!existsSync(join(root, initiative))) {
-    return `ERROR: no initiative named "${initiative}" — branch facts are recorded against an ` +
-      "opened one; call initiative_open first.";
-  }
-  const have = factsFor(root, initiative)[fact];
-  return have && have !== value ? `ERROR: ${fact} is already ${have} for this initiative` : null;
 }
 
 async function loadLatestProof(p: pg.Pool, candidateId: string): Promise<ProofEvaluationRow | null> {
@@ -213,39 +191,30 @@ export function registerReleaseTools(server: McpServer): void {
         return text(`ERROR: candidate ${candidate_id} has no recorded proof evaluation to prepare a release from`);
       }
 
-      // FR-58: release_prepare IS the promotable branch — checked, and refused as a hard error
-      // (never a soft facts_refused), BEFORE the release_attempt row below. An initiative
-      // release_mode already set to something else (proposal_only, from proposal_prepare or an
-      // improvement_start skip against the same initiative) means a release_attempt here would
-      // be recorded on the branch the initiative already left — a real cross-tool inconsistency,
-      // not the informational drift protocol_read's own resume case allows.
-      const locked = await withInitiativeFactsLock(initiative, async () => {
-        const conflict = await branchFactRefusal(initiative, "release_mode", "promotable");
-        if (conflict) return { refused: true as const, message: conflict };
-
-        const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
-          principal, "release_prepare", idempotency_key, { candidate_id, initiative },
-          async (client): Promise<MutatorOutcome<{ id: string }>> => {
-            const row = (await client.query<{ id: string }>(`
-              insert into zz.release_attempt
-                (candidate_id, base_subject_version_id, plugin_id, approved_patch_digest,
-                 required_owners, approval_refs, status, created_at)
-              values ($1::uuid, $2::uuid, $3::uuid, $4, $5::jsonb, '[]'::jsonb, $6, now())
-              returning id::text as id`,
-              [candidate_id, candidate.base_subject_version_id, subject.plugin_id, candidate.patch_digest,
-               JSON.stringify(requiredOwners), "prepared"])).rows[0];
-            if (!row) throw new Error("insert into zz.release_attempt produced no row");
-            return { result: { id: row.id }, result_table: "zz.release_attempt", result_id: row.id };
-          },
-        );
-        const releaseAttemptId = outcome.replayed ? outcome.result_id : outcome.result.id;
-        return { refused: false as const, outcome, releaseAttemptId, factsAttempt: await writeBranchFacts(initiative, { release_mode: "promotable" }) };
-      });
-      if (locked.refused) return text(locked.message);
-      const { outcome, releaseAttemptId, factsAttempt } = locked;
-      if (typeof factsAttempt === "string") {
-        return text(`${factsAttempt} (release_attempt ${releaseAttemptId} is recorded; retry with the same idempotency_key)`);
-      }
+      // FR-58: release_prepare IS the promotable branch — a release_mode already set to
+      // something else (proposal_only, from proposal_prepare or an improvement_start skip
+      // against the same initiative) refuses the whole call as a hard error, and the
+      // release_attempt row rolls back with it: an attempt recorded on the branch the initiative
+      // already left is a real cross-tool inconsistency, not the informational drift
+      // protocol_read's own resume case allows. One transaction, one connection
+      // (release-prepare.ts).
+      const { outcome, facts } = await prepareWithBranchFact<{ id: string }>(
+        principal, "release_prepare", idempotency_key, { candidate_id, initiative },
+        { root: await userRoot(), team: await teamFor(principal), initiative }, "promotable",
+        async (client): Promise<MutatorOutcome<{ id: string }>> => {
+          const row = (await client.query<{ id: string }>(`
+            insert into zz.release_attempt
+              (candidate_id, base_subject_version_id, plugin_id, approved_patch_digest,
+               required_owners, approval_refs, status, created_at)
+            values ($1::uuid, $2::uuid, $3::uuid, $4, $5::jsonb, '[]'::jsonb, $6, now())
+            returning id::text as id`,
+            [candidate_id, candidate.base_subject_version_id, subject.plugin_id, candidate.patch_digest,
+             JSON.stringify(requiredOwners), "prepared"])).rows[0];
+          if (!row) throw new Error("insert into zz.release_attempt produced no row");
+          return { result: { id: row.id }, result_table: "zz.release_attempt", result_id: row.id };
+        },
+      );
+      const releaseAttemptId = outcome.replayed ? outcome.result_id : outcome.result.id;
 
       // Written unconditionally, on every successful call (fresh or replayed) — unlike
       // findings.md, improvement.md is this tool's own reason to exist rather than an optional
@@ -275,9 +244,9 @@ export function registerReleaseTools(server: McpServer): void {
       });
       return json(typeof written === "string"
         ? { release_attempt_id: releaseAttemptId, required_owners: requiredOwners,
-            document: null, document_refused: written, facts: factsAttempt } satisfies PrepareResult
+            document: null, document_refused: written, facts } satisfies PrepareResult
         : { release_attempt_id: releaseAttemptId, required_owners: requiredOwners,
-            document: written.path, facts: factsAttempt } satisfies PrepareResult);
+            document: written.path, facts } satisfies PrepareResult);
     },
   );
 
@@ -358,7 +327,7 @@ export function registerReleaseTools(server: McpServer): void {
         "rollback procedure over a release_verify verdict of rolled_back: records the outcome " +
         "the earlier call was left waiting for. Only the principal whose release_apply moved the " +
         "attempt to applying, or a member of one of its owner teams, may record it. On status: " +
-        "released, requires release_ref (the commit the release tag names) and " +
+        "released, requires release_ref (the full 40-hex commit sha the release tag names) and " +
         "released_subject_version_id (the new subject version the CLI resolved by calling " +
         "plugin_locate with the exact version the release published, which must be newer, by " +
         "semver, than the base), moves the release_attempt to released and the candidate to " +
@@ -377,7 +346,8 @@ export function registerReleaseTools(server: McpServer): void {
         "reached released — not_rolled_back for a rolled_back call with no release_verify verdict " +
         "of rolled_back — prior_not_current for a rolled_back call after which the prior subject " +
         "would still not be current — not_newer for a released call whose subject is not newer than the base " +
-        "(retryable: the attempt stays applying) — a released call naming a " +
+        "(retryable: the attempt stays applying) — a released call whose release_ref is not a " +
+        "40-hex commit sha (retryable too) — a released call naming a " +
         "released_subject_version_id of another plugin, a released call missing release_ref or " +
         "released_subject_version_id, a failed call missing failure_tail, a rolled_back call " +
         "missing reason, and a deployment with no platform database. A mutator: writes through " +
@@ -388,7 +358,9 @@ export function registerReleaseTools(server: McpServer): void {
         release_ref: z.string().optional(),
         released_subject_version_id: z.string().optional(),
         failure_tail: z.string().optional(),
-        reason: z.string().optional().describe("Required for status: rolled_back — why release_verify decided to roll back."),
+        reason: z.string().optional().describe(
+          "Required for status: rolled_back — why release_verify decided to roll back. On status: released, " +
+          "optional: the operator's override --reconcile recorded (a tag accepted without the candidate's commit)."),
         idempotency_key: z.string().min(1),
       },
     },
@@ -556,34 +528,24 @@ export function registerReleaseTools(server: McpServer): void {
           "proposal_prepare, for an owned subject");
       }
 
-      // FR-58, the mirror of release_prepare's own pre-write check: a hard refusal, before the
-      // idempotency ledger below, so an initiative whose release_mode is already promotable
-      // never gets an ungated proposal.md sitting beside a promotable attempt. The fact itself is
-      // written after the ledger commits (branchFactRefusal's own note).
+      // FR-58, the mirror of release_prepare's own check: a hard refusal, in the same
+      // transaction as the ledger row, so an initiative whose release_mode is already promotable
+      // never gets an ungated proposal.md sitting beside a promotable attempt.
       const principal = parseCaller(requestHeaders()).email;
-      const locked = await withInitiativeFactsLock(initiative, async () => {
-        const conflict = await branchFactRefusal(initiative, "release_mode", "proposal_only");
-        if (conflict) return { refused: true as const, message: conflict };
-
-        const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
-          principal, "proposal_prepare", idempotency_key, { improvement_run_id, initiative },
-          async (client): Promise<MutatorOutcome<{ id: string }>> => {
-            // No new row — zz.improvement_run's own already-existing row is this ledger's anchor.
-            // proposal.md is regenerated fresh from current state below on every call (see this
-            // tool's own description), so nothing about ITS content is ever replayed from here.
-            const row = (await client.query<{ id: string }>(
-              "select id::text as id from zz.improvement_run where id = $1::uuid",
-              [improvement_run_id])).rows[0];
-            if (!row) throw new Error("zz.improvement_run row vanished between the check above and this transaction");
-            return { result: { id: row.id }, result_table: "zz.improvement_run", result_id: row.id };
-          },
-        );
-
-        return { refused: false as const, outcome, factsAttempt: await writeBranchFacts(initiative, { release_mode: "proposal_only" }) };
-      });
-      if (locked.refused) return text(locked.message);
-      const { outcome, factsAttempt } = locked;
-      if (typeof factsAttempt === "string") return text(factsAttempt);
+      const { outcome, facts } = await prepareWithBranchFact<{ id: string }>(
+        principal, "proposal_prepare", idempotency_key, { improvement_run_id, initiative },
+        { root: await userRoot(), team: await teamFor(principal), initiative }, "proposal_only",
+        async (client): Promise<MutatorOutcome<{ id: string }>> => {
+          // No new row — zz.improvement_run's own already-existing row is this ledger's anchor.
+          // proposal.md is regenerated fresh from current state below on every call (see this
+          // tool's own description), so nothing about ITS content is ever replayed from here.
+          const row = (await client.query<{ id: string }>(
+            "select id::text as id from zz.improvement_run where id = $1::uuid",
+            [improvement_run_id])).rows[0];
+          if (!row) throw new Error("zz.improvement_run row vanished between the check above and this transaction");
+          return { result: { id: row.id }, result_table: "zz.improvement_run", result_id: row.id };
+        },
+      );
       const written = await writeProposalDoc(p, initiative, improvement_run_id);
 
       logActivity(await userRoot(), null, {
@@ -591,8 +553,8 @@ export function registerReleaseTools(server: McpServer): void {
         document_refused: typeof written === "string", replayed: outcome.replayed,
       });
       return json(typeof written === "string"
-        ? { document: null, document_refused: written, candidates_included: [], facts: factsAttempt }
-        : { document: written.path, candidates_included: written.candidates_included, facts: factsAttempt });
+        ? { document: null, document_refused: written, candidates_included: [], facts }
+        : { document: written.path, candidates_included: written.candidates_included, facts });
     },
   );
 }

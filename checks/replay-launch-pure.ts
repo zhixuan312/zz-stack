@@ -29,8 +29,8 @@ const {
 // ---- argv construction with no shell: every builder returns an array, one argument per path
 // or name however many spaces or metacharacters it carries — nothing here is ever joined into
 // a string a shell would re-tokenize.
-assert.deepEqual(gitCloneArgv("/repo", "/tmp/a path/wt"),
-  ["clone", "--no-hardlinks", "--no-checkout", "--quiet", "/repo", "/tmp/a path/wt"],
+assert.deepEqual(gitCloneArgv("/repo", "/tmp/a path/wt.git"),
+  ["clone", "--bare", "--no-hardlinks", "--quiet", "/repo", "/tmp/a path/wt.git"],
   "a space in the path is one argv element, not a shell-visible token boundary");
 assert.deepEqual(gitRemoveOriginArgv(), ["remote", "remove", "origin"]);
 assert.deepEqual(gitResolveTagArgv("v0.76.0"), ["rev-parse", "--verify", "--quiet", "refs/tags/v0.76.0^{commit}"]);
@@ -118,6 +118,11 @@ assert.match(incapable.reason, /no shell-capable runtime/);
 const untouched = () => { throw new Error("refuseBeforeIO touched I/O before checking the runtime"); };
 assert.throws(() => refuseBeforeIO({ platform: "darwin", shellPath: null }, untouched),
   /no shell-capable runtime/, "the refusal must fire before `run` is ever called");
+// A keychain-only `claude login` never reaches a session's fresh CLAUDE_CONFIG_DIR: without an
+// environment credential every turn would fail, so the launch is refused before any I/O.
+assert.throws(() => refuseBeforeIO({ platform: "darwin", shellPath: "/bin/sh", modelCredential: false }, untouched),
+  /no model credential.*ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN/, "a missing model credential refuses before `run`");
+assert.equal(shellCapableRuntime({ platform: "darwin", shellPath: "/bin/sh", sandbox: "sandbox-exec", modelCredential: true }).ok, true);
 let ran = false;
 const value = refuseBeforeIO({ platform: "darwin", shellPath: "/bin/sh" }, () => { ran = true; return 42; });
 assert.equal(ran, true, "a capable runtime must still call run");

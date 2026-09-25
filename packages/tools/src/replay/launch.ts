@@ -55,7 +55,7 @@ import {
   detectSandbox, installPlugin, makeSessionHome, removeSessionHome, runTurn, sandboxContext, writeMcpConfig,
   type SandboxContext,
 } from "./session.js";
-import { fetchThirdParty, sourceKind, thirdPartyPlan, wrapAsMarketplace } from "./third-party.js";
+import { fetchThirdParty, pinGitPlan, sourceKind, thirdPartyPlan, wrapAsMarketplace } from "./third-party.js";
 
 // -------------------------------------------------------------------------------------------
 // Shapes carried over the wire — see the module note above for why these are local, not imported.
@@ -84,7 +84,8 @@ interface ReplayReadResult {
    *  that tag's `plugins.lock.json` must agree with. For a candidate run, the base subject's. */
   subject_declared_version?: string | null; subject_release_digest?: string | null;
   /** A third-party subject's own capture (`third-party.ts`): its whole-plugin digest and the
-   *  release identity (`resolved_commit` / `tarball_integrity`) its source is fetched at. */
+   *  release identity its source is fetched at (`resolved_commit` / `tarball_integrity`) and
+   *  checked against (`tree_digest`, every file). */
   subject_content_digest?: string | null; subject_release_identity?: Record<string, unknown> | null;
   /** I-18: the recorded candidate's own patchset, present only for a `candidate_id` run —
    *  `replay-runs.ts` resolves `subject_plugin` for a candidate the same way it always did for
@@ -192,14 +193,18 @@ export function redact(s: string, secrets: readonly string[]): string {
  *  judged by where it really lands (`realpathSync`, which also catches a symlinked parent
  *  directory) and must stay inside the clone, and then opened `O_NOFOLLOW | O_NONBLOCK` and
  *  `fstat`ed — only a regular file is read, so a symlink swapped in after the check, a FIFO or a
- *  device is refused rather than followed or blocked on. Exported for
+ *  device is refused rather than followed or blocked on. Nothing the session started is still
+ *  running by now to swap a path between the check and the read: each turn's whole process group
+ *  is killed when the turn returns (`runGrouped`, session.ts). Exported for
  *  `checks/replay-produced-symlink.ts`. */
-export function collectProduced(worktreePath: string, transcript: string, secrets: readonly string[]): ProducedRecord {
+export function collectProduced(
+  worktree: Pick<Worktree, "path" | "gitDir">, transcript: string, secrets: readonly string[],
+): ProducedRecord {
   let paths: string[] = [];
-  let root = worktreePath;
+  let root = worktree.path;
   try {
-    root = realpathSync(worktreePath);
-    paths = changedPaths(root);
+    root = realpathSync(worktree.path);
+    paths = changedPaths({ path: root, gitDir: worktree.gitDir });
   } catch { /* nothing to report — the transcript below still gets stored */ }
 
   const kept = paths
@@ -238,10 +243,12 @@ function readInside(root: string, rel: string): Buffer | null {
 }
 
 /** The one probe this function spawns is the sandbox's own trial run (`detectSandbox`): whether
- *  a sandbox can start is only knowable by starting one. */
+ *  a sandbox can start is only knowable by starting one. Not even that without a model
+ *  credential — the refusal for its absence needs no probe, so none runs. A `claude login` kept
+ *  in the macOS keychain does not count: every session runs in a fresh `CLAUDE_CONFIG_DIR`. */
 function runtimeEnv(): RuntimeEnv {
   const modelCredential = Boolean(process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_CODE_OAUTH_TOKEN);
-  const sandbox = detectSandbox();
+  const sandbox = modelCredential ? detectSandbox() : undefined;
   if (process.platform === "win32") {
     return { platform: process.platform, shellPath: process.env.ComSpec ?? null, modelCredential, sandbox };
   }
@@ -324,12 +331,12 @@ function cloneCatalogSubject(read: ReplayReadResult, start: ReplayStartResult, r
 }
 
 /** A third-party subject (`plugin_register`'s git, package or local_dir source): fetched at the
- *  identity it was captured at and checked against its content digest (`third-party.ts`), and —
- *  like a catalog clone — refused when that identity is not the ref `replay_start` recorded. */
-function fetchSubject(read: ReplayReadResult, start: ReplayStartResult, repoRoot: string): Worktree {
+ *  identity it was captured at and checked against its digests (`third-party.ts`), and — like a
+ *  catalog clone — refused when that identity is not the ref `replay_start` recorded. */
+async function fetchSubject(read: ReplayReadResult, start: ReplayStartResult, repoRoot: string): Promise<Worktree> {
   const plan = thirdPartyPlan(read);
   if (typeof plan === "string") throw new Error(`launchReplay: ${plan}`);
-  const worktree = fetchThirdParty(plan, repoRoot, start.team_slug);
+  const worktree = fetchThirdParty(await pinGitPlan(plan), repoRoot, start.team_slug);
   if (start.worktree_ref !== worktree.ref) {
     removeWorktree(worktree);
     throw new Error(`launchReplay: replay_start recorded ${start.worktree_ref} but the subject resolves to ${worktree.ref}`);
@@ -429,7 +436,9 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
     }
 
     const catalogSubject = sourceKind(actorRead) === "catalog";
-    worktree = catalogSubject ? cloneCatalogSubject(actorRead, start, opts.repoRoot, plugin) : fetchSubject(actorRead, start, opts.repoRoot);
+    worktree = catalogSubject
+      ? cloneCatalogSubject(actorRead, start, opts.repoRoot, plugin)
+      : await fetchSubject(actorRead, start, opts.repoRoot);
     appendFileSync(logPath, `# source ${worktree.ref} in ${worktree.path} @ ${worktree.commit}\n`, "utf8");
 
     // I-18: no candidate executes before its own row exists (FR-36), and that row is what this
@@ -443,13 +452,17 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
         throw new Error(
           `launchReplay: candidate ${actorRead.candidate_id} carries no patchset.diff to apply`);
       }
-      applyPatch(worktree.path, diff);
+      applyPatch(worktree, diff);
       appendFileSync(logPath, `# applied candidate ${actorRead.candidate_id}'s patch into ${worktree.path}\n`, "utf8");
     }
 
     // A catalog clone is its own marketplace; a third-party plugin is wrapped in a one-plugin one.
     const marketplaceRoot = catalogSubject ? worktree.path : wrapAsMarketplace(worktree, plugin, candidateHome.root);
-    installPlugin(claudeBin, candidateHome, sandbox, marketplaceRoot, plugin);
+    // The launcher's repository is readable to the candidate, never writable: its own git works
+    // read-only in the tree through the gitfile (git.ts), and nothing it does reaches what the
+    // launcher's git reads after the session.
+    const gitView = [worktree.gitDir];
+    installPlugin(claudeBin, candidateHome, sandbox, marketplaceRoot, plugin, gitView);
     const candidateMcpPath = writeMcpConfig(
       candidateHome.configDir, candidateMcpConfig(plugin, gatewayUrl, token, clientName));
     const personMcpPath = writeMcpConfig(personHome.configDir, NO_MCP_CONFIG);
@@ -458,7 +471,7 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
     let candidate = runTurn(claudeBin, candidateHome, sandbox, {
       model, newSessionId: candidateSessionId, mcpConfigPath: candidateMcpPath, strictMcpConfig: true,
       prompt: candidatePrompt(actorEvents),
-    }, worktree.path, logPath);
+    }, worktree.path, logPath, gitView);
 
     const personaPrompt = simulatedPersonPersona(personEvents);
     for (let turn = 0; turn < maxTurns && stillAsking(candidate.lastText); turn += 1) {
@@ -471,14 +484,14 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
       candidate = runTurn(claudeBin, candidateHome, sandbox, {
         model, resumeSessionId: candidateSessionId, mcpConfigPath: candidateMcpPath, strictMcpConfig: true,
         prompt: person.lastText,
-      }, worktree.path, logPath);
+      }, worktree.path, logPath, gitView);
     }
 
     // produced is collected and persisted through replay_close BEFORE the verifier is ever
     // attempted — replay_score (the verifier) reads zz.replay_run.produced, and a run scored
     // before that column is written would find nothing there and refuse. Both calls go through
     // ownMcp, the launcher's own credential: replay_close refuses the run's own team credential.
-    const produced = collectProduced(worktree.path, candidate.lastText, [token, ownPat, opts.verifierToken ?? ""]);
+    const produced = collectProduced(worktree, candidate.lastText, [token, ownPat, opts.verifierToken ?? ""]);
     await closeRun(
       ownMcp, start.replay_run_id, "completed", "candidate and simulated-person sessions finished", produced);
 

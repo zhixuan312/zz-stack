@@ -175,7 +175,9 @@ zz-stack 0.76.0 · console 0.19.0
   `candidate_prove` answers carry `proof_split: spent|released`.
 - `candidate_record` enforces `maxCandidatesPerGeneration` and `maxGenerations`. A missing or
   malformed `search_policy` is refused instead of defaulting, and so is one with non-integer or
-  zero generation/candidate bounds or a negative `minMeaningfulEffect`. Leakage is screened at
+  zero generation/candidate bounds or a negative `minMeaningfulEffect`. It also refuses
+  `wallClockHours` <= 0, a `minRepeats` that is not a positive integer, a `confidence` outside
+  (0, 1), and a negative `equivalenceBand`. Leakage is screened at
   the first `candidate_validate`; at proof, an unclear or unavailable leakage answer is
   `not_established`.
 - A candidate left `validating` for more than 45 minutes (a killed build) returns to `valid` or
@@ -188,13 +190,50 @@ zz-stack 0.76.0 · console 0.19.0
 - `zz-tool release-apply` requires `--release-tag` in apply and `--reconcile` modes; `--base-tag`
   and `--commit` are new. `release_ref` is the commit the published release tag names (the tag
   must be on origin, or local in a repo with no remote, and contain the candidate's commit).
-  `--reconcile` records `released` only when the release tag contains the branch commit, and
-  never `failed` while any tag carries it. `zz-tool release-rollback` requires `{version}` in
-  `--rollback-cmd`. `plugin_locate` without a version skips rolled-back versions.
+  The release command must keep the candidate's commit in the release tag's ancestry.
+  `--reconcile` records `released` only when the release tag contains the branch commit. It
+  never records `failed` while any tag carries it, or while the release tag is published but the
+  version is not yet registered. `--reconcile` gains `--accept-tag-without-candidate-commit`,
+  which records `released` by the tag's own commit and writes the operator's acceptance to the
+  attempt's reason. `release_record(released)` refuses a `release_ref` that is not a full 40-hex
+  commit sha. `zz-tool release-rollback` requires `{version}` in `--rollback-cmd`.
+  `plugin_locate` without a version skips rolled-back versions.
 - `release_prepare` refuses a caller outside the owner teams (`not_owner`); `release_apply`
-  applies the attempt `improvement.md` cites, not the newest prepared one.
+  applies the attempt `improvement.md` cites, not the newest prepared one. `release_prepare` and
+  `proposal_prepare` write the attempt and the branch fact in one transaction, so a refused fact
+  rolls the attempt back.
+- A control waiver discharges only its own step's unmet rule of exactly its kind. A waiver that
+  relied on substring matching no longer discharges anything.
 - The release baseline is the newest non-retracted `zz.plugin_version` by semver, captured or
   not; a newer uncaptured head is `stale_baseline`.
+- `plugin_register` records `release_identity.tree_digest`, a digest of every file the plugin
+  ships (hooks, commands, agents, `.mcp.json`, server code), for all three source kinds, and
+  refuses to re-register a version whose files changed even when its skills did not. The replay
+  launcher refuses a third-party subject without a `tree_digest`: register it again under a new
+  version. `@zz/catalog` now exports `pluginTreeDigest` and `publicHttpsUrl`; zz-core's
+  `subject-source.ts` no longer defines the host check itself.
+- A verifier-context `replay_start` re-reads its token inside its own transaction, just before
+  the run insert. A start racing `candidate_prove(abandon)` either commits before the revoke and
+  is cancelled and counted with the allocation's runs, or is refused by name.
+- **Replay launcher:** it refuses to start without `ANTHROPIC_API_KEY` or
+  `CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token`) in its environment. Each session runs in a
+  fresh `CLAUDE_CONFIG_DIR`, so a `claude login` kept only in the macOS keychain does not reach it.
+- The launcher's git repository for a replay now sits beside the tree, never inside it. Every
+  launcher git call names it with `--git-dir`/`--work-tree` and reads `.gitattributes` from the
+  empty tree (git 2.40+). The tree carries only a read-only gitfile, so a session's own git
+  still reads the repository and cannot write it. A fetched third-party tree carrying a `.git`
+  at any depth, a `.gitattributes` that assigns a filter (git-lfs included), or a symlink is
+  refused before any git command runs.
+- The launcher checks a third-party git source's host again before fetching (https to a public
+  address only) and pins the fetch to the checked addresses. `npm pack` for a package source uses
+  the operator's configured registry (`npm config get registry`, the URL only). A scoped
+  `@scope:registry` is not carried. The launcher's git now keeps `HTTPS_PROXY`, `HTTP_PROXY`,
+  `NO_PROXY` (either case), `GIT_SSL_CAINFO`, `SSL_CERT_FILE` and `SSL_CERT_DIR`.
+- Each replay session process runs in its own process group, and the group is killed when the
+  turn returns. A background command a session starts no longer outlives its turn, unless it
+  leaves the group with `setsid` on macOS.
+- `zz-plugin-improve` 0.4: token files are written with the agent's file-writing tool and
+  `chmod 600`. The shell heredoc fallback is gone.
 
 ## [0.75.0] — 2026-09-24
 

@@ -27,7 +27,7 @@
  * an initiative's durable branch facts (`protocol_action`, `improvement_mode`, `release_mode`)
  * every flow's `when` reads (`documentApplies`, packages/contracts/src/flow-when.js). Placed
  * here per the plan's own Output line — `protocol_read` is its first caller — and imported by
- * `candidates.ts` (`improvement_start`) and `release.ts` (`release_prepare`/`proposal_prepare`),
+ * `candidates.ts` (`improvement_start`) and `release-prepare.ts` (`release_prepare`/`proposal_prepare`),
  * which is why it takes no `subject_version_id`-shaped context of its own: every caller already
  * knows its initiative and what it decided.
  *
@@ -52,7 +52,7 @@ import { z } from "zod";
 import { latestProtocolVersion, triggersFor } from "./protocol-triggers.js";
 import { recordProtocolVersion } from "./protocol-record.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
-import { factsFor, withInitiativeFactsLock, writeFacts } from "../initiative-record.js";
+import { factsFor, lockInitiativeFacts, withInitiativeFactsLock, writeFacts } from "../initiative-record.js";
 import { logActivity } from "../persist.js";
 import { safeName, safePath, userRoot } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
@@ -82,31 +82,66 @@ interface BranchFacts {
   release_mode?: string;
 }
 
+/** Where a branch-fact write lands and what it writes through: the team store's root, the team
+ *  the mirror row is keyed on, and the one client inside an open transaction that takes the
+ *  cross-process lock and writes the mirror (null only when this deployment has no database).
+ *  DELIBERATE: resolved by the caller BEFORE its transaction — `userRoot`/`teamFor` query the
+ *  pool on a cache miss, and a second connection taken while this one is held is how the
+ *  four-connection pool starves. */
+interface FactsTransaction {
+  readonly client: Pick<pg.PoolClient, "query"> | null;
+  readonly root: string;
+  readonly team: string | null;
+}
+
 /** Mirror every fact the file holds into `zz.initiative_fact`, on every call — not only the
  *  ones this call set. A mirror that ran only for fresh facts would never repair one an earlier
- *  call wrote to the file and then failed to mirror (a dropped connection, a caller with no team
- *  at the time), and the console would read that initiative's branch as undetermined forever.
- *  `on conflict do nothing` makes the repeat free and is the second half of append-only: even a
- *  caller racing this exact insert cannot make the row disagree with the file, because
- *  `writeBranchFacts` already refused a disagreeing value before either write ran.
+ *  call wrote to the file and then failed to mirror (a caller with no team at the time), and the
+ *  console would read that initiative's branch as undetermined forever. `on conflict do nothing`
+ *  makes the repeat free and is the second half of append-only: even a caller racing this exact
+ *  insert cannot make the row disagree with the file, because the refuse-on-change check already
+ *  refused a disagreeing value before either write ran.
  *
  *  No team to mirror under is not an error — `userRoot()` resolves a team-less shelf for a
  *  caller `teamFor` cannot place, and the file write is what stands for such a caller; the
  *  console has nothing to draw for them either way. */
-async function mirrorBranchFacts(
-  team: string | null, initiative: string, facts: Record<string, string>,
-): Promise<void> {
+async function mirrorBranchFacts(tx: FactsTransaction, initiative: string, facts: Record<string, string>): Promise<void> {
   const entries = Object.entries(facts);
-  if (!team || !entries.length) return;
-  const p = db();
-  if (!p) return;
+  if (!tx.team || !tx.client || !entries.length) return;
   for (const [fact, value] of entries) {
-    await p.query(
+    await tx.client.query(
       `insert into zz.initiative_fact (team, initiative, fact, value)
        values ($1, $2, $3, $4)
        on conflict (team, initiative, fact) do nothing`,
-      [team, initiative, fact, value]);
+      [tx.team, initiative, fact, value]);
   }
+}
+
+/** The read, the refuse-on-change decision, the file write and the mirror, under both halves of
+ *  the facts lock: the caller holds `withInitiativeFactsLock`, and this takes the transaction
+ *  lock on `tx.client`. Two callers deciding different values would otherwise both pass on the
+ *  same empty read, and the second write would silently replace a fact the first had recorded. */
+async function decideBranchFacts(
+  tx: FactsTransaction, initiative: string, updates: BranchFacts,
+): Promise<string | Record<string, string>> {
+  if (!existsSync(join(tx.root, initiative))) {
+    return `ERROR: no initiative named "${initiative}" — branch facts are recorded against an ` +
+      "opened one; call initiative_open first.";
+  }
+  if (tx.client) await lockInitiativeFacts(tx.client, initiative);
+  const current = factsFor(tx.root, initiative);
+  const entries = (Object.entries(updates) as [string, string | undefined][])
+    .filter((e): e is [string, string] => e[1] !== undefined && e[1] !== "");
+  for (const [fact, value] of entries) {
+    const have = current[fact];
+    if (have && have !== value) return `ERROR: ${fact} is already ${have} for this initiative`;
+  }
+  const fresh = entries.filter(([fact, value]) => current[fact] !== value);
+  const next = { ...current };
+  for (const [fact, value] of fresh) next[fact] = value;
+  if (fresh.length) writeFacts(tx.root, initiative, next);
+  await mirrorBranchFacts(tx, initiative, next);
+  return next;
 }
 
 /**
@@ -114,6 +149,11 @@ async function mirrorBranchFacts(
  * only what it decided; an already-set fact refuses a DIFFERENT value and is silently a no-op
  * for the SAME one — a caller resuming after another wrote it first sees no difference between
  * "I set this" and "this was already true".
+ *
+ * `within`: a caller already inside a transaction (release_prepare/proposal_prepare, which write
+ * a ledger row and this fact together) passes its own client, root and team, and the lock and
+ * the mirror go through that one connection. Without it, this opens one short transaction of its
+ * own for the lock and the mirror, and holds nothing else while it does.
  *
  * RETURNS the merged facts object on success, or an `ERROR: …` string naming the fact and its
  * standing value — callers that treat a re-derived value as informational (protocol_read, where
@@ -123,35 +163,30 @@ async function mirrorBranchFacts(
  * improvement_start skip) return it as the tool's own refusal.
  */
 export async function writeBranchFacts(
-  initiative: string, updates: BranchFacts,
+  initiative: string, updates: BranchFacts, within?: FactsTransaction,
 ): Promise<string | Record<string, string>> {
   const badInitiative = safeName(initiative, "initiative");
   if (badInitiative) return badInitiative;
+  if (within) return withInitiativeFactsLock(initiative, () => decideBranchFacts(within, initiative, updates));
+
   const root = await userRoot();
-  if (!existsSync(join(root, initiative))) {
-    return `ERROR: no initiative named "${initiative}" — branch facts are recorded against an ` +
-      "opened one; call initiative_open first.";
-  }
-  // The read, the refuse-on-change decision and the write happen under one lock: two callers
-  // deciding different values would otherwise both pass on the same empty read, and the second
-  // write would silently replace a fact the first had already recorded.
-  const merged = await withInitiativeFactsLock(initiative, async () => {
-    const current = factsFor(root, initiative);
-    const entries = (Object.entries(updates) as [string, string | undefined][])
-      .filter((e): e is [string, string] => e[1] !== undefined && e[1] !== "");
-    for (const [fact, value] of entries) {
-      const have = current[fact];
-      if (have && have !== value) return `ERROR: ${fact} is already ${have} for this initiative`;
+  const team = await teamFor(parseCaller(requestHeaders()).email);
+  const p = db();
+  return withInitiativeFactsLock(initiative, async () => {
+    if (!p) return decideBranchFacts({ client: null, root, team }, initiative, updates);
+    const client = await p.connect();
+    try {
+      await client.query("BEGIN");
+      const decided = await decideBranchFacts({ client, root, team }, initiative, updates);
+      await client.query("COMMIT");
+      return decided;
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw err;
+    } finally {
+      client.release();
     }
-    const fresh = entries.filter(([fact, value]) => current[fact] !== value);
-    const next = { ...current };
-    for (const [fact, value] of fresh) next[fact] = value;
-    if (fresh.length) writeFacts(root, initiative, next);
-    return next;
   });
-  if (typeof merged === "string") return merged;
-  await mirrorBranchFacts(await teamFor(parseCaller(requestHeaders()).email), initiative, merged);
-  return merged;
 }
 
 export function registerProtocolTools(server: McpServer): void {

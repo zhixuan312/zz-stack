@@ -47,6 +47,7 @@ const A_OLD = "a0000000-0000-4000-8000-000000000001";
 const A_NEW = "a0000000-0000-4000-8000-000000000002";
 const OWNER = "owner@example.test", STRANGER = "stranger@example.test";
 const DIGEST = "d".repeat(64);
+const REF = "0123456789abcdef0123456789abcdef01234567";
 
 interface Scenario {
   candidate?: Rows; subject?: Rows; teams?: Record<string, string[]>; applying?: Rows;
@@ -208,11 +209,15 @@ await assert.rejects(rec(attemptRow({ status: "released", verdict: "rolled_back"
 await assert.rejects(rec(attemptRow({ status: "released", verdict: "rolled_back" }), { status: "rolled_back", reason: "r" }, OWNER, { versions: ["1.1.0", "1.2.0", "1.3.0"] }), /prior_not_current/);
 assert.equal((await rec(attemptRow({ status: "released", verdict: "rolled_back" }), { status: "rolled_back", reason: "r" })).result.status, "rolled_back");
 await assert.rejects(rec(attemptRow({ status: "failed" }), {}), /not_applying/);
-await assert.rejects(rec(attemptRow(), { release_ref: "abc" }), /requires both release_ref and released_subject_version_id/);
-await assert.rejects(rec(attemptRow(), { release_ref: "abc", released_subject_version_id: OTHER_PLUGIN }), /SAME plugin/);
-await assert.rejects(rec(attemptRow(), { release_ref: "abc", released_subject_version_id: BASE }), /not_newer/);
-await assert.rejects(rec(attemptRow(), { release_ref: "abc", released_subject_version_id: REL }, OWNER, { cas: false }), /left 'applying'/);
-assert.equal((await rec(attemptRow(), { release_ref: "abc", released_subject_version_id: REL })).result.status, "released");
+await assert.rejects(rec(attemptRow(), { release_ref: REF }), /requires both release_ref and released_subject_version_id/);
+for (const bad of ["abc", "v1.2.0", "demo@1.2.0", REF.slice(0, 12), REF.toUpperCase(), `${REF}\n`]) {
+  await assert.rejects(rec(attemptRow(), { release_ref: bad, released_subject_version_id: REL }), /not a full 40-hex commit sha/,
+    `release_ref ${JSON.stringify(bad)} is refused`);
+}
+await assert.rejects(rec(attemptRow(), { release_ref: REF, released_subject_version_id: OTHER_PLUGIN }), /SAME plugin/);
+await assert.rejects(rec(attemptRow(), { release_ref: REF, released_subject_version_id: BASE }), /not_newer/);
+await assert.rejects(rec(attemptRow(), { release_ref: REF, released_subject_version_id: REL }, OWNER, { cas: false }), /left 'applying'/);
+assert.equal((await rec(attemptRow(), { release_ref: REF, released_subject_version_id: REL })).result.status, "released");
 await assert.rejects(rec(attemptRow(), { status: "failed" }), /requires failure_tail/);
 await assert.rejects(rec(attemptRow(), { status: "failed", failure_tail: "t" }, OWNER, { cas: false }), /left 'applying'/);
 assert.equal((await rec(attemptRow(), { status: "failed", failure_tail: "t" })).result.status, "failed");

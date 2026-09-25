@@ -256,12 +256,16 @@ export const SearchPolicy = z.object({
   // number no candidate count can meet the way the protocol meant.
   maxGenerations: z.number().int().positive(),
   maxCandidatesPerGeneration: z.number().int().positive(),
-  wallClockHours: z.number(),
-  minRepeats: z.number(),
+  // A zero or negative bound expires every run before it starts.
+  wallClockHours: z.number().positive(),
+  // A repeat count: validation waits for this many scored runs per side, so a fraction is never met.
+  minRepeats: z.number().int().positive(),
   // A negative mme would read a regression as meaningful improvement.
   minMeaningfulEffect: z.number().nonnegative(),
-  confidence: z.number(),
-  equivalenceBand: z.number(),
+  // A confidence level: 0 or 1 makes the paired interval empty or unbounded.
+  confidence: z.number().gt(0).lt(1),
+  // A band width: a negative one makes "equivalent" impossible even for identical scores.
+  equivalenceBand: z.number().nonnegative(),
   complexity: z.string().min(1),
 });
 export type SearchPolicy = z.infer<typeof SearchPolicy>;

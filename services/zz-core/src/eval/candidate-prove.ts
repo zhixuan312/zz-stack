@@ -96,6 +96,7 @@ import {
 import { writeBranchFacts } from "./protocol.js";
 import { parseSearchPolicy } from "./search-rules.js";
 import { pairedDecision, type PairedDecisionResult } from "./stats.js";
+import { db } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
 import { insertEvaluatorAnswer, type AskedEvaluatorAnswer } from "../semantic.js";
 import { abandonProof } from "./candidate-prove-abandon.js";
@@ -333,8 +334,10 @@ export async function resolveOutcome(
     readonly resource_usage: unknown;
     readonly dimension_scores: unknown;
     readonly statistics: unknown;
-    /** Whether any run of this allocation executed on a proof case (`proofSplitSpent`). */
-    readonly observed: boolean;
+    /** Whether any run of this allocation executed on a proof case (`proofSplitSpent`) — or
+     *  the allocations whose runs decide it, counted inside this transaction after the token is
+     *  revoked (`abandonProof`), so a run registered before the count is always seen. */
+    readonly observed: boolean | { readonly allocations: readonly string[] };
     /** The proof-time leakage answer, recorded in this transaction so it rolls back with it. */
     readonly leakage_assessment?: AskedEvaluatorAnswer;
   },
@@ -349,7 +352,8 @@ export async function resolveOutcome(
   // screenLeakage's own reading rule: no reading from the critic is `unavailable`.
   const leakageReading = outcome.leakage_assessment
     ? outcome.leakage_assessment.result.reading ?? "unavailable" : null;
-  const splitSpent = proofSplitSpent(outcome.proof_status, outcome.observed, leakageReading);
+  let splitSpent = typeof outcome.observed === "boolean"
+    ? proofSplitSpent(outcome.proof_status, outcome.observed, leakageReading) : true;
 
   const ledgerOutcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
     // phase: "resolve"/"abandon" — never bare {candidate_id} — so a caller who reuses the OPEN
@@ -382,6 +386,20 @@ export async function resolveOutcome(
           "call already resolved this allocation; call candidate_prove again to read its current state");
       }
       if (outcome.leakage_assessment) await insertEvaluatorAnswer(client, outcome.leakage_assessment);
+      // The allocation is now spent — its verifier_token must not go on authenticating
+      // context: "verifier" replay_start calls for the rest of its natural expiry (FR-28's own
+      // "refuses a second opening" would otherwise have a side door: the token itself still
+      // works even though candidate_prove refuses to open this candidate again). Revoked before
+      // any run is counted below, so no run can start after the count on a token still valid.
+      await client.query(
+        "update zz.replay_verifier_token set revoked_at = now() where candidate_id = $1::uuid and revoked_at is null",
+        [candidate.id]);
+      let statistics = outcome.statistics;
+      if (typeof outcome.observed !== "boolean") {
+        const observed = await anyRunOf(client, outcome.observed.allocations);
+        splitSpent = proofSplitSpent(outcome.proof_status, observed, leakageReading);
+        statistics = { ...(outcome.statistics as Record<string, unknown>), proof_runs_executed: observed };
+      }
       const row = (await client.query<{ id: string }>(`
         insert into zz.candidate_evaluation
           (candidate_id, split, aggregate_score, dimension_scores, guardrails, statistics, resource_usage, created_at)
@@ -394,16 +412,9 @@ export async function resolveOutcome(
            upper: outcome.decision?.upper ?? null, verdict: outcome.decision?.verdict ?? null,
          }),
          JSON.stringify(outcome.dimension_scores), JSON.stringify(outcome.guardrails),
-         JSON.stringify(outcome.statistics), JSON.stringify(outcome.resource_usage)])).rows[0];
+         JSON.stringify(statistics), JSON.stringify(outcome.resource_usage)])).rows[0];
       if (!row) throw new Error("insert into zz.candidate_evaluation produced no row");
       await client.query("update zz.improvement_run set status = $2 where id = $1::uuid", [candidate.improvement_run_id, runStatus]);
-      // The allocation is now spent — its verifier_token must not go on authenticating
-      // context: "verifier" replay_start calls for the rest of its natural expiry (FR-28's own
-      // "refuses a second opening" would otherwise have a side door: the token itself still
-      // works even though candidate_prove refuses to open this candidate again).
-      await client.query(
-        "update zz.replay_verifier_token set revoked_at = now() where candidate_id = $1::uuid and revoked_at is null",
-        [candidate.id]);
       // The opening's claim on the case set's proof split: kept (spent) or released, by
       // proofSplitSpent. Keyed on the claimant, so an allocation that never opened (the
       // insufficient-proof-cases path) touches nothing.
@@ -416,6 +427,8 @@ export async function resolveOutcome(
     },
   );
   const candidateEvaluationId = ledgerOutcome.replayed ? ledgerOutcome.result_id : ledgerOutcome.result.id;
+  const proofSplit = ledgerOutcome.replayed && typeof outcome.observed !== "boolean"
+    ? await proofSplitOf(db() as pg.Pool, candidate.id) : splitSpent ? "spent" : "released";
 
   // FR-58: `release_mode: not_applicable` is append-only, so it is written only when this
   // initiative has nothing left to resume. A genuine `proof_failed` spends the allocation and the
@@ -429,7 +442,7 @@ export async function resolveOutcome(
   return {
     proof_status: outcome.proof_status, reason: outcome.reason, release_eligible: outcome.release_eligible,
     candidate_evaluation_id: candidateEvaluationId, verifier_token: null, token_already_issued: true,
-    status: candidateStatus, proof_split: splitSpent ? "spent" : "released", ...facts,
+    status: candidateStatus, proof_split: proofSplit, ...facts,
   };
 }
 
@@ -466,6 +479,23 @@ async function readBackIfSameResolve(
     verifier_token: null, token_already_issued: true, status: candStatus,
     proof_split: await proofSplitOf(p, candidateId),
   };
+}
+
+/** True once any of these allocations has a run at all, whatever its status: `replay_start`
+ *  draws a sealed proof case and binds it to a session when it registers the run, and a run
+ *  already `cancelled` may have been running when it was. Conservative on purpose — a sealed
+ *  proof errs toward spent.
+ *
+ *  The token rows are locked FOR UPDATE first: a `replay_start` whose run insert is in flight
+ *  holds a KEY SHARE lock on its token row through the `verifier_allocation_id` foreign key until
+ *  it commits, so this waits for that run and then counts it, rather than reading past it. */
+async function anyRunOf(client: Pick<pg.PoolClient, "query">, allocations: readonly string[]): Promise<boolean> {
+  if (!allocations.length) return false;
+  await client.query("select id from zz.replay_verifier_token where id = any($1::uuid[]) for update", [[...allocations]]);
+  const row = (await client.query<{ any: boolean }>(
+    "select exists (select 1 from zz.replay_run where verifier_allocation_id = any($1::uuid[])) as any",
+    [[...allocations]])).rows[0];
+  return row?.any ?? false;
 }
 
 /** A resolved candidate's `proof_split`, read back: it still holds a case set's split (spent) or

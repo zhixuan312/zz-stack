@@ -138,27 +138,58 @@ export function releaseRefFor(declaredVersion: string): string {
   return `refs/tags/${releaseTagFor(declaredVersion)}`;
 }
 
-/** Ahead of every git subcommand the launcher runs (`git.ts`'s one `git()` helper). The clone's
- *  working tree is the candidate's to write, so its `.git/config` is untrusted input once a
- *  session has run — the sandbox keeps `.git` read-only (sandbox.ts), and this is the second
- *  half: a command-line `-c` outranks every config file, so neither an fsmonitor command nor a
- *  hooks directory can come from anywhere the candidate could have touched. */
-export const GIT_HARDENED_ARGS = ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"] as const;
+/** Ahead of every git subcommand the launcher runs (`git.ts`'s one helper), and ahead of the
+ *  `--git-dir`/`--work-tree` pair that points it at the launcher's own repository, outside the
+ *  tree. The tree is the candidate's to write, and a fetched source is somebody else's bytes, so
+ *  nothing in it is ever read as git configuration: a command-line `-c` outranks every config
+ *  file, so neither an fsmonitor command, a hooks directory nor a global attributes file can come
+ *  from anywhere else. */
+export const GIT_HARDENED_ARGS = [
+  "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "core.attributesFile=/dev/null",
+] as const;
+
+/** git's own name for the empty tree (sha1). `GIT_ATTR_SOURCE` set to it makes git 2.40+ read
+ *  `.gitattributes` from that tree, never the working tree's: an in-tree `* filter=x` names no
+ *  filter, `eol`/`ident` rewrite nothing, and a checkout writes each file's bytes as committed.
+ *  COUPLED: `plugin_register`'s git reader (services/zz-core/src/eval/subject-source.ts) sets the
+ *  same, so its recorded `tree_digest` is over the bytes this launcher's checkout writes. */
+const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+/** Copied into a launcher git process when present: the process basics, and the proxy and CA
+ *  settings a fetch may need to leave the host. Nothing that can hold a credential of the
+ *  launcher's or name a git command. */
+const GIT_ENV_ALLOW = [
+  "PATH", "LANG", "LC_ALL", "SystemRoot",
+  "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy",
+  "GIT_SSL_CAINFO", "SSL_CERT_FILE", "SSL_CERT_DIR",
+] as const;
 
 /** The whole environment a launcher git process runs with — never the launcher's own, which can
- *  hold `ZZ_TOKEN`. No system or global config (a filter driver or `include.path` there would be
- *  one more command git runs), no prompt, and no optional index write from `status`. */
+ *  hold `ZZ_TOKEN`. No system or global config and no system attributes (a filter driver or
+ *  `include.path` there would be one more command git runs), in-tree attributes read from the
+ *  empty tree (`EMPTY_TREE`), no prompt, and no optional index write from `status`.
+ *
+ *  DELIBERATE: two layers against a filter driver, because only the first holds on every git.
+ *  The configuration git reads is the launcher's own repository and these variables, and none of
+ *  them defines a `filter.<name>.*` — so an in-tree attribute naming one resolves to nothing. On
+ *  git 2.40+, `GIT_ATTR_SOURCE` also stops the attribute being read at all; an older git ignores
+ *  the variable, and the first layer is what stands. */
 export function hardenedGitEnv(source: Readonly<Record<string, string | undefined>>): Record<string, string> {
   const env: Record<string, string> = {};
-  for (const key of ["PATH", "LANG", "LC_ALL", "SystemRoot"]) {
+  for (const key of GIT_ENV_ALLOW) {
     const value = source[key];
     if (value !== undefined) env[key] = value;
   }
-  return { ...env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" };
+  return {
+    ...env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_ATTR_NOSYSTEM: "1", GIT_ATTR_SOURCE: EMPTY_TREE,
+    GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0",
+  };
 }
 
-export const gitCloneArgv = (source: string, dest: string): string[] =>
-  ["clone", "--no-hardlinks", "--no-checkout", "--quiet", source, dest];
+/** `--bare` into the launcher's own directory: the object store and config live there, and the
+ *  tree is checked out beside it (`git.ts`), so the tree never holds a repository of its own. */
+export const gitCloneArgv = (source: string, gitDir: string): string[] =>
+  ["clone", "--bare", "--no-hardlinks", "--quiet", source, gitDir];
 export const gitRemoveOriginArgv = (): string[] => ["remote", "remove", "origin"];
 /** `^{commit}` peels an annotated tag to the commit it names; `refs/tags/` keeps a branch that
  *  happens to share the tag's name from ever answering instead. */
@@ -320,11 +351,11 @@ export const SESSION_EXEC_TIMEOUT_MS = 10 * 60_000;
 export const GIT_EXEC_TIMEOUT_MS = 60_000;
 /** The most interview rounds a launch may run; `launchReplay` refuses a larger `maxTurns`. */
 export const MAX_TURNS_CAP = 8;
-// The longest source path: a third-party package — npm pack, tar, init, add, commit, apply,
-// status — plus one to spare. A catalog clone takes six (clone, remove origin, resolve tag,
-// checkout, apply, status); a third-party git source six (init, fetch, checkout, verify, apply,
-// status).
-const GIT_STEPS = 8;
+// The longest source path: a third-party package — npm config, npm pack, tar, init, config, add,
+// commit, apply, status — plus one to spare. A catalog clone takes seven (clone, config, remove
+// origin, resolve tag, checkout, apply, status); a third-party git source seven (init, config,
+// fetch, checkout, verify, apply, status).
+const GIT_STEPS = 10;
 
 /** Two install commands, the candidate's first turn, and one person turn plus one candidate turn
  *  per interview round — each bounded by `SESSION_EXEC_TIMEOUT_MS` — plus the git steps. */

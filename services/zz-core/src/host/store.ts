@@ -167,6 +167,15 @@ async function evidenceFor(runId: string): Promise<(EvidenceEntry & { step_id: s
        supersedes: r.supersedes ?? undefined }));
 }
 
+const escapeRegExp = (v: string): string => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Whether `waiver` covers the unmet sentence `sentence`: that step's own rule of that exact kind.
+ *  COUPLED: the sentence shape is `unmetSentence`, packages/contracts/src/host.ts. */
+function waiverCovers(waiver: StoredWaiver, sentence: string): boolean {
+  return new RegExp(`^${escapeRegExp(waiver.step_id)} needs \\d+ ${escapeRegExp(waiver.kind)}( about a recorded .+)?$`)
+    .test(sentence);
+}
+
 /** Read a verdict together with the waivers that cover it, and the steps a document's own
  *  branch applicability has already ruled out (FR-58, Task I-27) — the one reading of "clear",
  *  owed wherever a refusal is turned into an answer.
@@ -179,16 +188,23 @@ async function evidenceFor(runId: string): Promise<(EvidenceEntry & { step_id: s
  *  `unmetSentence` (host.ts) always opens with the step id it is about — `"${stepId} needs …"`,
  *  and the predecessor-chain sentence `evaluate` prepends opens with the PREDECESSOR's id for
  *  the same reason — so a prefix match is exact and covers both the step's own unmet rule and
- *  every later step whose only outstanding reason is that ruled-out step. */
-function withWaivers(
+ *  every later step whose only outstanding reason is that ruled-out step.
+ *
+ *  A waiver covers exactly one sentence shape: its own step's `"<step_id> needs <n> <kind>"`,
+ *  optionally followed by `" about a recorded <x>"`. Anchored at both ends of the kind, and on
+ *  the step: a substring match let a waiver of kind `spec` cover `review needs 1 audit about a
+ *  recorded spec`, kind `review` cover `ship needs 1 review_approval`, and a waiver signed for
+ *  step A discharge step B's identical-kind gap carried up the predecessor chain — a signature
+ *  standing for gaps nobody signed for.
+ *
+ *  Exported for checks/store-waivers.ts. */
+export function withWaivers(
   verdict: ControlVerdict, waivers: readonly StoredWaiver[], ruledOutSteps: readonly string[] = [],
 ): StandingVerdict {
-  // A waiver covers an unmet sentence by naming its kind. The engine's `unmet` is prose for a
-  // person deciding what to record next, so this matches on the kind appearing in it rather
-  // than parsing a shape the engine does not promise. A waiver that matches nothing is carried
-  // nowhere, so a stale waiver cannot make a real gap look signed for.
-  const covering = waivers.filter((w) => verdict.unmet.some((u) => u.includes(w.kind)));
-  const afterWaivers = verdict.unmet.filter((u) => !waivers.some((w) => u.includes(w.kind)));
+  // A waiver that matches nothing is carried nowhere, so a stale waiver cannot make a real gap
+  // look signed for.
+  const covering = waivers.filter((w) => verdict.unmet.some((u) => waiverCovers(w, u)));
+  const afterWaivers = verdict.unmet.filter((u) => !waivers.some((w) => waiverCovers(w, u)));
   const stillOpen = afterWaivers.filter((u) => !ruledOutSteps.some((id) => u.startsWith(`${id} `)));
   return {
     satisfied: verdict.satisfied,

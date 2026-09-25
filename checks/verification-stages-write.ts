@@ -4,7 +4,9 @@
 // Where the instruction lives differs by stage, and this check follows it rather than
 // demanding one shape. The two audits load `sdlc-audit-criteria` first and delegate the
 // failure modes, the JSON envelope and the mechanics of recording a round to it, keeping only
-// which document and what it is for. `sdlc-review` loads no library and inlines everything.
+// which document and what it is for. `sdlc-review` loads no library and inlines everything,
+// and leaves both kinds of record: its document `verifies` others, so its rounds are sources
+// supporting that document and the document itself is written by the main agent.
 //
 // DELIBERATE: a library is read only when the skill references it by the load imperative.
 // Concatenating it unconditionally would assert a property of a file the worker may never
@@ -12,9 +14,8 @@
 // passing while its worker was never told to write anything.
 //
 // DELIBERATE: bodies only, with frontmatter and HTML design notes cut away first, and the
-// independence controls do not look for "read-only". All three carry "Read-only." in their
-// frontmatter `description:`, which no rewrite of a body can clear, and `sdlc-review` says
-// "Read-only git is available" in an unrelated instruction.
+// independence controls do not look for "read-only". The audits carry "Read-only." in their
+// frontmatter `description:`, which no rewrite of a body can clear.
 //
 // What is not guarded: the reverse direction, a library requiring something the stage
 // forbids; prohibitions phrased in words the BANS patterns do not cover; and whether any
@@ -29,12 +30,13 @@ const skillPath = (name: string) => `catalog/sdlc/sdlc-flow/skills/${name}/SKILL
 // From the manifest, not a list retyped here: a rename in flow.json would otherwise leave
 // this check testing a document name nothing produces.
 interface Stage { name: string; produces?: string; supports?: string }
-interface Flow { stages?: Stage[] }
+interface Flow { stages?: Stage[]; documents?: Array<{ name: string; verifies?: string[] }> }
 const flow: Flow = JSON.parse(readFileSync("catalog/sdlc/sdlc-flow/flow.json", "utf8"));
 const produces = new Map((flow.stages ?? []).map(
   (s): [string, string | undefined] => [s.name, s.produces]));
 const supports = new Map((flow.stages ?? []).map(
   (s): [string, string | undefined] => [s.name, s.supports]));
+const verifying = new Set((flow.documents ?? []).filter((d) => d.verifies?.length).map((d) => d.name));
 
 // DELIBERATE: the load imperative, not a mention of the library's name. Both audits also
 // refer to their library in passing, so keying on the bare name lets an audit delete its
@@ -105,17 +107,20 @@ for (const stage of STAGES) {
   }
 
   // The artifact, through the platform's own tool: `source_add` for a stage whose result is
-  // evidence, `document_write` for one that writes a document.
-  if (isSource) {
+  // evidence, `document_write` for one that writes a document — and both for a stage whose
+  // document verifies others, whose rounds are sources supporting it.
+  const rounds = isSource || verifying.has(doc);
+  if (rounds) {
     if (!/source_add/.test(reach)) fail.push(`${where} does not register its round as a source`);
     // `supports` ties the round to the document it read: the platform refuses that document's
     // next version until this source is cited.
     if (!/supports/.test(reach)) fail.push(`${where} registers a source without naming what it supports`);
-    if (/document_write/.test(reach)) {
+    if (isSource && /document_write/.test(reach)) {
       fail.push(`${where} writes a document; an audit round is a source, and doing both puts ` +
                 "one round on the record twice");
     }
-  } else {
+  }
+  if (!isSource) {
     if (!/document_write/.test(reach)) fail.push(`${where} does not write its document`);
     if (/you write no file|write no file/i.test(reach)) fail.push(`${where} still says it writes no file`);
     // `document_write` is create-or-overwrite and there is no append tool, so a second round

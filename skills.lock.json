@@ -12,16 +12,16 @@
     "sha": "83d434bd29d3"
   },
   "sdlc-flow": {
-    "version": "2.9",
-    "sha": "e7532410f236"
+    "version": "2.10",
+    "sha": "9e1eae693afe"
   },
   "sdlc-investigate": {
     "version": "1.3",
     "sha": "e1fbe3c441de"
   },
   "sdlc-method": {
-    "version": "1.14",
-    "sha": "7085449e1e66"
+    "version": "1.15",
+    "sha": "28fee2265e79"
   },
   "sdlc-plan-audit": {
     "version": "2.4",
@@ -40,8 +40,8 @@
     "sha": "4109e7895c67"
   },
   "sdlc-review": {
-    "version": "1.7",
-    "sha": "f1a6d5a80ce8"
+    "version": "1.8",
+    "sha": "2a23706b71c9"
   },
   "sdlc-spec-audit": {
     "version": "2.4",
@@ -124,8 +124,8 @@
     "sha": "d07ca4b6f509"
   },
   "zz-platform": {
-    "version": "3.69",
-    "sha": "f6946665c615"
+    "version": "3.70",
+    "sha": "aca0ae85d9c4"
   },
   "zz-tldr": {
     "version": "1.2",

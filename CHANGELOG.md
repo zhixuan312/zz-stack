@@ -33,6 +33,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [Unreleased]
+
+### Changed
+- **sdlc review converges.** `sdlc-review` answers "does what was built meet what was accepted"
+  first: `review.md` carries an `## Acceptance evidence` table, one row per criterion the approved
+  spec (`AC-N.N`) and plan (`Task I-N`) declare, each `established`, `not_established`,
+  `blocked` or `deferred`, with a kind-prefixed locator (`check:`, `run:`, `probe:`, `test:`) and
+  the quoted decisive output. `document_approve` refuses by name a missing or stray row, a bad
+  status, evidence with no locator or no quote, and a deferral no stakeholder source names. The
+  typed service's `evidence_relation` reads each established row when `review.md` is written or
+  patched: `no` refuses the approval, `unclear` asks for sharper evidence, `unclear` again on new
+  evidence goes to the stakeholder, and `unavailable` blocks nothing and is said so.
+- **The defect sweep is bounded and routed by the platform.** Each review round is a source —
+  `source_add(..., supports: ["review.md"], stage: "sdlc-review")` — carrying a JSON ledger of
+  findings with a fixed impact (S1 security/data loss/authority bypass, S2 main-path capability,
+  S3 edge-path result, S4 text), an evidence kind (`reproduced`, `cited`, `inferred`) and whether
+  the round's own scope introduced it. `initiative_status` answers from the ledgers: `fix` for an
+  evidenced open S1/S2, `run_experiment` when only inferred ones are open, `decide` when three
+  rounds have passed since the stakeholder last decided and the latest raised no fewer new
+  evidenced blockers than the one before (the review is not converging), and settled otherwise. A later round reads only the
+  fix diff; an out-of-scope finding goes to `review.md`'s `## Backlog`, which the approval checks.
+  Replayed over the six-round review of the plugin-evaluation release, the rounds converge and
+  settle after Round 4, and the inferred skill-against-tool findings of Rounds 5–6 route to
+  `run_experiment` instead of another reading round.
+
+### Upgrade notes
+- **Breaking:** approving `review.md` in an sdlc-flow initiative whose spec or plan declares
+  acceptance criteria now needs the `## Acceptance evidence` table; an initiative with none
+  declared is unaffected. Write the table before asking for the approval.
+- **Breaking:** a `source_add` naming `stage: "sdlc-review"` and supporting `review.md` is a review
+  round and is refused unless its content carries one well-formed ```json ledger numbered as the
+  next round. Stakeholder material supporting `review.md` names no stage.
+- `next_move.action` has two new values, `fix` and `run_experiment`, and a document that
+  `verifies` others routes its review rounds before `write_document` or `await_approval`.
+- The flow manifest's documents take an optional `verifies: [<document>, ...]`; the published
+  schema carries it.
+
 ## [0.76.1] — 2026-09-25
 
 ### Removed

@@ -1,6 +1,6 @@
 ---
 name: sdlc-flow
-version: 2.9
+version: 2.10
 description: Start and run software delivery — explore the ground, agree a spec, audit it, plan it, audit that, build it, review the code, then close it and hand it to zz-handover. The entry point for the SDLC flow.
 when_to_use: "Someone brings software delivery work — a brain dump to ground, an agreement to write, a plan to build from, a change to make — or you need to know which stage an initiative is at. This is the entry point: start here rather than at a stage. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -43,7 +43,7 @@ Not a ratchet. An audit that finds the spec rests on an unsettled decision sends
 | 4 | `sdlc-plan` | `plan.md` | **main agent** → the person approves |
 | 5 | `sdlc-plan-audit` | a SOURCE supporting `plan.md` | subagent per round, sequential, rounds routed by evidence |
 | 6 | `sdlc-execute` | the change itself, and no document | subagent per plan item |
-| 7 | `sdlc-review` | `review.md` — and it closes the initiative | subagents |
+| 7 | `sdlc-review` | `review.md` — and it closes the initiative — plus a SOURCE per sweep round | **main agent** for the evidence; subagent per round, sequential, rounds routed by evidence |
 
 Four documents, and the audits produce none of them. An audit report is a SOURCE: it is the
 material that makes the next version of somebody else's document necessary, and the platform
@@ -136,10 +136,13 @@ about that.
 
 One subagent per plan item. You keep the sequence and report what changed.
 
-### 7 · Review is dispatched
+### 7 · Review: acceptance evidence first, then a bounded sweep
 
-A code review of what was built, by workers who did not build it. That is the whole reason it
-is not yours.
+First, `review.md`'s acceptance evidence: one row per criterion the spec and the plan declare,
+established by running and quoting what ran — that is yours. Then the defect sweep, one
+dispatched round at a time, by a reviewer who did not build it; each round is a source whose
+ledger `initiative_status` reads to answer `fix`, `run_experiment`, `decide` or settled. You never
+choose how many rounds, and a later round never reads wider than the fix it checks.
 
 ### After review · the close is an act, not a stage
 

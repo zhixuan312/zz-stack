@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.14
+version: 1.15
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -21,10 +21,10 @@ main agent runs the flow, and dispatches in exactly four places.
 | `sdlc-explore`'s fan-out | many workers, in parallel | breadth — one question per worker |
 | `sdlc-spec-audit` / `sdlc-plan-audit` | one worker per round, **sequential**, rounds routed by evidence | a reader who did not write the document |
 | `sdlc-execute` | one worker per plan item | mechanical, and bounded by the plan |
-| `sdlc-review` | workers over what was built | a reviewer who did not write the code |
+| `sdlc-review`'s sweep | one worker per round, **sequential**, rounds routed by evidence | a reviewer who did not write the code |
 
-Everything else — `sdlc-explore` itself, `sdlc-spec`, `sdlc-plan`, and closing the initiative
-once `sdlc-review` is done — is yours.
+Everything else — `sdlc-explore` itself, `sdlc-spec`, `sdlc-plan`, `sdlc-review`'s acceptance
+evidence, and closing the initiative once `sdlc-review` is done — is yours.
 
 There is no generic audit skill. Which auditor you dispatch is decided by which document is on
 the table: `sdlc-spec-audit` for `spec.md`, `sdlc-plan-audit` for `plan.md`.
@@ -70,6 +70,28 @@ describes it, once `sdlc-review` is done. You are the only party who was present
 whole initiative, so there is nobody else to dispatch it to. `zz-handover` runs afterward
 and is what turns the closed initiative into what the next one recalls; that is the
 platform's step, not this flow's.
+
+## Review stops on evidence, not on a count
+
+Review owes two things, in this order. **Evidence that what was built meets what was accepted** —
+one row per criterion `spec.md` and `plan.md` declare, established by running and quoting the
+output — and then **a bounded defect sweep**. The platform routes the sweep from each round's
+ledger, and the rules are fixed:
+
+| Impact | Means | Routes a round |
+|---|---|---|
+| S1 | security, data loss, or an authority bypass | yes |
+| S2 | a capability on the main path is broken | yes |
+| S3 | a wrong result on an edge path | no — fixed in a batch, the gate verifies it |
+| S4 | text, docs, naming | no — fixed in a batch, the gate verifies it |
+
+- A round after the first reads ONLY the fix diff and its blast radius. A finding outside the
+  declared scope goes to `review.md`'s Backlog and opens no round, unless it is S1 and reproduced.
+- **A verification gap is resolved by running, not by another reading round.** An inferred S1 or
+  S2 gets a reproducer first (`run_experiment`); it blocks only once reproduced.
+- The rounds stop when no evidenced S1/S2 is open. Three rounds since the stakeholder last
+  decided, with the latest finding no fewer new evidenced S1/S2 than the one before, is theirs to
+  decide — a review that is not converging; the budget is a resource limit, not a pass.
 
 ## Three gates, and they are recorded either way
 

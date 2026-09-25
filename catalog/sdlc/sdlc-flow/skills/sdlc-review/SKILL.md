@@ -1,300 +1,217 @@
 ---
 name: sdlc-review
-version: 1.7
-description: Review what was built before it ships — sweep the change against ten release-safety failure modes, cite every finding precisely, and separate pre-existing defects from regressions this change introduced. Read-only. Dispatched, because a reviewer who did not write the code is the point.
-when_to_use: "sdlc-execute has finished and the change is about to be shipped, merged or handed over. This is the pre-release gate. Dispatched by the main agent."
+version: 1.8
+description: Verify what was built before it ships — first the evidence that every accepted criterion holds, established by running, then a bounded defect sweep in rounds the platform routes to a stop. The sweep is dispatched, one round at a time, because a reviewer who did not write the code is the point; the evidence table and the verdict are the main agent's.
+when_to_use: "sdlc-execute has finished and the change is about to be shipped, merged or handed over. This is the pre-release gate. The main agent compiles the acceptance evidence and dispatches each sweep round."
 ---
 
 # sdlc-review
 
-<!-- Design note: nothing captures a baseline for you, so establishing the change-set is
-     your first job. You also have plan.md available — a change that quietly does what no
-     task asked for, or skips a task the plan declared, is a finding no taxonomy sweep
-     surfaces on its own. -->
+<!-- Design note: review had no platform routing, so rounds, scope and stopping were the main
+     agent's judgement; one initiative ran six rounds, each wider than the last, and the defects
+     that mattered were found by running the flow end to end, not by reading. The outcome this
+     stage owes is evidence that the solution meets what was accepted. The sweep is secondary,
+     bounded, and routed by the platform from each round's ledger. -->
+
+Review answers one question first: **does what was built meet what was accepted?** That is
+answered by running things and quoting what they printed. Only then does it ask the second: **what
+would make this unsafe to ship?** — a bounded sweep by a reader who did not write the code.
+
+Two parts, each with a terminal state:
+
+| Part | Who | Record | Ends when |
+|---|---|---|---|
+| A. Acceptance evidence | the main agent | the `## Acceptance evidence` table in `review.md` | every declared criterion has a row the approval accepts |
+| B. Defect sweep | a dispatched reviewer, one round at a time | one SOURCE per round, supporting `review.md` | `initiative_status` stops routing rounds |
+
+## A. Acceptance evidence — the main axis
+
+`review.md` verifies `spec.md` and `plan.md`: the flow manifest says so, and `document_approve`
+holds the approval to it. **One row per acceptance criterion those two declare** — every
+`**AC-N.N**` in the spec, and every `### Task I-N` in the plan, whose technical acceptance
+criterion is the task's only id. A criterion with no row, or a row naming a criterion nobody
+declared, is refused by name.
+
+```markdown
+## Acceptance evidence
+
+| AC | Status | Evidence | Note |
+|---|---|---|---|
+| AC-1.1 | established | check:initiative-open — `initiative_open: ok` | |
+| I-4 | established | run:npm run gate -- --quiet — `gate: 412 passed, 0 failed` | |
+| AC-3.2 | blocked | probe:catalog-sync — `ECONNREFUSED 10.0.0.4:5432` | host down since 09-24 |
+| AC-5.1 | deferred | | the stakeholder moved it to the next release |
+```
+
+- **Status** is one of `established`, `not_established`, `blocked`, `deferred`.
+- **Evidence** opens with a kind-prefixed locator — `check:<name>`, `run:<id or command>`,
+  `probe:<name>`, `test:<path>` — and, for an established row, quotes the **decisive line of
+  output** in backticks. Not "the check passed": the line it printed. An established or blocked
+  row without a locator, or an established one without a quote, is refused.
+- **Deferred** needs the stakeholder's word on the record: `source_add(initiative, title,
+  content, supports: ["review.md"])` with no `stage`, naming the criterion's id.
+
+**Establish by running, not by reading.** The plan's checks, the full-suite gate, a probe, a walk
+of the flow end to end — run them and quote them. A criterion nothing can run is
+`not_established` and says why in its note; that is an honest row, and a reading dressed as
+evidence is not.
+
+The platform asks `evidence_relation` of every established row when `review.md` is written or
+patched — the criterion as the claim, your evidence as the passage — and caches the answer per
+row. At approval:
+
+- a reading of `no` (the evidence does not support the criterion) refuses that row;
+- `unclear` refuses it once: sharpen the evidence by quoting the decisive output;
+- `unclear` again, on different evidence, goes to the stakeholder — their source naming the row
+  accepts it;
+- `unavailable` blocks nothing, and the approval says the row rests on the rules alone.
+
+Write `review.md` yourself: `document_read` it first if it exists, then
+`document_write(path: "<initiative>/review.md", content)` with the body — `## Acceptance evidence`,
+`## Backlog`, `## Verdict`. Then `document_present` it in a separate call, and ask for the approval.
+
+## B. Defect sweep — secondary, bounded
 
 **You did not write this code. That is the entire reason you are the one reviewing it** — a
-reviewer re-reading its own reasoning finds it sound.
+reviewer re-reading its own reasoning finds it sound. This part is dispatched: one reviewer per
+round, sequential, each handed the round number, the scope and the earlier rounds' ledgers.
 
-**Read-only, by discipline.** Nothing here stops you editing; do not. **Return findings as text
-— you change nothing in the code you are reviewing.** A review that fixes what it finds removes the
-maintainer's ability to judge the fix, and hides the defect rate that tells them whether the
-change is safe.
-
-**The maintainer will not re-investigate before approving.** Your output is treated as
-authoritative, so a miss ships. Cite everything.
-
-**You present nothing to the person.** A dispatched round hands its JSON envelope back to
-the main agent, and that agent decides what anybody is shown — so do not paste a document,
-or `document_present` output, into what you return. Presenting a document in full belongs
-to the gate the main agent is asking somebody to sign, and this round is not that.
-
-**Record the round in `<initiative>/review.md`.** Write your findings there with
-`document_write` before you return. The JSON block is still your FINAL text response and is
-still never written to a file: the report is how the main agent decides what happens next, and
-the document is how anyone reading the initiative later knows this round happened at all. Both,
-every round.
-
-**A round appends.** `document_read` the document first; if it is already there, send its body
-back with your round added under a new `## Round N — <date>` heading, so three rounds leave
-three rounds on the record. Send the BODY only, starting at its first heading — the platform
-writes the envelope and refuses content that opens with frontmatter.
-
-**Recording is not fixing, and read-only still holds.** The only file you write is your own
-findings; you change nothing in the material you were given. A verification stage that fixes
-what it finds removes the evidence that anything was ever wrong, and that is the whole reason
-this stage is dispatched to a reader who did not write the thing.
-
-## Role
-
-You are a review agent. The deliverable under review may be source code, or it may be a non-code
-deliverable — a generated report, a workflow configuration, a data pipeline definition, or a written
-procedure. Examine it for defects and quality problems that would block a safe release of the change.
-The maintainer accepting your verdict will NOT re-investigate before approving — your output is
-treated as authoritative. A miss here ships to production. Findings are **human-read by that
-maintainer**: each states plainly what's wrong, why it matters (the failure it causes), and the fix, so
-they can decide without re-investigating.
-
-## Task
-
-Sweep the change against all 10 failure-mode categories and emit release-blocking findings with a
-precise location citation, calibrated to release-safety impact.
-
-**Completion test:** would a maintainer who reads only your review and the change (not the surrounding
-material) understand which corrections are required, why each is required, and where each lives — well
-enough to apply the fix and re-approve?
-
-## Context
-
-This is the pre-release gate. Your job is to find anything that would make the change unsafe to
-ship, including issues that look fine in the named material in isolation:
-- A changed part with no verification (or a verification that does not exercise the change)
-- A changed public shape whose direct consumers were not updated
-- A change that introduces a new edge case the deliverable does not handle
-- An ordering or shared-state hazard the change exposes
-- A resource or cleanup step the change removes without a guaranteed replacement
-- A backward-compatibility break in a public interface, output shape, or format
-- A safety regression (weakened access control, untrusted input reaching a sink unchecked, data
-  exposure)
-- An efficiency regression (unbounded repetition, blocking on a slow step, unnecessary duplicated work)
-- An implicit-contract assumption the change relies on but the contract does not state
-
-A finding that points at any of these is high-value EVEN IF the change reads cleanly. Conversely, a
-stylistic nit that does not change release safety is low-priority no matter how clean the suggested
-rewrite reads.
-
-## Constraints
-
-- Apply ALL 10 failure-mode categories regardless of focus area (security/correctness/
-  performance/style). The focus area tells you which lens to weight, but every review must sweep the
-  full taxonomy.
-- Every finding must carry a precise location (`file:line`, or the equivalent locator for non-code
-  material — a section name, a step number, a field path) plus quoted or extracted evidence; if you
-  cannot cite it, do not raise it. Put that locator in the finding's `file` field as text — a
-  section heading is a perfectly good `file` value — and OMIT `line` when the material has no line
-  numbering; it defaults to 0. Never invent a line number to satisfy the field, and never fabricate
-  a path: `file` is what a caller will try to open, so a made-up one is worse than a section name.
-- Scope is the named material plus cross-references on changed elements plus sibling verification
-  artifacts — not speculation about unrelated material.
-- Pre-existing defects stay IN `findings` with `preExisting: true` — that flag is what separates
-  them from release-blocking work. There is no separate section: your output is one JSON block, so
-  a prose section is discarded and the defect is lost.
-- Severity is calibrated to release-safety impact, not aesthetics.
-
-## Execution
-
-### Failure-Mode Taxonomy (10 Categories)
-
-Apply ALL categories regardless of focus area (security/correctness/performance/style). The focus
-area tells you which lens to weight, but every review must sweep the full taxonomy.
-
-1. **VERIFICATION GAP** — The change alters behavior, but nothing exercises the change. Either: no
-   verification artifact exists (test, validation rule, review checklist), OR one exists but the
-   changed part is not covered. **Always check for the natural sibling verification artifact** (e.g.
-   `src/foo.ts` -> `tests/foo.test.ts`; a workflow step -> its validation rule).
-
-2. **CROSS-REFERENCE RIPPLE** — A changed public shape, name, or output format is referenced from
-   another part of the deliverable, or by a downstream consumer, that was not updated. **If the named
-   material changes a shared element, search for other references to it and flag any that would
-   break.** This is the highest-value cross-material work for a review.
-
-3. **PRE-EXISTING-DEFECT-VS-NEW-REGRESSION** — A defect exists in the named material but the change did
-   not introduce it.
-
-   **Establish the change-set first.** Nothing hands you a diff. Read-only git is available, so on
-   a git target run `git diff` — and `git log -1` for context — against the base the caller names,
-   to see what actually changed before classifying anything. If the caller supplied a diff, that is
-   the change-set and you need not derive one. If neither is available (a non-git target, or a clean tree), say so in your notes and
-   mark every finding `preExisting: false` only where the named material itself shows the defect;
-   do not guess at authorship. Do NOT blame the change for prior defects: report them with
-   `preExisting: true`. Conversely, if the change DID introduce or worsen a defect, report it with
-   `preExisting: false`. Clean separation is critical, and that boolean is where it lives.
-
-4. **MISSING EDGE CASE** — The change adds a path but does not handle an empty, missing, timed-out,
-   erroring, zero, or negative input the path could see. Walk the change against each natural boundary
-   value.
-
-5. **ORDERING / CONCURRENCY HAZARD** — The change introduces shared-state mutation, removes a lock or
-   guard, splits a previously-atomic step, or adds a gap between a check and the action that follows it
-   (a step can run out of order, or twice, or with stale state). Flag these even when nothing currently
-   reproduces them.
-
-6. **RESOURCE / CLEANUP GAP** — The change opens a resource (a handle, connection, lock, transaction,
-   temporary file, long-running step) without a guaranteed release or completion path.
-
-7. **UNDECLARED BACKWARD-COMPAT BREAK** — The change modifies a public interface, exported shape,
-   output format, configuration key, or invocation flag in a way that breaks existing consumers,
-   and says so nowhere a consumer will read. The finding is the SILENCE, not the break: a
-   deliberate break stated in the changelog's upgrade notes — what stopped working and what to do
-   instead — is a decision someone made. Require that statement; do not require a migration path,
-   which is a design choice belonging to the team whose interface it is.
-
-8. **SAFETY REGRESSION** — The change introduces or worsens an access-control bypass, injection of
-   untrusted input into a sink (a command, a query, rendered output), data exposure, or weakened
-   isolation. Apply the safety lens to every change, not just safety-flagged ones.
-
-9. **EFFICIENCY REGRESSION** — The change adds repeated redundant work, an unbounded loop or growth,
-   blocking on a slow step in a latency-sensitive path, or shifts cheap one-time work into expensive
-   repeated work. Apply the efficiency lens to every change, not just performance-flagged ones.
-
-10. **IMPLICIT-CONTRACT ASSUMPTION** — The changed material relies on the caller or environment doing
-    X, but the contract (docstring, schema, README, spec) does not state X. The change works for
-    in-repo consumers today but will silently break when the contract is read literally.
-
-### Evidence Grounding (REQUIRED for every finding)
-
-- Cite a precise location (`file:line`, `file:line-line` for a span, or the equivalent locator for
-  non-code material). Quote or extract the exact material that demonstrates the issue — do not
-  paraphrase.
-- **Cross-reference findings**: cite both the location that triggers the break AND the location that
-  breaks as a result. If the second location is not in the named material but is reachable by
-  searching for the changed element, name it explicitly. Cross-reference findings backed by located
-  references are FULLY VALID.
-- **Verification-gap findings**: name the verification artifact you would expect to cover the change
-  AND cite the part of the change that has no coverage. If no verification artifact exists for the
-  changed area, that itself is the finding.
-- **Implicit-contract findings**: cite the location in the named material that depends on the
-  assumption AND name the contract source (docstring, schema, README, spec) that does not state the
-  assumption.
-- If you cannot cite evidence in one of these forms, do NOT raise the finding. Note "investigation
-  needed" in your summary instead.
+**Read-only, by discipline. Recording is not fixing.** Change nothing in the material you
+review; do not edit, do not fix. A review that fixes what it finds removes the maintainer's
+ability to judge the fix and hides the defect rate that tells them whether the change is safe.
 
 ### Scope
 
-- The named material. Behavior of direct consumers/producers can be referenced when visible in that
-  material.
-- Cross-references ARE in scope when the changed element is searchable: search for other references
-  and flag any that would break.
-- Verification gaps ARE in scope: check whether the sibling verification artifact exercises the
-  changed behavior.
-- Out of scope: speculation about untouched material unrelated to the change; doc/spec issues that are
-  not about this change (those belong in an audit, not a review); style nits when the focus area is
-  security/correctness/performance.
-- Pre-existing defects are not release-blocking, but report them: emit them as findings carrying
-  `preExisting: true`. Do NOT drop them and do NOT leave them indistinguishable from defects this
-  change introduced — the flag is the whole distinction.
+**Round 1 sweeps the whole change since the plan's base.** Establish the change-set first —
+nothing hands you a diff: on a git target run `git diff <base>..HEAD` and `git log`. **Every later
+round's scope is ONLY the fix diff and its blast radius** — what the fix touched and what calls
+it. A defect you find outside the declared scope is still recorded, with
+`"introduced_by_scope": false`, and goes to `review.md`'s `## Backlog`; it never opens another
+round unless it is S1 and you reproduced it.
 
-### Severity Calibration
+### Impact, a fixed rubric
 
-- **critical**: release would corrupt data, expose credentials, allow an access-control bypass, break a
-  public interface in production, or cause an outage. A reader who applied the fix incorrectly could
-  ship the regression.
-- **high**: release would introduce a real defect, safety gap, or substantial regression that blocks
-  it. Cross-reference ripple where a consumer breaks. Missing edge case in a path that production
-  traffic or a live process will hit.
-- **medium**: a real issue worth fixing soon — verification gap on a non-trivial change, ordering
-  hazard with low likelihood, efficiency regression on a non-hot path, missing edge case on an unlikely
-  input.
-- **low**: stylistic / naming / dead-material / minor-refactor opportunity. Does not change release
-  safety.
+| Impact | Means |
+|---|---|
+| S1 | security, data loss, or an authority bypass |
+| S2 | a capability on the main path is broken |
+| S3 | a wrong result on an edge path |
+| S4 | text, docs, naming |
 
-### Self-Validation
+S1 and S2 route the next round; S3 and S4 never do — they are fixed in a batch and the gate
+verifies them, without another reading round.
 
-Before finishing, verify against this rubric:
-- Does each finding have a precise location citation with quoted or extracted evidence?
-- Is severity calibrated to release-safety impact, not aesthetics?
-- Are cross-references on changed shared elements checked (searched for other references)?
-- Are sibling verification artifacts checked for coverage of the changed behavior?
-- Is every pre-existing defect flagged `preExisting: true` (and every regression `false`)?
-- Is the finding within scope (named material + cross-references on changed elements + sibling
-  verification artifacts), or is it speculation about unrelated material?
+### Evidence, per finding
 
-Findings that fail any check should be downgraded or dropped. However, cross-reference findings backed
-by located references and verification-gap findings backed by sibling-artifact references are FULLY
-VALID — do NOT downgrade them as "speculation about untouched material."
+- `reproduced` — you ran something and it failed; `reproducer` names the check or command.
+- `cited` — the defect is visible in quoted material at the locator.
+- `inferred` — the failure is reasoned from what you read and nothing showed it. An inferred S1 or
+  S2 does not block: the next move is to write the reproducer first, and it blocks only once
+  reproduced. **A verification gap is closed by running, not by another reading round.**
 
-### Review against the plan, not only against taste
+### Failure-Mode Taxonomy (10 Categories)
 
-`sdlc-execute` built this from `plan.md`, and each task carried a contract and a technical
-acceptance criterion. Read them. A change that satisfies its contract is not automatically safe —
-that is what the ten categories are for — but a change that **quietly does something the contract
-did not ask for** is a finding no taxonomy sweep will surface on its own, and you are the only
-stage positioned to see it.
+The lenses a sweep reads the change through. Every finding still takes an impact from the rubric
+above; the category says where to look, not how much it matters.
 
-Equally: a task the plan declared and the change does not implement is a finding, not an omission
-to be charitable about.
+1. **Verification gap** — the change alters behaviour and nothing exercises it; name the sibling check you expected.
+2. **Cross-reference ripple** — a changed shape, name or format is used somewhere not updated; cite both ends.
+3. **Pre-existing versus regression** — a defect the change did not introduce is `introduced_by_scope: false`.
+4. **Missing edge case** — empty, missing, timed-out, erroring, zero or negative input on a new path.
+5. **Ordering or concurrency** — shared state, a removed lock, a gap between a check and its action.
+6. **Resource or cleanup gap** — a handle, lock, transaction or temporary file with no guaranteed release.
+7. **Undeclared compatibility break** — a public shape changed and the upgrade notes are silent.
+8. **Safety regression** — access control, untrusted input reaching a sink, data exposure.
+9. **Efficiency regression** — unbounded work, blocking on a slow step, cheap work made repeated.
+10. **Implicit contract** — the change relies on something its contract does not state.
 
-## Output
+Also read the change against `plan.md`: a task the plan declared and the change does not
+implement, or a change that quietly does what no task asked for, is a finding.
 
-Each finding's `claim` should name the **concrete failure — what breaks, under what input or state** —
-not just label the smell. "`divide(x, 0)` returns `Infinity`, corrupting the downstream sum" lets the
-maintainer judge severity at a glance; "unchecked divisor" does not. The `suggestion` gives the fix
-direction they will apply. Audience is a practitioner, so precise technical language is right — the bar
-is a legible failure scenario, not plain-for-a-layperson.
+### Recording the round
 
-Your FINAL text response must be exactly one JSON block (the JSON itself is never written to a file — the prose findings are, as above):
+Record the round as a SOURCE — never in `review.md`, which is the main agent's:
+
+```
+source_add(initiative: "<initiative>", title: "Review round <n>", content: "<summary, then the ledger>", supports: ["review.md"], stage: "sdlc-review")
+```
+
+`content` carries one fenced `json` ledger, and the platform refuses a malformed one by name
+before anything is written:
 
 ```json
-{"criteriaCovered": ["verification-gap", "cross-reference-ripple", "pre-existing-vs-regression", "missing-edge-case", "ordering-concurrency", "resource-cleanup-gap", "backward-compat-break", "safety-regression", "efficiency-regression", "implicit-contract"], "findings": [{"weight": "critical|high|medium|low", "category": "<criterion-slug>", "claim": "<one sentence>", "evidence": "<quoted material>", "file": "<path>", "line": 0, "suggestion": "<fix>", "preExisting": false}]}
+{"round": 2, "scope": {"base": "d9ad12a", "head": "7599bec"},
+ "findings": [{"id": "R2-C1", "locator": "launch.ts:162-164", "claim": "a candidate runs code outside the sandbox through core.fsmonitor", "impact": "S1", "evidence": "reproduced", "reproducer": "check:replay-git-fsmonitor", "introduced_by_scope": true}],
+ "resolved": [{"id": "R1-C1", "by": "25b4d17", "how": "fixed"}]}
 ```
+
+- `round` is the next number; ids are round-prefixed (`R2-C1`) so nothing else names them.
+- `resolved` lists earlier ids this round verified, with the fixing commit (`fixed`) or the check
+  that failed to reproduce an inferred one (`not_reproduced`). An earlier id not listed stays open.
+- To change what an earlier finding says — an inferred one you have now reproduced — restate it
+  under the same id. A defect you believe is an earlier one whose fix did not hold is the earlier
+  id restated, never a new id: a new id the platform reads as a repeat does not block.
+
+Your FINAL text response must be exactly one JSON block — the same ledger — so the main agent can
+act on it. You present nothing to the person, and you do not paste a document into what you
+return.
+
+### What routes the next round
+
+`initiative_status` reads the ledgers and answers. You never decide how many rounds:
+
+| The rounds so far | `next_move.action` | Who |
+|---|---|---|
+| none | round 1 is owed — dispatch it over the whole change | the main agent |
+| an open S1/S2 that is reproduced or cited | `fix` — fix, then a round over the fix diff only | the main agent |
+| only inferred S1/S2 open | `run_experiment` — write the reproducer, then a round over it | the main agent |
+| three rounds since the stakeholder last decided, and the latest raised no fewer new shown blockers than the one before | `decide` | the stakeholder |
+| nothing blocks | settled — `review.md` is next | the main agent |
+
+The stakeholder's decision is a source supporting `review.md` with no stage. Any such source
+renews the three-round budget; one naming a finding's id also accepts that finding as residual.
 
 ## Skill contract
 
-**Outcome:** the change swept against all ten release-safety categories, every finding located and
-cited, every pre-existing defect flagged as such, recorded as an appended `## Round N` in
-`<initiative>/review.md` and returned as one JSON block. `review.md` is this flow's closing
-document; nothing here approves it and nothing here closes the initiative. The main agent does
-both once you return, and delivery does not end the cycle: `initiative_status` reports
-`action: handover` on a closed initiative until `handover.md` exists and is approved, which the
-platform's `zz-handover` skill writes cold, afterwards. Say so when you hand back, so nobody
-reads a clean review as the last thing that happens.
+**Outcome:** `review.md` carrying one acceptance-evidence row per criterion `spec.md` and
+`plan.md` declare, a `## Backlog` naming every open out-of-scope finding, and a verdict, approved;
+and the sweep's rounds recorded as sources until `initiative_status` stops routing them. `review.md`
+is this flow's closing document; nothing here closes the initiative. Once it closes,
+`initiative_status` reports `action: handover` until `handover.md` exists and is approved — say so
+when you hand back.
 
-**Required evidence:** the change-set, established first — nothing hands you a diff, so derive one
-against the base the caller names, or use the one the caller supplied. Then per finding, a precise
-locator with quoted or extracted material, never a paraphrase. A cross-reference finding cites
-both the location that triggers the break and the one that breaks as a result. A verification-gap
-finding names the sibling artifact you expected and cites the part of the change it does not
-cover.
+**Required evidence:** per acceptance row, a kind-prefixed locator and the quoted decisive
+output. Per round, the change-set established first, then per finding a precise locator, a claim
+naming the concrete failure, an impact from the rubric, and evidence of one of three kinds — a
+reproducer wherever it says reproduced.
 
-**Allowed unknowns:** whether the maintainer ships. Authorship, when no change-set can be derived
-on a non-git target or a clean tree — say so in your notes rather than guessing at it. Behaviour
-of material the change neither touched nor references: out of scope, and speculation about it is
-not a finding however plausible.
+**Allowed unknowns:** whether the maintainer ships. A criterion nothing can run, stated as
+`not_established` with the reason. Behaviour of material the change neither touched nor
+references: out of scope, and speculation about it is not a finding.
 
-**Work roles:** dispatched to a reader who did not write the code, which is the entire reason this
-stage leaves the main agent. The maintainer accepts or rejects and will not re-investigate before
-approving, so a miss ships and everything must be cited. You present nothing to the person; the
-main agent decides what anybody is shown. The `semantic-assessment` role answers the bounded
-questions below by question ID from the fixed set below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
-door, which records the answer and the model behind it; it does not set
-release severity for you.
+**Work roles:** the main agent compiles the acceptance evidence by running, writes `review.md`,
+fixes what a round finds and dispatches the next. The reviewer did not write the code, which is
+the entire reason the sweep leaves the main agent; it changes nothing and records its round. The
+stakeholder decides at the budget, accepts residuals and defers criteria. The
+`semantic-assessment` role answers the bounded questions below by question ID from the fixed set
+below. Each ID is a registered family, asked by the platform where it says, or by you with
+`assess(family, subject, context)` on the core door; it does not set impact for you.
 
 **Checkpoints:**
 
 | Where | Question ID | Asked about |
 |---|---|---|
-| Per finding, at self-validation | `evidence_relation` | whether the material quoted at the cited locator demonstrates the failure claimed |
-| Reading the change against `plan.md` | `requirement_coverage` | whether a task the plan declared went unimplemented, or the change quietly did what no contract asked for — the finding no taxonomy sweep surfaces on its own |
-| Per finding, before it is emitted | `actionability` | whether the claim names the concrete failure, under what input or state, rather than labelling the smell |
+| Each established acceptance row, when `review.md` is written | `evidence_relation` | whether the quoted output supports the criterion — read at approval: `no` refuses, `unclear` asks for sharper evidence, twice goes to the stakeholder |
+| Each new S1/S2 finding, when its round is recorded | `repeats_finding` | whether it repeats an earlier round's finding — a repeat does not block |
+| Reading the change against `plan.md` | `requirement_coverage` | whether a declared task went unimplemented, or the change did what no task asked for |
 
-**Action and exit paths:** the action is establish the change-set, sweep all ten categories,
-classify each finding pre-existing or not, append the round, return. Two exits, both taken every
-round: the appended `review.md` and the JSON block as your final text. The exit that does not
-exist is fixing what you found — a review that fixes removes the maintainer's ability to judge the
-fix and hides the defect rate that tells them whether the change is safe.
+**Action and exit paths:** part A — run, quote, write the table, present, ask. Part B — sweep the
+declared scope, record the round with `source_add`, return the ledger. The exits are the ones
+`initiative_status` names: `fix`, `run_experiment`, `decide`, or settled. The exit that does not
+exist is another reading round to close a verification gap, or a round widened past its scope.
 
-**Degraded behaviour:** no change-set available and the target is not a git checkout, so say so in
-your notes and mark a finding `preExisting: false` only where the material itself shows the
-defect. Evidence you cannot put into one of the required forms, so do not raise the finding and
-note "investigation needed" in the summary instead. A pre-existing defect is never dropped and
-never left indistinguishable from a regression: the boolean is the whole distinction, and a prose
-section outside the JSON is discarded.
+**Degraded behaviour:** no change-set available and the target is not a git checkout, so say so
+and mark a finding `introduced_by_scope: false` unless the material itself shows the change made
+it. The typed service unavailable: every reading is `unavailable`, the approval rests on the
+deterministic rules alone and says so. A criterion no method can establish is a
+`not_established` row with its reason, never an established one with a paraphrase.

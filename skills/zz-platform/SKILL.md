@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.69
+version: 3.70
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store outside a flow."
 ---
@@ -73,8 +73,8 @@ and why. These are the situations it distinguishes:
 |---|---|
 | the next document the flow declares is not there, or is there and still draft | you |
 | a gated document is written and nobody has recorded a verdict on it | the stakeholder |
-| an audit round is owed: none yet, or the document was revised after the last round read it | you |
-| an audit round reopened an agreement, or the round budget is spent on an unaudited revision | the stakeholder |
+| a round is owed: none yet, a revision after the last audit round, or a review round left a shown S1/S2 finding to `fix` or an inferred one to reproduce (`run_experiment`) | you |
+| an audit round reopened an agreement, or the round budget is spent with the work still unaudited or blocked | the stakeholder |
 | the declared documents are done and the platform's handover is not | you, then the person |
 | the chain's last document is ready and the initiative can be closed | you |
 | an outcome is recorded — it is over | nobody |
@@ -426,7 +426,7 @@ The knowledge store is the team's, not one agent's session:
   email, a decision taken in a corridor — attach it to the initiative and
   name in `supports` every document it bears on (one or several). It is
   ungated and immutable; anyone on the team may add one at any time from
-  any harness.
+  any harness. A round names its `stage`; a malformed review ledger is refused by name.
 - **The platform is a tenant too.** Its TEAM slug is also `zz-platform` —
   the same word as this skill's name and a different thing: a team shelf in
   the store, not a skill you can load. No tenant may claim it. That shelf has

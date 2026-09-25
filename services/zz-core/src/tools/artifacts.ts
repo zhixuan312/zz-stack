@@ -22,6 +22,8 @@ import { chainFor } from "../chain.js";
 import { envelopeEditRefusal, fieldRefusal, frontmatterRefusal } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
 import { auditRoundOf, assessRound } from "../audit-rounds.js";
+import { assessAcceptance, verifyingDoc } from "../review-acceptance.js";
+import { assessReviewRound, ledgerRefusal, reviewRoundOf, reviewRounds } from "../review-rounds.js";
 import { noteDocument, noteSource } from "../host/observe.js";
 import { sourceDocument } from "../indexing.js";
 import { unopenedRefusal } from "../initiative-record.js";
@@ -104,9 +106,10 @@ export function registerArtifactTools(server: McpServer): void {
       // evidence landed would let a caller write a document and be told the step is unmet.
       await noteDocument(chain, path, "document",
                          parseCaller(requestHeaders()).email, team);
+      const assessed = await acceptanceLine(root, chain, path, written);
       return text(`written: ${path} (${written.length} chars)`
         + (fixed.renamed.length ? `\nRenamed to the heading this flow declares: ${fixed.renamed.join(", ")}.` : "")
-        + nextMoveLine(root, path.split("/")[0]));
+        + assessed + nextMoveLine(root, path.split("/")[0]));
     },
   );
 
@@ -298,8 +301,10 @@ export function registerArtifactTools(server: McpServer): void {
       persistDocument(chain, root, path, target, fixed.content, "patch");
       logActivity(root, path,
         { user: parseCaller(requestHeaders()).email, action: "document_patch", path });
+      const assessed = await acceptanceLine(root, chain, path, fixed.content);
       return text(`patched: ${path}`
-        + (fixed.renamed.length ? `\nRenamed to the heading this flow declares: ${fixed.renamed.join(", ")}.` : ""));
+        + (fixed.renamed.length ? `\nRenamed to the heading this flow declares: ${fixed.renamed.join(", ")}.` : "")
+        + assessed);
     },
   );
 
@@ -340,8 +345,9 @@ export function registerArtifactTools(server: McpServer): void {
           .describe("Document(s) this material bears on, e.g. 'spec.md' or ['spec.md','plan.md']."),
         stage: z.string().optional()
           .describe("The flow stage this source is the output of, when it is one — an audit round " +
-                    "names its audit stage, e.g. 'sdlc-spec-audit'. Only a source naming its stage " +
-                    "counts as that stage's round."),
+                    "names its audit stage, e.g. 'sdlc-spec-audit', and a review round the stage " +
+                    "that writes the verifying document, e.g. 'sdlc-review', with its ```json " +
+                    "ledger in `content`. Only a source naming its stage counts as that stage's round."),
       },
     },
     async ({ initiative, title, content, supports, stage }) => {
@@ -385,8 +391,16 @@ export function registerArtifactTools(server: McpServer): void {
       // answers support spec.md too, and counting them as a round would let a spec pass its
       // audit without anybody auditing it.
       const governing = chainFor(root, `${initiative}/x.md`);
-      const round = auditRoundOf(governing, stage, list);
-      const auditsVersion = round
+      const review = reviewRoundOf(governing, stage, list);
+      // A review round's ledger is what the next move is computed from, so a malformed one is
+      // refused here, before anything is written: a source cannot be corrected once it lands.
+      if (review) {
+        const earlier = reviewRounds(join(root, initiative), review.stage, review.document).map((r) => r.ledger);
+        const refused = ledgerRefusal(content, earlier, review.document);
+        if (refused) return text(refused);
+      }
+      const round = auditRoundOf(governing, stage, list) ?? review;
+      const auditsVersion = round && !review
         ? parseEnvelope(existsSync(join(root, initiative, round.document))
             ? readFileSync(join(root, initiative, round.document), "utf8") : "").version || "1"
         : undefined;
@@ -416,12 +430,13 @@ export function registerArtifactTools(server: McpServer): void {
       // `sources/` and carries no `flow:`, so its own path returns EMPTY_CHAIN. This is the form
       // `initiative_open` uses to resolve a chain before any document exists.
       const sourceTeam = await teamFor(who.email);
-      if (round) await noteSource(governing, rel, round.document, who.email, sourceTeam);
+      if (round && !review) await noteSource(governing, rel, round.document, who.email, sourceTeam);
       // The round is assessed the moment it lands, so the next move can route on it: does it
-      // reopen something already agreed, and does it only repeat the round before it.
-      const assessed = round
-        ? await assessRound(root, initiative, rel, round.document, content, who.email)
-        : null;
+      // reopen something already agreed, and does it only repeat the round before it. A review
+      // round asks the second question once per S1/S2 finding it introduces.
+      const assessed = review
+        ? await assessReviewRound(root, initiative, rel, review.stage, review.document, who.email)
+        : round ? await assessRound(root, initiative, rel, round.document, content, who.email) : null;
       const stageNote = stage && !round
         ? `\n\nNOT COUNTED AS A ROUND: "${stage}" is not a stage of this flow that produces a source ` +
           `supporting ${list.join(", ") || "nothing"}, so this was recorded as material only.`
@@ -429,7 +444,8 @@ export function registerArtifactTools(server: McpServer): void {
       return text(
         `source recorded: ${rel}` +
         (list.length ? `\nsupports: ${list.join(", ")}` : "") +
-        (round ? `\nrecorded as a ${round.stage} round on ${round.document} v${auditsVersion}` : "") +
+        (round ? `\nrecorded as a ${round.stage} round on ${round.document}` +
+                 (auditsVersion ? ` v${auditsVersion}` : "") : "") +
         (assessed ? `\n${assessed}` : "") + stageNote +
         (stale.length
           ? `\n\nNote for whoever works on this next: ${stale.join(", ")} ` +
@@ -468,4 +484,15 @@ export function registerArtifactTools(server: McpServer): void {
       return text(JSON.stringify({ initiative, sources: rows }, null, 2));
     },
   );
+}
+
+/** After a verifying document is written or patched: ask `evidence_relation` of the acceptance
+ *  rows nobody asked about yet, so approval reads a cache instead of waiting on the service. */
+async function acceptanceLine(root: string, chain: ReturnType<typeof chainFor>, path: string,
+                              content: string): Promise<string> {
+  const doc = verifyingDoc(chain, path);
+  if (!doc) return "";
+  const said = await assessAcceptance(root, path.split("/")[0], doc, content,
+                                      parseCaller(requestHeaders()).email);
+  return said ? `\n${said}` : "";
 }

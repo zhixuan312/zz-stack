@@ -99,7 +99,11 @@
       "closing": true,
       "requiredForClose": true,
       "requires": "plan.md",
-      "stage": "sdlc-review"
+      "stage": "sdlc-review",
+      "verifies": [
+        "spec.md",
+        "plan.md"
+      ]
     }
   ]
 }

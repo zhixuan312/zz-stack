@@ -2,7 +2,7 @@
 name: "flow"
 description: "Run the SDLC Agent flow for your team."
 when_to_use: "The person typed /sdlc:flow. This is a command, not an auto-matched skill."
-version: "0.76.1"
+version: "0.76.2"
 disable-model-invocation: true
 ---
 
@@ -44,7 +44,7 @@ Not a ratchet. An audit that finds the spec rests on an unsettled decision sends
 | 4 | `sdlc-plan` | `plan.md` | **main agent** → the person approves |
 | 5 | `sdlc-plan-audit` | a SOURCE supporting `plan.md` | subagent per round, sequential, rounds routed by evidence |
 | 6 | `sdlc-execute` | the change itself, and no document | subagent per plan item |
-| 7 | `sdlc-review` | `review.md` — and it closes the initiative | subagents |
+| 7 | `sdlc-review` | `review.md` — and it closes the initiative — plus a SOURCE per sweep round | **main agent** for the evidence; subagent per round, sequential, rounds routed by evidence |
 
 Four documents, and the audits produce none of them. An audit report is a SOURCE: it is the
 material that makes the next version of somebody else's document necessary, and the platform
@@ -137,10 +137,13 @@ about that.
 
 One subagent per plan item. You keep the sequence and report what changed.
 
-### 7 · Review is dispatched
+### 7 · Review: acceptance evidence first, then a bounded sweep
 
-A code review of what was built, by workers who did not build it. That is the whole reason it
-is not yours.
+First, `review.md`'s acceptance evidence: one row per criterion the spec and the plan declare,
+established by running and quoting what ran — that is yours. Then the defect sweep, one
+dispatched round at a time, by a reviewer who did not build it; each round is a source whose
+ledger `initiative_status` reads to answer `fix`, `run_experiment`, `decide` or settled. You never
+choose how many rounds, and a later round never reads wider than the fix it checks.
 
 ### After review · the close is an act, not a stage
 

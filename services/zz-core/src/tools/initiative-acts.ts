@@ -30,6 +30,7 @@ import { DOC_REF, safePath, tagRefusal, titleSlug, userRoot, writeGuard } from "
 import { logActivity, persistDocument, putEnvelopeField } from "../persist.js";
 import { teamFor } from "../platform-db.js";
 import { improvementApprovalRefusal } from "../release-owners.js";
+import { acceptanceApprovalRefusal } from "../review-acceptance.js";
 import { isoToday, normalizeSections } from "../write-guards.js";
 
 import { registerInitiativeCloseTool } from "./initiative-close.js";
@@ -109,6 +110,11 @@ export function registerInitiativeActTools(server: McpServer): void {
         const refused = await improvementApprovalRefusal(documentBody(doc), signer, on_behalf_of?.trim() ? who.email : null);
         if (refused) return text(refused);
       }
+      // A document that `verifies` others is approved on evidence: one acceptance row per
+      // criterion they declare, each held to review-acceptance.ts's rules. Asked here and not in
+      // documentGuards, which runs on every draft write and would refuse a table being filled in.
+      const acceptance = await acceptanceApprovalRefusal(root, chain, relPath, doc, who.email);
+      if (acceptance.refusal) return text(acceptance.refusal);
       const already = parseEnvelope(doc).status === "approved";
       doc = putEnvelopeField(doc, "status", "approved");
       doc = putEnvelopeField(doc, "approved_by", signer);
@@ -128,6 +134,7 @@ export function registerInitiativeActTools(server: McpServer): void {
         `${relPath} approved — recorded under ${signer}` +
         (on_behalf_of ? ` (on their behalf, by ${who.email})` : "") + ".\n" +
         (already ? "It was already approved; the record now carries this verdict instead.\n" : "") +
+        (acceptance.note ? `${acceptance.note}\n` : "") +
         (fixed.renamed.length ? `Renamed to the heading this flow declares: ${fixed.renamed.join(", ")}.\n` : "") +
         // DELIBERATE: said, not refused. An approval with no `document_present` since the content last
         // moved is flagged and never rejected: this call records a decision a person already made, so a

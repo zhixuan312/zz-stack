@@ -1,0 +1,1083 @@
+{
+ "initiative": "2026-09-24-plugin-eval-next-version",
+ "note": "The six review rounds of 2026-09-24-plugin-eval-next-version/review.md, re-expressed as the ledgers the redesigned sdlc-review records. Every critical, high and medium finding keeps its id, locator and claim; each round's lows are one S4 entry, because S3/S4 never route a round. Impact follows the fixed rubric (S1 security, data loss, authority bypass; S2 a main-path capability broken; S3 an edge-path wrong result; S4 text). Evidence is `reproduced` where the round says it reproduced the defect, `inferred` for the Round 5-6 skill-against-tool findings the Closing section says were found by inferring whether an agent could finish, and `cited` otherwise. `introduced_by_scope` is false where the round itself calls a finding pre-existing or not a regression of its own diff. Rounds 5 and 6 declared wider scopes than their diffs \u2014 Round 5 a whole-release pass over dbc5251..d7290d3, Round 6 a walk of all eight stage skills \u2014 so their findings are inside the scope those rounds declared. `resolved` lists the previous round's ids the round's status table marks fixed; a partial fix is resolved there and its residual carried by the round's new id, as the review did. R4-M1 is S3: the round says it needs an earlier abandon that failed partway and does not block by severity.",
+ "rounds": [
+  {
+   "file": "2026-09-25-review-round-1.md",
+   "added_at": "2026-09-25T01:00:00.000Z",
+   "ledger": {
+    "round": 1,
+    "scope": {
+     "base": "dbc5251",
+     "head": "d9ad12a"
+    },
+    "findings": [
+     {
+      "id": "C1",
+      "locator": "packages/tools/src/replay/session.ts:96",
+      "claim": "the replay candidate session can reach the launching principal's credentials",
+      "impact": "S1",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "H1",
+      "locator": "services/zz-core/src/eval/release-apply.ts:169-171",
+      "claim": "a non-owner can satisfy approval_required through on_behalf_of",
+      "impact": "S1",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "H2",
+      "locator": "release-apply.ts:118",
+      "claim": "two candidates of one plugin can be released on the same baseline",
+      "impact": "S2",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "H3",
+      "locator": "release-apply.ts:111-133",
+      "claim": "stale_baseline ignores releases made outside this system and after rollbacks",
+      "impact": "S2",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "H4",
+      "locator": "release-verify.ts:489-495",
+      "claim": "a failing guardrail never triggers a rollback while the paired interval is unresolved",
+      "impact": "S2",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "H5",
+      "locator": "packages/tools/src/release/apply.ts:101",
+      "claim": "the patch is applied to the checkout's HEAD, not the validated base",
+      "impact": "S2",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "H6",
+      "locator": "candidate-prove.ts:513-518",
+      "claim": "proof sealing is nominal: the search caller receives proof case ids and a reading token",
+      "impact": "S1",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "H7",
+      "locator": "candidate-search.ts:579",
+      "claim": "the leakage critic is skipped for a candidate validated before candidate_search",
+      "impact": "S2",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "H8",
+      "locator": "candidate-search.ts:169-179",
+      "claim": "proof grants release eligibility when the leakage reading is unclear or unavailable",
+      "impact": "S2",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "H9",
+      "locator": "services/zz-core/src/guards.ts:47-53",
+      "claim": "abandoning an sdlc initiative at a gated draft is refused",
+      "impact": "S2",
+      "evidence": "reproduced",
+      "reproducer": "the built documentGuards on a stop over a draft spec.md",
+      "introduced_by_scope": true
+     },
+     {
+      "id": "H10",
+      "locator": "candidate-search.ts:573-581",
+      "claim": "model calls run inside open withIdempotency transactions on a 4-connection pool",
+      "impact": "S2",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M1",
+      "locator": "release-apply.ts:459-464",
+      "claim": "a released id equal to the base is accepted",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M2",
+      "locator": "release/rollback.ts:177",
+      "claim": "rollback restores the deployment's previous tag, not a target version",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M3",
+      "locator": "release-apply.ts:414-431",
+      "claim": "rolled_back is recordable by any principal with no verdict check",
+      "impact": "S1",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M4",
+      "locator": "release/apply.ts:253",
+      "claim": "a refused record leaves the attempt applying forever",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M5",
+      "locator": "checks/eval-release-rules.ts",
+      "claim": "no check covers verifyRelease branch order or planApply",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M6",
+      "locator": "proposal-doc.ts:181-183",
+      "claim": "a diff containing fences breaks the proposal's rendering",
+      "impact": "S4",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M7",
+      "locator": "subject.ts:572-580",
+      "claim": "plugin_register silently replaces another team's subject digest",
+      "impact": "S1",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M8",
+      "locator": "subject.ts:339-346",
+      "claim": "plugin_register accepts file:// and internal hosts (SSRF)",
+      "impact": "S1",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M9",
+      "locator": "eval-protocol.ts:145,157",
+      "claim": "negative and zero weights score outside 0-10",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M10",
+      "locator": "semantic.ts:194",
+      "claim": "assessment rows commit outside the ledger transaction",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M11",
+      "locator": "replay-runs.ts:620-630",
+      "claim": "replay_close has no principal predicate",
+      "impact": "S1",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M12",
+      "locator": "replay-runs.ts:79",
+      "claim": "the run TTL is shorter than a launch",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M13",
+      "locator": "replay/git.ts:107",
+      "claim": "git worktree add on the operator's checkout lets a session move refs",
+      "impact": "S1",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M14",
+      "locator": "launch.ts:267",
+      "claim": "a replay installs HEAD, not the subject's digest",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M15",
+      "locator": "candidate-validate.ts:371",
+      "claim": "two keys can both insert validation rows",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M16",
+      "locator": "candidate-search.ts:391",
+      "claim": "generationsExhausted counts composition depth",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M17",
+      "locator": "candidate-prove.ts:290-291",
+      "claim": "proof allocation is spent per candidate, not per case set",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M18",
+      "locator": "candidate-prove.ts:537",
+      "claim": "accepted pruning waits for the liveness bound",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M19",
+      "locator": "candidate-prove.ts:389-390",
+      "claim": "one failed proof forbids a later release",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M20",
+      "locator": "checks/flow-when-status.ts:69",
+      "claim": "no check exercises the conditional closing document",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "M21",
+      "locator": "services/gateway/src/console/plugin-eval.ts:289,303",
+      "claim": "released candidates render as not proved",
+      "impact": "S4",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R1-L",
+      "locator": "Round 1, Low",
+      "claim": "twenty low findings, recorded as one entry here (S3/S4 never route a round)",
+      "impact": "S4",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     }
+    ],
+    "resolved": []
+   }
+  },
+  {
+   "file": "2026-09-25-review-round-2.md",
+   "added_at": "2026-09-25T02:00:00.000Z",
+   "ledger": {
+    "round": 2,
+    "scope": {
+     "base": "d9ad12a",
+     "head": "7599bec"
+    },
+    "findings": [
+     {
+      "id": "R2-C1",
+      "locator": "launch.ts:162-164",
+      "claim": "a candidate runs code outside the sandbox through core.fsmonitor",
+      "impact": "S1",
+      "evidence": "reproduced",
+      "reproducer": "git 2.50.1: core.fsmonitor in .git/config runs on git status --porcelain",
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R2-H1",
+      "locator": "launch.ts:179",
+      "claim": "symlinks let the launcher copy operator files into produced",
+      "impact": "S1",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R2-H2",
+      "locator": "sandbox.ts:95",
+      "claim": "bwrap shares the PID namespace, exposing the launcher's environ",
+      "impact": "S1",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R2-H3",
+      "locator": "release-apply.ts:103-107",
+      "claim": "an uncaptured catalog release is invisible to the compare-and-set",
+      "impact": "S2",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R2-H4",
+      "locator": "qualify.ts:217-222",
+      "claim": "evaluator_qualify asks models inside an open transaction",
+      "impact": "S2",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R2-M1",
+      "locator": "replay-close.ts:44",
+      "claim": "a replay credential is refused only on its own run",
+      "impact": "S1",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R2-M2",
+      "locator": "launch.ts:253-256",
+      "claim": "third-party subjects can no longer be replayed at all",
+      "impact": "S2",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R2-M3",
+      "locator": "checks/replay-isolation-pure.ts",
+      "claim": "nothing checks R2-C1, R2-H1 or R2-H2",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R2-M4",
+      "locator": "release.ts:169-219",
+      "claim": "any principal can displace the approved attempt",
+      "impact": "S1",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R2-M5",
+      "locator": "apply.ts:140",
+      "claim": "release_ref can be a local-only commit",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R2-M6",
+      "locator": "apply.ts:293-303",
+      "claim": "--reconcile decides by version string only",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R2-M7",
+      "locator": "release-verify.ts:466-473",
+      "claim": "a pending release_verify never reads the guardrails",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R2-M8",
+      "locator": "checks/eval-release-apply-pure.ts",
+      "claim": "no check exercises the authority paths",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R2-M9",
+      "locator": "candidate-search.ts:517",
+      "claim": "composition ignores maxGenerations",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R2-M10",
+      "locator": "candidate-prove.ts:510-518",
+      "claim": "spending the proof split makes not_established permanent",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R2-M11",
+      "locator": "candidate-validate.ts:469-480",
+      "claim": "a stranded validating status wedges the search",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R2-M12",
+      "locator": "subject-source.ts:41",
+      "claim": "a top-level skills symlink escapes confinement",
+      "impact": "S1",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R2-M13",
+      "locator": "subject-source.ts:127",
+      "claim": "DNS rebinding bypasses the public-host check",
+      "impact": "S1",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R2-M14",
+      "locator": "subject-source.ts:154-159",
+      "claim": "plugin_register blocks zz-core's event loop for minutes",
+      "impact": "S2",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": false
+     },
+     {
+      "id": "R2-M15",
+      "locator": "initiative-record.ts:139-144",
+      "claim": "a damaged _facts.json blocks its initiative for good",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R2-L",
+      "locator": "Round 2, Low",
+      "claim": "thirteen low findings, one pre-existing, recorded as one entry here",
+      "impact": "S4",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     }
+    ],
+    "resolved": [
+     {
+      "id": "C1",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "H1",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "H2",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "H3",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "H4",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "H5",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "H6",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "H7",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "H8",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "H9",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "H10",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M1",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M2",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M3",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M4",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M5",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M6",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M7",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M8",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M9",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M10",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M11",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M12",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M13",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M14",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M15",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M16",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M17",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M18",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M19",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M20",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "M21",
+      "by": "25b4d17",
+      "how": "fixed"
+     },
+     {
+      "id": "R1-L",
+      "by": "25b4d17",
+      "how": "fixed"
+     }
+    ]
+   }
+  },
+  {
+   "file": "2026-09-25-review-round-3.md",
+   "added_at": "2026-09-25T03:00:00.000Z",
+   "ledger": {
+    "round": 3,
+    "scope": {
+     "base": "7599bec",
+     "head": "dffa81e"
+    },
+    "findings": [
+     {
+      "id": "R3-H1",
+      "locator": "third-party.ts:135",
+      "claim": "a third-party package runs commands as the operator through a filter driver",
+      "impact": "S1",
+      "evidence": "reproduced",
+      "reproducer": "git 2.50.1: filter.x.clean in a package .git/config runs on git add -A",
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R3-M1",
+      "locator": "release-apply.ts:317-321",
+      "claim": "a squash-released attempt stays applying for good",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R3-M2",
+      "locator": "third-party.ts:17-18",
+      "claim": "a local_dir replay is verified over SKILL.md files only",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R3-M3",
+      "locator": "initiative-record.ts",
+      "claim": "withInitiativeFactsLock holds a pooled connection while taking a second",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R3-M4",
+      "locator": "plan.ts:269-276",
+      "claim": "a replay session authenticates only through an env-var credential",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": false
+     },
+     {
+      "id": "R3-M5",
+      "locator": "checks/replay-git-fsmonitor.ts",
+      "claim": "no check covers R3-H1",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R3-L",
+      "locator": "Round 3, Low",
+      "claim": "eight low findings, recorded as one entry here",
+      "impact": "S4",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     }
+    ],
+    "resolved": [
+     {
+      "id": "R2-C1",
+      "by": "dffa81e",
+      "how": "fixed"
+     },
+     {
+      "id": "R2-H1",
+      "by": "dffa81e",
+      "how": "fixed"
+     },
+     {
+      "id": "R2-H2",
+      "by": "dffa81e",
+      "how": "fixed"
+     },
+     {
+      "id": "R2-H3",
+      "by": "dffa81e",
+      "how": "fixed"
+     },
+     {
+      "id": "R2-H4",
+      "by": "dffa81e",
+      "how": "fixed"
+     },
+     {
+      "id": "R2-M1",
+      "by": "dffa81e",
+      "how": "fixed"
+     },
+     {
+      "id": "R2-M2",
+      "by": "dffa81e",
+      "how": "fixed"
+     },
+     {
+      "id": "R2-M3",
+      "by": "dffa81e",
+      "how": "fixed"
+     },
+     {
+      "id": "R2-M4",
+      "by": "dffa81e",
+      "how": "fixed"
+     },
+     {
+      "id": "R2-M5",
+      "by": "dffa81e",
+      "how": "fixed"
+     },
+     {
+      "id": "R2-M6",
+      "by": "dffa81e",
+      "how": "fixed"
+     },
+     {
+      "id": "R2-M7",
+      "by": "dffa81e",
+      "how": "fixed"
+     },
+     {
+      "id": "R2-M8",
+      "by": "dffa81e",
+      "how": "fixed"
+     },
+     {
+      "id": "R2-M9",
+      "by": "dffa81e",
+      "how": "fixed"
+     },
+     {
+      "id": "R2-M10",
+      "by": "dffa81e",
+      "how": "fixed"
+     },
+     {
+      "id": "R2-M11",
+      "by": "dffa81e",
+      "how": "fixed"
+     },
+     {
+      "id": "R2-M12",
+      "by": "dffa81e",
+      "how": "fixed"
+     },
+     {
+      "id": "R2-M13",
+      "by": "dffa81e",
+      "how": "fixed"
+     },
+     {
+      "id": "R2-M14",
+      "by": "dffa81e",
+      "how": "fixed"
+     },
+     {
+      "id": "R2-M15",
+      "by": "dffa81e",
+      "how": "fixed"
+     },
+     {
+      "id": "R2-L",
+      "by": "dffa81e",
+      "how": "fixed"
+     }
+    ]
+   }
+  },
+  {
+   "file": "2026-09-25-review-round-4.md",
+   "added_at": "2026-09-25T04:00:00.000Z",
+   "ledger": {
+    "round": 4,
+    "scope": {
+     "base": "dffa81e",
+     "head": "5f5cb19"
+    },
+    "findings": [
+     {
+      "id": "R4-M1",
+      "locator": "candidate-prove-abandon.ts:54-60",
+      "claim": "a retried abandon releases a proof split that runs already used; it needs an earlier abandon that failed partway",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R4-L",
+      "locator": "Round 4, Low",
+      "claim": "six low findings, recorded as one entry here",
+      "impact": "S4",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R4-P1",
+      "locator": "packages/contracts/src/host.ts:276",
+      "claim": "a waiver against a predecessor step can never clear the closing step (pre-existing)",
+      "impact": "S3",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": false
+     }
+    ],
+    "resolved": [
+     {
+      "id": "R3-H1",
+      "by": "a749687",
+      "how": "fixed"
+     },
+     {
+      "id": "R3-M1",
+      "by": "a749687",
+      "how": "fixed"
+     },
+     {
+      "id": "R3-M2",
+      "by": "a749687",
+      "how": "fixed"
+     },
+     {
+      "id": "R3-M3",
+      "by": "a749687",
+      "how": "fixed"
+     },
+     {
+      "id": "R3-M4",
+      "by": "a749687",
+      "how": "fixed"
+     },
+     {
+      "id": "R3-M5",
+      "by": "a749687",
+      "how": "fixed"
+     },
+     {
+      "id": "R3-L",
+      "by": "a749687",
+      "how": "fixed"
+     }
+    ]
+   }
+  },
+  {
+   "file": "2026-09-25-review-round-5.md",
+   "added_at": "2026-09-25T05:00:00.000Z",
+   "ledger": {
+    "round": 5,
+    "scope": {
+     "base": "dbc5251",
+     "head": "d7290d3"
+    },
+    "findings": [
+     {
+      "id": "R5-H1",
+      "locator": "zz-plugin-define-qualify/SKILL.md:191-195",
+      "claim": "evaluator_qualify needs an evaluator_version_id no tool returns, so an agent cannot finish define-qualify",
+      "impact": "S2",
+      "evidence": "inferred",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R5-M1",
+      "locator": "zz-plugin-promote-verify/SKILL.md:151-152",
+      "claim": "the proof-replay command uses flags the launcher does not accept",
+      "impact": "S2",
+      "evidence": "inferred",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R5-M2",
+      "locator": "zz-plugin-improve/SKILL.md:158-161",
+      "claim": "improve builds a case set only evaluation_start can bind",
+      "impact": "S2",
+      "evidence": "inferred",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R5-L",
+      "locator": "Round 5, Low",
+      "claim": "five low findings, recorded as one entry here",
+      "impact": "S4",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": true
+     }
+    ],
+    "resolved": [
+     {
+      "id": "R4-M1",
+      "by": "d7290d3",
+      "how": "fixed"
+     },
+     {
+      "id": "R4-L",
+      "by": "d7290d3",
+      "how": "fixed"
+     },
+     {
+      "id": "R4-P1",
+      "by": "d7290d3",
+      "how": "fixed"
+     }
+    ]
+   }
+  },
+  {
+   "file": "2026-09-25-review-round-6.md",
+   "added_at": "2026-09-25T06:00:00.000Z",
+   "ledger": {
+    "round": 6,
+    "scope": {
+     "base": "dbc5251",
+     "head": "ea2f34e"
+    },
+    "findings": [
+     {
+      "id": "R6-H1",
+      "locator": "zz-plugin-improve/SKILL.md:114",
+      "claim": "a resumed IMPROVE session cannot recover the case_set_id",
+      "impact": "S2",
+      "evidence": "inferred",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R6-M1",
+      "locator": "protocol-triggers.ts:40-48",
+      "claim": "nothing reads a protocol's approval, so an unapproved protocol is reused",
+      "impact": "S1",
+      "evidence": "inferred",
+      "reproducer": null,
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R6-M2",
+      "locator": "scripts/gate/checks/skill-calls.ts:327-333",
+      "claim": "skill-calls checks only top-level argument names",
+      "impact": "S3",
+      "evidence": "reproduced",
+      "reproducer": "mutation 4: finding: { kind, pattern, measure_id } passes the gate",
+      "introduced_by_scope": true
+     },
+     {
+      "id": "R6-L",
+      "locator": "Round 6, Low",
+      "claim": "six low findings, recorded as one entry here",
+      "impact": "S4",
+      "evidence": "cited",
+      "reproducer": null,
+      "introduced_by_scope": false
+     }
+    ],
+    "resolved": [
+     {
+      "id": "R5-H1",
+      "by": "ea2f34e",
+      "how": "fixed"
+     },
+     {
+      "id": "R5-M1",
+      "by": "ea2f34e",
+      "how": "fixed"
+     },
+     {
+      "id": "R5-M2",
+      "by": "ea2f34e",
+      "how": "fixed"
+     },
+     {
+      "id": "R5-L",
+      "by": "ea2f34e",
+      "how": "fixed"
+     }
+    ]
+   }
+  }
+ ]
+}

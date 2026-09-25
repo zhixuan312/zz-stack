@@ -41,6 +41,9 @@ check("opening is explicit and dated by the platform, and freeform gets no next 
 check("audit rounds follow evidence, a spent budget or a reopened agreement waits on the stakeholder",
       runsCheck("audit-rounds.ts"));
 
+check("review rounds follow evidence — fix, run_experiment, decide at the budget, settle — and a verifying document is approved on one acceptance-evidence row per declared criterion",
+      runsCheck("review-rounds.ts"));
+
 check("a document's `when` decides applicability by code from durable facts, never by confidence",
       runsCheck("flow-when.ts"));
 

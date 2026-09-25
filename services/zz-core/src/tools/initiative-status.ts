@@ -17,6 +17,7 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { auditMove } from "../audit-rounds.js";
+import { reviewMove } from "../review-rounds.js";
 import { factsFor, openRecord, recordsFor } from "../initiative-record.js";
 import { chainFor } from "../chain.js";
 import { safeName, userRoot } from "../paths.js";
@@ -296,12 +297,21 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
     const writtenAt = pending ? stages.findIndex((st) => st.name === docs.find((d) => d.name === pending.name)?.stage) : -1;
     const unrecorded = stages.slice(0, writtenAt < 0 ? stages.length : writtenAt)
       .find((st) => st.produces === "record" && !records[st.name]);
-    if (awaiting) {
-      next = {
-        action: "await_approval", document: awaiting.name, waiting_on: "stakeholder",
-        why: `${awaiting.name} is ${awaiting.status ?? "unwritten"}; call document_approve("${name}/${awaiting.name}") ` +
-             "once the stakeholder agrees — nothing downstream may be written until that gate is recorded",
-      };
+    // A document that `verifies` others owes its review rounds before it is written or awaited:
+    // once its requirement is met and until it is approved, `reviewMove` routes the sweep, and
+    // its null — the rounds settled — hands over to the ordinary write/await answer below.
+    const verifying = flowDocs.find((d) => docs.find((x) => x.name === d.name)?.verifies?.length &&
+      d.status !== "approved" && (!d.requires || requirementMet(d.requires)));
+    const owedReview = verifying
+      ? reviewMove(root, name, docs.find((x) => x.name === verifying.name)?.stage ?? "", verifying.name)
+      : null;
+    const awaitApproval = (d: DocState) => ({
+      action: "await_approval", document: d.name, waiting_on: "stakeholder",
+      why: `${d.name} is ${d.status ?? "unwritten"}; call document_approve("${name}/${d.name}") ` +
+           "once the stakeholder agrees — nothing downstream may be written until that gate is recorded",
+    });
+    if (awaiting && awaiting.name !== owedReview?.document) {
+      next = awaitApproval(awaiting);
     } else if (unrecorded) {
       // NOT A TOOL: `run_stage` is `next_move.action`'s own vocabulary, like `resolve_branch`.
       next = {
@@ -314,6 +324,12 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
       // NOT A TOOL: `add_source` and `decide` are members of `next_move.action`'s own
       // vocabulary, not tool names. The `why` beside each names the call to make.
       next = owedAudit;
+    } else if (owedReview) {
+      // NOT A TOOL: `fix` and `run_experiment` join `add_source` and `decide` in the same
+      // vocabulary; review-rounds.ts says what each asks for.
+      next = owedReview;
+    } else if (awaiting) {
+      next = awaitApproval(awaiting);
     } else if (pending && appliesOf(pending.name) === "undetermined") {
       // FR-58 (Task I-26): `pending` is the next document in the flow's order, but its OWN
       // branch has not resolved — not a fact about approval or about a stage owing evidence,
@@ -341,8 +357,8 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
         ? { action: "write_document", document: missing[0], waiting_on: "agent",
             why: `${missing[0]} is required before this initiative can close` }
         // NOT A TOOL: `next_move.action` is its own vocabulary — declare_flow,
-        // write_document, await_approval, add_source, decide, resolve_branch, handover, closed,
-        // close — not tool names. The `why` beside it names the tool to call.
+        // write_document, await_approval, add_source, decide, fix, run_experiment,
+        // resolve_branch, handover, closed, close — not tool names. The `why` beside it names the tool to call.
         //
         // FR-58 (Task I-28): `chain.closingDoc` is a static, per-flow answer, and a
         // `when`-conditional closing document (`improvement.md`, promotable only) is

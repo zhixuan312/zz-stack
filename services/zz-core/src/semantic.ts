@@ -7,9 +7,12 @@
  * that the answer is yes — and what a checkpoint does with that probability is decided here, by
  * `readingOf`, never by the model.
  *
- * Two callers:
+ * The callers that ask a family:
  *   - `source_add`, which asks `changes_commitment` and `repeats_finding` about an audit round the
- *     moment it lands, so `initiative_status` can route the next move on the answer;
+ *     moment it lands, so `initiative_status` can route the next move on the answer, and
+ *     `repeats_finding` once per new S1/S2 finding of a review round (review-rounds.ts);
+ *   - `document_write`/`document_patch` and `document_approve` on a verifying document, which ask
+ *     `evidence_relation` of each established acceptance row (review-acceptance.ts);
  *   - the `assess` tool, which any stage uses to ask one family about one subject.
  *
  * Every answer is written twice, and each copy has one job:
@@ -21,7 +24,7 @@
  * Absence is an answer. With no typed-service key the reading is `unavailable`, the reason is
  * recorded, and every caller carries on with its deterministic rule alone.
  *
- * A third caller was added for plugin-eval's protocol-defined evaluators (FR-13, FR-15,
+ * Another caller was added for plugin-eval's protocol-defined evaluators (FR-13, FR-15,
  * Task I-8): `recordEvaluatorAssessment`, called directly by a measure (e.g. `discover.ts`'s
  * ownership classification) or through `evaluators.ts`'s `askEvaluator`. Unlike a family, an
  * evaluator's question, answer shape (`noul`/`choice`/`score`), polarity and model policy are
@@ -416,13 +419,19 @@ export function writeRoundAssessments(root: string, initiative: string, sourceFi
                 JSON.stringify({ source: `sources/${sourceFile}`, assessments }, null, 2) + "\n");
 }
 
+/** Every assessment recorded for one round, in the order they were written. A review round
+ *  asks one family once per finding, so a map keyed by family would keep only the last. */
+export function readRoundAssessmentList(root: string, initiative: string,
+                                        sourceFile: string): Assessment[] {
+  const file = assessmentFile(root, initiative, sourceFile);
+  if (!existsSync(file)) return [];
+  try {
+    return (JSON.parse(readFileSync(file, "utf8")) as { assessments?: Assessment[] }).assessments ?? [];
+  } catch { return []; }
+}
+
 /** One audit round's recorded assessments, keyed by family. Empty when none were taken. */
 export function readRoundAssessments(root: string, initiative: string,
                                      sourceFile: string): Record<string, Assessment> {
-  const file = assessmentFile(root, initiative, sourceFile);
-  if (!existsSync(file)) return {};
-  try {
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as { assessments?: Assessment[] };
-    return Object.fromEntries((parsed.assessments ?? []).map((a) => [a.family, a]));
-  } catch { return {}; }
+  return Object.fromEntries(readRoundAssessmentList(root, initiative, sourceFile).map((a) => [a.family, a]));
 }

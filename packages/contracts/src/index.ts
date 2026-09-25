@@ -312,6 +312,12 @@ export const FlowDoc = z.object({
    *  Absent, this document behaves exactly as it always has — see `documentApplies` in
    *  ./flow-when.js, the one function that reads this field. */
   when: FlowDocWhen.optional(),
+  /** The documents whose acceptance criteria this one is the evidence record for — sdlc-flow's
+   *  review.md verifies spec.md and plan.md. Declaring it makes two things true, both read by
+   *  zz-core's review-rounds.ts and review-acceptance.ts: a source naming this document's own
+   *  stage and supporting it is a review round, and approving it needs one acceptance-evidence
+   *  row per criterion those documents declare. Absent, the document is an ordinary one. */
+  verifies: z.array(z.string().min(1)).optional(),
 }).strict();
 export type FlowDoc = z.infer<typeof FlowDoc>;
 

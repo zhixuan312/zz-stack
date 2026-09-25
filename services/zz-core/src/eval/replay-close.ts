@@ -10,12 +10,12 @@
  * the run's PAT to the SAME principal who started the run, so `parseCaller().email` cannot tell
  * the launcher from the candidate: both answer as that principal. The difference is the binding
  * — the candidate's PAT is confined to the run's own `replay-` team, which the gateway forwards
- * as `x-zz-pat-team` — so a caller whose token is bound to `team_slug` is the candidate, and is
- * refused. Without that, a candidate could close its own run `completed` with whatever
+ * as `x-zz-pat-team` — so a caller whose token is bound to any `replay-` team is a candidate,
+ * and is refused. Without that, a candidate could close its own run `completed` with whatever
  * `produced` it liked, which is what `replay_score` then judges.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { parseCaller, teardownReplayTeam } from "@zz/contracts";
+import { parseCaller, REPLAY_TEAM_PREFIX, teardownReplayTeam } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
@@ -37,13 +37,18 @@ const LIVE_STATUSES: readonly string[] = ["registered", "running"];
 
 interface RunRow { principal: string; team_slug: string; status: string; pat_id: string }
 
-/** The candidate check on its own: a credential bound to the run's own `replay-` team is the one
- *  the candidate session holds, refused whoever it names. Exported for `replay-score.ts`, which
+/** The candidate check on its own: a credential bound to ANY reserved `replay-` team is one a
+ *  candidate session holds, refused whoever it names — not only this run's own. Every such
+ *  credential is issued to the same principal who started its run, so a candidate running for run
+ *  A would otherwise pass as that principal on run B (a concurrent or earlier replay) and close or
+ *  score it. Nothing but `provisionReplayTeam` ever makes a `replay-` team (`team_create` refuses
+ *  the prefix), so the prefix alone names a candidate. Exported for `replay-score.ts`, which
  *  refuses the same credential the same way — one sentence, never two that drift. */
 export function candidateCredentialRefusal(tool: string, patTeam: string | null, teamSlug: string): string | null {
-  if (!patTeam || patTeam !== teamSlug) return null;
-  return `ERROR: ${tool} refuses a credential scoped to the run's own replay team ` +
-    `('${teamSlug}') — that is the candidate's credential; the launcher calls ${tool} ` +
+  if (!patTeam?.startsWith(REPLAY_TEAM_PREFIX)) return null;
+  const whose = patTeam === teamSlug ? "the run's own replay team" : `another run's replay team ('${patTeam}')`;
+  return `ERROR: ${tool} refuses a credential scoped to ${whose} ` +
+    `(this run's is '${teamSlug}') — that is a candidate's credential; the launcher calls ${tool} ` +
     "with its own";
 }
 
@@ -94,7 +99,7 @@ export function registerReplayCloseTools(server: McpServer): void {
         "moves it registered -> running, so a reader can tell a run somebody is executing from one " +
         "only registered; its expiry (and its PAT's) stays what replay_start set. RETURNS " +
         "{ status: 'running', expires_at }. REFUSES an unknown replay_run_id; a credential scoped " +
-        "to the run's own replay team (the candidate's); any principal but the one who started " +
+        "to any reserved replay- team (a candidate's); any principal but the one who started " +
         "the run; a run already completed, failed or cancelled (swept); and a deployment with no " +
         "platform database. A mutator: writes through the FR-59 idempotency ledger.",
       inputSchema: {
@@ -148,7 +153,7 @@ export function registerReplayCloseTools(server: McpServer): void {
         "a model-backed measure is asked to judge. No score is accepted here: replay_score " +
         "computes and stores it from produced. RETURNS { archived, revoked }; a retry with the " +
         "same idempotency_key replays and re-reads the live teardown state. REFUSES an unknown " +
-        "replay_run_id; a credential scoped to the run's own replay team (the candidate's); any " +
+        "replay_run_id; a credential scoped to any reserved replay- team (a candidate's); any " +
         "principal but the one who started the run; a run already completed, failed or " +
         "cancelled — a swept run stays cancelled; and a deployment with no platform database. " +
         "A mutator: writes through the FR-59 idempotency ledger, and records one admin audit " +

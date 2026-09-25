@@ -22,7 +22,7 @@
  * the first branch of this same order alone — `no_release_owners` — plus a `not_eligible` refusal
  * for a candidate that has not itself reached `proof_passed`. `release_apply`
  * (`release-apply.ts`) evaluates the whole order, and builds three of its five inputs with the
- * helpers below: `approvedOwners` (who approved, by membership), `newestSubject` (which subject
+ * helpers below: `approvedOwners` (who approved, by membership), `newestVersion` (which version
  * is currently released) and `applyingRefusal` (whether another attempt already holds the plugin).
  *
  * `verifyReduction` is `release_verify`'s whole decision once every held case has its repeats, and
@@ -36,8 +36,8 @@
 import { pairedDecision } from "./stats.js";
 
 interface ReleaseDecisionInput {
-  readonly current_subject_id: string;
-  readonly base_subject_id: string;
+  /** Whether the plugin's currently released subject is still the candidate's own base. */
+  readonly base_is_current: boolean;
   readonly approved_patch_digest: string;
   readonly patch_digest: string;
   readonly required_owners: readonly string[];
@@ -64,20 +64,25 @@ export function releaseDecision(input: ReleaseDecisionInput): ReleaseDecisionRes
   const unapproved = input.required_owners.some((owner) => !input.approvals.includes(owner));
   if (unapproved) return { kind: "refuse", reason: "approval_required" };
   if (input.patch_digest !== input.approved_patch_digest) return { kind: "refuse", reason: "digest_mismatch" };
-  if (input.current_subject_id !== input.base_subject_id) return { kind: "refuse", reason: "stale_baseline" };
+  if (!input.base_is_current) return { kind: "refuse", reason: "stale_baseline" };
   return { kind: "apply" };
 }
 
 // -------------------------------------------------------------------------------------------
 // release_apply's decision inputs.
 
-/** Semver order: numeric core first, then a pre-release below its own release, then the
- *  pre-release text. Never a text sort — text puts 0.9.0 above 0.43.0, which made the "newest"
- *  release an old one. A version with no numeric core sorts below every version that has one. */
+/** Semver precedence (semver.org section 11): numeric core first, then a pre-release below its
+ *  own release, then the pre-release identifiers one by one — numeric ones numerically, numeric
+ *  below alphanumeric, alphanumeric as ASCII text, and a shorter run of equal identifiers below a
+ *  longer one. Build metadata (`+...`) is ignored. Never a text sort: text puts 0.9.0 above
+ *  0.43.0, and rc.10 below rc.9. A version with no leading numeric core — `v1.0.0` included —
+ *  sorts below every version that has one. Both "what is released now" readers — release_apply's
+ *  head and plugin_locate's (subject.ts) — reduce zz.plugin_version through `newestVersion`
+ *  below rather than trusting any SQL order. */
 export function compareSemver(a: string, b: string): number {
-  const parse = (v: string): { core: number[] | null; pre: string } => {
-    const m = /^v?(\d+(?:\.\d+)*)(?:-([0-9A-Za-z.-]+))?/.exec(v.trim());
-    return m ? { core: m[1].split(".").map(Number), pre: m[2] ?? "" } : { core: null, pre: "" };
+  const parse = (v: string): { core: number[] | null; pre: string[] } => {
+    const m = /^(\d+(?:\.\d+)*)(?:-([0-9A-Za-z.-]+))?/.exec(v.trim());
+    return m ? { core: m[1].split(".").map(Number), pre: m[2] ? m[2].split(".") : [] } : { core: null, pre: [] };
   };
   const x = parse(a), y = parse(b);
   if (!x.core || !y.core) return (x.core ? 1 : 0) - (y.core ? 1 : 0);
@@ -85,23 +90,24 @@ export function compareSemver(a: string, b: string): number {
     const d = (x.core[i] ?? 0) - (y.core[i] ?? 0);
     if (d) return Math.sign(d);
   }
-  if (x.pre === y.pre) return 0;
-  if (!x.pre) return 1;
-  if (!y.pre) return -1;
-  return x.pre < y.pre ? -1 : 1;
+  if (!x.pre.length || !y.pre.length) return (x.pre.length ? -1 : 0) + (y.pre.length ? 1 : 0);
+  for (let i = 0; i < Math.max(x.pre.length, y.pre.length); i += 1) {
+    const p = x.pre[i], q = y.pre[i];
+    if (p === undefined) return -1;
+    if (q === undefined) return 1;
+    if (p === q) continue;
+    const pn = /^\d+$/.test(p), qn = /^\d+$/.test(q);
+    if (pn && qn) return Math.sign(Number(p) - Number(q));
+    if (pn !== qn) return pn ? -1 : 1;
+    return p < q ? -1 : 1;
+  }
+  return 0;
 }
 
-interface VersionedSubject { readonly id: string; readonly declared_version: string }
-
-/** The currently released subject: the newest, by semver, of whatever this eval system itself
- *  released and the catalog's own registered versions — the caller has already left out every
- *  version a rollback retracted. First wins a tie, so the caller lists this system's own released
- *  subject first: an equal version is the same release seen from both sides. */
-export function newestSubject(subjects: readonly VersionedSubject[]): VersionedSubject | null {
-  let best: VersionedSubject | null = null;
-  for (const s of subjects) {
-    if (!best || compareSemver(s.declared_version, best.declared_version) > 0) best = s;
-  }
+/** The newest version by `compareSemver`, or null for none. First wins a tie. */
+export function newestVersion(versions: readonly string[]): string | null {
+  let best: string | null = null;
+  for (const v of versions) if (best === null || compareSemver(v, best) > 0) best = v;
   return best;
 }
 
@@ -169,45 +175,54 @@ export function rollbackDecision(input: RollbackDecisionInput): boolean {
 interface VerifyReductionInput {
   readonly deltas: readonly number[];
   readonly guardrail_status: "pass" | "fail" | "not_established";
+  /** Whether every held case has its repeats on both sides. Incomplete evidence can still roll
+   *  back on a guardrail the runs collected so far already failed — nothing else. */
+  readonly evidence_complete: boolean;
   readonly liveness_bound_reached: boolean;
   readonly resamples: number;
   readonly seed: string;
   readonly confidence: number;
 }
 
+type PairedDecision = ReturnType<typeof pairedDecision>;
+
 type VerifyReduction =
-  | { readonly kind: "escalate"; readonly decision: ReturnType<typeof pairedDecision> }
+  | { readonly kind: "pending" }
+  | { readonly kind: "escalate"; readonly decision: PairedDecision }
   | {
       readonly kind: "resolve";
       readonly verdict: "established" | "rolled_back" | "not_established";
       readonly reason: string;
-      readonly decision: ReturnType<typeof pairedDecision>;
+      /** Null only when no case had its repeats yet — a guardrail rollback on partial evidence. */
+      readonly decision: PairedDecision | null;
     };
 
-/** `release_verify`'s verdict once every held case has its repeats. The guardrails are read
- *  FIRST: a failed guardrail rolls back whatever the interval says, resolved or not — waiting for
- *  more repeats while a released subject is failing a required guardrail is the one delay FR-50
- *  does not allow. An unmeasured guardrail is missing evidence (`not_established`), never a
- *  failure. Only then does an unresolved interval either escalate one more repeat or, at the
- *  liveness bound, resolve `not_established` — no rollback without evidence. */
+/** `release_verify`'s whole verdict, over whatever runs have been collected so far. The
+ *  guardrails are read FIRST and over incomplete evidence too: a failed guardrail rolls back
+ *  whatever the interval says, resolved or not, complete or not — waiting for more repeats (or
+ *  for the liveness bound) while a released subject is visibly failing a required guardrail is the
+ *  one delay FR-50 does not allow. Anything else on incomplete evidence is `pending`: the caller
+ *  asks for the missing runs, or resolves `replays_unavailable` at the liveness bound. An
+ *  unmeasured guardrail is missing evidence (`not_established`), never a failure. Only then does
+ *  an unresolved interval either escalate one more repeat or, at the liveness bound, resolve
+ *  `not_established` — no rollback without evidence. */
 export function verifyReduction(input: VerifyReductionInput): VerifyReduction {
-  const decision = pairedDecision(
-    input.deltas, 0, { resamples: input.resamples, seed: input.seed, confidence: input.confidence });
+  const opts = { resamples: input.resamples, seed: input.seed, confidence: input.confidence };
+  const decision = input.deltas.length ? pairedDecision(input.deltas, 0, opts) : null;
   if (input.guardrail_status === "fail") {
     return { kind: "resolve", verdict: "rolled_back", reason: "guardrail_failed", decision };
   }
+  if (!input.evidence_complete) return { kind: "pending" };
   if (input.guardrail_status === "not_established") {
     return { kind: "resolve", verdict: "not_established", reason: "guardrails_not_established", decision };
   }
+  if (!decision) return { kind: "resolve", verdict: "not_established", reason: "no_paired_cases", decision };
   if (decision.verdict === "unresolved") {
     return input.liveness_bound_reached
       ? { kind: "resolve", verdict: "not_established", reason: "verification_unresolved", decision }
       : { kind: "escalate", decision };
   }
-  const regressed = rollbackDecision({
-    deltas: input.deltas, guardrail_failed: false, resamples: input.resamples, seed: input.seed,
-    confidence: input.confidence,
-  });
+  const regressed = rollbackDecision({ ...opts, deltas: input.deltas, guardrail_failed: false });
   return regressed
     ? { kind: "resolve", verdict: "rolled_back", reason: "regression_established", decision }
     : { kind: "resolve", verdict: "established", reason: "no_regression_established", decision };

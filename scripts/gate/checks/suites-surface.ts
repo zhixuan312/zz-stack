@@ -133,6 +133,14 @@ check("the launcher builds every git/claude argv with no shell, a run-bound cred
 
 check("a replay session's environment is an allowlist with no launcher credential in it, only the launching principal's own unbound credential may begin or close a live run, the run TTL outlasts the launcher's worst case, and the launcher installs a standalone clone of the subject's own release tag",
       runsCheck("replay-isolation-pure.ts"));
+check("the launcher's git never runs a command planted in the clone's .git/config, and the sandbox keeps .git read-only",
+      runsCheck("replay-git-fsmonitor.ts"));
+check("collectProduced never follows a symlink out of the clone into what it ships as produced",
+      runsCheck("replay-produced-symlink.ts"));
+check("no replay session can read the launcher's process: a fresh PID namespace under bwrap, no process-info outside the sandbox under Seatbelt",
+      runsCheck("replay-bwrap-pid.ts"));
+check("a third-party subject is fetched at its captured identity and replayed only when its content digest matches",
+      runsCheck("replay-third-party.ts"));
 
 check("complexityDelta is lines added minus lines removed plus 20 per added component minus 20 per removed one",
       runsCheck("eval-complexity.ts"));
@@ -155,11 +163,17 @@ check("paretoFrontier keeps exactly the non-dominated candidates on (pass vector
 check("releaseDecision applies only when every required owner approved the exact approved digest against the exact base subject, refusing no_release_owners, not_eligible, approval_required, digest_mismatch and stale_baseline in that order, and rollbackDecision is true on a guardrail failure or an established regression alone",
       runsCheck("eval-release-rules.ts"));
 
-check("release_apply's inputs: the current subject is the newest by semver, an approval speaks only for owner teams its signer is a member of and only for the attempt and digest it cites, any applying attempt of the plugin refuses, named as stale past the bound, and a rolled-back version is retracted from both plugin_locate's head and release_apply's baseline by one shared rule",
+check("release_apply's inputs: the current version is the newest by semver with pre-release precedence identifier by identifier, an approval speaks only for owner teams its signer is a member of and only for the attempt and digest it cites, any applying attempt of the plugin refuses, named as stale past the bound, and a rolled-back version is retracted from both plugin_locate's head and release_apply's baseline by one shared rule",
       runsCheck("eval-release-apply-pure.ts"));
 
-check("release_verify reads guardrails before the interval, so a failed guardrail rolls back while the interval is unresolved, and one confidence decides both the unresolved check and rollbackDecision",
+check("release_verify reads guardrails before the interval and over incomplete evidence, so a failed guardrail rolls back while the interval is unresolved or replays are still missing, before either pending answer, and one confidence decides both the unresolved check and rollbackDecision",
       runsCheck("eval-release-verify-reduction.ts"));
+
+check("every refusal branch of planApply, recordRelease, releaseActorRefusal and improvementApprovalRefusal refuses by name, one query at a time, with release_apply bound to the attempt improvement.md cites and a registered-but-uncaptured newer version read as stale_baseline",
+      runsCheck("eval-release-refusals.ts"));
+
+check("the release CLI starts from the recorded base or a --base-ref its base tag contains, records a release by a published tag's commit containing the candidate, and --reconcile records released only when that tag contains the branch commit and failed only when no tag carries it",
+      runsCheck("eval-release-git.ts"));
 
 check("a verifier_token reaches one proof allocation only: its own case set, candidate and base subject on the proof split, never a caller-named case, another allocation's run or an evaluator-role event, and a proof-split read blanks every per-case result field",
       runsCheck("eval-verifier-binding.ts"));
@@ -172,3 +186,15 @@ check("a search generation is the search's own round, capped by maxCandidatesPer
 
 check("replay_score refuses a credential scoped to the run's own replay team before anything is asked or written",
       runsCheck("eval-replay-score-guard.ts"));
+
+check("withInitiativeFactsLock gives one holder per initiative and none across initiatives, is reentrant within one call chain so writeBranchFacts may run under it, and releases on a throw",
+      runsCheck("initiative-facts-lock.ts"));
+
+check("replay_case_set_build writes only inside its transaction: a qualification it established and every classification it asked are recorded through the transaction's client, and a concurrent case-set change is refused before any row is written",
+      runsCheck("eval-replay-build-split.ts"));
+
+check("a resolved proof keeps the case set's proof split spent after a decision or after runs observed the cases, and releases it when no run executed or only the leakage answer was unavailable",
+      runsCheck("eval-proof-split-release.ts"));
+
+check("SearchPolicy's generation bounds are positive integers and its minMeaningfulEffect is non-negative; only an applicable dimension needs a positive weight",
+      runsCheck("eval-search-policy-bounds.ts"));

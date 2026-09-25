@@ -12,7 +12,7 @@
  *     release that registered nothing, not the release;
  *   - `rolled_back` needs `release_verify` to have decided `rolled_back` first — a rollback with
  *     no recorded verdict behind it is a rollback nobody established — and, once its version is
- *     retracted (`release-retracted.ts`), the prior subject must be the current one.
+ *     retracted (`release-retracted.ts`), the prior version must be the current one.
  *     Retraction is what makes the prior version current again for every reader; no
  *     `zz.plugin_version` row is deleted.
  *
@@ -23,7 +23,7 @@
 import type pg from "pg";
 
 import type { MutatorOutcome } from "./idempotency.js";
-import { currentReleasedSubjectVersionId } from "./release-apply.js";
+import { currentReleasedHead } from "./release-apply.js";
 import { compareSemver } from "./release-rules.js";
 import { Refusal } from "../refusal.js";
 import { ownerMember } from "../release-owners.js";
@@ -67,7 +67,7 @@ interface AttemptRow {
   readonly required_owners: string[]; readonly verdict: string | null; readonly plugin_id: string;
 }
 
-async function subjectOf(client: pg.PoolClient, id: string): Promise<{ plugin_id: string; declared_version: string } | null> {
+async function subjectOf(client: Pick<pg.PoolClient, "query">, id: string): Promise<{ plugin_id: string; declared_version: string } | null> {
   const row = (await client.query<{ plugin_id: string; declared_version: string }>(
     "select plugin_id::text as plugin_id, declared_version from zz.eval_subject_version where id = $1::uuid",
     [id])).rows[0];
@@ -78,7 +78,7 @@ async function subjectOf(client: pg.PoolClient, id: string): Promise<{ plugin_id
  *  UPDATE's `where status = '...'` is the decision (`applying` for released/failed, `released`
  *  for rolled_back — a rollback is a second event on an attempt already recorded released). */
 export async function recordRelease(
-  client: pg.PoolClient, args: RecordArgs, principal: string,
+  client: Pick<pg.PoolClient, "query">, args: RecordArgs, principal: string,
 ): Promise<MutatorOutcome<RecordResult>> {
   const attempt = (await client.query<AttemptRow>(`
     select id::text as id, candidate_id::text as candidate_id,
@@ -110,17 +110,20 @@ export async function recordRelease(
     if (!applied.rows.length) {
       throw new Refusal(`ERROR: release_attempt ${attempt.id} left 'released' before this call reached it`);
     }
-    // The prior subject must be current once this release is retracted — asked with the SAME
-    // rule release_apply's baseline and plugin_locate's head use (retractedVersions), inside this
-    // transaction, so the retraction and its confirmation commit together or not at all. A newer
-    // release that is not retracted still stands over the prior one; recording rolled_back then
-    // would claim a restore that did not happen.
-    const current = await currentReleasedSubjectVersionId(client, attempt.plugin_id);
-    if (current !== attempt.base_subject_version_id) {
+    // The prior version must be current once this release is retracted — asked with the SAME
+    // head release_apply's baseline uses (retractedVersions, then semver over zz.plugin_version),
+    // inside this transaction, so the retraction and its confirmation commit together or not at
+    // all. A newer release that is not retracted still stands over the prior one; recording
+    // rolled_back then would claim a restore that did not happen. Compared by VERSION, not by
+    // subject id: the head's newest capture of the prior version need not be the very row the
+    // attempt was based on.
+    const head = await currentReleasedHead(client, attempt.plugin_id);
+    const prior = await subjectOf(client, attempt.base_subject_version_id);
+    if (!head || !prior || compareSemver(head.version, prior.declared_version) !== 0) {
       throw new Refusal(
         `ERROR: prior_not_current — with release_attempt ${attempt.id}'s version retracted, the ` +
-        `plugin's current subject is ${current ?? "unresolvable"}, not the prior ` +
-        `${attempt.base_subject_version_id}; nothing recorded`);
+        `plugin's current version is ${head?.version ?? "unresolvable"}, not the prior ` +
+        `${prior?.declared_version ?? attempt.base_subject_version_id}; nothing recorded`);
     }
     // Migration 084 — candidate.status gains rolled_back for exactly this write, never on its own.
     await client.query("update zz.candidate set status = 'rolled_back' where id = $1::uuid", [attempt.candidate_id]);
@@ -143,9 +146,9 @@ export async function recordRelease(
     if (!args.released_subject_version_id || !args.release_ref) {
       throw new Refusal("ERROR: status: released requires both release_ref and released_subject_version_id");
     }
-    const [released, base] = await Promise.all([
-      subjectOf(client, args.released_subject_version_id), subjectOf(client, attempt.base_subject_version_id),
-    ]);
+    // Sequential: one PoolClient runs one query at a time.
+    const released = await subjectOf(client, args.released_subject_version_id);
+    const base = await subjectOf(client, attempt.base_subject_version_id);
     if (!released || !base || released.plugin_id !== base.plugin_id) {
       throw new Refusal(
         `ERROR: released_subject_version_id ${args.released_subject_version_id} does not name a ` +

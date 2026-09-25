@@ -43,7 +43,7 @@
   },
   "zz-plugin-eval": {
     "version": "0.76.0",
-    "digest": "d861152e",
+    "digest": "2555217e",
     "skills": {
       "zz-plugin-define-qualify": "89fc51b40200",
       "zz-plugin-discover": "6cbb234cc76d",
@@ -51,9 +51,9 @@
       "zz-plugin-evaluate": "5854ff768181",
       "zz-plugin-explain": "46b5a75a819f",
       "zz-plugin-identify": "634db2438a21",
-      "zz-plugin-improve": "26b12aa0a0a0",
+      "zz-plugin-improve": "d8c8404ad772",
       "zz-plugin-observe": "ff0b99352c0b",
-      "zz-plugin-promote-verify": "aba6fef551f1"
+      "zz-plugin-promote-verify": "f4bace156314"
     }
   }
 }

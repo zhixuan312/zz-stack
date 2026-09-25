@@ -8,7 +8,7 @@
  * One evaluator, `replay.source_kind` (FR-60 rule 1), tells a source apart as `person_statement`
  * or `agent_record` — registered here the same way `discover.ts` registers `discover.owner_kind`:
  * inline, idempotent by content, no separate seeding step. Its qualification is read (or, when
- * none exists yet, established) through `qualify.ts`'s exported `performQualification` — the same
+ * none exists yet, established) through `qualify.ts`'s exported `gatherQualification` — the same
  * ladder `evaluator_qualify` runs, never a second copy of it.
  *
  * `deriveCase` builds ONE global, chronologically ordered event timeline per initiative — actor,
@@ -32,7 +32,8 @@ import { canonicalJson } from "./idempotency.js";
 import type { EvaluatorDefinition } from "./evaluators.js";
 import { askEvaluatorQuestion, type AskedEvaluatorAnswer } from "../semantic.js";
 import {
-  performQualification, resolveEvaluator as resolveEvaluatorStableKey, type ProtocolContext,
+  gatherQualification, resolveEvaluator as resolveEvaluatorStableKey, type GatheredQualification,
+  type ProtocolContext,
 } from "./qualify.js";
 
 const sha256Hex = (s: string): string => createHash("sha256").update(s, "utf8").digest("hex");
@@ -282,18 +283,25 @@ async function currentQualificationState(
 
 /** FR-60 rule 1, in full: read the evaluator's current qualification against this protocol
  *  version; if none has ever been recorded, run the qualification ladder once (through
- *  `qualify.ts`'s own `performQualification` — never a second copy of it) so a fresh protocol is
+ *  `qualify.ts`'s own `gatherQualification` — never a second copy of it) so a fresh protocol is
  *  not permanently stuck reporting a state nobody ever computed. An EXISTING qualification, of
  *  whatever state, is read as-is and never re-run here — re-qualifying on every build would make
- *  `replay_case_set_build` a second, uninvited caller of `evaluator_qualify`'s own job. */
+ *  `replay_case_set_build` a second, uninvited caller of `evaluator_qualify`'s own job.
+ *
+ *  Asks and does not record, the same split as `classifyMaterial`: a fresh run comes back as
+ *  `pending`, and the caller writes it with `recordQualification` inside its own ledger
+ *  transaction. `establish: false` (a replayed build) never asks at all — it reads what exists
+ *  and answers the ladder's bottom rung when nothing does. */
 export async function resolveQualification(
-  p: pg.Pool, protocolVersionId: string, evaluatorVersionId: string, protocol: ProtocolContext, principal: string,
-): Promise<string> {
+  p: pg.Pool, protocolVersionId: string, evaluatorVersionId: string, protocol: ProtocolContext,
+  principal: string, establish: boolean,
+): Promise<{ state: string; pending: GatheredQualification | null }> {
   const existing = await currentQualificationState(p, protocolVersionId, evaluatorVersionId);
-  if (existing !== null) return existing;
+  if (existing !== null) return { state: existing, pending: null };
+  if (!establish) return { state: EVAL_STATE_ENUMS.qualificationState[0], pending: null };
   const stableKey = await resolveEvaluatorStableKey(p, evaluatorVersionId) ?? SOURCE_KIND_EVALUATOR.stable_key;
-  const result = await performQualification(p, p, protocolVersionId, evaluatorVersionId, protocol, stableKey, principal);
-  return result.state;
+  const pending = await gatherQualification(p, protocolVersionId, evaluatorVersionId, protocol, stableKey, principal);
+  return { state: pending.state, pending };
 }
 
 // -------------------------------------------------------------------------------------------

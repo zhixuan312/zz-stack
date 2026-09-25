@@ -29,7 +29,7 @@ import {
 import { insertEvaluatorAnswer } from "../semantic.js";
 import { Refusal } from "../refusal.js";
 import { registerEvaluator } from "./evaluators.js";
-import { resolveProtocol } from "./qualify.js";
+import { recordQualification, resolveProtocol, type GatheredQualification } from "./qualify.js";
 import { assignSplits, minimumsMet, type SplitCase, type SplitPolicy } from "./split.js";
 import {
   decideBeforeWork, withIdempotency, type IdempotencyOutcome, type MutatorOutcome,
@@ -156,6 +156,84 @@ async function writeCase(
   }
 }
 
+/** Everything a build decided before its transaction opened: the material's digest, the
+ *  protocol's policies, the qualification state (and, when this call established it, the
+ *  unrecorded run behind it), and every source classification already asked. */
+interface BuildPlan {
+  readonly pluginId: string;
+  readonly protocolVersionId: string;
+  readonly snapshotDigest: string;
+  readonly splitPolicy: SplitPolicy;
+  readonly scoringPolicy: unknown;
+  readonly qualState: string;
+  readonly qualified: boolean;
+  readonly materialCount: number;
+  readonly classified: readonly ClassifiedMaterial[];
+  readonly qualification: GatheredQualification | null;
+}
+
+/** The transaction body of `replay_case_set_build`: writes only, through `client`, never a model
+ *  call — every question was asked before the transaction opened. Exported for
+ *  `checks/eval-replay-build-split.ts`, which drives it with a stub client. */
+export async function recordBuild(client: Queryable, plan: BuildPlan): Promise<MutatorOutcome<BuildResult>> {
+  if (plan.qualification) await recordQualification(client, plan.qualification);
+
+  const existing = await latestCaseSet(client, plan.pluginId);
+  if (existing && existing.digest === plan.snapshotDigest) {
+    const counts = await countsFor(client, existing.id);
+    const result: BuildResult = {
+      case_set_id: existing.id, version: existing.version, counts,
+      minimums_met: minimumsMet(counts, plan.splitPolicy), source_kind_qualification: plan.qualState,
+    };
+    return { result, result_table: "zz.replay_case_set", result_id: existing.id };
+  }
+  if (plan.classified.length !== plan.materialCount) {
+    // Classification was skipped because the plugin's newest case set matched this material when
+    // it was read, and a concurrent build has since replaced it. Refused before any case-set row
+    // is written, and never answered by asking a model in here. The refusal rolls back with no
+    // ledger row, so the same idempotency_key is still unused.
+    throw new Refusal("ERROR: another build replaced this plugin's case set while this call was preparing; nothing was recorded — call again, the same idempotency_key is still unused");
+  }
+
+  const version = (existing?.version ?? 0) + 1;
+  const splitSeed = plan.snapshotDigest;
+  const caseSetRow = await client.query<{ id: string }>(`
+    insert into zz.replay_case_set (plugin_id, version, source_snapshot_digest, split_seed, created_at)
+    values ($1::uuid, $2, $3, $4, now())
+    returning id::text as id`,
+    [plan.pluginId, version, plan.snapshotDigest, splitSeed]);
+  const caseSetId = caseSetRow.rows[0]?.id;
+  if (!caseSetId) throw new Error("insert into zz.replay_case_set produced no row");
+
+  const record = async (asked: Parameters<typeof insertEvaluatorAnswer>[1]) =>
+    (await insertEvaluatorAnswer(client, asked)).assessment_id;
+  const derived: DerivedCase[] = [];
+  for (const c of plan.classified) {
+    derived.push(await deriveCase(c, record, plan.qualified, plan.scoringPolicy, plan.protocolVersionId));
+  }
+
+  const splitInput: SplitCase[] = derived.map((c) => ({
+    case_digest: c.caseDigest, replayable: c.status === "replayable",
+  }));
+  const assigned = assignSplits(splitInput, splitSeed, plan.splitPolicy);
+
+  for (const c of derived) {
+    await writeCase(client, caseSetId, c, assigned.get(c.caseDigest) ?? null);
+  }
+
+  const counts: Counts = { evolve: 0, validation: 0, proof: 0, not_replayable: 0 };
+  for (const c of derived) {
+    if (c.status === "not_replayable") { counts.not_replayable += 1; continue; }
+    const split = assigned.get(c.caseDigest);
+    if (split) counts[split] += 1;
+  }
+  const result: BuildResult = {
+    case_set_id: caseSetId, version, counts, minimums_met: minimumsMet(counts, plan.splitPolicy),
+    source_kind_qualification: plan.qualState,
+  };
+  return { result, result_table: "zz.replay_case_set", result_id: caseSetId };
+}
+
 export function registerReplayCaseTools(server: McpServer): void {
   server.registerTool(
     "replay_case_set_build",
@@ -208,9 +286,15 @@ export function registerReplayCaseTools(server: McpServer): void {
 
       const principal = parseCaller(requestHeaders()).email;
 
+      // A retry is ruled out before anything is asked: a replayed build neither qualifies nor
+      // classifies. Every model call a fresh build makes happens below, before the transaction.
+      const args = { subject_version_id, protocol_version_id, source_scope };
+      const prior = await decideBeforeWork(principal, "replay_case_set_build", idempotency_key, args);
+
       const evaluator = await registerEvaluator(SOURCE_KIND_EVALUATOR);
-      const qualState = await resolveQualification(
-        p, protocol_version_id, evaluator.evaluator_version_id, protocol, principal);
+      const qualification = await resolveQualification(
+        p, protocol_version_id, evaluator.evaluator_version_id, protocol, principal, !prior.replayed);
+      const qualState = qualification.state;
       const qualified = meetsOperational(qualState);
 
       const protocolRow = (await p.query<{ replay_policy: unknown; scoring_policy: unknown }>(
@@ -222,10 +306,7 @@ export function registerReplayCaseTools(server: McpServer): void {
       const materials = resolved.initiatives.map((init) => buildMaterial(root, init));
       const snapshotDigest = materialDigest(materials, protocol_version_id, scoringPolicy, qualState);
 
-      // Every model call happens here, before the transaction: a retry is ruled out first, and
-      // unchanged material (the existing case set's digest) needs no classification at all.
-      const args = { subject_version_id, protocol_version_id, source_scope };
-      const prior = await decideBeforeWork(principal, "replay_case_set_build", idempotency_key, args);
+      // Unchanged material (the existing case set's digest) needs no classification at all.
       const unchanged = !prior.replayed && (await latestCaseSet(p, pluginId))?.digest === snapshotDigest;
       const classified: ClassifiedMaterial[] = [];
       if (!prior.replayed && !unchanged) {
@@ -234,63 +315,13 @@ export function registerReplayCaseTools(server: McpServer): void {
         }
       }
 
+      const plan: BuildPlan = {
+        pluginId, protocolVersionId: protocol_version_id, snapshotDigest, splitPolicy, scoringPolicy,
+        qualState, qualified, materialCount: materials.length, classified,
+        qualification: qualification.pending,
+      };
       const outcome: IdempotencyOutcome<BuildResult> = prior.replayed ? prior : await withIdempotency(
-        principal, "replay_case_set_build", idempotency_key, args,
-        async (client): Promise<MutatorOutcome<BuildResult>> => {
-          const existing = await latestCaseSet(client, pluginId);
-          if (existing && existing.digest === snapshotDigest) {
-            const counts = await countsFor(client, existing.id);
-            const result: BuildResult = {
-              case_set_id: existing.id, version: existing.version, counts,
-              minimums_met: minimumsMet(counts, splitPolicy), source_kind_qualification: qualState,
-            };
-            return { result, result_table: "zz.replay_case_set", result_id: existing.id };
-          }
-
-          const version = (existing?.version ?? 0) + 1;
-          const splitSeed = snapshotDigest;
-          const caseSetRow = await client.query<{ id: string }>(`
-            insert into zz.replay_case_set (plugin_id, version, source_snapshot_digest, split_seed, created_at)
-            values ($1::uuid, $2, $3, $4, now())
-            returning id::text as id`,
-            [pluginId, version, snapshotDigest, splitSeed]);
-          const caseSetId = caseSetRow.rows[0]?.id;
-          if (!caseSetId) throw new Error("insert into zz.replay_case_set produced no row");
-
-          const derived: DerivedCase[] = [];
-          if (classified.length !== materials.length) {
-            // The material changed between the digest check above and this transaction — a
-            // concurrent build moved the case set. Refuse rather than ask a model in here.
-            throw new Refusal("ERROR: the plugin's case set changed while this build was classifying; call again with a new idempotency_key");
-          }
-          const record = async (asked: Parameters<typeof insertEvaluatorAnswer>[1]) =>
-            (await insertEvaluatorAnswer(client, asked)).assessment_id;
-          for (const c of classified) {
-            derived.push(await deriveCase(c, record, qualified, scoringPolicy, protocol_version_id));
-          }
-
-          const splitInput: SplitCase[] = derived.map((c) => ({
-            case_digest: c.caseDigest, replayable: c.status === "replayable",
-          }));
-          const assigned = assignSplits(splitInput, splitSeed, splitPolicy);
-
-          for (const c of derived) {
-            await writeCase(client, caseSetId, c, assigned.get(c.caseDigest) ?? null);
-          }
-
-          const counts: Counts = { evolve: 0, validation: 0, proof: 0, not_replayable: 0 };
-          for (const c of derived) {
-            if (c.status === "not_replayable") { counts.not_replayable += 1; continue; }
-            const split = assigned.get(c.caseDigest);
-            if (split) counts[split] += 1;
-          }
-          const result: BuildResult = {
-            case_set_id: caseSetId, version, counts, minimums_met: minimumsMet(counts, splitPolicy),
-            source_kind_qualification: qualState,
-          };
-          return { result, result_table: "zz.replay_case_set", result_id: caseSetId };
-        },
-      );
+        principal, "replay_case_set_build", idempotency_key, args, (client) => recordBuild(client, plan));
 
       let result: BuildResult;
       if (outcome.replayed) {

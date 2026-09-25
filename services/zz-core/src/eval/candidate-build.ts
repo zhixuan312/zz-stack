@@ -39,6 +39,11 @@ import { join, resolve } from "node:path";
 const GIT_TIMEOUT_MS = 60_000;
 const BUILD_TIMEOUT_MS = 10 * 60_000;
 const GATE_TIMEOUT_MS = 15 * 60_000;
+/** The longest one validation build can legitimately hold a candidate `validating`: the build
+ *  and gate timeouts, plus 20 minutes for the git steps, dependency linking and the leakage
+ *  question asked before them. `candidate-validate.ts` treats an older hold as a process that
+ *  died mid-build. COUPLED to the three timeouts above. */
+export const VALIDATING_LEASE_MS = BUILD_TIMEOUT_MS + GATE_TIMEOUT_MS + 20 * 60_000;
 /** The contract's own words: "the failing command's own output tail" — enough to act on, never
  *  the whole log (a runaway gate can print megabytes). */
 const OUTPUT_TAIL_CHARS = 4000;

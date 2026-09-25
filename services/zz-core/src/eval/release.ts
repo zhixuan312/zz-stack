@@ -19,7 +19,7 @@
  * `releaseDecision` (`release-rules.ts`) is deliberately NOT called from here — see that file's
  * own module note. This tool's gate is only the first branch of that same refusal order
  * (`no_release_owners`) plus a `not_eligible` refusal for a candidate that never reached
- * `proof_passed`; the rest of the order (`approval_required`, `digest_mismatch`,
+ * `proof_passed` and a `not_owner` refusal for a caller in none of the owner teams; the rest of the order (`approval_required`, `digest_mismatch`,
  * `stale_baseline`) belongs to `release_apply`, once an approved document and a live current
  * subject both exist to check the rest of it against.
  *
@@ -67,10 +67,11 @@ import { writeBranchFacts } from "./protocol.js";
 import { describeApplyOutcomeForReplay, planApply, type ApplyResult } from "./release-apply.js";
 import { describeRecordOutcomeForReplay, recordRelease, type RecordResult } from "./release-record.js";
 import { verifyRelease, type VerifyOutcome } from "./release-verify.js";
-import { factsFor } from "../initiative-record.js";
+import { factsFor, withInitiativeFactsLock } from "../initiative-record.js";
 import { logActivity } from "../persist.js";
 import { safeName, userRoot } from "../paths.js";
 import { db } from "../platform-db.js";
+import { memberTeams } from "../release-owners.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so no release can be prepared");
@@ -106,7 +107,9 @@ async function loadSubject(p: pg.Pool, subjectVersionId: string): Promise<Subjec
 /** FR-58's refuse-on-change rule, read-only: the refusal `writeBranchFacts` would give, asked
  *  BEFORE the idempotency ledger so a conflicting branch refuses with nothing written, while the
  *  fact itself is written only AFTER the ledger commits — a fact recorded for a call whose ledger
- *  transaction then failed would name a branch no row stands behind. */
+ *  transaction then failed would name a branch no row stands behind. COUPLED: every caller holds
+ *  `withInitiativeFactsLock` across this check, its ledger write and `writeBranchFacts`; without
+ *  it a concurrent release_prepare and proposal_prepare both pass the check and both commit. */
 async function branchFactRefusal(initiative: string, fact: string, value: string): Promise<string | null> {
   const bad = safeName(initiative, "initiative");
   if (bad) return bad;
@@ -154,7 +157,8 @@ export function registerReleaseTools(server: McpServer): void {
         "record a second attempt. Applies no patch, runs no " +
         "repository gate, creates no release — that is release_apply/release_verify, a later " +
         "stage this tool never reaches. REFUSES a candidate that has not itself reached " +
-        "proof_passed (not_eligible); a base subject with no recorded release_owners — a " +
+        "proof_passed (not_eligible); a caller who is not a member of one of the base subject's " +
+        "owner teams (not_owner); a base subject with no recorded release_owners — a " +
         "third-party or not-yet-owned subject, which stays proposal-only (no_release_owners); " +
         "an unknown candidate_id; a deployment with no platform database; and (FR-58, hard " +
         "refusal, before any write) this initiative's release_mode already set to something " +
@@ -193,6 +197,17 @@ export function registerReleaseTools(server: McpServer): void {
           "this candidate's own improvement_run_id.");
       }
 
+      // Only an owner may prepare: every prepared attempt is one `release_apply` could bind to,
+      // and a stranger's fresh attempt would rewrite improvement.md to cite a row the owners
+      // never read. Membership, never the caller's active team (release-owners.ts).
+      const principal = parseCaller(requestHeaders()).email;
+      const callerTeams = await memberTeams(p, principal);
+      if (!requiredOwners.some((owner) => callerTeams.includes(owner))) {
+        return text(
+          `ERROR: not_owner — ${principal || "this caller"} is not a member of an owner team of ` +
+          `${subject.plugin} (${requiredOwners.join(", ")}); only an owner may prepare its release`);
+      }
+
       const proof = await loadLatestProof(p, candidate_id);
       if (!proof) {
         return text(`ERROR: candidate ${candidate_id} has no recorded proof evaluation to prepare a release from`);
@@ -204,27 +219,30 @@ export function registerReleaseTools(server: McpServer): void {
       // improvement_start skip against the same initiative) means a release_attempt here would
       // be recorded on the branch the initiative already left — a real cross-tool inconsistency,
       // not the informational drift protocol_read's own resume case allows.
-      const conflict = await branchFactRefusal(initiative, "release_mode", "promotable");
-      if (conflict) return text(conflict);
+      const locked = await withInitiativeFactsLock(initiative, async () => {
+        const conflict = await branchFactRefusal(initiative, "release_mode", "promotable");
+        if (conflict) return { refused: true as const, message: conflict };
 
-      const principal = parseCaller(requestHeaders()).email;
-      const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
-        principal, "release_prepare", idempotency_key, { candidate_id, initiative },
-        async (client): Promise<MutatorOutcome<{ id: string }>> => {
-          const row = (await client.query<{ id: string }>(`
-            insert into zz.release_attempt
-              (candidate_id, base_subject_version_id, plugin_id, approved_patch_digest,
-               required_owners, approval_refs, status, created_at)
-            values ($1::uuid, $2::uuid, $3::uuid, $4, $5::jsonb, '[]'::jsonb, $6, now())
-            returning id::text as id`,
-            [candidate_id, candidate.base_subject_version_id, subject.plugin_id, candidate.patch_digest,
-             JSON.stringify(requiredOwners), "prepared"])).rows[0];
-          if (!row) throw new Error("insert into zz.release_attempt produced no row");
-          return { result: { id: row.id }, result_table: "zz.release_attempt", result_id: row.id };
-        },
-      );
-      const releaseAttemptId = outcome.replayed ? outcome.result_id : outcome.result.id;
-      const factsAttempt = await writeBranchFacts(initiative, { release_mode: "promotable" });
+        const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
+          principal, "release_prepare", idempotency_key, { candidate_id, initiative },
+          async (client): Promise<MutatorOutcome<{ id: string }>> => {
+            const row = (await client.query<{ id: string }>(`
+              insert into zz.release_attempt
+                (candidate_id, base_subject_version_id, plugin_id, approved_patch_digest,
+                 required_owners, approval_refs, status, created_at)
+              values ($1::uuid, $2::uuid, $3::uuid, $4, $5::jsonb, '[]'::jsonb, $6, now())
+              returning id::text as id`,
+              [candidate_id, candidate.base_subject_version_id, subject.plugin_id, candidate.patch_digest,
+               JSON.stringify(requiredOwners), "prepared"])).rows[0];
+            if (!row) throw new Error("insert into zz.release_attempt produced no row");
+            return { result: { id: row.id }, result_table: "zz.release_attempt", result_id: row.id };
+          },
+        );
+        const releaseAttemptId = outcome.replayed ? outcome.result_id : outcome.result.id;
+        return { refused: false as const, outcome, releaseAttemptId, factsAttempt: await writeBranchFacts(initiative, { release_mode: "promotable" }) };
+      });
+      if (locked.refused) return text(locked.message);
+      const { outcome, releaseAttemptId, factsAttempt } = locked;
       if (typeof factsAttempt === "string") {
         return text(`${factsAttempt} (release_attempt ${releaseAttemptId} is recorded; retry with the same idempotency_key)`);
       }
@@ -270,12 +288,13 @@ export function registerReleaseTools(server: McpServer): void {
         "WHEN improvement.md has been approved for a candidate release_prepare already recorded " +
         "a promotion package for (FR-49, the compare-and-swap): takes an advisory lock on the " +
         "candidate's own plugin, evaluates releaseDecision against the plugin's CURRENTLY " +
-        "released subject — the newer, by semver, of this eval system's own released attempts " +
-        "and the catalog's registered versions, leaving out any version a rollback retracted — " +
-        "and, only on apply, moves the newest prepared release_attempt to applying, guarded by a " +
+        "released version — the newest, by semver, registered in zz.plugin_version, leaving out " +
+        "any version a rollback retracted — and, only on apply, moves the prepared " +
+        "release_attempt improvement.md cites (the newest prepared one only while it cites none) " +
+        "to applying, guarded by a " +
         "compare-and-swap on that exact row and by partial unique indexes allowing one live " +
         "attempt per candidate and one applying attempt per plugin. An approval counts only when " +
-        "improvement.md is approved, cites THIS release_attempt_id in its frontmatter, quotes the " +
+        "improvement.md is approved, cites THIS release_attempt_id in its body, quotes the " +
         "digest, and its approved_by is a MEMBER of an owner team; the caller must be an " +
         "owner-team member too. RETURNS { status: applying|refused, reason, release_attempt_id, " +
         "patch: {diff, patch_digest} | null, plan: {plugin, declared_version, " +
@@ -295,8 +314,10 @@ export function registerReleaseTools(server: McpServer): void {
         "does not match the candidate's own recorded patch_digest), stale_baseline (the plugin's " +
         "currently released subject has moved since this candidate's own base — rebase, " +
         "re-validate, re-prove and re-approve before trying again), an unknown candidate_id, a " +
-        "candidate with no prepared release_attempt, an unresolvable currently-released subject " +
-        "(call plugin_locate for this plugin's released version first), and a deployment with no " +
+        "candidate with no prepared release_attempt, an improvement.md citing an attempt that is " +
+        "not this candidate's prepared one, a plugin with no registered version, a current " +
+        "version that is not newer than the base but was never captured (call plugin_locate for " +
+        "it first), and a deployment with no " +
         "platform database. A mutator: writes through the FR-59 idempotency ledger.",
       inputSchema: {
         candidate_id: z.string(),
@@ -337,7 +358,7 @@ export function registerReleaseTools(server: McpServer): void {
         "rollback procedure over a release_verify verdict of rolled_back: records the outcome " +
         "the earlier call was left waiting for. Only the principal whose release_apply moved the " +
         "attempt to applying, or a member of one of its owner teams, may record it. On status: " +
-        "released, requires release_ref (the commit the release procedure left) and " +
+        "released, requires release_ref (the commit the release tag names) and " +
         "released_subject_version_id (the new subject version the CLI resolved by calling " +
         "plugin_locate with the exact version the release published, which must be newer, by " +
         "semver, than the base), moves the release_attempt to released and the candidate to " +
@@ -434,7 +455,9 @@ export function registerReleaseTools(server: McpServer): void {
         "all by the protocol's own liveness bound, answer not_established with a named reason " +
         "(insufficient_proof_cases / replays_unavailable / verification_unresolved) — never a " +
         "rollback and never an indefinite wait (FR-50's own \"no rollback without evidence\"). " +
-        "A failed required guardrail rolls back even while the interval is still unresolved. " +
+        "A required guardrail the runs collected so far already failed rolls back at once — while " +
+        "the interval is still unresolved, while replays are still missing, and before the " +
+        "liveness bound. " +
         "A mutator: writes through the FR-59 idempotency " +
         "ledger once evidence resolves; a pending runs_required read makes no ledger write. Pass " +
         "`initiative` to record release_mode: not_applicable as that initiative's durable branch " +
@@ -537,25 +560,29 @@ export function registerReleaseTools(server: McpServer): void {
       // idempotency ledger below, so an initiative whose release_mode is already promotable
       // never gets an ungated proposal.md sitting beside a promotable attempt. The fact itself is
       // written after the ledger commits (branchFactRefusal's own note).
-      const conflict = await branchFactRefusal(initiative, "release_mode", "proposal_only");
-      if (conflict) return text(conflict);
-
       const principal = parseCaller(requestHeaders()).email;
-      const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
-        principal, "proposal_prepare", idempotency_key, { improvement_run_id, initiative },
-        async (client): Promise<MutatorOutcome<{ id: string }>> => {
-          // No new row — zz.improvement_run's own already-existing row is this ledger's anchor.
-          // proposal.md is regenerated fresh from current state below on every call (see this
-          // tool's own description), so nothing about ITS content is ever replayed from here.
-          const row = (await client.query<{ id: string }>(
-            "select id::text as id from zz.improvement_run where id = $1::uuid",
-            [improvement_run_id])).rows[0];
-          if (!row) throw new Error("zz.improvement_run row vanished between the check above and this transaction");
-          return { result: { id: row.id }, result_table: "zz.improvement_run", result_id: row.id };
-        },
-      );
+      const locked = await withInitiativeFactsLock(initiative, async () => {
+        const conflict = await branchFactRefusal(initiative, "release_mode", "proposal_only");
+        if (conflict) return { refused: true as const, message: conflict };
 
-      const factsAttempt = await writeBranchFacts(initiative, { release_mode: "proposal_only" });
+        const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
+          principal, "proposal_prepare", idempotency_key, { improvement_run_id, initiative },
+          async (client): Promise<MutatorOutcome<{ id: string }>> => {
+            // No new row — zz.improvement_run's own already-existing row is this ledger's anchor.
+            // proposal.md is regenerated fresh from current state below on every call (see this
+            // tool's own description), so nothing about ITS content is ever replayed from here.
+            const row = (await client.query<{ id: string }>(
+              "select id::text as id from zz.improvement_run where id = $1::uuid",
+              [improvement_run_id])).rows[0];
+            if (!row) throw new Error("zz.improvement_run row vanished between the check above and this transaction");
+            return { result: { id: row.id }, result_table: "zz.improvement_run", result_id: row.id };
+          },
+        );
+
+        return { refused: false as const, outcome, factsAttempt: await writeBranchFacts(initiative, { release_mode: "proposal_only" }) };
+      });
+      if (locked.refused) return text(locked.message);
+      const { outcome, factsAttempt } = locked;
       if (typeof factsAttempt === "string") return text(factsAttempt);
       const written = await writeProposalDoc(p, initiative, improvement_run_id);
 

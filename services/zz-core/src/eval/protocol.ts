@@ -52,7 +52,7 @@ import { z } from "zod";
 import { latestProtocolVersion, triggersFor } from "./protocol-triggers.js";
 import { recordProtocolVersion } from "./protocol-record.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
-import { factsFor, writeFacts } from "../initiative-record.js";
+import { factsFor, withInitiativeFactsLock, writeFacts } from "../initiative-record.js";
 import { logActivity } from "../persist.js";
 import { safeName, safePath, userRoot } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
@@ -132,17 +132,24 @@ export async function writeBranchFacts(
     return `ERROR: no initiative named "${initiative}" — branch facts are recorded against an ` +
       "opened one; call initiative_open first.";
   }
-  const current = factsFor(root, initiative);
-  const entries = (Object.entries(updates) as [string, string | undefined][])
-    .filter((e): e is [string, string] => e[1] !== undefined && e[1] !== "");
-  for (const [fact, value] of entries) {
-    const have = current[fact];
-    if (have && have !== value) return `ERROR: ${fact} is already ${have} for this initiative`;
-  }
-  const fresh = entries.filter(([fact, value]) => current[fact] !== value);
-  const merged = { ...current };
-  for (const [fact, value] of fresh) merged[fact] = value;
-  if (fresh.length) writeFacts(root, initiative, merged);
+  // The read, the refuse-on-change decision and the write happen under one lock: two callers
+  // deciding different values would otherwise both pass on the same empty read, and the second
+  // write would silently replace a fact the first had already recorded.
+  const merged = await withInitiativeFactsLock(initiative, async () => {
+    const current = factsFor(root, initiative);
+    const entries = (Object.entries(updates) as [string, string | undefined][])
+      .filter((e): e is [string, string] => e[1] !== undefined && e[1] !== "");
+    for (const [fact, value] of entries) {
+      const have = current[fact];
+      if (have && have !== value) return `ERROR: ${fact} is already ${have} for this initiative`;
+    }
+    const fresh = entries.filter(([fact, value]) => current[fact] !== value);
+    const next = { ...current };
+    for (const [fact, value] of fresh) next[fact] = value;
+    if (fresh.length) writeFacts(root, initiative, next);
+    return next;
+  });
+  if (typeof merged === "string") return merged;
   await mirrorBranchFacts(await teamFor(parseCaller(requestHeaders()).email), initiative, merged);
   return merged;
 }

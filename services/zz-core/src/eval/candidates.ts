@@ -520,8 +520,11 @@ export function registerCandidateTools(server: McpServer): void {
         "once every case clears it but the bootstrap interval still straddles mme, one more " +
         "repeat per case per side — never a run this tool launches itself: replay_start " +
         "(case_id-steerable) and the launcher run the replay, this tool only plans and reads " +
-        "back. Never reads a proof or evolve case. REFUSES a candidate_id nothing minted; a " +
-        "status outside (recorded, valid); a malformed search_policy; a deployment with no git checkout to build from; an " +
+        "back. Never reads a proof or evolve case. A candidate held 'validating' longer than " +
+        "any build and gate can take (its process died mid-build) is first returned to valid or " +
+        "recorded; a retried build reuses the patch's earlier leakage answer. REFUSES a " +
+        "candidate_id nothing minted; a status outside (recorded, valid) — including another " +
+        "call's live 'validating' hold; a malformed search_policy; a deployment with no git checkout to build from; an " +
         "improvement_run whose own eval_run bound no case_set_version_id; and a case set with no " +
         "replayable validation-split case. A mutator once it has a verdict to store: writes " +
         "through the FR-59 idempotency ledger — a build/gate failure and an interim " +
@@ -555,7 +558,8 @@ export function registerCandidateTools(server: McpServer): void {
         "(Task I-20, FR-38 to FR-42, FR-44; the leakage screen runs in candidate_validate): " +
         "composes at most one new child candidate per call from two valid candidates whose " +
         "patches touch disjoint files, recorded with its own digest and parent_ids exactly the " +
-        "way candidate_record records a proposed one; reduces every candidate with a stored " +
+        "way candidate_record records a proposed one — only where candidate_record could record " +
+        "one (never into a full generation or past maxGenerations); reduces every candidate with a stored " +
         "validation evaluation to the Pareto frontier over (per-case pass vector, cost); and, " +
         "once the protocol's own liveness bound (maxGenerations/wallClockHours) is reached, " +
         "selects exactly one final candidate FROM THAT FRONTIER — among members validated as " +
@@ -616,23 +620,28 @@ export function registerCandidateTools(server: McpServer): void {
         "WHEN an improvement_run's own selected final candidate is ready for its sealed proof " +
         "(FR-28, FR-43): opens the candidate's ONE proof allocation. A first call (status: " +
         "selected) mints a verifier_token bound to this candidate and case set, moves the " +
-        "candidate to proving and the run to proofing, spends the case set's proof split (a case " +
-        "set opens for proof once, whichever candidate), and RETURNS { proof_status: null, " +
+        "candidate to proving and the run to proofing, claims the case set's proof split (no " +
+        "other candidate opens it while this one proves), and RETURNS { proof_status: null, " +
         "verifier_token, token_already_issued, runs_required: { case_set_id, baseline, candidate " +
         "}, status: 'proving' } — run COUNTS per side, never a proof case id, and never resolving " +
         "in the same call. The IMPROVE agent calls replay_start(context: 'verifier', " +
         "verifier_token, split: 'proof', no case_id — drawn server-side) plus the launcher " +
-        "(VERIFIER_TOKEN in its environment) that many times per side. A LATER call reads back " +
+        "(the verifier token in a mode-0600 --verifier-token-file) that many times per side. A LATER call reads back " +
         "completed, scored proof-split runs: short of minRepeats it RETURNS updated counts; once " +
         "every case clears it (or the liveness bound passes) it computes pairedDecision, " +
         "re-screens for leakage and stores one zz.candidate_evaluation (split: proof). RETURNS { " +
         "proof_status: proof_passed|proof_failed|not_established, reason, release_eligible, " +
-        "candidate_evaluation_id, status } — never a per-case result. proof_passed needs " +
+        "candidate_evaluation_id, status, proof_split: spent|released } — never a per-case " +
+        "result. proof_passed needs " +
         "improves (or an accepted pruning), every critical guardrail passing and a clear " +
         "no-leakage answer — unclear/unavailable is not_established (leakage_unresolved); " +
         "release_eligible also needs a release_owner (FR-47). not_established also covers " +
-        "insufficient_proof_cases, proof_unresolved and guardrails_not_established. Every " +
-        "terminal outcome SPENDS the allocation: candidate.status becomes proof_passed, " +
+        "insufficient_proof_cases, proof_unresolved and guardrails_not_established. The case " +
+        "set's proof split stays SPENT (no candidate proves on it again) after proof_passed, " +
+        "proof_failed, or a not_established whose runs executed on proof cases (they observed " +
+        "them); it is RELEASED after a not_established where no run ever executed or the only " +
+        "gap was an unavailable leakage answer. Every terminal outcome spends the CANDIDATE's " +
+        "allocation: candidate.status becomes proof_passed, " +
         "proof_failed (candidate_record refuses this hypothesis again) or proof_not_established " +
         "(an evidence gap — re-recordable); improvement_run.status becomes ready_for_approval, " +
         "closed (no owners, FR-51) or proof_failed. abandon: true recovers an allocation stuck " +
@@ -640,13 +649,15 @@ export function registerCandidateTools(server: McpServer): void {
         "proof_not_established (reason: abandoned); a no-op read-back on a spent candidate. " +
         "REFUSES abandon on a selected candidate; a candidate_id nothing minted; a status neither " +
         "selected/proving nor spent — \"ERROR: only the selected candidate may open proof\"; a " +
-        "non-abandon call on a spent candidate — \"ERROR: proof allocation spent; a new allocation " +
-        "or new evidence is required\"; an eval_run with no case_set_version_id; a plugin with no " +
-        "model-backed measure; a malformed search_policy; and a case set another candidate already " +
-        "opened. A mutator whenever it writes (FR-59 ledger); an interim runs_required response is " +
+        "non-abandon call on a spent candidate — \"ERROR: proof allocation spent\", naming what " +
+        "a fresh improvement_start can still do; an eval_run with no case_set_version_id; a " +
+        "plugin with no model-backed measure; a malformed search_policy; and a case set whose " +
+        "proof split another candidate holds (proving, or spent as above). A mutator whenever it " +
+        "writes (FR-59 ledger); an interim runs_required response is " +
         "not. Pass `initiative` to record release_mode: not_applicable (FR-58) on a proof_failed " +
         "outcome of an OWNED candidate only — not_established is a gap a fresh improvement_start " +
-        "may resume from, and a non-owned candidate still has proposal_prepare.",
+        "may resume from (on this case set only if proof_split was released; otherwise on a new " +
+        "one), and a non-owned candidate still has proposal_prepare.",
       inputSchema: {
         candidate_id: z.string(), idempotency_key: z.string().min(1),
         abandon: z.boolean().optional()

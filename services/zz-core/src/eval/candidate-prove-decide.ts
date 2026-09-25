@@ -61,3 +61,19 @@ export function proofVerdict(input: {
     release_eligible: hasOwners,
   };
 }
+
+/** Whether a resolved allocation keeps its case set's proof split spent (FR-28: a sealed proof
+ *  leaks at most one bit per resolved decision). `proof_passed`/`proof_failed` resolved a
+ *  decision: spent. A `not_established` outcome releases the split when nothing ever ran on a
+ *  proof case (`observed: false` — insufficient cases, or abandoned before any proof run was registered) or
+ *  when the only thing missing was the leakage critic itself (`unavailable`, a model outage, not
+ *  a property of the candidate). Any other `not_established` outcome had runs execute on the
+ *  sealed cases, which observed them, so the split stays spent. */
+export function proofSplitSpent(
+  proofStatus: ProofVerdict["proof_status"], observed: boolean,
+  leakageReading: "yes" | "no" | "unclear" | "unavailable" | null,
+): boolean {
+  if (proofStatus !== "not_established") return true;
+  if (!observed) return false;
+  return leakageReading !== "unavailable";
+}

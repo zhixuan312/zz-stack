@@ -48,7 +48,7 @@ import { randomUUID } from "node:crypto";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
-  EVAL_STATE_ENUMS, parseCaller, provisionReplayTeam, ReplayDependencyPolicy, sha256,
+  EVAL_STATE_ENUMS, parseCaller, provisionReplayTeam, REPLAY_TEAM_PREFIX, ReplayDependencyPolicy, sha256,
   teardownReplayTeam, type Db,
 } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
@@ -147,13 +147,20 @@ export function sealedRows<T extends { split: string | null }>(rows: readonly T[
  *  caller is acting AS the run's own team. Any other caller (the launching principal's own
  *  unbound credential, reading for the simulated person or the verifier) is unrestricted here
  *  — `requireContext`/`sealedRows` above still gate `evaluator` against a proof case and a
- *  missing `verifier_token`, so this is additive, never a relaxation of either. Null means
- *  allowed; a string is the refusal text. */
-export function roleReadGuard(patTeam: string | null, teamSlug: string, role: string): string | null {
-  if (patTeam !== teamSlug) return null;
+ *  missing `verifier_token`, so this is additive, never a relaxation of either.
+ *
+ *  A credential bound to ANY other `replay-` team is a candidate too (a different run's, issued
+ *  to the same principal) and reads nothing of this run at all; and even its own run it reads
+ *  only through `role: "actor"` — the bare row (`role` absent) names the subject's source and
+ *  patch, which the candidate has no need of. Null means allowed; a string is the refusal text. */
+export function roleReadGuard(patTeam: string | null, teamSlug: string, role: string | undefined): string | null {
+  if (!patTeam?.startsWith(REPLAY_TEAM_PREFIX)) return null;
+  if (patTeam !== teamSlug) {
+    return `ERROR: a credential scoped to replay team '${patTeam}' reads nothing of another run ('${teamSlug}')`;
+  }
   if (role === "actor") return null;
   return `ERROR: a credential scoped to its own replay run ('${teamSlug}') may only read ` +
-    `role: actor events, not role: ${role}`;
+    `role: actor events, not ${role ? `role: ${role}` : "the run itself"}`;
 }
 
 // -------------------------------------------------------------------------------------------
@@ -216,20 +223,29 @@ export async function resolveSubjectOrCandidate(
 /** The run's `sandbox_ref` (077's column, `worktree_ref` in replay_start's response): the git ref
  *  the launcher clones and installs from — `refs/tags/v<declared_version>` for a catalog subject
  *  (or, for a candidate run, its base subject), since a catalog plugin's declared version IS the
- *  platform release it was tagged at. A subject with no release in this repository (a third
- *  party's) has nothing to clone; the launcher refuses it, and this records why instead of a ref.
- *  COUPLED: `releaseRefFor` in packages/tools/src/replay/plan.ts builds the same string, and the
- *  launcher refuses a run whose recorded ref and resolved clone disagree. Once a ref under
+ *  platform release it was tagged at. A third-party subject has no tag; its ref names the
+ *  captured identity the launcher fetches it at — `git:<resolved_commit>`,
+ *  `package:<tarball_integrity>` or `local_dir:<locator>` — and `none: <why>` when that identity
+ *  was never recorded (the launcher then refuses the run). COUPLED: `releaseRefFor` (plan.ts) and
+ *  `fetchThirdParty` (third-party.ts) in packages/tools/src/replay build the same strings, and the
+ *  launcher refuses a run whose recorded ref and fetched source disagree. Once a ref under
  *  `refs/replay/<team_slug>` in the operator's own repository; nothing creates that any more. */
 async function subjectReleaseRef(p: Db, subjectVersionId: string | undefined, candidateId: string | undefined): Promise<string> {
-  const row = (await p.query<{ declared_version: string; kind: string | null }>(`
-    select sv.declared_version, sv.source_locator->>'kind' as kind
+  const row = (await p.query<{
+    declared_version: string; kind: string | null; locator: string | null; commit: string | null; integrity: string | null;
+  }>(`
+    select sv.declared_version, sv.source_locator->>'kind' as kind, sv.source_locator->>'locator' as locator,
+           sv.release_identity->>'resolved_commit' as commit, sv.release_identity->>'tarball_integrity' as integrity
       from zz.eval_subject_version sv
      where sv.id = coalesce($1::uuid,
              (select c.base_subject_version_id from zz.candidate c where c.id = $2::uuid))`,
     [subjectVersionId ?? null, candidateId ?? null])).rows[0];
   if (!row) return "none: subject not found";
-  return row.kind === "catalog" ? `refs/tags/v${row.declared_version}` : `none: ${row.kind ?? "unrecorded"} source`;
+  if (row.kind === "catalog") return `refs/tags/v${row.declared_version}`;
+  if (row.kind === "git" && row.commit) return `git:${row.commit}`;
+  if (row.kind === "package" && row.integrity) return `package:${row.integrity}`;
+  if (row.kind === "local_dir" && row.locator) return `local_dir:${row.locator}`;
+  return `none: ${row.kind ?? "unrecorded"} source with no recorded release identity`;
 }
 
 interface DependencyMode { surface: string; mode: string }
@@ -511,10 +527,12 @@ export function registerReplayRunTools(server: McpServer): void {
         "{ replay_run_id, status, case_id, split, subject_version_id, candidate_id, " +
         "protocol_version_id, environment_digest, sandbox_ref, team_slug, score, guardrails, " +
         "model_usage, cost, duration_ms, created_at, subject_plugin, subject_source_locator, " +
-        "subject_declared_version, subject_release_digest, candidate_patchset } — the result " +
+        "subject_declared_version, subject_release_digest, subject_content_digest, " +
+        "subject_release_identity, candidate_patchset } — the result " +
         "fields answer null until status reaches a terminal value; the subject_* fields " +
         "(the launcher clones v<subject_declared_version> and checks its plugin digest against " +
-        "subject_release_digest) resolve for EITHER a " +
+        "subject_release_digest; a third-party subject is fetched at subject_release_identity's " +
+        "resolved_commit or tarball_integrity and checked against subject_content_digest) resolve for EITHER a " +
         "subject_version_id run or a candidate_id run (Task I-18: through the recorded " +
         "candidate's own base_subject_version_id), null only when that subject was never " +
         "located; candidate_patchset (the recorded diff a candidate replay must apply " +
@@ -527,9 +545,10 @@ export function registerReplayRunTools(server: McpServer): void {
         "context with no valid verifier_token — one minted by candidate_prove for the proof " +
         "allocation this run is part of; ERROR: proof is sealed — a search context " +
         "reading a run whose case is split: proof, which this tool never exposes to a search " +
-        "caller; and a credential bound to this run's own reserved team asking for any role " +
-        "other than actor — that credential is the one the candidate session holds, and it may " +
-        "only ever read actor events. Under a verifier_token: REFUSES a run another allocation " +
+        "caller; a credential bound to another run's reserved replay- team, whatever it asks; and " +
+        "a credential bound to this run's own reserved team asking for anything but role: actor " +
+        "— that credential is the one the candidate session holds, and it may only ever read " +
+        "actor events. Under a verifier_token: REFUSES a run another allocation " +
         "started, role: evaluator, and events of a run no longer live; a proof-split run never " +
         "returns case_id, score, guardrails, model_usage, cost or duration_ms, whoever reads it.",
       inputSchema: {
@@ -557,6 +576,7 @@ export function registerReplayRunTools(server: McpServer): void {
         duration_ms: string | null; created_at: string;
         subject_plugin: string | null; subject_source_locator: unknown;
         subject_declared_version: string | null; subject_release_digest: string | null;
+        subject_content_digest: string | null; subject_release_identity: Record<string, unknown> | null;
         candidate_patchset: { diff: string; files?: string[] } | null;
         verifier_allocation_id: string | null;
       }>(`
@@ -572,6 +592,10 @@ export function registerReplayRunTools(server: McpServer): void {
                coalesce(sv.source_locator, cand_sv.source_locator) as subject_source_locator,
                coalesce(sv.declared_version, cand_sv.declared_version) as subject_declared_version,
                coalesce(sv.release_identity, cand_sv.release_identity)->>'released_digest' as subject_release_digest,
+               -- A third-party subject has no released_digest: the launcher fetches its source at
+               -- release_identity's resolved_commit/tarball_integrity and checks content_digest.
+               coalesce(sv.content_digest, cand_sv.content_digest) as subject_content_digest,
+               coalesce(sv.release_identity, cand_sv.release_identity) as subject_release_identity,
                cand.patchset as candidate_patchset
           from zz.replay_run r
           join zz.replay_case c on c.id = r.case_id
@@ -591,11 +615,12 @@ export function registerReplayRunTools(server: McpServer): void {
       }
       const { verifier_allocation_id: _allocation, ...visible } = sealProofRead(unsealed);
 
-      if (!role) return json(visible);
-
+      // Before the role-less return: a candidate's credential never gets the bare row either.
       const patTeam = one(requestHeaders()["x-zz-pat-team"]) || null;
       const guardErr = roleReadGuard(patTeam, visible.team_slug, role);
       if (guardErr) return text(guardErr);
+
+      if (!role) return json(visible);
 
       const rawEvents = (await p.query<{ seq: number; actor: string; visibility: string; kind: string; payload: unknown }>(
         `select seq, actor, visibility, kind, payload from zz.replay_event where case_id = $1::uuid order by seq`,

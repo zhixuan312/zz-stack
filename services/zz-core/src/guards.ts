@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { admitEntry, documentApplies, OUTCOME_STOPPED, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
 
 import { frontmatterStatus } from "./chain.js";
-import { closingDocRuledOut, factsFor } from "./initiative-record.js";
+import { closingDocRuledOut, factsForWrite } from "./initiative-record.js";
 import { attributionCheck, type Chain, outcomeCheck, sectionCheck, statusCheck } from "./write-guards.js";
 
 /** Why a stop discharges a close-time requirement, written once because two rules claim it.
@@ -45,7 +45,10 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
   // that call already does when a caller names a document explicitly, rather than recomputing
   // "the furthest one" a second way here.
   const stop = env.outcome === OUTCOME_STOPPED;
-  const ruledOut = closingDocRuledOut(root, parts[0], chain.documents.find((d) => d.name === chain.closingDoc));
+  // A stop reads a damaged `_facts.json` as no facts rather than refusing (`factsForWrite`): the
+  // abandon is the one act that must still work on an initiative whose branch cannot be read.
+  const facts = factsForWrite(root, parts[0], stop) ?? {};
+  const ruledOut = closingDocRuledOut(chain.documents.find((d) => d.name === chain.closingDoc), facts);
   const missing = stop && !!chain.closingDoc && !existsSync(join(root, parts[0], chain.closingDoc));
   const isClosingWrite = parts[1] === chain.closingDoc
     ? !ruledOut
@@ -89,7 +92,6 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
   // own refusal elsewhere in this initiative's contract. An ABANDONED close is unaffected: the
   // work stopped, and stopping asks no branch to have been decided — the same exemption
   // STOPPED_GROUND already gives the gates below.
-  const facts = factsFor(root, parts[0]);
   if (!stop) {
     const undetermined = chain.documents.find(
       (d) => d.when && documentApplies(d, facts) === "undetermined");
@@ -285,12 +287,15 @@ function closedOnSomeDocument(root: string, initiative: string): boolean {
  *  same as `document_write`.
  *  `undetermined`: the branch has not resolved yet; the contract calls this "not writable yet",
  *  not a refusal about approval or ownership. */
-function applicabilityCheck(chain: Chain, root: string, relPath: string): string | null {
+function applicabilityCheck(chain: Chain, root: string, relPath: string, stop: boolean): string | null {
   const parts = relPath.replace(/^\/+/, "").split("/");
   if (parts.length !== 2) return null;
   const doc = chain.documents.find((d) => d.name === parts[1]);
   if (!doc?.when) return null;
-  const facts = factsFor(root, parts[0]);
+  // An abandon over a damaged `_facts.json` is not asked: the branch cannot be read, and a stop
+  // asks no branch to have been decided.
+  const facts = factsForWrite(root, parts[0], stop);
+  if (!facts) return null;
   const applic = documentApplies(doc, facts);
   if (applic === "applies") return null;
   if (applic === "not_applicable") {
@@ -315,7 +320,7 @@ function applicabilityCheck(chain: Chain, root: string, relPath: string): string
  *
  * What stays here is what the kernel must not know: that a prerequisite is a file, that
  * `gate: true` is what ratifies one, and what to tell an agent that has been refused. */
-function gateCheck(chain: Chain, root: string, relPath: string): string | null {
+function gateCheck(chain: Chain, root: string, relPath: string, stop: boolean): string | null {
   const clean = relPath.replace(/^\/+/, "");
   const parts = clean.split("/");
   if (parts.length !== 2) return null;
@@ -324,7 +329,11 @@ function gateCheck(chain: Chain, root: string, relPath: string): string | null {
   // FR-58 (Task I-26): a dependency the branch has ruled out is discharged, not missing — the
   // ground below is what lets a document downstream of a not_applicable one still be written.
   const depDoc = chain.documents.find((d) => d.name === dep);
-  const depApplic = depDoc?.when ? documentApplies(depDoc, factsFor(root, parts[0])) : "applies";
+  // An abandon over a damaged `_facts.json` cannot tell whether a conditional dependency applied,
+  // and a stop asks no branch to have been decided — so the dependency is discharged, on that
+  // ground, rather than left to refuse the one act that still works on such an initiative.
+  const depFacts = depDoc?.when ? factsForWrite(root, parts[0], stop) : {};
+  const depApplic = !depDoc?.when ? "applies" : depFacts ? documentApplies(depDoc, depFacts) : "unreadable";
   // A non-gated prerequisite is satisfied by existing. `gate: false` says no approval is
   // required, so nothing ever approves such a document and its status stays `draft` for the
   // life of the initiative — demanding `approved` here would make the next document
@@ -358,6 +367,9 @@ function gateCheck(chain: Chain, root: string, relPath: string): string | null {
       // permanently unwritable, on the one branch where the contract says it never applied.
       ...(depApplic === "not_applicable"
         ? [{ kind: dep, ground: `${dep} does not apply on this branch (\`when\`: ${JSON.stringify(depDoc!.when)})` }]
+        : []),
+      ...(depApplic === "unreadable"
+        ? [{ kind: dep, ground: `${STOPPED_GROUND}, and _facts.json is damaged, so whether ${dep} applied cannot be read` }]
         : []),
     ],
   );
@@ -435,11 +447,14 @@ function ownershipCheck(root: string, relPath: string, content: string,
  * write, and only `initiative_open` creates. */
 export function documentGuards(chain: Chain, root: string, relPath: string, content: string,
                         team: string | null, via: string | null = null): string | null {
+  // COUPLED: the one question closeCheck asks too — a write recording an abandon is judged
+  // over a damaged `_facts.json` instead of refused by it.
+  const stop = parseEnvelope(content).outcome === OUTCOME_STOPPED;
   return ownershipCheck(root, relPath, content, via)
     ?? closedDocumentGuard(root, relPath, via)
     ?? approvedDocumentGuard(chain, root, relPath, via)
-    ?? applicabilityCheck(chain, root, relPath)
-    ?? gateCheck(chain, root, relPath)
+    ?? applicabilityCheck(chain, root, relPath, stop)
+    ?? gateCheck(chain, root, relPath, stop)
     ?? closeCheck(chain, root, relPath, content)
     ?? statusCheck(chain, relPath, content)
     ?? outcomeCheck(chain, relPath, content)

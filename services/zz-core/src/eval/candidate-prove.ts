@@ -29,8 +29,13 @@
  * `leakage_unresolved`, never a pass. The verdict itself is `candidate-prove-decide.ts`.
  *
  * FR-28's "one opening" is also a fact about the CASES, not only the candidate: opening proof
- * spends the case set's proof split (`zz.replay_case_set.proof_spent_*`, migration 088), so a
- * fresh improvement_run cannot re-open the same sealed cases with a new candidate.
+ * claims the case set's proof split (`zz.replay_case_set.proof_spent_*`, migration 088), so no
+ * second candidate opens the same sealed cases while this one is proving. Resolution decides
+ * whether the claim becomes spent for good (`proofSplitSpent`, `candidate-prove-decide.ts`): a
+ * sealed proof leaks at most one bit per resolved decision, so `proof_passed`/`proof_failed`
+ * spend it, and so does a `not_established` outcome whose runs executed on the proof cases (they
+ * observed them). A `not_established` outcome where no run ever executed, or where the only gap
+ * was an `unavailable` leakage answer, releases it for a fresh improvement_start.
  *
  * FR-28's own "spent allocation refuses a second opening": once a candidate reaches
  * `proof_passed` or `proof_failed`, a call with a KEY THIS ALLOCATION HAS NEVER SEEN refuses
@@ -49,8 +54,9 @@
  * dispatch on this same task): an unestablished proof — too few proof cases
  * (`insufficient_proof_cases`), an interval that never resolved by the liveness bound
  * (`proof_unresolved`), or an allocation nobody could finish (`abandoned`, below) — is spent
- * exactly as a statistically failed one is (`SPENT_STATUSES` covers all three; a second
- * `candidate_prove` call against any of them refuses or reads back, never re-opens), but it is
+ * for this candidate exactly as a statistically failed one is (`SPENT_STATUSES` covers all
+ * three; a second `candidate_prove` call against any of them refuses or reads back, never
+ * re-opens — whether the CASE SET's proof split stays spent is the rule above), but it is
  * NOT a rejected hypothesis. `REJECTED_CANDIDATE_STATUSES` (`proposer-bundle.ts`) deliberately
  * leaves `proof_not_established` out — an evidence gap is not FR-38's "already rejected idea" —
  * so `candidate_record` refuses to re-record only a genuinely `proof_failed` hypothesis; a
@@ -82,7 +88,7 @@ import {
   type PerCaseDelta, type SideRun,
 } from "./candidate-validate.js";
 import { screenLeakage } from "./candidate-leakage.js";
-import { needsMoreRepeats, proofVerdict } from "./candidate-prove-decide.js";
+import { needsMoreRepeats, proofSplitSpent, proofVerdict } from "./candidate-prove-decide.js";
 import type { TouchedComponent } from "./complexity.js";
 import {
   lookupRow, withIdempotency, type IdempotencyOutcome, type IdempotencyRow, type MutatorOutcome,
@@ -278,6 +284,8 @@ export interface CandidateProveOutcome {
   readonly token_already_issued: boolean;
   readonly runs_required?: ProofRunsRequired;
   readonly status: string;
+  /** On a resolution: whether the case set's sealed proof split stays spent or was released. */
+  readonly proof_split?: "spent" | "released";
   readonly facts_recorded?: boolean;
   readonly facts?: Record<string, string>;
   readonly facts_refused?: string;
@@ -310,7 +318,8 @@ export const SPENT_STATUSES = new Set(["proof_passed", "proof_failed", "proof_no
  *  outcome, `not_established` included — 077 gives `zz.improvement_run` no third status and this
  *  dispatch's contract is the candidate's own status column, not the run's) — the same "one
  *  transaction, both tables" shape `candidate-search.ts`'s own `runCandidateSearch` already uses
- *  for `selected`/`closed`. `phase` defaults to `"resolve"`; `abandonProof` passes `"abandon"` so
+ *  for `selected`/`closed`. The same transaction keeps or releases the case set's proof split
+ *  (`proofSplitSpent`). `phase` defaults to `"resolve"`; `abandonProof` passes `"abandon"` so
  *  the two calls never share a digest (see the module note and `readBackIfSameResolve`'s own
  *  comment on why phases must not collide). */
 export async function resolveOutcome(
@@ -324,6 +333,8 @@ export async function resolveOutcome(
     readonly resource_usage: unknown;
     readonly dimension_scores: unknown;
     readonly statistics: unknown;
+    /** Whether any run of this allocation executed on a proof case (`proofSplitSpent`). */
+    readonly observed: boolean;
     /** The proof-time leakage answer, recorded in this transaction so it rolls back with it. */
     readonly leakage_assessment?: AskedEvaluatorAnswer;
   },
@@ -335,6 +346,10 @@ export async function resolveOutcome(
   const runStatus = outcome.proof_status === "proof_passed"
     ? (outcome.release_eligible ? "ready_for_approval" : "closed")
     : "proof_failed";
+  // screenLeakage's own reading rule: no reading from the critic is `unavailable`.
+  const leakageReading = outcome.leakage_assessment
+    ? outcome.leakage_assessment.result.reading ?? "unavailable" : null;
+  const splitSpent = proofSplitSpent(outcome.proof_status, outcome.observed, leakageReading);
 
   const ledgerOutcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
     // phase: "resolve"/"abandon" — never bare {candidate_id} — so a caller who reuses the OPEN
@@ -389,6 +404,14 @@ export async function resolveOutcome(
       await client.query(
         "update zz.replay_verifier_token set revoked_at = now() where candidate_id = $1::uuid and revoked_at is null",
         [candidate.id]);
+      // The opening's claim on the case set's proof split: kept (spent) or released, by
+      // proofSplitSpent. Keyed on the claimant, so an allocation that never opened (the
+      // insufficient-proof-cases path) touches nothing.
+      if (!splitSpent) {
+        await client.query(`
+          update zz.replay_case_set set proof_spent_at = null, proof_spent_by_candidate_id = null
+           where proof_spent_by_candidate_id = $1::uuid`, [candidate.id]);
+      }
       return { result: { id: row.id }, result_table: "zz.candidate_evaluation", result_id: row.id };
     },
   );
@@ -406,7 +429,7 @@ export async function resolveOutcome(
   return {
     proof_status: outcome.proof_status, reason: outcome.reason, release_eligible: outcome.release_eligible,
     candidate_evaluation_id: candidateEvaluationId, verifier_token: null, token_already_issued: true,
-    status: candidateStatus, ...facts,
+    status: candidateStatus, proof_split: splitSpent ? "spent" : "released", ...facts,
   };
 }
 
@@ -441,7 +464,17 @@ async function readBackIfSameResolve(
     proof_status: stored.aggregate_score.proof_status, reason: stored.aggregate_score.reason,
     release_eligible: stored.aggregate_score.release_eligible, candidate_evaluation_id: stored.id,
     verifier_token: null, token_already_issued: true, status: candStatus,
+    proof_split: await proofSplitOf(p, candidateId),
   };
+}
+
+/** A resolved candidate's `proof_split`, read back: it still holds a case set's split (spent) or
+ *  its resolution released it. For a caller that lost the resolving response. */
+export async function proofSplitOf(p: pg.Pool, candidateId: string): Promise<"spent" | "released"> {
+  const row = (await p.query<{ held: boolean }>(
+    "select exists (select 1 from zz.replay_case_set where proof_spent_by_candidate_id = $1::uuid) as held",
+    [candidateId])).rows[0];
+  return row?.held ? "spent" : "released";
 }
 
 export async function proveCandidate(
@@ -460,7 +493,7 @@ export async function proveCandidate(
   if (SPENT_STATUSES.has(candidate.status)) {
     const replay = await readBackIfSameResolve(p, candidateId, idempotencyKey, principal);
     if (replay) return replay;
-    return { error: "ERROR: proof allocation spent; a new allocation or new evidence is required" };
+    return { error: spentAllocationRefusal(candidate) };
   }
 
   const ctx = await loadProofContext(p, candidate);
@@ -479,6 +512,7 @@ export async function proveCandidate(
       proof_status: "not_established", reason: "insufficient_proof_cases", release_eligible: false,
       decision: null, guardrails: null, resource_usage: null, dimension_scores: null,
       statistics: { available_proof_cases: caseIds.length, required_minimum: ctx.minProofCases },
+      observed: false,
     }, "resolve", initiative);
   }
 
@@ -506,8 +540,9 @@ export async function proveCandidate(
             "already opened this allocation (or it has since resolved); call candidate_prove again " +
             "to read its current state");
         }
-        // The case set's proof split is spent by this opening (migration 088) — the same CAS
-        // shape, so two candidates racing for one case set open it at most once between them.
+        // This opening claims the case set's proof split (migration 088) — the same CAS shape,
+        // so two candidates racing for one case set open it at most once between them. The
+        // resolution keeps it spent or releases it (resolveOutcome, proofSplitSpent).
         const spent = await client.query(`
           update zz.replay_case_set set proof_spent_at = now(), proof_spent_by_candidate_id = $2::uuid
            where id = $1::uuid and proof_spent_at is null`, [ctx.caseSetId, candidateId]);
@@ -584,11 +619,25 @@ export async function proveCandidate(
   });
   return resolveOutcome(candidate, idempotencyKey, principal, {
     ...verdict, decision, guardrails, resource_usage, dimension_scores, statistics,
-    leakage_assessment: leakage.pending,
+    observed: true, leakage_assessment: leakage.pending ?? undefined,
   }, "resolve", initiative);
 }
 
-/** Which candidate already spent this case set's proof split, or null. */
+/** A candidate proves once, whatever its outcome. What a caller can do next depends on it: a
+ *  `proof_not_established` hypothesis may be re-recorded under a fresh improvement_start, and
+ *  whether that search can prove on the same case set is what this resolution's `proof_split`
+ *  said. */
+function spentAllocationRefusal(candidate: CandidateRow): string {
+  const next = candidate.status === "proof_not_established"
+    ? "its hypothesis may be re-recorded under a fresh improvement_start, which can prove on the " +
+      "same case set only if this proof released its sealed split (proof_split: released — no run " +
+      "executed on a proof case, or the only gap was an unavailable leakage answer); otherwise " +
+      "build a new case set (new evidence)"
+    : "a new candidate needs new evidence (a new case set) to prove";
+  return `ERROR: proof allocation spent — candidate ${candidate.id} already resolved ${candidate.status}; ${next}`;
+}
+
+/** Which candidate holds this case set's proof split (proving now, or spent it), or null. */
 async function caseSetSpentBy(p: pg.Pool, caseSetId: string): Promise<string | null> {
   const row = (await p.query<{ by: string | null; at: string | null }>(
     "select proof_spent_by_candidate_id::text as by, proof_spent_at::text as at from zz.replay_case_set where id = $1::uuid",
@@ -597,6 +646,9 @@ async function caseSetSpentBy(p: pg.Pool, caseSetId: string): Promise<string | n
 }
 
 function spentRefusal(caseSetId: string, by: string): string {
-  return `ERROR: case set ${caseSetId}'s sealed proof cases were already opened by candidate ${by} — ` +
-    "a proof allocation spends its cases; build a new case set (new evidence) before proving again";
+  return `ERROR: case set ${caseSetId}'s sealed proof cases are held by candidate ${by} — either it ` +
+    "is proving them now, or its proof resolved with runs that executed on them (proof_passed, " +
+    "proof_failed, or not_established after its runs observed the cases), which spends them. A " +
+    "proof that ended before any run executed, or whose only gap was an unavailable leakage " +
+    "answer, would have released them. Build a new case set (new evidence) before proving again";
 }

@@ -42,7 +42,10 @@ export async function ownerMember(runner: Queryable, email: string, owners: read
  *  "release_attempt_id: `<id>`" — or null when it cites none, or more than one. Read from the
  *  body, like the digest it quotes: the body is what an approver reads and signs. */
 export function citedReleaseAttempt(body: string): string | null {
-  const ids = new Set([...body.matchAll(/release_attempt_id: `([0-9a-f-]{36})`/g)].map((m) => m[1]));
+  // A real UUID only (8-4-4-4-12 hex), lowercased: a 36-character run of hyphens would otherwise
+  // be "cited" and reach a `::uuid` cast as a raw database error rather than a named refusal.
+  const ids = new Set([...body.matchAll(
+    /release_attempt_id: `([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`/gi)].map((m) => m[1].toLowerCase()));
   return ids.size === 1 ? [...ids][0] : null;
 }
 
@@ -50,13 +53,14 @@ export function citedReleaseAttempt(body: string): string | null {
  *  can never satisfy `release_apply`, so there is nothing to protect): the name stamped into
  *  `approved_by` must be a member of an owner team, and so must the session that records it when
  *  that is somebody else (`on_behalf_of`). Otherwise anyone could sign an owner's name onto the
- *  one document that authorizes a release. Null means allowed. */
+ *  one document that authorizes a release. Null means allowed. `runner` defaults to the platform
+ *  database; a check passes its own. */
 export async function improvementApprovalRefusal(
-  body: string, signer: string, recorder: string | null,
+  body: string, signer: string, recorder: string | null, runner: Queryable | null = db(),
 ): Promise<string | null> {
   const attemptId = citedReleaseAttempt(body);
   if (!attemptId) return null;
-  const p = db();
+  const p = runner;
   if (!p) return "ERROR: this deployment has no platform database, so improvement.md's owner teams cannot be checked";
   const row = (await p.query<{ required_owners: string[] }>(
     "select required_owners from zz.release_attempt where id = $1::uuid", [attemptId])).rows[0];

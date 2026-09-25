@@ -9,10 +9,12 @@
  * reason: "abandoned"` through the SAME `resolveOutcome` transaction (`candidate-prove.ts`)
  * every other terminal outcome uses, own idempotency phase, after `cancelProofRuns` tears down
  * whatever the token already spawned — so a later search needs a new allocation, per FR-28.
+ * An abandon before any proof run was registered releases the case set's proof split; one after
+ * keeps it spent (`proofSplitSpent`).
  */
 import type pg from "pg";
 
-import { resolveOutcome, SPENT_STATUSES, type CandidateProveOutcome, type CandidateRow, type StoredProofEvaluation } from "./candidate-prove.js";
+import { proofSplitOf, resolveOutcome, SPENT_STATUSES, type CandidateProveOutcome, type CandidateRow, type StoredProofEvaluation } from "./candidate-prove.js";
 import { closeRun } from "./replay-runs.js";
 
 /** Every proof-split replay_run THIS candidate's own verifier_token allocation spawned and is
@@ -54,6 +56,17 @@ async function activeVerifierAllocationId(p: pg.Pool, candidateId: string): Prom
   return row?.id ?? null;
 }
 
+/** True once this allocation has any run at all, whatever its status: `replay_start` draws a
+ *  sealed proof case and binds it to a session when it registers the run, and a run the sweep or
+ *  an earlier teardown already `cancelled` may have been running when it was. Conservative on
+ *  purpose — a sealed proof errs toward spent. */
+async function anyProofRunExecuted(p: pg.Pool, verifierAllocationId: string): Promise<boolean> {
+  const row = (await p.query<{ any: boolean }>(
+    "select exists (select 1 from zz.replay_run where verifier_allocation_id = $1::uuid) as any",
+    [verifierAllocationId])).rows[0];
+  return row?.any ?? false;
+}
+
 /** The candidate's own latest proof `zz.candidate_evaluation` row, however it got there (a
  *  normal resolve, or a prior abandon) — read back for `abandon`'s own no-op-on-already-spent
  *  contract below, which answers the CURRENT terminal state whatever idempotency_key the caller
@@ -87,6 +100,7 @@ export async function abandonProof(
       proof_status: stored.aggregate_score.proof_status, reason: stored.aggregate_score.reason,
       release_eligible: stored.aggregate_score.release_eligible, candidate_evaluation_id: stored.id,
       verifier_token: null, token_already_issued: true, status: candidate.status,
+      proof_split: await proofSplitOf(p, candidate.id),
     };
   }
 
@@ -95,12 +109,17 @@ export async function abandonProof(
   // different candidate's own allocation could share. A missing allocation id (the token row
   // itself vanished mid-flight) still lets the abandon resolve; it only means nothing was left
   // to cancel.
+  //
+  // Whether any run was drawn onto a proof case decides whether the case set's proof split is
+  // released (`proofSplitSpent`, candidate-prove-decide.ts). Read before cancelling, and counted
+  // whatever the status, since cancelling does not undo a case a session was already handed.
   const verifierAllocationId = await activeVerifierAllocationId(p, candidate.id);
+  const observed = verifierAllocationId ? await anyProofRunExecuted(p, verifierAllocationId) : false;
   if (verifierAllocationId) await cancelProofRuns(p, verifierAllocationId, principal);
 
   return resolveOutcome(candidate, idempotencyKey, principal, {
     proof_status: "not_established", reason: "abandoned", release_eligible: false,
     decision: null, guardrails: null, resource_usage: null, dimension_scores: null,
-    statistics: { abandoned: true },
+    statistics: { abandoned: true, proof_runs_executed: observed }, observed,
   }, "abandon", initiative);
 }

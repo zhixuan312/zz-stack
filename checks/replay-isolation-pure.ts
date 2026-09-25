@@ -14,7 +14,7 @@ const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const plan = await load("packages/tools/dist/replay/plan.js");
 const git = await load("packages/tools/dist/replay/git.js");
 const sandbox = await load("packages/tools/dist/replay/sandbox.js");
-const { detectSandbox } = await load("packages/tools/dist/replay/session.js");
+const { detectSandbox, sandboxContext } = await load("packages/tools/dist/replay/session.js");
 const { candidateCredentialRefusal, lifecycleGuard } = await load("services/zz-core/dist/eval/replay-close.js");
 const { REPLAY_RUN_TTL_MS } = await load("services/zz-core/dist/eval/replay-runs.js");
 
@@ -70,6 +70,11 @@ assert.equal(candidateCredentialRefusal("replay_score", null, "replay-sdlc-a1b2c
 assert.equal(candidateCredentialRefusal("replay_score", "other-team", "replay-sdlc-a1b2c3d4"), null);
 assert.match(candidateCredentialRefusal("replay_score", "replay-sdlc-a1b2c3d4", "replay-sdlc-a1b2c3d4"),
   /^ERROR: replay_score refuses a credential scoped to the run's own replay team/);
+assert.match(candidateCredentialRefusal("replay_score", "replay-sdlc-99999999", "replay-sdlc-a1b2c3d4"),
+  /^ERROR: replay_score refuses a credential scoped to another run's replay team \('replay-sdlc-99999999'\)/,
+  "another run's candidate credential is refused too — same principal, different run");
+assert.match(lifecycleGuard("replay_close", { principal: "a@x", patTeam: "replay-other-12345678" }, run),
+  /candidate's credential/, "replay_close refuses any replay- credential, not only the run's own");
 
 // ---- the TTL outlasts the launcher's worst case, with room for the calls around it.
 assert.equal(typeof REPLAY_RUN_TTL_MS, "number");
@@ -154,7 +159,9 @@ assert.match(sandbox.seatbeltProfile({ denyRead: [{ path: '/a"b\\c', dir: true }
 assert.throws(() => sandbox.seatbeltProfile({ ...spec, allowRead: ["/Users"] }), /would re-allow all of denied/);
 assert.throws(() => sandbox.bwrapArgs({ ...spec, writable: ["/Users/op"] }, "/"), /would re-allow all of denied/);
 const bw: string[] = sandbox.bwrapArgs(spec, "/private/tmp/clone");
-assert.deepEqual(bw.slice(0, 3), ["--ro-bind", "/", "/"], "the root goes in read-only first");
+const firstMount = bw.indexOf("--ro-bind");
+assert.deepEqual(bw.slice(0, firstMount), [...sandbox.BWRAP_NAMESPACES], "fresh namespaces (network shared back) before any mount");
+assert.deepEqual(bw.slice(firstMount, firstMount + 3), ["--ro-bind", "/", "/"], "the root goes in read-only first");
 const idx = (...a: string[]) => bw.findIndex((_: string, i: number) => a.every((x, j) => bw[i + j] === x));
 assert.ok(idx("--tmpfs", "/Users/op") > 0, "a denied directory is covered by an empty tmpfs");
 assert.ok(idx("--ro-bind", "/dev/null", "/etc/zz-token") > 0, "a denied file is covered by /dev/null");
@@ -202,6 +209,24 @@ if (!tool) {
     const outside = join(tmpdir(), `zz-sandbox-outside-${process.pid}`);
     assert.throws(() => run("/bin/sh", ["-c", `echo x > ${outside}`]), "nothing outside the writable paths is writable");
     assert.equal(existsSync(outside), false);
+
+    // R2 item 4: the whole temporary directory is denied — another session's home (and its
+    // run-scoped PAT) lives there — and only this session's own home is bound back.
+    const ctx = sandboxContext(tool, process.cwd(), "git");
+    assert.ok(ctx.denyRead.some((d: { path: string }) => d.path === realpathSync(tmpdir())), "the real tmpdir is denied");
+    const sibling = realpathSync(mkdtempSync(join(tmpdir(), "zz-replay-home-")));
+    try {
+      writeFileSync(join(sibling, "mcp.json"), "zzp_other_run_token");
+      const scoped = { denyRead: ctx.denyRead, allowRead: ctx.allowRead, writable: [sessionHome] };
+      const inCtx = (args: string[]) => {
+        const c = sandbox.sandboxedCommand(tool, scoped, "/bin/cat", args, sessionHome);
+        return execFileSync(c.file, c.argv, { cwd: sessionHome, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      };
+      assert.throws(() => inCtx([join(sibling, "mcp.json")]), "another session's home under tmpdir is unreadable");
+      assert.equal(inCtx([join(sessionHome, "ok.txt")]), "ok", "the session's own home, under the denied tmpdir, is readable");
+    } finally {
+      rmSync(sibling, { recursive: true, force: true });
+    }
   } finally {
     rmSync(fakeHome, { recursive: true, force: true });
     rmSync(sessionHome, { recursive: true, force: true });

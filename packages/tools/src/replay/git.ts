@@ -20,12 +20,35 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 import {
-  GIT_EXEC_TIMEOUT_MS, gitApplyArgv, gitCheckoutDetachArgv, gitCloneArgv, gitRemoveOriginArgv,
-  gitResolveTagArgv, releaseRefFor, releaseTagFor, worktreeDirName,
+  GIT_EXEC_TIMEOUT_MS, GIT_HARDENED_ARGS, gitApplyArgv, gitCheckoutDetachArgv, gitCloneArgv, gitRemoveOriginArgv,
+  gitResolveTagArgv, gitStatusArgv, hardenedGitEnv, releaseRefFor, releaseTagFor, worktreeDirName,
 } from "./plan.js";
 
-function git(cwd: string, args: string[]): string {
-  return execFileSync("git", args, { cwd, encoding: "utf8", timeout: GIT_EXEC_TIMEOUT_MS, stdio: ["ignore", "pipe", "pipe"] }).trim();
+/** The one way this launcher runs git: hardened flags ahead of the subcommand and an allowlisted
+ *  environment (`GIT_HARDENED_ARGS`, `hardenedGitEnv`, plan.ts) — the clone's own `.git/config`
+ *  is never trusted to name a command, and no token of the launcher's reaches a git process. */
+function gitRaw(cwd: string, args: string[]): string {
+  return execFileSync("git", [...GIT_HARDENED_ARGS, ...args], {
+    cwd, env: hardenedGitEnv(process.env), encoding: "utf8", timeout: GIT_EXEC_TIMEOUT_MS, stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+const git = (cwd: string, args: string[]): string => gitRaw(cwd, args).trim();
+/** The same hardened git, for `third-party.ts`'s own fetch of a subject's source. */
+export const runGit = git;
+
+/** The paths `git status` reports changed or new in the clone — what the session produced. A
+ *  rename's second NUL field (its old path) is skipped. Runs after the session, so every
+ *  hardening in `gitRaw` is what makes reading the candidate's own repository safe. */
+export function changedPaths(worktreePath: string): string[] {
+  const fields = gitRaw(worktreePath, gitStatusArgv()).split("\0");
+  const out: string[] = [];
+  for (let i = 0; i < fields.length; i += 1) {
+    const f = fields[i];
+    if (f.length < 4) continue;
+    out.push(f.slice(3));
+    if (f[0] === "R" || f[0] === "C") i += 1;
+  }
+  return out;
 }
 
 export interface Worktree {
@@ -41,7 +64,7 @@ export interface Worktree {
  *  of its own to stay unique across concurrent runs, and a deterministic path is exactly what
  *  lets a retry find and remove what a crashed earlier attempt for the SAME run left behind —
  *  a random suffix minted fresh on every call could never be rediscovered by a later one. */
-function worktreePathFor(teamSlug: string): string {
+export function worktreePathFor(teamSlug: string): string {
   // Real path: the OS sandbox (sandbox.ts) matches `/private/var/...`, not the `/var` symlink.
   return join(realpathSync(tmpdir()), "zz-replay", worktreeDirName(teamSlug));
 }

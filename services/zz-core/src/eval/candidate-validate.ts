@@ -36,7 +36,7 @@ import type pg from "pg";
 
 import {
   applyCandidatePatch, buildAndGate, createCandidateWorktree, discoverRepoRoot,
-  linkWorkspaceDependencies, removeCandidateWorktree, type BuildOutcome, type Worktree,
+  linkWorkspaceDependencies, removeCandidateWorktree, VALIDATING_LEASE_MS, type BuildOutcome, type Worktree,
 } from "./candidate-build.js";
 import { loadDimensions } from "./evaluate.js";
 import type { GuardrailResult } from "./evaluate-measures.js";
@@ -395,13 +395,18 @@ async function buildCandidateInIsolation(
  *  `rejected_precheck`, with the reason on `expected_effect._rejection_reason` where
  *  `candidate_search` reports it from — or null to go on to the build. */
 async function screenBeforeBuild(p: pg.Pool, candidateId: string, principal: string): Promise<string | null> {
-  const row = (await p.query<{ hypothesis: string; diff: string | null; touched_components: TouchedComponent[] | null }>(
-    "select hypothesis, patchset->>'diff' as diff, touched_components from zz.candidate where id = $1::uuid",
+  const row = (await p.query<{
+    hypothesis: string; diff: string | null; touched_components: TouchedComponent[] | null; patch_digest: string;
+  }>(
+    "select hypothesis, patchset->>'diff' as diff, touched_components, patch_digest from zz.candidate where id = $1::uuid",
     [candidateId])).rows[0];
   if (!row) return `ERROR: no candidate ${candidateId}`;
+  // A retry after a timed-out build screens the same subject again: an earlier recorded answer
+  // is read back rather than asked twice (candidate-leakage.ts's `reuse`).
   const verdict = await screenLeakage(
-    { hypothesis: row.hypothesis, diff: row.diff ?? "", touched_components: row.touched_components ?? [] }, principal);
-  await insertEvaluatorAnswer(p, verdict.pending);
+    { hypothesis: row.hypothesis, diff: row.diff ?? "", touched_components: row.touched_components ?? [] }, principal,
+    { pool: p, patchDigest: row.patch_digest });
+  if (verdict.pending) await insertEvaluatorAnswer(p, verdict.pending);
   if (verdict.reading !== "yes") return null;
   await p.query(
     "update zz.candidate set expected_effect = expected_effect || $2::jsonb where id = $1::uuid",
@@ -428,12 +433,34 @@ async function acquireValidatingLock(p: pg.Pool, candidateId: string): Promise<"
     with prior as (
       select status from zz.candidate where id = $1::uuid and status in ('recorded', 'valid') for update
     )
-    update zz.candidate c set status = 'validating'
+    update zz.candidate c set status = 'validating', validating_since = now()
       from prior
      where c.id = $1::uuid
     returning prior.status as prior_status`, [candidateId])).rows[0];
   if (!row) return null;
   return row.prior_status as "recorded" | "valid";
+}
+
+/** The lease on `validating` (migration 088's `validating_since`): the hold above is released by
+ *  the call's own `finally`, which a process killed mid-build (SIGKILL, a redeploy) never runs.
+ *  A hold older than `VALIDATING_LEASE_MS` — longer than any build and gate can take — is such a
+ *  process, and its candidate goes back to where it can be validated again: `valid` when its
+ *  build already passed (a stored validation verdict exists), `recorded` otherwise, which
+ *  screens and builds it again. Scoped to one candidate (`candidate_validate`) or one run
+ *  (`candidate_search`, whose generations never settle while a candidate is `validating`). */
+export async function releaseStaleValidating(
+  p: pg.Pool, scope: { readonly candidateId: string } | { readonly improvementRunId: string },
+): Promise<void> {
+  const [column, id] = "candidateId" in scope ? ["id", scope.candidateId] : ["improvement_run_id", scope.improvementRunId];
+  await p.query(`
+    update zz.candidate c
+       set status = case when exists (
+             select 1 from zz.candidate_evaluation ce where ce.candidate_id = c.id and ce.split = 'validation'
+           ) then 'valid' else 'recorded' end,
+           validating_since = null
+     where c.${column} = $1::uuid and c.status = 'validating'
+       and c.validating_since < now() - make_interval(secs => $2)`,
+    [id, VALIDATING_LEASE_MS / 1000]);
 }
 
 // -------------------------------------------------------------------------------------------
@@ -461,6 +488,8 @@ const RESAMPLES = 2000;
 export async function validateCandidate(
   p: pg.Pool, candidateId: string, idempotencyKey: string, principal: string,
 ): Promise<ValidateOutcome | { error: string }> {
+  // Before the status gate below, so a hold whose process died is repaired rather than refused.
+  await releaseStaleValidating(p, { candidateId });
   const candidate = await loadCandidate(p, candidateId);
   if (!candidate) return { error: `ERROR: no candidate ${candidateId}` };
   if (candidate.status !== "recorded" && candidate.status !== "valid") {
@@ -593,7 +622,7 @@ export async function validateCandidate(
     // is — and the one thing standing between a thrown exception (a DB error mid-plan, say) and
     // a candidate stuck 'validating' forever.
     await p.query(
-      "update zz.candidate set status = $2 where id = $1::uuid and status = 'validating'",
+      "update zz.candidate set status = $2, validating_since = null where id = $1::uuid and status = 'validating'",
       [candidateId, finalStatus]);
   }
 }

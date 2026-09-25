@@ -13,7 +13,7 @@ import { documentApplies, OUTCOME_STOPPED, closeInitiative, parseCaller, parseEn
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { closingDocRuledOut, factsFor, OPEN_RECORD, openRecord, recordAbandoned } from "../initiative-record.js";
+import { closingDocRuledOut, factsFor, factsForWrite, OPEN_RECORD, openRecord, recordAbandoned } from "../initiative-record.js";
 import { chainFor, frontmatterStatus } from "../chain.js";
 import { oneLine } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
@@ -99,7 +99,9 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         // below: the ruled-out document never exists, `gatesPassed`/`requiredPresent` would
         // read false forever, and the false-abandon refusal would never fire even when every
         // APPLICABLE gate is passed and everything the branch actually required exists.
-        const facts = factsFor(root, initiative);
+        // A damaged `_facts.json` reads as no facts here (`factsForWrite`): the abandon is the
+        // way out of an initiative whose branch cannot be read, so it must not refuse on it.
+        const facts = factsForWrite(root, initiative, true) ?? {};
         const ruledOut = (d: { name: string; when?: Record<string, string | string[]> }): boolean =>
           !!d.when && documentApplies(d, facts) === "not_applicable";
         // DELIBERATE: `handover.md` is excluded from the gate set. It is derived onto
@@ -156,7 +158,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       // document the branch ruled out. `closingDocRuledOut` is the one question guards.ts's
       // `closeCheck` asks too, so the two never disagree about which document a close lands on.
       const declaredDoc = chain.documents.find((d) => d.name === chain.closingDoc);
-      const ruledOut = closingDocRuledOut(root, initiative, declaredDoc);
+      const ruledOut = closingDocRuledOut(declaredDoc, factsForWrite(root, initiative, stopped) ?? {});
       const missing = stopped && !!chain.closingDoc && !existsSync(join(dirOf, chain.closingDoc));
       const furthest = (ruledOut || missing)
         ? [...chain.documents].reverse()

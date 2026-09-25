@@ -158,7 +158,10 @@ export const Dimension = z.object({
   key: z.string().min(1),
   name: z.string().min(1),
   canonicalKind: z.enum(CANONICAL_KINDS),
-  weight: z.number().positive(),
+  // Non-negative here, positive when applicable (the superRefine below): `score.ts` drops an
+  // applicable: false dimension from both weighted sums, so its weight is never read and 0 is an
+  // honest value for it. An applicable dimension at 0 would count for nothing.
+  weight: z.number().nonnegative(),
   required: z.boolean(),
   applicable: z.boolean(),
   notApplicableReason: z.string().nullable(),
@@ -172,6 +175,12 @@ export const Dimension = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom, path: ["measures"],
       message: `measure weights inside dimension "${dim.key}" sum to ${total}, not 1`,
+    });
+  }
+  if (dim.applicable && dim.weight <= 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ["weight"],
+      message: `dimension "${dim.key}" is applicable, so its weight must be positive`,
     });
   }
   // (e) a non-applicable dimension must say why, so "applicable: false" is never a silent drop
@@ -243,11 +252,14 @@ export type UncertaintyPolicy = z.infer<typeof UncertaintyPolicy>;
 // the free-form proof/release policies and named guardrails around them.
 
 export const SearchPolicy = z.object({
-  maxGenerations: z.number(),
-  maxCandidatesPerGeneration: z.number(),
+  // Counts: a fractional or non-positive bound makes `generationCapRefusal` compare against a
+  // number no candidate count can meet the way the protocol meant.
+  maxGenerations: z.number().int().positive(),
+  maxCandidatesPerGeneration: z.number().int().positive(),
   wallClockHours: z.number(),
   minRepeats: z.number(),
-  minMeaningfulEffect: z.number(),
+  // A negative mme would read a regression as meaningful improvement.
+  minMeaningfulEffect: z.number().nonnegative(),
   confidence: z.number(),
   equivalenceBand: z.number(),
   complexity: z.string().min(1),

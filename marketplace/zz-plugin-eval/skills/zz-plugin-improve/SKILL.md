@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-improve
-version: 0.2
+version: 0.3
 description: Stage 7 of zz-plugin-eval (IMPROVE). Search for a proven candidate patch against plugin-owned findings — propose, validate by replay, search to one deterministic winner, prove it sealed — then hand off to promotion for an owned subject or write an owner-facing proposal for one this team cannot release.
 when_to_use: "The seventh stage of zz-plugin-eval, after EXPLAIN. Runs for every branch except one with no plugin-owned actionable finding at all, which skips it with one call and closes. REQUIRES a shell-capable runtime (Claude Code) that can run npm/zz-tool commands and launch isolated sessions — refuses to start anywhere else. Every stage before this one runs with no shell at all (FR-54)."
 ---
@@ -111,20 +111,37 @@ replay_start(case_set_id, subject_version_id? | candidate_id?, split: "validatio
 both — then, for the `worktree_ref`/`replay_run_id` it returns:
 
 ```
-REPLAY_TOKEN=<token> npm run replay -- --run <replay_run_id> --repo <path-to-a-checkout>
+umask 077; d=$(mktemp -d)
+cat > "$d/replay" <<'TOKEN'
+<token>
+TOKEN
+npm run replay -- --run <replay_run_id> --repo <path-to-a-checkout> --token-file "$d/replay"
+rm -rf "$d"
 ```
 
-`REPLAY_TOKEN` is the `token` `replay_start` returned, passed in the environment and never as an
-argument. The launcher marks the run `running`, clones `--repo` standalone at the subject's own
-release tag (`v<declared_version>`) and refuses — closing the run `failed` — when that tag's
-plugin digest is not the one the subject was captured at. It installs the subject plugin into a
+`<token>` is the `token` `replay_start` returned. It goes into a file, never onto a command line
+or into the environment, where `ps`, shell history and `/proc` would keep it. Best: make the
+directory with `mktemp -d`, write the file with your own file-writing tool (not a shell command),
+then `chmod 600` it; the quoted heredoc above is the shell-only fallback. Remove the directory
+once the launcher returns. The launcher refuses a token file anyone but you can read.
+
+It marks the run `running` and fetches the subject exactly as it was captured. A catalog plugin:
+`--repo` cloned standalone at the subject's own release tag (`v<declared_version>`). A
+third-party plugin `plugin_register` captured: its git source at the recorded
+`resolved_commit` (https only), its npm package re-packed and matched to the recorded
+`tarball_integrity`, or its `local_dir` copied from `--repo`'s own `catalog/`. Either way it
+refuses — closing the run `failed` — when what it fetched does not carry the digest the subject
+was captured at, so a non-owned subject's candidates are proven the same way an owned one's are
+before they reach `proposal.md`. It installs the subject plugin into a
 session-local `CLAUDE_CONFIG_DIR` under a temporary `HOME`, with none of your own credentials in
 the sessions' environment, and runs every session inside an OS sandbox (`sandbox-exec` on macOS,
 `bwrap` on Linux) that cannot read your home directory or write outside its own. **With no
 working sandbox it refuses to start** — install bubblewrap, or run it outside any enclosing
 sandbox; there is no unsandboxed mode. It then runs the candidate/baseline session against `actor` events and a simulated
 person against `actor`+`user_oracle` events, scores it, and calls `replay_close` itself — you do
-not close a run the launcher already ran. Repeat `candidate_validate` once enough runs land; it
+not close a run the launcher already ran. A completed run's logs are deleted as it closes; a
+failed run's stay in `$TMPDIR/zz-replay-logs/` (the path is in the launcher's output) for you to
+read, and every launch removes any there older than 7 days. Repeat `candidate_validate` once enough runs land; it
 plans, it never executes.
 
 ## No case set yet? Build one before validating
@@ -181,22 +198,31 @@ candidate_prove(candidate_id, idempotency_key, abandon?, initiative?)
 
 Only the candidate `candidate_search` left `selected` may open this, and only once (FR-28). A
 FIRST call mints a `verifier_token` bound to this one allocation (this candidate, this case
-set, the proof split), moves the candidate to `proving`, spends the case set's proof cases, and
+set, the proof split), moves the candidate to `proving`, claims the case set's proof split (no
+other candidate opens those sealed cases while this one proves), and
 RETURNS `{ proof_status: null, verifier_token, runs_required: { case_set_id, baseline,
 candidate }, status: 'proving' }` — never resolving in the same call. `runs_required` is COUNTS
 per side, never case ids: you never learn which proof case a run used. Run them one at a time:
 
 ```
 replay_start(case_set_id, candidate_id | subject_version_id, split: "proof", context: "verifier", verifier_token, repeats, idempotency_key)
-REPLAY_TOKEN=<token> VERIFIER_TOKEN=<verifier_token> npm run replay -- --run <replay_run_id> --repo <path>
+umask 077; d=$(mktemp -d)
+cat > "$d/replay" <<'TOKEN'
+<token>
+TOKEN
+cat > "$d/verifier" <<'TOKEN'
+<verifier_token>
+TOKEN
+npm run replay -- --run <replay_run_id> --repo <path> --token-file "$d/replay" --verifier-token-file "$d/verifier"
+rm -rf "$d"
 ```
 
 `candidate_id` for the candidate side, the candidate's `base_subject_version_id` for the
 baseline side. **Never pass `case_id`** — the proof case is drawn server-side, and a verifier
 `replay_start` naming one REFUSES; so does one outside the allocation (another case set,
 candidate or subject). Start the next run once the launcher returns: the draw skips a case with
-a run still live, so starting many at once runs out of cases. `VERIFIER_TOKEN` goes in the
-environment, never on the command line, where `ps`, shell history and logs would keep it. The
+a run still live, so starting many at once runs out of cases. The `verifier_token` goes in
+a file the same way as the run's own token, never on the command line or in the environment. The
 launcher uses it for its own calls only; neither replay session sees it. Under the token,
 `replay_read` of a proof run returns no case id, score or cost, and `replay_score` answers
 `sealed: true` with no number — **do not use the token for anything but the launcher.**
@@ -205,12 +231,18 @@ launcher uses it for its own calls only; neither replay session sees it. Under t
 completed and scored; once enough exist, it re-screens for leakage (an unclear or unavailable
 answer is `not_established, reason: leakage_unresolved` — never a pass), computes the paired
 verdict, and RETURNS `{ proof_status: proof_passed | proof_failed | not_established, reason,
-release_eligible, candidate_evaluation_id, status }` — **never a per-case result; search never
+release_eligible, candidate_evaluation_id, status, proof_split: spent | released }` — **never a per-case result; search never
 sees a proof case or a proof result.** release_eligible is additionally true only when the base
 subject records release owners (FR-47).
 
-**Every terminal outcome spends the allocation, and opening it spent the case set:** proving
-again needs a new case set (new evidence), whichever candidate. On an OWNED candidate, a
+**Every terminal outcome ends THIS candidate's allocation (its token is revoked; it never
+re-opens). Whether the CASE SET's proof split was spent is a separate answer: `proof_split`.**
+`proof_passed` and `proof_failed` keep the case set's proof split spent, and so does
+`not_established` when any proof run existed (those runs observed the sealed cases): proving
+again then needs a new case set (new evidence), whichever candidate. A `not_established` where no
+proof run was ever registered, or where the only gap was an `unavailable` leakage answer,
+releases it (`proof_split: released`) — a fresh `improvement_start` may prove against the same
+case set. On an OWNED candidate, a
 `proof_failed` outcome leaves nothing left to promote or propose — pass `initiative` and
 `release_mode: not_applicable` is recorded for you. A `not_established` outcome records nothing:
 it is an evidence gap a fresh `improvement_start` in this initiative may resume from. On a NON-owned candidate, nothing is
@@ -221,10 +253,11 @@ nothing-to-promote) either way — leave that one for `proposal_prepare` below.
 
 **`abandon: true`** recovers an allocation stuck `proving` because you lost the response that
 opened it — no `verifier_token` holder, nothing else can resolve it. It revokes the token,
-cancels whatever proof runs it spawned (the case set stays spent), and resolves
+cancels whatever proof runs it spawned, and resolves
 `proof_not_established, reason: abandoned`
 (an evidence gap, not a rejected hypothesis — the SAME hypothesis may be proposed again under a
-fresh `improvement_start`). A second `abandon` call is a no-op read-back, never a refusal.
+fresh `improvement_start`). The case set stays spent if any proof run was registered, and is
+released if none was — `proof_split` says which. A second `abandon` call is a no-op read-back, never a refusal.
 
 ## Owned subject, proof passed: promotion
 

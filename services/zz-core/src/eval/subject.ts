@@ -21,6 +21,7 @@
  * anything asks for it a second time.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { type PluginComponent, pluginContentDigest, sha256 } from "@zz/catalog";
 import { parseCaller } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
@@ -28,7 +29,8 @@ import { z } from "zod";
 
 import { entryOf, serversOf } from "./plugin-eval.js";
 import { retractedVersions } from "./release-retracted.js";
-import { type Component, resolveSource, sha256 } from "./subject-source.js";
+import { newestVersion } from "./release-rules.js";
+import { resolveSource } from "./subject-source.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
@@ -38,19 +40,12 @@ import { Refusal } from "../refusal.js";
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so no subject can be recorded");
 
-/** The whole-plugin digest: sha256 over the SORTED per-component digests, never over an order a
- *  query happened to return them in — two locates of the same release must agree on this digest
- *  however their component rows came back. */
-function combinedDigest(components: readonly Component[]): string {
-  return sha256([...components.map((c) => c.digest)].sort().join("\n"));
-}
-
 /** Everything IDENTIFY needs about one released (plugin, version), resolved once before any
  *  write. Returns null for a plugin/version this platform never released — the caller turns
  *  that into the contract's exact refusal text; this function does no I/O beyond reading. */
 async function resolveSubject(pool: pg.Pool, plugin: string, version: string | undefined): Promise<{
   pluginId: string; origin: string; declaredVersion: string; releasedDigest: string;
-  components: Component[]; contentDigest: string;
+  components: PluginComponent[]; contentDigest: string;
   sourceLocator: Record<string, unknown>; releaseIdentity: Record<string, unknown>;
 } | null> {
   // `$2::text is null` rather than two query strings: one text keeps the "latest release" and
@@ -64,21 +59,22 @@ async function resolveSubject(pool: pg.Pool, plugin: string, version: string | u
   const pluginId = (await pool.query<{ id: string }>(
     "select id::text as id from zz.plugin where name = $1", [plugin])).rows[0]?.id;
   const retracted = pluginId && !version ? await retractedVersions(pool, pluginId) : [];
-  const head = (await pool.query<{
+  const rows = (await pool.query<{
     plugin_id: string; plugin_version_id: string; origin: string; declared_version: string; digest: string;
   }>(`
     select p.id::text as plugin_id, pv.id::text as plugin_version_id, p.origin,
            pv.version as declared_version, pv.digest
       from zz.plugin p join zz.plugin_version pv on pv.plugin_id = p.id
      where p.name = $1 and ($2::text is null or pv.version = $2) and pv.version <> all($3::text[])
-     -- Semver order, not text order: '0.10.0' sorts below '0.9.0' as text. The numeric core is
-     -- compared as numeric[] (never int[], which a long digit run overflows); a version with no
-     -- numeric core reads null and sorts last rather than failing the cast; at an equal core a
-     -- release outranks its own pre-release ('1.0.0' above '1.0.0-rc.1'), and text breaks any
-     -- tie that is left.
-     order by string_to_array(substring(pv.version from '^[0-9]+(?:\\.[0-9]+)*'), '.')::numeric[] desc nulls last,
-              (pv.version like '%-%') asc, pv.version desc
-     limit 1`, [plugin, version ?? null, retracted])).rows[0];
+     order by pv.version desc`,
+    [plugin, version ?? null, retracted])).rows;
+  // COUPLED: the head is the newest by `newestVersion` (release-rules.ts), the one semver
+  // precedence release_apply reduces the same table with. A SQL order is a second parse that
+  // drifts from it: text breaks a pre-release tie as rc.10 below rc.9, and a numeric[] core
+  // reads 1.0 below 1.0.0. A plugin's versions are few, so they are reduced here, not in SQL;
+  // the text order above only settles a precedence tie (`newestVersion` keeps the first).
+  const newest = newestVersion(rows.map((r) => r.declared_version));
+  const head = rows.find((r) => r.declared_version === newest);
   if (!head) return null;
 
   // A third party has no release to recompute against — plugin_register captured its
@@ -90,7 +86,7 @@ async function resolveSubject(pool: pg.Pool, plugin: string, version: string | u
   // different subject_version_id values depending on which tool minted the row first.
   if (head.origin === "third_party") {
     const captured = (await pool.query<{
-      component_manifest: Component[]; content_digest: string;
+      component_manifest: PluginComponent[]; content_digest: string;
       source_locator: Record<string, unknown>; release_identity: Record<string, unknown>;
     }>(`
       select component_manifest, content_digest, source_locator, release_identity
@@ -120,15 +116,15 @@ async function resolveSubject(pool: pg.Pool, plugin: string, version: string | u
      order by s.name`, [plugin, head.declared_version])).rows;
 
   const entry = entryOf(plugin);
-  const components: Component[] = [
-    ...skills.map((s): Component => ({
+  const components: PluginComponent[] = [
+    ...skills.map((s): PluginComponent => ({
       kind: "skill", name: s.name,
       // A skill version's own content hash, never blank in practice (register-skills.ts always
       // writes one) — falling back to a hash of its identity rather than throwing, so a stray
       // pre-migration row cannot take IDENTIFY down for the whole plugin.
       digest: s.content_hash || sha256(`${s.name}@${s.version}`),
     })),
-    ...serversOf(entry).map((sv): Component => ({
+    ...serversOf(entry).map((sv): PluginComponent => ({
       kind: "server", name: sv.name, digest: sha256(`${sv.name}:${sv.path}`),
     })),
   ];
@@ -142,7 +138,7 @@ async function resolveSubject(pool: pg.Pool, plugin: string, version: string | u
 
   return {
     pluginId: head.plugin_id, origin: head.origin, declaredVersion: head.declared_version,
-    releasedDigest: head.digest, components, contentDigest: combinedDigest(components),
+    releasedDigest: head.digest, components, contentDigest: pluginContentDigest(components),
     sourceLocator: entry
       ? { kind: "catalog", owner: entry.owner, flow: entry.flow }
       : { kind: "unrecorded" },
@@ -163,7 +159,7 @@ async function subjectResponse(
 ): Promise<Record<string, unknown>> {
   const row = (await runner.query<{
     id: string; plugin: string; declared_version: string; content_digest: string;
-    component_manifest: Component[]; release_identity: Record<string, unknown>;
+    component_manifest: PluginComponent[]; release_identity: Record<string, unknown>;
     origin: string; owner_team: string | null; evolvable: boolean; release_owners: string[];
   }>(`
     select sv.id::text as id, p.name as plugin, sv.declared_version, sv.content_digest,
@@ -348,7 +344,7 @@ export function registerSubjectTools(server: McpServer): void {
       if ("error" in resolved) {
         return text(`ERROR: source ${source_locator} could not be read: ${resolved.error}`);
       }
-      const contentDigest = combinedDigest(resolved.components);
+      const contentDigest = pluginContentDigest(resolved.components);
 
       const principal = parseCaller(requestHeaders()).email;
       const outcome: IdempotencyOutcome<string> = await withIdempotency(

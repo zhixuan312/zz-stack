@@ -3,8 +3,9 @@
  *
  * COUPLED: the manifest shape is @zz/contracts' schema, not an interface declared here.
  */
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 
 /** Where the shelf lives. `/catalog` in the image, which is where it ships.
  *
@@ -264,4 +265,92 @@ export function skillText(flow: string, skill: string): string | null {
  * packager. */
 export function pluginName(flow: string): string {
   return flow.endsWith("-flow") ? flow.slice(0, -"-flow".length) : flow;
+}
+
+/** One entry of a plugin's component manifest. `kind: "config"` is part of the declared shape for
+ *  a component this catalog schema does not carry yet (deploy/environment declarations, say) —
+ *  none is emitted today because nothing in `CatalogManifest` represents one. */
+export interface PluginComponent {
+  readonly kind: "skill" | "server" | "flow" | "config";
+  readonly name: string;
+  readonly digest: string;
+}
+
+export const sha256 = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
+
+/** The refusal for a path that is a symlink, or null — `lstat`, so the link itself is judged and
+ *  never where it points. A path that does not exist is not this question's business.
+ *
+ *  Exported for zz-core's package reader, which asks it of the tarball's `package/` directory
+ *  before handing that directory here. */
+export function symlinkRefusal(path: string): { error: string } | null {
+  let linked: boolean;
+  try {
+    linked = lstatSync(path).isSymbolicLink();
+  } catch {
+    return null;
+  }
+  return linked
+    ? { error: `${basename(path)} is a symlink; a source's skills and flow.json are read only as real files and directories` }
+    : null;
+}
+
+/** The components of a plugin directory, read straight off disk: every SKILL.md under its
+ *  `skills/` subdirectory (the catalog's own convention) or under the directory itself when it
+ *  has none, plus whatever `flow.json` beside it declares — never through zz.skill_version, which
+ *  a third party never has a row in.
+ *
+ *  COUPLED: the one walk behind both `plugin_register` (zz-core, subject-source.ts) and the replay
+ *  launcher (packages/tools), so a subject's recorded digest and the digest a replay checks out
+ *  against are computed by the same code, and a symlink refused by one is refused by both.
+ *
+ *  An empty `components` is a directory with nothing to capture; each caller words that refusal
+ *  for its own source kind.
+ *
+ *  DELIBERATE: a top-level `skills` or `flow.json` that is a symlink is refused, not followed and
+ *  not skipped. The walk never follows a link it meets, but these two are opened by name, and
+ *  `readdirSync`/`readFileSync` follow a link they are handed — a cloned repository or an
+ *  extracted tarball carrying `skills -> /` would walk the host's filesystem. Refused rather than
+ *  skipped so the caller learns why a source they can see holds skills read as holding none. */
+export function pluginDirComponents(dir: string): { components: PluginComponent[] } | { error: string } {
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) return { error: `${dir} is not a directory` };
+  const linked = symlinkRefusal(join(dir, "skills")) ?? symlinkRefusal(join(dir, "flow.json"));
+  if (linked) return linked;
+  const skillsDir = existsSync(join(dir, "skills")) ? join(dir, "skills") : dir;
+  const components: PluginComponent[] = [];
+  const walk = (d: string): void => {
+    for (const f of readdirSync(d, { withFileTypes: true })) {
+      // Never followed: a symlink inside the directory could otherwise read any file on the host.
+      if (f.isSymbolicLink()) continue;
+      const abs = join(d, f.name);
+      if (f.isDirectory()) { walk(abs); continue; }
+      if (f.name !== "SKILL.md") continue;
+      // The digest is the file's own bytes, not a database row: a third party carries no
+      // zz.skill_version, so there is no content_hash column to defer to.
+      components.push({ kind: "skill", name: basename(dirname(abs)), digest: sha256(readFileSync(abs, "utf8")) });
+    }
+  };
+  if (existsSync(skillsDir)) walk(skillsDir);
+
+  const flowFile = join(dir, "flow.json");
+  if (existsSync(flowFile)) {
+    const got = manifestAt(flowFile);
+    if (got.manifest) {
+      for (const sv of got.manifest.servers ?? []) {
+        components.push({ kind: "server", name: sv.name, digest: sha256(`${sv.name}:${sv.path}`) });
+      }
+      components.push({
+        kind: "flow", name: got.manifest.name ?? basename(dir),
+        digest: sha256(JSON.stringify(got.manifest)),
+      });
+    }
+  }
+  return { components };
+}
+
+/** The whole-plugin digest: sha256 over the SORTED per-component digests, never over an order a
+ *  walk or a query happened to return them in — two captures of the same release must agree on
+ *  this digest however their components came back. */
+export function pluginContentDigest(components: readonly PluginComponent[]): string {
+  return sha256([...components.map((c) => c.digest)].sort().join("\n"));
 }

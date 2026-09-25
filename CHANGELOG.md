@@ -101,7 +101,8 @@ zz-stack 0.76.0 · console 0.19.0
   All are additive, except that `zz.assessment.family` and `reading` become nullable,
   `zz.release_attempt.plugin_id` becomes NOT NULL (backfilled from each attempt's base subject),
   and 088 deletes older duplicate `split = 'validation'` rows of `zz.candidate_evaluation`,
-  keeping the newest one that every reader already used.
+  keeping the newest one that every reader already used. 088 first re-points idempotency ledger
+  rows at the kept row, and also adds `zz.candidate.validating_since`.
 - **`ZZ_CATALOG_OWNER_TEAM` is now required** by `register-plugins`, which refuses to run
   without it. It names the team that owns this repository's catalog. Set it in `deploy/.env`.
 - `finding_record` now takes `(eval_run_id, finding{kind, pattern, owner_kind, ...},
@@ -122,32 +123,78 @@ zz-stack 0.76.0 · console 0.19.0
   `https://` to a public host, any package spec that is not a registry spec, and
   re-registering an existing version whose content has changed.
 - `_facts.json` that does not parse is now refused by name instead of being read as empty.
+  `initiative_close(initiative, "abandoned")` still works on such an initiative. To continue it
+  instead, an operator rewrites `<initiative>/_facts.json` in the team's store from
+  `zz.initiative_fact` (a JSON object of fact to value), or deletes it when that table has no
+  row for the initiative. The refusal text names both.
+- `initiative_status` with no argument lists an initiative with a damaged `_facts.json` as
+  `{initiative, damaged: true, error}` and still lists the rest.
+- `plugin_register` refuses any source whose top-level `skills` or
+  `flow.json` (or a package's `package/` directory) is a symlink. Git clones are pinned to the
+  addresses the host check resolved (git 2.x `http.curloptResolve`), and git, npm and tar now
+  run without blocking zz-core's event loop.
+- Version precedence follows semver everywhere a newest version is picked (`plugin_locate`
+  without a version, `release_apply`'s baseline): pre-release identifiers are compared field by
+  field, so `1.0.0-rc.10` is above `1.0.0-rc.9`, and a `v` prefix is not a version.
+- The plugin-directory walk and the whole-plugin digest moved to `@zz/catalog`
+  (`pluginDirComponents`, `pluginContentDigest`, `PluginComponent`, `sha256`); zz-core's
+  `subject-source.ts` no longer exports `Component` or `sha256`. Digests are unchanged.
+- Every `replay_*` tool refuses any `replay-` team credential, not only the run's own.
+  `replay_read` refuses a run's own credential without `role: actor`, and returns
+  `subject_content_digest` and `subject_release_identity`.
+- A verifier's `replay_read` refuses `role: evaluator` events and the events of a finished run.
+- A protocol dimension that is applicable needs a positive weight and must not carry a
+  `notApplicableReason`; one with `applicable: false` may have weight 0.
 - **Replay launcher:** it refuses to start on a host without a working `sandbox-exec` (macOS)
-  or `bwrap` (Linux), and there is no unsandboxed mode. `--ref` and `--verifier-token` are gone;
-  the verifier token is read from `VERIFIER_TOKEN` only. It clones the subject's release tag
-  `v<version>`, so a version with no tag cannot be replayed.
-- `replay_close` no longer accepts `result.score` or `result.guardrails`, refuses the run's own
-  replay-team credential and any principal but the one who started the run, and refuses a run
-  that is no longer live. New tool `replay_begin` moves a run to `running`. `replay_run.sandbox_ref`
-  now holds the release tag ref.
+  or `bwrap` with full namespace unsharing (Linux), and there is no unsandboxed mode. `--ref`
+  and `--verifier-token` are gone. It takes `--token-file` (required) and
+  `--verifier-token-file`, each a regular mode-0600 file the operator owns; the `REPLAY_TOKEN`
+  and `VERIFIER_TOKEN` environment variables are no longer read. It refuses `maxTurns` above 8.
+- A catalog subject replays from its release tag `v<version>`, so a version with no tag cannot
+  be replayed. A third-party subject replays from its captured source (the git commit, the npm
+  package with an integrity check, or a `local_dir` under the catalog), verified by content
+  digest; a mismatch fails the run. `replay_start`'s `worktree_ref` (and `replay_run.sandbox_ref`)
+  records that identity: `refs/tags/v<version>`, `git:<commit>`, `package:<integrity>` or
+  `local_dir:<locator>`.
+- A replay session cannot write its clone's `.git`, so a plugin skill that runs `git add`,
+  `commit` or `stash` behaves differently under replay. Completed runs' logs are deleted; failed
+  runs' logs are kept and swept after 7 days.
+- `replay_close` no longer accepts `result.score` or `result.guardrails`, refuses any principal
+  but the one who started the run, and refuses a run that is no longer live. New tool
+  `replay_begin` moves a run to `running`. `replay_run.sandbox_ref` now holds the release tag
+  ref.
 - `pat_issue` refuses a label that starts with `replay:`.
 - **Verifier tokens are bound to one allocation** (candidate, case set, proof split). Tokens
   minted before 088 are refused. A verifier-context `replay_start` refuses `case_id`; the server
   draws the case. `candidate_prove` and `release_verify` return `runs_required` as counts,
   `{ case_set_id, baseline, candidate }`. Proof-split `replay_read` returns case, score, cost and
   timing as null, and `replay_score` on a proof run returns no number.
-- A case set's proof split can be opened once. `candidate_record` enforces
-  `maxCandidatesPerGeneration` and `maxGenerations`. A missing or malformed `search_policy` is
-  refused instead of defaulting. Leakage is screened at the first `candidate_validate`; at proof,
-  an unclear or unavailable leakage answer is `not_established`.
+- Opening proof claims a case set's proof split. The split stays spent on `proof_passed`,
+  `proof_failed`, or a `not_established` proof after any proof run existed. It is released when
+  no proof run was registered or the only gap was an unavailable leakage answer.
+  `candidate_prove` answers carry `proof_split: spent|released`.
+- `candidate_record` enforces `maxCandidatesPerGeneration` and `maxGenerations`. A missing or
+  malformed `search_policy` is refused instead of defaulting, and so is one with non-integer or
+  zero generation/candidate bounds or a negative `minMeaningfulEffect`. Leakage is screened at
+  the first `candidate_validate`; at proof, an unclear or unavailable leakage answer is
+  `not_established`.
+- A candidate left `validating` for more than 45 minutes (a killed build) returns to `valid` or
+  `recorded` at the next `candidate_validate` or `candidate_search`.
 - **Release authority is team membership.** `release_apply`, `release_record` and
   `release_verify` refuse `not_owner`; `document_approve` on `improvement.md` refuses a signer
   outside an owner team, and with `on_behalf_of` also the recording session. The approved
   `improvement.md` must cite its `release_attempt_id` and digest. New refusals:
   `release_in_progress`, `not_newer`, `not_rolled_back`, `prior_not_current`.
-- `zz-tool release-apply` requires `--release-version` and gains `--base-ref` and `--reconcile`;
-  `zz-tool release-rollback` requires `{version}` in `--rollback-cmd`. `release_ref` is now the
-  release commit sha. `plugin_locate` without a version skips rolled-back versions.
+- `zz-tool release-apply` requires `--release-tag` in apply and `--reconcile` modes; `--base-tag`
+  and `--commit` are new. `release_ref` is the commit the published release tag names (the tag
+  must be on origin, or local in a repo with no remote, and contain the candidate's commit).
+  `--reconcile` records `released` only when the release tag contains the branch commit, and
+  never `failed` while any tag carries it. `zz-tool release-rollback` requires `{version}` in
+  `--rollback-cmd`. `plugin_locate` without a version skips rolled-back versions.
+- `release_prepare` refuses a caller outside the owner teams (`not_owner`); `release_apply`
+  applies the attempt `improvement.md` cites, not the newest prepared one.
+- The release baseline is the newest non-retracted `zz.plugin_version` by semver, captured or
+  not; a newer uncaptured head is `stale_baseline`.
 
 ## [0.75.0] — 2026-09-24
 

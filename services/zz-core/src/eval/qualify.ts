@@ -24,7 +24,10 @@ import {
   gatherCountedEvidence, labelEvidence, mappingFor, parseLabelMappings, type SnapshotRow,
 } from "./qualify-evidence.js";
 import { qualificationState, resolveThresholds, type LadderEvidence } from "./qualify-ladder.js";
-import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import {
+  decideBeforeWork, withIdempotency, type IdempotencyOutcome, type MutatorOutcome,
+} from "./idempotency.js";
+import { insertEvaluatorAnswer, type AskedEvaluatorAnswer } from "../semantic.js";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
 import { db } from "../platform-db.js";
@@ -123,32 +126,45 @@ function respond(counted: LadderEvidence, state: string, reason: string | null, 
   };
 }
 
-/** The one shape both `evaluator_qualify`'s own transaction and a direct caller need to write
- *  the row through: a plain pool for a standalone caller, a transaction's own client when the
- *  write has to commit atomically with something else. Mirrors `idempotency.ts`'s own
- *  `Queryable` — an explicit generic signature, not `Pick<pg.Pool, "query">`, which TypeScript
- *  infers as a non-callable union over `Pool`'s overloads. */
+/** Anything `recordQualification` writes through: a transaction's own client (the ledger
+ *  transaction in `evaluator_qualify`, or the case-set build's in `replay-cases.ts`). Mirrors
+ *  `idempotency.ts`'s own `Queryable` — an explicit generic signature, not
+ *  `Pick<pg.Pool, "query">`, which TypeScript infers as a non-callable union over `Pool`'s
+ *  overloads. */
 interface Writer {
   query<R extends pg.QueryResultRow = pg.QueryResultRow>(text: string, values?: unknown[]): Promise<pg.QueryResult<R>>;
 }
 
-/** The qualification run itself (FR-16), factored out of the tool body so `replay-derive.ts`
- *  (Task I-14, FR-60 rule 1) can run it directly — "`replay_case_set_build` runs
- *  `evaluator_qualify` for it first when no such qualification exists" is this function, called
- *  with no `idempotency_key` of its own because it runs at most once per non-replayed
- *  `replay_case_set_build` call, itself already inside THAT tool's own FR-59 ledger transaction.
- *  `evaluator_qualify`'s own tool handler below is the other caller, inside its own ledger. */
-export async function performQualification(
-  p: pg.Pool, writer: Writer, protocolVersionId: string, evaluatorVersionId: string,
+/** One qualification run, decided and not yet written: the ladder's state, the evidence behind
+ *  it, and every evaluator answer asked on the way, in ask order. */
+export interface GatheredQualification {
+  readonly protocolVersionId: string;
+  readonly evaluatorVersionId: string;
+  readonly pluginId: string;
+  readonly state: string;
+  readonly reason: string | null;
+  readonly evidence: LadderEvidence;
+  readonly asked: readonly AskedEvaluatorAnswer[];
+}
+
+/** The qualification run itself (FR-16), split in two so no model call ever runs inside a
+ *  transaction: this half reads on the pool and asks every question (anchors, faults, controls,
+ *  stability — up to nine calls of up to ~100s each) and writes nothing; `recordQualification`
+ *  writes the answers and the row through the caller's transaction client. Two callers, the same
+ *  split: `evaluator_qualify` below, and `replay-derive.ts`'s `resolveQualification` (FR-60 rule
+ *  1's "runs `evaluator_qualify` for it first when no such qualification exists"), whose answers
+ *  `replay_case_set_build` records inside its own ledger transaction. */
+export async function gatherQualification(
+  p: pg.Pool, protocolVersionId: string, evaluatorVersionId: string,
   protocol: ProtocolContext, stableKey: string, principal: string,
-): Promise<QualifyResult> {
+): Promise<GatheredQualification> {
   const measure = await resolveMeasure(p, protocolVersionId, evaluatorVersionId);
   const { thresholds } = resolveThresholds(protocol.policy?.thresholds);
 
   const snapshot = measure ? await latestSnapshot(p, protocol.pluginId, false) : null;
   const foreignSnapshot = measure && snapshot ? await latestSnapshot(p, protocol.pluginId, true) : null;
 
-  const counted = await gatherCountedEvidence({
+  const { counts, asked } = await gatherCountedEvidence({
     evaluatorVersionId, principal, snapshot, foreignSnapshot,
     vocabulary: measure?.vocabulary ?? null,
   });
@@ -157,19 +173,26 @@ export async function performQualification(
     ? await labelEvidence(p, measure.measureId, evaluatorVersionId, mappingFor(mappings, stableKey))
     : null;
 
-  const evidence: LadderEvidence = { ...counted, labels };
+  const evidence: LadderEvidence = { ...counts, labels };
   const { state, reason } = qualificationState(evidence, thresholds);
+  return { protocolVersionId, evaluatorVersionId, pluginId: protocol.pluginId, state, reason, evidence, asked };
+}
 
+/** The write half: every asked answer's `zz.assessment` row, then the one
+ *  `zz.eval_evaluator_qualification` row — all through `writer`, so they commit or roll back
+ *  together with the caller's ledger row. Database writes only; never asks. */
+export async function recordQualification(writer: Writer, g: GatheredQualification): Promise<QualifyResult> {
+  for (const answer of g.asked) await insertEvaluatorAnswer(writer, answer);
   const row = (await writer.query<{ id: string }>(`
     insert into zz.eval_evaluator_qualification
       (evaluator_version_id, protocol_version_id, subject_scope, state, evidence, qualified_at)
     values ($1::uuid, $2::uuid, $3::jsonb, $4, $5::jsonb, now())
     returning id::text as id`,
-    [evaluatorVersionId, protocolVersionId, JSON.stringify({ plugin_id: protocol.pluginId }),
-     state, JSON.stringify({ ...evidence, reason })])).rows[0];
+    [g.evaluatorVersionId, g.protocolVersionId, JSON.stringify({ plugin_id: g.pluginId }),
+     g.state, JSON.stringify({ ...g.evidence, reason: g.reason })])).rows[0];
   if (!row) throw new Error("insert into zz.eval_evaluator_qualification produced no row");
 
-  return respond(evidence, state, reason, row.id);
+  return respond(g.evidence, g.state, g.reason, row.id);
 }
 
 export function registerEvaluatorQualifyTools(server: McpServer): void {
@@ -214,15 +237,24 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
 
       const principal = parseCaller(requestHeaders()).email;
 
-      const outcome: IdempotencyOutcome<QualifyResult> = await withIdempotency(
-        principal, "evaluator_qualify", idempotency_key,
-        { protocol_version_id, evaluator_version_id },
-        async (client): Promise<MutatorOutcome<QualifyResult>> => {
-          const result = await performQualification(
-            p, client, protocol_version_id, evaluator_version_id, protocol, stableKey, principal);
-          return { result, result_table: "zz.eval_evaluator_qualification", result_id: result.qualification_id };
-        },
-      );
+      // Every model call happens before the transaction: a retry is ruled out first (so it never
+      // re-asks), then the ladder asks on the pool, then the transaction only writes.
+      const args = { protocol_version_id, evaluator_version_id };
+      const prior = await decideBeforeWork(principal, "evaluator_qualify", idempotency_key, args);
+      let outcome: IdempotencyOutcome<QualifyResult>;
+      if (prior.replayed) {
+        outcome = prior;
+      } else {
+        const gathered = await gatherQualification(
+          p, protocol_version_id, evaluator_version_id, protocol, stableKey, principal);
+        outcome = await withIdempotency(
+          principal, "evaluator_qualify", idempotency_key, args,
+          async (client): Promise<MutatorOutcome<QualifyResult>> => {
+            const result = await recordQualification(client, gathered);
+            return { result, result_table: "zz.eval_evaluator_qualification", result_id: result.qualification_id };
+          },
+        );
+      }
 
       let result: QualifyResult;
       if (outcome.replayed) {

@@ -10,16 +10,23 @@
  * (`replay-runs.ts` + `packages/tools/src/replay/launch.ts`) already draws — and reports back
  * through `release_record`.
  *
- * The "currently released subject" FR-49 compares against is not a column anywhere. The same
- * plugin can be released by this eval system's own `release_apply` (recorded as a `released`
- * attempt) or by an ordinary platform release outside it (`zz.plugin_version`, written by
- * `register-plugins` from `plugins.lock.json`). Both are read, and the newer by SEMVER wins
- * (`newestSubject`, `release-rules.ts`) — never "this system's own release if one exists", which
- * went stale the moment an ordinary release moved past it, and never a text sort. A version a
- * rollback retracted (`retractedVersions`, the same rule `plugin_locate`'s head applies) is left
- * out of both sides. A catalog head that
- * `plugin_locate` never captured resolves to nothing, which the caller turns into an explicit
- * refusal rather than guessing a stale_baseline verdict.
+ * The "currently released subject" FR-49 compares against is not a column anywhere. It is the
+ * head of `zz.plugin_version` ALONE — every release registers there, this eval system's own
+ * (`release_record` records `released` only for a version `plugin_locate` found registered) and
+ * an ordinary platform release outside it (`register-plugins`, from `plugins.lock.json`) alike —
+ * the newest by semver (`newestVersion`, `release-rules.ts`, never a text sort or a SQL order),
+ * leaving out every version a rollback retracted (`retractedVersions`, the same rule
+ * `plugin_locate`'s head applies). DELIBERATE: never joined to `zz.eval_subject_version` to find
+ * the head — a version registered at deploy that `plugin_locate` never captured was invisible to
+ * that join, so a candidate based on 1.1.0 read 1.1.0 as current and shipped over 1.2.0. The
+ * capture is looked up only AFTER the head is settled: a head newer than the base is
+ * stale_baseline whether or not it was ever captured; a head that is not newer but has no capture
+ * is refused explicitly (`plugin_locate` it first), never guessed.
+ *
+ * Which attempt applies: the one the approved `<initiative>/improvement.md` cites — never "the
+ * newest prepared", which anybody calling `release_prepare` again could move out from under the
+ * owners' approval. Only when the document cites no attempt yet does the newest prepared one
+ * stand in, so its `approval_required` can still be recorded.
  *
  * Approval binding: read `<initiative>/improvement.md` off disk and require `status: approved`,
  * the body citing THIS attempt's `release_attempt_id` (and no other), and quoting the attempt's
@@ -45,7 +52,7 @@ import type pg from "pg";
 
 import type { MutatorOutcome } from "./idempotency.js";
 import { retractedVersions } from "./release-retracted.js";
-import { applyingRefusal, approvedOwners, newestSubject, releaseDecision, STALE_APPLYING_MS } from "./release-rules.js";
+import { applyingRefusal, approvedOwners, compareSemver, newestVersion, releaseDecision, STALE_APPLYING_MS } from "./release-rules.js";
 import { safeName, safePath } from "../paths.js";
 import { Refusal } from "../refusal.js";
 import { citedReleaseAttempt, memberTeams } from "../release-owners.js";
@@ -77,36 +84,51 @@ interface PreparedAttempt {
   readonly approved_patch_digest: string;
 }
 
-/** The newest attempt `release_prepare` left `prepared` for this candidate. `release_prepare`
- *  inserts a fresh row on every call with a fresh key, so more than one can exist; the newest is
- *  the one its improvement.md was written for, and the approval must cite it. */
-async function loadPreparedAttempt(runner: Queryable, candidateId: string): Promise<PreparedAttempt | null> {
+/** The attempt this call applies — see the module note. `cited` is the one attempt the
+ *  improvement.md body names: it must be a prepared attempt of THIS candidate, or the call is
+ *  refused rather than silently applying some other row. With no citation yet, the newest
+ *  prepared attempt stands in so `approval_required` is recorded against it. */
+async function loadPreparedAttempt(
+  runner: Queryable, candidateId: string, cited: string | null,
+): Promise<PreparedAttempt | null> {
   const row = (await runner.query<PreparedAttempt>(`
     select id::text as id, required_owners, approved_patch_digest,
            base_subject_version_id::text as base_subject_version_id
       from zz.release_attempt
-     where candidate_id = $1::uuid and status = 'prepared'
-     order by created_at desc limit 1`, [candidateId])).rows[0];
+     where candidate_id = $1::uuid and status = 'prepared' and ($2::uuid is null or id = $2::uuid)
+     order by created_at desc limit 1`, [candidateId, cited])).rows[0];
+  if (!row && cited) {
+    throw new Refusal(
+      `ERROR: improvement.md cites release_attempt ${cited}, which is not a prepared attempt of ` +
+      `candidate ${candidateId} — it belongs to another candidate or already left 'prepared'; ` +
+      "nothing was applied");
+  }
   return row ?? null;
 }
 
-/** See the module note. Null means neither source has an answer. This system's own releases are
- *  listed first so an equal version resolves to the subject this system recorded. Also what
- *  `release_record(rolled_back)` asks, inside its own transaction, to confirm the prior subject is
- *  current once the rolled-back version is retracted. */
-export async function currentReleasedSubjectVersionId(runner: Queryable, pluginId: string): Promise<string | null> {
-  const released = (await runner.query<{ id: string; declared_version: string }>(`
-    select sv.id::text as id, sv.declared_version
-      from zz.release_attempt ra
-      join zz.eval_subject_version sv on sv.id = ra.released_subject_version_id
-     where ra.plugin_id = $1::uuid and ra.status = 'released'`, [pluginId])).rows;
-  const catalog = (await runner.query<{ id: string; declared_version: string }>(`
-    select distinct on (pv.version) sv.id::text as id, sv.declared_version
-      from zz.plugin_version pv
-      join zz.eval_subject_version sv on sv.plugin_id = pv.plugin_id and sv.declared_version = pv.version
-     where pv.plugin_id = $1::uuid and pv.version <> all($2::text[])
-     order by pv.version, sv.captured_at desc`, [pluginId, await retractedVersions(runner, pluginId)])).rows;
-  return newestSubject([...released, ...catalog])?.id ?? null;
+interface ReleasedHead {
+  readonly version: string;
+  /** The newest capture of that version, or null when `plugin_locate` never captured it. */
+  readonly subject_id: string | null;
+}
+
+/** See the module note: the head of `zz.plugin_version` alone, by semver, retracted versions left
+ *  out, and only then its capture. Null when the plugin has no registered version at all. Also
+ *  what `release_record(rolled_back)` asks, inside its own transaction, to confirm the prior
+ *  version is current once the rolled-back one is retracted. Sequential queries: `runner` may be
+ *  one PoolClient, which runs one query at a time. */
+export async function currentReleasedHead(runner: Queryable, pluginId: string): Promise<ReleasedHead | null> {
+  const retracted = await retractedVersions(runner, pluginId);
+  const versions = (await runner.query<{ version: string }>(`
+    select pv.version from zz.plugin_version pv
+     where pv.plugin_id = $1::uuid and pv.version <> all($2::text[])`, [pluginId, retracted])).rows;
+  const version = newestVersion(versions.map((r) => r.version));
+  if (version === null) return null;
+  const captured = (await runner.query<{ id: string }>(`
+    select id::text as id from zz.eval_subject_version
+     where plugin_id = $1::uuid and declared_version = $2
+     order by captured_at desc limit 1`, [pluginId, version])).rows[0];
+  return { version, subject_id: captured?.id ?? null };
 }
 
 /** The commit the base subject was released from — where the CLI's worktree starts, never the
@@ -137,23 +159,36 @@ async function proofEligible(runner: Queryable, candidateId: string): Promise<bo
   return !!row?.aggregate_score?.release_eligible;
 }
 
-/** The owner teams `<initiative>/improvement.md` approves for this attempt — see the module note
- *  and `approvedOwners` for what binds an approval to it. */
-async function improvementApprovals(
-  runner: Queryable, initiative: string, attempt: PreparedAttempt,
-): Promise<string[]> {
+/** What `planApply` reads of `<initiative>/improvement.md`: its gate status, its signer and its
+ *  body. A parameter of `planApply` so a check can hand it a document without a request context
+ *  (`safePath` resolves the caller's team store from the request). */
+interface ImprovementDoc {
+  readonly status: string | undefined;
+  readonly approved_by: string;
+  readonly body: string;
+}
+type ReadImprovementDoc = (initiative: string) => Promise<ImprovementDoc | null>;
+
+async function readImprovementDoc(initiative: string): Promise<ImprovementDoc | null> {
   const badInitiative = safeName(initiative, "initiative");
   if (badInitiative) throw new Refusal(badInitiative);
   const target = await safePath(`${initiative}/improvement.md`);
-  if (!existsSync(target)) return [];
+  if (!existsSync(target)) return null;
   const raw = readFileSync(target, "utf8");
   const env = parseEnvelope(raw);
-  const body = documentBody(raw);
-  const approver = (env.approved_by ?? "").trim();
+  return { status: env.status, approved_by: (env.approved_by ?? "").trim(), body: documentBody(raw) };
+}
+
+/** The owner teams the document approves for this attempt — see the module note and
+ *  `approvedOwners` for what binds an approval to it. */
+async function improvementApprovals(
+  runner: Queryable, doc: ImprovementDoc | null, attempt: PreparedAttempt,
+): Promise<string[]> {
+  if (!doc) return [];
   return approvedOwners({
-    status: env.status, cited_attempt_id: citedReleaseAttempt(body), attempt_id: attempt.id,
-    quotes_digest: body.includes(attempt.approved_patch_digest),
-    approver_teams: approver ? await memberTeams(runner, approver) : [],
+    status: doc.status, cited_attempt_id: citedReleaseAttempt(doc.body), attempt_id: attempt.id,
+    quotes_digest: doc.body.includes(attempt.approved_patch_digest),
+    approver_teams: doc.approved_by ? await memberTeams(runner, doc.approved_by) : [],
     required_owners: attempt.required_owners,
   });
 }
@@ -220,7 +255,8 @@ function inProgressRefusal(
       `applying for over ${STALE_APPLYING_MS / 60_000} minutes, so the process applying it is gone. ` +
       "Reconcile it first — it records released if that release landed and failed if it did not: " +
       `zz-tool release-apply --reconcile ${held.attempt_id} --candidate ${heldCandidate} ` +
-      `--plugin ${pluginName} --release-version <the version its release command publishes> --repo <clone>`
+      `--plugin ${pluginName} --release-version <the version its release command publishes> ` +
+      "--release-tag <the tag that command pushes> --repo <clone>"
     : `ERROR: release_in_progress — release_attempt ${held.attempt_id} of ${pluginName} is applying ` +
       `now; candidate ${candidateId} may not apply until it records released or failed`);
 }
@@ -229,19 +265,21 @@ function inProgressRefusal(
  *  lock is xact-scoped and releases at COMMIT or ROLLBACK.
  *
  *  Two refusal shapes: anything with no persisted outcome (an unknown candidate, no prepared
- *  attempt, a caller who is no owner, an attempt already applying, an unresolvable current
- *  subject, a bad initiative) THROWS, so the transaction rolls back and the ledger records
- *  nothing; `releaseDecision`'s verdicts are RETURNED, because the row write they make has to
- *  commit and be ledgered. */
+ *  attempt, a cited attempt that is not this candidate's prepared one, a caller who is no owner,
+ *  an attempt already applying, no registered or no captured current subject, a bad initiative)
+ *  THROWS, so the transaction rolls back and the ledger records nothing; `releaseDecision`'s
+ *  verdicts are RETURNED, because the row write they make has to commit and be ledgered. */
 export async function planApply(
-  client: pg.PoolClient, candidateId: string, approvedPatchDigest: string, initiative: string,
-  principal: string,
+  client: Queryable, candidateId: string, approvedPatchDigest: string, initiative: string,
+  principal: string, readDoc: ReadImprovementDoc = readImprovementDoc,
 ): Promise<MutatorOutcome<ApplyResult>> {
   const candidate = await loadCandidateForApply(client, candidateId);
   if (!candidate) throw new Refusal(`ERROR: no candidate ${candidateId}`);
 
-  const subject = (await client.query<{ plugin_id: string; plugin: string; release_owners: string[] }>(`
-    select sv.plugin_id::text as plugin_id, pl.name as plugin, pl.release_owners
+  const subject = (await client.query<{
+    plugin_id: string; plugin: string; release_owners: string[]; declared_version: string;
+  }>(`
+    select sv.plugin_id::text as plugin_id, pl.name as plugin, pl.release_owners, sv.declared_version
       from zz.eval_subject_version sv join zz.plugin pl on pl.id = sv.plugin_id
      where sv.id = $1::uuid`, [candidate.base_subject_version_id])).rows[0];
   if (!subject) {
@@ -282,7 +320,8 @@ export async function planApply(
     throw inProgressRefusal(subject.plugin, held, heldCandidate, candidateId);
   }
 
-  const attempt = await loadPreparedAttempt(client, candidateId);
+  const doc = await readDoc(initiative);
+  const attempt = await loadPreparedAttempt(client, candidateId, doc ? citedReleaseAttempt(doc.body) : null);
   if (!attempt) {
     throw new Refusal(
       `ERROR: no prepared release_attempt for candidate ${candidateId} — call release_prepare ` +
@@ -290,20 +329,27 @@ export async function planApply(
       "refused or failed)");
   }
 
-  const [eligible, approvals, currentSubjectId] = await Promise.all([
-    proofEligible(client, candidateId),
-    improvementApprovals(client, initiative, attempt),
-    currentReleasedSubjectVersionId(client, subject.plugin_id),
-  ]);
-  if (!currentSubjectId) {
+  // One query at a time: `client` is a single PoolClient, which queues concurrent queries anyway
+  // and warns that doing so is deprecated.
+  const eligible = await proofEligible(client, candidateId);
+  const approvals = await improvementApprovals(client, doc, attempt);
+  const head = await currentReleasedHead(client, subject.plugin_id);
+  if (!head) {
     throw new Refusal(
-      `ERROR: cannot resolve this plugin's currently released subject_version — call ` +
-      "plugin_locate for its released version at least once before releasing a candidate against it");
+      `ERROR: ${subject.plugin} has no registered release in zz.plugin_version, so there is no ` +
+      "currently released subject to compare this candidate's base against");
+  }
+  // A head newer than the base is stale whether or not it was captured; one that is not newer
+  // must be captured, or there is nothing to compare the base against (module note).
+  const headIsNewer = compareSemver(head.version, subject.declared_version) > 0;
+  if (!headIsNewer && !head.subject_id) {
+    throw new Refusal(
+      `ERROR: ${subject.plugin} ${head.version} is registered but was never captured — call ` +
+      `plugin_locate for ${subject.plugin} ${head.version} before releasing a candidate against it`);
   }
 
   const decision = releaseDecision({
-    current_subject_id: currentSubjectId,
-    base_subject_id: attempt.base_subject_version_id,
+    base_is_current: !headIsNewer && head.subject_id === attempt.base_subject_version_id,
     approved_patch_digest: approvedPatchDigest,
     patch_digest: candidate.patch_digest,
     required_owners: attempt.required_owners,

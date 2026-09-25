@@ -11,7 +11,7 @@
  *
  * Each session runs with an allowlisted environment and a temporary `HOME` (`candidateEnv`,
  * plan.ts): the launcher's own credentials — the principal's PAT and the proof allocation's
- * `VERIFIER_TOKEN` — stay in this process and are used only for its own MCP calls.
+ * verifier token — stay in this process and are used only for its own MCP calls.
  *
  * Two contract adjustments this task made to `replay_read` (agreed with the orchestrator; see
  * the worker report for the full reasoning) are what this file leans on rather than re-deriving:
@@ -35,16 +35,18 @@
  * below are local mirrors of that door's JSON, the same way `ops/call.ts` never imports a
  * service's types — `packages/tools` only ever crosses that boundary over MCP, on the wire.
  */
-import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import {
+  appendFileSync, closeSync, constants as fsConstants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync,
+  readFileSync, realpathSync, rmSync, statSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { Mcp } from "@zz/mcp-client";
 
 import { die, optional, parseArgs, platformToken, required } from "../lib/cli.js";
-import { applyPatch, createWorktree, readReleaseLock, removeWorktree, type Worktree } from "./git.js";
+import { applyPatch, changedPaths, createWorktree, readReleaseLock, removeWorktree, type Worktree } from "./git.js";
 import {
   assertRoleEvents, candidateMcpConfig, candidatePrompt, idempotencyKey, MAX_TURNS_CAP, NO_MCP_CONFIG,
   refuseBeforeIO, releaseLockMismatch, simulatedPersonPersona, stillAsking, type RuntimeEnv,
@@ -53,6 +55,7 @@ import {
   detectSandbox, installPlugin, makeSessionHome, removeSessionHome, runTurn, sandboxContext, writeMcpConfig,
   type SandboxContext,
 } from "./session.js";
+import { fetchThirdParty, sourceKind, thirdPartyPlan, wrapAsMarketplace } from "./third-party.js";
 
 // -------------------------------------------------------------------------------------------
 // Shapes carried over the wire — see the module note above for why these are local, not imported.
@@ -80,6 +83,9 @@ interface ReplayReadResult {
    *  `release_identity.released_digest` it was captured at — what picks the clone's tag and what
    *  that tag's `plugins.lock.json` must agree with. For a candidate run, the base subject's. */
   subject_declared_version?: string | null; subject_release_digest?: string | null;
+  /** A third-party subject's own capture (`third-party.ts`): its whole-plugin digest and the
+   *  release identity (`resolved_commit` / `tarball_integrity`) its source is fetched at. */
+  subject_content_digest?: string | null; subject_release_identity?: Record<string, unknown> | null;
   /** I-18: the recorded candidate's own patchset, present only for a `candidate_id` run —
    *  `replay-runs.ts` resolves `subject_plugin` for a candidate the same way it always did for
    *  a `subject_version_id` (through the base subject `candidate_record` bound at recording
@@ -115,7 +121,10 @@ export interface LaunchOpts {
 // the run itself. An operator-chosen ref would measure whatever that ref holds under the
 // subject's name.
 
-export interface LaunchResult { readonly status: "completed" | "failed"; readonly logPath: string }
+/** `logPath` is null once a completed run's logs are deleted (`LOG_RETENTION_MS`); a failed run
+ *  keeps them for the operator. `verifier` is the verifier step's own outcome line — on a
+ *  completed run, the only place it survives the log. */
+export interface LaunchResult { readonly status: "completed" | "failed"; readonly logPath: string | null; readonly verifier?: string }
 
 /** `replay_close`'s own `result.produced` shape (migration 080), mirrored here — never imported
  *  from `services/zz-core/dist`, per the module note above: `packages/tools` crosses that
@@ -140,6 +149,26 @@ const ARTIFACT_HEAD_CHARS = 2000;
 const MAX_ARTIFACTS = 20;
 const REDACTED = "[REDACTED]";
 
+/** Logs retention. Both logs (the candidate's stream-json and the oracle-informed `.person`
+ *  transcript) are deleted as soon as `replay_close` has taken a completed run — `produced` is
+ *  the record from then on. A failed run's logs stay for the operator to read, and every launch
+ *  first sweeps whatever any earlier one left older than this. */
+const LOG_RETENTION_MS = 7 * 24 * 60 * 60_000;
+
+function sweepOldLogs(logDir: string, now: number): void {
+  for (const name of readdirSync(logDir)) {
+    const p = join(logDir, name);
+    try {
+      if (now - statSync(p).mtimeMs > LOG_RETENTION_MS) rmSync(p, { force: true });
+    } catch { /* a concurrent launch removed it first */ }
+  }
+}
+
+function removeLogs(logPath: string): void {
+  rmSync(logPath, { force: true });
+  rmSync(`${logPath}.person`, { force: true });
+}
+
 /** Every occurrence of every secret this run held, replaced — never partial, never case-folded:
  *  a token is exact bytes or it is not the token. Applied to both the transcript and every
  *  artifact head before `produced` ever leaves this process. Exported for
@@ -156,37 +185,56 @@ export function redact(s: string, secrets: readonly string[]): string {
 /** What the session left behind in its own worktree, bounded and redacted — `replay_close`'s own
  *  `result.produced`, and the only thing `replay_score` (Task I-19's own fix) has to judge. Never
  *  throws: a worktree `git status` cannot read (already torn down, an unexpected git failure) is
- *  not a reason to fail the whole launch — the transcript alone is still worth storing. */
-function collectProduced(worktreePath: string, transcript: string, secrets: readonly string[]): ProducedRecord {
-  let statusOut = "";
+ *  not a reason to fail the whole launch — the transcript alone is still worth storing.
+ *
+ *  Everything here reads a tree the candidate wrote, from OUTSIDE its sandbox, so every path is
+ *  hostile: `ln -s ~/.ssh/id_ed25519 leak` shows up in `git status` as `leak`. Each path is
+ *  judged by where it really lands (`realpathSync`, which also catches a symlinked parent
+ *  directory) and must stay inside the clone, and then opened `O_NOFOLLOW | O_NONBLOCK` and
+ *  `fstat`ed — only a regular file is read, so a symlink swapped in after the check, a FIFO or a
+ *  device is refused rather than followed or blocked on. Exported for
+ *  `checks/replay-produced-symlink.ts`. */
+export function collectProduced(worktreePath: string, transcript: string, secrets: readonly string[]): ProducedRecord {
+  let paths: string[] = [];
+  let root = worktreePath;
   try {
-    statusOut = execFileSync("git", ["status", "--porcelain"], {
-      cwd: worktreePath, encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "pipe"],
-    });
+    root = realpathSync(worktreePath);
+    paths = changedPaths(root);
   } catch { /* nothing to report — the transcript below still gets stored */ }
 
-  const paths = statusOut.split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean)
-    // The status code is always the first two characters ("??", " M", "A ", …); the path is
-    // everything after the first space, quoted by git when it holds a space of its own.
-    .map((l) => l.slice(l.indexOf(" ") + 1).trim().replace(/^"(.*)"$/, "$1"))
+  const kept = paths
     .filter((p) => p && !/^(node_modules|dist)\//.test(p) && !/\/(node_modules|dist)\//.test(p) && !p.startsWith(".git/"))
     .slice(0, MAX_ARTIFACTS);
 
-  const artifacts: ProducedArtifact[] = paths.map((rel) => {
-    try {
-      const buf = readFileSync(join(worktreePath, rel));
-      return {
-        path: rel, sha256: createHash("sha256").update(buf).digest("hex"), bytes: buf.length,
-        head: redact(buf.toString("utf8").slice(0, ARTIFACT_HEAD_CHARS), secrets),
-      };
-    } catch {
-      return { path: rel, sha256: "", bytes: 0, head: "(could not be read — removed, or not a regular file)" };
-    }
-  });
-
+  const artifacts: ProducedArtifact[] = [];
+  for (const rel of kept) {
+    const buf = readInside(root, rel);
+    if (!buf) continue;
+    artifacts.push({
+      path: rel, sha256: createHash("sha256").update(buf).digest("hex"), bytes: buf.length,
+      head: redact(buf.toString("utf8").slice(0, ARTIFACT_HEAD_CHARS), secrets),
+    });
+  }
   return { transcript: redact(transcript, secrets), artifacts };
+}
+
+/** `rel`'s bytes when it is a regular file really inside `root`; null for anything else — a
+ *  symlink, a path whose parent is one, a FIFO, a device, or a file that is gone. */
+function readInside(root: string, rel: string): Buffer | null {
+  const abs = join(root, rel);
+  let fd: number | undefined;
+  try {
+    if (!lstatSync(abs).isFile()) return null;
+    const real = realpathSync(abs);
+    if (!real.startsWith(`${root}/`)) return null;
+    fd = openSync(real, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK);
+    if (!fstatSync(fd).isFile()) return null;
+    return readFileSync(fd);
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
 }
 
 /** The one probe this function spawns is the sandbox's own trial run (`detectSandbox`): whether
@@ -245,20 +293,48 @@ async function beginRun(mcp: Mcp, replayRunId: string): Promise<void> {
   if (/^ERROR[: ]/.test(said)) throw new Error(`replay_begin refused: ${said}`);
 }
 
-/** Which tag to clone and what digest it must carry. Only a catalog subject has a release in
- *  this repository at all; a third-party subject's source lives wherever `plugin_register` read
- *  it from, and installing this repository's bytes under its name would score the wrong plugin. */
+/** Which tag to clone and what digest it must carry — a catalog subject only, whose release is a
+ *  tag in this repository. A third-party subject is fetched from its own source instead
+ *  (`fetchSubject`); installing this repository's bytes under its name would score the wrong plugin. */
 function subjectRelease(read: ReplayReadResult): { declaredVersion: string; releasedDigest: string } {
-  const kind = (read.subject_source_locator as { kind?: unknown } | null)?.kind;
-  if (kind !== "catalog") {
-    throw new Error(`launchReplay: subject source is ${String(kind ?? "unrecorded")}, not this ` +
-      "repository's catalog — only a catalog plugin's release can be cloned from --repo");
-  }
   if (!read.subject_declared_version || !read.subject_release_digest) {
     throw new Error("launchReplay: replay_read carried no subject_declared_version/subject_release_digest " +
       "— the subject's release cannot be pinned");
   }
   return { declaredVersion: read.subject_declared_version, releasedDigest: read.subject_release_digest };
+}
+
+/** A catalog subject: a standalone clone of `--repo` at the subject's release tag, whose
+ *  `plugins.lock.json` must carry the digest the subject was captured at. */
+function cloneCatalogSubject(read: ReplayReadResult, start: ReplayStartResult, repoRoot: string, plugin: string): Worktree {
+  const release = subjectRelease(read);
+  const worktree = createWorktree(repoRoot, start.team_slug, release.declaredVersion);
+  // replay_start recorded the tag it expected this clone to sit at; the two must agree, or the
+  // run's own record names bytes this launch did not install.
+  if (start.worktree_ref !== worktree.ref) {
+    removeWorktree(worktree);
+    throw new Error(`launchReplay: replay_start recorded ${start.worktree_ref} but the subject resolves to ${worktree.ref}`);
+  }
+  const mismatch = releaseLockMismatch(readReleaseLock(worktree.path), plugin, release.declaredVersion, release.releasedDigest);
+  if (mismatch) {
+    removeWorktree(worktree);
+    throw new Error(`launchReplay: ${mismatch}`);
+  }
+  return worktree;
+}
+
+/** A third-party subject (`plugin_register`'s git, package or local_dir source): fetched at the
+ *  identity it was captured at and checked against its content digest (`third-party.ts`), and —
+ *  like a catalog clone — refused when that identity is not the ref `replay_start` recorded. */
+function fetchSubject(read: ReplayReadResult, start: ReplayStartResult, repoRoot: string): Worktree {
+  const plan = thirdPartyPlan(read);
+  if (typeof plan === "string") throw new Error(`launchReplay: ${plan}`);
+  const worktree = fetchThirdParty(plan, repoRoot, start.team_slug);
+  if (start.worktree_ref !== worktree.ref) {
+    removeWorktree(worktree);
+    throw new Error(`launchReplay: replay_start recorded ${start.worktree_ref} but the subject resolves to ${worktree.ref}`);
+  }
+  return worktree;
 }
 
 async function closeRun(
@@ -304,9 +380,9 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
 
   // Never under `opts.repoRoot`: that is a real checkout, possibly shared with other work, and a
   // log file landing in it is a stray untracked file nobody asked for. `os.tmpdir()` outlives
-  // this function's own cleanup — the caller reads the log after the clone and session homes
-  // are already gone. The path is fixed before the `try` so the `catch` can always name it; the
-  // directory itself is created inside.
+  // this function's own cleanup, so a failed run's log is still there for the operator; a
+  // completed run's is deleted (`LOG_RETENTION_MS`). The path is fixed before the `try` so the
+  // `catch` can always name it; the directory itself is created inside.
   const logPath = join(tmpdir(), "zz-replay-logs", `${start.replay_run_id}.jsonl`);
   let worktree: Worktree | undefined;
   let candidateHome: ReturnType<typeof makeSessionHome> | undefined;
@@ -324,9 +400,10 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
     let sandbox: SandboxContext;
     [candidateHome, personHome, sandbox] = refuseBeforeIO(env, () => {
       const logDir = join(tmpdir(), "zz-replay-logs");
-      mkdirSync(logDir, { recursive: true });
+      mkdirSync(logDir, { recursive: true, mode: 0o700 });
+      sweepOldLogs(logDir, Date.now());
       // `env.sandbox` is non-null here — refuseBeforeIO has already refused a host without one.
-      const ctx = sandboxContext(env.sandbox!, opts.repoRoot, claudeBin, logDir);
+      const ctx = sandboxContext(env.sandbox!, opts.repoRoot, claudeBin);
       return [makeSessionHome({ replayToken: token, gatewayUrl }), makeSessionHome(), ctx] as const;
     });
 
@@ -351,17 +428,9 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
       throw new Error(`launchReplay: cannot resolve which plugin to install — ${why}`);
     }
 
-    const release = subjectRelease(actorRead);
-    worktree = createWorktree(opts.repoRoot, start.team_slug, release.declaredVersion);
-    // replay_start recorded the tag it expected this clone to sit at; the two must agree, or the
-    // run's own record names bytes this launch did not install.
-    if (start.worktree_ref !== worktree.ref) {
-      throw new Error(`launchReplay: replay_start recorded ${start.worktree_ref} but the subject resolves to ${worktree.ref}`);
-    }
-    appendFileSync(logPath, `# clone ${worktree.path} @ ${worktree.commit} (v${release.declaredVersion})\n`, "utf8");
-    const mismatch = releaseLockMismatch(
-      readReleaseLock(worktree.path), plugin, release.declaredVersion, release.releasedDigest);
-    if (mismatch) throw new Error(`launchReplay: ${mismatch}`);
+    const catalogSubject = sourceKind(actorRead) === "catalog";
+    worktree = catalogSubject ? cloneCatalogSubject(actorRead, start, opts.repoRoot, plugin) : fetchSubject(actorRead, start, opts.repoRoot);
+    appendFileSync(logPath, `# source ${worktree.ref} in ${worktree.path} @ ${worktree.commit}\n`, "utf8");
 
     // I-18: no candidate executes before its own row exists (FR-36), and that row is what this
     // reads — a candidate replay installs the BASE subject's plugin (just resolved above) and
@@ -378,7 +447,9 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
       appendFileSync(logPath, `# applied candidate ${actorRead.candidate_id}'s patch into ${worktree.path}\n`, "utf8");
     }
 
-    installPlugin(claudeBin, candidateHome, sandbox, worktree.path, plugin);
+    // A catalog clone is its own marketplace; a third-party plugin is wrapped in a one-plugin one.
+    const marketplaceRoot = catalogSubject ? worktree.path : wrapAsMarketplace(worktree, plugin, candidateHome.root);
+    installPlugin(claudeBin, candidateHome, sandbox, marketplaceRoot, plugin);
     const candidateMcpPath = writeMcpConfig(
       candidateHome.configDir, candidateMcpConfig(plugin, gatewayUrl, token, clientName));
     const personMcpPath = writeMcpConfig(personHome.configDir, NO_MCP_CONFIG);
@@ -412,9 +483,8 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
       ownMcp, start.replay_run_id, "completed", "candidate and simulated-person sessions finished", produced);
 
     const verifierNote = await attemptVerifier(ownMcp, start.replay_run_id);
-    appendFileSync(logPath, `# ${verifierNote}\n`, "utf8");
-
-    return { status: "completed", logPath };
+    removeLogs(logPath);
+    return { status: "completed", logPath: null, verifier: verifierNote };
   } catch (err) {
     const reason = (err as Error).message;
     try {
@@ -433,30 +503,49 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
 }
 
 // -------------------------------------------------------------------------------------------
-// CLI: `node packages/tools/dist/replay/launch.js --run <replay_run_id> --repo <path>`
+// CLI: `node packages/tools/dist/replay/launch.js --run <replay_run_id> --repo <path>
+//        --token-file <path> [--verifier-token-file <path>]`
 //
-// The CLI's own argv is fixed by the plan (`--run`, `--repo`), which is narrower than
-// `launchReplay`'s own `start: ReplayStartResult` — in particular `replay_start`'s `token` and
-// `dependency_modes` are not among replay_read's fields, so a CLI-driven run reads what it can
-// from `replay_read` and takes the run-scoped token from `$REPLAY_TOKEN`. A caller that already
-// holds the full `ReplayStartResult` (the IMPROVE skill, immediately after its own `replay_start`
-// call) should call `launchReplay` directly rather than round-tripping through this CLI — this
-// entry point exists for the npm script and for a person re-running a launch by hand.
+// The CLI's own argv is narrower than `launchReplay`'s own `start: ReplayStartResult` — in
+// particular `replay_start`'s `token` and `dependency_modes` are not among replay_read's fields,
+// so a CLI-driven run reads what it can from `replay_read` and takes the run-scoped token from a
+// file. A caller that already holds the full `ReplayStartResult` should call `launchReplay`
+// directly rather than round-tripping through this CLI.
+//
+// DELIBERATE: tokens arrive only as files, never argv or environment. argv is visible in `ps`
+// and shell history; an environment variable is readable from `/proc/<pid>/environ` (or `ps eww`)
+// by any process of the same user. The file must be a regular file owned by this user with no
+// group or other permission bits (`umask 077` before writing it) — anything looser is refused,
+// because a token another user could read is already spent. The launcher reads it once and never
+// deletes it; the skill that wrote it does.
+
+function readTokenFile(path: string, what: string): string {
+  let st;
+  try { st = lstatSync(path); } catch { return die(`${what}: ${path} does not exist`); }
+  if (!st.isFile()) die(`${what}: ${path} is not a regular file`);
+  if (typeof process.getuid === "function" && st.uid !== process.getuid()) die(`${what}: ${path} is not owned by you`);
+  if ((st.mode & 0o077) !== 0) {
+    die(`${what}: ${path} is readable by others (mode ${(st.mode & 0o777).toString(8)}) — write it under umask 077`);
+  }
+  const token = readFileSync(path, "utf8").trim();
+  if (!token) die(`${what}: ${path} is empty`);
+  return token;
+}
 
 async function cliMain(argv: string[]): Promise<number> {
   const args = parseArgs(argv);
   const replayRunId = required(args, "run", "the replay_run_id from replay_start");
-  const repoRoot = required(args, "repo", "the repository to worktree from");
+  const repoRoot = required(args, "repo", "the repository to clone from");
   const claudeBin = optional(args, "claude-bin", "path to the claude binary") ?? undefined;
   const gatewayUrl = optional(args, "gateway", "the gateway base, e.g. http://localhost:18000") ?? undefined;
   const model = optional(args, "model", "the model for both sessions") ?? undefined;
-  const token = (process.env.REPLAY_TOKEN ?? "").trim();
-  if (!token) die("REPLAY_TOKEN is required: the run-scoped PAT replay_start returned for this run");
-  // Task I-21's own addition: a proof run's own case is split: proof, sealed from a
-  // context: "search" reader whoever asks, so this needs the verifier_token candidate_prove
-  // minted for the run's allocation. Environment only, never a flag: argv is visible in `ps`,
-  // shell history and logs. It stays in this process — `candidateEnv` never passes it on.
-  const verifierToken = (process.env.VERIFIER_TOKEN ?? "").trim() || undefined;
+  const token = readTokenFile(
+    required(args, "token-file", "a mode-0600 file holding the run-scoped PAT replay_start returned"), "--token-file");
+  // A proof run's own case is split: proof, sealed from a context: "search" reader whoever asks,
+  // so it needs the verifier_token candidate_prove minted for the run's allocation. It stays in
+  // this process — `candidateEnv` never passes it on.
+  const verifierFile = optional(args, "verifier-token-file", "a mode-0600 file holding candidate_prove's verifier_token");
+  const verifierToken = verifierFile ? readTokenFile(verifierFile, "--verifier-token-file") : undefined;
 
   const base = (gatewayUrl ?? process.env.ZZ_URL ?? "").replace(/\/+$/, "");
   if (!base) die("no gateway: pass --gateway or set ZZ_URL");

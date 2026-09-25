@@ -15,7 +15,8 @@
  *     'recorded'`, ready for the SAME `candidate_validate` call (leakage screen, build, replay)
  *     any other candidate goes through. It joins the search's current generation
  *     (`search-rules.ts`), never "its parents' generation + 1" — composition depth is not a
- *     search round;
+ *     search round — and only when `generationCapRefusal` would let `candidate_record` add one
+ *     there, so composition never runs a search past maxGenerations;
  *   - reduces every candidate with a stored validation evaluation to `selection.ts`'s pure
  *     `paretoFrontier`, and, once the protocol's own liveness bound is reached, to `selectFinal`
  *     over the frontier members whose verdict is `improves` or an accepted pruning trade-off —
@@ -50,6 +51,7 @@ import { writeBranchFacts } from "./protocol.js";
 import {
   generationCapRefusal, parseSearchPolicy, searchGeneration, type GenerationMember, type GenerationState,
 } from "./search-rules.js";
+import { releaseStaleValidating } from "./candidate-validate.js";
 import { Refusal } from "../refusal.js";
 
 type Runner = pg.Pool | pg.PoolClient;
@@ -504,20 +506,28 @@ export async function runCandidateSearch(
     };
   }
 
+  // A candidate whose validating process died mid-build would keep its generation unsettled
+  // forever; its lease is released first (candidate-validate.ts).
+  await releaseStaleValidating(p, { improvementRunId });
+
   const outcome: IdempotencyOutcome<{ status: string }> = await withIdempotency(
     principal, "candidate_search", idempotencyKey, { improvement_run_id: improvementRunId },
     async (client): Promise<MutatorOutcome<{ status: string }>> => {
+      // The same run lock `recordGenerationFor` takes, first: a composed child and a concurrent
+      // candidate_record cannot both take a generation's last slot.
+      await client.query("select 1 from zz.improvement_run where id = $1::uuid for update", [improvementRunId]);
       const candidates = await loadCandidates(client, improvementRunId);
       const caseSetId = await caseSetIdFor(client, improvementRunId);
       const caseIds = caseSetId ? await loadValidationCaseIds(client, caseSetId) : [];
       let evaluations = await loadValidationEvaluations(client, candidates.map((c) => c.id));
 
       // 1. Compose at most one new child from two disjoint, already-valid candidates (FR-39),
-      // into the generation a recorded candidate would join — skipped, never refused, when that
-      // generation is already full.
+      // into the generation a recorded candidate would join — only where `candidate_record`
+      // itself could record one (`generationCapRefusal`), so a composed child never fills a
+      // full generation or opens one past maxGenerations. Skipped there, never refused.
       const pair = findComposablePair(candidates);
       const gen = generationOf(candidates, evaluations);
-      if (pair && gen.nextCount < policy.maxCandidatesPerGeneration) {
+      if (pair && generationCapRefusal(gen, policy) === null) {
         const composed = await composeCandidate(
           client, improvementRunId, subject.subject_version_id, subject.component_manifest,
           subject.release_owners, pair[0], pair[1], principal, gen.next);

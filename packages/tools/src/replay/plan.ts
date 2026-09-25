@@ -138,6 +138,25 @@ export function releaseRefFor(declaredVersion: string): string {
   return `refs/tags/${releaseTagFor(declaredVersion)}`;
 }
 
+/** Ahead of every git subcommand the launcher runs (`git.ts`'s one `git()` helper). The clone's
+ *  working tree is the candidate's to write, so its `.git/config` is untrusted input once a
+ *  session has run — the sandbox keeps `.git` read-only (sandbox.ts), and this is the second
+ *  half: a command-line `-c` outranks every config file, so neither an fsmonitor command nor a
+ *  hooks directory can come from anywhere the candidate could have touched. */
+export const GIT_HARDENED_ARGS = ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"] as const;
+
+/** The whole environment a launcher git process runs with — never the launcher's own, which can
+ *  hold `ZZ_TOKEN`. No system or global config (a filter driver or `include.path` there would be
+ *  one more command git runs), no prompt, and no optional index write from `status`. */
+export function hardenedGitEnv(source: Readonly<Record<string, string | undefined>>): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const key of ["PATH", "LANG", "LC_ALL", "SystemRoot"]) {
+    const value = source[key];
+    if (value !== undefined) env[key] = value;
+  }
+  return { ...env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" };
+}
+
 export const gitCloneArgv = (source: string, dest: string): string[] =>
   ["clone", "--no-hardlinks", "--no-checkout", "--quiet", source, dest];
 export const gitRemoveOriginArgv = (): string[] => ["remote", "remove", "origin"];
@@ -147,6 +166,8 @@ export const gitResolveTagArgv = (tag: string): string[] =>
   ["rev-parse", "--verify", "--quiet", `refs/tags/${tag}^{commit}`];
 export const gitCheckoutDetachArgv = (commit: string): string[] =>
   ["checkout", "--detach", "--quiet", commit];
+/** NUL-separated, so a path with a space, a quote or a newline arrives as itself. */
+export const gitStatusArgv = (): string[] => ["status", "--porcelain", "-z", "--untracked-files=all"];
 
 interface LockEntryLike { readonly version?: unknown; readonly digest?: unknown }
 
@@ -235,8 +256,8 @@ export function claudeSessionArgv(opts: SessionArgvOpts): string[] {
 //
 // Every session runs `--permission-mode bypassPermissions`, so whatever is in its environment is
 // readable by the model and by any command it runs. The launcher's own environment holds the
-// principal's unbound PAT (`ZZ_TOKEN`), the run's `REPLAY_TOKEN` as handed to the CLI, the proof
-// allocation's `VERIFIER_TOKEN`, and a real `HOME` whose `~/.zz/token` is that same unbound PAT
+// principal's unbound PAT (`ZZ_TOKEN`), and in memory the run's replay token and the proof
+// allocation's verifier token (read from files, launch.ts's CLI note), and a real `HOME` whose `~/.zz/token` is that same unbound PAT
 // again. None of those may cross into a session: the candidate is the thing under test, and a
 // candidate that can reach the verifier's token or the principal's own credential can mark its own
 // homework. So nothing is inherited by default — only what `claude` needs to run and to reach
@@ -299,7 +320,11 @@ export const SESSION_EXEC_TIMEOUT_MS = 10 * 60_000;
 export const GIT_EXEC_TIMEOUT_MS = 60_000;
 /** The most interview rounds a launch may run; `launchReplay` refuses a larger `maxTurns`. */
 export const MAX_TURNS_CAP = 8;
-const GIT_STEPS = 6; // clone, remove origin, resolve tag, checkout, apply, status
+// The longest source path: a third-party package — npm pack, tar, init, add, commit, apply,
+// status — plus one to spare. A catalog clone takes six (clone, remove origin, resolve tag,
+// checkout, apply, status); a third-party git source six (init, fetch, checkout, verify, apply,
+// status).
+const GIT_STEPS = 8;
 
 /** Two install commands, the candidate's first turn, and one person turn plus one candidate turn
  *  per interview round — each bounded by `SESSION_EXEC_TIMEOUT_MS` — plus the git steps. */

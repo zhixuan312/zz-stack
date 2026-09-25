@@ -12,11 +12,13 @@
  * COUPLED: read by chain.ts resolving a flow, by document_write refusing an unopened name,
  * and by initiative_open itself — hence its own module rather than a corner of the tool.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { documentApplies } from "@zz/contracts";
+import { documentApplies, OUTCOME_STOPPED } from "@zz/contracts";
 
+import { db } from "./platform-db.js";
 import { Refusal } from "./refusal.js";
 import { isoToday } from "./write-guards.js";
 
@@ -106,7 +108,7 @@ export function openRecord(root: string, name: string): OpenRecord | null {
  *  the same split `recordAbandoned` below keeps from `closeInitiative`. Underscore-prefixed, so
  *  no listing treats it as a document.
  *
- *  DELIBERATE: not exported. `factsFor`/`writeFacts` below are the only two touching the
+ *  DELIBERATE: not exported. `factsOrDamaged`/`writeFacts` below are the only two touching the
  *  filename; a second module reaching for it directly would be reading or writing `_facts.json`
  *  a second way. */
 const FACTS_FILE = "_facts.json";
@@ -120,31 +122,117 @@ const FACTS_FILE = "_facts.json";
  * `writeFacts` below replaces the file atomically, so no reader ever sees a partial write, and a
  * file that does not parse is damage. Reading it as `{}` would turn every fact back into
  * `undetermined` — and a fact that was set once is exactly what the refuse-on-change rule
- * protects, so `{}` would let the next write record the opposite branch over it.
+ * protects, so `{}` would let the next write record the opposite branch over it. */
+export function factsFor(root: string, initiative: string): Record<string, string> {
+  const facts = factsOrDamaged(root, initiative);
+  if (facts) return facts;
+  throw new Refusal(
+    `ERROR: ${initiative}/${FACTS_FILE} is not a JSON object, so this initiative's branch facts ` +
+    "cannot be read. The platform writes that file whole and atomically, so this is damage, not " +
+    "a write in progress, and nothing reads or writes this initiative's branch until it is " +
+    `repaired. Two ways out. To stop the work: initiative_close("${initiative}", ` +
+    `"${OUTCOME_STOPPED}") — an abandon does not read this file. To continue it: an operator ` +
+    `rewrites ${initiative}/${FACTS_FILE} in the team's store on the platform host as a JSON ` +
+    "object of fact → value, from the platform database's mirror of it " +
+    `(select fact, value from zz.initiative_fact where team = '<team>' and initiative = ` +
+    `'${initiative}'), or deletes it when the mirror holds no row — each stage that decides a ` +
+    "fact records it again when it next runs.");
+}
+
+/** `factsFor`'s read without the throw: the facts, or null when the file is damaged.
+ *
+ * For the one act that must proceed over damage — an abandoned close, which asks no branch to
+ * have been decided (guards.ts `closeCheck`, initiative-close.ts). Without it a damaged file
+ * would leave the initiative unable to advance AND unable to stop, and nothing on the platform
+ * repairs it on its own.
  *
  * A non-string value under a fact name is dropped rather than coerced: `documentApplies` compares
  * strings, and a caller-written number or object is not one. */
-export function factsFor(root: string, initiative: string): Record<string, string> {
+function factsOrDamaged(root: string, initiative: string): Record<string, string> | null {
   const file = join(root, initiative, FACTS_FILE);
   if (!existsSync(file)) return {};
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(file, "utf8"));
   } catch {
-    parsed = null;
+    return null;
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Refusal(
-      `ERROR: ${initiative}/${FACTS_FILE} is not a JSON object, so this initiative's branch facts ` +
-      "cannot be read. The platform writes that file whole and atomically, so this is damage, not " +
-      "a write in progress — restore it from the record of what each stage decided before " +
-      "anything reads or writes this initiative's branch again.");
-  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
     if (typeof v === "string") out[k] = v;
   }
   return out;
+}
+
+/** The facts a write is judged against: `factsFor`'s, except that a write recording an abandon
+ *  (`stopping`, an `outcome:` of OUTCOME_STOPPED) gets null for a damaged file rather than a
+ *  throw — a stop asks no branch to have been decided, so each caller discharges what the facts
+ *  would have answered. One function so guards.ts's three fact readers and initiative-close.ts
+ *  agree on when damage is survivable. */
+export function factsForWrite(root: string, initiative: string, stopping: boolean): Record<string, string> | null {
+  return stopping ? factsOrDamaged(root, initiative) : factsFor(root, initiative);
+}
+
+const factsLockHeld = new AsyncLocalStorage<ReadonlySet<string>>();
+const inProcessFactsLocks = new Map<string, Promise<unknown>>();
+
+/** Run `fn` holding the one lock on this initiative's branch facts — for a read-check-write of
+ *  `_facts.json` (`writeBranchFacts`, eval/protocol.ts, and release.ts), which two concurrent
+ *  callers would otherwise both pass on the same old read and then both write.
+ *
+ *  Two layers: an in-process per-initiative queue, always, and inside it a session-level pg
+ *  advisory lock on its own pooled client when there is a database, so every zz-core process
+ *  sharing that database is serialized too.
+ *
+ *  DELIBERATE: the queue comes first even with a database. Without it every waiter in this
+ *  process would hold a pooled connection while blocked on the advisory lock, and a holder whose
+ *  `fn` queries the database would wait for a connection its own waiters hold — the pool is four.
+ *  With it, one connection per initiative per process waits, at most.
+ *
+ *  DELIBERATE: reentrant within one async call chain (AsyncLocalStorage), so a caller holding the
+ *  lock may call `writeBranchFacts`, which takes it too. Without that the inner call would queue
+ *  behind the outer one, forever.
+ *
+ *  Keyed on the initiative name alone, not the team: two teams' same-named initiatives share a
+ *  lock, which costs a wait and never a wrong answer. */
+export async function withInitiativeFactsLock<T>(initiative: string, fn: () => Promise<T>): Promise<T> {
+  const held = factsLockHeld.getStore();
+  if (held?.has(initiative)) return fn();
+  const inner = () => factsLockHeld.run(new Set([...(held ?? []), initiative]), fn);
+  const before = inProcessFactsLocks.get(initiative) ?? Promise.resolve();
+  const run = before.then(() => withFactsAdvisoryLock(initiative, inner));
+  const tail = run.catch(() => undefined);
+  inProcessFactsLocks.set(initiative, tail);
+  try {
+    return await run;
+  } finally {
+    if (inProcessFactsLocks.get(initiative) === tail) inProcessFactsLocks.delete(initiative);
+  }
+}
+
+/** The cross-process half of `withInitiativeFactsLock`: `fn` under a pg advisory lock, or `fn`
+ *  alone when this deployment has no database and so no second process to exclude. */
+async function withFactsAdvisoryLock<T>(initiative: string, fn: () => Promise<T>): Promise<T> {
+  const p = db();
+  if (!p) return fn();
+  const client = await p.connect();
+  const key = `initiative_facts:${initiative}`;
+  // A connection whose lock or unlock failed goes back to the pool destroyed (`release(err)`),
+  // never reused: it may still hold a session lock nobody will release.
+  try {
+    await client.query("select pg_advisory_lock(hashtext($1))", [key]);
+  } catch (err) {
+    client.release(err as Error);
+    throw err;
+  }
+  try {
+    return await fn();
+  } finally {
+    const failed = await client.query("select pg_advisory_unlock(hashtext($1))", [key])
+      .then(() => undefined, (err: Error) => err);
+    client.release(failed);
+  }
 }
 
 /** Write the durable branch facts, replacing whatever `factsFor` would have read back.
@@ -177,11 +265,11 @@ export function writeFacts(root: string, initiative: string, facts: Record<strin
  *  A document with no `when` is never ruled out — this returns `false` unconditionally, which is
  *  every flow that predates FR-58 (sdlc-flow, zz-access): asking never changes their answer. */
 export function closingDocRuledOut(
-  root: string, initiative: string,
   declared: { name: string; when?: Record<string, string | string[]> } | undefined,
+  facts: Record<string, string>,
 ): boolean {
   if (!declared?.when) return false;
-  return documentApplies(declared, factsFor(root, initiative)) === "not_applicable";
+  return documentApplies(declared, facts) === "not_applicable";
 }
 
 /** An initiative this slug would collide with, or null.

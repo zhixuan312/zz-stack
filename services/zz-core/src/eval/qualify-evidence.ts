@@ -32,7 +32,7 @@
  */
 import type pg from "pg";
 
-import { recordEvaluatorAssessment, type EvaluatorAssessmentResult } from "../semantic.js";
+import { askEvaluatorQuestion, type AskedEvaluatorAnswer, type EvaluatorAssessmentResult } from "../semantic.js";
 import type { LadderCounts, LadderLabels } from "./qualify-ladder.js";
 
 /** The evaluator's own vocabulary for "this count is positive" / "this count is zero", named by
@@ -130,34 +130,45 @@ function normalizeAnswer(r: Pick<EvaluatorAssessmentResult, "answer_kind" | "rea
   return top ? top[0] : null;
 }
 
-async function ask(evaluatorVersionId: string, subject: string, principal: string): Promise<string | null> {
-  const result = await recordEvaluatorAssessment({ evaluator_version_id: evaluatorVersionId, subject_text: subject, askedBy: principal });
-  return normalizeAnswer(result);
-}
-
 /** anchors + planted faults + controls + stability, all four counted-evidence categories the
  *  ladder reads, gathered against one evaluator version. Every ask goes through
- *  `recordEvaluatorAssessment` directly (this file already holds the `evaluator_version_id` it
- *  needs — the same reason `discover.ts` bypasses `evaluators.ts`'s `askEvaluator` wrapper), so
- *  every anchor/fault/control/stability ask lands its own `zz.assessment` row, in order. */
+ *  `askEvaluatorQuestion` directly (this file already holds the `evaluator_version_id` it
+ *  needs — the same reason `discover.ts` bypasses `evaluators.ts`'s `askEvaluator` wrapper) and
+ *  records NOTHING: each answer comes back in `asked`, in ask order, for the caller to write
+ *  through its own transaction (`qualify.ts`'s `recordQualification`). Asking here and writing
+ *  there keeps every model call (up to nine, each up to ~100s) outside any open transaction. */
 export async function gatherCountedEvidence(opts: {
   evaluatorVersionId: string;
   principal: string;
   snapshot: SnapshotRow | null;
   foreignSnapshot: SnapshotRow | null;
   vocabulary: AnchorVocabulary | null;
-}): Promise<{ anchors: LadderCounts; planted_faults: LadderCounts; controls: LadderCounts; stability: LadderCounts }> {
+}): Promise<{
+  counts: { anchors: LadderCounts; planted_faults: LadderCounts; controls: LadderCounts; stability: LadderCounts };
+  asked: AskedEvaluatorAnswer[];
+}> {
+  const asked: AskedEvaluatorAnswer[] = [];
+  const ask = async (subject: string): Promise<string | null> => {
+    const answer = await askEvaluatorQuestion({
+      evaluator_version_id: opts.evaluatorVersionId, subject_text: subject, askedBy: opts.principal,
+    });
+    asked.push(answer);
+    return normalizeAnswer(answer.result);
+  };
   const anchors = buildAnchors(opts.snapshot, opts.vocabulary);
   if (!anchors.length) {
     return {
-      anchors: { passed: 0, total: 0 }, planted_faults: { passed: 0, total: 0 },
-      controls: { passed: 0, total: 0 }, stability: { passed: 0, total: 0 },
+      counts: {
+        anchors: { passed: 0, total: 0 }, planted_faults: { passed: 0, total: 0 },
+        controls: { passed: 0, total: 0 }, stability: { passed: 0, total: 0 },
+      },
+      asked,
     };
   }
 
   let anchorsPassed = 0;
   for (const a of anchors) {
-    const answer = await ask(opts.evaluatorVersionId, a.subject, opts.principal);
+    const answer = await ask(a.subject);
     if (answer === a.expected) anchorsPassed += 1;
   }
 
@@ -167,7 +178,7 @@ export async function gatherCountedEvidence(opts: {
     for (const a of anchors) {
       const fault = faultOf(a, opts.vocabulary);
       faultsTotal += 1;
-      const answer = await ask(opts.evaluatorVersionId, fault.subject, opts.principal);
+      const answer = await ask(fault.subject);
       if (answer === fault.expected) faultsKilled += 1;
     }
   }
@@ -179,7 +190,7 @@ export async function gatherCountedEvidence(opts: {
       const control = controlOf(a, opts.foreignSnapshot);
       if (!control) continue;
       controlsTotal += 1;
-      const answer = await ask(opts.evaluatorVersionId, control.subject, opts.principal);
+      const answer = await ask(control.subject);
       // The control is EXPECTED to fail against this plugin's own anchor's expected answer: a
       // reading evaluator answers what the foreign number actually says, which need not be what
       // this plugin's own anchor expected.
@@ -190,17 +201,20 @@ export async function gatherCountedEvidence(opts: {
   const stabilityAnchor = anchors[0];
   const stabilityAnswers: (string | null)[] = [];
   for (let i = 0; i < 3; i += 1) {
-    stabilityAnswers.push(await ask(opts.evaluatorVersionId, stabilityAnchor.subject, opts.principal));
+    stabilityAnswers.push(await ask(stabilityAnchor.subject));
   }
   const modal = new Map<string | null, number>();
   for (const a of stabilityAnswers) modal.set(a, (modal.get(a) ?? 0) + 1);
   const agreeing = Math.max(...modal.values());
 
   return {
-    anchors: { passed: anchorsPassed, total: anchors.length },
-    planted_faults: { passed: faultsKilled, total: faultsTotal },
-    controls: { passed: controlsFailedAsExpected, total: controlsTotal },
-    stability: { passed: agreeing, total: 3 },
+    counts: {
+      anchors: { passed: anchorsPassed, total: anchors.length },
+      planted_faults: { passed: faultsKilled, total: faultsTotal },
+      controls: { passed: controlsFailedAsExpected, total: controlsTotal },
+      stability: { passed: agreeing, total: 3 },
+    },
+    asked,
   };
 }
 

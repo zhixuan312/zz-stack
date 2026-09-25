@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
-const { compareSemver, newestSubject, approvedOwners, applyingRefusal, STALE_APPLYING_MS } =
+const { compareSemver, newestVersion, approvedOwners, applyingRefusal, STALE_APPLYING_MS } =
   await import(pathToFileURL(join(process.cwd(), "services/zz-core/dist/eval/release-rules.js")).href);
 
 // Semver, not text: text puts 0.9.0 above 0.43.0.
@@ -14,14 +14,22 @@ assert.equal(compareSemver("1.2.0", "1.2.0"), 0);
 assert.equal(compareSemver("1.2.0-rc.1", "1.2.0"), -1, "a pre-release sorts below its release");
 assert.equal(compareSemver("1.2", "1.2.0"), 0);
 assert.equal(compareSemver("garbage", "0.0.1"), -1);
+// Pre-release precedence, identifier by identifier (semver.org section 11).
+const ordered = ["1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta", "1.0.0-beta", "1.0.0-beta.2",
+  "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0"];
+for (let i = 1; i < ordered.length; i += 1) {
+  assert.equal(compareSemver(ordered[i - 1], ordered[i]), -1, `${ordered[i - 1]} < ${ordered[i]}`);
+  assert.equal(compareSemver(ordered[i], ordered[i - 1]), 1, `${ordered[i]} > ${ordered[i - 1]}`);
+}
+assert.equal(compareSemver("1.0.0-rc.10", "1.0.0-rc.9"), 1, "numeric identifiers compare numerically");
+assert.equal(compareSemver("1.0.0+build.5", "1.0.0"), 0, "build metadata is ignored");
+// No leading numeric core — `v1.0.0` included — sorts below every version with one.
+assert.equal(compareSemver("v9.0.0", "0.0.1"), -1);
 
-// The newer of this system's release and the catalog head wins; a tie keeps the first listed.
-const evalReleased = { id: "eval", declared_version: "0.9.0" };
-const catalogHead = { id: "catalog", declared_version: "0.43.0" };
-assert.equal(newestSubject([evalReleased, catalogHead]).id, "catalog", "an ordinary release past this system's own");
-assert.equal(newestSubject([{ id: "eval", declared_version: "1.0.0" }, { id: "catalog", declared_version: "0.43.0" }]).id, "eval");
-assert.equal(newestSubject([{ id: "eval", declared_version: "1.0.0" }, { id: "catalog", declared_version: "1.0.0" }]).id, "eval");
-assert.equal(newestSubject([]), null);
+// The head is the newest registered version by semver; first wins a tie; none is null.
+assert.equal(newestVersion(["0.9.0", "0.43.0", "0.43.0-rc.1"]), "0.43.0");
+assert.equal(newestVersion(["1.0.0-rc.9", "1.0.0-rc.10"]), "1.0.0-rc.10");
+assert.equal(newestVersion([]), null);
 
 // An approval speaks only for owner teams its signer is a MEMBER of, and only for this attempt.
 const approval = {
@@ -51,6 +59,9 @@ assert.equal(citedReleaseAttempt(`# Improvement\n\n${cite(a1)}\n`), a1);
 assert.equal(citedReleaseAttempt(`${cite(a1)}\n${cite(a1)}`), a1);
 assert.equal(citedReleaseAttempt(`${cite(a1)}\n${cite(a2)}`), null, "two attempts cited");
 assert.equal(citedReleaseAttempt("no citation"), null);
+assert.equal(citedReleaseAttempt(cite("-".repeat(36))), null, "a 36-character non-UUID cites nothing");
+assert.equal(citedReleaseAttempt(cite("0b7a3c1e-1111-4222-8333-94445555666g")), null, "not hex");
+assert.equal(citedReleaseAttempt(cite(a1.toUpperCase())), a1, "case-insensitive, lowercased");
 // A rollback makes the prior version current again without deleting the retracted
 // zz.plugin_version row: retractedVersions is the one rule, and BOTH "what is released now"
 // readers filter by it — plugin_locate's head (subject.ts) and release_apply's baseline.

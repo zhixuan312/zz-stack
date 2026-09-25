@@ -24,7 +24,7 @@
  *     server-side and answers with the verdict alone.
  *
  * RESIDUAL, stated plainly: the token reaches the launcher through the IMPROVE agent (it is in
- * `candidate_prove`'s response, and the agent sets `VERIFIER_TOKEN` for the launcher), and the
+ * `candidate_prove`'s response, and the agent writes it to the launcher's `--verifier-token-file`), and the
  * agent holds the same principal's PAT the launcher does. Nothing here separates the two
  * identities. The boundary is what each tool hands back under that token — no proof case id, no
  * per-case proof score, no evaluator-oracle event, no run outside the allocation — not who holds

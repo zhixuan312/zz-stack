@@ -9,10 +9,12 @@
  *
  *   node packages/tools/dist/release/apply.js --candidate <id> --repo <path> \
  *     --initiative <slug> --digest <approved_patch_digest> --release-cmd "<command>" \
- *     --release-version <version> [--base-ref <commit>] [--gate-cmd "<command>"] [--gateway <url>]
+ *     --release-version <version> --release-tag <tag> [--base-ref <commit> [--base-tag <tag>]] \
+ *     [--gate-cmd "<command>"] [--gateway <url>]
  *
  *   node packages/tools/dist/release/apply.js --reconcile <release_attempt_id> \
- *     --candidate <id> --plugin <name> --release-version <version> --repo <path> [--gateway <url>]
+ *     --candidate <id> --plugin <name> --release-version <version> --release-tag <tag> \
+ *     --repo <path> [--commit <sha>] [--gateway <url>]
  *
  * `--release-cmd` is deliberately required, with no default: the version bump, the changelog and
  * the branch/merge sequence are judgement work a script must not do on somebody's behalf, so "the
@@ -20,16 +22,22 @@
  * `--release-version` is the exact version that command publishes; the new subject is located AT
  * that version (`plugin_locate` with `version`), never as "whatever the head is now" — the head
  * after a release that registered nothing is the unchanged base, and recording that as released
- * is the lie `release_record` now refuses (`not_newer`).
+ * is the lie `release_record` now refuses (`not_newer`). `--release-tag` is the git tag that
+ * command creates and pushes; what is recorded as `release_ref` is the commit that tag names, and
+ * only once the tag is confirmed published and containing the candidate's own commit
+ * (`releaseRefFor`, `git.ts`) — a commit only this clone holds would be unresolvable to the next
+ * release.
  *
  * Where the patch lands: a fresh worktree on `plan.branch`, created at the commit the base subject
  * was released from — `plan.base_ref` from the server (this system's own release_ref, or a git
  * source's resolved_commit), else `--base-ref` from the operator, and refused (recorded `failed`,
- * nothing touched) when neither names a commit this repository has or the two disagree. Never
+ * nothing touched) when neither names a commit this repository has or the two disagree; when
+ * `plan.base_ref` does not resolve in this clone, `--base-ref` stands in only if `--base-tag` (the
+ * base version's release tag) contains it (`resolveBase`, `git.ts`). Never
  * `--repo`'s own HEAD: a candidate is proved against its base, and applying it onto whatever the
  * checkout happens to hold releases something nobody proved. `--repo`'s own HEAD and branch are
- * never moved. On success the worktree is removed and the branch KEPT — it holds the release
- * commit, and its sha is the `release_ref` the next release against this subject starts from. On
+ * never moved. On success the worktree is removed and the branch KEPT — it holds the candidate's
+ * commit, which `--reconcile` checks against the release tag. On
  * any failure before the release command succeeds, worktree and branch are both removed and the
  * attempt is recorded `failed`.
  *
@@ -37,9 +45,13 @@
  * If locating the new version or recording `released` is refused or the process dies, the
  * attempt stays applying and `release_apply` refuses every later attempt of the plugin with
  * `release_in_progress` — naming it as stale once it is — until `--reconcile` finds out what
- * really happened: the published version located → `released`; never registered → `failed`, the
- * truth, and the branch removed. `released` is recorded under a key derived from the attempt, so a
- * lost response is retried as a replay rather than a second write.
+ * really happened. Registered is not enough for `released`: another release may have published
+ * that version, so the release tag must also contain the candidate's branch commit. Not
+ * registered is not enough for `failed` either: while any tag contains the branch commit the
+ * release did land and may simply register late, so nothing is recorded yet. Only a version never
+ * registered AND a commit no tag carries is `failed`, the truth, and the branch removed.
+ * `released` is recorded under a key derived from the attempt, so a lost response is retried as
+ * a replay rather than a second write.
  */
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
@@ -49,10 +61,10 @@ import { join } from "node:path";
 
 import { Mcp } from "@zz/mcp-client";
 
+import { commitOf, fetchTags, git, gitQuiet, releaseRefFor, resolveBase, tagsContaining } from "./git.js";
 import { die, optional, parseArgs, platformToken, required } from "../lib/cli.js";
 import { splitCommand } from "../lib/shell.js";
 
-const GIT_TIMEOUT_MS = 60_000;
 const GATE_TIMEOUT_MS = 15 * 60_000;
 const RELEASE_TIMEOUT_MS = 20 * 60_000;
 /** The failing command's own output tail — enough to act on, never a whole log. */
@@ -64,20 +76,7 @@ const sha256 = (s: string): string => createHash("sha256").update(s, "utf8").dig
 const isRefusal = (said: string): boolean => /^ERROR[: ]/.test(said);
 
 // -------------------------------------------------------------------------------------------
-// Git.
-
-function git(cwd: string, args: string[]): string {
-  return execFileSync("git", args, { cwd, encoding: "utf8", timeout: GIT_TIMEOUT_MS, stdio: ["ignore", "pipe", "pipe"] }).trim();
-}
-function gitQuiet(cwd: string, args: string[]): void {
-  try { execFileSync("git", args, { cwd, timeout: GIT_TIMEOUT_MS, stdio: "ignore" }); }
-  catch { /* nothing there to remove, or already gone — both are the success case here */ }
-}
-/** The commit `ref` names in `repoRoot`, or null when it names none. */
-function commitOf(repoRoot: string, ref: string): string | null {
-  try { return git(repoRoot, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]); }
-  catch { return null; }
-}
+// The worktree.
 
 function worktreePathFor(attemptId: string): string {
   return join(tmpdir(), "zz-release-apply", attemptId);
@@ -133,28 +132,12 @@ interface ApplyResponse {
   } | null;
 }
 
-/** The base commit, or why there is none — see the module note. */
-function resolveBase(repoRoot: string, planRef: string | null, operatorRef: string | null): { commit: string } | { refused: string } {
-  const fromPlan = planRef ? commitOf(repoRoot, planRef) : null;
-  const fromOperator = operatorRef ? commitOf(repoRoot, operatorRef) : null;
-  if (planRef && !fromPlan) return { refused: `the base subject's recorded release commit ${planRef} is not in ${repoRoot}` };
-  if (operatorRef && !fromOperator) return { refused: `--base-ref ${operatorRef} names no commit in ${repoRoot}` };
-  if (fromPlan && fromOperator && fromPlan !== fromOperator) {
-    return { refused: `--base-ref ${operatorRef} is ${fromOperator}, but the base subject was released from ${fromPlan}` };
-  }
-  const commit = fromPlan ?? fromOperator;
-  return commit ? { commit } : {
-    refused: "nothing records the commit the base subject was released from — pass --base-ref " +
-      "naming it (the commit whose catalog carries the base version)",
-  };
-}
-
 const releasedKey = (attemptId: string): string => `release_record:${attemptId}:released`;
 const failedKey = (attemptId: string): string => `release_record:${attemptId}:failed`;
 
-function reconcileHint(attemptId: string, candidateId: string, plugin: string, version: string): string {
+function reconcileHint(attemptId: string, candidateId: string, plugin: string, version: string, tag: string): string {
   return `zz-tool release-apply --reconcile ${attemptId} --candidate ${candidateId} --plugin ${plugin} ` +
-    `--release-version ${version} --repo <this clone>`;
+    `--release-version ${version} --release-tag ${tag} --repo <this clone>`;
 }
 
 async function applyMain(mcp: Mcp, args: ReturnType<typeof parseArgs>): Promise<number> {
@@ -163,7 +146,9 @@ async function applyMain(mcp: Mcp, args: ReturnType<typeof parseArgs>): Promise<
   const initiative = required(args, "initiative", "the initiative improvement.md was written into");
   const digest = required(args, "digest", "the approved_patch_digest quoted in the approved improvement.md");
   const releaseVersion = required(args, "release-version", "the exact version --release-cmd publishes");
+  const releaseTag = required(args, "release-tag", "the git tag --release-cmd creates and pushes for this release");
   const operatorBase = optional(args, "base-ref", "the commit the base subject was released from, when the platform records none");
+  const baseTag = optional(args, "base-tag", "the base version's release tag, which must contain --base-ref when the platform's recorded ref does not resolve here");
   const gateCmd = splitCommand(optional(args, "gate-cmd", "the command that gates the applied patch") ?? DEFAULT_GATE_CMD);
   const releaseCmd = splitCommand(required(args, "release-cmd",
     "the repository's own release procedure, run from the isolated worktree once the gate " +
@@ -206,7 +191,7 @@ async function applyMain(mcp: Mcp, args: ReturnType<typeof parseArgs>): Promise<
       `server's own patch_digest=${apply.patch.patch_digest}`);
     return 1;
   }
-  const base = resolveBase(repoRoot, plan.base_ref, operatorBase);
+  const base = resolveBase(repoRoot, plan.base_ref, operatorBase, baseTag);
   if ("refused" in base) { await recordFailed(`base unresolvable, nothing applied: ${base.refused}`); return 1; }
   if (commitOf(repoRoot, `refs/heads/${plan.branch}`)) {
     await recordFailed(
@@ -229,6 +214,7 @@ async function applyMain(mcp: Mcp, args: ReturnType<typeof parseArgs>): Promise<
       "-c", "user.name=zz-release-apply", "-c", "user.email=release-apply@local",
       "commit", "-m", `release: apply candidate ${candidateId} (${digest})`,
     ]);
+    const candidateCommit = git(path, ["rev-parse", "HEAD"]);
 
     const gate = runCommand(path, gateCmd, GATE_TIMEOUT_MS);
     if (!gate.ok) { await recordFailed(gate.output); return 1; }
@@ -236,15 +222,20 @@ async function applyMain(mcp: Mcp, args: ReturnType<typeof parseArgs>): Promise<
     if (!release.ok) { await recordFailed(release.output); return 1; }
     released = true;
 
-    const releaseRef = git(path, ["rev-parse", "HEAD"]);
     removeWorktree(repoRoot, attemptId, null);
-    return await recordReleased(mcp, attemptId, plan.plugin, releaseVersion, releaseRef,
-      reconcileHint(attemptId, candidateId, plan.plugin, releaseVersion));
+    const hint = reconcileHint(attemptId, candidateId, plan.plugin, releaseVersion, releaseTag);
+    const releaseRef = releaseRefFor(repoRoot, releaseTag, candidateCommit);
+    if ("refused" in releaseRef) {
+      console.error(`the release command succeeded but its release is not confirmed: ${releaseRef.refused}\n` +
+        `The attempt is left applying; once the tag is published, run: ${hint}`);
+      return 1;
+    }
+    return await recordReleased(mcp, attemptId, plan.plugin, releaseVersion, releaseRef.commit, hint);
   } catch (err) {
     const message = (err as Error).message ?? String(err);
     if (released) {
       console.error(`${message}\nThe release command succeeded, so this attempt is left applying. Run: ` +
-        reconcileHint(attemptId, candidateId, plan.plugin, releaseVersion));
+        reconcileHint(attemptId, candidateId, plan.plugin, releaseVersion, releaseTag));
     } else {
       await recordFailed(message);
     }
@@ -258,7 +249,7 @@ async function applyMain(mcp: Mcp, args: ReturnType<typeof parseArgs>): Promise<
  *  a retry replays rather than writing twice. A refusal leaves the attempt applying and says how
  *  to finish it; it never falls back to `failed`, because the release already happened. */
 async function recordReleased(
-  mcp: Mcp, attemptId: string, plugin: string, version: string, releaseRef: string, hint: string,
+  mcp: Pick<Mcp, "call">, attemptId: string, plugin: string, version: string, releaseRef: string, hint: string,
 ): Promise<number> {
   const locateSaid = await mcp.call("plugin_locate", { plugin, version, idempotency_key: `plugin_locate:${attemptId}:${version}` });
   if (isRefusal(locateSaid)) {
@@ -279,27 +270,54 @@ async function recordReleased(
   return 0;
 }
 
-/** `--reconcile`: what really happened to an attempt nobody is left to report for. The version
- *  its release command publishes is registered → it released; it is not → it did not, and
- *  `failed` is the truth. */
-async function reconcileMain(mcp: Mcp, args: ReturnType<typeof parseArgs>, attemptId: string): Promise<number> {
+/** `--reconcile`: what really happened to an attempt nobody is left to report for — see the
+ *  module note. The candidate's commit is its kept branch's tip, or `--commit` when the branch is
+ *  gone; with neither, nothing can be confirmed and nothing is recorded. */
+export async function reconcileMain(
+  mcp: Pick<Mcp, "call">, args: ReturnType<typeof parseArgs>, attemptId: string,
+): Promise<number> {
   const candidateId = required(args, "candidate", "the candidate the attempt applied");
   const plugin = required(args, "plugin", "the plugin the attempt released");
   const version = required(args, "release-version", "the exact version the attempt's release command publishes");
+  const releaseTag = required(args, "release-tag", "the git tag the attempt's release command creates and pushes");
   const repoRoot = required(args, "repo", "the clone the attempt was applied in");
   const branch = `release/candidate-${candidateId}`;
+  const hint = reconcileHint(attemptId, candidateId, plugin, version, releaseTag);
 
   removeWorktree(repoRoot, attemptId, null);
+  const candidateCommit = commitOf(repoRoot, `refs/heads/${branch}`)
+    ?? commitOf(repoRoot, optional(args, "commit", "the candidate's commit, when its branch is gone") ?? "");
+  if (!candidateCommit) {
+    console.error(`branch ${branch} is gone from ${repoRoot} and no --commit names the candidate's commit, so ` +
+      "whether its release landed cannot be confirmed; nothing recorded");
+    return 1;
+  }
+  fetchTags(repoRoot);
+
   const locateSaid = await mcp.call("plugin_locate", { plugin, version, idempotency_key: `plugin_locate:${attemptId}:${version}` });
   if (!isRefusal(locateSaid)) {
-    const releaseRef = commitOf(repoRoot, `refs/heads/${branch}`) ?? `${plugin}@${version}`;
-    return recordReleased(mcp, attemptId, plugin, version, releaseRef, reconcileHint(attemptId, candidateId, plugin, version));
+    const releaseRef = releaseRefFor(repoRoot, releaseTag, candidateCommit);
+    if ("refused" in releaseRef) {
+      console.error(`${plugin} ${version} is registered, but this attempt's release is not confirmed: ` +
+        `${releaseRef.refused}. Nothing recorded — if another release published ${version}, this ` +
+        "attempt's own release has not landed yet; rerun once it is tagged, or name the right --release-tag");
+      return 1;
+    }
+    return recordReleased(mcp, attemptId, plugin, version, releaseRef.commit, hint);
+  }
+  const carriers = tagsContaining(repoRoot, candidateCommit);
+  if (carriers.length) {
+    console.error(`${plugin} ${version} is not registered yet, but the candidate's commit ${candidateCommit} is ` +
+      `already inside tag(s) ${carriers.join(", ")} — the release landed and may register late, so ` +
+      `failed would be a lie. Nothing recorded; once it is registered, run: ${hint}`);
+    return 1;
   }
   gitQuiet(repoRoot, ["branch", "-D", branch]);
   const said = await mcp.call("release_record", {
     release_attempt_id: attemptId, status: "failed", idempotency_key: failedKey(attemptId),
-    failure_tail: `reconcile: ${plugin} ${version} was never registered, so this attempt's release ` +
-      `did not land; branch ${branch} removed. plugin_locate said: ${locateSaid}`.slice(-OUTPUT_TAIL_CHARS),
+    failure_tail: `reconcile: ${plugin} ${version} was never registered and no tag carries the ` +
+      `candidate's commit ${candidateCommit}, so this attempt's release did not land; branch ` +
+      `${branch} removed. plugin_locate said: ${locateSaid}`.slice(-OUTPUT_TAIL_CHARS),
   });
   console.log(`release_record (failed) -> ${said}`);
   return isRefusal(said) ? 1 : 0;

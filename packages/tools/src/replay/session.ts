@@ -18,7 +18,7 @@ import {
   candidateEnv, claudeInstallArgv, claudeMarketplaceAddArgv, claudeSessionArgv, SESSION_EXEC_TIMEOUT_MS,
   type SessionArgvOpts,
 } from "./plan.js";
-import { sandboxedCommand, type SandboxTool } from "./sandbox.js";
+import { BWRAP_NAMESPACES, sandboxedCommand, type SandboxTool } from "./sandbox.js";
 
 const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 
@@ -57,7 +57,10 @@ export function detectSandbox(): SandboxTool | null {
       probe("/usr/bin/sandbox-exec", ["-p", "(version 1)(allow default)", "/usr/bin/true"]) ? "sandbox-exec" : null;
   }
   if (process.platform === "linux") {
-    return probe("bwrap", ["--ro-bind", "/", "/", "--dev", "/dev", "--", "/bin/true"]) ? "bwrap" : null;
+    // The same namespaces every session gets (BWRAP_NAMESPACES): a host that allows bwrap but not
+    // an unshared PID namespace is refused here, never run with the launcher's /proc in view.
+    return probe("bwrap", [...BWRAP_NAMESPACES, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--", "/bin/true"])
+      ? "bwrap" : null;
   }
   return null;
 }
@@ -84,11 +87,14 @@ function locate(bin: string): string | null {
 
 /** Denied: the operator's real home directory (from the password database, not `$HOME`, which
  *  the launcher's own caller could have pointed anywhere) and `$HOME` when that differs, the
- *  operator's checkout, an explicit `ZZ_TOKEN_FILE`, and the launcher's own log directory (the
- *  simulated person's transcript, oracle-informed, lands there). Re-allowed read-only: wherever
+ *  operator's checkout, an explicit `ZZ_TOKEN_FILE`, and the whole system temporary directory —
+ *  every other replay session's home and clone live there (a concurrent candidate's run-scoped
+ *  PAT sits in its home's MCP config), and so do the launcher's own logs (the simulated person's
+ *  transcript, oracle-informed) and the operator's token files (`--token-file`). This session's
+ *  own home and clone are bound back per process, as its writable paths. Re-allowed read-only: wherever
  *  `claude` and the node running this launcher are installed, when that is under a denied path —
  *  a user-level install (`~/.local`, `~/.nvm`) is ordinary. */
-export function sandboxContext(tool: SandboxTool, repoRoot: string, claudeBin: string, logDir: string): SandboxContext {
+export function sandboxContext(tool: SandboxTool, repoRoot: string, claudeBin: string): SandboxContext {
   const denyRead: { path: string; dir: boolean }[] = [];
   const deny = (p: string | undefined): void => {
     const r = p ? real(p) : null;
@@ -98,7 +104,7 @@ export function sandboxContext(tool: SandboxTool, repoRoot: string, claudeBin: s
   deny(process.env.HOME);
   deny(repoRoot);
   deny(process.env.ZZ_TOKEN_FILE);
-  deny(logDir);
+  deny(tmpdir());
 
   const located = locate(claudeBin);
   if (!located) throw new Error(`launchReplay: '${claudeBin}' is not on PATH`);
@@ -108,13 +114,19 @@ export function sandboxContext(tool: SandboxTool, repoRoot: string, claudeBin: s
   return { tool, denyRead, allowRead };
 }
 
-/** One sandboxed `execFileSync`, writable only where `writable` says. */
+/** One sandboxed `execFileSync`, writable only where `paths.writable` says, and never inside any
+ *  of those a directory carries its own `.git` — the clone's, which the launcher later reads with
+ *  `git` outside the sandbox (sandbox.ts's module note). `paths.readable` adds read-only paths for
+ *  this one process (the clone, for the install step). */
 function execSandboxed(
-  sandbox: SandboxContext, writable: readonly string[], bin: string, args: string[],
+  sandbox: SandboxContext, paths: { writable: readonly string[]; readable?: readonly string[] }, bin: string, args: string[],
   opts: { cwd: string; env: Record<string, string>; timeout: number; maxBuffer?: number },
 ): string {
-  const cmd = sandboxedCommand(sandbox.tool, { denyRead: sandbox.denyRead, allowRead: sandbox.allowRead, writable },
-    bin, args, opts.cwd);
+  const readOnly = paths.writable.map((p) => join(p, ".git")).filter((p) => existsSync(p));
+  const cmd = sandboxedCommand(sandbox.tool, {
+    denyRead: sandbox.denyRead, allowRead: [...sandbox.allowRead, ...(paths.readable ?? [])],
+    writable: paths.writable, readOnly,
+  }, bin, args, opts.cwd);
   return execFileSync(cmd.file, cmd.argv, { ...opts, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 }
 
@@ -137,8 +149,10 @@ export function installPlugin(
   const declared = JSON.parse(readFileSync(marketplaceJsonPath, "utf8")) as { name?: string };
   const marketplaceName = declared.name || "zz-stack";
   const opts = { cwd: home.root, env: home.env, timeout: SESSION_EXEC_TIMEOUT_MS };
-  execSandboxed(sandbox, [home.root], claudeBin, claudeMarketplaceAddArgv(marketplaceRoot), opts);
-  execSandboxed(sandbox, [home.root], claudeBin, claudeInstallArgv(plugin, marketplaceName), opts);
+  // The clone sits under the denied temporary directory: readable for these two steps, never writable.
+  const paths = { writable: [home.root], readable: [marketplaceRoot] };
+  execSandboxed(sandbox, paths, claudeBin, claudeMarketplaceAddArgv(marketplaceRoot), opts);
+  execSandboxed(sandbox, paths, claudeBin, claudeInstallArgv(plugin, marketplaceName), opts);
   return marketplaceName;
 }
 
@@ -193,7 +207,7 @@ export function runTurn(
   const writable = [...new Set([home.root, cwd])];
   let raw: string;
   try {
-    raw = execSandboxed(sandbox, writable, claudeBin, argv,
+    raw = execSandboxed(sandbox, { writable }, claudeBin, argv,
       { cwd, env: home.env, timeout: SESSION_EXEC_TIMEOUT_MS, maxBuffer: MAX_OUTPUT_BYTES });
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string; message?: string };

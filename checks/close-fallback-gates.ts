@@ -19,6 +19,9 @@
  *      admitted, and so is one on plan.md in draft; a FINISHED close there is not a close at all.
  *   5. a damaged `_facts.json` — the branch a close is judged on — is refused by name for that
  *      initiative, and the no-argument listing reports it as damaged and still lists the rest.
+ *   6. over that same damage an ABANDON still lands — the one way out of an initiative whose
+ *      branch cannot be read — while a finished close is refused with a refusal that names the
+ *      abandon and the operator repair.
  *
  * Run: node checks/close-fallback-gates.ts   (also run by scripts/gate.ts)
  */
@@ -141,6 +144,22 @@ function open(flow: string, facts: Record<string, string> | null) {
      `the listing dropped the healthy initiative beside a damaged one: ${JSON.stringify(listed)}`);
 }
 
+// 6. a damaged _facts.json still lets the work stop, and says how to repair it otherwise
+{
+  const i = open("zz-plugin-eval", null);
+  i.write("findings.md", {});
+  writeFileSync(join(root, i.name, "_facts.json"), "[\"not an object\"]");
+  let finished: unknown = null;
+  try { finished = i.close("findings.md", FINISHED); } catch (err) { finished = err; }
+  const said = finished instanceof Error ? finished.message : String(finished);
+  is(/_facts\.json is not a JSON object/.test(said) && /initiative_close\(.*"abandoned"\)/.test(said) &&
+     /zz\.initiative_fact/.test(said),
+     `a finished close over a damaged _facts.json did not refuse naming the abandon and the repair: ${said}`);
+  let stopped: unknown = null;
+  try { stopped = i.close("findings.md", STOPPED); } catch (err) { stopped = err; }
+  is(stopped === null, `an abandon over a damaged _facts.json was refused: ${String(stopped)}`);
+}
+
 rmSync(root, { recursive: true, force: true });
 
 if (fail.length) {
@@ -148,4 +167,5 @@ if (fail.length) {
   process.exit(1);
 }
 console.log("close-fallback-gates: skip, proposal_only and promotable each close where their branch " +
-            "lands, and a stop on a fallback draft is not asked for that draft's approval");
+            "lands, a stop on a fallback draft is not asked for that draft's approval, and a damaged " +
+            "_facts.json still lets the work stop");

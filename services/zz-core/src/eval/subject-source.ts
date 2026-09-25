@@ -7,69 +7,24 @@
  * https-only to a public host, and `package` is a registry spec and nothing else. A locator that
  * fails any of those is refused before a single byte is read.
  */
-import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { BlockList, isIP } from "node:net";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, sep } from "node:path";
+import { join, sep } from "node:path";
+import { promisify } from "node:util";
 
-import { CATALOG_DIR, manifestAt } from "@zz/catalog";
+import { CATALOG_DIR, type PluginComponent, pluginDirComponents, symlinkRefusal } from "@zz/catalog";
 import { addressResolver } from "@zz/contracts";
 
-/** One entry of `component_manifest`. `kind: "config"` is part of the declared shape for a
- *  component this catalog schema does not carry yet (deploy/environment declarations, say) —
- *  none is emitted today because nothing in `CatalogManifest` represents one. */
-export interface Component {
-  readonly kind: "skill" | "server" | "flow" | "config";
-  readonly name: string;
-  readonly digest: string;
-}
-
-export const sha256 = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
-
-/** `plugin_register`'s `source_kind: "local_dir"` reader: every SKILL.md under the directory
- *  (or its own `skills/` subdirectory, the catalog's own convention, when it has one), plus
- *  whatever `flow.json` beside it declares — read straight off disk, never through the catalog
- *  or zz.skill_version, neither of which a third party ever has a row in.
- *
- *  Returns null for a directory with nothing to capture — no SKILL.md and no flow.json — which
- *  `plugin_register` turns into the contract's "source could not be read" refusal rather than
- *  minting a subject with an empty component set. */
-function resolveLocalDir(path: string): { components: Component[] } | null {
-  if (!existsSync(path) || !statSync(path).isDirectory()) return null;
-  const skillsDir = existsSync(join(path, "skills")) ? join(path, "skills") : path;
-  const components: Component[] = [];
-  const walk = (d: string): void => {
-    for (const f of readdirSync(d, { withFileTypes: true })) {
-      // Never followed: a symlink inside an allowed directory could otherwise read any file on
-      // the host, which is exactly what the catalog-root confinement below refuses.
-      if (f.isSymbolicLink()) continue;
-      const abs = join(d, f.name);
-      if (f.isDirectory()) { walk(abs); continue; }
-      if (f.name !== "SKILL.md") continue;
-      // The digest is the file's own bytes, not a database row: a third party carries no
-      // zz.skill_version, so there is no content_hash column to defer to the way the catalog
-      // path does.
-      components.push({ kind: "skill", name: basename(dirname(abs)), digest: sha256(readFileSync(abs, "utf8")) });
-    }
-  };
-  if (existsSync(skillsDir)) walk(skillsDir);
-
-  const flowFile = join(path, "flow.json");
-  if (existsSync(flowFile)) {
-    const got = manifestAt(flowFile);
-    if (got.manifest) {
-      for (const sv of got.manifest.servers ?? []) {
-        components.push({ kind: "server", name: sv.name, digest: sha256(`${sv.name}:${sv.path}`) });
-      }
-      components.push({
-        kind: "flow", name: got.manifest.name ?? basename(path),
-        digest: sha256(JSON.stringify(got.manifest)),
-      });
-    }
-  }
-  return components.length ? { components } : null;
+/** A reader's components, or null for a directory with nothing to capture — no SKILL.md and no
+ *  flow.json — which `plugin_register` turns into the contract's "source could not be read"
+ *  refusal rather than minting a subject with an empty component set. The walk itself, and its
+ *  symlink refusals, are `pluginDirComponents` (@zz/catalog), shared with the replay launcher. */
+function resolveLocalDir(path: string): { components: PluginComponent[] } | { error: string } | null {
+  const got = pluginDirComponents(path);
+  if ("error" in got) return got;
+  return got.components.length ? got : null;
 }
 
 /** `local_dir` is read only inside the catalog root (`CATALOG_DIR`, `ZZ_CATALOG_DIR` in a
@@ -112,10 +67,14 @@ for (const [net, bits] of [
  *  answers one public and one internal address would otherwise pass half the time.
  *
  *  COUPLED: resolved through `addressResolver` (@zz/contracts), the platform's one resolver and
- *  one IPv4-mapped fold, with no cache — an answer cached here is an answer a rebinding host
- *  gets to change before git asks again. An address that is still not a valid IP after the fold
- *  (a mapped address in hex spelling) is refused rather than guessed at. */
-async function publicHttpsUrl(url: string): Promise<{ error: string } | null> {
+ *  one IPv4-mapped fold. An address that is still not a valid IP after the fold (a mapped address
+ *  in hex spelling) is refused rather than guessed at.
+ *
+ *  RETURNS the `http.curloptResolve` entry that pins git to exactly the addresses checked here.
+ *  Without it git resolves the name a second time, and a rebinding host answers that second
+ *  lookup with an internal address after passing this one with a public address. An IP-literal
+ *  host needs no pin: nothing is resolved. */
+async function publicHttpsUrl(url: string): Promise<{ error: string } | { pin: string[] }> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -131,7 +90,12 @@ async function publicHttpsUrl(url: string): Promise<{ error: string } | null> {
   if (internal) {
     return { error: `the host ${host} resolves to a private, loopback or link-local address; only public hosts are read` };
   }
-  return null;
+  if (isIP(host) !== 0) return { pin: [] };
+  // curl's CURLOPT_RESOLVE shape, `HOST:PORT:ADDR[,ADDR]`, an IPv6 address bracketed. Every
+  // checked address is listed, so git may still fail over between them, and only between them.
+  const port = parsed.port || "443";
+  const list = [...addresses].map((a) => (isIP(a) === 6 ? `[${a}]` : a)).join(",");
+  return { pin: ["-c", `http.curloptResolve=${host}:${port}:${list}`] };
 }
 
 /** `plugin_register`'s `source_kind: "git"` and `"package"` readers both shell out to a real
@@ -148,16 +112,25 @@ const MAX_SOURCE_BYTES = 200 * 1024 * 1024;
 
 type ExecResult = { ok: true; output: string } | { ok: false; error: string };
 
+const execFileAsync = promisify(execFile);
+
 /** One external command, run the way psql.ts's own `psqlText` does: no shell, so the locator can
  *  never be interpolated into anything a shell parses, and the caller decides what "failed"
- *  means for its own contract rather than this throwing past it. */
-function tryExec(cmd: string, args: string[], cwd?: string): ExecResult {
+ *  means for its own contract rather than this throwing past it.
+ *
+ *  DELIBERATE: asynchronous. A clone may take the whole two-minute timeout, and a synchronous
+ *  exec would hold zz-core's one event loop — every team's every call — for all of it. */
+async function tryExec(cmd: string, args: string[], cwd?: string): Promise<ExecResult> {
   try {
-    const output = execFileSync(cmd, args, {
+    const run = execFileAsync(cmd, args, {
       cwd, encoding: "utf8", timeout: EXEC_TIMEOUT_MS, maxBuffer: MAX_EXEC_OUTPUT_BYTES,
-      stdio: ["ignore", "pipe", "pipe"],
     });
-    return { ok: true, output };
+    // execFile takes no `stdio` option, so stdin is an open pipe: closed at once, the way
+    // `stdio: "ignore"` did, so a credential prompt reads end-of-file rather than waiting out
+    // the whole timeout.
+    run.child.stdin?.end();
+    const { stdout } = await run;
+    return { ok: true, output: stdout };
   } catch (err) {
     const e = err as { stderr?: string; stdout?: string; message?: string; killed?: boolean; signal?: string };
     const timedOut = e.killed && e.signal ? ` (killed by ${e.signal} after ${EXEC_TIMEOUT_MS}ms)` : "";
@@ -172,15 +145,15 @@ const GIT_SAFE = [
   "-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.file.allow=never",
   "-c", "http.followRedirects=false", "-c", "submodule.recurse=false",
 ];
-const git = (args: string[], cwd?: string) => tryExec("git", [...GIT_SAFE, ...args], cwd);
+const git = (pin: string[], args: string[], cwd?: string) => tryExec("git", [...GIT_SAFE, ...pin, ...args], cwd);
 
 /** A temporary directory that is always removed, success or failure — `plugin_register`'s
  *  contract for `git`/`package` requires the clone/extract scratch space to be gone afterwards,
  *  whatever the outcome. */
-function withTempDir<T>(prefix: string, fn: (dir: string) => T): T {
+async function withTempDir<T>(prefix: string, fn: (dir: string) => Promise<T>): Promise<T> {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   try {
-    return fn(dir);
+    return await fn(dir);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -209,7 +182,7 @@ function directorySizeBytes(dir: string, limit: number): number {
 const oversizeError = (limit: number) =>
   `the fetched source exceeds the ${Math.round(limit / (1024 * 1024))}MB size limit`;
 
-type SourceResolution = { components: Component[]; identityExtra: Record<string, unknown> } | { error: string };
+type SourceResolution = { components: PluginComponent[]; identityExtra: Record<string, unknown> } | { error: string };
 
 /** `source_kind: "git"`: `<url>` or `<url>#<ref>` — a branch, tag or commit. Cloned shallow
  *  (`--depth 1`) into a temporary directory, resolved exactly like `local_dir`, and the ref it
@@ -221,37 +194,39 @@ async function resolveGit(locator: string): Promise<SourceResolution> {
   const url = hashAt === -1 ? locator : locator.slice(0, hashAt);
   const ref = hashAt === -1 ? undefined : locator.slice(hashAt + 1) || undefined;
   if (!url) return { error: "no repository URL was given before '#'" };
-  const refused = await publicHttpsUrl(url);
-  if (refused) return refused;
+  const checked = await publicHttpsUrl(url);
+  if ("error" in checked) return checked;
+  const { pin } = checked;
 
-  return withTempDir("zz-plugin-git-", (dir) => {
+  return withTempDir("zz-plugin-git-", async (dir) => {
     // The fast path: a shallow clone of exactly the named branch/tag, or of the default branch
     // when no ref was given. `--` ends option parsing before the caller-controlled URL, so a
     // locator that happens to start with '-' is read as a repository name and never as a flag.
     const shallow = ref
-      ? git(["clone", "--quiet", "--depth", "1", "--branch", ref, "--", url, dir])
-      : git(["clone", "--quiet", "--depth", "1", "--", url, dir]);
+      ? await git(pin, ["clone", "--quiet", "--depth", "1", "--branch", ref, "--", url, dir])
+      : await git(pin, ["clone", "--quiet", "--depth", "1", "--", url, dir]);
     if (!shallow.ok) {
       if (!ref) return { error: shallow.error };
       // `--branch` only resolves refs the remote advertises (branches and tags), so a commit SHA
       // falls through to a full clone plus an explicit fetch of that one commit — still shallow
       // at the object it lands on, just not at the clone step.
-      const full = git(["clone", "--quiet", "--", url, dir]);
+      const full = await git(pin, ["clone", "--quiet", "--", url, dir]);
       if (!full.ok) return { error: full.error };
-      const fetch = git(["fetch", "--quiet", "--depth", "1", "--", "origin", ref], dir);
+      const fetch = await git(pin, ["fetch", "--quiet", "--depth", "1", "--", "origin", ref], dir);
       if (!fetch.ok) return { error: `ref ${ref} could not be fetched: ${fetch.error}` };
-      const checkout = git(["checkout", "--quiet", "FETCH_HEAD"], dir);
+      const checkout = await git([], ["checkout", "--quiet", "FETCH_HEAD"], dir);
       if (!checkout.ok) return { error: checkout.error };
     }
 
     const size = directorySizeBytes(dir, MAX_SOURCE_BYTES);
     if (size > MAX_SOURCE_BYTES) return { error: oversizeError(MAX_SOURCE_BYTES) };
 
-    const head = git(["rev-parse", "HEAD"], dir);
+    const head = await git([], ["rev-parse", "HEAD"], dir);
     if (!head.ok) return { error: head.error };
 
     const resolved = resolveLocalDir(dir);
     if (!resolved) return { error: "no SKILL.md and no flow.json were found in the cloned repository" };
+    if ("error" in resolved) return resolved;
     return { components: resolved.components, identityExtra: { resolved_commit: head.output.trim() } };
   });
 }
@@ -275,13 +250,17 @@ const REGISTRY_SPEC = /^(@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*(@[A-Za-
  *  temporary directory and resolved like `local_dir`. The tarball's own integrity hash is
  *  recorded, because a package version is otherwise mutable at the registry in a way a git
  *  commit is not: republishing the same `name@version` under `npm unpublish` + republish is rare
- *  but real, and the integrity is what makes a later locate notice it. */
-function resolvePackage(spec: string): SourceResolution {
+ *  but real, and the integrity is what makes a later locate notice it.
+ *
+ *  No address pin here, unlike `resolveGit`: the spec is checked to be a registry spec, so npm
+ *  fetches from the operator's configured registry and never from a host the caller named — a
+ *  rebinding answer would have to come from the registry's own DNS. */
+async function resolvePackage(spec: string): Promise<SourceResolution> {
   if (!REGISTRY_SPEC.test(spec)) {
     return { error: "only a registry package spec (name or @scope/name, optionally @version) is read" };
   }
-  return withTempDir("zz-plugin-package-", (dir) => {
-    const pack = tryExec("npm", [
+  return withTempDir("zz-plugin-package-", async (dir) => {
+    const pack = await tryExec("npm", [
       "pack", "--json", "--pack-destination", dir, "--ignore-scripts", "--no-audit", "--no-fund", "--", spec,
     ]);
     if (!pack.ok) return { error: pack.error };
@@ -300,7 +279,7 @@ function resolvePackage(spec: string): SourceResolution {
     // `--` here too: the tarball path is ours, not the caller's, but the rule is "argv arrays,
     // no shell interpolation of the locator" for this whole reader, applied uniformly rather
     // than only where the untrusted string happens to land.
-    const untar = tryExec("tar", ["-xzf", join(dir, entry.filename), "-C", extracted]);
+    const untar = await tryExec("tar", ["-xzf", join(dir, entry.filename), "-C", extracted]);
     if (!untar.ok) return { error: untar.error };
 
     const size = directorySizeBytes(extracted, MAX_SOURCE_BYTES);
@@ -308,10 +287,14 @@ function resolvePackage(spec: string): SourceResolution {
 
     // npm packs every tarball with its content under one top-level "package/" directory —
     // npm-packlist's own convention, not this platform's — resolved straight through on the rare
-    // publisher whose tarball omits it.
+    // publisher whose tarball omits it. A `package` that is a symlink is refused for the same
+    // reason `resolveLocalDir` refuses a linked `skills`.
+    const linked = symlinkRefusal(join(extracted, "package"));
+    if (linked) return linked;
     const root = existsSync(join(extracted, "package")) ? join(extracted, "package") : extracted;
     const resolved = resolveLocalDir(root);
     if (!resolved) return { error: "no SKILL.md and no flow.json were found in the package" };
+    if ("error" in resolved) return resolved;
     return {
       components: resolved.components,
       identityExtra: { tarball_integrity: entry.integrity ?? entry.shasum ?? null },
@@ -329,9 +312,8 @@ export async function resolveSource(kind: "local_dir" | "git" | "package", locat
     const dir = confinedLocalDir(locator);
     if (typeof dir !== "string") return dir;
     const resolved = resolveLocalDir(dir);
-    return resolved
-      ? { components: resolved.components, identityExtra: {} }
-      : { error: "no SKILL.md and no flow.json were found under this path" };
+    if (!resolved) return { error: "no SKILL.md and no flow.json were found under this path" };
+    return "error" in resolved ? resolved : { components: resolved.components, identityExtra: {} };
   }
   return kind === "git" ? resolveGit(locator) : resolvePackage(locator);
 }

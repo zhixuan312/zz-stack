@@ -91,6 +91,12 @@ assert.match(
 // context/verifier-token/proof-sealing are what gate it, elsewhere.
 assert.equal(roleReadGuard(null, "replay-sdlc-a1b2c3d4", "evaluator"), null);
 assert.equal(roleReadGuard("some-other-team", "replay-sdlc-a1b2c3d4", "simulated_person"), null);
+// R2: any replay- credential is a candidate's — another run's reads nothing here, not even actor,
+// and the run's own never gets the bare row (role absent).
+assert.match(roleReadGuard("replay-sdlc-99999999", "replay-sdlc-a1b2c3d4", "actor"), /reads nothing of another run/);
+assert.match(roleReadGuard("replay-sdlc-99999999", "replay-sdlc-a1b2c3d4", undefined), /reads nothing of another run/);
+assert.match(roleReadGuard("replay-sdlc-a1b2c3d4", "replay-sdlc-a1b2c3d4", undefined), /not the run itself/);
+assert.equal(roleReadGuard(null, "replay-sdlc-a1b2c3d4", undefined), null);
 
 // ---- stillAsking / idempotencyKey.
 assert.equal(stillAsking("what did you mean by that?"), true);

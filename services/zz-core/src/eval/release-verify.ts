@@ -194,9 +194,15 @@ async function proofCaseIds(p: pg.Pool, caseSetId: string): Promise<string[]> {
  *  subject. */
 interface VerifyRunsRequired { readonly case_set_id: string; readonly baseline: number; readonly candidate: number }
 
-type Plan =
-  | { readonly kind: "pending"; readonly runs_required: VerifyRunsRequired }
-  | { readonly kind: "resolved"; readonly perCase: PerCaseDelta[]; readonly prior: SideRun[]; readonly released: SideRun[] };
+/** Every run collected so far, whether or not evidence is complete — `runs_required` is null
+ *  once every held case has its repeats on both sides. The runs travel either way, because a
+ *  guardrail the released side has already failed decides before any missing run arrives. */
+interface Plan {
+  readonly runs_required: VerifyRunsRequired | null;
+  readonly perCase: PerCaseDelta[];
+  readonly prior: SideRun[];
+  readonly released: SideRun[];
+}
 
 async function planVerify(
   p: pg.Pool, caseSetId: string, caseIds: readonly string[], priorId: string, releasedId: string, minRepeats: number,
@@ -220,10 +226,10 @@ async function planVerify(
       perCase.push({ case_id: caseId, baseline_mean, baseline_n: a.length, candidate_mean, candidate_n: b.length, delta: candidate_mean - baseline_mean });
     }
   }
-  if (priorShort || releasedShort) {
-    return { kind: "pending", runs_required: { case_set_id: caseSetId, baseline: priorShort, candidate: releasedShort } };
-  }
-  return { kind: "resolved", perCase, prior, released };
+  const runs_required = priorShort || releasedShort
+    ? { case_set_id: caseSetId, baseline: priorShort, candidate: releasedShort }
+    : null;
+  return { runs_required, perCase, prior, released };
 }
 
 // -------------------------------------------------------------------------------------------
@@ -459,7 +465,20 @@ export async function verifyRelease(
   const boundReached = Date.now() - new Date(attempt.created_at).getTime() >= ctx.policy.wallClockHours * 3_600_000;
 
   const plan = await planVerify(p, ctx.caseSetId, caseIds, attempt.base_subject_version_id, attempt.released_subject_version_id, ctx.policy.minRepeats);
-  if (plan.kind === "pending") {
+
+  // One pure reduction (release-rules.ts's verifyReduction) decides everything from here, over the
+  // runs collected so far: a guardrail the released side has already failed rolls back before
+  // either pending answer below — before more replays are asked for and before the liveness
+  // bound resolves replays_unavailable — and the protocol's own confidence is the one both the
+  // unresolved check and rollbackDecision use.
+  const deltas = plan.perCase.map((c) => c.delta);
+  const guardrailSummary = summariseGuardrails(plan.released);
+  const reduced = verifyReduction({
+    deltas, guardrail_status: guardrailSummary.status, evidence_complete: plan.runs_required === null,
+    liveness_bound_reached: boundReached, resamples: RESAMPLES, seed: releaseAttemptId,
+    confidence: ctx.policy.confidence,
+  });
+  if (reduced.kind === "pending" && plan.runs_required) {
     // Unlike candidate_validate/candidate_prove — which wait indefinitely for missing repeats,
     // because nothing is live at risk before a candidate is ever released — a real released
     // subject may be regressed RIGHT NOW while replay evidence never arrives (a stuck IMPROVE
@@ -469,8 +488,8 @@ export async function verifyRelease(
     if (boundReached) {
       return resolveVerify(p, attempt, idempotencyKey, principal, {
         verdict: "not_established", reason: "replays_unavailable",
-        evidence: { deltas_summary: null, guardrails: null }, rollback_plan: null,
-        dimension_scores: null, guardrails: null, resource_usage: null,
+        evidence: { deltas_summary: null, guardrails: guardrailSummary }, rollback_plan: null,
+        dimension_scores: null, guardrails: guardrailSummary, resource_usage: null,
         statistics: { runs_required: plan.runs_required, liveness_bound_reached: true },
       });
     }
@@ -481,17 +500,7 @@ export async function verifyRelease(
       token_already_issued: ensured.alreadyIssued, status: attempt.status,
     };
   }
-
-  // One pure reduction (release-rules.ts's verifyReduction) decides everything from here, with the
-  // guardrails read BEFORE the interval: a failed guardrail rolls back even while the interval is
-  // still unresolved, and the protocol's own confidence is the one both the unresolved check and
-  // rollbackDecision use.
-  const deltas = plan.perCase.map((c) => c.delta);
-  const guardrailSummary = summariseGuardrails(plan.released);
-  const reduced = verifyReduction({
-    deltas, guardrail_status: guardrailSummary.status, liveness_bound_reached: boundReached,
-    resamples: RESAMPLES, seed: releaseAttemptId, confidence: ctx.policy.confidence,
-  });
+  if (reduced.kind === "pending") throw new Error("verifyReduction answered pending on complete evidence");
   if (reduced.kind === "escalate") {
     return {
       verdict: null, reason: null, evidence: null, rollback_plan: null,
@@ -507,8 +516,11 @@ export async function verifyRelease(
   const statistics = {
     per_case: plan.perCase, paired_decision: decision, policy: ctx.policy,
     resamples: RESAMPLES, seed: releaseAttemptId, liveness_bound_reached: boundReached,
+    runs_required: plan.runs_required,
   };
-  const deltas_summary = { mean_delta: decision.mean, lower: decision.lower, upper: decision.upper, verdict: decision.verdict };
+  const deltas_summary = decision
+    ? { mean_delta: decision.mean, lower: decision.lower, upper: decision.upper, verdict: decision.verdict }
+    : null;
   const recorded = {
     evidence: { deltas_summary, guardrails: guardrailSummary },
     dimension_scores, guardrails: guardrailSummary, resource_usage, statistics,

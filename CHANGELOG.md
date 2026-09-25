@@ -106,6 +106,7 @@ zz-stack 0.76.0 · console 0.19.0
 - Clients must re-pull the shelf for the new stage skills (see the commands at the end of the
   release).
 - `round_judge` and `round_score` are gone from /eval/mcp; score a plugin through `evaluation_start`/`evaluation_assess`/`evaluation_score`; `round_scores` still reads historic rounds.
+- `ZZ_JUDGE_PAIR_CAP` is no longer read; remove it from `deploy/.env` (a value left there is silently ignored).
 
 ## [0.75.0] — 2026-09-24
 

@@ -94,13 +94,13 @@ catalog/    the flows and platform capabilities, one directory per owner. A
                                 flows when a package is built and so has no file in
                                 the catalog
             zz/zz-plugin-eval   plugin evaluation and improvement, 9 skills — the whole unit a person
-                                installs, which is the level the platform ships at and
-                                the only level two of its properties are visible from:
-                                whether a flow that goes wrong can return to an earlier
-                                stage, and whether a tool its skills name was ever
-                                called. One kind of evidence: traces from real runs.
-                                locate, profile, define (the gate: what good means for
-                                this plugin), judge, report. Measures; never changes
+                                installs, judged by what its real runs did. identify,
+                                observe, discover, define-qualify (the gate: a versioned
+                                protocol agreed before any scoring), evaluate (a 0–10
+                                score with coverage and uncertainty), explain, then —
+                                for a plugin we own — improve (replayed, proven
+                                candidates) and promote-verify (a gated release with
+                                rollback); a plugin we do not own gets proposal.md
 skills/     the baseline plugin's skills, served whatever flow a team runs. They
             live here rather than under the baseline's catalog entry, beside the
             generated router skill rather than in the catalog. Two are

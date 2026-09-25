@@ -48,7 +48,9 @@ import {
   type ComplexityInput, type ManifestComponent, type PatchFile, type PatchStats, type TouchedComponent,
 } from "./complexity.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { loadSubjectForEvalRun } from "./proposal-doc.js";
 import { loadProposerBundle, REJECTED_CANDIDATE_STATUSES, type ProposerBundle } from "./proposer-bundle.js";
+import { writeBranchFacts } from "./protocol.js";
 import { sweepExpired } from "./replay-runs.js";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
@@ -92,20 +94,38 @@ export function registerCandidateTools(server: McpServer): void {
         "evidence: failing traces, evaluator critiques, refusal text, corrections, dependency/ " +
         "tool errors, cost/latency and prior rejected hypotheses for this eval_run's plugin, so " +
         "the candidate this run searches for is proposed against what already failed rather " +
-        "than guessed blind. REFUSES an eval_run_id nothing minted, an empty finding_ids list, " +
-        "a finding_ids entry naming no finding, a finding recorded against a DIFFERENT " +
-        "eval_run, and any finding whose owner_kind is not 'plugin' — " +
+        "than guessed blind. REFUSES an eval_run_id nothing minted, an empty finding_ids list " +
+        "(unless skip: true), a finding_ids entry naming no finding, a finding recorded against " +
+        "a DIFFERENT eval_run, and any finding whose owner_kind is not 'plugin' — " +
         "\"ERROR: finding <id> is owned by <kind>; it is reported to its owner, not optimised\" " +
         "(FR-34: a dependency/platform/environment/user_input/unknown finding stays an " +
-        "owner-facing finding and starts no optimization). A mutator: writes through the FR-59 " +
-        "idempotency ledger.",
+        "owner-facing finding and starts no optimization). Pass `initiative` to record " +
+        "improvement_mode as that initiative's durable branch fact (FR-58) — search when the " +
+        "base subject records release_owners, proposal when it does not; omit `initiative` and " +
+        "nothing is recorded. `skip: true` is the explicit route for no plugin-owned actionable " +
+        "finding at all: opens no improvement_run, and — with `initiative` — records " +
+        "improvement_mode: skip and release_mode: not_applicable in one call. Checked and " +
+        "REFUSED, before the idempotency ledger and before ANY row is written, when this " +
+        "initiative's improvement_mode is already set to something else (FR-58, a hard refusal " +
+        "— unlike protocol_read's own informational one — because opening or replaying into a " +
+        "zz.improvement_run regardless would leave a search or proposal running that the " +
+        "initiative's own facts do not admit to). REFUSES skip alongside a non-empty " +
+        "finding_ids, and skip when a plugin-owned finding for this eval_run is still " +
+        "`deferred` (name it and call improvement_start with it instead). A mutator: writes " +
+        "through the FR-59 idempotency ledger.",
       inputSchema: {
         eval_run_id: z.string(),
-        finding_ids: z.array(z.string()).min(1),
+        finding_ids: z.array(z.string()).default([]),
+        skip: z.boolean().optional().describe(
+          "No plugin-owned finding is actionable for this eval_run — opens no improvement_run. " +
+          "REFUSES a non-empty finding_ids, and a still-deferred plugin-owned finding."),
+        initiative: z.string().optional().describe(
+          "Record improvement_mode (and, on skip, release_mode) as this initiative's durable " +
+          "branch fact. Omit and nothing is recorded."),
         idempotency_key: z.string().min(1),
       },
     },
-    async ({ eval_run_id, finding_ids, idempotency_key }) => {
+    async ({ eval_run_id, finding_ids, skip, initiative, idempotency_key }) => {
       const p = db();
       if (!p) return noDb();
 
@@ -113,6 +133,63 @@ export function registerCandidateTools(server: McpServer): void {
         "select id::text as id, protocol_version_id::text as protocol_version_id " +
         "from zz.eval_run where id = $1::uuid", [eval_run_id])).rows[0];
       if (!run) return text(`ERROR: no eval_run ${eval_run_id}`);
+
+      if (skip) {
+        if (finding_ids.length) {
+          return text("ERROR: skip is for no plugin-owned actionable finding at all — " +
+            "finding_ids was non-empty; call improvement_start with them instead of skip");
+        }
+        const openPluginFindings = (await p.query<{ id: string }>(
+          "select id::text as id from zz.eval_finding " +
+          "where eval_run_id = $1::uuid and owner_kind = 'plugin' and decision = 'deferred'",
+          [eval_run_id])).rows;
+        if (openPluginFindings.length) {
+          return text(
+            `ERROR: eval_run ${eval_run_id} has ${openPluginFindings.length} plugin-owned ` +
+            `finding(s) still deferred (${openPluginFindings.map((f) => f.id).join(", ")}) — ` +
+            "skip is for no plugin-owned actionable finding at all; call improvement_start with " +
+            "finding_ids naming them instead.");
+        }
+
+        // FR-58: checked and refused as a HARD error, BEFORE the idempotency ledger below —
+        // never a soft facts_refused. Skip declares release_mode: not_applicable alongside
+        // improvement_mode: skip in one call; a conflict here means this initiative already
+        // stands on a different branch (a search already opened for it, say), and letting the
+        // ledger anchor proceed regardless would leave the facts saying skip while a real search
+        // is or was open — the exact cross-branch inconsistency release_prepare's own pre-write
+        // check exists to prevent.
+        let skipFacts: Record<string, string> = {};
+        if (initiative) {
+          const written = await writeBranchFacts(
+            initiative, { improvement_mode: "skip", release_mode: "not_applicable" });
+          if (typeof written === "string") return text(written);
+          skipFacts = written;
+        }
+
+        const principal = parseCaller(requestHeaders()).email;
+        // No zz.improvement_run row: skip records that a search never started. zz.eval_run's own
+        // row is this ledger's anchor — a re-select, never an insert — the shape proposal_prepare
+        // uses (release.ts) for a call that writes no new row of its own.
+        const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
+          principal, "improvement_start", idempotency_key, { eval_run_id, skip: true },
+          async (client): Promise<MutatorOutcome<{ id: string }>> => {
+            const row = (await client.query<{ id: string }>(
+              "select id::text as id from zz.eval_run where id = $1::uuid", [eval_run_id])).rows[0];
+            if (!row) throw new Error("zz.eval_run row vanished between the check above and this transaction");
+            return { result: { id: row.id }, result_table: "zz.eval_run", result_id: row.id };
+          },
+        );
+        logActivity(await userRoot(), null, {
+          user: principal, action: "improvement_start", eval_run_id, skip: true, replayed: outcome.replayed,
+        });
+        return json({
+          improvement_run_id: null, status: "skipped",
+          facts_recorded: !!initiative, facts: initiative ? skipFacts : undefined,
+        });
+      }
+      if (!finding_ids.length) {
+        return text("ERROR: finding_ids is required unless skip: true — nothing named to search for");
+      }
 
       const findings = await loadFindingsForCheck(p, finding_ids);
       const byId = new Map(findings.map((f) => [f.id, f]));
@@ -136,6 +213,23 @@ export function registerCandidateTools(server: McpServer): void {
         [run.protocol_version_id])).rows[0];
       const search_policy = ((protocolRow?.improvement_policy as { search?: Record<string, unknown> } | null)
         ?.search ?? {}) as Record<string, unknown>;
+
+      // FR-58: search when the base subject this eval_run scored records release_owners, proposal
+      // when it does not — the SAME ownership split release_prepare/proposal_prepare's own mirror
+      // guard already enforces (release.ts), read here rather than re-derived a second way.
+      // Checked and refused as a HARD error, BEFORE the idempotency ledger below (never a soft
+      // facts_refused) — the same reason the skip branch above moved its own write earlier: a
+      // conflict here means a DIFFERENT improvement_mode already stands for this initiative, and
+      // opening (or replaying into) a zz.improvement_run regardless would leave a search or
+      // proposal running that the initiative's own facts do not admit to.
+      const subject = await loadSubjectForEvalRun(p, eval_run_id);
+      const improvement_mode = (subject?.release_owners.length ?? 0) > 0 ? "search" : "proposal";
+      let searchFacts: Record<string, string> = {};
+      if (initiative) {
+        const written = await writeBranchFacts(initiative, { improvement_mode });
+        if (typeof written === "string") return text(written);
+        searchFacts = written;
+      }
 
       const principal = parseCaller(requestHeaders()).email;
       // FR-31: "Any replay_start or improvement_start call first closes the caller's own runs
@@ -165,7 +259,9 @@ export function registerCandidateTools(server: McpServer): void {
       });
       return json({
         improvement_run_id: improvementRunId, search_policy, status: "open", proposer_bundle: bundle,
-      } satisfies ImprovementStartResult & { proposer_bundle: ProposerBundle });
+        facts_recorded: !!initiative, facts: initiative ? searchFacts : undefined,
+      } satisfies ImprovementStartResult & { proposer_bundle: ProposerBundle } &
+        { facts_recorded: boolean; facts?: Record<string, string> });
     },
   );
 

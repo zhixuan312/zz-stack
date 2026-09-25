@@ -42,6 +42,28 @@ export function mountInitiatives(app: Express): void {
       team_slug: string; initiative: string; flow: string | null;
       approved_by: string | null; updated_at: string;
     };
+    // FR-58 (Task I-27): the same three scope shapes as the docs query above, mirrored for
+    // `zz.initiative_fact` (migration 085) — the console's own copy of `<initiative>/
+    // _facts.json`, which it cannot read directly (it has no filesystem access to the store).
+    // Written as three complete statements rather than one assembled at request time, for the
+    // same reason the docs query above is: `check:sql` PREPAREs every statement it can read
+    // whole, and a predicate built from `scope.kind` is invisible to it.
+    type FactRow = { team: string; initiative: string; fact: string; value: string };
+    const { rows: factRows } = scope.kind !== "platform"
+      ? await db.query<FactRow>(
+      `select team, initiative, fact, value from zz.initiative_fact where team = $1`, [scope.slug])
+      : want !== null
+      ? await db.query<FactRow>(
+      `select team, initiative, fact, value from zz.initiative_fact where team = $1`, [want])
+      : await db.query<FactRow>(`select team, initiative, fact, value from zz.initiative_fact`);
+    const factsByInit = new Map<string, Record<string, string>>();
+    for (const r of factRows) {
+      const key = `${r.team}/${r.initiative}`;
+      const got = factsByInit.get(key) ?? {};
+      got[r.fact] = r.value;
+      factsByInit.set(key, got);
+    }
+
     const { rows } = scope.kind !== "platform"
       ? await db.query<ListRow>(
       `select team_slug, initiative, flow, path, type, status, outcome, approved_by, supports,
@@ -85,7 +107,7 @@ export function mountInitiatives(app: Express): void {
         // Whoever approved something is the person the work belongs to. There is no owner
         // column, and the first document's author is whoever typed first, not who signed.
         stakeholder: docs.map((d) => d.approved_by).find(Boolean) ?? null,
-        ...stageOf(docs, docs.map((d) => d.flow).find(Boolean) ?? null),
+        ...stageOf(docs, docs.map((d) => d.flow).find(Boolean) ?? null, factsByInit.get(key) ?? {}),
       };
     }).sort((a, b) => b.updated.localeCompare(a.updated));
     res.json({ initiatives });
@@ -124,7 +146,7 @@ export function mountInitiatives(app: Express): void {
       res.status(404).json({ error: `no initiative ${team}/${slug}` });
       return;
     }
-    const [docs, decisions] = await Promise.all([
+    const [docs, decisions, facts] = await Promise.all([
       db.query<DocRow & { flow: string | null }>(
         // `flow` as well, because which documents are gated is the flow's
         // declaration and there is no way to ask the manifest without it.
@@ -136,8 +158,13 @@ export function mountInitiatives(app: Express): void {
         `select path, role, key, verdict, qualifier, detail, checker
            from zz.decision where team_slug = $1 and initiative = $2
           order by path, key`, [team, slug]),
+      // FR-58 (Task I-27): this initiative's own mirror of `_facts.json` (migration 085),
+      // read for `stageOf` below the same way the list route reads it for every initiative.
+      db.query<{ fact: string; value: string }>(
+        `select fact, value from zz.initiative_fact where team = $1 and initiative = $2`, [team, slug]),
     ]);
     if (!docs.rows.length) { res.status(404).json({ error: `no initiative ${team}/${slug}` }); return; }
+    const factMap = Object.fromEntries(facts.rows.map((f) => [f.fact, f.value]));
     const shape = flowShape(docs.rows.map((d) => (d as { flow?: string }).flow).find(Boolean) ?? null);
     res.json({
       team, slug,
@@ -165,7 +192,7 @@ export function mountInitiatives(app: Express): void {
         withQualifier: decisions.rows.filter((d) => (d as { qualifier: string }).qualifier).length,
         withChecker: decisions.rows.filter((d) => (d as { checker: string }).checker).length,
       },
-      ...stageOf(docs.rows, docs.rows.map((d) => d.flow).find(Boolean) ?? null),
+      ...stageOf(docs.rows, docs.rows.map((d) => d.flow).find(Boolean) ?? null, factMap),
     });
   }));
 

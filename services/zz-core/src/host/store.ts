@@ -167,17 +167,29 @@ async function evidenceFor(runId: string): Promise<(EvidenceEntry & { step_id: s
        supersedes: r.supersedes ?? undefined }));
 }
 
-/** Read a verdict together with the waivers that cover it. The one reading of "clear", owed
- *  wherever a refusal is turned into an answer. */
+/** Read a verdict together with the waivers that cover it, and the steps a document's own
+ *  branch applicability has already ruled out (FR-58, Task I-27) — the one reading of "clear",
+ *  owed wherever a refusal is turned into an answer.
+ *
+ *  `ruledOutSteps` is never folded into `dischargedBy`: a waiver is somebody's signature on a
+ *  ground they gave, and a step the branch ruled `not_applicable` was never signed for by
+ *  anybody — the branch decided it before a person was ever asked. Kept apart so a reader of
+ *  `dischargedBy` sees only what was actually excused, not what the platform itself answered.
+ *
+ *  `unmetSentence` (host.ts) always opens with the step id it is about — `"${stepId} needs …"`,
+ *  and the predecessor-chain sentence `evaluate` prepends opens with the PREDECESSOR's id for
+ *  the same reason — so a prefix match is exact and covers both the step's own unmet rule and
+ *  every later step whose only outstanding reason is that ruled-out step. */
 function withWaivers(
-  verdict: ControlVerdict, waivers: readonly StoredWaiver[],
+  verdict: ControlVerdict, waivers: readonly StoredWaiver[], ruledOutSteps: readonly string[] = [],
 ): StandingVerdict {
   // A waiver covers an unmet sentence by naming its kind. The engine's `unmet` is prose for a
   // person deciding what to record next, so this matches on the kind appearing in it rather
   // than parsing a shape the engine does not promise. A waiver that matches nothing is carried
   // nowhere, so a stale waiver cannot make a real gap look signed for.
   const covering = waivers.filter((w) => verdict.unmet.some((u) => u.includes(w.kind)));
-  const stillOpen = verdict.unmet.filter((u) => !waivers.some((w) => u.includes(w.kind)));
+  const afterWaivers = verdict.unmet.filter((u) => !waivers.some((w) => u.includes(w.kind)));
+  const stillOpen = afterWaivers.filter((u) => !ruledOutSteps.some((id) => u.startsWith(`${id} `)));
   return {
     satisfied: verdict.satisfied,
     unmet: verdict.unmet,
@@ -195,14 +207,24 @@ function withWaivers(
  * Null means no run is open, which is not a refusal and must not be collapsed into one. A
  * caller deciding what to do about an un-enrolled initiative is answering a different question
  * from one deciding what to record next.
- */
+ *
+ * `ruledOutSteps` (FR-58, Task I-27): step ids whose own document a caller has already found
+ * `not_applicable` on this initiative's own branch (`documentApplies`, packages/contracts/src/
+ * flow-when.js) — never computed here, because this file holds no facts and no manifest, only
+ * the run. The caller (initiative-close.ts) reads a step's document from `FlowDoc.stage`, the
+ * same convention `stageIndex` in the console's `shared.ts` already draws on, and passes the
+ * ones every one of whose documents came back `not_applicable`. A step this run's evidence
+ * genuinely satisfies is unaffected either way — `withWaivers` only discharges what is still
+ * `unmet`. */
 export async function claimFor(
   team: string, initiative: string, module: ReviewedModule, stepId: string, action: string,
+  ruledOutSteps: readonly string[] = [],
 ): Promise<{ grant: ActionGrant; standing: StandingVerdict } | null> {
   const run = await runFor(team, initiative);
   if (!run) return null;
   const { host, kernelRunId } = rehydrate(run, module, await evidenceFor(run.id));
   const grant = host.actionClaim(kernelRunId, stepId, action);
-  const standing = withWaivers(host.controlEvaluate(kernelRunId, stepId), await waiversFor(run.id));
+  const standing = withWaivers(
+    host.controlEvaluate(kernelRunId, stepId), await waiversFor(run.id), ruledOutSteps);
   return { grant, standing };
 }

@@ -60,6 +60,7 @@ import { z } from "zod";
 import { writeImprovementDoc, type ProofEvaluationRow } from "./improvement-doc.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { loadSubjectForEvalRun, writeProposalDoc } from "./proposal-doc.js";
+import { writeBranchFacts } from "./protocol.js";
 import {
   describeApplyOutcomeForReplay, describeRecordOutcomeForReplay, planApply, recordRelease,
   type ApplyResult, type RecordResult,
@@ -112,6 +113,7 @@ async function loadLatestProof(p: pg.Pool, candidateId: string): Promise<ProofEv
 interface PrepareResult {
   readonly release_attempt_id: string; readonly required_owners: string[];
   readonly document: string | null; readonly document_refused?: string;
+  readonly facts: Record<string, string>;
 }
 
 export function registerReleaseTools(server: McpServer): void {
@@ -136,8 +138,10 @@ export function registerReleaseTools(server: McpServer): void {
         "stage this tool never reaches. REFUSES a candidate that has not itself reached " +
         "proof_passed (not_eligible); a base subject with no recorded release_owners — a " +
         "third-party or not-yet-owned subject, which stays proposal-only (no_release_owners); " +
-        "an unknown candidate_id; and a deployment with no platform database. A mutator: writes " +
-        "through the FR-59 idempotency ledger.",
+        "an unknown candidate_id; a deployment with no platform database; and (FR-58, hard " +
+        "refusal, before any write) this initiative's release_mode already set to something " +
+        "other than promotable. RETURNS `facts`, this initiative's release_mode now recorded " +
+        "as promotable. A mutator: writes through the FR-59 idempotency ledger.",
       inputSchema: {
         candidate_id: z.string(),
         initiative: z.string().describe("The initiative improvement.md is written into."),
@@ -175,6 +179,15 @@ export function registerReleaseTools(server: McpServer): void {
       if (!proof) {
         return text(`ERROR: candidate ${candidate_id} has no recorded proof evaluation to prepare a release from`);
       }
+
+      // FR-58: release_prepare IS the promotable branch — checked, and refused as a hard error
+      // (never a soft facts_refused), BEFORE the release_attempt row below. An initiative
+      // release_mode already set to something else (proposal_only, from proposal_prepare or an
+      // improvement_start skip against the same initiative) means a release_attempt here would
+      // be recorded on the branch the initiative already left — a real cross-tool inconsistency,
+      // not the informational drift protocol_read's own resume case allows.
+      const factsAttempt = await writeBranchFacts(initiative, { release_mode: "promotable" });
+      if (typeof factsAttempt === "string") return text(factsAttempt);
 
       const principal = parseCaller(requestHeaders()).email;
       const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
@@ -222,9 +235,9 @@ export function registerReleaseTools(server: McpServer): void {
       });
       return json(typeof written === "string"
         ? { release_attempt_id: releaseAttemptId, required_owners: requiredOwners,
-            document: null, document_refused: written } satisfies PrepareResult
+            document: null, document_refused: written, facts: factsAttempt } satisfies PrepareResult
         : { release_attempt_id: releaseAttemptId, required_owners: requiredOwners,
-            document: written.path } satisfies PrepareResult);
+            document: written.path, facts: factsAttempt } satisfies PrepareResult);
     },
   );
 
@@ -431,7 +444,10 @@ export function registerReleaseTools(server: McpServer): void {
         "governed store (see proposal-doc.ts's own module note, \"EXPLICIT GUARD\"). REFUSES " +
         "promotable — a base subject that DOES record release_owners: \"use release_prepare, " +
         "not proposal_prepare, for an owned subject\" — an improvement_run_id nothing minted, " +
-        "and one whose own eval_run names a subject this call cannot read back. A mutator: " +
+        "one whose own eval_run names a subject this call cannot read back, and (FR-58, hard " +
+        "refusal, before any write) this initiative's release_mode already set to something " +
+        "other than proposal_only. RETURNS `facts`, this initiative's release_mode now recorded " +
+        "as proposal_only. A mutator: " +
         "writes through the FR-59 idempotency ledger — the ledger's own anchor is the " +
         "improvement_run's ALREADY-existing row (a plain re-select, never an insert), because " +
         "this tool records no new database row of its own.",
@@ -468,6 +484,12 @@ export function registerReleaseTools(server: McpServer): void {
           "proposal_prepare, for an owned subject");
       }
 
+      // FR-58, the mirror of release_prepare's own pre-write check: a hard refusal, before the
+      // idempotency ledger below, so an initiative whose release_mode is already promotable
+      // never gets an ungated proposal.md sitting beside a promotable attempt.
+      const factsAttempt = await writeBranchFacts(initiative, { release_mode: "proposal_only" });
+      if (typeof factsAttempt === "string") return text(factsAttempt);
+
       const principal = parseCaller(requestHeaders()).email;
       const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
         principal, "proposal_prepare", idempotency_key, { improvement_run_id, initiative },
@@ -490,8 +512,8 @@ export function registerReleaseTools(server: McpServer): void {
         document_refused: typeof written === "string", replayed: outcome.replayed,
       });
       return json(typeof written === "string"
-        ? { document: null, document_refused: written, candidates_included: [] }
-        : { document: written.path, candidates_included: written.candidates_included });
+        ? { document: null, document_refused: written, candidates_included: [], facts: factsAttempt }
+        : { document: written.path, candidates_included: written.candidates_included, facts: factsAttempt });
     },
   );
 }

@@ -1,4 +1,5 @@
 import { catalogManifest, isFlow, skillText, withHandover } from "@zz/catalog";
+import { documentApplies } from "@zz/contracts";
 import type { Request, Response } from "express";
 
 import { platformDbReady } from "../db.js";
@@ -187,7 +188,17 @@ export function flowShape(flow: string | null): Map<string, { gate: boolean; clo
   return out;
 }
 
-export function stageOf(docs: StageDoc[], flow: string | null): {
+/** An initiative's durable branch facts (FR-58), read from `zz.initiative_fact` (migration
+ *  085) — the console's own mirror of `<initiative>/_facts.json`, since it reads `zz.doc`
+ *  alone and never the filesystem `writeBranchFacts` (services/zz-core/src/eval/protocol.ts)
+ *  writes to. `{}` — no facts recorded, or the flow declares no `when` at all — is `stageOf`'s
+ *  own default and behaves exactly as it did before Task I-27: `documentApplies` answers
+ *  `applies` for every document that carries no `when`.
+ *  DELIBERATE: not exported — `stageOf` below is the one signature that names it; a caller
+ *  passes a plain `Record<string, string>` it structurally matches. */
+type InitiativeFacts = Record<string, string>;
+
+export function stageOf(docs: StageDoc[], flow: string | null, facts: InitiativeFacts = {}): {
   at: number; of: number; stage: string;
   /** Every step of the diagram in order, bookends included. `open` and `closed` are acts of
    * every initiative and no manifest declares them; between them are the flow's stages.
@@ -197,13 +208,17 @@ export function stageOf(docs: StageDoc[], flow: string | null): {
    *             it declares none and a later step produced something, so it was passed through
    *   partial   its documents exist, but a gate on one is still open
    *   empty     nothing shows it happened
+   *   skipped   (FR-58) every document this step declares is `not_applicable` on this
+   *             initiative's own branch — the branch already answered it; it never blocks
+   *   waiting   (FR-58) a document this step declares is `undetermined` — the branch has not
+   *             been decided yet, which is not the same sentence as "nothing written"
    * `current` marks where an open initiative is now. */
   steps: {
     name: string; what: string; produces: string;
     /** `untracked` is a stage that cannot leave a document — it produces a record or
      *  nothing — with no later stage to prove it ran. `empty` is a stage that owes a
      *  document and has not written one. The console draws them differently. */
-    state: "done" | "partial" | "empty" | "untracked"; current: boolean;
+    state: "done" | "partial" | "empty" | "untracked" | "skipped" | "waiting"; current: boolean;
   }[];
   /** Placed by index into `steps`, bookends included, so the console places nothing itself. */
   gates: { name: string; passed: boolean; after: number }[]; accepted: boolean;
@@ -234,12 +249,21 @@ export function stageOf(docs: StageDoc[], flow: string | null): {
     // the documents zz-core actually gates, handover.md included.
     const declared = withHandover(manifest.documents);
     const byName = new Map(live.map((d) => [d.path, d]));
+    // FR-58 (Task I-27): whether this initiative's own branch facts rule a document in, out or
+    // undecided — computed once, read everywhere below. A document with no `when` at all
+    // answers `applies` from `documentApplies` itself, so this map needs no separate "does it
+    // declare when" branch anywhere it is read.
+    const applic = new Map(declared.map((d) => [d.name, documentApplies(d, facts)]));
     // Where each gate sits, from the manifest's own `stage` on the gated document. `after`
     // is 0 when the manifest does not say, and the console renders that as unplaced rather
     // than guessing a position.
     const stageIndex = (n: string | undefined) =>
       n ? (manifest.stages ?? []).findIndex((x) => x.name === n) + 1 : 0;
-    const gates = declared.filter((d) => d.gate === true)
+    // `not_applicable` is excluded outright, the same filter guards.ts's own `closeRequires`
+    // applies (services/zz-core/src/guards.ts): a gate the branch has ruled out is not a gate
+    // this initiative owes, and leaving it in would draw it pending forever — nothing writes a
+    // document that documentGuards refuses.
+    const gates = declared.filter((d) => d.gate === true && applic.get(d.name) !== "not_applicable")
       .map((d) => ({ name: `approve ${d.name.replace(/\.md$/, "")}`,
                      // Carried for the same reason flowShape carries it.
                      role: d.role,
@@ -284,9 +308,12 @@ export function stageOf(docs: StageDoc[], flow: string | null): {
       ? Math.max(1, reached)
       : Math.min(stages.length, Math.max(1, reached + 1));
     // Was everything the flow asks for there when it closed: every gate approved, every
-    // document required to close present. Independent of `closed`.
+    // document required to close present. Independent of `closed`. FR-58: a requiredForClose
+    // document the branch ruled out is discharged, the same `documentApplies` reading
+    // `initiative_status` and `initiative_close` both give it (services/zz-core/src/guards.ts).
     const complete = gates.every((g) => g.passed)
-      && declared.filter((d) => d.requiredForClose === true).every((d) => byName.has(d.name));
+      && declared.filter((d) => d.requiredForClose === true && applic.get(d.name) !== "not_applicable")
+           .every((d) => byName.has(d.name));
     // Each stage's state from what the manifest says it leaves behind, in three kinds:
     //
     //   a document  the flow declares it; done when it exists and any gate on it is
@@ -297,7 +324,7 @@ export function stageOf(docs: StageDoc[], flow: string | null): {
     //   nothing     no artifact at all; the order pass below reads it from what came after
     const meta = new Map((manifest.stages ?? []).map((x) => [x.name, x]));
     const sources = live.filter((d) => d.type === "source");
-    const stageState = (n: string): "done" | "partial" | "empty" => {
+    const stageState = (n: string): "done" | "partial" | "empty" | "skipped" | "waiting" => {
       const produces = meta.get(n)?.produces;
       if (produces === "source") {
         // `supports` exists only on the source shape of a stage — the contract is a union —
@@ -310,10 +337,19 @@ export function stageOf(docs: StageDoc[], flow: string | null): {
       }
       const mine = declared.filter((d) => d.stage === n);
       if (!mine.length) return "empty";
-      const written = mine.filter((d) => byName.has(d.name));
+      // FR-58 (Task I-27): a document this stage owes that the branch ruled `not_applicable`
+      // is not counted against it — if every one of them was ruled out, the stage is `skipped`
+      // rather than `empty`, which would draw it pending forever. One still `undetermined`
+      // reads as `waiting`: the platform has not yet decided whether this is required, which is
+      // a different sentence from "nothing written" (and `documentGuards` refuses writing an
+      // undetermined document anyway, so `written` never disagrees with this).
+      const applicable = mine.filter((d) => applic.get(d.name) !== "not_applicable");
+      if (!applicable.length) return "skipped";
+      if (applicable.some((d) => applic.get(d.name) === "undetermined")) return "waiting";
+      const written = applicable.filter((d) => byName.has(d.name));
       if (!written.length) return "empty";
-      const gatesOpen = mine.some((d) => d.gate === true && byName.get(d.name)?.status !== "approved");
-      return written.length === mine.length && !gatesOpen ? "done" : "partial";
+      const gatesOpen = applicable.some((d) => d.gate === true && byName.get(d.name)?.status !== "approved");
+      return written.length === applicable.length && !gatesOpen ? "done" : "partial";
     };
     const flowSteps = stages.map((n) => ({
       name: label(String(n)),
@@ -330,24 +366,27 @@ export function stageOf(docs: StageDoc[], flow: string | null): {
         .replace(/^["']|["']$/g, "")
         .replace(/^Stage \d+[^.]*\.\s*/i, "")
         .split(/(?<=\.)\s/)[0].trim().slice(0, 120),
-      state: stageState(String(n)) as "done" | "partial" | "empty" | "untracked",
+      state: stageState(String(n)) as "done" | "partial" | "empty" | "untracked" | "skipped" | "waiting",
       current: false,
     }));
     // A stage that writes nothing was passed through when something after it exists: order is
-    // the only evidence such a stage leaves.
+    // the only evidence such a stage leaves. `skipped` counts as "something happened" here too
+    // — a stage the branch ruled out entirely is not a gap the stepper should still be waiting on.
     for (let i = flowSteps.length - 1; i >= 0; i--) {
       const produces = meta.get(String(stages[i]))?.produces;
       const writesNothing = produces === "nothing" || produces === "record"
         || (!produces && !declared.some((d) => d.stage === stages[i]));
-      const somethingAfter = flowSteps.slice(i + 1).some((st) => st.state === "done" || st.state === "partial");
+      const somethingAfter = flowSteps.slice(i + 1)
+        .some((st) => st.state === "done" || st.state === "partial" || st.state === "skipped");
       if (!writesNothing) continue;
       // `untracked`, not `empty`, when there is no later stage to prove it ran: the console
       // draws `empty` as "nothing written", which such a stage never could have.
       flowSteps[i].state = somethingAfter ? "done" : "untracked";
     }
     // Where it is now: the first stage that is not done, and only while it is open. A closed
-    // initiative is not anywhere.
-    const currentAt = flowSteps.findIndex((st) => st.state !== "done");
+    // initiative is not anywhere. `skipped` reads as passed through here too — the branch
+    // already decided it, so it must not be where the stepper says work is waiting.
+    const currentAt = flowSteps.findIndex((st) => st.state !== "done" && st.state !== "skipped");
     if (!closed && currentAt >= 0) flowSteps[currentAt].current = true;
     const steps = [
       { name: "open", what: "the initiative exists: its folder was created and it was opened",

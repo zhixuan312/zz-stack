@@ -275,8 +275,23 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         if (governed && team) {
           const closingStep = [...governed.module.steps]
             .reverse().find((st) => st.grants.includes(CLOSE_ACTION));
+          // FR-58 (Task I-27): a step whose own document(s) — `FlowDoc.stage`, the same
+          // convention the console's `stageIndex` draws on — the branch has ruled
+          // `not_applicable` owes this run nothing. Without this, a reviewed module gating a
+          // conditional document (protocol.md under `when: protocol_action`, say) could never be
+          // closed on the branch that rules it out: the document never exists to be written, so
+          // the step's own completion rule would read `unmet` forever. A step with no document at
+          // all, or one whose document still applies, is untouched — `documentApplies` answers
+          // `applies` for anything carrying no `when`.
+          const facts = factsFor(root, initiative);
+          const ruledOutSteps = governed.module.steps
+            .filter((st) => {
+              const docs = chain.documents.filter((d) => d.stage === st.id);
+              return docs.length > 0 && docs.every((d) => documentApplies(d, facts) === "not_applicable");
+            })
+            .map((st) => st.id);
           const claimed = closingStep
-            ? await claimFor(team, initiative, governed.module, closingStep.id, CLOSE_ACTION)
+            ? await claimFor(team, initiative, governed.module, closingStep.id, CLOSE_ACTION, ruledOutSteps)
             : null;
           if (claimed && !claimed.grant.granted && !claimed.standing.clear) {
             return text(

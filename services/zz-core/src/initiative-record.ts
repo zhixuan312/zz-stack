@@ -95,13 +95,17 @@ export function openRecord(root: string, name: string): OpenRecord | null {
 
 
 /** Where a flow's durable branch facts live (FR-58, Task I-26): `protocol_action`,
- *  `improvement_mode`, `release_mode`. Written by the eval service (Task I-27) and read by
- *  every caller that resolves a conditional document's `when` — never written here, the same
- *  division `_open.json` above draws between the tool that opens an initiative and the one
- *  that reads it back. Underscore-prefixed, so no listing treats it as a document.
+ *  `improvement_mode`, `release_mode`. Written by `writeFacts` below and read by every caller
+ *  that resolves a conditional document's `when` — the same division `_open.json` above draws
+ *  between the tool that opens an initiative and the one that reads it back, except that here
+ *  BOTH halves live in this module: `writeBranchFacts` (services/zz-core/src/eval/protocol.ts,
+ *  Task I-27) owns the refuse-on-change decision and calls `writeFacts` for the mechanical part,
+ *  the same split `recordAbandoned` below keeps from `closeInitiative`. Underscore-prefixed, so
+ *  no listing treats it as a document.
  *
- *  DELIBERATE: not exported. `factsFor` below is the one reader; a second module reaching for
- *  the filename itself would be reading `_facts.json` a second way. */
+ *  DELIBERATE: not exported. `factsFor`/`writeFacts` below are the only two touching the
+ *  filename; a second module reaching for it directly would be reading or writing `_facts.json`
+ *  a second way. */
 const FACTS_FILE = "_facts.json";
 
 /** An initiative's durable branch facts, or `{}` when none are recorded yet.
@@ -127,6 +131,16 @@ export function factsFor(root: string, initiative: string): Record<string, strin
   } catch {
     return {};
   }
+}
+
+/** Write the durable branch facts, replacing whatever `factsFor` would have read back.
+ *
+ * DELIBERATE: no merge and no refusal here — `writeBranchFacts` (eval/protocol.ts) reads the
+ * current facts with `factsFor` above, decides whether a requested change is a refusal, and
+ * passes the whole merged object down. This call is the mechanical write, append-only only
+ * because its one caller never asks it to drop a fact that was already set. */
+export function writeFacts(root: string, initiative: string, facts: Record<string, string>): void {
+  writeFileSync(join(root, initiative, FACTS_FILE), `${JSON.stringify(facts, null, 2)}\n`);
 }
 
 /** An initiative this slug would collide with, or null.

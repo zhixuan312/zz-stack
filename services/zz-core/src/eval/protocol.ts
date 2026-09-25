@@ -22,8 +22,26 @@
  * tool description. "At the same digest" (the contract's own words) is checked by requiring the
  * document's body to quote the `content_digest` `protocol_record` returned, verbatim — the one
  * fact that ties a page of prose to the exact immutable row it was written to describe.
+ *
+ * `writeBranchFacts` (Task I-27, FR-52, FR-58) is this file's third export: the one writer of
+ * an initiative's durable branch facts (`protocol_action`, `improvement_mode`, `release_mode`)
+ * every flow's `when` reads (`documentApplies`, packages/contracts/src/flow-when.js). Placed
+ * here per the plan's own Output line — `protocol_read` is its first caller — and imported by
+ * `candidates.ts` (`improvement_start`) and `release.ts` (`release_prepare`/`proposal_prepare`),
+ * which is why it takes no `subject_version_id`-shaped context of its own: every caller already
+ * knows its initiative and what it decided.
+ *
+ * The store write follows `writeRoundAssessments` (semantic.ts): `initiative-record.ts` owns
+ * `_facts.json`'s name and mechanical write (`factsFor`/`writeFacts`); this function owns the
+ * one rule that write must obey — a fact already set refuses a different value, forever — and
+ * mirrors every NEWLY set fact into `zz.initiative_fact` (migration 085) so the console, which
+ * reads `zz.doc` alone, can compute the same `documentApplies` answer. The mirror is written
+ * the moment the file is, not fire-and-forget like `indexDoc`'s search vector: a stale search
+ * result is merely slow to find, but a stale console stepper is a wrong answer about whether an
+ * initiative may close.
  */
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { documentBody, EvaluationProtocol, parseEnvelope, parseCaller } from "@zz/contracts";
@@ -34,9 +52,10 @@ import { z } from "zod";
 import { latestProtocolVersion, triggersFor } from "./protocol-triggers.js";
 import { recordProtocolVersion } from "./protocol-record.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { factsFor, writeFacts } from "../initiative-record.js";
 import { logActivity } from "../persist.js";
 import { safeName, safePath, userRoot } from "../paths.js";
-import { db } from "../platform-db.js";
+import { db, teamFor } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
@@ -54,6 +73,78 @@ async function pluginOf(p: pg.Pool, subjectVersionId: string): Promise<{ pluginI
   return row ? { pluginId: row.plugin_id, plugin: row.plugin } : null;
 }
 
+/** The three durable branch facts (FR-58) — every caller passes only the ones it decided.
+ *  DELIBERATE: not exported — `writeBranchFacts` below is the one signature that names it, and
+ *  every caller passes a plain object literal it structurally matches. */
+interface BranchFacts {
+  protocol_action?: string;
+  improvement_mode?: string;
+  release_mode?: string;
+}
+
+/** Mirror every NEWLY set fact into `zz.initiative_fact` — never a fact `writeBranchFacts`
+ *  already found unchanged, which reaches here only because the file write above is a whole
+ *  replace rather than a per-fact diff. `on conflict do nothing` is the second half of
+ *  append-only: even a caller racing this exact insert cannot make the row disagree with the
+ *  file, because `writeBranchFacts` already refused a disagreeing value before either write ran.
+ *
+ *  No team to mirror under is not an error — `userRoot()` resolves a team-less shelf for a
+ *  caller `teamFor` cannot place, and the file write is what stands for such a caller; the
+ *  console has nothing to draw for them either way. */
+async function mirrorBranchFacts(
+  team: string | null, initiative: string, fresh: readonly [string, string][],
+): Promise<void> {
+  if (!team || !fresh.length) return;
+  const p = db();
+  if (!p) return;
+  for (const [fact, value] of fresh) {
+    await p.query(
+      `insert into zz.initiative_fact (team, initiative, fact, value)
+       values ($1, $2, $3, $4)
+       on conflict (team, initiative, fact) do nothing`,
+      [team, initiative, fact, value]);
+  }
+}
+
+/**
+ * Set one or more of an initiative's durable branch facts (FR-52, FR-58). Every caller passes
+ * only what it decided; an already-set fact refuses a DIFFERENT value and is silently a no-op
+ * for the SAME one — a caller resuming after another wrote it first sees no difference between
+ * "I set this" and "this was already true".
+ *
+ * RETURNS the merged facts object on success, or an `ERROR: …` string naming the fact and its
+ * standing value — callers that treat a re-derived value as informational (protocol_read, where
+ * a resumed read may legitimately recompute a different action once a protocol now exists)
+ * fold that string into their own response instead of failing outright; callers for whom a
+ * conflict means the wrong branch entirely (release_prepare, proposal_prepare, the
+ * improvement_start skip) return it as the tool's own refusal.
+ */
+export async function writeBranchFacts(
+  initiative: string, updates: BranchFacts,
+): Promise<string | Record<string, string>> {
+  const badInitiative = safeName(initiative, "initiative");
+  if (badInitiative) return badInitiative;
+  const root = await userRoot();
+  if (!existsSync(join(root, initiative))) {
+    return `ERROR: no initiative named "${initiative}" — branch facts are recorded against an ` +
+      "opened one; call initiative_open first.";
+  }
+  const current = factsFor(root, initiative);
+  const entries = (Object.entries(updates) as [string, string | undefined][])
+    .filter((e): e is [string, string] => e[1] !== undefined && e[1] !== "");
+  for (const [fact, value] of entries) {
+    const have = current[fact];
+    if (have && have !== value) return `ERROR: ${fact} is already ${have} for this initiative`;
+  }
+  const fresh = entries.filter(([fact, value]) => current[fact] !== value);
+  if (!fresh.length) return current;
+  const merged = { ...current };
+  for (const [fact, value] of fresh) merged[fact] = value;
+  writeFacts(root, initiative, merged);
+  await mirrorBranchFacts(await teamFor(parseCaller(requestHeaders()).email), initiative, fresh);
+  return merged;
+}
+
 export function registerProtocolTools(server: McpServer): void {
   server.registerTool(
     "protocol_read",
@@ -66,30 +157,46 @@ export function registerProtocolTools(server: McpServer): void {
         "— and triggers: which of purpose_changed, new_recurring_failure, evaluator_drift, " +
         "new_evidence_surface fired, or none. Computed entirely from live state — no document, " +
         "no protocol_body — from the plugin plugin_locate/plugin_register already IDENTIFY'd. " +
+        "Pass `initiative` to record protocol_action as that initiative's durable branch fact " +
+        "(FR-58) — omit it and nothing is recorded, which the response says. A fact already set " +
+        "to a DIFFERENT action is left standing (facts_recorded: false, facts_refused naming " +
+        "why) rather than refusing the whole call: a resumed read may legitimately recompute " +
+        "reuse once protocol_record has since run, and that is informational, not an error. " +
         "REFUSES a subject_version_id nothing minted, and a deployment with no platform " +
-        "database. Read-only; never writes.",
-      inputSchema: { subject_version_id: z.string() },
+        "database. Otherwise read-only; never writes to zz.eval_protocol_version.",
+      inputSchema: {
+        subject_version_id: z.string(),
+        initiative: z.string().optional().describe(
+          "Record protocol_action as this initiative's durable branch fact. Omit to read only."),
+      },
     },
-    async ({ subject_version_id }) => {
+    async ({ subject_version_id, initiative }) => {
       const p = db();
       if (!p) return noDb();
       const subject = await pluginOf(p, subject_version_id);
       if (!subject) return text("ERROR: unknown subject_version_id — call plugin_locate or plugin_register first");
 
       const latest = await latestProtocolVersion(p, subject.pluginId);
+      let response: Record<string, unknown>;
       if (!latest) {
-        return json({ protocol_version_id: null, protocol_action: "create", triggers: ["none"],
-          note: "No protocol exists for this plugin yet. Record one with protocol_record." });
+        response = { protocol_version_id: null, protocol_action: "create", triggers: ["none"],
+          note: "No protocol exists for this plugin yet. Record one with protocol_record." };
+      } else {
+        const triggers = await triggersFor(p, subject.pluginId, subject.plugin, latest);
+        const protocol_action = triggers.length ? "revise" : "reuse";
+        response = {
+          protocol_version_id: latest.id, protocol_action, triggers: triggers.length ? triggers : ["none"],
+          note: protocol_action === "reuse"
+            ? "REUSE, DO NOT RECORD. This plugin's newest protocol version is still compatible."
+            : `RECORD A NEW VERSION: ${triggers.join(", ")} fired against version ${latest.version}. ` +
+              "protocol_record never edits a version in place.",
+        };
       }
-      const triggers = await triggersFor(p, subject.pluginId, subject.plugin, latest);
-      const protocol_action = triggers.length ? "revise" : "reuse";
-      return json({
-        protocol_version_id: latest.id, protocol_action, triggers: triggers.length ? triggers : ["none"],
-        note: protocol_action === "reuse"
-          ? "REUSE, DO NOT RECORD. This plugin's newest protocol version is still compatible."
-          : `RECORD A NEW VERSION: ${triggers.join(", ")} fired against version ${latest.version}. ` +
-            "protocol_record never edits a version in place.",
-      });
+      if (!initiative) return json({ ...response, facts_recorded: false });
+      const written = await writeBranchFacts(initiative, { protocol_action: response.protocol_action as string });
+      return json(typeof written === "string"
+        ? { ...response, facts_recorded: false, facts_refused: written }
+        : { ...response, facts_recorded: true, facts: written });
     },
   );
 

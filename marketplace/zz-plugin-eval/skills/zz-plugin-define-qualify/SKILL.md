@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define-qualify
-version: 0.1
+version: 0.2
 description: Stage 4 of zz-plugin-eval (DEFINE/QUALIFY), and the one gate that matters most. Derive what good means for THIS plugin from its own profile and DISCOVER's candidates, write it into protocol.md, get a person to agree it, then qualify every model-backed evaluator it names before anything is scored.
 when_to_use: "The fourth stage of zz-plugin-eval, after DISCOVER. Conditional: protocol_read decides create/revise/reuse, and this stage only writes when it says create or revise. Produces protocol.md, gated — protocol_affirm refuses to bind it until somebody approves it. No shell required."
 ---
@@ -62,11 +62,42 @@ Inside a dimension, one or more **measures** actually produce a mark. Each carri
   **`definition.qualification.{positive, zero}` is required too** — QUALIFY below cannot build an
   anchor without it, and a measure that never gets one answers `unqualified, reason: no_anchors`
   forever.
-- **`deterministic` / `outcome`** — a tool computes a fact and the measure's `definition` says
-  what counts as passing. `definition`'s exact shape is not fixed by the contract — write it as
-  precisely as you would have written a threshold: name the figure, name the line, name why.
+- **`deterministic` / `outcome`** — a tool computes a fact and the measure reads it off OBSERVE's
+  own snapshot, by a dotted `definition.factPath`: the fact's own name (`tool_refusal_rate`,
+  `latency_p50_ms`, `outcome_delivered_rate`, ...) — every name `plugin_profile` computes is listed
+  in `services/zz-core/src/eval/observe-facts.ts`'s own `OBSERVATION_FACT_KEYS`, and
+  `protocol_record` refuses a `factPath` naming anything else, by listing the real ones back to
+  you. Declare `definition.normalize`, one of three rules, to turn that fact's raw value into the
+  `[0,1]` the measure needs:
+  - `"rate"` (the default, so a fact that is already a rate — `usable_run_coverage`,
+    `tool_coverage`, `tool_refusal_rate` — needs no `normalize` at all) reads the fact's own value
+    directly.
+  - `"inverted_rate"` reads `1 - value` — for a rate where LOWER is better, such as
+    `tool_refusal_rate` or `dependency_failure_rate`: a plugin that refuses nothing should score
+    `1`, not `0`.
+  - `"threshold"` compares a measured quantity (`latency_p50_ms`, `tokens_per_model_call_avg`)
+    against a declared `max` and/or `min`, and reduces the comparison to `1`/`0` — use this for
+    anything that is not itself a `[0,1]` rate; `"rate"`/`"inverted_rate"` refuse (excluded, never
+    a guessed value) when the fact's raw value falls outside `[0,1]`.
+
+  A missing fact (a zero-denominator window, a snapshot recorded before its own window had any
+  traffic) makes the measure excluded with a named reason — never a bare `0`, and never a
+  silently-passing `1`.
 - **`human`** — nothing here reads it automatically; it exists for a mark this platform does not
   yet compute any other way.
+
+## Critical guardrails live on the protocol, not on a measure
+
+`improvement.criticalGuardrails` — `[{ key, threshold }]` — is the ONE guardrail mechanism.
+Name a measure's own `key` (unique across every dimension — `protocol_record` refuses a key that
+resolves to zero measures or to more than one) and the threshold its normalised `[0,1]` value
+must meet or exceed. `evaluation_score`, `replay_score`, `candidate_prove` and `release_verify`
+all read this same list — nothing on a measure's own `definition` marks it as a guardrail. A
+guardrail bound to a `deterministic`/`outcome` measure reads `not_established` on every replay
+(a replay run carries no observation snapshot for that measure to read a fact off), which
+`candidate_prove`/`release_verify` correctly treat as missing evidence, never a failure — keep
+that in mind before naming a snapshot-only fact as a critical guardrail on a protocol whose
+`improvement.evolvable` is `true`.
 
 ## THE JUDGE IS HANDED THE ARTIFACT'S TEXT, AND NOTHING ELSE
 

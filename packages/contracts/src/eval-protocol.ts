@@ -255,9 +255,13 @@ export type ProofPolicy = z.infer<typeof ProofPolicy>;
 export const ReleasePolicy = FreeformRecord;
 export type ReleasePolicy = z.infer<typeof ReleasePolicy>;
 
-/** A named guardrail inside `improvement.criticalGuardrails` — a bare key is enough to name one;
- *  a richer object may carry whatever else the protocol wants recorded about it. */
-export const Guardrail = z.union([z.string().min(1), z.object({ key: z.string().min(1) }).catchall(z.unknown())]);
+/** A named guardrail inside `improvement.criticalGuardrails` (Task I-29's own fix dispatch, FR-6,
+ *  FR-23): the measure key it binds to, and the threshold its normalised `[0,1]` value must meet
+ *  or exceed to pass — `evaluateGuardrails` (`services/zz-core/src/eval/evaluate-measures.ts`) is
+ *  the one place that number is read, so a guardrail with no explicit threshold is a protocol that
+ *  never said what "pass" means for it. A richer object may still carry whatever else the protocol
+ *  wants recorded about it, through `catchall`. */
+export const Guardrail = z.object({ key: z.string().min(1), threshold: z.number().min(0).max(1) }).catchall(z.unknown());
 export type Guardrail = z.infer<typeof Guardrail>;
 
 /** A named failure mode inside `failureTaxonomy` — same shape as Guardrail, for the same reason:

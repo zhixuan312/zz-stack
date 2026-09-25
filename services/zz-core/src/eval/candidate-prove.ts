@@ -82,14 +82,14 @@ import {
   lookupRow, withIdempotency, type IdempotencyOutcome, type IdempotencyRow, type MutatorOutcome,
 } from "./idempotency.js";
 import { writeBranchFacts } from "./protocol.js";
-import { closeRun } from "./replay-runs.js";
 import { pairedDecision, type PairedDecisionResult } from "./stats.js";
 import { Refusal } from "../refusal.js";
+import { abandonProof } from "./candidate-prove-abandon.js";
 
 // -------------------------------------------------------------------------------------------
 // Candidate + its proof policy.
 
-interface CandidateRow {
+export interface CandidateRow {
   readonly id: string;
   readonly status: string;
   readonly improvement_run_id: string;
@@ -261,7 +261,7 @@ function mintVerifierToken(): string {
 // -------------------------------------------------------------------------------------------
 // The tool's own result shape and orchestrator.
 
-interface CandidateProveOutcome {
+export interface CandidateProveOutcome {
   readonly proof_status: "proof_passed" | "proof_failed" | "not_established" | null;
   readonly reason: string | null;
   readonly release_eligible: boolean;
@@ -288,7 +288,7 @@ async function recordNothingToPromote(
 }
 
 const OPEN_STATUSES = new Set(["selected", "proving"]);
-const SPENT_STATUSES = new Set(["proof_passed", "proof_failed", "proof_not_established"]);
+export const SPENT_STATUSES = new Set(["proof_passed", "proof_failed", "proof_not_established"]);
 
 /** Records the proof allocation's terminal outcome — the ONE ledger write this call makes,
  *  whatever combination of leakage/statistics/guardrails/ownership (or `abandonProof`) decided
@@ -304,7 +304,7 @@ const SPENT_STATUSES = new Set(["proof_passed", "proof_failed", "proof_not_estab
  *  for `selected`/`closed`. `phase` defaults to `"resolve"`; `abandonProof` passes `"abandon"` so
  *  the two calls never share a digest (see the module note and `readBackIfSameResolve`'s own
  *  comment on why phases must not collide). */
-async function resolveOutcome(
+export async function resolveOutcome(
   candidate: CandidateRow, idempotencyKey: string, principal: string,
   outcome: {
     readonly proof_status: "proof_passed" | "proof_failed" | "not_established";
@@ -396,7 +396,7 @@ async function resolveOutcome(
   };
 }
 
-interface StoredProofEvaluation {
+export interface StoredProofEvaluation {
   readonly id: string;
   readonly aggregate_score: {
     proof_status: "proof_passed" | "proof_failed" | "not_established";
@@ -428,100 +428,6 @@ async function readBackIfSameResolve(
     release_eligible: stored.aggregate_score.release_eligible, candidate_evaluation_id: stored.id,
     verifier_token: null, token_already_issued: true, status: candStatus,
   };
-}
-
-// -------------------------------------------------------------------------------------------
-// Abandon (this dispatch, FR-28): recovers an allocation stuck `proving` because the caller lost
-// the response that opened it — nobody holds the verifier_token, so no ordinary candidate_prove
-// call can ever plan or resolve it.
-
-/** Every proof-split replay_run THIS candidate's own verifier_token allocation spawned and is
- *  still `registered`/`running` — candidate-side and baseline-side alike, scoped by
- *  `verifier_allocation_id` (migration 082, this task's own fix dispatch) rather than by
- *  `candidate_id`/`base_subject_version_id`. Closed through `closeRun` (`replay-runs.ts`), the
- *  SAME teardown `replay_close`/`sweepExpired` already use — never a second, ad hoc teardown
- *  that could drift from that one's own admin-event record.
- *
- *  FIXED (was DELIBERATE, Task I-21's own defect this dispatch closes): baseline-side runs used
- *  to be matched by `base_subject_version_id` alone, with no verifier_token-scoped column to
- *  narrow further — a second candidate proving the SAME base subject against the SAME case set
- *  at the same time would then also lose its own still-registered baseline runs here.
- *  `verifier_allocation_id` is stamped by `replay_start` from the exact `verifier_token`
- *  presented (`replay-runs.ts`'s own `requireContext`), so it identifies one allocation and
- *  nothing wider — two concurrent allocations against the same base subject and case set now
- *  cancel only their own runs. */
-async function cancelProofRuns(
-  p: pg.Pool, verifierAllocationId: string, principal: string,
-): Promise<void> {
-  const { rows } = await p.query<{ id: string; team_slug: string; pat_id: string }>(`
-    select rr.id::text as id, rr.team_slug, rr.pat_id::text as pat_id
-      from zz.replay_run rr
-     where rr.verifier_allocation_id = $1::uuid
-       and rr.status in ('registered', 'running')`,
-    [verifierAllocationId]);
-  for (const run of rows) await closeRun(p, run, "cancelled", principal, "abandoned");
-}
-
-/** The candidate's own currently open (not yet revoked) `zz.replay_verifier_token` id — the same
- *  allocation `candidate_prove`'s own "open" phase minted and `resolveOutcome` revokes on
- *  resolution. Null when nothing was ever minted (an abandon against a `selected` candidate is
- *  already refused before this is ever called) or the token row itself is gone. */
-async function activeVerifierAllocationId(p: pg.Pool, candidateId: string): Promise<string | null> {
-  const row = (await p.query<{ id: string }>(`
-    select id::text as id from zz.replay_verifier_token
-     where candidate_id = $1::uuid and revoked_at is null
-     order by created_at desc limit 1`, [candidateId])).rows[0];
-  return row?.id ?? null;
-}
-
-/** The candidate's own latest proof `zz.candidate_evaluation` row, however it got there (a
- *  normal resolve, or a prior abandon) — read back for `abandon`'s own no-op-on-already-spent
- *  contract below, which answers the CURRENT terminal state whatever idempotency_key the caller
- *  used to reach it, unlike `readBackIfSameResolve`'s own exact-retry match. */
-async function latestProofEvaluation(p: pg.Pool, candidateId: string): Promise<StoredProofEvaluation | null> {
-  return (await p.query<StoredProofEvaluation>(`
-    select id::text as id, aggregate_score from zz.candidate_evaluation
-     where candidate_id = $1::uuid and split = 'proof'
-     order by created_at desc limit 1`, [candidateId])).rows[0] ?? null;
-}
-
-/** `abandon: true` — see the module note. `selected` REFUSES (nothing was ever opened, so there
- *  is no allocation to abandon); `proving` cancels whatever the token spawned and resolves the
- *  allocation `not_established, reason: "abandoned"` through `resolveOutcome`'s own `"abandon"`
- *  phase; an already-spent candidate (by this call or any other terminal path) is a NO-OP
- *  read-back of its own current state, never a refusal — FR-28's "revokes the token" is already
- *  true by the time a second abandon reaches it. */
-async function abandonProof(
-  p: pg.Pool, candidate: CandidateRow, idempotencyKey: string, principal: string, initiative?: string,
-): Promise<CandidateProveOutcome | { error: string }> {
-  if (candidate.status === "selected") {
-    return { error: `ERROR: candidate ${candidate.id} has no open proof allocation to abandon — it was never opened` };
-  }
-  if (SPENT_STATUSES.has(candidate.status)) {
-    const stored = await latestProofEvaluation(p, candidate.id);
-    if (!stored) {
-      return { error: `ERROR: candidate ${candidate.id} is spent but its own proof evaluation cannot be read back` };
-    }
-    return {
-      proof_status: stored.aggregate_score.proof_status, reason: stored.aggregate_score.reason,
-      release_eligible: stored.aggregate_score.release_eligible, candidate_evaluation_id: stored.id,
-      verifier_token: null, token_already_issued: true, status: candidate.status,
-    };
-  }
-
-  // proving: cancel whatever the token already spawned before revoking it — scoped to this
-  // candidate's own open allocation (migration 082), never to a case set or base subject a
-  // different candidate's own allocation could share. A missing allocation id (the token row
-  // itself vanished mid-flight) still lets the abandon resolve; it only means nothing was left
-  // to cancel.
-  const verifierAllocationId = await activeVerifierAllocationId(p, candidate.id);
-  if (verifierAllocationId) await cancelProofRuns(p, verifierAllocationId, principal);
-
-  return resolveOutcome(candidate, idempotencyKey, principal, {
-    proof_status: "not_established", reason: "abandoned", release_eligible: false,
-    decision: null, guardrails: null, resource_usage: null, dimension_scores: null,
-    statistics: { abandoned: true },
-  }, "abandon", initiative);
 }
 
 export async function proveCandidate(
@@ -655,6 +561,21 @@ export async function proveCandidate(
   if (leakage.leaked) {
     return resolveOutcome(candidate, idempotencyKey, principal, {
       proof_status: "proof_failed", reason: `leakage_detected: ${leakage.reason ?? ""}`, release_eligible: false,
+      decision, guardrails, resource_usage, dimension_scores, statistics,
+    }, "resolve", initiative);
+  }
+
+  // FR-9/FR-23 (Task I-29's own fix dispatch): a critical guardrail this candidate's own replay
+  // evidence never measured — every deterministic/outcome measure excludes against a replay run,
+  // which carries no observation snapshot (evaluate-measures.ts/replay-score.ts's own module
+  // notes) — is missing evidence, never a failure. Checked before the statistical verdict below:
+  // no amount of additional repeats ever changes a structurally-unmeasurable guardrail's status,
+  // so `not_established` is this call's real, terminal answer here, not a reason to keep waiting,
+  // and folding it into `guardrails_failed` (the pre-fix behaviour) would misreport a coverage gap
+  // as a proven regression.
+  if (guardrails.status === "not_established") {
+    return resolveOutcome(candidate, idempotencyKey, principal, {
+      proof_status: "not_established", reason: "guardrails_not_established", release_eligible: false,
       decision, guardrails, resource_usage, dimension_scores, statistics,
     }, "resolve", initiative);
   }

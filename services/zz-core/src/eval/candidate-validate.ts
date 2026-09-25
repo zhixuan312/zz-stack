@@ -37,6 +37,7 @@ import {
   linkWorkspaceDependencies, removeCandidateWorktree, type BuildOutcome, type Worktree,
 } from "./candidate-build.js";
 import { loadDimensions } from "./evaluate.js";
+import type { GuardrailResult } from "./evaluate-measures.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { pairedDecision, type PairedDecisionResult } from "./stats.js";
 
@@ -174,7 +175,10 @@ export interface SideRun {
   readonly case_id: string;
   readonly overall: number;
   readonly score: { dimensions?: { key: string; score: number | null }[] } | null;
-  readonly guardrails: readonly string[] | null;
+  /** The rich `GuardrailResult[]` `replay_score` stores on `zz.replay_run.guardrails` (Task I-29's
+   *  own fix dispatch — was a bare `"pass"|"fail"|"not_established"[]`). `summariseGuardrails`
+   *  below reads `.status` off each entry. */
+  readonly guardrails: readonly GuardrailResult[] | null;
   readonly cost: number | null;
   readonly duration_ms: number | null;
 }
@@ -290,9 +294,9 @@ export function escalateOneRepeat(caseIds: readonly string[], candidate: Candida
 // Guardrails / resource usage / dimension scores — reported, never gated on (the contract's own
 // "cost/latency/complexity as reported objectives, not caps").
 
-export function summariseGuardrails(runs: readonly SideRun[]): { status: "pass" | "fail" | "not_established"; by_run: { case_id: string; guardrails: readonly string[] | null }[] } {
-  const flat = runs.flatMap((r) => r.guardrails ?? []);
-  const status = flat.includes("fail") ? "fail" : flat.includes("not_established") ? "not_established" : "pass";
+export function summariseGuardrails(runs: readonly SideRun[]): { status: "pass" | "fail" | "not_established"; by_run: { case_id: string; guardrails: readonly GuardrailResult[] | null }[] } {
+  const flatStatuses = runs.flatMap((r) => (r.guardrails ?? []).map((g) => g.status));
+  const status = flatStatuses.includes("fail") ? "fail" : flatStatuses.includes("not_established") ? "not_established" : "pass";
   return { status, by_run: runs.map((r) => ({ case_id: r.case_id, guardrails: r.guardrails })) };
 }
 

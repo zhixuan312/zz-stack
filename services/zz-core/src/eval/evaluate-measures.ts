@@ -2,13 +2,20 @@
  * `evaluation_assess`'s own per-measure execution, and `evaluation_score`'s own reduction of the
  * rows it wrote into `scoreRun`'s input shape (Task I-13, AC-8.1, AC-9.1).
  *
+ * FIXED (fix dispatch on initiative 2026-09-24-plugin-eval-next-version, task I-29's own two
+ * follow-on seams): `deterministic`/`outcome` used to read only two hard-coded facts off
+ * `zz.eval_observation_snapshot`'s own raw columns, because OBSERVE (Task I-7) stored only their
+ * digest and never the ~18 facts it actually computes. Migration 086 gives the snapshot a `facts`
+ * column carrying the whole map (observe-facts.ts's `OBSERVATION_FACT_KEYS`), so a measure now
+ * names ANY of them by a dotted `definition.factPath`, normalised to `[0,1]` by a rule the measure
+ * itself declares — see `deterministicAnswer`/`normalizeFactValue` below. `outcome` reads the same
+ * way; it still has no replay/case data source of its own (a later task), so it is scored
+ * identically to `deterministic` until one exists.
+ *
  * One measure, one evaluator type, one answer:
- *   - `deterministic` / `outcome` read a NAMED fact straight off `zz.eval_observation_snapshot`'s
- *     own stored columns — the same two facts `qualify-evidence.ts`'s `FACT_STATEMENTS` already
- *     reads (`usable_run_coverage`, `tool_coverage`), because OBSERVE (Task I-7) is DELIBERATE
- *     about storing only those counts and the digest over the rest, never the full facts object.
- *     `outcome` has no replay/case data source yet (a later task); until one exists it reads the
- *     same two stored facts, exactly as `qualify-evidence.ts`'s own header note says of `labels`.
+ *   - `deterministic` / `outcome` read a NAMED fact off the run's bound observation snapshot, by
+ *     dotted path. A missing fact, an unresolved path, or a value the declared normalisation rule
+ *     cannot make sense of is excluded with a named reason — never a bare 0.
  *   - `bounded_semantic` / `generative_critic` ask the measure's bound `evaluator_version_id`
  *     through `askEvaluator`, and derive a `[0,1]` value from the answer — see `valueFromAnswer`.
  *   - `human` has no label-ingestion pipeline yet; its measures are recorded as `null`, excluded
@@ -16,11 +23,16 @@
  *
  * `definition` is a protocol measure's freeform jsonb (spec v8 fixes no shape for it — this
  * task's own plan boundary, "final deliverable content is not in this plan", is what leaves the
- * shape below to this file rather than to the contract): `{ factKey?, qualification?: {positive,
- * zero}, guardrail?: boolean, guardrailThreshold?: number }`. `qualification` is the SAME
- * `{positive, zero}` vocabulary `qualify.ts` already reads off a measure for anchor-building —
- * reused here, never redefined, so a protocol author writes one vocabulary and both EVALUATE and
- * QUALIFY read it.
+ * shape below to this file rather than to the contract): for `deterministic`/`outcome`,
+ * `{ factPath: string, normalize?: "rate" | "inverted_rate" | "threshold", max?: number, min?:
+ * number }` — `normalize` defaults to `"rate"` when omitted, so the two original facts
+ * (`usable_run_coverage`, `tool_coverage`, already rates in `[0,1]`) need not declare one.
+ * `qualification?: {positive, zero}` is the SAME vocabulary `qualify.ts` already reads off a
+ * measure for anchor-building — reused here, never redefined, so a protocol author writes one
+ * vocabulary and both EVALUATE and QUALIFY read it. `improvement.criticalGuardrails` (protocol-
+ * level, `@zz/contracts`'s `Guardrail`) is now the ONLY guardrail mechanism — see
+ * `evaluateGuardrails` below; a measure's own `definition` no longer carries `guardrail`/
+ * `guardrailThreshold`.
  */
 import { askEvaluator, type EvaluatorAssessmentResult } from "./evaluators.js";
 
@@ -28,6 +40,12 @@ export interface SnapshotFacts {
   readonly usable_run_count: number;
   readonly total_run_count: number;
   readonly coverage: { surface?: { observed?: number; total?: number } } | null;
+  /** The full map migration 086 added — `null` for a snapshot recorded before that column
+   *  existed (no backfill), which excludes every deterministic/outcome measure with a named
+   *  reason rather than guessing at a value. Loosely typed (`unknown` per entry): this file
+   *  narrows each entry it actually reads through `asFactLike`, rather than importing
+   *  observe-facts.ts's `ObservedFact` union and coupling to its exact shape. */
+  readonly facts: Record<string, unknown> | null;
 }
 
 export interface MeasureRow {
@@ -66,37 +84,121 @@ export interface MeasureAnswer {
   readonly detail: Record<string, unknown>;
 }
 
-const FACT_KEYS = ["usable_run_coverage", "tool_coverage"] as const;
-
-function factValue(factKey: unknown, snapshot: SnapshotFacts): { n: number; d: number } | null {
-  if (factKey === "usable_run_coverage") {
-    const d = snapshot.total_run_count;
-    return d > 0 ? { n: snapshot.usable_run_count, d } : null;
-  }
-  if (factKey === "tool_coverage") {
-    const d = snapshot.coverage?.surface?.total ?? 0;
-    const n = snapshot.coverage?.surface?.observed ?? 0;
-    return d > 0 ? { n, d } : null;
-  }
-  return null;
+/** Walks a dot-separated path over a plain object — the same "reach a figure on the sheet" idea
+ *  `plugin-facts.ts`'s own `reaches` applies for the legacy ruler, rewritten here against
+ *  OBSERVE's own facts map rather than the whole legacy profile sheet. `undefined` the moment the
+ *  path runs off the object (a non-object node, or a missing key) — never a thrown error, since a
+ *  bad path is this function's caller's business to report, not this function's to crash over. */
+function getByPath(obj: unknown, path: string): unknown {
+  return path.split(".").reduce<unknown>(
+    (at, segment) => (at !== null && typeof at === "object" ? (at as Record<string, unknown>)[segment] : undefined),
+    obj,
+  );
 }
 
-/** deterministic / outcome: a named fact, read off the snapshot's own stored columns — no model,
- *  no subject_ref (the same value for every subject_ref this run assesses, until a replay/case
- *  data source exists to vary it by). */
-function deterministicAnswer(measure: MeasureRow, snapshot: SnapshotFacts): MeasureAnswer {
-  const factKey = measure.definition.factKey;
-  const fact = factValue(factKey, snapshot);
-  const known = FACT_KEYS.includes(factKey as (typeof FACT_KEYS)[number]);
+/** One `ObservedFact`/`MissingFact` (observe-facts.ts), narrowed just enough to read here without
+ *  importing that file's own union type — `value` is the one field every shape shares, and
+ *  `numerator`/`denominator`/`coverage`/`reason` are read only when present. Not an `ObservedFact`
+ *  itself: a `factPath` may resolve to something else entirely (a stray object with no `value`),
+ *  and `null` is this function's honest answer for "not fact-shaped", distinct from a resolved
+ *  fact whose own `value` happens to be `null`. */
+interface FactLike {
+  readonly value: number | null;
+  readonly numerator?: number;
+  readonly denominator?: number;
+  readonly coverage?: unknown;
+  readonly reason?: string;
+}
+function asFactLike(node: unknown): FactLike | null {
+  if (!node || typeof node !== "object" || !("value" in node)) return null;
+  const v = (node as Record<string, unknown>).value;
+  if (v !== null && typeof v !== "number") return null;
+  return node as FactLike;
+}
+
+/** deterministic/outcome measures declare one of these three (Task I-29's own fix dispatch,
+ *  replacing the single implicit "read this fact as a rate" rule the two original facts got away
+ *  with). `rate`/`inverted_rate` both need the raw fact value to already BE a rate in `[0,1]` —
+ *  `usable_run_coverage`/`tool_coverage`/`tool_refusal_rate` and friends qualify; `latency_p50_ms`
+ *  or `tokens_per_model_call_avg` do not, and normalising one of those as a rate is refused rather
+ *  than silently producing a number `scoreRun`'s own `[0,1]` guard would otherwise throw on later.
+ *  `threshold` is for exactly that shape: a measured quantity compared against a declared `max`
+ *  and/or `min`, reduced to a pass/fail `1`/`0`. */
+type NormalizeRule = "rate" | "inverted_rate" | "threshold";
+
+interface NormalizeOutcome { readonly value: number | null; readonly reason: string | null }
+
+function normalizeFactValue(raw: number, definition: Record<string, unknown>, factPath: string): NormalizeOutcome {
+  const rule = (typeof definition.normalize === "string" ? definition.normalize : "rate") as NormalizeRule | string;
+  if (rule === "rate" || rule === "inverted_rate") {
+    if (raw < 0 || raw > 1) {
+      return {
+        value: null,
+        reason: `fact "${factPath}"'s value ${raw} is not a rate in [0,1] — normalize:"${rule}" ` +
+          "needs a rate-shaped fact (use normalize:\"threshold\" for a measured quantity instead)",
+      };
+    }
+    return { value: rule === "inverted_rate" ? 1 - raw : raw, reason: null };
+  }
+  if (rule === "threshold") {
+    const max = definition.max;
+    const min = definition.min;
+    if (typeof max !== "number" && typeof min !== "number") {
+      return { value: null, reason: `measure declares normalize:"threshold" but names no max or min` };
+    }
+    const passesMax = typeof max !== "number" || raw <= max;
+    const passesMin = typeof min !== "number" || raw >= min;
+    return { value: passesMax && passesMin ? 1 : 0, reason: null };
+  }
   return {
-    value: fact ? fact.n / fact.d : null,
-    excluded: fact === null,
-    excluded_reason: fact
-      ? null
-      : known ? `fact "${String(factKey)}" has a zero denominator in this run's observation snapshot`
-              : `measure "${measure.key}" names no known factKey (one of ${FACT_KEYS.join(", ")})`,
+    value: null,
+    reason: `measure declares unknown normalize rule "${rule}" (one of rate, inverted_rate, threshold)`,
+  };
+}
+
+function excludedAnswer(reason: string): MeasureAnswer {
+  return {
+    value: null, excluded: true, excluded_reason: reason,
     evaluator_version_id: null, assessment_id: null, qualification_id: null, qualification_state: null,
-    detail: { fact_key: factKey ?? null, numerator: fact?.n ?? null, denominator: fact?.d ?? null },
+    detail: {},
+  };
+}
+
+/** deterministic / outcome: a named fact, read off the run's bound observation snapshot by a
+ *  dotted `definition.factPath` — no model, no subject_ref (the same value for every subject_ref
+ *  this run assesses, until a replay/case data source exists to vary it by). `protocol_record`
+ *  (protocol-record.ts's own `factPathRefusal`) already refused a `factPath` naming no fact OBSERVE
+ *  computes at all, at record time — so a resolution failure here means THIS snapshot in
+ *  particular carries none (a pre-086 snapshot with `facts: null`, or a path drift this file's own
+ *  header note asks `checks/eval-fact-path.ts` to catch), not a malformed protocol. */
+function deterministicAnswer(measure: MeasureRow, snapshot: SnapshotFacts): MeasureAnswer {
+  const factPath = measure.definition.factPath;
+  if (typeof factPath !== "string" || !factPath.trim()) {
+    return excludedAnswer(`measure "${measure.key}" declares no definition.factPath`);
+  }
+  if (!snapshot.facts) {
+    return excludedAnswer(
+      `measure "${measure.key}"'s factPath "${factPath}" cannot be read — this run's observation ` +
+      "snapshot carries no facts (recorded before migration 086, or a context with no observation " +
+      "snapshot at all, such as a replay/verify run)");
+  }
+  const fact = asFactLike(getByPath(snapshot.facts, factPath));
+  if (!fact) {
+    return excludedAnswer(
+      `measure "${measure.key}"'s factPath "${factPath}" names no fact this observation snapshot carries`);
+  }
+  if (fact.value === null) {
+    return excludedAnswer(`fact "${factPath}" is missing in this run's observation snapshot: ${fact.reason ?? "no reason recorded"}`);
+  }
+  const { value, reason } = normalizeFactValue(fact.value, measure.definition, factPath);
+  return {
+    value, excluded: value === null, excluded_reason: reason,
+    evaluator_version_id: null, assessment_id: null, qualification_id: null, qualification_state: null,
+    detail: {
+      fact_path: factPath, normalize: (measure.definition.normalize as string | undefined) ?? "rate",
+      raw_value: fact.value, numerator: fact.numerator ?? null, denominator: fact.denominator ?? null,
+      coverage: fact.coverage ?? null,
+    },
   };
 }
 
@@ -199,4 +301,58 @@ export function reduceMeasureAnswers(answers: readonly MeasureAnswer[]): number 
   const usable = answers.filter((a): a is MeasureAnswer & { value: number } => !a.excluded && a.value !== null);
   if (!usable.length) return null;
   return usable.reduce((s, a) => s + a.value, 0) / usable.length;
+}
+
+// -------------------------------------------------------------------------------------------
+// Guardrails (Task I-29's own fix dispatch, FR-6, FR-20, FR-23): `improvement.criticalGuardrails`
+// is now the ONLY guardrail mechanism — evaluation_score, replay_score, candidate_prove and
+// release_verify all read it through the two functions below, rather than each scanning a
+// per-measure `definition.guardrail` flag of its own (the duplicate this fix removes).
+
+/** One `Guardrail` (`@zz/contracts`) as this file evaluates it: a measure key and the threshold
+ *  its NORMALISED value (the same [0,1] `reduceMeasureAnswers` already produced — never the raw
+ *  fact) must meet or exceed to pass. `@zz/contracts`'s own zod schema already requires both
+ *  fields on every entry it lets `protocol_record` write; `parseCriticalGuardrails` stays
+ *  defensive of a bare string or a missing threshold anyway, because it also reads
+ *  `improvement_policy` straight back off the database, which is one write path removed from
+ *  that schema's own validation. */
+export interface CriticalGuardrail { readonly key: string; readonly threshold: number }
+
+export interface GuardrailResult extends CriticalGuardrail {
+  readonly value: number | null;
+  readonly status: "pass" | "fail" | "not_established";
+}
+
+const DEFAULT_GUARDRAIL_THRESHOLD = 0.5;
+
+export function parseCriticalGuardrails(raw: unknown): CriticalGuardrail[] {
+  if (!Array.isArray(raw)) return [];
+  const out: CriticalGuardrail[] = [];
+  for (const g of raw) {
+    if (g && typeof g === "object" && typeof (g as Record<string, unknown>).key === "string") {
+      const r = g as Record<string, unknown>;
+      const threshold = typeof r.threshold === "number" ? r.threshold : DEFAULT_GUARDRAIL_THRESHOLD;
+      out.push({ key: r.key as string, threshold });
+    }
+  }
+  return out;
+}
+
+/** A run's own critical guardrails, evaluated against whatever this run already reduced each
+ *  named measure key to (`valueByMeasureKey` — the same `reduceMeasureAnswers` output
+ *  `evaluation_score`/`replay_score` compute per measure for scoring, keyed by `MeasureRow.key`
+ *  rather than by `id`, because a protocol names its guardrails by measure key). A key the run
+ *  never assessed at all (not present in the map) reads exactly as one whose every assessment was
+ *  excluded — `not_established`, never a silently-passing `undefined`. Missing evidence is never
+ *  failure (FR-9): `not_established` is its own status, distinct from `fail`, and every caller of
+ *  this function is expected to keep that distinction rather than treating "not pass" as "fail". */
+export function evaluateGuardrails(
+  critical: readonly CriticalGuardrail[], valueByMeasureKey: ReadonlyMap<string, number | null>,
+): GuardrailResult[] {
+  return critical.map((g) => {
+    const value = valueByMeasureKey.get(g.key) ?? null;
+    const status: GuardrailResult["status"] =
+      value === null ? "not_established" : value >= g.threshold ? "pass" : "fail";
+    return { ...g, value, status };
+  });
 }

@@ -43,9 +43,9 @@
   },
   "zz-plugin-eval": {
     "version": "0.76.0",
-    "digest": "43859ea3",
+    "digest": "617ac32e",
     "skills": {
-      "zz-plugin-define-qualify": "168025b0f085",
+      "zz-plugin-define-qualify": "89fc51b40200",
       "zz-plugin-discover": "6cbb234cc76d",
       "zz-plugin-eval": "b2a7bd96a55b",
       "zz-plugin-evaluate": "5854ff768181",

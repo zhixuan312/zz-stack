@@ -22,6 +22,7 @@ import type pg from "pg";
 
 import { canonicalJson } from "./idempotency.js";
 import { registerEvaluator, type EvaluatorDefinition } from "./evaluators.js";
+import { OBSERVATION_FACT_KEYS } from "./observe-facts.js";
 
 const sha256Digest = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 
@@ -56,6 +57,59 @@ function asEvaluatorDefinition(raw: unknown, measureKey: string): EvaluatorDefin
     polarity: (r.polarity as Record<string, unknown>) ?? {},
     model_policy: (r.model_policy as Record<string, unknown>) ?? {},
   };
+}
+
+/** A `deterministic`/`outcome` measure's `definition.factPath` refused, by name, when it names no
+ *  fact OBSERVE actually computes — the idea `plugin-facts.ts`'s own `readsRefusal` already
+ *  applies for the legacy ruler (a quantitative line's `reads` dotted path checked against the
+ *  profile sheet), replicated here against `observe-facts.ts`'s own `OBSERVATION_FACT_KEYS`
+ *  instead: only the path's FIRST segment is checked against that list — a nested path underneath
+ *  a resolved fact is `evaluate-measures.ts`'s own business at read time, not something this
+ *  file's static, pre-observation check can validate. `null` on a valid measure; this file's own
+ *  Fix dispatch note (I-29) is what this refusal answers. */
+export function factPathRefusal(
+  measure: { key: string; evaluatorType: string; definition: Record<string, unknown> },
+): string | null {
+  if (measure.evaluatorType !== "deterministic" && measure.evaluatorType !== "outcome") return null;
+  const factPath = measure.definition.factPath;
+  if (typeof factPath !== "string" || !factPath.trim()) {
+    return `measure "${measure.key}" is deterministic/outcome and names no definition.factPath`;
+  }
+  const top = factPath.split(".")[0];
+  if (!(OBSERVATION_FACT_KEYS as readonly string[]).includes(top)) {
+    return `measure "${measure.key}"'s factPath "${factPath}" names no fact OBSERVE computes — ` +
+      `one of ${OBSERVATION_FACT_KEYS.join(", ")}`;
+  }
+  const normalize = measure.definition.normalize;
+  if (normalize !== undefined && normalize !== "rate" && normalize !== "inverted_rate" && normalize !== "threshold") {
+    return `measure "${measure.key}"'s normalize "${String(normalize)}" is none of rate, inverted_rate, threshold`;
+  }
+  if (normalize === "threshold" && typeof measure.definition.max !== "number" && typeof measure.definition.min !== "number") {
+    return `measure "${measure.key}" declares normalize:"threshold" but names no max or min`;
+  }
+  return null;
+}
+
+/** Every `improvement.criticalGuardrails[].key` refused, by name, when it resolves to zero or more
+ *  than one measure across this protocol body's own dimensions — `evaluateGuardrails`
+ *  (evaluate-measures.ts) reads a guardrail by measure key alone, so a key that names nothing, or
+ *  names more than one measure, is a protocol that cannot be evaluated the way it claims to be.
+ *  `null` when every guardrail resolves to exactly one measure. */
+export function criticalGuardrailRefusal(
+  body: { dimensions: readonly { measures: readonly { key: string }[] }[]; improvement: { criticalGuardrails: readonly { key: string }[] } },
+): string | null {
+  const allMeasureKeys = body.dimensions.flatMap((d) => d.measures.map((m) => m.key));
+  for (const g of body.improvement.criticalGuardrails) {
+    const matches = allMeasureKeys.filter((k) => k === g.key);
+    if (matches.length === 0) {
+      return `improvement.criticalGuardrails names measure key "${g.key}", which no dimension's measure declares`;
+    }
+    if (matches.length > 1) {
+      return `improvement.criticalGuardrails names measure key "${g.key}", which ${matches.length} ` +
+        "measures across this protocol's dimensions declare — a guardrail key must resolve to exactly one measure";
+    }
+  }
+  return null;
 }
 
 /** Every `evaluator_version_id` a `bounded_semantic`/`generative_critic` measure resolves to,
@@ -169,6 +223,18 @@ interface RecordedVersion { protocol_version_id: string; content_digest: string 
 export async function recordProtocolVersion(
   client: pg.PoolClient, pluginId: string, body: EvaluationProtocol,
 ): Promise<RecordedVersion | string> {
+  // Checked first, purely in memory, before any evaluator is registered or written: a protocol
+  // whose factPath/criticalGuardrails content is wrong should not leave a half-registered
+  // evaluator version behind for a caller who fixes the typo and tries again.
+  for (const dim of body.dimensions) {
+    for (const measure of dim.measures) {
+      const factIssue = factPathRefusal(measure);
+      if (factIssue) return `REFUSED: ${factIssue}`;
+    }
+  }
+  const guardrailIssue = criticalGuardrailRefusal(body);
+  if (guardrailIssue) return `REFUSED: ${guardrailIssue}`;
+
   const evaluators = await resolveMeasureEvaluators(body);
   if (typeof evaluators === "string") return `REFUSED: ${evaluators}`;
 

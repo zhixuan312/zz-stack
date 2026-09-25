@@ -12,17 +12,20 @@
  * `evaluation_assess` runs every measure of every dimension against every `subject_ref` the
  * caller names, through `evaluate-measures.ts`'s `answerMeasure`, and writes one
  * `zz.eval_assessment` row per (measure, subject_ref) pair — `deterministic`/`outcome` read a
- * named fact off the run's own bound observation snapshot (the same two facts
- * `qualify-evidence.ts` already reads; see that file's own module note for why nothing richer is
- * stored), `bounded_semantic`/`generative_critic` ask the measure's bound evaluator and record an
- * `assessment_id`, `human` is recorded as excluded (no ingestion pipeline yet).
+ * named fact off the run's own bound observation snapshot, by a dotted `definition.factPath`
+ * (migration 086 — the snapshot now carries the whole facts map, not just the two `evaluate-
+ * measures.ts` used to special-case), `bounded_semantic`/`generative_critic` ask the measure's
+ * bound evaluator and record an `assessment_id`, `human` is recorded as excluded (no ingestion
+ * pipeline yet).
  *
  * `evaluation_score` reduces those rows back (`reduceMeasureAnswers`), calls `scoreRun` (pure,
  * `score.ts`) once for the run's own numbers and once per subject_ref for `evaluate-interval.ts`'s
  * bootstrap, computes `coverage_met` and `qualification_met` (see `qualificationMet` below — the
  * bootstrap-protocol override this file must apply is Task I-29's: `scoring.establishment.bootstrap
  * = true` forces `qualification_met = false` regardless of what every measure's own evaluator
- * qualification says), and stores the result on `zz.eval_run`.
+ * qualification says), evaluates the protocol's own `improvement.criticalGuardrails` (Task I-29's
+ * own second fix — the ONLY guardrail mechanism now; a per-measure `definition.guardrail` flag is
+ * no longer read anywhere), and stores the result on `zz.eval_run`.
  */
 import { createHash } from "node:crypto";
 
@@ -33,8 +36,8 @@ import type pg from "pg";
 import { z } from "zod";
 
 import {
-  answerMeasure, reduceMeasureAnswers,
-  type DimensionRow, type MeasureAnswer, type MeasureRow, type SnapshotFacts,
+  answerMeasure, evaluateGuardrails, parseCriticalGuardrails, reduceMeasureAnswers,
+  type CriticalGuardrail, type DimensionRow, type MeasureAnswer, type MeasureRow, type SnapshotFacts,
 } from "./evaluate-measures.js";
 import { bootstrapInterval, resolveUncertainty } from "./evaluate-interval.js";
 import { canonicalJson, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
@@ -105,9 +108,9 @@ export async function loadDimensions(p: pg.Pool, protocolVersionId: string): Pro
 
 async function loadSnapshotFacts(p: pg.Pool, observationSnapshotId: string): Promise<SnapshotFacts> {
   const row = (await p.query<SnapshotFacts>(`
-    select usable_run_count, total_run_count, coverage
+    select usable_run_count, total_run_count, coverage, facts
       from zz.eval_observation_snapshot where id = $1::uuid`, [observationSnapshotId])).rows[0];
-  return row ?? { usable_run_count: 0, total_run_count: 0, coverage: null };
+  return row ?? { usable_run_count: 0, total_run_count: 0, coverage: null, facts: null };
 }
 
 export async function latestQualification(
@@ -120,19 +123,30 @@ export async function latestQualification(
   return row ?? null;
 }
 
-interface ProtocolPolicy { qualification: QualificationPolicy | null; bootstrap: boolean; uncertainty: Record<string, unknown> }
+interface ProtocolPolicy {
+  qualification: QualificationPolicy | null; bootstrap: boolean; uncertainty: Record<string, unknown>;
+  /** `improvement.criticalGuardrails`, parsed by `parseCriticalGuardrails` — the ONLY guardrail
+   *  mechanism (Task I-29's own fix dispatch). Read here, alongside `qualification_policy`/
+   *  `scoring_policy`, so evaluation_score and replay_score (which both already call this
+   *  function) share one query and one parse rather than each reading `improvement_policy` a
+   *  second way. */
+  criticalGuardrails: CriticalGuardrail[];
+}
 
 export async function loadProtocolPolicy(p: pg.Pool, protocolVersionId: string): Promise<ProtocolPolicy> {
-  const row = (await p.query<{ qualification_policy: unknown; scoring_policy: unknown }>(`
-    select qualification_policy, scoring_policy from zz.eval_protocol_version where id = $1::uuid`,
+  const row = (await p.query<{ qualification_policy: unknown; scoring_policy: unknown; improvement_policy: unknown }>(`
+    select qualification_policy, scoring_policy, improvement_policy
+      from zz.eval_protocol_version where id = $1::uuid`,
     [protocolVersionId])).rows[0];
   const qual = QualificationPolicy.safeParse(row?.qualification_policy);
   const scoring = row?.scoring_policy as { establishment?: unknown; uncertainty?: unknown } | undefined;
   const establishment = EstablishmentPolicy.safeParse(scoring?.establishment ?? {});
+  const improvement = row?.improvement_policy as { criticalGuardrails?: unknown } | undefined;
   return {
     qualification: qual.success ? qual.data : null,
     bootstrap: establishment.success ? establishment.data.bootstrap : false,
     uncertainty: (scoring?.uncertainty as Record<string, unknown>) ?? {},
+    criticalGuardrails: parseCriticalGuardrails(improvement?.criticalGuardrails),
   };
 }
 
@@ -426,9 +440,13 @@ export function registerEvaluationTools(server: McpServer): void {
 
       const policy = await loadProtocolPolicy(p, run.protocol_version_id);
       const snapshot = await loadSnapshotFacts(p, run.observation_snapshot_id);
+      const criticalKeys = new Set(policy.criticalGuardrails.map((g) => g.key));
 
       // The doc-friendly per-measure detail findings.md reads back (Task I-13's own generator,
       // findings-doc.ts) — denominators and guardrail flags scoreRun's own output does not carry.
+      // `guardrail` is now membership in the protocol's OWN `improvement.criticalGuardrails`
+      // (Task I-29's own fix dispatch) rather than a per-measure `definition.guardrail` flag —
+      // display only; `evaluateGuardrails` below is what actually decides pass/fail/not_established.
       const measureDetail = (values: Map<string, MeasureAnswer[]>): Map<string, MeasureScoreRow> => {
         const out = new Map<string, MeasureScoreRow>();
         for (const m of measures) {
@@ -436,7 +454,7 @@ export function registerEvaluationTools(server: McpServer): void {
           const value = reduceMeasureAnswers(answers);
           out.set(m.id, {
             key: m.key, evaluator_type: m.evaluator_type, weight: m.weight, required: m.required,
-            value, excluded: value === null, guardrail: Boolean((m.definition as { guardrail?: unknown }).guardrail),
+            value, excluded: value === null, guardrail: criticalKeys.has(m.key),
             excluded_reason: value === null ? (answers[0]?.excluded_reason ?? "no assessment recorded") : null,
           });
         }
@@ -459,8 +477,12 @@ export function registerEvaluationTools(server: McpServer): void {
         snapshot.usable_run_count, subjectRefs.size);
       const qualification_met = await qualificationMet(p, dims, run.protocol_version_id, policy);
 
-      const guardrails = [...overallDetail.values()].filter((m) => m.guardrail).map((m): "pass" | "fail" | "not_established" =>
-        m.value === null ? "not_established" : m.value >= 0.5 ? "pass" : "fail");
+      // Task I-29's own second fix: the protocol's own improvement.criticalGuardrails, evaluated
+      // against each measure's already-reduced [0,1] value — keyed by measure KEY (a guardrail
+      // names a key, not a row id), one entry per measure this run actually has an id for.
+      const valueByMeasureKey = new Map<string, number | null>(measures.map((m) => [m.key, overallDetail.get(m.id)!.value]));
+      const guardrailResults = evaluateGuardrails(policy.criticalGuardrails, valueByMeasureKey);
+      const guardrails = guardrailResults.map((g) => g.status);
 
       const scored = scoreRun({ dimensions: scoreInputDimensions, coverage_met, qualification_met, guardrails });
 
@@ -496,10 +518,11 @@ export function registerEvaluationTools(server: McpServer): void {
           await client.query(`
             update zz.eval_run
                set run_status = 'completed', score_status = $2, overall_score = $3,
-                   score_interval = $4::jsonb, dimension_scores = $5::jsonb, guardrail_status = $6
+                   score_interval = $4::jsonb, dimension_scores = $5::jsonb, guardrail_status = $6,
+                   guardrails = $7::jsonb
              where id = $1::uuid`,
             [eval_run_id, scored.status, scored.overall, JSON.stringify(score_interval),
-             JSON.stringify(dimension_scores), scored.guardrail_status]);
+             JSON.stringify(dimension_scores), scored.guardrail_status, JSON.stringify(guardrailResults)]);
           return { result: { id: eval_run_id }, result_table: "zz.eval_run", result_id: eval_run_id };
         },
       );

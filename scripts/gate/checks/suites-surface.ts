@@ -95,6 +95,9 @@ check("an evaluation protocol accepts every FR-6 field and refuses unbalanced we
 check("the zz-core bootstrap reference protocol validates under EvaluationProtocol and carries exactly FR-57's frozen dimension weights, search policy, selection order, split policy and bootstrap establishment",
       runsCheck("eval-zz-core-protocol.ts"));
 
+check("a deterministic/outcome measure reads any observed fact by a dotted factPath, normalised by rate/inverted_rate/threshold, missing evidence excludes rather than scoring 0, protocol_record refuses an unknown factPath or an unresolved criticalGuardrails key, and evaluateGuardrails never folds not_established into fail",
+      runsCheck("eval-fact-path.ts"));
+
 check("a request's digest ignores key order and the idempotency key, and a stored ledger row decides proceed, replay or conflict",
       runsCheck("eval-idempotency.ts"));
 

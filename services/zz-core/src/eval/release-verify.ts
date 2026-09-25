@@ -504,6 +504,20 @@ export async function verifyRelease(
   };
   const deltas_summary = { mean_delta: decision.mean, lower: decision.lower, upper: decision.upper, verdict: decision.verdict };
 
+  // FR-9/FR-23 (Task I-29's own fix dispatch), the same reason candidate-prove.ts's own proof
+  // resolution short-circuits on this: a critical guardrail this held-case replay evidence never
+  // measured is missing evidence, not a verified regression — reported honestly here rather than
+  // folded into `established` (silently treating an unmeasurable guardrail as passed, which would
+  // let a release the protocol cannot actually vouch for stand unverified) or into `rolled_back`
+  // (treating it as a proven failure it was never shown to be).
+  if (guardrailSummary.status === "not_established") {
+    return resolveVerify(p, attempt, idempotencyKey, principal, {
+      verdict: "not_established", reason: "guardrails_not_established",
+      evidence: { deltas_summary, guardrails: guardrailSummary }, rollback_plan: null,
+      dimension_scores, guardrails: guardrailSummary, resource_usage, statistics,
+    });
+  }
+
   if (decision.verdict === "unresolved" && boundReached) {
     // Every case cleared minRepeats, but the interval still straddles zero at the liveness bound
     // — a real answer (FR-50's own "no rollback without evidence"), never an indefinite wait.

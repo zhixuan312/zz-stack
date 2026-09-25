@@ -45,9 +45,7 @@
           "suite": "production",
           "required": true,
           "definition": {
-            "qualification": { "positive": "yes", "zero": "no" },
-            "guardrail": true,
-            "guardrailThreshold": 0.5
+            "qualification": { "positive": "yes", "zero": "no" }
           },
           "evaluator": {
             "stable_key": "zz-core.document-gate-readiness",
@@ -88,16 +86,16 @@
         {
           "key": "usable_run_coverage",
           "evaluatorType": "deterministic",
-          "weight": 0.5,
+          "weight": 0.4,
           "suite": "production",
           "required": true,
-          "definition": { "factKey": "usable_run_coverage", "guardrail": true, "guardrailThreshold": 0.5 },
+          "definition": { "factPath": "usable_run_coverage" },
           "evaluator": null
         },
         {
           "key": "refusal_explains_itself",
           "evaluatorType": "bounded_semantic",
-          "weight": 0.5,
+          "weight": 0.3,
           "suite": "production",
           "required": true,
           "definition": { "qualification": { "positive": "yes", "zero": "no" } },
@@ -109,6 +107,15 @@
             "polarity": { "good_when": "yes" },
             "model_policy": { "requestedModel": "typesafe/jev-latest" }
           }
+        },
+        {
+          "key": "tool_refusal_rate",
+          "evaluatorType": "deterministic",
+          "weight": 0.3,
+          "suite": "production",
+          "required": true,
+          "definition": { "factPath": "tool_refusal_rate", "normalize": "inverted_rate" },
+          "evaluator": null
         }
       ]
     },
@@ -194,7 +201,7 @@
         {
           "key": "call_economy",
           "evaluatorType": "generative_critic",
-          "weight": 1,
+          "weight": 0.6,
           "suite": "production",
           "required": true,
           "definition": { "qualification": { "positive": "yes", "zero": "no" } },
@@ -206,6 +213,15 @@
             "polarity": { "good_when": "yes" },
             "model_policy": { "requestedModel": "typesafe/jev-latest" }
           }
+        },
+        {
+          "key": "latency_within_budget",
+          "evaluatorType": "deterministic",
+          "weight": 0.4,
+          "suite": "production",
+          "required": true,
+          "definition": { "factPath": "latency_p50_ms", "normalize": "threshold", "max": 5000 },
+          "evaluator": null
         }
       ]
     },
@@ -224,7 +240,7 @@
           "weight": 0.5,
           "suite": "production",
           "required": true,
-          "definition": { "factKey": "tool_coverage" },
+          "definition": { "factPath": "tool_coverage" },
           "evaluator": null
         },
         {
@@ -319,8 +335,8 @@
       "allocation": "opens the current generation's sealed proof allocation exactly once for the selected final candidate"
     },
     "criticalGuardrails": [
-      "usable_run_coverage",
-      "document_gate_readiness"
+      { "key": "usable_run_coverage", "threshold": 0.5 },
+      { "key": "document_gate_readiness", "threshold": 0.5 }
     ],
     "release": {
       "approvalDocument": "improvement.md",

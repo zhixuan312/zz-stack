@@ -10,10 +10,13 @@
  * re-derived), aimed at a replay run instead of an eval_run:
  *   - `deterministic`/`outcome` measures read a NAMED fact off `zz.eval_observation_snapshot`
  *     (`evaluate-measures.ts`'s own words) — a replay case has no such snapshot, so every one of
- *     these measures is asked against an all-zero `SnapshotFacts`, which `factValue` (that same
- *     file) already answers `null`/excluded for on a zero denominator. This is not a special case
- *     bolted on here; it is `answerMeasure`'s own existing "no comparable fact" path, reached
- *     honestly because a replay case truly carries none of OBSERVE's counted facts.
+ *     these measures is asked against `NO_SNAPSHOT` (`facts: null`), which `deterministicAnswer`
+ *     (that same file) already answers excluded for. This is not a special case bolted on here; it
+ *     is `answerMeasure`'s own existing "this snapshot carries no facts" path, reached honestly
+ *     because a replay case truly carries none of OBSERVE's counted facts. A critical guardrail
+ *     bound to one of these measures therefore reads `not_established` on every replay run —
+ *     `candidate_prove`/`release_verify` (Task I-29's own fix dispatch) treat that as missing
+ *     evidence, never as a failure.
  *   - `bounded_semantic`/`generative_critic` measures ask the measure's own bound evaluator — but,
  *     as of this fix, against what the replay ACTUALLY PRODUCED, never a templated sentence
  *     naming an id. See the fix note below.
@@ -47,7 +50,9 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
-import { answerMeasure, reduceMeasureAnswers, type MeasureAnswer, type SnapshotFacts } from "./evaluate-measures.js";
+import {
+  answerMeasure, evaluateGuardrails, reduceMeasureAnswers, type MeasureAnswer, type SnapshotFacts,
+} from "./evaluate-measures.js";
 import { latestQualification, loadDimensions, loadProtocolPolicy, qualificationMet } from "./evaluate.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { visibleEvents } from "./replay-cases.js";
@@ -64,7 +69,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // exists for it) — every `deterministic`/`outcome` measure is asked against this and answers
 // excluded through `answerMeasure`'s own zero-denominator path, never a second exclusion rule
 // written here.
-const NO_SNAPSHOT: SnapshotFacts = { usable_run_count: 0, total_run_count: 0, coverage: null };
+const NO_SNAPSHOT: SnapshotFacts = { usable_run_count: 0, total_run_count: 0, coverage: null, facts: null };
 
 /** `zz.replay_run.produced` (migration 080), exactly as `replay_close`'s own `result.produced`
  *  schema and the launcher that fills it (`packages/tools/src/replay/launch.ts`) agree on it. */
@@ -190,11 +195,13 @@ export async function scoreReplay(
           value: reduceMeasureAnswers(byMeasure.get(m.id) ?? []),
         })),
       }));
-      const guardrails = measures
-        .map((m, i) => ({ m, a: answers[i] }))
-        .filter(({ m }) => Boolean((m.definition as { guardrail?: unknown }).guardrail))
-        .map(({ a }): "pass" | "fail" | "not_established" =>
-          a.excluded || a.value === null ? "not_established" : a.value >= 0.5 ? "pass" : "fail");
+      // Task I-29's own second fix: the protocol's own improvement.criticalGuardrails, evaluated
+      // against each measure's already-reduced value — the SAME function evaluation_score calls,
+      // over this run's single-subject answers rather than a multi-subject reduction.
+      const valueByMeasureKey = new Map<string, number | null>(
+        measures.map((m, i) => [m.key, reduceMeasureAnswers([answers[i]])]));
+      const guardrailResults = evaluateGuardrails(policy.criticalGuardrails, valueByMeasureKey);
+      const guardrails = guardrailResults.map((g) => g.status);
 
       // No `zz.eval_observation_snapshot`/minCoverage concept applies to a single replay
       // case (DELIBERATE — one case is one case, not a coverage window to floor), so
@@ -206,9 +213,12 @@ export async function scoreReplay(
         dimensions: scoreInputDimensions, coverage_met: true, qualification_met, guardrails,
       });
 
+      // `guardrails` stores the RICH array (`GuardrailResult[]`, not the bare status strings
+      // `scoreRun` takes) — `summariseGuardrails` (candidate-validate.ts) reads `.status` off each
+      // entry, the same shape `evaluation_score` now stores on `zz.eval_run.guardrails`.
       await client.query(
         "update zz.replay_run set score = $2::jsonb, guardrails = $3::jsonb where id = $1::uuid",
-        [replayRunId, JSON.stringify(scored), JSON.stringify(guardrails)]);
+        [replayRunId, JSON.stringify(scored), JSON.stringify(guardrailResults)]);
 
       const result: ReplayScoreResult = {
         replay_run_id: replayRunId, assessment_count: answers.length, overall: scored.overall,

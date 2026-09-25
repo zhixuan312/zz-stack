@@ -16,6 +16,27 @@ import type pg from "pg";
 
 import { toolCallEvents, type EvidenceWindow } from "./plugin-profile.js";
 
+/** Every fact key `plugin_profile` (observe.ts) writes into `zz.eval_observation_snapshot.facts`
+ *  (migration 086, fix dispatch on I-29's own follow-on) — the canonical list `protocol-record.ts`
+ *  refuses a deterministic/outcome measure's `definition.factPath` against (its first dotted
+ *  segment must name one of these) and `evaluate-measures.ts` reads one entry of by that same
+ *  path. `usable_run_coverage`/`tool_coverage` are computed directly in observe.ts's own
+ *  `computeObservation` (from `traces.usable_runs`/`traces.runs` and the tool-coverage count), not
+ *  by a function in this file — still listed here because this file is the facts registry, not
+ *  because this file computes them. The other sixteen are this file's own exported functions'
+ *  keys, plus the six observe.ts derives straight from `pluginTraces`. Keep this list and
+ *  `computeObservation`'s own `facts` object literal in lockstep — `checks/eval-fact-path.ts` is
+ *  pure (no database) and cannot see a live drift between the two; only a real `plugin_profile`
+ *  call, whose `facts` keys are compared against this list, catches that. */
+export const OBSERVATION_FACT_KEYS = [
+  "usable_run_coverage", "tool_coverage",
+  "stage_return_rate", "unplaced_step_rate", "tool_call_volume", "tool_refusal_rate",
+  "dependency_failure_rate", "never_called_rate",
+  "latency_p50_ms", "latency_p90_ms", "request_bytes_avg", "response_bytes_avg",
+  "outcome_delivered_rate", "outcome_accepted_rate", "outcome_abandoned_rate", "doc_approval_rate",
+  "tokens_per_model_call_avg", "cost_per_model_call_avg",
+] as const;
+
 export interface Fact {
   readonly numerator: number;
   readonly denominator: number;

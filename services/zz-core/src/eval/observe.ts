@@ -6,11 +6,16 @@
  * call, and the same release observed a second time (a different window, a different deployed
  * environment) produces a second snapshot on the same subject rather than overwriting the first.
  *
- * DELIBERATE: the row stores no facts, only the digest over them (`evidence_digest`) plus the
- * counts/coverage/window/identities migration 077 actually gives it a column for. A replay of an
- * idempotent call therefore recomputes the facts fresh, over the row's own stored (resolved)
- * window, and reports whether that recomputation still hashes to what was stored — surfacing
- * drift rather than silently serving whatever the facts happen to be today under the old id.
+ * FIXED (was DELIBERATE, migration 086 — fix dispatch on I-29's own follow-on): the row used to
+ * store no facts, only the digest over them (`evidence_digest`) — so a deterministic/outcome
+ * measure could read only whichever two facts a caller also happened to pass as raw columns.
+ * `facts` (086) now stores the whole computed map, keyed by `OBSERVATION_FACT_KEYS`
+ * (observe-facts.ts), so a measure can read any of them by dotted `definition.factPath`
+ * (evaluate-measures.ts). The digest and the replay-recomputation behaviour are unchanged: a
+ * replay of an idempotent call still recomputes the facts fresh, over the row's own stored
+ * (resolved) window, and reports whether that recomputation still hashes to what was stored —
+ * surfacing drift rather than silently serving whatever the facts happen to be today under the
+ * old id.
  *
  * Every fact below is `{numerator, denominator, value, coverage}` or `{value: null, reason}` —
  * never a bare 0 for a population with nothing in it. The heavier queries live in
@@ -138,6 +143,16 @@ async function computeObservation(
   const noRefusals = "no refusal is recorded for this subject in this window";
 
   const facts: Record<string, ObservedFact> = {
+    // The two facts this measure system read as special-cased raw columns before migration 086 —
+    // folded into the same `facts` map every other entry lives in, by `OBSERVATION_FACT_KEYS`'s
+    // own two names, so a deterministic measure's `definition.factPath` addresses them exactly
+    // the way it addresses every other fact. `usable_run_count`/`total_run_count` and
+    // `coverage.surface` stay on the row as their own columns too (evaluation_score's own
+    // coverage-floor check reads the raw counts, not a rate) — this is the SAME numbers, read a
+    // second way, never a second computation.
+    usable_run_coverage: rate(traces.usable_runs, traces.runs, traces.usable_runs, traces.runs, noEvents),
+    tool_coverage: rate(called.size, reachable.length, called.size, reachable.length,
+      "this plugin's skills name no tool this scan can check reachability for"),
     stage_return_rate: rate(traces.returns.length, totalStepVisits,
       traces.coverage.with_step, traces.coverage.events, noSteps),
     unplaced_step_rate: rate(totalUnplaced, totalStepVisits,
@@ -247,8 +262,8 @@ export function registerObserveTools(server: McpServer): void {
           const row = (await client.query<{ id: string }>(`
             insert into zz.eval_observation_snapshot
               (subject_version_id, production_window, coverage, usable_run_count, total_run_count,
-               runtime_identity, environment_digest, evidence_digest, created_at)
-            values ($1::uuid, $2::jsonb, $3::jsonb, $4, $5, $6::jsonb, $7, $8, now())
+               runtime_identity, environment_digest, evidence_digest, facts, created_at)
+            values ($1::uuid, $2::jsonb, $3::jsonb, $4, $5, $6::jsonb, $7, $8, $9::jsonb, now())
             returning id::text as id`,
             [subject_version_id,
              JSON.stringify({ requested: evidence_window, resolved: window }),
@@ -256,7 +271,8 @@ export function registerObserveTools(server: McpServer): void {
              observation.traces.usable_runs, observation.traces.runs,
              JSON.stringify(observation.runtimeIdentity),
              sha256(canonicalJson(observation.runtimeIdentity)),
-             sha256(canonicalJson(observation.facts))])).rows[0];
+             sha256(canonicalJson(observation.facts)),
+             JSON.stringify(observation.facts)])).rows[0];
           return { result: { id: row.id }, result_table: "zz.eval_observation_snapshot", result_id: row.id };
         },
       );

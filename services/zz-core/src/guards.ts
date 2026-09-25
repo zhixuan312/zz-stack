@@ -26,8 +26,8 @@ import { attributionCheck, type Chain, outcomeCheck, sectionCheck, statusCheck }
  * verification guide is what a finished build owes its stakeholder, and demanding one from
  * work that stopped can only be satisfied by writing a guide for a thing nobody built.
  *
- * Not a general amnesty: the closing document's own gate is asked without it, and the word
- * costs an outcome the ledger then carries in public. */
+ * Not a general amnesty: the declared closing document's own gate is asked without it, and the
+ * word costs an outcome the ledger then carries in public. */
 const STOPPED_GROUND =
   `the work stopped rather than finished, and closing it as ${OUTCOME_STOPPED} records that in the team's ledger`;
 /** Closing an initiative (writing `outcome:` into the manifest's closing
@@ -106,11 +106,19 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
     }
   }
   // Judged from `content` — the text being written — and never from the copy on disk, which
-  // this write supersedes. No waiver: a stop does not discharge this one.
+  // this write supersedes. No waiver on the flow's DECLARED closing document: a stop does not
+  // discharge the gate of the document the flow says closes it.
+  //
+  // DELIBERATE: a stop that lands on a FALLBACK document is waived. That document is where the
+  // work happened to stop — spec.md in draft on an sdlc initiative abandoned before review.md —
+  // not a document the flow asked to close on, and its gate is exactly one of the gates a stop
+  // is excused from below. Without the waiver, abandoning mid-draft would demand approving the
+  // draft first, which is the dilemma STOPPED_GROUND exists to remove.
+  const fallback = parts[1] !== chain.closingDoc;
   const own = admitEntry(
     self?.gate ? [{ kind: parts[1], standard: "ratified" }] : [],
     [{ kind: parts[1], standard: parseEnvelope(content).status === "approved" ? "ratified" : "recorded" }],
-    [],
+    stop && fallback ? [{ kind: parts[1], ground: STOPPED_GROUND }] : [],
   );
   if (!own.admitted) {
     return (

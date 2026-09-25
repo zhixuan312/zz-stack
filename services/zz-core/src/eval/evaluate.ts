@@ -36,11 +36,12 @@ import type pg from "pg";
 import { z } from "zod";
 
 import {
-  answerMeasure, evaluateGuardrails, parseCriticalGuardrails, reduceMeasureAnswers,
-  type CriticalGuardrail, type DimensionRow, type MeasureAnswer, type MeasureRow, type SnapshotFacts,
+  answerMeasure, evaluateGuardrails, parseCriticalGuardrails, recordMeasureAnswer, reduceMeasureAnswers,
+  type AnsweredMeasure, type CriticalGuardrail, type DimensionRow, type MeasureAnswer, type MeasureRow,
+  type SnapshotFacts,
 } from "./evaluate-measures.js";
 import { bootstrapInterval, resolveUncertainty } from "./evaluate-interval.js";
-import { canonicalJson, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { canonicalJson, decideBeforeWork, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { scoreRun } from "./score.js";
 import { resolveSubjectRef } from "./subject-ref.js";
 import { logActivity } from "../persist.js";
@@ -342,34 +343,45 @@ export function registerEvaluationTools(server: McpServer): void {
         resolvedRefs.set(subjectRef, resolved.text);
       }
 
-      const outcome: IdempotencyOutcome<{ assessment_count: number; measures_assessed: number }> =
-        await withIdempotency(
-          principal, "evaluation_assess", idempotency_key, { eval_run_id, subject_refs },
+      // Every model is asked BEFORE the transaction opens (evaluate-measures.ts's module note):
+      // an evaluator call can take ~100s, and a transaction held across it pins a pool
+      // connection. A replay is recognised first, so a retried call never re-asks a model.
+      const ledgerArgs = { eval_run_id, subject_refs };
+      const prior = await decideBeforeWork(principal, "evaluation_assess", idempotency_key, ledgerArgs);
+      const answered: { subjectRef: string; measure: MeasureRow; answer: AnsweredMeasure }[] = [];
+      if (!prior.replayed) {
+        for (const subjectRef of subject_refs) {
+          const subjectText = resolvedRefs.get(subjectRef);
+          for (const measure of measures) {
+            answered.push({ subjectRef, measure, answer: await answerMeasure({
+              measure, snapshot, subjectRef, principal, subjectText,
+              qualificationOf: (evId) => latestQualification(p, evId, run.protocol_version_id),
+            }) });
+          }
+        }
+      }
+
+      const outcome: IdempotencyOutcome<{ assessment_count: number; measures_assessed: number }> = prior.replayed
+        ? prior
+        : await withIdempotency(
+          principal, "evaluation_assess", idempotency_key, ledgerArgs,
           async (client): Promise<MutatorOutcome<{ assessment_count: number; measures_assessed: number }>> => {
             if (run.run_status === "pending") {
               await client.query("update zz.eval_run set run_status = 'running' where id = $1::uuid", [eval_run_id]);
             }
-            let written = 0;
-            for (const subjectRef of subject_refs) {
-              const subjectText = resolvedRefs.get(subjectRef);
-              for (const measure of measures) {
-                const answer: MeasureAnswer = await answerMeasure({
-                  measure, snapshot, subjectRef, principal, subjectText,
-                  qualificationOf: (evId) => latestQualification(p, evId, run.protocol_version_id),
-                });
-                await client.query(`
-                  insert into zz.eval_assessment
-                    (eval_run_id, measure_id, evaluator_version_id, assessment_id, qualification_id,
-                     subject_ref, evidence_ref, answer, policy_version, created_at)
-                  values ($1::uuid, $2::uuid, $3::uuid, $4, $5::uuid, $6, $7, $8::jsonb, $9, now())`,
-                  [eval_run_id, measure.id, answer.evaluator_version_id, answer.assessment_id,
-                   answer.qualification_id, subjectRef, `observation_snapshot:${run.observation_snapshot_id}`,
-                   JSON.stringify(answer), String(run.protocol_version)]);
-                written += 1;
-              }
+            for (const { subjectRef, measure, answer: pending } of answered) {
+              const answer: MeasureAnswer = await recordMeasureAnswer(client, pending);
+              await client.query(`
+                insert into zz.eval_assessment
+                  (eval_run_id, measure_id, evaluator_version_id, assessment_id, qualification_id,
+                   subject_ref, evidence_ref, answer, policy_version, created_at)
+                values ($1::uuid, $2::uuid, $3::uuid, $4, $5::uuid, $6, $7, $8::jsonb, $9, now())`,
+                [eval_run_id, measure.id, answer.evaluator_version_id, answer.assessment_id,
+                 answer.qualification_id, subjectRef, `observation_snapshot:${run.observation_snapshot_id}`,
+                 JSON.stringify(answer), String(run.protocol_version)]);
             }
             return {
-              result: { assessment_count: written, measures_assessed: measures.length },
+              result: { assessment_count: answered.length, measures_assessed: measures.length },
               result_table: "zz.eval_run", result_id: eval_run_id,
             };
           },

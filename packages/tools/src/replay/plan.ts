@@ -51,6 +51,9 @@ export interface RuntimeEnv {
    *  check looks for. Passed in rather than read here so the pure decision takes a value, not a
    *  filesystem probe. */
   readonly shellPath: string | null;
+  /** Which OS sandbox (`sandbox.ts`) this host can start. Absent means "not checked" (the pure
+   *  checks); null means checked and none works — refused, with no unsandboxed fallback. */
+  readonly sandbox?: "sandbox-exec" | "bwrap" | null;
   /** Whether a model credential reaches a headless session. The launcher gives each session a
    *  fresh `CLAUDE_CONFIG_DIR`, which holds no login, so only `ANTHROPIC_API_KEY` or
    *  `CLAUDE_CODE_OAUTH_TOKEN` in the environment can authenticate it. Absent means "not
@@ -71,6 +74,15 @@ export function shellCapableRuntime(env: RuntimeEnv): RuntimeCheck {
       ok: false,
       reason: `launchReplay: no shell-capable runtime on ${env.platform} — git and claude both ` +
         "run as child processes, and this environment has neither a shell nor a way to spawn one",
+    };
+  }
+  if (env.sandbox === null) {
+    return {
+      ok: false,
+      reason: `launchReplay: no working OS sandbox on ${env.platform} — a replay session runs as ` +
+        "you with bypassPermissions, and only sandbox-exec (macOS) or bwrap (Linux) stops it reading " +
+        "your own files by absolute path. Install bubblewrap, or run the launcher outside any " +
+        "enclosing sandbox; there is no unsandboxed mode",
     };
   }
   if (env.modelCredential === false) {
@@ -96,34 +108,71 @@ export function refuseBeforeIO<T>(env: RuntimeEnv, run: () => T): T {
 }
 
 // -------------------------------------------------------------------------------------------
-// git argv — worktree lifecycle under refs/replay/<team_slug>, never a branch.
+// git argv — a standalone clone per run, pinned to the subject's own release tag.
+//
+// DELIBERATE: a clone, never `git worktree add`. A worktree shares the operator's real `.git`
+// (its objects, its refs, its hooks and config), and the candidate session runs with
+// `bypassPermissions` inside it — `git -C .. update-ref`, a rewritten hook, or a ref deleted
+// from the worktree lands in the operator's own repository. `--no-hardlinks` copies the object
+// store rather than linking it, and `gitRemoveOriginArgv` drops the one remaining pointer back
+// at `repoRoot`, so nothing the session does inside the clone can reach the checkout it came from.
 
-/** `refs/replay/<team_slug>` — never a branch, never under `refs/heads/`. `replay_start` already
- *  names this as `worktree_ref`/`sandbox_ref`; this is the one place that string is built from a
- *  team_slug, so a reader who wants "what ref does this run use" never has two answers. */
-export function replayRefFor(teamSlug: string): string {
-  return `refs/replay/${teamSlug}`;
-}
-
-/** One worktree directory per run, named from its team slug — team slugs are already unique per
+/** One clone directory per run, named from its team slug — team slugs are already unique per
  *  run (`provisionReplayTeam`), so two concurrent launches can never collide on this path. */
 export function worktreeDirName(teamSlug: string): string {
   return `replay-${teamSlug}`;
 }
 
-export const gitRevParseArgv = (ref: string): string[] => ["rev-parse", ref];
+/** The git tag a catalog subject's release lives at. A catalog plugin's `declared_version` IS
+ *  the platform's release version (`register-plugins.ts`), and `/release` tags that release
+ *  `v<version>` — so this is the one ref that holds exactly the bytes the subject was captured
+ *  from, never the operator's `HEAD` or a ref somebody typed. */
+export function releaseTagFor(declaredVersion: string): string {
+  return `v${declaredVersion}`;
+}
 
-/** Points `ref` at `commit` without touching `HEAD` or any branch — `git update-ref`, not
- *  `checkout` or `branch`, is the only git command that moves a ref with no working tree and no
- *  effect on whatever branch the caller's own checkout is on. */
-export const gitUpdateRefArgv = (ref: string, commit: string): string[] => ["update-ref", ref, commit];
-export const gitUpdateRefDeleteArgv = (ref: string): string[] => ["update-ref", "-d", ref];
+/** The full ref `releaseTagFor` names — what a run records as its `sandbox_ref`/`worktree_ref`.
+ *  COUPLED: `replay_start` (services/zz-core/src/eval/replay-runs.ts) spells the same string
+ *  server-side, and the launcher refuses a run whose recorded ref differs from this. */
+export function releaseRefFor(declaredVersion: string): string {
+  return `refs/tags/${releaseTagFor(declaredVersion)}`;
+}
 
-export const gitWorktreeAddArgv = (worktreePath: string, ref: string): string[] =>
-  ["worktree", "add", "--detach", worktreePath, ref];
-export const gitWorktreeRemoveArgv = (worktreePath: string): string[] =>
-  ["worktree", "remove", "--force", worktreePath];
-export const gitWorktreeListArgv = (): string[] => ["worktree", "list", "--porcelain"];
+export const gitCloneArgv = (source: string, dest: string): string[] =>
+  ["clone", "--no-hardlinks", "--no-checkout", "--quiet", source, dest];
+export const gitRemoveOriginArgv = (): string[] => ["remote", "remove", "origin"];
+/** `^{commit}` peels an annotated tag to the commit it names; `refs/tags/` keeps a branch that
+ *  happens to share the tag's name from ever answering instead. */
+export const gitResolveTagArgv = (tag: string): string[] =>
+  ["rev-parse", "--verify", "--quiet", `refs/tags/${tag}^{commit}`];
+export const gitCheckoutDetachArgv = (commit: string): string[] =>
+  ["checkout", "--detach", "--quiet", commit];
+
+interface LockEntryLike { readonly version?: unknown; readonly digest?: unknown }
+
+/** The component-digest comparison between what the clone is about to install and what the
+ *  subject was captured as. `plugins.lock.json`'s own `digest` for a plugin is the packager's
+ *  hash of everything that plugin ships, and `register-plugins.ts` copied that same value into
+ *  `zz.plugin_version.digest` at release — which `plugin_locate` then froze into the subject's
+ *  `release_identity.released_digest`. Equal means the tag holds the subject's bytes; anything
+ *  else means the launcher would be measuring a different plugin than the one it was asked to.
+ *  Null when they agree; otherwise the refusal text. */
+export function releaseLockMismatch(
+  lock: unknown, plugin: string, declaredVersion: string, releasedDigest: string,
+): string | null {
+  const entry = (lock && typeof lock === "object" ? (lock as Record<string, unknown>)[plugin] : undefined) as
+    LockEntryLike | undefined;
+  if (!entry) return `plugins.lock.json at ${releaseTagFor(declaredVersion)} records no plugin '${plugin}'`;
+  if (entry.version !== declaredVersion) {
+    return `plugins.lock.json at ${releaseTagFor(declaredVersion)} declares '${plugin}' version ` +
+      `${String(entry.version)}, not the subject's ${declaredVersion}`;
+  }
+  if (entry.digest !== releasedDigest) {
+    return `'${plugin}' at ${releaseTagFor(declaredVersion)} has content digest ${String(entry.digest)}, ` +
+      `but the subject was captured at ${releasedDigest} — refusing to replay a different plugin`;
+  }
+  return null;
+}
 
 /** I-18: a recorded candidate's own patch, applied into the pinned worktree before anything
  *  installs from it — `patchPath` is a file this same run wrote its diff text to (see
@@ -179,6 +228,83 @@ export function claudeSessionArgv(opts: SessionArgvOpts): string[] {
   if (opts.appendSystemPrompt) argv.push("--append-system-prompt", opts.appendSystemPrompt);
   argv.push(opts.prompt);
   return argv;
+}
+
+// -------------------------------------------------------------------------------------------
+// Session environment — an allowlist, never `{ ...process.env }`.
+//
+// Every session runs `--permission-mode bypassPermissions`, so whatever is in its environment is
+// readable by the model and by any command it runs. The launcher's own environment holds the
+// principal's unbound PAT (`ZZ_TOKEN`), the run's `REPLAY_TOKEN` as handed to the CLI, the proof
+// allocation's `VERIFIER_TOKEN`, and a real `HOME` whose `~/.zz/token` is that same unbound PAT
+// again. None of those may cross into a session: the candidate is the thing under test, and a
+// candidate that can reach the verifier's token or the principal's own credential can mark its own
+// homework. So nothing is inherited by default — only what `claude` needs to run and to reach
+// its model.
+
+/** Copied across when present. Model credentials (the fresh config dir holds no login), the
+ *  process basics a CLI needs, and proxy settings a model request may need to leave the host.
+ *  Nothing matching `ZZ_*`, `REPLAY_*` or `VERIFIER_*` is ever on this list. */
+const SESSION_ENV_ALLOW = [
+  "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "SHELL", "TZ",
+  "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN",
+  "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy",
+  "NODE_EXTRA_CA_CERTS",
+  // Windows only — a child process there cannot start without them; absent on POSIX.
+  "SystemRoot", "ComSpec", "PATHEXT",
+] as const;
+
+interface SessionEnvOpts {
+  /** A temporary directory standing in for `HOME`, so `~/.zz/token`, `~/.claude` and every other
+   *  dotfile of the operator's resolves somewhere empty. */
+  readonly home: string;
+  readonly configDir: string;
+  /** The candidate only: the run's own replay-team PAT and the gateway it is for, as `ZZ_TOKEN`/
+   *  `ZZ_URL` — the credential the candidate legitimately holds (it is already in the session's
+   *  own `--mcp-config`), set explicitly so the principal's own value can never be the one a
+   *  `zz-tool` call inside the session picks up. The simulated person gets neither. */
+  readonly replayToken?: string;
+  readonly gatewayUrl?: string;
+}
+
+/** The whole environment one replay session's `claude` process is started with. Pure: `source`
+ *  is passed in (the launcher hands it `process.env`) so a check can prove what is dropped. */
+export function candidateEnv(source: Readonly<Record<string, string | undefined>>, opts: SessionEnvOpts): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const key of SESSION_ENV_ALLOW) {
+    const value = source[key];
+    if (value !== undefined) env[key] = value;
+  }
+  env.HOME = opts.home;
+  // Inside the session home: the sandbox leaves nothing else writable (sandbox.ts).
+  env.TMPDIR = `${opts.home}/tmp`;
+  env.USERPROFILE = opts.home;
+  env.CLAUDE_CONFIG_DIR = opts.configDir;
+  if (opts.replayToken) env.ZZ_TOKEN = opts.replayToken;
+  if (opts.gatewayUrl) env.ZZ_URL = opts.gatewayUrl;
+  return env;
+}
+
+// -------------------------------------------------------------------------------------------
+// The launch's worst-case wall time — what the server's run TTL has to outlast.
+//
+// COUPLED: `REPLAY_RUN_TTL_MS` in `services/zz-core/src/eval/replay-runs.ts` must exceed
+// `launchWorstCaseMs(MAX_TURNS_CAP)`. The two packages never import each other, so the coupling is
+// pinned by `checks/replay-isolation-pure.ts`, which loads both and compares them. A TTL shorter
+// than a real launch lets `sweepExpired` cancel a live run and expire the candidate's PAT under it.
+
+/** One `claude` subprocess's own timeout — a plugin install step or one headless turn. */
+export const SESSION_EXEC_TIMEOUT_MS = 10 * 60_000;
+/** One git subprocess's own timeout — clone, checkout, apply, status. */
+export const GIT_EXEC_TIMEOUT_MS = 60_000;
+/** The most interview rounds a launch may run; `launchReplay` refuses a larger `maxTurns`. */
+export const MAX_TURNS_CAP = 8;
+const GIT_STEPS = 6; // clone, remove origin, resolve tag, checkout, apply, status
+
+/** Two install commands, the candidate's first turn, and one person turn plus one candidate turn
+ *  per interview round — each bounded by `SESSION_EXEC_TIMEOUT_MS` — plus the git steps. */
+export function launchWorstCaseMs(maxTurns: number): number {
+  return (2 + 1 + 2 * maxTurns) * SESSION_EXEC_TIMEOUT_MS + GIT_STEPS * GIT_EXEC_TIMEOUT_MS;
 }
 
 // -------------------------------------------------------------------------------------------

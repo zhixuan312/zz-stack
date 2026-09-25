@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { join, resolve } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { parseCaller, parseEnvelope } from "@zz/contracts";
+import { documentBody, parseCaller, parseEnvelope } from "@zz/contracts";
 import { indexDoc } from "@zz/indexing";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
@@ -29,6 +29,7 @@ import { sourceDocument } from "../indexing.js";
 import { DOC_REF, safePath, tagRefusal, titleSlug, userRoot, writeGuard } from "../paths.js";
 import { logActivity, persistDocument, putEnvelopeField } from "../persist.js";
 import { teamFor } from "../platform-db.js";
+import { improvementApprovalRefusal } from "../release-owners.js";
 import { isoToday, normalizeSections } from "../write-guards.js";
 
 import { registerInitiativeCloseTool } from "./initiative-close.js";
@@ -101,6 +102,13 @@ export function registerInitiativeActTools(server: McpServer): void {
       }
       const signer = (on_behalf_of ?? "").trim() || who.email;
       let doc = readFileSync(target, "utf8");
+      // COUPLED: release_apply (eval/release-apply.ts) counts this approval only for owner teams the
+      // signer is a member of. Checked here too, so a name nobody can vouch for is never stamped
+      // onto the document that authorizes a release — least of all by somebody else, on_behalf_of.
+      if (parts[1] === "improvement.md") {
+        const refused = await improvementApprovalRefusal(documentBody(doc), signer, on_behalf_of?.trim() ? who.email : null);
+        if (refused) return text(refused);
+      }
       const already = parseEnvelope(doc).status === "approved";
       doc = putEnvelopeField(doc, "status", "approved");
       doc = putEnvelopeField(doc, "approved_by", signer);

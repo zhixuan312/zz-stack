@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-improve
-version: 0.1
+version: 0.2
 description: Stage 7 of zz-plugin-eval (IMPROVE). Search for a proven candidate patch against plugin-owned findings — propose, validate by replay, search to one deterministic winner, prove it sealed — then hand off to promotion for an owned subject or write an owner-facing proposal for one this team cannot release.
 when_to_use: "The seventh stage of zz-plugin-eval, after EXPLAIN. Runs for every branch except one with no plugin-owned actionable finding at all, which skips it with one call and closes. REQUIRES a shell-capable runtime (Claude Code) that can run npm/zz-tool commands and launch isolated sessions — refuses to start anywhere else. Every stage before this one runs with no shell at all (FR-54)."
 ---
@@ -40,7 +40,8 @@ liveness bound — `maxGenerations`, `maxCandidatesPerGeneration`, `wallClockHou
 bootstrap defaults are 5/8/24) plus `proposer_bundle`. Records `improvement_mode: search` when
 the base subject records `release_owners`, `improvement_mode: proposal` when it does not — you
 never choose which; the tool derives it from ownership. REFUSES a finding owned by anything but
-`plugin`, and a finding recorded against a different `eval_run_id`.
+`plugin`, a finding recorded against a different `eval_run_id`, and a protocol version whose
+`improvement.search` is missing or malformed — there is no fallback policy.
 
 ## The proposer bundle — read this before proposing anything
 
@@ -74,8 +75,11 @@ normalised text already matches a candidate this plugin has already rejected (`r
 id and telling you which. That is FR-38's regularization working, not a bug to route around:
 propose something genuinely different, or explain in the new hypothesis what changed.
 
-`parents` (candidate ids) marks a composed child — `generation` becomes one more than its
-highest parent's own. Leave it empty for a fresh proposal from the bundle alone.
+`generation` is the search's own round, not lineage: a candidate joins the current generation
+until every candidate in it has a validation verdict (or was rejected), then the next one.
+`parents` (candidate ids) only records lineage. **REFUSES once the current generation already
+holds `maxCandidatesPerGeneration` candidates** — validate them first — and once `maxGenerations`
+generations hold a validated candidate (call `candidate_search` to select).
 
 ## Validating — build, gate, then replay against baseline
 
@@ -83,8 +87,11 @@ highest parent's own. Leave it empty for a fresh proposal from the bundle alone.
 candidate_validate(candidate_id, idempotency_key)
 ```
 
-**First call on a `recorded` candidate:** builds its own worktree from this checkout, applies the
-patchset, runs the repository's build and gate in isolation. **A build/gate failure moves the
+**First call on a `recorded` candidate:** asks the leakage critic first (FR-38) — a patch that
+reads as hard-coded against evidence it should not have, or a rejected hypothesis restated,
+becomes `rejected_precheck` and the call REFUSES with the critic's reason. Otherwise it builds its
+own worktree from this checkout, applies the patchset, runs the repository's build and gate in
+isolation. **A build/gate failure moves the
 candidate to `invalid` and REFUSES with the failing command's own output tail** — never
 replayed, never partially scored; fix it and record a fresh candidate (`invalid` is not
 re-triable in place).
@@ -104,11 +111,18 @@ replay_start(case_set_id, subject_version_id? | candidate_id?, split: "validatio
 both — then, for the `worktree_ref`/`replay_run_id` it returns:
 
 ```
-npm run replay -- --run <replay_run_id> --repo <path-to-a-throwaway-checkout>
+REPLAY_TOKEN=<token> npm run replay -- --run <replay_run_id> --repo <path-to-a-checkout>
 ```
 
-The launcher pins the worktree, installs the subject plugin into a session-local
-`CLAUDE_CONFIG_DIR`, runs the candidate/baseline session against `actor` events and a simulated
+`REPLAY_TOKEN` is the `token` `replay_start` returned, passed in the environment and never as an
+argument. The launcher marks the run `running`, clones `--repo` standalone at the subject's own
+release tag (`v<declared_version>`) and refuses — closing the run `failed` — when that tag's
+plugin digest is not the one the subject was captured at. It installs the subject plugin into a
+session-local `CLAUDE_CONFIG_DIR` under a temporary `HOME`, with none of your own credentials in
+the sessions' environment, and runs every session inside an OS sandbox (`sandbox-exec` on macOS,
+`bwrap` on Linux) that cannot read your home directory or write outside its own. **With no
+working sandbox it refuses to start** — install bubblewrap, or run it outside any enclosing
+sandbox; there is no unsandboxed mode. It then runs the candidate/baseline session against `actor` events and a simulated
 person against `actor`+`user_oracle` events, scores it, and calls `replay_close` itself — you do
 not close a run the launcher already ran. Repeat `candidate_validate` once enough runs land; it
 plans, it never executes.
@@ -136,12 +150,12 @@ candidate_search(improvement_run_id, idempotency_key, initiative?)
 ```
 
 Call this to move the search forward once you have proposed/validated what you can this
-generation. It screens every still-`recorded` candidate through the leakage critic BEFORE
-`candidate_validate` ever builds one (a hard-coded or repeated-hypothesis patch becomes
-`rejected_precheck`), composes at most one new child per call from two disjoint-file `valid`
+generation. It composes at most one new child per call from two disjoint-file `valid`
 candidates, reduces everything with a validation evaluation to the Pareto frontier over
 (per-case pass vector, cost), and — once the protocol's own liveness bound is reached — selects
-exactly one final candidate by the protocol's deterministic selection policy. RETURNS `{
+exactly one final candidate by the protocol's deterministic selection policy, from the frontier
+members validation found `improves` (or an accepted pruning). It asks no model; the leakage
+screen already ran in `candidate_validate`. RETURNS `{
 generation, frontier_ids, rejected, selected_id, status, explore_components, edit_budget,
 proposer_bundle, next }`.
 
@@ -151,8 +165,8 @@ manifest components no candidate this run has touched yet, FR-38's own explorati
 requirement), validate what is already recorded, or stop. `edit_budget` is
 `maxCandidatesPerGeneration` — how many candidates this generation may still record.
 
-**`status: closed` with `selected_id: null` means nothing guardrail-passing cleared the
-equivalence band.** On an OWNED subject that is genuinely nothing left — pass `initiative` on
+**`status: closed` with `selected_id: null` means no guardrail-passing, improving candidate was
+on the frontier by the bound.** On an OWNED subject that is genuinely nothing left — pass `initiative` on
 this call (or the one that produced this outcome) and `release_mode: not_applicable` is recorded
 for you; `initiative_close` then closes on `findings.md` alone, same as a `skip`. On a NON-owned
 subject, nothing is recorded here even with `initiative` passed — `proposal_prepare` below can
@@ -166,26 +180,40 @@ candidate_prove(candidate_id, idempotency_key, abandon?, initiative?)
 ```
 
 Only the candidate `candidate_search` left `selected` may open this, and only once (FR-28). A
-FIRST call mints a `verifier_token` carrying no proposer/search capability, moves the candidate
-to `proving`, and RETURNS `{ proof_status: null, verifier_token, runs_required, status:
-'proving' }` — never resolving in the same call. For every entry:
+FIRST call mints a `verifier_token` bound to this one allocation (this candidate, this case
+set, the proof split), moves the candidate to `proving`, spends the case set's proof cases, and
+RETURNS `{ proof_status: null, verifier_token, runs_required: { case_set_id, baseline,
+candidate }, status: 'proving' }` — never resolving in the same call. `runs_required` is COUNTS
+per side, never case ids: you never learn which proof case a run used. Run them one at a time:
 
 ```
-replay_start(case_set_id, candidate_id, split: "proof", context: "verifier", verifier_token, case_id, repeats, idempotency_key)
-npm run replay -- --run <replay_run_id> --repo <path> --verifier-token <verifier_token>
+replay_start(case_set_id, candidate_id | subject_version_id, split: "proof", context: "verifier", verifier_token, repeats, idempotency_key)
+REPLAY_TOKEN=<token> VERIFIER_TOKEN=<verifier_token> npm run replay -- --run <replay_run_id> --repo <path>
 ```
+
+`candidate_id` for the candidate side, the candidate's `base_subject_version_id` for the
+baseline side. **Never pass `case_id`** — the proof case is drawn server-side, and a verifier
+`replay_start` naming one REFUSES; so does one outside the allocation (another case set,
+candidate or subject). Start the next run once the launcher returns: the draw skips a case with
+a run still live, so starting many at once runs out of cases. `VERIFIER_TOKEN` goes in the
+environment, never on the command line, where `ps`, shell history and logs would keep it. The
+launcher uses it for its own calls only; neither replay session sees it. Under the token,
+`replay_read` of a proof run returns no case id, score or cost, and `replay_score` answers
+`sealed: true` with no number — **do not use the token for anything but the launcher.**
 
 **A LATER call** against the same `proving` candidate reads back whatever proof-split runs
-completed and scored; once enough exist, it re-screens for leakage, computes the paired
+completed and scored; once enough exist, it re-screens for leakage (an unclear or unavailable
+answer is `not_established, reason: leakage_unresolved` — never a pass), computes the paired
 verdict, and RETURNS `{ proof_status: proof_passed | proof_failed | not_established, reason,
 release_eligible, candidate_evaluation_id, status }` — **never a per-case result; search never
 sees a proof case or a proof result.** release_eligible is additionally true only when the base
 subject records release owners (FR-47).
 
-**Every terminal outcome spends the allocation.** On an OWNED candidate, every outcome except
-`proof_passed` leaves nothing left to promote or propose — pass `initiative` and
-`release_mode: not_applicable` is recorded for you the moment that happens (the same defect
-I-27 left in `candidate_search`, closed here too). On a NON-owned candidate, nothing is
+**Every terminal outcome spends the allocation, and opening it spent the case set:** proving
+again needs a new case set (new evidence), whichever candidate. On an OWNED candidate, a
+`proof_failed` outcome leaves nothing left to promote or propose — pass `initiative` and
+`release_mode: not_applicable` is recorded for you. A `not_established` outcome records nothing:
+it is an evidence gap a fresh `improvement_start` in this initiative may resume from. On a NON-owned candidate, nothing is
 recorded even with `initiative` passed: the candidate already reached `valid` before proof ever
 opened, so `proposal_prepare` below can still report it, whatever proof said. A `proof_passed`
 candidate with NO release owners reaches `status: closed` (a proposal-eligible outcome, not
@@ -193,7 +221,8 @@ nothing-to-promote) either way — leave that one for `proposal_prepare` below.
 
 **`abandon: true`** recovers an allocation stuck `proving` because you lost the response that
 opened it — no `verifier_token` holder, nothing else can resolve it. It revokes the token,
-cancels whatever proof runs it spawned, and resolves `proof_not_established, reason: abandoned`
+cancels whatever proof runs it spawned (the case set stays spent), and resolves
+`proof_not_established, reason: abandoned`
 (an evidence gap, not a rejected hypothesis — the SAME hypothesis may be proposed again under a
 fresh `improvement_start`). A second `abandon` call is a no-op read-back, never a refusal.
 

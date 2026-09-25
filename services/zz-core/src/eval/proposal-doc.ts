@@ -167,7 +167,18 @@ function renderProof(ev: EvaluationRow | null): string {
     `release eligible: ${s.release_eligible ? "yes" : "no"}, interval ${renderInterval(s)}`;
 }
 
+/** A fence the diff cannot close: CommonMark ends a fenced block at the first line of at least
+ *  as many backticks as opened it, so a diff that itself contains ``` (a patch to a Markdown
+ *  skill, say) would end a three-backtick fence early and spill the rest of the patch into the
+ *  document as prose. One backtick longer than the longest run inside, never fewer than three. */
+function fenceFor(body: string): string {
+  const longest = Math.max(0, ...(body.match(/`+/g) ?? []).map((run) => run.length));
+  return "`".repeat(Math.max(3, longest + 1));
+}
+
 function renderCandidate(c: CandidateRow, evaluations: readonly EvaluationRow[]): string {
+  const diff = c.diff || "(no diff recorded)";
+  const fence = fenceFor(diff);
   return [
     `### Candidate \`${c.id}\` (${c.status})`,
     `- Hypothesis: ${c.hypothesis}`,
@@ -178,9 +189,9 @@ function renderCandidate(c: CandidateRow, evaluations: readonly EvaluationRow[])
     `- Validation evidence: ${renderValidation(evidenceFor(evaluations, c.id, "validation"))}`,
     `- Proof evidence: ${renderProof(evidenceFor(evaluations, c.id, "proof"))}`,
     "- Patch (inert — never applied by this platform):",
-    "```diff",
-    c.diff || "(no diff recorded)",
-    "```",
+    `${fence}diff`,
+    diff,
+    fence,
   ].join("\n");
 }
 

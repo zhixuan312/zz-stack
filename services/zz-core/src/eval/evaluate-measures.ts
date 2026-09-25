@@ -17,7 +17,11 @@
  *     dotted path. A missing fact, an unresolved path, or a value the declared normalisation rule
  *     cannot make sense of is excluded with a named reason — never a bare 0.
  *   - `bounded_semantic` / `generative_critic` ask the measure's bound `evaluator_version_id`
- *     through `askEvaluator`, and derive a `[0,1]` value from the answer — see `valueFromAnswer`.
+ *     through `askEvaluatorQuestion` (`semantic.ts`), and derive a `[0,1]` value from the answer —
+ *     see `valueFromAnswer`. The answer comes back UNRECORDED (`AnsweredMeasure.pending`): the
+ *     caller asks every measure before it opens its idempotency transaction and records each one
+ *     with `recordMeasureAnswer` inside it, so a model call never holds a pool connection open and
+ *     a rolled-back ledger write takes its `zz.assessment` rows with it.
  *   - `human` has no label-ingestion pipeline yet; its measures are recorded as `null`, excluded
  *     the same way an unqualified evaluator's answer is.
  *
@@ -34,7 +38,11 @@
  * `evaluateGuardrails` below; a measure's own `definition` no longer carries `guardrail`/
  * `guardrailThreshold`.
  */
-import { askEvaluator, type EvaluatorAssessmentResult } from "./evaluators.js";
+import type pg from "pg";
+
+import {
+  askEvaluatorQuestion, insertEvaluatorAnswer, type AskedEvaluatorAnswer, type EvaluatorAssessmentResult,
+} from "../semantic.js";
 
 export interface SnapshotFacts {
   readonly usable_run_count: number;
@@ -211,7 +219,7 @@ function deterministicAnswer(measure: MeasureRow, snapshot: SnapshotFacts): Meas
  *  named vocabulary, the distribution's keys are read as an ordered scale (first = worst, last =
  *  best) and reduced to a probability-weighted position — a reasonable default for an
  *  unconfigured `score`/`choice` measure, not a fixed contract (this task's own plan boundary). */
-function valueFromAnswer(r: EvaluatorAssessmentResult, definition: Record<string, unknown>): number | null {
+function valueFromAnswer(r: Omit<EvaluatorAssessmentResult, "assessment_id">, definition: Record<string, unknown>): number | null {
   if (r.answer_kind === "noul") {
     return r.reading === "unavailable" || r.reading === "unclear" || r.probability === null
       ? null : r.probability;
@@ -232,15 +240,18 @@ function valueFromAnswer(r: EvaluatorAssessmentResult, definition: Record<string
 async function modelBackedAnswer(
   measure: MeasureRow, subjectText: string, context: string | undefined, principal: string,
   qualificationOf: (evaluatorVersionId: string) => Promise<{ id: string; state: string } | null>,
-): Promise<MeasureAnswer> {
+): Promise<AnsweredMeasure> {
   if (!measure.evaluator_version_id) {
     return {
       value: null, excluded: true, excluded_reason: `measure "${measure.key}" names no evaluator`,
       evaluator_version_id: null, assessment_id: null, qualification_id: null, qualification_state: null,
-      detail: {},
+      detail: {}, pending: null,
     };
   }
-  const result = await askEvaluator(measure.evaluator_version_id, subjectText, context, principal);
+  const asked = await askEvaluatorQuestion({
+    evaluator_version_id: measure.evaluator_version_id, subject_text: subjectText, context, askedBy: principal,
+  });
+  const result = asked.result;
   const qual = await qualificationOf(measure.evaluator_version_id);
   const unqualified = !qual || qual.state === "unqualified";
   const raw = valueFromAnswer(result, measure.definition);
@@ -250,11 +261,27 @@ async function modelBackedAnswer(
     excluded_reason: unqualified
       ? `evaluator is ${qual ? "unqualified" : "never qualified"} against this protocol version`
       : raw === null ? "the evaluator returned no comparable answer" : null,
-    evaluator_version_id: measure.evaluator_version_id, assessment_id: result.assessment_id,
+    evaluator_version_id: measure.evaluator_version_id, assessment_id: null,
     qualification_id: qual?.id ?? null, qualification_state: qual?.state ?? null,
     detail: { answer_kind: result.answer_kind, reading: result.reading, probability: result.probability,
               distribution: result.distribution, raw_value: raw },
+    pending: asked,
   };
+}
+
+/** A measure's answer before it is recorded: `pending` is the model answer still to be written
+ *  to `zz.assessment` (null for a measure no model was asked about), and `assessment_id` stays
+ *  null until `recordMeasureAnswer` writes it. */
+export type AnsweredMeasure = MeasureAnswer & { readonly pending: AskedEvaluatorAnswer | null };
+
+/** Records `answered`'s pending model answer through `runner` — the caller's own transaction
+ *  client — and returns the storable `MeasureAnswer` with its `assessment_id`, `pending` dropped
+ *  so it never reaches `zz.eval_assessment.answer`. */
+export async function recordMeasureAnswer(runner: pg.PoolClient, answered: AnsweredMeasure): Promise<MeasureAnswer> {
+  const { pending, ...answer } = answered;
+  if (!pending) return answer;
+  const recorded = await insertEvaluatorAnswer(runner, pending);
+  return { ...answer, assessment_id: recorded.assessment_id };
 }
 
 /** One measure, one subject_ref, one answer — dispatched by `evaluator_type`. `human` measures
@@ -272,20 +299,20 @@ export async function answerMeasure(opts: {
    *  not fix, only extends the seam past). */
   subjectText?: string;
   /** What the subject is judged against, e.g. a case's own evaluation_oracle events — passed to
-   *  `askEvaluator` as `context`, never folded into `subjectText` itself, so the SUBJECT/CONTEXT
+   *  the evaluator as `context`, never folded into `subjectText` itself, so the SUBJECT/CONTEXT
    *  split `semantic.ts`'s own state string keeps is still visible to whatever reads the raw
    *  assessment back later. */
   context?: string;
-}): Promise<MeasureAnswer> {
+}): Promise<AnsweredMeasure> {
   const { measure, snapshot, subjectRef, principal, qualificationOf, subjectText, context } = opts;
   if (measure.evaluator_type === "deterministic" || measure.evaluator_type === "outcome") {
-    return deterministicAnswer(measure, snapshot);
+    return { ...deterministicAnswer(measure, snapshot), pending: null };
   }
   if (measure.evaluator_type === "human") {
     return {
       value: null, excluded: true, excluded_reason: "no human-label ingestion pipeline exists yet",
       evaluator_version_id: null, assessment_id: null, qualification_id: null, qualification_state: null,
-      detail: {},
+      detail: {}, pending: null,
     };
   }
   const text = subjectText ?? `Measure "${measure.key}" against subject_ref "${subjectRef}".`;

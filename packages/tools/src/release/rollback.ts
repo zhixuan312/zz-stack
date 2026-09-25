@@ -9,7 +9,18 @@
  * `release_record`.
  *
  *   node packages/tools/dist/release/rollback.js --release-attempt <id> --repo <path> \
- *     --rollback-cmd "<command>" [--gateway <url>]
+ *     --rollback-cmd "<command naming {version}>" [--gateway <url>]
+ *
+ * The command is TOLD which version to restore: every `{version}` in `--rollback-cmd` becomes
+ * `rollback_plan.declared_version` and every `{plugin}` becomes `rollback_plan.plugin`, and a
+ * command naming no `{version}` is refused before it runs — a rollback that restores "the
+ * previous release" by its own reckoning may restore something other than the subject
+ * `release_verify` measured against. After the command succeeds, `plugin_locate` AT
+ * `rollback_plan.declared_version` must answer exactly `rollback_plan.prior_subject_version_id`
+ * before anything is recorded. `release_record(rolled_back)` then retracts the rolled-back version
+ * and, in the same transaction, refuses `prior_not_current` unless the prior subject is the
+ * plugin's current one — so a rollback is verified without deleting any `zz.plugin_version` row,
+ * and a newer release still standing over the prior one is never recorded as rolled back.
  *
  * `--rollback-cmd` is deliberately required, with no default baked in as a hard-coded call —
  * the same judgement `apply.ts`'s own `--release-cmd` already declines to make on a caller's
@@ -22,14 +33,15 @@
  * `npm run rollback` is what actually knows how to restore the prior version (read a tag, revert
  * a commit, whatever that repository's own release history calls for), which is exactly why it is
  * a configured command rather than logic duplicated here. This file's only job is to run that
- * command in an isolated worktree and record what happened.
+ * command in an isolated worktree, confirm the prior subject is current, and record that.
  *
  * `--repo`'s own HEAD and branch are never touched, the same isolation `apply.ts` keeps: every
  * step runs inside a fresh, deterministic worktree in its own ref namespace
  * (`refs/release-rollback/<attempt>`), removed whether the command succeeds or fails.
  * `--repo` should be a throwaway clone during verification, never the primary checkout.
  *
- * If `release_verify`'s own current verdict is not `rolled_back` (established, not_established,
+ * `release_record` for `rolled_back` is keyed on the attempt, so a lost response retries as a
+ * replay. If `release_verify`'s own current verdict is not `rolled_back` (established, not_established,
  * or still pending more replay evidence), there is nothing for this CLI to do — it says so and
  * exits 0 without touching the repository or calling release_record; running it again once
  * evidence resolves is the correct way to find out whether a rollback is now due. If the rollback
@@ -134,7 +146,7 @@ interface VerifyResponse {
   reason: string | null;
   evidence: unknown;
   rollback_plan: { plugin: string; declared_version: string; prior_subject_version_id: string; branch: string } | null;
-  runs_required?: unknown[];
+  runs_required?: { case_set_id: string; baseline: number; candidate: number };
   status: string;
 }
 
@@ -144,10 +156,13 @@ async function cliMain(argv: string[]): Promise<number> {
   const repoRoot = required(args, "repo", "the repository checkout to run the rollback command into — a throwaway clone while verifying, never the primary checkout");
   const gatewayUrl = (optional(args, "gateway", "the gateway base, e.g. http://localhost:18000") ?? process.env.ZZ_URL ?? "").replace(/\/+$/, "");
   if (!gatewayUrl) die("no gateway: pass --gateway or set ZZ_URL");
-  const rollbackCmd = splitCommand(required(args, "rollback-cmd",
-    "the repository's own rollback procedure, run from an isolated worktree — normally " +
-    "\"npm run rollback\"; pass a harmless stub while verifying, e.g. --rollback-cmd \"git tag " +
-    "v0.0.0-rollback\""));
+  const rollbackTemplate = splitCommand(required(args, "rollback-cmd",
+    "the repository's own rollback procedure, run from an isolated worktree, naming {version} " +
+    "(and optionally {plugin}) where the version to restore goes; pass a harmless stub while " +
+    "verifying, e.g. --rollback-cmd \"git tag v{version}-rollback\""));
+  if (!rollbackTemplate.some((a) => a.includes("{version}"))) {
+    die("--rollback-cmd names no {version}: the command must be told which version to restore", 2);
+  }
   const idempotencyKey = optional(args, "idempotency-key", "a fixed key, to retry this exact call idempotently") ?? randomUUID();
 
   const mcp = new Mcp(`${gatewayUrl}/eval/mcp`, { pat: platformToken(), client: DEFAULT_CLIENT });
@@ -161,7 +176,8 @@ async function cliMain(argv: string[]): Promise<number> {
     // Nothing to do — established, not_established, or still pending more replay evidence (the
     // module note's own contract: this CLI never drives replay itself).
     console.log(verify.verdict === null
-      ? `release_verify still needs more evidence (${verify.runs_required?.length ?? 0} runs_required) — nothing to roll back yet`
+      ? `release_verify still needs more evidence (${verify.runs_required?.baseline ?? 0} prior and ` +
+        `${verify.runs_required?.candidate ?? 0} released replays) — nothing to roll back yet`
       : `release_verify's own verdict is ${verify.verdict} — no rollback due`);
     return 0;
   }
@@ -170,6 +186,8 @@ async function cliMain(argv: string[]): Promise<number> {
   }
   const plan = verify.rollback_plan;
   console.log(`rollback_plan -> plugin ${plan.plugin}, restoring ${plan.declared_version} (${plan.prior_subject_version_id})`);
+  const rollbackCmd = rollbackTemplate.map((a) =>
+    a.replaceAll("{version}", () => plan.declared_version).replaceAll("{plugin}", () => plan.plugin));
 
   let worktree: Worktree | undefined;
   try {
@@ -182,9 +200,25 @@ async function cliMain(argv: string[]): Promise<number> {
       return 1;
     }
 
+    // The version restored must still BE the prior subject — located at its exact version, the
+    // same content release_verify measured against. Whether it is then current is release_record's
+    // own check, made in the same transaction that retracts the rolled-back version.
+    const locateSaid = await mcp.call("plugin_locate", {
+      plugin: plan.plugin, version: plan.declared_version, idempotency_key: randomUUID(),
+    });
+    const prior = /^ERROR[: ]/.test(locateSaid) ? null : (JSON.parse(locateSaid) as { subject_version_id: string });
+    if (!prior || prior.subject_version_id !== plan.prior_subject_version_id) {
+      console.error(
+        `the rollback command succeeded, but ${plan.plugin} ${plan.declared_version} now resolves to ` +
+        `${prior ? prior.subject_version_id : `nothing: ${locateSaid}`}, not the prior subject ` +
+        `${plan.prior_subject_version_id} — nothing recorded`);
+      return 1;
+    }
+
     const recordSaid = await mcp.call("release_record", {
       release_attempt_id: releaseAttemptId, status: "rolled_back",
-      reason: verify.reason ?? "regression_established", idempotency_key: randomUUID(),
+      reason: verify.reason ?? "regression_established",
+      idempotency_key: `release_record:${releaseAttemptId}:rolled_back`,
     });
     console.log(`release_record (rolled_back) -> ${recordSaid}`);
     return /^ERROR[: ]/.test(recordSaid) ? 1 : 0;

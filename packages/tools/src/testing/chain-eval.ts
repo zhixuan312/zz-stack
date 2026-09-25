@@ -123,9 +123,12 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
     await callEval("replay_start", {
       case_set_id: randomUUID(), subject_version_id: randomUUID(), split: "evolve", repeats: 1,
       idempotency_key: randomUUID(),
-    }), /no platform database|unknown case set/);
+    }), /no platform database|unknown subject_version_id|unknown case set/);
   eitherOr("replay_read refuses a replay_run_id nothing minted",
     await callEval("replay_read", { replay_run_id: randomUUID() }),
+    /no platform database|unknown replay_run_id/);
+  eitherOr("replay_begin refuses a replay_run_id nothing minted",
+    await callEval("replay_begin", { replay_run_id: randomUUID(), idempotency_key: randomUUID() }),
     /no platform database|unknown replay_run_id/);
   eitherOr("replay_close refuses a replay_run_id nothing minted",
     await callEval("replay_close", {

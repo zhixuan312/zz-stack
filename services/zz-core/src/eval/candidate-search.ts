@@ -8,18 +8,23 @@
  * Never an executor: like `candidate_validate`, this file plans and reduces, never runs a replay
  * or a proof itself (FR-46's own boundary — "search never calls a proof tool" is this task's
  * contract line for the same reason). What it DOES do inside one call:
- *   - screens every still-`recorded` candidate through the registered `search.leakage` evaluator
- *     (FR-38's own "leakage criticism"), rejecting one whose patch reads as hard-coded against
- *     evidence a proposer should not have relied on, BEFORE candidate_validate ever builds it;
  *   - composes at most one new child candidate per call, from two `valid` candidates whose
  *     patches touch disjoint files (FR-39, this task's own invariant: "composition only merges
  *     candidates touching disjoint files"), recorded exactly the way `candidate_record`
  *     (`candidates.ts`) records a proposed one — its own digest, its own `parent_ids`, `status:
- *     'recorded'`, ready for the SAME leakage screen and the SAME `candidate_validate` call any
- *     other candidate goes through;
+ *     'recorded'`, ready for the SAME `candidate_validate` call (leakage screen, build, replay)
+ *     any other candidate goes through. It joins the search's current generation
+ *     (`search-rules.ts`), never "its parents' generation + 1" — composition depth is not a
+ *     search round;
  *   - reduces every candidate with a stored validation evaluation to `selection.ts`'s pure
- *     `paretoFrontier`, and, once the protocol's own liveness bound is reached, to `selectFinal` —
- *     one deterministic winner, or `null` when nothing guardrail-passing cleared the band;
+ *     `paretoFrontier`, and, once the protocol's own liveness bound is reached, to `selectFinal`
+ *     over the frontier members whose verdict is `improves` or an accepted pruning trade-off —
+ *     one deterministic winner, or `null` when none qualifies;
+ *
+ * The leakage critic (FR-38) used to run here, over `recorded` candidates only — but the
+ * documented order validates a candidate before search ever sees it, so the screen was skipped
+ * for exactly the candidates that mattered. It now runs inside `candidate_validate`, before the
+ * build (`candidate-leakage.ts`), and this call asks no model at all.
  *   - when the current generation has nothing left to try — every one of its own candidates
  *     `rejected_precheck`, `invalid` or validated `not_improved` — names which of the base
  *     subject's own manifest components no candidate in this run has touched yet (FR-38's own
@@ -31,71 +36,23 @@
  * `complexity_delta` is never filtered out anywhere in this file, which IS "pruning admitted as a
  * first-class candidate operation" in practice.
  */
-import { SearchPolicy } from "@zz/contracts";
+import type { SearchPolicy } from "@zz/contracts";
 import type pg from "pg";
 
 import {
   complexityDelta, componentCounts, hypothesisDigest, parseUnifiedDiff, patchDigest, touchedComponents,
   type ManifestComponent, type PatchFile, type TouchedComponent,
 } from "./complexity.js";
-import { registerEvaluator, type EvaluatorDefinition } from "./evaluators.js";
 import { loadProposerBundle, type ProposerBundle } from "./proposer-bundle.js";
 import { paretoFrontier, selectFinal, type FrontierCandidate, type SelectionCandidate } from "./selection.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { writeBranchFacts } from "./protocol.js";
-import { recordEvaluatorAssessment } from "../semantic.js";
+import {
+  generationCapRefusal, parseSearchPolicy, searchGeneration, type GenerationMember, type GenerationState,
+} from "./search-rules.js";
 import { Refusal } from "../refusal.js";
 
 type Runner = pg.Pool | pg.PoolClient;
-
-// -------------------------------------------------------------------------------------------
-// The search policy this task's own numbers govern — the four fields candidate_search reads,
-// out of SearchPolicy's own larger shape (candidate_validate.ts reads the other three:
-// minRepeats/minMeaningfulEffect/confidence). Same fallback shape as candidate-validate.ts's own
-// DEFAULT_POLICY, and the same reason: a protocol that names no improvement_policy.search is not
-// a run with no candidates, it is a run using FR-57's own bootstrap numbers.
-interface SearchPolicyLite {
-  readonly maxGenerations: number;
-  readonly maxCandidatesPerGeneration: number;
-  readonly wallClockHours: number;
-  readonly equivalenceBand: number;
-}
-
-const DEFAULT_SEARCH_POLICY: SearchPolicyLite = {
-  maxGenerations: 5, maxCandidatesPerGeneration: 8, wallClockHours: 24, equivalenceBand: 0.1,
-};
-
-function resolveSearchPolicy(raw: unknown): SearchPolicyLite {
-  const parsed = SearchPolicy.safeParse(raw);
-  return parsed.success
-    ? { maxGenerations: parsed.data.maxGenerations, maxCandidatesPerGeneration: parsed.data.maxCandidatesPerGeneration,
-        wallClockHours: parsed.data.wallClockHours, equivalenceBand: parsed.data.equivalenceBand }
-    : DEFAULT_SEARCH_POLICY;
-}
-
-// -------------------------------------------------------------------------------------------
-// The leakage critic (FR-38): one registered evaluator, defined here and registered inline the
-// same way discover.ts registers discover.owner_kind — idempotent by content digest, so calling
-// registerEvaluator on every candidate_search call costs one upsert-and-read-back and never mints
-// a second version of the same question.
-
-export const LEAKAGE_EVALUATOR: EvaluatorDefinition = {
-  stable_key: "search.leakage",
-  kind: "noul",
-  question:
-    "Below is one candidate patch a search proposed against a plugin under optimization — its " +
-    "hypothesis, the files it touches, and an excerpt of its own unified diff. The proposer may " +
-    "read this run's evolve evidence and its own prior validation results, but must never see " +
-    "sealed proof cases or evaluation-oracle content, and must never repeat a hypothesis already " +
-    "rejected. Does this candidate's hypothesis or patch read as though it leaked or hard-coded " +
-    "specific evidence it should not have — a literal case id, a literal expected answer, a " +
-    "special case that only matches known evidence content, or a hypothesis restating a rejected " +
-    "one in different words — rather than implementing a genuinely general fix a proposer could " +
-    "justify from evolve evidence alone?",
-  answer_schema: { type: "noul" },
-  polarity: {},
-  model_policy: {},
-};
 
 // -------------------------------------------------------------------------------------------
 // Candidates, as this file needs to read and reason about them — a narrower shape than
@@ -134,49 +91,6 @@ async function loadCandidates(runner: Runner, improvementRunId: string): Promise
 function rejectionReason(c: CandidateRow): string {
   const stored = c.expected_effect._rejection_reason;
   return typeof stored === "string" ? stored : "rejected before validation";
-}
-
-// -------------------------------------------------------------------------------------------
-// Leakage screening — one call per still-`recorded` candidate, never re-asked once a candidate
-// has moved past `recorded` (candidate_validate's own status guard, `in (recorded, valid)`,
-// already stops taking a `rejected_precheck` row further, and a candidate that clears this once
-// stays `recorded` for candidate_validate to pick up next — no new status is minted here that
-// migration 077's own check constraint does not already carry).
-
-interface LeakageVerdict { readonly leaked: boolean; readonly reason: string | null }
-
-/** Narrowed to exactly what a leakage screen reads — `candidate-prove.ts` (Task I-21) reuses this
- *  same critic at proof time (FR-43's own "no unresolved leakage") over a candidate row shaped
- *  quite differently from this file's own `CandidateRow`, so the parameter names only the three
- *  fields either caller can supply, never the full row either file happens to load. */
-export interface LeakageSubject {
-  readonly hypothesis: string;
-  readonly diff: string;
-  readonly touched_components: readonly TouchedComponent[];
-}
-
-export async function screenLeakage(
-  evaluatorVersionId: string, candidate: LeakageSubject, principal: string,
-): Promise<LeakageVerdict> {
-  const touched = candidate.touched_components.map((c) => c.path).join(", ") || "(no files parsed from this patch)";
-  const subject =
-    `HYPOTHESIS: ${candidate.hypothesis}\n` +
-    `TOUCHED FILES: ${touched}\n` +
-    `DIFF EXCERPT:\n${candidate.diff.slice(0, 2000)}`;
-  const answer = await recordEvaluatorAssessment({
-    evaluator_version_id: evaluatorVersionId, subject_text: subject, askedBy: principal,
-  });
-  if (answer.reading === "yes") {
-    return {
-      leaked: true,
-      reason: `leakage critic flagged this candidate (probability ${answer.probability?.toFixed(2) ?? "?"}) ` +
-        "as likely relying on evidence it should not have, or restating a rejected hypothesis",
-    };
-  }
-  // "no", "unclear" and "unavailable" all admit the candidate — an outage or an inconclusive read
-  // never blocks search on its own, the same "never drops a candidate for a model outage" rule
-  // discover.ts's own header states for the same evaluator kind; only a clear "yes" rejects.
-  return { leaked: false, reason: null };
 }
 
 // -------------------------------------------------------------------------------------------
@@ -219,7 +133,7 @@ function concatDiffs(a: string, b: string): string {
 async function composeCandidate(
   client: pg.PoolClient, improvementRunId: string, baseSubjectVersionId: string,
   manifest: readonly ManifestComponent[], releaseOwners: readonly string[],
-  a: CandidateRow, b: CandidateRow, principal: string,
+  a: CandidateRow, b: CandidateRow, principal: string, generation: number,
 ): Promise<CandidateRow> {
   const diff = concatDiffs(a.diff, b.diff);
   const stats = parseUnifiedDiff(diff);
@@ -231,7 +145,6 @@ async function composeCandidate(
   });
   const digest = patchDigest(diff);
   const touched_components = touchedComponents(files, manifest);
-  const generation = Math.max(a.generation, b.generation) + 1;
   const hypothesis =
     `Composed from candidate ${a.id} ("${a.hypothesis.slice(0, 80)}") and candidate ${b.id} ` +
     `("${b.hypothesis.slice(0, 80)}") — disjoint-file crossover, FR-39.`;
@@ -381,14 +294,35 @@ interface ViewCore {
   readonly explore_components: readonly string[];
 }
 
+function generationOf(
+  candidates: readonly CandidateRow[], evaluations: ReadonlyMap<string, ValidationEval>,
+): GenerationState {
+  const members: GenerationMember[] = candidates.map((c) => ({
+    generation: c.generation, validated: evaluations.has(c.id),
+    rejected: c.status === "rejected_precheck" || c.status === "invalid",
+  }));
+  return searchGeneration(members);
+}
+
+/** FR-43's own bar, applied at selection too: a frontier member is selectable only when its
+ *  validation verdict is `improves`, or it is a pruning candidate (negative complexity_delta)
+ *  whose interval shows no regression. A `not_improved`/`unresolved` candidate can sit on the
+ *  frontier (it may still be cheapest), but selecting it would spend the one proof allocation on
+ *  a candidate validation already said does not improve. */
+function selectable(c: CandidateRow, ev: ValidationEval | undefined): boolean {
+  if (!ev) return false;
+  return ev.verdict === "improves" || (c.complexity_delta < 0 && ev.lower >= 0);
+}
+
 function computeViewCore(
   candidates: readonly CandidateRow[], evaluations: ReadonlyMap<string, ValidationEval>,
-  caseIds: readonly string[], policy: SearchPolicyLite, manifest: readonly ManifestComponent[],
+  caseIds: readonly string[], policy: SearchPolicy, manifest: readonly ManifestComponent[],
   runCreatedAt: Date, alreadySelectedId: string | null,
 ): ViewCore {
-  const generation = candidates.length ? Math.max(...candidates.map((c) => c.generation)) : 0;
+  const gen = generationOf(candidates, evaluations);
+  const generation = gen.current;
   const wallClockExceeded = Date.now() - runCreatedAt.getTime() >= policy.wallClockHours * 3_600_000;
-  const generationsExhausted = generation + 1 >= policy.maxGenerations;
+  const generationsExhausted = gen.settled && gen.validatedGenerations >= policy.maxGenerations;
   const stopped = wallClockExceeded || generationsExhausted;
 
   const frontierSet = paretoFrontier(buildFrontierInput(candidates, evaluations, caseIds));
@@ -400,7 +334,7 @@ function computeViewCore(
   // a second, independent way to win; it lost the frontier reduction and stays lost here.
   let selected_id = alreadySelectedId;
   if (selected_id === null && stopped) {
-    const frontierCandidates = candidates.filter((c) => frontierSet.has(c.id));
+    const frontierCandidates = candidates.filter((c) => frontierSet.has(c.id) && selectable(c, evaluations.get(c.id)));
     selected_id = selectFinal(buildSelectionInput(frontierCandidates, evaluations), policy.equivalenceBand);
   }
 
@@ -414,14 +348,15 @@ function computeViewCore(
   return { generation, stopped, frontier_ids, rejected, selected_id, explore_components };
 }
 
-function nextGuidance(view: ViewCore, status: string, policy: SearchPolicyLite): string {
+function nextGuidance(view: ViewCore, status: string, policy: SearchPolicy): string {
   if (status === "selected") {
     return `generation ${view.generation}: candidate ${view.selected_id ?? "?"} selected — call ` +
       "candidate_prove next; propose or validate no further against this improvement_run.";
   }
   if (status === "closed") {
-    return `generation ${view.generation}: no guardrail-passing candidate cleared the ` +
-      "equivalence band by the liveness bound — this improvement_run is closed not_established.";
+    return `generation ${view.generation}: no guardrail-passing candidate that validation found ` +
+      "improving (or an accepted pruning) was on the frontier by the liveness bound — this " +
+      "improvement_run is closed not_established.";
   }
   if (view.explore_components.length) {
     return `generation ${view.generation} has stalled — every candidate in it is rejected, ` +
@@ -524,7 +459,7 @@ async function loadSubjectContext(p: pg.Pool, evalRunId: string): Promise<Subjec
 
 async function fullView(
   runner: Runner, improvementRunId: string, createdAt: Date,
-  policy: SearchPolicyLite, manifest: readonly ManifestComponent[],
+  policy: SearchPolicy, manifest: readonly ManifestComponent[],
 ): Promise<ViewCore> {
   const candidates = await loadCandidates(runner, improvementRunId);
   const caseSetId = await caseSetIdFor(runner, improvementRunId);
@@ -548,7 +483,8 @@ export async function runCandidateSearch(
   if (!subject) {
     return { error: `ERROR: improvement_run ${improvementRunId}'s own eval_run names no subject_version_id` };
   }
-  const policy = resolveSearchPolicy(run.search_policy);
+  const policy = parseSearchPolicy(run.search_policy, improvementRunId);
+  if ("error" in policy) return policy;
   const createdAt = new Date(run.created_at);
 
   // Already at a terminal state: read-only, no ledger row, no re-mutation — a run that has
@@ -568,43 +504,32 @@ export async function runCandidateSearch(
     };
   }
 
-  const evaluator = await registerEvaluator(LEAKAGE_EVALUATOR);
-
   const outcome: IdempotencyOutcome<{ status: string }> = await withIdempotency(
     principal, "candidate_search", idempotencyKey, { improvement_run_id: improvementRunId },
     async (client): Promise<MutatorOutcome<{ status: string }>> => {
       const candidates = await loadCandidates(client, improvementRunId);
-
-      // 1. Leakage screen every still-recorded candidate (FR-38, "before validation").
-      for (const c of candidates.filter((cc) => cc.status === "recorded")) {
-        const verdict = await screenLeakage(evaluator.evaluator_version_id, c, principal);
-        if (verdict.leaked) {
-          await client.query(
-            "update zz.candidate set status = 'rejected_precheck', " +
-            "expected_effect = expected_effect || $2::jsonb where id = $1::uuid",
-            [c.id, JSON.stringify({ _rejection_reason: verdict.reason })]);
-          c.status = "rejected_precheck";
-          c.expected_effect._rejection_reason = verdict.reason;
-        }
-      }
-
-      // 2. Compose at most one new child from two disjoint, already-valid candidates (FR-39).
-      const pair = findComposablePair(candidates);
-      if (pair) {
-        const composed = await composeCandidate(
-          client, improvementRunId, subject.subject_version_id, subject.component_manifest,
-          subject.release_owners, pair[0], pair[1], principal);
-        candidates.push(composed);
-      }
-
-      // 3. Reduce to generation / frontier / selection.
       const caseSetId = await caseSetIdFor(client, improvementRunId);
       const caseIds = caseSetId ? await loadValidationCaseIds(client, caseSetId) : [];
-      const evaluations = await loadValidationEvaluations(client, candidates.map((c) => c.id));
+      let evaluations = await loadValidationEvaluations(client, candidates.map((c) => c.id));
+
+      // 1. Compose at most one new child from two disjoint, already-valid candidates (FR-39),
+      // into the generation a recorded candidate would join — skipped, never refused, when that
+      // generation is already full.
+      const pair = findComposablePair(candidates);
+      const gen = generationOf(candidates, evaluations);
+      if (pair && gen.nextCount < policy.maxCandidatesPerGeneration) {
+        const composed = await composeCandidate(
+          client, improvementRunId, subject.subject_version_id, subject.component_manifest,
+          subject.release_owners, pair[0], pair[1], principal, gen.next);
+        candidates.push(composed);
+        evaluations = await loadValidationEvaluations(client, candidates.map((c) => c.id));
+      }
+
+      // 2. Reduce to generation / frontier / selection.
       const core = computeViewCore(
         candidates, evaluations, caseIds, policy, subject.component_manifest, createdAt, null);
 
-      // 4. Data mapping (this task's own contract): selected candidate -> status = selected,
+      // 3. Data mapping (this task's own contract): selected candidate -> status = selected,
       // improvement_run.status = selected; no guardrail-passing candidate at the bound ->
       // selected_id = null, run closed with not_established; otherwise still searching.
       const newStatus = core.selected_id ? "selected" : core.stopped ? "closed" : "searching";
@@ -637,3 +562,22 @@ export async function runCandidateSearch(
   };
 }
 
+
+/** The generation `candidate_record` records a new candidate into — the run's own
+ *  search_policy (never a fallback) and `search-rules.ts`'s generation rule, read over the same
+ *  rows `candidate_search` reduces. Throws the refusal: it runs inside `candidate_record`'s
+ *  ledger transaction (`client`), so the cap is checked against committed rows under the same
+ *  commit that adds one. */
+export async function recordGenerationFor(
+  client: pg.PoolClient, improvementRunId: string, searchPolicy: unknown,
+): Promise<number> {
+  const policy = parseSearchPolicy(searchPolicy, improvementRunId);
+  if ("error" in policy) throw new Refusal(policy.error);
+  // Serialises concurrent records into one run, so two cannot both take a generation's last slot.
+  await client.query("select 1 from zz.improvement_run where id = $1::uuid for update", [improvementRunId]);
+  const candidates = await loadCandidates(client, improvementRunId);
+  const state = generationOf(candidates, await loadValidationEvaluations(client, candidates.map((c) => c.id)));
+  const refusal = generationCapRefusal(state, policy);
+  if (refusal) throw new Refusal(refusal);
+  return state.next;
+}

@@ -1,40 +1,36 @@
 /**
- * The launcher's worktree lifecycle (Task I-17): one detached worktree per run, pinned to a
- * resolved commit under `refs/replay/<team_slug>` — never a branch, never the caller's own
- * checkout. `git worktree add`/`remove` and `update-ref` only; nothing here ever runs
- * `checkout`, `stash` or `reset` against `opts.repoRoot` itself, so the user's real checkout is
- * never touched (worker_rules.md's own line: "never touch the user's main checkout's branches").
+ * The launcher's clone lifecycle (Task I-17): one standalone clone per run, detached at the
+ * subject's own release tag. `git clone --no-hardlinks` and `remote remove origin` leave the
+ * clone with its own object store and no pointer back at `opts.repoRoot` — nothing here ever runs
+ * a command that writes to `repoRoot`'s `.git` (no `worktree add`, no `update-ref`), so neither the
+ * launcher nor the `bypassPermissions` session running inside the clone can touch the operator's
+ * real repository. See `plan.ts`'s git section for why a worktree was not good enough.
+ *
+ * DELIBERATE: no `zz-stack-dashboard` symlink beside the clone any more. One used to point at the
+ * operator's real console checkout so a gate run inside the replay could find its sibling — which
+ * handed a `bypassPermissions` session a writable path into a second real repository. A gate run
+ * inside a replay now reports the missing sibling the way it does on any host without one.
  *
  * Every git call goes through `execFileSync` with an argv array from `plan.ts` — no shell, so a
  * team slug or a path can never be reinterpreted as a second argument.
  */
 import { execFileSync } from "node:child_process";
-import {
-  existsSync, lstatSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, symlinkSync, unlinkSync, writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import {
-  gitApplyArgv, gitRevParseArgv, gitUpdateRefArgv, gitUpdateRefDeleteArgv, gitWorktreeAddArgv,
-  gitWorktreeListArgv, gitWorktreeRemoveArgv, replayRefFor, worktreeDirName,
+  GIT_EXEC_TIMEOUT_MS, gitApplyArgv, gitCheckoutDetachArgv, gitCloneArgv, gitRemoveOriginArgv,
+  gitResolveTagArgv, releaseRefFor, releaseTagFor, worktreeDirName,
 } from "./plan.js";
 
-const EXEC_TIMEOUT_MS = 60_000;
-
-function git(repoRoot: string, args: string[]): string {
-  return execFileSync("git", args, { cwd: repoRoot, encoding: "utf8", timeout: EXEC_TIMEOUT_MS, stdio: ["ignore", "pipe", "pipe"] }).trim();
-}
-
-/** Best-effort; a command that fails because there was nothing to undo is not this function's
- *  problem — it is called speculatively, both up front (clearing a crashed run's leftovers) and
- *  in the `finally` that closes a run out. */
-function gitQuiet(repoRoot: string, args: string[]): void {
-  try { execFileSync("git", args, { cwd: repoRoot, timeout: EXEC_TIMEOUT_MS, stdio: "ignore" }); }
-  catch { /* nothing there to remove, or already gone — both are the success case here */ }
+function git(cwd: string, args: string[]): string {
+  return execFileSync("git", args, { cwd, encoding: "utf8", timeout: GIT_EXEC_TIMEOUT_MS, stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 
 export interface Worktree {
+  /** `refs/tags/v<declared_version>` — the ref the clone was checked out from, and what
+   *  `replay_start` recorded as the run's `sandbox_ref`/`worktree_ref`. */
   readonly ref: string;
   readonly path: string;
   readonly commit: string;
@@ -46,82 +42,54 @@ export interface Worktree {
  *  lets a retry find and remove what a crashed earlier attempt for the SAME run left behind —
  *  a random suffix minted fresh on every call could never be rediscovered by a later one. */
 function worktreePathFor(teamSlug: string): string {
-  return join(tmpdir(), "zz-replay", worktreeDirName(teamSlug));
+  // Real path: the OS sandbox (sandbox.ts) matches `/private/var/...`, not the `/var` symlink.
+  return join(realpathSync(tmpdir()), "zz-replay", worktreeDirName(teamSlug));
 }
 
-/** Fix 6: the gate's "every route this gateway serves has a caller" check (and the hygiene
- *  check beside it) resolves the console's sibling checkout as `join(<repo root the gate is
- *  running from>, "..", "zz-stack-dashboard")` — and `root` there is wherever `scripts/gate/
- *  read.ts` itself sits, which inside a worktree is the worktree's own top, not the real
- *  checkout's. A worktree created at a fresh `mkdtempSync` path every time has no sibling at
- *  all, so the gate run this launcher's own replay session may end up running (through the
- *  candidate's own build+gate, or a subject's) fails that check for a reason that has nothing to
- *  do with the patch under test.
- *
- *  Every worktree this file creates lives under the SAME parent (`tmpdir()/zz-replay`), so one
- *  symlink there — `tmpdir()/zz-replay/zz-stack-dashboard`, pointing at the real sibling beside
- *  `repoRoot` — makes `../zz-stack-dashboard` resolve correctly from every worktree under it,
- *  present or future. Created once, idempotently, and only when the real dashboard checkout
- *  exists beside `repoRoot`; a deployment with no sibling console checkout is left exactly as
- *  the gate already reports it (a named, non-fatal-here condition), never faked into existing. */
-function ensureDashboardSibling(repoRoot: string, parentDir: string): void {
-  const real = resolve(repoRoot, "..", "zz-stack-dashboard");
-  if (!existsSync(real)) return;
-  const link = join(parentDir, "zz-stack-dashboard");
-  try {
-    const stat = lstatSync(link);
-    if (stat.isSymbolicLink() && readlinkSync(link) === real) return;
-    unlinkSync(link); // stale — a previous run's dashboard moved or this is some other file
-  } catch {
-    // ENOENT: nothing there yet, which is the ordinary case — fall through to create it.
-  }
-  symlinkSync(real, link);
-}
-
-/** Removes whatever a crashed earlier launch for this same team slug left behind — the ref, the
- *  worktree directory registration, and the directory itself — so a retry never collides with
- *  its own predecessor. Called before anything else touches this run's worktree. */
-function clearStaleWorktree(repoRoot: string, teamSlug: string): void {
+/** Clones `repoRoot` into this run's directory and detaches it at `v<declaredVersion>` — the
+ *  "install at an exact digest" half of the contract. Whatever the operator's checkout does
+ *  after this call, the clone keeps the release commit for the whole life of the run. A missing
+ *  tag throws: a subject whose release was never tagged in `repoRoot` cannot be replayed from it,
+ *  and falling back to `HEAD` would measure whatever the operator happens to have checked out.
+ *  A crashed earlier attempt for the same team slug is removed first, so a retry never collides
+ *  with its own predecessor. */
+export function createWorktree(repoRoot: string, teamSlug: string, declaredVersion: string): Worktree {
   const path = worktreePathFor(teamSlug);
-  gitQuiet(repoRoot, gitWorktreeRemoveArgv(path));
   if (existsSync(path)) rmSync(path, { recursive: true, force: true });
-  gitQuiet(repoRoot, gitUpdateRefDeleteArgv(replayRefFor(teamSlug)));
-}
-
-/** Resolves `ref` (default `HEAD`) to a commit, points `refs/replay/<team_slug>` at it, and adds
- *  a detached worktree there — the "install at an exact digest" half of the contract: whatever
- *  the caller's own checkout does after this call, the worktree keeps the commit it was pinned
- *  to for the whole life of the run. */
-export function createWorktree(repoRoot: string, teamSlug: string, ref = "HEAD"): Worktree {
-  clearStaleWorktree(repoRoot, teamSlug);
-  const commit = git(repoRoot, gitRevParseArgv(ref));
-  const replayRef = replayRefFor(teamSlug);
-  git(repoRoot, gitUpdateRefArgv(replayRef, commit));
-  const path = worktreePathFor(teamSlug);
-  // Only the parent: `git worktree add` refuses a target directory that already exists, and
-  // creates it itself.
-  const parent = join(tmpdir(), "zz-replay");
+  // Only the parent: `git clone` creates the target directory itself.
+  const parent = dirname(path);
   mkdirSync(parent, { recursive: true });
-  ensureDashboardSibling(repoRoot, parent);
+  git(parent, gitCloneArgv(resolve(repoRoot), path));
   try {
-    git(repoRoot, gitWorktreeAddArgv(path, replayRef));
+    git(path, gitRemoveOriginArgv());
+    const tag = releaseTagFor(declaredVersion);
+    let commit: string;
+    try {
+      commit = git(path, gitResolveTagArgv(tag));
+    } catch {
+      throw new Error(`launchReplay: ${repoRoot} has no release tag ${tag} — the subject's own ` +
+        "release cannot be checked out, and no other commit is an acceptable stand-in for it");
+    }
+    git(path, gitCheckoutDetachArgv(commit));
+    return { ref: releaseRefFor(declaredVersion), path, commit };
   } catch (err) {
-    gitQuiet(repoRoot, gitUpdateRefDeleteArgv(replayRef));
+    rmSync(path, { recursive: true, force: true });
     throw err;
   }
-  return { ref: replayRef, path, commit };
 }
 
-/** Removes the worktree and its ref, in that order — a worktree still registered against a
- *  deleted ref is the state `git worktree list` would otherwise show as broken. Always called
- *  from a `finally`; safe to call twice. */
-export function removeWorktree(repoRoot: string, worktree: Worktree): void {
-  gitQuiet(repoRoot, gitWorktreeRemoveArgv(worktree.path));
+/** The clone's own `plugins.lock.json`, parsed — what `releaseLockMismatch` (plan.ts) compares
+ *  against the subject's captured digest. */
+export function readReleaseLock(worktreePath: string): unknown {
+  return JSON.parse(readFileSync(join(worktreePath, "plugins.lock.json"), "utf8"));
+}
+
+/** Removes the clone. Always called from a `finally`; safe to call twice. */
+export function removeWorktree(worktree: Worktree): void {
   if (existsSync(worktree.path)) rmSync(worktree.path, { recursive: true, force: true });
-  gitQuiet(repoRoot, gitUpdateRefDeleteArgv(worktree.ref));
 }
 
-/** I-18: applies a recorded candidate's own unified diff into an already-created worktree,
+/** I-18: applies a recorded candidate's own unified diff into an already-created clone,
  *  before `installPlugin` reads anything out of it — the launcher's own lift of the
  *  candidate-replay refusal: "a recorded candidate's patch must be applied into the replay
  *  worktree before the session starts." The diff text never reaches `execFileSync`'s argv as a
@@ -145,12 +113,4 @@ export function applyPatch(worktreePath: string, diff: string): void {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-}
-
-/** Every worktree `repoRoot` currently has registered, one path per line — the live
- *  concurrency proof (two launches sharing no worktree) reads this rather than trusting each
- *  run's own bookkeeping. */
-export function listWorktrees(repoRoot: string): string[] {
-  return git(repoRoot, gitWorktreeListArgv())
-    .split("\n").filter((l) => l.startsWith("worktree ")).map((l) => l.slice("worktree ".length));
 }

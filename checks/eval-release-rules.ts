@@ -11,7 +11,7 @@ assert.deepEqual(releaseDecision({ ...ok, proof_eligible: false }), { kind: "ref
 assert.deepEqual(releaseDecision({ ...ok, approvals: [] }), { kind: "refuse", reason: "approval_required" });
 assert.deepEqual(releaseDecision({ ...ok, patch_digest: "q" }), { kind: "refuse", reason: "digest_mismatch" });
 assert.deepEqual(releaseDecision({ ...ok, current_subject_id: "s2" }), { kind: "refuse", reason: "stale_baseline" });
-assert.equal(rollbackDecision({ deltas: Array(12).fill(-1), guardrail_failed: false, resamples: 2000, seed: "s" }), true, "established regression");
-assert.equal(rollbackDecision({ deltas: Array(12).fill(0.2), guardrail_failed: false, resamples: 2000, seed: "s" }), false);
-assert.equal(rollbackDecision({ deltas: Array(12).fill(0.2), guardrail_failed: true, resamples: 2000, seed: "s" }), true, "guardrail failure");
+assert.equal(rollbackDecision({ deltas: Array(12).fill(-1), guardrail_failed: false, resamples: 2000, seed: "s", confidence: 0.95 }), true, "established regression");
+assert.equal(rollbackDecision({ deltas: Array(12).fill(0.2), guardrail_failed: false, resamples: 2000, seed: "s", confidence: 0.95 }), false);
+assert.equal(rollbackDecision({ deltas: Array(12).fill(0.2), guardrail_failed: true, resamples: 2000, seed: "s", confidence: 0.95 }), true, "guardrail failure");
 console.log("ok eval-release-rules");

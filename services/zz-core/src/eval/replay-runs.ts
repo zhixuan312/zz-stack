@@ -1,5 +1,6 @@
 /**
- * `replay_start`, `replay_read`, `replay_close` (Task I-16, FR-28 to FR-33, AC-29.1 to AC-33.1):
+ * `replay_start`, `replay_read` (Task I-16, FR-28 to FR-33, AC-29.1 to AC-33.1) — `replay_begin`/
+ * `replay_close` moved to `replay-close.ts` with the guard they share:
  * one isolated execution of a candidate or subject against one replay case, in the reserved
  * `replay-` team Task I-15's `provisionReplayTeam`/`teardownReplayTeam` (`@zz/contracts`) create
  * and tear down for it.
@@ -24,8 +25,9 @@
  * verifier_token (the plan's own Errors clause): a `context: "verifier"` call must present one,
  * checked against `zz.replay_verifier_token` (migration 079) — real validation, not a stub.
  * `candidate_prove` (Task I-21, `candidate-prove.ts`) is the only writer of that table: it mints
- * one token per proof allocation it opens, so a verifier request only ever succeeds for a run the
- * IMPROVE agent is driving against an actual, still-open proof.
+ * one token per proof allocation it opens, bound to that allocation's candidate and case set, so
+ * a verifier request only ever succeeds for a run of that one still-open proof — what the token
+ * may reach, and the residual it leaves, is `replay-verifier.ts`'s module note.
  *
  * Every admin write here — the team `provisionReplayTeam` creates and the PAT it issues, the team
  * `teardownReplayTeam` archives and the PAT it revokes — is recorded in `zz.event` through
@@ -54,6 +56,10 @@ import { z } from "zod";
 
 import { canonicalJson, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { visibleEvents } from "./replay-cases.js";
+import {
+  sealProofRead, verifierAllocation, verifierCaseDraw, verifierReadRefusal, verifierSide, verifierStartRefusal,
+  type VerifierAllocation,
+} from "./replay-verifier.js";
 import { platformEvent } from "../indexing.js";
 import { db } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
@@ -63,7 +69,6 @@ const noDb = () => text("ERROR: this deployment has no platform database, so no 
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REPLAY_CASE_SPLITS = EVAL_STATE_ENUMS.replayCaseSplit;
-const CLOSE_STATUSES = ["completed", "failed", "cancelled"] as const;
 const CONTEXTS = ["search", "verifier"] as const;
 // I-17's own addition (launch.ts, worker report): `replay_read`'s `role` argument, so the
 // launcher can read a case's events through the one function that already gates them by role
@@ -72,11 +77,14 @@ const CONTEXTS = ["search", "verifier"] as const;
 const READ_ROLES = ["actor", "simulated_person", "evaluator"] as const;
 
 // How long a replay team's PAT — and the run it belongs to — lives before replay_start's own
-// expiry sweep (AC-29.1) reclaims it. Long enough for one case to run, short enough that a
-// crashed or abandoned caller does not squat on the reserved `replay-` namespace indefinitely.
+// expiry sweep (AC-29.1) reclaims it — measured from replay_start, which the IMPROVE skill runs
+// the launcher straight after.
+// COUPLED: must exceed `launchWorstCaseMs(MAX_TURNS_CAP)` in packages/tools/src/replay/plan.ts
+// (3h14m at a cap of 8) — a shorter TTL lets the sweep cancel a live run and expire the
+// candidate's PAT under it. `checks/replay-isolation-pure.ts` loads both and compares them.
 // DELIBERATE: not a caller-supplied argument — the plan's own signature carries none, and a
 // per-call TTL would be a second, silent policy nobody agreed to.
-const REPLAY_RUN_TTL_MS = 60 * 60 * 1000;
+export const REPLAY_RUN_TTL_MS = 4 * 60 * 60 * 1000;
 
 const PROOF_SEALED = "ERROR: proof is sealed";
 const VERIFIER_REFUSED =
@@ -149,33 +157,19 @@ export function roleReadGuard(patTeam: string | null, teamSlug: string, role: st
 }
 
 // -------------------------------------------------------------------------------------------
-// verifier_token — real validation against a table only candidate_prove writes a row into.
-
-/** The `zz.replay_verifier_token` row id a presented token names, or null when it is missing,
- *  revoked or expired — real validation, not a stub (Task I-16's own module note). Its id, not a
- *  bare boolean: migration 082's own fix dispatch (this task) needs the exact allocation a
- *  verifier-context `replay_start` call is acting under, so `cancelProofRuns`
- *  (`candidate-prove.ts`) can cancel only the runs THIS allocation spawned, never a different
- *  candidate's own proof runs that happen to share a base subject or case set. */
-async function verifierAllocationId(p: Db, token: string | undefined): Promise<string | null> {
-  if (!token) return null;
-  const row = (await p.query<{ id: string }>(
-    `select id::text as id from zz.replay_verifier_token
-      where token_hash = $1 and revoked_at is null and expires_at > now()`,
-    [sha256(token)])).rows[0];
-  return row?.id ?? null;
-}
+// verifier_token — real validation against a table only candidate_prove writes a row into, and
+// bound to that one allocation (replay-verifier.ts).
 
 /** Shared by replay_start and replay_read — the only two tools the plan's Errors clause names as
- *  taking `context`. A search context is always admitted, with no allocation of its own.
- *  `replay_start` alone uses `verifierAllocationId` on the `ok` branch — see this module's own
- *  header note (migration 082) — replay_read only needs the admit/refuse verdict. */
+ *  taking `context`. A search context is always admitted, with no allocation of its own; a
+ *  verifier context carries the allocation its token names, and each tool then checks the call
+ *  stays inside it (`verifierStartRefusal`/`verifierReadRefusal`). */
 async function requireContext(
   p: Db, context: string, verifierToken: string | undefined,
-): Promise<{ ok: true; verifierAllocationId: string | null } | { ok: false; error: string }> {
-  if (context !== "verifier") return { ok: true, verifierAllocationId: null };
-  const id = await verifierAllocationId(p, verifierToken);
-  return id ? { ok: true, verifierAllocationId: id } : { ok: false, error: VERIFIER_REFUSED };
+): Promise<{ ok: true; allocation: VerifierAllocation | null } | { ok: false; error: string }> {
+  if (context !== "verifier") return { ok: true, allocation: null };
+  const allocation = await verifierAllocation(p, verifierToken);
+  return allocation ? { ok: true, allocation } : { ok: false, error: VERIFIER_REFUSED };
 }
 
 // -------------------------------------------------------------------------------------------
@@ -217,6 +211,25 @@ export async function resolveSubjectOrCandidate(
     if (!sv) return `ERROR: unknown subject_version_id ${subjectVersionId}`;
   }
   return null;
+}
+
+/** The run's `sandbox_ref` (077's column, `worktree_ref` in replay_start's response): the git ref
+ *  the launcher clones and installs from — `refs/tags/v<declared_version>` for a catalog subject
+ *  (or, for a candidate run, its base subject), since a catalog plugin's declared version IS the
+ *  platform release it was tagged at. A subject with no release in this repository (a third
+ *  party's) has nothing to clone; the launcher refuses it, and this records why instead of a ref.
+ *  COUPLED: `releaseRefFor` in packages/tools/src/replay/plan.ts builds the same string, and the
+ *  launcher refuses a run whose recorded ref and resolved clone disagree. Once a ref under
+ *  `refs/replay/<team_slug>` in the operator's own repository; nothing creates that any more. */
+async function subjectReleaseRef(p: Db, subjectVersionId: string | undefined, candidateId: string | undefined): Promise<string> {
+  const row = (await p.query<{ declared_version: string; kind: string | null }>(`
+    select sv.declared_version, sv.source_locator->>'kind' as kind
+      from zz.eval_subject_version sv
+     where sv.id = coalesce($1::uuid,
+             (select c.base_subject_version_id from zz.candidate c where c.id = $2::uuid))`,
+    [subjectVersionId ?? null, candidateId ?? null])).rows[0];
+  if (!row) return "none: subject not found";
+  return row.kind === "catalog" ? `refs/tags/v${row.declared_version}` : `none: ${row.kind ?? "unrecorded"} source`;
 }
 
 interface DependencyMode { surface: string; mode: string }
@@ -295,7 +308,11 @@ interface ClosingRun { id: string; team_slug: string; pat_id: string }
 export async function closeRun(
   p: Db, run: ClosingRun, status: string, actor: string, reason: string,
 ): Promise<{ archived: boolean; revoked: boolean }> {
-  await p.query("update zz.replay_run set status = $2 where id = $1::uuid", [run.id, status]);
+  // Only from a live status: a run replay_close already finished keeps its terminal status, and
+  // a swept run can never be reopened as anything else.
+  await p.query(
+    "update zz.replay_run set status = $2 where id = $1::uuid and status in ('registered', 'running')",
+    [run.id, status]);
   const { archived, revoked } = await teardownReplayTeam(p, { teamSlug: run.team_slug, patId: run.pat_id });
   platformEvent({
     actor, kind: "replay_team.torn_down", subject: run.id, team: run.team_slug,
@@ -329,8 +346,6 @@ interface StartResult {
   token: string | null; token_already_issued: boolean; dependency_modes: DependencyMode[];
 }
 
-interface CloseResult { archived: boolean; revoked: boolean }
-
 export function registerReplayRunTools(server: McpServer): void {
   server.registerTool(
     "replay_start",
@@ -347,12 +362,16 @@ export function registerReplayRunTools(server: McpServer): void {
         "{ replay_run_id, team_slug, worktree_ref, digest, token, token_already_issued, " +
         "dependency_modes: [{surface, mode}] } — token is the new PAT's plaintext on a fresh " +
         "call and null on a same idempotency_key retry, which instead answers " +
-        "token_already_issued: true against the same identifiers. dependency_modes is this " +
+        "token_already_issued: true against the same identifiers. worktree_ref is the ref the " +
+        "launcher clones and installs from — refs/tags/v<declared_version> of the subject (a " +
+        "candidate's base subject), or 'none: …' for a subject with no release here. dependency_modes is this " +
         "plugin's protocol's own declared surface -> replay mode mapping (sandbox | recorded | " +
         "simulated | live_read_only | non_replayable), what dependencyAction resolves each " +
         "request against once the run is underway. REFUSES a verifier context with no valid " +
         "verifier_token — one minted by candidate_prove for the proof allocation this run is " +
-        "part of; a search context naming split: proof (ERROR: proof is " +
+        "part of — and a verifier context outside that allocation: another case set, another " +
+        "candidate or base subject, a split other than proof, or any case_id (the proof case is " +
+        "drawn server-side, never named); a search context naming split: proof (ERROR: proof is " +
         "sealed); neither or both of subject_version_id/candidate_id; an unknown case_set_id; " +
         "a plugin with no recorded protocol version; a split with no available replayable " +
         "case, or, with case_id given, that exact case not being an available replayable one " +
@@ -390,6 +409,11 @@ export function registerReplayRunTools(server: McpServer): void {
         return text(
           "ERROR: replay_start takes exactly one of subject_version_id or candidate_id, never both or neither");
       }
+      const allocation = ctx.allocation;
+      if (allocation) {
+        const scopeErr = verifierStartRefusal(allocation, { split, case_set_id, case_id, candidate_id, subject_version_id });
+        if (scopeErr) return text(scopeErr);
+      }
       // Without this, an unknown candidate_id or subject_version_id reached zz.replay_run's own
       // FK constraints and came back as a raw postgres error rather than a house-style refusal —
       // the same shape every other "nothing minted" check in this file already answers with.
@@ -399,6 +423,7 @@ export function registerReplayRunTools(server: McpServer): void {
       // `$3::uuid` cast and come back as a raw postgres error.
       if (case_id && !UUID_RE.test(case_id)) return text(`ERROR: unknown case ${case_id}`);
 
+      const worktreeRef = await subjectReleaseRef(p, subject_version_id, candidate_id);
       const pluginId = await caseSetPlugin(p, case_set_id);
       if (!pluginId) return text("ERROR: unknown case set");
       const protocol = await pluginProtocol(p, pluginId);
@@ -417,7 +442,9 @@ export function registerReplayRunTools(server: McpServer): void {
         { case_set_id, subject_version_id: subject_version_id ?? null, candidate_id: candidate_id ?? null,
           split, case_id: case_id ?? null, repeats, context },
         async (client): Promise<MutatorOutcome<StartResult>> => {
-          const chosen = await selectCase(client, case_set_id, split, case_id);
+          const chosen = allocation
+            ? await verifierCaseDraw(client, allocation, verifierSide(allocation, subject_version_id))
+            : await selectCase(client, case_set_id, split, case_id);
           if (!chosen) {
             throw new Refusal(case_id
               ? `ERROR: case ${case_id} is not an available replayable case in split "${split}" for case set ${case_set_id}`
@@ -438,7 +465,6 @@ export function registerReplayRunTools(server: McpServer): void {
             subject_version_id: subject_version_id ?? null, candidate_id: candidate_id ?? null,
             protocol_version_id: protocol.protocolVersionId,
           }));
-          const worktreeRef = `refs/replay/${teamSlug}`;
 
           await client.query(
             `insert into zz.replay_run
@@ -448,7 +474,7 @@ export function registerReplayRunTools(server: McpServer): void {
              values ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, 'registered', $8, $9,
                      $10::uuid, $11, $12::uuid, now())`,
             [runId, chosen.id, subject_version_id ?? null, candidate_id ?? null, protocol.protocolVersionId,
-             digest, worktreeRef, principal, teamSlug, patId, expiresAt, ctx.verifierAllocationId]);
+             digest, worktreeRef, principal, teamSlug, patId, expiresAt, allocation?.id ?? null]);
 
           platformEvent({
             actor: principal, kind: "replay_team.provisioned", subject: runId, team: teamSlug,
@@ -485,8 +511,10 @@ export function registerReplayRunTools(server: McpServer): void {
         "{ replay_run_id, status, case_id, split, subject_version_id, candidate_id, " +
         "protocol_version_id, environment_digest, sandbox_ref, team_slug, score, guardrails, " +
         "model_usage, cost, duration_ms, created_at, subject_plugin, subject_source_locator, " +
-        "candidate_patchset } — the result fields answer null until status reaches a " +
-        "terminal value; subject_plugin/subject_source_locator resolve for EITHER a " +
+        "subject_declared_version, subject_release_digest, candidate_patchset } — the result " +
+        "fields answer null until status reaches a terminal value; the subject_* fields " +
+        "(the launcher clones v<subject_declared_version> and checks its plugin digest against " +
+        "subject_release_digest) resolve for EITHER a " +
         "subject_version_id run or a candidate_id run (Task I-18: through the recorded " +
         "candidate's own base_subject_version_id), null only when that subject was never " +
         "located; candidate_patchset (the recorded diff a candidate replay must apply " +
@@ -501,7 +529,9 @@ export function registerReplayRunTools(server: McpServer): void {
         "reading a run whose case is split: proof, which this tool never exposes to a search " +
         "caller; and a credential bound to this run's own reserved team asking for any role " +
         "other than actor — that credential is the one the candidate session holds, and it may " +
-        "only ever read actor events.",
+        "only ever read actor events. Under a verifier_token: REFUSES a run another allocation " +
+        "started, role: evaluator, and events of a run no longer live; a proof-split run never " +
+        "returns case_id, score, guardrails, model_usage, cost or duration_ms, whoever reads it.",
       inputSchema: {
         replay_run_id: z.string(),
         context: z.enum(CONTEXTS).default("search"),
@@ -526,9 +556,12 @@ export function registerReplayRunTools(server: McpServer): void {
         score: unknown; guardrails: unknown; model_usage: unknown; cost: string | null;
         duration_ms: string | null; created_at: string;
         subject_plugin: string | null; subject_source_locator: unknown;
+        subject_declared_version: string | null; subject_release_digest: string | null;
         candidate_patchset: { diff: string; files?: string[] } | null;
+        verifier_allocation_id: string | null;
       }>(`
         select r.id::text as id, r.status, r.case_id::text as case_id, c.split,
+               r.verifier_allocation_id::text as verifier_allocation_id,
                r.subject_version_id::text as subject_version_id, r.candidate_id::text as candidate_id,
                r.protocol_version_id::text as protocol_version_id, r.environment_digest, r.sandbox_ref,
                r.team_slug, r.score, r.guardrails, r.model_usage, r.cost, r.duration_ms, r.created_at,
@@ -537,6 +570,8 @@ export function registerReplayRunTools(server: McpServer): void {
                -- SAME zz.eval_subject_version/zz.plugin join, never a second derivation.
                coalesce(pl.name, cand_pl.name) as subject_plugin,
                coalesce(sv.source_locator, cand_sv.source_locator) as subject_source_locator,
+               coalesce(sv.declared_version, cand_sv.declared_version) as subject_declared_version,
+               coalesce(sv.release_identity, cand_sv.release_identity)->>'released_digest' as subject_release_digest,
                cand.patchset as candidate_patchset
           from zz.replay_run r
           join zz.replay_case c on c.id = r.case_id
@@ -548,8 +583,13 @@ export function registerReplayRunTools(server: McpServer): void {
          where r.id = $1::uuid`, [replay_run_id])).rows[0];
       if (!row) return text(`ERROR: unknown replay_run_id ${replay_run_id}`);
 
-      const [visible] = sealedRows([row], context);
-      if (!visible) return text(PROOF_SEALED);
+      const [unsealed] = sealedRows([row], context);
+      if (!unsealed) return text(PROOF_SEALED);
+      if (ctx.allocation) {
+        const scopeErr = verifierReadRefusal(ctx.allocation, unsealed, role);
+        if (scopeErr) return text(scopeErr);
+      }
+      const { verifier_allocation_id: _allocation, ...visible } = sealProofRead(unsealed);
 
       if (!role) return json(visible);
 
@@ -559,105 +599,9 @@ export function registerReplayRunTools(server: McpServer): void {
 
       const rawEvents = (await p.query<{ seq: number; actor: string; visibility: string; kind: string; payload: unknown }>(
         `select seq, actor, visibility, kind, payload from zz.replay_event where case_id = $1::uuid order by seq`,
-        [visible.case_id])).rows;
+        [unsealed.case_id])).rows;
       const events = visibleEvents(rawEvents, role);
       return json({ ...visible, events });
-    },
-  );
-
-  server.registerTool(
-    "replay_close",
-    {
-      description:
-        "WHEN a candidate or subject execution has finished, failed or been cancelled: records " +
-        "the terminal status and, when given, the run's score/guardrails/model_usage/cost/" +
-        "duration_ms/produced (protocol/environment identity was already stored by " +
-        "replay_start), then tears down its reserved team and PAT (teardownReplayTeam, Task " +
-        "I-15). produced (Task I-19's own fix — a replay's score must measure the replay) is " +
-        "the launcher's bounded, redacted record of what the session actually produced: " +
-        "{ transcript, artifacts: [{ path, sha256, bytes, head }] } — what replay_score reads " +
-        "to build the text a model-backed measure is asked to judge, in place of a templated " +
-        "sentence naming an id. RETURNS { archived, revoked } — both false on a run whose team " +
-        "is already torn down, so a second close is a safe no-op rather than an error. REFUSES " +
-        "an unknown replay_run_id and a deployment with no platform database. A mutator: writes " +
-        "through the FR-59 idempotency ledger, and records one admin audit event in zz.event " +
-        "for the team it archives and the PAT it revokes.",
-      inputSchema: {
-        replay_run_id: z.string(),
-        status: z.enum(CLOSE_STATUSES),
-        result: z.object({
-          score: z.record(z.string(), z.unknown()).optional(),
-          guardrails: z.record(z.string(), z.unknown()).optional(),
-          model_usage: z.record(z.string(), z.unknown()).optional(),
-          cost: z.number().optional(),
-          duration_ms: z.number().optional(),
-          produced: z.object({
-            transcript: z.string(),
-            artifacts: z.array(z.object({
-              path: z.string(), sha256: z.string(), bytes: z.number(), head: z.string(),
-            })),
-          }).optional(),
-        }).optional(),
-        idempotency_key: z.string().min(1),
-      },
-    },
-    async ({ replay_run_id, status, result, idempotency_key }) => {
-      const p = db();
-      if (!p) return noDb();
-      if (!UUID_RE.test(replay_run_id)) return text(`ERROR: unknown replay_run_id ${replay_run_id}`);
-
-      const principal = parseCaller(requestHeaders()).email;
-      const outcome: IdempotencyOutcome<CloseResult> = await withIdempotency(
-        principal, "replay_close", idempotency_key, { replay_run_id, status, result: result ?? null },
-        async (client): Promise<MutatorOutcome<CloseResult>> => {
-          // `coalesce(..., <column>)` rather than overwriting with null: `replay_score` (I-19)
-          // stores this run's per-case overall on `score` AFTER this same close call has already
-          // stored `produced` — the launcher closes the run with its own produced output first,
-          // then attempts the verifier (replay_score) against the now-closed run, never the
-          // other way around. A bare overwrite here would null out the very score
-          // candidate_validate reads back, on every real run, the moment a later call closes it
-          // again (a second close is a safe no-op, per this tool's own contract).
-          const row = (await client.query<{ team_slug: string; pat_id: string }>(
-            `update zz.replay_run
-                set status = $2,
-                    score = coalesce($3::jsonb, score),
-                    guardrails = coalesce($4::jsonb, guardrails),
-                    model_usage = coalesce($5::jsonb, model_usage),
-                    cost = coalesce($6::numeric, cost),
-                    duration_ms = coalesce($7::bigint, duration_ms),
-                    produced = coalesce($8::jsonb, produced)
-              where id = $1::uuid
-             returning team_slug, pat_id::text as pat_id`,
-            [replay_run_id, status,
-             result?.score ? JSON.stringify(result.score) : null,
-             result?.guardrails ? JSON.stringify(result.guardrails) : null,
-             result?.model_usage ? JSON.stringify(result.model_usage) : null,
-             result?.cost ?? null, result?.duration_ms ?? null,
-             result?.produced ? JSON.stringify(result.produced) : null],
-          )).rows[0];
-          if (!row) throw new Refusal(`ERROR: unknown replay_run_id ${replay_run_id}`);
-
-          const { archived, revoked } = await teardownReplayTeam(client, { teamSlug: row.team_slug, patId: row.pat_id });
-          platformEvent({
-            actor: principal, kind: "replay_team.torn_down", subject: replay_run_id, team: row.team_slug,
-            detail: { team_slug: row.team_slug, pat_id: row.pat_id, status, reason: "closed", archived, revoked },
-          });
-          return { result: { archived, revoked }, result_table: "zz.replay_run", result_id: replay_run_id };
-        },
-      );
-
-      if (!outcome.replayed) return json(outcome.result);
-
-      // A replay of the idempotency ledger never re-runs teardownReplayTeam, so the ledger's own
-      // ids are the only thing it hands back. teardownReplayTeam is safe to call again for real
-      // here — both halves answer false for a team already archived and a PAT already revoked —
-      // which is what makes this genuinely idempotent rather than merely deduplicated: a second
-      // read of "is it torn down" reflects the live state, not a cached guess at it.
-      const run = (await p.query<{ team_slug: string; pat_id: string }>(
-        "select team_slug, pat_id::text as pat_id from zz.replay_run where id = $1::uuid", [outcome.result_id],
-      )).rows[0];
-      if (!run) return json({ archived: false, revoked: false } satisfies CloseResult);
-      return json(await teardownReplayTeam(p, { teamSlug: run.team_slug, patId: run.pat_id }));
     },
   );
 }

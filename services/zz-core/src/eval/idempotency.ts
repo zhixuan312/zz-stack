@@ -134,6 +134,24 @@ function conflictRefusal(key: string, tool: string): Refusal {
 // insert the ledger row, rather than any other reason the insert could fail.
 const UNIQUE_VIOLATION = "23505";
 
+/** The ledger's verdict on a request BEFORE a mutator does its slow work — for the tools that
+ *  ask a model (`failure_discover`, `candidate_search`'s callers, `replay_score`,
+ *  `evaluation_assess`). Those now ask outside the transaction, so without this a retry would
+ *  re-ask every model before `withIdempotency` got to say "replay". Throws the same conflict
+ *  refusal `withIdempotency` would. Advisory only: `withIdempotency` still decides again inside
+ *  its transaction, so a race between this read and that one is settled there, never here. */
+export async function decideBeforeWork(
+  principal: string, tool: string, key: string, args: Record<string, unknown>,
+): Promise<{ readonly replayed: false } | { readonly replayed: true; readonly result_table: string; readonly result_id: string }> {
+  if (!key || !key.trim()) throw new Refusal("ERROR: idempotency_key required");
+  const pool = db();
+  if (!pool) throw new Refusal("ERROR: this deployment has no platform database, so nothing can be recorded");
+  const decision = idempotencyDecision(await lookupRow(pool, principal, tool, key), requestDigest(args));
+  if (decision.kind === "conflict") throw conflictRefusal(key, tool);
+  if (decision.kind === "replay") return { replayed: true, result_table: decision.result_table, result_id: decision.result_id };
+  return { replayed: false };
+}
+
 /** The transactional wrapper every mutator calls instead of writing directly. `principal` and
  *  `tool` name who is calling and what they are calling; `key` is the caller-supplied
  *  idempotency key; `args` is the tool's full argument object, digested exactly as
@@ -145,7 +163,11 @@ const UNIQUE_VIOLATION = "23505";
  *  `result_table`/`result_id` are `fn`'s own write's identity and do not exist until it has run.
  *  So the transaction is: decide from what is already stored, run `fn`, insert the ledger row,
  *  commit — never insert-then-run, which would have nothing to point `result_id` at if inserted
- *  first and would leave a dangling row if `fn` then failed. */
+ *  first and would leave a dangling row if `fn` then failed.
+ *
+ *  `fn` holds one of the pool's few connections for as long as it runs: it must do database
+ *  writes only, never a model call, and never a query on the pool (a second connection while the
+ *  first is held is how the pool starves). Ask first, then call this. */
 export async function withIdempotency<T>(
   principal: string,
   tool: string,

@@ -1,12 +1,17 @@
 /**
  * launchReplay (Task I-17, AC-31.1, AC-32.1): the IMPROVE-stage session launcher. Given one
- * `replay_start` result, it pins a worktree to an exact commit, installs the subject plugin into
- * a session-local `CLAUDE_CONFIG_DIR` from that pinned worktree (never the live checkout, never
- * the published shelf), runs a headless candidate session fed only `actor` events against a
- * headless simulated-person session fed `actor` + `user_oracle` events, attempts the verifier
- * step, and always ends by calling `replay_close` — a worktree failure or a runtime refusal
- * closes the run `failed` rather than leaving it open, exactly as the contract's Errors clause
- * requires.
+ * `replay_start` result, it marks the run `running` (`replay_begin`), clones the repository
+ * standalone at the SUBJECT's own release tag and checks that tag's plugin digest against the
+ * one the subject was captured at, installs the subject plugin into a session-local
+ * `CLAUDE_CONFIG_DIR` from that clone (never the live checkout, never the published shelf), runs
+ * a headless candidate session fed only `actor` events against a headless simulated-person
+ * session fed `actor` + `user_oracle` events, attempts the verifier step, and always ends by
+ * calling `replay_close` — a clone failure, a digest mismatch or a runtime refusal closes the
+ * run `failed` rather than leaving it open, exactly as the contract's Errors clause requires.
+ *
+ * Each session runs with an allowlisted environment and a temporary `HOME` (`candidateEnv`,
+ * plan.ts): the launcher's own credentials — the principal's PAT and the proof allocation's
+ * `VERIFIER_TOKEN` — stay in this process and are used only for its own MCP calls.
  *
  * Two contract adjustments this task made to `replay_read` (agreed with the orchestrator; see
  * the worker report for the full reasoning) are what this file leans on rather than re-deriving:
@@ -39,13 +44,14 @@ import { join } from "node:path";
 import { Mcp } from "@zz/mcp-client";
 
 import { die, optional, parseArgs, platformToken, required } from "../lib/cli.js";
-import { applyPatch, createWorktree, listWorktrees, removeWorktree, type Worktree } from "./git.js";
+import { applyPatch, createWorktree, readReleaseLock, removeWorktree, type Worktree } from "./git.js";
 import {
-  assertRoleEvents, candidateMcpConfig, candidatePrompt, idempotencyKey, NO_MCP_CONFIG,
-  refuseBeforeIO, simulatedPersonPersona, stillAsking, type RuntimeEnv,
+  assertRoleEvents, candidateMcpConfig, candidatePrompt, idempotencyKey, MAX_TURNS_CAP, NO_MCP_CONFIG,
+  refuseBeforeIO, releaseLockMismatch, simulatedPersonPersona, stillAsking, type RuntimeEnv,
 } from "./plan.js";
 import {
-  installPlugin, makeConfigDir, removeConfigDir, runTurn, writeMcpConfig,
+  detectSandbox, installPlugin, makeSessionHome, removeSessionHome, runTurn, sandboxContext, writeMcpConfig,
+  type SandboxContext,
 } from "./session.js";
 
 // -------------------------------------------------------------------------------------------
@@ -64,9 +70,16 @@ export interface ReplayStartResult {
 interface ReplayEvent { readonly seq: number; readonly actor: string; readonly visibility: string; readonly kind: string; readonly payload: unknown }
 
 interface ReplayReadResult {
-  case_id: string; split: string | null; team_slug: string;
+  /** Null on a proof-split run: `replay_read` never names a proof case (replay-verifier.ts's
+   *  `sealProofRead`), and nothing here needs it — the launcher never starts a run itself, and
+   *  the agent's own proof `replay_start` names no case_id either. */
+  case_id: string | null; split: string | null; team_slug: string;
   subject_version_id: string | null; candidate_id: string | null;
   subject_plugin: string | null; subject_source_locator: unknown;
+  /** The subject's `declared_version` (a catalog plugin's platform release version) and the
+   *  `release_identity.released_digest` it was captured at — what picks the clone's tag and what
+   *  that tag's `plugins.lock.json` must agree with. For a candidate run, the base subject's. */
+  subject_declared_version?: string | null; subject_release_digest?: string | null;
   /** I-18: the recorded candidate's own patchset, present only for a `candidate_id` run —
    *  `replay-runs.ts` resolves `subject_plugin` for a candidate the same way it always did for
    *  a `subject_version_id` (through the base subject `candidate_record` bound at recording
@@ -85,9 +98,8 @@ export interface LaunchOpts {
    *  the verifier attempt, `replay_close`). Defaults to `platformToken()`. */
   readonly ownPat?: string;
   readonly model?: string;
+  /** Interview rounds, at most `MAX_TURNS_CAP` — the bound the server's run TTL is sized for. */
   readonly maxTurns?: number;
-  /** What commit the worktree pins to. Defaults to `HEAD` of `repoRoot`. */
-  readonly ref?: string;
   readonly clientName?: string;
   /** Task I-21's own addition: the `verifier_token` `candidate_prove` minted for this run's own
    *  proof allocation. When present, EVERY `replay_read` this launch makes — the candidate's own
@@ -99,6 +111,9 @@ export interface LaunchOpts {
    *  which reads under the ordinary `context: "search"` default instead. */
   readonly verifierToken?: string;
 }
+// No `ref` option: the commit a replay installs is the subject's own release tag, resolved from
+// the run itself. An operator-chosen ref would measure whatever that ref holds under the
+// subject's name.
 
 export interface LaunchResult { readonly status: "completed" | "failed"; readonly logPath: string }
 
@@ -110,7 +125,7 @@ interface ProducedArtifact { readonly path: string; readonly sha256: string; rea
 interface ProducedRecord { readonly transcript: string; readonly artifacts: readonly ProducedArtifact[] }
 
 const DEFAULT_MODEL = "sonnet";
-const DEFAULT_MAX_TURNS = 8;
+const DEFAULT_MAX_TURNS = MAX_TURNS_CAP;
 const DEFAULT_CLIENT = "zz-replay-launcher";
 const DISALLOWED_PERSON_TOOLS = ["Skill", "Task", "Bash", "Read", "Write", "Edit", "Glob", "Grep", "WebFetch", "WebSearch"];
 
@@ -174,12 +189,15 @@ function collectProduced(worktreePath: string, transcript: string, secrets: read
   return { transcript: redact(transcript, secrets), artifacts };
 }
 
+/** The one probe this function spawns is the sandbox's own trial run (`detectSandbox`): whether
+ *  a sandbox can start is only knowable by starting one. */
 function runtimeEnv(): RuntimeEnv {
   const modelCredential = Boolean(process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_CODE_OAUTH_TOKEN);
+  const sandbox = detectSandbox();
   if (process.platform === "win32") {
-    return { platform: process.platform, shellPath: process.env.ComSpec ?? null, modelCredential };
+    return { platform: process.platform, shellPath: process.env.ComSpec ?? null, modelCredential, sandbox };
   }
-  return { platform: process.platform, shellPath: existsSync("/bin/sh") ? "/bin/sh" : null, modelCredential };
+  return { platform: process.platform, shellPath: existsSync("/bin/sh") ? "/bin/sh" : null, modelCredential, sandbox };
 }
 
 async function readRole(
@@ -217,6 +235,32 @@ async function attemptVerifier(mcp: Mcp, replayRunId: string): Promise<string> {
   }
 }
 
+/** `registered -> running`. A refusal here (a run already swept, closed or cancelled, or a
+ *  credential that is not the launching principal's own) throws, and the launch closes it
+ *  `failed` — which the server then refuses too for a run already terminal, leaving it as is. */
+async function beginRun(mcp: Mcp, replayRunId: string): Promise<void> {
+  const said = await mcp.call("replay_begin", {
+    replay_run_id: replayRunId, idempotency_key: idempotencyKey(replayRunId, "replay_begin"),
+  });
+  if (/^ERROR[: ]/.test(said)) throw new Error(`replay_begin refused: ${said}`);
+}
+
+/** Which tag to clone and what digest it must carry. Only a catalog subject has a release in
+ *  this repository at all; a third-party subject's source lives wherever `plugin_register` read
+ *  it from, and installing this repository's bytes under its name would score the wrong plugin. */
+function subjectRelease(read: ReplayReadResult): { declaredVersion: string; releasedDigest: string } {
+  const kind = (read.subject_source_locator as { kind?: unknown } | null)?.kind;
+  if (kind !== "catalog") {
+    throw new Error(`launchReplay: subject source is ${String(kind ?? "unrecorded")}, not this ` +
+      "repository's catalog — only a catalog plugin's release can be cloned from --repo");
+  }
+  if (!read.subject_declared_version || !read.subject_release_digest) {
+    throw new Error("launchReplay: replay_read carried no subject_declared_version/subject_release_digest " +
+      "— the subject's release cannot be pinned");
+  }
+  return { declaredVersion: read.subject_declared_version, releasedDigest: read.subject_release_digest };
+}
+
 async function closeRun(
   mcp: Mcp, replayRunId: string, status: "completed" | "failed", reason: string,
   produced?: ProducedRecord,
@@ -234,41 +278,59 @@ async function closeRun(
 }
 
 /** Runs one replay: candidate against simulated person, best-effort verifier, always a terminal
- *  `replay_close`. Every failure path still calls `replay_close(failed, ...)` before returning —
- *  see the module note for why a runtime refusal and a worktree failure are not exceptions to
- *  that rule. */
+ *  `replay_close`. Every failure after the two argument guards below still calls
+ *  `replay_close(failed, ...)` before returning — everything that can fail, from the first
+ *  directory this function creates onwards, is inside the one `try`.
+ *
+ *  The two guards stay outside it on purpose. With no gateway there is no door to close through.
+ *  With no token, this `ReplayStartResult` is a same-key retry's (`token: null`): the credential,
+ *  and the live run it drives, belong to whichever call got the fresh response — closing that
+ *  run `failed` from here would kill somebody else's replay. `platformToken()` below can also
+ *  stop the process before the `try`, when the launcher has no credential of its own — and then
+ *  there is nothing to call `replay_close` with either. */
 export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): Promise<LaunchResult> {
   const gatewayUrl = (opts.gatewayUrl ?? process.env.ZZ_URL ?? "").replace(/\/+$/, "");
   if (!gatewayUrl) throw new Error("launchReplay: no gatewayUrl — pass opts.gatewayUrl or set ZZ_URL");
   if (!start.token) throw new Error("launchReplay: no token on this ReplayStartResult — nothing to authenticate the candidate with");
+  const token = start.token;
   const claudeBin = opts.claudeBin ?? "claude";
   const model = opts.model ?? DEFAULT_MODEL;
   const maxTurns = opts.maxTurns ?? DEFAULT_MAX_TURNS;
   const clientName = opts.clientName ?? DEFAULT_CLIENT;
+  const ownPat = opts.ownPat ?? platformToken();
 
-  const candidateMcp = new Mcp(`${gatewayUrl}/eval/mcp`, { pat: start.token, client: clientName });
-  const ownMcp = new Mcp(`${gatewayUrl}/eval/mcp`, { pat: opts.ownPat ?? platformToken(), client: clientName });
+  const candidateMcp = new Mcp(`${gatewayUrl}/eval/mcp`, { pat: token, client: clientName });
+  const ownMcp = new Mcp(`${gatewayUrl}/eval/mcp`, { pat: ownPat, client: clientName });
 
   // Never under `opts.repoRoot`: that is a real checkout, possibly shared with other work, and a
   // log file landing in it is a stray untracked file nobody asked for. `os.tmpdir()` outlives
-  // this function's own cleanup — the caller reads the log after the worktree and config dirs
-  // are already gone.
-  const logDir = join(tmpdir(), "zz-replay-logs");
-  mkdirSync(logDir, { recursive: true });
-  const logPath = join(logDir, `${start.replay_run_id}.jsonl`);
+  // this function's own cleanup — the caller reads the log after the clone and session homes
+  // are already gone. The path is fixed before the `try` so the `catch` can always name it; the
+  // directory itself is created inside.
+  const logPath = join(tmpdir(), "zz-replay-logs", `${start.replay_run_id}.jsonl`);
   let worktree: Worktree | undefined;
-  const candidateConfigDir = makeConfigDir();
-  const personConfigDir = makeConfigDir();
+  let candidateHome: ReturnType<typeof makeSessionHome> | undefined;
+  let personHome: ReturnType<typeof makeSessionHome> | undefined;
 
   try {
-    // The runtime-capability refusal fires before `createWorktree` — and therefore before any
-    // git process — is ever spawned. `refuseBeforeIO` is what makes that provable rather than
-    // merely true by construction: see `checks/replay-launch-pure.ts`.
-    worktree = refuseBeforeIO(runtimeEnv(), () => createWorktree(opts.repoRoot, start.team_slug, opts.ref));
-    // Logged for the concurrency proof: two launches against the same repoRoot must never
-    // register the same path here, whatever else either run is doing at the moment it logs.
-    appendFileSync(logPath, `# worktree ${worktree.path} @ ${worktree.commit}\n` +
-      `# repoRoot worktrees: ${listWorktrees(opts.repoRoot).join(", ")}\n`, "utf8");
+    if (!Number.isInteger(maxTurns) || maxTurns < 0 || maxTurns > MAX_TURNS_CAP) {
+      throw new Error(`launchReplay: maxTurns ${maxTurns} is outside 0..${MAX_TURNS_CAP} — the ` +
+        "server's run TTL is sized for that bound, and a longer launch would be swept mid-run");
+    }
+    // The runtime-capability refusal fires before any directory is created or any process is
+    // spawned. `refuseBeforeIO` is what makes that provable rather than merely true by
+    // construction: see `checks/replay-launch-pure.ts`.
+    const env = runtimeEnv();
+    let sandbox: SandboxContext;
+    [candidateHome, personHome, sandbox] = refuseBeforeIO(env, () => {
+      const logDir = join(tmpdir(), "zz-replay-logs");
+      mkdirSync(logDir, { recursive: true });
+      // `env.sandbox` is non-null here — refuseBeforeIO has already refused a host without one.
+      const ctx = sandboxContext(env.sandbox!, opts.repoRoot, claudeBin, logDir);
+      return [makeSessionHome({ replayToken: token, gatewayUrl }), makeSessionHome(), ctx] as const;
+    });
+
+    await beginRun(ownMcp, start.replay_run_id);
 
     // The candidate holds `start.token`, a credential bound to its own reserved team — the same
     // one `roleReadGuard` on the server refuses for anything but `role: "actor"`. Reading with
@@ -289,11 +351,23 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
       throw new Error(`launchReplay: cannot resolve which plugin to install — ${why}`);
     }
 
+    const release = subjectRelease(actorRead);
+    worktree = createWorktree(opts.repoRoot, start.team_slug, release.declaredVersion);
+    // replay_start recorded the tag it expected this clone to sit at; the two must agree, or the
+    // run's own record names bytes this launch did not install.
+    if (start.worktree_ref !== worktree.ref) {
+      throw new Error(`launchReplay: replay_start recorded ${start.worktree_ref} but the subject resolves to ${worktree.ref}`);
+    }
+    appendFileSync(logPath, `# clone ${worktree.path} @ ${worktree.commit} (v${release.declaredVersion})\n`, "utf8");
+    const mismatch = releaseLockMismatch(
+      readReleaseLock(worktree.path), plugin, release.declaredVersion, release.releasedDigest);
+    if (mismatch) throw new Error(`launchReplay: ${mismatch}`);
+
     // I-18: no candidate executes before its own row exists (FR-36), and that row is what this
     // reads — a candidate replay installs the BASE subject's plugin (just resolved above) and
-    // then applies the recorded patch on top of it, in the worktree, before anything reads from
-    // that worktree. A subject_version_id run (no candidate_id) skips this entirely: there is no
-    // patch, and the pinned worktree's own commit is already what gets installed.
+    // then applies the recorded patch on top of it, in the clone, before anything reads from
+    // it. A subject_version_id run (no candidate_id) skips this entirely: there is no patch, and
+    // the release tag's own commit is already what gets installed.
     if (actorRead.candidate_id) {
       const diff = actorRead.candidate_patchset?.diff;
       if (!diff) {
@@ -304,39 +378,36 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
       appendFileSync(logPath, `# applied candidate ${actorRead.candidate_id}'s patch into ${worktree.path}\n`, "utf8");
     }
 
-    installPlugin(claudeBin, candidateConfigDir, worktree.path, plugin);
+    installPlugin(claudeBin, candidateHome, sandbox, worktree.path, plugin);
     const candidateMcpPath = writeMcpConfig(
-      candidateConfigDir, candidateMcpConfig(plugin, gatewayUrl, start.token, clientName));
-    const personMcpPath = writeMcpConfig(personConfigDir, NO_MCP_CONFIG);
+      candidateHome.configDir, candidateMcpConfig(plugin, gatewayUrl, token, clientName));
+    const personMcpPath = writeMcpConfig(personHome.configDir, NO_MCP_CONFIG);
 
     const candidateSessionId = randomUUID();
-    let candidate = runTurn(claudeBin, candidateConfigDir, {
+    let candidate = runTurn(claudeBin, candidateHome, sandbox, {
       model, newSessionId: candidateSessionId, mcpConfigPath: candidateMcpPath, strictMcpConfig: true,
       prompt: candidatePrompt(actorEvents),
     }, worktree.path, logPath);
 
     const personaPrompt = simulatedPersonPersona(personEvents);
     for (let turn = 0; turn < maxTurns && stillAsking(candidate.lastText); turn += 1) {
-      const person = runTurn(claudeBin, personConfigDir, {
+      const person = runTurn(claudeBin, personHome, sandbox, {
         model, mcpConfigPath: personMcpPath, strictMcpConfig: true, appendSystemPrompt: personaPrompt,
         disallowedTools: DISALLOWED_PERSON_TOOLS,
         prompt: `They say:\n\n${candidate.lastText}\n\nReply as yourself.`,
-      }, worktree.path, `${logPath}.person`);
+      }, personHome.root, `${logPath}.person`);
       if (!person.lastText) break;
-      candidate = runTurn(claudeBin, candidateConfigDir, {
+      candidate = runTurn(claudeBin, candidateHome, sandbox, {
         model, resumeSessionId: candidateSessionId, mcpConfigPath: candidateMcpPath, strictMcpConfig: true,
         prompt: person.lastText,
       }, worktree.path, logPath);
     }
 
-    // FIX: produced is collected and persisted through replay_close BEFORE the verifier is ever
+    // produced is collected and persisted through replay_close BEFORE the verifier is ever
     // attempted — replay_score (the verifier) reads zz.replay_run.produced, and a run scored
-    // before that column is written would find nothing there and refuse (replay-score.ts's own
-    // fix). The team's PAT is still valid for this call (closeRun uses ownMcp, an unbound
-    // credential, not the team-scoped one anyway), and replay_score itself needs no live team —
-    // it reads the row straight off the database — so closing first costs nothing and buys the
-    // ordering the contract now requires.
-    const produced = collectProduced(worktree.path, candidate.lastText, [start.token, opts.ownPat ?? platformToken()]);
+    // before that column is written would find nothing there and refuse. Both calls go through
+    // ownMcp, the launcher's own credential: replay_close refuses the run's own team credential.
+    const produced = collectProduced(worktree.path, candidate.lastText, [token, ownPat, opts.verifierToken ?? ""]);
     await closeRun(
       ownMcp, start.replay_run_id, "completed", "candidate and simulated-person sessions finished", produced);
 
@@ -348,16 +419,16 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
     const reason = (err as Error).message;
     try {
       appendFileSync(logPath, `# launch failed: ${reason}\n`, "utf8");
-    } catch { /* logPath's own directory may not exist yet if the failure was very early */ }
+    } catch { /* the log directory is not created until after the runtime check */ }
     await closeRun(ownMcp, start.replay_run_id, "failed", reason).catch(() => {
       // replay_close itself refusing must never mask the original failure this run is being
-      // closed for — the reason above is already in the log and in the thrown error below.
+      // closed for — the reason above is already in the log.
     });
     return { status: "failed", logPath };
   } finally {
-    if (worktree) removeWorktree(opts.repoRoot, worktree);
-    removeConfigDir(candidateConfigDir);
-    removeConfigDir(personConfigDir);
+    if (worktree) removeWorktree(worktree);
+    if (candidateHome) removeSessionHome(candidateHome);
+    if (personHome) removeSessionHome(personHome);
   }
 }
 
@@ -379,19 +450,13 @@ async function cliMain(argv: string[]): Promise<number> {
   const claudeBin = optional(args, "claude-bin", "path to the claude binary") ?? undefined;
   const gatewayUrl = optional(args, "gateway", "the gateway base, e.g. http://localhost:18000") ?? undefined;
   const model = optional(args, "model", "the model for both sessions") ?? undefined;
-  const ref = optional(args, "ref", "the commit/ref to pin the worktree to") ?? undefined;
   const token = (process.env.REPLAY_TOKEN ?? "").trim();
   if (!token) die("REPLAY_TOKEN is required: the run-scoped PAT replay_start returned for this run");
   // Task I-21's own addition: a proof run's own case is split: proof, sealed from a
-  // context: "search" reader whoever asks — this CLI's own team_slug/sandbox_ref lookup below
-  // needs the SAME verifier_token candidate_prove minted for this run's own allocation, or it is
-  // refused before launchReplay is ever reached. `--verifier-token`, falling back to
-  // `$VERIFIER_TOKEN` the same way `--run`'s own token falls back to `$REPLAY_TOKEN` — a secret
-  // is better left out of argv (visible in `ps`, shell history, logs) when either works, so the
-  // flag exists for the plan's own named contract and the env var for how it is actually passed.
-  const verifierToken =
-    (optional(args, "verifier-token", "the verifier_token candidate_prove minted for this run's proof allocation")
-      ?? process.env.VERIFIER_TOKEN ?? "").trim() || undefined;
+  // context: "search" reader whoever asks, so this needs the verifier_token candidate_prove
+  // minted for the run's allocation. Environment only, never a flag: argv is visible in `ps`,
+  // shell history and logs. It stays in this process — `candidateEnv` never passes it on.
+  const verifierToken = (process.env.VERIFIER_TOKEN ?? "").trim() || undefined;
 
   const base = (gatewayUrl ?? process.env.ZZ_URL ?? "").replace(/\/+$/, "");
   if (!base) die("no gateway: pass --gateway or set ZZ_URL");
@@ -411,7 +476,7 @@ async function cliMain(argv: string[]): Promise<number> {
     // launchReplay directly with the full ReplayStartResult instead.
     dependency_modes: [],
   };
-  const result = await launchReplay(start, { repoRoot, claudeBin, gatewayUrl: base, model, ref, verifierToken });
+  const result = await launchReplay(start, { repoRoot, claudeBin, gatewayUrl: base, model, verifierToken });
   console.log(JSON.stringify(result));
   return result.status === "completed" ? 0 : 1;
 }

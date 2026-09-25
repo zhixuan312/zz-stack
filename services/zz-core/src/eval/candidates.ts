@@ -40,7 +40,7 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
-import { runCandidateSearch } from "./candidate-search.js";
+import { recordGenerationFor, runCandidateSearch } from "./candidate-search.js";
 import { proveCandidate } from "./candidate-prove.js";
 import { validateCandidate } from "./candidate-validate.js";
 import {
@@ -52,6 +52,7 @@ import { loadSubjectForEvalRun } from "./proposal-doc.js";
 import { loadProposerBundle, REJECTED_CANDIDATE_STATUSES, type ProposerBundle } from "./proposer-bundle.js";
 import { writeBranchFacts } from "./protocol.js";
 import { sweepExpired } from "./replay-runs.js";
+import { parseSearchPolicy } from "./search-rules.js";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
 import { db } from "../platform-db.js";
@@ -88,8 +89,8 @@ export function registerCandidateTools(server: McpServer): void {
         "OWN expired replay runs (FR-31, the same sweep replay_start runs — an unreachable " +
         "sandbox is torn down before a new run opens), then opens one durable " +
         "zz.improvement_run against eval_run_id and its finding_ids, with a search_policy " +
-        "snapshot taken from that run's own protocol version (improvement_policy.search, or {} " +
-        "for a protocol that declares none). RETURNS { improvement_run_id, search_policy, " +
+        "snapshot taken from that run's own protocol version (improvement_policy.search — " +
+        "REFUSED when it is missing or malformed; no fallback policy exists). RETURNS { improvement_run_id, search_policy, " +
         "status, proposer_bundle } — proposer_bundle (AC-37.1) is this run's own actionable " +
         "evidence: failing traces, evaluator critiques, refusal text, corrections, dependency/ " +
         "tool errors, cost/latency and prior rejected hypotheses for this eval_run's plugin, so " +
@@ -221,6 +222,9 @@ export function registerCandidateTools(server: McpServer): void {
         [run.protocol_version_id])).rows[0];
       const search_policy = ((protocolRow?.improvement_policy as { search?: Record<string, unknown> } | null)
         ?.search ?? {}) as Record<string, unknown>;
+      // Refused here, before any run exists, rather than by every later tool that reads it.
+      const policyCheck = parseSearchPolicy(search_policy, "(not yet opened)");
+      if ("error" in policyCheck) return text(policyCheck.error);
 
       // FR-58: search when the base subject this eval_run scored records release_owners, proposal
       // when it does not — the SAME ownership split release_prepare/proposal_prepare's own mirror
@@ -283,14 +287,16 @@ export function registerCandidateTools(server: McpServer): void {
         "WHEN a candidate patch has been proposed and MUST be persisted before anything about " +
         "it executes (FR-36): records improvement_run_id, base_subject_version_id, parents " +
         "(their generation + 1, or 0 with no parents), hypothesis, expected_effect and " +
-        "patchset.diff, computing patch_digest (sha256 of the diff), complexity_delta " +
+        "patchset.diff, into the search's current generation (search-rules.ts — parents are " +
+        "lineage only, never the generation), computing patch_digest (sha256 of the diff), complexity_delta " +
         "(complexityDelta over the diff's own added/removed lines and added/removed files), " +
         "touched_components (the patch's files mapped onto base_subject_version_id's own " +
         "component_manifest) and touched_owners (the base subject's plugin's own " +
         "release_owners, FR-47 — every touched component inherits plugin-level ownership in " +
         "this initiative). RETURNS { candidate_id, generation, patch_digest, complexity_delta, " +
         "touched_components, touched_owners, status: 'recorded' }. REFUSES an " +
-        "improvement_run_id nothing minted; a base_subject_version_id nothing minted; a " +
+        "improvement_run_id nothing minted; one whose search_policy is malformed; a generation " +
+        "already holding maxCandidatesPerGeneration candidates, or a search past maxGenerations; a base_subject_version_id nothing minted; a " +
         "parents entry naming no candidate; and a hypothesis whose normalised-text digest " +
         "matches a candidate already " + REJECTED_CANDIDATE_STATUSES.join("/") + ", OR whose " +
         "latest split: 'validation' zz.candidate_evaluation verdict is not_improved, for the " +
@@ -317,8 +323,8 @@ export function registerCandidateTools(server: McpServer): void {
       const p = db();
       if (!p) return noDb();
 
-      const run = (await p.query<{ id: string; eval_run_id: string }>(
-        "select id::text as id, eval_run_id::text as eval_run_id from zz.improvement_run where id = $1::uuid",
+      const run = (await p.query<{ id: string; eval_run_id: string; search_policy: unknown }>(
+        "select id::text as id, eval_run_id::text as eval_run_id, search_policy from zz.improvement_run where id = $1::uuid",
         [improvement_run_id])).rows[0];
       if (!run) return text(`ERROR: no improvement_run ${improvement_run_id}`);
 
@@ -348,15 +354,14 @@ export function registerCandidateTools(server: McpServer): void {
           `own eval_run plugin ${runPlugin.plugin_name}`);
       }
 
-      let generation = 0;
       if (parents.length) {
-        const parentRows = (await p.query<{ id: string; generation: number }>(
-          "select id::text as id, generation from zz.candidate where id = any($1::uuid[])", [parents])).rows;
-        const found = new Map(parentRows.map((r) => [r.id, r]));
+        const parentRows = (await p.query<{ id: string }>(
+          "select id::text as id from zz.candidate where id = any($1::uuid[])", [parents])).rows;
+        const found = new Set(parentRows.map((r) => r.id));
         const missing = parents.filter((id) => !found.has(id));
         if (missing.length) return text(`ERROR: parent candidate id(s) not found: ${missing.join(", ")}`);
-        generation = Math.max(...parentRows.map((r) => r.generation)) + 1;
       }
+
 
       const stats: PatchStats = parseUnifiedDiff(patchset.diff);
       const files: readonly PatchFile[] = stats.files;
@@ -435,6 +440,9 @@ export function registerCandidateTools(server: McpServer): void {
           id: string; generation: number; patch_digest: string; complexity_delta: number;
           touched_components: typeof touched_components; touched_owners: string[];
         }>> => {
+          // Inside the ledger's transaction, never before it: a retry of the call that filled a
+          // generation must reach the replay decision above, not the cap refusal.
+          const generation = await recordGenerationFor(client, improvement_run_id, run.search_policy);
           const row = (await client.query<{ id: string }>(`
             insert into zz.candidate
               (improvement_run_id, base_subject_version_id, generation, parent_ids, hypothesis,
@@ -491,7 +499,9 @@ export function registerCandidateTools(server: McpServer): void {
     {
       description:
         "WHEN a recorded or already-valid candidate is ready to be checked against its own base " +
-        "(Task I-19, AC-40.1/AC-41.1): on a first call (status: recorded) builds the candidate's " +
+        "(Task I-19, AC-40.1/AC-41.1): on a first call (status: recorded) first asks the " +
+        "search.leakage critic (FR-38) — a clear yes rests it at rejected_precheck and REFUSES " +
+        "with the critic's reason — then builds the candidate's " +
         "own worktree from this checkout, applies its patchset and runs the repository build and " +
         "gate against it in isolation before anything else touches it. On a build or gate " +
         "failure the candidate's status becomes invalid and this call REFUSES with the failing " +
@@ -511,7 +521,7 @@ export function registerCandidateTools(server: McpServer): void {
         "repeat per case per side — never a run this tool launches itself: replay_start " +
         "(case_id-steerable) and the launcher run the replay, this tool only plans and reads " +
         "back. Never reads a proof or evolve case. REFUSES a candidate_id nothing minted; a " +
-        "status outside (recorded, valid); a deployment with no git checkout to build from; an " +
+        "status outside (recorded, valid); a malformed search_policy; a deployment with no git checkout to build from; an " +
         "improvement_run whose own eval_run bound no case_set_version_id; and a case set with no " +
         "replayable validation-split case. A mutator once it has a verdict to store: writes " +
         "through the FR-59 idempotency ledger — a build/gate failure and an interim " +
@@ -542,17 +552,14 @@ export function registerCandidateTools(server: McpServer): void {
     {
       description:
         "WHEN an improvement_run's own recorded candidates are ready to be advanced one step " +
-        "(Task I-20, FR-38 to FR-42, FR-44): screens every still-recorded candidate through the " +
-        "registered search.leakage evaluator (a candidate whose patch reads as hard-coded " +
-        "against evidence it should not have, or as a rejected hypothesis restated, becomes " +
-        "rejected_precheck with the critic's reason) BEFORE candidate_validate ever builds one; " +
+        "(Task I-20, FR-38 to FR-42, FR-44; the leakage screen runs in candidate_validate): " +
         "composes at most one new child candidate per call from two valid candidates whose " +
         "patches touch disjoint files, recorded with its own digest and parent_ids exactly the " +
         "way candidate_record records a proposed one; reduces every candidate with a stored " +
         "validation evaluation to the Pareto frontier over (per-case pass vector, cost); and, " +
         "once the protocol's own liveness bound (maxGenerations/wallClockHours) is reached, " +
-        "selects exactly one final candidate FROM THAT FRONTIER by the protocol's deterministic " +
-        "selection policy — a validated candidate the frontier reduction already excluded is " +
+        "selects exactly one final candidate FROM THAT FRONTIER — among members validated as " +
+        "improves or an accepted pruning — by the protocol's deterministic selection policy — a validated candidate the frontier reduction already excluded is " +
         "never selected merely for having a good enough score on its own — " +
         "candidate.status and improvement_run.status both become 'selected', or, when no " +
         "guardrail-passing candidate cleared the equivalence band, improvement_run.status " +
@@ -562,8 +569,8 @@ export function registerCandidateTools(server: McpServer): void {
         "(directed at explore_components when the current generation has stalled), validate " +
         "the ones just proposed, or stop. RETURNS { generation, frontier_ids, rejected: " +
         "[{id, reason}], selected_id, status, explore_components, edit_budget, proposer_bundle, " +
-        "next }. REFUSES an improvement_run_id nothing minted, and one whose own eval_run names " +
-        "no subject_version_id it can still resolve. A mutator once it has mutated candidate or " +
+        "next }. REFUSES an improvement_run_id nothing minted, one whose own eval_run names " +
+        "no subject_version_id it can still resolve, and a malformed search_policy. A mutator once it has mutated candidate or " +
         "improvement_run state: writes through the FR-59 idempotency ledger; a call against an " +
         "improvement_run already at a terminal status (selected/proofing/proof_failed/" +
         "ready_for_approval/released/closed/cancelled) is read-only and writes no ledger row. " +
@@ -607,46 +614,39 @@ export function registerCandidateTools(server: McpServer): void {
     {
       description:
         "WHEN an improvement_run's own selected final candidate is ready for its sealed proof " +
-        "(Task I-21, FR-28, FR-43; abandon: this dispatch): opens the candidate's ONE proof " +
-        "allocation. A first call (candidate.status: selected) mints a verifier_token with no " +
-        "proposer/search capability, moves candidate.status to proving and improvement_run.status " +
-        "to proofing, and RETURNS { proof_status: null, verifier_token, token_already_issued, " +
-        "runs_required, status: 'proving' } — never resolving in the same call. The IMPROVE agent " +
-        "drives replay_start(context: 'verifier', verifier_token, split: 'proof') plus the " +
-        "launcher (packages/tools/src/replay/launch.ts --verifier-token) against every " +
-        "runs_required entry. A LATER call against the same proving candidate reads back " +
-        "completed, scored proof-split zz.replay_run rows: short of minRepeats it RETURNS the " +
-        "same shape with updated runs_required; once every case clears it (or the liveness bound " +
-        "passes) it computes pairedDecision (stats.ts), re-screens for leakage (search.leakage), " +
-        "and stores one zz.candidate_evaluation (split: proof) row. RETURNS { proof_status: " +
-        "proof_passed|proof_failed|not_established, reason, release_eligible, " +
-        "candidate_evaluation_id, status } — never a per-case result. proof_passed requires an " +
-        "established score, pairedDecision improves (or an accepted pruning trade-off), every " +
-        "critical guardrail passing, and no leakage; release_eligible is additionally true only " +
-        "with a recorded release_owner (FR-47). Below the proof-case minimum, or an interval " +
-        "still straddling mme at the liveness bound, RETURNS not_established (reason: " +
-        "insufficient_proof_cases or proof_unresolved). Every terminal outcome SPENDS the " +
-        "allocation: candidate.status becomes proof_passed, proof_failed (a real rejection — " +
-        "candidate_record refuses to re-record this hypothesis), or proof_not_established " +
-        "(migration 081: an evidence gap from insufficient_proof_cases, proof_unresolved or " +
-        "abandon, never a rejected hypothesis, so REJECTED_CANDIDATE_STATUSES leaves it out and " +
-        "the same hypothesis may be re-recorded); improvement_run.status becomes " +
-        "ready_for_approval, closed (no owners, FR-51), or proof_failed. A resumed search " +
-        "restarts through a fresh improvement_start, never this allocation. abandon: true " +
-        "recovers an allocation stuck proving because the caller lost the response that opened " +
-        "it: revokes the token, cancels every still-registered proof-split replay_run it " +
-        "spawned, and resolves proof_not_established (reason: abandoned). REFUSES abandon on a " +
-        "selected candidate (nothing to abandon); on a spent one abandon is a NO-OP read-back, " +
-        "never a refusal. REFUSES a candidate_id nothing minted; a candidate whose status is " +
-        "neither selected/proving nor already spent — \"ERROR: only the selected candidate may " +
-        "open proof\"; a non-abandon call against a spent candidate — \"ERROR: proof allocation " +
-        "spent; a new allocation or new evidence is required\"; an improvement_run whose eval_run " +
-        "bound no case_set_version_id; and a plugin with no bounded_semantic/generative_critic " +
-        "measure to score a replay with. A mutator whenever it actually writes: writes through " +
-        "the FR-59 idempotency ledger — an interim runs_required response is not. Pass " +
-        "`initiative` to record release_mode: not_applicable (FR-58) on every terminal outcome " +
-        "except proof_passed, on an OWNED candidate only — a non-owned one still has " +
-        "proposal_prepare open to it. Omit `initiative` and nothing is recorded.",
+        "(FR-28, FR-43): opens the candidate's ONE proof allocation. A first call (status: " +
+        "selected) mints a verifier_token bound to this candidate and case set, moves the " +
+        "candidate to proving and the run to proofing, spends the case set's proof split (a case " +
+        "set opens for proof once, whichever candidate), and RETURNS { proof_status: null, " +
+        "verifier_token, token_already_issued, runs_required: { case_set_id, baseline, candidate " +
+        "}, status: 'proving' } — run COUNTS per side, never a proof case id, and never resolving " +
+        "in the same call. The IMPROVE agent calls replay_start(context: 'verifier', " +
+        "verifier_token, split: 'proof', no case_id — drawn server-side) plus the launcher " +
+        "(VERIFIER_TOKEN in its environment) that many times per side. A LATER call reads back " +
+        "completed, scored proof-split runs: short of minRepeats it RETURNS updated counts; once " +
+        "every case clears it (or the liveness bound passes) it computes pairedDecision, " +
+        "re-screens for leakage and stores one zz.candidate_evaluation (split: proof). RETURNS { " +
+        "proof_status: proof_passed|proof_failed|not_established, reason, release_eligible, " +
+        "candidate_evaluation_id, status } — never a per-case result. proof_passed needs " +
+        "improves (or an accepted pruning), every critical guardrail passing and a clear " +
+        "no-leakage answer — unclear/unavailable is not_established (leakage_unresolved); " +
+        "release_eligible also needs a release_owner (FR-47). not_established also covers " +
+        "insufficient_proof_cases, proof_unresolved and guardrails_not_established. Every " +
+        "terminal outcome SPENDS the allocation: candidate.status becomes proof_passed, " +
+        "proof_failed (candidate_record refuses this hypothesis again) or proof_not_established " +
+        "(an evidence gap — re-recordable); improvement_run.status becomes ready_for_approval, " +
+        "closed (no owners, FR-51) or proof_failed. abandon: true recovers an allocation stuck " +
+        "proving after a lost response: revokes the token, cancels its live proof runs, resolves " +
+        "proof_not_established (reason: abandoned); a no-op read-back on a spent candidate. " +
+        "REFUSES abandon on a selected candidate; a candidate_id nothing minted; a status neither " +
+        "selected/proving nor spent — \"ERROR: only the selected candidate may open proof\"; a " +
+        "non-abandon call on a spent candidate — \"ERROR: proof allocation spent; a new allocation " +
+        "or new evidence is required\"; an eval_run with no case_set_version_id; a plugin with no " +
+        "model-backed measure; a malformed search_policy; and a case set another candidate already " +
+        "opened. A mutator whenever it writes (FR-59 ledger); an interim runs_required response is " +
+        "not. Pass `initiative` to record release_mode: not_applicable (FR-58) on a proof_failed " +
+        "outcome of an OWNED candidate only — not_established is a gap a fresh improvement_start " +
+        "may resume from, and a non-owned candidate still has proposal_prepare.",
       inputSchema: {
         candidate_id: z.string(), idempotency_key: z.string().min(1),
         abandon: z.boolean().optional()
@@ -668,7 +668,7 @@ export function registerCandidateTools(server: McpServer): void {
       logActivity(await userRoot(), null, {
         user: principal, action: "candidate_prove", candidate_id,
         proof_status: outcome.proof_status, release_eligible: outcome.release_eligible,
-        runs_required: outcome.runs_required?.length ?? 0,
+        runs_required: outcome.runs_required ?? null,
       });
       return json(outcome);
     },

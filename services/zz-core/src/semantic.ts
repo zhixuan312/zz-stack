@@ -39,6 +39,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { QUESTION_FAMILIES } from "@zz/contracts";
+import type pg from "pg";
 
 import { ask, configured, NOT_CONFIGURED, type Question } from "./typed-service.js";
 import { db } from "./platform-db.js";
@@ -191,8 +192,8 @@ interface AssessmentInsertRow {
  *  needs it for `assessment_id`; `assessFamily`'s `Assessment` has never carried one and does
  *  not start now. Throws on any failure: whether that is swallowed or not is each caller's own
  *  call, made where it decides what a failure means for it. */
-async function insertAssessmentRow(row: AssessmentInsertRow): Promise<number> {
-  const p = db();
+async function insertAssessmentRow(row: AssessmentInsertRow, runner?: Queryable): Promise<number> {
+  const p = runner ?? db();
   if (!p) throw new Error("no platform database configured");
   const { rows } = await p.query<{ id: string }>(`
     insert into zz.assessment
@@ -282,21 +283,32 @@ export interface EvaluatorAssessmentResult {
   reason: string | null;
 }
 
-/** Ask one registered evaluator question about one subject, and record it.
+/** One evaluator answer the typed service has given and nothing has recorded yet — what
+ *  `askEvaluatorQuestion` hands back and `insertEvaluatorAnswer` writes. Split so a mutator can
+ *  ask BEFORE it opens its idempotency transaction (a typed-service call can take ~100s, and a
+ *  transaction held open across it pins one of the pool's few connections) and record INSIDE it
+ *  (so the `zz.assessment` row commits or rolls back with the ledger row, and a replay never
+ *  writes a second one). */
+export interface AskedEvaluatorAnswer {
+  readonly row: AssessmentInsertRow;
+  readonly result: Omit<EvaluatorAssessmentResult, "assessment_id">;
+}
+
+/** Anything `insertEvaluatorAnswer` can write through: the pool, or a client inside a
+ *  transaction. */
+interface Queryable {
+  query<R extends pg.QueryResultRow = pg.QueryResultRow>(text: string, values?: unknown[]): Promise<pg.QueryResult<R>>;
+}
+
+/** Ask one registered evaluator question about one subject — no write.
  *
  * "Every model-backed measure resolves to a `zz.eval_evaluator_version`": the resolve happens
  * here, first, and an `evaluator_version_id` nothing registered is refused before any model is
  * asked. The primitive the typed service is asked (`noul`/`choice`/`score`) is the evaluator's
- * own declared shape, never the caller's choice — `evaluators.ts`'s `askEvaluator` is a thin
- * positional wrapper over this, and `discover.ts` (Task I-9) calls it directly the same way.
- *
- * Unlike `assessFamily`, the insert here is not wrapped in a swallowing `catch`: an insert
- * failure fails the call, because a plugin-eval measure with no `assessment_id` is a measure
- * that silently never happened, and `zz.eval_assessment` cannot reference a row that was never
- * written. */
-export async function recordEvaluatorAssessment(opts: {
+ * own declared shape, never the caller's choice. */
+export async function askEvaluatorQuestion(opts: {
   evaluator_version_id: string; subject_text: string; context?: string; askedBy: string;
-}): Promise<EvaluatorAssessmentResult> {
+}): Promise<AskedEvaluatorAnswer> {
   const evaluator = await resolveEvaluatorVersion(opts.evaluator_version_id);
   const digest = evaluatorQuestionDigest(evaluator.stable_key, evaluator.version, evaluator.question);
   const asked_at = new Date().toISOString();
@@ -353,17 +365,42 @@ export async function recordEvaluatorAssessment(opts: {
     }
   }
 
-  const assessment_id = await insertAssessmentRow({
-    family: null, evaluator_version_id: evaluator.id, instruction_version: evaluator.version,
-    question_digest: digest, reading, probability, distribution, answer_kind: evaluator.answer_schema.type,
-    requested_model, resolved_model, identity_assurance, reason,
-    initiative: null, about: null, asked_by: opts.askedBy, asked_at,
-  });
-
   return {
-    assessment_id, answer_kind: evaluator.answer_schema.type, probability, distribution, reading,
-    resolved_model, identity_assurance, reason,
+    row: {
+      family: null, evaluator_version_id: evaluator.id, instruction_version: evaluator.version,
+      question_digest: digest, reading, probability, distribution, answer_kind: evaluator.answer_schema.type,
+      requested_model, resolved_model, identity_assurance, reason,
+      initiative: null, about: null, asked_by: opts.askedBy, asked_at,
+    },
+    result: {
+      answer_kind: evaluator.answer_schema.type, probability, distribution, reading,
+      resolved_model, identity_assurance, reason,
+    },
   };
+}
+
+/** Record one asked answer through `runner` — the caller's own transaction client when the
+ *  answer belongs to a mutator's ledger write. Not wrapped in a swallowing `catch`: a plugin-eval
+ *  measure with no `assessment_id` is a measure that silently never happened, and
+ *  `zz.eval_assessment` cannot reference a row that was never written. */
+export async function insertEvaluatorAnswer(
+  runner: Queryable, asked: AskedEvaluatorAnswer,
+): Promise<EvaluatorAssessmentResult> {
+  const assessment_id = await insertAssessmentRow(asked.row, runner);
+  return { assessment_id, ...asked.result };
+}
+
+/** Ask and record in one go, on the pool — for a caller that holds no transaction of its own
+ *  (`evaluators.ts`'s `askEvaluator`, `qualify-evidence.ts`). A mutator asks with
+ *  `askEvaluatorQuestion` before its transaction and records with `insertEvaluatorAnswer` inside
+ *  it instead. */
+export async function recordEvaluatorAssessment(opts: {
+  evaluator_version_id: string; subject_text: string; context?: string; askedBy: string;
+}): Promise<EvaluatorAssessmentResult> {
+  const asked = await askEvaluatorQuestion(opts);
+  const p = db();
+  if (!p) throw new Error("no platform database configured");
+  return insertEvaluatorAnswer(p, asked);
 }
 
 /** Where an audit round's assessments live in the store. Underscore-prefixed, so no listing,

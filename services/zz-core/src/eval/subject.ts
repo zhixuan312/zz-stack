@@ -13,44 +13,30 @@
  * released, captured once from its own source directory rather than recomputed on every call —
  * there is no release to anchor a recompute to, so the row `plugin_register` writes is what
  * `plugin_locate` reads back for it afterwards, unchanged, rather than a second derivation that
- * could disagree with the first.
+ * could disagree with the first. Its source readers, and the confinement that bounds what a
+ * caller's locator may reach, are subject-source.ts's.
  *
  * DELIBERATE: both are mutators, unlike everything in plugin-eval.ts. They are the only places a
  * new subject version comes from, so the identity every later stage joins against exists before
  * anything asks for it a second time.
  */
-import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
-
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { manifestAt } from "@zz/catalog";
 import { parseCaller } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
 import { entryOf, serversOf } from "./plugin-eval.js";
+import { retractedVersions } from "./release-retracted.js";
+import { type Component, resolveSource, sha256 } from "./subject-source.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
 import { db } from "../platform-db.js";
+import { Refusal } from "../refusal.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so no subject can be recorded");
-
-/** One entry of `component_manifest`. `kind: "config"` is part of the declared shape for a
- *  component this catalog schema does not carry yet (deploy/environment declarations, say) —
- *  none is emitted today because nothing in `CatalogManifest` represents one. */
-interface Component {
-  readonly kind: "skill" | "server" | "flow" | "config";
-  readonly name: string;
-  readonly digest: string;
-}
-
-const sha256 = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 
 /** The whole-plugin digest: sha256 over the SORTED per-component digests, never over an order a
  *  query happened to return them in — two locates of the same release must agree on this digest
@@ -70,11 +56,29 @@ async function resolveSubject(pool: pg.Pool, plugin: string, version: string | u
   // `$2::text is null` rather than two query strings: one text keeps the "latest release" and
   // "this exact release" paths from drifting apart the way plugin-eval.ts's old copy of this
   // query and this one already had, once, before this task merged them.
-  const head = (await pool.query<{ plugin_id: string; origin: string; declared_version: string; digest: string }>(`
-    select p.id::text as plugin_id, p.origin, pv.version as declared_version, pv.digest
+  //
+  // The newest release leaves out every version a rollback retracted (`retractedVersions`, the
+  // same rule release_apply's baseline applies), so after a rollback the head IS the prior
+  // version again — the retracted row stays in zz.plugin_version, and naming its exact version
+  // still resolves it.
+  const pluginId = (await pool.query<{ id: string }>(
+    "select id::text as id from zz.plugin where name = $1", [plugin])).rows[0]?.id;
+  const retracted = pluginId && !version ? await retractedVersions(pool, pluginId) : [];
+  const head = (await pool.query<{
+    plugin_id: string; plugin_version_id: string; origin: string; declared_version: string; digest: string;
+  }>(`
+    select p.id::text as plugin_id, pv.id::text as plugin_version_id, p.origin,
+           pv.version as declared_version, pv.digest
       from zz.plugin p join zz.plugin_version pv on pv.plugin_id = p.id
-     where p.name = $1 and ($2::text is null or pv.version = $2)
-     order by pv.version desc limit 1`, [plugin, version ?? null])).rows[0];
+     where p.name = $1 and ($2::text is null or pv.version = $2) and pv.version <> all($3::text[])
+     -- Semver order, not text order: '0.10.0' sorts below '0.9.0' as text. The numeric core is
+     -- compared as numeric[] (never int[], which a long digit run overflows); a version with no
+     -- numeric core reads null and sorts last rather than failing the cast; at an equal core a
+     -- release outranks its own pre-release ('1.0.0' above '1.0.0-rc.1'), and text breaks any
+     -- tie that is left.
+     order by string_to_array(substring(pv.version from '^[0-9]+(?:\\.[0-9]+)*'), '.')::numeric[] desc nulls last,
+              (pv.version like '%-%') asc, pv.version desc
+     limit 1`, [plugin, version ?? null, retracted])).rows[0];
   if (!head) return null;
 
   // A third party has no release to recompute against — plugin_register captured its
@@ -147,7 +151,7 @@ async function resolveSubject(pool: pg.Pool, plugin: string, version: string | u
     // version was captured. Not the content digest above: that is recomputed here and can differ
     // from the release-time one if a component's digest source changes under it, which is exactly
     // what a second locate is supposed to catch.
-    releaseIdentity: { plugin_version_id: head.plugin_id, released_digest: head.digest, origin: head.origin },
+    releaseIdentity: { plugin_version_id: head.plugin_version_id, released_digest: head.digest, origin: head.origin },
   };
 }
 
@@ -211,226 +215,6 @@ async function subjectResponse(
   };
 }
 
-/** `plugin_register`'s `source_kind: "local_dir"` reader: every SKILL.md under the directory
- *  (or its own `skills/` subdirectory, the catalog's own convention, when it has one), plus
- *  whatever `flow.json` beside it declares — read straight off disk, never through the catalog
- *  or zz.skill_version, neither of which a third party ever has a row in.
- *
- *  Returns null for a directory with nothing to capture — no SKILL.md and no flow.json — which
- *  `plugin_register` turns into the contract's "source could not be read" refusal rather than
- *  minting a subject with an empty component set. */
-function resolveLocalDir(path: string): { components: Component[] } | null {
-  if (!existsSync(path) || !statSync(path).isDirectory()) return null;
-  const skillsDir = existsSync(join(path, "skills")) ? join(path, "skills") : path;
-  const components: Component[] = [];
-  const walk = (d: string): void => {
-    for (const f of readdirSync(d, { withFileTypes: true })) {
-      const abs = join(d, f.name);
-      if (f.isDirectory()) { walk(abs); continue; }
-      if (f.name !== "SKILL.md") continue;
-      // The digest is the file's own bytes, not a database row: a third party carries no
-      // zz.skill_version, so there is no content_hash column to defer to the way the catalog
-      // path does above.
-      components.push({ kind: "skill", name: basename(dirname(abs)), digest: sha256(readFileSync(abs, "utf8")) });
-    }
-  };
-  if (existsSync(skillsDir)) walk(skillsDir);
-
-  const flowFile = join(path, "flow.json");
-  if (existsSync(flowFile)) {
-    const got = manifestAt(flowFile);
-    if (got.manifest) {
-      for (const sv of got.manifest.servers ?? []) {
-        components.push({ kind: "server", name: sv.name, digest: sha256(`${sv.name}:${sv.path}`) });
-      }
-      components.push({
-        kind: "flow", name: got.manifest.name ?? basename(path),
-        digest: sha256(JSON.stringify(got.manifest)),
-      });
-    }
-  }
-  return components.length ? { components } : null;
-}
-
-/** `plugin_register`'s `source_kind: "git"` and `"package"` readers both shell out to a real
- *  binary (git / npm / tar) against a caller-controlled locator, so every call here goes through
- *  `tryExec`: argv arrays only, `--` ahead of the untrusted token so it can never be read as a
- *  flag, a bounded timeout and a bounded output buffer. Neither git nor npm caps how much they
- *  write to *disk*, so `directorySizeBytes` below is the actual backstop against an oversized or
- *  bombed fetch — the buffer limit only bounds what a command prints. */
-const EXEC_TIMEOUT_MS = 120_000;
-const MAX_EXEC_OUTPUT_BYTES = 16 * 1024 * 1024;
-/** Generous for a plugin's own skills and servers, and still a real ceiling: a shallow git clone
- *  or an npm tarball this large is almost certainly the wrong repository/package, not a slow one. */
-const MAX_SOURCE_BYTES = 200 * 1024 * 1024;
-
-type ExecResult = { ok: true; output: string } | { ok: false; error: string };
-
-/** One external command, run the way psql.ts's own `psqlText` does: no shell, so the locator can
- *  never be interpolated into anything a shell parses, and the caller decides what "failed"
- *  means for its own contract rather than this throwing past it. */
-function tryExec(cmd: string, args: string[], cwd?: string): ExecResult {
-  try {
-    const output = execFileSync(cmd, args, {
-      cwd, encoding: "utf8", timeout: EXEC_TIMEOUT_MS, maxBuffer: MAX_EXEC_OUTPUT_BYTES,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    return { ok: true, output };
-  } catch (err) {
-    const e = err as { stderr?: string; stdout?: string; message?: string; killed?: boolean; signal?: string };
-    const timedOut = e.killed && e.signal ? ` (killed by ${e.signal} after ${EXEC_TIMEOUT_MS}ms)` : "";
-    return { ok: false, error: `${(e.stderr || e.stdout || e.message || "unknown error").trim().slice(-500)}${timedOut}` };
-  }
-}
-
-/** A temporary directory that is always removed, success or failure — `plugin_register`'s
- *  contract for `git`/`package` requires the clone/extract scratch space to be gone afterwards,
- *  whatever the outcome. */
-function withTempDir<T>(prefix: string, fn: (dir: string) => T): T {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
-  try {
-    return fn(dir);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-/** The real size backstop (see the block comment above `EXEC_TIMEOUT_MS`): a recursive byte
- *  count of what git/tar actually put on disk, stopping early once it is already over `limit` —
- *  the caller only needs to know "too big", not the exact total for something it is about to
- *  refuse. Symlinks are skipped rather than followed, so a crafted entry cannot point back out
- *  of its own temporary directory and inflate — or escape — this count. */
-function directorySizeBytes(dir: string, limit: number): number {
-  let total = 0;
-  const walk = (d: string): void => {
-    for (const f of readdirSync(d, { withFileTypes: true })) {
-      if (total > limit) return;
-      if (f.isSymbolicLink()) continue;
-      const abs = join(d, f.name);
-      if (f.isDirectory()) { walk(abs); continue; }
-      total += statSync(abs).size;
-    }
-  };
-  walk(dir);
-  return total;
-}
-
-const oversizeError = (limit: number) =>
-  `the fetched source exceeds the ${Math.round(limit / (1024 * 1024))}MB size limit`;
-
-type SourceResolution = { components: Component[]; identityExtra: Record<string, unknown> } | { error: string };
-
-/** `source_kind: "git"`: `<url>` or `<url>#<ref>` — a branch, tag or commit. Cloned shallow
- *  (`--depth 1`) into a temporary directory, resolved exactly like `local_dir`, and the ref it
- *  actually landed on recorded as `resolved_commit` — the immutable half of FR-1's release
- *  identity for a source that itself is not immutable (a branch moves; the commit it named at
- *  capture time does not). */
-function resolveGit(locator: string): SourceResolution {
-  const hashAt = locator.lastIndexOf("#");
-  const url = hashAt === -1 ? locator : locator.slice(0, hashAt);
-  const ref = hashAt === -1 ? undefined : locator.slice(hashAt + 1) || undefined;
-  if (!url) return { error: "no repository URL was given before '#'" };
-
-  return withTempDir("zz-plugin-git-", (dir) => {
-    // The fast path: a shallow clone of exactly the named branch/tag, or of the default branch
-    // when no ref was given. `--` ends option parsing before the caller-controlled URL, so a
-    // locator that happens to start with '-' is read as a repository name and never as a flag.
-    const shallow = ref
-      ? tryExec("git", ["clone", "--quiet", "--depth", "1", "--branch", ref, "--", url, dir])
-      : tryExec("git", ["clone", "--quiet", "--depth", "1", "--", url, dir]);
-    if (!shallow.ok) {
-      if (!ref) return { error: shallow.error };
-      // `--branch` only resolves refs the remote advertises (branches and tags), so a commit SHA
-      // falls through to a full clone plus an explicit fetch of that one commit — still shallow
-      // at the object it lands on, just not at the clone step.
-      const full = tryExec("git", ["clone", "--quiet", "--", url, dir]);
-      if (!full.ok) return { error: full.error };
-      const fetch = tryExec("git", ["fetch", "--quiet", "--depth", "1", "--", "origin", ref], dir);
-      if (!fetch.ok) return { error: `ref ${ref} could not be fetched: ${fetch.error}` };
-      const checkout = tryExec("git", ["checkout", "--quiet", "FETCH_HEAD"], dir);
-      if (!checkout.ok) return { error: checkout.error };
-    }
-
-    const size = directorySizeBytes(dir, MAX_SOURCE_BYTES);
-    if (size > MAX_SOURCE_BYTES) return { error: oversizeError(MAX_SOURCE_BYTES) };
-
-    const head = tryExec("git", ["rev-parse", "HEAD"], dir);
-    if (!head.ok) return { error: head.error };
-
-    const resolved = resolveLocalDir(dir);
-    if (!resolved) return { error: "no SKILL.md and no flow.json were found in the cloned repository" };
-    return { components: resolved.components, identityExtra: { resolved_commit: head.output.trim() } };
-  });
-}
-
-/** `npm pack`'s own `--json` report for the tarball it just wrote — only the fields this reader
- *  uses, not the package's full manifest. */
-interface NpmPackEntry {
-  filename: string;
-  integrity?: string;
-  shasum?: string;
-}
-
-/** `source_kind: "package"`: an npm spec (`name@version`, same syntax `npm install` takes).
- *  Fetched with `npm pack` — never installed, so no `postinstall` script of the package's own
- *  runs — extracted into a temporary directory and resolved like `local_dir`. The tarball's own
- *  integrity hash is recorded, because a package version is otherwise mutable at the registry in
- *  a way a git commit is not: republishing the same `name@version` under `npm unpublish` +
- *  republish is rare but real, and the integrity is what makes a later locate notice it. */
-function resolvePackage(spec: string): SourceResolution {
-  return withTempDir("zz-plugin-package-", (dir) => {
-    const pack = tryExec("npm", [
-      "pack", "--json", "--pack-destination", dir, "--ignore-scripts", "--no-audit", "--no-fund", "--", spec,
-    ]);
-    if (!pack.ok) return { error: pack.error };
-
-    let entries: NpmPackEntry[];
-    try {
-      entries = JSON.parse(pack.output) as NpmPackEntry[];
-    } catch {
-      return { error: "npm pack did not answer with the JSON it was asked for" };
-    }
-    const entry = entries[0];
-    if (!entry?.filename) return { error: "npm pack produced no tarball" };
-
-    const extracted = join(dir, "extracted");
-    mkdirSync(extracted);
-    // `--` here too: the tarball path is ours, not the caller's, but the rule is "argv arrays,
-    // no shell interpolation of the locator" for this whole reader, applied uniformly rather
-    // than only where the untrusted string happens to land.
-    const untar = tryExec("tar", ["-xzf", join(dir, entry.filename), "-C", extracted]);
-    if (!untar.ok) return { error: untar.error };
-
-    const size = directorySizeBytes(extracted, MAX_SOURCE_BYTES);
-    if (size > MAX_SOURCE_BYTES) return { error: oversizeError(MAX_SOURCE_BYTES) };
-
-    // npm packs every tarball with its content under one top-level "package/" directory —
-    // npm-packlist's own convention, not this platform's — resolved straight through on the rare
-    // publisher whose tarball omits it.
-    const root = existsSync(join(extracted, "package")) ? join(extracted, "package") : extracted;
-    const resolved = resolveLocalDir(root);
-    if (!resolved) return { error: "no SKILL.md and no flow.json were found in the package" };
-    return {
-      components: resolved.components,
-      identityExtra: { tarball_integrity: entry.integrity ?? entry.shasum ?? null },
-    };
-  });
-}
-
-/** `plugin_register`'s three `source_kind` readers, behind one signature: `local_dir` reads the
- *  path as given (no fetch, no temporary directory, no size limit — it is already local and
- *  already the caller's own disk); `git` and `package` fetch first and clean up after
- *  themselves whatever the outcome. Every branch returns either components to capture or the
- *  contract's own `<reason>` half of `ERROR: source <locator> could not be read: <reason>`. */
-function resolveSource(kind: "local_dir" | "git" | "package", locator: string): SourceResolution {
-  if (kind === "local_dir") {
-    const resolved = resolveLocalDir(locator);
-    return resolved
-      ? { components: resolved.components, identityExtra: {} }
-      : { error: "no SKILL.md and no flow.json were found under this path" };
-  }
-  return kind === "git" ? resolveGit(locator) : resolvePackage(locator);
-}
 
 export function registerSubjectTools(server: McpServer): void {
   server.registerTool(
@@ -502,9 +286,10 @@ export function registerSubjectTools(server: McpServer): void {
       description:
         "WHEN a plugin needs to be evaluated and the catalog has never released it: IDENTIFY " +
         "it from its own source instead. It reads source_locator — for source_kind local_dir, " +
-        "the directory's own SKILL.md files, declared servers and flow manifest; for git, a " +
-        "repository URL (optionally '#ref') shallow-cloned and read the same way, with the " +
-        "commit it landed on recorded; for package, an npm spec (name@version) fetched with " +
+        "a directory under the catalog root: its own SKILL.md files, declared servers and flow " +
+        "manifest; for git, an https:// repository URL on a public host (optionally '#ref') " +
+        "shallow-cloned and read the same way, with the commit it landed on recorded; for " +
+        "package, a registry spec (name or @scope/name, optionally @version) fetched with " +
         "npm pack and read from its extracted tarball, with the tarball's own integrity " +
         "recorded — and RETURNS the same subject_version_id shape plugin_locate comes back with, so plugin_locate, " +
         "plugin_profile and plugin_conform all then work for this plugin with no catalog entry. " +
@@ -514,8 +299,9 @@ export function registerSubjectTools(server: McpServer): void {
         "the same FR-59 idempotency ledger plugin_locate uses. REFUSES a name the catalog " +
         "already owns — that plugin is registered by release, never by this tool — REFUSES a " +
         "payload naming origin, owner_team, evolvable or release_owners, since the platform " +
-        "derives every authority field itself and never takes one as input, and REFUSES a " +
-        "source_locator it cannot read.",
+        "derives every authority field itself and never takes one as input, REFUSES a " +
+        "source_locator it cannot read or may not reach, and REFUSES re-registering a version " +
+        "whose content changed — a changed source is a new version.",
       inputSchema: {
         name: z.string(),
         version: z.string(),
@@ -558,7 +344,7 @@ export function registerSubjectTools(server: McpServer): void {
       // cost local_dir already paid to re-read a directory before this task. Moving the fetch
       // inside the ledger's transaction would mean holding a database connection open for a
       // multi-second git clone or npm pack, which is the worse trade.
-      const resolved = resolveSource(source_kind, source_locator);
+      const resolved = await resolveSource(source_kind, source_locator);
       if ("error" in resolved) {
         return text(`ERROR: source ${source_locator} could not be read: ${resolved.error}`);
       }
@@ -573,11 +359,25 @@ export function registerSubjectTools(server: McpServer): void {
             insert into zz.plugin (name, origin) values ($1, 'third_party')
             on conflict (name) do update set origin = excluded.origin
             returning id::text as id`, [name])).rows[0];
+          // A declared version is immutable once captured: re-registering it from a source whose
+          // content moved would rewrite the digest every earlier evaluation of that version was
+          // judged against, and a subject's identity is exactly what must not move under it. The
+          // same content is a no-op; different content is a new version, and the caller says so.
+          // `for update` so two concurrent registrations of one version cannot both see nothing.
           await client.query(`
             insert into zz.plugin_version (plugin_id, version, digest)
             values ($1::uuid, $2, $3)
-            on conflict (plugin_id, version) do update set digest = excluded.digest`,
+            on conflict (plugin_id, version) do nothing`,
             [pluginRow.id, version, contentDigest]);
+          const held = (await client.query<{ digest: string }>(`
+            select digest from zz.plugin_version where plugin_id = $1::uuid and version = $2 for update`,
+            [pluginRow.id, version])).rows[0];
+          if (held.digest !== contentDigest) {
+            throw new Refusal(
+              `ERROR: ${name}@${version} is already registered with content digest ${held.digest}, and ` +
+              `this source digests to ${contentDigest}. A registered version never changes content — ` +
+              "register the changed source under a new version.");
+          }
           const row = (await client.query<{ id: string }>(`
             insert into zz.eval_subject_version
               (plugin_id, declared_version, content_digest, component_manifest, source_locator,

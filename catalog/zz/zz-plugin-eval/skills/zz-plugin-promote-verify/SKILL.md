@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-promote-verify
-version: 0.1
+version: 0.2
 description: Stage 8 of zz-plugin-eval (PROMOTE/VERIFY), the promotion boundary. Once IMPROVE has a proof-passed, owned candidate, prepare and gate the exact patch, apply it only after every required owner approves, record what happened, and run the automatic no-gate post-release check with its own objective rollback rule.
 when_to_use: "The eighth and last stage of zz-plugin-eval, reached only when release_mode is promotable — a candidate IMPROVE selected reached proof_passed against an owned subject. REQUIRES a shell-capable runtime that can run zz-tool commands against a real repository checkout. Never reached on a proposal_only or not_applicable branch."
 ---
@@ -43,8 +43,12 @@ not itself reached `proof_passed` (`not_eligible`); a base subject with NO recor
 
 `document_present` it, put it in front of every required owner, and `document_approve` it the
 moment they agree — under their name, in the same turn. **`release_apply` reads the approved
-document back and refuses without it**, quoting the exact `patch_digest` this document names: an
-approval on a document later revised past that digest is not an approval of THIS patch.
+document back and refuses without it**: the approval counts only when the document cites THIS
+`release_attempt_id` in its frontmatter and quotes the exact `patch_digest`, and only for the
+owner teams the approver is a MEMBER of. An approval of an earlier attempt's document, or by
+somebody in no owner team, approves nothing. `document_approve` refuses `not_owner` on
+`improvement.md` when the signer is in no owner team — and, with `on_behalf_of`, when the session
+recording it is in none either.
 
 ## Applying it — the exact compare-and-swap
 
@@ -52,14 +56,18 @@ approval on a document later revised past that digest is not an approval of THIS
 release_apply(candidate_id, approved_patch_digest, initiative, idempotency_key)
 ```
 
-Takes an advisory lock on the candidate's own plugin, evaluates against the plugin's CURRENTLY
-released subject (this system's own most recent released attempt, or the catalog's released
-head if this system has never released it), and — only on apply — moves the newest `prepared`
-attempt to `applying`. RETURNS `{ status: applying | refused, reason, release_attempt_id, patch:
-{diff, patch_digest} | null, plan: {plugin, declared_version, base_subject_version_id, branch} |
-null }`. **REFUSES** `no_release_owners`/`not_eligible` (recomputed live); `approval_required`
-(no approved `improvement.md` yet quoting this exact digest — NOT terminal, try again once it is
-approved); `digest_mismatch` (the approved digest does not match the candidate's own recorded
+Only an owner-team member may call it. Takes an advisory lock on the candidate's own plugin,
+evaluates against the plugin's CURRENTLY released subject (the newer, by semver, of this system's
+own released attempts and the catalog's registered versions, leaving out any version a rollback
+retracted), and — only on apply — moves the newest `prepared` attempt to `applying`. RETURNS `{
+status: applying | refused, reason, release_attempt_id, patch: {diff, patch_digest} | null, plan:
+{plugin, declared_version, base_subject_version_id, branch, base_ref} | null }` — `base_ref` is the
+commit the base subject was released from, or null when nothing recorded one. **REFUSES**
+`not_owner` (the caller is in no owner team); release_in_progress, when another attempt of
+this plugin is applying — wait for it, or, once the refusal names it stale, run the `--reconcile`
+command it prints; `no_release_owners`/`not_eligible` (recomputed live); `approval_required` (no
+approved `improvement.md` citing this attempt and quoting this exact digest, signed by an
+owner-team member — NOT terminal, try again once it is approved); `digest_mismatch` (the approved digest does not match the candidate's own recorded
 one); **`stale_baseline`** (the plugin's currently released subject has moved since this
 candidate's own base — rebase, re-validate, re-prove and re-approve before trying again; a
 changed patch needs the whole cycle again too). Nothing here applies a patch or runs a gate —
@@ -68,21 +76,37 @@ zz-core has no checkout of the plugin's own repository. That is the CLI, next:
 ```
 zz-tool release-apply --candidate <id> --repo <throwaway-clone> --initiative <initiative> \
   --digest <approved_patch_digest> --release-cmd "<the repository's own release command>" \
+  --release-version <the exact version that command publishes> [--base-ref <commit>] \
   [--gate-cmd "<override, default is npm run gate>"] [--gateway <url>] [--idempotency-key <key>]
 ```
 
-Applies exactly the approved patch into a throwaway clone (never the primary checkout), runs the
-repository's own gate, then its own release command, and reports back:
+Applies exactly the approved patch on a fresh `plan.branch` created at the base subject's release
+commit — `plan.base_ref`, else `--base-ref`; it records `failed` without touching anything when
+neither names a commit the clone has — runs the repository's own gate, then its own release
+command, locates the new subject AT `--release-version`, and reports back (the branch is kept on
+success; it holds the release commit):
 
 ```
 release_record(release_attempt_id, status: released, release_ref, released_subject_version_id, idempotency_key)
 release_record(release_attempt_id, status: failed, failure_tail, idempotency_key)
 ```
 
-`released` moves the attempt (and the candidate) to `released` — `released_subject_version_id`
-is typically what calling `plugin_locate` again, post-release, resolves to. `failed` moves the
-attempt to `failed`; the repository is already back at its pre-apply commit by the CLI's own
-contract, so this only records that it happened. RETURNS `{ status, release_attempt_id,
+**When `--base-ref` is required:** whenever `plan.base_ref` is null — the base was released by an
+ordinary catalog release outside this flow (only a git-sourced third-party subject, or a base this
+flow itself released, records its commit), in which case name the commit whose catalog carries
+`plan.declared_version`. Also when `plan.base_ref` is a commit the clone does not have — a base
+this flow released from a different clone, whose `--release-cmd` did not push its release branch;
+fetch that branch or pass the commit. When both are given they must name the same commit.
+
+`released` moves the attempt (and the candidate) to `released`; it refuses `not_newer` when the
+subject is not newer, by semver, than the base, and the attempt stays applying so it can be
+retried. `failed` moves the attempt to `failed`; the CLI has already removed its worktree and
+branch. Only the principal who applied the attempt, or an owner-team member, may record it
+(`not_owner`). Once the release command has succeeded the CLI never records `failed`: if locating
+or recording is refused, or the process dies, the attempt stays applying and
+`zz-tool release-apply --reconcile <release_attempt_id> --candidate <id> --plugin <name>
+--release-version <version> --repo <clone>` records the truth later — `released` if that version
+is registered, `failed` if it never was. RETURNS `{ status, release_attempt_id,
 released_subject_version_id, release_ref }`.
 
 ## Verifying it — automatic, no gate, with its own rollback rule
@@ -97,8 +121,11 @@ proof split `candidate_prove` already sealed, reused here under a fresh `verifie
 call mints — against the released subject and its prior version, and applies the protocol's own
 rollback decision. RETURNS `{ verdict: established | rolled_back | not_established | null,
 reason, evidence, rollback_plan, runs_required?, verifier_token?, status }` — like
-`candidate_prove`, `runs_required` names still-missing `(case, side)` pairs while short; drive
-each with `replay_start(context: "verifier", verifier_token, split: "proof")` plus `npm run
+`candidate_prove`, `runs_required` is `{ case_set_id, baseline, candidate }` while short — COUNTS,
+never case ids: `baseline` replays of the prior subject (the candidate's base) and `candidate`
+replays of the released one. Run each with `replay_start(context: "verifier", verifier_token,
+split: "proof", case_set_id, subject_version_id: <prior or released>)` — no `case_id`; the server
+draws the case, and the token is bound to this case set and these two subjects — plus `npm run
 replay -- --run <id> --verifier-token <token>`, exactly as IMPROVE's own proof loop.
 
 **On `rolled_back`, this call records the verdict and a `rollback_plan` but applies NOTHING
@@ -106,17 +133,23 @@ itself** — it does not move `release_attempt.status`. Run the repository's own
 
 ```
 zz-tool release-rollback --release-attempt <id> --repo <throwaway-clone> \
-  --rollback-cmd "<the repository's own rollback command>" [--gateway <url>] [--idempotency-key <key>]
+  --rollback-cmd "<the repository's own rollback command, naming {version}>" [--gateway <url>] [--idempotency-key <key>]
 ```
 
-then report it back:
+`{version}` (and `{plugin}`) in the command become the version to restore; a command naming no
+`{version}` is refused. Once it succeeds, the CLI confirms the restored version still locates to
+the prior subject, and only then reports back itself:
 
 ```
 release_record(release_attempt_id, status: rolled_back, reason, idempotency_key)
 ```
 
-which restores the prior subject as current and marks the candidate `rolled_back`. **No rollback
-ever fires without evidence** (FR-50) — below the held-case minimum, or an interval that never
+which marks the attempt and the candidate `rolled_back` and retracts the rolled-back version:
+`plugin_locate`'s head and `release_apply`'s baseline both skip it from then on, so no registry row
+is deleted. It refuses `not_rolled_back` unless `release_verify` already decided `rolled_back`, and
+`prior_not_current` — recording nothing — when, with that version retracted, the plugin's current
+subject is still not the prior one (a newer release stands over it). A failed required guardrail rolls back even while the interval is still unresolved. **No
+rollback ever fires without evidence** (FR-50) — below the held-case minimum, or an interval that never
 resolves by the liveness bound, `release_verify` answers `not_established` with a named reason
 (`insufficient_proof_cases` / `replays_unavailable` / `verification_unresolved`), never a
 rollback and never an indefinite wait.

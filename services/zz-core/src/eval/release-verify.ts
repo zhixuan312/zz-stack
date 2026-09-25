@@ -3,9 +3,9 @@
  * no-gate check a released candidate crosses after `release_record` moves it to `released` —
  * the same planner/reducer split `candidate_validate`/`candidate_prove` already keep against
  * `packages/tools/src/replay/launch.ts`, applied to a "prior subject vs released subject"
- * comparison instead of a "baseline vs candidate" one. This file plans which (case, side) pairs
- * still need a completed, scored `zz.replay_run` and reduces them into a verdict once evidence
- * is complete; it never runs a replay itself, and it never applies a patch, checks out a
+ * comparison instead of a "baseline vs candidate" one. This file plans how many completed,
+ * scored `zz.replay_run`s each side still needs — counts, never case ids — and reduces them into
+ * a verdict once evidence is complete; it never runs a replay itself, and it never applies a patch, checks out a
  * worktree or runs a shell command — `packages/tools/src/release/rollback.ts` does that, once
  * this file has already decided `rolled_back` and handed back a plan naming what to restore.
  *
@@ -55,8 +55,8 @@ import {
 } from "./candidate-validate.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { writeBranchFacts } from "./protocol.js";
-import { rollbackDecision } from "./release-rules.js";
-import { pairedDecision } from "./stats.js";
+import { releaseActorRefusal } from "./release-record.js";
+import { verifyReduction } from "./release-rules.js";
 import { Refusal } from "../refusal.js";
 
 // -------------------------------------------------------------------------------------------
@@ -70,6 +70,8 @@ interface AttemptRow {
   readonly released_subject_version_id: string | null;
   readonly verification: VerificationState | null;
   readonly created_at: string;
+  readonly applied_by: string | null;
+  readonly required_owners: string[];
 }
 
 interface VerificationState {
@@ -86,7 +88,7 @@ async function loadAttempt(p: pg.Pool, id: string): Promise<AttemptRow | null> {
     select id::text as id, status, candidate_id::text as candidate_id,
            base_subject_version_id::text as base_subject_version_id,
            released_subject_version_id::text as released_subject_version_id,
-           verification, created_at
+           verification, created_at, applied_by, required_owners
       from zz.release_attempt where id = $1::uuid`, [id])).rows[0];
   return row ?? null;
 }
@@ -183,61 +185,53 @@ async function proofCaseIds(p: pg.Pool, caseSetId: string): Promise<string[]> {
 }
 
 // -------------------------------------------------------------------------------------------
-// Planning: which (case, side) pairs still need a completed, scored replay_run.
+// Planning: how many completed, scored replay_runs each side still needs.
 
-interface VerifyRunsRequiredEntry {
-  readonly case_id: string;
-  readonly side: "prior" | "released";
-  readonly subject_version_id: string;
-  readonly count: number;
-}
+/** What the caller still has to run, as COUNTS per side — never a proof case id, the same shape
+ *  `candidate_prove` answers (FR-30): `replay_start(context: "verifier", verifier_token,
+ *  split: "proof", case_set_id, subject_version_id)` draws each case itself, bound by the token to
+ *  this case set and to the prior (`baseline`, the candidate's base) or released (`candidate`)
+ *  subject. */
+interface VerifyRunsRequired { readonly case_set_id: string; readonly baseline: number; readonly candidate: number }
 
 type Plan =
-  | { readonly kind: "pending"; readonly runs_required: VerifyRunsRequiredEntry[] }
+  | { readonly kind: "pending"; readonly runs_required: VerifyRunsRequired }
   | { readonly kind: "resolved"; readonly perCase: PerCaseDelta[]; readonly prior: SideRun[]; readonly released: SideRun[] };
 
 async function planVerify(
-  p: pg.Pool, caseIds: readonly string[], priorId: string, releasedId: string, minRepeats: number,
+  p: pg.Pool, caseSetId: string, caseIds: readonly string[], priorId: string, releasedId: string, minRepeats: number,
 ): Promise<Plan> {
   const prior = await baselineRuns(p, caseIds, priorId);
   const released = await baselineRuns(p, caseIds, releasedId);
   const byPrior = groupByCase(prior);
   const byReleased = groupByCase(released);
 
-  const runsRequired: VerifyRunsRequiredEntry[] = [];
+  let priorShort = 0;
+  let releasedShort = 0;
   const perCase: PerCaseDelta[] = [];
   for (const caseId of caseIds) {
     const a = byPrior.get(caseId) ?? [];
     const b = byReleased.get(caseId) ?? [];
-    if (a.length < minRepeats) {
-      runsRequired.push({ case_id: caseId, side: "prior", subject_version_id: priorId, count: minRepeats - a.length });
-    }
-    if (b.length < minRepeats) {
-      runsRequired.push({ case_id: caseId, side: "released", subject_version_id: releasedId, count: minRepeats - b.length });
-    }
+    priorShort += Math.max(minRepeats - a.length, 0);
+    releasedShort += Math.max(minRepeats - b.length, 0);
     if (a.length >= minRepeats && b.length >= minRepeats) {
       const baseline_mean = mean(a.map((r) => r.overall));
       const candidate_mean = mean(b.map((r) => r.overall));
       perCase.push({ case_id: caseId, baseline_mean, baseline_n: a.length, candidate_mean, candidate_n: b.length, delta: candidate_mean - baseline_mean });
     }
   }
-  if (runsRequired.length) return { kind: "pending", runs_required: runsRequired };
-  return { kind: "resolved", perCase, prior, released };
-}
-
-function escalateOneRepeat(caseIds: readonly string[], priorId: string, releasedId: string): VerifyRunsRequiredEntry[] {
-  const out: VerifyRunsRequiredEntry[] = [];
-  for (const caseId of caseIds) {
-    out.push({ case_id: caseId, side: "prior", subject_version_id: priorId, count: 1 });
-    out.push({ case_id: caseId, side: "released", subject_version_id: releasedId, count: 1 });
+  if (priorShort || releasedShort) {
+    return { kind: "pending", runs_required: { case_set_id: caseSetId, baseline: priorShort, candidate: releasedShort } };
   }
-  return out;
+  return { kind: "resolved", perCase, prior, released };
 }
 
 // -------------------------------------------------------------------------------------------
 // Verifier token — the same mechanism candidate_prove mints, for the same candidate_id, under a
 // fresh row (the proof allocation's own token is already revoked by the time a candidate is
-// released).
+// released), bound the same way (migration 088): to this case set, and to the released subject as
+// the one side besides the candidate's base a verifier replay may run against. No exemption for
+// post-release verification — replay-verifier.ts refuses an unbound token outright.
 
 const VERIFIER_TOKEN_BYTES = 32;
 function mintVerifierToken(): string { return randomBytes(VERIFIER_TOKEN_BYTES).toString("hex"); }
@@ -257,7 +251,7 @@ export interface VerifyOutcome {
   readonly reason: string | null;
   readonly evidence: { deltas_summary: unknown; guardrails: unknown } | null;
   readonly rollback_plan: RollbackPlan | null;
-  readonly runs_required?: VerifyRunsRequiredEntry[];
+  readonly runs_required?: VerifyRunsRequired;
   readonly verifier_token?: string | null;
   readonly token_already_issued?: boolean;
   readonly status: string;
@@ -290,7 +284,7 @@ function terminalOutcome(attempt: AttemptRow): VerifyOutcome {
  *  second column to CAS against — see the module note on why `verification` alone carries this
  *  file's whole state. */
 async function ensureVerifierToken(
-  attempt: AttemptRow, idempotencyKey: string, principal: string,
+  attempt: AttemptRow, caseSetId: string, idempotencyKey: string, principal: string,
 ): Promise<{ token: string | null; alreadyIssued: boolean }> {
   if (attempt.verification?.verifier_token_id) return { token: null, alreadyIssued: true };
 
@@ -305,9 +299,10 @@ async function ensureVerifierToken(
       // alone (the protocol's own wallClockHours bound is what actually ends verification).
       const expiresAt = new Date(Date.now() + 24 * 3_600_000).toISOString();
       const row = (await client.query<{ id: string }>(`
-        insert into zz.replay_verifier_token (token_hash, candidate_id, expires_at, created_at)
-        values ($1, $2::uuid, $3, now()) returning id::text as id`,
-        [sha256(token), attempt.candidate_id, expiresAt])).rows[0];
+        insert into zz.replay_verifier_token
+          (token_hash, candidate_id, case_set_id, released_subject_version_id, expires_at, created_at)
+        values ($1, $2::uuid, $3::uuid, $4::uuid, $5, now()) returning id::text as id`,
+        [sha256(token), attempt.candidate_id, caseSetId, attempt.released_subject_version_id, expiresAt])).rows[0];
       if (!row) throw new Error("insert into zz.replay_verifier_token produced no row");
       await client.query(
         `update zz.release_attempt set verification = coalesce(verification, '{}'::jsonb) || $2::jsonb where id = $1::uuid`,
@@ -414,6 +409,10 @@ export async function verifyRelease(
 ): Promise<VerifyOutcome | { error: string }> {
   const attempt = await loadAttempt(p, releaseAttemptId);
   if (!attempt) return { error: `ERROR: no release_attempt ${releaseAttemptId}` };
+  // Before anything else, the read-back included: this call mints a verifier token and records a
+  // verdict, so only the principal who applied the attempt or an owner-team member may make it.
+  const refused = await releaseActorRefusal(p, attempt, principal);
+  if (refused) return { error: refused };
 
   // Already resolved, on ANY idempotency_key — a rolled_back verdict may since have been
   // executed (status moved to rolled_back by release_record) or may still be sitting released
@@ -459,7 +458,7 @@ export async function verifyRelease(
   // started around here" marker this schema carries.
   const boundReached = Date.now() - new Date(attempt.created_at).getTime() >= ctx.policy.wallClockHours * 3_600_000;
 
-  const plan = await planVerify(p, caseIds, attempt.base_subject_version_id, attempt.released_subject_version_id, ctx.policy.minRepeats);
+  const plan = await planVerify(p, ctx.caseSetId, caseIds, attempt.base_subject_version_id, attempt.released_subject_version_id, ctx.policy.minRepeats);
   if (plan.kind === "pending") {
     // Unlike candidate_validate/candidate_prove — which wait indefinitely for missing repeats,
     // because nothing is live at risk before a candidate is ever released — a real released
@@ -475,7 +474,7 @@ export async function verifyRelease(
         statistics: { runs_required: plan.runs_required, liveness_bound_reached: true },
       });
     }
-    const ensured = await ensureVerifierToken(attempt, idempotencyKey, principal);
+    const ensured = await ensureVerifierToken(attempt, ctx.caseSetId, idempotencyKey, principal);
     return {
       verdict: null, reason: null, evidence: null, rollback_plan: null,
       runs_required: plan.runs_required, verifier_token: ensured.token,
@@ -483,19 +482,26 @@ export async function verifyRelease(
     };
   }
 
+  // One pure reduction (release-rules.ts's verifyReduction) decides everything from here, with the
+  // guardrails read BEFORE the interval: a failed guardrail rolls back even while the interval is
+  // still unresolved, and the protocol's own confidence is the one both the unresolved check and
+  // rollbackDecision use.
   const deltas = plan.perCase.map((c) => c.delta);
-  const decision = pairedDecision(deltas, 0, { resamples: RESAMPLES, seed: releaseAttemptId, confidence: ctx.policy.confidence });
-
-  if (decision.verdict === "unresolved" && !boundReached) {
+  const guardrailSummary = summariseGuardrails(plan.released);
+  const reduced = verifyReduction({
+    deltas, guardrail_status: guardrailSummary.status, liveness_bound_reached: boundReached,
+    resamples: RESAMPLES, seed: releaseAttemptId, confidence: ctx.policy.confidence,
+  });
+  if (reduced.kind === "escalate") {
     return {
       verdict: null, reason: null, evidence: null, rollback_plan: null,
-      runs_required: escalateOneRepeat(plan.perCase.map((c) => c.case_id), attempt.base_subject_version_id, attempt.released_subject_version_id),
+      // One more repeat per case per side.
+      runs_required: { case_set_id: ctx.caseSetId, baseline: plan.perCase.length, candidate: plan.perCase.length },
       verifier_token: null, token_already_issued: true, status: attempt.status,
     };
   }
 
-  const guardrailSummary = summariseGuardrails(plan.released);
-  const guardrailFailed = guardrailSummary.status === "fail";
+  const decision = reduced.decision;
   const dimension_scores = summariseDimensions(plan.prior, plan.released);
   const resource_usage = summariseResourceUsage(plan.prior, plan.released, candidate.complexity_delta);
   const statistics = {
@@ -503,40 +509,22 @@ export async function verifyRelease(
     resamples: RESAMPLES, seed: releaseAttemptId, liveness_bound_reached: boundReached,
   };
   const deltas_summary = { mean_delta: decision.mean, lower: decision.lower, upper: decision.upper, verdict: decision.verdict };
+  const recorded = {
+    evidence: { deltas_summary, guardrails: guardrailSummary },
+    dimension_scores, guardrails: guardrailSummary, resource_usage, statistics,
+  };
 
-  // FR-9/FR-23 (Task I-29's own fix dispatch), the same reason candidate-prove.ts's own proof
-  // resolution short-circuits on this: a critical guardrail this held-case replay evidence never
-  // measured is missing evidence, not a verified regression — reported honestly here rather than
-  // folded into `established` (silently treating an unmeasurable guardrail as passed, which would
-  // let a release the protocol cannot actually vouch for stand unverified) or into `rolled_back`
-  // (treating it as a proven failure it was never shown to be).
-  if (guardrailSummary.status === "not_established") {
+  // FR-9/FR-23: an unmeasured critical guardrail (guardrails_not_established) or an interval still
+  // straddling zero at the liveness bound (verification_unresolved) is missing evidence — neither
+  // an established release nor a rollback.
+  if (reduced.verdict === "not_established") {
     return resolveVerify(p, attempt, idempotencyKey, principal, {
-      verdict: "not_established", reason: "guardrails_not_established",
-      evidence: { deltas_summary, guardrails: guardrailSummary }, rollback_plan: null,
-      dimension_scores, guardrails: guardrailSummary, resource_usage, statistics,
+      verdict: "not_established", reason: reduced.reason, rollback_plan: null, ...recorded,
     });
   }
-
-  if (decision.verdict === "unresolved" && boundReached) {
-    // Every case cleared minRepeats, but the interval still straddles zero at the liveness bound
-    // — a real answer (FR-50's own "no rollback without evidence"), never an indefinite wait.
+  if (reduced.verdict === "established") {
     return resolveVerify(p, attempt, idempotencyKey, principal, {
-      verdict: "not_established", reason: "verification_unresolved",
-      evidence: { deltas_summary, guardrails: guardrailSummary }, rollback_plan: null,
-      dimension_scores, guardrails: guardrailSummary, resource_usage, statistics,
-    });
-  }
-
-  const rolledBack = rollbackDecision({
-    deltas, guardrail_failed: guardrailFailed, resamples: RESAMPLES, seed: releaseAttemptId,
-  });
-
-  if (!rolledBack) {
-    return resolveVerify(p, attempt, idempotencyKey, principal, {
-      verdict: "established", reason: "no_regression_established",
-      evidence: { deltas_summary, guardrails: guardrailSummary }, rollback_plan: null,
-      dimension_scores, guardrails: guardrailSummary, resource_usage, statistics,
+      verdict: "established", reason: reduced.reason, rollback_plan: null, ...recorded,
     }, initiative);
   }
 
@@ -547,8 +535,6 @@ export async function verifyRelease(
   } : null;
 
   return resolveVerify(p, attempt, idempotencyKey, principal, {
-    verdict: "rolled_back", reason: guardrailFailed ? "guardrail_failed" : "regression_established",
-    evidence: { deltas_summary, guardrails: guardrailSummary }, rollback_plan: rollbackPlan,
-    dimension_scores, guardrails: guardrailSummary, resource_usage, statistics,
+    verdict: "rolled_back", reason: reduced.reason, rollback_plan: rollbackPlan, ...recorded,
   }, initiative);
 }

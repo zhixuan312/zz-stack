@@ -170,7 +170,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
       "earlier one with the same label, because a purpose has one current credential. REFUSES " +
       "issuing for anybody but yourself without superadmin or team-admin authority, and " +
       "refuses to bind a token to a team its holder is not in — that token would " +
-      "authenticate nowhere.",
+      "authenticate nowhere. REFUSES a label starting 'replay:', which only replay runs' own tokens carry.",
     inputSchema: {
       email: z.string().email().optional(),
       team: z.string().optional().describe(
@@ -201,6 +201,15 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
         `reaches further than it does. Pass \`team: "${id.patTeam}"\` to issue another bound ` +
         "token, or use an unbound token — a binding is only worth something if it cannot be " +
         "traded away by the token it binds.");
+    }
+    // COUPLED: provisionReplayTeam (packages/contracts/src/replay-team.ts) labels every replay
+    // run's PAT `replay:<run id>`, and zz.replay_run.pat_id references that row (migration 079).
+    // issuePat replaces a same-label token by DELETING it, so a person issuing one under that
+    // label would either break on the foreign key or, before any run points at it, silently
+    // retire a live run's credential. The prefix belongs to the replay launcher alone.
+    if (label?.startsWith("replay:")) {
+      return text("ERROR: the 'replay:' label prefix is reserved for replay runs' own tokens — " +
+                  "pick another label");
     }
     const pid = await principalId(db, target);
     if (!pid) return text(`ERROR: no principal '${target}'`);

@@ -1,56 +1,42 @@
 /**
- * `release_apply`'s and `release_record`'s own DB logic (Task I-23, FR-49, AC-49.1): the
- * compare-and-swap FR-49 asks for, split from `release.ts`'s registration the same way
- * `release-rules.ts` split the pure decision out of `release_prepare` (Task I-22's own module
- * note) — this file is the part that touches the database and the artifact store; `release.ts`
- * keeps only the two tools' registration and description.
+ * `release_apply`'s own DB logic (Task I-23, FR-49, AC-49.1): the compare-and-swap FR-49 asks
+ * for, split from `release.ts`'s registration the same way `release-rules.ts` holds the pure
+ * decision — this file is the part that touches the database and the artifact store.
+ * `release_record`'s own half lives in `release-record.ts`.
  *
  * Design point, stated once, here: zz-core runs server-side in a container with no checkout of
- * the plugin's repository (worker_rules.md's own framing). Every OTHER split this initiative made
- * — replay (`replay-runs.ts` + `packages/tools/src/replay/launch.ts`) and candidate build
- * (`candidate-build.ts`, run inside `candidate_validate` itself, server-side, because THAT step
- * never leaves the platform's own checkout) — draws the same line: the server owns the decision,
- * the lock/CAS and the record; a local CLI with a shell does the git work. `release_apply`
- * follows the replay split exactly: this module decides and records, `packages/tools/src/
- * release/apply.ts` (a fresh CLI — there is no candidate/simulated-person turn to run here, just
- * "apply this diff, hash it, commit, gate, release") does the checkout work and reports back
- * through `release_record` below.
+ * the plugin's repository. The server owns the decision, the lock/CAS and the record; a local CLI
+ * with a shell (`packages/tools/src/release/apply.ts`) does the git work — the same split replay
+ * (`replay-runs.ts` + `packages/tools/src/replay/launch.ts`) already draws — and reports back
+ * through `release_record`.
  *
- * `currentReleasedSubjectVersionId` (the "currently released subject" FR-49 compares against):
- * not a column anywhere. The SAME plugin can be released by this eval system's own
- * `release_apply` (which then owns the answer, through the release_attempt it just wrote) or,
- * before this system has ever released it once, by an ordinary platform release outside this
- * system entirely (`register-plugins.ts`, run from `scripts/release.ts`, is what really moves
- * `zz.plugin_version` for a catalog plugin). So the answer is read in that same order: this
- * system's own most recent `released` attempt for the plugin, if one exists; otherwise the
- * plugin's own catalog head — the exact (plugin, declared_version) pair `subject.ts`'s own
- * `resolveSubject` treats as "the newest release" — joined back to whichever `eval_subject_version`
- * row was captured for it. A plugin whose head version was never captured by `plugin_locate`
- * resolves to null here, which the caller turns into an explicit refusal rather than guessing a
- * stale_baseline verdict from nothing.
+ * The "currently released subject" FR-49 compares against is not a column anywhere. The same
+ * plugin can be released by this eval system's own `release_apply` (recorded as a `released`
+ * attempt) or by an ordinary platform release outside it (`zz.plugin_version`, written by
+ * `register-plugins` from `plugins.lock.json`). Both are read, and the newer by SEMVER wins
+ * (`newestSubject`, `release-rules.ts`) — never "this system's own release if one exists", which
+ * went stale the moment an ordinary release moved past it, and never a text sort. A version a
+ * rollback retracted (`retractedVersions`, the same rule `plugin_locate`'s head applies) is left
+ * out of both sides. A catalog head that
+ * `plugin_locate` never captured resolves to nothing, which the caller turns into an explicit
+ * refusal rather than guessing a stale_baseline verdict.
  *
- * Approval binding: the SAME mechanism `protocol_affirm` uses for `protocol.md` (`protocol.ts`'s
- * own module note) — read `<initiative>/improvement.md` off disk, require `status: approved` and
- * the document's body to quote the exact digest — checked against the release_attempt's OWN
- * `approved_patch_digest` (what `release_prepare` actually wrote into the document, its own
- * ground truth), never against this call's own `approved_patch_digest` ARGUMENT: checking the
- * caller's argument would make a caller who simply passes the wrong digest read as "nobody
- * approved this" (`approval_required`) rather than the more specific `digest_mismatch`
- * `releaseDecision` exists to report for exactly that case — a properly approved candidate,
- * applied with the wrong digest, has to fail on the digest check, not be misreported as
- * unapproved. The one difference from `protocol_affirm`: `required_owners` here is TEAM SLUGS
- * (`zz.plugin.release_owners`, `register-plugins.ts`'s own `[ownerTeam]`), never email addresses,
- * so an approving PERSON's `approved_by` email is resolved to the team they act for (`teamFor`,
- * `platform-db.ts` — the same function every other tool on this door uses to find whose store a
- * person writes into) before it is compared against `required_owners`. FR-48's own words are
- * "authorizes promotion for the approving ownership domain" — a person approves as themselves,
- * but what the platform checks is the domain (team) that approval speaks for.
+ * Approval binding: read `<initiative>/improvement.md` off disk and require `status: approved`,
+ * the body citing THIS attempt's `release_attempt_id` (and no other), and quoting the attempt's
+ * OWN `approved_patch_digest` (what `release_prepare` wrote into the document), never this call's
+ * own digest argument — a caller who passes the wrong digest must be told `digest_mismatch`, not
+ * a confusing "not approved". The approver counts for exactly the owner teams they are a MEMBER
+ * of (`release-owners.ts`), never the one team `teamFor` would resolve them to; and the caller
+ * of `release_apply` itself must be a member of an owner team too.
  *
- * `release_apply` needed no `initiative` argument in the spec's own frozen interface table — the
- * same gap `release_prepare` already crossed (that file's own module note: "there is no other way
- * to locate a team-scoped document from a bare candidate_id"). Added here for the identical
- * reason: `improvement.md`'s approval has to be read from somewhere, and a bare candidate_id names
- * no path of its own.
+ * Exactly one applying attempt per plugin: the advisory lock serializes decisions, the check
+ * after it refuses `release_in_progress` while any attempt of the plugin is applying (whichever
+ * candidate), and migration 089's `release_attempt_applying_plugin_idx` makes the same fact a
+ * database guarantee. An attempt left applying past `STALE_APPLYING_MS` has nobody left to
+ * report for it; the refusal names it and the reconcile command that records what really happened.
+ *
+ * `release_apply` takes an `initiative` argument the spec's frozen interface table did not name:
+ * `improvement.md`'s approval has to be read from somewhere, and a bare candidate_id names no path.
  */
 import { existsSync, readFileSync } from "node:fs";
 
@@ -58,16 +44,14 @@ import { documentBody, parseEnvelope } from "@zz/contracts";
 import type pg from "pg";
 
 import type { MutatorOutcome } from "./idempotency.js";
-import { releaseDecision } from "./release-rules.js";
+import { retractedVersions } from "./release-retracted.js";
+import { applyingRefusal, approvedOwners, newestSubject, releaseDecision, STALE_APPLYING_MS } from "./release-rules.js";
 import { safeName, safePath } from "../paths.js";
-import { teamFor } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
+import { citedReleaseAttempt, memberTeams } from "../release-owners.js";
 
-// The one shape every function here needs from either a pool or a client already inside a
-// transaction — mirrors idempotency.ts's own `Queryable`, kept as its own copy rather than a
-// shared import for the same reason that file gives: a `Pick<Pool | PoolClient, "query">` union
-// is not callable, and a structural interface both satisfy is simpler than reaching across files
-// for one type.
+// Mirrors idempotency.ts's own `Queryable`: a `Pick<Pool | PoolClient, "query">` union is not
+// callable, and a structural interface both satisfy is simpler than reaching across files.
 interface Queryable {
   query<R extends pg.QueryResultRow = pg.QueryResultRow>(text: string, values?: unknown[]): Promise<pg.QueryResult<R>>;
 }
@@ -94,10 +78,8 @@ interface PreparedAttempt {
 }
 
 /** The newest attempt `release_prepare` left `prepared` for this candidate. `release_prepare`
- *  inserts a fresh row on every call (its own module note: a refused document write must not
- *  lose the recorded attempt, so nothing dedupes across calls), so more than one can exist for
- *  one candidate; "the newest `prepared` one" is what a caller who called `release_prepare` again
- *  — after fixing whatever made an earlier attempt un-appliable — means. */
+ *  inserts a fresh row on every call with a fresh key, so more than one can exist; the newest is
+ *  the one its improvement.md was written for, and the approval must cite it. */
 async function loadPreparedAttempt(runner: Queryable, candidateId: string): Promise<PreparedAttempt | null> {
   const row = (await runner.query<PreparedAttempt>(`
     select id::text as id, required_owners, approved_patch_digest,
@@ -108,35 +90,44 @@ async function loadPreparedAttempt(runner: Queryable, candidateId: string): Prom
   return row ?? null;
 }
 
-/** See the module note. Null means neither source has an answer. */
-async function currentReleasedSubjectVersionId(runner: Queryable, pluginId: string): Promise<string | null> {
-  const released = (await runner.query<{ id: string }>(`
-    select ra.released_subject_version_id::text as id
+/** See the module note. Null means neither source has an answer. This system's own releases are
+ *  listed first so an equal version resolves to the subject this system recorded. Also what
+ *  `release_record(rolled_back)` asks, inside its own transaction, to confirm the prior subject is
+ *  current once the rolled-back version is retracted. */
+export async function currentReleasedSubjectVersionId(runner: Queryable, pluginId: string): Promise<string | null> {
+  const released = (await runner.query<{ id: string; declared_version: string }>(`
+    select sv.id::text as id, sv.declared_version
       from zz.release_attempt ra
-      join zz.candidate c on c.id = ra.candidate_id
-      join zz.eval_subject_version sv on sv.id = c.base_subject_version_id
-     where sv.plugin_id = $1::uuid and ra.status = 'released'
-     order by ra.created_at desc limit 1`, [pluginId])).rows[0];
-  if (released?.id) return released.id;
-
-  // No release this eval system ever made — fall back to the catalog's own head, the same
-  // (plugin, declared_version) pair subject.ts's resolveSubject treats as "the newest release",
-  // joined to whichever eval_subject_version row plugin_locate already captured for it.
-  const head = (await runner.query<{ id: string }>(`
-    select sv.id::text as id
-      from zz.plugin p
-      join zz.plugin_version pv on pv.plugin_id = p.id
-      join zz.eval_subject_version sv on sv.plugin_id = p.id and sv.declared_version = pv.version
-     where p.id = $1::uuid
-     order by pv.version desc, sv.captured_at desc
-     limit 1`, [pluginId])).rows[0];
-  return head?.id ?? null;
+      join zz.eval_subject_version sv on sv.id = ra.released_subject_version_id
+     where ra.plugin_id = $1::uuid and ra.status = 'released'`, [pluginId])).rows;
+  const catalog = (await runner.query<{ id: string; declared_version: string }>(`
+    select distinct on (pv.version) sv.id::text as id, sv.declared_version
+      from zz.plugin_version pv
+      join zz.eval_subject_version sv on sv.plugin_id = pv.plugin_id and sv.declared_version = pv.version
+     where pv.plugin_id = $1::uuid and pv.version <> all($2::text[])
+     order by pv.version, sv.captured_at desc`, [pluginId, await retractedVersions(runner, pluginId)])).rows;
+  return newestSubject([...released, ...catalog])?.id ?? null;
 }
 
-/** Live, not the `release_eligible` flag frozen onto the candidate's own `proof_passed` status at
- *  proof time (`release_prepare`'s own module note explains why it never reads THAT flag either):
- *  release_apply may run long after proof, so this reads the candidate's stored proof evaluation
- *  fresh rather than trusting a status byte that could have drifted. */
+/** The commit the base subject was released from — where the CLI's worktree starts, never the
+ *  checkout's own HEAD. This system's own release of it records the commit as `release_ref`; a
+ *  third-party git source records the commit it captured as `release_identity.resolved_commit`.
+ *  A catalog release outside this system records neither, so null: the CLI then refuses unless
+ *  its operator names the commit (`--base-ref`). */
+async function baseRefFor(runner: Queryable, baseSubjectId: string): Promise<string | null> {
+  const released = (await runner.query<{ release_ref: string | null }>(`
+    select release_ref from zz.release_attempt
+     where released_subject_version_id = $1::uuid and status = 'released' and release_ref is not null
+     order by created_at desc limit 1`, [baseSubjectId])).rows[0];
+  if (released?.release_ref) return released.release_ref;
+  const identity = (await runner.query<{ commit: string | null }>(
+    "select release_identity->>'resolved_commit' as commit from zz.eval_subject_version where id = $1::uuid",
+    [baseSubjectId])).rows[0];
+  return identity?.commit ?? null;
+}
+
+/** Live, not the `release_eligible` flag frozen onto the candidate's own status at proof time:
+ *  release_apply may run long after proof, so this reads the stored proof evaluation fresh. */
 async function proofEligible(runner: Queryable, candidateId: string): Promise<boolean> {
   const row = (await runner.query<{ aggregate_score: { release_eligible?: boolean } }>(`
     select aggregate_score
@@ -146,29 +137,25 @@ async function proofEligible(runner: Queryable, candidateId: string): Promise<bo
   return !!row?.aggregate_score?.release_eligible;
 }
 
-interface ApprovalCheck { readonly approved: boolean; readonly team: string | null }
-
-/** `protocol_affirm`'s own check (`protocol.ts`'s module note), reused for `improvement.md`:
- *  `status: approved`, and the body quotes `groundTruthDigest` — the release_attempt's OWN
- *  `approved_patch_digest`, what `release_prepare` actually wrote into the document, never this
- *  call's own `approved_patch_digest` argument (see `planApply`'s own note on why: a caller who
- *  passes the wrong digest must be told `digest_mismatch` by `releaseDecision`, not a confusing
- *  "not approved"). */
-async function checkImprovementApproval(
-  initiative: string, groundTruthDigest: string,
-): Promise<ApprovalCheck> {
+/** The owner teams `<initiative>/improvement.md` approves for this attempt — see the module note
+ *  and `approvedOwners` for what binds an approval to it. */
+async function improvementApprovals(
+  runner: Queryable, initiative: string, attempt: PreparedAttempt,
+): Promise<string[]> {
   const badInitiative = safeName(initiative, "initiative");
   if (badInitiative) throw new Refusal(badInitiative);
-  const path = `${initiative}/improvement.md`;
-  const target = await safePath(path);
-  if (!existsSync(target)) return { approved: false, team: null };
+  const target = await safePath(`${initiative}/improvement.md`);
+  if (!existsSync(target)) return [];
   const raw = readFileSync(target, "utf8");
   const env = parseEnvelope(raw);
-  if (env.status !== "approved") return { approved: false, team: null };
-  if (!documentBody(raw).includes(groundTruthDigest)) return { approved: false, team: null };
-  const approvedBy = (env.approved_by ?? "").trim();
-  const team = approvedBy ? await teamFor(approvedBy) : null;
-  return { approved: !!team, team };
+  const body = documentBody(raw);
+  const approver = (env.approved_by ?? "").trim();
+  return approvedOwners({
+    status: env.status, cited_attempt_id: citedReleaseAttempt(body), attempt_id: attempt.id,
+    quotes_digest: body.includes(attempt.approved_patch_digest),
+    approver_teams: approver ? await memberTeams(runner, approver) : [],
+    required_owners: attempt.required_owners,
+  });
 }
 
 // -------------------------------------------------------------------------------------------
@@ -181,19 +168,15 @@ export interface ApplyResult {
   readonly patch: { diff: string; patch_digest: string } | null;
   readonly plan: {
     plugin: string; declared_version: string; base_subject_version_id: string; branch: string;
+    base_ref: string | null;
   } | null;
 }
 
 const branchFor = (candidateId: string): string => `release/candidate-${candidateId}`;
 
 /** Rebuilds `release_apply`'s response from the row alone — the FR-59 ledger stores only
- *  `result_table`/`result_id`, never the tool's own response body, so a REPLAYED call (and this
- *  function's own use from the fresh path too, so the two can never disagree about the shape)
- *  reads it back rather than trusting anything held in memory from the original call. A status
- *  the row has since moved past (`released`/`failed`/`rolled_back`, written by a later
- *  `release_record`) is reported as itself, not reinterpreted as `applying` — a replay answers
- *  "what is true about this attempt now", the same contract `protocol_record`'s own replay branch
- *  keeps by re-reading `content_digest` fresh rather than caching it. */
+ *  `result_table`/`result_id`, so a replayed call (and the fresh path too, so the two never
+ *  disagree) reads it back. A status the row has since moved past is reported as itself. */
 async function describeApplyOutcome(runner: Queryable, attemptId: string): Promise<ApplyResult> {
   const attempt = (await runner.query<{
     status: string; reason: string | null; candidate_id: string; base_subject_version_id: string;
@@ -222,64 +205,82 @@ async function describeApplyOutcome(runner: Queryable, attemptId: string): Promi
     plan: subject ? {
       plugin: subject.plugin, declared_version: subject.declared_version,
       base_subject_version_id: attempt.base_subject_version_id, branch: branchFor(attempt.candidate_id),
+      base_ref: await baseRefFor(runner, attempt.base_subject_version_id),
     } : null,
   };
 }
 
-/** FR-49's own compare-and-swap. Runs inside `withIdempotency`'s own transaction (`client`, not
- *  the pool), so the advisory lock below is xact-scoped and needs no separate unlock path — it
- *  releases automatically at COMMIT or ROLLBACK, the same guarantee `pg_advisory_xact_lock`
- *  exists for.
+/** The release_in_progress refusal: a live attempt is waited for; a stale one is named with the
+ *  command that finds out what really happened to it and records that. */
+function inProgressRefusal(
+  pluginName: string, held: { attempt_id: string; stale: boolean }, heldCandidate: string, candidateId: string,
+): Refusal {
+  return new Refusal(held.stale
+    ? `ERROR: release_in_progress — release_attempt ${held.attempt_id} of ${pluginName} has been ` +
+      `applying for over ${STALE_APPLYING_MS / 60_000} minutes, so the process applying it is gone. ` +
+      "Reconcile it first — it records released if that release landed and failed if it did not: " +
+      `zz-tool release-apply --reconcile ${held.attempt_id} --candidate ${heldCandidate} ` +
+      `--plugin ${pluginName} --release-version <the version its release command publishes> --repo <clone>`
+    : `ERROR: release_in_progress — release_attempt ${held.attempt_id} of ${pluginName} is applying ` +
+      `now; candidate ${candidateId} may not apply until it records released or failed`);
+}
+
+/** FR-49's own compare-and-swap. Runs inside `withIdempotency`'s transaction, so the advisory
+ *  lock is xact-scoped and releases at COMMIT or ROLLBACK.
  *
- *  Two refusal shapes: an unknown candidate_id, no `prepared` attempt to apply, an unresolvable
- *  "currently released subject", or a bad `initiative` name are reported by THROWING — nothing
- *  this call could do has a persisted outcome, so the transaction rolls back and the FR-59 ledger
- *  never records the attempt (a retry, even with the same key, re-runs from scratch, exactly the
- *  behaviour `protocol_record`'s own validation-failure throw already establishes for "this call
- *  produced nothing to remember"). `releaseDecision`'s own refuse/apply verdicts, by contrast, are
- *  RETURNED as an ordinary `MutatorOutcome` — the row write they make (or, for `apply`, the CAS)
- *  has to commit and be ledgered, so throwing here would roll back the very state change the
- *  verdict is reporting. */
+ *  Two refusal shapes: anything with no persisted outcome (an unknown candidate, no prepared
+ *  attempt, a caller who is no owner, an attempt already applying, an unresolvable current
+ *  subject, a bad initiative) THROWS, so the transaction rolls back and the ledger records
+ *  nothing; `releaseDecision`'s verdicts are RETURNED, because the row write they make has to
+ *  commit and be ledgered. */
 export async function planApply(
   client: pg.PoolClient, candidateId: string, approvedPatchDigest: string, initiative: string,
+  principal: string,
 ): Promise<MutatorOutcome<ApplyResult>> {
   const candidate = await loadCandidateForApply(client, candidateId);
   if (!candidate) throw new Refusal(`ERROR: no candidate ${candidateId}`);
 
-  const subject = (await client.query<{ plugin_id: string }>(
-    "select plugin_id::text as plugin_id from zz.eval_subject_version where id = $1::uuid",
-    [candidate.base_subject_version_id])).rows[0];
+  const subject = (await client.query<{ plugin_id: string; plugin: string; release_owners: string[] }>(`
+    select sv.plugin_id::text as plugin_id, pl.name as plugin, pl.release_owners
+      from zz.eval_subject_version sv join zz.plugin pl on pl.id = sv.plugin_id
+     where sv.id = $1::uuid`, [candidate.base_subject_version_id])).rows[0];
   if (!subject) {
     throw new Refusal(
       `ERROR: candidate ${candidateId}'s base_subject_version_id ${candidate.base_subject_version_id} ` +
       "no longer resolves to a plugin");
   }
 
-  // Task I-25's own fix on this file: a THIRD-PARTY/not-yet-owned candidate never gets a
-  // prepared release_attempt in the first place — release_prepare's own no_release_owners
-  // branch (release.ts) refuses it before ever inserting one — so the loadPreparedAttempt check
-  // below would otherwise report "no prepared release_attempt for candidate ..." for a candidate
-  // that could NEVER have one, hiding the real, more specific reason (this module's own header
-  // comment already promised "REFUSES no_release_owners/not_eligible, recomputed live" — this is
-  // what makes that promise true). Checked here, live off zz.plugin.release_owners, ahead of the
-  // advisory lock AND the attempt lookup, so a non-owned candidate is refused the same way
-  // whatever stale zz.release_attempt rows do or do not exist for it.
-  const ownerRow = (await client.query<{ release_owners: string[] }>(
-    "select release_owners from zz.plugin where id = $1::uuid", [subject.plugin_id])).rows[0];
-  if (!ownerRow || ownerRow.release_owners.length === 0) {
+  // A third-party/not-yet-owned candidate never gets a prepared attempt (release_prepare refuses
+  // it first), so without this check the attempt lookup below would hide the real reason.
+  if (subject.release_owners.length === 0) {
     throw new Refusal(
       `ERROR: no_release_owners — candidate ${candidateId}'s own base subject records no ` +
       "release_owners, so it cannot be promoted. It may still receive an owner-facing proposal " +
       "— call proposal_prepare instead, naming this candidate's own improvement_run_id.");
   }
+  const callerTeams = await memberTeams(client, principal);
+  if (!subject.release_owners.some((owner) => callerTeams.includes(owner))) {
+    throw new Refusal(
+      `ERROR: not_owner — ${principal || "this caller"} is not a member of an owner team of ` +
+      `${subject.plugin} (${subject.release_owners.join(", ")}); only an owner may apply its release`);
+  }
 
   // Every concurrent release_apply for THIS plugin blocks here until the one ahead of it commits
-  // or rolls back, so the decision below is always made against a state nothing else in flight
-  // can still change out from under it. `hashtext` over a namespaced string, not the bare uuid:
-  // pg_advisory_xact_lock takes a bigint key, and prefixing the namespace keeps this lock's
-  // keyspace disjoint from any other advisory lock this service ever takes on a uuid-shaped
-  // input, now or later.
+  // or rolls back. `hashtext` over a namespaced string keeps this lock's keyspace disjoint from
+  // any other advisory lock this service takes on a uuid-shaped input.
   await client.query("select pg_advisory_xact_lock(hashtext($1))", [`release_apply:${subject.plugin_id}`]);
+
+  // ISO 8601 through to_json, never `::text`: the session's DateStyle/TimeZone decide what text a
+  // timestamptz renders as, and an unparseable one would read every live attempt as stale.
+  const applying = (await client.query<{ id: string; candidate_id: string; applying_at: string | null }>(`
+    select id::text as id, candidate_id::text as candidate_id, to_json(applying_at)#>>'{}' as applying_at
+      from zz.release_attempt
+     where plugin_id = $1::uuid and status = 'applying'`, [subject.plugin_id])).rows;
+  const held = applyingRefusal(applying, Date.now());
+  if (held) {
+    const heldCandidate = applying.find((a) => a.id === held.attempt_id)?.candidate_id ?? "<its candidate>";
+    throw inProgressRefusal(subject.plugin, held, heldCandidate, candidateId);
+  }
 
   const attempt = await loadPreparedAttempt(client, candidateId);
   if (!attempt) {
@@ -289,16 +290,9 @@ export async function planApply(
       "refused or failed)");
   }
 
-  // approval is checked against the attempt's OWN recorded approved_patch_digest — the ground
-  // truth improvement.md was actually written to quote (improvement-doc.ts renders
-  // candidate.patch_digest at prepare time) — never against this call's own approvedPatchDigest
-  // argument. Checking the caller's argument here would make a caller who simply passes the
-  // WRONG digest read as "nobody approved this" instead of the more specific digest_mismatch
-  // releaseDecision exists to report: a properly approved candidate, applied with the wrong
-  // digest, must fail on the digest check, not be misreported as unapproved.
-  const [eligible, approval, currentSubjectId] = await Promise.all([
+  const [eligible, approvals, currentSubjectId] = await Promise.all([
     proofEligible(client, candidateId),
-    checkImprovementApproval(initiative, attempt.approved_patch_digest),
+    improvementApprovals(client, initiative, attempt),
     currentReleasedSubjectVersionId(client, subject.plugin_id),
   ]);
   if (!currentSubjectId) {
@@ -313,21 +307,15 @@ export async function planApply(
     approved_patch_digest: approvedPatchDigest,
     patch_digest: candidate.patch_digest,
     required_owners: attempt.required_owners,
-    approvals: approval.approved && approval.team ? [approval.team] : [],
+    approvals,
     proof_eligible: eligible,
   });
 
   if (decision.kind === "refuse") {
-    // approval_required is NOT terminal — the document may still be approved later, and a fresh
-    // release_apply call (a fresh idempotency_key; the same one would only ever replay this exact
-    // refusal, by design — see the module note on describeApplyOutcome) must still find this
-    // candidate eligible, so `status` stays 'prepared'. Every OTHER reason IS terminal:
-    // digest_mismatch and stale_baseline both mean THIS candidate can never legally apply against
-    // THIS base again — a rebase is a NEW candidate, never a retry of this one — and
-    // no_release_owners/not_eligible were already release_prepare's own gate, recomputed here only
-    // to catch drift since prepare. `reason` is written either way, terminal or not, so a REPLAY
-    // of an approval_required refusal (describeApplyOutcomeForReplay, below) reads the same
-    // answer a fresh call would rather than a null the row never carried.
+    // approval_required is NOT terminal — the document may still be approved later, so `status`
+    // stays 'prepared'. Every other reason is: digest_mismatch and stale_baseline mean THIS
+    // candidate can never legally apply against THIS base again. `reason` is written either way,
+    // so a replay reads the same answer a fresh call would.
     const terminal = decision.reason !== "approval_required";
     await client.query(
       `update zz.release_attempt set reason = $2${terminal ? ", status = 'refused'" : ""}
@@ -337,22 +325,20 @@ export async function planApply(
     return { result, result_table: "zz.release_attempt", result_id: attempt.id };
   }
 
-  // apply: prepared -> applying, guarded twice over — the CAS below is what makes THIS row move
-  // at most once; migration 077's own partial unique index is what makes at most one row PER
-  // CANDIDATE ever sit in applying/released at once, across every prepared row release_prepare
-  // ever inserted for it. The advisory lock above serializes the DECISION; the index is what still
-  // catches two DIFFERENT prepared rows for the same candidate both trying to become the live one,
-  // which the lock alone (scoped to one plugin, not one row) does not by itself prevent.
+  // prepared -> applying. The CAS makes THIS row move at most once; migration 077's index keeps
+  // one live attempt per candidate and migration 089's one applying attempt per plugin — both
+  // still catch a race the lock alone would not.
   let applied;
   try {
-    applied = await client.query(
-      "update zz.release_attempt set status = 'applying' where id = $1::uuid and status = 'prepared' returning id",
-      [attempt.id]);
+    applied = await client.query(`
+      update zz.release_attempt set status = 'applying', applied_by = $2, applying_at = now()
+       where id = $1::uuid and status = 'prepared' returning id`,
+      [attempt.id, principal]);
   } catch (err) {
     if ((err as { code?: string }).code === "23505") {
       throw new Refusal(
-        `ERROR: release_in_progress — another attempt for candidate ${candidateId} is already ` +
-        "applying or released; migration 077's own partial unique index refused this one");
+        `ERROR: release_in_progress — another attempt of ${subject.plugin} is already applying, or ` +
+        `candidate ${candidateId} is already released; the database refused this one`);
     }
     throw err;
   }
@@ -366,149 +352,7 @@ export async function planApply(
   return { result, result_table: "zz.release_attempt", result_id: attempt.id };
 }
 
-/** `release_apply`'s replay path — see `describeApplyOutcome`'s own note: the ledger stores only
- *  `result_table`/`result_id`, so a replayed call is reconstructed from CURRENT row state rather
- *  than a cached response body. Exported for `release.ts`, which is the only caller: a read-only
- *  reconstruction needs no transaction, so it runs directly against the pool. */
+/** `release_apply`'s replay path — see `describeApplyOutcome`. Read-only, so it runs on the pool. */
 export async function describeApplyOutcomeForReplay(pool: pg.Pool, attemptId: string): Promise<ApplyResult> {
   return describeApplyOutcome(pool, attemptId);
-}
-
-// -------------------------------------------------------------------------------------------
-// release_record.
-
-interface RecordArgs {
-  readonly release_attempt_id: string;
-  readonly status: "released" | "failed" | "rolled_back";
-  readonly release_ref: string | null;
-  readonly released_subject_version_id: string | null;
-  readonly failure_tail: string | null;
-  readonly reason: string | null;
-}
-
-export interface RecordResult {
-  readonly status: "released" | "failed" | "rolled_back";
-  readonly release_attempt_id: string;
-  readonly released_subject_version_id: string | null;
-  readonly release_ref: string | null;
-}
-
-/** Records the CLI's own outcome — `packages/tools/src/release/apply.ts` once it has applied the
- *  patch, run the gate and run the repository's release procedure, or failed at one of those
- *  steps (`released`/`failed`); `packages/tools/src/release/rollback.ts` (Task I-24, FR-50) once
- *  it has run the repository's own rollback procedure over a `release_verify` verdict of
- *  `rolled_back` (`rolled_back`). CAS-guarded the same way `planApply`'s own apply branch is —
- *  the SELECT below exists only to produce a readable refusal rather than a bare "0 rows
- *  updated"; the actual decision is each branch's own final UPDATE's `where status = '...'`,
- *  different for each of the three (`applying` for released/failed, `released` for
- *  rolled_back — a rollback is a SECOND event on an attempt this same function already recorded
- *  released once, never a continuation of the original applying attempt). */
-export async function recordRelease(client: pg.PoolClient, args: RecordArgs): Promise<MutatorOutcome<RecordResult>> {
-  const attempt = (await client.query<{ id: string; candidate_id: string; base_subject_version_id: string; status: string; released_subject_version_id: string | null; release_ref: string | null }>(`
-    select id::text as id, candidate_id::text as candidate_id,
-           base_subject_version_id::text as base_subject_version_id, status,
-           released_subject_version_id::text as released_subject_version_id, release_ref
-      from zz.release_attempt where id = $1::uuid`, [args.release_attempt_id])).rows[0];
-  if (!attempt) throw new Refusal(`ERROR: no release_attempt ${args.release_attempt_id}`);
-
-  if (args.status === "rolled_back") {
-    if (!args.reason) throw new Refusal("ERROR: status: rolled_back requires reason");
-    if (attempt.status !== "released") {
-      throw new Refusal(
-        `ERROR: not_released — release_attempt ${args.release_attempt_id} is ${attempt.status}, not ` +
-        "released; a rollback can only be recorded against an attempt that actually reached " +
-        "released — call release_verify first to confirm the verdict");
-    }
-    const applied = await client.query(`
-      update zz.release_attempt set status = 'rolled_back', rolled_back = true, reason = $2
-       where id = $1::uuid and status = 'released' returning id`,
-      [attempt.id, args.reason]);
-    if (!applied.rows.length) {
-      throw new Refusal(`ERROR: release_attempt ${attempt.id} left 'released' before this call reached it`);
-    }
-    // Migration 084 — candidate.status gains rolled_back for exactly this write, alongside its
-    // own release_attempt, never on its own.
-    await client.query("update zz.candidate set status = 'rolled_back' where id = $1::uuid", [attempt.candidate_id]);
-
-    const result: RecordResult = {
-      status: "rolled_back", release_attempt_id: attempt.id,
-      released_subject_version_id: attempt.released_subject_version_id, release_ref: attempt.release_ref,
-    };
-    return { result, result_table: "zz.release_attempt", result_id: attempt.id };
-  }
-
-  if (attempt.status !== "applying") {
-    throw new Refusal(
-      `ERROR: not_applying — release_attempt ${args.release_attempt_id} is ${attempt.status}, not ` +
-      "applying; release_record only records the outcome of a call release_apply already moved " +
-      "into applying, and never overwrites an attempt already released/refused/failed");
-  }
-
-  if (args.status === "released") {
-    if (!args.released_subject_version_id || !args.release_ref) {
-      throw new Refusal("ERROR: status: released requires both release_ref and released_subject_version_id");
-    }
-    const [newSubject, baseSubject] = await Promise.all([
-      client.query<{ plugin_id: string }>(
-        "select plugin_id::text as plugin_id from zz.eval_subject_version where id = $1::uuid",
-        [args.released_subject_version_id]),
-      client.query<{ plugin_id: string }>(
-        "select plugin_id::text as plugin_id from zz.eval_subject_version where id = $1::uuid",
-        [attempt.base_subject_version_id]),
-    ]);
-    if (!newSubject.rows[0] || !baseSubject.rows[0]
-        || newSubject.rows[0].plugin_id !== baseSubject.rows[0].plugin_id) {
-      throw new Refusal(
-        `ERROR: released_subject_version_id ${args.released_subject_version_id} does not name a ` +
-        "subject version of the SAME plugin this candidate's own base subject belongs to");
-    }
-
-    const applied = await client.query(`
-      update zz.release_attempt
-         set status = 'released', release_ref = $2, released_subject_version_id = $3::uuid
-       where id = $1::uuid and status = 'applying' returning id`,
-      [attempt.id, args.release_ref, args.released_subject_version_id]);
-    if (!applied.rows.length) {
-      throw new Refusal(`ERROR: release_attempt ${attempt.id} left 'applying' before this call reached it`);
-    }
-    await client.query("update zz.candidate set status = 'released' where id = $1::uuid", [attempt.candidate_id]);
-
-    const result: RecordResult = {
-      status: "released", release_attempt_id: attempt.id,
-      released_subject_version_id: args.released_subject_version_id, release_ref: args.release_ref,
-    };
-    return { result, result_table: "zz.release_attempt", result_id: attempt.id };
-  }
-
-  // failed — the repository is already back at its pre-apply commit by the time this is called
-  // (packages/tools/src/release/apply.ts's own contract); this only records that it happened.
-  if (!args.failure_tail) throw new Refusal("ERROR: status: failed requires failure_tail");
-  const applied = await client.query(`
-    update zz.release_attempt set status = 'failed', reason = $2
-     where id = $1::uuid and status = 'applying' returning id`,
-    [attempt.id, args.failure_tail]);
-  if (!applied.rows.length) {
-    throw new Refusal(`ERROR: release_attempt ${attempt.id} left 'applying' before this call reached it`);
-  }
-
-  const result: RecordResult = {
-    status: "failed", release_attempt_id: attempt.id,
-    released_subject_version_id: null, release_ref: null,
-  };
-  return { result, result_table: "zz.release_attempt", result_id: attempt.id };
-}
-
-/** `release_record`'s replay path — mirrors `describeApplyOutcomeForReplay`: read the row back
- *  rather than trust anything held in memory from the original call. */
-export async function describeRecordOutcomeForReplay(pool: pg.Pool, attemptId: string): Promise<RecordResult> {
-  const row = (await pool.query<{
-    status: string; released_subject_version_id: string | null; release_ref: string | null;
-  }>(`
-    select status, released_subject_version_id::text as released_subject_version_id, release_ref
-      from zz.release_attempt where id = $1::uuid`, [attemptId])).rows[0];
-  if (!row) throw new Refusal(`ERROR: release_attempt ${attemptId} no longer exists`);
-  return {
-    status: row.status as RecordResult["status"], release_attempt_id: attemptId,
-    released_subject_version_id: row.released_subject_version_id, release_ref: row.release_ref,
-  };
 }

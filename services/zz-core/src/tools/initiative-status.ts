@@ -20,6 +20,7 @@ import { auditMove } from "../audit-rounds.js";
 import { factsFor, openRecord } from "../initiative-record.js";
 import { chainFor } from "../chain.js";
 import { safeName, userRoot } from "../paths.js";
+import { Refusal } from "../refusal.js";
 import { logActivity } from "../persist.js";
 import { db, teamFor } from "../platform-db.js";
 import { type Chain } from "../write-guards.js";
@@ -365,6 +366,43 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
            next_move_absent: undefined as string | undefined };
 }
 
+const chainArgs = (root: string, name: string): [Chain, FlowDoc[]] => {
+  const chain = chainFor(root, `${name}/x.md`);
+  return [chain, chain.documents];
+};
+
+/** The no-argument `initiative_status`: every OPEN initiative, and a count of the closed ones.
+ *  Closed ones are counted rather than dropped, so a filtered answer is not mistaken for an
+ *  empty one.
+ *
+ *  DELIBERATE: a `Refusal` from one initiative (a damaged `_facts.json`, which `factsFor`
+ *  refuses by name) is reported against that initiative, with its text, and the listing goes
+ *  on — one folder must not take down the listing of every initiative beside it. Anything else
+ *  still throws: an error nobody named is not a fact about one initiative. */
+export function initiativeListing(root: string, names: readonly string[]) {
+  const open = [];
+  let closedCount = 0;
+  for (const name of names) {
+    if (!existsSync(join(root, name))) {
+      open.push({ initiative: name, error: "no such initiative" });
+      continue;
+    }
+    let state;
+    try {
+      state = initiativeState(root, name, ...chainArgs(root, name));
+    } catch (err) {
+      if (!(err instanceof Refusal)) throw err;
+      open.push({ initiative: name, damaged: true, error: err.message });
+      continue;
+    }
+    // DELIBERATE: optional-chained — `next_move` is null for a freeform initiative, and one
+    // such folder would otherwise take down the listing of every initiative beside it.
+    if (state.next_move?.action === "closed") { closedCount++; continue; }
+    open.push(state);
+  }
+  return { open, closed_not_listed: closedCount };
+}
+
 /** The next move, as one line appended to the result of a tool that just changed an
  *  initiative — so a caller who never asks `initiative_status` is still told what the flow
  *  expects next. Empty for a freeform initiative, a closed one, or a name that is not one. */
@@ -406,26 +444,14 @@ export function registerInitiativeStatusTools(server: McpServer): void {
         // `.git` in every root. COUPLED: walk() in @zz/indexing applies the same filter.
         : readdirSync(root).filter((n) => !n.startsWith("_") && !n.startsWith(".") &&
             !n.endsWith(".md") && statSync(join(root, n)).isDirectory());
-      const out = [];
-      // The no-argument call promises open initiatives. Closed ones are counted rather than
-      // dropped, so a filtered answer is not mistaken for an empty one.
-      let closedCount = 0;
-      for (const name of names) {
-        if (!existsSync(join(root, name))) {
-          out.push({ initiative: name, error: "no such initiative" });
-          continue;
-        }
-        const chain = chainFor(root, `${name}/x.md`);
-        const state = initiativeState(root, name, chain, chain.documents);
-        // DELIBERATE: optional-chained — `next_move` is null for a freeform initiative, and
-        // one such folder would otherwise take down the listing of every initiative beside
-        // it.
-        if (!initiative && state.next_move?.action === "closed") { closedCount++; continue; }
-        out.push(state);
-      }
+      // Named: that one initiative, and a damaged one refuses — the caller asked about it.
+      const answer = initiative
+        ? (existsSync(join(root, initiative))
+          ? initiativeState(root, initiative, ...chainArgs(root, initiative))
+          : { initiative, error: "no such initiative" })
+        : initiativeListing(root, names);
       logActivity(root, null, { user: who.email, action: "initiative_status", initiative: initiative ?? "*" });
-      return text(JSON.stringify(
-        initiative ? out[0] : { open: out, closed_not_listed: closedCount }, null, 2));
+      return text(JSON.stringify(answer, null, 2));
     },
   );
 

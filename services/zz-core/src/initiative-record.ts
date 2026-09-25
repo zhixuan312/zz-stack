@@ -12,11 +12,12 @@
  * COUPLED: read by chain.ts resolving a flow, by document_write refusing an unopened name,
  * and by initiative_open itself — hence its own module rather than a corner of the tool.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { documentApplies } from "@zz/contracts";
 
+import { Refusal } from "./refusal.js";
 import { isoToday } from "./write-guards.js";
 
 /** The declaration, beside the documents rather than among them.
@@ -113,26 +114,37 @@ const FACTS_FILE = "_facts.json";
 /** An initiative's durable branch facts, or `{}` when none are recorded yet.
  *
  * No `_facts.json` is not an error — it is every named fact reading `undetermined`
- * (`documentApplies`, ./flow-when.js) rather than this call throwing. Read the way
- * `_assessments/` is read in semantic.ts: JSON.parse, and a malformed or non-object file is
- * `{}` too, for the reason `openRecord` above swallows one — `initiative_status` is called
- * between a partial write and the next one and must not go down computing a next move over it.
+ * (`documentApplies`, ./flow-when.js) rather than this call throwing.
+ *
+ * DELIBERATE: a malformed or non-object file IS an error, thrown as a `Refusal` naming the file.
+ * `writeFacts` below replaces the file atomically, so no reader ever sees a partial write, and a
+ * file that does not parse is damage. Reading it as `{}` would turn every fact back into
+ * `undetermined` — and a fact that was set once is exactly what the refuse-on-change rule
+ * protects, so `{}` would let the next write record the opposite branch over it.
+ *
  * A non-string value under a fact name is dropped rather than coerced: `documentApplies` compares
  * strings, and a caller-written number or object is not one. */
 export function factsFor(root: string, initiative: string): Record<string, string> {
   const file = join(root, initiative, FACTS_FILE);
   if (!existsSync(file)) return {};
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
-    if (!parsed || typeof parsed !== "object") return {};
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-      if (typeof v === "string") out[k] = v;
-    }
-    return out;
+    parsed = JSON.parse(readFileSync(file, "utf8"));
   } catch {
-    return {};
+    parsed = null;
   }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Refusal(
+      `ERROR: ${initiative}/${FACTS_FILE} is not a JSON object, so this initiative's branch facts ` +
+      "cannot be read. The platform writes that file whole and atomically, so this is damage, not " +
+      "a write in progress — restore it from the record of what each stage decided before " +
+      "anything reads or writes this initiative's branch again.");
+  }
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof v === "string") out[k] = v;
+  }
+  return out;
 }
 
 /** Write the durable branch facts, replacing whatever `factsFor` would have read back.
@@ -142,7 +154,12 @@ export function factsFor(root: string, initiative: string): Record<string, strin
  * passes the whole merged object down. This call is the mechanical write, append-only only
  * because its one caller never asks it to drop a fact that was already set. */
 export function writeFacts(root: string, initiative: string, facts: Record<string, string>): void {
-  writeFileSync(join(root, initiative, FACTS_FILE), `${JSON.stringify(facts, null, 2)}\n`);
+  // Temp file, then rename: a rename within one directory is atomic, so a concurrent `factsFor`
+  // reads the old facts or the new ones and never a truncated file between the two.
+  const file = join(root, initiative, FACTS_FILE);
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(facts, null, 2)}\n`);
+  renameSync(tmp, file);
 }
 
 /** Is the flow's DECLARED closing document (`chain.closingDoc`) ruled out for this initiative

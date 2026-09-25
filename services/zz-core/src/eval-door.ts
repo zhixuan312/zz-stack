@@ -29,6 +29,7 @@ import { registerProtocolTools } from "./eval/protocol.js";
 import { registerEvaluatorQualifyTools } from "./eval/qualify.js";
 import { registerReleaseTools } from "./eval/release.js";
 import { registerReplayCaseTools } from "./eval/replay-cases.js";
+import { registerReplayCloseTools } from "./eval/replay-close.js";
 import { registerReplayScoreTools } from "./eval/replay-score.js";
 import { registerReplayRunTools } from "./eval/replay-runs.js";
 import { registerSubjectTools } from "./eval/subject.js";
@@ -65,7 +66,7 @@ const EVAL_INSTRUCTIONS =
   "answers count\n" +
   "  evaluation_*  bind a protocol version and an observation snapshot into one run, assess " +
   "and score it\n" +
-  "  replay_*  derive replay cases and start, read, close a run\n" +
+  "  replay_*  derive replay cases and start, begin, read, close a run\n" +
   "  improvement_*  open an optimization run against plugin-owned findings\n" +
   "  candidate_*  persist a proposed patch before it executes\n" +
   "  release_*  prepare, apply, record a candidate's promotion\n" +
@@ -103,6 +104,7 @@ export function buildEvalServer(): McpServer {
   registerEvaluationTools(server);
   registerReplayCaseTools(server);
   registerReplayRunTools(server);
+  registerReplayCloseTools(server);
   registerReplayScoreTools(server);
   registerCandidateTools(server);
   registerReleaseTools(server);

@@ -14,8 +14,30 @@ import { check } from "../run.ts";
  * a string shaped like a key. Each is a shape rather than a list of markers, because a marker
  * list only finds what its author already knew.
  */
+/** Is this IPv4 address one a document may name? RFC 5737's TEST-NET blocks and the private
+ *  ranges are what a document is supposed to use; anything else names a machine that exists.
+ *
+ *  169.254.0.0/16 is link-local: it is never a machine anybody can reach from outside, and an
+ *  SSRF blocklist has to name it. 100.64.0.0/10 is NOT allowed as a range — it is the CGNAT
+ *  space a tailnet hands out, production's own tailnet address lives in it, and catching a 100.x
+ *  disclosure is exactly what this rule is for. Only its network-address literal `100.64.0.0` is
+ *  allowed, which is how a blocklist spells the range as base + /10 and names no host. */
+function documentationAddress(a: number, b: number, c: number, d: number): boolean {
+  return (a === 192 && b === 0) || (a === 198 && (b === 51 || b === 18 || b === 19)) ||
+    (a === 203 && b === 0) || a === 10 || a === 127 || a === 0 ||
+    (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224 ||
+    (a === 169 && b === 254) || (a === 100 && b === 64 && c === 0 && d === 0);
+}
+
 check("nothing in this repository discloses an address, a host or a credential", () => {
   const bad: string[] = [];
+  // The narrowing above is the point of the 100.x exception, so it is asserted every run: a
+  // tailnet host address must still be flagged, and only the bare network literal passes.
+  for (const [a, b, c, d] of [[100, 100, 1, 1], [100, 64, 0, 1], [100, 127, 255, 254]]) {
+    if (documentationAddress(a, b, c, d)) {
+      bad.push(`this rule's own allowlist admits ${a}.${b}.${c}.${d}, a tailnet host address it exists to catch`);
+    }
+  }
   for (const rel of trackedFiles() ?? []) {
     if (!/\.(ts|tsx|mjs|js|sql|sh|md|json|yml|yaml|html|example)$/.test(rel)) continue;
     // Tracked is not present: a file deleted in the working tree stays tracked until the
@@ -32,16 +54,11 @@ check("nothing in this repository discloses an address, a host or a credential",
           bad.push(`${at} carries the address ${m[0]}`);
         }
       }
-      // A routable IPv4 address. RFC 5737's TEST-NET blocks and the private ranges are what
-      // a document is supposed to use; anything else names a machine that exists.
+      // A routable IPv4 address — `documentationAddress` above says which are not.
       for (const m of ln.matchAll(/\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\b/g)) {
         const [a, b, c, d] = m.slice(1, 5).map(Number);
         if (a > 255 || b > 255 || c > 255 || d > 255) continue;   // a version, not an address
-        const documentation =
-          (a === 192 && b === 0) || (a === 198 && (b === 51 || b === 18 || b === 19)) ||
-          (a === 203 && b === 0) || a === 10 || a === 127 || a === 0 ||
-          (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224;
-        if (!documentation) bad.push(`${at} names the host ${m[0]}`);
+        if (!documentationAddress(a, b, c, d)) bad.push(`${at} names the host ${m[0]}`);
       }
       // Anything shaped like a key. The lengths are the real ones: a provider key is long,
       // and a short `sk-` literal is a test fixture the redaction engine has to be fed.

@@ -12,8 +12,9 @@
  *     patterns — pure arithmetic, no model touches it;
  *   - each group's representative evidence then goes to ONE registered evaluator,
  *     `discover.owner_kind` (a `choice` over `EVAL_STATE_ENUMS.ownerKind`), through
- *     `recordEvaluatorAssessment` directly — this file already holds the `evaluator_version_id`
- *     it needs, so it has no reason to go through `evaluators.ts`'s `askEvaluator` wrapper.
+ *     `askEvaluatorQuestion` directly — this file already holds the `evaluator_version_id` it
+ *     needs. Every model is asked before the ledger transaction opens (`planCandidates`) and
+ *     each answer is recorded inside it (`insertPlanned`), with the candidate it classified.
  *
  * A refusal group with no recorded text at all is the one shape the deterministic pass cannot
  * describe — for that, and only that, ONE generative-critic call proposes the description,
@@ -35,7 +36,7 @@
  * reason, folded into `evidence_refs` (migration 077 gives this table no separate reason column,
  * and the contract's own response shape has none either). After the FIRST such outage from
  * either model in one run, every remaining group of that kind is answered `unknown` WITHOUT a
- * second call to `recordEvaluatorAssessment` — so only the group that hit the outage carries a
+ * second evaluator call — so only the group that hit the outage carries a
  * real `zz.assessment` row for `discover.owner_kind`; every later group in the same run carries
  * none, and its only record of the classification is the `not asked: …` reason inside its own
  * `evidence_refs.ownership`. DELIBERATE, and a real narrowing of "each ownership classification
@@ -63,8 +64,10 @@ import {
 import { registerEvaluator, type EvaluatorDefinition } from "./evaluators.js";
 import { ask } from "./judge.js";
 import { JUDGE_MODEL } from "./judge-model.js";
-import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
-import { recordEvaluatorAssessment } from "../semantic.js";
+import {
+  decideBeforeWork, withIdempotency, type IdempotencyOutcome, type MutatorOutcome,
+} from "./idempotency.js";
+import { askEvaluatorQuestion, insertEvaluatorAnswer, type AskedEvaluatorAnswer } from "../semantic.js";
 import { NOT_CONFIGURED } from "../typed-service.js";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
@@ -161,7 +164,12 @@ async function resolveSnapshot(pool: pg.Pool, id: string): Promise<Snapshot | nu
  *  a real evaluator answer, an evaluator that answered off-vocabulary (should not happen — the
  *  evaluator's own schema is the vocabulary — reported rather than trusted blindly), or an
  *  outage. `note` is null only for a real, on-vocabulary answer. */
-interface Classification { owner_kind: string; confidence: number | null; note: string | null }
+interface Classification {
+  owner_kind: string; confidence: number | null; note: string | null;
+  /** The evaluator answer still to be recorded in `zz.assessment` — inside the ledger
+   *  transaction, never before it; null when no model was asked (`not asked: …`). */
+  pending: AskedEvaluatorAnswer | null;
+}
 
 /** Mutable across one `failure_discover` call: the first reason either model became unavailable
  *  for, so every later group of that kind stops asking and answers `unknown` for free. See this
@@ -175,26 +183,28 @@ async function classifyOwnerKind(
     return {
       owner_kind: "unknown", confidence: null,
       note: `not asked: discover.owner_kind was unavailable earlier in this run — ${outage.owner}`,
+      pending: null,
     };
   }
-  const answered = await recordEvaluatorAssessment({
+  const pending = await askEvaluatorQuestion({
     evaluator_version_id: evaluatorVersionId, subject_text: subjectText, context: contextText,
     askedBy: principal,
   });
+  const answered = pending.result;
   if (answered.reading === "unavailable") {
     // NOT_CONFIGURED answers instantly, with no network call — safe, and free, to keep asking:
     // every remaining group gets the same honest "no typed service configured" answer. Anything
     // else spent real budget failing and is worth not repeating.
     if (answered.reason !== NOT_CONFIGURED) outage.owner = answered.reason ?? "unavailable, no reason given";
-    return { owner_kind: "unknown", confidence: null, note: answered.reason };
+    return { owner_kind: "unknown", confidence: null, note: answered.reason, pending };
   }
   const distribution = answered.distribution ?? {};
   const [chosen, top] = Object.entries(distribution).sort((a, b) => b[1] - a[1])[0] ?? [null, null];
   if (!chosen || !(EVAL_STATE_ENUMS.ownerKind as readonly string[]).includes(chosen)) {
     return { owner_kind: "unknown", confidence: null,
-             note: "the evaluator answered with no option this schema declares" };
+             note: "the evaluator answered with no option this schema declares", pending };
   }
-  return { owner_kind: chosen, confidence: top ?? null, note: null };
+  return { owner_kind: chosen, confidence: top ?? null, note: null, pending };
 }
 
 /** The `SUBJECT`/`CONTEXT` split every evaluator question in this codebase uses (`semantic.ts`):
@@ -277,6 +287,7 @@ async function insertCandidate(
   prevalence: { numerator: number; denominator: number }, classification: Classification,
   evidenceRefs: unknown[],
 ): Promise<CandidateOut> {
+  if (classification.pending) await insertEvaluatorAnswer(client, classification.pending);
   const row = (await client.query<{
     id: string; description: string; prevalence: { numerator: number; denominator: number };
     owner_kind: string; confidence: string | null; evidence_refs: unknown; stable_key: string | null;
@@ -297,16 +308,25 @@ async function insertCandidate(
   };
 }
 
-/** The whole discovery run for one snapshot: deterministic grouping, then one ownership
- *  classification per group and, for the one group shape that needs it, one generative-critic
- *  description — then every group becomes exactly one inserted row, however its evidence or its
- *  models behaved. Runs inside `withIdempotency`'s `fn`, so a replay never re-enters here and
- *  therefore never re-asks a model — the ledger's proceed/replay decision is the circuit that
- *  actually matters; the outage breaker above only bounds the proceed path's own worst case. */
-async function discoverCandidates(
-  pool: pg.Pool, client: pg.PoolClient, snapshot: Snapshot, evaluatorVersionId: string, principal: string,
+/** One candidate row, fully decided and not yet written. */
+interface PlannedCandidate {
+  readonly description: string;
+  readonly prevalence: { numerator: number; denominator: number };
+  readonly classification: Classification;
+  readonly evidenceRefs: unknown[];
+}
+
+/** The whole discovery run for one snapshot, up to but not including any write: deterministic
+ *  grouping, then one ownership classification per group and, for the one group shape that needs
+ *  it, one generative-critic description. Runs BEFORE `withIdempotency` opens its transaction —
+ *  every model call here can take ~100s, and a transaction held across them pins a pool
+ *  connection while the evaluator's own reads need another. `decideBeforeWork` has already ruled
+ *  out a replay, so a retried call still never re-asks a model; the outage breaker above only
+ *  bounds the proceed path's own worst case. `insertPlanned` writes the result. */
+async function planCandidates(
+  pool: pg.Pool, snapshot: Snapshot, evaluatorVersionId: string, principal: string,
   idempotencyKey: string,
-): Promise<FailureDiscoverResult> {
+): Promise<PlannedCandidate[]> {
   const entry = entryOf(snapshot.plugin);
   const stages = (entry?.manifest.stages ?? []).map((s) => s.name);
   const reachable = toolsNamedBy(snapshot.plugin);
@@ -322,7 +342,7 @@ async function discoverCandidates(
   const totalVisits = totalStepVisits(traces.stage_paths);
 
   const outage: Outage = { owner: null, critic: null };
-  const candidates: CandidateOut[] = [];
+  const planned: PlannedCandidate[] = [];
 
   for (const g of refusals) {
     const labelable = g.normalized_text.trim().length > 0;
@@ -340,9 +360,10 @@ async function discoverCandidates(
       { kind: "ownership", evaluator: "discover.owner_kind", reason: classification.note },
       { kind: "discovery_run", principal, idempotency_key: idempotencyKey },
     ];
-    candidates.push(await insertCandidate(
-      client, snapshot.observation_snapshot_id, built.description,
-      { numerator: g.count, denominator: totalCalls }, classification, evidenceRefs));
+    planned.push({
+      description: built.description, prevalence: { numerator: g.count, denominator: totalCalls },
+      classification, evidenceRefs,
+    });
   }
 
   for (const g of returns) {
@@ -357,11 +378,22 @@ async function discoverCandidates(
       { kind: "ownership", evaluator: "discover.owner_kind", reason: classification.note },
       { kind: "discovery_run", principal, idempotency_key: idempotencyKey },
     ];
-    candidates.push(await insertCandidate(
-      client, snapshot.observation_snapshot_id, description,
-      { numerator: g.count, denominator: totalVisits }, classification, evidenceRefs));
+    planned.push({ description, prevalence: { numerator: g.count, denominator: totalVisits }, classification, evidenceRefs });
   }
 
+  return planned;
+}
+
+/** Every planned row, and each one's own evaluator answer, in the ledger's transaction — so a
+ *  rollback takes the `zz.assessment` rows with the candidates, and a replay writes neither. */
+async function insertPlanned(
+  client: pg.PoolClient, observationSnapshotId: string, planned: readonly PlannedCandidate[],
+): Promise<FailureDiscoverResult> {
+  const candidates: CandidateOut[] = [];
+  for (const c of planned) {
+    candidates.push(await insertCandidate(
+      client, observationSnapshotId, c.description, c.prevalence, c.classification, c.evidenceRefs));
+  }
   return { candidates };
 }
 
@@ -440,11 +472,14 @@ export function registerFailureDiscoverTools(server: McpServer): void {
       const evaluator = await registerEvaluator(OWNER_KIND_EVALUATOR);
 
       const principal = parseCaller(requestHeaders()).email;
-      const outcome: IdempotencyOutcome<FailureDiscoverResult> = await withIdempotency(
+      const prior = await decideBeforeWork(
+        principal, "failure_discover", idempotency_key, { observation_snapshot_id });
+      const planned = prior.replayed ? [] : await planCandidates(
+        pool, snapshot, evaluator.evaluator_version_id, principal, idempotency_key);
+      const outcome: IdempotencyOutcome<FailureDiscoverResult> = prior.replayed ? prior : await withIdempotency(
         principal, "failure_discover", idempotency_key, { observation_snapshot_id },
         async (client): Promise<MutatorOutcome<FailureDiscoverResult>> => {
-          const result = await discoverCandidates(
-            pool, client, snapshot, evaluator.evaluator_version_id, principal, idempotency_key);
+          const result = await insertPlanned(client, observation_snapshot_id, planned);
           // Anchored at the snapshot, not at a candidate row: a window with zero refusals and
           // zero returns is a legitimate discovery run that writes no candidate at all, and
           // `zz.eval_idempotency.result_id` is `uuid not null` with nothing to point at then.

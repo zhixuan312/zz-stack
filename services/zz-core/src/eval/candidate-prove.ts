@@ -8,10 +8,12 @@
  * `candidate_validate`'s own split): a first call against a `selected` candidate MINTS a
  * `verifier_token` (migration 079's `zz.replay_verifier_token`, real validation `replay-runs.ts`
  * has been checking against since Task I-16 — nothing before this file ever inserted a row there)
- * and moves the candidate to `proving`, returning the token and the `(case, side)` pairs still
- * needed; the IMPROVE agent drives `replay_start(context: "verifier", verifier_token)` plus
- * `launchReplay` (Task I-21's own `--verifier-token` addition to `packages/tools/src/replay/
- * launch.ts`) against each one; a LATER call, once enough proof-split `zz.replay_run` rows are
+ * bound to the allocation's candidate and case set (migration 088), and moves the candidate to
+ * `proving`, returning the token, the case set and how many runs each side still needs — COUNTS
+ * only, never a proof case id: the IMPROVE agent drives `replay_start(context: "verifier",
+ * verifier_token)` that many times per side, and `replay_start` draws each proof case
+ * server-side (`replay-verifier.ts`, whose module note states what the token can reach and the
+ * residual it leaves). A LATER call, once enough proof-split `zz.replay_run` rows are
  * `completed` and scored, computes `proof_status` from them and stores it. Never an executor
  * itself — exactly the planner/reducer split `candidate_validate` already keeps from the
  * launcher.
@@ -21,10 +23,14 @@
  * `summariseDimensions` and `protocolHasModelBackedMeasure` — none of them hard-code a split
  * literal, so a proof run is scored by the SAME machinery a validation run is, over case ids this
  * file resolves to `split: 'proof'` instead. `pairedDecision` (`stats.ts`) is the same pure
- * bootstrap both files feed. `screenLeakage`/`LEAKAGE_EVALUATOR` (`candidate-search.ts`) is the
- * SAME critic `candidate_search` already ran before this candidate ever reached `valid` — run
- * again here, once, against the finished proof evidence, because FR-43's own eligibility line
- * ("no unresolved leakage") names it as a proof-time check, not only a pre-validation one.
+ * bootstrap both files feed. `screenLeakage` (`candidate-leakage.ts`) is the SAME critic
+ * `candidate_validate` ran before this candidate was built — asked again here, once, before the
+ * resolving transaction opens, and recorded inside it; at proof an inconclusive answer is
+ * `leakage_unresolved`, never a pass. The verdict itself is `candidate-prove-decide.ts`.
+ *
+ * FR-28's "one opening" is also a fact about the CASES, not only the candidate: opening proof
+ * spends the case set's proof split (`zz.replay_case_set.proof_spent_*`, migration 088), so a
+ * fresh improvement_run cannot re-open the same sealed cases with a new candidate.
  *
  * FR-28's own "spent allocation refuses a second opening": once a candidate reaches
  * `proof_passed` or `proof_failed`, a call with a KEY THIS ALLOCATION HAS NEVER SEEN refuses
@@ -67,23 +73,25 @@
  */
 import { randomBytes } from "node:crypto";
 
-import { sha256, SearchPolicy, ThreeWaySplitPolicy } from "@zz/contracts";
+import { sha256, ThreeWaySplitPolicy } from "@zz/contracts";
 import type pg from "pg";
 
 import {
-  baselineRuns, candidateRuns, escalateOneRepeat, groupByCase, mean, protocolHasModelBackedMeasure,
+  baselineRuns, candidateRuns, groupByCase, mean, protocolHasModelBackedMeasure,
   summariseDimensions, summariseGuardrails, summariseResourceUsage,
-  type PerCaseDelta, type RunsRequiredEntry, type SideRun,
+  type PerCaseDelta, type SideRun,
 } from "./candidate-validate.js";
-import { LEAKAGE_EVALUATOR, screenLeakage, type LeakageSubject } from "./candidate-search.js";
+import { screenLeakage } from "./candidate-leakage.js";
+import { needsMoreRepeats, proofVerdict } from "./candidate-prove-decide.js";
 import type { TouchedComponent } from "./complexity.js";
-import { registerEvaluator } from "./evaluators.js";
 import {
   lookupRow, withIdempotency, type IdempotencyOutcome, type IdempotencyRow, type MutatorOutcome,
 } from "./idempotency.js";
 import { writeBranchFacts } from "./protocol.js";
+import { parseSearchPolicy } from "./search-rules.js";
 import { pairedDecision, type PairedDecisionResult } from "./stats.js";
 import { Refusal } from "../refusal.js";
+import { insertEvaluatorAnswer, type AskedEvaluatorAnswer } from "../semantic.js";
 import { abandonProof } from "./candidate-prove-abandon.js";
 
 // -------------------------------------------------------------------------------------------
@@ -122,15 +130,10 @@ async function loadCandidate(p: pg.Pool, candidateId: string): Promise<Candidate
 
 interface ProofPolicy { readonly minRepeats: number; readonly mme: number; readonly confidence: number; readonly wallClockHours: number }
 
-/** Same fallback numbers `candidate-validate.ts`'s own `DEFAULT_POLICY` uses, for the same
- *  reason: a protocol naming no `improvement_policy.search` is not a candidate with no proof, it
- *  is a run using these. Proof reuses `SearchPolicy` rather than the freeform `ProofPolicy`
- *  (`@zz/contracts`) column, because spec v8 fixes no shape for that column beyond "an object"
- *  (FR-6's own words) while `SearchPolicy.minRepeats/minMeaningfulEffect/confidence` are exactly
- *  FR-57's own frozen "Repeats"/"Minimum meaningful effect"/"Decision rule" numbers — inventing a
- *  second, parallel shape under `improvement_policy.proof` for the same three numbers would be a
- *  second, silent policy nobody agreed to. */
-const DEFAULT_PROOF_POLICY: ProofPolicy = { minRepeats: 3, mme: 0, confidence: 0.95, wallClockHours: 24 };
+// Proof reads `SearchPolicy` (never a fallback — `search-rules.ts`) rather than the freeform
+// `ProofPolicy` column: spec v8 fixes no shape for that column beyond "an object", while
+// `SearchPolicy.minRepeats/minMeaningfulEffect/confidence` are exactly FR-57's own frozen
+// numbers — a second, parallel shape for the same three would be a policy nobody agreed to.
 
 const DEFAULT_SPLIT_POLICY = {
   evolve: 0.4, validation: 0.3, proof: 0.3, min: { evolve: 5, validation: 10, proof: 10 },
@@ -182,11 +185,12 @@ async function loadProofContext(p: pg.Pool, candidate: CandidateRow): Promise<Pr
     (protocolRow?.replay_policy as { splitPolicy?: unknown } | null)?.splitPolicy);
   const minProofCases = splitParsed.success ? splitParsed.data.min.proof : DEFAULT_SPLIT_POLICY.min.proof;
 
-  const searchParsed = SearchPolicy.safeParse(run.search_policy);
-  const policy: ProofPolicy = searchParsed.success
-    ? { minRepeats: searchParsed.data.minRepeats, mme: searchParsed.data.minMeaningfulEffect,
-        confidence: searchParsed.data.confidence, wallClockHours: searchParsed.data.wallClockHours }
-    : DEFAULT_PROOF_POLICY;
+  const searchParsed = parseSearchPolicy(run.search_policy, candidate.improvement_run_id);
+  if ("error" in searchParsed) return { ok: false, error: searchParsed.error };
+  const policy: ProofPolicy = {
+    minRepeats: searchParsed.minRepeats, mme: searchParsed.minMeaningfulEffect,
+    confidence: searchParsed.confidence, wallClockHours: searchParsed.wallClockHours,
+  };
 
   return {
     ok: true, caseSetId: snapshot.case_set_version_id, minProofCases, policy,
@@ -208,36 +212,40 @@ async function proofCaseIds(p: pg.Pool, caseSetId: string): Promise<string[]> {
 // than taking them as an argument; everything it calls (`baselineRuns`/`candidateRuns`/
 // `groupByCase`/`mean`) is reused unchanged.
 
+/** What the caller still has to run, as COUNTS per side — never a proof case id (FR-30):
+ *  `replay_start` under the verifier_token draws each case itself. `case_set_id` is what that
+ *  `replay_start` names. */
+interface ProofRunsRequired { readonly case_set_id: string; readonly baseline: number; readonly candidate: number }
+
 type Plan =
-  | { readonly kind: "pending"; readonly runs_required: RunsRequiredEntry[] }
+  | { readonly kind: "pending"; readonly runs_required: ProofRunsRequired }
   | { readonly kind: "resolved"; readonly perCase: PerCaseDelta[]; readonly baseline: SideRun[]; readonly candidateSide: SideRun[] };
 
 async function planProof(
-  p: pg.Pool, candidate: CandidateRow, caseIds: readonly string[], minRepeats: number,
+  p: pg.Pool, candidate: CandidateRow, caseSetId: string, caseIds: readonly string[], minRepeats: number,
 ): Promise<Plan> {
   const baseline = await baselineRuns(p, caseIds, candidate.base_subject_version_id);
   const candidateSide = await candidateRuns(p, caseIds, candidate.id);
   const byBaseline = groupByCase(baseline);
   const byCandidate = groupByCase(candidateSide);
 
-  const runsRequired: RunsRequiredEntry[] = [];
+  let baselineShort = 0;
+  let candidateShort = 0;
   const perCase: PerCaseDelta[] = [];
   for (const caseId of caseIds) {
     const b = byBaseline.get(caseId) ?? [];
     const k = byCandidate.get(caseId) ?? [];
-    if (b.length < minRepeats) {
-      runsRequired.push({ case_id: caseId, side: "baseline", subject_version_id: candidate.base_subject_version_id, candidate_id: null, count: minRepeats - b.length });
-    }
-    if (k.length < minRepeats) {
-      runsRequired.push({ case_id: caseId, side: "candidate", subject_version_id: null, candidate_id: candidate.id, count: minRepeats - k.length });
-    }
+    baselineShort += Math.max(minRepeats - b.length, 0);
+    candidateShort += Math.max(minRepeats - k.length, 0);
     if (b.length >= minRepeats && k.length >= minRepeats) {
       const baseline_mean = mean(b.map((r) => r.overall));
       const candidate_mean = mean(k.map((r) => r.overall));
       perCase.push({ case_id: caseId, baseline_mean, baseline_n: b.length, candidate_mean, candidate_n: k.length, delta: candidate_mean - baseline_mean });
     }
   }
-  if (runsRequired.length) return { kind: "pending", runs_required: runsRequired };
+  if (baselineShort || candidateShort) {
+    return { kind: "pending", runs_required: { case_set_id: caseSetId, baseline: baselineShort, candidate: candidateShort } };
+  }
   return { kind: "resolved", perCase, baseline, candidateSide };
 }
 
@@ -268,15 +276,16 @@ export interface CandidateProveOutcome {
   readonly candidate_evaluation_id: string | null;
   readonly verifier_token: string | null;
   readonly token_already_issued: boolean;
-  readonly runs_required?: RunsRequiredEntry[];
+  readonly runs_required?: ProofRunsRequired;
   readonly status: string;
   readonly facts_recorded?: boolean;
   readonly facts?: Record<string, string>;
   readonly facts_refused?: string;
 }
 
-/** FR-58: the same soft `writeBranchFacts` wrapper `candidate-search.ts` uses (I-27's defect,
- *  closed with this one) — a conflict is folded into `facts_refused`, never raised. */
+/** FR-58: the same soft `writeBranchFacts` wrapper `candidate-search.ts` uses — a conflict is
+ *  folded into `facts_refused`, never raised. `initiative_fact` is append-only, so this is
+ *  written only for an outcome nothing in this initiative resumes from (see the call site). */
 async function recordNothingToPromote(
   initiative: string | undefined,
 ): Promise<{ facts_recorded?: boolean; facts?: Record<string, string>; facts_refused?: string }> {
@@ -315,6 +324,8 @@ export async function resolveOutcome(
     readonly resource_usage: unknown;
     readonly dimension_scores: unknown;
     readonly statistics: unknown;
+    /** The proof-time leakage answer, recorded in this transaction so it rolls back with it. */
+    readonly leakage_assessment?: AskedEvaluatorAnswer;
   },
   phase: "resolve" | "abandon" = "resolve",
   initiative?: string,
@@ -355,6 +366,7 @@ export async function resolveOutcome(
           `ERROR: candidate ${candidate.id} is no longer open for proof — another candidate_prove ` +
           "call already resolved this allocation; call candidate_prove again to read its current state");
       }
+      if (outcome.leakage_assessment) await insertEvaluatorAnswer(client, outcome.leakage_assessment);
       const row = (await client.query<{ id: string }>(`
         insert into zz.candidate_evaluation
           (candidate_id, split, aggregate_score, dimension_scores, guardrails, statistics, resource_usage, created_at)
@@ -382,11 +394,13 @@ export async function resolveOutcome(
   );
   const candidateEvaluationId = ledgerOutcome.replayed ? ledgerOutcome.result_id : ledgerOutcome.result.id;
 
-  // FR-58: every terminal outcome except proof_passed, on an OWNED candidate, leaves nothing to
-  // promote or propose. A non-owned one still reached `valid` before proof opened, so
-  // proposal_prepare can still report it — gated on ownership for the same reason
-  // candidate-search.ts's own fix is.
-  const facts = runStatus === "proof_failed" && candidate.touched_owners.length > 0
+  // FR-58: `release_mode: not_applicable` is append-only, so it is written only when this
+  // initiative has nothing left to resume. A genuine `proof_failed` spends the allocation and the
+  // hypothesis. A `not_established` outcome (insufficient cases, unresolved, leakage unresolved,
+  // abandoned) is an evidence gap: its hypothesis may be re-proposed under a fresh
+  // improvement_start in this same initiative, and a fact written now would block that search's
+  // own release. A non-owned candidate still has proposal_prepare open to it either way.
+  const facts = outcome.proof_status === "proof_failed" && phase === "resolve" && candidate.touched_owners.length > 0
     ? await recordNothingToPromote(initiative) : {};
 
   return {
@@ -473,17 +487,16 @@ export async function proveCandidate(
   // the verifier token and plans the proof runs"), even if, by coincidence, enough runs already
   // existed. This is the call's only ledger write when it fires.
   if (candidate.status === "selected") {
+    const spentBy = await caseSetSpentBy(p, ctx.caseSetId);
+    if (spentBy && spentBy !== candidateId) return { error: spentRefusal(ctx.caseSetId, spentBy) };
     const opened: IdempotencyOutcome<{ id: string; token: string }> = await withIdempotency(
       // phase: "open" — see the module note on why this and the resolve call never share a digest.
       principal, "candidate_prove", idempotencyKey, { candidate_id: candidateId, phase: "open" },
       async (client): Promise<MutatorOutcome<{ id: string; token: string }>> => {
-        // CAS, checked first, same reason and shape as the resolve transaction's own below: two
+        // CAS, checked first, same reason and shape as the resolve transaction's own: two
         // concurrent opening calls must mint at most one verifier_token for this allocation
         // (AC-28.1's "once"). The loser's own UPDATE matches zero rows once the winner's has
-        // committed 'proving', and this throws before ever minting — the winner's own retry with
-        // a FRESH idempotency_key lands on the now-`proving` candidate and gets `runs_required`
-        // with no new token, exactly as a second, later call against an already-open allocation
-        // always does.
+        // committed 'proving', and this throws before ever minting.
         const claimed = await client.query(
           "update zz.candidate set status = 'proving' where id = $1::uuid and status = 'selected'",
           [candidateId]);
@@ -493,127 +506,97 @@ export async function proveCandidate(
             "already opened this allocation (or it has since resolved); call candidate_prove again " +
             "to read its current state");
         }
+        // The case set's proof split is spent by this opening (migration 088) — the same CAS
+        // shape, so two candidates racing for one case set open it at most once between them.
+        const spent = await client.query(`
+          update zz.replay_case_set set proof_spent_at = now(), proof_spent_by_candidate_id = $2::uuid
+           where id = $1::uuid and proof_spent_at is null`, [ctx.caseSetId, candidateId]);
+        if ((spent.rowCount ?? 0) === 0) {
+          const by = (await client.query<{ by: string | null }>(
+            "select proof_spent_by_candidate_id::text as by from zz.replay_case_set where id = $1::uuid",
+            [ctx.caseSetId])).rows[0]?.by ?? "another candidate";
+          throw new Refusal(spentRefusal(ctx.caseSetId, by));
+        }
         const token = mintVerifierToken();
         const expiresAt = new Date(Date.now() + ctx.policy.wallClockHours * 3_600_000).toISOString();
         const row = (await client.query<{ id: string }>(`
-          insert into zz.replay_verifier_token (token_hash, candidate_id, expires_at, created_at)
-          values ($1, $2::uuid, $3, now()) returning id::text as id`,
-          [sha256(token), candidateId, expiresAt])).rows[0];
+          insert into zz.replay_verifier_token (token_hash, candidate_id, case_set_id, expires_at, created_at)
+          values ($1, $2::uuid, $3::uuid, $4, now()) returning id::text as id`,
+          [sha256(token), candidateId, ctx.caseSetId, expiresAt])).rows[0];
         if (!row) throw new Error("insert into zz.replay_verifier_token produced no row");
         await client.query("update zz.improvement_run set status = 'proofing' where id = $1::uuid", [candidate.improvement_run_id]);
         return { result: { id: row.id, token }, result_table: "zz.replay_verifier_token", result_id: row.id };
       },
     );
 
-    // Plans the FULL minRepeats requirement per case — never `escalateOneRepeat`'s single-repeat
-    // nudge, which is only correct once every case has already cleared the floor once. On a
-    // fresh allocation nothing has run yet, so `planProof` itself computes the real requirement
-    // (and, on the vanishingly unlikely chance evidence already exists from a stale prior state,
-    // reports none — a later call against the now-`proving` candidate resolves it).
-    const openingPlan = await planProof(p, candidate, caseIds, ctx.policy.minRepeats);
-    const runsRequired = openingPlan.kind === "pending" ? openingPlan.runs_required : [];
+    // Plans the FULL minRepeats requirement per case. On a fresh allocation nothing has run yet,
+    // so `planProof` computes the real requirement (and, should evidence already exist from a
+    // stale prior state, reports none — a later call against the now-`proving` candidate
+    // resolves it).
+    const openingPlan = await planProof(p, candidate, ctx.caseSetId, caseIds, ctx.policy.minRepeats);
     return {
       proof_status: null, reason: null, release_eligible: false, candidate_evaluation_id: null,
       verifier_token: opened.replayed ? null : opened.result.token, token_already_issued: opened.replayed,
-      runs_required: runsRequired, status: "proving",
+      runs_required: openingPlan.kind === "pending" ? openingPlan.runs_required
+        : { case_set_id: ctx.caseSetId, baseline: 0, candidate: 0 },
+      status: "proving",
     };
   }
 
   // Continuing (`proving`): plan from whatever proof-split replay_run rows already exist. Pending
   // evidence is read-only — no ledger row, the same as candidate_validate's own runs_required
   // branch — resolution is the only write.
-  const plan = await planProof(p, candidate, caseIds, ctx.policy.minRepeats);
-  if (plan.kind === "pending") {
-    return {
-      proof_status: null, reason: null, release_eligible: false, candidate_evaluation_id: null,
-      verifier_token: null, token_already_issued: true, runs_required: plan.runs_required, status: "proving",
-    };
-  }
+  const plan = await planProof(p, candidate, ctx.caseSetId, caseIds, ctx.policy.minRepeats);
+  const stillProving = (runs_required: ProofRunsRequired): CandidateProveOutcome => ({
+    proof_status: null, reason: null, release_eligible: false, candidate_evaluation_id: null,
+    verifier_token: null, token_already_issued: true, runs_required, status: "proving",
+  });
+  if (plan.kind === "pending") return stillProving(plan.runs_required);
 
   const boundReached = Date.now() - ctx.improvementRunCreatedAt.getTime() >= ctx.policy.wallClockHours * 3_600_000;
   const deltas = plan.perCase.map((c) => c.delta);
   const decision = pairedDecision(deltas, ctx.policy.mme, { resamples: 2000, seed: candidateId, confidence: ctx.policy.confidence });
 
-  if (decision.verdict === "unresolved" && !boundReached) {
-    return {
-      proof_status: null, reason: null, release_eligible: false, candidate_evaluation_id: null,
-      verifier_token: null, token_already_issued: true,
-      runs_required: escalateOneRepeat(plan.perCase.map((c) => c.case_id), candidate), status: "proving",
-    };
+  // One more repeat per case per side — but only after an accepted pruning trade-off has had
+  // its look (candidate-prove-decide.ts): that one is settled, not undecided.
+  if (needsMoreRepeats(decision, candidate.complexity_delta, boundReached)) {
+    return stillProving({ case_set_id: ctx.caseSetId, baseline: caseIds.length, candidate: caseIds.length });
   }
 
-  // FR-43's own "no unresolved leakage": the SAME critic candidate_search already ran before this
-  // candidate ever reached valid/selected, re-asked once more against the finished proof evidence.
-  const evaluator = await registerEvaluator(LEAKAGE_EVALUATOR);
-  const leakageSubject: LeakageSubject = {
+  // FR-43's own "no unresolved leakage": asked here, before the resolving transaction opens,
+  // and recorded inside it (resolveOutcome's `leakage_assessment`).
+  const leakage = await screenLeakage({
     hypothesis: candidate.hypothesis, diff: candidate.diff, touched_components: candidate.touched_components,
-  };
-  const leakage = await screenLeakage(evaluator.evaluator_version_id, leakageSubject, principal);
+  }, principal);
 
+  // FR-9/FR-23: a critical guardrail this candidate's own replay evidence never measured is
+  // missing evidence, never a failure — `proofVerdict` answers `guardrails_not_established`.
   const guardrails = summariseGuardrails(plan.candidateSide);
   const resource_usage = summariseResourceUsage(plan.baseline, plan.candidateSide, candidate.complexity_delta);
   const dimension_scores = summariseDimensions(plan.baseline, plan.candidateSide);
   const statistics = {
     per_case: plan.perCase, paired_decision: decision, policy: ctx.policy, resamples: 2000, seed: candidateId,
-    liveness_bound_reached: boundReached, leakage,
+    liveness_bound_reached: boundReached, leakage: { reading: leakage.reading, reason: leakage.reason },
   };
-
-  if (leakage.leaked) {
-    return resolveOutcome(candidate, idempotencyKey, principal, {
-      proof_status: "proof_failed", reason: `leakage_detected: ${leakage.reason ?? ""}`, release_eligible: false,
-      decision, guardrails, resource_usage, dimension_scores, statistics,
-    }, "resolve", initiative);
-  }
-
-  // FR-9/FR-23 (Task I-29's own fix dispatch): a critical guardrail this candidate's own replay
-  // evidence never measured — every deterministic/outcome measure excludes against a replay run,
-  // which carries no observation snapshot (evaluate-measures.ts/replay-score.ts's own module
-  // notes) — is missing evidence, never a failure. Checked before the statistical verdict below:
-  // no amount of additional repeats ever changes a structurally-unmeasurable guardrail's status,
-  // so `not_established` is this call's real, terminal answer here, not a reason to keep waiting,
-  // and folding it into `guardrails_failed` (the pre-fix behaviour) would misreport a coverage gap
-  // as a proven regression.
-  if (guardrails.status === "not_established") {
-    return resolveOutcome(candidate, idempotencyKey, principal, {
-      proof_status: "not_established", reason: "guardrails_not_established", release_eligible: false,
-      decision, guardrails, resource_usage, dimension_scores, statistics,
-    }, "resolve", initiative);
-  }
-
-  // FR-43: "improvement above the protocol's meaningful/noise threshold OR an accepted pruning
-  // trade-off." `decision.verdict === "improves"` is the first; a candidate whose own
-  // complexity_delta is negative (FR-44's own pruning) and whose interval shows no evidence of
-  // regression (lower bound at or above zero, whatever mme itself requires) is the second — a
-  // pure simplification that measures no worse is accepted even when it never had a positive
-  // effect large enough to clear mme on its own. Computed BEFORE the `unresolved` branch below:
-  // a pruning candidate whose interval merely straddles mme (never dipping below zero) is a
-  // RESOLVED "no regression", not an undecided one — `acceptedPruning` must get first look, or a
-  // real pruning trade-off is misreported `not_established` for evidence that already settled it.
-  const acceptedPruning = candidate.complexity_delta < 0 && decision.lower >= 0;
-  const improvementClears = decision.verdict === "improves" || acceptedPruning;
-  const guardrailsPass = guardrails.status === "pass";
-
-  if (decision.verdict === "unresolved" && !acceptedPruning) {
-    // Every case cleared minRepeats, but the interval still straddles mme at the liveness bound —
-    // a real answer, never a reason to keep asking for repeats past the bound the protocol set.
-    return resolveOutcome(candidate, idempotencyKey, principal, {
-      proof_status: "not_established", reason: "proof_unresolved", release_eligible: false,
-      decision, guardrails, resource_usage, dimension_scores, statistics,
-    }, "resolve", initiative);
-  }
-
-  if (!improvementClears || !guardrailsPass) {
-    const reason = !guardrailsPass ? "guardrails_failed" : "improvement_below_meaningful_effect";
-    return resolveOutcome(candidate, idempotencyKey, principal, {
-      proof_status: "proof_failed", reason, release_eligible: false,
-      decision, guardrails, resource_usage, dimension_scores, statistics,
-    }, "resolve", initiative);
-  }
-
-  const hasOwners = candidate.touched_owners.length > 0;
+  const verdict = proofVerdict({
+    decision, complexityDelta: candidate.complexity_delta, guardrails: guardrails.status,
+    leakage, hasOwners: candidate.touched_owners.length > 0,
+  });
   return resolveOutcome(candidate, idempotencyKey, principal, {
-    proof_status: "proof_passed",
-    reason: hasOwners ? "proof_passed" : "proof_passed; release_eligible false — no release owners recorded for this plugin/subject",
-    release_eligible: hasOwners, decision, guardrails, resource_usage, dimension_scores, statistics,
+    ...verdict, decision, guardrails, resource_usage, dimension_scores, statistics,
+    leakage_assessment: leakage.pending,
   }, "resolve", initiative);
+}
+
+/** Which candidate already spent this case set's proof split, or null. */
+async function caseSetSpentBy(p: pg.Pool, caseSetId: string): Promise<string | null> {
+  const row = (await p.query<{ by: string | null; at: string | null }>(
+    "select proof_spent_by_candidate_id::text as by, proof_spent_at::text as at from zz.replay_case_set where id = $1::uuid",
+    [caseSetId])).rows[0];
+  return row?.at ? (row.by ?? "another candidate") : null;
+}
+
+function spentRefusal(caseSetId: string, by: string): string {
+  return `ERROR: case set ${caseSetId}'s sealed proof cases were already opened by candidate ${by} — ` +
+    "a proof allocation spends its cases; build a new case set (new evidence) before proving again";
 }

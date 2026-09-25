@@ -22,14 +22,16 @@
  * invariant) means in practice — not a runtime check, a query that cannot reach them.
  *
  * Reused by `candidate-prove.ts` (Task I-21): `mean`, `groupByCase`, `SideRun`, `baselineRuns`,
- * `candidateRuns`, `RunsRequiredEntry`, `PerCaseDelta`, `escalateOneRepeat`,
- * `summariseGuardrails`, `summariseResourceUsage`, `summariseDimensions` and
+ * `candidateRuns`, `PerCaseDelta`, `summariseGuardrails`, `summariseResourceUsage`, `summariseDimensions` and
  * `protocolHasModelBackedMeasure` are exported below for exactly that — a proof run is scored by
  * the SAME machinery a validation run is, over whichever case ids the caller already resolved to
  * `split: 'proof'` rather than `split: 'validation'`. None of these functions hard-code a split
- * literal themselves; the split is decided once, by whichever caller fetches the case ids.
+ * literal themselves; the split is decided once, by whichever caller fetches the case ids. Proof
+ * plans its own runs as counts, never case ids, so the per-case `runs_required` shape stays here.
+ *
+ * The leakage screen (FR-38, `candidate-leakage.ts`) runs here, on the first call against a
+ * `recorded` candidate, before it is built — `screenBeforeBuild`.
  */
-import { SearchPolicy } from "@zz/contracts";
 import type pg from "pg";
 
 import {
@@ -39,7 +41,11 @@ import {
 import { loadDimensions } from "./evaluate.js";
 import type { GuardrailResult } from "./evaluate-measures.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { screenLeakage } from "./candidate-leakage.js";
+import type { TouchedComponent } from "./complexity.js";
+import { parseSearchPolicy } from "./search-rules.js";
 import { pairedDecision, type PairedDecisionResult } from "./stats.js";
+import { insertEvaluatorAnswer } from "../semantic.js";
 
 // -------------------------------------------------------------------------------------------
 // Candidate + its validation policy.
@@ -61,12 +67,6 @@ async function loadCandidate(p: pg.Pool, candidateId: string): Promise<Candidate
 }
 
 interface ValidationPolicy { minRepeats: number; mme: number; confidence: number; wallClockHours: number }
-
-/** Search policy defaults for a protocol whose `improvement_policy.search` this task's own plan
- *  boundary leaves free to omit — never thrown on, because a missing policy is not a missing
- *  candidate: 3 repeats, no meaningful-effect floor, a conventional 95% interval, a one-day
- *  liveness bound. Generous enough that a real protocol always overrides them. */
-const DEFAULT_POLICY: ValidationPolicy = { minRepeats: 3, mme: 0, confidence: 0.95, wallClockHours: 24 };
 
 type ValidationContext =
   | { readonly ok: true; readonly caseSetId: string; readonly policy: ValidationPolicy; readonly improvementRunCreatedAt: Date }
@@ -96,11 +96,14 @@ async function loadValidationContext(p: pg.Pool, candidate: CandidateRow): Promi
     };
   }
 
-  const parsed = SearchPolicy.safeParse(run.search_policy);
-  const policy: ValidationPolicy = parsed.success
-    ? { minRepeats: parsed.data.minRepeats, mme: parsed.data.minMeaningfulEffect,
-        confidence: parsed.data.confidence, wallClockHours: parsed.data.wallClockHours }
-    : DEFAULT_POLICY;
+  // No fallback policy (search-rules.ts): a malformed snapshot is refused, never validated
+  // against an invented `mme: 0`.
+  const parsed = parseSearchPolicy(run.search_policy, candidate.improvement_run_id);
+  if ("error" in parsed) return { ok: false, error: parsed.error };
+  const policy: ValidationPolicy = {
+    minRepeats: parsed.minRepeats, mme: parsed.minMeaningfulEffect,
+    confidence: parsed.confidence, wallClockHours: parsed.wallClockHours,
+  };
   return { ok: true, caseSetId: snapshot.case_set_version_id, policy, improvementRunCreatedAt: new Date(run.created_at) };
 }
 
@@ -225,7 +228,7 @@ export function groupByCase(xs: readonly SideRun[]): Map<string, SideRun[]> {
   return m;
 }
 
-export interface RunsRequiredEntry {
+interface RunsRequiredEntry {
   readonly case_id: string;
   readonly side: "baseline" | "candidate";
   readonly subject_version_id: string | null;
@@ -281,7 +284,7 @@ async function planValidation(p: pg.Pool, candidate: CandidateRow, caseSetId: st
 /** `unresolved` under the liveness bound asks for exactly one more repeat per case per side —
  *  the contract's own "adds repeats while the result is unresolved," applied uniformly rather
  *  than guessing which case is the noisy one. */
-export function escalateOneRepeat(caseIds: readonly string[], candidate: CandidateRow): RunsRequiredEntry[] {
+function escalateOneRepeat(caseIds: readonly string[], candidate: CandidateRow): RunsRequiredEntry[] {
   const out: RunsRequiredEntry[] = [];
   for (const caseId of caseIds) {
     out.push({ case_id: caseId, side: "baseline", subject_version_id: candidate.base_subject_version_id, candidate_id: null, count: 1 });
@@ -340,14 +343,14 @@ export function summariseDimensions(baseline: readonly SideRun[], candidateSide:
 // -------------------------------------------------------------------------------------------
 // Build + gate isolation.
 
-/** `null` on success (the candidate is now `valid`); an error object on failure — the caller
- *  returns it to the MCP client as-is, never through `withIdempotency` (the contract's own
- *  "never replayed"): a build/gate failure is reported fresh on every call, not cached as a
- *  ledger replay, and a candidate marked `invalid` here is refused by the status gate above
- *  before this function is ever reached again. `retryable` (fix 5) tells the caller whether the
- *  candidate itself was judged (`invalid` — a real build/gate failure, correctly recorded) or
- *  whether nothing was judged at all (a timeout — not this candidate's fault, so the caller
- *  restores it to `recorded` rather than leaving it stuck `validating` or wrongly `invalid`). */
+/** `null` on success; an error object on failure — the caller returns it to the MCP client
+ *  as-is, never through `withIdempotency` (the contract's own "never replayed"): a build/gate
+ *  failure is reported fresh on every call, not cached as a ledger replay. Writes NO status
+ *  itself: the candidate stays `validating` (the caller's lock) until the caller's own `finally`
+ *  writes the resting status — a `valid` written here, mid-call, dropped the lock while the rest
+ *  of the call still ran, and let a second call in. `retryable` tells the caller whether the
+ *  candidate itself was judged (`invalid` — a real build/gate failure) or whether nothing was
+ *  judged at all (a timeout — not this candidate's fault, so it goes back to `recorded`). */
 async function buildCandidateInIsolation(
   p: pg.Pool, candidate: CandidateRow,
 ): Promise<{ error: string; retryable: boolean } | null> {
@@ -367,10 +370,7 @@ async function buildCandidateInIsolation(
     linkWorkspaceDependencies(repoRoot, worktree.path);
     applyCandidatePatch(worktree.path, patchRow.diff);
     const attempt: BuildOutcome = buildAndGate(worktree.path);
-    if (attempt.ok) {
-      await p.query("update zz.candidate set status = 'valid' where id = $1::uuid", [candidate.id]);
-      return null;
-    }
+    if (attempt.ok) return null;
     if (attempt.stage === "timeout") {
       // Not the candidate's fault — refuse rather than mark it invalid on an environment that
       // never finished judging it. retryable: true, so the caller's own CAS lock (fix 5) hands
@@ -380,7 +380,6 @@ async function buildCandidateInIsolation(
         retryable: true,
       };
     }
-    await p.query("update zz.candidate set status = 'invalid' where id = $1::uuid", [candidate.id]);
     return {
       error: `ERROR: candidate ${candidate.id} failed its own ${attempt.stage}, which invalidates it. ` +
         `Failing command tail follows:\n${attempt.output}`,
@@ -389,6 +388,25 @@ async function buildCandidateInIsolation(
   } finally {
     if (worktree) removeCandidateWorktree(repoRoot, worktree);
   }
+}
+
+/** Screens a `recorded` candidate for leakage (candidate-leakage.ts) and records the answer.
+ *  Returns the refusal text when the critic says `yes` — the caller then rests the candidate at
+ *  `rejected_precheck`, with the reason on `expected_effect._rejection_reason` where
+ *  `candidate_search` reports it from — or null to go on to the build. */
+async function screenBeforeBuild(p: pg.Pool, candidateId: string, principal: string): Promise<string | null> {
+  const row = (await p.query<{ hypothesis: string; diff: string | null; touched_components: TouchedComponent[] | null }>(
+    "select hypothesis, patchset->>'diff' as diff, touched_components from zz.candidate where id = $1::uuid",
+    [candidateId])).rows[0];
+  if (!row) return `ERROR: no candidate ${candidateId}`;
+  const verdict = await screenLeakage(
+    { hypothesis: row.hypothesis, diff: row.diff ?? "", touched_components: row.touched_components ?? [] }, principal);
+  await insertEvaluatorAnswer(p, verdict.pending);
+  if (verdict.reading !== "yes") return null;
+  await p.query(
+    "update zz.candidate set expected_effect = expected_effect || $2::jsonb where id = $1::uuid",
+    [candidateId, JSON.stringify({ _rejection_reason: verdict.reason })]);
+  return `ERROR: candidate ${candidateId} is rejected_precheck — ${verdict.reason}`;
 }
 
 /** Fix 5: `candidate_validate` never wrote `'validating'` (a legal status per migration 077's own
@@ -470,14 +488,21 @@ export async function validateCandidate(
   let finalStatus: string = priorStatus;
   try {
     if (priorStatus === "recorded") {
+      // FR-38's leakage screen, before anything is built — see candidate-leakage.ts for why a
+      // clear `yes` alone rejects here while proof holds the stricter bar.
+      const leaked = await screenBeforeBuild(p, candidate.id, principal);
+      if (leaked) {
+        finalStatus = "rejected_precheck";
+        return { error: leaked };
+      }
       const built = await buildCandidateInIsolation(p, candidate);
       if (built) {
         finalStatus = built.retryable ? "recorded" : "invalid";
         return { error: built.error };
       }
     }
-    // The build (if it ran) already wrote 'valid' itself; this call's own restore in `finally`
-    // only re-affirms it (a no-op update, since the row is 'validating' until then either way).
+    // Written by the `finally` below, never mid-call: the row stays 'validating' — locked
+    // against a second candidate_validate — until this call has stored its verdict or returned.
     finalStatus = "valid";
 
     // A candidate stays `valid` after its verdict is stored (a `not_improved` candidate is not
@@ -564,10 +589,9 @@ export async function validateCandidate(
       guardrails, resource_usage, status: "valid",
     };
   } finally {
-    // Restores whatever this call decided the candidate's resting status should be — a no-op
-    // when buildCandidateInIsolation already wrote it directly (the `where status = 'validating'`
-    // guard means this UPDATE touches zero rows in that case), and the one thing standing between
-    // a thrown exception (a DB error mid-plan, say) and a candidate stuck 'validating' forever.
+    // The ONE status write this call makes: whatever it decided the candidate's resting status
+    // is — and the one thing standing between a thrown exception (a DB error mid-plan, say) and
+    // a candidate stuck 'validating' forever.
     await p.query(
       "update zz.candidate set status = $2 where id = $1::uuid and status = 'validating'",
       [candidateId, finalStatus]);

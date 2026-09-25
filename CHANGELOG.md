@@ -97,8 +97,11 @@ zz-stack 0.76.0 · console 0.19.0
   the reader of historic rounds.
 
 ### Upgrade notes
-- **Ten migrations, 077 through 086**, apply on the gateway's next start. All are additive,
-  except that `zz.assessment.family` and `reading` become nullable.
+- **Twelve migrations, 077 through 089 (there is no 087)**, apply on the gateway's next start.
+  All are additive, except that `zz.assessment.family` and `reading` become nullable,
+  `zz.release_attempt.plugin_id` becomes NOT NULL (backfilled from each attempt's base subject),
+  and 088 deletes older duplicate `split = 'validation'` rows of `zz.candidate_evaluation`,
+  keeping the newest one that every reader already used.
 - **`ZZ_CATALOG_OWNER_TEAM` is now required** by `register-plugins`, which refuses to run
   without it. It names the team that owns this repository's catalog. Set it in `deploy/.env`.
 - `finding_record` now takes `(eval_run_id, finding{kind, pattern, owner_kind, ...},
@@ -107,6 +110,44 @@ zz-stack 0.76.0 · console 0.19.0
   release).
 - `round_judge` and `round_score` are gone from /eval/mcp; score a plugin through `evaluation_start`/`evaluation_assess`/`evaluation_score`; `round_scores` still reads historic rounds.
 - `ZZ_JUDGE_PAIR_CAP` is no longer read; remove it from `deploy/.env` (a value left there is silently ignored).
+- `plugin_profile` now takes `(subject_version_id, evidence_window, idempotency_key)` instead of
+  `(plugin, version)`. `evidence_window` is `{from, to}` or `{last_runs}`; get
+  `subject_version_id` from `plugin_locate` first.
+- `plugin_locate` now takes `(plugin, version?, idempotency_key)`. `idempotency_key` is
+  required because the call records the subject version.
+- New status values for clients to handle: `initiative_status` can return
+  `next_move.action: "resolve_branch"` and `documents[].applies`, and console flow steps can
+  have `state: "skipped"` or `"waiting"`.
+- `plugin_register` now refuses `local_dir` outside the catalog root, any git URL that is not
+  `https://` to a public host, any package spec that is not a registry spec, and
+  re-registering an existing version whose content has changed.
+- `_facts.json` that does not parse is now refused by name instead of being read as empty.
+- **Replay launcher:** it refuses to start on a host without a working `sandbox-exec` (macOS)
+  or `bwrap` (Linux), and there is no unsandboxed mode. `--ref` and `--verifier-token` are gone;
+  the verifier token is read from `VERIFIER_TOKEN` only. It clones the subject's release tag
+  `v<version>`, so a version with no tag cannot be replayed.
+- `replay_close` no longer accepts `result.score` or `result.guardrails`, refuses the run's own
+  replay-team credential and any principal but the one who started the run, and refuses a run
+  that is no longer live. New tool `replay_begin` moves a run to `running`. `replay_run.sandbox_ref`
+  now holds the release tag ref.
+- `pat_issue` refuses a label that starts with `replay:`.
+- **Verifier tokens are bound to one allocation** (candidate, case set, proof split). Tokens
+  minted before 088 are refused. A verifier-context `replay_start` refuses `case_id`; the server
+  draws the case. `candidate_prove` and `release_verify` return `runs_required` as counts,
+  `{ case_set_id, baseline, candidate }`. Proof-split `replay_read` returns case, score, cost and
+  timing as null, and `replay_score` on a proof run returns no number.
+- A case set's proof split can be opened once. `candidate_record` enforces
+  `maxCandidatesPerGeneration` and `maxGenerations`. A missing or malformed `search_policy` is
+  refused instead of defaulting. Leakage is screened at the first `candidate_validate`; at proof,
+  an unclear or unavailable leakage answer is `not_established`.
+- **Release authority is team membership.** `release_apply`, `release_record` and
+  `release_verify` refuse `not_owner`; `document_approve` on `improvement.md` refuses a signer
+  outside an owner team, and with `on_behalf_of` also the recording session. The approved
+  `improvement.md` must cite its `release_attempt_id` and digest. New refusals:
+  `release_in_progress`, `not_newer`, `not_rolled_back`, `prior_not_current`.
+- `zz-tool release-apply` requires `--release-version` and gains `--base-ref` and `--reconcile`;
+  `zz-tool release-rollback` requires `{version}` in `--rollback-cmd`. `release_ref` is now the
+  release commit sha. `plugin_locate` without a version skips rolled-back versions.
 
 ## [0.75.0] — 2026-09-24
 

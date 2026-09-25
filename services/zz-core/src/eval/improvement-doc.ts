@@ -12,23 +12,19 @@
  * owners, its sealed proof evaluation) before calling this, so the document write is pure
  * rendering plus the platform's own file-store side effects, nothing else.
  *
- * The body MUST quote `patch_digest` verbatim — `release_apply` (a later task, not this one)
- * binds an approval to this exact document the same way `protocol_affirm` binds one to
- * `protocol.md` (`protocol.ts`'s own module note): "at the same digest" is checked by requiring
- * the document's body to quote the digest, the one fact that ties a page of prose to the exact
- * immutable patch it was written to describe.
+ * The body MUST quote `patch_digest` verbatim and cite `release_attempt_id` exactly once (the
+ * closing line `renderBody` writes) — `release_apply` (`release-apply.ts`) counts an approval only
+ * when the approved body cites THIS attempt and quotes its digest, and only for the owner teams its
+ * `approved_by` is a member of (`release-owners.ts`, which `document_approve` also checks before it
+ * stamps a signer). COUPLED: `citedReleaseAttempt` parses that closing line's exact shape.
+ * The two citations are what tie a page of prose to the exact attempt and immutable patch it was
+ * written to describe; an approval of an earlier attempt's document approves nothing.
  *
- * `catalog/zz/zz-plugin-eval/flow.json` at the time this task lands declares no `improvement.md`
- * document at all — the same gap `findings-doc.ts`'s own module note describes for `findings.md`
- * before Task I-28. `documentGuards` reads whatever manifest is live: `gateCheck` only acts when
- * `chain.requires[name]` names this document as somebody else's prerequisite, and `sectionCheck`
- * only acts when the manifest lists this document's own sections — neither is true for a name the
- * manifest has never heard of, so on a REAL zz-plugin-eval initiative today this write lands
- * ungated exactly as it does on a freeform one, with no approval enforced before it. FR-53's own
- * "gated only when release_mode = promotable and a final candidate has established proof" is not
- * yet a live gate — that is what Task I-28's own `flow.json` update (`gate: true`, `requires` the
- * right predicate) is waiting to turn on, the same way it is for `findings.md`. This file's own
- * writing path already imposes no gate of its own; `flow.json` merely has to catch up to it.
+ * `catalog/zz/zz-plugin-eval/flow.json` declares `improvement.md` gated (`gate: true`), requiring
+ * `findings.md`, and applicable when `release_mode` is `promotable` — the branch fact
+ * `release_prepare` records before it calls this. `documentGuards` applies that manifest to this
+ * write — its `requires` prerequisite and its declared sections — and refuses to write over a
+ * document already approved (a revision is `document_revise`).
  */
 import { existsSync, readFileSync } from "node:fs";
 

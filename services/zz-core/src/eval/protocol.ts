@@ -34,7 +34,7 @@
  * The store write follows `writeRoundAssessments` (semantic.ts): `initiative-record.ts` owns
  * `_facts.json`'s name and mechanical write (`factsFor`/`writeFacts`); this function owns the
  * one rule that write must obey — a fact already set refuses a different value, forever — and
- * mirrors every NEWLY set fact into `zz.initiative_fact` (migration 085) so the console, which
+ * mirrors every set fact into `zz.initiative_fact` (migration 085) so the console, which
  * reads `zz.doc` alone, can compute the same `documentApplies` answer. The mirror is written
  * the moment the file is, not fire-and-forget like `indexDoc`'s search vector: a stale search
  * result is merely slow to find, but a stale console stepper is a wrong answer about whether an
@@ -82,22 +82,25 @@ interface BranchFacts {
   release_mode?: string;
 }
 
-/** Mirror every NEWLY set fact into `zz.initiative_fact` — never a fact `writeBranchFacts`
- *  already found unchanged, which reaches here only because the file write above is a whole
- *  replace rather than a per-fact diff. `on conflict do nothing` is the second half of
- *  append-only: even a caller racing this exact insert cannot make the row disagree with the
- *  file, because `writeBranchFacts` already refused a disagreeing value before either write ran.
+/** Mirror every fact the file holds into `zz.initiative_fact`, on every call — not only the
+ *  ones this call set. A mirror that ran only for fresh facts would never repair one an earlier
+ *  call wrote to the file and then failed to mirror (a dropped connection, a caller with no team
+ *  at the time), and the console would read that initiative's branch as undetermined forever.
+ *  `on conflict do nothing` makes the repeat free and is the second half of append-only: even a
+ *  caller racing this exact insert cannot make the row disagree with the file, because
+ *  `writeBranchFacts` already refused a disagreeing value before either write ran.
  *
  *  No team to mirror under is not an error — `userRoot()` resolves a team-less shelf for a
  *  caller `teamFor` cannot place, and the file write is what stands for such a caller; the
  *  console has nothing to draw for them either way. */
 async function mirrorBranchFacts(
-  team: string | null, initiative: string, fresh: readonly [string, string][],
+  team: string | null, initiative: string, facts: Record<string, string>,
 ): Promise<void> {
-  if (!team || !fresh.length) return;
+  const entries = Object.entries(facts);
+  if (!team || !entries.length) return;
   const p = db();
   if (!p) return;
-  for (const [fact, value] of fresh) {
+  for (const [fact, value] of entries) {
     await p.query(
       `insert into zz.initiative_fact (team, initiative, fact, value)
        values ($1, $2, $3, $4)
@@ -137,11 +140,10 @@ export async function writeBranchFacts(
     if (have && have !== value) return `ERROR: ${fact} is already ${have} for this initiative`;
   }
   const fresh = entries.filter(([fact, value]) => current[fact] !== value);
-  if (!fresh.length) return current;
   const merged = { ...current };
   for (const [fact, value] of fresh) merged[fact] = value;
-  writeFacts(root, initiative, merged);
-  await mirrorBranchFacts(await teamFor(parseCaller(requestHeaders()).email), initiative, fresh);
+  if (fresh.length) writeFacts(root, initiative, merged);
+  await mirrorBranchFacts(await teamFor(parseCaller(requestHeaders()).email), initiative, merged);
   return merged;
 }
 

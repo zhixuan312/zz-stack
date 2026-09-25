@@ -5,42 +5,41 @@
  * the advisory lock and the record; zz-core runs server-side with no checkout of the plugin's
  * repository, so this CLI is what actually applies the patch, hashes it, commits, gates, and runs
  * the repository's own release procedure — the same server-decides/CLI-executes split
- * `packages/tools/src/replay/launch.ts` already uses for replay, and `candidate-build.ts` uses
- * for a candidate's own build+gate (server-side there only because THAT step never leaves the
- * platform's own checkout — this one does, once a real release procedure runs).
+ * `packages/tools/src/replay/launch.ts` already uses for replay.
  *
  *   node packages/tools/dist/release/apply.js --candidate <id> --repo <path> \
- *     --initiative <slug> --digest <approved_patch_digest> \
- *     --release-cmd "<command>" [--gate-cmd "<command>"] [--gateway <url>]
+ *     --initiative <slug> --digest <approved_patch_digest> --release-cmd "<command>" \
+ *     --release-version <version> [--base-ref <commit>] [--gate-cmd "<command>"] [--gateway <url>]
  *
- * `--release-cmd` is deliberately required, with no default. `scripts/release.ts` and
- * `.claude/commands/release.md` both say plainly that the version bump, the changelog and the
- * branch/merge-to-master sequence are judgement work a script must not do on somebody's behalf —
- * this CLI cannot honestly supply them autonomously, so "the repository's release procedure" is a
- * configured command rather than a hard-coded call into `scripts/release.ts`. A real deployment
- * points `--release-cmd` at a wrapper that already carries those judgement calls (typically
- * prepared once, ahead of the candidate reaching this stage); this task's own verification points
- * it at a harmless stub instead — see the task's own instruction never to run a real release
- * while verifying.
+ *   node packages/tools/dist/release/apply.js --reconcile <release_attempt_id> \
+ *     --candidate <id> --plugin <name> --release-version <version> --repo <path> [--gateway <url>]
  *
- * Isolation, not `git reset`: every step from `git apply` through the release command runs inside
- * a fresh, deterministic worktree (mirroring `packages/tools/src/replay/git.ts`'s own lifecycle,
- * repeated here with its own ref namespace rather than imported — the same small, self-contained
- * pattern `services/zz-core/src/eval/candidate-build.ts`'s own module note already repeats rather
- * than reaching across a service/package boundary for). `--repo`'s own HEAD and branch are never
- * touched, so "the repository returns to its pre-apply commit" on a gate or release failure holds
- * by construction: the worktree that failed is simply removed, and `--repo` was never on anything
- * else. `--repo` should be a throwaway clone during verification, never the real checkout — this
- * file has no way to tell the difference and does not try to.
+ * `--release-cmd` is deliberately required, with no default: the version bump, the changelog and
+ * the branch/merge sequence are judgement work a script must not do on somebody's behalf, so "the
+ * repository's release procedure" is a configured command, prepared ahead with those calls made.
+ * `--release-version` is the exact version that command publishes; the new subject is located AT
+ * that version (`plugin_locate` with `version`), never as "whatever the head is now" — the head
+ * after a release that registered nothing is the unchanged base, and recording that as released
+ * is the lie `release_record` now refuses (`not_newer`).
  *
- * Every path past a successful `release_apply` call ends in exactly one `release_record` call —
- * `released` on success, `failed` (with the failing command's own output tail) on every other
- * exit, including an uncaught exception — because an `applying` attempt with nobody left to call
- * `release_record` for it is stuck there forever: migration 077's own partial unique index means
- * THIS candidate can never apply again until an operator calls `release_record` by hand. That
- * escape hatch — call `release_record(release_attempt_id, status: failed, failure_tail: "...",
- * idempotency_key: "...")` directly — is the one thing to reach for if this process itself dies
- * mid-run rather than exiting through one of its own paths.
+ * Where the patch lands: a fresh worktree on `plan.branch`, created at the commit the base subject
+ * was released from — `plan.base_ref` from the server (this system's own release_ref, or a git
+ * source's resolved_commit), else `--base-ref` from the operator, and refused (recorded `failed`,
+ * nothing touched) when neither names a commit this repository has or the two disagree. Never
+ * `--repo`'s own HEAD: a candidate is proved against its base, and applying it onto whatever the
+ * checkout happens to hold releases something nobody proved. `--repo`'s own HEAD and branch are
+ * never moved. On success the worktree is removed and the branch KEPT — it holds the release
+ * commit, and its sha is the `release_ref` the next release against this subject starts from. On
+ * any failure before the release command succeeds, worktree and branch are both removed and the
+ * attempt is recorded `failed`.
+ *
+ * Once the release command has succeeded, `failed` is never recorded again: the release happened.
+ * If locating the new version or recording `released` is refused or the process dies, the
+ * attempt stays applying and `release_apply` refuses every later attempt of the plugin with
+ * `release_in_progress` — naming it as stale once it is — until `--reconcile` finds out what
+ * really happened: the published version located → `released`; never registered → `failed`, the
+ * truth, and the branch removed. `released` is recorded under a key derived from the attempt, so a
+ * lost response is retried as a replay rather than a second write.
  */
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
@@ -56,21 +55,16 @@ import { splitCommand } from "../lib/shell.js";
 const GIT_TIMEOUT_MS = 60_000;
 const GATE_TIMEOUT_MS = 15 * 60_000;
 const RELEASE_TIMEOUT_MS = 20 * 60_000;
-/** The failing command's own output tail — enough to act on, never a whole log; mirrors
- *  `candidate-build.ts`'s own `OUTPUT_TAIL_CHARS`. */
+/** The failing command's own output tail — enough to act on, never a whole log. */
 const OUTPUT_TAIL_CHARS = 4000;
 const DEFAULT_GATE_CMD = "npm run gate -- --quiet";
 const DEFAULT_CLIENT = "zz-release-apply";
 
 const sha256 = (s: string): string => createHash("sha256").update(s, "utf8").digest("hex");
+const isRefusal = (said: string): boolean => /^ERROR[: ]/.test(said);
 
 // -------------------------------------------------------------------------------------------
-// Worktree lifecycle — own ref namespace (`refs/release-apply/<attempt>`), deterministic in the
-// release_attempt_id so a crashed earlier attempt for the SAME id is found and cleared rather
-// than colliding, exactly the property `replay/git.ts`'s own `worktreePathFor` and
-// `candidate-build.ts`'s own `worktreePathFor` both lean on.
-
-interface Worktree { readonly ref: string; readonly path: string }
+// Git.
 
 function git(cwd: string, args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8", timeout: GIT_TIMEOUT_MS, stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -79,48 +73,26 @@ function gitQuiet(cwd: string, args: string[]): void {
   try { execFileSync("git", args, { cwd, timeout: GIT_TIMEOUT_MS, stdio: "ignore" }); }
   catch { /* nothing there to remove, or already gone — both are the success case here */ }
 }
+/** The commit `ref` names in `repoRoot`, or null when it names none. */
+function commitOf(repoRoot: string, ref: string): string | null {
+  try { return git(repoRoot, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]); }
+  catch { return null; }
+}
 
 function worktreePathFor(attemptId: string): string {
   return join(tmpdir(), "zz-release-apply", attemptId);
 }
-function refFor(attemptId: string): string {
-  return `refs/release-apply/${attemptId}`;
-}
 
-function clearStaleWorktree(repoRoot: string, attemptId: string): void {
+/** Removes the worktree, and the branch too unless it is being kept as the release's record. */
+function removeWorktree(repoRoot: string, attemptId: string, branch: string | null): void {
   const path = worktreePathFor(attemptId);
   gitQuiet(repoRoot, ["worktree", "remove", "--force", path]);
   if (existsSync(path)) rmSync(path, { recursive: true, force: true });
-  gitQuiet(repoRoot, ["update-ref", "-d", refFor(attemptId)]);
+  gitQuiet(repoRoot, ["worktree", "prune"]);
+  if (branch) gitQuiet(repoRoot, ["branch", "-D", branch]);
 }
 
-/** Pins a detached worktree to `--repo`'s own current HEAD — never a branch, so nothing this file
- *  does can ever move `--repo`'s own checkout out from under whoever else is using it. */
-function createReleaseWorktree(repoRoot: string, attemptId: string): Worktree {
-  clearStaleWorktree(repoRoot, attemptId);
-  const commit = git(repoRoot, ["rev-parse", "HEAD"]);
-  const ref = refFor(attemptId);
-  git(repoRoot, ["update-ref", ref, commit]);
-  const path = worktreePathFor(attemptId);
-  mkdirSync(join(tmpdir(), "zz-release-apply"), { recursive: true });
-  try {
-    git(repoRoot, ["worktree", "add", "--quiet", "--detach", path, ref]);
-  } catch (err) {
-    gitQuiet(repoRoot, ["update-ref", "-d", ref]);
-    throw err;
-  }
-  return { ref, path };
-}
-
-function removeReleaseWorktree(repoRoot: string, worktree: Worktree): void {
-  gitQuiet(repoRoot, ["worktree", "remove", "--force", worktree.path]);
-  if (existsSync(worktree.path)) rmSync(worktree.path, { recursive: true, force: true });
-  gitQuiet(repoRoot, ["update-ref", "-d", worktree.ref]);
-}
-
-/** `git apply`, argv only — the diff text never reaches `execFileSync`'s argv as a string, only a
- *  private temporary file's path does, mirroring `replay/git.ts`'s and `candidate-build.ts`'s own
- *  `applyPatch`. */
+/** `git apply`, argv only — the diff text never reaches argv, only a private file's path does. */
 function applyDiff(worktreePath: string, diff: string): void {
   const dir = mkdtempSync(join(tmpdir(), "zz-release-apply-patch-"));
   const patchPath = join(dir, "candidate.patch");
@@ -148,65 +120,85 @@ function runCommand(cwd: string, argv: readonly string[], timeoutMs: number): Co
 
 // -------------------------------------------------------------------------------------------
 // The wire shapes this CLI reads back — local mirrors, never imported from `services/zz-core/
-// dist`, the same rule `replay/launch.ts`'s own module note states: `packages/tools` crosses that
-// boundary only over MCP, on the wire.
+// dist`: `packages/tools` crosses that boundary only over MCP.
 
 interface ApplyResponse {
   status: "applying" | "refused";
   reason: string | null;
   release_attempt_id: string;
   patch: { diff: string; patch_digest: string } | null;
-  plan: { plugin: string; declared_version: string; base_subject_version_id: string; branch: string } | null;
+  plan: {
+    plugin: string; declared_version: string; base_subject_version_id: string; branch: string;
+    base_ref: string | null;
+  } | null;
 }
 
-async function cliMain(argv: string[]): Promise<number> {
-  const args = parseArgs(argv);
+/** The base commit, or why there is none — see the module note. */
+function resolveBase(repoRoot: string, planRef: string | null, operatorRef: string | null): { commit: string } | { refused: string } {
+  const fromPlan = planRef ? commitOf(repoRoot, planRef) : null;
+  const fromOperator = operatorRef ? commitOf(repoRoot, operatorRef) : null;
+  if (planRef && !fromPlan) return { refused: `the base subject's recorded release commit ${planRef} is not in ${repoRoot}` };
+  if (operatorRef && !fromOperator) return { refused: `--base-ref ${operatorRef} names no commit in ${repoRoot}` };
+  if (fromPlan && fromOperator && fromPlan !== fromOperator) {
+    return { refused: `--base-ref ${operatorRef} is ${fromOperator}, but the base subject was released from ${fromPlan}` };
+  }
+  const commit = fromPlan ?? fromOperator;
+  return commit ? { commit } : {
+    refused: "nothing records the commit the base subject was released from — pass --base-ref " +
+      "naming it (the commit whose catalog carries the base version)",
+  };
+}
+
+const releasedKey = (attemptId: string): string => `release_record:${attemptId}:released`;
+const failedKey = (attemptId: string): string => `release_record:${attemptId}:failed`;
+
+function reconcileHint(attemptId: string, candidateId: string, plugin: string, version: string): string {
+  return `zz-tool release-apply --reconcile ${attemptId} --candidate ${candidateId} --plugin ${plugin} ` +
+    `--release-version ${version} --repo <this clone>`;
+}
+
+async function applyMain(mcp: Mcp, args: ReturnType<typeof parseArgs>): Promise<number> {
   const candidateId = required(args, "candidate", "the candidate_id release_apply is called for");
-  const repoRoot = required(args, "repo", "the repository checkout to apply the patch into — a throwaway clone while verifying, never the primary checkout");
+  const repoRoot = required(args, "repo", "the repository checkout to release from — a throwaway clone while verifying, never the primary checkout");
   const initiative = required(args, "initiative", "the initiative improvement.md was written into");
   const digest = required(args, "digest", "the approved_patch_digest quoted in the approved improvement.md");
-  const gatewayUrl = (optional(args, "gateway", "the gateway base, e.g. http://localhost:18000") ?? process.env.ZZ_URL ?? "").replace(/\/+$/, "");
-  if (!gatewayUrl) die("no gateway: pass --gateway or set ZZ_URL");
+  const releaseVersion = required(args, "release-version", "the exact version --release-cmd publishes");
+  const operatorBase = optional(args, "base-ref", "the commit the base subject was released from, when the platform records none");
   const gateCmd = splitCommand(optional(args, "gate-cmd", "the command that gates the applied patch") ?? DEFAULT_GATE_CMD);
   const releaseCmd = splitCommand(required(args, "release-cmd",
     "the repository's own release procedure, run from the isolated worktree once the gate " +
     "passes — read scripts/release.ts and .claude/commands/release.md before choosing one for a " +
     "real release; pass a harmless stub while verifying, e.g. --release-cmd \"git tag " +
     "v0.0.0-verify\""));
-  const idempotencyKey = optional(args, "idempotency-key", "a fixed key, to retry this exact call idempotently") ?? randomUUID();
-
-  const mcp = new Mcp(`${gatewayUrl}/eval/mcp`, { pat: platformToken(), client: DEFAULT_CLIENT });
+  const idempotencyKey = optional(args, "idempotency-key", "a fixed key, to retry this exact call idempotently")
+    ?? randomUUID();
 
   const applySaid = await mcp.call("release_apply", {
     candidate_id: candidateId, approved_patch_digest: digest, initiative, idempotency_key: idempotencyKey,
   });
-  if (/^ERROR[: ]/.test(applySaid)) die(`release_apply refused: ${applySaid}`, 2);
+  if (isRefusal(applySaid)) die(`release_apply refused: ${applySaid}`, 2);
   const apply = JSON.parse(applySaid) as ApplyResponse;
   console.log(`release_apply -> ${apply.status}${apply.reason ? ` (${apply.reason})` : ""}`);
-  if (apply.status !== "applying" || !apply.patch || !apply.plan) {
-    // Refused before anything here ever touched the repository — release_apply already recorded
-    // why, on the server, as part of the same call.
-    return 1;
-  }
+  if (apply.status !== "applying" || !apply.patch || !apply.plan) return 1;
 
   const attemptId = apply.release_attempt_id;
+  const plan = apply.plan;
   const diff = apply.patch.diff;
-
+  let createdBranch = false;
+  let released = false; // once true, `failed` is never recorded — see the module note
   let recorded = false;
   const recordFailed = async (tail: string): Promise<void> => {
-    if (recorded) return; // every exit path calls this at most once — see the module note
+    if (recorded || released) return;
     recorded = true;
+    removeWorktree(repoRoot, attemptId, createdBranch ? plan.branch : null);
     const said = await mcp.call("release_record", {
       release_attempt_id: attemptId, status: "failed",
-      failure_tail: tail.slice(-OUTPUT_TAIL_CHARS), idempotency_key: randomUUID(),
+      failure_tail: tail.slice(-OUTPUT_TAIL_CHARS), idempotency_key: failedKey(attemptId),
     });
     console.log(`release_record (failed) -> ${said}`);
   };
 
-  // The contract's own words: "hashes the applied bytes against approved_patch_digest before
-  // committing." Checked here, before the repository is touched at all — independently of the
-  // check release_apply itself already made server-side, on the bytes this process actually
-  // received rather than trusting the wire twice for the same fact without checking it twice.
+  // Hashed before the repository is touched, on the bytes this process actually received.
   const appliedHash = sha256(diff);
   if (appliedHash !== digest || apply.patch.patch_digest !== digest) {
     await recordFailed(
@@ -214,56 +206,113 @@ async function cliMain(argv: string[]): Promise<number> {
       `server's own patch_digest=${apply.patch.patch_digest}`);
     return 1;
   }
+  const base = resolveBase(repoRoot, plan.base_ref, operatorBase);
+  if ("refused" in base) { await recordFailed(`base unresolvable, nothing applied: ${base.refused}`); return 1; }
+  if (commitOf(repoRoot, `refs/heads/${plan.branch}`)) {
+    await recordFailed(
+      `branch ${plan.branch} already exists in ${repoRoot} — an earlier attempt for this candidate ` +
+      "left it; delete it (or reconcile that attempt) before applying again. Nothing applied.");
+    return 1;
+  }
 
-  let worktree: Worktree | undefined;
+  const path = worktreePathFor(attemptId);
   try {
-    worktree = createReleaseWorktree(repoRoot, attemptId);
-    applyDiff(worktree.path, diff);
-    // -c user.name/user.email rather than relying on repo/global config: this process may run in
-    // an environment with neither set, and a commit failing on that account is not a candidate or
-    // a gate problem worth reporting as either.
-    git(worktree.path, ["add", "-A"]);
-    git(worktree.path, [
+    removeWorktree(repoRoot, attemptId, null);
+    mkdirSync(join(tmpdir(), "zz-release-apply"), { recursive: true });
+    git(repoRoot, ["worktree", "add", "--quiet", "-b", plan.branch, path, base.commit]);
+    createdBranch = true;
+    applyDiff(path, diff);
+    git(path, ["add", "-A"]);
+    git(path, [
       // "@local", not a dotted domain: the gate's own credential-disclosure check treats an
-      // address with a dot after the "@" as a real, reachable one (mutation/workspace.ts's own
-      // committer identity uses the same shape for the same reason).
+      // address with a dot after the "@" as a real, reachable one.
       "-c", "user.name=zz-release-apply", "-c", "user.email=release-apply@local",
       "commit", "-m", `release: apply candidate ${candidateId} (${digest})`,
     ]);
 
-    const gate = runCommand(worktree.path, gateCmd, GATE_TIMEOUT_MS);
+    const gate = runCommand(path, gateCmd, GATE_TIMEOUT_MS);
     if (!gate.ok) { await recordFailed(gate.output); return 1; }
-
-    const release = runCommand(worktree.path, releaseCmd, RELEASE_TIMEOUT_MS);
+    const release = runCommand(path, releaseCmd, RELEASE_TIMEOUT_MS);
     if (!release.ok) { await recordFailed(release.output); return 1; }
+    released = true;
 
-    // Best effort — `--always` falls back to an abbreviated commit hash on a repo with no tags at
-    // all, so this never throws for want of one; a release_ref is still recorded either way.
-    const releaseRef = git(worktree.path, ["describe", "--tags", "--always"]);
-
-    // The new subject version release_record asks for is resolved the SAME way plugin_locate
-    // resolves any other — never re-derived here, which would risk disagreeing with it.
-    const locateSaid = await mcp.call("plugin_locate", { plugin: apply.plan.plugin, idempotency_key: randomUUID() });
-    if (/^ERROR[: ]/.test(locateSaid)) {
-      await recordFailed(`release procedure ran, but plugin_locate afterwards failed: ${locateSaid}`);
-      return 1;
-    }
-    const located = JSON.parse(locateSaid) as { subject_version_id: string };
-
-    recorded = true; // set before the call: a thrown/rejected release_record must not also retry through recordFailed
-    const recordSaid = await mcp.call("release_record", {
-      release_attempt_id: attemptId, status: "released",
-      release_ref: releaseRef, released_subject_version_id: located.subject_version_id,
-      idempotency_key: randomUUID(),
-    });
-    console.log(`release_record (released) -> ${recordSaid}`);
-    return /^ERROR[: ]/.test(recordSaid) ? 1 : 0;
+    const releaseRef = git(path, ["rev-parse", "HEAD"]);
+    removeWorktree(repoRoot, attemptId, null);
+    return await recordReleased(mcp, attemptId, plan.plugin, releaseVersion, releaseRef,
+      reconcileHint(attemptId, candidateId, plan.plugin, releaseVersion));
   } catch (err) {
-    await recordFailed((err as Error).message ?? String(err));
+    const message = (err as Error).message ?? String(err);
+    if (released) {
+      console.error(`${message}\nThe release command succeeded, so this attempt is left applying. Run: ` +
+        reconcileHint(attemptId, candidateId, plan.plugin, releaseVersion));
+    } else {
+      await recordFailed(message);
+    }
     return 1;
   } finally {
-    if (worktree) removeReleaseWorktree(repoRoot, worktree);
+    if (!released && !recorded) removeWorktree(repoRoot, attemptId, createdBranch ? plan.branch : null);
   }
+}
+
+/** Locates the exact published version and records it released, under the attempt's own key —
+ *  a retry replays rather than writing twice. A refusal leaves the attempt applying and says how
+ *  to finish it; it never falls back to `failed`, because the release already happened. */
+async function recordReleased(
+  mcp: Mcp, attemptId: string, plugin: string, version: string, releaseRef: string, hint: string,
+): Promise<number> {
+  const locateSaid = await mcp.call("plugin_locate", { plugin, version, idempotency_key: `plugin_locate:${attemptId}:${version}` });
+  if (isRefusal(locateSaid)) {
+    console.error(`plugin_locate found no ${plugin} ${version}: ${locateSaid}\nOnce it is registered, run: ${hint}`);
+    return 1;
+  }
+  const located = JSON.parse(locateSaid) as { subject_version_id: string };
+  const recordSaid = await mcp.call("release_record", {
+    release_attempt_id: attemptId, status: "released",
+    release_ref: releaseRef, released_subject_version_id: located.subject_version_id,
+    idempotency_key: releasedKey(attemptId),
+  });
+  console.log(`release_record (released) -> ${recordSaid}`);
+  if (isRefusal(recordSaid)) {
+    console.error(`the attempt is still applying; once the refusal above is addressed, run: ${hint}`);
+    return 1;
+  }
+  return 0;
+}
+
+/** `--reconcile`: what really happened to an attempt nobody is left to report for. The version
+ *  its release command publishes is registered → it released; it is not → it did not, and
+ *  `failed` is the truth. */
+async function reconcileMain(mcp: Mcp, args: ReturnType<typeof parseArgs>, attemptId: string): Promise<number> {
+  const candidateId = required(args, "candidate", "the candidate the attempt applied");
+  const plugin = required(args, "plugin", "the plugin the attempt released");
+  const version = required(args, "release-version", "the exact version the attempt's release command publishes");
+  const repoRoot = required(args, "repo", "the clone the attempt was applied in");
+  const branch = `release/candidate-${candidateId}`;
+
+  removeWorktree(repoRoot, attemptId, null);
+  const locateSaid = await mcp.call("plugin_locate", { plugin, version, idempotency_key: `plugin_locate:${attemptId}:${version}` });
+  if (!isRefusal(locateSaid)) {
+    const releaseRef = commitOf(repoRoot, `refs/heads/${branch}`) ?? `${plugin}@${version}`;
+    return recordReleased(mcp, attemptId, plugin, version, releaseRef, reconcileHint(attemptId, candidateId, plugin, version));
+  }
+  gitQuiet(repoRoot, ["branch", "-D", branch]);
+  const said = await mcp.call("release_record", {
+    release_attempt_id: attemptId, status: "failed", idempotency_key: failedKey(attemptId),
+    failure_tail: `reconcile: ${plugin} ${version} was never registered, so this attempt's release ` +
+      `did not land; branch ${branch} removed. plugin_locate said: ${locateSaid}`.slice(-OUTPUT_TAIL_CHARS),
+  });
+  console.log(`release_record (failed) -> ${said}`);
+  return isRefusal(said) ? 1 : 0;
+}
+
+async function cliMain(argv: string[]): Promise<number> {
+  const args = parseArgs(argv);
+  const gatewayUrl = (optional(args, "gateway", "the gateway base, e.g. http://localhost:18000") ?? process.env.ZZ_URL ?? "").replace(/\/+$/, "");
+  if (!gatewayUrl) die("no gateway: pass --gateway or set ZZ_URL");
+  const mcp = new Mcp(`${gatewayUrl}/eval/mcp`, { pat: platformToken(), client: DEFAULT_CLIENT });
+  // NOT A TOOL: `reconcile` is this CLI's own flag, the mode that settles a stuck attempt.
+  const reconcile = optional(args, "reconcile", "the release_attempt_id left applying to reconcile");
+  return reconcile ? reconcileMain(mcp, args, reconcile) : applyMain(mcp, args);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

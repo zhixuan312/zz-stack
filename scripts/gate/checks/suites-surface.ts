@@ -47,6 +47,12 @@ check("a document's `when` decides applicability by code from durable facts, nev
 check("a not_applicable document is discharged everywhere and an undetermined one blocks a finished close",
       runsCheck("flow-when-status.ts"));
 
+check("a close lands where its branch does, and a stop on a fallback draft owes that draft no approval",
+      runsCheck("close-fallback-gates.ts"));
+
+check("plugin_register reads the catalog root, public https git and registry packages, and nothing else",
+      runsCheck("plugin-register-source.ts"));
+
 check("the /manage door is cut by role, the duplicates are gone, and the exception is kept",
       runsCheck("manage-surface.ts"));
 
@@ -125,6 +131,9 @@ check("every dependency mode resolves to exactly one action with no fabricated o
 check("the launcher builds every git/claude argv with no shell, a run-bound credential is refused any events role but actor, and a launch outside a shell-capable runtime refuses before touching a process",
       runsCheck("replay-launch-pure.ts"));
 
+check("a replay session's environment is an allowlist with no launcher credential in it, only the launching principal's own unbound credential may begin or close a live run, the run TTL outlasts the launcher's worst case, and the launcher installs a standalone clone of the subject's own release tag",
+      runsCheck("replay-isolation-pure.ts"));
+
 check("complexityDelta is lines added minus lines removed plus 20 per added component minus 20 per removed one",
       runsCheck("eval-complexity.ts"));
 
@@ -145,3 +154,21 @@ check("paretoFrontier keeps exactly the non-dominated candidates on (pass vector
 
 check("releaseDecision applies only when every required owner approved the exact approved digest against the exact base subject, refusing no_release_owners, not_eligible, approval_required, digest_mismatch and stale_baseline in that order, and rollbackDecision is true on a guardrail failure or an established regression alone",
       runsCheck("eval-release-rules.ts"));
+
+check("release_apply's inputs: the current subject is the newest by semver, an approval speaks only for owner teams its signer is a member of and only for the attempt and digest it cites, any applying attempt of the plugin refuses, named as stale past the bound, and a rolled-back version is retracted from both plugin_locate's head and release_apply's baseline by one shared rule",
+      runsCheck("eval-release-apply-pure.ts"));
+
+check("release_verify reads guardrails before the interval, so a failed guardrail rolls back while the interval is unresolved, and one confidence decides both the unresolved check and rollbackDecision",
+      runsCheck("eval-release-verify-reduction.ts"));
+
+check("a verifier_token reaches one proof allocation only: its own case set, candidate and base subject on the proof split, never a caller-named case, another allocation's run or an evaluator-role event, and a proof-split read blanks every per-case result field",
+      runsCheck("eval-verifier-binding.ts"));
+
+check("candidate_prove judges an accepted pruning before asking for more repeats, and an unclear or unavailable leakage answer is not_established (leakage_unresolved), never a pass",
+      runsCheck("eval-proof-verdict.ts"));
+
+check("a search generation is the search's own round, capped by maxCandidatesPerGeneration and maxGenerations, and a malformed or empty search_policy is refused rather than defaulted",
+      runsCheck("eval-search-rules.ts"));
+
+check("replay_score refuses a credential scoped to the run's own replay team before anything is asked or written",
+      runsCheck("eval-replay-score-guard.ts"));

@@ -25,10 +25,12 @@
  * FR-28 (sealed proof): a candidate's proof-split `zz.candidate_evaluation` row carries
  * `aggregate_score`/`dimension_scores`/`statistics` that must never reach a search context —
  * and a dashboard viewer is exactly such a context, with no isolation of its own. This route
- * never selects those columns for `split = 'proof'`; proof answers with `zz.candidate.status`
- * alone (`proof_passed` | `proof_failed` | `proof_not_established` | `proving` | never proved),
- * which is what "Proof shows only pass or fail" (this task's own console rule) means at the data
- * layer, not only at render time.
+ * never selects those numbers for `split = 'proof'`; proof answers with a verdict word alone
+ * (`proof_passed` | `proof_failed` | `proof_not_established` | `proving` | never proved) — from
+ * `zz.candidate.status` while the candidate is in proof, and from the proof row's one
+ * `aggregate_score->>'proof_status'` key once it has moved past it (released, rolled back,
+ * stale). That is what "Proof shows only pass or fail" (this task's own console rule) means at
+ * the data layer, not only at render time.
  */
 import type { Express } from "express";
 
@@ -96,7 +98,9 @@ export function mountPluginEval(app: Express): void {
       contentDigest: subject.content_digest, capturedAt: subject.captured_at,
     };
 
-    // The newest EVALUATE run against this subject (FR-21–FR-23). `dimension_scores` and
+    // The newest COMPLETED EVALUATE run against this subject (FR-21–FR-23) — a pending,
+    // running, failed or cancelled run has no scores to draw, and showing it would blank a page
+    // that has a perfectly good completed run behind it. `dimension_scores` and
     // `guardrails` are already the rich per-measure shape `evaluation_score` computed and stored
     // (evaluate.ts) — reading them back is a select, not a re-join of eval_dimension/eval_measure.
     const run = (await db.query<{
@@ -115,7 +119,7 @@ export function mountPluginEval(app: Express): void {
         from zz.eval_run er
         join zz.eval_protocol_version pv on pv.id = er.protocol_version_id
         join zz.eval_protocol pr on pr.id = pv.protocol_id
-       where er.subject_version_id = $1::uuid
+       where er.subject_version_id = $1::uuid and er.run_status = 'completed'
        order by er.created_at desc limit 1`, [subject.id])).rows[0];
 
     if (!run) {
@@ -224,12 +228,12 @@ function findingOut(f: {
 
 /** Evolution's own evidence: every candidate the run's improvement searches produced, with
  *  validation's real numbers (never sealed — FR-40 lets search reuse them freely) and proof
- *  reduced to `candidate.status` alone (see this file's own header note on FR-28). Cost/latency
- *  is `zz.replay_run` summed per candidate — every replay execution a candidate caused,
- *  whichever split it ran in, because FR-33's telemetry requirement is about the candidate's
- *  real resource use, not only its validation slice. */
+ *  reduced to a verdict word (see this file's own header note on FR-28). Cost/latency is
+ *  `zz.replay_run` summed per candidate over every split EXCEPT proof: a proof run's cost and
+ *  duration are a function of the sealed cases it ran, and a per-candidate total that moves with
+ *  them is a side channel onto the proof set a search context must never see. */
 async function loadCandidates(db: ReturnType<typeof platformDb>, improvementRunIds: string[]) {
-  const [candidateRows, validationRows, usageRows, releaseRows] = await Promise.all([
+  const [candidateRows, validationRows, proofRows, usageRows, releaseRows] = await Promise.all([
     db.query<{
       id: string; generation: number; hypothesis: string; status: string; complexity_delta: number;
       touched_components: unknown; touched_owners: string[]; base_subject_version_id: string;
@@ -247,12 +251,23 @@ async function loadCandidates(db: ReturnType<typeof platformDb>, improvementRunI
        where split = 'validation'
          and candidate_id in (select id from zz.candidate where improvement_run_id = any($1::uuid[]))
        order by candidate_id, created_at desc`, [improvementRunIds]),
+    // Proof: the verdict key and nothing else — never the interval, deltas or dimension scores
+    // beside it (the header's FR-28 note).
+    db.query<{ candidate_id: string; proof_status: string | null }>(`
+      select distinct on (candidate_id) candidate_id::text as candidate_id,
+             aggregate_score->>'proof_status' as proof_status
+        from zz.candidate_evaluation
+       where split = 'proof'
+         and candidate_id in (select id from zz.candidate where improvement_run_id = any($1::uuid[]))
+       order by candidate_id, created_at desc`, [improvementRunIds]),
     db.query<{ candidate_id: string; cost: string | null; avg_duration_ms: string | null; runs: string }>(`
-      select candidate_id::text as candidate_id, sum(cost)::text as cost,
-             avg(duration_ms)::text as avg_duration_ms, count(*)::text as runs
-        from zz.replay_run
-       where candidate_id in (select id from zz.candidate where improvement_run_id = any($1::uuid[]))
-       group by candidate_id`, [improvementRunIds]),
+      select rr.candidate_id::text as candidate_id, sum(rr.cost)::text as cost,
+             avg(rr.duration_ms)::text as avg_duration_ms, count(*)::text as runs
+        from zz.replay_run rr
+        join zz.replay_case rc on rc.id = rr.case_id
+       where rr.candidate_id in (select id from zz.candidate where improvement_run_id = any($1::uuid[]))
+         and rc.split <> 'proof'
+       group by rr.candidate_id`, [improvementRunIds]),
     db.query<{
       candidate_id: string; status: string; reason: string | null; release_ref: string | null;
       released_declared_version: string | null; verification: { verdict?: string; reason?: string | null } | null;
@@ -267,6 +282,7 @@ async function loadCandidates(db: ReturnType<typeof platformDb>, improvementRunI
   ]);
 
   const validationByCandidate = new Map(validationRows.rows.map((v) => [v.candidate_id, v]));
+  const proofByCandidate = new Map(proofRows.rows.map((p) => [p.candidate_id, p.proof_status]));
   const usageByCandidate = new Map(usageRows.rows.map((u) => [u.candidate_id, u]));
   // Newest attempt per candidate: a rebased candidate (FR-49 stale_baseline) can carry more than
   // one, and the page shows where release stands NOW, not its whole history in this tile.
@@ -285,8 +301,11 @@ async function loadCandidates(db: ReturnType<typeof platformDb>, improvementRunI
         upper: v.aggregate_score.upper, verdict: v.aggregate_score.verdict, guardrails: v.guardrails } : null,
       // "not_proved" — nothing here means a candidate that never reached candidate_prove, kept
       // distinct from the enum's own proof_not_established (FR-28's own too-few-cases/unresolved
-      // outcome), which candidate.status already carries and this maps through unchanged.
-      proof: PROOF_STATUSES.has(c.status) ? c.status : "not_proved",
+      // outcome). A status past proof (released, rolled_back, stale) no longer says how proof
+      // went, so the proof row's verdict answers instead.
+      proof: PROOF_STATUSES.has(c.status)
+        ? c.status
+        : PROOF_VERDICTS[proofByCandidate.get(c.id) ?? ""] ?? "not_proved",
       cost: usage?.cost === undefined || usage.cost === null ? null : Number(usage.cost),
       durationMsAvg: usage?.avg_duration_ms === undefined || usage.avg_duration_ms === null ? null : Number(usage.avg_duration_ms),
       replayRuns: usage ? Number(usage.runs) : 0,
@@ -301,3 +320,8 @@ async function loadCandidates(db: ReturnType<typeof platformDb>, improvementRunI
 }
 
 const PROOF_STATUSES = new Set(["proving", "proof_passed", "proof_failed", "proof_not_established"]);
+/** candidate-prove.ts's stored `proof_status` words, mapped onto the candidate-status vocabulary
+ *  the page reads — the same mapping candidate-prove.ts applies when it sets `candidate.status`. */
+const PROOF_VERDICTS: Record<string, string> = {
+  proof_passed: "proof_passed", proof_failed: "proof_failed", not_established: "proof_not_established",
+};

@@ -20,8 +20,8 @@ const { launchReplay, redact } = await import(
   pathToFileURL(join(process.cwd(), "packages/tools/dist/replay/launch.js")).href);
 
 const {
-  assertRoleEvents, shellCapableRuntime, refuseBeforeIO, replayRefFor, worktreeDirName,
-  gitUpdateRefArgv, gitUpdateRefDeleteArgv, gitWorktreeAddArgv, gitWorktreeRemoveArgv,
+  assertRoleEvents, shellCapableRuntime, refuseBeforeIO, releaseRefFor, worktreeDirName,
+  gitCloneArgv, gitRemoveOriginArgv, gitResolveTagArgv, gitCheckoutDetachArgv,
   claudeMarketplaceAddArgv, claudeInstallArgv, claudeSessionArgv, candidateMcpConfig,
   NO_MCP_CONFIG, stillAsking, idempotencyKey,
 } = plan;
@@ -29,17 +29,16 @@ const {
 // ---- argv construction with no shell: every builder returns an array, one argument per path
 // or name however many spaces or metacharacters it carries — nothing here is ever joined into
 // a string a shell would re-tokenize.
-assert.deepEqual(gitUpdateRefArgv("refs/replay/replay-x", "abc123"),
-  ["update-ref", "refs/replay/replay-x", "abc123"]);
-assert.deepEqual(gitUpdateRefDeleteArgv("refs/replay/replay-x"), ["update-ref", "-d", "refs/replay/replay-x"]);
-assert.deepEqual(gitWorktreeAddArgv("/tmp/a path/wt", "refs/replay/replay-x"),
-  ["worktree", "add", "--detach", "/tmp/a path/wt", "refs/replay/replay-x"],
+assert.deepEqual(gitCloneArgv("/repo", "/tmp/a path/wt"),
+  ["clone", "--no-hardlinks", "--no-checkout", "--quiet", "/repo", "/tmp/a path/wt"],
   "a space in the path is one argv element, not a shell-visible token boundary");
-assert.deepEqual(gitWorktreeRemoveArgv("/tmp/wt"), ["worktree", "remove", "--force", "/tmp/wt"]);
+assert.deepEqual(gitRemoveOriginArgv(), ["remote", "remove", "origin"]);
+assert.deepEqual(gitResolveTagArgv("v0.76.0"), ["rev-parse", "--verify", "--quiet", "refs/tags/v0.76.0^{commit}"]);
+assert.deepEqual(gitCheckoutDetachArgv("abc123"), ["checkout", "--detach", "--quiet", "abc123"]);
 assert.deepEqual(claudeMarketplaceAddArgv("/tmp/wt"), ["plugin", "marketplace", "add", "/tmp/wt"]);
 assert.deepEqual(claudeInstallArgv("zz-plugin-eval", "zz-stack"),
   ["plugin", "install", "-y", "zz-plugin-eval@zz-stack"]);
-assert.equal(replayRefFor("replay-sdlc-a1b2c3d4"), "refs/replay/replay-sdlc-a1b2c3d4");
+assert.equal(releaseRefFor("0.76.0"), "refs/tags/v0.76.0");
 assert.equal(worktreeDirName("replay-sdlc-a1b2c3d4"), "replay-replay-sdlc-a1b2c3d4");
 
 const sessionArgv = claudeSessionArgv({
@@ -101,6 +100,11 @@ assert.notEqual(idempotencyKey("run-1", "replay_close"), idempotencyKey("run-2",
 
 // ---- the runtime refusal: fires before any I/O, not merely as a returned value.
 assert.equal(shellCapableRuntime({ platform: "darwin", shellPath: "/bin/sh" }).ok, true);
+assert.equal(shellCapableRuntime({ platform: "darwin", shellPath: "/bin/sh", sandbox: "sandbox-exec" }).ok, true);
+assert.match(shellCapableRuntime({ platform: "linux", shellPath: "/bin/sh", sandbox: null }).reason,
+  /no working OS sandbox/, "a host with no sandbox is refused — there is no unsandboxed mode");
+assert.throws(() => refuseBeforeIO({ platform: "linux", shellPath: "/bin/sh", sandbox: null },
+  () => { throw new Error("touched I/O"); }), /no working OS sandbox/, "the sandbox refusal fires before any I/O");
 const incapable = shellCapableRuntime({ platform: "darwin", shellPath: null });
 assert.equal(incapable.ok, false);
 assert.match(incapable.reason, /no shell-capable runtime/);
@@ -118,7 +122,7 @@ assert.equal(value, 42);
 // checks in launch.ts run before its first `new Mcp(...)`.
 const start: ReplayStartResult = {
   replay_run_id: "11111111-1111-1111-1111-111111111111", team_slug: "replay-sdlc-a1b2c3d4",
-  worktree_ref: "refs/replay/replay-sdlc-a1b2c3d4", digest: "d", token: null,
+  worktree_ref: "refs/tags/v0.76.0", digest: "d", token: null,
   token_already_issued: true, dependency_modes: [],
 };
 const opts: LaunchOpts = { repoRoot: "/tmp", gatewayUrl: "" };

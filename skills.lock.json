@@ -96,16 +96,16 @@
     "sha": "634db2438a21"
   },
   "zz-plugin-improve": {
-    "version": "0.1",
-    "sha": "9c7d067da26e"
+    "version": "0.2",
+    "sha": "26b12aa0a0a0"
   },
   "zz-plugin-observe": {
     "version": "0.1",
     "sha": "ff0b99352c0b"
   },
   "zz-plugin-promote-verify": {
-    "version": "0.1",
-    "sha": "2a011a60086c"
+    "version": "0.2",
+    "sha": "aba6fef551f1"
   },
   "zz-authoring": {
     "version": "1.1",
@@ -124,8 +124,8 @@
     "sha": "20fda0ac1218"
   },
   "zz-platform": {
-    "version": "3.64",
-    "sha": "8218b13849c2"
+    "version": "3.65",
+    "sha": "99b60c945092"
   },
   "zz-tldr": {
     "version": "1.2",

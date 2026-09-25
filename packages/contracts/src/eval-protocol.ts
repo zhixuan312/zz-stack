@@ -76,6 +76,8 @@ const IMPROVEMENT_RUN_STATUSES = [
 const CANDIDATE_STATUSES = [
   "recorded", "rejected_precheck", "validating", "valid", "invalid", "selected",
   "proving", "proof_passed", "proof_failed", "proof_not_established", "stale", "released",
+  // Migration 084: release_record's rollback path marks the candidate whose release it undid.
+  "rolled_back",
 ] as const;
 /** zz.replay_run.status (077) — distinct from replay_case.status above: a case is either
  *  replayable or not, once; a run against it moves through its own execution lifecycle and can
@@ -142,7 +144,9 @@ const FreeformRecord = z.record(z.string(), z.unknown());
 export const Measure = z.object({
   key: z.string().min(1),
   evaluatorType: z.enum(EVALUATOR_TYPES),
-  weight: z.number(),
+  // Positive, never zero or negative: a zero weight is a measure that counts for nothing, and a
+  // negative one lets two measures sum to 1 while one of them scores backwards.
+  weight: z.number().positive(),
   suite: z.enum(SUITES),
   required: z.boolean(),
   definition: FreeformRecord,
@@ -154,7 +158,7 @@ export const Dimension = z.object({
   key: z.string().min(1),
   name: z.string().min(1),
   canonicalKind: z.enum(CANONICAL_KINDS),
-  weight: z.number(),
+  weight: z.number().positive(),
   required: z.boolean(),
   applicable: z.boolean(),
   notApplicableReason: z.string().nullable(),
@@ -176,6 +180,14 @@ export const Dimension = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom, path: ["notApplicableReason"],
       message: `dimension "${dim.key}" is not applicable and must name a notApplicableReason`,
+    });
+  }
+  // (e, reversed) an applicable dimension carries no reason for not applying — a reason beside
+  // `applicable: true` is two answers to one question, and a reader cannot tell which one holds.
+  if (dim.applicable && dim.notApplicableReason !== null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ["notApplicableReason"],
+      message: `dimension "${dim.key}" is applicable, so its notApplicableReason must be null`,
     });
   }
 });

@@ -77,7 +77,9 @@ const round = (v: number, decimals: number): number => {
  *  "excluded here", never "counts as zero". */
 function weightedMean(items: { weight: number; value: number }[]): number | null {
   const totalWeight = items.reduce((sum, i) => sum + i.weight, 0);
-  if (items.length === 0 || totalWeight === 0) return null;
+  // `<= 0`, not `=== 0`: the protocol schema refuses a non-positive weight, but a total at or
+  // below zero reaching here would divide into a sign-flipped or infinite mean rather than none.
+  if (items.length === 0 || !(totalWeight > 0) || !Number.isFinite(totalWeight)) return null;
   return items.reduce((sum, i) => sum + (i.weight / totalWeight) * i.value, 0);
 }
 
@@ -97,12 +99,14 @@ function guardrailStatus(guardrails: ScoreRunInput["guardrails"]): ScoreRunOutpu
 }
 
 /** Pure and deterministic (AC-19.1–AC-23.1's shared invariant): same input, same output, every
- *  time. Throws `RangeError` on a measure value outside [0,1] — the one input this cannot make
+ *  time. Throws `RangeError` on a measure value outside [0,1] or not finite — the one input this cannot make
  *  sense of rather than merely score badly. */
 export function scoreRun(input: ScoreRunInput): ScoreRunOutput {
   for (const dim of input.dimensions) {
     for (const m of dim.measures) {
-      if (m.value !== null && (m.value < 0 || m.value > 1)) {
+      // `!Number.isFinite` first: NaN compares false against both bounds and would otherwise
+      // pass straight into the mean and come out as an overall of NaN.
+      if (m.value !== null && (!Number.isFinite(m.value) || m.value < 0 || m.value > 1)) {
         throw new RangeError(`measure value ${m.value} in dimension "${dim.key}" is outside [0, 1]`);
       }
     }

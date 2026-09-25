@@ -29,7 +29,7 @@ import {
 import { insertEvaluatorAnswer } from "../semantic.js";
 import { Refusal } from "../refusal.js";
 import { registerEvaluator } from "./evaluators.js";
-import { recordQualification, resolveProtocol, type GatheredQualification } from "./qualify.js";
+import { recordQualification, resolveProtocol, unaffirmedRefusal, type GatheredQualification } from "./qualify.js";
 import { assignSplits, minimumsMet, type SplitCase, type SplitPolicy } from "./split.js";
 import {
   decideBeforeWork, withIdempotency, type IdempotencyOutcome, type MutatorOutcome,
@@ -247,7 +247,7 @@ export function registerReplayCaseTools(server: McpServer): void {
         "user_oracle/evaluation_oracle timeline, and splits every replayable case with " +
         "assignSplits. RETURNS { case_set_id, version, counts: {evolve, validation, proof, " +
         "not_replayable}, minimums_met, source_kind_qualification }. REFUSES an unknown " +
-        "subject_version_id or protocol_version_id, a protocol_version_id that is not this " +
+        "subject_version_id or protocol_version_id, one protocol_affirm has not bound, a protocol_version_id that is not this " +
         "subject's own plugin's, source_scope naming an initiative that is not closed, and " +
         "source_scope naming nothing. Unchanged source material since the plugin's newest " +
         "case-set version reuses it rather than minting a redundant one; changed material " +
@@ -272,6 +272,8 @@ export function registerReplayCaseTools(server: McpServer): void {
       if (!pluginId) return text("ERROR: unknown subject_version_id — call plugin_locate or plugin_register first");
       const protocol = await resolveProtocol(p, protocol_version_id);
       if (!protocol) return text("ERROR: unknown protocol_version_id");
+      const unaffirmed = unaffirmedRefusal(protocol_version_id, protocol);
+      if (unaffirmed) return text(unaffirmed);
       if (protocol.pluginId !== pluginId) {
         return text("ERROR: protocol_version_id does not belong to this subject_version_id's plugin");
       }

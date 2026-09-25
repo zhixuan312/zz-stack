@@ -154,8 +154,10 @@ function renderTrust(rows: EvaluatorTrustRow[]): string {
 function renderFindings(findings: FindingRow[], kind: FindingRow["kind"]): string {
   const rows = findings.filter((f) => f.kind === kind);
   if (!rows.length) return `No ${kind} is recorded against this run.`;
+  // The id is printed because IMPROVE's `improvement_start` names findings by it, and a fresh
+  // conversation has this document, not EXPLAIN's `finding_record` responses.
   return rows.map((f) =>
-    `- ${f.pattern} (owner: ${f.owner_kind ?? "unknown"}${f.owner_ref ? ` ${f.owner_ref}` : ""}, ` +
+    `- ${f.pattern} (id: \`${f.id}\`, owner: ${f.owner_kind ?? "unknown"}${f.owner_ref ? ` ${f.owner_ref}` : ""}, ` +
     `decision: ${f.decision})`).join("\n");
 }
 

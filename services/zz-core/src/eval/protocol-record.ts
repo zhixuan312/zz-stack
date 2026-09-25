@@ -89,6 +89,21 @@ export function factPathRefusal(
   return null;
 }
 
+/** A measure key repeated anywhere in the body, refused by name with the dimensions that repeat
+ *  it. Every reader names a measure by key alone across the whole version — `evaluator_qualify`
+ *  and `finding_record` (`measureByKey`), a critical guardrail — so a key two dimensions share is
+ *  one no caller can name. `null` when every key is unique protocol-wide. */
+export function duplicateMeasureKeyRefusal(
+  body: { dimensions: readonly { key: string; measures: readonly { key: string }[] }[] },
+): string | null {
+  const seen = new Map<string, string[]>();
+  for (const d of body.dimensions) for (const m of d.measures) seen.set(m.key, [...(seen.get(m.key) ?? []), d.key]);
+  const repeated = [...seen].filter(([, dims]) => dims.length > 1);
+  if (!repeated.length) return null;
+  return "measure keys must be unique across the whole protocol — " +
+    repeated.map(([key, dims]) => `"${key}" is declared in ${dims.join(", ")}`).join("; ");
+}
+
 /** Every `improvement.criticalGuardrails[].key` refused, by name, when it resolves to zero or more
  *  than one measure across this protocol body's own dimensions — `evaluateGuardrails`
  *  (evaluate-measures.ts) reads a guardrail by measure key alone, so a key that names nothing, or
@@ -231,6 +246,8 @@ export async function recordProtocolVersion(
       if (factIssue) return `REFUSED: ${factIssue}`;
     }
   }
+  const duplicateIssue = duplicateMeasureKeyRefusal(body);
+  if (duplicateIssue) return `REFUSED: ${duplicateIssue}`;
   const guardrailIssue = criticalGuardrailRefusal(body);
   if (guardrailIssue) return `REFUSED: ${guardrailIssue}`;
 

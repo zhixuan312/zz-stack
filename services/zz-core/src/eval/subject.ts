@@ -169,11 +169,10 @@ async function subjectResponse(
       join zz.plugin p on p.id = sv.plugin_id
      where sv.id = $1::uuid`, [subjectVersionId])).rows[0];
 
-  // The newest protocol version this plugin has, if any — FR-4/FR-5's protocol lineage has no
-  // writer yet in this task's dependency scope (protocol_record is a later stage), so this reads
-  // as null until it does. Not a compatibility check against `subject_compatibility`: that
-  // reading is protocol_read's one job, and duplicating it here would give two answers to
-  // "which protocol applies" from two different tools.
+  // The newest protocol version this plugin has, if any — affirmed or not. DELIBERATE: no
+  // compatibility check against `subject_compatibility` or the triggers, and no affirmation
+  // check: deciding which protocol applies is protocol_read's one job, and doing it here too would
+  // give two answers to that question from two different tools.
   const protocol = (await runner.query<{ id: string }>(`
     select epv.id::text as id
       from zz.eval_protocol_version epv
@@ -201,7 +200,7 @@ async function subjectResponse(
     // value belongs to an initiative that never reached a release/proposal stage at all, which
     // is not a fact plugin_locate, called before any evaluation exists, can see.
     release_mode: row.release_owners.length > 0 ? "promotable" : "proposal_only",
-    latest_compatible_protocol_version_id: protocol?.id ?? null,
+    latest_protocol_version_id: protocol?.id ?? null,
     // What an evaluation may do with its findings follows from whose the plugin is — carried
     // over from plugin-eval.ts's pre-FR-1 plugin_locate, which this module replaces. Ours
     // (`origin = "platform"`): the findings feed a change somebody makes. A third party's
@@ -220,8 +219,8 @@ export function registerSubjectTools(server: McpServer): void {
         "WHEN an evaluation begins, before any other tool on this door: IDENTIFY the plugin it is " +
         "about. It RETURNS FR-1's immutable subject_version — declared version, whole-plugin " +
         "content digest, per-component manifest (skill/server/flow/config digests, never the " +
-        "environment), ownership and its release mode, and the latest compatible protocol version " +
-        "if one exists — with the SAME subject_version_id for the same release content, whichever " +
+        "environment), ownership and its release mode, and the plugin's newest protocol version " +
+        "if one exists (no compatibility check — protocol_read decides that) — with the SAME subject_version_id for the same release content, whichever " +
         "call minted the row. Every later tool takes the subject_version_id this returns, so an " +
         "evaluation cannot drift onto a different version of its own subject halfway through. A " +
         "mutator: it upserts zz.eval_subject_version through the FR-59 idempotency ledger, so a " +

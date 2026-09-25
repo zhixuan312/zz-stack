@@ -215,6 +215,14 @@ check("candidate_prove(abandon) revokes the verifier_token before cancelling any
       runsCheck("eval-proof-abandon-order.ts"));
 check("a verifier replay_start re-reads its token FOR SHARE right before the run insert, so a start racing an abandon is counted or refused",
       runsCheck("eval-replay-start-token-race.ts"));
+check("measure keys resolve by name (none, one, or a duplicate refused naming its dimensions) and are unique protocol-wide; finding_record refuses an unknown measure_key, evaluator_qualify a non-model measure, and an unaffirmed protocol version is refused by evaluator_qualify and evaluation_start and never answered reuse by protocol_read",
+      runsCheck("eval-protocol-gate.ts"));
+check("the replay launcher runs every cleanup removal even when one throws, and a leftover keeps a completed run completed with a cleanup_warning",
+      runsCheck("replay-launch-cleanup.ts"));
+check("pluginDirComponents leaves a tests fixture SKILL.md out of a catalog capture's components at any depth",
+      runsCheck("catalog-unshipped-skills.ts"));
+check("release_prepare and proposal_prepare take only the initiative: the eval_run from its findings.md, the one proof_passed candidate (none or several refused by name), the newest improvement run",
+      runsCheck("eval-prepare-from-initiative.ts"));
 
 check("a waiver covers only its own step's unmet rule of exactly its kind — never a kind it is a substring of, one named in an about tail, or another step's same-kind gap",
       runsCheck("store-waivers.ts"));

@@ -1,6 +1,6 @@
 ---
 name: zz-handover
-version: 2.11
+version: 2.12
 description: The handover every flow ends with. Read one closed initiative — its documents, its telemetry, its refusals — decide what generalises beyond the team that hit it and what matters only to this team, mint the first kind immediately, and propose the second in one gated handover document.
 when_to_use: "An initiative has closed — its closing document carries an `outcome` and the platform has appended its row to `_ledger.md`. Runs at the end of EVERY flow, whatever the flow was. Not a delivery stage: the stakeholder never sees this run."
 ---
@@ -244,7 +244,7 @@ open, because its gate would demand a document that work could never produce.
 
 **So Pass 2 completion is self-reported and platform-unverified.** Write the count because a
 later reader can compare it against `knowledge_search(query: "<a proposed node's title>")` for
-each node the document proposed — a team node is a result with no `scope: "platform"` — and see
+each node the document proposed — a team node is a result with `shelf: "team"` — and see
 for themselves,
 not because anything will stop you if you promise two and mint none. If that gap matters
 enough to close, it closes by implementing the read-back — not by a sentence here saying it

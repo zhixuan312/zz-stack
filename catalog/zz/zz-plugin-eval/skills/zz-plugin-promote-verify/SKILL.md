@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-promote-verify
-version: 0.5
+version: 0.7
 description: Stage 8 of zz-plugin-eval (PROMOTE/VERIFY), the promotion boundary. Once IMPROVE has a proof-passed, owned candidate, prepare and gate the exact patch, apply it only after every required owner approves, record what happened, and run the automatic no-gate post-release check with its own objective rollback rule.
 when_to_use: "The eighth and last stage of zz-plugin-eval, reached only when release_mode is promotable — a candidate IMPROVE selected reached proof_passed against an owned subject. REQUIRES a shell-capable runtime that can run zz-tool commands against a real repository checkout. Never reached on a proposal_only or not_applicable branch."
 ---
@@ -13,12 +13,14 @@ and every step past `release_prepare` needs a person's approval first.
 ## Preparing the release — the one gate that authorizes it
 
 ```
-release_prepare(candidate_id, initiative, idempotency_key)
+release_prepare(initiative, idempotency_key)
 ```
 
 **WHEN a candidate reached `proof_passed` with `release_eligible: true`** (IMPROVE's own
-`candidate_prove`). Resolves required owners LIVE from the base subject's own `release_owners`
-(never the release_eligible flag `candidate_prove` recorded at proof time — ownership is
+`candidate_prove`). The initiative is all this stage needs to start, in any conversation: the
+tool finds the candidate itself — the one candidate of the initiative's improvement runs (on the
+`eval_run_id` its `findings.md` records) that reached `proof_passed`. Resolves required owners
+LIVE from the base subject's own `release_owners` (never the release_eligible flag `candidate_prove` recorded at proof time — ownership is
 re-checked, not cached), records the promotion package as a `zz.release_attempt` row
 (`prepared`), and writes `<initiative>/improvement.md` — the authority-bearing gate FR-48 names,
 naming the exact candidate/patch digest, proof evidence, score change, guardrails, affected
@@ -29,12 +31,16 @@ owners and the planned release/rollback:
 ## Guardrails · ## Owners       · ## Release plan · ## Rollback plan
 ```
 
-RETURNS `{ release_attempt_id, required_owners, document }` — `required_owners` and the attempt
+RETURNS `{ candidate_id, release_attempt_id, patch_digest, required_owners, document }` —
+`candidate_id` and `patch_digest` are what `release_apply` and `zz-tool release-apply` take
+(`patch_digest` as `approved_patch_digest`). The candidate, the digest, the owners and the attempt
 id are always returned even when the document write is refused (an unopened/closed initiative, a
 document already approved), which then answers `document: null` plus document_refused naming
 why; retry with the SAME `idempotency_key` to write the document against the already-recorded
-attempt, never a fresh one, which would record a second attempt. REFUSES a candidate that has
-not itself reached `proof_passed` (`not_eligible`); a caller who is not a member of one of the
+attempt, never a fresh one, which would record a second attempt. REFUSES an initiative whose
+`findings.md` records no `eval_run_id` (`no_eval_run`), none of whose candidates reached
+`proof_passed` (`not_eligible`), or more than one of whose did (`ambiguous_candidate`, listing
+them); a caller who is not a member of one of the
 base subject's owner teams (`not_owner`); a base subject with NO recorded
 `release_owners` — `no_release_owners`, naming `proposal_prepare` instead, back in IMPROVE; and
 (FR-58, hard refusal) this initiative's release_mode already set to something other than
@@ -45,7 +51,7 @@ base subject's owner teams (`not_owner`); a base subject with NO recorded
 `document_present` it, put it in front of every required owner, and `document_approve` it the
 moment they agree — under their name, in the same turn. **`release_apply` reads the approved
 document back and refuses without it**: the approval counts only when the document cites THIS
-`release_attempt_id` in its frontmatter and quotes the exact `patch_digest`, and only for the
+`release_attempt_id` in its body and quotes the exact `patch_digest`, and only for the
 owner teams the approver is a MEMBER of. An approval of an earlier attempt's document, or by
 somebody in no owner team, approves nothing. `document_approve` refuses `not_owner` on
 `improvement.md` when the signer is in no owner team — and, with `on_behalf_of`, when the session
@@ -146,10 +152,11 @@ rollback decision. RETURNS `{ verdict: established | rolled_back | not_establish
 reason, evidence, rollback_plan, runs_required?, verifier_token?, status }` — like
 `candidate_prove`, `runs_required` is `{ case_set_id, baseline, candidate }` while short — COUNTS,
 never case ids: `baseline` replays of the prior subject (the candidate's base) and `candidate`
-replays of the released one. Run each, one at a time, exactly as IMPROVE's own proof loop:
+replays of the released one, named beside it as `prior_subject_version_id` and
+`released_subject_version_id`. Run each, one at a time, exactly as IMPROVE's own proof loop:
 
 ```
-replay_start(case_set_id, subject_version_id: <prior or released>, split: "proof", context: "verifier", verifier_token, repeats, idempotency_key)
+replay_start(case_set_id, subject_version_id: <prior_subject_version_id or released_subject_version_id>, split: "proof", context: "verifier", verifier_token, repeats, idempotency_key)
 d=$(mktemp -d)
 ```
 

@@ -41,7 +41,7 @@ import {
   readFileSync, realpathSync, rmSync, statSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { Mcp } from "@zz/mcp-client";
 
@@ -127,7 +127,38 @@ export interface LaunchOpts {
 /** `logPath` is null once a completed run's logs are deleted (`LOG_RETENTION_MS`); a failed run
  *  keeps them for the operator. `verifier` is the verifier step's own outcome line — on a
  *  completed run, the only place it survives the log. */
-export interface LaunchResult { readonly status: "completed" | "failed"; readonly logPath: string | null; readonly verifier?: string }
+export interface LaunchResult {
+  readonly status: "completed" | "failed"; readonly logPath: string | null; readonly verifier?: string;
+  readonly cleanup_warning?: string;
+}
+
+/** Runs every removal on its own and settles the launch's answer. A rename that fails (a
+ *  directory the session left busy, a permission it changed) must not skip the removals after
+ *  it, and must not escape as a throw that replaces the answer.
+ *
+ *  DELIBERATE: a leftover never turns a completed run into a failed one. By then the run is
+ *  closed and scored — reporting `failed` would send the agent to start a fresh run for evidence
+ *  that already landed. It stays `completed`, with the leftovers in `cleanup_warning` (and on
+ *  stderr); a failed run keeps `failed`, with them appended to the log it already kept. */
+export function settleCleanup(
+  result: LaunchResult, logPath: string, removals: readonly (readonly [string, () => void])[],
+): LaunchResult {
+  const leftovers: string[] = [];
+  for (const [what, remove] of removals) {
+    try { remove(); } catch (err) { leftovers.push(`${what}: ${(err as Error).message}`); }
+  }
+  if (!leftovers.length) return result;
+  const warning = `cleanup failed: ${leftovers.join("; ")}`;
+  if (result.status === "completed") {
+    console.error(`launchReplay: ${warning}`);
+    return { ...result, cleanup_warning: warning };
+  }
+  try {
+    mkdirSync(dirname(logPath), { recursive: true, mode: 0o700 });
+    appendFileSync(logPath, `# ${warning}\n`, "utf8");
+  } catch { /* nowhere left to say it but the answer itself */ }
+  return { ...result, cleanup_warning: warning };
+}
 
 /** `replay_close`'s own `result.produced` shape (migration 002), mirrored here — never imported
  *  from `services/zz-core/dist`, per the module note above: `packages/tools` crosses that
@@ -514,24 +545,13 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
     });
     result = { status: "failed", logPath };
   } finally {
-    // Each removal on its own: a rename that fails (a directory the session left busy, a
-    // permission it changed) must not skip the homes after it, and must not escape as a throw
-    // that replaces this function's answer. A leftover directory is reported as a failed launch
-    // with its reason in the log — the run itself was already closed above either way.
-    const leftovers: string[] = [];
-    const attempt = (what: string, remove: () => void): void => {
-      try { remove(); } catch (err) { leftovers.push(`${what}: ${(err as Error).message}`); }
-    };
-    if (worktree) { const w = worktree; attempt("worktree", () => removeWorktree(w)); }
-    if (candidateHome) { const h = candidateHome; attempt("candidate home", () => removeSessionHome(h)); }
-    if (personHome) { const h = personHome; attempt("person home", () => removeSessionHome(h)); }
-    if (leftovers.length) {
-      try {
-        mkdirSync(join(tmpdir(), "zz-replay-logs"), { recursive: true, mode: 0o700 });
-        appendFileSync(logPath, `# cleanup failed: ${leftovers.join("; ")}\n`, "utf8");
-      } catch { /* nowhere left to say it but the status below */ }
-      result = { status: "failed", logPath };
-    }
+    // The run itself was already closed above either way; see settleCleanup.
+    const removals: (readonly [string, () => void])[] = [];
+    if (worktree) { const w = worktree; removals.push(["worktree", () => removeWorktree(w)]); }
+    if (candidateHome) { const h = candidateHome; removals.push(["candidate home", () => removeSessionHome(h)]); }
+    if (personHome) { const h = personHome; removals.push(["person home", () => removeSessionHome(h)]); }
+    // `result` is assigned on both paths above; the finally only ever sees it set.
+    result = settleCleanup(result!, logPath, removals);
   }
   return result;
 }

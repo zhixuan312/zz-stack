@@ -228,7 +228,10 @@ export function groupByCase(xs: readonly SideRun[]): Map<string, SideRun[]> {
   return m;
 }
 
+/** `case_set_id` rides on every entry, so the `replay_start` it asks for is written from this entry
+ *  alone — IMPROVE may run in a conversation that never saw `improvement_start`'s response. */
 interface RunsRequiredEntry {
+  readonly case_set_id: string;
   readonly case_id: string;
   readonly side: "baseline" | "candidate";
   readonly subject_version_id: string | null;
@@ -266,10 +269,10 @@ async function planValidation(p: pg.Pool, candidate: CandidateRow, caseSetId: st
     const b = byBaseline.get(caseId) ?? [];
     const k = byCandidate.get(caseId) ?? [];
     if (b.length < minRepeats) {
-      runsRequired.push({ case_id: caseId, side: "baseline", subject_version_id: candidate.base_subject_version_id, candidate_id: null, count: minRepeats - b.length });
+      runsRequired.push({ case_set_id: caseSetId, case_id: caseId, side: "baseline", subject_version_id: candidate.base_subject_version_id, candidate_id: null, count: minRepeats - b.length });
     }
     if (k.length < minRepeats) {
-      runsRequired.push({ case_id: caseId, side: "candidate", subject_version_id: null, candidate_id: candidate.id, count: minRepeats - k.length });
+      runsRequired.push({ case_set_id: caseSetId, case_id: caseId, side: "candidate", subject_version_id: null, candidate_id: candidate.id, count: minRepeats - k.length });
     }
     if (b.length >= minRepeats && k.length >= minRepeats) {
       const baseline_mean = mean(b.map((r) => r.overall));
@@ -284,11 +287,11 @@ async function planValidation(p: pg.Pool, candidate: CandidateRow, caseSetId: st
 /** `unresolved` under the liveness bound asks for exactly one more repeat per case per side —
  *  the contract's own "adds repeats while the result is unresolved," applied uniformly rather
  *  than guessing which case is the noisy one. */
-function escalateOneRepeat(caseIds: readonly string[], candidate: CandidateRow): RunsRequiredEntry[] {
+function escalateOneRepeat(caseSetId: string, caseIds: readonly string[], candidate: CandidateRow): RunsRequiredEntry[] {
   const out: RunsRequiredEntry[] = [];
   for (const caseId of caseIds) {
-    out.push({ case_id: caseId, side: "baseline", subject_version_id: candidate.base_subject_version_id, candidate_id: null, count: 1 });
-    out.push({ case_id: caseId, side: "candidate", subject_version_id: null, candidate_id: candidate.id, count: 1 });
+    out.push({ case_set_id: caseSetId, case_id: caseId, side: "baseline", subject_version_id: candidate.base_subject_version_id, candidate_id: null, count: 1 });
+    out.push({ case_set_id: caseSetId, case_id: caseId, side: "candidate", subject_version_id: null, candidate_id: candidate.id, count: 1 });
   }
   return out;
 }
@@ -467,6 +470,7 @@ export async function releaseStaleValidating(
 // The tool's own result shape and orchestrator.
 
 interface ValidateOutcome {
+  readonly case_set_id: string;
   readonly candidate_evaluation_id: string | null;
   readonly verdict: PairedDecisionResult["verdict"] | null;
   readonly interval: [number, number] | null;
@@ -541,18 +545,19 @@ export async function validateCandidate(
     // same candidate, and a later eligibility check reading "the" validation evaluation would find
     // several. One candidate, one stored validation verdict; every call past the first reads it
     // back rather than re-deciding it.
+    const ctx = await loadValidationContext(p, candidate);
+    if (!ctx.ok) return { error: ctx.error };
+    const case_set_id = ctx.caseSetId;
+
     const stored = await existingValidationEvaluation(p, candidateId);
     if (stored) {
       return {
-        candidate_evaluation_id: stored.id, verdict: stored.aggregate_score.verdict,
+        case_set_id, candidate_evaluation_id: stored.id, verdict: stored.aggregate_score.verdict,
         interval: [stored.aggregate_score.lower, stored.aggregate_score.upper],
         mean_delta: stored.aggregate_score.mean_delta,
         guardrails: stored.guardrails, resource_usage: stored.resource_usage, status: "valid",
       };
     }
-
-    const ctx = await loadValidationContext(p, candidate);
-    if (!ctx.ok) return { error: ctx.error };
 
     const modelBacked = await protocolHasModelBackedMeasure(p, candidate.base_subject_version_id);
     if (!modelBacked.ok) return { error: modelBacked.error };
@@ -563,7 +568,7 @@ export async function validateCandidate(
     }
     if (plan.kind === "pending") {
       return {
-        candidate_evaluation_id: null, verdict: null, interval: null, mean_delta: null,
+        case_set_id, candidate_evaluation_id: null, verdict: null, interval: null, mean_delta: null,
         guardrails: null, resource_usage: null, runs_required: plan.runs_required, status: "valid",
       };
     }
@@ -576,9 +581,9 @@ export async function validateCandidate(
     const boundReached = Date.now() - ctx.improvementRunCreatedAt.getTime() >= ctx.policy.wallClockHours * 3_600_000;
     if (decision.verdict === "unresolved" && !boundReached) {
       return {
-        candidate_evaluation_id: null, verdict: null, interval: null, mean_delta: null,
+        case_set_id, candidate_evaluation_id: null, verdict: null, interval: null, mean_delta: null,
         guardrails: null, resource_usage: null,
-        runs_required: escalateOneRepeat(plan.perCase.map((c) => c.case_id), candidate),
+        runs_required: escalateOneRepeat(ctx.caseSetId, plan.perCase.map((c) => c.case_id), candidate),
         status: "valid",
       };
     }
@@ -613,7 +618,7 @@ export async function validateCandidate(
     const candidateEvaluationId = outcome.replayed ? outcome.result_id : outcome.result.id;
 
     return {
-      candidate_evaluation_id: candidateEvaluationId, verdict: decision.verdict,
+      case_set_id, candidate_evaluation_id: candidateEvaluationId, verdict: decision.verdict,
       interval: [decision.lower, decision.upper], mean_delta: decision.mean,
       guardrails, resource_usage, status: "valid",
     };

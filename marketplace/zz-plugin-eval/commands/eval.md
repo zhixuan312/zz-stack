@@ -151,7 +151,9 @@ line. Where a threshold belongs is yours. What the number *is* is never yours.
 is the honest answer — report it and move on.
 
 ❌ **Scoring before `protocol.md` is approved.** `protocol_affirm` refuses without an approved
-document quoting the exact version's `content_digest`, and the refusal is the gate working.
+document quoting the exact version's `content_digest`, and until it binds, `evaluator_qualify`,
+`replay_case_set_build` and `evaluation_start` refuse that protocol version by name — the
+refusal is the gate working.
 
 ❌ **Starting IMPROVE with no shell.** Nothing before it needs one; everything from it on does.
 

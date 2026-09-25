@@ -31,29 +31,29 @@
   },
   "zz-core": {
     "version": "0.76.0",
-    "digest": "7ba32649",
+    "digest": "b727f992",
     "skills": {
       "zz-authoring": "60f258ebec54",
       "zz-breakout": "8ec4136f1e82",
       "zz-deck": "ad14925b6473",
-      "zz-handover": "2f8b418f1c24",
+      "zz-handover": "d07ca4b6f509",
       "zz-platform": "1f5d094fce2c",
       "zz-tldr": "ac9890b7fffb"
     }
   },
   "zz-plugin-eval": {
     "version": "0.76.0",
-    "digest": "bc1400de",
+    "digest": "8b5a1a16",
     "skills": {
-      "zz-plugin-define-qualify": "bf1a0ed01761",
+      "zz-plugin-define-qualify": "4a77949b6f10",
       "zz-plugin-discover": "6cbb234cc76d",
-      "zz-plugin-eval": "35477b8262df",
-      "zz-plugin-evaluate": "d610c76b7128",
+      "zz-plugin-eval": "2a818725df0b",
+      "zz-plugin-evaluate": "56f5ccee8049",
       "zz-plugin-explain": "651bebc40bf8",
-      "zz-plugin-identify": "634db2438a21",
-      "zz-plugin-improve": "bdeca43c0e17",
+      "zz-plugin-identify": "339e956f2883",
+      "zz-plugin-improve": "1af4d2383a20",
       "zz-plugin-observe": "ff0b99352c0b",
-      "zz-plugin-promote-verify": "8fc28324d8aa"
+      "zz-plugin-promote-verify": "3212d4f1d9c4"
     }
   }
 }

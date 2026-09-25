@@ -72,40 +72,40 @@
     "sha": "a5d73e2d40eb"
   },
   "zz-plugin-define-qualify": {
-    "version": "0.3",
-    "sha": "bf1a0ed01761"
+    "version": "0.4",
+    "sha": "4a77949b6f10"
   },
   "zz-plugin-discover": {
     "version": "0.1",
     "sha": "6cbb234cc76d"
   },
   "zz-plugin-eval": {
-    "version": "2.2",
-    "sha": "35477b8262df"
+    "version": "2.3",
+    "sha": "2a818725df0b"
   },
   "zz-plugin-evaluate": {
-    "version": "0.2",
-    "sha": "d610c76b7128"
+    "version": "0.3",
+    "sha": "56f5ccee8049"
   },
   "zz-plugin-explain": {
     "version": "0.2",
     "sha": "651bebc40bf8"
   },
   "zz-plugin-identify": {
-    "version": "0.1",
-    "sha": "634db2438a21"
+    "version": "0.2",
+    "sha": "339e956f2883"
   },
   "zz-plugin-improve": {
-    "version": "0.5",
-    "sha": "bdeca43c0e17"
+    "version": "0.7",
+    "sha": "1af4d2383a20"
   },
   "zz-plugin-observe": {
     "version": "0.1",
     "sha": "ff0b99352c0b"
   },
   "zz-plugin-promote-verify": {
-    "version": "0.5",
-    "sha": "8fc28324d8aa"
+    "version": "0.7",
+    "sha": "3212d4f1d9c4"
   },
   "zz-authoring": {
     "version": "1.1",
@@ -120,8 +120,8 @@
     "sha": "ad14925b6473"
   },
   "zz-handover": {
-    "version": "2.11",
-    "sha": "2f8b418f1c24"
+    "version": "2.12",
+    "sha": "d07ca4b6f509"
   },
   "zz-platform": {
     "version": "3.67",

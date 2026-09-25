@@ -59,6 +59,7 @@ import { z } from "zod";
 
 import { writeImprovementDoc, type ProofEvaluationRow } from "./improvement-doc.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { improvementRunOf, proofPassedCandidateOf } from "./initiative-run.js";
 import { loadSubjectForEvalRun, writeProposalDoc } from "./proposal-doc.js";
 import { describeApplyOutcomeForReplay, planApply, type ApplyResult } from "./release-apply.js";
 import { prepareWithBranchFact } from "./release-prepare.js";
@@ -109,8 +110,12 @@ async function loadLatestProof(p: pg.Pool, candidateId: string): Promise<ProofEv
   return row ?? null;
 }
 
+/** `candidate_id` and `patch_digest` are returned because `release_apply` (and `zz-tool
+ *  release-apply --candidate`) take them, and this call resolved the candidate from the initiative:
+ *  this response is where PROMOTE/VERIFY first learns either. */
 interface PrepareResult {
-  readonly release_attempt_id: string; readonly required_owners: string[];
+  readonly candidate_id: string; readonly release_attempt_id: string; readonly patch_digest: string;
+  readonly required_owners: string[];
   readonly document: string | null; readonly document_refused?: string;
   readonly facts: Record<string, string>;
 }
@@ -121,37 +126,45 @@ export function registerReleaseTools(server: McpServer): void {
     {
       description:
         "WHEN a candidate has reached proof_passed and is ready to cross the promotion boundary " +
-        "(FR-46, nothing before this touches the real repository): resolves required owners " +
+        "(FR-46, nothing before this touches the real repository): resolves the candidate from " +
+        "the initiative alone — the one candidate of its improvement runs (the eval_run its " +
+        "findings.md records) that reached proof_passed — then resolves required owners " +
         "LIVE from the base subject's own release_owners (never the release_eligible flag " +
         "candidate_prove recorded at proof time), records the promotion package as a " +
         "zz.release_attempt row (prepared), and writes <initiative>/improvement.md — the " +
         "authority-bearing gate FR-48 names, naming the exact candidate/patch digest, proof " +
         "evidence, score change, guardrails, affected owners and the planned release/rollback. " +
-        "RETURNS { release_attempt_id, required_owners, document }; the attempt id and owners " +
+        "RETURNS { candidate_id, release_attempt_id, patch_digest, required_owners, document } — " +
+        "candidate_id and patch_digest are what release_apply takes (patch_digest as " +
+        "approved_patch_digest); the candidate, attempt id and owners " +
         "are always returned even when the document write is refused (an unopened initiative, a " +
         "closed one, a document already approved), which then answers document: null plus " +
         "document_refused naming why — retry with the SAME idempotency_key to write the " +
         "document against the already-recorded attempt, never with a fresh one, which would " +
         "record a second attempt. Applies no patch, runs no " +
         "repository gate, creates no release — that is release_apply/release_verify, a later " +
-        "stage this tool never reaches. REFUSES a candidate that has not itself reached " +
-        "proof_passed (not_eligible); a caller who is not a member of one of the base subject's " +
+        "stage this tool never reaches. REFUSES an initiative with no findings.md eval_run " +
+        "(no_eval_run), none of whose candidates reached proof_passed (not_eligible), or more " +
+        "than one of whose did (ambiguous_candidate, listing them); a caller who is not a member of one of the base subject's " +
         "owner teams (not_owner); a base subject with no recorded release_owners — a " +
         "third-party or not-yet-owned subject, which stays proposal-only (no_release_owners); " +
-        "an unknown candidate_id; a deployment with no platform database; and (FR-58, hard " +
+        "a deployment with no platform database; and (FR-58, hard " +
         "refusal, before any write) this initiative's release_mode already set to something " +
         "other than promotable. RETURNS `facts`, this initiative's release_mode now recorded " +
         "as promotable. A mutator: writes through the FR-59 idempotency ledger.",
       inputSchema: {
-        candidate_id: z.string(),
-        initiative: z.string().describe("The initiative improvement.md is written into."),
+        initiative: z.string().describe(
+          "The initiative improvement.md is written into; its proof_passed candidate is the one prepared."),
         idempotency_key: z.string().min(1),
       },
     },
-    async ({ candidate_id, initiative, idempotency_key }) => {
+    async ({ initiative, idempotency_key }) => {
       const p = db();
       if (!p) return noDb();
 
+      const resolved = await proofPassedCandidateOf(p, initiative);
+      if (typeof resolved !== "string") return text(resolved.error);
+      const candidate_id = resolved;
       const candidate = await loadCandidate(p, candidate_id);
       if (!candidate) return text(`ERROR: no candidate ${candidate_id}`);
       if (candidate.status !== "proof_passed") {
@@ -172,7 +185,7 @@ export function registerReleaseTools(server: McpServer): void {
           `ERROR: no_release_owners — ${subject.plugin} ${subject.declared_version} ` +
           `(origin: ${subject.origin}) records no release_owners, so it cannot be promoted. It ` +
           "may still receive an owner-facing proposal — call proposal_prepare instead, naming " +
-          "this candidate's own improvement_run_id.");
+          "this initiative.");
       }
 
       // Only an owner may prepare: every prepared attempt is one `release_apply` could bind to,
@@ -243,9 +256,9 @@ export function registerReleaseTools(server: McpServer): void {
         document_refused: typeof written === "string",
       });
       return json(typeof written === "string"
-        ? { release_attempt_id: releaseAttemptId, required_owners: requiredOwners,
+        ? { candidate_id, release_attempt_id: releaseAttemptId, patch_digest: candidate.patch_digest, required_owners: requiredOwners,
             document: null, document_refused: written, facts } satisfies PrepareResult
-        : { release_attempt_id: releaseAttemptId, required_owners: requiredOwners,
+        : { candidate_id, release_attempt_id: releaseAttemptId, patch_digest: candidate.patch_digest, required_owners: requiredOwners,
             document: written.path, facts } satisfies PrepareResult);
     },
   );
@@ -407,7 +420,8 @@ export function registerReleaseTools(server: McpServer): void {
         "prior_subject_version_id, branch } | null, runs_required?, verifier_token?, " +
         "token_already_issued?, status } — verdict stays null and runs_required: { case_set_id, " +
         "baseline, candidate } counts the replays each side still needs (baseline = the prior " +
-        "subject, candidate = the released one) while evidence is incomplete, exactly like " +
+        "subject, candidate = the released one; prior_subject_version_id and " +
+        "released_subject_version_id name both beside it) while evidence is incomplete, exactly like " +
         "candidate_prove: run each with replay_start(context: verifier, verifier_token, split: " +
         "proof, case_set_id, subject_version_id of that side) and NO case_id — the server draws " +
         "the case; verifier_token carries the plaintext once, on the call that mints " +
@@ -468,7 +482,9 @@ export function registerReleaseTools(server: McpServer): void {
       description:
         "WHEN an improvement_run's own base subject records no release_owners (FR-51, " +
         "AC-51.1) and its findings/candidates are ready to be written up for whoever actually " +
-        "owns that plugin: writes <initiative>/proposal.md (proposal-doc.ts), ungated (FR-53's " +
+        "owns that plugin: resolves the improvement_run from the initiative alone — the newest run " +
+        "of the eval_run its findings.md records (a fresh improvement_start after a " +
+        "not_established proof supersedes the earlier one) — and writes <initiative>/proposal.md (proposal-doc.ts), ungated (FR-53's " +
         "own \"a proposal_only branch writes ungated proposal.md\"), always regenerated FRESH " +
         "from the improvement_run's CURRENT findings and candidates on every call — never a " +
         "cached body from an earlier call, the same contract findings.md's own write already " +
@@ -487,7 +503,8 @@ export function registerReleaseTools(server: McpServer): void {
         "side effects are a database read and a document write into this platform's own " +
         "governed store (see proposal-doc.ts's own module note, \"EXPLICIT GUARD\"). REFUSES " +
         "promotable — a base subject that DOES record release_owners: \"use release_prepare, " +
-        "not proposal_prepare, for an owned subject\" — an improvement_run_id nothing minted, " +
+        "not proposal_prepare, for an owned subject\" — an initiative with no findings.md eval_run " +
+        "(no_eval_run) or no improvement run on it (no_improvement_run), " +
         "one whose own eval_run names a subject this call cannot read back, and (FR-58, hard " +
         "refusal, before any write) this initiative's release_mode already set to something " +
         "other than proposal_only. RETURNS `facts`, this initiative's release_mode now recorded " +
@@ -496,14 +513,18 @@ export function registerReleaseTools(server: McpServer): void {
         "improvement_run's ALREADY-existing row (a plain re-select, never an insert), because " +
         "this tool records no new database row of its own.",
       inputSchema: {
-        improvement_run_id: z.string(),
-        initiative: z.string().describe("The initiative proposal.md is written into."),
+        initiative: z.string().describe(
+          "The initiative proposal.md is written into; its newest improvement run is the one reported."),
         idempotency_key: z.string().min(1),
       },
     },
-    async ({ improvement_run_id, initiative, idempotency_key }) => {
+    async ({ initiative, idempotency_key }) => {
       const p = db();
       if (!p) return noDb();
+
+      const resolved = await improvementRunOf(p, initiative);
+      if (typeof resolved !== "string") return text(resolved.error);
+      const improvement_run_id = resolved;
 
       const run = (await p.query<{ id: string; eval_run_id: string }>(
         "select id::text as id, eval_run_id::text as eval_run_id from zz.improvement_run where id = $1::uuid",

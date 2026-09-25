@@ -35,11 +35,20 @@ interface LatestProtocolVersion {
   version: number;
   purpose: string;
   observable_surfaces: string[];
+  /** Null until `protocol_affirm` binds an approved protocol.md — protocol_read's own answer. */
+  approved_document_path: string | null;
+  content_digest: string;
+  /** Whether any version of this plugin's protocol was ever affirmed: an unaffirmed newest one
+   *  is still the `create` its lineage began with when none was. */
+  any_affirmed: boolean;
 }
 
 export async function latestProtocolVersion(p: pg.Pool, pluginId: string): Promise<LatestProtocolVersion | null> {
   const row = (await p.query<LatestProtocolVersion>(`
-    select epv.id::text as id, epv.version, epv.purpose, epv.observable_surfaces
+    select epv.id::text as id, epv.version, epv.purpose, epv.observable_surfaces,
+           epv.approved_document_path, epv.content_digest,
+           exists (select 1 from zz.eval_protocol_version a join zz.eval_protocol ap on ap.id = a.protocol_id
+                    where ap.plugin_id = $1::uuid and a.approved_document_path is not null) as any_affirmed
       from zz.eval_protocol_version epv
       join zz.eval_protocol ep on ep.id = epv.protocol_id
      where ep.plugin_id = $1::uuid

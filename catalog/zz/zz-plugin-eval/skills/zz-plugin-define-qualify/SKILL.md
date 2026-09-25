@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define-qualify
-version: 0.3
+version: 0.4
 description: Stage 4 of zz-plugin-eval (DEFINE/QUALIFY), and the one gate that matters most. Derive what good means for THIS plugin from its own profile and DISCOVER's candidates, write it into protocol.md, get a person to agree it, then qualify every model-backed evaluator it names before anything is scored.
 when_to_use: "The fourth stage of zz-plugin-eval, after DISCOVER. Conditional: protocol_read decides create/revise/reuse, and this stage only writes when it says create or revise. Produces protocol.md, gated — protocol_affirm refuses to bind it until somebody approves it. No shell required."
 ---
@@ -12,13 +12,20 @@ protocol_read(subject_version_id, initiative?)                create, reuse or r
 ```
 
 `protocol_read` decides nothing for you: `create` means this plugin has no protocol yet;
-`reuse` means the newest version is still compatible and there is nothing to write; `revise`
-names which trigger fired (`purpose_changed, new_recurring_failure, evaluator_drift,
+`reuse` means the newest version is affirmed and still compatible and there is nothing to write;
+`revise` names which trigger fired (`purpose_changed, new_recurring_failure, evaluator_drift,
 new_evidence_surface`) and expects a new version, never an edit to the old one. Pass
 `initiative` to record protocol_action as this initiative's durable branch fact (FR-58) — this
 is what tells `initiative_status`, and every later close, whether `protocol.md` applies on this
 branch. **On `reuse`, stop here** — protocol.md is `not_applicable` for this run and DEFINE has
 nothing to write; go straight to EVALUATE.
+
+**`awaiting_affirmation: { version, content_digest }` in the response** means the newest version
+was recorded but no approved `protocol.md` was ever bound to it — a stage that stopped between
+`protocol_record` and `protocol_affirm`. It is never `reuse`: nothing qualifies or scores against
+it. With `triggers: ["none"]`, **do not record again** — write (or finish) `protocol.md` quoting
+that `content_digest`, get it approved, and `protocol_affirm` the returned `protocol_version_id`
+(below). With a trigger, record the next version as for any `revise`.
 
 ## Every plugin gets its own protocol
 
@@ -89,8 +96,9 @@ Inside a dimension, one or more **measures** actually produce a mark. Each carri
 ## Critical guardrails live on the protocol, not on a measure
 
 `improvement.criticalGuardrails` — `[{ key, threshold }]` — is the ONE guardrail mechanism.
-Name a measure's own `key` (unique across every dimension — `protocol_record` refuses a key that
-resolves to zero measures or to more than one) and the threshold its normalised `[0,1]` value
+Name a measure's own `key` (**measure keys are unique across the whole protocol** —
+`protocol_record` refuses a body that repeats one in any two dimensions, and a guardrail key that
+names no measure) and the threshold its normalised `[0,1]` value
 must meet or exceed. `evaluation_score`, `replay_score`, `candidate_prove` and `release_verify`
 all read this same list — nothing on a measure's own `definition` marks it as a guardrail. A
 guardrail bound to a `deterministic`/`outcome` measure reads `not_established` on every replay
@@ -157,8 +165,9 @@ protocol_record(subject_version_id, protocol_body, idempotency_key)
 writes a new, immutable `zz.eval_protocol_version` and RETURNS `{ protocol_version_id,
 content_digest }`. It never edits a version in place — a body naming any version but this
 protocol's next one is refused. **Record before the person reads it, approve after.** Recording
-is not approving — nothing is scored until `protocol_affirm` binds a person's approval of
-`protocol.md` to this exact version.
+is not approving — until `protocol_affirm` binds a person's approval of `protocol.md` to this
+exact version, `evaluator_qualify`, `replay_case_set_build` and `evaluation_start` each refuse it
+by name.
 
 `document_write` into the initiative as `protocol.md`, with the three sections the manifest
 declares, spelled exactly:
@@ -193,9 +202,9 @@ evaluator_qualify(protocol_version_id, measure_key, idempotency_key)
 
 `measure_key` is the measure's own `key`, exactly as you wrote it into `protocol_body`. The tool
 resolves the evaluator version that measure defers to from this protocol version — you never
-pass one. It REFUSES a key this protocol version does not have (naming the keys it does), a key
-two dimensions share, and a `deterministic`/`outcome`/`human` measure, which is never
-qualified. It runs the protocol's own `QualificationPolicy` over four evidence
+pass one. It REFUSES a protocol version `protocol_affirm` has not bound, a key this protocol
+version does not have (naming the keys it does), a key two dimensions of an older version share,
+and a `deterministic`/`outcome`/`human` measure, which is never qualified. It runs the protocol's own `QualificationPolicy` over four evidence
 categories — **anchors** (known answers derived from OBSERVE's own snapshot facts), **planted
 faults** (the same facts, sign-flipped, killed when the evaluator's answer flips with them),
 **controls** (the same facts read off another plugin's own real snapshot, never a mutation) and

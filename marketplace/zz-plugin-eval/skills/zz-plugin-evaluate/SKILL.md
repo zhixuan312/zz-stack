@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-evaluate
-version: 0.2
+version: 0.3
 description: Stage 5 of zz-plugin-eval (EVALUATE). Bind an approved protocol version to a subject's own observation snapshot, run every measure the protocol names against real evidence, and reduce the result to one deterministic overall score with its status, coverage and guardrails. No recommendation — that is EXPLAIN.
 when_to_use: "The fifth stage of zz-plugin-eval, once a protocol version is affirmed (or was already reusable). Produces no document — its output is durable score data EXPLAIN reads. No shell required."
 ---
@@ -19,7 +19,9 @@ protocol version and an observation snapshot (and a `case_set_version_id`) into 
 `zz.eval_evidence_snapshot`, and opens one `zz.eval_run` at `run_status: 'pending'` against it.
 RETURNS `{ eval_run_id, evidence_snapshot_id, run_status }`. REFUSES an observation snapshot
 belonging to a DIFFERENT subject than `subject_version_id` names — never silently scoring one
-plugin's evidence against another's identity.
+plugin's evidence against another's identity — and, like `replay_case_set_build`, a protocol
+version `protocol_affirm` has not bound to an approved `protocol.md` (named, with its version):
+go back to DEFINE/QUALIFY and finish the approval.
 
 ## The case set — built before `evaluation_start`, bound by it
 

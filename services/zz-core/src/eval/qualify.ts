@@ -46,18 +46,34 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /** Exported for `replay-derive.ts` (Task I-14): `replay_case_set_build` resolves the SAME
  *  protocol context this tool does before deciding whether `replay.source_kind` needs qualifying
  *  — one resolver, so the two callers can never read a protocol's policy differently. */
-export interface ProtocolContext { pluginId: string; policy: QualificationPolicy | null }
+export interface ProtocolContext {
+  pluginId: string; policy: QualificationPolicy | null; version: number; affirmed: boolean;
+}
 
 export async function resolveProtocol(p: pg.Pool, protocolVersionId: string): Promise<ProtocolContext | null> {
   if (!UUID_RE.test(protocolVersionId)) return null;
-  const row = (await p.query<{ plugin_id: string; qualification_policy: unknown }>(`
-    select pr.plugin_id::text as plugin_id, pv.qualification_policy as qualification_policy
+  const row = (await p.query<{ plugin_id: string; qualification_policy: unknown; version: number; affirmed: boolean }>(`
+    select pr.plugin_id::text as plugin_id, pv.qualification_policy as qualification_policy,
+           pv.version, pv.approved_document_path is not null as affirmed
       from zz.eval_protocol_version pv
       join zz.eval_protocol pr on pr.id = pv.protocol_id
      where pv.id = $1::uuid`, [protocolVersionId])).rows[0];
   if (!row) return null;
   const parsed = QualificationPolicy.safeParse(row.qualification_policy);
-  return { pluginId: row.plugin_id, policy: parsed.success ? parsed.data : null };
+  return { pluginId: row.plugin_id, policy: parsed.success ? parsed.data : null, version: row.version, affirmed: row.affirmed };
+}
+
+/** FR-6's gate, read where it matters: `protocol_record` writes every version with
+ *  `approved_document_path` null, and only `protocol_affirm` sets it, once a person approved the
+ *  `protocol.md` quoting its digest. Nothing is qualified, replay-derived or scored against a
+ *  version that never got there. No exemption for a bootstrap protocol (`zz-core.v1`): it is
+ *  recorded through `protocol_record` like any other body and affirmed the same way —
+ *  `scoring.establishment.bootstrap` only caps what its score may claim. */
+export function unaffirmedRefusal(protocolVersionId: string, protocol: ProtocolContext): string | null {
+  if (protocol.affirmed) return null;
+  return `ERROR: protocol_version_id ${protocolVersionId} (version ${protocol.version}) has not been affirmed — ` +
+    "write protocol.md quoting its content_digest, get it approved, and call protocol_affirm first; " +
+    "nothing is qualified or scored against a protocol nobody agreed";
 }
 
 /** Exported for the same reason as `resolveProtocol` above. */
@@ -71,9 +87,10 @@ export async function resolveEvaluator(p: pg.Pool, evaluatorVersionId: string): 
 }
 
 /** A `measure_key` inside one protocol version, resolved to its row — or the refusal, by name.
- *  Keys are unique within a dimension, not across a protocol version (migration 002 carries no
- *  such constraint), so a key two dimensions share is refused naming both rather than resolved
- *  to whichever row came first. Exported for `finding_record` (plugin-record.ts), which cites a
+ *  `protocol_record` refuses a body that repeats a key anywhere in it (`duplicateMeasureKeyRefusal`),
+ *  but migration 002 carries no such constraint and a version recorded before that refusal may
+ *  still share one across two dimensions — refused here naming both rather than resolved to
+ *  whichever row came first. Exported for `finding_record` (plugin-record.ts), which cites a
  *  measure by the same key: one resolver, so the two can never read a key differently. */
 export async function measureByKey(
   p: pg.Pool, protocolVersionId: string, measureKey: string,
@@ -103,19 +120,17 @@ interface MeasureBinding {
   vocabulary: { positive: string; zero: string } | null;
 }
 
-/** The measure inside THIS protocol version that names THIS evaluator version — anchors have
- *  nothing to be built from without one, so a miss here is the `no_anchors` path, never a refusal
- *  of the call itself (an evaluator may legitimately have no measure bound yet, and the contract
- *  wants that reported as an evidence-shaped answer, not an error). */
-async function resolveMeasure(
-  p: pg.Pool, protocolVersionId: string, evaluatorVersionId: string,
-): Promise<MeasureBinding | null> {
-  const row = (await p.query<{ id: string; definition: unknown }>(`
-    select m.id::text as id, m.definition as definition
-      from zz.eval_measure m
-      join zz.eval_dimension d on d.id = m.dimension_id
-     where d.protocol_version_id = $1::uuid and m.evaluator_version_id = $2::uuid
-     limit 1`, [protocolVersionId, evaluatorVersionId])).rows[0];
+/** The measure the caller already resolved, read for its anchor vocabulary. `null` — an evaluator
+ *  no protocol measure defers to — is the `no_anchors` path, never a refusal of the call itself
+ *  (the contract wants that reported as an evidence-shaped answer, not an error).
+ *
+ *  DELIBERATE: by id, never re-found by evaluator version. Two measures may defer to the same
+ *  evaluator version (`registerEvaluator` is idempotent by content), and a `limit 1` lookup would
+ *  read whichever one's vocabulary came first rather than the measure the caller named. */
+async function resolveMeasure(p: pg.Pool, measureId: string | null): Promise<MeasureBinding | null> {
+  if (!measureId) return null;
+  const row = (await p.query<{ id: string; definition: unknown }>(
+    "select id::text as id, definition from zz.eval_measure where id = $1::uuid", [measureId])).rows[0];
   if (!row) return null;
   const def = (row.definition ?? {}) as Record<string, unknown>;
   const q = def.qualification as Record<string, unknown> | undefined;
@@ -189,10 +204,10 @@ export interface GatheredQualification {
  *  1's "runs `evaluator_qualify` for it first when no such qualification exists"), whose answers
  *  `replay_case_set_build` records inside its own ledger transaction. */
 export async function gatherQualification(
-  p: pg.Pool, protocolVersionId: string, evaluatorVersionId: string,
+  p: pg.Pool, protocolVersionId: string, evaluatorVersionId: string, measureId: string | null,
   protocol: ProtocolContext, stableKey: string, principal: string,
 ): Promise<GatheredQualification> {
-  const measure = await resolveMeasure(p, protocolVersionId, evaluatorVersionId);
+  const measure = await resolveMeasure(p, measureId);
   const { thresholds } = resolveThresholds(protocol.policy?.thresholds);
 
   const snapshot = measure ? await latestSnapshot(p, protocol.pluginId, false) : null;
@@ -248,7 +263,8 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
         "{passed, total}, planted_faults: {killed, total}, controls: {failed_as_expected, total}, " +
         "stability: {agreeing, total}, labels: {n, tpr, tnr} | null } }, writing exactly one " +
         "zz.eval_evaluator_qualification row scoped to { plugin_id } (derived from the protocol). " +
-        "REFUSES an unknown protocol_version_id; a measure_key this protocol version does not " +
+        "REFUSES an unknown protocol_version_id; one protocol_affirm has not bound (not yet approved); " +
+        "a measure_key this protocol version does not " +
         "have (naming the keys it does have); a key two dimensions share; and a " +
         "deterministic/outcome/human measure, which is not qualified. NEVER refuses on thin " +
         "evidence — no anchor can be built (the measure's own definition.qualification names no " +
@@ -268,6 +284,8 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
 
       const protocol = await resolveProtocol(p, protocol_version_id);
       if (!protocol) return text("ERROR: unknown protocol_version_id");
+      const unaffirmed = unaffirmedRefusal(protocol_version_id, protocol);
+      if (unaffirmed) return text(unaffirmed);
       const measure = await measureByKey(p, protocol_version_id, measure_key);
       if ("error" in measure) return text(measure.error);
       // By type, not by a null evaluator: a deterministic/outcome measure may still name one
@@ -291,7 +309,7 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
         outcome = prior;
       } else {
         const gathered = await gatherQualification(
-          p, protocol_version_id, evaluator_version_id, protocol, stableKey, principal);
+          p, protocol_version_id, evaluator_version_id, measure.id, protocol, stableKey, principal);
         outcome = await withIdempotency(
           principal, "evaluator_qualify", idempotency_key, args,
           async (client): Promise<MutatorOutcome<QualifyResult>> => {

@@ -42,6 +42,7 @@ import {
 } from "./evaluate-measures.js";
 import { bootstrapInterval, resolveUncertainty } from "./evaluate-interval.js";
 import { canonicalJson, decideBeforeWork, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { resolveProtocol, unaffirmedRefusal } from "./qualify.js";
 import { scoreRun } from "./score.js";
 import { resolveSubjectRef } from "./subject-ref.js";
 import { logActivity } from "../persist.js";
@@ -201,7 +202,8 @@ export function registerEvaluationTools(server: McpServer): void {
         "atomically binds them (and, where replay is used, a case_set_version_id) into one " +
         "immutable zz.eval_evidence_snapshot, and opens one zz.eval_run at run_status='pending' " +
         "against it. RETURNS { eval_run_id, evidence_snapshot_id, run_status }. REFUSES an " +
-        "observation_snapshot_id nothing minted; a protocol_version_id nothing minted; and an " +
+        "observation_snapshot_id nothing minted; a protocol_version_id nothing minted, or one " +
+        "protocol_affirm has not bound to an approved protocol.md (named, with its version); and an " +
         "observation snapshot belonging to a DIFFERENT subject than subject_version_id names — " +
         "\"ERROR: observation snapshot belongs to subject <x>, not <y>\" — never silently scoring " +
         "one plugin's evidence against another's identity. A mutator: writes through the FR-59 " +
@@ -228,9 +230,10 @@ export function registerEvaluationTools(server: McpServer): void {
         return text(`ERROR: observation snapshot belongs to subject ${actual ?? snapshot.subject_version_id}, ` +
                     `not ${given ?? subject_version_id}`);
       }
-      const protocolRow = (await p.query<{ id: string }>(
-        "select id::text as id from zz.eval_protocol_version where id = $1::uuid", [protocol_version_id])).rows[0];
-      if (!protocolRow) return text("ERROR: unknown protocol_version_id");
+      const protocol = await resolveProtocol(p, protocol_version_id);
+      if (!protocol) return text("ERROR: unknown protocol_version_id");
+      const unaffirmed = unaffirmedRefusal(protocol_version_id, protocol);
+      if (unaffirmed) return text(unaffirmed);
       if (case_set_version_id) {
         const cs = (await p.query<{ id: string }>(
           "select id::text as id from zz.replay_case_set where id = $1::uuid", [case_set_version_id])).rows[0];

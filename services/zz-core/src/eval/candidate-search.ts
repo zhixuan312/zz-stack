@@ -294,6 +294,10 @@ interface ViewCore {
   readonly rejected: readonly { readonly id: string; readonly reason: string }[];
   readonly selected_id: string | null;
   readonly explore_components: readonly string[];
+  /** How many more candidates `candidate_record` would accept right now: the room left in the
+   *  generation a new one joins, 0 once `maxGenerations` is used up — the same rule
+   *  `generationCapRefusal` refuses by, so the number never promises a slot the record refuses. */
+  readonly edit_budget: number;
 }
 
 function generationOf(
@@ -347,7 +351,8 @@ function computeViewCore(
   const stalled = currentGen.length > 0 && currentGen.every((c) => isTerminalNegative(c, evaluations));
   const explore_components = stalled ? untouchedComponents(manifest, candidates) : [];
 
-  return { generation, stopped, frontier_ids, rejected, selected_id, explore_components };
+  const edit_budget = generationsExhausted ? 0 : Math.max(policy.maxCandidatesPerGeneration - gen.nextCount, 0);
+  return { generation, stopped, frontier_ids, rejected, selected_id, explore_components, edit_budget };
 }
 
 function nextGuidance(view: ViewCore, status: string, policy: SearchPolicy): string {
@@ -501,7 +506,7 @@ export async function runCandidateSearch(
     return {
       generation: core.generation, frontier_ids: core.frontier_ids, rejected: core.rejected,
       selected_id: core.selected_id, status: run.status, explore_components: core.explore_components,
-      edit_budget: policy.maxCandidatesPerGeneration, proposer_bundle: bundle,
+      edit_budget: core.edit_budget, proposer_bundle: bundle,
       next: nextGuidance(core, run.status, policy), ...facts,
     };
   }
@@ -567,7 +572,7 @@ export async function runCandidateSearch(
   return {
     generation: core.generation, frontier_ids: core.frontier_ids, rejected: core.rejected,
     selected_id: core.selected_id, status: finalStatus, explore_components: core.explore_components,
-    edit_budget: policy.maxCandidatesPerGeneration, proposer_bundle: bundle,
+    edit_budget: core.edit_budget, proposer_bundle: bundle,
     next: nextGuidance(core, finalStatus, policy), ...facts,
   };
 }

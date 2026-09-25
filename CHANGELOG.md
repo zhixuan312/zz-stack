@@ -114,6 +114,37 @@ zz-stack 0.76.0 · console 0.19.0
   `evaluator_version_id`, which no tool returned. It resolves the measure's evaluator itself,
   returns `measure_key` and `evaluator_version_id` alongside the result, and refuses an unknown
   key, a key two dimensions share, and a measure that is not bounded_semantic/generative_critic.
+- **A protocol version must be affirmed before it is used.** `evaluator_qualify`,
+  `replay_case_set_build` and `evaluation_start` refuse a `protocol_version_id` that
+  `protocol_affirm` never bound to an approved `protocol.md`, naming it and its version.
+  `protocol_read` never answers `reuse` for such a newest version: it answers `create` (no version
+  of the protocol was ever affirmed) or `revise`, with `awaiting_affirmation: {version,
+  content_digest}`, and with no trigger the agent approves and affirms that version instead of
+  recording another. The bootstrap `zz-core.v1` protocol is recorded and affirmed the same way.
+  A protocol version recorded but never affirmed on a running deployment has to be affirmed (or
+  replaced) before anything scores against it again.
+- `protocol_record` refuses a body that repeats a measure key in two dimensions: keys are unique
+  across the whole protocol.
+- Tool responses carry the ids later calls need, so a stage can open in a fresh conversation:
+  `improvement_start` returns `base_subject_version_id` and `case_set_id` (null when the eval_run
+  bound no case set); `candidate_validate` returns `case_set_id`, and each `runs_required` entry
+  is `{case_set_id, case_id, side, subject_version_id, candidate_id, count}`; `release_prepare`
+  returns `candidate_id` and `patch_digest`; `release_verify` returns `prior_subject_version_id` and
+  `released_subject_version_id` beside `runs_required`; `findings.md` prints each finding's id.
+- `release_prepare` now takes `(initiative, idempotency_key)` and `proposal_prepare` takes
+  `(initiative, idempotency_key)`: `candidate_id` and `improvement_run_id` are gone. Both read the
+  eval_run from `<initiative>/findings.md`. `release_prepare` prepares the one candidate of its
+  improvement runs that reached `proof_passed`, returns it as `candidate_id`, and refuses
+  `no_eval_run`, `not_eligible` (none) or `ambiguous_candidate` (several, listed).
+  `proposal_prepare` reports the newest improvement run on that eval_run and refuses
+  `no_eval_run` or `no_improvement_run`. `eval_run_id` is now a published envelope field, so a
+  flow can no longer claim that name for a field of its own.
+- `plugin_locate`'s `latest_compatible_protocol_version_id` is renamed
+  `latest_protocol_version_id`: it is the newest version, with no compatibility check.
+- `candidate_search`'s `edit_budget` is the number of candidates `candidate_record` would still
+  accept, not `maxCandidatesPerGeneration`.
+- **Replay launcher:** a completed run whose sandbox directories could not all be removed now
+  stays `completed` (exit 0) with a `cleanup_warning`, instead of reporting `failed`.
 - The case set is built in EVALUATE now: `replay_case_set_build` runs before `evaluation_start`,
   whose `case_set_version_id` is that call's `case_set_id`. No tool changed; the
   `zz-plugin-evaluate` and `zz-plugin-improve` skills moved the step to where the binding is.
@@ -265,7 +296,9 @@ zz-stack 0.76.0 · console 0.19.0
   already did. A subject captured from a checkout whose skills sat under a `tests` directory
   must be registered again under a new version.
 - The gate now checks every tool call a skill writes against the tool's `inputSchema`: an
-  argument the tool does not take, or a required one left out, fails it.
+  argument the tool does not take, or a required one left out, fails it. A field the schema
+  declares as an inline object (or array of objects) is checked the same way, at every depth, when
+  the skill writes it out as `name: { ... }` or `name: [{ ... }]`.
 
 ## [0.75.0] — 2026-09-24
 

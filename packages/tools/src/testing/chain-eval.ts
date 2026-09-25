@@ -177,13 +177,13 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
   eitherOr("candidate_prove refuses abandon on a candidate_id nothing minted",
     await callEval("candidate_prove", { candidate_id: randomUUID(), abandon: true, idempotency_key: randomUUID() }),
     /no platform database|no candidate/);
-  // Task I-22: a random candidate_id decides nothing and matches no candidate — refused before
-  // any subject or owner is ever resolved, the same way candidate_prove's own probe above is
-  // safe against any live state.
-  eitherOr("release_prepare refuses a candidate_id nothing minted",
+  // Task I-22: an initiative nobody opened has no findings.md, so no eval_run to resolve a
+  // candidate from — refused before any subject or owner is ever resolved, safe against any live
+  // state.
+  eitherOr("release_prepare refuses an initiative with no findings.md eval_run",
     await callEval("release_prepare", {
-      candidate_id: randomUUID(), initiative: "chain-check-probe", idempotency_key: randomUUID(),
-    }), /no platform database|no candidate/);
+      initiative: "chain-check-probe", idempotency_key: randomUUID(),
+    }), /no platform database|no_eval_run/);
   // Task I-23: same shape again — a random candidate_id resolves no candidate row before either
   // tool ever reaches the advisory lock or the database's live state, so both are safe against
   // whatever this deployment has or has not released.
@@ -204,11 +204,10 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
     await callEval("release_verify", {
       release_attempt_id: randomUUID(), idempotency_key: randomUUID(),
     }), /no platform database|no release_attempt/);
-  // Task I-25: a random improvement_run_id decides nothing and matches no run — refused before
-  // any subject or ownership is ever resolved, the same way improvement_start's own probe above
-  // is safe against any live state.
-  eitherOr("proposal_prepare refuses an improvement_run_id nothing minted",
+  // Task I-25: the same unopened initiative resolves no improvement run — refused before any
+  // subject or ownership is ever resolved, safe against any live state.
+  eitherOr("proposal_prepare refuses an initiative with no findings.md eval_run",
     await callEval("proposal_prepare", {
-      improvement_run_id: randomUUID(), initiative: "chain-check-probe", idempotency_key: randomUUID(),
-    }), /no platform database|no improvement_run/);
+      initiative: "chain-check-probe", idempotency_key: randomUUID(),
+    }), /no platform database|no_eval_run/);
 }

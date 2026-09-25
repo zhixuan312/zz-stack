@@ -300,7 +300,9 @@ export async function resolveQualification(
   if (existing !== null) return { state: existing, pending: null };
   if (!establish) return { state: EVAL_STATE_ENUMS.qualificationState[0], pending: null };
   const stableKey = await resolveEvaluatorStableKey(p, evaluatorVersionId) ?? SOURCE_KIND_EVALUATOR.stable_key;
-  const pending = await gatherQualification(p, protocolVersionId, evaluatorVersionId, protocol, stableKey, principal);
+  // No measure: the source-kind evaluator is the platform's own, never one a protocol measure
+  // defers to, so its qualification has no anchor vocabulary to read (`no_anchors`).
+  const pending = await gatherQualification(p, protocolVersionId, evaluatorVersionId, null, protocol, stableKey, principal);
   return { state: pending.state, pending };
 }
 

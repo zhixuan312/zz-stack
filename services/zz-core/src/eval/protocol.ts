@@ -197,9 +197,12 @@ export function registerProtocolTools(server: McpServer): void {
         "WHEN starting or resuming the define stage: reads whether this subject's plugin " +
         "already has a compatible EvaluationProtocol. RETURNS protocol_version_id (null if " +
         "none exists yet), protocol_action — create (no protocol at all), reuse (the newest " +
-        "version still fits, nothing to do) or revise (a trigger fired, record a new version) " +
+        "version is affirmed and still fits, nothing to do) or revise (a trigger fired, record a new version) " +
         "— and triggers: which of purpose_changed, new_recurring_failure, evaluator_drift, " +
-        "new_evidence_surface fired, or none. Computed entirely from live state — no document, " +
+        "new_evidence_surface fired, or none. A newest version protocol_affirm never bound is " +
+        "never reuse: it answers create (no version was ever affirmed) or revise, plus " +
+        "awaiting_affirmation: { version, content_digest } — with no trigger, get that version's " +
+        "protocol.md approved and affirmed rather than recording another. Computed entirely from live state — no document, " +
         "no protocol_body — from the plugin plugin_locate/plugin_register already IDENTIFY'd. " +
         "Pass `initiative` to record protocol_action as that initiative's durable branch fact " +
         "(FR-58) — omit it and nothing is recorded, which the response says. A fact already set " +
@@ -225,13 +228,31 @@ export function registerProtocolTools(server: McpServer): void {
       if (!latest) {
         response = { protocol_version_id: null, protocol_action: "create", triggers: ["none"],
           note: "No protocol exists for this plugin yet. Record one with protocol_record." };
+      } else if (latest.approved_document_path === null) {
+        // FR-6: recorded is not agreed. A newest version protocol_affirm never bound is not
+        // reusable — nothing may score against it — so the stage that recorded it is still open:
+        // `create`/`revise` as the lineage began, which keeps protocol.md applying on this
+        // initiative's branch. It is not a reason to record again unless a trigger fired.
+        const triggers = await triggersFor(p, subject.pluginId, subject.plugin, latest);
+        response = {
+          protocol_version_id: latest.id, protocol_action: latest.any_affirmed ? "revise" : "create",
+          triggers: triggers.length ? triggers : ["none"],
+          awaiting_affirmation: { version: latest.version, content_digest: latest.content_digest },
+          note: triggers.length
+            ? `RECORD A NEW VERSION: ${triggers.join(", ")} fired against version ${latest.version}, ` +
+              "which was never affirmed either. protocol_record never edits a version in place."
+            : `AWAITING APPROVAL OF VERSION ${latest.version}, DO NOT RECORD. It was recorded, but no ` +
+              `approved protocol.md is bound to it: write protocol.md quoting content_digest ` +
+              `${latest.content_digest}, have it approved, then call protocol_affirm. Nothing ` +
+              "qualifies or scores against it until then.",
+        };
       } else {
         const triggers = await triggersFor(p, subject.pluginId, subject.plugin, latest);
         const protocol_action = triggers.length ? "revise" : "reuse";
         response = {
           protocol_version_id: latest.id, protocol_action, triggers: triggers.length ? triggers : ["none"],
           note: protocol_action === "reuse"
-            ? "REUSE, DO NOT RECORD. This plugin's newest protocol version is still compatible."
+            ? "REUSE, DO NOT RECORD. This plugin's newest protocol version is affirmed and still compatible."
             : `RECORD A NEW VERSION: ${triggers.join(", ")} fired against version ${latest.version}. ` +
               "protocol_record never edits a version in place.",
         };
@@ -254,7 +275,8 @@ export function registerProtocolTools(server: McpServer): void {
         "lineage for any failureTaxonomy entry naming a candidateId/mergedCandidateIds. " +
         "RETURNS { protocol_version_id, content_digest }. REFUSES an invalid body with the zod " +
         "issues verbatim; a version number that is not this protocol's next one — there is no " +
-        "edit, only a new version; a bounded_semantic/generative_critic measure with no usable " +
+        "edit, only a new version; a measure key repeated anywhere in the body (keys are unique " +
+        "protocol-wide); a bounded_semantic/generative_critic measure with no usable " +
         "evaluator; and a failureTaxonomy candidateId naming no candidate from this plugin's " +
         "own evidence. A mutator: writes through the FR-59 idempotency ledger.",
       inputSchema: {
@@ -312,7 +334,8 @@ export function registerProtocolTools(server: McpServer): void {
         "this version is not approved — when the document does not exist, is not " +
         "status: approved, or does not quote this version's content_digest anywhere in its " +
         "body: a document approved for a DIFFERENT version of this protocol is not approved " +
-        "for this one. A mutator: writes through the FR-59 idempotency ledger.",
+        "for this one. Until it binds, evaluator_qualify, replay_case_set_build and " +
+        "evaluation_start refuse this version by name. A mutator: writes through the FR-59 idempotency ledger.",
       inputSchema: {
         protocol_version_id: z.string(),
         initiative: z.string().describe("The initiative protocol.md was written into."),

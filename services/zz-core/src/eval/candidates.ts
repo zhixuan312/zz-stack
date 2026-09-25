@@ -66,8 +66,13 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // -------------------------------------------------------------------------------------------
 // improvement_start
 
+/** `base_subject_version_id` and `case_set_id` travel on the response because IMPROVE may open in
+ *  a fresh conversation: `candidate_record` and every validation/proof `replay_start` name them,
+ *  and no other call in the stage returns either. */
 interface ImprovementStartResult {
   readonly improvement_run_id: string;
+  readonly base_subject_version_id: string;
+  readonly case_set_id: string | null;
   readonly search_policy: Record<string, unknown>;
   readonly status: string;
 }
@@ -90,8 +95,10 @@ export function registerCandidateTools(server: McpServer): void {
         "sandbox is torn down before a new run opens), then opens one durable " +
         "zz.improvement_run against eval_run_id and its finding_ids, with a search_policy " +
         "snapshot taken from that run's own protocol version (improvement_policy.search — " +
-        "REFUSED when it is missing or malformed; no fallback policy exists). RETURNS { improvement_run_id, search_policy, " +
-        "status, proposer_bundle } — proposer_bundle (AC-37.1) is this run's own actionable " +
+        "REFUSED when it is missing or malformed; no fallback policy exists). RETURNS { improvement_run_id, " +
+        "base_subject_version_id, case_set_id, search_policy, status, proposer_bundle } — the base subject every " +
+        "candidate_record names and the case set this eval_run bound at evaluation_start (null when it bound none: " +
+        "nothing from this run can be validated, so build one in EVALUATE first); proposer_bundle (AC-37.1) is this run's own actionable " +
         "evidence: failing traces, evaluator critiques, refusal text, corrections, dependency/ " +
         "tool errors, cost/latency and prior rejected hypotheses for this eval_run's plugin, so " +
         "the candidate this run searches for is proposed against what already failed rather " +
@@ -132,9 +139,11 @@ export function registerCandidateTools(server: McpServer): void {
       const p = db();
       if (!p) return noDb();
 
-      const run = (await p.query<{ id: string; protocol_version_id: string }>(
-        "select id::text as id, protocol_version_id::text as protocol_version_id " +
-        "from zz.eval_run where id = $1::uuid", [eval_run_id])).rows[0];
+      const run = (await p.query<{ id: string; protocol_version_id: string; subject_version_id: string; case_set_id: string | null }>(
+        "select er.id::text as id, er.protocol_version_id::text as protocol_version_id, " +
+        "er.subject_version_id::text as subject_version_id, es.case_set_version_id::text as case_set_id " +
+        "from zz.eval_run er join zz.eval_evidence_snapshot es on es.id = er.evidence_snapshot_id " +
+        "where er.id = $1::uuid", [eval_run_id])).rows[0];
       if (!run) return text(`ERROR: no eval_run ${eval_run_id}`);
 
       if (skip) {
@@ -270,7 +279,8 @@ export function registerCandidateTools(server: McpServer): void {
         eval_run_id, finding_count: finding_ids.length, replayed: outcome.replayed,
       });
       return json({
-        improvement_run_id: improvementRunId, search_policy, status: "open", proposer_bundle: bundle,
+        improvement_run_id: improvementRunId, base_subject_version_id: run.subject_version_id,
+        case_set_id: run.case_set_id, search_policy, status: "open", proposer_bundle: bundle,
         facts_recorded: !!initiative, facts: initiative ? searchFacts : undefined,
       } satisfies ImprovementStartResult & { proposer_bundle: ProposerBundle } &
         { facts_recorded: boolean; facts?: Record<string, string> });
@@ -513,10 +523,10 @@ export function registerCandidateTools(server: McpServer): void {
         "pairedDecision (stats.ts) over each case's (candidate mean − baseline mean) delta. " +
         "RETURNS, when every case has enough repeats and the interval clears mme or the " +
         "protocol's own liveness bound (wallClockHours since improvement_start) has passed: " +
-        "{ candidate_evaluation_id, verdict, interval: [lower, upper], mean_delta, guardrails, " +
+        "{ case_set_id, candidate_evaluation_id, verdict, interval: [lower, upper], mean_delta, guardrails, " +
         "resource_usage }, and stores the same on zz.candidate_evaluation (split: validation). " +
-        "Otherwise RETURNS { candidate_evaluation_id: null, verdict: null, runs_required: " +
-        "[{case_id, side, count}] } — the exact (case, side) pairs still short of minRepeats, or, " +
+        "Otherwise RETURNS { case_set_id, candidate_evaluation_id: null, verdict: null, runs_required: " +
+        "[{case_set_id, case_id, side, subject_version_id, candidate_id, count}] } — the exact (case, side) pairs still short of minRepeats, or, " +
         "once every case clears it but the bootstrap interval still straddles mme, one more " +
         "repeat per case per side — never a run this tool launches itself: replay_start " +
         "(case_id-steerable) and the launcher run the replay, this tool only plans and reads " +
@@ -572,7 +582,8 @@ export function registerCandidateTools(server: McpServer): void {
         "IMPROVE agent does next in `next` — propose more candidates for this generation " +
         "(directed at explore_components when the current generation has stalled), validate " +
         "the ones just proposed, or stop. RETURNS { generation, frontier_ids, rejected: " +
-        "[{id, reason}], selected_id, status, explore_components, edit_budget, proposer_bundle, " +
+        "[{id, reason}], selected_id, status, explore_components, edit_budget (how many more candidate_record " +
+        "would accept now), proposer_bundle, " +
         "next }. REFUSES an improvement_run_id nothing minted, one whose own eval_run names " +
         "no subject_version_id it can still resolve, and a malformed search_policy. A mutator once it has mutated candidate or " +
         "improvement_run state: writes through the FR-59 idempotency ledger; a call against an " +

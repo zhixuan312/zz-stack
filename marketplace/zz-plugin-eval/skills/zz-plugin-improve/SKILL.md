@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-improve
-version: 0.5
+version: 0.7
 description: Stage 7 of zz-plugin-eval (IMPROVE). Search for a proven candidate patch against plugin-owned findings — propose, validate by replay, search to one deterministic winner, prove it sealed — then hand off to promotion for an owned subject or write an owner-facing proposal for one this team cannot release.
 when_to_use: "The seventh stage of zz-plugin-eval, after EXPLAIN. Runs for every branch except one with no plugin-owned actionable finding at all, which skips it with one call and closes. REQUIRES a shell-capable runtime (Claude Code) that can run npm/zz-tool commands and launch isolated sessions — refuses to start anywhere else. Every stage before this one runs with no shell at all (FR-54)."
 ---
@@ -14,6 +14,9 @@ release-rollback` — and none of that exists without a shell. If you are runnin
 no shell access, stop and say so; do not simulate what these commands would do.
 
 ## First: is there anything to search for?
+
+`eval_run_id` and every finding's id are in `<initiative>/findings.md` — the run's id under
+`## Score`, each finding's `id` beside it — so this stage can open in a fresh conversation.
 
 ```
 improvement_start(eval_run_id, finding_ids: [], skip: true, initiative, idempotency_key)
@@ -35,9 +38,12 @@ could never seed a candidate, so leaving one `deferred` is not a reason this cal
 improvement_start(eval_run_id, finding_ids: [...plugin-owned, deferred...], initiative, idempotency_key)
 ```
 
-opens one durable `zz.improvement_run` and RETURNS `search_policy` (the protocol's own
-liveness bound — `maxGenerations`, `maxCandidatesPerGeneration`, `wallClockHours` — FR-57's
-bootstrap defaults are 5/8/24) plus `proposer_bundle`. Records `improvement_mode: search` when
+opens one durable `zz.improvement_run` and RETURNS `improvement_run_id`,
+`base_subject_version_id` (the subject every candidate is a patch against), `case_set_id` (the
+case set this eval_run bound), `search_policy` (the protocol's own liveness bound —
+`maxGenerations`, `maxCandidatesPerGeneration`, `wallClockHours` — FR-57's bootstrap defaults
+are 5/8/24) plus `proposer_bundle`. Keep the first three: every later call in this stage names
+them, and nothing else here returns `base_subject_version_id`. Records `improvement_mode: search` when
 the base subject records `release_owners`, `improvement_mode: proposal` when it does not — you
 never choose which; the tool derives it from ownership. REFUSES a finding owned by anything but
 `plugin`, a finding recorded against a different `eval_run_id`, and a protocol version whose
@@ -45,8 +51,9 @@ never choose which; the tool derives it from ownership. REFUSES a finding owned 
 
 **Every candidate is validated and proved against the case set THIS `eval_run_id` bound at
 `evaluation_start`** — EVALUATE builds it with `replay_case_set_build` and binds its `case_set_id`
-as `case_set_version_id`. Nothing in this stage binds one. An eval_run that bound none cannot
-carry a search: `candidate_validate` refuses every candidate from it. Before opening a search on
+as `case_set_version_id`; `improvement_start` hands it back as `case_set_id`. Nothing in this stage
+binds one. **`case_set_id: null` means the eval_run bound none**, and it cannot carry a search:
+`candidate_validate` refuses every candidate from it. Before opening a search on
 such a run, go back to EVALUATE — build the case set, start a new eval_run bound to it, score it
 — and EXPLAIN, whose findings belong to that new run; then open the search with those.
 
@@ -74,7 +81,8 @@ schema, configuration, tests or documentation (FR-35 — any component necessary
 candidate_record(improvement_run_id, base_subject_version_id, parents: [], hypothesis, expected_effect, patchset: { diff }, idempotency_key)
 ```
 
-`patchset.diff` is a unified diff — the file list and added/removed state are derived from it,
+`base_subject_version_id` is the one `improvement_start` returned. `patchset.diff` is a unified
+diff — the file list and added/removed state are derived from it,
 never supplied separately. RETURNS `{ candidate_id, generation, patch_digest, complexity_delta,
 touched_components, touched_owners, status: 'recorded' }`. **REFUSES a hypothesis whose
 normalised text already matches a candidate this plugin has already rejected (`rejected_precheck`,
@@ -106,16 +114,17 @@ re-triable in place).
 **Once valid (or on a later call):** reads every completed, scored validation-split
 `zz.replay_run`, pairs candidate against baseline by case, and — once every case has at least
 `minRepeats` completed runs on BOTH sides — computes the paired bootstrap verdict. Otherwise
-RETURNS `{ candidate_evaluation_id: null, verdict: null, runs_required: [{case_id, side,
-count}] }` — the exact `(case, side)` pairs still short. **This tool never launches a replay
-itself.** For each `runs_required` entry:
+RETURNS `{ case_set_id, candidate_evaluation_id: null, verdict: null, runs_required: [{case_set_id,
+case_id, side, subject_version_id, candidate_id, count}] }` — the exact `(case, side)` pairs still
+short. **This tool never launches a replay itself.** For each `runs_required` entry, every
+argument below is that entry's own field (`repeats` is its `count`):
 
 ```
 replay_start(case_set_id, subject_version_id? | candidate_id?, split: "validation", case_id, repeats, context: "search", idempotency_key)
 ```
 
-— `subject_version_id` for the `baseline` side, `candidate_id` for the `candidate` side, never
-both — then, for the `worktree_ref`/`replay_run_id` it returns:
+— the entry names `subject_version_id` on the `baseline` side and `candidate_id` on the
+`candidate` side, the other null; pass the one it names, never both — then, for the `worktree_ref`/`replay_run_id` it returns:
 
 ```
 d=$(mktemp -d)
@@ -164,8 +173,10 @@ sandbox; there is no unsandboxed mode. It then runs the candidate/baseline sessi
 person against `actor`+`user_oracle` events, scores it, and calls `replay_close` itself — you do
 not close a run the launcher already ran. A completed run's logs are deleted as it closes; a
 failed run's stay in `$TMPDIR/zz-replay-logs/` (the path is in the launcher's output) for you to
-read, and every launch removes any there older than 7 days. Repeat `candidate_validate` once enough runs land; it
-plans, it never executes.
+read, and every launch removes any there older than 7 days. A run that completed but left a
+directory it could not remove still reports `completed` (exit 0) with a `cleanup_warning` naming
+what is left — the evidence landed; remove the leftover by hand, do not re-run. Repeat
+`candidate_validate` once enough runs land; it plans, it never executes.
 
 ## Advancing the search
 
@@ -186,8 +197,9 @@ proposer_bundle, next }`.
 **Read `next` and `explore_components` to decide what to do next**, not your own judgement of
 "enough": `next` says propose more (steered at `explore_components` — the base subject's own
 manifest components no candidate this run has touched yet, FR-38's own exploration
-requirement), validate what is already recorded, or stop. `edit_budget` is
-`maxCandidatesPerGeneration` — how many candidates this generation may still record.
+requirement), validate what is already recorded, or stop. `edit_budget` is how many more
+candidates `candidate_record` would accept right now — the room left in the generation a new one
+joins, 0 once `maxGenerations` is used up.
 
 **`status: closed` with `selected_id: null` means no guardrail-passing, improving candidate was
 on the frontier by the bound.** On an OWNED subject that is genuinely nothing left — pass `initiative` on
@@ -225,8 +237,8 @@ npm run replay -- --run <replay_run_id> --repo <path> --token-file "$d/replay" -
 rm -rf "$d"
 ```
 
-`candidate_id` for the candidate side, the candidate's `base_subject_version_id` for the
-baseline side. **Never pass `case_id`** — the proof case is drawn server-side, and a verifier
+`candidate_id` (the `selected_id`) for the candidate side, `improvement_start`'s
+`base_subject_version_id` for the baseline side, and `runs_required.case_set_id` for both. **Never pass `case_id`** — the proof case is drawn server-side, and a verifier
 `replay_start` naming one REFUSES; so does one outside the allocation (another case set,
 candidate or subject). Start the next run once the launcher returns: the draw skips a case with
 a run still live, so starting many at once runs out of cases. The `verifier_token` goes in
@@ -272,16 +284,19 @@ released if none was — `proof_split` says which. A second `abandon` call is a 
 `release_eligible: true` is the handoff to PROMOTE/VERIFY (`zz-plugin-promote-verify`) —
 `release_prepare`, `improvement.md`, `release_apply` (`zz-tool release-apply`), `release_record`,
 `release_verify` (`zz-tool release-rollback`). Read that skill for the exact sequence; this stage
-ends once you call `release_prepare`, which records `release_mode: promotable`.
+ends once you call `release_prepare(initiative, ...)`, which finds the proof_passed candidate
+from the initiative and records `release_mode: promotable`.
 
 ## Non-owned subject: write the proposal instead
 
 ```
-proposal_prepare(improvement_run_id, initiative, idempotency_key)
+proposal_prepare(initiative, idempotency_key)
 ```
 
 **WHEN the base subject records no release owners** — a third-party or other-team plugin
-`plugin_register` captured. Writes `<initiative>/proposal.md`, ungated, always regenerated FRESH
+`plugin_register` captured. It finds the run itself from the initiative — the newest improvement
+run on the eval_run `findings.md` records, so a search resumed under a fresh `improvement_start`
+is the one reported. Writes `<initiative>/proposal.md`, ungated, always regenerated FRESH
 from the run's current findings and candidates: Subject, Findings, Candidates (every candidate
 that reached validation or later, with its hypothesis, patch digest and the diff itself as inert
 fenced markdown, when the subject's own source is readable — findings-only prose, no diff fence,

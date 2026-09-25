@@ -258,6 +258,11 @@ export interface VerifyOutcome {
   readonly evidence: { deltas_summary: unknown; guardrails: unknown } | null;
   readonly rollback_plan: RollbackPlan | null;
   readonly runs_required?: VerifyRunsRequired;
+  /** Beside `runs_required`, the two subjects its `baseline`/`candidate` counts are replays of —
+   *  every `replay_start` it asks for names one, and this stage may run in a conversation that
+   *  never saw `release_apply`'s plan or the CLI's `release_record`. */
+  readonly prior_subject_version_id?: string;
+  readonly released_subject_version_id?: string;
   readonly verifier_token?: string | null;
   readonly token_already_issued?: boolean;
   readonly status: string;
@@ -465,6 +470,10 @@ export async function verifyRelease(
   const boundReached = Date.now() - new Date(attempt.created_at).getTime() >= ctx.policy.wallClockHours * 3_600_000;
 
   const plan = await planVerify(p, ctx.caseSetId, caseIds, attempt.base_subject_version_id, attempt.released_subject_version_id, ctx.policy.minRepeats);
+  const subjects = {
+    prior_subject_version_id: attempt.base_subject_version_id,
+    released_subject_version_id: attempt.released_subject_version_id,
+  };
 
   // One pure reduction (release-rules.ts's verifyReduction) decides everything from here, over the
   // runs collected so far: a guardrail the released side has already failed rolls back before
@@ -496,7 +505,7 @@ export async function verifyRelease(
     const ensured = await ensureVerifierToken(attempt, ctx.caseSetId, idempotencyKey, principal);
     return {
       verdict: null, reason: null, evidence: null, rollback_plan: null,
-      runs_required: plan.runs_required, verifier_token: ensured.token,
+      runs_required: plan.runs_required, ...subjects, verifier_token: ensured.token,
       token_already_issued: ensured.alreadyIssued, status: attempt.status,
     };
   }
@@ -506,7 +515,7 @@ export async function verifyRelease(
       verdict: null, reason: null, evidence: null, rollback_plan: null,
       // One more repeat per case per side.
       runs_required: { case_set_id: ctx.caseSetId, baseline: plan.perCase.length, candidate: plan.perCase.length },
-      verifier_token: null, token_already_issued: true, status: attempt.status,
+      ...subjects, verifier_token: null, token_already_issued: true, status: attempt.status,
     };
   }
 

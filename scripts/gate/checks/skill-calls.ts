@@ -1,7 +1,9 @@
 /**
  * A skill's written tool call against the tool's real contract. skill-tools.ts proves the tool
  * exists; this proves the call a skill teaches would be accepted: every argument it names is in
- * that tool's zod `inputSchema`, and every argument the schema requires is named.
+ * that tool's zod `inputSchema`, and every argument the schema requires is named. A field whose
+ * schema is an inline `z.object({...})` (or `z.array(z.object({...}))`) is judged one level down
+ * the same way wherever the skill writes it as `name: { ... }` (or `name: [{ ... }]`), at any depth.
  *
  * The failure it exists for: a skill that tells an agent to pass an argument no tool returns, or
  * leaves out one the tool refuses without, reads as a complete instruction and fails as a
@@ -17,9 +19,11 @@ import { join } from "node:path";
 import { firstOf, root, sourceFiles, toolsIn } from "../read.ts";
 import { check, note } from "../run.ts";
 
-/** One tool's arguments as its source declares them: name -> required. `open` is a schema this
- *  cannot enumerate (a spread or a shape built elsewhere), whose argument names are not judged. */
-interface ToolSchema { fields: Map<string, boolean>; open: boolean }
+/** One tool's arguments as its source declares them: name -> whether it is required, and the
+ *  shape inside it when it is an inline object. `open` is a schema this cannot enumerate (a spread
+ *  or a shape built elsewhere), whose argument names are not judged. */
+interface Field { required: boolean; nested: ToolSchema | null }
+interface ToolSchema { fields: Map<string, Field>; open: boolean }
 
 const OPENERS: Record<string, string> = { "(": ")", "[": "]", "{": "}" };
 
@@ -107,7 +111,79 @@ function surface(entry: string): string {
   return out;
 }
 
-let occurrences = 0, closed = 0;
+/** The fields of one `{ ... }` shape body. A field's value that is itself `z.object({` — directly
+ *  or as `z.array(z.object({` — carries its own shape; a named schema constant stays unjudged. */
+function shapeOf(body: string): ToolSchema {
+  const schema: ToolSchema = { fields: new Map(), open: false };
+  for (const raw of topLevel(body, "ts")) {
+    // A field's leading comment is not part of its name.
+    const entry = raw.replace(/^(?:\s*(?:\/\/[^\n]*\n|\/\*[\s\S]*?\*\/))*\s*/, "");
+    const m = /^([a-z][a-z0-9_]*)\s*(:?)/.exec(entry);
+    if (!m || !m[2]) { schema.open = true; continue; }   // a spread or a shorthand: not enumerable here
+    const value = entry.slice(m[0].length);
+    const inline = /^\s*z\.(?:array\(\s*z\.)?object\(\s*\{/.exec(value);
+    const brace = inline ? inline[0].length - 1 : -1;
+    const end = inline ? closeOf(value, brace, "ts") : -1;
+    schema.fields.set(m[1], {
+      required: !/\.optional\(|\.default\(|\.nullish\(|z\.optional\(/.test(surface(entry)),
+      nested: end > 0 ? shapeOf(value.slice(brace + 1, end)) : null,
+    });
+  }
+  return schema;
+}
+
+/** What a skill wrote inside `name: { ... }` or `name: [{ ... }, ...]` (its first element), or
+ *  null when the value is anything else — a placeholder, a name, a quoted string. */
+function objectText(value: string): string | null {
+  let v = value.trim();
+  if (v.startsWith("[") && closeOf(v, 0, "md") === v.length - 1) v = topLevel(v.slice(1, -1), "md")[0] ?? "";
+  return v.startsWith("{") && closeOf(v, 0, "md") === v.length - 1 ? v.slice(1, -1) : null;
+}
+
+/** One written argument list judged against `schema`, findings pushed to `bad`. Each argument is
+ *  a name, `name: value`, `name?` (optional), `name[]`, or `a | b` (one of); a quoted or
+ *  `<placeholder>` value is positional and `...` stands for the rest, so either one leaves the
+ *  required set unjudged — the names that are written are still checked. `path` prefixes a
+ *  nested field's name (`finding.`); the nested list's own completeness never makes the outer
+ *  one partial. Returns whether every argument was named. */
+function judge(text: string, schema: ToolSchema, where: string, tool: string, path: string, bad: string[]): boolean {
+  let partial = false;
+  const named: { names: string[]; optional: boolean; value: string }[] = [];
+  for (const arg of topLevel(text, "md")) {
+    if (/^(\.\.\.|…)$/.test(arg)) { partial = true; continue; }
+    const head = nameOf(arg);
+    const names = head.split("|").map((n) => n.trim().replace(/\[\]$/, ""));
+    if (!names.every((n) => /^[a-z][a-z0-9_]*\??$/.test(n))) { partial = true; continue; }
+    named.push({
+      names: names.map((n) => n.replace(/\?$/, "")), optional: names.some((n) => n.endsWith("?")),
+      value: head.length < arg.length ? arg.slice(head.length + 1) : "",
+    });
+  }
+  if (!schema.open) {
+    for (const n of named.flatMap((g) => g.names)) {
+      if (!schema.fields.has(n)) bad.push(`${where} passes \`${path}${n}\`, which ${tool} does not take`);
+    }
+  }
+  for (const g of named) {
+    if (g.optional && g.names.length === 1 && schema.fields.get(g.names[0])?.required) {
+      bad.push(`${where} marks \`${path}${g.names[0]}\` optional, and ${tool} requires it`);
+    }
+    const nested = g.names.length === 1 ? schema.fields.get(g.names[0])?.nested : null;
+    const inner = nested ? objectText(g.value) : null;
+    if (nested && inner !== null) {
+      nestedJudged++;
+      judge(inner, nested, where, tool, `${path}${g.names[0]}.`, bad);
+    }
+  }
+  if (partial) return false;
+  const given = new Set(named.flatMap((g) => g.names));
+  for (const [field, { required }] of schema.fields) {
+    if (required && !given.has(field)) bad.push(`${where} leaves out \`${path}${field}\`, which ${tool} requires`);
+  }
+  return true;
+}
+
+let occurrences = 0, closed = 0, nestedJudged = 0;
 const schemas = new Map<string, ToolSchema>();
 for (const rel of [...sourceFiles(["services/zz-core/src"], [".ts"]), ...sourceFiles(["services/gateway/src"], [".ts"])]) {
   for (const tool of toolsIn(readFileSync(join(root, rel), "utf8"))) {
@@ -119,15 +195,7 @@ for (const rel of [...sourceFiles(["services/zz-core/src"], [".ts"]), ...sourceF
     const end = closeOf(tool.body, open, "ts");
     if (end < 0) continue;   // counted as not closed, reported by the check
     closed++;
-    const schema: ToolSchema = { fields: new Map(), open: false };
-    for (const raw of topLevel(tool.body.slice(open + 1, end), "ts")) {
-      // A field's leading comment is not part of its name.
-      const entry = raw.replace(/^(?:\s*(?:\/\/[^\n]*\n|\/\*[\s\S]*?\*\/))*\s*/, "");
-      const m = /^([a-z][a-z0-9_]*)\s*(:?)/.exec(entry);
-      if (!m || !m[2]) { schema.open = true; continue; }   // a spread or a shorthand: not enumerable here
-      schema.fields.set(m[1], !/\.optional\(|\.default\(|\.nullish\(|z\.optional\(/.test(surface(entry)));
-    }
-    schemas.set(tool.name, schema);
+    schemas.set(tool.name, shapeOf(tool.body.slice(open + 1, end)));
   }
 }
 
@@ -154,36 +222,11 @@ check("every tool call a skill writes names only the tool's arguments, and every
       // not a call it teaches; a call that means "the rest" writes `tool(skip: true, ...)`.
       if (!txt.slice(open + 1, end).trim()) continue;
       calls++;
-      // Each argument is a name, `name: value`, `name?` (optional), `name[]`, or `a | b` (one of);
-      // a quoted or `<placeholder>` value is positional and `...` stands for the rest, so either
-      // one leaves the required set unjudged — the names that are written are still checked.
-      let partial = false;
-      const named: { names: string[]; optional: boolean }[] = [];
-      for (const arg of topLevel(txt.slice(open + 1, end), "md")) {
-        if (/^(\.\.\.|…)$/.test(arg)) { partial = true; continue; }
-        const names = nameOf(arg).split("|").map((n) => n.trim().replace(/\[\]$/, ""));
-        if (!names.every((n) => /^[a-z][a-z0-9_]*\??$/.test(n))) { partial = true; continue; }
-        named.push({ names: names.map((n) => n.replace(/\?$/, "")), optional: names.some((n) => n.endsWith("?")) });
-      }
-      if (!schema.open) {
-        for (const n of named.flatMap((g) => g.names)) {
-          if (!schema.fields.has(n)) bad.push(`${where} passes \`${n}\`, which ${m[1]} does not take`);
-        }
-      }
-      for (const g of named) {
-        if (g.optional && g.names.length === 1 && schema.fields.get(g.names[0])) {
-          bad.push(`${where} marks \`${g.names[0]}\` optional, and ${m[1]} requires it`);
-        }
-      }
-      if (partial) continue;
-      full++;
-      const given = new Set(named.flatMap((g) => g.names));
-      for (const [field, required] of schema.fields) {
-        if (required && !given.has(field)) bad.push(`${where} leaves out \`${field}\`, which ${m[1]} requires`);
-      }
+      if (judge(txt.slice(open + 1, end), schema, where, m[1], "", bad)) full++;
     }
   }
   note(`      ${calls} tool calls in skills checked against ${schemas.size} registrations; ` +
-       `${full} named every argument, ${calls - full} are positional or end in ... and had their names checked`);
+       `${full} named every argument, ${calls - full} are positional or end in ... and had their names checked; ` +
+       `${nestedJudged} inline objects judged against their nested shape`);
   return firstOf(bad, 40);
 });

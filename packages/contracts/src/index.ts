@@ -283,6 +283,11 @@ export const Envelope = z.object({
   /** The version of its subject a knowledge node's claims were last checked against, written by
    *  knowledge_add. */
   verified_against: z.string().optional(),
+
+  /** The eval_run a zz-plugin-eval findings.md reports, written by finding_record's regeneration.
+   *  COUPLED: release_prepare and proposal_prepare read it (eval/initiative-run.ts) to find the
+   *  initiative's improvement runs, so a flow claiming this name would redirect them. */
+  eval_run_id: z.string().optional(),
 });
 export type Envelope = z.infer<typeof Envelope>;
 

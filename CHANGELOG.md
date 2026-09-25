@@ -33,6 +33,76 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.76.0] — 2026-09-25
+
+zz-stack 0.76.0 · console 0.19.0
+
+### Added
+- **Plugin evaluation now ends in a real overall score.** A run of `zz-plugin-eval` binds one
+  immutable plugin subject, one observation snapshot and one versioned Evaluation Protocol. It
+  publishes a deterministic 0–10 fit-for-purpose score across six dimensions (effectiveness,
+  reliability, constraint adherence, recovery & robustness, efficiency, generalization). Every
+  score says whether it is `established`, `provisional` or `not_established`, what it covered,
+  and how far each semantic evaluator is qualified (`unqualified` →
+  `mechanically_qualified` → `operationally_qualified` → `human_calibrated`). Human labels are
+  optional: an evaluator earns its level from anchors, planted faults, blind controls and
+  repeat stability. Critical guardrails never average away.
+- **Any plugin can be evaluated**, including one this repository does not ship: `plugin_register`
+  takes a local directory, a git URL or an npm package, records it as third-party, and
+  derives its authority server-side.
+- **Failure discovery before any protocol exists** (`failure_discover`). Recurring failures are
+  grouped from the event log, and each is given an owner (plugin, dependency, platform,
+  environment, user input or unknown) by a registered evaluator.
+- **Chronological replay of closed initiatives.** `replay_case_set_build` turns closed
+  initiatives into sealed replay cases, split 40/30/30 into evolve, validation and proof. The
+  candidate session sees only what the original person saw at the time. `replay_start`,
+  `replay_read` and `replay_close` run each replay in its own `replay-` team with its own
+  run-scoped PAT and an audit trail in `zz.event`. `npm run replay` launches an isolated headless
+  session.
+- **Governed improvement for plugins we own.** The tools are `improvement_start`,
+  `candidate_record`, `candidate_validate`, `candidate_search` and `candidate_prove`. Every
+  candidate is on a ledger. A leakage critic screens candidates, a Pareto frontier keeps the
+  trade-offs, and a deterministic selection picks one. Its paired-bootstrap proof runs on a
+  sealed set the search never sees.
+- **Release and rollback inside the flow.** `release_prepare` writes `improvement.md`, which
+  quotes the exact patch digest and is the approval that authorises release. `release_apply`
+  plus `zz-tool release-apply` apply exactly that patch, once, against the proven baseline.
+  `release_verify` plus `zz-tool release-rollback` check the released version and roll back an
+  established regression. A plugin we do not own gets an ungated `proposal.md` instead, and is
+  never written to.
+- **Conditional documents in the flow contract.** A flow document may declare
+  `when: {fact: value}` over `protocol_action`, `improvement_mode` and `release_mode`.
+  `initiative_status`, the gates and `initiative_close` skip a ruled-out document, and refuse to
+  close finished while a branch is undecided. The console stepper shows `skipped` and `waiting`.
+- **Console: the plugin page leads with the evaluation.** The score comes first, then Health,
+  Quality, Usage, Learning, Evolution and Automation & Trust. Every rate is shown with its
+  denominator, and proof is only ever shown as pass or fail
+  (`GET /api/console/plugins/:plugin/eval`).
+- `catalog/zz/zz-plugin-eval/protocols/zz-core.v1.json` is the bootstrap reference protocol. By
+  design it cannot establish a score before the first real observation revises it.
+
+### Changed
+- **`zz-plugin-eval` is an eight-stage flow**: identify, observe, discover, define-qualify,
+  evaluate, explain, improve and promote-verify. IMPROVE and PROMOTE-VERIFY need a shell;
+  everything before them is MCP-only. `findings.md` is now ungated measurement output.
+- Every mutating evaluation tool takes an `idempotency_key`, kept per principal and per tool.
+
+### Removed
+- `ruler_read`, `ruler_record`, `ruler_affirm` and `rulers.md`. Use `protocol_read`,
+  `protocol_record`, `protocol_affirm` and `protocol.md`. Historical ruler rounds stay readable.
+- The skills `zz-plugin-locate`, `-profile`, `-define`, `-judge` and `-report`, replaced by
+  the eight stage skills.
+
+### Upgrade notes
+- **Ten migrations, 077 through 086**, apply on the gateway's next start. All are additive,
+  except that `zz.assessment.family` and `reading` become nullable.
+- **`ZZ_CATALOG_OWNER_TEAM` is now required** by `register-plugins`, which refuses to run
+  without it. It names the team that owns this repository's catalog. Set it in `deploy/.env`.
+- `finding_record` now takes `(eval_run_id, finding{kind, pattern, owner_kind, ...},
+  idempotency_key)`, and `finding_decide` requires `idempotency_key`.
+- Clients must re-pull the shelf for the new stage skills (see the commands at the end of the
+  release).
+
 ## [0.75.0] — 2026-09-24
 
 ### Removed

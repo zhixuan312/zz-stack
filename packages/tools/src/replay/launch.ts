@@ -396,6 +396,7 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
   let worktree: Worktree | undefined;
   let candidateHome: ReturnType<typeof makeSessionHome> | undefined;
   let personHome: ReturnType<typeof makeSessionHome> | undefined;
+  let result: LaunchResult;
 
   try {
     if (!Number.isInteger(maxTurns) || maxTurns < 0 || maxTurns > MAX_TURNS_CAP) {
@@ -501,7 +502,7 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
 
     const verifierNote = await attemptVerifier(ownMcp, start.replay_run_id);
     removeLogs(logPath);
-    return { status: "completed", logPath: null, verifier: verifierNote };
+    result = { status: "completed", logPath: null, verifier: verifierNote };
   } catch (err) {
     const reason = (err as Error).message;
     try {
@@ -511,12 +512,28 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
       // replay_close itself refusing must never mask the original failure this run is being
       // closed for — the reason above is already in the log.
     });
-    return { status: "failed", logPath };
+    result = { status: "failed", logPath };
   } finally {
-    if (worktree) removeWorktree(worktree);
-    if (candidateHome) removeSessionHome(candidateHome);
-    if (personHome) removeSessionHome(personHome);
+    // Each removal on its own: a rename that fails (a directory the session left busy, a
+    // permission it changed) must not skip the homes after it, and must not escape as a throw
+    // that replaces this function's answer. A leftover directory is reported as a failed launch
+    // with its reason in the log — the run itself was already closed above either way.
+    const leftovers: string[] = [];
+    const attempt = (what: string, remove: () => void): void => {
+      try { remove(); } catch (err) { leftovers.push(`${what}: ${(err as Error).message}`); }
+    };
+    if (worktree) { const w = worktree; attempt("worktree", () => removeWorktree(w)); }
+    if (candidateHome) { const h = candidateHome; attempt("candidate home", () => removeSessionHome(h)); }
+    if (personHome) { const h = personHome; attempt("person home", () => removeSessionHome(h)); }
+    if (leftovers.length) {
+      try {
+        mkdirSync(join(tmpdir(), "zz-replay-logs"), { recursive: true, mode: 0o700 });
+        appendFileSync(logPath, `# cleanup failed: ${leftovers.join("; ")}\n`, "utf8");
+      } catch { /* nowhere left to say it but the status below */ }
+      result = { status: "failed", logPath };
+    }
   }
+  return result;
 }
 
 // -------------------------------------------------------------------------------------------

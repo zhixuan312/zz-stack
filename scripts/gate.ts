@@ -40,6 +40,7 @@ import "./gate/checks/catalog-servers.ts";
 import "./gate/checks/skill-shape.ts";
 import "./gate/checks/skill-claims.ts";
 import "./gate/checks/skill-tools.ts";
+import "./gate/checks/skill-calls.ts";
 import "./gate/checks/skill-prose.ts";
 import "./gate/checks/prose-names.ts";
 

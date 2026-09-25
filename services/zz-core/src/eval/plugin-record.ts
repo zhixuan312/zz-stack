@@ -34,6 +34,7 @@ import { z } from "zod";
 
 import { writeFindingsDoc } from "./findings-doc.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { measureByKey } from "./qualify.js";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
 import { db } from "../platform-db.js";
@@ -56,7 +57,10 @@ export function registerPluginRecordTools(server: McpServer): void {
         "environment/user_input carries no expected_effect — assess and stop. Pass `initiative` " +
         "to regenerate that initiative's findings.md from this eval_run's current score and " +
         "every finding recorded against it so far — omit it to record without touching the " +
-        "document. REFUSES an eval_run_id nothing minted and a call missing owner_kind. A " +
+        "document. Cite the measure a finding is evidence for by its measure_key, as written in " +
+        "the protocol this eval_run was scored against. REFUSES an eval_run_id nothing minted, a " +
+        "call missing owner_kind, and a measure_key that protocol version does not have (naming " +
+        "the keys it does). A " +
         "mutator: writes through the FR-59 idempotency ledger.",
       inputSchema: {
         eval_run_id: z.string(),
@@ -65,7 +69,8 @@ export function registerPluginRecordTools(server: McpServer): void {
           pattern: z.string().describe("what this run found, in one sentence"),
           owner_kind: z.enum(EVAL_STATE_ENUMS.ownerKind),
           owner_ref: z.string().optional().describe("which plugin/dependency/etc, when owner_kind names one"),
-          measure_id: z.string().optional().describe("the zz.eval_measure this finding is evidence for, if one"),
+          measure_key: z.string().optional()
+            .describe("the key of the measure this finding is evidence for, if one — resolved through this eval_run's own protocol version"),
           evidence_refs: z.array(z.string()).default([]),
           expected_effect: z.record(z.string(), z.unknown()).optional()
             .describe("what changing this is expected to move — omit when owner_kind is not 'plugin'"),
@@ -77,9 +82,17 @@ export function registerPluginRecordTools(server: McpServer): void {
     async ({ eval_run_id, finding, idempotency_key, initiative }) => {
       const p = db();
       if (!p) return noDb();
-      const run = (await p.query<{ id: string }>(
-        "select id::text as id from zz.eval_run where id = $1::uuid", [eval_run_id])).rows[0];
+      const run = (await p.query<{ id: string; protocol_version_id: string }>(
+        "select id::text as id, protocol_version_id::text as protocol_version_id from zz.eval_run where id = $1::uuid",
+        [eval_run_id])).rows[0];
       if (!run) return text(`ERROR: no eval_run ${eval_run_id}`);
+      // Resolved before the ledger, so an unknown key refuses by name and anchors no ledger row.
+      let measureId: string | null = null;
+      if (finding.measure_key !== undefined) {
+        const measure = await measureByKey(p, run.protocol_version_id, finding.measure_key);
+        if ("error" in measure) return text(measure.error);
+        measureId = measure.id;
+      }
 
       const principal = parseCaller(requestHeaders()).email;
       const outcome: IdempotencyOutcome<{ id: string; kind: string; pattern: string }> = await withIdempotency(
@@ -92,7 +105,7 @@ export function registerPluginRecordTools(server: McpServer): void {
             values ($1::uuid, $2, $3, $4, $5, $6::uuid, $7::jsonb, $8::jsonb, 'deferred')
             returning id::text as id`,
             [eval_run_id, finding.kind, finding.pattern, finding.owner_kind, finding.owner_ref ?? null,
-             finding.measure_id ?? null, JSON.stringify(finding.evidence_refs ?? []),
+             measureId, JSON.stringify(finding.evidence_refs ?? []),
              finding.expected_effect ? JSON.stringify(finding.expected_effect) : null])).rows[0];
           if (!row) throw new Error("insert into zz.eval_finding produced no row");
           return {

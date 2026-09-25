@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-evaluate
-version: 0.1
+version: 0.2
 description: Stage 5 of zz-plugin-eval (EVALUATE). Bind an approved protocol version to a subject's own observation snapshot, run every measure the protocol names against real evidence, and reduce the result to one deterministic overall score with its status, coverage and guardrails. No recommendation — that is EXPLAIN.
 when_to_use: "The fifth stage of zz-plugin-eval, once a protocol version is affirmed (or was already reusable). Produces no document — its output is durable score data EXPLAIN reads. No shell required."
 ---
@@ -8,17 +8,38 @@ when_to_use: "The fifth stage of zz-plugin-eval, once a protocol version is affi
 # zz-plugin-evaluate
 
 ```
+replay_case_set_build(subject_version_id, protocol_version_id, source_scope: {initiatives: [...]} | {flow, closed_between: [from, to]}, idempotency_key)
 evaluation_start(subject_version_id, protocol_version_id, observation_snapshot_id, case_set_version_id?, idempotency_key)
 evaluation_assess(eval_run_id, subject_refs[], idempotency_key)
 evaluation_score(eval_run_id, idempotency_key)
 ```
 
-Three calls, in this order, once each per evaluation. `evaluation_start` atomically binds a
-protocol version and an observation snapshot (and, where replay is used, a `case_set_version_id`)
-into one immutable `zz.eval_evidence_snapshot`, and opens one `zz.eval_run` at `run_status:
-'pending'` against it. RETURNS `{ eval_run_id, evidence_snapshot_id, run_status }`. REFUSES an
-observation snapshot belonging to a DIFFERENT subject than `subject_version_id` names — never
-silently scoring one plugin's evidence against another's identity.
+Four calls, in this order, once each per evaluation. `evaluation_start` atomically binds a
+protocol version and an observation snapshot (and a `case_set_version_id`) into one immutable
+`zz.eval_evidence_snapshot`, and opens one `zz.eval_run` at `run_status: 'pending'` against it.
+RETURNS `{ eval_run_id, evidence_snapshot_id, run_status }`. REFUSES an observation snapshot
+belonging to a DIFFERENT subject than `subject_version_id` names — never silently scoring one
+plugin's evidence against another's identity.
+
+## The case set — built before `evaluation_start`, bound by it
+
+`case_set_version_id` is the `case_set_id` `replay_case_set_build` returned. The binding happens
+here and nowhere else: IMPROVE validates and proves every candidate against the case set THIS
+eval_run bound, and `candidate_validate` refuses a run that bound none. So build it first
+whenever the plugin has closed initiatives to replay, even though nothing in this stage replays
+anything — an eval_run started without one can score, but can never carry a search.
+
+`replay_case_set_build` derives FR-60's chronological cases from real closed initiatives —
+classifying each source person_statement/`agent_record`, building actor/`user_oracle`/
+evaluation_oracle timelines, splitting every replayable case `evolve`/`validation`/`proof` by
+`sha256(seed, case_digest)`. RETURNS `{ case_set_id, version, counts: {evolve, validation, proof,
+not_replayable}, minimums_met, source_kind_qualification }`. FR-57's bootstrap minimums are 5
+evolve, 10 validation, 10 proof — below a minimum, search may still run, but `candidate_prove`
+will record `not_established, reason: insufficient_proof_cases` and the candidate is not
+release-eligible. Unchanged source material reuses the existing case set rather than minting a
+redundant one. Omit `case_set_version_id` only when there is no closed initiative to build from,
+and say so: no candidate for this run's findings can then be validated or proved, and IMPROVE
+sends a run that needs a search back here for a new one.
 
 ## `subject_refs` — what the measures actually read
 
@@ -27,8 +48,9 @@ silently scoring one plugin's evidence against another's identity.
 rendered from its own event rows — then runs every measure of every dimension in the run's
 protocol against that resolved text. **REFUSES BY NAME any ref that resolves to neither a real
 document nor a real run** — a model is never silently handed a templated sentence naming the ref
-instead of the thing it names. Pick refs that are actually worth judging: the artifacts this
-protocol's own `observableSurfaces` names, not an arbitrary sample.
+instead of the thing it names. A ref is a document path or a run id, never a tool name: the
+protocol's own `observableSurfaces` names the tools whose output matters, so pick the documents
+and runs those tools produced — the ones worth judging, not an arbitrary sample.
 
 `deterministic`/`outcome` measures read a named fact off the run's own bound observation
 snapshot, never the resolved text — the same fact OBSERVE computed. `bounded_semantic`/
@@ -92,7 +114,8 @@ stored — assess more evidence first if the coverage is what you want to change
 `score_status` short of one), `dimension_scores`, `guardrail_status` and `coverage` — the durable
 record EXPLAIN turns into `findings.md`.
 
-**Required evidence:** `evaluation_start`'s `eval_run_id`. `evaluation_assess`'s own
+**Required evidence:** `replay_case_set_build`'s `case_set_id` and `counts` (or the stated reason
+there was nothing to build from). `evaluation_start`'s `eval_run_id`. `evaluation_assess`'s own
 `assessment_count`/`measures_assessed`, for every `subject_ref` actually judged. `evaluation_score`'s
 full response, read and carried forward verbatim — never a number re-derived by hand from the
 dimension detail.
@@ -100,7 +123,8 @@ dimension detail.
 **Allowed unknowns:** whether this run's evidence is enough to establish a score — `score_status`
 answers that from the protocol's own thresholds, not from your own read of how it feels.
 
-**Action and exit paths:** the action is `evaluation_start`, then `evaluation_assess` against
+**Action and exit paths:** the action is `replay_case_set_build`, then `evaluation_start`
+binding its case set, then `evaluation_assess` against
 every subject_ref worth judging, then `evaluation_score`. The exit is EXPLAIN
 (`zz-plugin-explain`), always, whatever `score_status` came back.
 

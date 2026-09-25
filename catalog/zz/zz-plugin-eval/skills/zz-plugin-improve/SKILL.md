@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-improve
-version: 0.4
+version: 0.5
 description: Stage 7 of zz-plugin-eval (IMPROVE). Search for a proven candidate patch against plugin-owned findings — propose, validate by replay, search to one deterministic winner, prove it sealed — then hand off to promotion for an owned subject or write an owner-facing proposal for one this team cannot release.
 when_to_use: "The seventh stage of zz-plugin-eval, after EXPLAIN. Runs for every branch except one with no plugin-owned actionable finding at all, which skips it with one call and closes. REQUIRES a shell-capable runtime (Claude Code) that can run npm/zz-tool commands and launch isolated sessions — refuses to start anywhere else. Every stage before this one runs with no shell at all (FR-54)."
 ---
@@ -42,6 +42,13 @@ the base subject records `release_owners`, `improvement_mode: proposal` when it 
 never choose which; the tool derives it from ownership. REFUSES a finding owned by anything but
 `plugin`, a finding recorded against a different `eval_run_id`, and a protocol version whose
 `improvement.search` is missing or malformed — there is no fallback policy.
+
+**Every candidate is validated and proved against the case set THIS `eval_run_id` bound at
+`evaluation_start`** — EVALUATE builds it with `replay_case_set_build` and binds its `case_set_id`
+as `case_set_version_id`. Nothing in this stage binds one. An eval_run that bound none cannot
+carry a search: `candidate_validate` refuses every candidate from it. Before opening a search on
+such a run, go back to EVALUATE — build the case set, start a new eval_run bound to it, score it
+— and EXPLAIN, whose findings belong to that new run; then open the search with those.
 
 ## The proposer bundle — read this before proposing anything
 
@@ -127,6 +134,11 @@ rm -rf "$d"
 
 The launcher refuses a token file anyone but you can read. Remove the directory once it returns.
 
+**The launcher needs the gateway and your own platform token**, besides the run's token in the
+file: `ZZ_URL` in its environment or `--gateway <url>` on the command line, and the token the
+zz-tool CLIs read — `$ZZ_TOKEN`, the file `$ZZ_TOKEN_FILE` names, or `~/.zz/token`. It opens,
+reads and closes the run under that token; the run's own token only ever reaches the session.
+
 **The launcher needs a model credential in its own environment**: `ANTHROPIC_API_KEY`, or
 `CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token` mints one). Every session runs under a fresh
 `CLAUDE_CONFIG_DIR` with no login in it, so a `claude login` kept only in the macOS keychain never
@@ -154,22 +166,6 @@ not close a run the launcher already ran. A completed run's logs are deleted as 
 failed run's stay in `$TMPDIR/zz-replay-logs/` (the path is in the launcher's output) for you to
 read, and every launch removes any there older than 7 days. Repeat `candidate_validate` once enough runs land; it
 plans, it never executes.
-
-## No case set yet? Build one before validating
-
-```
-replay_case_set_build(subject_version_id, protocol_version_id, source_scope: {initiatives: [...]} | {flow, closed_between: [from, to]}, idempotency_key)
-```
-
-Derives FR-60's chronological cases from real closed initiatives — classifying each source
-person_statement/`agent_record`, building actor/`user_oracle`/evaluation_oracle timelines,
-splitting every replayable case `evolve`/`validation`/`proof` by `sha256(seed, case_digest)`.
-RETURNS `{ case_set_id, version, counts: {evolve, validation, proof, not_replayable},
-minimums_met, source_kind_qualification }`. FR-57's bootstrap minimums are 5 evolve, 10
-validation, 10 proof — below a minimum, search may still run, but `candidate_prove` will record
-`not_established, reason: insufficient_proof_cases` and the candidate is not release-eligible.
-Build this once per plugin version's own material; unchanged source reuses the existing case set
-rather than minting a redundant one.
 
 ## Advancing the search
 
@@ -305,8 +301,9 @@ is what writes cold afterwards, the same as every other close this flow reaches.
 ❌ **Trying to run this stage with no shell.** Stop and say so; nothing here simulates what a
 launcher command would have done.
 
-❌ **Skipping `replay_case_set_build` and calling `candidate_validate` cold.** It refuses a case
-set with no replayable validation-split case.
+❌ **Searching on an eval_run that bound no case set.** `candidate_validate` refuses every
+candidate from it; the case set is EVALUATE's to build and bind, and a run without one goes back
+there. It also refuses a case set with no replayable validation-split case.
 
 ❌ **Closing a replay_run the launcher already closed.** `npm run replay` always calls
 `replay_close` itself, success or failure.

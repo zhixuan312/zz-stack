@@ -89,7 +89,7 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
   // against any live state, the same way protocol_affirm's probe above is.
   eitherOr("evaluator_qualify refuses a protocol_version_id nothing minted",
     await callEval("evaluator_qualify", {
-      protocol_version_id: randomUUID(), evaluator_version_id: randomUUID(), idempotency_key: randomUUID(),
+      protocol_version_id: randomUUID(), measure_key: "quality", idempotency_key: randomUUID(),
     }), /no platform database|unknown protocol_version_id/);
   // Task I-13: three random uuids decide nothing on any live state, the same way the probes
   // above are safe.

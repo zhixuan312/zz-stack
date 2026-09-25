@@ -75,7 +75,7 @@ applies (FR-52, FR-58) — never a model's confidence:
 |---|---|---|
 | protocol_action | `create` \| `reuse` \| `revise` | `protocol_read`, DEFINE/QUALIFY |
 | improvement_mode | `skip` \| `search` \| `proposal` | `improvement_start`, IMPROVE |
-| release_mode | `not_applicable` \| proposal_only \| `promotable` | `improvement_start(skip)`, `candidate_search`/`candidate_prove` (nothing to promote), `release_prepare`, `proposal_prepare`, IMPROVE/PROMOTE-VERIFY |
+| release_mode | `not_applicable` \| proposal_only \| `promotable` | `improvement_start(skip: true, ...)`, `candidate_search`/`candidate_prove` (nothing to promote), `release_prepare`, `proposal_prepare`, IMPROVE/PROMOTE-VERIFY |
 
 `protocol.md` is gated only when protocol_action is `create`/`revise` — `reuse` skips
 DEFINE/QUALIFY entirely. `findings.md` is always ungated and always written — every branch

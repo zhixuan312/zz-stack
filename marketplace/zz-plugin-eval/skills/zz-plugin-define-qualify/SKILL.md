@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define-qualify
-version: 0.2
+version: 0.3
 description: Stage 4 of zz-plugin-eval (DEFINE/QUALIFY), and the one gate that matters most. Derive what good means for THIS plugin from its own profile and DISCOVER's candidates, write it into protocol.md, get a person to agree it, then qualify every model-backed evaluator it names before anything is scored.
 when_to_use: "The fourth stage of zz-plugin-eval, after DISCOVER. Conditional: protocol_read decides create/revise/reuse, and this stage only writes when it says create or revise. Produces protocol.md, gated — protocol_affirm refuses to bind it until somebody approves it. No shell required."
 ---
@@ -188,32 +188,33 @@ Once `protocol_affirm` has bound the approval, qualify each `bounded_semantic`/
 `generative_critic` measure's own evaluator:
 
 ```
-evaluator_qualify(protocol_version_id, evaluator_version_id, idempotency_key)
+evaluator_qualify(protocol_version_id, measure_key, idempotency_key)
 ```
 
-`evaluator_version_id` is the one `registerEvaluator` (inside `protocol_record`) minted for that
-measure's own `evaluator.stable_key` — read it back off `zz.eval_evaluator_version` if you did
-not keep it from recording. It runs the protocol's own `QualificationPolicy` over four evidence
+`measure_key` is the measure's own `key`, exactly as you wrote it into `protocol_body`. The tool
+resolves the evaluator version that measure defers to from this protocol version — you never
+pass one. It REFUSES a key this protocol version does not have (naming the keys it does), a key
+two dimensions share, and a `deterministic`/`outcome`/`human` measure, which is never
+qualified. It runs the protocol's own `QualificationPolicy` over four evidence
 categories — **anchors** (known answers derived from OBSERVE's own snapshot facts), **planted
 faults** (the same facts, sign-flipped, killed when the evaluator's answer flips with them),
 **controls** (the same facts read off another plugin's own real snapshot, never a mutation) and
 **stability** (one anchor asked three times) — plus **labels**, only where the protocol's
 `qualification.labelMappings` names this evaluator's `stable_key`.
 
-RETURNS `{ qualification_id, state, evidence: { anchors, planted_faults, controls, stability,
-labels } }` — `state` is one of `unqualified`, `mechanically_qualified`,
+RETURNS `{ measure_key, evaluator_version_id, qualification_id, state, evidence: { anchors,
+planted_faults, controls, stability, labels } }` — `state` is one of `unqualified`, `mechanically_qualified`,
 `operationally_qualified` or `human_calibrated`. A new evaluator version always starts
 `unqualified`; `unqualified` with `evidence.reason: no_anchors` means this measure's own
 `definition.qualification` names no `{positive, zero}` vocabulary yet, or the plugin has no
 OBSERVE snapshot to derive an anchor from — not a call failure, and not this tool's fault to fix.
 **Never refuses on thin evidence** — it always writes a row, honestly stating how thin.
 
-**Qualify every `bounded_semantic`/`generative_critic` evaluator this protocol version names**
-before handing off, not only the ones you expect to be asked about — `replay_case_set_build`
-(a later, IMPROVE-stage tool) requires `qualification.boundedSemanticMinimum` to be met before it
-will admit a measure's evaluator into a case set, and FR-57's own bootstrap rule for `zz-core`
-requires `operationally_qualified` before a `bounded_semantic` measure counts toward an
-established score at all.
+**Qualify every `bounded_semantic`/`generative_critic` measure this protocol version names**
+before handing off, not only the ones you expect to be asked about — `evaluation_score` reads
+each REQUIRED model-backed measure's latest qualification against
+`qualification.boundedSemanticMinimum` (default `operationally_qualified`), and one measure short
+of it keeps the whole run's `qualification_met` false, so the score cannot be `established`.
 
 ## Pitfalls
 

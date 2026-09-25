@@ -144,7 +144,7 @@ const SNAPSHOT_IDENTITY = ["-c", "user.name=zz-replay", "-c", "user.email=zz-rep
 
 /** The checks every fetched tree passes before anything else reads it: nothing git would obey,
  *  then every file's digest, then the skills-and-manifest digest. Throws the refusal; `why` adds
- *  the likely cause to a tree-digest mismatch. */
+ *  the likely cause to either digest's mismatch. */
 function verifyTree(path: string, plan: FetchPlan, why?: () => string): void {
   const unsafe = gitInstruction(path);
   if (unsafe) {
@@ -161,7 +161,7 @@ function verifyTree(path: string, plan: FetchPlan, why?: () => string): void {
   const digest = pluginContentDigest(got.components);
   if (digest !== plan.digest) {
     throw new Error(`launchReplay: the fetched source has content digest ${digest}, but the subject was captured ` +
-      `at ${plan.digest} — refusing to replay a different plugin`);
+      `at ${plan.digest} — refusing to replay a different plugin${why ? ` (${why()})` : ""}`);
   }
 }
 

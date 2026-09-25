@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-explain
-version: 0.1
+version: 0.2
 description: Stage 6 of zz-plugin-eval (EXPLAIN). Record what EVALUATE's own score and assessments actually found — strengths, defects, unknowns, each with an owner — and let findings.md regenerate itself from the current record. Ungated measurement output, never an approval gate.
 when_to_use: "The sixth stage of zz-plugin-eval, once evaluation_score has completed. Produces findings.md — ungated, and every branch of this flow reaches it before anything else happens. No shell required."
 ---
@@ -33,9 +33,10 @@ whoever owns it.
 
 **A finding on somebody else's plugin/dependency/platform/environment/user_input carries no
 `expected_effect` — assess it and stop.** Only a `plugin`-owned finding is IMPROVE's raw
-material; report the rest honestly and move on. Cite `measure_id` (the `zz.eval_measure` this
-finding is evidence for) and `evidence_refs` wherever the finding traces back to something
-`evaluation_assess` actually read.
+material; report the rest honestly and move on. Cite `finding.measure_key` — the key of the
+measure this finding is evidence for, as the protocol this eval_run was scored against names it —
+and `evidence_refs` wherever the finding traces back to something `evaluation_assess` actually
+read. A key that protocol version does not have is refused by name, with the keys it does have.
 
 ## ONE CHANGE, AND SAY WHAT YOU EXPECT IT TO DO
 
@@ -94,7 +95,7 @@ opens a stale document.
 
 `findings.md` is ungated measurement output — nothing here approves it, and nothing blocks on it
 being approved. Every branch of this flow reaches IMPROVE next: a subject with no plugin-owned,
-actionable finding calls `improvement_start(skip: true)` there and the initiative closes on
+actionable finding calls `improvement_start(skip: true, ...)` there and the initiative closes on
 `findings.md` itself; one with findings opens a real search or an owner-facing proposal. This
 stage never decides which — it only makes sure every real finding this run produced is on the
 record before IMPROVE reads it.

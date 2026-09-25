@@ -314,8 +314,12 @@ export function symlinkRefusal(path: string): { error: string } | null {
  *  not skipped. The walk never follows a link it meets, but these two are opened by name, and
  *  `readdirSync`/`readFileSync` follow a link they are handed — a cloned repository or an
  *  extracted tarball carrying `skills -> /` would walk the host's filesystem. Refused rather than
- *  skipped so the caller learns why a source they can see holds skills read as holding none. */
-export function pluginDirComponents(dir: string): { components: PluginComponent[] } | { error: string } {
+ *  skipped so the caller learns why a source they can see holds skills read as holding none.
+ *
+ *  `unshipped` names directories left out at any depth, the same argument `pluginTreeDigest`
+ *  takes: a catalog capture passes `IMAGE_UNSHIPPED`, so a fixture SKILL.md under `tests` is not a
+ *  component in a checkout when the image cannot see it. */
+export function pluginDirComponents(dir: string, unshipped?: string): { components: PluginComponent[] } | { error: string } {
   if (!existsSync(dir) || !statSync(dir).isDirectory()) return { error: `${dir} is not a directory` };
   const linked = symlinkRefusal(join(dir, "skills")) ?? symlinkRefusal(join(dir, "flow.json"));
   if (linked) return linked;
@@ -326,7 +330,10 @@ export function pluginDirComponents(dir: string): { components: PluginComponent[
       // Never followed: a symlink inside the directory could otherwise read any file on the host.
       if (f.isSymbolicLink()) continue;
       const abs = join(d, f.name);
-      if (f.isDirectory()) { walk(abs); continue; }
+      if (f.isDirectory()) {
+        if (f.name !== unshipped) walk(abs);
+        continue;
+      }
       if (f.name !== "SKILL.md") continue;
       // The digest is the file's own bytes, not a database row: a third party carries no
       // zz.skill_version, so there is no content_hash column to defer to.

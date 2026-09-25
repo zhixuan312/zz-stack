@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-eval
-version: 2.1
+version: 2.2
 description: "The front door to plugin evaluation and governed improvement. Eight stages — IDENTIFY, OBSERVE, DISCOVER, DEFINE/QUALIFY, EVALUATE, EXPLAIN, IMPROVE, PROMOTE/VERIFY — over one plugin at one exact content, against a protocol somebody agreed BEFORE any scoring. Load it whenever somebody wants a plugin graded, scored, marked down, or confirmed as good or bad, including when they have already reached a conclusion and want it checked. Also when a plugin-owned defect is worth searching for a proven fix, or a plugin needs release/rollback through its own authorized owners. Measurement never bends toward a change somebody already wanted; promotion never happens without the required owners' say-so."
 when_to_use: "Someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?'. Answering either from your own read is the failure this flow exists to prevent, so load it before agreeing or disagreeing. Also whenever a plugin is up for keeping, changing or retiring; a plugin-owned defect is worth fixing; or a candidate patch needs proving and releasing through its own owners. This is the entry point: start here rather than at a stage. IDENTIFY through EXPLAIN run on any client with no shell; IMPROVE and PROMOTE/VERIFY need Claude Code."
 ---
@@ -74,7 +74,7 @@ applies (FR-52, FR-58) — never a model's confidence:
 |---|---|---|
 | protocol_action | `create` \| `reuse` \| `revise` | `protocol_read`, DEFINE/QUALIFY |
 | improvement_mode | `skip` \| `search` \| `proposal` | `improvement_start`, IMPROVE |
-| release_mode | `not_applicable` \| proposal_only \| `promotable` | `improvement_start(skip)`, `candidate_search`/`candidate_prove` (nothing to promote), `release_prepare`, `proposal_prepare`, IMPROVE/PROMOTE-VERIFY |
+| release_mode | `not_applicable` \| proposal_only \| `promotable` | `improvement_start(skip: true, ...)`, `candidate_search`/`candidate_prove` (nothing to promote), `release_prepare`, `proposal_prepare`, IMPROVE/PROMOTE-VERIFY |
 
 `protocol.md` is gated only when protocol_action is `create`/`revise` — `reuse` skips
 DEFINE/QUALIFY entirely. `findings.md` is always ungated and always written — every branch

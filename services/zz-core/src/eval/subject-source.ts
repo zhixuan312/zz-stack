@@ -29,17 +29,18 @@ import {
  *  Refused first, by name, whatever the kind: a source the launcher would always refuse to replay
  *  (`gitInstruction`, the same function it calls) — a `.git` anywhere, or a `.gitattributes`
  *  assigning a filter, git-lfs included. `ownGit` is a git clone's own `.git`. A catalog
- *  directory is digested without what the image leaves out (`IMAGE_UNSHIPPED`), so a checkout and
- *  the image record the same digest. */
+ *  directory is digested without what the image leaves out (`IMAGE_UNSHIPPED`) — both digests,
+ *  the components and the tree — so a checkout and the image record the same identity. */
 function resolveLocalDir(
   path: string, opts: { ownGit?: boolean; catalog?: boolean } = {},
 ): { components: PluginComponent[]; treeDigest: string } | { error: string } | null {
   const instruction = gitInstruction(path, { ownGit: opts.ownGit });
   if (instruction) return { error: `${instruction}, which git would run commands from; such a source is never replayed` };
-  const got = pluginDirComponents(path);
+  const unshipped = opts.catalog ? IMAGE_UNSHIPPED : undefined;
+  const got = pluginDirComponents(path, unshipped);
   if ("error" in got) return got;
   if (!got.components.length) return null;
-  const tree = pluginTreeDigest(path, opts.catalog ? IMAGE_UNSHIPPED : undefined);
+  const tree = pluginTreeDigest(path, unshipped);
   if ("error" in tree) return tree;
   return { components: got.components, treeDigest: tree.digest };
 }

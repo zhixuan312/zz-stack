@@ -107,7 +107,16 @@ zz-stack 0.76.0 · console 0.19.0
 - **`ZZ_CATALOG_OWNER_TEAM` is now required** by `register-plugins`, which refuses to run
   without it. It names the team that owns this repository's catalog. Set it in `deploy/.env`.
 - `finding_record` now takes `(eval_run_id, finding{kind, pattern, owner_kind, ...},
-  idempotency_key)`, and `finding_decide` requires `idempotency_key`.
+  idempotency_key)`, and `finding_decide` requires `idempotency_key`. A finding cites its
+  measure as `finding.measure_key`, resolved through the eval_run's own protocol version;
+  `finding.measure_id` is gone, and a key that version does not have is refused by name.
+- `evaluator_qualify` now takes `(protocol_version_id, measure_key, idempotency_key)`, not
+  `evaluator_version_id`, which no tool returned. It resolves the measure's evaluator itself,
+  returns `measure_key` and `evaluator_version_id` alongside the result, and refuses an unknown
+  key, a key two dimensions share, and a measure that is not bounded_semantic/generative_critic.
+- The case set is built in EVALUATE now: `replay_case_set_build` runs before `evaluation_start`,
+  whose `case_set_version_id` is that call's `case_set_id`. No tool changed; the
+  `zz-plugin-evaluate` and `zz-plugin-improve` skills moved the step to where the binding is.
 - Clients must re-pull the shelf for the new stage skills (see the commands at the end of the
   release).
 - `round_judge` and `round_score` are gone from /eval/mcp; score a plugin through `evaluation_start`/`evaluation_assess`/`evaluation_score`; `round_scores` still reads historic rounds.
@@ -252,6 +261,11 @@ zz-stack 0.76.0 · console 0.19.0
 - The launcher's `npm pack` keeps the same proxy and CA variables as its git (one shared list).
 - `zz-plugin-improve` 0.4: token files are written with the agent's file-writing tool and
   `chmod 600`. The shell heredoc fallback is gone.
+- A `local_dir` catalog subject's content digest now leaves out `tests` too, as its tree digest
+  already did. A subject captured from a checkout whose skills sat under a `tests` directory
+  must be registered again under a new version.
+- The gate now checks every tool call a skill writes against the tool's `inputSchema`: an
+  argument the tool does not take, or a required one left out, fails it.
 
 ## [0.75.0] — 2026-09-24
 

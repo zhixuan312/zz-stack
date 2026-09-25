@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-promote-verify
-version: 0.4
+version: 0.5
 description: Stage 8 of zz-plugin-eval (PROMOTE/VERIFY), the promotion boundary. Once IMPROVE has a proof-passed, owned candidate, prepare and gate the exact patch, apply it only after every required owner approves, record what happened, and run the automatic no-gate post-release check with its own objective rollback rule.
 when_to_use: "The eighth and last stage of zz-plugin-eval, reached only when release_mode is promotable — a candidate IMPROVE selected reached proof_passed against an owned subject. REQUIRES a shell-capable runtime that can run zz-tool commands against a real repository checkout. Never reached on a proposal_only or not_applicable branch."
 ---
@@ -146,10 +146,27 @@ rollback decision. RETURNS `{ verdict: established | rolled_back | not_establish
 reason, evidence, rollback_plan, runs_required?, verifier_token?, status }` — like
 `candidate_prove`, `runs_required` is `{ case_set_id, baseline, candidate }` while short — COUNTS,
 never case ids: `baseline` replays of the prior subject (the candidate's base) and `candidate`
-replays of the released one. Run each with `replay_start(context: "verifier", verifier_token,
-split: "proof", case_set_id, subject_version_id: <prior or released>)` — no `case_id`; the server
-draws the case, and the token is bound to this case set and these two subjects — plus `npm run
-replay -- --run <id> --verifier-token <token>`, exactly as IMPROVE's own proof loop.
+replays of the released one. Run each, one at a time, exactly as IMPROVE's own proof loop:
+
+```
+replay_start(case_set_id, subject_version_id: <prior or released>, split: "proof", context: "verifier", verifier_token, repeats, idempotency_key)
+d=$(mktemp -d)
+```
+
+No `case_id`: the server draws the case, and the token is bound to this case set and these two
+subjects. Write the run's `<token>` to `$d/replay` and `<verifier_token>` to `$d/verifier` with
+your file-writing tool — never a shell command, whose argv `ps` and shell history keep — then:
+
+```
+chmod 600 "$d/replay" "$d/verifier"
+npm run replay -- --run <replay_run_id> --repo <path> --token-file "$d/replay" --verifier-token-file "$d/verifier"
+rm -rf "$d"
+```
+
+The launcher refuses a token file anyone but you can read. It also needs the gateway —
+`ZZ_URL` in its environment or `--gateway <url>` — and your own platform token, the one the
+zz-tool CLIs read (`$ZZ_TOKEN`, the file `$ZZ_TOKEN_FILE` names, or `~/.zz/token`), plus a model
+credential (`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`), as IMPROVE's skill says.
 
 **On `rolled_back`, this call records the verdict and a `rollback_plan` but applies NOTHING
 itself** — it does not move `release_attempt.status`. Run the repository's own rollback next:

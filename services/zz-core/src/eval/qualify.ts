@@ -8,11 +8,16 @@
  * protocol's policy and the bound measure, gathering evidence, applying the ladder, and writing
  * the row through the FR-59 idempotency ledger, the same shape every mutator on this door uses.
  *
- * `subject_scope` is not a caller-supplied input (the plan header's own signature carries only
- * `protocol_version_id`, `evaluator_version_id` and `idempotency_key`): it is derived from the
- * protocol's own plugin, `{ plugin_id }`, the same way `protocol_affirm` derives a document path
- * from an `initiative` it is handed rather than asked to guess — see this file's own tool
- * description for the same disclosure made to a caller.
+ * `subject_scope` is not a caller-supplied input: it is derived from the protocol's own plugin,
+ * `{ plugin_id }`, the same way `protocol_affirm` derives a document path from an `initiative`
+ * it is handed rather than asked to guess — see this file's own tool description for the same
+ * disclosure made to a caller.
+ *
+ * DELIBERATE: the caller names the measure by `measure_key`, never an `evaluator_version_id`.
+ * The key is what the define stage wrote into `protocol_body`; the evaluator version is minted
+ * inside `protocol_record` and no tool returns it, so a contract that asked for it sent the agent
+ * to read a table it has no door to. The measure resolves the evaluator version through the
+ * protocol version the caller already names.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { QualificationPolicy, parseCaller } from "@zz/contracts";
@@ -35,6 +40,7 @@ import { Refusal } from "../refusal.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so no evaluator can be qualified");
+const MODEL_BACKED = new Set(["bounded_semantic", "generative_critic"]);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Exported for `replay-derive.ts` (Task I-14): `replay_case_set_build` resolves the SAME
@@ -62,6 +68,34 @@ export async function resolveEvaluator(p: pg.Pool, evaluatorVersionId: string): 
       from zz.eval_evaluator_version v join zz.eval_evaluator e on e.id = v.evaluator_id
      where v.id = $1::uuid`, [evaluatorVersionId])).rows[0];
   return row ? row.stable_key : null;
+}
+
+/** A `measure_key` inside one protocol version, resolved to its row — or the refusal, by name.
+ *  Keys are unique within a dimension, not across a protocol version (migration 002 carries no
+ *  such constraint), so a key two dimensions share is refused naming both rather than resolved
+ *  to whichever row came first. Exported for `finding_record` (plugin-record.ts), which cites a
+ *  measure by the same key: one resolver, so the two can never read a key differently. */
+export async function measureByKey(
+  p: pg.Pool, protocolVersionId: string, measureKey: string,
+): Promise<{ id: string; evaluator_type: string; evaluator_version_id: string | null } | { error: string }> {
+  const rows = (await p.query<{ id: string; key: string; dimension: string; evaluator_type: string; evaluator_version_id: string | null }>(`
+    select m.id::text as id, m.key, d.key as dimension, m.evaluator_type,
+           m.evaluator_version_id::text as evaluator_version_id
+      from zz.eval_measure m join zz.eval_dimension d on d.id = m.dimension_id
+     where d.protocol_version_id = $1::uuid
+     order by d.key, m.key`, [protocolVersionId])).rows;
+  const named = rows.filter((r) => r.key === measureKey);
+  if (!named.length) {
+    return { error: `ERROR: protocol version ${protocolVersionId} has no measure "${measureKey}" — ` +
+      `its measures are ${rows.length ? rows.map((r) => r.key).join(", ") : "none"}` };
+  }
+  if (named.length > 1) {
+    return { error: `ERROR: measure "${measureKey}" is in more than one dimension of protocol version ` +
+      `${protocolVersionId} (${named.map((r) => r.dimension).join(", ")}) — record a new protocol version ` +
+      "that gives each a distinct key" };
+  }
+  const [{ id, evaluator_type, evaluator_version_id }] = named;
+  return { id, evaluator_type, evaluator_version_id };
 }
 
 interface MeasureBinding {
@@ -200,46 +234,57 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
     "evaluator_qualify",
     {
       description:
-        "WHEN a registered evaluator version needs its qualification state established (or " +
-        "re-established) against one protocol version, before its answers may back a score: " +
-        "runs the protocol's own QualificationPolicy over four evidence categories — anchors " +
+        "WHEN a model-backed measure's evaluator needs its qualification state established " +
+        "(or re-established) against one protocol version, before its answers may back a score. " +
+        "Name the measure by the measure_key you wrote into protocol_body; the evaluator version " +
+        "it defers to is resolved from that protocol version, never passed in. Runs the " +
+        "protocol's own QualificationPolicy over four evidence categories — anchors " +
         "(known answers derived from the plugin's own OBSERVE snapshot facts), planted faults " +
         "(the same facts, sign-flipped, killed when the evaluator's answer flips with them), " +
         "controls (the same facts read off another plugin's own real snapshot, never a " +
         "mutation) and stability (one anchor asked three times) — plus labels, ONLY where the " +
         "protocol's qualification.labelMappings names this evaluator's stable_key. RETURNS " +
-        "{ qualification_id, state, evidence: { anchors: {passed, total}, planted_faults: " +
-        "{killed, total}, controls: {failed_as_expected, total}, stability: {agreeing, total}, " +
-        "labels: {n, tpr, tnr} | null } }, writing exactly one zz.eval_evaluator_qualification " +
-        "row scoped to { plugin_id } (derived from the protocol, since a bare " +
-        "protocol_version_id/evaluator_version_id pair names no subject_scope on its own). " +
-        "REFUSES an unknown protocol_version_id or evaluator_version_id; NEVER refuses on thin " +
-        "evidence — no anchor can be built (no measure in this protocol version names this " +
-        "evaluator, or the measure's own definition.qualification names no {positive, zero} " +
-        "vocabulary, or the plugin has no OBSERVE snapshot yet) answers state=unqualified, " +
-        "reason=no_anchors instead. A mutator: writes through the FR-59 idempotency ledger, so " +
-        "a retried call with the same idempotency_key replays the same row rather than " +
-        "re-asking any model.",
+        "{ measure_key, evaluator_version_id, qualification_id, state, evidence: { anchors: " +
+        "{passed, total}, planted_faults: {killed, total}, controls: {failed_as_expected, total}, " +
+        "stability: {agreeing, total}, labels: {n, tpr, tnr} | null } }, writing exactly one " +
+        "zz.eval_evaluator_qualification row scoped to { plugin_id } (derived from the protocol). " +
+        "REFUSES an unknown protocol_version_id; a measure_key this protocol version does not " +
+        "have (naming the keys it does have); a key two dimensions share; and a " +
+        "deterministic/outcome/human measure, which is not qualified. NEVER refuses on thin " +
+        "evidence — no anchor can be built (the measure's own definition.qualification names no " +
+        "{positive, zero} vocabulary, or the plugin has no OBSERVE snapshot yet) answers " +
+        "state=unqualified, reason=no_anchors instead. A mutator: writes through the FR-59 " +
+        "idempotency ledger, so a retried call with the same idempotency_key replays the same " +
+        "row rather than re-asking any model.",
       inputSchema: {
         protocol_version_id: z.string(),
-        evaluator_version_id: z.string(),
+        measure_key: z.string().min(1).describe("The measure's key as written in protocol_body."),
         idempotency_key: z.string().min(1),
       },
     },
-    async ({ protocol_version_id, evaluator_version_id, idempotency_key }) => {
+    async ({ protocol_version_id, measure_key, idempotency_key }) => {
       const p = db();
       if (!p) return noDb();
 
       const protocol = await resolveProtocol(p, protocol_version_id);
       if (!protocol) return text("ERROR: unknown protocol_version_id");
+      const measure = await measureByKey(p, protocol_version_id, measure_key);
+      if ("error" in measure) return text(measure.error);
+      // By type, not by a null evaluator: a deterministic/outcome measure may still name one
+      // (migration 002), and a qualification written for it is one `qualificationMet` never reads.
+      const evaluator_version_id = measure.evaluator_version_id;
+      if (!MODEL_BACKED.has(measure.evaluator_type) || !evaluator_version_id) {
+        return text(`ERROR: measure "${measure_key}" is ${measure.evaluator_type} — only a ` +
+          "bounded_semantic/generative_critic measure's evaluator is qualified");
+      }
       const stableKey = await resolveEvaluator(p, evaluator_version_id);
-      if (!stableKey) return text(`ERROR: "${evaluator_version_id}" is not a registered evaluator version`);
+      if (!stableKey) return text(`ERROR: measure "${measure_key}" names evaluator version ${evaluator_version_id}, which is not registered`);
 
       const principal = parseCaller(requestHeaders()).email;
 
       // Every model call happens before the transaction: a retry is ruled out first (so it never
       // re-asks), then the ladder asks on the pool, then the transaction only writes.
-      const args = { protocol_version_id, evaluator_version_id };
+      const args = { protocol_version_id, measure_key };
       const prior = await decideBeforeWork(principal, "evaluator_qualify", idempotency_key, args);
       let outcome: IdempotencyOutcome<QualifyResult>;
       if (prior.replayed) {
@@ -267,10 +312,10 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
       }
 
       logActivity(await userRoot(), null, {
-        user: principal, action: "evaluator_qualify", protocol_version_id, evaluator_version_id,
+        user: principal, action: "evaluator_qualify", protocol_version_id, measure_key, evaluator_version_id,
         state: result.state, replayed: outcome.replayed,
       });
-      return json(result);
+      return json({ measure_key, evaluator_version_id, ...result });
     },
   );
 }

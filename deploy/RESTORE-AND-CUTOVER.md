@@ -149,8 +149,8 @@ docker exec -i zz-rehearsal-db psql -U zz -d zz_rehearsal \
 the artifacts, revisions, events and scoped-search tables this rehearsal needs. Apply every other
 file in `services/gateway/migrations/` after it, in filename order.
 
-Its lines 102-104 are `create extension if not exists citext / pg_textsearch / pg_trgm`. Applied
-through `psql` as above those run unconditionally — the `requires-extension:` directives in its
+Just after its header come three `create extension if not exists citext / pg_textsearch /
+pg_trgm` lines. Applied through `psql` as above those run unconditionally — the `requires-extension:` directives in its
 header are read by the gateway's own migration runner (`services/gateway/src/db.ts`), which
 defers the file on a cluster that cannot supply them; piping it straight into `psql` bypasses
 that and fails outright.

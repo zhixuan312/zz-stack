@@ -1,6 +1,6 @@
 /**
  * The idempotency ledger (FR-59, AC-59.1): one row per `(principal, tool, idempotency_key)` in
- * `zz.eval_idempotency` (migration 002), so a retried mutator call either replays the first
+ * `zz.eval_idempotency` (001), so a retried mutator call either replays the first
  * attempt's result or is refused as a conflict, and never re-runs a write it already made.
  *
  * `withIdempotency` is the transactional wrapper every mutator added from here on calls before

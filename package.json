@@ -24,7 +24,6 @@
     "chain-check": "node packages/tools/dist/testing/chain-check.js",
     "audit": "node packages/tools/dist/testing/manifest-audit.js",
     "tool-report": "node packages/tools/dist/testing/tool-report.js",
-    "evolve-report": "node packages/tools/dist/testing/evolve-report.js",
     "watch-results": "node packages/tools/dist/ops/watch-results.js",
     "call": "node packages/tools/dist/ops/call.js",
     "replay": "node packages/tools/dist/replay/launch.js",
@@ -37,9 +36,7 @@
     "check:redaction": "node services/gateway/dist/redact-check.js",
     "plugin-surface": "node packages/tools/dist/ops/plugin-surface.js",
     "register-skills": "node packages/tools/dist/ops/register-skills.js",
-    "register-plugins": "node packages/tools/dist/ops/register-plugins.js",
-    "step-score": "node packages/tools/dist/testing/step-score.js",
-    "skill-reflect": "node packages/tools/dist/testing/skill-reflect.js"
+    "register-plugins": "node packages/tools/dist/ops/register-plugins.js"
   },
   "devDependencies": {
     "@zz/contracts": "*",
@@ -48,7 +45,7 @@
     "typescript": "^5.6.0",
     "@types/node": "^22.7.0"
   },
-  "version": "0.76.0",
+  "version": "0.76.1",
   "license": "MIT",
   "private": true
 }

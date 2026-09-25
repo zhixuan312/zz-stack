@@ -136,19 +136,20 @@ testing/    the shell around the engines: eval-step.sh (every requirement in
             manifest-audit (mechanical record audit), chain-check (the document
             chain over MCP, no model in the loop — it answers whether the
             platform works when a provider outage means the harness cannot get a
-            turn), tool-report (what the tools actually did, read back from the
-            platform's own tool_call record), evolve-report (which step stalls,
-            in the platform's own refusal sentences), mcp-client-check (the shared MCP client, against a stub server — no
+            turn; its walks of the tracker, the /eval door, closes without a
+            closing document and the shelf are chain-bugs, chain-eval,
+            chain-freeform and chain-shelf), tool-report (what the tools actually did,
+            read back from the platform's own tool_call record, with
+            tool-report-history comparing saved reports across runs),
+            mcp-client-check (the shared MCP client, against a stub server — no
             gateway, no network, one second) and sql-check (every query in the
             repository PREPAREd against a migrated empty database, which is what
             answers "would this statement run at all" — the one question the
             offline gate cannot ask and the type system cannot either, since the
-            SQL lives in template literals), step-score (what "better" means
-            for a step, as numbers, from the refusals the
-            platform already recorded) and skill-reflect (the reflect half of
-            prompt evolution: one proposed addition to one skill, in the skill's
-            own words, from the refusal sentences that name the rule that was
-            broken) — flow content lives in each flow's tests/. All engines exit
+            SQL lives in template literals). Which step of a flow stalls, and
+            what to change about it, is the plugin-eval flow's job on the
+            platform, not a script's — flow content lives in each flow's tests/.
+            All engines exit
             non-zero on failure.
 deploy/     the server package: docker compose, the Caddyfile (a template —
             install-caddy.sh is the only thing that should apply it),

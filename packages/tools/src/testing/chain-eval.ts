@@ -63,7 +63,7 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
     await callEval("protocol_record", {
       subject_version_id: randomUUID(), protocol_body: {}, idempotency_key: randomUUID(),
     }), /no platform database|unknown subject_version_id|"code"/);
-  // Task I-13: finding_record now binds to an eval_run_id (migration 002), not the legacy round's
+  // Task I-13: finding_record now binds to an eval_run_id (001), not the legacy round's
   // eval_id — a random uuid is safe against any live state, the same way every other probe here is.
   eitherOr("finding_record refuses an eval_run_id nothing minted",
     await callEval("finding_record", {

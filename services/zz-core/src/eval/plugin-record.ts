@@ -12,8 +12,8 @@
  * plugin's measurement object now, into `zz.eval_protocol_version` and never `zz.rubric*`.
  *
  * Task I-13 replaces `finding_record`'s own shape: a finding now belongs to one `eval_run_id`
- * (migration 002's `zz.eval_finding.eval_run_id`, alongside the legacy `eval_id` a historic round
- * carries — see 002's own comment on zz.eval_finding for the dual-lifecycle shape), names its `kind`
+ * (001's `zz.eval_finding.eval_run_id`, alongside the legacy `eval_id` a historic round
+ * carries — see 001's own comment on zz.eval_finding for the dual-lifecycle shape), names its `kind`
  * (strength/defect/unknown, not the legacy `scope`), and REQUIRES `owner_kind` at recording time
  * rather than leaving ownership to a later pass. This is a breaking change: the OLD
  * `finding_record(eval_id, findings: [...])` shape this file used to accept is gone, not carried

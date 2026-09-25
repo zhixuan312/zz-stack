@@ -114,8 +114,8 @@ export function logEvent(e: {
   toolKey?: string;
 }): void {
   // One spelling of a person, folded here because this is the one place every gateway event passes
-  // through. The actor column is grouped on by tool-report --actor, evolve-report and
-  // watch-results, and one person appearing as two rows makes each half look like complete work.
+  // through. The actor column is grouped on by tool-report --actor and watch-results, and one
+  // person appearing as two rows makes each half look like complete work.
   const actor = e.actor.trim().toLowerCase();
   const record = {
     ts: new Date().toISOString(),

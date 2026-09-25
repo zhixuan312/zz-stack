@@ -411,7 +411,7 @@ async function acquireValidatingLock(p: pg.Pool, candidateId: string): Promise<P
   return { status: row.prior_status as "recorded" | "valid" };
 }
 
-/** The two leases this file keeps (migration 002). `validating`: the hold above is released by
+/** The two leases this file keeps (001). `validating`: the hold above is released by
  *  the call's own `finally`, which a process killed mid-call (SIGKILL, a redeploy) never runs; a
  *  hold older than `VALIDATING_LEASE_MS` is such a process, and its candidate goes back to `valid`
  *  when a stored validation verdict exists, `recorded` otherwise. `awaiting_build`: a build lease

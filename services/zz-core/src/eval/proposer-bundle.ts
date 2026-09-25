@@ -22,7 +22,7 @@ import type pg from "pg";
  *  (candidate_validate/candidate_prove); `rejected_precheck` is the status this same repeat check
  *  itself implies for a hypothesis that never got past it. All three read as "this idea did not
  *  work," which is exactly what FR-38's regularized search needs to avoid proposing again.
- *  Deliberately NOT `proof_not_established` (migration 002, fix dispatch on I-21) — an
+ *  Deliberately NOT `proof_not_established` (001, fix dispatch on I-21) — an
  *  unestablished proof is an evidence gap, not a rejected idea, so it does not block
  *  `candidate_record`'s own repeat-hypothesis check the way a genuinely `proof_failed` one does.
  *

@@ -1,6 +1,6 @@
 /**
  * Candidate complexity (Task I-18, FR-41, FR-57's own frozen formula): everything
- * `candidate_record` needs to turn a unified-diff patchset into the numbers migration 002's
+ * `candidate_record` needs to turn a unified-diff patchset into the numbers 001's
  * `zz.candidate` stores — `complexity_delta`, the touched file list and each file's mapping onto
  * the base subject's own `component_manifest` (`subject.ts`'s `Component` shape, mirrored here
  * rather than imported, to keep this module import-free of the mutator that reads it).

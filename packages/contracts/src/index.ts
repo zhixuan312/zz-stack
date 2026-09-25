@@ -34,7 +34,7 @@ export {
 
 export { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS, SKILL_ALIAS,
          FIXED_DOORS, DOORS_PRINTED, isDoor, NO_TOKEN_ONBOARDING, PLUGIN_ALIAS,
-         resolveTool, resolveToolKey, resolveStep } from "./alias.js";
+         resolveToolKey, resolveStep } from "./alias.js";
 
 export { BANDS, NOT_MEASURABLE, band,
          HEADROOM, HEADROOM_STATES, headroomState, MARK_SCALE, type HeadroomState } from "./bands.js";
@@ -146,7 +146,7 @@ const VARYING: [RegExp, string][] = [
 /** Who a refusal belongs to, from the sentence it carries. "A call came back not-ok" is four
  * different facts and a rate that counts them as one is mostly schema-validation noise.
  *
- * COUPLED: the gateway writes it onto every event; packages/tools' step-score reads it back.
+ * COUPLED: the gateway writes it onto every event; tool-report and the console read it back.
  *
  *   guardrail  the platform said no, by name. Working as intended; never a defect.
  *   ours       the call was malformed — a missing argument, an invalid enum, unparseable
@@ -267,8 +267,8 @@ export const Envelope = z.object({
    *  source_add. A document revised past it owes the next round. */
   audits_version: z.string().optional(),
   /** Why a document was revised, in one line, written by document_revise.
-   *  DELIBERATE: no code reads it. evolve-report counts revisions and sends a reader to the
-   *  team's own store; only the count crosses the boundary. */
+   *  DELIBERATE: no code reads it. It is for a person reading the document's own history in
+   *  the team's store. */
   revision_note: z.string().optional(),
   /** The initiatives a journal node was learned from, written by knowledge_add.
    *  COUPLED: indexDoc puts it in zz.doc.evidence and knowledge_search expands the graph along

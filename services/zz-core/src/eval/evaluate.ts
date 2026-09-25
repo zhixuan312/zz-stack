@@ -13,7 +13,7 @@
  * caller names, through `evaluate-measures.ts`'s `answerMeasure`, and writes one
  * `zz.eval_assessment` row per (measure, subject_ref) pair — `deterministic`/`outcome` read a
  * named fact off the run's own bound observation snapshot, by a dotted `definition.factPath`
- * (migration 002 — the snapshot now carries the whole facts map, not just the two `evaluate-
+ * (migration 001 — the snapshot now carries the whole facts map, not just the two `evaluate-
  * measures.ts` used to special-case), `bounded_semantic`/`generative_critic` ask the measure's
  * bound evaluator and record an `assessment_id`, `human` is recorded as excluded (no ingestion
  * pipeline yet).

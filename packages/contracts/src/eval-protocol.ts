@@ -3,10 +3,10 @@
  * object a plugin version is scored against. Pure zod schemas and their inferred types; no I/O.
  *
  * Field names below are the protocol body's own, camelCase, one-to-one with spec v8's
- * `EvaluationProtocol` type. Migration 002 (services/gateway/migrations/002_plugin_eval_next.sql)
- * stores this same content under snake_case columns on `zz.eval_protocol_version` — `suites`,
- * `replay_policy`, `qualification_policy`, `scoring_policy`, `improvement_policy` — mapped
- * positionally by the write path. This module never speaks snake_case.
+ * `EvaluationProtocol` type. The schema (services/gateway/migrations/001_init.sql) stores this
+ * same content under snake_case columns on `zz.eval_protocol_version` — `suites`, `replay_policy`,
+ * `qualification_policy`, `scoring_policy`, `improvement_policy` — mapped positionally by the
+ * write path. This module never speaks snake_case.
  *
  * `PROTOCOL_ENUMS` and `EVAL_STATE_ENUMS` are the one source both this schema's `z.enum(...)`
  * calls and every later writer draw their vocabulary from — the check that validates a value and
@@ -32,27 +32,28 @@ const EVALUATOR_TYPES = [
   "deterministic", "outcome", "bounded_semantic", "generative_critic", "human",
 ] as const;
 
-/** Which suite a measure runs in — zz.eval_measure.suite (002) and Measure.suite below. */
+/** Which suite a measure runs in — zz.eval_measure.suite (001) and Measure.suite below. */
 const SUITES = ["capability", "regression", "production"] as const;
 
 const REPLAY_MODES = [
   "sandbox", "recorded", "simulated", "live_read_only", "non_replayable",
 ] as const;
 
-/** zz.eval_evaluator_qualification.state (002) and QualificationPolicy.boundedSemanticMinimum
- *  below — the same ladder under two names: how sure an evaluator's verdict has to be before
- *  its qualification, or a protocol's minimum bar for one, is admitted. */
+/** zz.eval_evaluator_qualification.state (001) and
+ *  QualificationPolicy.boundedSemanticMinimum below — the same ladder under two names: how sure
+ *  an evaluator's verdict has to be before its qualification, or a protocol's minimum bar for
+ *  one, is admitted. */
 const QUALIFICATION_STATES = [
   "unqualified", "mechanically_qualified", "operationally_qualified", "human_calibrated",
 ] as const;
 
-/** zz.eval_failure_mode_candidate.owner_kind and zz.eval_finding.owner_kind (002) — the same
- *  vocabulary on two tables, so one array backs both check constraints. */
+/** zz.eval_failure_mode_candidate.owner_kind and zz.eval_finding.owner_kind (001) —
+ *  the same vocabulary on two tables, so one array backs both check constraints. */
 const OWNER_KINDS = [
   "plugin", "dependency", "platform", "environment", "user_input", "unknown",
 ] as const;
 
-/** zz.eval_finding.kind (002) — Task I-13's EVALUATE-produced finding, distinct from the
+/** zz.eval_finding.kind (001) — Task I-13's EVALUATE-produced finding, distinct from the
  *  rubric-era finding's own `scope` (generic/specific), which keeps its separate vocabulary. */
 const FINDING_KINDS = ["strength", "defect", "unknown"] as const;
 
@@ -67,7 +68,7 @@ const IMPROVEMENT_RUN_STATUSES = [
   "open", "searching", "selected", "proofing", "proof_failed",
   "ready_for_approval", "released", "closed", "cancelled",
 ] as const;
-/** `proof_not_established` (migration 002, fix dispatch on I-21): a candidate whose sealed proof
+/** `proof_not_established` (001, fix dispatch on I-21): a candidate whose sealed proof
  *  never resolved to passed or failed — too few proof cases, an interval that never cleared mme
  *  by the liveness bound, or the allocation's token holder abandoned it — is spent (the proof
  *  allocation is used up either way) but is NOT a rejected hypothesis. Distinct from
@@ -76,18 +77,19 @@ const IMPROVEMENT_RUN_STATUSES = [
 const CANDIDATE_STATUSES = [
   "recorded", "rejected_precheck", "awaiting_build", "validating", "valid", "invalid", "selected",
   "proving", "proof_passed", "proof_failed", "proof_not_established", "stale", "released",
-  // Migration 002: release_record's rollback path marks the candidate whose release it undid.
+  // Migration 001: release_record's rollback path marks the candidate whose release it undid.
   "rolled_back",
 ] as const;
-/** zz.replay_run.status (002) — distinct from replay_case.status above: a case is either
+/** zz.replay_run.status (001) — distinct from replay_case.status above: a case is either
  *  replayable or not, once; a run against it moves through its own execution lifecycle and can
  *  fail or be cancelled independently of the case it replays. */
 const REPLAY_RUN_STATUSES = [
   "registered", "running", "completed", "failed", "not_replayable", "cancelled",
 ] as const;
-/** zz.candidate_evaluation.split (002) — distinct from replay_case.split above: a case is drawn
- *  once into evolve/validation/proof; a candidate's *evaluation* against the pool is scored as
- *  validation/proof/post_release, the third being a released candidate re-scored in production. */
+/** zz.candidate_evaluation.split (001) — distinct from replay_case.split above: a case
+ *  is drawn once into evolve/validation/proof; a candidate's *evaluation* against the pool is
+ *  scored as validation/proof/post_release, the third being a released candidate re-scored in
+ *  production. */
 const CANDIDATE_EVALUATION_SPLITS = ["validation", "proof", "post_release"] as const;
 const RELEASE_ATTEMPT_STATUSES = [
   "prepared", "applying", "released", "refused", "failed", "rolled_back",
@@ -106,7 +108,7 @@ export const PROTOCOL_ENUMS = {
   boundedSemanticMinimum: QUALIFICATION_STATES,
 } as const;
 
-/** Every state column migration 002 constrains, one array per column (two columns sharing a
+/** Every state column migration 001 constrains, one array per column (two columns sharing a
  *  vocabulary — owner_kind, the qualification ladder — share one array rather than restate it).
  *  Every later writer takes its values from here; a value that only ever lived in the SQL CHECK
  *  is a state the gate's "every state the schema allows can actually be reached" check reports
@@ -139,7 +141,7 @@ const FreeformRecord = z.record(z.string(), z.unknown());
 
 // -------------------------------------------------------------------------------------------
 // Dimension / Measure — one canonical scoring dimension inside a protocol version, and the
-// weighted measures inside it. Mirrors zz.eval_dimension / zz.eval_measure (002).
+// weighted measures inside it. Mirrors zz.eval_dimension / zz.eval_measure (001).
 
 export const Measure = z.object({
   key: z.string().min(1),
@@ -299,7 +301,7 @@ export type FailureMode = z.infer<typeof FailureMode>;
 
 // -------------------------------------------------------------------------------------------
 // The protocol body itself — spec v8's EvaluationProtocol type (FR-6). Field names are the
-// protocol body's own, camelCase, one-to-one; migration 002 stores this content under
+// protocol body's own, camelCase, one-to-one; migration 001 stores this content under
 // snake_case columns on zz.eval_protocol_version, mapped positionally, never renamed here.
 
 /** One of `suites.capability` / `.regression` / `.production` — spec v8 does not fix a shape

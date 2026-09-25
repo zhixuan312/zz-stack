@@ -97,7 +97,7 @@ const SURFACE_ALIAS: Record<string, Record<string, string>> = {
 
 /** One tool's current name, on one door. A miss returns the name unchanged: most names were
  *  never renamed, and that is an answer rather than a failure. */
-export function resolveTool(surface: string, tool: string): string {
+function resolveTool(surface: string, tool: string): string {
   return SURFACE_ALIAS[surface]?.[tool] ?? tool;
 }
 

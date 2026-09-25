@@ -160,7 +160,7 @@ export function settleCleanup(
   return { ...result, cleanup_warning: warning };
 }
 
-/** `replay_close`'s own `result.produced` shape (migration 002), mirrored here — never imported
+/** `replay_close`'s own `result.produced` shape (001), mirrored here — never imported
  *  from `services/zz-core/dist`, per the module note above: `packages/tools` crosses that
  *  boundary only over MCP, on the wire. Not exported: nothing outside this file needs the shape
  *  by name, only the value `collectProduced` below builds in it. */

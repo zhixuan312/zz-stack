@@ -5,7 +5,7 @@
  * FIXED (fix dispatch on initiative 2026-09-24-plugin-eval-next-version, task I-29's own two
  * follow-on seams): `deterministic`/`outcome` used to read only two hard-coded facts off
  * `zz.eval_observation_snapshot`'s own raw columns, because OBSERVE (Task I-7) stored only their
- * digest and never the ~18 facts it actually computes. Migration 002 gives the snapshot a `facts`
+ * digest and never the ~18 facts it actually computes. Migration 001 gives the snapshot a `facts`
  * column carrying the whole map (observe-facts.ts's `OBSERVATION_FACT_KEYS`), so a measure now
  * names ANY of them by a dotted `definition.factPath`, normalised to `[0,1]` by a rule the measure
  * itself declares — see `deterministicAnswer`/`normalizeFactValue` below. `outcome` reads the same
@@ -48,7 +48,7 @@ export interface SnapshotFacts {
   readonly usable_run_count: number;
   readonly total_run_count: number;
   readonly coverage: { surface?: { observed?: number; total?: number } } | null;
-  /** The full map migration 002 stores — `null` for a snapshot that carries none,
+  /** The full map migration 001 stores — `null` for a snapshot that carries none,
    *  which excludes every deterministic/outcome measure with a named
    *  reason rather than guessing at a value. Loosely typed (`unknown` per entry): this file
    *  narrows each entry it actually reads through `asFactLike`, rather than importing

@@ -455,7 +455,6 @@ function main(argv: string[]): number {
     if (report.named.length) {
       // `skill_read`, the resolved name: `named.tools` holds subjects already folded through
       // resolveToolKey, so an unresolved spelling matches no row and this section stops rendering.
-      // COUPLED: evolve-report.ts folds the same rename the same way.
       const skills = report.named.filter((n) => n.key === "name" && n.tools.some((t) => t.includes("skill_read")));
       // Capped for the terminal, and the cap is stated: a listing that quietly stops at twelve
       // reads as "that is all of them". --json carries every row.
@@ -516,9 +515,8 @@ function main(argv: string[]): number {
   return 0;
 }
 
-// Only when run as the CLI. evolve-report and step-score import the resolvers, and the checks that
-// verify them import this file too — an import must not also run the CLI's psql query and exit the
-// process under it.
+// Only when run as the CLI. The checks that verify the resolvers import this file — an import must
+// not also run the CLI's psql query and exit the process under it.
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   process.exit(main(process.argv.slice(2)));
 }

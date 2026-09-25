@@ -38,7 +38,7 @@
  *
  * Exactly one applying attempt per plugin: the advisory lock serializes decisions, the check
  * after it refuses `release_in_progress` while any attempt of the plugin is applying (whichever
- * candidate), and migration 002's `release_attempt_applying_plugin_idx` makes the same fact a
+ * candidate), and 001's `release_attempt_applying_plugin_idx` makes the same fact a
  * database guarantee. An attempt left applying past `STALE_APPLYING_MS` has nobody left to
  * report for it; the refusal names it and the reconcile command that records what really happened.
  *
@@ -371,7 +371,7 @@ export async function planApply(
     return { result, result_table: "zz.release_attempt", result_id: attempt.id };
   }
 
-  // prepared -> applying. The CAS makes THIS row move at most once; migration 002's two indexes
+  // prepared -> applying. The CAS makes THIS row move at most once; 001's two indexes
   // keep one live attempt per candidate and one applying attempt per plugin — both
   // still catch a race the lock alone would not.
   let applied;

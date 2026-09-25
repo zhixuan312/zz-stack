@@ -494,18 +494,6 @@ export const COV_SECURITY: readonly MutationSpec[] = [
   // scripts/gate/checks/data-telemetry-reports.ts
   {
     check: "scripts/gate/checks/data-telemetry-reports.ts",
-    target: "the evolution loop is closed, and separate from what it measures",
-    assertion: "a refusal is attributed to the skill the agent was following",
-    subject: "packages/tools/src/testing/evolve-report.ts",
-    find: '      if (ids.name) following.set(e.caller ?? "", resolveStep(ids.name));',
-    replace: "      if (ids.name) void resolveStep(ids.name);",
-    planted: "the report stops tracing which skill each actor was following, so every refusal " +
-      "recorded before the gateway began stamping the step outright becomes unattributable — " +
-      "and 'this step is where it stalls' is the only form of the answer a skill can actually " +
-      "be edited from",
-  },
-  {
-    check: "scripts/gate/checks/data-telemetry-reports.ts",
     target: "provenance the platform records is provenance something reads",
     assertion: "a _by column written on every row is selected somewhere",
     subject: "services/gateway/src/admin.ts",
@@ -521,17 +509,6 @@ export const COV_SECURITY: readonly MutationSpec[] = [
       "so 'who created this team' can only be answered by opening the database by hand — " +
       "which is the same answer as not having recorded it, in the form that looks most like " +
       "compliance",
-  },
-  {
-    check: "scripts/gate/checks/data-telemetry-reports.ts",
-    target: "a report counting an activity counts the ones that happened",
-    assertion: "a count of an activity asks whether the call succeeded",
-    subject: "packages/tools/src/testing/evolve-report.ts",
-    find: '    if (tool === "document_revise" && e.ok) s.revisions += 1;',
-    replace: '    if (tool === "document_revise") s.revisions += 1;',
-    planted: "the revision count includes calls that were refused, so a step that tried five " +
-      "times and got through once reports five revisions — the number the improvement loop " +
-      "reads says the opposite of what happened",
   },
   {
     check: "scripts/gate/checks/data-telemetry-reports.ts",

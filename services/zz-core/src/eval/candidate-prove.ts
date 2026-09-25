@@ -6,9 +6,9 @@
  *
  * Two calls, never one blocking round trip (the plan's own words, mirrored from
  * `candidate_validate`'s own split): a first call against a `selected` candidate MINTS a
- * `verifier_token` (migration 002's `zz.replay_verifier_token`, real validation `replay-runs.ts`
+ * `verifier_token` (001's `zz.replay_verifier_token`, real validation `replay-runs.ts`
  * has been checking against since Task I-16 — nothing before this file ever inserted a row there)
- * bound to the allocation's candidate and case set (migration 002), and moves the candidate to
+ * bound to the allocation's candidate and case set (001), and moves the candidate to
  * `proving`, returning the token, the case set and how many runs each side still needs — COUNTS
  * only, never a proof case id: the IMPROVE agent drives `replay_start(context: "verifier",
  * verifier_token)` that many times per side, and `replay_start` draws each proof case
@@ -29,7 +29,7 @@
  * `leakage_unresolved`, never a pass. The verdict itself is `candidate-prove-decide.ts`.
  *
  * FR-28's "one opening" is also a fact about the CASES, not only the candidate: opening proof
- * claims the case set's proof split (`zz.replay_case_set.proof_spent_*`, migration 002), so no
+ * claims the case set's proof split (`zz.replay_case_set.proof_spent_*`, migration 001), so no
  * second candidate opens the same sealed cases while this one is proving. Resolution decides
  * whether the claim becomes spent for good (`proofSplitSpent`, `candidate-prove-decide.ts`): a
  * sealed proof leaks at most one bit per resolved decision, so `proof_passed`/`proof_failed`
@@ -50,7 +50,7 @@
  * false replay that would hand back the wrong table's row under the other call's own response
  * shape.
  *
- * `candidate.status` DOES carry a separate `proof_not_established` value (migration 002, fix
+ * `candidate.status` DOES carry a separate `proof_not_established` value (001, fix
  * dispatch on this same task): an unestablished proof — too few proof cases
  * (`insufficient_proof_cases`), an interval that never resolved by the liveness bound
  * (`proof_unresolved`), or an allocation nobody could finish (`abandoned`, below) — is spent
@@ -310,13 +310,13 @@ export const SPENT_STATUSES = new Set(["proof_passed", "proof_failed", "proof_no
 
 /** Records the proof allocation's terminal outcome — the ONE ledger write this call makes,
  *  whatever combination of leakage/statistics/guardrails/ownership (or `abandonProof`) decided
- *  it. `candidate.status` moves to `proof_passed`, `proof_not_established` (migration 002 —
+ *  it. `candidate.status` moves to `proof_passed`, `proof_not_established` (migration 001 —
  *  `insufficient_proof_cases`, `proof_unresolved` and `abandoned` all land here: an evidence gap,
  *  never a rejected hypothesis) or `proof_failed` (a real statistical/leakage/guardrail
  *  rejection) — and `improvement_run.status` moves to `ready_for_approval` (passed AND an owner
  *  exists to approve it), `closed` (passed but no release_owners are recorded for this base
  *  subject's plugin — a proposal-only outcome, FR-51) or `proof_failed` (every other terminal
- *  outcome, `not_established` included — 002 gives `zz.improvement_run` no third status and this
+ *  outcome, `not_established` included — 001 gives `zz.improvement_run` no third status and this
  *  dispatch's contract is the candidate's own status column, not the run's) — the same "one
  *  transaction, both tables" shape `candidate-search.ts`'s own `runCandidateSearch` already uses
  *  for `selected`/`closed`. The same transaction keeps or releases the case set's proof split
@@ -578,7 +578,7 @@ export async function proveCandidate(
             "already opened this allocation (or it has since resolved); call candidate_prove again " +
             "to read its current state");
         }
-        // This opening claims the case set's proof split (migration 002) — the same CAS shape,
+        // This opening claims the case set's proof split (001) — the same CAS shape,
         // so two candidates racing for one case set open it at most once between them. The
         // resolution keeps it spent or releases it (resolveOutcome, proofSplitSpent).
         const spent = await client.query(`

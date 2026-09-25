@@ -32,8 +32,8 @@ import { db } from "./platform-db.js";
  * COUPLED: team_id and team_slug both. Console views join through `team_id`, and the id is
  * resolved inside the INSERT so it cannot drift from the slug beside it.
  *
- * The actor is folded in the statement. tool-report, evolve-report and watch-results all
- * group on this column, and one person spelled two ways breaks all three.
+ * The actor is folded in the statement. tool-report and watch-results both group on this
+ * column, and one person spelled two ways breaks both.
  *
  * Fire and forget, catching everything: a journal entry that failed to write must never make
  * a node the person already minted report failure. */

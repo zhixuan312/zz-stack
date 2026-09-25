@@ -26,37 +26,13 @@ function errMessage(err: unknown): string {
 import { flows, schemaColumns } from "../facts.ts";
 
 check("the evolution loop is closed, and separate from what it measures", () => {
-  // Evidence -> which step is not working -> change one thing -> re-verify -> next round.
-  // tool-report says which tool is refused; it does not name the step that stalls, which is the
-  // form a skill can be edited from.
+  // Evidence -> which step is not working -> change one thing -> re-verify -> next round. The
+  // plugin-eval flow runs the loop on the platform, from the platform's own record of what a
+  // plugin's runs did.
   //
-  // evolve-report attributes each refusal to the skill the agent had loaded when it happened,
-  // by trace: skill_read says which skill, and everything after it is done while following
-  // that skill. Attribution by document name would be a guess, because a flow may write the
-  // same document from more than one step.
-  //
-  // DELIBERATE: zz-evolve is a platform skill under skills/, never a stage in any flow's
-  // manifest. An evaluation whose subject runs it means nothing.
+  // DELIBERATE: the loop is never a stage in any flow's manifest. An evaluation whose subject
+  // runs it means nothing.
   const bad: string[] = [];
-  const tool = join(root, "packages/tools/src/testing/evolve-report.ts");
-  if (!existsSync(tool)) {
-    bad.push("evolve-report is missing — nothing says which STEP stalls");
-  } else {
-    const src = readFileSync(tool, "utf8");
-    // The attribution expression, not the words: a test for the string "skill_view" also
-    // passes on `skill_view_disabled`.
-    //
-    // Attribution is a column — the gateway decides which step a call belonged to at the door
-    // and stores it, so the report reads `e.step` rather than replaying skill loads per caller.
-    // Both legs are required: without the column the report is guessing, and without the trace
-    // fallback the history written before the column becomes unreadable.
-    if (!/const stamped = e\.step/.test(src) || !/following\.set\(e\.caller/.test(src)) {
-      bad.push("evolve-report no longer attributes refusals to the skill being followed");
-    }
-    if (!/refusalClass/.test(src)) {
-      bad.push("evolve-report no longer groups refusals by class — raw texts do not rank");
-    }
-  }
   // The loop closes outside any skill: the report specifies the change and a release applies
   // it. So the report has to say so — one change, the expected effect written down, and the
   // route named. A recommendation that does not say what it expects cannot be contradicted by

@@ -175,8 +175,11 @@ function collectProduced(worktreePath: string, transcript: string, secrets: read
 }
 
 function runtimeEnv(): RuntimeEnv {
-  if (process.platform === "win32") return { platform: process.platform, shellPath: process.env.ComSpec ?? null };
-  return { platform: process.platform, shellPath: existsSync("/bin/sh") ? "/bin/sh" : null };
+  const modelCredential = Boolean(process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_CODE_OAUTH_TOKEN);
+  if (process.platform === "win32") {
+    return { platform: process.platform, shellPath: process.env.ComSpec ?? null, modelCredential };
+  }
+  return { platform: process.platform, shellPath: existsSync("/bin/sh") ? "/bin/sh" : null, modelCredential };
 }
 
 async function readRole(

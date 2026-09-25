@@ -51,6 +51,11 @@ export interface RuntimeEnv {
    *  check looks for. Passed in rather than read here so the pure decision takes a value, not a
    *  filesystem probe. */
   readonly shellPath: string | null;
+  /** Whether a model credential reaches a headless session. The launcher gives each session a
+   *  fresh `CLAUDE_CONFIG_DIR`, which holds no login, so only `ANTHROPIC_API_KEY` or
+   *  `CLAUDE_CODE_OAUTH_TOKEN` in the environment can authenticate it. Absent means "not
+   *  checked" (the pure checks), false means checked and missing. */
+  readonly modelCredential?: boolean;
 }
 
 type RuntimeCheck = { readonly ok: true } | { readonly ok: false; readonly reason: string };
@@ -66,6 +71,14 @@ export function shellCapableRuntime(env: RuntimeEnv): RuntimeCheck {
       ok: false,
       reason: `launchReplay: no shell-capable runtime on ${env.platform} — git and claude both ` +
         "run as child processes, and this environment has neither a shell nor a way to spawn one",
+    };
+  }
+  if (env.modelCredential === false) {
+    return {
+      ok: false,
+      reason: "launchReplay: no model credential for a headless session — each session runs in a " +
+        "fresh CLAUDE_CONFIG_DIR with no login, so set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN " +
+        "(`claude setup-token` mints one) in the launcher's environment",
     };
   }
   return { ok: true };

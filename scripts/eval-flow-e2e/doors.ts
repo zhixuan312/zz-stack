@@ -36,7 +36,11 @@ export class Conversation {
   #n = 0;
   constructor(url: string, pat: string, stage: string, client = "eval-flow-e2e") {
     this.stage = stage;
-    const open = (d: Door): Mcp => new Mcp(`${url}${DOORS[d]}`, { pat, client, timeoutMs: 600_000 });
+    // The eval door resends on a dead pooled socket: the walk blocks its own event loop while it
+    // composes a candidate (clone + build), and every mutating eval call carries an idempotency
+    // key, so a resend replays rather than repeats. The core door makes unkeyed writes and never
+    // follows a blocking step, so it stays off there.
+    const open = (d: Door): Mcp => new Mcp(`${url}${DOORS[d]}`, { pat, client, timeoutMs: 600_000, retryStaleSocket: d === "eval" });
     this.#mcp = { core: open("core"), eval: open("eval"), manage: open("manage") };
   }
 

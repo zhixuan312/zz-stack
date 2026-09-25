@@ -317,7 +317,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/knowledge.ts",
     target: "no skill states the abolished learnings.md completion test as current",
-    subject: "catalog/zz/zz-plugin-eval/skills/zz-plugin-report/SKILL.md",
+    subject: "catalog/zz/zz-plugin-eval/skills/zz-plugin-explain/SKILL.md",
     find: "❌ **Padding section 4.**",
     replace: "`initiative_status` returns `action: handover` until `learnings.md` exists.\n\n" +
       "❌ **Padding section 4.**",

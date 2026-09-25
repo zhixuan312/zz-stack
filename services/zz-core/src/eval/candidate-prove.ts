@@ -81,6 +81,7 @@ import { registerEvaluator } from "./evaluators.js";
 import {
   lookupRow, withIdempotency, type IdempotencyOutcome, type IdempotencyRow, type MutatorOutcome,
 } from "./idempotency.js";
+import { writeBranchFacts } from "./protocol.js";
 import { closeRun } from "./replay-runs.js";
 import { pairedDecision, type PairedDecisionResult } from "./stats.js";
 import { Refusal } from "../refusal.js";
@@ -269,6 +270,21 @@ interface CandidateProveOutcome {
   readonly token_already_issued: boolean;
   readonly runs_required?: RunsRequiredEntry[];
   readonly status: string;
+  readonly facts_recorded?: boolean;
+  readonly facts?: Record<string, string>;
+  readonly facts_refused?: string;
+}
+
+/** FR-58: the same soft `writeBranchFacts` wrapper `candidate-search.ts` uses (I-27's defect,
+ *  closed with this one) — a conflict is folded into `facts_refused`, never raised. */
+async function recordNothingToPromote(
+  initiative: string | undefined,
+): Promise<{ facts_recorded?: boolean; facts?: Record<string, string>; facts_refused?: string }> {
+  if (!initiative) return {};
+  const written = await writeBranchFacts(initiative, { release_mode: "not_applicable" });
+  return typeof written === "string"
+    ? { facts_recorded: false, facts_refused: written }
+    : { facts_recorded: true, facts: written };
 }
 
 const OPEN_STATUSES = new Set(["selected", "proving"]);
@@ -301,6 +317,7 @@ async function resolveOutcome(
     readonly statistics: unknown;
   },
   phase: "resolve" | "abandon" = "resolve",
+  initiative?: string,
 ): Promise<CandidateProveOutcome> {
   const candidateStatus = outcome.proof_status === "proof_passed" ? "proof_passed"
     : outcome.proof_status === "not_established" ? "proof_not_established" : "proof_failed";
@@ -365,10 +382,17 @@ async function resolveOutcome(
   );
   const candidateEvaluationId = ledgerOutcome.replayed ? ledgerOutcome.result_id : ledgerOutcome.result.id;
 
+  // FR-58: every terminal outcome except proof_passed, on an OWNED candidate, leaves nothing to
+  // promote or propose. A non-owned one still reached `valid` before proof opened, so
+  // proposal_prepare can still report it — gated on ownership for the same reason
+  // candidate-search.ts's own fix is.
+  const facts = runStatus === "proof_failed" && candidate.touched_owners.length > 0
+    ? await recordNothingToPromote(initiative) : {};
+
   return {
     proof_status: outcome.proof_status, reason: outcome.reason, release_eligible: outcome.release_eligible,
     candidate_evaluation_id: candidateEvaluationId, verifier_token: null, token_already_issued: true,
-    status: candidateStatus,
+    status: candidateStatus, ...facts,
   };
 }
 
@@ -468,7 +492,7 @@ async function latestProofEvaluation(p: pg.Pool, candidateId: string): Promise<S
  *  read-back of its own current state, never a refusal — FR-28's "revokes the token" is already
  *  true by the time a second abandon reaches it. */
 async function abandonProof(
-  p: pg.Pool, candidate: CandidateRow, idempotencyKey: string, principal: string,
+  p: pg.Pool, candidate: CandidateRow, idempotencyKey: string, principal: string, initiative?: string,
 ): Promise<CandidateProveOutcome | { error: string }> {
   if (candidate.status === "selected") {
     return { error: `ERROR: candidate ${candidate.id} has no open proof allocation to abandon — it was never opened` };
@@ -497,11 +521,12 @@ async function abandonProof(
     proof_status: "not_established", reason: "abandoned", release_eligible: false,
     decision: null, guardrails: null, resource_usage: null, dimension_scores: null,
     statistics: { abandoned: true },
-  }, "abandon");
+  }, "abandon", initiative);
 }
 
 export async function proveCandidate(
   p: pg.Pool, candidateId: string, idempotencyKey: string, principal: string, abandon = false,
+  initiative?: string,
 ): Promise<CandidateProveOutcome | { error: string }> {
   const candidate = await loadCandidate(p, candidateId);
   if (!candidate) return { error: `ERROR: no candidate ${candidateId}` };
@@ -510,7 +535,7 @@ export async function proveCandidate(
     return { error: "ERROR: only the selected candidate may open proof" };
   }
 
-  if (abandon) return abandonProof(p, candidate, idempotencyKey, principal);
+  if (abandon) return abandonProof(p, candidate, idempotencyKey, principal, initiative);
 
   if (SPENT_STATUSES.has(candidate.status)) {
     const replay = await readBackIfSameResolve(p, candidateId, idempotencyKey, principal);
@@ -534,7 +559,7 @@ export async function proveCandidate(
       proof_status: "not_established", reason: "insufficient_proof_cases", release_eligible: false,
       decision: null, guardrails: null, resource_usage: null, dimension_scores: null,
       statistics: { available_proof_cases: caseIds.length, required_minimum: ctx.minProofCases },
-    });
+    }, "resolve", initiative);
   }
 
   // Opening: a `selected` candidate has never had a proof allocation — mint the token and move to
@@ -631,7 +656,7 @@ export async function proveCandidate(
     return resolveOutcome(candidate, idempotencyKey, principal, {
       proof_status: "proof_failed", reason: `leakage_detected: ${leakage.reason ?? ""}`, release_eligible: false,
       decision, guardrails, resource_usage, dimension_scores, statistics,
-    });
+    }, "resolve", initiative);
   }
 
   // FR-43: "improvement above the protocol's meaningful/noise threshold OR an accepted pruning
@@ -653,7 +678,7 @@ export async function proveCandidate(
     return resolveOutcome(candidate, idempotencyKey, principal, {
       proof_status: "not_established", reason: "proof_unresolved", release_eligible: false,
       decision, guardrails, resource_usage, dimension_scores, statistics,
-    });
+    }, "resolve", initiative);
   }
 
   if (!improvementClears || !guardrailsPass) {
@@ -661,7 +686,7 @@ export async function proveCandidate(
     return resolveOutcome(candidate, idempotencyKey, principal, {
       proof_status: "proof_failed", reason, release_eligible: false,
       decision, guardrails, resource_usage, dimension_scores, statistics,
-    });
+    }, "resolve", initiative);
   }
 
   const hasOwners = candidate.touched_owners.length > 0;
@@ -669,5 +694,5 @@ export async function proveCandidate(
     proof_status: "proof_passed",
     reason: hasOwners ? "proof_passed" : "proof_passed; release_eligible false — no release owners recorded for this plugin/subject",
     release_eligible: hasOwners, decision, guardrails, resource_usage, dimension_scores, statistics,
-  });
+  }, "resolve", initiative);
 }

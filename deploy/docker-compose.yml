@@ -23,7 +23,7 @@
 services:
   # The platform's store and tools. Reached from outside only through the gateway below.
   zz-core:
-    image: ${ZZ_IMAGE:-ghcr.io/zhixuan312/zz-stack}:${ZZ_VERSION:-0.75.2}
+    image: ${ZZ_IMAGE:-ghcr.io/zhixuan312/zz-stack}:${ZZ_VERSION:-0.76.0}
     restart: unless-stopped
     depends_on:
       postgres: {condition: service_healthy}
@@ -77,7 +77,7 @@ services:
 
   # The gateway: the one authenticated door. Same image as zz-core, a different SERVICE.
   cred-proxy:
-    image: ${ZZ_IMAGE:-ghcr.io/zhixuan312/zz-stack}:${ZZ_VERSION:-0.75.2}
+    image: ${ZZ_IMAGE:-ghcr.io/zhixuan312/zz-stack}:${ZZ_VERSION:-0.76.0}
     restart: unless-stopped
     depends_on:
       postgres: {condition: service_healthy}

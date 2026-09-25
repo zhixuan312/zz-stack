@@ -2,7 +2,7 @@
 name: "eval"
 description: "Run the ZZ Plugin Evaluation flow for your team."
 when_to_use: "The person typed /zz-plugin-eval:eval. This is a command, not an auto-matched skill."
-version: "0.75.2"
+version: "0.76.0"
 disable-model-invocation: true
 ---
 
@@ -10,8 +10,7 @@ disable-model-invocation: true
 
 **A plugin is what a person installs**: a flow's skills plus the MCP servers those skills call,
 arriving together and reached together. That is the unit this measures, and it is the unit the
-platform ships at — which the platform could not previously evaluate, because it evaluated the
-two halves separately and neither half contains the answer.
+platform ships at.
 
 Two questions are only visible from the whole:
 
@@ -19,20 +18,23 @@ Two questions are only visible from the whole:
   does it plough on? That is a relation between stages, so no per-skill ruler contains it.
 - **Use.** A tool is reachable, a skill names it, every gate check is green — and no agent has
   ever called it. Reachability is a property of the package and is already settled at release.
-  Use is a property of the runs, and nothing reads it.
+  Use is a property of the runs, and nothing reads it but this flow.
 
-**This measures. It does not improve.** `findings.md` says what to change; making the change is
-a repository edit and a release by whoever owns the plugin. Fold improvement into the measuring
-flow and the measurement bends toward the intervention somebody already wanted.
+**Measurement never bends toward a change somebody already wanted.** EVALUATE and EXPLAIN score
+and report from evidence alone; IMPROVE only ever starts from a `plugin`-owned finding EXPLAIN
+already recorded, never from a hunch. **Promotion is authority-bound, not measurement-bound.**
+A candidate may propose a fix to anything; only the plugin's own required owners, through the
+platform's ordinary approval mechanism, ever let it touch a real repository.
 
 **It is a platform capability, not a stage of anybody's delivery.** An agent in the middle of
 shipping something does not stop and evaluate the plugin it is shipping with — that is a
 separate piece of work with its own initiative.
 
-**A PERSON OPENS THIS FLOW. NOTHING OPENS IT FOR THEM.** This skill is a flow's `entry`, so the shelf renders it as the command
-`/zz-plugin-eval:eval` carrying `disable-model-invocation: true` — a model cannot invoke it at
-all, whatever its `when_to_use` says. The five stage skills beside it each say "never on its
-own", which is right: a stage that fires out of order is worse than one that does not fire.
+**A PERSON OPENS THIS FLOW. NOTHING OPENS IT FOR THEM.** This skill is a flow's `entry`, so the
+shelf renders it as the command `/zz-plugin-eval:eval` carrying `disable-model-invocation: true`
+— a model cannot invoke it at all, whatever its `when_to_use` says. Each of the eight stage
+skills beside it says "never on its own", which is right: a stage that fires out of order is
+worse than one that does not fire.
 
 The consequence: asked the questions this flow exists to answer in ordinary words, with the
 plugin installed, nothing in it engages. That is not a defect — it is what "a person invokes
@@ -40,149 +42,97 @@ this on purpose" costs.
 
 Load `zz-platform` first, as with every flow on this platform.
 
-## One kind of evidence
+## One kind of evidence, three loops
 
 | | where it comes from | needs | answers |
 |---|---|---|---|
 | **traces** | the event log, via `plugin_profile` | five usable runs | what did it actually do in real use? |
 
-**A thin trace block is a real constraint, not a fact to report and route around.** A
-plugin nobody has used cannot be judged on its runs. That is an honest `not measured`, and the
-enum carries that word for exactly this. Two things soften it: a ruler whose subject is the
-**document** or the **initiative** reads artifacts rather than runs, and may have subjects when
-the trace history is thin; and `plugin_conform` answers from the catalog entry alone.
+**A thin trace block is a real constraint, not a fact to report and route around.** A plugin
+nobody has used cannot be judged on its runs. That is an honest `not measured`, and the
+architecture carries that word all the way through — an OBSERVE snapshot, a `score_status`, a
+`proposal.md`'s own findings-only section.
 
-## The one hard rule
+The eight stages sit in three nested loops and one promotion boundary:
 
-**You are not the judge.** Scoring is `round_judge`, which takes a plugin, a version and a
-ruler id and nothing else: it assembles the subjects and runs a model pinned by the deployment.
-You orchestrate, you narrate, you write the documents. Your own reading of an artifact belongs
-in `findings.md` as an observation, never in the table as a score — a judge that varies with the
-conversation makes every number incomparable with every other number.
+```text
+INSTRUMENT LOOP
+IDENTIFY -> OBSERVE -> DISCOVER -> DEFINE/QUALIFY -> protocol.md [GATE, conditional]
 
-## The five stages
+EVALUATION LOOP
+EVALUATE -> EXPLAIN -> findings.md [NO GATE, always]
+
+IMPROVEMENT LOOP
+IMPROVE -> proposal.md [NO GATE, conditional] or the promotion boundary below
+
+PROMOTE/VERIFY -> improvement.md [GATE, conditional, closing] -> release -> verify -> rollback if warranted
+```
+
+Three durable, deterministic branch facts drive which conditional stage runs and which document
+applies (FR-52, FR-58) — never a model's confidence:
+
+| fact | values | set by |
+|---|---|---|
+| protocol_action | `create` \| `reuse` \| `revise` | `protocol_read`, DEFINE/QUALIFY |
+| improvement_mode | `skip` \| `search` \| `proposal` | `improvement_start`, IMPROVE |
+| release_mode | `not_applicable` \| proposal_only \| `promotable` | `improvement_start(skip)`, `candidate_search`/`candidate_prove` (nothing to promote), `release_prepare`, `proposal_prepare`, IMPROVE/PROMOTE-VERIFY |
+
+`protocol.md` is gated only when protocol_action is `create`/`revise` — `reuse` skips
+DEFINE/QUALIFY entirely. `findings.md` is always ungated and always written — every branch
+reaches it. `proposal.md` is ungated and appears only when `release_mode: proposal_only`.
+`improvement.md` is gated AND is this flow's `closing` document — but only on the `promotable`
+branch. On every other branch, the initiative closes on `findings.md` or `proposal.md` instead:
+the platform resolves this from release_mode through each document's own `when`, not from
+which stage an agent happened to stop at.
+
+**A fact this flow has not yet decided reads `resolve_branch`, not an error.** Call
+`initiative_status` between DISCOVER and DEFINE/QUALIFY's own `protocol_read` and it answers
+`resolve_branch: protocol.md` — protocol_action is not yet recorded, so the platform cannot yet
+say whether protocol.md applies. That is expected, not a stall: run the stage `next_move` names
+next and it resolves.
+
+## The eight stages
 
 | # | Stage | What it settles |
 |---|---|---|
-| 1 | `zz-plugin-locate` | which plugin, at which released version, containing what |
-| 2 | `zz-plugin-profile` | the two evidence blocks, each with its own sufficiency |
-| 3 | `zz-plugin-define` | **what good means for this plugin** — gated |
-| 4 | `zz-plugin-judge` | the scores, against the approved ruler |
-| 5 | `zz-plugin-report` | `findings.md` — gated, and it closes the initiative |
+| 1 | `zz-plugin-identify` | which plugin, at which exact content — catalog release or third-party capture |
+| 2 | `zz-plugin-observe` | the production evidence block, with its own sufficiency |
+| 3 | `zz-plugin-discover` | candidate failure modes mined from real evidence, before any protocol exists |
+| 4 | `zz-plugin-define-qualify` | **what good means for this plugin, and whether its judges can be trusted** — gated |
+| 5 | `zz-plugin-evaluate` | the deterministic overall score, against the approved protocol |
+| 6 | `zz-plugin-explain` | `findings.md` — ungated, and every branch reaches it |
+| 7 | `zz-plugin-improve` | a proven candidate, an owner-facing proposal, or nothing plugin-owned to search |
+| 8 | `zz-plugin-promote-verify` | `improvement.md` — gated and closing on the promotable branch; release, verify, roll back if warranted |
 
-After report, the close is an act rather than a stage — one `initiative_close()` call — and the platform
-then reports `action: handover`, which `zz-handover` writes cold, afterwards. The close ends
-the evaluation; the handover ends the cycle.
+After a close, the close is an act rather than a stage — one `initiative_close()` call — and the
+platform then reports `action: handover`, which `zz-handover` writes cold, afterwards. The close
+ends the cycle this run went through; the handover ends the initiative.
 
-**Two gates**: `protocol.md` after define, `findings.md` after report. Nothing is scored before a
-person has agreed what good means, and nothing is closed before a person has read what was
-found.
+## The one hard rule
 
-## Not yet a stage: `failure_discover`
+**You are not the judge.** Scoring is `evaluation_score`, which reduces stored assessments
+deterministically — no model supplies `overall_score` directly. A `bounded_semantic`/
+`generative_critic` measure's own answer is evidence a qualified evaluator gave, recorded with
+its provenance; it is never your own reading substituted in. Your own reading of an artifact
+belongs in `findings.md` as an observation, never in the score.
 
-`/eval/mcp` also carries `failure_discover(observation_snapshot_id)` — DISCOVER, mining one
-`plugin_profile` snapshot's own real refusals and stage returns for candidate failure modes,
-before any protocol exists. It is not one of the five stages above and this flow does not call
-it. A candidate it writes is a proposal, `status = 'candidate'`, until `zz-plugin-define`'s
-`protocol_record` folds one in — naming it in a `failureTaxonomy` entry's `candidateId` accepts
-it, `mergedCandidateIds` folds others into the same entry — which is a decision `zz-plugin-define`
-makes, not this stage. Named here so `failure_discover` reads as this door's own tool rather
-than an undocumented one, not as an instruction for THIS skill to call it.
+## MCP-first, then a shell (FR-54)
 
-## Not yet a stage: `evaluation_start` / `evaluation_assess` / `evaluation_score`
+IDENTIFY through EXPLAIN are runnable by any client with no shell — every durable state change
+in those five stages goes through this door's own MCP tools alone. IMPROVE is where that
+changes: replay and candidate execution are isolated agent sessions the IMPROVE stage's own
+runtime launches (`npm run replay`, `zz-tool release-apply`, `zz-tool release-rollback`), so
+IMPROVE and PROMOTE/VERIFY need Claude Code (or an equivalent shell-capable runtime) and refuse
+to start anywhere else. Load the stage skill for the one you are on; each says exactly which
+tools to call, in what order, and what each refusal means.
 
-`/eval/mcp` also carries EVALUATE's own protocol-driven run — `evaluation_start(subject_version_id,
-protocol_version_id, observation_snapshot_id, idempotency_key)` binds one `zz.eval_protocol_version`
-to one plugin's own observation snapshot into an immutable `zz.eval_run`; `evaluation_assess(eval_run_id,
-subject_refs, idempotency_key)` runs every measure the protocol's dimensions name against the
-`subject_ref`s given it; `evaluation_score(eval_run_id, idempotency_key)` reduces what was
-assessed into one deterministic score, its status, its guardrails and a bootstrap interval —
-`scoreRun` itself calls no model. This is not one of the five stages above and this flow does not
-call it yet: it replaces `round_judge`/`round_scores`/`round_score` for a plugin whose protocol is
-a `zz.eval_protocol_version` (from `protocol_record`) rather than a legacy ruler, and Task I-28
-wires it into this flow's own stages. Named here so the three tools read as this door's own
-rather than undocumented ones. `finding_record(eval_run_id, finding, idempotency_key)` records
-what an `eval_run` concluded the same way — a strength, a defect or an unknown, each naming
-`owner_kind` — and `finding_decide` closes it, same as for a legacy round's finding.
+## Legacy readers, still live
 
-## Not yet a stage: `improvement_start` / `candidate_record`
-
-`/eval/mcp` also carries IMPROVE's own ledger — `improvement_start(eval_run_id, finding_ids,
-idempotency_key)` opens one durable `zz.improvement_run` against an `eval_run`'s plugin-owned
-findings (a dependency/platform/environment/user_input/unknown finding refuses it, FR-34) and
-returns a `search_policy` snapshot alongside the proposer's own evidence bundle — failing traces,
-evaluator critiques, refusal text, corrections, errors, cost/latency and prior rejected
-hypotheses. `candidate_record(improvement_run_id, base_subject_version_id, parents, hypothesis,
-expected_effect, patchset, idempotency_key)` persists one proposed patch — before anything about
-it executes (FR-36) — computing its `patch_digest`, `complexity_delta`, touched components and
-touched owners, and refusing a hypothesis that repeats one already rejected for the same plugin.
-This is not one of the five stages above and this flow does not call it yet: Task I-28 is what
-teaches an agent to read the proposer bundle and propose a candidate from it. Named here so both
-tools read as this door's own rather than undocumented ones.
-
-## Not yet a stage: `replay_score` / `candidate_validate`
-
-`/eval/mcp` also carries the rest of IMPROVE's validation loop. `replay_score(replay_run_id,
-idempotency_key)` is what gives one finished `zz.replay_run` an overall number — the same
-`scoreRun` `evaluation_score` calls, run over that case's own evaluator-visible transcript
-instead of an eval_run's evidence snapshot — and is what the launcher's own verifier step calls
-once a candidate or baseline replay session finishes. `candidate_validate(candidate_id,
-idempotency_key)` builds a `recorded` candidate's own worktree, applies its patchset and runs
-this repository's build and gate against it before anything else touches it (a failure marks the
-candidate `invalid` and refuses with the failing command's own output tail); once it is `valid`,
-each call reads every validation-split case's own completed, scored `zz.replay_run` rows, pairs
-candidate against baseline by case, and either answers `runs_required` — which `(case, side)`
-pairs still need a `replay_start`/launcher run — or, once every case has enough of them, calls
-the pure `pairedDecision` bootstrap over their deltas and stores the verdict. Neither tool
-launches a replay itself: `replay_start` and the launcher (`packages/tools/src/replay/launch.ts`)
-are what run one, driven by whoever is executing the candidate's own search. This is not one of
-the five stages above and this flow does not call it yet: Task I-28 is what teaches an agent to
-drive this loop. Named here so both tools read as this door's own rather than undocumented ones.
-
-## Not yet a stage: `candidate_search`
-
-`/eval/mcp` also carries `candidate_search(improvement_run_id, idempotency_key)` — the tool that
-advances one generation of the search from what the ledger already holds, never by launching a
-replay itself. It screens every still-`recorded` candidate through the registered
-`search.leakage` evaluator BEFORE `candidate_validate` ever builds one (a leaked or repeated
-hypothesis becomes `rejected_precheck` with the critic's own reason); composes at most one new
-child candidate per call from two `valid` candidates whose patches touch disjoint files, recorded
-with its own digest exactly the way `candidate_record` records a proposed one; reduces every
-candidate with a stored validation evaluation to the Pareto frontier over (per-case pass vector,
-cost); and, once the protocol's own liveness bound (`maxGenerations`/`wallClockHours`) is
-reached, selects exactly one final candidate by the protocol's deterministic selection policy —
-or, when nothing guardrail-passing cleared the equivalence band, closes `zz.improvement_run`
-`not_established`. Its response's own `next` field says what the IMPROVE agent does next: propose
-more candidates (directed at `explore_components` when the current generation has stalled),
-validate the ones just proposed, or stop. This is not one of the five stages above and this flow
-does not call it yet: Task I-28 is what teaches an agent to drive this loop. Named here so this
-tool reads as this door's own rather than an undocumented one.
-
-## Not yet a stage: `candidate_prove`
-
-`/eval/mcp` also carries `candidate_search`'s own selected candidate's sealed proof —
-`candidate_prove(candidate_id, idempotency_key, abandon?)`. Only the candidate `candidate_search`
-left `selected` may open it, and only once (FR-28): a first call mints a `verifier_token` with no
-proposer/search capability, moves the candidate to `proving`, and answers `runs_required` — the
-IMPROVE agent drives `replay_start(context: "verifier", verifier_token, split: "proof")` plus the
-launcher (`packages/tools/src/replay/launch.ts --verifier-token`) against each pair, the same way
-it drives validation, but against sealed proof cases search never saw. A later call against the
-same `proving` candidate reads back whatever proof-split runs are now `completed` and scored;
-once every case has enough of them it re-screens the candidate for leakage, calls the same
-`pairedDecision` bootstrap, and answers `proof_status: proof_passed | proof_failed |
-not_established` plus whether it is release-eligible — never a per-case result. Every terminal answer spends
-the allocation: `candidate.status` becomes `proof_passed`, `proof_failed`, or
-`proof_not_established` for an unresolved proof (too few proof cases, an interval that never
-cleared the liveness bound, or an abandoned allocation) — an evidence gap, not a rejected
-hypothesis, so its own idea may be proposed again, unlike a genuinely `proof_failed` one. A
-non-abandon call against a spent candidate refuses outright, whatever it answered. If the
-response to the opening call is lost after it commits, the allocation is stuck `proving` with a
-`verifier_token` nobody holds — the caller calls `candidate_prove` again with `abandon: true`: it
-revokes the token, cancels whatever proof runs it spawned, and resolves the allocation
-`proof_not_established`; a second `abandon` call is then a no-op read-back, not a refusal. This is
-not one of the five stages above and this flow does not call it yet: Task I-28 is what teaches an
-agent to drive this loop. Named here so this tool reads as this door's own rather than an
-undocumented one.
+`round_judge`, `round_scores` and `round_score` remain for any plugin version whose
+`rubric_id` was set under the OLD five-stage ruler, before this flow's own protocol lifecycle
+existed — no tool records a new `zz.rubric` any more, so a version with no `rubric_id` scores
+through `protocol_read`/`protocol_record`/`protocol_affirm` instead. Nothing in this flow's own
+eight stages calls the legacy trio; they stay reachable purely for historical continuity.
 
 ## Facts come from tools; meaning comes from you
 
@@ -190,26 +140,58 @@ Every number these tools return is a count, a set, an ordering or a difference. 
 is a judgement, and that is deliberate.
 
 `returns: 3` is a fact — a stage ran, a later stage ran, then the first ran again. Whether that
-is a flow re-grounding well or one thrashing is **not in the data**. The initiative that
-designed this flow returned three times and every one was healthy: an audit found a real defect
-and the spec went back. A tool that labelled those "unhealthy" would be answering a question it
-cannot see the evidence for.
-
-So: the tool produces the fact, the ruler you agree says where the line is, and the tool may
-then apply that line. Where a threshold belongs — 10% or 30% — is yours. What the number *is*
-is never yours.
+is a flow re-grounding well or one thrashing is **not in the data**. So: the tool produces the
+fact, the protocol you agree in DEFINE/QUALIFY says where the line is, and code applies that
+line. Where a threshold belongs is yours. What the number *is* is never yours.
 
 ## Pitfalls
 
 ❌ **Stopping because the trace block is thin.** A thin trace block is `not measured`, and that
-is the honest answer — report it and move on, rather than treating it as a reason to stop.
+is the honest answer — report it and move on.
 
 ❌ **Scoring before `protocol.md` is approved.** `protocol_affirm` refuses without an approved
 document quoting the exact version's `content_digest`, and the refusal is the gate working.
 
-❌ **Reading a number without its window.** `plugin_profile` returns the resolved `window` it
-computed every fact over, and `stage_paths` carries each step's own timestamps — a three-week-old
-figure presented as today's is worse than none.
+❌ **Starting IMPROVE with no shell.** Nothing before it needs one; everything from it on does.
 
-❌ **Comparing two plugins.** Every ruler is that plugin's own, so two scores are two things
-measured with two rulers. There is no leaderboard here and there is not meant to be.
+❌ **Comparing two plugins.** Every protocol is that plugin's own, so two scores are two things
+measured with two protocols. There is no leaderboard here and there is not meant to be.
+
+❌ **Assuming `improvement.md` is always the closing document.** It closes the `promotable`
+branch only — `findings.md` or `proposal.md` closes every other one, and the platform resolves
+which from release_mode, not from a guess about which stage an agent stopped at.
+
+## Skill contract
+
+**Outcome:** a plugin measured and, where a plugin-owned defect and an owned subject both exist,
+a proven and released improvement — or an honest stop at whichever boundary the evidence or the
+ownership actually drew: a thin trace block, an unqualified evaluator, nothing plugin-owned to
+search, a subject this team cannot release. This skill writes no document of its own; routing to
+the right stage skill is its whole product.
+
+**Required evidence:** `initiative_status`'s own `next_move`, said out loud before routing on
+it. Which durable branch facts (protocol_action, improvement_mode, release_mode) are already
+set, read from the tool that set them, never assumed from which stage an agent happens to be on.
+At each gate, the approval recorded on the document, never a recollection of the conversation.
+
+**Allowed unknowns:** what DEFINE/QUALIFY will decide the protocol says; what IMPROVE's search
+will find or fail to prove; whether a subject is owned before IDENTIFY has said so. None of
+these has to be settled to route the next stage, and guessing at them is how a stage gets
+skipped.
+
+**Work roles:** a person opens this flow and approves `protocol.md`/`improvement.md` at their
+gates — nothing substitutes for them there, and nothing opens the flow on their behalf
+(`disable-model-invocation: true` is the platform's own enforcement of that). Choosing the stage
+and calling its tools in order is this agent's own. Scoring, qualification and selection are
+code and typed evaluators, never the routing agent's own reading, per "the one hard rule" above.
+
+**Action and exit paths:** the action is load the stage skill `initiative_status` names next,
+follow it exactly, and return here to route once it finishes. The exits are the two closes:
+`findings.md`/`proposal.md` alone (no plugin-owned finding, a non-owned subject, or nothing
+proven), or `improvement.md` (an owned, proven, approved, released candidate) — followed, either
+way, by `zz-handover` once the cycle is closed.
+
+**Degraded behaviour:** a plugin nobody has used, a protocol that cannot qualify its own
+evaluators yet, a search that proves nothing — each is a real, complete outcome this flow
+reports honestly at the stage that found it, never smoothed over by routing past it to the next
+one.

@@ -28,6 +28,7 @@
     "call": "node packages/tools/dist/ops/call.js",
     "replay": "node packages/tools/dist/replay/launch.js",
     "release-apply": "node packages/tools/dist/release/apply.js",
+    "release-rollback": "node packages/tools/dist/release/rollback.js",
     "check:sql": "node packages/tools/dist/testing/sql-check.js",
     "check:identity": "node services/gateway/dist/identity-check.js",
     "check:scope": "node services/gateway/dist/scope-check.js",
@@ -44,7 +45,7 @@
     "typescript": "^5.6.0",
     "@types/node": "^22.7.0"
   },
-  "version": "0.75.2",
+  "version": "0.76.0",
   "license": "MIT",
   "private": true
 }

@@ -222,7 +222,7 @@ anything about a particular flow.
 |---|---|---|
 | `"<name>.md"` | a main document, declared in `documents` | `sdlc-spec` → `spec.md` |
 | `"source"` | supporting material another document changes because of | `sdlc-plan-audit` → a source about `plan.md` |
-| `"record"` | rows in the platform's own tables | `zz-plugin-judge` → scores |
+| `"record"` | rows in the platform's own tables | `zz-plugin-evaluate` → scores |
 | `"nothing"` | no artifact at all | `sdlc-execute` → the repository itself |
 
 **2 · Main or supporting?** That is the difference between the first two rows, and it is a
@@ -293,7 +293,7 @@ to add a tool; it adds the tool to `zz-core` and asks for the door.
 
 `shelved: true` means *ZZ owns this and every account already has it* — a team cannot install
 it, and it is hidden from the installable listing. It says nothing about shape: `zz-access`
-is shelved and is not a flow, while `zz-plugin-eval` is not shelved and has five stages, two
+is shelved and is not a flow, while `zz-plugin-eval` is not shelved and has eight stages, four
 documents and two gates.
 
 

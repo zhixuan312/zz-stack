@@ -42,6 +42,7 @@ import { registerEvaluator, type EvaluatorDefinition } from "./evaluators.js";
 import { loadProposerBundle, type ProposerBundle } from "./proposer-bundle.js";
 import { paretoFrontier, selectFinal, type FrontierCandidate, type SelectionCandidate } from "./selection.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { writeBranchFacts } from "./protocol.js";
 import { recordEvaluatorAssessment } from "../semantic.js";
 import { Refusal } from "../refusal.js";
 
@@ -446,11 +447,43 @@ interface CandidateSearchResult {
   readonly edit_budget: number;
   readonly proposer_bundle: ProposerBundle;
   readonly next: string;
+  readonly facts_recorded?: boolean;
+  readonly facts?: Record<string, string>;
+  readonly facts_refused?: string;
 }
 
 const TERMINAL_RUN_STATUSES = new Set([
   "selected", "proofing", "proof_failed", "ready_for_approval", "released", "closed", "cancelled",
 ]);
+
+/** FR-58 (defect found in I-27, closed here): a search that ends `closed` with `selected_id:
+ *  null` selected nothing to promote — no candidate cleared the frontier at all. On an OWNED
+ *  base subject (`release_owners` non-empty, `improvement_mode: search`) that is genuinely
+ *  nothing left for this initiative: `release_prepare` refuses anything short of `proof_passed`,
+ *  and `proposal_prepare` itself refuses an owned subject outright, so left unrecorded this
+ *  initiative's `release_mode` never gets set and a finished close hits `branch_undetermined`
+ *  forever (`guards.ts`'s `closeCheck`).
+ *
+ *  Deliberately gated on ownership at the CALL SITE below, not here: a non-owned subject
+ *  (`improvement_mode: proposal`) reaching `closed, selected_id: null` still has
+ *  `proposal_prepare` open to it — it writes from every candidate that reached validation or
+ *  later, whether or not one was ever selected — so writing `not_applicable` here for that
+ *  branch would foreclose a proposal search never actually ruled out.
+ *
+ *  Folded into the response the same soft way `protocol_read` folds a conflict (`facts_refused`,
+ *  never a hard refusal): `initiative` is optional and omitting it records nothing, exactly like
+ *  every other `writeBranchFacts` caller in this file's own family. A conflict here means the
+ *  initiative already stands on a different branch — informational, not this call's business to
+ *  enforce, the same reasoning `protocol_read`'s own resumed-read case already documents. */
+async function recordNothingToPromote(
+  initiative: string | undefined,
+): Promise<{ facts_recorded?: boolean; facts?: Record<string, string>; facts_refused?: string }> {
+  if (!initiative) return {};
+  const written = await writeBranchFacts(initiative, { release_mode: "not_applicable" });
+  return typeof written === "string"
+    ? { facts_recorded: false, facts_refused: written }
+    : { facts_recorded: true, facts: written };
+}
 
 interface RunRow {
   readonly id: string; readonly eval_run_id: string; readonly search_policy: unknown;
@@ -506,6 +539,7 @@ async function fullView(
  */
 export async function runCandidateSearch(
   p: pg.Pool, improvementRunId: string, idempotencyKey: string, principal: string,
+  initiative?: string,
 ): Promise<CandidateSearchResult | { error: string }> {
   const run = await loadRun(p, improvementRunId);
   if (!run) return { error: `ERROR: no improvement_run ${improvementRunId}` };
@@ -524,11 +558,13 @@ export async function runCandidateSearch(
     const core = await fullView(p, improvementRunId, createdAt, policy, subject.component_manifest);
     const bundle = await loadProposerBundle(p, improvementRunId);
     if (!bundle) throw new Refusal("ERROR: improvement_run resolves to no proposer bundle it can read back");
+    const facts = run.status === "closed" && core.selected_id === null && subject.release_owners.length > 0
+      ? await recordNothingToPromote(initiative) : {};
     return {
       generation: core.generation, frontier_ids: core.frontier_ids, rejected: core.rejected,
       selected_id: core.selected_id, status: run.status, explore_components: core.explore_components,
       edit_budget: policy.maxCandidatesPerGeneration, proposer_bundle: bundle,
-      next: nextGuidance(core, run.status, policy),
+      next: nextGuidance(core, run.status, policy), ...facts,
     };
   }
 
@@ -590,12 +626,14 @@ export async function runCandidateSearch(
   const core = await fullView(p, improvementRunId, createdAt, policy, subject.component_manifest);
   const bundle = await loadProposerBundle(p, improvementRunId);
   if (!bundle) throw new Refusal("ERROR: improvement_run resolves to no proposer bundle it can read back");
+  const facts = finalStatus === "closed" && core.selected_id === null && subject.release_owners.length > 0
+    ? await recordNothingToPromote(initiative) : {};
 
   return {
     generation: core.generation, frontier_ids: core.frontier_ids, rejected: core.rejected,
     selected_id: core.selected_id, status: finalStatus, explore_components: core.explore_components,
     edit_budget: policy.maxCandidatesPerGeneration, proposer_bundle: bundle,
-    next: nextGuidance(core, finalStatus, policy),
+    next: nextGuidance(core, finalStatus, policy), ...facts,
   };
 }
 

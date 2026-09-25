@@ -396,18 +396,27 @@ export function registerReleaseTools(server: McpServer): void {
         "(insufficient_proof_cases / replays_unavailable / verification_unresolved) — never a " +
         "rollback and never an indefinite wait (FR-50's own \"no rollback without evidence\"). " +
         "A mutator: writes through the FR-59 idempotency " +
-        "ledger once evidence resolves; a pending runs_required read makes no ledger write.",
+        "ledger once evidence resolves; a pending runs_required read makes no ledger write. Pass " +
+        "`initiative` to record release_mode: not_applicable as that initiative's durable branch " +
+        "fact (FR-58) on a rolled_back verdict — the one outcome this call reaches with nothing " +
+        "left standing to promote. In practice release_prepare already set release_mode: " +
+        "promotable for this initiative before this attempt could exist, so the fact is usually " +
+        "already recorded and this is a no-op; omit `initiative` and nothing is recorded either way.",
       inputSchema: {
         release_attempt_id: z.string(),
         idempotency_key: z.string().min(1),
+        initiative: z.string().optional().describe(
+          "Record release_mode: not_applicable as this initiative's durable branch fact on a " +
+          "rolled_back verdict. Omit to read only."),
       },
     },
-    async ({ release_attempt_id, idempotency_key }) => {
+    async ({ release_attempt_id, idempotency_key, initiative }) => {
       const p = db();
       if (!p) return noDb();
 
       const principal = parseCaller(requestHeaders()).email;
-      const result: VerifyOutcome | { error: string } = await verifyRelease(p, release_attempt_id, idempotency_key, principal);
+      const result: VerifyOutcome | { error: string } =
+        await verifyRelease(p, release_attempt_id, idempotency_key, principal, initiative);
       if ("error" in result) return text(result.error);
 
       logActivity(await userRoot(), null, {

@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { admitEntry, documentApplies, OUTCOME_STOPPED, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
 
 import { frontmatterStatus } from "./chain.js";
-import { factsFor } from "./initiative-record.js";
+import { closingDocRuledOut, factsFor } from "./initiative-record.js";
 import { attributionCheck, type Chain, outcomeCheck, sectionCheck, statusCheck } from "./write-guards.js";
 
 /** Why a stop discharges a close-time requirement, written once because two rules claim it.
@@ -34,14 +34,28 @@ const STOPPED_GROUND =
  * document) requires every document the manifest marks `requiredForClose`. */
 function closeCheck(chain: Chain, root: string, relPath: string, content: string): string | null {
   const parts = relPath.replace(/^\/+/, "").split("/");
-  if (parts.length !== 2 || parts[1] !== chain.closingDoc) return null;
-  if (!parseEnvelope(content).outcome) return null;
+  if (parts.length !== 2) return null;
+  const env = parseEnvelope(content);
+  if (!env.outcome) return null;
+  // FR-58 (Task I-28): `chain.closingDoc` is a static, per-flow answer — a `when`-conditional
+  // closing document (`improvement.md`, promotable only) is `not_applicable` on every other
+  // branch, and the branch still has to close somewhere. `closingDocRuledOut` is the same
+  // question `initiative_close` asks before picking where to write, so the two never disagree
+  // about which document a close lands on; the fallback itself trusts `parts[1]` the same way
+  // that call already does when a caller names a document explicitly, rather than recomputing
+  // "the furthest one" a second way here.
+  const stop = env.outcome === OUTCOME_STOPPED;
+  const ruledOut = closingDocRuledOut(root, parts[0], chain.documents.find((d) => d.name === chain.closingDoc));
+  const missing = stop && !!chain.closingDoc && !existsSync(join(root, parts[0], chain.closingDoc));
+  const isClosingWrite = parts[1] === chain.closingDoc
+    ? !ruledOut
+    : (ruledOut || missing) && chain.docs.has(parts[1]) && parts[1] !== "handover.md";
+  if (!isClosingWrite) return null;
   // The closing document's own gate, when it declares one. gateCheck enforces a gate only
   // where another document `requires` it, so the last gated document in a chain — usually the
   // closing one — has its gate enforced by nothing else.
   //
   // `outcome: accepted` is a claim about what a person said, so the close has to name who.
-  const env = parseEnvelope(content);
   // The close is an act, and its fields are stamped by that act, never typed here.
   // `initiative_close()` takes what the caller knows — finished or abandoned, and who
   // accepted it if anyone did — and the platform derives the outcome from that. There is no
@@ -66,7 +80,7 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
   // `ratified` from the text being written and once at `recorded` from the copy on disk.
   // `admitEntry` takes the strongest holding of a kind, so the disk copy would answer for the
   // text, and a closing document approved yesterday would close on an unapproved draft today.
-  const stop = env.outcome === OUTCOME_STOPPED;
+  // (`stop` is computed once, above, before the branch-aware `isClosingWrite` check.)
   const self = chain.documents.find((d) => d.name === parts[1]);
   // FR-58 (Task I-26): a document whose branch has not resolved yet — a named fact `when`
   // depends on is absent from `_facts.json` — blocks a FINISHED close outright. The platform

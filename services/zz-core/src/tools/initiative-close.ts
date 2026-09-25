@@ -13,7 +13,7 @@ import { documentApplies, OUTCOME_STOPPED, closeInitiative, parseCaller, parseEn
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { factsFor, OPEN_RECORD, openRecord, recordAbandoned } from "../initiative-record.js";
+import { closingDocRuledOut, factsFor, OPEN_RECORD, openRecord, recordAbandoned } from "../initiative-record.js";
 import { chainFor, frontmatterStatus } from "../chain.js";
 import { oneLine } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
@@ -148,13 +148,23 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       // `document`.
       const stopped = disposition === OUTCOME_STOPPED;
       const dirOf = join(root, initiative);
-      const furthest = stopped
+      // FR-58 (Task I-28): the flow's declared closing document (`chain.closingDoc`) can itself
+      // be `when`-conditional — `improvement.md`, promotable only — and ruled out on every other
+      // branch. That is not "stopped before it was written"; it is "this branch closes
+      // somewhere else", and the SAME fallback this call already used for an abandon whose
+      // closing document was never reached now also fires for a finished close whose declared
+      // document the branch ruled out. `closingDocRuledOut` is the one question guards.ts's
+      // `closeCheck` asks too, so the two never disagree about which document a close lands on.
+      const declaredDoc = chain.documents.find((d) => d.name === chain.closingDoc);
+      const ruledOut = closingDocRuledOut(root, initiative, declaredDoc);
+      const missing = stopped && !!chain.closingDoc && !existsSync(join(dirOf, chain.closingDoc));
+      const furthest = (ruledOut || missing)
         ? [...chain.documents].reverse()
           .find((d) => d.name !== "handover.md" && existsSync(join(dirOf, d.name)))?.name
         : undefined;
       const named = (document ?? "").trim();
       const closingDoc = chain.closingDoc
-        ? (stopped && !existsSync(join(dirOf, chain.closingDoc)) ? named || furthest || "" : chain.closingDoc)
+        ? ((ruledOut || missing) ? named || furthest || "" : chain.closingDoc)
         : named;
       if (!closingDoc) {
         if (stopped) {

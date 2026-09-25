@@ -2,8 +2,8 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "zz-plugin-eval",
   "agentName": "ZZ Plugin Evaluation",
-  "description": "Measure a whole plugin by what its real runs did. One protocol you agree, evidence and never a change.",
-  "purpose": "To answer whether a plugin is worth having, from evidence the platform already holds — what its real runs did — against a protocol somebody agreed before the scoring started. It measures and never changes what it measures.",
+  "description": "Measure a whole plugin by what its real runs did, then — for plugins this team owns — search for a proven, authorized improvement. One protocol you agree, evidence, and a change only once a person approves it.",
+  "purpose": "To answer whether a plugin is worth having, from evidence the platform already holds — what its real runs did — against a protocol somebody agreed before the scoring started, and to turn a plugin-owned defect into a candidate patch with independent proof before anyone approves promoting it. Measurement never bends toward the change somebody already wanted; promotion never happens without the required owners' say-so.",
   "entry": "zz-plugin-eval",
   "commands": {
     "eval": "zz-plugin-eval"
@@ -16,24 +16,36 @@
   ],
   "stages": [
     {
-      "name": "zz-plugin-locate",
-      "produces": "nothing"
-    },
-    {
-      "name": "zz-plugin-profile",
+      "name": "zz-plugin-identify",
       "produces": "record"
     },
     {
-      "name": "zz-plugin-define",
+      "name": "zz-plugin-observe",
+      "produces": "record"
+    },
+    {
+      "name": "zz-plugin-discover",
+      "produces": "record"
+    },
+    {
+      "name": "zz-plugin-define-qualify",
       "produces": "protocol.md"
     },
     {
-      "name": "zz-plugin-judge",
+      "name": "zz-plugin-evaluate",
       "produces": "record"
     },
     {
-      "name": "zz-plugin-report",
+      "name": "zz-plugin-explain",
       "produces": "findings.md"
+    },
+    {
+      "name": "zz-plugin-improve",
+      "produces": "proposal.md"
+    },
+    {
+      "name": "zz-plugin-promote-verify",
+      "produces": "improvement.md"
     }
   ],
   "documents": [
@@ -41,28 +53,73 @@
       "name": "protocol.md",
       "role": "agreement",
       "gate": true,
+      "when": {
+        "protocol_action": ["create", "revise"]
+      },
       "sections": [
         "The plugin under evaluation",
         "What good means here",
         "The evidence each dimension reads"
       ],
-      "stage": "zz-plugin-define"
+      "stage": "zz-plugin-define-qualify"
     },
     {
       "name": "findings.md",
       "role": "verification",
       "requires": "protocol.md",
-      "closing": true,
       "requiredForClose": true,
       "sections": [
-        "Outcome",
-        "What is good",
-        "What is bad",
-        "What to do to improve it",
-        "What this does not establish"
+        "Score",
+        "Dimensions",
+        "Guardrails",
+        "Evaluator trust",
+        "Strengths",
+        "Defects",
+        "Unknowns",
+        "Ownership"
+      ],
+      "gate": false,
+      "stage": "zz-plugin-explain"
+    },
+    {
+      "name": "proposal.md",
+      "role": "proposal",
+      "requires": "findings.md",
+      "requiredForClose": true,
+      "when": {
+        "release_mode": "proposal_only"
+      },
+      "sections": [
+        "Subject",
+        "Findings",
+        "Candidates",
+        "Ownership and promotion"
+      ],
+      "gate": false,
+      "stage": "zz-plugin-improve"
+    },
+    {
+      "name": "improvement.md",
+      "role": "agreement",
+      "requires": "findings.md",
+      "closing": true,
+      "requiredForClose": true,
+      "when": {
+        "release_mode": "promotable"
+      },
+      "sections": [
+        "Candidate",
+        "Base subject",
+        "Patch",
+        "Proof result",
+        "Score change",
+        "Guardrails",
+        "Owners",
+        "Release plan",
+        "Rollback plan"
       ],
       "gate": true,
-      "stage": "zz-plugin-report"
+      "stage": "zz-plugin-promote-verify"
     }
   ],
   "license": "MIT"

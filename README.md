@@ -93,7 +93,7 @@ catalog/    the flows and platform capabilities, one directory per owner. A
                                 plus zz-router, which is generated from the shelf's
                                 flows when a package is built and so has no file in
                                 the catalog
-            zz/zz-plugin-eval   plugin evaluation, 6 skills — the whole unit a person
+            zz/zz-plugin-eval   plugin evaluation and improvement, 9 skills — the whole unit a person
                                 installs, which is the level the platform ships at and
                                 the only level two of its properties are visible from:
                                 whether a flow that goes wrong can return to an earlier

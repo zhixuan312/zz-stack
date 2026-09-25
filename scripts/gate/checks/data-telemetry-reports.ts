@@ -61,18 +61,18 @@ check("the evolution loop is closed, and separate from what it measures", () => 
   // it. So the report has to say so — one change, the expected effect written down, and the
   // route named. A recommendation that does not say what it expects cannot be contradicted by
   // the next round, and gets read as agreement whatever that round says.
-  const report = join(root, "catalog/zz/zz-plugin-eval/skills/zz-plugin-report/SKILL.md");
+  const report = join(root, "catalog/zz/zz-plugin-eval/skills/zz-plugin-explain/SKILL.md");
   if (!existsSync(report)) {
-    bad.push("zz-plugin-report is missing — nothing specifies the change the evidence calls for");
+    bad.push("zz-plugin-explain is missing — nothing specifies the change the evidence calls for");
   } else {
     const r = readFileSync(report, "utf8");
     if (!/ONE CHANGE, AND SAY WHAT YOU EXPECT IT TO DO/.test(r)) {
-      bad.push("zz-plugin-report no longer requires one change with its expected effect — " +
+      bad.push("zz-plugin-explain no longer requires one change with its expected effect — " +
                "two changes in a round make the next round unable to attribute either, and a " +
                "recommendation with no expectation cannot be contradicted");
     }
     if (!/release/i.test(r)) {
-      bad.push("zz-plugin-report no longer names how a change actually ships — the catalog is " +
+      bad.push("zz-plugin-explain no longer names how a change actually ships — the catalog is " +
                "read-only at runtime, so a recommendation that does not say 'repository and " +
                "release' dead-ends");
     }

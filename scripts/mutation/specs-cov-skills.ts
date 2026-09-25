@@ -69,7 +69,7 @@ export const COV_SKILLS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/skill-prose.ts",
     target: "every stage that writes a document names document_present, or says why not",
     assertion: "a declared stage names neither document_present nor a departure from it",
-    subject: `${EVAL}/zz-plugin-report/SKILL.md`,
+    subject: `${EVAL}/zz-plugin-explain/SKILL.md`,
     find: "put in front of the person with `document_present`, and approved by them with",
     replace: "put in front of the person by pasting the text you just wrote, and approved by them with",
     planted: "the stage that writes findings.md stops naming document_present, so the person " +

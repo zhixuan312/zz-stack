@@ -110,15 +110,17 @@ export function registerCandidateTools(server: McpServer): void {
         "— unlike protocol_read's own informational one — because opening or replaying into a " +
         "zz.improvement_run regardless would leave a search or proposal running that the " +
         "initiative's own facts do not admit to). REFUSES skip alongside a non-empty " +
-        "finding_ids, and skip when a plugin-owned finding for this eval_run is still " +
-        "`deferred` (name it and call improvement_start with it instead). A mutator: writes " +
-        "through the FR-59 idempotency ledger.",
+        "finding_ids, and skip when a plugin-owned defect/unknown for this eval_run is still " +
+        "`deferred` (name it and call improvement_start with it instead) — a plugin-owned " +
+        "STRENGTH never blocks skip, since it carries no expected_effect and could never seed a " +
+        "candidate. A mutator: writes through the FR-59 idempotency ledger.",
       inputSchema: {
         eval_run_id: z.string(),
         finding_ids: z.array(z.string()).default([]),
         skip: z.boolean().optional().describe(
-          "No plugin-owned finding is actionable for this eval_run — opens no improvement_run. " +
-          "REFUSES a non-empty finding_ids, and a still-deferred plugin-owned finding."),
+          "No plugin-owned defect/unknown is actionable for this eval_run — opens no " +
+          "improvement_run. REFUSES a non-empty finding_ids, and a still-deferred plugin-owned " +
+          "defect/unknown; a deferred plugin-owned strength never blocks it."),
         initiative: z.string().optional().describe(
           "Record improvement_mode (and, on skip, release_mode) as this initiative's durable " +
           "branch fact. Omit and nothing is recorded."),
@@ -139,9 +141,15 @@ export function registerCandidateTools(server: McpServer): void {
           return text("ERROR: skip is for no plugin-owned actionable finding at all — " +
             "finding_ids was non-empty; call improvement_start with them instead of skip");
         }
+        // Live-verified gap (I-28's own dry pass): a deferred plugin-owned STRENGTH used to
+        // block skip too, even though a strength carries no expected_effect and can never seed
+        // a candidate (FR-34's "actionable" finding is one optimization could start from) — an
+        // agent that recorded a strength exactly as EXPLAIN's own skill tells it to could then
+        // never skip without first deciding a finding that was never optimization's business.
+        // `defect`/`unknown` are the only kinds a search ever reads.
         const openPluginFindings = (await p.query<{ id: string }>(
-          "select id::text as id from zz.eval_finding " +
-          "where eval_run_id = $1::uuid and owner_kind = 'plugin' and decision = 'deferred'",
+          "select id::text as id from zz.eval_finding where eval_run_id = $1::uuid " +
+          "and owner_kind = 'plugin' and kind in ('defect', 'unknown') and decision = 'deferred'",
           [eval_run_id])).rows;
         if (openPluginFindings.length) {
           return text(
@@ -558,15 +566,28 @@ export function registerCandidateTools(server: McpServer): void {
         "no subject_version_id it can still resolve. A mutator once it has mutated candidate or " +
         "improvement_run state: writes through the FR-59 idempotency ledger; a call against an " +
         "improvement_run already at a terminal status (selected/proofing/proof_failed/" +
-        "ready_for_approval/released/closed/cancelled) is read-only and writes no ledger row.",
-      inputSchema: { improvement_run_id: z.string(), idempotency_key: z.string().min(1) },
+        "ready_for_approval/released/closed/cancelled) is read-only and writes no ledger row. " +
+        "Pass `initiative` to record release_mode: not_applicable as that initiative's durable " +
+        "branch fact (FR-58) the moment status becomes closed with selected_id: null on an OWNED " +
+        "base subject — no candidate cleared the frontier, so release_prepare (the only thing " +
+        "that could promote it) has nothing to work with. A non-owned subject's own closed run " +
+        "leaves release_mode alone: proposal_prepare can still report whatever reached " +
+        "validation, selected or not. Omit `initiative` and nothing is recorded; a fact already " +
+        "set to something else is left standing (facts_recorded: false, facts_refused naming " +
+        "why), never a hard refusal.",
+      inputSchema: {
+        improvement_run_id: z.string(), idempotency_key: z.string().min(1),
+        initiative: z.string().optional().describe(
+          "Record release_mode: not_applicable as this initiative's durable branch fact once " +
+          "this run closes with nothing selected. Omit to read only."),
+      },
     },
-    async ({ improvement_run_id, idempotency_key }) => {
+    async ({ improvement_run_id, idempotency_key, initiative }) => {
       const p = db();
       if (!p) return noDb();
       const principal = parseCaller(requestHeaders()).email;
 
-      const outcome = await runCandidateSearch(p, improvement_run_id, idempotency_key, principal);
+      const outcome = await runCandidateSearch(p, improvement_run_id, idempotency_key, principal, initiative);
       if ("error" in outcome) return text(outcome.error);
 
       logActivity(await userRoot(), null, {
@@ -613,31 +634,35 @@ export function registerCandidateTools(server: McpServer): void {
         "ready_for_approval, closed (no owners, FR-51), or proof_failed. A resumed search " +
         "restarts through a fresh improvement_start, never this allocation. abandon: true " +
         "recovers an allocation stuck proving because the caller lost the response that opened " +
-        "it (no verifier_token holder, nothing else can resolve it): it revokes the token, " +
-        "cancels every still-registered proof-split replay_run it spawned, and resolves " +
-        "proof_not_established (reason: abandoned). REFUSES abandon on a selected candidate " +
-        "(never opened — nothing to abandon); on an already-spent candidate abandon is instead a " +
-        "NO-OP read-back of the current terminal state, never a refusal. REFUSES a candidate_id " +
-        "nothing minted; a candidate whose status is neither selected/proving nor already spent " +
-        "— \"ERROR: only the selected candidate may open proof\"; a non-abandon call against a " +
-        "spent candidate — \"ERROR: proof allocation spent; a new allocation or new evidence is " +
-        "required\"; an improvement_run whose eval_run bound no case_set_version_id; and a " +
-        "plugin with no bounded_semantic/generative_critic measure to score a replay with. A " +
-        "mutator whenever it actually writes (opening, resolving, or abandoning): writes through " +
-        "the FR-59 idempotency ledger — an interim runs_required response is not.",
+        "it: revokes the token, cancels every still-registered proof-split replay_run it " +
+        "spawned, and resolves proof_not_established (reason: abandoned). REFUSES abandon on a " +
+        "selected candidate (nothing to abandon); on a spent one abandon is a NO-OP read-back, " +
+        "never a refusal. REFUSES a candidate_id nothing minted; a candidate whose status is " +
+        "neither selected/proving nor already spent — \"ERROR: only the selected candidate may " +
+        "open proof\"; a non-abandon call against a spent candidate — \"ERROR: proof allocation " +
+        "spent; a new allocation or new evidence is required\"; an improvement_run whose eval_run " +
+        "bound no case_set_version_id; and a plugin with no bounded_semantic/generative_critic " +
+        "measure to score a replay with. A mutator whenever it actually writes: writes through " +
+        "the FR-59 idempotency ledger — an interim runs_required response is not. Pass " +
+        "`initiative` to record release_mode: not_applicable (FR-58) on every terminal outcome " +
+        "except proof_passed, on an OWNED candidate only — a non-owned one still has " +
+        "proposal_prepare open to it. Omit `initiative` and nothing is recorded.",
       inputSchema: {
         candidate_id: z.string(), idempotency_key: z.string().min(1),
         abandon: z.boolean().optional()
           .describe("Recover an allocation stuck 'proving' because the caller lost the response " +
                     "that opened it. Ignored on a candidate that was never opened."),
+        initiative: z.string().optional().describe(
+          "Record release_mode: not_applicable as this initiative's durable branch fact once " +
+          "this allocation resolves with nothing to promote or propose. Omit to read only."),
       },
     },
-    async ({ candidate_id, idempotency_key, abandon }) => {
+    async ({ candidate_id, idempotency_key, abandon, initiative }) => {
       const p = db();
       if (!p) return noDb();
       const principal = parseCaller(requestHeaders()).email;
 
-      const outcome = await proveCandidate(p, candidate_id, idempotency_key, principal, abandon ?? false);
+      const outcome = await proveCandidate(p, candidate_id, idempotency_key, principal, abandon ?? false, initiative);
       if ("error" in outcome) return text(outcome.error);
 
       logActivity(await userRoot(), null, {

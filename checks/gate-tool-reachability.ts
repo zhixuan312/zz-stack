@@ -12,7 +12,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
-const SK = "catalog/zz/zz-plugin-eval/skills/zz-plugin-locate/SKILL.md";
+const SK = "catalog/zz/zz-plugin-eval/skills/zz-plugin-identify/SKILL.md";
 const EXISTS = "a skill never names a platform tool that does not exist";
 const REACHES = "a skill never instructs a tool its package cannot reach";
 

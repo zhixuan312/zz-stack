@@ -15,6 +15,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { documentApplies } from "@zz/contracts";
+
 import { isoToday } from "./write-guards.js";
 
 /** The declaration, beside the documents rather than among them.
@@ -141,6 +143,28 @@ export function factsFor(root: string, initiative: string): Record<string, strin
  * because its one caller never asks it to drop a fact that was already set. */
 export function writeFacts(root: string, initiative: string, facts: Record<string, string>): void {
   writeFileSync(join(root, initiative, FACTS_FILE), `${JSON.stringify(facts, null, 2)}\n`);
+}
+
+/** Is the flow's DECLARED closing document (`chain.closingDoc`) ruled out for this initiative
+ *  (FR-58, Task I-28)? `zz-plugin-eval` is the first flow whose closing document is itself
+ *  `when`-conditional — `improvement.md`, promotable only — so a branch that never reaches
+ *  `promotable` has to close on something else, and `chain.closingDoc` (chain.ts) is a static,
+ *  per-flow answer that cannot see this initiative's own branch facts.
+ *
+ *  Read by BOTH `initiative_close` (initiative-close.ts, to fall back to the furthest document
+ *  this branch actually wrote — the same fallback it already used for a stop that never reached
+ *  its closing document, now also triggered by a branch that ruled it out) and `closeCheck`
+ *  (guards.ts, to recognise a write reaching that fallback document as still the closing write) —
+ *  one function, so the two never disagree about which document a close lands on.
+ *
+ *  A document with no `when` is never ruled out — this returns `false` unconditionally, which is
+ *  every flow that predates FR-58 (sdlc-flow, zz-access): asking never changes their answer. */
+export function closingDocRuledOut(
+  root: string, initiative: string,
+  declared: { name: string; when?: Record<string, string | string[]> } | undefined,
+): boolean {
+  if (!declared?.when) return false;
+  return documentApplies(declared, factsFor(root, initiative)) === "not_applicable";
 }
 
 /** An initiative this slug would collide with, or null.

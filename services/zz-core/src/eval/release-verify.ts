@@ -54,6 +54,7 @@ import {
   summariseGuardrails, summariseResourceUsage, type PerCaseDelta, type SideRun,
 } from "./candidate-validate.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { writeBranchFacts } from "./protocol.js";
 import { rollbackDecision } from "./release-rules.js";
 import { pairedDecision } from "./stats.js";
 import { Refusal } from "../refusal.js";
@@ -260,6 +261,9 @@ export interface VerifyOutcome {
   readonly verifier_token?: string | null;
   readonly token_already_issued?: boolean;
   readonly status: string;
+  readonly facts_recorded?: boolean;
+  readonly facts?: Record<string, string>;
+  readonly facts_refused?: string;
 }
 
 const rollbackBranchFor = (attemptId: string): string => `release/rollback-${attemptId}`;
@@ -314,6 +318,24 @@ async function ensureVerifierToken(
   return { token: opened.replayed ? null : opened.result.token, alreadyIssued: opened.replayed };
 }
 
+/** FR-58: the same soft `writeBranchFacts` wrapper `candidate-search.ts`/`candidate-prove.ts`
+ *  use for their own nothing-to-promote terminal states. In practice this arm is unreachable —
+ *  `release_prepare` (release.ts) already requires `initiative` and already set release_mode:
+ *  promotable before this attempt's own release_attempt row could exist, so `writeBranchFacts`
+ *  here refuses (soft, folded into `facts_refused`) rather than writes. Implemented for the
+ *  symmetry the task names explicitly (candidate_search, candidate_prove, release_verify), and
+ *  so a future caller of `release_verify` standing on facts release_prepare never wrote — a
+ *  hand-seeded release_attempt, say — is not left with an undetermined branch either. */
+async function recordNothingToPromote(
+  initiative: string | undefined,
+): Promise<{ facts_recorded?: boolean; facts?: Record<string, string>; facts_refused?: string }> {
+  if (!initiative) return {};
+  const written = await writeBranchFacts(initiative, { release_mode: "not_applicable" });
+  return typeof written === "string"
+    ? { facts_recorded: false, facts_refused: written }
+    : { facts_recorded: true, facts: written };
+}
+
 /** The one ledger write a resolution ever makes: a `zz.candidate_evaluation` row (`split:
  *  'post_release'`) plus `zz.release_attempt.verification`. CAS'd on `verification is null` (or,
  *  for the rare row that only ever held `{verifier_token_id}` from `ensureVerifierToken` above,
@@ -333,6 +355,7 @@ async function resolveVerify(
     readonly statistics: unknown;
     readonly resource_usage: unknown;
   },
+  initiative?: string,
 ): Promise<VerifyOutcome> {
   const verification: VerificationState = {
     ...(attempt.verification ?? {}),
@@ -368,9 +391,13 @@ async function resolveVerify(
   );
 
   if (!ledger.replayed) {
+    // FR-58: `rolled_back` is the one verdict this call reaches with nothing left standing to
+    // promote — the release it would have promoted just got reverted. See the note on
+    // `recordNothingToPromote` above for why this arm is unreachable in practice today.
+    const facts = outcome.verdict === "rolled_back" ? await recordNothingToPromote(initiative) : {};
     return {
       verdict: outcome.verdict, reason: outcome.reason, evidence: outcome.evidence,
-      rollback_plan: outcome.rollback_plan, status: attempt.status,
+      rollback_plan: outcome.rollback_plan, status: attempt.status, ...facts,
     };
   }
   // Replayed — read the attempt back rather than trust this call's own locally-built `outcome`,
@@ -383,6 +410,7 @@ const RESAMPLES = 2000;
 
 export async function verifyRelease(
   p: pg.Pool, releaseAttemptId: string, idempotencyKey: string, principal: string,
+  initiative?: string,
 ): Promise<VerifyOutcome | { error: string }> {
   const attempt = await loadAttempt(p, releaseAttemptId);
   if (!attempt) return { error: `ERROR: no release_attempt ${releaseAttemptId}` };
@@ -495,7 +523,7 @@ export async function verifyRelease(
       verdict: "established", reason: "no_regression_established",
       evidence: { deltas_summary, guardrails: guardrailSummary }, rollback_plan: null,
       dimension_scores, guardrails: guardrailSummary, resource_usage, statistics,
-    });
+    }, initiative);
   }
 
   const prior = await loadSubjectDesc(p, attempt.base_subject_version_id);
@@ -508,5 +536,5 @@ export async function verifyRelease(
     verdict: "rolled_back", reason: guardrailFailed ? "guardrail_failed" : "regression_established",
     evidence: { deltas_summary, guardrails: guardrailSummary }, rollback_plan: rollbackPlan,
     dimension_scores, guardrails: guardrailSummary, resource_usage, statistics,
-  });
+  }, initiative);
 }

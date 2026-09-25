@@ -325,7 +325,20 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
         // NOT A TOOL: `next_move.action` is its own vocabulary — declare_flow,
         // write_document, await_approval, add_source, decide, resolve_branch, handover, closed,
         // close — not tool names. The `why` beside it names the tool to call.
-        : { action: "close", document: chain.closingDoc, waiting_on: "agent",
+        //
+        // FR-58 (Task I-28): `chain.closingDoc` is a static, per-flow answer, and a
+        // `when`-conditional closing document (`improvement.md`, promotable only) is
+        // `not_applicable` on every other branch — the same question `initiative_close`
+        // (initiative-close.ts) and `closeCheck` (guards.ts) both ask before deciding where a
+        // close actually lands, asked here too so this call never names a document those two
+        // would refuse to close on. `flowDocs` is already filtered to what applies on this
+        // branch and, by construction of this `else` arm, every one of them exists — so its
+        // last entry IS the furthest document this branch actually wrote.
+        : { action: "close",
+            document: chain.closingDoc && appliesOf(chain.closingDoc) === "not_applicable"
+              ? flowDocs[flowDocs.length - 1]?.name ?? chain.closingDoc
+              : chain.closingDoc,
+            waiting_on: "agent",
             // Every gate being recorded is a statement about approvals; acceptance is a
             // different act by a different person, so the `why` has to name both.
             why: "every declared document exists and every gate is recorded — close it " +

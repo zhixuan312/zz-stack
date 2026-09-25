@@ -6,10 +6,10 @@
  * call, and the same release observed a second time (a different window, a different deployed
  * environment) produces a second snapshot on the same subject rather than overwriting the first.
  *
- * FIXED (was DELIBERATE, migration 086 — fix dispatch on I-29's own follow-on): the row used to
+ * FIXED (was DELIBERATE, migration 002 — fix dispatch on I-29's own follow-on): the row used to
  * store no facts, only the digest over them (`evidence_digest`) — so a deterministic/outcome
  * measure could read only whichever two facts a caller also happened to pass as raw columns.
- * `facts` (086) now stores the whole computed map, keyed by `OBSERVATION_FACT_KEYS`
+ * `facts` (002) now stores the whole computed map, keyed by `OBSERVATION_FACT_KEYS`
  * (observe-facts.ts), so a measure can read any of them by dotted `definition.factPath`
  * (evaluate-measures.ts). The digest and the replay-recomputation behaviour are unchanged: a
  * replay of an idempotent call still recomputes the facts fresh, over the row's own stored
@@ -143,7 +143,7 @@ async function computeObservation(
   const noRefusals = "no refusal is recorded for this subject in this window";
 
   const facts: Record<string, ObservedFact> = {
-    // The two facts this measure system read as special-cased raw columns before migration 086 —
+    // The two facts this measure system read as special-cased raw columns before migration 002 —
     // folded into the same `facts` map every other entry lives in, by `OBSERVATION_FACT_KEYS`'s
     // own two names, so a deterministic measure's `definition.factPath` addresses them exactly
     // the way it addresses every other fact. `usable_run_count`/`total_run_count` and

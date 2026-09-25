@@ -54,7 +54,7 @@ for (const confidence of [0.8, 0.99]) {
   const rolled = rollbackDecision({ deltas: edgy, guardrail_failed: false, resamples: 2000, seed: "s", confidence });
   assert.equal(r.kind === "resolve" && r.verdict === "rolled_back", rolled, `confidence ${confidence}`);
 }
-// Post-release verification gets no exemption from verifier-token binding (migration 088): the
+// Post-release verification gets no exemption from verifier-token binding (migration 002): the
 // token it mints names the case set and the released subject, and what it asks the agent to run
 // is counts per side, never a proof case id.
 import { readFileSync } from "node:fs";

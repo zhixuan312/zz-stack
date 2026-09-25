@@ -414,7 +414,7 @@ async function screenBeforeBuild(p: pg.Pool, candidateId: string, principal: str
   return `ERROR: candidate ${candidateId} is rejected_precheck — ${verdict.reason}`;
 }
 
-/** Fix 5: `candidate_validate` never wrote `'validating'` (a legal status per migration 077's own
+/** Fix 5: `candidate_validate` never wrote `'validating'` (a legal status per migration 002's own
  *  check constraint, but nothing before this fix ever set it), so two concurrent calls against
  *  the same `recorded` candidate both read `status = 'recorded'`, both called
  *  `buildCandidateInIsolation`, and both raced `createCandidateWorktree`'s own deterministic
@@ -441,7 +441,7 @@ async function acquireValidatingLock(p: pg.Pool, candidateId: string): Promise<"
   return row.prior_status as "recorded" | "valid";
 }
 
-/** The lease on `validating` (migration 088's `validating_since`): the hold above is released by
+/** The lease on `validating` (migration 002's `validating_since`): the hold above is released by
  *  the call's own `finally`, which a process killed mid-build (SIGKILL, a redeploy) never runs.
  *  A hold older than `VALIDATING_LEASE_MS` — longer than any build and gate can take — is such a
  *  process, and its candidate goes back to where it can be validated again: `valid` when its

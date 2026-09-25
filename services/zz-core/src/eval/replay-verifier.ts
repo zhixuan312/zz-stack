@@ -3,7 +3,7 @@
  * `replay_start`/`replay_read` may do with the token `candidate_prove` minted, split out of
  * `replay-runs.ts` so the binding is decided in one place both tools share.
  *
- * A token names ONE proof allocation: one candidate, one case set (migration 088's
+ * A token names ONE proof allocation: one candidate, one case set (migration 002's
  * `zz.replay_verifier_token.case_set_id`), the `proof` split, and the candidate's own base
  * subject for the baseline side. `candidate_prove` runs the other side as `candidate_id`;
  * `release_verify` (the same table, after promotion) runs it as the released subject
@@ -44,8 +44,8 @@ export interface VerifierAllocation {
   readonly released_subject_version_id: string | null;
 }
 
-/** The allocation a presented token names, or null when it is missing, revoked, expired, or was
- *  minted before migration 088 bound tokens to a case set — an unbound token is refused, never
+/** The allocation a presented token names, or null when it is missing, revoked, expired, or names
+ *  no case set — an unbound token is refused, never
  *  treated as a token for every case set. */
 export async function verifierAllocation(p: Db, token: string | undefined): Promise<VerifierAllocation | null> {
   if (!token) return null;

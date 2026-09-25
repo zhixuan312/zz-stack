@@ -92,6 +92,8 @@
 -- absorbs: 072_write_path_records_its_analyzer.sql
 -- absorbs: 073_a_run_is_where_the_control_loop_keeps_what_it_was_told.sql
 -- absorbs: 074_a_later_fact_can_withdraw_an_earlier_one.sql
+-- absorbs: 075_the_flow_comment_names_a_file_that_is_gone.sql
+-- absorbs: 076_semantic_assessment.sql
 --
 -- requires-extension: citext
 -- requires-extension: pg_textsearch
@@ -284,6 +286,50 @@ CREATE TABLE zz.artifact_revision (
     CONSTRAINT artifact_revision_origin_profile_check CHECK ((origin_profile = ANY (ARRAY['native'::text, 'legacy_import'::text]))),
     CONSTRAINT artifact_revision_previous_revision_check CHECK (((previous_revision IS NULL) OR (previous_revision > 0))),
     CONSTRAINT artifact_revision_revision_check CHECK ((revision > 0))
+);
+
+
+--
+-- Name: assessment; Type: TABLE; Schema: zz; Owner: -
+--
+
+CREATE TABLE zz.assessment (
+    id bigint NOT NULL,
+    family text NOT NULL,
+    instruction_version integer NOT NULL,
+    question_digest text NOT NULL,
+    reading text NOT NULL,
+    probability numeric,
+    requested_model text,
+    resolved_model text,
+    identity_assurance text,
+    reason text,
+    initiative text,
+    about text,
+    asked_by text NOT NULL,
+    asked_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT assessment_reading_check CHECK ((reading = ANY (ARRAY['yes'::text, 'no'::text, 'unclear'::text, 'unavailable'::text])))
+);
+
+
+--
+-- Name: TABLE assessment; Type: COMMENT; Schema: zz; Owner: -
+--
+
+COMMENT ON TABLE zz.assessment IS 'Every semantic-assessment question the platform asked the typed service, with its provenance. A reading of unavailable carries its reason.';
+
+
+--
+-- Name: assessment_id_seq; Type: SEQUENCE; Schema: zz; Owner: -
+--
+
+ALTER TABLE zz.assessment ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME zz.assessment_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
 );
 
 
@@ -1426,6 +1472,14 @@ ALTER TABLE ONLY zz.artifact_revision
 
 
 --
+-- Name: assessment assessment_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.assessment
+    ADD CONSTRAINT assessment_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: bug bug_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -1960,6 +2014,13 @@ CREATE INDEX artifact_identifier_trgm ON zz.artifact_identifier USING gist (norm
 --
 
 CREATE INDEX artifact_passage_owner ON zz.artifact_passage USING btree (owner_id, artifact_id, revision, scope);
+
+
+--
+-- Name: assessment_initiative_idx; Type: INDEX; Schema: zz; Owner: -
+--
+
+CREATE INDEX assessment_initiative_idx ON zz.assessment USING btree (initiative, asked_at);
 
 
 --

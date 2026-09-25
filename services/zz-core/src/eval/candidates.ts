@@ -1,7 +1,7 @@
 /**
  * IMPROVE's own ledger (Task I-18, FR-34 to FR-37, AC-34.1 to AC-37.1): `improvement_start` opens
  * one durable optimization run against an `eval_run`'s plugin-owned findings, and `candidate_record`
- * persists one proposed patch set against it — migration 077's `zz.improvement_run`/`zz.candidate`
+ * persists one proposed patch set against it — migration 002's `zz.improvement_run`/`zz.candidate`
  * — before anything about that candidate ever executes (FR-36's own words: "no candidate executes
  * before its ledger row... exist", which is also why `launch.ts`'s candidate-replay refusal was
  * lifted in this same task, once this file gave it a row to read).
@@ -396,7 +396,7 @@ export function registerCandidateTools(server: McpServer): void {
       //
       // FIX (dispatch, FR-28): REJECTED_CANDIDATE_STATUSES still names proof_failed — re-testing
       // a hypothesis whose proof genuinely FAILED would reuse that proof, which FR-28 forbids —
-      // but deliberately NOT proof_not_established (migration 081): a candidate whose proof
+      // but deliberately NOT proof_not_established (migration 002): a candidate whose proof
       // never resolved (insufficient_proof_cases, proof_unresolved, or an abandoned allocation)
       // is an evidence gap, not a rejected idea, so its own hypothesis may be proposed again
       // under a fresh improvement_start.

@@ -145,11 +145,11 @@ docker exec -i zz-rehearsal-db psql -U zz -d zz_rehearsal \
   < <checkout>/zz-stack/services/gateway/migrations/001_init.sql
 ```
 
-`001_init.sql` is the whole schema in one file; migrations 002..074, including the artifacts,
-revisions, events and scoped-search tables this rehearsal needs, were squashed into it. Apply
-every other file in `services/gateway/migrations/` after it, in filename order.
+`001_init.sql` is every migration its `-- absorbs:` lines name, squashed into one file, including
+the artifacts, revisions, events and scoped-search tables this rehearsal needs. Apply every other
+file in `services/gateway/migrations/` after it, in filename order.
 
-Its lines 26-28 are `create extension if not exists citext / pg_textsearch / pg_trgm`. Applied
+Its lines 102-104 are `create extension if not exists citext / pg_textsearch / pg_trgm`. Applied
 through `psql` as above those run unconditionally — the `requires-extension:` directives in its
 header are read by the gateway's own migration runner (`services/gateway/src/db.ts`), which
 defers the file on a cluster that cannot supply them; piping it straight into `psql` bypasses

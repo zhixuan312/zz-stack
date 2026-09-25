@@ -5,7 +5,7 @@
  * FIXED (fix dispatch on initiative 2026-09-24-plugin-eval-next-version, task I-29's own two
  * follow-on seams): `deterministic`/`outcome` used to read only two hard-coded facts off
  * `zz.eval_observation_snapshot`'s own raw columns, because OBSERVE (Task I-7) stored only their
- * digest and never the ~18 facts it actually computes. Migration 086 gives the snapshot a `facts`
+ * digest and never the ~18 facts it actually computes. Migration 002 gives the snapshot a `facts`
  * column carrying the whole map (observe-facts.ts's `OBSERVATION_FACT_KEYS`), so a measure now
  * names ANY of them by a dotted `definition.factPath`, normalised to `[0,1]` by a rule the measure
  * itself declares — see `deterministicAnswer`/`normalizeFactValue` below. `outcome` reads the same
@@ -48,8 +48,8 @@ export interface SnapshotFacts {
   readonly usable_run_count: number;
   readonly total_run_count: number;
   readonly coverage: { surface?: { observed?: number; total?: number } } | null;
-  /** The full map migration 086 added — `null` for a snapshot recorded before that column
-   *  existed (no backfill), which excludes every deterministic/outcome measure with a named
+  /** The full map migration 002 stores — `null` for a snapshot that carries none,
+   *  which excludes every deterministic/outcome measure with a named
    *  reason rather than guessing at a value. Loosely typed (`unknown` per entry): this file
    *  narrows each entry it actually reads through `asFactLike`, rather than importing
    *  observe-facts.ts's `ObservedFact` union and coupling to its exact shape. */
@@ -177,7 +177,7 @@ function excludedAnswer(reason: string): MeasureAnswer {
  *  this run assesses, until a replay/case data source exists to vary it by). `protocol_record`
  *  (protocol-record.ts's own `factPathRefusal`) already refused a `factPath` naming no fact OBSERVE
  *  computes at all, at record time — so a resolution failure here means THIS snapshot in
- *  particular carries none (a pre-086 snapshot with `facts: null`, or a path drift this file's own
+ *  particular carries none (a snapshot with `facts: null`, or a path drift this file's own
  *  header note asks `checks/eval-fact-path.ts` to catch), not a malformed protocol. */
 function deterministicAnswer(measure: MeasureRow, snapshot: SnapshotFacts): MeasureAnswer {
   const factPath = measure.definition.factPath;
@@ -187,8 +187,8 @@ function deterministicAnswer(measure: MeasureRow, snapshot: SnapshotFacts): Meas
   if (!snapshot.facts) {
     return excludedAnswer(
       `measure "${measure.key}"'s factPath "${factPath}" cannot be read — this run's observation ` +
-      "snapshot carries no facts (recorded before migration 086, or a context with no observation " +
-      "snapshot at all, such as a replay/verify run)");
+      "snapshot carries no facts (a context with no observation snapshot at all, such as a " +
+      "replay/verify run)");
   }
   const fact = asFactLike(getByPath(snapshot.facts, factPath));
   if (!fact) {

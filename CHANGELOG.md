@@ -97,12 +97,10 @@ zz-stack 0.76.0 · console 0.19.0
   the reader of historic rounds.
 
 ### Upgrade notes
-- **Twelve migrations, 077 through 089 (there is no 087)**, apply on the gateway's next start.
-  All are additive, except that `zz.assessment.family` and `reading` become nullable,
-  `zz.release_attempt.plugin_id` becomes NOT NULL (backfilled from each attempt's base subject),
-  and 088 deletes older duplicate `split = 'validation'` rows of `zz.candidate_evaluation`,
-  keeping the newest one that every reader already used. 088 first re-points idempotency ledger
-  rows at the kept row, and also adds `zz.candidate.validating_since`.
+- **One migration, `002_plugin_eval_next.sql`**, applies on the gateway's next start. It is
+  additive, except that `zz.assessment.family`/`reading` and `zz.eval_finding.eval_id`/`scope`
+  become nullable. `075` and `076` are now absorbed into `001_init.sql`: a deployment that ran
+  them keeps their rows in `zz.schema_migration`, and `npm run doctor` counts them as covered.
 - **`ZZ_CATALOG_OWNER_TEAM` is now required** by `register-plugins`, which refuses to run
   without it. It names the team that owns this repository's catalog. Set it in `deploy/.env`.
 - `finding_record` now takes `(eval_run_id, finding{kind, pattern, owner_kind, ...},
@@ -164,8 +162,8 @@ zz-stack 0.76.0 · console 0.19.0
   `replay_begin` moves a run to `running`. `replay_run.sandbox_ref` now holds the release tag
   ref.
 - `pat_issue` refuses a label that starts with `replay:`.
-- **Verifier tokens are bound to one allocation** (candidate, case set, proof split). Tokens
-  minted before 088 are refused. A verifier-context `replay_start` refuses `case_id`; the server
+- **Verifier tokens are bound to one allocation** (candidate, case set, proof split). A token
+  that names no case set is refused. A verifier-context `replay_start` refuses `case_id`; the server
   draws the case. `candidate_prove` and `release_verify` return `runs_required` as counts,
   `{ case_set_id, baseline, candidate }`. Proof-split `replay_read` returns case, score, cost and
   timing as null, and `replay_score` on a proof run returns no number.

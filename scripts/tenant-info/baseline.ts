@@ -191,6 +191,18 @@ function checkoutMigrationHead(): string {
   return head;
 }
 
+/** Every ledger name a checkout migration's `-- absorbs:` lines say it replaced.
+ *
+ *  COUPLED: the same directive `scripts/doctor/layers/data.ts` reads. A deployment that ran the
+ *  absorbed files keeps their rows in `zz.schema_migration`, and those names can sort after the
+ *  file that absorbed them (`076_…` after `002_…`), so the ledger's head is its newest name that
+ *  is NOT one of these — otherwise every squashed deployment reads as ahead of its own checkout. */
+function absorbedMigrations(): Set<string> {
+  const dir = join(repoRoot, "services/gateway/migrations");
+  return new Set(readdirSync(dir).filter((f) => f.endsWith(".sql")).flatMap((f) =>
+    [...readFileSync(join(dir, f), "utf8").matchAll(/^--\s*absorbs:\s*(\S+)\s*$/gm)].map((m) => m[1])));
+}
+
 function toolSchemaSha256(): string {
   const dir = join(repoRoot, "packages/contracts/src");
   const files = readdirSync(dir).filter((f) => f.endsWith(".ts")).sort();
@@ -215,16 +227,17 @@ interface DbFacts {
  *  fact — the migration ledger, the extension catalog, every count — comes from the same snapshot
  *  boundary. No mutating probe runs here; the transaction is rolled back at the end purely
  *  because there is never anything to commit. */
-async function readDatabaseFacts(databaseUrl: string): Promise<DbFacts> {
+async function readDatabaseFacts(databaseUrl: string, absorbed: Set<string>): Promise<DbFacts> {
   const { default: pg } = await import("pg");
   const client = new pg.Client({ connectionString: databaseUrl });
   await client.connect();
   try {
     await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-    const migrationRow = await client.query<{ name: string }>(
-      "select name from zz.schema_migration order by name desc limit 1");
-    const migrationName = migrationRow.rows[0]?.name;
-    if (!migrationName) throw new Error("zz.schema_migration has no rows");
+    const migrationRows = await client.query<{ name: string }>(
+      "select name from zz.schema_migration order by name desc");
+    if (!migrationRows.rows.length) throw new Error("zz.schema_migration has no rows");
+    const migrationName = migrationRows.rows.find((r) => !absorbed.has(r.name))?.name;
+    if (!migrationName) throw new Error("every zz.schema_migration row names a migration this checkout absorbed");
     const migration_head = /^(\d+)_/.exec(migrationName)?.[1] ?? migrationName;
 
     const version = await client.query<{ server_version: string }>("show server_version");
@@ -251,7 +264,7 @@ async function readDatabaseFacts(databaseUrl: string): Promise<DbFacts> {
     };
     const counts: CountEntry[] = [
       await runCount("tenants", "select count(*) as tenants from zz.team where status = 'active'"),
-      await runCount("initiatives", "select count(*) as initiatives from zz.initiative where deleted_at is null"),
+      await runCount("initiatives", "select count(*) as initiatives from zz.initiative"),
       await runCount("documents", "select count(*) as documents from zz.doc"),
       await runCount("knowledge_nodes", "select count(*) as knowledge_nodes from zz.knowledge_node"),
       await runCount("knowledge_nodes_adopted",
@@ -340,7 +353,7 @@ export async function runBaseline(workspaceReal: string): Promise<{ report: Base
     }
   } else {
     try {
-      const db = await readDatabaseFacts(databaseUrl);
+      const db = await readDatabaseFacts(databaseUrl, absorbedMigrations());
       if (checkoutHead !== undefined && checkoutHead !== db.migration_head) {
         blocked.push({
           field: "migration_head",
@@ -348,7 +361,7 @@ export async function runBaseline(workspaceReal: string): Promise<{ report: Base
             `zz.schema_migration's is ${db.migration_head}`,
         });
       } else {
-        set("migration_head", db.migration_head, evidence("sql", "select name from zz.schema_migration order by name desc limit 1"));
+        set("migration_head", db.migration_head, evidence("sql", "select name from zz.schema_migration order by name desc, skipping every name a checkout migration absorbs"));
       }
       set("postgres_version", db.postgres_version, evidence("sql", "show server_version"));
       set("extensions", db.extensions, evidence("sql", "select extname, extversion from pg_extension"));

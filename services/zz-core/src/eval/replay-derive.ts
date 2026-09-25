@@ -12,7 +12,7 @@
  * ladder `evaluator_qualify` runs, never a second copy of it.
  *
  * `deriveCase` builds ONE global, chronologically ordered event timeline per initiative — actor,
- * user_oracle and evaluation_oracle events share one `seq` sequence (migration 077's
+ * user_oracle and evaluation_oracle events share one `seq` sequence (migration 002's
  * `unique(case_id, seq)` has no per-visibility partition), which is what lets a candidate actor's
  * seq-0 row and its own later evaluation-oracle material sit in one real order rather than three
  * separate ones nothing ties together.
@@ -67,7 +67,7 @@ export const SOURCE_KIND_EVALUATOR: EvaluatorDefinition = {
 type SourceKind = "person_statement" | "agent_record";
 
 // The literal state/status/visibility words this file writes, checked once against migration
-// 077's own vocabulary (`EVAL_STATE_ENUMS`) — the same guard `discover.ts` runs over its own
+// 002's own vocabulary (`EVAL_STATE_ENUMS`) — the same guard `discover.ts` runs over its own
 // `CANDIDATE_STATUS` — so an enum edited without this file catches it here, at import, rather
 // than as a constraint violation the first time a case is actually written.
 const REPLAY_CASE_STATUSES = EVAL_STATE_ENUMS.replayCaseStatus as readonly string[];

@@ -28,7 +28,7 @@
  * not fixed in this file — they live in `zz.eval_evaluator_version`, written once when the
  * evaluator is defined, and resolved here by `evaluator_version_id`. Both callers share one
  * insert builder (`insertAssessmentRow`), so the two identity shapes (`family` xor
- * `evaluator_version_id`, enforced by migration 077's own check) land in one table through one
+ * `evaluator_version_id`, enforced by migration 002's own check) land in one table through one
  * code path — but they keep their own error behaviour: `assessFamily`'s provenance write is
  * best-effort (an answer in hand is not lost to a database hiccup), while
  * `recordEvaluatorAssessment`'s is not — a plugin-eval measure with no recorded assessment_id is
@@ -165,7 +165,7 @@ export async function assessFamily(opts: {
   return out;
 }
 
-/** One `zz.assessment` row, in the shape the table itself declares (migration 077): a family
+/** One `zz.assessment` row, in the shape the table itself declares (migration 002): a family
  *  question xor an evaluator question, and only a `choice`/`score` answer ever carries a
  *  `distribution`. Building it in one place is what keeps `assessFamily` and
  *  `recordEvaluatorAssessment` writing rows the table's own checks agree on. */

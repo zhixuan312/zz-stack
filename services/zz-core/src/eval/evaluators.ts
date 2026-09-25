@@ -46,7 +46,7 @@ export type EvaluatorAnswerSchema =
   | { readonly type: "choice"; readonly criteria: Readonly<Record<string, string>> }
   | { readonly type: "score"; readonly criteria: readonly string[] };
 
-/** What a caller hands `registerEvaluator`: everything migration 077's `zz.eval_evaluator` and
+/** What a caller hands `registerEvaluator`: everything migration 002's `zz.eval_evaluator` and
  *  `zz.eval_evaluator_version` need to exist, before any question has been asked. */
 export interface EvaluatorDefinition {
   readonly stable_key: string;

@@ -15,7 +15,7 @@ import type pg from "pg";
 import { toolCallEvents, type EvidenceWindow } from "./plugin-profile.js";
 
 /** Every fact key `plugin_profile` (observe.ts) writes into `zz.eval_observation_snapshot.facts`
- *  (migration 086, fix dispatch on I-29's own follow-on) — the canonical list `protocol-record.ts`
+ *  (migration 002, fix dispatch on I-29's own follow-on) — the canonical list `protocol-record.ts`
  *  refuses a deterministic/outcome measure's `definition.factPath` against (its first dotted
  *  segment must name one of these) and `evaluate-measures.ts` reads one entry of by that same
  *  path. `usable_run_coverage`/`tool_coverage` are computed directly in observe.ts's own

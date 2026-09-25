@@ -189,7 +189,7 @@ export function flowShape(flow: string | null): Map<string, { gate: boolean; clo
 }
 
 /** An initiative's durable branch facts (FR-58), read from `zz.initiative_fact` (migration
- *  085) — the console's own mirror of `<initiative>/_facts.json`, since it reads `zz.doc`
+ *  002) — the console's own mirror of `<initiative>/_facts.json`, since it reads `zz.doc`
  *  alone and never the filesystem `writeBranchFacts` (services/zz-core/src/eval/protocol.ts)
  *  writes to. `{}` — no facts recorded, or the flow declares no `when` at all — is `stageOf`'s
  *  own default and behaves exactly as it did before Task I-27: `documentApplies` answers

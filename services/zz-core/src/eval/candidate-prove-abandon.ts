@@ -20,7 +20,7 @@ import { closeRun } from "./replay-runs.js";
 
 /** Every proof-split replay_run THIS candidate's own verifier_token allocation spawned and is
  *  still `registered`/`running` — candidate-side and baseline-side alike, scoped by
- *  `verifier_allocation_id` (migration 082) rather than by `candidate_id`/`base_subject_version_id`.
+ *  `verifier_allocation_id` (migration 002) rather than by `candidate_id`/`base_subject_version_id`.
  *  Closed through `closeRun` (`replay-runs.ts`), the SAME teardown `replay_close`/`sweepExpired`
  *  already use — never a second, ad hoc teardown that could drift from that one's own admin-event
  *  record.
@@ -97,7 +97,7 @@ export async function abandonProof(
   }
 
   // proving: revoke the token first, so nothing new can start; then cancel whatever it already
-  // spawned — scoped to this candidate's own allocations (migration 082), never to a case set or
+  // spawned — scoped to this candidate's own allocations (migration 002), never to a case set or
   // base subject a different candidate's own allocation could share.
   //
   // Whether any run was drawn onto a proof case decides whether the case set's proof split is

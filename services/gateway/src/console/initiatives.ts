@@ -43,7 +43,7 @@ export function mountInitiatives(app: Express): void {
       approved_by: string | null; updated_at: string;
     };
     // FR-58 (Task I-27): the same three scope shapes as the docs query above, mirrored for
-    // `zz.initiative_fact` (migration 085) — the console's own copy of `<initiative>/
+    // `zz.initiative_fact` (migration 002) — the console's own copy of `<initiative>/
     // _facts.json`, which it cannot read directly (it has no filesystem access to the store).
     // Written as three complete statements rather than one assembled at request time, for the
     // same reason the docs query above is: `check:sql` PREPAREs every statement it can read
@@ -158,7 +158,7 @@ export function mountInitiatives(app: Express): void {
         `select path, role, key, verdict, qualifier, detail, checker
            from zz.decision where team_slug = $1 and initiative = $2
           order by path, key`, [team, slug]),
-      // FR-58 (Task I-27): this initiative's own mirror of `_facts.json` (migration 085),
+      // FR-58 (Task I-27): this initiative's own mirror of `_facts.json` (migration 002),
       // read for `stageOf` below the same way the list route reads it for every initiative.
       db.query<{ fact: string; value: string }>(
         `select fact, value from zz.initiative_fact where team = $1 and initiative = $2`, [team, slug]),

@@ -203,7 +203,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
         "traded away by the token it binds.");
     }
     // COUPLED: provisionReplayTeam (packages/contracts/src/replay-team.ts) labels every replay
-    // run's PAT `replay:<run id>`, and zz.replay_run.pat_id references that row (migration 079).
+    // run's PAT `replay:<run id>`, and zz.replay_run.pat_id references that row (migration 002).
     // issuePat replaces a same-label token by DELETING it, so a person issuing one under that
     // label would either break on the foreign key or, before any run points at it, silently
     // retire a live run's credential. The prefix belongs to the replay launcher alone.

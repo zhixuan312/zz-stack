@@ -9,7 +9,7 @@
  * file only ever inserts. A body whose `version` does not name the next number after this
  * plugin's newest is refused before anything is written — see `nextVersionRefusal`.
  *
- * Body field → migration 077 column, positionally, never renamed: `pluginPurpose` → `purpose`,
+ * Body field → migration 002 column, positionally, never renamed: `pluginPurpose` → `purpose`,
  * `observableSurfaces` → `observable_surfaces`, `failureTaxonomy` → `failure_taxonomy`, `suites`
  * → `suites`, `replay` → `replay_policy`, `qualification` → `qualification_policy`, `scoring` →
  * `scoring_policy`, `improvement` → `improvement_policy`. `packages/contracts/src/eval-protocol.ts`
@@ -31,7 +31,7 @@ const sha256Digest = (s: string) => createHash("sha256").update(s, "utf8").diges
 // idempotency_key values could hit at once.
 const UNIQUE_VIOLATION = "23505";
 
-/** A measure's freeform `evaluator` object, narrowed to what `registerEvaluator` needs — 077's
+/** A measure's freeform `evaluator` object, narrowed to what `registerEvaluator` needs — 002's
  *  CHECK requires `evaluator_version_id` for a `bounded_semantic`/`generative_critic` measure, so
  *  this is where that requirement is actually enforced, with a message naming the measure rather
  *  than a CHECK violation's raw SQL text. */
@@ -285,7 +285,7 @@ export async function recordProtocolVersion(
       insert into zz.eval_dimension
         (protocol_version_id, key, name, canonical_kind, weight, required, applicable, not_applicable_reason)
       values ($1::uuid, $2, $3, $4, $5, $6, $7,
-              -- 077's CHECK pairs applicable/not_applicable_reason strictly: null on one side,
+              -- 002's CHECK pairs applicable/not_applicable_reason strictly: null on one side,
               -- a real string on the other. The zod schema above only requires a reason when
               -- NOT applicable; a stray one on an applicable dimension is dropped here rather
               -- than sent through to a CHECK violation the caller cannot read a message from.

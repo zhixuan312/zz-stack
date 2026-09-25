@@ -127,7 +127,7 @@ export async function recordRelease(
         `plugin's current version is ${head?.version ?? "unresolvable"}, not the prior ` +
         `${prior?.declared_version ?? attempt.base_subject_version_id}; nothing recorded`);
     }
-    // Migration 002 — candidate.status gains rolled_back for exactly this write, never on its own.
+    // Migration 001 — candidate.status gains rolled_back for exactly this write, never on its own.
     await client.query("update zz.candidate set status = 'rolled_back' where id = $1::uuid", [attempt.candidate_id]);
 
     const result: RecordResult = {

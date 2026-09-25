@@ -15,7 +15,7 @@
  * fed back into optimization. FR-28's own boundary is about search never seeing proof before
  * final selection; post-release verification runs after release_apply/release_record, with no
  * search session left to leak into. So this file mints its OWN fresh
- * `zz.replay_verifier_token` row for the SAME candidate_id (migration 002's table takes no
+ * `zz.replay_verifier_token` row for the SAME candidate_id (001's table takes no
  * second identity, and a `context: "search"` `replay_start` call refuses `split: "proof"`
  * outright — see `replay-runs.ts`'s own `PROOF_SEALED`), reusing the exact mechanism
  * `candidate-prove.ts` already built rather than adding a second one. The proof allocation
@@ -29,7 +29,7 @@
  * `subject_version_id`, not specifically a baseline's. Calling it twice, once per side, is the
  * whole read.
  *
- * State lives on `zz.release_attempt.verification` (migration 002, null until this file's first
+ * State lives on `zz.release_attempt.verification` (001, null until this file's first
  * resolved call) rather than on a status column, because — unlike `candidate.status`, which
  * `candidate_prove` moves `selected -> proving -> proof_passed/...` — `zz.release_attempt.status`
  * has no interim "verifying" value and must not gain one: the attempt IS still `released` for
@@ -236,7 +236,7 @@ async function planVerify(
 // -------------------------------------------------------------------------------------------
 // Verifier token — the same mechanism candidate_prove mints, for the same candidate_id, under a
 // fresh row (the proof allocation's own token is already revoked by the time a candidate is
-// released), bound the same way (migration 002): to this case set, and to the released subject as
+// released), bound the same way (001): to this case set, and to the released subject as
 // the one side besides the candidate's base a verifier replay may run against. No exemption for
 // post-release verification — replay-verifier.ts refuses an unbound token outright.
 

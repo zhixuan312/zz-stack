@@ -32,9 +32,6 @@ declare -A TOOLS=(
   [audit]=testing/manifest-audit
   [chain-check]=testing/chain-check
   [tool-report]=testing/tool-report
-  [evolve-report]=testing/evolve-report
-  [step-score]=testing/step-score
-  [skill-reflect]=testing/skill-reflect
   # PROMOTE/VERIFY's own two commands (Task I-28): apply an approved candidate's patch and run
   # the repository's release procedure against it, or run the repository's rollback procedure
   # over a release_verify verdict of rolled_back. Both operate on a throwaway clone, never the

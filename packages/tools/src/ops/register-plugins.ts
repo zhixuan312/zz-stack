@@ -78,7 +78,7 @@ function main(argv: string[]): number {
   for (const name of names) {
     const p = lock[name];
     if (args.flags.has("dry-run")) continue;
-    // owner_team/evolvable/release_owners (002, FR-2, FR-47): every catalog plugin is the same
+    // owner_team/evolvable/release_owners (001, FR-2, FR-47): every catalog plugin is the same
     // team's to release, evolvable by construction, and its own release_owners list is just that
     // one team — a plugin registered any other way (plugin_register, for a third party) never
     // reaches this insert, so writing them here unconditionally is exactly the catalog-registration

@@ -33,7 +33,7 @@
  *
  * Errors: a model outage (typed-judgement transport failure, or the reading judge unreachable)
  * never drops a candidate — it is stored with `owner_kind = 'unknown'` and the failure's own
- * reason, folded into `evidence_refs` (migration 002 gives this table no separate reason column,
+ * reason, folded into `evidence_refs` (migration 001 gives this table no separate reason column,
  * and the contract's own response shape has none either). After the FIRST such outage from
  * either model in one run, every remaining group of that kind is answered `unknown` WITHOUT a
  * second evaluator call — so only the group that hit the outage carries a
@@ -399,7 +399,7 @@ async function insertPlanned(
 }
 
 /** A replay's own reconstruction: every candidate row THIS (principal, idempotency_key)
- *  discovery run wrote. `observation_snapshot_id` alone is not enough — migration 002 gives this
+ *  discovery run wrote. `observation_snapshot_id` alone is not enough — 001 gives this
  *  table no column naming which call wrote a row, and nothing in this contract forbids running
  *  DISCOVER again over the same snapshot under a genuinely different `idempotency_key` (a
  *  second, later opinion), which would leave two calls' candidates sharing one

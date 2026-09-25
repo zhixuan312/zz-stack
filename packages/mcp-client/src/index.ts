@@ -118,8 +118,8 @@ export class Mcp {
       //
       // COUPLED: the gateway correlates a skill load with the calls that follow it by
       // `x-zz-user-email` + `x-zz-client`. Without this, every process acting as one person
-      // shares one trace, and the per-skill figures tool-report, evolve-report and step-score
-      // count absorb whatever automation is running. `client` is declared at every call site,
+      // shares one trace, and the per-skill figures tool-report counts absorb whatever
+      // automation is running. `client` is declared at every call site,
       // e.g. "call" or "chain-check".
       "x-zz-client": this.#client,
       ...(opts.pat ? { Authorization: `Bearer ${opts.pat}` } : {}),

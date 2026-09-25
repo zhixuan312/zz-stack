@@ -200,8 +200,8 @@ check("a caller's email is normalised at the boundary, never at the call site", 
   }
 
   // An actor that did not come from parseCaller. Every statement that writes zz.event.actor
-  // folds it; unfolded, one person becomes two rows in the column tool-report, evolve-report
-  // and watch-results group on.
+  // folds it; unfolded, one person becomes two rows in the column tool-report and watch-results
+  // group on.
   for (const rel of sourceFiles(["packages", "services"], [".ts"])) {
     const text = readFileSync(join(root, rel), "utf8");
     if (!/insert into (?:zz\.)?event\b/.test(text)) continue;
@@ -220,7 +220,7 @@ check("a caller's email is normalised at the boundary, never at the call site", 
     const foldedInCode = /const actor = e\.actor\.trim\(\)\.toLowerCase\(\)/.test(code);
     if (!foldedInSql && !foldedInCode) {
       bad.push(`${rel} writes the event actor without folding it — one person then appears as ` +
-               "two rows in the column tool-report, evolve-report and watch-results group on");
+               "two rows in the column tool-report and watch-results group on");
     }
   }
 

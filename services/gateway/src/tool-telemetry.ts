@@ -410,8 +410,8 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
         // and not which version of that stage's skill this caller has, so absent is the honest
         // answer.
         //
-        // COUPLED: step-score.ts keys per-version scoring on `${step} ${step_version}`, so a
-        // name carrying another skill's bytes reaches the scores.
+        // `step` and `step_version` together name one version of one skill, so a name carrying
+        // another skill's bytes names a version that never existed.
         const owedElsewhere = !!owedBy && owedBy !== step?.step;
         const stepVersion = owedElsewhere ? undefined : step?.step_version;
         const stepSha = owedElsewhere ? undefined : step?.step_sha;

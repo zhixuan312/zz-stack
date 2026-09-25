@@ -34,7 +34,7 @@
  * The store write follows `writeRoundAssessments` (semantic.ts): `initiative-record.ts` owns
  * `_facts.json`'s name and mechanical write (`factsFor`/`writeFacts`); this function owns the
  * one rule that write must obey — a fact already set refuses a different value, forever — and
- * mirrors every set fact into `zz.initiative_fact` (migration 002) so the console, which
+ * mirrors every set fact into `zz.initiative_fact` (001) so the console, which
  * reads `zz.doc` alone, can compute the same `documentApplies` answer. The mirror is written
  * the moment the file is, not fire-and-forget like `indexDoc`'s search vector: a stale search
  * result is merely slow to find, but a stale console stepper is a wrong answer about whether an

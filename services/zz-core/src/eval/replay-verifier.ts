@@ -3,7 +3,7 @@
  * `replay_start`/`replay_read` may do with the token `candidate_prove` minted, split out of
  * `replay-runs.ts` so the binding is decided in one place both tools share.
  *
- * A token names ONE proof allocation: one candidate, one case set (migration 002's
+ * A token names ONE proof allocation: one candidate, one case set (001's
  * `zz.replay_verifier_token.case_set_id`), the `proof` split, and the candidate's own base
  * subject for the baseline side. `candidate_prove` runs the other side as `candidate_id`;
  * `release_verify` (the same table, after promotion) runs it as the released subject

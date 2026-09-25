@@ -23,7 +23,7 @@
  *     read one at a time as read many at a time).
  *
  * verifier_token (the plan's own Errors clause): a `context: "verifier"` call must present one,
- * checked against `zz.replay_verifier_token` (migration 002) — real validation, not a stub.
+ * checked against `zz.replay_verifier_token` (001) — real validation, not a stub.
  * `candidate_prove` (Task I-21, `candidate-prove.ts`) is the only writer of that table: it mints
  * one token per proof allocation it opens, bound to that allocation's candidate and case set, so
  * a verifier request only ever succeeds for a run of that one still-open proof — what the token
@@ -35,7 +35,7 @@
  * Task I-15 provisioned and tore down a team with no such record; this task is what closes that
  * gap, so an access review reading `zz.event` sees a replay team's whole life, not half of it.
  *
- * Migration 002 (Task I-22, fix dispatch on a defect Task I-21 left): `replay_start` now stamps
+ * Migration 001 (Task I-22, fix dispatch on a defect Task I-21 left): `replay_start` now stamps
  * every verifier-context `zz.replay_run` row with `verifier_allocation_id`, the exact
  * `zz.replay_verifier_token` row its own `verifier_token` argument resolved to. Before this, a
  * baseline-side proof run (no `candidate_id` of its own) was distinguishable from another
@@ -221,7 +221,7 @@ export async function resolveSubjectOrCandidate(
   return null;
 }
 
-/** The run's `sandbox_ref` (002's column, `worktree_ref` in replay_start's response): the git ref
+/** The run's `sandbox_ref` (001's column, `worktree_ref` in replay_start's response): the git ref
  *  the launcher clones and installs from — `refs/tags/v<declared_version>` for a catalog subject
  *  (or, for a candidate run, its base subject), since a catalog plugin's declared version IS the
  *  platform release it was tagged at. A third-party subject has no tag; its ref names the

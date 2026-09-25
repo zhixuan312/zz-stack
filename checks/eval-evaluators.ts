@@ -11,7 +11,7 @@
  *      all refuse — "no platform database" — rather than silently doing nothing.
  *
  * What this cannot prove offline — an evaluator resolving to its registered
- * `zz.eval_evaluator_version`, one noul/choice/score assessment row satisfying migration 002's
+ * `zz.eval_evaluator_version`, one noul/choice/score assessment row satisfying 001's
  * checks, an unregistered `evaluator_version_id` refused, an insert failure propagating — needs a
  * real database and is established by agent-review of a live run instead (see `checks/insert-arity.ts`
  * for the one part of that — column/value parity — this repository can still check statically).

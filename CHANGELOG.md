@@ -33,6 +33,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.76.1] — 2026-09-25
+
+### Removed
+- **Breaking:** the `evolve-report`, `step-score` and `skill-reflect` npm scripts and `zz-tool`
+  commands, with their sources in `packages/tools/src/testing/`. Which step stalls and what to
+  change about it is the `zz-plugin-eval` flow's job now; run that flow instead.
+
+### Upgrade notes
+- `002_plugin_eval_next.sql` is absorbed into `001_init.sql`, and the migrations directory holds
+  that one file. A deployment that ran 002 keeps its row in `zz.schema_migration` and applies
+  nothing on its next start; `npm run doctor` counts the row as covered. A fresh install gets
+  the same schema from `001_init.sql` alone.
+
 ## [0.76.0] — 2026-09-25
 
 zz-stack 0.76.0 · console 0.19.0
@@ -82,6 +95,9 @@ zz-stack 0.76.0 · console 0.19.0
   design it cannot establish a score before the first real observation revises it.
 
 ### Changed
+- `npm run doctor`'s "no document carries a status its flow does not gate" reads only initiatives
+  that are not closed: a closed initiative ran under the manifest of its day, so the approvals on
+  old five-stage `findings.md` documents are history, not claims to check.
 - A control waiver on every gap of a predecessor step now counts that step as completed, so the
   step after it is no longer blocked by '<before> has not completed'; a partly waived predecessor
   still blocks.

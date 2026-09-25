@@ -123,8 +123,8 @@ export const COV_BUILD: readonly MutationSpec[] = [
     check: "scripts/gate/checks/build.ts",
     target: "every npm script that runs a built tool has a source file",
     subject: "package.json",
-    find: '"step-score": "node packages/tools/dist/testing/step-score.js"',
-    replace: '"step-score": "node packages/tools/dist/testing/step-scores.js"',
+    find: '"tool-report": "node packages/tools/dist/testing/tool-report.js"',
+    replace: '"tool-report": "node packages/tools/dist/testing/tool-reports.js"',
     planted: "an npm script names a tool this repository does not have, so it fails with a node " +
       '"Cannot find module" against a dist path, which reads as a broken build rather than a ' +
       "script that should not exist",

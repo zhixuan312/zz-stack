@@ -195,7 +195,7 @@ function checkoutMigrationHead(): string {
  *
  *  COUPLED: the same directive `scripts/doctor/layers/data.ts` reads. A deployment that ran the
  *  absorbed files keeps their rows in `zz.schema_migration`, and those names can sort after the
- *  file that absorbed them (`076_…` after `002_…`), so the ledger's head is its newest name that
+ *  file that absorbed them (`076_…` after `001_…`), so the ledger's head is its newest name that
  *  is NOT one of these — otherwise every squashed deployment reads as ahead of its own checkout. */
 function absorbedMigrations(): Set<string> {
   const dir = join(repoRoot, "services/gateway/migrations");

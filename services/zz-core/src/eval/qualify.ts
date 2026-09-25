@@ -89,7 +89,7 @@ export async function resolveEvaluator(p: pg.Pool, evaluatorVersionId: string): 
 
 /** A `measure_key` inside one protocol version, resolved to its row — or the refusal, by name.
  *  `protocol_record` refuses a body that repeats a key anywhere in it (`duplicateMeasureKeyRefusal`),
- *  but migration 002 carries no such constraint and a version recorded before that refusal may
+ *  but migration 001 carries no such constraint and a version recorded before that refusal may
  *  still share one across two dimensions — refused here naming both rather than resolved to
  *  whichever row came first. Exported for `finding_record` (plugin-record.ts), which cites a
  *  measure by the same key: one resolver, so the two can never read a key differently. */
@@ -294,7 +294,7 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
       const measure = await measureByKey(p, protocol_version_id, measure_key);
       if ("error" in measure) return text(measure.error);
       // By type, not by a null evaluator: a deterministic/outcome measure may still name one
-      // (migration 002), and a qualification written for it is one `qualificationMet` never reads.
+      // (001), and a qualification written for it is one `qualificationMet` never reads.
       const evaluator_version_id = measure.evaluator_version_id;
       if (!MODEL_BACKED.has(measure.evaluator_type) || !evaluator_version_id) {
         return text(`ERROR: measure "${measure_key}" is ${measure.evaluator_type} — only a ` +

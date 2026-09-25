@@ -28,7 +28,7 @@
  * `Measure "<key>" against subject_ref "<id>"` — a sentence with no content in it at all, so two
  * sessions that produced entirely different output scored identically (both excluded, or both the
  * same evaluator answer on the same empty prompt). `replay_close`'s own `result.produced`
- * (migration 002's `zz.replay_run.produced`) is now the launcher's bounded, redacted record of
+ * (001's `zz.replay_run.produced`) is now the launcher's bounded, redacted record of
  * what the session actually wrote — its final transcript and the artifacts it left in its
  * worktree — and `producedSubjectText` below is what turns that into the text a model-backed
  * measure is asked to judge, with the case's own `evaluation_oracle` events passed alongside it
@@ -77,7 +77,7 @@ const one = (v: string | string[] | undefined): string => (Array.isArray(v) ? v[
 // written here.
 const NO_SNAPSHOT: SnapshotFacts = { usable_run_count: 0, total_run_count: 0, coverage: null, facts: null };
 
-/** `zz.replay_run.produced` (migration 002), exactly as `replay_close`'s own `result.produced`
+/** `zz.replay_run.produced` (001), exactly as `replay_close`'s own `result.produced`
  *  schema and the launcher that fills it (`packages/tools/src/replay/launch.ts`) agree on it. */
 export interface ProducedRecord {
   readonly transcript: string;

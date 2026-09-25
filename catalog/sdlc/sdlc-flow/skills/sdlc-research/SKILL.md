@@ -1,6 +1,6 @@
 ---
 name: sdlc-research
-version: 1.5
+version: 1.6
 description: Answer one question about the world outside this system — prior art, a standard, how others solved the same shape of problem — with cited external sources and honest confidence. Read-only. Dispatched by sdlc-explore, one question per worker.
 when_to_use: "One external question needs answering: what the prior art is, what a standard says, what practitioners actually do, how an adjacent domain solves this. Dispatched by sdlc-explore as part of its fan-out. Not for questions about this system — that is sdlc-investigate."
 ---
@@ -133,17 +133,10 @@ than the tier supports.
 
 **Work roles:** searching and fetching belong to whatever the runtime offers; working all five
 perspectives, weighing tiers and deduplicating are this agent's own, run alone with no workers
-underneath. Nothing downstream merges your findings with anyone else's. The `semantic-assessment`
-role answers the bounded questions below by question ID from the fixed set below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
-door, which records the answer and the model behind it; it does not decide what a source means.
+underneath. Nothing downstream merges your findings with anyone else's.
 
-**Checkpoints:**
-
-| Where | Question ID | Asked about |
-|---|---|---|
-| Per finding, before it is reported | `evidence_relation` | whether the fetched excerpt supports the claim, and at which source tier |
-| Across your own findings, before returning | `repeats_finding` | whether two findings cite the same source for the same claim, so one is kept |
-| On the finished answer | `actionability` | whether a person could decide from this, or is being handed a source list to chase |
+**Checkpoints:** none. No bounded question at this stage has an answer the platform routes
+on, so none is asked.
 
 **Action and exit paths:** the action is search, fetch, work the five perspectives, cite,
 deduplicate, return. Two exits: the sourced answer, or the announced unsourced one described

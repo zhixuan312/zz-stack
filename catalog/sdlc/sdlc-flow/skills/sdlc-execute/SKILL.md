@@ -1,6 +1,6 @@
 ---
 name: sdlc-execute
-version: 1.10
+version: 1.12
 description: Build what the approved plan describes — one subagent per task, one wave of tasks with disjoint ownership at a time, each making its task's contract true and its plan-authored checks pass. Main agent orchestrates and stays accountable for the sequence; the work itself is dispatched.
 when_to_use: "plan.md exists, has been audited, and the person has approved it. Implements its tasks. If there is no plan on disk, this is not the stage — the plan is what makes each task dispatchable. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -58,13 +58,14 @@ comparison. A check
 that appears after the worker has been told what "done" means is a check the worker has already
 routed around — activating on time is exactly as load-bearing as activating only the one file.
 
-**4. Derive the waves and the hotspots.** Read every task's `**Owns:**` line and the plan's
-`## Integration hotspots` list. A wave is every task whose dependencies are all done; tasks in one
-wave run at the same time. Before dispatching anything, confirm that no two tasks in one wave own
-overlapping paths and no task owns a hotspot — where either holds, the plan left a race undecided,
-and it goes back to `sdlc-plan` rather than being settled by whichever worker finishes last.
-**A plan where no task declares Owns runs one task per wave**, in plan order: nobody decided who
-writes what, so nothing runs beside anything.
+**4. Read the waves and the hotspots from the platform.** Call `initiative_status` on the
+initiative: its `plan` field is `validatePlan` run on the current plan.md — `waves`, `hotspots`,
+`ok` and `violations`. Run the tasks in the order of `plan.waves`: every task in one wave may be
+dispatched in parallel, a wave starts only when the previous one has landed, and nobody but the
+integration step writes a path in `plan.hotspots`. If `plan.ok` is false the waves are empty —
+an overlap or an owned hotspot is a race the plan left undecided, so it goes back to `sdlc-plan`;
+meanwhile run one task at a time in plan order and tell the person which `plan.violations`
+stopped parallel execution. **A plan where no task declares Owns runs one task per wave.**
 
 ## Dispatching a wave
 
@@ -238,18 +239,10 @@ throws away finished work.
 made the decisions — including who writes what — and what remains is the change itself. This agent
 keeps the sequence, owns the branch, freezes and activates the checks, applies the hotspot edits,
 runs the checks, the gate and the skeleton, and stays accountable for what changed.
-The person decides whether the work is committed. The `semantic-assessment` role answers the
-bounded questions below by question ID from the fixed set below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
-door, which records the answer and the model behind it;
-it does not judge a check's result, which is deterministic.
+The person decides whether the work is committed.
 
-**Checkpoints:**
-
-| Where | Question ID | Asked about |
-|---|---|---|
-| After each task, reading what actually changed | `changes_commitment` | whether the change quietly did something the contract did not ask for, or skipped something it did — divergence from the plan is expected, and somebody has to notice it |
-| On a check that produced no verdict | `needs_verification` | whether it failed or could not run, and which environment could settle it |
-| When the same task fails the same way twice | `actionability` | whether the contract itself is wrong, which sends it back to `sdlc-plan` rather than to a third worker |
+**Checkpoints:** none. No bounded question at this stage has an answer the platform routes
+on, so none is asked.
 
 **Action and exit paths:** the action is freeze every check up front, derive the waves, then per
 wave: activate its checks, dispatch its tasks together, check ownership, run the tasks' checks,

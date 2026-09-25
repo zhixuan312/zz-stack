@@ -1,21 +1,21 @@
 {
   "sdlc": {
     "version": "0.76.2",
-    "digest": "bf628c64",
+    "digest": "ad121265",
     "skills": {
-      "sdlc-audit-criteria": "2c32186e1ee1",
-      "sdlc-execute": "d0fe01eb21b1",
-      "sdlc-explore": "83d434bd29d3",
-      "sdlc-flow": "9e1eae693afe",
-      "sdlc-investigate": "e1fbe3c441de",
-      "sdlc-method": "afd52c39d758",
-      "sdlc-plan": "adcb886ead96",
-      "sdlc-plan-audit": "d295becb459d",
-      "sdlc-recall": "219093e69041",
-      "sdlc-research": "4109e7895c67",
-      "sdlc-review": "2a23706b71c9",
-      "sdlc-spec": "bef9d0d20a57",
-      "sdlc-spec-audit": "b21bc0d7087d"
+      "sdlc-audit-criteria": "115360726930",
+      "sdlc-execute": "e0e1e2b0f03b",
+      "sdlc-explore": "476be4f41550",
+      "sdlc-flow": "7828861c8ce0",
+      "sdlc-investigate": "9c23d509eaeb",
+      "sdlc-method": "97f5a1cfba37",
+      "sdlc-plan": "7938cfad68ca",
+      "sdlc-plan-audit": "b363bfa72cf0",
+      "sdlc-recall": "9f5324dc179e",
+      "sdlc-research": "aa813e7243b0",
+      "sdlc-review": "89bdd9a085ee",
+      "sdlc-spec": "bdc33d47864d",
+      "sdlc-spec-audit": "6b66398b8905"
     }
   },
   "zz-access": {

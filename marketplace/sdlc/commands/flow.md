@@ -265,18 +265,14 @@ step, and guessing at them is how a stage gets skipped.
 
 **Work roles:** the person decides at the three gates — agreement on `spec.md`, approval of
 `plan.md`, approval of `review.md` — and nothing substitutes for them there. Choosing the stage
-and reporting where the work stands are this agent's own. The `semantic-assessment` role is asked
-the bounded questions below by question ID from the fixed set below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
-door, which records the answer and the model behind it;
-it never picks the stage.
+and reporting where the work stands are this agent's own. The platform asks one bounded question
+itself and routes on the answer; you ask none, and it never picks the stage.
 
 **Checkpoints:**
 
 | Where | Question ID | Asked about |
 |---|---|---|
-| Before routing to `sdlc-spec` | `needs_fact` | whether the ground is established enough to decide on, or `sdlc-explore` has to run first |
-| At each of the three gates | `missing_user_input` | whether the person's decision is recorded on the document, or exists only in the conversation |
-| After an audit round lands — asked by the platform itself in `source_add`, reading returned in its result | `changes_commitment` | whether a finding reopens something the person already agreed, which sends the document back to the stage that wrote it |
+| After an audit round lands — asked by the platform itself in `source_add`, reading returned in its result | `changes_commitment` | whether the round reopens something the person already agreed — `yes` on a round that read the current version makes the next move `decide`, waiting on the stakeholder, until they record a decision or the document is revised |
 
 **Action and exit paths:** the action is entering the next stage, or re-entering an earlier one
 when an audit sends a document back — the sequence is not a ratchet, and a return is the method

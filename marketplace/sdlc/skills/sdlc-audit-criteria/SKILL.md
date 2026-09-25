@@ -1,6 +1,6 @@
 ---
 name: sdlc-audit-criteria
-version: 2.5
+version: 2.6
 description: The eleven prose failure modes every sdlc audit applies, the evidence shapes a finding must take, and the JSON a round returns. Loaded by sdlc-spec-audit and sdlc-plan-audit; never run on its own.
 when_to_use: "You were dispatched as sdlc-spec-audit or sdlc-plan-audit. Load this first, then that skill — it carries what is different about the document you were given."
 ---
@@ -277,19 +277,11 @@ it: no reading of the store answers that, so it is recorded as an unknown rather
 
 **Work roles:** the eleven passes and the consolidation belong to the auditing agent, run one mode
 at a time rather than as a single sweep, because each mode gets full attention before the next.
-The document's owner decides what is fixed. The `semantic-assessment` role answers the bounded
-questions below by question ID from the fixed set below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
-door, which records the answer and the model behind it — but running the
-self-validation rubric is not delegated away: it was a second model's job before and it is yours
-now.
+The document's owner decides what is fixed. Running the self-validation rubric is not delegated
+away: it was a second model's job before and it is yours now.
 
-**Checkpoints:**
-
-| Where | Question ID | Asked about |
-|---|---|---|
-| Self-validation, per finding | `evidence_relation` | whether the quoted material actually demonstrates the issue claimed, in one of the four shapes |
-| Criterion 3, across the whole document | `repeats_finding` | whether two items address the same root cause without acknowledging each other, so they are merged or cross-referenced |
-| Criterion 7, per proposed fix | `actionability` | whether the fix is complete enough to implement, or stops at a vague verb with no owning subsystem |
+**Checkpoints:** none. No bounded question at this stage has an answer the platform routes
+on, so none is asked.
 
 **Action and exit paths:** the action is eleven modes sequentially, notes kept in working memory,
 then consolidation. Two exits, both taken every round: `source_add` carrying the prose findings

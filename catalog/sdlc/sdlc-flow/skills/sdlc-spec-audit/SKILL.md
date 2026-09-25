@@ -1,6 +1,6 @@
 ---
 name: sdlc-spec-audit
-version: 2.4
+version: 2.5
 description: Audit spec.md — the eleven prose failure modes plus the spec's own contract: eight components, FR-to-AC traceability, the deliverable contract, frozen values inlined, scope exhaustive. Read-only. Dispatched, one round at a time; how many is routed by evidence.
 when_to_use: "spec.md is written and agreed by the person, and someone is about to plan from it. Runs after sdlc-spec and before sdlc-plan. Dispatched by the main agent, one round at a time."
 ---
@@ -112,18 +112,16 @@ option B while Alternatives records option A as the decision" is, and it is crit
 **Work roles:** this round is dispatched because the value is a reader who did not write the
 document; running it yourself re-reads your own reasoning and finds it sound. The person who owns
 the spec decides what to fix, and you present nothing to them — the main agent decides what
-anybody is shown. The `semantic-assessment` role answers the bounded questions below by question
-ID from the fixed set below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
-door, which records the answer and the model behind it; it does not set severity for
-you.
+anybody is shown. Where the caller said what the last round raised, confirm each fix rather
+than re-reporting it. The platform asks two bounded questions of your round when it is recorded,
+and routes on them; you ask none, and severity stays yours to calibrate.
 
 **Checkpoints:**
 
 | Where | Question ID | Asked about |
 |---|---|---|
-| Contract point 2, per requirement | `requirement_coverage` | whether every `FR-N` reaches at least one testable `AC-N.N`, and every criterion is numbered, checkboxed and checkable |
-| On each finding, where the caller said what the last round raised | `repeats_finding` | whether this was already reported, so the round confirms the fix rather than re-reporting the problem as a third independent confirmation |
-| On each finding, before it is emitted | `actionability` | whether the owner could act on it without asking you to explain it |
+| When `source_add` records your round — asked by the platform | `changes_commitment` | whether the round reopens something the document records as agreed — `yes` makes the next move `decide`, waiting on the stakeholder, instead of another round |
+| The same, from round 2 on | `repeats_finding` | whether the round mostly repeats the rounds before it — the next move says so; it does not change the move |
 
 **Action and exit paths:** the action is the eleven failure modes one at a time, then the spec's
 seven, then consolidation. Two exits, both taken every round: `source_add` carrying the prose

@@ -20,6 +20,7 @@ import { auditMove } from "../audit-rounds.js";
 import { reviewMove } from "../review-rounds.js";
 import { factsFor, openRecord, recordsFor } from "../initiative-record.js";
 import { chainFor } from "../chain.js";
+import { planStructure, planStructureNote, type PlanStructure } from "../plan-structure.js";
 import { safeName, userRoot } from "../paths.js";
 import { Refusal } from "../refusal.js";
 import { logActivity } from "../persist.js";
@@ -384,6 +385,11 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
                  "is outstanding, not this call" };
     }
   }
+  // The current plan's structure: waves an executor may run in parallel, or why it cannot.
+  const plan: PlanStructure | undefined = planStructure(dir, docs);
+  if (next.action !== "closed") {
+    next.why += planStructureNote(plan, states.find((d) => d.name === plan?.document)?.status ?? null);
+  }
   const { sourceFiles, needsRefinement } =
     sourceReport(dir, (d) => states.find((x) => x.name === d)?.status ?? null);
   return { initiative: name,
@@ -395,7 +401,9 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
            // a revision — the team decides, and document_revise is how they do it
            sources_after_approval: needsRefinement,
            // Omitted when empty: only a flow with `produces: "record"` stages writes any.
-           records: Object.keys(records).length ? records : undefined, next_move: next,
+           records: Object.keys(records).length ? records : undefined,
+           // Omitted when the flow declares no plan or it is not written yet.
+           plan, next_move: next,
            // Undefined rather than absent, so the two returns of this function have one
            // shape and a caller can read the field without knowing which branch answered.
            next_move_absent: undefined as string | undefined };

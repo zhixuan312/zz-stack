@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.16
+version: 1.17
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -303,17 +303,10 @@ Delegation is an ordinary answer and it stands until they say otherwise.
 **Work roles:** the person holds the three gates. A dispatched worker does breadth, independent
 reading, or bounded volume — never a decision somebody is party to. This agent keeps the sequence,
 does the synthesis, and is the only thing between a worker's draft and a document someone builds
-on. The `semantic-assessment` role answers the bounded questions below by question ID from the
-fixed set below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
-door, which records the answer and the model behind it; it does not decide what is dispatched.
+on.
 
-**Checkpoints:**
-
-| Where | Question ID | Asked about |
-|---|---|---|
-| Deciding whether a piece of work is yours or a worker's | `needs_analysis` | whether the work is judgement a person is party to, or breadth, independence or volume |
-| On a returned document, before accepting it | `actionability` | whether each section carries substance a reader could build on, or was named and not written |
-| Before a re-dispatch | `repeats_finding` | which parts are already written, so the second prompt names only what is missing |
+**Checkpoints:** none. No bounded question at this stage has an answer the platform routes
+on, so none is asked.
 
 **Action and exit paths:** the action is dispatching a stage or running it yourself, then reading
 the file and deciding. Two exits: accept the return and move on, or re-dispatch on the same tier

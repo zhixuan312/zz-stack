@@ -1,6 +1,6 @@
 ---
 name: sdlc-explore
-version: 1.9
+version: 1.10
 description: Ground a raw idea before anyone designs it — capture the brain dump, fan out parallel workers across this system, the outside world and the ZZ knowledge base, wait for all of them, then synthesise one explore.md (Background · Current state · Rough direction). Main agent, with the fan-out dispatched.
 when_to_use: "Someone arrives with a raw idea, problem, feature request or brain dump and it needs grounding before it is designed. The question is exploratory — several directions to weigh, not one fact to look up. If it is one convergent question, that is a single sdlc-investigate, not this. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -224,17 +224,10 @@ picture changes with the last answer.
 
 **Work roles:** the fan-out is dispatched, one question per worker, and the synthesis is this
 agent's own — many answers are not a picture, and making them one is the judgement this stage
-exists for. The person is asked once, terse, to size the fan-out. The `semantic-assessment` role
-answers the bounded questions below by question ID from the fixed set below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
-door, which records the answer and the model behind it; it does not rank the directions.
+exists for. The person is asked once, terse, to size the fan-out.
 
-**Checkpoints:**
-
-| Where | Question ID | Asked about |
-|---|---|---|
-| Phase 2, per candidate worker | `needs_fact` / `needs_analysis` | whether the question is one convergent fact, which is one worker, or a subject, which is several — a prompt saying "and also" is two workers |
-| Phase 4, per finding carried into the document | `evidence_relation` | whether the cited material actually supports the claim a direction rests on |
-| Phase 4, across the returned reports | `repeats_finding` | whether two workers found the same thing, so the synthesis states it once rather than as two confirmations |
+**Checkpoints:** none. No bounded question at this stage has an answer the platform routes
+on, so none is asked.
 
 **Action and exit paths:** the action is size, ask once, dispatch in one message, wait for all,
 synthesise, write, present. The forward exit is `sdlc-spec`, with a direction the person chose.

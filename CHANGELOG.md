@@ -90,11 +90,18 @@ than how much code moved.
 - The release's live chain check walks with `ZZ_PROBE_TOKEN`, a superadmin's PAT, so `bug_list`, `bug_resolve` and `knowledge_reindex` are verified at release. Without it the chain is walked with `ZZ_TOKEN` and those probes report `unknown: no probe token` instead of a silent skip. A probe token that is not a superadmin's reports `unknown` too. Preflight checks that the probe token is a superadmin's. When it is missing, the release warns before building, and the release then goes live untagged.
 - Doctor probes can be registered `predeploy: true`: read-only, and asking only this checkout and the data already live. The release runs them as step 1b, before building, and refuses on a disagreement or on a probe that could not run. Preflight shows them too. The first is "no document carries a status its flow does not gate", the probe that rolled 0.76.0 back after its deploy.
 
+- `initiative_status` returns `plan: { ok, violations, waves, hotspots }` for a flow whose plan document is written, computed by `validatePlan` from the current plan.md; when an approved plan does not validate, `next_move.why` says so. sdlc-execute 1.12 reads its parallel waves from there.
+- sdlc skills declare only the checkpoints whose answers the platform routes on: `changes_commitment` and `repeats_finding` for audit rounds, `evidence_relation` and `repeats_finding` for review. Every agent-called `assess(...)` instruction is removed; nine skills now declare no checkpoints. New gate check `checkpoints-consumed` fails a skill that names a question family no code reads.
+
+### Console
+- Plugin evaluation's Evolution panel shows each candidate's hypothesis, status, build result and release state; the validation, proof, cost and replay columns are gone with the replay mechanism.
+
 ### Upgrade notes — replay removal and platform tools
 - /eval/mcp: the eight tools under Removed are gone; `evaluation_start` no longer takes `case_set_version_id`; `candidate_record` no longer takes `parents` and returns no `generation`; `improvement_start` returns no `case_set_id` or `search_policy`; `release_verify` no longer takes `initiative` or `rotate_token`. `improvement_mode` value `search` is now `release`.
 - Every protocol version recorded before this release lacks `improvement.release`; `release_prepare` and `release_verify` refuse it by name — revise the protocol in DEFINE/QUALIFY.
 - `/api/console/plugins/:plugin/eval` candidate rows drop `generation`, `validation`, `proof`, `cost`, `durationMsAvg` and `replayRuns`, and gain `build: {ok, stage}`; the console follows in the same release.
 - `pat_issue` no longer refuses `replay:` labels, and `team_create` no longer refuses `replay-` slugs.
+- sdlc agents no longer call `assess`; nothing read those answers.
 - Set `ZZ_PROBE_TOKEN` (a superadmin's PAT) in the release machine's `.env`, or releases go live untagged.
 
 ## [0.76.1] — 2026-09-25

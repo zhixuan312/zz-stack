@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.15
+version: 1.16
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -462,19 +462,10 @@ creates, A comes first, and a dependency you have not resolved is a task you hav
 **Work roles:** this stage is never dispatched. Order, risk and scope are the person's judgement,
 and a dispatched plan is a plausible ordering nobody chose; the person approves the document
 before anything is built from it. Each technical AC names which role proves it — a deterministic
-command, a delegated analytical review, or a named human whose authority the claim requires. The
-`semantic-assessment` role answers the bounded questions below by question ID from the fixed set
-below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
-door, which records the answer and the model behind it, and is never a substitute for the human method: a plausible
-opinion is not accountability.
+command, a delegated analytical review, or a named human whose authority the claim requires.
 
-**Checkpoints:**
-
-| Where | Question ID | Asked about |
-|---|---|---|
-| Step 4, per business AC in the spec | `requirement_coverage` | whether it reaches at least one task, and whether that task's technical AC is the engineering translation of it rather than a restatement |
-| Per technical AC, choosing how it is proved | `needs_verification` | whether the claim is machine-decidable, needs delegated analysis, or needs authority — decided by what the claim requires, never by what is convenient |
-| On a return from audit or from execution | `changes_commitment` | whether the finding changes what was approved, so the revision cites the source that caused it and marks every task `unchanged`, `changed` or `new` |
+**Checkpoints:** none. No bounded question at this stage has an answer the platform routes
+on, so none is asked.
 
 **Action and exit paths:** the action is ground truth, state the production method in prose,
 scaffold in one write with a uniquely-id'd marker per task, fill one task at a time until no

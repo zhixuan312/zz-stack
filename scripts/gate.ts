@@ -66,6 +66,7 @@ import "./gate/checks/plan-validator.ts";
 import "./gate/checks/issuer-unreachable.ts";
 import "./gate/checks/grant-claim-refusals.ts";
 import "./gate/checks/assessment-port.ts";
+import "./gate/checks/checkpoints-consumed.ts";
 import "./gate/checks/central-binding.ts";
 import "./gate/checks/dependency-invalidation.ts";
 import "./gate/checks/commit-result-reconciliation.ts";

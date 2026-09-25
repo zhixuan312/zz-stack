@@ -1,6 +1,6 @@
 ---
 name: sdlc-review
-version: 1.8
+version: 1.9
 description: Verify what was built before it ships — first the evidence that every accepted criterion holds, established by running, then a bounded defect sweep in rounds the platform routes to a stop. The sweep is dispatched, one round at a time, because a reviewer who did not write the code is the point; the evidence table and the verdict are the main agent's.
 when_to_use: "sdlc-execute has finished and the change is about to be shipped, merged or handed over. This is the pre-release gate. The main agent compiles the acceptance evidence and dispatches each sweep round."
 ---
@@ -192,18 +192,15 @@ references: out of scope, and speculation about it is not a finding.
 **Work roles:** the main agent compiles the acceptance evidence by running, writes `review.md`,
 fixes what a round finds and dispatches the next. The reviewer did not write the code, which is
 the entire reason the sweep leaves the main agent; it changes nothing and records its round. The
-stakeholder decides at the budget, accepts residuals and defers criteria. The
-`semantic-assessment` role answers the bounded questions below by question ID from the fixed set
-below. Each ID is a registered family, asked by the platform where it says, or by you with
-`assess(family, subject, context)` on the core door; it does not set impact for you.
+stakeholder decides at the budget, accepts residuals and defers criteria. The platform asks two
+bounded questions itself and routes on the answers; you ask none, and impact stays yours to set.
 
 **Checkpoints:**
 
 | Where | Question ID | Asked about |
 |---|---|---|
 | Each established acceptance row, when `review.md` is written | `evidence_relation` | whether the quoted output supports the criterion — read at approval: `no` refuses, `unclear` asks for sharper evidence, twice goes to the stakeholder |
-| Each new S1/S2 finding, when its round is recorded | `repeats_finding` | whether it repeats an earlier round's finding — a repeat does not block |
-| Reading the change against `plan.md` | `requirement_coverage` | whether a declared task went unimplemented, or the change did what no task asked for |
+| Each new S1/S2 finding, when its round is recorded | `repeats_finding` | whether it repeats an earlier round's finding — `yes` means it does not block, and it does not count as a new blocker when the budget checks whether the review is converging |
 
 **Action and exit paths:** part A — run, quote, write the table, present, ask. Part B — sweep the
 declared scope, record the round with `source_add`, return the ledger. The exits are the ones

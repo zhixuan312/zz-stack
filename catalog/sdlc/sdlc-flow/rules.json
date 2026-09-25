@@ -350,26 +350,20 @@
     {
       "rule_id": "checkpoints.question_ids_are_registered",
       "skill": "sdlc-flow",
-      "locator": "## Skill contract — **Work roles:** and **Checkpoints:** (present in all thirteen skills)",
-      "claim": "The `semantic-assessment` role is asked the bounded questions below by registered question ID",
+      "locator": "## Skill contract — **Work roles:** and **Checkpoints:** (present in sdlc-flow, sdlc-spec-audit, sdlc-plan-audit and sdlc-review — the stages whose answers the platform routes on)",
+      "claim": "The platform asks bounded questions itself and routes on the answers; you ask none",
       "enforcement_class": "platform",
       "schema": "packages/contracts/src/assessment.ts::QUESTION_FAMILIES",
       "handler": "services/zz-core/src/semantic.ts::assessFamily — refuses a family QUESTION_FAMILIES does not register, and records every answer in zz.assessment; reached by the assess tool (services/zz-core/src/tools/assess.ts) and, for changes_commitment and repeats_finding, by source_add when an audit round lands (services/zz-core/src/audit-rounds.ts::assessRound)",
       "behavioural_test": "checks/audit-rounds.ts §7 — every registered family carries an instruction, an unregistered family is refused, and an unconfigured service answers unavailable with its reason",
-      "note": "Registered: the nine families are QUESTION_FAMILIES, each with the instruction the typed service is asked. Two checkpoints are asked by the platform itself when an audit round lands; every other checkpoint is asked by the stage that reaches it, through assess.",
+      "note": "Registered: the nine families are QUESTION_FAMILIES, each with the instruction the typed service is asked. A skill names only a family whose answer code reads: changes_commitment and repeats_finding when an audit round lands (audit-rounds.ts), repeats_finding per new S1/S2 review finding (review-rounds.ts), evidence_relation per established acceptance row (review-acceptance.ts). scripts/gate/checks/checkpoints-consumed.ts fails a skill that names any other.",
       "enum": {
-        "name": "question IDs cited in the thirteen skills' Checkpoints tables",
+        "name": "question IDs cited in the skills' Checkpoints tables",
         "closed": true,
         "claimed": [
           "evidence_relation",
-          "requirement_coverage",
-          "needs_fact",
-          "needs_verification",
-          "needs_analysis",
-          "missing_user_input",
           "changes_commitment",
-          "repeats_finding",
-          "actionability"
+          "repeats_finding"
         ],
         "emitted_from": null,
         "emitted_from_note": "Nothing emits these. A later task builds QUESTION_FAMILIES and must adopt these exact spellings."

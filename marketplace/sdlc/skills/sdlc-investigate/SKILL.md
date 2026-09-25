@@ -1,6 +1,6 @@
 ---
 name: sdlc-investigate
-version: 1.3
+version: 1.4
 description: Answer one specific question about material inside this system — code, config, specs, data, documents — with grounded file:line citations and calibrated confidence. Read-only. Dispatched by sdlc-explore, one question per worker.
 when_to_use: "One convergent question about this system needs a grounded answer: how something works, where something lives, what something depends on. Dispatched by sdlc-explore as part of its fan-out, or reached directly when a single fact is blocking. Not for surveying a subject — that is the whole fan-out, not one worker."
 ---
@@ -166,18 +166,10 @@ named. An unknown rated `high` is not an unknown; it is an overstatement.
 
 **Work roles:** retrieval here is deterministic — grep, glob, read — and the reading, the five
 perspectives and the synthesis are this agent's own. Nothing re-reads your citations, so no
-reviewing role stands behind you and the self-validation rubric is yours to run and mean. The
-`semantic-assessment` role answers the bounded questions below by question ID from the fixed set
-below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
-door, which records the answer and the model behind it; it does not write the answer.
+reviewing role stands behind you and the self-validation rubric is yours to run and mean.
 
-**Checkpoints:**
-
-| Where | Question ID | Asked about |
-|---|---|---|
-| Per citation, before it enters the answer | `evidence_relation` | whether the cited line, as read this session, says what the claim says it says |
-| Per synthesis claim, at self-validation | `needs_verification` | whether a link in the chain is inferred, which caps confidence at `medium` and names the file to confirm against |
-| On the finished answer | `actionability` | whether the caller could act without re-deriving the finding, or is being handed the investigation instead of the answer |
+**Checkpoints:** none. No bounded question at this stage has an answer the platform routes
+on, so none is asked.
 
 **Action and exit paths:** the action is read, cite, apply all five perspectives, calibrate,
 return. The exit is the JSON block as your final text response. No exit here writes, edits or

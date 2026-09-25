@@ -37,6 +37,8 @@ check("the core door introduces itself to a client that reads nothing else, and 
 
 check("opening is explicit and dated by the platform, and freeform gets no next move",
       runsCheck("initiative-open.ts"));
+check("initiative_status carries the current plan's waves, hotspots and violations, and an approved plan that does not validate says so in its next move",
+      runsCheck("plan-waves-status.ts"));
 
 check("audit rounds follow evidence, a spent budget or a reopened agreement waits on the stakeholder",
       runsCheck("audit-rounds.ts"));

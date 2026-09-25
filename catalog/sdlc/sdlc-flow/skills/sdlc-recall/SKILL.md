@@ -1,6 +1,6 @@
 ---
 name: sdlc-recall
-version: 1.10
+version: 1.11
 description: Search the ZZ knowledge base for what earlier work already decided or learned about a question, read the nodes that matter, and report what it means for the decision in front of someone. Read-only. Dispatched by sdlc-explore, one topic per worker.
 when_to_use: "Before designing, attempting or deciding something, to find out what this team already settled — decisions, design rationale, observed behaviour, process learnings, conventions. Dispatched by sdlc-explore as part of its fan-out. Searches the platform's knowledge base, which is shared across the team and across initiatives."
 ---
@@ -208,17 +208,10 @@ abandoned proposal comes back.
 
 **Work roles:** `knowledge_search` does the retrieval and ranking deterministically and cannot
 synthesise — it has no model behind it. Turning ranked source material into an answer somebody can
-act on is this agent's own work and the whole reason this skill exists. The `semantic-assessment`
-role answers the bounded questions below by question ID from the fixed set below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
-door, which records the answer and the model behind it; it does not write the briefing.
+act on is this agent's own work and the whole reason this skill exists.
 
-**Checkpoints:**
-
-| Where | Question ID | Asked about |
-|---|---|---|
-| Per result, before it is cited | `evidence_relation` | whether the node's own words support the claim, and whether the hit is a node somebody distilled or a document asserting an intent at a date |
-| Per adopted finding | `changes_commitment` | whether a superseded node means the team already went down this road and came back, so the caller marks the matching direction rather than re-proposing it |
-| Across results | `repeats_finding` | whether two hits are the same lesson reached by different lanes, so it is reported once |
+**Checkpoints:** none. No bounded question at this stage has an answer the platform routes
+on, so none is asked.
 
 **Action and exit paths:** the action is search several ways, read what matters, synthesise.
 **Four exits, and they are different facts that must never be merged:** findings, with what they

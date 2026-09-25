@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan-audit
-version: 2.5
+version: 2.6
 description: Audit plan.md — the eleven prose failure modes plus the plan's own contract: AC traceability, task contracts, checks that compile, the format the executor depends on, dependency order and ownership, the walking skeleton, the full-suite gate. Read-only. Dispatched, one round at a time; how many is routed by evidence.
 when_to_use: "plan.md is written and someone is about to execute it. Runs after sdlc-plan and before sdlc-execute. Dispatched by the main agent, one round at a time."
 ---
@@ -135,17 +135,16 @@ because nothing else in the flow is positioned to see it.
 **Work roles:** dispatched, because the value is a reader who did not write the plan. The person
 who owns the plan decides what to fix, and you present nothing to them. The consumer everything
 here is calibrated against is a low-judgement worker that follows the plan literally and will not
-stop to check. The `semantic-assessment` role answers the bounded questions below by question ID
-from the fixed set below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
-door, which records the answer and the model behind it, and severity stays yours to calibrate.
+stop to check. Where the caller said what the last round raised, confirm each fix and look
+instead for what the changes introduced. The platform asks two bounded questions of your round
+when it is recorded, and routes on them; you ask none, and severity stays yours to calibrate.
 
 **Checkpoints:**
 
 | Where | Question ID | Asked about |
 |---|---|---|
-| Contract point 1, per business AC in the spec | `requirement_coverage` | whether the traceability table reaches it from at least one task — an untraced AC is scope that will not get built |
-| Contract points 2 to 4, per task | `actionability` | whether a worker that cannot disambiguate could execute this contract literally and know when it is done |
-| On each finding, where the caller said what the last round raised | `repeats_finding` | whether this was already reported, so the round confirms the fix and looks instead for what the changes introduced |
+| When `source_add` records your round — asked by the platform | `changes_commitment` | whether the round reopens something the document records as agreed — `yes` makes the next move `decide`, waiting on the stakeholder, instead of another round |
+| The same, from round 2 on | `repeats_finding` | whether the round mostly repeats the rounds before it — the next move says so; it does not change the move |
 
 **Action and exit paths:** the action is the eleven failure modes one at a time, then the plan's
 fourteen, then consolidation. Two exits, both taken every round: `source_add` carrying the prose

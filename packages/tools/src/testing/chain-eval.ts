@@ -205,4 +205,11 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
       release_attempt_id: randomUUID(), status: "failed", failure_tail: "chain-check-probe",
       idempotency_key: randomUUID(),
     }), /no platform database|no release_attempt/);
+  // Task I-24: same shape once more — a random release_attempt_id resolves no row before this
+  // tool ever plans a replay or touches the case-set/protocol lookups, so the probe is safe
+  // against whatever this deployment has or has not verified.
+  eitherOr("release_verify refuses a release_attempt_id nothing minted",
+    await callEval("release_verify", {
+      release_attempt_id: randomUUID(), idempotency_key: randomUUID(),
+    }), /no platform database|no release_attempt/);
 }

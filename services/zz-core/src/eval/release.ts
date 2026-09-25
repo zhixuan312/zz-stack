@@ -45,6 +45,7 @@ import {
   describeApplyOutcomeForReplay, describeRecordOutcomeForReplay, planApply, recordRelease,
   type ApplyResult, type RecordResult,
 } from "./release-apply.js";
+import { verifyRelease, type VerifyOutcome } from "./release-verify.js";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
 import { db } from "../platform-db.js";
@@ -269,44 +270,53 @@ export function registerReleaseTools(server: McpServer): void {
     {
       description:
         "WHEN packages/tools/src/release/apply.ts has finished applying a candidate's patch — " +
-        "successfully, through the gate and the repository's own release procedure, or not: " +
-        "records the outcome release_apply's own applying attempt was left waiting for. On " +
-        "status: released, requires release_ref (the tag/ref the release procedure created) and " +
-        "released_subject_version_id (the new subject version the CLI resolved, typically by " +
-        "calling plugin_locate again after the real release), moves the release_attempt to " +
-        "released and the candidate to released. On status: failed, requires failure_tail (the " +
-        "failing command's own output tail) and moves the release_attempt to failed — the " +
-        "repository is already back at its pre-apply commit by the time this is called, per the " +
-        "CLI's own contract; this only records that it happened. RETURNS { status, " +
-        "release_attempt_id, released_subject_version_id, release_ref }. REFUSES not_applying — " +
-        "an unknown release_attempt_id, or one that is not currently applying (already " +
-        "released/refused/failed, or release_apply was never called for it) — a released call " +
-        "naming a released_subject_version_id whose plugin does not match the candidate's own " +
-        "base subject's plugin, a released call missing release_ref or " +
-        "released_subject_version_id, a failed call missing failure_tail, and a deployment with " +
-        "no platform database. A mutator: writes through the FR-59 idempotency ledger.",
+        "successfully, through the gate and the repository's own release procedure, or not — or " +
+        "packages/tools/src/release/rollback.ts has finished running the repository's own " +
+        "rollback procedure over a release_verify verdict of rolled_back: records the outcome " +
+        "the earlier call was left waiting for. On status: released, requires release_ref (the " +
+        "tag/ref the release procedure created) and released_subject_version_id (the new subject " +
+        "version the CLI resolved, typically by calling plugin_locate again after the real " +
+        "release), moves the release_attempt to released and the candidate to released. On " +
+        "status: failed, requires failure_tail (the failing command's own output tail) and moves " +
+        "the release_attempt to failed — the repository is already back at its pre-apply commit " +
+        "by the time this is called, per the CLI's own contract; this only records that it " +
+        "happened. On status: rolled_back, requires reason (why release_verify decided to roll " +
+        "back — its own evidence, already recorded on release_verify's own call) and moves an " +
+        "ALREADY-released attempt to rolled_back, and its candidate to rolled_back, so the prior " +
+        "subject is current again (FR-50). RETURNS { status, release_attempt_id, " +
+        "released_subject_version_id, release_ref }. REFUSES not_applying — an unknown " +
+        "release_attempt_id, or one that is not currently applying, for a released/failed call " +
+        "(already released/refused/failed, or release_apply was never called for it) — " +
+        "not_released for a rolled_back call against an attempt that never reached released — a " +
+        "released call naming a released_subject_version_id whose plugin does not match the " +
+        "candidate's own base subject's plugin, a released call missing release_ref or " +
+        "released_subject_version_id, a failed call missing failure_tail, a rolled_back call " +
+        "missing reason, and a deployment with no platform database. A mutator: writes through " +
+        "the FR-59 idempotency ledger.",
       inputSchema: {
         release_attempt_id: z.string(),
-        status: z.enum(["released", "failed"]),
+        status: z.enum(["released", "failed", "rolled_back"]),
         release_ref: z.string().optional(),
         released_subject_version_id: z.string().optional(),
         failure_tail: z.string().optional(),
+        reason: z.string().optional().describe("Required for status: rolled_back — why release_verify decided to roll back."),
         idempotency_key: z.string().min(1),
       },
     },
-    async ({ release_attempt_id, status, release_ref, released_subject_version_id, failure_tail, idempotency_key }) => {
+    async ({ release_attempt_id, status, release_ref, released_subject_version_id, failure_tail, reason, idempotency_key }) => {
       const p = db();
       if (!p) return noDb();
 
       const principal = parseCaller(requestHeaders()).email;
       const outcome: IdempotencyOutcome<RecordResult> = await withIdempotency(
         principal, "release_record", idempotency_key,
-        { release_attempt_id, status, release_ref, released_subject_version_id, failure_tail },
+        { release_attempt_id, status, release_ref, released_subject_version_id, failure_tail, reason },
         (client) => recordRelease(client, {
           release_attempt_id, status,
           release_ref: release_ref ?? null,
           released_subject_version_id: released_subject_version_id ?? null,
           failure_tail: failure_tail ?? null,
+          reason: reason ?? null,
         }),
       );
       const result = outcome.replayed
@@ -316,6 +326,60 @@ export function registerReleaseTools(server: McpServer): void {
       logActivity(await userRoot(), null, {
         user: principal, action: "release_record", release_attempt_id: result.release_attempt_id,
         status: result.status, replayed: outcome.replayed,
+      });
+      return json(result);
+    },
+  );
+
+  server.registerTool(
+    "release_verify",
+    {
+      description:
+        "WHEN an attempt release_record already moved to released is ready for its automatic, " +
+        "no-gate post-release check (FR-50, AC-50.1): replays the candidate's own proof-equivalent " +
+        "held cases (the SAME split: proof rows candidate_prove already sealed, reused here well " +
+        "after promotion, under a fresh verifier_token this call mints for the same candidate_id) " +
+        "against the released subject and its prior version, computes the paired per-case deltas " +
+        "of released against prior, and applies rollbackDecision. RETURNS { verdict: " +
+        "established|rolled_back|not_established|null, reason, evidence: { deltas_summary, " +
+        "guardrails } | null, rollback_plan: { plugin, declared_version, " +
+        "prior_subject_version_id, branch } | null, runs_required?, verifier_token?, " +
+        "token_already_issued?, status } — verdict stays null and runs_required names the " +
+        "still-missing (case, side) pairs while evidence is incomplete, exactly like " +
+        "candidate_validate; verifier_token carries the plaintext once, on the call that mints " +
+        "it, and null on every later call (token_already_issued: true instead). On rolled_back, " +
+        "this call records the verdict and rollback_plan but applies NOTHING itself and does not " +
+        "move release_attempt.status — packages/tools/src/release/rollback.ts (or a zz-tool " +
+        "release-rollback CLI) runs the repository's own rollback command (npm run rollback, " +
+        "stubbed in verification) against rollback_plan and reports back through release_record " +
+        "(status: rolled_back), which is what actually restores the prior subject and marks the " +
+        "candidate. REFUSES not_released — an unknown release_attempt_id, or one release_record " +
+        "never moved to released; an attempt with no released_subject_version_id recorded; a " +
+        "candidate whose case set was never bound at evaluation_start; a protocol with no " +
+        "bounded_semantic/generative_critic measure (every replay would score overall: null); " +
+        "and a deployment with no platform database. Below the protocol's own minimum held-case " +
+        "count, missing replay evidence that never arrives, or an interval that never resolves, " +
+        "all by the protocol's own liveness bound, answer not_established with a named reason " +
+        "(insufficient_proof_cases / replays_unavailable / verification_unresolved) — never a " +
+        "rollback and never an indefinite wait (FR-50's own \"no rollback without evidence\"). " +
+        "A mutator: writes through the FR-59 idempotency " +
+        "ledger once evidence resolves; a pending runs_required read makes no ledger write.",
+      inputSchema: {
+        release_attempt_id: z.string(),
+        idempotency_key: z.string().min(1),
+      },
+    },
+    async ({ release_attempt_id, idempotency_key }) => {
+      const p = db();
+      if (!p) return noDb();
+
+      const principal = parseCaller(requestHeaders()).email;
+      const result: VerifyOutcome | { error: string } = await verifyRelease(p, release_attempt_id, idempotency_key, principal);
+      if ("error" in result) return text(result.error);
+
+      logActivity(await userRoot(), null, {
+        user: principal, action: "release_verify", release_attempt_id,
+        verdict: result.verdict, status: result.status,
       });
       return json(result);
     },

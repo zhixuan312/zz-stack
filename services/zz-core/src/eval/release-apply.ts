@@ -361,30 +361,64 @@ export async function describeApplyOutcomeForReplay(pool: pg.Pool, attemptId: st
 
 interface RecordArgs {
   readonly release_attempt_id: string;
-  readonly status: "released" | "failed";
+  readonly status: "released" | "failed" | "rolled_back";
   readonly release_ref: string | null;
   readonly released_subject_version_id: string | null;
   readonly failure_tail: string | null;
+  readonly reason: string | null;
 }
 
 export interface RecordResult {
-  readonly status: "released" | "failed";
+  readonly status: "released" | "failed" | "rolled_back";
   readonly release_attempt_id: string;
   readonly released_subject_version_id: string | null;
   readonly release_ref: string | null;
 }
 
-/** Records the CLI's own outcome (`packages/tools/src/release/apply.ts`) once it has applied the
+/** Records the CLI's own outcome — `packages/tools/src/release/apply.ts` once it has applied the
  *  patch, run the gate and run the repository's release procedure, or failed at one of those
- *  steps. CAS-guarded the same way `planApply`'s own apply branch is: the final UPDATE's own
- *  `where status = 'applying'` is what actually decides whether this call's write lands, the SELECT
- *  above it exists only to produce a readable refusal rather than a bare "0 rows updated". */
+ *  steps (`released`/`failed`); `packages/tools/src/release/rollback.ts` (Task I-24, FR-50) once
+ *  it has run the repository's own rollback procedure over a `release_verify` verdict of
+ *  `rolled_back` (`rolled_back`). CAS-guarded the same way `planApply`'s own apply branch is —
+ *  the SELECT below exists only to produce a readable refusal rather than a bare "0 rows
+ *  updated"; the actual decision is each branch's own final UPDATE's `where status = '...'`,
+ *  different for each of the three (`applying` for released/failed, `released` for
+ *  rolled_back — a rollback is a SECOND event on an attempt this same function already recorded
+ *  released once, never a continuation of the original applying attempt). */
 export async function recordRelease(client: pg.PoolClient, args: RecordArgs): Promise<MutatorOutcome<RecordResult>> {
-  const attempt = (await client.query<{ id: string; candidate_id: string; base_subject_version_id: string; status: string }>(`
+  const attempt = (await client.query<{ id: string; candidate_id: string; base_subject_version_id: string; status: string; released_subject_version_id: string | null; release_ref: string | null }>(`
     select id::text as id, candidate_id::text as candidate_id,
-           base_subject_version_id::text as base_subject_version_id, status
+           base_subject_version_id::text as base_subject_version_id, status,
+           released_subject_version_id::text as released_subject_version_id, release_ref
       from zz.release_attempt where id = $1::uuid`, [args.release_attempt_id])).rows[0];
   if (!attempt) throw new Refusal(`ERROR: no release_attempt ${args.release_attempt_id}`);
+
+  if (args.status === "rolled_back") {
+    if (!args.reason) throw new Refusal("ERROR: status: rolled_back requires reason");
+    if (attempt.status !== "released") {
+      throw new Refusal(
+        `ERROR: not_released — release_attempt ${args.release_attempt_id} is ${attempt.status}, not ` +
+        "released; a rollback can only be recorded against an attempt that actually reached " +
+        "released — call release_verify first to confirm the verdict");
+    }
+    const applied = await client.query(`
+      update zz.release_attempt set status = 'rolled_back', rolled_back = true, reason = $2
+       where id = $1::uuid and status = 'released' returning id`,
+      [attempt.id, args.reason]);
+    if (!applied.rows.length) {
+      throw new Refusal(`ERROR: release_attempt ${attempt.id} left 'released' before this call reached it`);
+    }
+    // Migration 084 — candidate.status gains rolled_back for exactly this write, alongside its
+    // own release_attempt, never on its own.
+    await client.query("update zz.candidate set status = 'rolled_back' where id = $1::uuid", [attempt.candidate_id]);
+
+    const result: RecordResult = {
+      status: "rolled_back", release_attempt_id: attempt.id,
+      released_subject_version_id: attempt.released_subject_version_id, release_ref: attempt.release_ref,
+    };
+    return { result, result_table: "zz.release_attempt", result_id: attempt.id };
+  }
+
   if (attempt.status !== "applying") {
     throw new Refusal(
       `ERROR: not_applying — release_attempt ${args.release_attempt_id} is ${attempt.status}, not ` +

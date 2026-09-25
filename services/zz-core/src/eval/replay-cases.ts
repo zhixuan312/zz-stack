@@ -23,13 +23,17 @@ import type pg from "pg";
 import { z } from "zod";
 
 import {
-  buildMaterial, deriveCase, materialDigest, meetsOperational, resolveInitiatives,
-  resolveQualification, SOURCE_KIND_EVALUATOR, type DerivedCase, type SourceScope,
+  buildMaterial, classifyMaterial, deriveCase, materialDigest, meetsOperational, resolveInitiatives,
+  resolveQualification, SOURCE_KIND_EVALUATOR, type ClassifiedMaterial, type DerivedCase, type SourceScope,
 } from "./replay-derive.js";
+import { insertEvaluatorAnswer } from "../semantic.js";
+import { Refusal } from "../refusal.js";
 import { registerEvaluator } from "./evaluators.js";
 import { resolveProtocol } from "./qualify.js";
 import { assignSplits, minimumsMet, type SplitCase, type SplitPolicy } from "./split.js";
-import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import {
+  decideBeforeWork, withIdempotency, type IdempotencyOutcome, type MutatorOutcome,
+} from "./idempotency.js";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
 import { db } from "../platform-db.js";
@@ -218,9 +222,20 @@ export function registerReplayCaseTools(server: McpServer): void {
       const materials = resolved.initiatives.map((init) => buildMaterial(root, init));
       const snapshotDigest = materialDigest(materials, protocol_version_id, scoringPolicy, qualState);
 
-      const outcome: IdempotencyOutcome<BuildResult> = await withIdempotency(
-        principal, "replay_case_set_build", idempotency_key,
-        { subject_version_id, protocol_version_id, source_scope },
+      // Every model call happens here, before the transaction: a retry is ruled out first, and
+      // unchanged material (the existing case set's digest) needs no classification at all.
+      const args = { subject_version_id, protocol_version_id, source_scope };
+      const prior = await decideBeforeWork(principal, "replay_case_set_build", idempotency_key, args);
+      const unchanged = !prior.replayed && (await latestCaseSet(p, pluginId))?.digest === snapshotDigest;
+      const classified: ClassifiedMaterial[] = [];
+      if (!prior.replayed && !unchanged) {
+        for (const material of materials) {
+          classified.push(await classifyMaterial(material, evaluator.evaluator_version_id, qualified, principal));
+        }
+      }
+
+      const outcome: IdempotencyOutcome<BuildResult> = prior.replayed ? prior : await withIdempotency(
+        principal, "replay_case_set_build", idempotency_key, args,
         async (client): Promise<MutatorOutcome<BuildResult>> => {
           const existing = await latestCaseSet(client, pluginId);
           if (existing && existing.digest === snapshotDigest) {
@@ -243,9 +258,15 @@ export function registerReplayCaseTools(server: McpServer): void {
           if (!caseSetId) throw new Error("insert into zz.replay_case_set produced no row");
 
           const derived: DerivedCase[] = [];
-          for (const material of materials) {
-            derived.push(await deriveCase(
-              material, evaluator.evaluator_version_id, qualified, principal, scoringPolicy, protocol_version_id));
+          if (classified.length !== materials.length) {
+            // The material changed between the digest check above and this transaction — a
+            // concurrent build moved the case set. Refuse rather than ask a model in here.
+            throw new Refusal("ERROR: the plugin's case set changed while this build was classifying; call again with a new idempotency_key");
+          }
+          const record = async (asked: Parameters<typeof insertEvaluatorAnswer>[1]) =>
+            (await insertEvaluatorAnswer(client, asked)).assessment_id;
+          for (const c of classified) {
+            derived.push(await deriveCase(c, record, qualified, scoringPolicy, protocol_version_id));
           }
 
           const splitInput: SplitCase[] = derived.map((c) => ({

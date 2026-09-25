@@ -29,7 +29,8 @@ import { openRecord } from "../initiative-record.js";
 import { safeName } from "../paths.js";
 import { documentVersions } from "../versions.js";
 import { canonicalJson } from "./idempotency.js";
-import { askEvaluator, type EvaluatorDefinition } from "./evaluators.js";
+import type { EvaluatorDefinition } from "./evaluators.js";
+import { askEvaluatorQuestion, type AskedEvaluatorAnswer } from "../semantic.js";
 import {
   performQualification, resolveEvaluator as resolveEvaluatorStableKey, type ProtocolContext,
 } from "./qualify.js";
@@ -81,18 +82,22 @@ for (const w of ["actor", "user_oracle", "evaluation_oracle"]) {
  *  user_oracle" is enforced by never asking, not by discarding an answer after the fact. Qualified,
  *  a tie (or an unavailable/off-vocabulary answer) resolves to `agent_record` — "an agent_record
  *  verdict wins ties" — the conservative side, since an agent_record source never becomes
- *  actor/user_oracle material a simulated person could be asked to repeat. */
-async function classifySource(
+ *  actor/user_oracle material a simulated person could be asked to repeat.
+ *
+ *  Asks and does not record: the answer is written by `deriveCase`, inside the caller's
+ *  transaction, so a rolled-back build leaves no orphaned `zz.assessment` row behind. */
+async function askSourceKind(
   evaluatorVersionId: string, qualified: boolean, subjectText: string, contextText: string, principal: string,
-): Promise<{ kind: SourceKind; assessment_id: number | null }> {
-  if (!qualified) return { kind: "agent_record", assessment_id: null };
-  const answered = await askEvaluator(evaluatorVersionId, subjectText, contextText, principal);
-  const distribution = answered.distribution ?? {};
-  const entries = Object.entries(distribution);
-  if (!entries.length) return { kind: "agent_record", assessment_id: answered.assessment_id };
+): Promise<{ kind: SourceKind; asked: AskedEvaluatorAnswer | null }> {
+  if (!qualified) return { kind: "agent_record", asked: null };
+  const asked = await askEvaluatorQuestion({
+    evaluator_version_id: evaluatorVersionId, subject_text: subjectText, context: contextText, askedBy: principal,
+  });
+  const entries = Object.entries(asked.result.distribution ?? {});
+  if (!entries.length) return { kind: "agent_record", asked };
   const [top] = entries.sort((a, b) =>
     b[1] - a[1] || (a[0] === "agent_record" ? -1 : b[0] === "agent_record" ? 1 : 0));
-  return { kind: top[0] === "person_statement" ? "person_statement" : "agent_record", assessment_id: answered.assessment_id };
+  return { kind: top[0] === "person_statement" ? "person_statement" : "agent_record", asked };
 }
 
 // -------------------------------------------------------------------------------------------
@@ -326,9 +331,30 @@ export interface DerivedCase {
 const byTimestampThenPriority = (a: TimelineEntry, b: TimelineEntry): number =>
   a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : a.priority - b.priority;
 
+/** Rule 1 for one initiative: every source's kind, asked of the evaluator when qualified.
+ *  Every model call a build makes happens here, BEFORE the caller opens its transaction — each
+ *  ask can take ~100s, and a transaction held across them pins one of the pool's few
+ *  connections. Nothing is written; `deriveCase` records the answers inside the transaction. */
+export interface ClassifiedMaterial {
+  readonly material: InitiativeMaterial;
+  readonly sources: readonly { readonly kind: SourceKind; readonly asked: AskedEvaluatorAnswer | null }[];
+}
+
+export async function classifyMaterial(
+  material: InitiativeMaterial, evaluatorVersionId: string, qualified: boolean, principal: string,
+): Promise<ClassifiedMaterial> {
+  const sources: { kind: SourceKind; asked: AskedEvaluatorAnswer | null }[] = [];
+  for (const s of material.sources) {
+    sources.push(await askSourceKind(
+      evaluatorVersionId, qualified, `${s.title}\n\n${s.body}`,
+      `Material attached to closed initiative "${material.initiative}".`, principal));
+  }
+  return { material, sources };
+}
+
 /** One initiative's material, turned into one case (FR-60 rules 2-7). Classification (rule 1) is
- *  already decided by the caller — `qualified` — so this function is otherwise pure over its
- *  inputs but for the one `askEvaluator` call per source it makes when qualified.
+ *  already decided — `classifyMaterial` asked before the transaction — so the only I/O here is
+ *  `record`, which writes each answer through the caller's transaction and returns its id.
  *
  * `payload` carries provenance (`assessment_id`, the classification's own reason) that a rebuild
  * over UNCHANGED material can legitimately answer differently — a fresh model call is not
@@ -336,15 +362,14 @@ const byTimestampThenPriority = (a: TimelineEntry, b: TimelineEntry): number =>
  * built only from the material itself, so `assignSplits`'s ordering (keyed on `case_digest`) does
  * not drift with the evaluator's own call-to-call variance. */
 export async function deriveCase(
-  material: InitiativeMaterial, evaluatorVersionId: string, qualified: boolean, principal: string,
+  input: ClassifiedMaterial, record: (asked: AskedEvaluatorAnswer) => Promise<number>, qualified: boolean,
   scoringPolicy: unknown, protocolVersionId: string,
 ): Promise<DerivedCase> {
+  const { material } = input;
   const classified: (SourceRow & { kind: SourceKind; assessmentId: number | null })[] = [];
-  for (const s of material.sources) {
-    const { kind, assessment_id } = await classifySource(
-      evaluatorVersionId, qualified, `${s.title}\n\n${s.body}`,
-      `Material attached to closed initiative "${material.initiative}".`, principal);
-    classified.push({ ...s, kind, assessmentId: assessment_id });
+  for (const [i, s] of material.sources.entries()) {
+    const { kind, asked } = input.sources[i];
+    classified.push({ ...s, kind, assessmentId: asked ? await record(asked) : null });
   }
   const personSources = classified.filter((s) => s.kind === "person_statement")
     .sort((a, b) => a.addedAt.localeCompare(b.addedAt));

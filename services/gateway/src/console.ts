@@ -41,6 +41,7 @@ import { mountInitiatives } from "./console/initiatives.js";
 import { mountKnowledge } from "./console/knowledge.js";
 import { mountSkills } from "./console/skills.js";
 import { mountCatalog } from "./console/catalog.js";
+import { mountPluginEval } from "./console/plugin-eval.js";
 
 
 export function mountConsole(app: Express): void {
@@ -51,4 +52,5 @@ export function mountConsole(app: Express): void {
   mountKnowledge(app);
   mountSkills(app);
   mountCatalog(app);
+  mountPluginEval(app);
 }

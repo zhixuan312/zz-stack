@@ -33,6 +33,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.79.1] — 2026-09-26
+
+### Fixed
+- **A failure mode folded into a protocol is recognised when it is seen again.** `protocol_record`
+  overwrote an accepted candidate's `stable_key` with its taxonomy entry's key, and DISCOVER
+  matched only accepted or open rows, not ones merged into an entry. Every failure mode a
+  protocol had already folded in came back as new in the next window, and `protocol_read`
+  demanded another version for nothing new (the third re-run of all four evaluations saw every
+  candidate come back open). Keys already overwritten stay as they are; the next protocol version
+  that folds those failure modes in keeps theirs.
+
 ## [0.79.0] — 2026-09-26
 
 ### Added

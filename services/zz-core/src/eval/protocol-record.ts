@@ -203,19 +203,19 @@ async function lineageRefusal(
 }
 
 /** Applies the lineage `lineageRefusal` already validated: an accepted candidate's status moves
- *  to `accepted` and takes the taxonomy entry's `key` as its `stable_key`; every candidate it
- *  names in `mergedCandidateIds` moves to `merged`, pointed at the accepted one. Run inside the
+ *  to `accepted`; every candidate it names in `mergedCandidateIds` moves to `merged`, pointed at
+ *  the accepted one. Each keeps its own `stable_key` — the failure mode's identity across windows,
+ *  which the next DISCOVER matches on. Overwritten with the taxonomy entry's key, every accepted
+ *  failure mode came back as new in the next window and demanded another protocol version. Run inside the
  *  same transaction as the version/dimension/measure inserts below — lineage and the version it
  *  belongs to land together or not at all. */
 async function applyLineage(client: pg.PoolClient, body: EvaluationProtocol): Promise<void> {
   for (const entry of body.failureTaxonomy) {
     if (typeof entry === "string") continue;
     const t = entry as TaxonomyLineage;
-    const key = typeof t.key === "string" ? t.key : null;
     if (typeof t.candidateId === "string") {
       await client.query(
-        `update zz.eval_failure_mode_candidate set status = 'accepted', stable_key = coalesce($2, stable_key)
-          where id = $1::uuid`, [t.candidateId, key]);
+        "update zz.eval_failure_mode_candidate set status = 'accepted' where id = $1::uuid", [t.candidateId]);
     }
     if (Array.isArray(t.mergedCandidateIds) && typeof t.candidateId === "string") {
       const merged = t.mergedCandidateIds.filter((m): m is string => typeof m === "string");

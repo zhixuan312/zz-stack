@@ -355,3 +355,24 @@ check("a run is attributed to a version by time, not by a column nothing stamps"
   }
   return bad.length ? firstOf(bad) : null;
 });
+
+check("the run reconcile rewrites only the runs that changed", () => {
+  // `reconcileRuns` runs every five minutes over every run, and an unconditional `do update`
+  // rewrote each row on every pass whether or not anything moved — 805,942 updates on 723 rows
+  // in production, all of them dead tuples. Each upsert skips a row its update would leave as
+  // it is, compared against the values the update writes.
+  const rel = "services/gateway/src/runs.ts";
+  const f = join(root, rel);
+  if (!existsSync(f)) return `${rel} is gone -- this check reads nothing`;
+  const code = withoutComments(readFileSync(f, "utf8"));
+  const updates = [...code.matchAll(/do update\s+set([\s\S]*?)`\)/g)].map((m) => m[1]!);
+  if (updates.length !== 2) return `${rel} has ${updates.length} run upserts; this check expects the two reconcileRuns writes`;
+  const bad = updates.filter((u) => !/\n\s*where \$\{CHANGED\}$/.test(u));
+  if (bad.length) return `${rel}: ${bad.length} run upsert(s) rewrite the row on every pass — end the do update with \`where \${CHANGED}\``;
+  const changed = /const CHANGED = `([\s\S]*?)`;/.exec(code)?.[1] ?? "";
+  for (const col of ["calls", "refusals", "bytes_total", "started_at", "ended_at"]) {
+    if (!changed.includes(`zz.run.${col}`)) return `${rel}: CHANGED does not compare ${col}, so a change to it alone is never written`;
+  }
+  if (!/is distinct from/.test(changed)) return `${rel}: CHANGED must compare with is distinct from, or a null total never counts as a change`;
+  return null;
+});

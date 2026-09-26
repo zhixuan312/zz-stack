@@ -23,6 +23,17 @@ import { platformDb, platformDbReady } from "./db.js";
  *  piece of work that never happened. It is a limit of the grain, not something to paper over. */
 const PLACEABLE = "e.detail ? 'run' and e.initiative is not null and e.initiative <> ''";
 
+/** Whether an upsert's `do update` would change the stored run: the stored columns against the
+ *  values the update writes, which for started_at and ended_at are the least and greatest
+ *  expressions, not the recomputed bounds alone.
+ *
+ *  COUPLED: both `on conflict ... do update` clauses in `reconcileRuns` — each sets exactly
+ *  these five columns with exactly these expressions. */
+const CHANGED = `(zz.run.calls, zz.run.refusals, zz.run.bytes_total, zz.run.started_at, zz.run.ended_at)
+      is distinct from (excluded.calls, excluded.refusals, excluded.bytes_total,
+                        least(zz.run.started_at, excluded.started_at),
+                        greatest(coalesce(zz.run.ended_at, excluded.ended_at), excluded.ended_at))`;
+
 /** Which version of a skill was running when an event fired — answered by time.
  *
  * `e.step_version` is stamped only when a skill is served whole through skill_read
@@ -113,7 +124,8 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
   // Then the runs. The statistics are recomputed rather than added to: an event arriving late
   // for a run that already exists has to change that run's counts, and `do update` is what
   // makes running this every few minutes produce the same answer as running it once at the
-  // end. started_at is kept at the earliest seen; ended_at moves forward.
+  // end. started_at is kept at the earliest seen; ended_at moves forward. `CHANGED` skips a
+  // row the update would leave as it is, so a pass rewrites only the runs that moved.
   const r = await db.query(`
     insert into zz.run (initiative_id, skill_version_id, caller_session,
                         calls, refusals, bytes_total, started_at, ended_at)
@@ -133,7 +145,8 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
       set calls = excluded.calls, refusals = excluded.refusals,
           bytes_total = excluded.bytes_total,
           started_at = least(zz.run.started_at, excluded.started_at),
-          ended_at = greatest(coalesce(zz.run.ended_at, excluded.ended_at), excluded.ended_at)`);
+          ended_at = greatest(coalesce(zz.run.ended_at, excluded.ended_at), excluded.ended_at)
+      where ${CHANGED}`);
 
   // Runs that never opened an initiative. A skill can be loaded and used without one ever being
   // opened. Requiring an initiative leaves such a skill with stamped calls and zero runs —
@@ -153,7 +166,8 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
       set calls = excluded.calls, refusals = excluded.refusals,
           bytes_total = excluded.bytes_total,
           started_at = least(zz.run.started_at, excluded.started_at),
-          ended_at = greatest(coalesce(zz.run.ended_at, excluded.ended_at), excluded.ended_at)`);
+          ended_at = greatest(coalesce(zz.run.ended_at, excluded.ended_at), excluded.ended_at)
+      where ${CHANGED}`);
 
   // And the link back, which is what makes a run's trace readable. The evaluation track reads
   // a run's ordered events as the artifact it scores, so a run with no events on it shows a

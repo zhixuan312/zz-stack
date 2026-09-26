@@ -33,6 +33,46 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.78.0] — 2026-09-26
+
+### Added
+- **`definition.documents`** limits a document measure to the files it is about (a question about
+  an agreement is not asked of an exploration or a handover).
+- **`definition.wholeDocument`** asks a question of every part of a long document, cut at its
+  headings, and answers with the weakest part. Asked once, a 50-180KB spec was judged on its first
+  24,000 characters.
+- **`event:<id>` subject refs** judge one door call, for calls outside any run (an admin act on
+  /manage). `plugin_profile` lists a door's refused calls as `traces.refusal_refs`.
+- **`doc_deferral_rate`**, a fact: the gated documents whose wording sends the reader to a
+  conversation, a meeting or later ("as agreed", "per the call", "TBD"). It reads every team's
+  documents whole, where the text judge could read one team's, and could not tell a named decider
+  from a deferred decision.
+- **A not-applicable dimension may name no measure**; its reason is the statement.
+
+### Changed
+- **Breaking: qualification asks every known-answer text three times.** An anchor, fault or
+  control passes only when all three answers are its expected (an unclear answer is a miss), and
+  stability is the share of texts whose answers agree. One draw qualified the same evaluator on an
+  identical anchor under one protocol version and not the next; measures that passed on one draw
+  may now be unqualified, which is the point.
+- **Breaking: a door plugin's subject id changes with every platform release.** Its own server is
+  digested with the platform build it runs in; it was a constant, so a door that changed with
+  every release read as unchanged.
+- **A revised protocol owes its own bind and qualification.** `protocol_affirm` records the digest
+  its document quoted and replaces the initiative's DEFINE record; `initiative_status` owes the
+  bind again when protocol.md is revised to quote a newer version.
+- **zz-core `document_read`** answers a missing path with what to call next: `document_list` with
+  the initiative as prefix, or `initiative_status` when the initiative itself is missing.
+- **zz-core `document_revise`** suggests the whole `sources` list when a revision leaves an owed
+  source uncited, the call's own included. Suggesting only the missing one read as a replacement
+  and sent a caller round between two sources.
+- The zz-core reference protocol's `call_economy` asks about repeated reads only, and
+  `document_gate_readiness` reads spec, plan and review whole.
+
+### Fixed
+- **A list-valued call target is recorded.** Several long paths joined past the length cap and
+  the call carried no target; the entries that fit are kept and the rest counted.
+
 ## [0.77.6] — 2026-09-26
 
 ### Fixed

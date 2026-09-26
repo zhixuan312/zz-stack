@@ -98,8 +98,8 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
     target: "a lock regenerated from the converted tree comes back unchanged, byte for byte",
     assertion: "the committed plugins.lock.json is what regenerating it produces",
     subject: "plugins.lock.json",
-    find: "\"digest\": \"b1497e6d\"",
-    replace: "\"digest\": \"b1497e61\"",
+    find: "\"digest\": \"adfb87f1\"",
+    replace: "\"digest\": \"adfb87f2\"",
     planted: "zz-core's committed content digest no longer matches the content it is computed " +
       "from, so the lock describes a plugin that does not exist and every consumer keyed on " +
       "that digest is told it received something it did not",

@@ -387,8 +387,8 @@ export const COV_DEPLOY: readonly MutationSpec[] = [
     check: "scripts/gate/checks/config-env.ts",
     target: "every variable zz-tool forwards is read by a tool that exists",
     subject: "deploy/zz-tool",
-    find: "JUDGE_MODEL TEAM_DB_URL; do",
-    replace: "JUDGE_MODEL TEAM_DB_URL LIBRECHAT_MONGO_URL; do",
+    find: "LLM_API_KEY JUDGE_MODEL TEAM_DB_URL \\",
+    replace: "LLM_API_KEY JUDGE_MODEL TEAM_DB_URL LIBRECHAT_MONGO_URL \\",
     planted: "the passthrough list carries a variable belonging to a front end this platform " +
       "removed, so an operator reading the list cannot tell a live knob from a fossil — and " +
       "neither can the next person deciding whether it is safe to delete one",

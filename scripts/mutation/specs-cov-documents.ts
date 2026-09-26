@@ -243,8 +243,8 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
     target: "nothing tells an agent to write a field the platform owns",
     assertion: "a message that tells the agent to put something in the frontmatter",
     subject: "services/zz-core/src/tools/initiative-status.ts",
-    find: "             \"once the stakeholder agrees — nothing downstream may be written until that gate is recorded\",",
-    replace: "             \"once the stakeholder agrees — or record status: approved with approved_by and approved_at in the frontmatter\",",
+    find: "           \"once the stakeholder agrees — nothing downstream may be written until that gate is recorded\",",
+    replace: "           \"once the stakeholder agrees — or record status: approved with approved_by and approved_at in the frontmatter\",",
     planted: "the next move the platform computes every turn tells the agent to write the " +
       "approval into the frontmatter, which every write path refuses — so an agent following " +
       "the instruction it is told to trust is refused by the platform that gave it",

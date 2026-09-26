@@ -318,9 +318,9 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     check: "scripts/gate/checks/knowledge.ts",
     target: "no skill states the abolished learnings.md completion test as current",
     subject: "catalog/zz/zz-plugin-eval/skills/zz-plugin-explain/SKILL.md",
-    find: "❌ **Padding section 4.**",
+    find: "❌ **Recording a finding with no `owner_kind`.**",
     replace: "`initiative_status` returns `action: handover` until `learnings.md` exists.\n\n" +
-      "❌ **Padding section 4.**",
+      "❌ **Recording a finding with no `owner_kind`.**",
     planted: "the stage that closes an evaluation describes the deleted substring-scan " +
       "completion test as how completion works today, so a reader waits for a state the " +
       "platform stopped answering and a file nothing writes",
@@ -329,8 +329,8 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     check: "scripts/gate/checks/knowledge.ts",
     target: "the abandon-contradiction refusal is not disabled by the derived handover",
     subject: "services/zz-core/src/tools/initiative-close.ts",
-    find: "const gates = chain.documents.filter((d) => d.gate === true && d.name !== \"handover.md\");",
-    replace: "const gates = chain.documents.filter((d) => d.gate === true);",
+    find: ".filter((d) => d.gate === true && d.name !== \"handover.md\" && !ruledOut(d));",
+    replace: ".filter((d) => d.gate === true && !ruledOut(d));",
     planted: "the derived handover is counted among the gates a finished initiative must have " +
       "passed, and it cannot exist at close time — so the refusal that stops fully approved " +
       "work being recorded as abandoned can never fire for any flow that gates anything",

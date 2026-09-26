@@ -551,7 +551,10 @@ export function registerEvaluationTools(server: McpServer): void {
 
       const dimension_scores: DimensionScoreRow[] = dims.map((d) => {
         const outScore = scored.dimensions.find((s) => s.key === d.key);
-        const measuresRows = d.measures.map((m) => overallDetail.get(m.id)!);
+        // A dimension that does not apply was never assessed; its measures carry its reason, not
+        // an exclusion that reads as missing evidence.
+        const measuresRows = d.measures.map((m) => d.applicable ? overallDetail.get(m.id)!
+          : { ...overallDetail.get(m.id)!, excluded_reason: `not applicable: ${d.not_applicable_reason ?? "the protocol says so"}` });
         return {
           key: d.key, canonical_kind: d.canonical_kind, score: outScore?.score ?? null,
           coverage: outScore?.coverage ?? null, applicable: d.applicable,

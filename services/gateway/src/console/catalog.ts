@@ -14,7 +14,6 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { catalogEntries, isFlow, pluginName } from "@zz/catalog";
-import { band } from "@zz/contracts";
 import type { Express } from "express";
 
 import { PLATFORM_VERSION } from "../client-package.js";
@@ -140,51 +139,46 @@ export function mountCatalog(app: Express): void {
                        (select to_char(max(e.ts) at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') from zz.event e
                          where e.kind = 'tool_call' and e.step = s.name)                  as last_run
                   from zz.skill s`),
-      // What was released, and how many evaluations each released version has.
+      // What was released, and how many completed evaluation runs scored each released version.
+      // An evaluation's subject names the release it digested in `release_identity`.
       db.query(`select p.name as plugin, pv.version, pv.digest,
-                       (select count(*) from zz.eval ev where ev.plugin_version_id = pv.id) as evals
+                       (select count(*) from zz.eval_run er
+                          join zz.eval_subject_version sv on sv.id = er.subject_version_id
+                         where sv.release_identity->>'plugin_version_id' = pv.id::text
+                           and er.run_status = 'completed') as evals
                   from zz.plugin p
                   join zz.plugin_version pv on pv.plugin_id = p.id`),
-      // The latest round that reached a verdict, one per plugin. `headroom_state is not null` is
-      // the definition of evaluated: a historic round was minted first and got its verdict in a
-      // later call, so an abandoned round has marks but nothing to report, and showing the
-      // newest row regardless would put an empty score beside a perfectly good earlier one.
+      // The newest completed evaluation run, one per plugin. Only a completed run carries a
+      // score; a pending, running, failed or cancelled one would blank the column beside a good
+      // earlier result.
       //
       // Across versions, not within one: the answer is the last time anybody measured the
       // plugin, and pinning to the shelf version would blank the column on every release day.
       // The version that was measured travels with the figures.
       //
-      // DELIBERATE: the columns are named rather than starred. A `select *` over these tables
-      // would pull jsonb nobody asked for.
-      db.query(`select distinct on (pv.plugin_id)
-                       p.name as plugin, pv.version,
-                       e.effectiveness, e.headroom_points, e.headroom_named, e.headroom_state,
-                       e.initiative, e.team_slug,
-                       to_char(e.started_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as at
-                  from zz.eval e
-                  join zz.plugin_version pv on pv.id = e.plugin_version_id
-                  join zz.plugin p on p.id = pv.plugin_id
-                 where e.is_control is false and e.headroom_state is not null
-                 order by pv.plugin_id, e.started_at desc`),
+      // COUPLED: `/api/console/plugins/:plugin/eval` (plugin-eval.ts) reads the same run for the
+      // plugin's own page; both count a defect as open while its plugin-owned finding is deferred.
+      db.query(`select distinct on (sv.plugin_id)
+                       p.name as plugin, sv.declared_version as version,
+                       er.overall_score::text as overall_score, er.score_status, er.guardrail_status,
+                       (select count(*) from zz.eval_finding f
+                         where f.eval_run_id = er.id and f.kind = 'defect'
+                           and f.owner_kind = 'plugin' and f.decision = 'deferred') as open_defects,
+                       to_char(er.created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as at
+                  from zz.eval_run er
+                  join zz.eval_subject_version sv on sv.id = er.subject_version_id
+                  join zz.plugin p on p.id = sv.plugin_id
+                 where er.run_status = 'completed'
+                 order by sv.plugin_id, er.created_at desc`),
     ]);
 
-    /** The newest scored round per plugin, by name.
-     *
-     *  The initiative is nullable; a round without one reads as a date with no report. */
+    /** The newest completed evaluation per plugin, by name. */
     const verdict = new Map(evaluated.rows.map((r) => [r.plugin as string, {
       version: r.version as string,
-      effectiveness: r.effectiveness === null ? null : Number(r.effectiveness),
-      // COUPLED: the band is `band(score)` and the rule is in @zz/contracts, so the console and
-      // the report cannot print different words for one number. Named here, not read off a column.
-      band: band(r.effectiveness === null ? null : Number(r.effectiveness)),
-      headroomPoints: r.headroom_points === null ? null : Number(r.headroom_points),
-      headroomNamed: r.headroom_named === null ? null : Number(r.headroom_named),
-      headroomState: r.headroom_state as string,
-      // Both, or neither. zz.doc is keyed (team_slug, initiative): a slug with no team cannot
-      // be addressed, and a link built from half of a key is a 404 waiting for a reader.
-      initiative: r.initiative && r.team_slug
-        ? { team: r.team_slug as string, slug: r.initiative as string }
-        : null,
+      overallScore: r.overall_score === null ? null : Number(r.overall_score),
+      scoreStatus: r.score_status as string | null,
+      guardrailStatus: r.guardrail_status as string | null,
+      openDefects: Number(r.open_defects),
       at: r.at as string,
     }]));
 

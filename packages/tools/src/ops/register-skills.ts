@@ -228,24 +228,18 @@ function main(argv: string[]): number {
   // What the catalog does not carry — retired, not deleted.
   //
   // This registrar only inserts and updates, so a skill that was renamed or absorbed stays in
-  // zz.skill. It has to: a version is referenced by zz.run, and
-  // `doc.produced_by_run_id -> run.skill_version_id` is the chain that answers which version
-  // wrote a document. Deleting the row would attribute those documents to whichever skill
-  // happened to be current. They are reported so nobody mistakes one for a failed registration,
-  // and never offered for removal.
+  // zz.skill. It has to: its versions are referenced by zz.run and zz.plugin_version_skill, and
+  // deleting the row would lose which version those runs and plugin releases were. They are
+  // reported so nobody mistakes one for a failed registration, and never offered for removal.
   const names = found.map((f) => lit(f.name)).join(", ");
   // Recorded, so no other reader has to diff the catalog to know. One writer sets the fact;
   // everything else reads it.
   if (!args.flags.has("dry-run")) {
     psqlText(psql, `update zz.skill set retired = true where name not in (${names}) and not retired`);
   }
-  const stale = psqlRows<{ name: string; kind: string; owner: string | null;
-                           evals: number; runs: number }>(
+  const stale = psqlRows<{ name: string; kind: string; owner: string | null; runs: number }>(
     psql,
     `select s.name, s.kind, coalesce(s.flow, s.kind) as owner,
-            (select count(*) from zz.eval e
-               join zz.skill_version sv on sv.id = e.skill_version_id
-              where sv.skill_id = s.id) as evals,
             (select count(*) from zz.run r
                join zz.skill_version sv on sv.id = r.skill_version_id
               where sv.skill_id = s.id) as runs
@@ -255,15 +249,10 @@ function main(argv: string[]): number {
   if (stale.length) {
     console.log(`  ${stale.length} retired — in the registry, no longer in the catalog:\n`);
     for (const s of stale) {
-      // Runs, because that is what a retired row is for. Reporting evals alone reads as
-      // "nothing is holding this" for a row whose deletion the database would refuse.
-      const held = [
-        Number(s.runs) > 0 ? `${s.runs} run(s) attribute documents to it` : "",
-        Number(s.evals) > 0 ? `${s.evals} eval(s)` : "",
-      ].filter(Boolean).join(", ");
+      const held = Number(s.runs) > 0 ? `${s.runs} run(s) reference its versions` : "";
       console.log(`    ${s.kind.padEnd(12)} ${s.name.padEnd(20)} ${(s.owner ?? "").padEnd(10)}${held && `  — ${held}`}`);
     }
-    console.log("\n  Kept on purpose: they carry the provenance of documents already written.\n");
+    console.log("\n  Kept on purpose: runs and plugin releases reference their versions.\n");
   }
   return 0;
 }

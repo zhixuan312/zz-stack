@@ -381,7 +381,17 @@ export function mountMcpOauth(app: Express): void {
         res.status(400).json({ error: "invalid_grant", error_description: "the PKCE verifier does not match the challenge this code was issued against" });
         return;
       }
-      await platformDb().query("update zz.mcp_oauth_authz set used = true where id = $1", [code]);
+      // Consumed in one statement, so two exchanges of one code cannot both pass: the reads
+      // above decide which refusal a bad request gets, and this decides which request wins.
+      const consumed = await platformDb().query(
+        `update zz.mcp_oauth_authz set used = true
+          where id = $1 and used = false and created_at > now() - interval '10 minutes'`, [code]);
+      if (consumed.rowCount !== 1) {
+        const { rows: current } = await platformDb().query<{ used: boolean }>(
+          "select used from zz.mcp_oauth_authz where id = $1", [code]);
+        res.status(400).json({ error: "invalid_grant", error_description: current[0]?.used ? "that code has already been exchanged" : "unknown or expired code" });
+        return;
+      }
 
       // The token carries the person's own authority and states nothing about what its holder
       // may do: every authority check reads the principal on the call it is deciding.

@@ -6,7 +6,7 @@
  * membership row is right for somebody in one team, which is why review does not catch it.
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { between, codeOnly, contractsSource, firstOf, gatewaySource, root, sourceFiles, toolsIn, unbuilt, withoutComments, zzCoreSource } from "../read.ts";
@@ -340,4 +340,29 @@ check("nothing picks a team by taking the first membership row", () => {
     }
   }
   return bad.join("\n");
+});
+
+check("an OAuth code is exchanged once, even by two requests at the same instant", () => {
+  // Reading `used` and then setting it is two statements, and two exchanges of one code that
+  // interleave both read false: both mint a token, and the second's one-token-per-door delete
+  // removes the first's, so a client holds a token that stopped working the moment it arrived.
+  // The code is consumed by the update that tests it, and the exchange goes on only when that
+  // update changed the row.
+  const REL = "services/gateway/src/mcp-oauth.ts";
+  if (!existsSync(join(root, REL))) return `${REL} is gone, so the code exchange is unchecked`;
+  const code = withoutComments(readFileSync(join(root, REL), "utf8"));
+  const sets = [...code.matchAll(/update zz\.mcp_oauth_authz set used = true([^`"]*)/g)];
+  if (sets.length !== 1) return `${REL} marks a code used in ${sets.length} places; the exchange consumes it in exactly one`;
+  const where = sets[0]![1]!;
+  if (!/used = false/.test(where)) {
+    return `${REL} marks a code used without testing that it was unused (\`${where.trim()}\`) — two concurrent exchanges both succeed`;
+  }
+  if (!/created_at > now\(\) - interval '10 minutes'/.test(where)) {
+    return `${REL} consumes a code without testing it has not expired — a code that expired after it was read would still mint a token`;
+  }
+  const after = code.slice(sets[0]!.index!);
+  if (!/if \(consumed\.rowCount !== 1\)/.test(after.slice(0, 400))) {
+    return `${REL} consumes the code but does not refuse when the update changed no row — the losing exchange would still mint a token`;
+  }
+  return null;
 });

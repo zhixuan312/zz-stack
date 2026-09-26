@@ -14,7 +14,7 @@ import { registerAdminTools } from "./admin.js";
 import { caller } from "./credentials.js";
 import { platformDb, platformDbReady } from "./db.js";
 import { logEvent } from "./events.js";
-import { callerIdentity, isSuper } from "./identity.js";
+import { callerIdentity, isSuper, type Identity } from "./identity.js";
 import { myTeamsSummary } from "./settings.js";
 import { registerShelf, renderClientSetup } from "./admin/flows.js";
 
@@ -54,6 +54,13 @@ const ACCESS_INSTRUCTIONS =
   "NOT FOR: doing any work. Documents, the knowledge store, the skills library and today's " +
   "date are the /core door. This one changes who may do things, not what gets done.";
 
+/** Who the boot-time surface record builds this door as: a superadmin, so every tier is
+ *  registered. Never a request's identity — every handler resolves its own caller per call. */
+const SURFACE_RECORDER: Identity = {
+  email: "surface-record@platform", displayName: "surface record", platformRole: "superadmin",
+  teams: [], activeTeam: null, via: "forwarded",
+};
+
 /** /manage/mcp — the one door a person speaks to, built per request for the person speaking.
  *
  * Its tool list is cut by the caller's role. `registerAdminTools` reads it once and registers
@@ -85,10 +92,12 @@ export async function buildAccessServer(
       return (register as (...a: unknown[]) => unknown)(name, ...rest);
     }) as typeof register;
   }
-  const id = everything ? null : await callerIdentity();
+  // At boot there is no caller: the surface record builds as a superadmin, through the same
+  // tier predicates every request takes, so it sees exactly the tools a superadmin is offered.
+  const id = everything ? SURFACE_RECORDER : await callerIdentity();
   // Operator tools on this door take the same reading of "operator" the handlers do. See the
   // note over registerAdminTools: visibility must never be wider than executability.
-  const sup = !!everything || (!!id && isSuper(id));
+  const sup = !!id && isSuper(id);
 
   // The shelf. It lives with the registry code that answers it, and is mounted here because
   // this is the door a person has: /manage is a person's own access, and "what may I install"
@@ -228,7 +237,7 @@ export async function buildAccessServer(
 
   // People, teams, tokens, the registry and the projections — registered by role, guarded
   // per call. admin.ts owns both halves of that; this is the only place it is mounted.
-  registerAdminTools(server, id, !!everything);
+  registerAdminTools(server, id);
 
   return server;
 }

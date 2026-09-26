@@ -31,9 +31,8 @@ import { auditAdmin, callerIdentity as caller, isSuper, isTeamAdmin, type Identi
  * DELIBERATE: the filter is not the authorisation. `lead` means "administers some team"
  * while every act is about one named team, so each handler still resolves the caller and
  * refuses with its own reason. */
-export function registerAdminTools(server: McpServer, id: Identity | null, everything = false): void {
-  // `everything`: the boot-time surface record (access-surface.ts), never a served door.
-  const sup = everything || (!!id && isSuper(id));
+export function registerAdminTools(server: McpServer, id: Identity | null): void {
+  const sup = !!id && isSuper(id);
   const lead = sup || (!!id && id.teams.some((t) => isTeamAdmin(id, t.slug)));
 
   server.registerTool("whoami", {

@@ -28,8 +28,7 @@ import type pg from "pg";
 import { z } from "zod";
 
 import { entryOf, serversOf } from "./plugin-eval.js";
-import { retractedVersions } from "./release-retracted.js";
-import { newestVersion } from "./release-rules.js";
+import { currentVersionOf } from "../release-head.js";
 import { resolveSource } from "./subject-source.js";
 import { recordStage } from "./stage-record.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
@@ -49,33 +48,24 @@ async function resolveSubject(pool: pg.Pool, plugin: string, version: string | u
   components: PluginComponent[]; contentDigest: string;
   sourceLocator: Record<string, unknown>; releaseIdentity: Record<string, unknown>;
 } | null> {
-  // `$2::text is null` rather than two query strings: one text keeps the "latest release" and
-  // "this exact release" paths from drifting apart the way plugin-eval.ts's old copy of this
-  // query and this one already had, once, before this task merged them.
-  //
-  // The newest release leaves out every version a rollback retracted (`retractedVersions`, the
-  // same rule release_apply's baseline applies), so after a rollback the head IS the prior
-  // version again — the retracted row stays in zz.plugin_version, and naming its exact version
-  // still resolves it.
+  // The current release is `currentVersionOf`'s (../release-head.ts), the same reader
+  // release_apply's baseline uses: for a catalog plugin, the version the running deployment
+  // declares; for any other, the newest by semver with every version a rollback retracted left
+  // out. A retracted row stays in zz.plugin_version, and naming its exact version still resolves
+  // it.
   const pluginId = (await pool.query<{ id: string }>(
     "select id::text as id from zz.plugin where name = $1", [plugin])).rows[0]?.id;
-  const retracted = pluginId && !version ? await retractedVersions(pool, pluginId) : [];
-  const rows = (await pool.query<{
+  if (!pluginId) return null;
+  const target = version ?? await currentVersionOf(pool, pluginId);
+  if (target === null) return null;
+  const head = (await pool.query<{
     plugin_id: string; plugin_version_id: string; origin: string; declared_version: string; digest: string;
   }>(`
     select p.id::text as plugin_id, pv.id::text as plugin_version_id, p.origin,
            pv.version as declared_version, pv.digest
       from zz.plugin p join zz.plugin_version pv on pv.plugin_id = p.id
-     where p.name = $1 and ($2::text is null or pv.version = $2) and pv.version <> all($3::text[])
-     order by pv.version desc`,
-    [plugin, version ?? null, retracted])).rows;
-  // COUPLED: the head is the newest by `newestVersion` (release-rules.ts), the one semver
-  // precedence release_apply reduces the same table with. A SQL order is a second parse that
-  // drifts from it: text breaks a pre-release tie as rc.10 below rc.9, and a numeric[] core
-  // reads 1.0 below 1.0.0. A plugin's versions are few, so they are reduced here, not in SQL;
-  // the text order above only settles a precedence tie (`newestVersion` keeps the first).
-  const newest = newestVersion(rows.map((r) => r.declared_version));
-  const head = rows.find((r) => r.declared_version === newest);
+     where p.id = $1::uuid and pv.version = $2`,
+    [pluginId, target])).rows[0];
   if (!head) return null;
 
   // A third party has no release to recompute against — plugin_register captured its
@@ -229,7 +219,7 @@ export function registerSubjectTools(server: McpServer): void {
         "REFUSES a plugin this platform has never released.",
       inputSchema: {
         plugin: z.string(),
-        version: z.string().optional().describe("Omit for the newest released version."),
+        version: z.string().optional().describe("Omit for the currently released version."),
         idempotency_key: z.string().min(1),
         initiative: z.string().optional().describe(
           "The initiative this evaluation runs in: records subject_version_id as its IDENTIFY record, " +

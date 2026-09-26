@@ -96,6 +96,7 @@
 -- absorbs: 076_semantic_assessment.sql
 -- absorbs: 002_plugin_eval_next.sql
 -- absorbs: 002_remove_replay.sql
+-- absorbs: 002_a_finding_can_be_corrected.sql
 --
 -- requires-extension: citext
 -- requires-extension: pg_textsearch
@@ -829,6 +830,7 @@ CREATE TABLE zz.eval_finding (
     expected_effect jsonb,
     eval_run_id uuid,
     kind text,
+    superseded_by uuid,
     CONSTRAINT eval_finding_decision_check CHECK ((decision = ANY (ARRAY['applied'::text, 'rejected'::text, 'deferred'::text]))),
     CONSTRAINT eval_finding_kind_check CHECK ((kind = ANY (ARRAY['strength'::text, 'defect'::text, 'unknown'::text]))),
     CONSTRAINT eval_finding_owner_kind_check CHECK ((owner_kind = ANY (ARRAY['plugin'::text, 'dependency'::text, 'platform'::text, 'environment'::text, 'user_input'::text, 'unknown'::text]))),
@@ -857,6 +859,13 @@ COMMENT ON COLUMN zz.eval_finding.eval_run_id IS 'Set instead of eval_id for an 
 --
 
 COMMENT ON COLUMN zz.eval_finding.kind IS 'strength | defect | unknown — required when eval_run_id is set; null on every legacy round finding, which carries scope instead.';
+
+
+--
+-- Name: COLUMN eval_finding.superseded_by; Type: COMMENT; Schema: zz; Owner: -
+--
+
+COMMENT ON COLUMN zz.eval_finding.superseded_by IS 'The finding that corrected this one, when finding_record(supersedes) replaced it. Null for a current finding. A superseded finding is also decision=rejected, so it stays closed for every reader.';
 
 
 --
@@ -3307,6 +3316,14 @@ ALTER TABLE ONLY zz.eval_finding
 
 ALTER TABLE ONLY zz.eval_finding
     ADD CONSTRAINT eval_finding_resulted_in_skill_version_id_fkey FOREIGN KEY (resulted_in_skill_version_id) REFERENCES zz.skill_version(id) ON DELETE SET NULL;
+
+
+--
+-- Name: eval_finding eval_finding_superseded_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_finding
+    ADD CONSTRAINT eval_finding_superseded_by_fkey FOREIGN KEY (superseded_by) REFERENCES zz.eval_finding(id);
 
 
 --

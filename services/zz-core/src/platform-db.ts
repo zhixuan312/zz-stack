@@ -14,6 +14,7 @@ import { configureIndexing } from "@zz/indexing";
 import { requestHeaders } from "@zz/mcp-http";
 
 import { Refusal } from "./refusal.js";
+import { currentVersionOf } from "./release-head.js";
 
 const TEAM_DB_URL = (process.env.TEAM_DB_URL ?? "").trim();
 let pool: pg.Pool | undefined;
@@ -131,11 +132,11 @@ export async function teamsFor(email: string): Promise<{ active: string | null; 
 }
 /** The version behind a subject tag.
  *
- *  `plugin:<name>` and `flow:<name>` — the newest row in zz.plugin_version, which is what that
- *  plugin last released. A flow is a plugin, registered at release under `pluginName` of its
- *  directory (`flow:sdlc-flow` is the plugin `sdlc`), so the two tags resolve the same way. Ordered
- *  by the version itself, semver-wise, because zz.plugin_version carries no timestamp and a
- *  lexicographic sort puts 0.9.0 above 0.43.0.
+ *  `plugin:<name>` and `flow:<name>` — the plugin's current version, read by `currentVersionOf`
+ *  (release-head.ts), the same reader plugin_locate's head uses: a catalog plugin's is the
+ *  version the running deployment declares, never a higher legacy row. A flow is a plugin,
+ *  registered at release under `pluginName` of its directory (`flow:sdlc-flow` is the plugin
+ *  `sdlc`), so the two tags resolve the same way.
  *
  *  `provider:` and `interface:` — no backing table for either, so their "unresolved" is permanent
  *  rather than a lookup that is merely failing today.
@@ -144,22 +145,23 @@ export async function teamsFor(email: string): Promise<{ active: string | null; 
  *  Never null once a subject tag is present: an infra hiccup at write time must not be
  *  indistinguishable from "no subject involved", or it produces a claim that can never be
  *  retired. */
-export async function subjectVersionFor(tags: string[] | undefined): Promise<string | null> {
+export async function subjectVersionFor(
+  tags: string[] | undefined, p: Pick<pg.Pool, "query"> | null = db(),
+): Promise<string | null> {
   const all = tags ?? [];
   const pluginTag = all.find((t) => t.startsWith("plugin:") || t.startsWith("flow:"));
   const otherTag = all.find((t) => t.startsWith("provider:") || t.startsWith("interface:"));
   if (pluginTag) {
     try {
-      const p = db();
       // `unresolved`, not null: a tag is present, so the subject exists and only the lookup
-      // failed. Empty is this function's word for "no subject involved".
+      // failed. Empty is this function's word for "no subject involved". A catalog version with
+      // no row refuses inside currentVersionOf, and lands here as `unresolved` too.
       if (!p) return "unresolved";
-      const r = await p.query<{ version: string }>(
-        `select pv.version from zz.plugin_version pv join zz.plugin p on p.id = pv.plugin_id
-          where p.name = $1
-          order by string_to_array(regexp_replace(pv.version, '[^0-9.].*$', ''), '.')::int[] desc
-          limit 1`, [pluginName(pluginTag.slice(pluginTag.indexOf(":") + 1))]);
-      return r.rows[0]?.version ?? "unresolved";
+      const id = (await p.query<{ id: string }>(
+        "select id::text as id from zz.plugin where name = $1",
+        [pluginName(pluginTag.slice(pluginTag.indexOf(":") + 1))])).rows[0]?.id;
+      if (!id) return "unresolved";
+      return (await currentVersionOf(p, id)) ?? "unresolved";
     } catch {
       return "unresolved";
     }

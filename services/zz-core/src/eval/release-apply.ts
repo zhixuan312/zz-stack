@@ -14,9 +14,9 @@
  * head of `zz.plugin_version` ALONE — every release registers there, this eval system's own
  * (`release_record` records `released` only for a version `plugin_locate` found registered) and
  * an ordinary platform release outside it (`register-plugins`, from `plugins.lock.json`) alike —
- * the newest by semver (`newestVersion`, `release-rules.ts`, never a text sort or a SQL order),
- * leaving out every version a rollback retracted (`retractedVersions`, the same rule
- * `plugin_locate`'s head applies). DELIBERATE: never joined to `zz.eval_subject_version` to find
+ * read by `currentVersionOf` (`../release-head.ts`), the reader `plugin_locate`'s head calls too: a
+ * catalog plugin's version as the running deployment declares it, any other plugin's newest by
+ * semver with retracted versions left out. DELIBERATE: never joined to `zz.eval_subject_version` to find
  * the head — a version registered at deploy that `plugin_locate` never captured was invisible to
  * that join, so a candidate based on 1.1.0 read 1.1.0 as current and shipped over 1.2.0. The
  * capture is looked up only AFTER the head is settled: a head newer than the base is
@@ -51,8 +51,8 @@ import { documentBody, parseEnvelope } from "@zz/contracts";
 import type pg from "pg";
 
 import type { MutatorOutcome } from "./idempotency.js";
-import { retractedVersions } from "./release-retracted.js";
-import { applyingRefusal, approvedOwners, compareSemver, newestVersion, releaseDecision, STALE_APPLYING_MS } from "./release-rules.js";
+import { compareSemver, currentVersionOf } from "../release-head.js";
+import { applyingRefusal, approvedOwners, releaseDecision, STALE_APPLYING_MS } from "./release-rules.js";
 import { safeName, safePath } from "../paths.js";
 import { Refusal } from "../refusal.js";
 import { citedReleaseAttempt, memberTeams } from "../release-owners.js";
@@ -112,17 +112,13 @@ interface ReleasedHead {
   readonly subject_id: string | null;
 }
 
-/** See the module note: the head of `zz.plugin_version` alone, by semver, retracted versions left
- *  out, and only then its capture. Null when the plugin has no registered version at all. Also
+/** See the module note: the head of `zz.plugin_version` alone, by `currentVersionOf`, and only
+ *  then its capture. Null when the plugin has no registered version at all. Also
  *  what `release_record(rolled_back)` asks, inside its own transaction, to confirm the prior
  *  version is current once the rolled-back one is retracted. Sequential queries: `runner` may be
  *  one PoolClient, which runs one query at a time. */
 export async function currentReleasedHead(runner: Queryable, pluginId: string): Promise<ReleasedHead | null> {
-  const retracted = await retractedVersions(runner, pluginId);
-  const versions = (await runner.query<{ version: string }>(`
-    select pv.version from zz.plugin_version pv
-     where pv.plugin_id = $1::uuid and pv.version <> all($2::text[])`, [pluginId, retracted])).rows;
-  const version = newestVersion(versions.map((r) => r.version));
+  const version = await currentVersionOf(runner, pluginId);
   if (version === null) return null;
   const captured = (await runner.query<{ id: string }>(`
     select id::text as id from zz.eval_subject_version

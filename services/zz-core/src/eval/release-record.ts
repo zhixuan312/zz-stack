@@ -12,7 +12,7 @@
  *     release that registered nothing, not the release;
  *   - `rolled_back` needs `release_verify` to have decided `rolled_back` first — a rollback with
  *     no recorded verdict behind it is a rollback nobody established — and, once its version is
- *     retracted (`release-retracted.ts`), the prior version must be the current one.
+ *     retracted (`retractedVersions`, `../release-head.ts`), the prior version must be the current one.
  *     Retraction is what makes the prior version current again for every reader; no
  *     `zz.plugin_version` row is deleted.
  *
@@ -24,7 +24,7 @@ import type pg from "pg";
 
 import type { MutatorOutcome } from "./idempotency.js";
 import { currentReleasedHead } from "./release-apply.js";
-import { compareSemver } from "./release-rules.js";
+import { compareSemver } from "../release-head.js";
 import { Refusal } from "../refusal.js";
 import { ownerMember } from "../release-owners.js";
 
@@ -113,7 +113,7 @@ export async function recordRelease(
       throw new Refusal(`ERROR: release_attempt ${attempt.id} left 'released' before this call reached it`);
     }
     // The prior version must be current once this release is retracted — asked with the SAME
-    // head release_apply's baseline uses (retractedVersions, then semver over zz.plugin_version),
+    // head release_apply's baseline uses (`currentVersionOf`, ../release-head.ts),
     // inside this transaction, so the retraction and its confirmation commit together or not at
     // all. A newer release that is not retracted still stands over the prior one; recording
     // rolled_back then would claim a restore that did not happen. Compared by VERSION, not by

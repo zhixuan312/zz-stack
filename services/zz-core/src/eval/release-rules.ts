@@ -21,9 +21,10 @@
  * been approved yet, so `approval_required` would fire on every legitimate call. Its own gate is
  * the first branch of this same order alone — `no_release_owners` — plus a `not_eligible` refusal
  * for a candidate that is not `valid` (built and gated). `release_apply`
- * (`release-apply.ts`) evaluates the whole order, and builds three of its five inputs with the
- * helpers below: `approvedOwners` (who approved, by membership), `newestVersion` (which version
- * is currently released) and `applyingRefusal` (whether another attempt already holds the plugin).
+ * (`release-apply.ts`) evaluates the whole order, and builds three of its five inputs with
+ * `approvedOwners` below (who approved, by membership), `currentVersionOf` (`../release-head.ts`,
+ * which version is currently released) and `applyingRefusal` below (whether another attempt
+ * already holds the plugin).
  *
  * `verifyDecision` is `release_verify`'s whole decision (FR-50, 002): a released improvement is
  * judged on real use, never on replays. Until the released subject has the protocol's
@@ -68,46 +69,6 @@ export function releaseDecision(input: ReleaseDecisionInput): ReleaseDecisionRes
 
 // -------------------------------------------------------------------------------------------
 // release_apply's decision inputs.
-
-/** Semver precedence (semver.org section 11): numeric core first, then a pre-release below its
- *  own release, then the pre-release identifiers one by one — numeric ones numerically, numeric
- *  below alphanumeric, alphanumeric as ASCII text, and a shorter run of equal identifiers below a
- *  longer one. Build metadata (`+...`) is ignored. Never a text sort: text puts 0.9.0 above
- *  0.43.0, and rc.10 below rc.9. A version with no leading numeric core — `v1.0.0` included —
- *  sorts below every version that has one. Both "what is released now" readers — release_apply's
- *  head and plugin_locate's (subject.ts) — reduce zz.plugin_version through `newestVersion`
- *  below rather than trusting any SQL order. */
-export function compareSemver(a: string, b: string): number {
-  const parse = (v: string): { core: number[] | null; pre: string[] } => {
-    const m = /^(\d+(?:\.\d+)*)(?:-([0-9A-Za-z.-]+))?/.exec(v.trim());
-    return m ? { core: m[1].split(".").map(Number), pre: m[2] ? m[2].split(".") : [] } : { core: null, pre: [] };
-  };
-  const x = parse(a), y = parse(b);
-  if (!x.core || !y.core) return (x.core ? 1 : 0) - (y.core ? 1 : 0);
-  for (let i = 0; i < Math.max(x.core.length, y.core.length); i += 1) {
-    const d = (x.core[i] ?? 0) - (y.core[i] ?? 0);
-    if (d) return Math.sign(d);
-  }
-  if (!x.pre.length || !y.pre.length) return (x.pre.length ? -1 : 0) + (y.pre.length ? 1 : 0);
-  for (let i = 0; i < Math.max(x.pre.length, y.pre.length); i += 1) {
-    const p = x.pre[i], q = y.pre[i];
-    if (p === undefined) return -1;
-    if (q === undefined) return 1;
-    if (p === q) continue;
-    const pn = /^\d+$/.test(p), qn = /^\d+$/.test(q);
-    if (pn && qn) return Math.sign(Number(p) - Number(q));
-    if (pn !== qn) return pn ? -1 : 1;
-    return p < q ? -1 : 1;
-  }
-  return 0;
-}
-
-/** The newest version by `compareSemver`, or null for none. First wins a tie. */
-export function newestVersion(versions: readonly string[]): string | null {
-  let best: string | null = null;
-  for (const v of versions) if (best === null || compareSemver(v, best) > 0) best = v;
-  return best;
-}
 
 interface ApprovalFacts {
   readonly status: string | undefined;

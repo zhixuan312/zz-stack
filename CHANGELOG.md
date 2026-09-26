@@ -33,6 +33,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [Unreleased]
+
+### Fixed
+- **plugin_locate and release_apply read a catalog plugin's current version from the running
+  deployment.** A catalog plugin is at the version the running catalog declares, never the semver
+  max of every `zz.plugin_version` row, so zz-access resolves to the deployed release instead of
+  2.3.0 from an earlier numbering. If that version has no row, both refuse by name ("not registered
+  — the release's register-plugins step did not run"). Third-party plugins keep newest-by-semver
+  with retracted versions left out.
+- **Knowledge stamps a plugin's current version.** A node tagged `plugin:<name>` or `flow:<name>`
+  records `verified_against` from the same reader plugin_locate uses.
+- **plugin_profile reports zz-core's real version.** `runtime_identity.service_versions."zz-core"`
+  was always "0.0.0"; it now carries the running platform version.
+
+### Upgrade notes
+- **Migration:** `002_a_finding_can_be_corrected.sql` is absorbed into `001_init.sql`; the
+  migrations directory holds only `001_init.sql`. A deployment that ran it keeps its ledger row and
+  applies nothing.
+
 ## [0.76.3] — 2026-09-26
 
 ### Changed

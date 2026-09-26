@@ -28,6 +28,9 @@ assert.match(src, /supersedes: z\.string\(\)\.optional\(\)/, "finding_record tak
 assert.match(src, /set superseded_by = \$2::uuid, decision = 'rejected'[\s\S]*?where id = \$1::uuid and decision = 'deferred' and superseded_by is null/,
   "the old finding is closed as rejected-and-superseded, only if still open");
 assert.match(src, /old\.eval_run_id !== eval_run_id/, "a correction stays in its own eval_run");
-const migration = readFileSync("services/gateway/migrations/002_a_finding_can_be_corrected.sql", "utf8");
-assert.match(migration, /ADD COLUMN superseded_by uuid REFERENCES zz\.eval_finding\(id\)/);
+// The column: 001_init.sql is a pg_dump of the schema, so it spells the column and its foreign key apart.
+const schema = readFileSync("services/gateway/migrations/001_init.sql", "utf8");
+assert.match(schema, /CREATE TABLE zz\.eval_finding \([^;]*\n    superseded_by uuid,?\n/, "eval_finding has superseded_by");
+assert.match(schema, /ALTER TABLE ONLY zz\.eval_finding\n    ADD CONSTRAINT eval_finding_superseded_by_fkey FOREIGN KEY \(superseded_by\) REFERENCES zz\.eval_finding\(id\);/,
+  "superseded_by points at another finding");
 console.log("ok eval-finding-supersede");

@@ -26,7 +26,7 @@ import { createHash } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { pluginForDoor } from "@zz/catalog";
 import { parseCaller } from "@zz/contracts";
-import { requestHeaders, serviceVersion, text } from "@zz/mcp-http";
+import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
@@ -43,6 +43,7 @@ import { withIdempotency, canonicalJson, type IdempotencyOutcome, type MutatorOu
 import { recordStage } from "./stage-record.js";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
+import { PLATFORM_VERSION } from "../platform-version.js";
 import { Refusal } from "../refusal.js";
 import { db } from "../platform-db.js";
 
@@ -196,7 +197,7 @@ async function computeObservation(
     traces, facts,
     coverageSurface: { ...called, source: surface.source },
     runtimeIdentity: {
-      service_versions: { "zz-core": serviceVersion(import.meta.url) },
+      service_versions: { "zz-core": PLATFORM_VERSION },
       models: models.rows.map((r) => r.model),
     },
   };

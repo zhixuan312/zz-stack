@@ -5,8 +5,10 @@
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
-const { compareSemver, newestVersion, approvedOwners, applyingRefusal, STALE_APPLYING_MS } =
+const { approvedOwners, applyingRefusal, STALE_APPLYING_MS } =
   await import(pathToFileURL(join(process.cwd(), "services/zz-core/dist/eval/release-rules.js")).href);
+const { compareSemver, newestVersion, retractedVersions } =
+  await import(pathToFileURL(join(process.cwd(), "services/zz-core/dist/release-head.js")).href);
 
 // Semver, not text: text puts 0.9.0 above 0.43.0.
 assert.equal(compareSemver("0.43.0", "0.9.0"), 1);
@@ -63,19 +65,15 @@ assert.equal(citedReleaseAttempt(cite("-".repeat(36))), null, "a 36-character no
 assert.equal(citedReleaseAttempt(cite("0b7a3c1e-1111-4222-8333-94445555666g")), null, "not hex");
 assert.equal(citedReleaseAttempt(cite(a1.toUpperCase())), a1, "case-insensitive, lowercased");
 // A rollback makes the prior version current again without deleting the retracted
-// zz.plugin_version row: retractedVersions is the one rule, and BOTH "what is released now"
-// readers filter by it — plugin_locate's head (subject.ts) and release_apply's baseline.
+// zz.plugin_version row: retractedVersions is the one rule, read by currentVersionOf
+// (release-head.ts), which BOTH "what is released now" readers call — plugin_locate's head
+// (subject.ts) and release_apply's baseline. checks/eval-release-head.ts pins what it answers.
 import { readFileSync } from "node:fs";
-const { retractedVersions } =
-  await import(pathToFileURL(join(process.cwd(), "services/zz-core/dist/eval/release-retracted.js")).href);
 let seen = "";
 const stub = { async query(text: string) { seen = text; return { rows: [{ declared_version: "0.44.0" }] }; } };
 assert.deepEqual(await retractedVersions(stub, "11111111-1111-4111-8111-111111111111"), ["0.44.0"]);
 assert.match(seen, /status = 'rolled_back'/, "only a rolled_back attempt retracts its version");
-for (const f of ["services/zz-core/src/eval/subject.ts", "services/zz-core/src/eval/release-apply.ts"]) {
-  const src = readFileSync(f, "utf8");
-  assert.match(src, /await retractedVersions\(/, `${f} does not read the retracted versions`);
-  assert.match(src, /pv\.version <> all\(\$\d::text\[\]\)/, `${f} does not leave retracted versions out of its head`);
-}
+assert.match(readFileSync("services/zz-core/src/release-head.ts", "utf8"), /await retractedVersions\(/,
+  "currentVersionOf does not read the retracted versions");
 console.log("ok eval-release-apply-pure");
 process.exit(0);

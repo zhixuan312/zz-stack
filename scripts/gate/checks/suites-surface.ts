@@ -154,8 +154,11 @@ check("the unified-diff parser counts added/removed lines and whole-file adds/de
 check("releaseDecision applies only when every required owner approved the exact approved digest against the exact base subject, refusing no_release_owners, not_eligible, approval_required, digest_mismatch and stale_baseline in that order, and rollbackDecision is true on a guardrail failure or an established regression alone",
       runsCheck("eval-release-rules.ts"));
 
-check("release_apply's inputs: the current version is the newest by semver with pre-release precedence identifier by identifier, an approval speaks only for owner teams its signer is a member of and only for the attempt and digest it cites, any applying attempt of the plugin refuses, named as stale past the bound, and a rolled-back version is retracted from both plugin_locate's head and release_apply's baseline by one shared rule",
+check("release_apply's inputs: semver precedence identifier by identifier, an approval speaks only for owner teams its signer is a member of and only for the attempt and digest it cites, any applying attempt of the plugin refuses, named as stale past the bound, and a rolled-back version is retracted by the one shared reader both plugin_locate's head and release_apply's baseline call",
       runsCheck("eval-release-apply-pure.ts"));
+
+check("a catalog plugin's current version is the one the running deployment declares, never a higher legacy row, and an unregistered declared version is refused by name; any other plugin's is the newest by semver with retracted versions left out; plugin_locate's head, release_apply's baseline and knowledge's subject stamp all read it through currentVersionOf, and zz-core's runtime identity reports the real platform version, never serviceVersion's \"0.0.0\" fallback",
+      runsCheck("eval-release-head.ts"));
 
 check("release_verify judges a release on real use: it waits for the protocol's minimum of real runs and an evaluation of them, rolls back on a failed critical guardrail before reading the score or on a score beyond the regression band below the base, and never rolls back with no base score",
       runsCheck("eval-release-verify-reduction.ts"));

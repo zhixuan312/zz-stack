@@ -70,7 +70,8 @@ function applyClient(sc: Scenario) {
     [/where plugin_id = \$1::uuid and status = 'applying'/, () => sc.applying ?? []],
     [/status = 'prepared' and \(\$2::uuid is null/, (v) => prepared.filter((a) => v[1] === null || a.id === v[1])],
     [/status = 'rolled_back'/, () => (sc.retracted ?? []).map((declared_version) => ({ declared_version }))],
-    [/from zz\.plugin_version pv/, (v) => (sc.versions ?? ["1.1.0"]).filter((x) => !(v[1] as string[]).includes(x)).map((version) => ({ version }))],
+    [/select name from zz\.plugin where id/, () => [{ name: "demo" }]],
+    [/from zz\.plugin_version pv/, () => (sc.versions ?? ["1.1.0"]).map((version) => ({ version }))],
     [/from zz\.eval_subject_version\s+where plugin_id/, (v) => {
       const id = (sc.captured ?? { "1.1.0": BASE })[String(v[1])];
       return id ? [{ id }] : [];
@@ -183,7 +184,8 @@ function recordClient(attempt: Record<string, unknown> | null, o: { versions?: s
     [/update zz\.release_attempt/, (v) => (o.cas === false ? [] : [{ id: v[0] }])],
     [/update zz\.candidate/, () => []],
     [/status = 'rolled_back'/, () => [{ declared_version: "1.2.0" }]],
-    [/from zz\.plugin_version pv/, (v) => (o.versions ?? ["1.1.0", "1.2.0"]).filter((x) => !(v[1] as string[]).includes(x)).map((version) => ({ version }))],
+    [/select name from zz\.plugin where id/, () => [{ name: "demo" }]],
+    [/from zz\.plugin_version pv/, () => (o.versions ?? ["1.1.0", "1.2.0"]).map((version) => ({ version }))],
     [/from zz\.eval_subject_version\s+where plugin_id/, () => [{ id: BASE }]],
     [/select plugin_id::text as plugin_id, declared_version/, (v) => (subjects[String(v[0])] ? [subjects[String(v[0])]] : [])],
   ]);

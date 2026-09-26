@@ -33,6 +33,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.77.3] — 2026-09-26
+
+### Fixed
+- **zz-access has a recorded tool surface.** /manage is served by the gateway, and only zz-core
+  recorded its doors' surfaces, so zz-access had no `zz.plugin_tool` row at any version. An
+  evaluation then counted every tool its skills mention — /core's `bug_list` and
+  `initiative_status` among them — as its surface and as never called. The gateway now records
+  /manage's 17 tools at boot, and the release restarts cred-proxy beside zz-core once the version
+  is registered.
+- **A version released before its door recorded a surface is read against the nearest one**
+  (the first recorded version at or after it, else the newest), and plugin_profile says which.
+
 ## [0.77.2] — 2026-09-26
 
 ### Fixed

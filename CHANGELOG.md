@@ -33,6 +33,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.77.5] — 2026-09-26
+
+### Changed
+- **A score below the protocol's evidence floor is `not_established`, not `provisional`.**
+  Provisional used to need only half the protocol's measure weight scored; zz-access, on 10 calls
+  and no run, read "provisional 8.0". It now also needs the protocol's own `minCoverage`. The
+  number is still reported, with `establishment_blocked_by` naming the floor it missed.
+
 ## [0.77.4] — 2026-09-26
 
 ### Changed

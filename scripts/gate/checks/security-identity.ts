@@ -366,3 +366,27 @@ check("an OAuth code is exchanged once, even by two requests at the same instant
   }
   return null;
 });
+
+check("deactivating a person ends every way back in, in the same transaction as the status", () => {
+  // `resolvePat`, `resolveSession` and `spendEnrolment` each refuse a principal that is not
+  // active, which holds only while the person stays deactivated: `addPerson` is an upsert that
+  // sets `status='active'`. So re-adding somebody who had left revives every token, console
+  // session and unused enrolment link that deactivation merely hid. Each is ended for good, and
+  // inside the transaction that changes the status, so no failure leaves a half-retired person.
+  const REL = "services/gateway/src/admin/people.ts";
+  if (!existsSync(join(root, REL))) return `${REL} is gone, so deactivation is unchecked`;
+  const found = between(withoutComments(readFileSync(join(root, REL), "utf8")),
+    "export async function deactivatePerson(", "\nexport ");
+  if (!found.text) return `deactivatePerson cannot be read in ${REL}: ${found.why}`;
+  const body = found.text;
+  const begin = body.indexOf('query("begin")');
+  const commit = body.indexOf('query("commit")');
+  if (begin < 0 || commit < begin) return "deactivatePerson does not run in one explicit transaction";
+  const inside = body.slice(begin, commit);
+  const bad: string[] = [];
+  if (!/update principal set status='deactivated'/.test(inside)) bad.push("the status change is outside the transaction");
+  if (!/update pat set revoked_at = now\(\) where revoked_at is null/.test(inside)) bad.push("live tokens are not revoked in it");
+  if (!/update console_session set revoked_at = now\(\) where revoked_at is null/.test(inside)) bad.push("live console sessions are not revoked in it");
+  if (!/update passkey_enrolment set used_at = now\(\) where used_at is null/.test(inside)) bad.push("unused enrolment links are not spent in it");
+  return bad.length ? `deactivatePerson: ${bad.join("; ")} — re-adding the person would bring it back` : null;
+});

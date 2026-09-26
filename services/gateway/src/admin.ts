@@ -98,7 +98,8 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   if (sup) server.registerTool("person_deactivate", {
     description:
       "WHEN somebody leaves, or their access must stop. RETURNS confirmation that they can " +
-      "no longer authenticate, with their live tokens revoked. " +
+      "no longer authenticate, with their live tokens and console sessions revoked and their " +
+      "unused enrolment links spent. " +
       "REFUSES anyone but a superadmin, and refuses unless confirm repeats the same email.",
     inputSchema: { email: z.string().email(), confirm: z.string() },
   }, async ({ email, confirm }) => {

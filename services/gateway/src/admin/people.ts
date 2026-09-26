@@ -59,19 +59,39 @@ export async function deactivatePerson(
 ): Promise<PlatformWriteOutcome> {
   if (!superOnly(id)) return { ok: false, status: 403, error: "superadmin required" };
   if (confirm !== email) return { ok: false, status: 400, error: `confirm must repeat the email exactly ('${email}')` };
-  await platformDb().query("update principal set status='deactivated', updated_at=now() where email=$1", [email.toLowerCase()]);
-  // And their tokens are revoked, not merely made unusable by a status this act can undo.
-  // `resolvePat` refuses a principal that is not active, which holds only while the principal
-  // stays deactivated: `addPerson` is an upsert that sets `status='active'`, so re-adding
-  // somebody who had left would otherwise bring every token they held back to life.
-  const revoked = await platformDb().query(
-    `update pat set revoked_at = now()
-       where revoked_at is null
-         and principal_id = (select id from principal where email = $1)`, [email.toLowerCase()]);
-  auditAdmin(id, "deactivate_person", email, { ...extraDetail, patsRevoked: revoked.rowCount ?? 0 });
+  // And everything they could still get in with is ended, not merely made unusable by a status
+  // this act can undo: `addPerson` is an upsert that sets `status='active'`, so re-adding
+  // somebody who had left would otherwise bring back every token, console session and unused
+  // enrolment link they held. Tokens and sessions are revoked, unused links are spent, and all
+  // of it commits with the status change or none of it does.
+  const client = await platformDb().connect();
+  let revoked: { pats: number; sessions: number; links: number };
+  try {
+    await client.query("begin");
+    const who = await client.query<{ id: string }>(
+      "update principal set status='deactivated', updated_at=now() where email=$1 returning id",
+      [email.toLowerCase()]);
+    const principal = who.rows[0]?.id ?? null;
+    const pats = await client.query(
+      "update pat set revoked_at = now() where revoked_at is null and principal_id = $1", [principal]);
+    const sessions = await client.query(
+      "update console_session set revoked_at = now() where revoked_at is null and principal_id = $1", [principal]);
+    const links = await client.query(
+      "update passkey_enrolment set used_at = now() where used_at is null and principal_id = $1", [principal]);
+    await client.query("commit");
+    revoked = { pats: pats.rowCount ?? 0, sessions: sessions.rowCount ?? 0, links: links.rowCount ?? 0 };
+  } catch (err) {
+    await client.query("rollback");
+    throw err;
+  } finally {
+    client.release();
+  }
+  auditAdmin(id, "deactivate_person", email, {
+    ...extraDetail, patsRevoked: revoked.pats, sessionsRevoked: revoked.sessions, enrolmentsSpent: revoked.links });
   return { ok: true, message:
-    `principal ${email} deactivated, and ${revoked.rowCount ?? 0} live token(s) revoked — ` +
-    "adding them back later will not bring any of them back." };
+    `principal ${email} deactivated: ${revoked.pats} live token(s) and ${revoked.sessions} console ` +
+    `session(s) revoked, ${revoked.links} unused enrolment link(s) spent — adding them back later ` +
+    "will not bring any of them back." };
 }
 /** Mint an enrolment link so somebody can register a passkey.
  *

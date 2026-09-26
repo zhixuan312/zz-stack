@@ -154,11 +154,25 @@ const IDENTIFIER_ARGS = new Set([
 /** An identifier is short. Anything longer is a field that happens to share a safe name. */
 const ID_CAP = 200;
 
+function fitted(items: readonly string[]): string {
+  const kept: string[] = [];
+  for (const [i, item] of items.entries()) {
+    const rest = items.length - i - 1;
+    const next = [...kept, item].join(",") + (rest ? `,+${rest} more` : "");
+    if (next.length > ID_CAP) return kept.length ? `${kept.join(",")},+${items.length - kept.length} more` : "";
+    kept.push(item);
+  }
+  return kept.join(",");
+}
+
 function identifiers(args: Record<string, unknown>): Record<string, string> | undefined {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(args)) {
     if (!IDENTIFIER_ARGS.has(k)) continue;
-    const s = Array.isArray(v) ? v.join(",") : String(v ?? "");
+    // A list keeps the entries that fit and counts the rest: joined whole, several long paths ran
+    // past the cap and the call was recorded with no target at all, so a trace could not tell
+    // one read of five documents from five reads of one.
+    const s = Array.isArray(v) ? fitted(v.map(String)) : String(v ?? "");
     if (!s || s.length > ID_CAP) continue;
     out[k] = s;
   }

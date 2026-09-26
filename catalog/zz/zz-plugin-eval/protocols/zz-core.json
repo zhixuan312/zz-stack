@@ -90,12 +90,18 @@
                 }
               ]
             },
-            "subjectKind": "document"
+            "subjectKind": "document",
+            "wholeDocument": true,
+            "documents": [
+              "spec.md",
+              "plan.md",
+              "review.md"
+            ]
           },
           "evaluator": {
             "stable_key": "zz-core.document-gate-readiness",
             "kind": "noul",
-            "question": "Read this document; a long one may be cut off at the end. Is every section shown substantive -- each heading followed by real content, none left empty, marked TBD, or deferred to somewhere else?",
+            "question": "Read this document, or this part of one. Is every section shown substantive -- each heading followed by real content, none left empty, marked TBD, or deferred to somewhere else?",
             "answer_schema": {
               "type": "noul"
             },
@@ -430,7 +436,7 @@
           "evaluator": {
             "stable_key": "zz-core.call-economy",
             "kind": "noul",
-            "question": "Read this run's own sequence of tool calls, each with the target it acted on. Did it avoid calling the same tool on the same target more times than the work needed -- repeating an identical read or write with nothing changed in between?",
+            "question": "Read this run's own sequence of tool calls, each with the target it acted on. Did it avoid reading the same target again when nothing had written to that target in between?",
             "answer_schema": {
               "type": "noul"
             },

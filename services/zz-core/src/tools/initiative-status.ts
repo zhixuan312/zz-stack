@@ -97,8 +97,20 @@ function sourceReport(dir: string, statusOf: (docName: string) => string | null)
  *  COUPLED: the record shape eval/stage-record.ts writes — `owes`, one key per act once it
  *  lands, `qualify_owed` and `qualified.<measure>`. Read here rather than imported: the
  *  evaluation modules are reached from the evaluation side only (checks/eval-tools-moved.ts). */
-function owedActs(record: Readonly<Record<string, string>> | undefined, initiative: string): string[] {
+function owedActs(
+  record: Readonly<Record<string, string>> | undefined, initiative: string,
+  /** The document the stage produced, as it stands now. */
+  produced: string,
+): string[] {
   if (!record?.owes) return [];
+  // Bound to a version the document no longer quotes: it was revised to a newer protocol version,
+  // and that version is neither bound nor qualified, whatever this record says of the old one.
+  const stale = !!record.affirmed_digest && !produced.includes(record.affirmed_digest);
+  if (stale) {
+    return [`protocol.md now quotes a protocol version this initiative has not bound — call ` +
+      `protocol_affirm with that version (initiative: "${initiative}"), then evaluator_qualify for ` +
+      "each model-backed measure it names, before EVALUATE scores"];
+  }
   const owed = (record.qualify_owed ?? "").split(",").filter(Boolean)
     .filter((k) => !record[`qualified.${k}`]);
   const version = record.protocol_version_id ?? "<protocol_version_id from protocol_read>";
@@ -333,9 +345,13 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
     // A stage whose document is settled can still owe acts no document records — DEFINE/QUALIFY's
     // protocol_affirm and evaluator_qualify once protocol.md is approved (stage-record.ts). Its
     // record names them, and a stage with one still missing is unfinished the same way.
+    const producedText = (doc: string): string => {
+      const file = join(dir, doc);
+      return existsSync(file) && statSync(file).isFile() ? readFileSync(file, "utf8") : "";
+    };
     const owing = (st: (typeof stages)[number]): string[] =>
       st.produces.endsWith(".md") && appliesOf(st.produces) === "applies" &&
-      requirementMet(st.produces) ? owedActs(records[st.name], name) : [];
+      requirementMet(st.produces) ? owedActs(records[st.name], name, producedText(st.produces)) : [];
     const unrecorded = stages.slice(0, writtenAt < 0 ? stages.length : writtenAt)
       .find((st) => st.produces === "record" ? !records[st.name] : owing(st).length > 0);
     // A document that `verifies` others owes its review rounds before it is written or awaited:

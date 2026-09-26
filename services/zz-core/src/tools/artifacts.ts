@@ -181,9 +181,16 @@ export function registerArtifactTools(server: McpServer): void {
           if (!existsSync(target)) {
             // Names the other shelf, once, when the path looks like a journal node — a caller
             // has no other way to learn a second shelf exists.
+            // And says what to call next: a refusal that only names the missing file left one
+            // caller presenting another initiative's document instead (eval 2026-09-26, run fc6b98bd).
+            const initiative = rel.split("/")[0];
             const hint = scope !== "platform" && rel.startsWith("_knowledge/")
               ? " — if knowledge_search returned it with `shelf: \"platform\"`, read it with scope: \"platform\""
-              : "";
+              : scope === "platform" || !initiative || initiative === rel
+                ? ""
+                : existsSync(join(root, initiative))
+                  ? ` — document_list(prefix: "${initiative}") lists what that initiative holds`
+                  : ` — there is no initiative "${initiative}" in your team's store; initiative_status() lists the open ones`;
             rows.push({ rel, body: `ERROR: ${rel} does not exist${hint}` });
             continue;
           }

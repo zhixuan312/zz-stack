@@ -53,6 +53,10 @@ interface PluginTraces {
    *  unique within a team, so neither is given without the other. */
   run_refs: { run_id: string; team: string | null; initiative: string | null; started_at: string }[];
   run_refs_truncated: boolean;
+  /** A door's refused calls, newest first, as `event:<id>` subject_refs: a call made outside any
+   *  run (an admin act, an evaluation) has no run to hand a judge, and its refusal is the thing
+   *  a credential door is worth. Empty for a flow, whose refusals are inside its runs. */
+  refusal_refs: string[];
   coverage: { events: number; with_step: number; with_initiative: number; resolvable: number };
   stage_paths: { initiative: string; steps: { step: string; first_ts: string; last_ts: string }[] }[];
   /** Counted, never classified. See the header.
@@ -454,6 +458,11 @@ export async function pluginTraces(
     sufficient: usable >= USABLE_RUNS_FLOOR,
     run_refs: runRefs.slice(0, RUN_REFS_CAP),
     run_refs_truncated: runRefs.length > RUN_REFS_CAP,
+    refusal_refs: servesOwnDoor
+      ? (await pool.query<{ id: string }>(
+          `select e.id::text as id ${toolCallEvents(true)} and e.ok is false order by e.ts desc limit ${RUN_REFS_CAP}`,
+          params)).rows.map((r) => `event:${r.id}`)
+      : [],
     reason: runs > 0 ? undefined :
       `no run is recorded against ${plugin} ${version} in this window (${window.from} to ` +
       `${window.to}). A run belongs to a version through the skill versions that version ` +

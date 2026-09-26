@@ -58,15 +58,19 @@ export async function recordDefineOwes(initiative: string | undefined): Promise<
 }
 
 /** protocol_affirm bound `path` to this version. `qualifyOwed` is every model-backed measure key
- *  the version names — none owed discharges the qualification here and now. */
+ *  the version names — none owed discharges the qualification here and now. The record is
+ *  REPLACED, so an earlier version's qualifications never count for this one, and it keeps the
+ *  digest the bound document quoted: initiative_status reads protocol.md for it, and a document
+ *  revised to quote a newer version owes the bind and the qualification again. */
 export async function recordAffirmed(
   initiative: string, protocolVersionId: string, path: string, qualifyOwed: readonly string[],
+  contentDigest: string,
 ): Promise<{ record_refused?: string }> {
   return recordStage(initiative, DEFINE_STAGE, {
     owes: DEFINE_OWES.join(","), protocol_version_id: protocolVersionId, protocol_affirm: path,
-    qualify_owed: qualifyOwed.join(","),
+    affirmed_digest: contentDigest, qualify_owed: qualifyOwed.join(","),
     ...(qualifyOwed.length ? {} : { evaluator_qualify: "none owed" }),
-  });
+  }, true);
 }
 
 /** evaluator_qualify established `state` for one measure of this version. The qualification is

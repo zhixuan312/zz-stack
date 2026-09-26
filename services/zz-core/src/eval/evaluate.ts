@@ -292,7 +292,8 @@ export function registerEvaluationTools(server: McpServer): void {
         "WHEN eval_run_id is pending or running: resolves every subject_ref to its real content — " +
         "an <initiative>/<doc>.md ref is read off the caller's own team's artifact store (one under " +
         "_knowledge/ is a knowledge node), bug:<id> from its bug report, a bare run_id (plugin_profile's " +
-        "traces.run_refs) from its own zz.event rows — then routes each measure: deterministic/outcome " +
+        "traces.run_refs) from its own zz.event rows, event:<id> (traces.refusal_refs) as that one door call " +
+        "— then routes each measure: deterministic/outcome " +
         "read a named fact off the run's bound observation snapshot ONCE per run; bounded_semantic/" +
         "generative_critic ask the measure's bound evaluator only about refs of the kind it judges " +
         "(definition.subjectKind, else its question's \"Read this run/document/bug report/record\"), " +

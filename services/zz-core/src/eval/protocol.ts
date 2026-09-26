@@ -405,7 +405,7 @@ export function registerProtocolTools(server: McpServer): void {
         select distinct m.key from zz.eval_measure m join zz.eval_dimension d on d.id = m.dimension_id
          where d.protocol_version_id = $1::uuid and m.evaluator_type in ('bounded_semantic', 'generative_critic')
          order by m.key`, [protocol_version_id])).rows.map((r) => r.key);
-      const recorded = await recordAffirmed(initiative, protocol_version_id, path, owed);
+      const recorded = await recordAffirmed(initiative, protocol_version_id, path, owed, row.content_digest);
       return json({ approved_document_path: path, approved_by: env.approved_by ?? null,
                     qualify_owed: owed, ...recorded });
     },

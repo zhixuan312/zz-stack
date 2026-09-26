@@ -115,8 +115,13 @@ async function resolveSubject(pool: pg.Pool, plugin: string, version: string | u
       // pre-migration row cannot take IDENTIFY down for the whole plugin.
       digest: s.content_hash || sha256(`${s.name}@${s.version}`),
     })),
+    // A plugin's own server is code in the platform build it shipped with, so its identity is
+    // that build: hashed from name and path alone it was a constant, and a door that changed with
+    // every release read as unchanged. A server the plugin only calls (sdlc's baseline door) is
+    // not its content, and stays keyed by address.
     ...serversOf(entry).map((sv): PluginComponent => ({
-      kind: "server", name: sv.name, digest: sha256(`${sv.name}:${sv.path}`),
+      kind: "server", name: sv.name,
+      digest: sha256(sv.name === plugin ? `${sv.name}:${sv.path}@${head.declared_version}` : `${sv.name}:${sv.path}`),
     })),
   ];
   if (entry) {

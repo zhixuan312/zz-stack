@@ -77,6 +77,26 @@ export async function resolveSubjectRef(
     return { text: `RUN ${subjectRef}:\n${trace.text}`, kind: "run" };
   }
 
+  // One door call, for a call that belongs to no run — an admin act on /manage, an evaluation on
+  // /eval — whose refusal a judge is asked about: the tool, what it acted on, and what it answered.
+  const event = /^event:(\d+)$/.exec(subjectRef);
+  if (event) {
+    const row = (await p.query<{ at: string; tool: string; target: string; ok: boolean | null; refusal: string | null; shapes: string | null }>(`
+      select to_char(e.ts, 'YYYY-MM-DD HH24:MI:SS') as at, coalesce(e.tool_key, e.subject) as tool,
+             coalesce((select string_agg(v.key || '=' || left(v.value, 120), ' ' order by v.key)
+                         from jsonb_each_text(case when jsonb_typeof(e.detail->'ids') = 'object'
+                                                   then e.detail->'ids' else '{}'::jsonb end) v), '') as target,
+             e.ok, e.refusal, (e.detail->'shapes')::text as shapes
+        from zz.event e where e.id = $1::bigint and e.kind = 'tool_call'`, [event[1]])).rows[0];
+    if (!row) return { error: `ERROR: subject_ref "${subjectRef}" names no tool call — nothing to judge` };
+    return {
+      text: `CALL ${event[1]} at ${row.at}:\n${row.tool}${row.target ? `  ${row.target}` : ""}  ` +
+        `${row.ok === false ? `REFUSED  ${row.refusal ?? ""}` : "ok"}` +
+        (row.shapes ? `\nargument shapes: ${row.shapes}` : ""),
+      kind: "event",
+    };
+  }
+
   if (subjectRef.startsWith("bug:")) {
     const id = subjectRef.slice("bug:".length);
     const bug = UUID_RE.test(id)

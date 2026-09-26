@@ -11,7 +11,7 @@ import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 
 const m = await import(pathToFileURL(join(process.cwd(), "services/zz-core/dist/eval/evaluate-measures.js")).href);
-const { planAssessment, subjectKindOf, refKindOf, runLevelRef, isRunLevelRef, answerMeasure, readingsOf } = m;
+const { planAssessment, subjectKindOf, refKindOf, runLevelRef, isRunLevelRef, answerMeasure, readingsOf, documentParts } = m;
 const { renderInterval } = await import(pathToFileURL(join(process.cwd(), "services/zz-core/dist/eval/findings-doc.js")).href);
 
 const measure = (key: string, evaluator_type: string, extra: Record<string, unknown> = {}) =>
@@ -23,6 +23,8 @@ assert.equal(refKindOf("0b7c7a9e-1111-4222-8333-444455556666"), "run");
 assert.equal(refKindOf("2026-09-24-x/spec.md"), "document");
 assert.equal(refKindOf("_knowledge/nodes/0029-a.md"), "knowledge");
 assert.equal(refKindOf("bug:0b7c7a9e-1111-4222-8333-444455556666"), "bug");
+assert.equal(refKindOf("event:16644"), "event", "a door call is a subject of its own");
+assert.equal(subjectKindOf(measure("r", "bounded_semantic", { question: "Read this refused call. Was ..." })), "event");
 assert.equal(subjectKindOf(measure("a", "bounded_semantic", { definition: { subjectKind: "run" }, question: "Read this document." })), "run",
   "a declared subjectKind wins over the question");
 // Every model-backed measure of the live zz-core protocol routes to a kind — none falls back to "every ref".
@@ -99,6 +101,27 @@ const none = planAssessment({ measures: [recovery], subjectRefs: [cleanRun], run
 assert.equal(none.length, 1);
 assert.equal(none[0].ask, false);
 assert.match(none[0].excluded_reason, /applies only where one did/);
+
+// -- definition.documents: a document measure judges only the files it names ---------------------
+const agreement = measure("agreement", "bounded_semantic", { definition: { subjectKind: "document", documents: ["spec.md", "plan.md"] } });
+const docsPlan = planAssessment({ measures: [agreement], subjectRefs: ["x/explore.md", "x/spec.md", "x/handover.md", "x/plan.md"],
+  runLevel: run, alreadyAssessed: new Set(), qualified: () => true, textOf: noText });
+assert.deepEqual(docsPlan.filter((p: { ask: boolean }) => p.ask).map((p: { subjectRef: string }) => p.subjectRef).sort(),
+  ["x/plan.md", "x/spec.md"], "a measure naming spec.md and plan.md is asked of those alone");
+const docsNone = planAssessment({ measures: [agreement], subjectRefs: ["x/explore.md"],
+  runLevel: run, alreadyAssessed: new Set(), qualified: () => true, textOf: noText });
+assert.match(docsNone[0].excluded_reason, /is one of the documents it judges \(spec\.md, plan\.md\)/);
+
+// -- a long document is read whole, part by part ------------------------------------------------
+{
+  const doc = ["# Spec", ...Array.from({ length: 12 }, (_, i) => `## Section ${i}\n${"x".repeat(9000)}`)].join("\n");
+  const parts = documentParts(doc, 22000);
+  assert.ok(parts.length >= 5, `a 108KB document in ${parts.length} part(s)`);
+  assert.ok(parts.every((p: string) => p.length <= 22000 + 60), "every part fits the judge's window");
+  assert.equal(parts.map((p: string) => p.replace(/^\[Part \d+ of \d+ of one document\]\n/, "")).join(""), doc,
+    "the parts together are the whole document, nothing dropped");
+  assert.deepEqual(documentParts("short", 22000), ["short"], "a short document is one unlabelled part");
+}
 
 // -- no model call for an unqualified evaluator, even through answerMeasure --------------------
 let asked = false;

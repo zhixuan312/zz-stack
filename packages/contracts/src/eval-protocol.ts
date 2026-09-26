@@ -153,6 +153,18 @@ export const Measure = z.object({
       message: `measure "${m.key}" has appliesWhen "${String(m.definition.appliesWhen)}"; the one condition is "refused"`,
     });
   }
+  if (m.definition.wholeDocument !== undefined && typeof m.definition.wholeDocument !== "boolean") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["definition", "wholeDocument"],
+      message: `measure "${m.key}" has a wholeDocument that is not true or false` });
+  }
+  // `documents` names the files a document measure judges, by file name.
+  const docs = m.definition.documents;
+  if (docs !== undefined && (!Array.isArray(docs) || !docs.length || docs.some((d) => typeof d !== "string" || !d.endsWith(".md")))) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ["definition", "documents"],
+      message: `measure "${m.key}" has documents that are not a list of .md file names, e.g. ["spec.md", "plan.md"]`,
+    });
+  }
   // A model-backed measure is qualified against its own known-answer texts, so it has to carry
   // enough of them for every rung below human_calibrated: anchors with at least two different
   // expected answers (an evaluator that always says one thing cannot pass), a fault and a control.
@@ -211,13 +223,19 @@ export const Dimension = z.object({
   required: z.boolean(),
   applicable: z.boolean(),
   notApplicableReason: z.string().nullable(),
-  measures: z.array(Measure).min(1),
+  measures: z.array(Measure),
 }).superRefine((dim, ctx) => {
-  // (c) a dimension's measure weights sum to 1, applicable or not — a non-applicable dimension
-  // still names a real measure set; it is only excluded from the protocol-level dimension
-  // weighting in EvaluationProtocol's own superRefine below.
+  // (c) an applicable dimension has measures whose weights sum to 1. A non-applicable one may
+  // name none: its reason is the whole statement, and a placeholder measure to satisfy a count
+  // (zz-access's protocol carried three `human` measures nobody would ever take) says nothing.
+  if (dim.applicable && !dim.measures.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ["measures"],
+      message: `dimension "${dim.key}" is applicable and names no measure`,
+    });
+  }
   const total = dim.measures.reduce((sum, m) => sum + m.weight, 0);
-  if (Math.abs(total - 1) > 1e-9) {
+  if (dim.measures.length && Math.abs(total - 1) > 1e-9) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom, path: ["measures"],
       message: `measure weights inside dimension "${dim.key}" sum to ${total}, not 1`,

@@ -45,6 +45,17 @@ assert.ok(!measures.some((m) => m.key === "document_frontmatter_conformance"),
   const oneSided = structuredClone(protocol);
   for (const a of oneSided.dimensions[0].measures[0].definition.qualification.anchors) a.expected = "yes";
   assert.match(JSON.stringify(EvaluationProtocol.safeParse(oneSided).error.issues), /at least two different expected answers/);
+  // A dimension that does not apply may name no measure; one that applies must name one.
+  const na = structuredClone(protocol);
+  const dropped = na.dimensions.find((d: { key: string }) => d.key === "generalization");
+  na.dimensions = na.dimensions.filter((d: { key: string }) => d.key !== "generalization");
+  na.dimensions.push({ ...dropped, weight: 0, required: false, applicable: false,
+    notApplicableReason: "No second flow exists to generalise to.", measures: [] });
+  na.dimensions[0].weight += dropped.weight;
+  assert.equal(EvaluationProtocol.safeParse(na).success, true, "a not-applicable dimension with no measure was refused");
+  const empty = structuredClone(protocol);
+  empty.dimensions[0].measures = [];
+  assert.match(JSON.stringify(EvaluationProtocol.safeParse(empty).error.issues), /is applicable and names no measure/);
 }
 
 // A truthful evaluator: it answers each text with what that text actually is. Built from the
@@ -58,7 +69,21 @@ for (const m of semantic) {
   const { counts, results } = await gatherCountedEvidence({ anchors: m.definition.qualification!.anchors, ask: truthful });
   const r = qualificationState({ ...counts, labels: null }, thresholds);
   assert.deepEqual(r, { state: "operationally_qualified", reason: null }, `${m.key}: ${JSON.stringify({ r, counts })}`);
-  assert.equal(results.length, m.definition.qualification!.anchors.length + 2, `${m.key}: one result per text plus two stability repeats`);
+  assert.equal(results.length, m.definition.qualification!.anchors.length * 3, `${m.key}: every text asked three times`);
+}
+
+// 3b. One draw does not qualify: an evaluator whose answer on one anchor flips on the third ask
+// fails that anchor and its stability (sdlc read_economy: yes under v1, unclear under v2).
+{
+  const anchors = semantic[0].definition.qualification!.anchors;
+  const flaky = anchors.find((a) => a.role === "anchor")!;
+  let seen = 0;
+  const { counts } = await gatherCountedEvidence({
+    anchors, ask: async (text: string) => (text === flaky.text && ++seen === 3 ? noul("unclear") : truthful(text)),
+  });
+  assert.equal(counts.anchors.passed, counts.anchors.total - 1, "an anchor answered unclear once in three still passed");
+  assert.equal(counts.stability.passed, counts.stability.total - 1, "an entry whose answers disagreed counted as stable");
+  assert.equal(qualificationState({ ...counts, labels: null }, thresholds).state, "unqualified");
 }
 
 // 4. Mismatched anchors — a text labelled with the wrong answer — fail by name: the threshold,

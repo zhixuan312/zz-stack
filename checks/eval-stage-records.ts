@@ -92,6 +92,18 @@ try {
   n = next();
   is(n.action === "run_stage" && n.stage === "evaluate",
      `every owed measure has a state: next_move is ${JSON.stringify(n)}, not run_stage evaluate`);
+  // A protocol.md revised to quote a newer version owes that version's bind and qualification,
+  // whatever the record says of the old one (2026-09-26-eval-sdlc: v2 and v3 approved, and
+  // next_move went straight to EVALUATE on v1's record).
+  writeStageRecord(root, I, "define", { affirmed_digest: "digest-v1" });
+  writeFileSync(join(root, I, "protocol.md"), "---\ntitle: P\nstatus: approved\napproved_by: ada@zz.test\n---\n\n# P\n\ncontent_digest `digest-v1`\n");
+  n = next();
+  is(n.action === "run_stage" && n.stage === "evaluate", `the bound version still quoted: next_move is ${JSON.stringify(n)}, not run_stage evaluate`);
+  writeFileSync(join(root, I, "protocol.md"), "---\ntitle: P\nstatus: approved\napproved_by: ada@zz.test\n---\n\n# P v2\n\ncontent_digest `digest-v2`\n");
+  n = next();
+  is(n.action === "run_stage" && n.stage === "define" && /protocol_affirm/.test(n.why),
+     `protocol.md revised to a newer version: next_move is ${JSON.stringify(n)}, not run_stage define naming protocol_affirm`);
+  writeStageRecord(root, I, "define", { affirmed_digest: "digest-v2" });
   writeStageRecord(root, I, "evaluate", { eval_run_id: "e-1" });
   n = next();
   is(n.action === "write_document" && n.document === "findings.md", `evaluate recorded: next_move is ${JSON.stringify(n)}, not findings.md`);

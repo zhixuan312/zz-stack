@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define-qualify
-version: 0.8
+version: 0.9
 description: Stage 4 of zz-plugin-eval (DEFINE/QUALIFY), and the one gate that matters most. Derive what good means for THIS plugin from its own profile and DISCOVER's candidates, write it into protocol.md, get a person to agree it, then qualify every model-backed evaluator it names before anything is scored.
 when_to_use: "The fourth stage of zz-plugin-eval, after DISCOVER. Conditional: protocol_read decides create/revise/reuse, and this stage only writes when it says create or revise. Produces protocol.md, gated — protocol_affirm refuses to bind it until somebody approves it. No shell required."
 ---
@@ -77,12 +77,15 @@ Inside a dimension, one or more **measures** actually produce a mark. Each carri
   `protocol_record` refuses a `bounded_semantic`/`generative_critic` measure that carries none.
   **`definition.qualification.anchors` is required too** — the known-answer texts QUALIFY asks
   this measure's own question about; `protocol_record` refuses the body without them. See
-  *Writing anchors* below. `definition.subjectKind` (`run`, `document`, `knowledge`, `bug`) names
-  the artifact it reads, and `definition.appliesWhen: "refused"` asks a run measure only of runs
+  *Writing anchors* below. `definition.subjectKind` (`run`, `document`, `knowledge`, `bug`, `event`) names
+  the artifact it reads, `definition.documents: ["spec.md", "plan.md"]` limits a document measure
+  to the files it is about, and `definition.appliesWhen: "refused"` asks a run measure only of runs
   that refused a call — any question about how a refusal read or was recovered from needs it,
   or every run without a refusal answers it vacuously. The judge reads at most 24,000 characters
-  of an artifact: a question about a whole long document has to be answerable from its opening
-  part, and say so.
+  at once: `definition.wholeDocument: true` asks a question that must hold of every part ("every
+  section is substantive", "nothing points elsewhere for its meaning") of each part of a long
+  document, cut at its headings, and the document answers with its weakest part. Leave it off for
+  a question one part can answer ("does it state acceptance criteria").
 - **`deterministic` / `outcome`** — a tool computes a fact and the measure reads it off OBSERVE's
   own snapshot, by a dotted `definition.factPath`: the fact's own name (`tool_refusal_rate`,
   `latency_p50_ms`, `outcome_delivered_rate`, ...) — every name `plugin_profile` computes is listed
@@ -211,13 +214,22 @@ truthful evaluator gives to THIS measure's question (`yes`/`no` for a noul, a cr
 choice):
 
 - `role: "anchor"` — at least one clearly good and one clearly bad example (two different
-  `expected` values). The first anchor is also asked three times for stability.
+  `expected` values).
 - `role: "fault"` — a good anchor with ONE defect planted, so the truthful answer flips.
 - `role: "control"` — an artifact of another kind (a shell session, another project's issue)
   whose answer to the same question is still obvious.
 
 Write a text a stranger would answer the same way. If you have to argue for its `expected`, it is
-not an anchor — sharpen it or pick another. Never a sentence *about* the artifact ("Of 9 runs, 3
+not an anchor — sharpen it or pick another.
+
+**Write at least one anchor in the shape of the real artifact, not a toy.** Read a document or run
+the measure will judge, and copy its habits into an anchor with the answer they deserve: a spec
+that names who settled a decision and cites a source file, a trace with a long patch series, a
+refusal quoted in the platform's own wording. sdlc's `spec_executable` passed four short, clean
+anchors and then judged a real spec that states every decision 0.25, because the real one named
+the stakeholder; nothing it had been qualified on looked like that. If the evaluator cannot answer
+the realistic anchor, the measure is not one it can judge — which is the finding, not a reason to
+drop the anchor. Never a sentence *about* the artifact ("Of 9 runs, 3
 were usable"): the evaluator is asked the measure's question about the text itself.
 
 ## QUALIFY — every model-backed measure, before anything is scored
@@ -236,8 +248,9 @@ pass one. It REFUSES a protocol version `protocol_affirm` has not bound, a key t
 version does not have (naming the keys it does), a key two dimensions of an older version share,
 and a `deterministic`/`outcome`/`human` measure, which is never qualified. It runs the protocol's own `QualificationPolicy` over four evidence
 categories, all from the measure's own `definition.qualification.anchors` — **anchors**,
-**planted faults** and **controls** (each entry of that role, passed when the answer is its
-`expected`) and **stability** (the first anchor asked three times) — plus **labels**, only where
+**planted faults** and **controls** (each entry of that role, asked three times and passed only
+when all three answers are its `expected` — an unclear answer is a miss) and **stability** (the
+share of entries whose three answers agree) — plus **labels**, only where
 the protocol's `qualification.labelMappings` names this evaluator's `stable_key`.
 
 RETURNS `{ measure_key, evaluator_version_id, qualification_id, state, evidence: { anchors,

@@ -11,8 +11,11 @@
  *     one, and no model-backed measure could ever qualify.
  *   - `role: "anchor"` feeds the anchor pass rate, `"fault"` (a good example with one planted
  *     defect) the fault kill rate, `"control"` (an artifact of another kind) the control catch rate.
- *   - Stability is the first `anchor` entry, asked three more times; `agreeing` counts the modal
- *     answer.
+ *   - Every entry is asked three times, and passes only when all three answers are its
+ *     `expected` — an unclear answer is a miss. Stability is the share of entries whose three
+ *     answers agree. It used to be the first anchor alone, asked twice more: the same evaluator
+ *     version then qualified on one draw and not on the next (sdlc's read_economy, yes under
+ *     protocol v1 and unclear under v2 on an identical anchor).
  *   - Labels come only through the protocol's `qualification.labelMappings`, matched by this
  *     evaluator's own `stable_key` — see `parseLabelMappings`/`mappingFor`. The correlation this
  *     needs (a specific evaluator answer tied to a specific `zz.eval_finding` decision, through
@@ -41,7 +44,7 @@ function normalizeAnswer(r: Answer): string | null {
 }
 
 /** One known-answer text as it came back: which entry, what it expected, what the evaluator said.
- *  `role: "stability"` rows are the repeated asks of the first anchor. */
+ *  `role: "stability"` rows are an entry's second and third asks. */
 export interface AnchorResult {
   readonly id: string;
   readonly role: MeasureAnchor["role"] | "stability";
@@ -68,31 +71,28 @@ export async function gatherCountedEvidence(opts: {
   }
 
   const tally = { anchor: { passed: 0, total: 0 }, fault: { passed: 0, total: 0 }, control: { passed: 0, total: 0 } };
+  const stability = { passed: 0, total: 0 };
   for (const a of opts.anchors) {
-    const got = normalizeAnswer(await opts.ask(a.text));
-    results.push({ id: a.id, role: a.role, expected: a.expected, got });
+    const answers: (string | null)[] = [];
+    for (let i = 0; i < ASKS_PER_ENTRY; i += 1) {
+      const got = normalizeAnswer(await opts.ask(a.text));
+      answers.push(got);
+      results.push({ id: a.id, role: i === 0 ? a.role : "stability", expected: a.expected, got });
+    }
     tally[a.role].total += 1;
-    if (got === a.expected) tally[a.role].passed += 1;
+    if (answers.every((got) => got === a.expected)) tally[a.role].passed += 1;
+    stability.total += 1;
+    if (answers.every((got) => got === answers[0])) stability.passed += 1;
   }
-
-  const firstAnswer = results.find((r) => r.id === first.id)?.got ?? null;
-  const repeats: (string | null)[] = [firstAnswer];
-  for (let i = 0; i < 2; i += 1) {
-    const got = normalizeAnswer(await opts.ask(first.text));
-    results.push({ id: first.id, role: "stability", expected: first.expected, got });
-    repeats.push(got);
-  }
-  const modal = new Map<string | null, number>();
-  for (const a of repeats) modal.set(a, (modal.get(a) ?? 0) + 1);
 
   return {
-    counts: {
-      anchors: tally.anchor, planted_faults: tally.fault, controls: tally.control,
-      stability: { passed: Math.max(...modal.values()), total: repeats.length },
-    },
+    counts: { anchors: tally.anchor, planted_faults: tally.fault, controls: tally.control, stability },
     results,
   };
 }
+
+/** How many times each known-answer text is asked. */
+const ASKS_PER_ENTRY = 3;
 
 // ---------------------------------------------------------------------------------------------
 // Labels — selection is pure (pinned alongside the ladder in this task's own check); the query

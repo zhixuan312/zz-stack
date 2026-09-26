@@ -32,6 +32,7 @@ export const OBSERVATION_FACT_KEYS = [
   "dependency_failure_rate", "never_called_rate",
   "latency_p50_ms", "latency_p90_ms", "request_bytes_avg", "response_bytes_avg",
   "outcome_delivered_rate", "outcome_accepted_rate", "outcome_abandoned_rate", "doc_approval_rate",
+  "doc_deferral_rate",
   "tokens_per_model_call_avg", "cost_per_model_call_avg",
 ] as const;
 
@@ -141,6 +142,11 @@ export async function refusalDetail(
   return rows.map((r) => ({ text: r.normalized, owner: r.owner, count: Number(r.n) }));
 }
 
+/** Wording that defers a document's meaning to somewhere a reader cannot follow. A fact, not a
+ *  judge: sdlc's text judge could not tell "the stakeholder settled these decisions" (stated) from
+ *  "as agreed on the call" (deferred), and this pattern can. */
+const DEFERRAL = String.raw`(\yas (agreed|discussed)\y|\yper (the|our) (call|meeting|chat|conversation)\y|\ysee the (chat|thread|call|ticket)\y|\y(agreed|discussed|decided) (on|in|during) the (call|meeting|chat)\y|\yTBD\y)`;
+
 /** Initiative outcomes and document approvals, scoped to the initiatives this plugin's own door
  *  traffic touched in this window — never the whole platform's `zz.doc` table, which would make
  *  these facts a statement about the install rather than about the subject and window observed.
@@ -167,11 +173,12 @@ export async function outcomeAndApprovalFacts(
       outcome_accepted_rate: { value: null, reason: noDocs },
       outcome_abandoned_rate: { value: null, reason: noDocs },
       doc_approval_rate: { value: null, reason: noDocs },
+      doc_deferral_rate: { value: null, reason: noDocs },
     };
   }
   const row = (await pool.query<{
     initiatives: string; closed: string; delivered: string; accepted: string; abandoned: string;
-    documents: string; approved: string;
+    documents: string; approved: string; deferring: string;
   }>(`
     -- The initiatives this subject's own calls touched: a door's calls, or the calls inside a
     -- flow's runs — the same population every other fact here is drawn from (toolCallEvents).
@@ -192,7 +199,11 @@ export async function outcomeAndApprovalFacts(
            -- Gated documents only — the ones a flow puts a status on. Sources and free documents
            -- are never approved by design; counted in, 259 sources put sdlc at 13 of 291.
            (select count(*) from live where status <> '')::text as documents,
-           (select count(*) from live where status <> '' and approved_by is not null)::text as approved`,
+           (select count(*) from live where status <> '' and approved_by is not null)::text as approved,
+           -- A gated document that sends its reader somewhere else for what it means: to a
+           -- conversation, a meeting, a thread, or to later. Read whole, across every team's
+           -- documents in the window — a text judge could read one team's, 24,000 characters at a time.
+           (select count(*) from live where status <> '' and body ~* '${DEFERRAL}')::text as deferring`,
     [plugin, version, window.from, window.to])).rows[0];
 
   const initiatives = N(row?.initiatives);
@@ -206,6 +217,7 @@ export async function outcomeAndApprovalFacts(
     outcome_accepted_rate: rate(N(row?.accepted), closed, closed, initiatives, noClose),
     outcome_abandoned_rate: rate(N(row?.abandoned), closed, closed, initiatives, noClose),
     doc_approval_rate: rate(N(row?.approved), documents, documents, documents, noDocs),
+    doc_deferral_rate: rate(N(row?.deferring), documents, documents, documents, noDocs),
   };
 }
 

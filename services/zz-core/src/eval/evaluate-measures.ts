@@ -258,11 +258,23 @@ async function modelBackedAnswer(
       qualification_id: qual?.id ?? null, qualification_state: qual?.state ?? null, pending: null,
     };
   }
-  const asked = await askEvaluatorQuestion({
-    evaluator_version_id: measure.evaluator_version_id, subject_text: subjectText, context, askedBy: principal,
-  });
+  // `wholeDocument`: a question that must hold of every part of a document ("every section is
+  // substantive", "nothing points elsewhere for its meaning") is asked of each part the judge can
+  // read whole, and the document answers with its weakest part. Asked once, a long spec was
+  // judged on the first 24,000 characters of its 50-180KB.
+  const parts = measure.definition.wholeDocument === true ? documentParts(subjectText, PART_CHARS) : [subjectText];
+  let worst: { asked: AskedEvaluatorAnswer; raw: number | null } | null = null;
+  const partValues: (number | null)[] = [];
+  for (const part of parts) {
+    const asked = await askEvaluatorQuestion({
+      evaluator_version_id: measure.evaluator_version_id, subject_text: part, context, askedBy: principal,
+    });
+    const raw = valueFromAnswer(asked.result, measure.definition);
+    partValues.push(raw);
+    if (!worst || (raw !== null && (worst.raw === null || raw < worst.raw))) worst = { asked, raw };
+  }
+  const { asked, raw } = worst!;
   const result = asked.result;
-  const raw = valueFromAnswer(result, measure.definition);
   return {
     value: raw,
     excluded: raw === null,
@@ -270,9 +282,31 @@ async function modelBackedAnswer(
     evaluator_version_id: measure.evaluator_version_id, assessment_id: null,
     qualification_id: qual.id, qualification_state: qual.state,
     detail: { answer_kind: result.answer_kind, reading: result.reading, probability: result.probability,
-              distribution: result.distribution, raw_value: raw },
+              distribution: result.distribution, raw_value: raw,
+              ...(parts.length > 1 ? { parts: parts.length, part_values: partValues } : {}) },
     pending: asked,
   };
+}
+
+/** Below the judge's own 24,000-character subject window (semantic.ts), with room for the label. */
+const PART_CHARS = 22_000;
+
+/** A document cut at its headings into parts no longer than `limit`, each labelled with where it
+ *  sits, so a judge reads every part whole. A single section longer than `limit` is cut inside. */
+export function documentParts(text: string, limit: number): string[] {
+  if (text.length <= limit) return [text];
+  const sections = text.split(/(?=^#{1,6} )/m);
+  const chunks: string[] = [];
+  let current = "";
+  for (const section of sections) {
+    for (let i = 0; i < section.length; i += limit) {
+      const piece = section.slice(i, i + limit);
+      if (current && current.length + piece.length > limit) { chunks.push(current); current = ""; }
+      current += piece;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks.map((c, i) => `[Part ${i + 1} of ${chunks.length} of one document]\n${c}`);
 }
 
 /** A measure's answer before it is recorded: `pending` is the model answer still to be written
@@ -340,8 +374,8 @@ export function reduceMeasureAnswers(answers: readonly MeasureAnswer[]): number 
 // asked without a model or a database.
 
 /** What a subject_ref is, and what a model-backed measure judges. */
-export type SubjectKind = "run" | "document" | "knowledge" | "bug";
-const SUBJECT_KINDS: readonly SubjectKind[] = ["run", "document", "knowledge", "bug"];
+export type SubjectKind = "run" | "document" | "knowledge" | "bug" | "event";
+const SUBJECT_KINDS: readonly SubjectKind[] = ["run", "document", "knowledge", "bug", "event"];
 
 /** The subject_ref a once-per-run row is stored under: a deterministic/outcome fact read off the
  *  run's own observation snapshot, and every run-level exclusion. `evaluation_score` keeps these
@@ -355,6 +389,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export function refKindOf(ref: string): SubjectKind | null {
   if (UUID_RE.test(ref)) return "run";
   if (ref.startsWith("bug:")) return "bug";
+  if (/^event:\d+$/.test(ref)) return "event";
   if (ref.startsWith("_knowledge/") && ref.endsWith(".md")) return "knowledge";
   if (ref.endsWith(".md")) return "document";
   return null;
@@ -368,10 +403,11 @@ export function subjectKindOf(measure: MeasureRow): SubjectKind | null {
   if (typeof declared === "string" && (SUBJECT_KINDS as readonly string[]).includes(declared)) {
     return declared as SubjectKind;
   }
-  const opening = /^\s*Read this (run|document|bug report|record)\b/i.exec(measure.question ?? "");
+  const opening = /^\s*Read this (run|document|bug report|record|call|refused call)\b/i.exec(measure.question ?? "");
   if (!opening) return null;
   const noun = opening[1].toLowerCase();
-  return noun === "bug report" ? "bug" : noun === "record" ? "knowledge" : (noun as SubjectKind);
+  return noun === "bug report" ? "bug" : noun === "record" ? "knowledge"
+    : noun === "call" || noun === "refused call" ? "event" : (noun as SubjectKind);
 }
 
 /** A refused call in a run's trace, as `traceOf` (judge-trace.ts) renders it. COUPLED. */
@@ -434,9 +470,16 @@ export function planAssessment(opts: {
       continue;
     }
     const refusedOnly = measure.definition.appliesWhen === "refused";
-    const matching = refusedOnly ? ofKind.filter((r) => REFUSED_LINE.test(textOf(r) ?? "")) : ofKind;
+    // `definition.documents` names the files a document measure judges — a question about an
+    // agreement (spec, plan) has no answer on an exploration or a handover.
+    const named = Array.isArray(measure.definition.documents) ? measure.definition.documents.map(String) : null;
+    const matching = ofKind
+      .filter((r) => !refusedOnly || REFUSED_LINE.test(textOf(r) ?? ""))
+      .filter((r) => !named || named.includes(r.split("/").pop() ?? r));
     if (!matching.length) {
-      once(measure, false, `none of the ${ofKind.length} subject_ref(s) of its kind refused a call — this measure applies only where one did`);
+      once(measure, false, refusedOnly
+        ? `none of the ${ofKind.length} subject_ref(s) of its kind refused a call — this measure applies only where one did`
+        : `none of the ${ofKind.length} subject_ref(s) of its kind is one of the documents it judges (${named?.join(", ")})`);
       continue;
     }
     for (const subjectRef of matching) out.push({ measure, subjectRef, ask: true, excluded_reason: null });

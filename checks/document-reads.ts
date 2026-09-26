@@ -236,5 +236,16 @@ else {
   }
 }
 
+// A path that does not exist says what to call next, not only that it is missing: the eval of
+// 2026-09-26 found one caller who, told only "review.md does not exist", went on to present a
+// different initiative's document.
+{
+  const src = readFileSync("services/zz-core/src/tools/artifacts.ts", "utf8");
+  is(/document_list\(prefix: "\$\{initiative\}"\)/.test(src),
+     "document_read's does-not-exist refusal no longer names document_list for the initiative");
+  is(/initiative_status\(\) lists the open ones/.test(src),
+     "document_read's does-not-exist refusal no longer names initiative_status for a missing initiative");
+}
+
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }
 console.log("document reads: ok");

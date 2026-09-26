@@ -183,7 +183,7 @@ interface GatheredQualification {
 
 /** The qualification run itself (FR-16), split in two so no model call ever runs inside a
  *  transaction: this half reads on the pool and asks every question (each declared anchor, fault
- *  and control, then the first anchor twice more for stability) and writes nothing;
+ *  and control, three times each) and writes nothing;
  *  `recordQualification` writes the answers and the row through `evaluator_qualify`'s ledger
  *  transaction client. */
 async function gatherQualification(
@@ -240,10 +240,11 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
         "it defers to is resolved from that protocol version, never passed in. Runs the " +
         "protocol's own QualificationPolicy thresholds over the measure's OWN known-answer texts, " +
         "declared in protocol_body as definition.qualification.anchors [{ id, role, text, expected }], " +
-        "each asked the measure's own question: role anchor (anchor pass rate; the first is asked " +
-        "twice more for stability), fault (a good example with one planted defect — killed when " +
+        "each asked the measure's own question three times and passed only when all three answers are its " +
+        "expected: role anchor (anchor pass rate), fault (a good example with one planted defect — killed when " +
         "the answer flips) and control (an artifact of another kind) — plus labels, ONLY where the " +
-        "protocol's qualification.labelMappings names this evaluator's stable_key. RETURNS " +
+        "protocol's qualification.labelMappings names this evaluator's stable_key; stability is the share of " +
+        "texts whose three answers agree. RETURNS " +
         "{ measure_key, evaluator_version_id, qualification_id, state, evidence: { anchors: " +
         "{passed, total}, planted_faults: {killed, total}, controls: {failed_as_expected, total}, " +
         "stability: {agreeing, total}, labels: {n, tpr, tnr} | null, reason, results: [{ id, role, " +

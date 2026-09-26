@@ -293,12 +293,18 @@ export function registerInitiativeActTools(server: McpServer): void {
         .map((f) => `sources/${f}`)
         .filter((ref) => !linked.has(ref));
       if (owed.length) {
+        // The `sources` to send is the whole list — what this call already cited plus what it
+        // still owes. Suggesting only the missing one read as a replacement: a caller who cited
+        // one of two owed sources was told to cite the other, did so literally, and was then told
+        // to cite the first (bug 5913fa5b), round and round.
+        const whole = [...new Set([...(sources ?? []).map((x) => x.trim()), ...owed])];
         return text(
           `ERROR: ${owed.join(", ")} ${owed.length === 1 ? "supports" : "support"} ${parts[1]} ` +
           `and ${owed.length === 1 ? "was" : "were"} added after the version you are replacing, ` +
-          `so ${owed.length === 1 ? "it is" : "they are"} what this revision answers. Cite ` +
-          `${owed.length === 1 ? "it" : "them"}: \`sources: ${JSON.stringify(owed)}\`. A version ` +
-          "that does not name what changed it cannot be checked by anybody later.");
+          `so ${owed.length === 1 ? "it is" : "they are"} what this revision answers. Send the whole ` +
+          `list — every source this revision answers, not only the missing one: \`sources: ` +
+          `${JSON.stringify(whole)}\`. A version that does not name what changed it cannot be ` +
+          "checked by anybody later.");
       }
 
       // The input that caused the change is stored beside the document it changed, so v2 always says

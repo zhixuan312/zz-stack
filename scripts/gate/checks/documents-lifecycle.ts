@@ -39,6 +39,11 @@ check("document_revise records the material behind every version", () => {
   if (!/supports/.test(src) || !/what this revision answers/.test(src)) {
     bad.push("nothing requires a revision to cite the sources that already support the document");
   }
+  // The `sources` it suggests is the whole list, the call's own included: suggesting only the
+  // missing one read as a replacement and sent a caller round between two sources (bug 5913fa5b).
+  if (!/\[\.\.\.\(sources \?\? \[\]\)\.map\(\(x\) => x\.trim\(\)\), \.\.\.owed\]/.test(src)) {
+    bad.push("the uncited-source refusal suggests only the missing sources, not the whole list to send");
+  }
   const at = src.indexOf('action: "document_revise"');
   if (at < 0) { bad.push("the document_revise activity payload was not found"); }
   else {

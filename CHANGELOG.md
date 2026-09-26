@@ -33,6 +33,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.77.2] — 2026-09-26
+
+### Fixed
+- **A door that is only used outside initiatives can be observed.** plugin_profile refused a
+  window with no run, but an admin act on a door (zz-access issuing a token, adding a member)
+  belongs to no run: zz-access 0.63.0, with 10 calls and 2 refusals, was refused as unused. A
+  door's window is now empty only when it has no call, and the refusal lists a door's used
+  versions by calls.
+- **A strength is not reported as open work.** finding_record told a strength it was deferred
+  and counting against the plugin's headroom, and findings.md printed `decision: deferred` beside
+  it. IMPROVE never read strengths; the wording now says so.
+
 ## [0.77.1] — 2026-09-26
 
 ### Fixed

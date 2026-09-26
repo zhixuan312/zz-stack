@@ -32,7 +32,7 @@ import { z } from "zod";
 
 import { entryOf, helperSkillsOf, servesOwnDoor, stageDocumentsOf, toolsNamedBy } from "./plugin-eval.js";
 import {
-  latencyAndByteFacts, outcomeAndApprovalFacts, refusalDetail, tokenAndCostFacts,
+  latencyAndByteFacts, outcomeAndApprovalFacts, refusalDetail,
   measured, rate, type ObservedFact,
 } from "./observe-facts.js";
 import {
@@ -137,7 +137,7 @@ interface Observation {
   traces: Awaited<ReturnType<typeof pluginTraces>>;
   facts: Record<string, ObservedFact>;
   coverageSurface: { observed: number; total: number; source: string };
-  runtimeIdentity: { service_versions: Record<string, string>; models: string[] };
+  runtimeIdentity: { service_versions: Record<string, string> };
 }
 
 /** Everything OBSERVE computes for one subject over one resolved window — called once for a
@@ -159,16 +159,10 @@ async function computeObservation(
   const writesDocuments = traces.use.some((u) =>
     ["document_write", "document_patch", "document_revise"].includes(u.tool.split(":").pop() ?? ""));
 
-  const [latencyBytes, outcomes, tokens, detail, models] = await Promise.all([
+  const [latencyBytes, outcomes, detail] = await Promise.all([
     latencyAndByteFacts(pool, plugin, version, serves, window),
     outcomeAndApprovalFacts(pool, plugin, version, serves, writesDocuments, window),
-    tokenAndCostFacts(pool, plugin, version, window),
     refusalDetail(pool, plugin, version, serves, window),
-    pool.query<{ model: string }>(`
-      select distinct mc.model
-        from zz.model_call mc
-       where mc.plugin = $1 and mc.ts between $2 and $3
-       order by mc.model`, [plugin, window.from, window.to]),
   ]);
 
   const totalCalls = traces.use.reduce((s, u) => s + u.calls, 0);
@@ -223,16 +217,12 @@ async function computeObservation(
       "this plugin's skills name no tool this scan can check reachability for"),
     ...latencyBytes,
     ...outcomes,
-    ...tokens,
   };
 
   return {
     traces, facts,
     coverageSurface: { ...called, source: surface.source },
-    runtimeIdentity: {
-      service_versions: { "zz-core": PLATFORM_VERSION },
-      models: models.rows.map((r) => r.model),
-    },
+    runtimeIdentity: { service_versions: { "zz-core": PLATFORM_VERSION } },
   };
 }
 

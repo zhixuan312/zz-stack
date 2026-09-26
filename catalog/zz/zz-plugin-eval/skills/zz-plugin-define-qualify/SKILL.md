@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define-qualify
-version: 0.9
+version: 0.10
 description: Stage 4 of zz-plugin-eval (DEFINE/QUALIFY), and the one gate that matters most. Derive what good means for THIS plugin from its own profile and DISCOVER's candidates, write it into protocol.md, get a person to agree it, then qualify every model-backed evaluator it names before anything is scored.
 when_to_use: "The fourth stage of zz-plugin-eval, after DISCOVER. Conditional: protocol_read decides create/revise/reuse, and this stage only writes when it says create or revise. Produces protocol.md, gated — protocol_affirm refuses to bind it until somebody approves it. No shell required."
 ---
@@ -99,7 +99,7 @@ Inside a dimension, one or more **measures** actually produce a mark. Each carri
   - `"inverted_rate"` reads `1 - value` — for a rate where LOWER is better, such as
     `tool_refusal_rate` or `dependency_failure_rate`: a plugin that refuses nothing should score
     `1`, not `0`.
-  - `"threshold"` compares a measured quantity (`latency_p50_ms`, `tokens_per_model_call_avg`)
+  - `"threshold"` compares a measured quantity (`latency_p50_ms`, `request_bytes_avg`)
     against a declared `max` and/or `min`, and reduces the comparison to `1`/`0` — use this for
     anything that is not itself a `[0,1]` rate; `"rate"`/`"inverted_rate"` refuse (excluded, never
     a guessed value) when the fact's raw value falls outside `[0,1]`.

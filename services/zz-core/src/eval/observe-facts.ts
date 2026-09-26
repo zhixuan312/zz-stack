@@ -1,7 +1,7 @@
 /**
  * The facts `plugin_profile` (observe.ts, Task I-7) adds beyond what `pluginTraces` already
- * counts: outcomes, document approvals, latency, request/response bytes, refusal text/owner
- * detail, and tokens/cost. Kept out of observe.ts to stay under this repository's 700-line
+ * counts: outcomes, document approvals, latency, request/response bytes, and refusal text/owner
+ * detail. Kept out of observe.ts to stay under this repository's 700-line
  * ceiling, and out of plugin-profile.ts because these queries have no reader outside OBSERVE.
  *
  * DELIBERATE: every exported function returns `ObservedFact` values — `{numerator, denominator,
@@ -21,11 +21,14 @@ import { toolCallEvents, type EvidenceWindow } from "./plugin-profile.js";
  *  path. `usable_run_coverage`/`tool_coverage` are computed directly in observe.ts's own
  *  `computeObservation` (from `traces.usable_runs`/`traces.runs` and the tool-coverage count), not
  *  by a function in this file — still listed here because this file is the facts registry, not
- *  because this file computes them. The other sixteen are this file's own exported functions'
- *  keys, plus the six observe.ts derives straight from `pluginTraces`. Keep this list and
+ *  because this file computes them. Of the other sixteen, nine are this file's own exported
+ *  functions' keys and seven observe.ts derives straight from `pluginTraces`. Keep this list and
  *  `computeObservation`'s own `facts` object literal in lockstep — `checks/eval-fact-path.ts` is
  *  pure (no database) and cannot see a live drift between the two; only a real `plugin_profile`
- *  call, whose `facts` keys are compared against this list, catches that. */
+ *  call, whose `facts` keys are compared against this list, catches that.
+ *
+ *  No fact reads `zz.model_call`: its rows are the platform's own evaluation spend (the typed
+ *  and critic judges), never a plugin's model use, which the platform cannot observe. */
 export const OBSERVATION_FACT_KEYS = [
   "usable_run_coverage", "tool_coverage",
   "stage_return_rate", "unplaced_step_rate", "repeat_read_rate", "tool_call_volume", "tool_refusal_rate",
@@ -33,7 +36,6 @@ export const OBSERVATION_FACT_KEYS = [
   "latency_p50_ms", "latency_p90_ms", "request_bytes_avg", "response_bytes_avg",
   "outcome_delivered_rate", "outcome_accepted_rate", "outcome_abandoned_rate", "doc_approval_rate",
   "doc_deferral_rate",
-  "tokens_per_model_call_avg", "cost_per_model_call_avg",
 ] as const;
 
 export interface Fact {
@@ -218,46 +220,5 @@ export async function outcomeAndApprovalFacts(
     outcome_abandoned_rate: rate(N(row?.abandoned), closed, closed, initiatives, noClose),
     doc_approval_rate: rate(N(row?.approved), documents, documents, documents, noDocs),
     doc_deferral_rate: rate(N(row?.deferring), documents, documents, documents, noDocs),
-  };
-}
-
-/** Model-call tokens for this plugin VERSION in this window. Cost has no column anywhere on
- *  this platform's schema — `zz.model_call` carries token counts and not a price — so it is
- *  reported as missing with a named reason rather than left out of the facts map entirely (the
- *  plan's "missing inputs are null with a reason" applies to a fact nothing records, not only to
- *  one whose population happens to be empty).
- *
- * `zz.model_call` itself carries no version column — only `plugin` — so the join to `zz.event`
- * is load-bearing: without `e.plugin_version = $2`, a second
- * subject_version_id for the SAME plugin name (a different declared version, still in the same
- * window) would silently attribute the first version's token usage to itself. A model call this
- * join cannot resolve to an event (should not happen — every model_call.event_id is written by
- * the same code path that writes the event) drops out rather than being guessed at. */
-export async function tokenAndCostFacts(
-  pool: pg.Pool, plugin: string, version: string, window: EvidenceWindow,
-): Promise<Record<string, ObservedFact>> {
-  const row = (await pool.query<{ calls: string; with_tokens: string; total_tokens: string | null }>(`
-    select count(*)::text as calls,
-           count(*) filter (where mc.input_tokens is not null or mc.output_tokens is not null)::text as with_tokens,
-           sum(coalesce(mc.input_tokens, 0) + coalesce(mc.output_tokens, 0))::text as total_tokens
-      from zz.model_call mc
-      join zz.event e on e.id = mc.event_id
-     where mc.plugin = $1 and e.plugin_version = $2
-       and mc.ts between $3 and $4`,
-    [plugin, version, window.from, window.to])).rows[0];
-
-  const calls = N(row?.calls);
-  const withTokens = N(row?.with_tokens);
-  const totalTokens = F(row?.total_tokens);
-  const avgTokens = withTokens > 0 && totalTokens !== null ? totalTokens / withTokens : null;
-  return {
-    tokens_per_model_call_avg: measured(avgTokens, withTokens, calls,
-      calls === 0 ? "no model call is recorded for this plugin in this window" :
-        "every model call in this window recorded no token count"),
-    cost_per_model_call_avg: {
-      value: null,
-      reason: "no cost is recorded anywhere on this platform's schema — zz.model_call carries " +
-        "token counts and not a price",
-    },
   };
 }

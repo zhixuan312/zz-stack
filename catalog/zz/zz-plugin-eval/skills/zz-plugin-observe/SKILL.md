@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-observe
-version: 0.5
+version: 0.6
 description: Stage 2 of zz-plugin-eval (OBSERVE). Compute the pre-protocol observation snapshot — production facts from this subject's real runs, in one resolved window — with its sufficiency verdict and the coverage it was derived from. No model touches any of it.
 when_to_use: "The second stage of zz-plugin-eval, after IDENTIFY has settled subject_version_id. Also the stage that decides whether there is enough evidence for DISCOVER and EVALUATE to work from. No shell required."
 ---
@@ -62,8 +62,9 @@ itself, whose evidence is exactly that.
   when the population is non-empty, `{value: null, reason}` when it is not. **A missing input is
   never `0`.** Covers outcomes, stage returns, repeated document reads, tool-call volume, refusals (with a normalised-text
   and owner-attributed `detail` breakdown), latency p50/p90, request/response bytes, document
-  approvals/revisions, never-called tools, tokens (cost is always `null` — nothing on this
-  platform records a price), and dependency failures (refusals owned by `theirs`).
+  approvals/revisions, never-called tools, and dependency failures (refusals owned by
+  `theirs`). No fact covers a plugin's own model use: the platform cannot observe it, and the
+  model calls it records are its own evaluation spend.
 - `traces` — run/path/return/use detail, for the narration these facts summarise. A **return**
   is read off the documents, never off the step a caller's last `skill_read` set: a successful
   write to a stage's document after a later stage's document of that initiative already existed
@@ -74,7 +75,7 @@ itself, whose evidence is exactly that.
   `initiative`. A `run_id` is what EVALUATE takes as a run-kind `subject_ref`, and what a
   finding cites; never cite an initiative slug without its team.
 - `environment_digest` / `evidence_digest` — the snapshot's own identity: deployed service
-  versions plus the models actually used in this window, and a hash over the canonical facts.
+  versions, and a hash over the canonical facts.
   Two observations of the same release in two environments, or two windows, mint two snapshots.
 
 ## Read the coverage before you read anything else

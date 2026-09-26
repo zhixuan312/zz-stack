@@ -5,6 +5,7 @@
 // improvement.criticalGuardrails is the ONE guardrail mechanism, evaluated against each measure's
 // already-reduced value. This check is pure: no database, no model call.
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 
@@ -126,3 +127,29 @@ const notEstablished = evaluateGuardrails(critical, new Map());
 assert.ok(notEstablished.every((r: { status: string }) => r.status === "not_established"), "an unmeasured guardrail is not_established, never fail");
 
 console.log("ok eval-fact-path: evaluateGuardrails distinguishes pass / fail / not_established");
+
+// -- no fact claims a plugin's model use --------------------------------------------------------
+// zz.model_call holds the platform's own evaluation spend (the typed and critic judges), never a
+// plugin's model calls, and its event_id is never filled. A token or cost fact joined through it,
+// or a runtime_identity.models read off it, was always empty or named the judge's model as the
+// plugin's. Neither is a fact, and neither may be declared as one or named to a protocol author.
+const { OBSERVATION_FACT_KEYS } =
+  await import(pathToFileURL(join(process.cwd(), "services/zz-core/dist/eval/observe-facts.js")).href);
+const unobservable = ["tokens_per_model_call_avg", "cost_per_model_call_avg"];
+for (const key of unobservable) {
+  assert.ok(!OBSERVATION_FACT_KEYS.includes(key), `${key} is not an observation fact`);
+  assert.notEqual(factPathRefusal({ key: "m", evaluatorType: "deterministic", definition: { factPath: key } }), null,
+    `protocol_record refuses a measure reading ${key}`);
+}
+for (const rel of ["services/zz-core/src/eval/observe.ts", "services/zz-core/src/eval/observe-facts.ts"]) {
+  assert.doesNotMatch(readFileSync(rel, "utf8"), /from zz\.model_call/, `${rel} reads no fact off zz.model_call`);
+}
+const evalCatalog = ["catalog/zz/zz-plugin-eval/protocols", "catalog/zz/zz-plugin-eval/skills"];
+const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true })
+  .flatMap((d) => d.isDirectory() ? walk(join(dir, d.name)) : [join(dir, d.name)]);
+for (const file of evalCatalog.flatMap(walk)) {
+  const text = readFileSync(file, "utf8");
+  for (const key of unobservable) assert.ok(!text.includes(key), `${file} names ${key}, which no snapshot carries`);
+  assert.ok(!/models actually used/.test(text), `${file} says a snapshot records the models a plugin used`);
+}
+console.log("ok eval-fact-path: no fact claims a plugin's model use");

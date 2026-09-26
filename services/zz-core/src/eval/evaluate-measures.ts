@@ -130,7 +130,7 @@ function asFactLike(node: unknown): FactLike | null {
  *  replacing the single implicit "read this fact as a rate" rule the two original facts got away
  *  with). `rate`/`inverted_rate` both need the raw fact value to already BE a rate in `[0,1]` —
  *  `usable_run_coverage`/`tool_coverage`/`tool_refusal_rate` and friends qualify; `latency_p50_ms`
- *  or `tokens_per_model_call_avg` do not, and normalising one of those as a rate is refused rather
+ *  or `request_bytes_avg` do not, and normalising one of those as a rate is refused rather
  *  than silently producing a number `scoreRun`'s own `[0,1]` guard would otherwise throw on later.
  *  `threshold` is for exactly that shape: a measured quantity compared against a declared `max`
  *  and/or `min`, reduced to a pass/fail `1`/`0`. */

@@ -42,6 +42,8 @@ true.
 
 ```bash
 npm run build                                    # tsc -b, project references
+node scripts/gate.ts                             # every check; needs Docker for the schema inventory
+node scripts/rehearse.ts --dump <zz-db-*.sql.gz> # a pending migration on a restored backup
 npm run doctor                                   # where a deployment stops matching this checkout
 node scripts/doctor.ts --layer repo,image       # offline; no host needed
 ```

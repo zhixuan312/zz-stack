@@ -33,6 +33,48 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.81.0] — 2026-09-27
+
+Phase 0 of the schema first-principles review (initiative
+`2026-09-21-schema-first-principles-review`): the standard, the target, the rehearsal, and the
+initiative as the one record of its own lifecycle.
+
+### Added
+- **`SCHEMA.md`** — the five questions every table and column answers, the six classes, the
+  twelve rules and the comment contract the schema is held to.
+- **`schema-target.ts`** — the schema this checkout declares, by subject under `schema-target/`,
+  edited by hand from the spec. `checks/schema-inventory.ts` migrates a throwaway PostgreSQL 17
+  with the real runner and fails the gate on any difference in a table, column, key, foreign key,
+  check, index or comment. The gate now needs Docker.
+- **`scripts/rehearse.ts`** — restores a production backup into a throwaway PostgreSQL 17, lets
+  the real runner apply what is pending, and proves nothing moved that the migration did not
+  declare, ending `REHEARSAL OK`.
+- **`zz-tool migrate-initiative-files`** — a one-shot carry of each initiative's lifecycle from
+  its closing envelope into `zz.initiative`. Removed again once this release is verified.
+
+### Changed
+- **`zz.initiative` is the record of an initiative's lifecycle.** `initiative_open` writes the
+  row (flow, opened_at, opened_by) and `initiative_close` records outcome, closed_at, closed_by
+  and accepted_by or no_signoff_reason on it, in the same call; a second close is refused by the
+  row. The gateway no longer invents initiative rows from events and documents. The console,
+  OBSERVE, knowledge search, the results watcher and the doctor read closed, outcome and flow
+  from the row.
+- **`knowledge_search`** returns an initiative's outcome and flow on every document of it, not
+  only on its closing document.
+
+### Fixed
+- **The console overview under-counted closed initiatives** — it counted one closed only when a
+  document with the flow's current closing name carried an outcome (14 of 34 on the 2026-09-26
+  backup) — and counted a closed initiative whose flow no longer resolves as having no flow.
+
+### Upgrade notes
+- **Migration `002_initiative_anchor.sql`** runs on the gateway's next start: `zz.initiative`
+  gains its lifecycle columns, `created_at` becomes `opened_at`, and `flow` may be null.
+  Immediately after the deploy run `./deploy/zz-tool migrate-initiative-files` once (it fills
+  only empty fields; a second run changes nothing).
+- `initiative_open` and `initiative_close` refuse without `TEAM_DB_URL`.
+- No client re-pull: no skill changed.
+
 ## [0.80.0] — 2026-09-26
 
 ### Changed

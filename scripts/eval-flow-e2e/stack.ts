@@ -169,9 +169,18 @@ export async function up(stubPort: number): Promise<Stack> {
     catch { return false; }
   });
 
-  // COUPLED: the row deploy/issue-first-pat.sh writes, as tool-chain.ts does.
+  // COUPLED: the row deploy/issue-first-pat.sh writes, as tool-chain.ts does. The label names
+  // one purpose, so the token a previous run left under it is revoked before this one is
+  // written; both statements go in one psql request, wrapped in a transaction, so the revoke
+  // cannot outlive a failed insert.
   const pat = `zzp_${randomBytes(24).toString("hex")}`;
-  q(`insert into zz.pat (principal_id, token_hash, label) select id, '${PAT_OF(pat)}', 'eval-flow-e2e' from zz.principal where email = '${OPERATOR}'`);
+  q(`begin;
+     update zz.pat set revoked_at = now()
+       where principal_id = (select id from zz.principal where email = '${OPERATOR}')
+         and label = 'eval-flow-e2e' and revoked_at is null;
+     insert into zz.pat (principal_id, token_hash, label)
+       select id, '${PAT_OF(pat)}', 'eval-flow-e2e' from zz.principal where email = '${OPERATOR}';
+     commit;`);
 
   // What a release writes after the deploy (scripts/release/registries.ts), in the same order,
   // BEFORE any traffic: a run resolves its skill version by `released_at <= event ts`.

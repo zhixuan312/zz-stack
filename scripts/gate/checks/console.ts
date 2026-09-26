@@ -174,10 +174,11 @@ check("every console write route records the door it came through", () => {
     // The three scope modules, not the mount point: the routes live under settings/ by scope.
     ...["me", "team", "platform"].map((scope) => ({
       path: `services/gateway/src/settings/${scope}.ts`,
-      // `active_team_id` is a column this file writes directly, with no zz-core call and no
-      // WRITE_CALLS function to detect it by. Switching the team a person acts for changes what
-      // every client of theirs shows.
-      isWrite: (body: string) => /active_team_id/.test(body) ||
+      // `active_team_id` and `console_session` are columns a settings file writes directly,
+      // with no zz-core call and no WRITE_CALLS function to detect it by. The first is the team
+      // a person's agents act for; the second is the team one browser session acts for, which is
+      // the console's own switch. Both change what every client of theirs shows.
+      isWrite: (body: string) => /active_team_id|console_session/.test(body) ||
         new RegExp(`\\b(${WRITE_CALLS.join("|")})\\(`).test(body),
       markerCalls: WRITE_CALLS,
     })),
@@ -251,6 +252,35 @@ check("every console write route records the door it came through", () => {
         bad.push(`WRITE_CALLS names "${name}" and no settings route calls it — the list is stale`);
       }
     }
+  }
+  return bad.length ? bad.join("; ") : null;
+});
+
+check("the console's team switch moves its session, not the principal", () => {
+  // AC-2.1: the team a console browser acts for is `console_session.team_id`, set by this route
+  // and by nothing else, while the principal's `active_team_id` is the team the person's agents
+  // act for and is moved by `team_switch` on /manage. A route that wrote the principal's column
+  // would move every agent that authenticates as this person while the console looked like it
+  // had switched — which is the reading this phase exists to correct.
+  const f = "services/gateway/src/settings/me.ts";
+  const src = withoutComments(readFileSync(join(root, f), "utf8"));
+  const bad: string[] = [];
+  if (!/update console_session\b/.test(src)) {
+    bad.push(`${f} never updates console_session — the switch would move nothing this browser's ` +
+             "own");
+  }
+  if (/update\s+principal[^`]*\bset\b[^`]*active_team_id/.test(src)) {
+    bad.push(`${f} writes principal.active_team_id — that is the team the caller's agents act ` +
+             "for, and a browser switching it moves every agent they hold");
+  }
+  // A caller with no console session has no session team to move, and is told where an agent's
+  // team moves rather than handed a success that changed nothing they can see.
+  if (!/id\.via !== "session"/.test(src)) {
+    bad.push(`${f} does not refuse a caller that is not a signed-in console session`);
+  }
+  if (!/team_switch/.test(src) || !/\/manage/.test(src)) {
+    bad.push(`${f}'s refusal does not name team_switch on /manage, which is how an agent's team ` +
+             "moves");
   }
   return bad.length ? bad.join("; ") : null;
 });

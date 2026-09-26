@@ -44,10 +44,32 @@ export async function issueMyAccessTokenFor(
   }
   if (r.rows[0].status !== "active") return { ok: false, error: `${email} is deactivated` };
   const token = mintPat();
+  // One live token per person per label is the database's own rule — the partial unique index
+  // (principal_id, label) where revoked_at is null. The revoke and the insert commit together or
+  // not at all: issued as two transactions, a failure between them would end the purpose with no
+  // live token and take away access nobody asked to lose. The token being replaced is revoked,
+  // never deleted, so what it obtained keeps its provenance and its `last_used_at`.
+  //
+  // DELIBERATE: an unlabelled token is exempt (label <> ''), as the index is — "" is not a
+  // purpose, so re-issuing one adds a token rather than ending the previous.
   // No scope column: a token carries whatever its holder may do, read from the principal.
-  await db.query(
-    "insert into pat (principal_id, token_hash, label) values ($1,$2,$3)",
-    [r.rows[0].id, sha256(token), label ?? ""]);
+  const client = await db.connect();
+  try {
+    await client.query("begin");
+    await client.query(
+      "update pat set revoked_at = now() " +
+      "where principal_id = $1 and label = $2 and label <> '' and revoked_at is null",
+      [r.rows[0].id, label ?? ""]);
+    await client.query(
+      "insert into pat (principal_id, token_hash, label) values ($1,$2,$3)",
+      [r.rows[0].id, sha256(token), label ?? ""]);
+    await client.query("commit");
+  } catch (err) {
+    await client.query("rollback");
+    throw err;
+  } finally {
+    client.release();
+  }
   logEvent({ actor: email, kind: "pat.self_issue", subject: label ?? "", detail: extraDetail });
   return { ok: true, token, label: label ?? "", email };
 }

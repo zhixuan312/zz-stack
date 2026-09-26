@@ -76,8 +76,16 @@ export async function teamsFor(email: string): Promise<{ active: string | null; 
   // by email alone makes a token that says "team X" read team Y's store.
   const boundRaw = requestHeaders()["x-zz-pat-team"];
   const bound = (Array.isArray(boundRaw) ? boundRaw[0] : boundRaw ?? "").trim();
+  // The console's session team, stamped the same way. A console write or ask that the gateway
+  // forwards here must act in the session's team — the browser's own, which is not the team the
+  // same person's agents act for.
+  const sessionRaw = requestHeaders()["x-zz-session-team"];
+  const session = (Array.isArray(sessionRaw) ? sessionRaw[0] : sessionRaw ?? "").trim();
   const now = Date.now();
-  const key = bound ? `${email}\u0000${bound}` : email;
+  // Both headers are part of the key. Three seconds of cache keyed on the address alone would
+  // answer the next request with the team the previous one acted for, which is the whole bug
+  // this header exists to close.
+  const key = `${email}\u0000${bound}\u0000${session}`;
   const hit = teamCache.get(key);
   if (hit && hit.expires > now) return { active: hit.team, all: hit.all };
   try {
@@ -100,11 +108,12 @@ export async function teamsFor(email: string): Promise<{ active: string | null; 
     );
     const every = platform.rows.map((r) => r.slug).filter((s): s is string => !!s);
     // COUPLED: which team they are acting as is `actingTeam` in @zz/contracts, which the gateway
-    // calls too. The bound-token rule, the chosen team and the fallback ordering all live there, so
-    // a person's documents and their gateway calls cannot resolve to two different teams.
+    // calls too. The bound-token rule, the session's own team, the chosen team and the fallback
+    // ordering all live there, so a person's documents and their gateway calls cannot resolve to
+    // two different teams.
     const active = actingTeam(
       platform.rows.filter((r) => !!r.slug).map((r) => ({ slug: r.slug as string, role: r.role })),
-      platform.rows[0]?.active_slug ?? null,
+      session || platform.rows[0]?.active_slug || null,
       bound || null,
     );
     // Seconds, not a minute. The active team is a choice a person makes, and a switch that takes up

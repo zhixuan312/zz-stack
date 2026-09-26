@@ -16,29 +16,59 @@ import { mintPat, sha256 } from "./identity.js";
  *  depending on the `pg` package, which this package otherwise has no reason to carry. */
 export interface Db {
   query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<{ rows: T[]; rowCount: number | null }>;
+  /** One connection out of the pool, held open across a transaction and handed back. */
+  connect(): Promise<DbConnection>;
 }
 
-/** Mint a token, hash it, and write the one row that makes it live — replacing any existing
- *  token with the same label first, because a label names one purpose and a purpose has one
- *  current credential. Returns the plaintext (shown once, never stored again) and the new
- *  row's id. */
+/** A connection held out of the pool for as long as a transaction lasts. Nothing outside this
+ *  module names it: a caller satisfies `connect()`'s return structurally. */
+interface DbConnection {
+  query(text: string, params?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }>;
+  release(): void;
+}
+
+/** Mint a token, hash it, and write the one row that makes it live — revoking any live token
+ *  with the same label first, because a label names one purpose and a purpose has one current
+ *  credential. Returns the plaintext (shown once, never stored again), the new row's id, and
+ *  how many rows the revoke took out. */
 export async function issuePat(db: Db, args: {
   principalId: string; teamId: string | null; label?: string; expiresAt: string | null;
 }): Promise<{ token: string; patId: string; replaced: number }> {
   const token = mintPat();
-  // DELIBERATE: an unlabelled token is exempt from the replace-by-label rule, matching
-  // pat_issue's own rule — "" is not a purpose, so a caller wanting a second deliberate token
-  // leaves the label off or names it differently.
-  const replaced = args.label
-    ? (await db.query("delete from zz.pat where principal_id = $1 and label = $2",
-                       [args.principalId, args.label])).rowCount ?? 0
-    : 0;
-  const r = await db.query<{ id: string }>(
-    `insert into zz.pat (principal_id, token_hash, label, team_id, expires_at)
-     values ($1,$2,$3,$4,$5) returning id`,
-    [args.principalId, sha256(token), args.label ?? "", args.teamId, args.expiresAt],
-  );
-  return { token, patId: r.rows[0].id, replaced };
+  const label = args.label ?? "";
+  // One live token per purpose is the database's own rule — the partial unique index
+  // (principal_id, label) where revoked_at is null. The revoke and the insert commit together or
+  // not at all: issued as two transactions, a failure between them would end the purpose with no
+  // live token and take away access nobody asked to lose. The token being replaced is revoked,
+  // never deleted, so what it obtained keeps its provenance and its `last_used_at`.
+  //
+  // DELIBERATE: an unlabelled token is exempt (label <> ''), as the index is — "" is not a
+  // purpose, so a caller wanting a second deliberate token leaves the label off or names it
+  // differently.
+  const client = await db.connect();
+  let patId: string;
+  let replaced: number;
+  try {
+    await client.query("begin");
+    const revoked = await client.query(
+      "update zz.pat set revoked_at = now() " +
+      "where principal_id = $1 and label = $2 and label <> '' and revoked_at is null",
+      [args.principalId, label]);
+    const issued = await client.query(
+      `insert into zz.pat (principal_id, token_hash, label, team_id, expires_at)
+       values ($1,$2,$3,$4,$5) returning id`,
+      [args.principalId, sha256(token), label, args.teamId, args.expiresAt],
+    );
+    await client.query("commit");
+    patId = String(issued.rows[0].id);
+    replaced = revoked.rowCount ?? 0;
+  } catch (err) {
+    await client.query("rollback");
+    throw err;
+  } finally {
+    client.release();
+  }
+  return { token, patId, replaced };
 }
 
 /** Revoke a token by id. Returns whether a live token was actually revoked — false for a

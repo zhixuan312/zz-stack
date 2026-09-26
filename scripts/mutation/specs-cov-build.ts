@@ -220,10 +220,10 @@ export const COV_BUILD: readonly MutationSpec[] = [
     check: "scripts/gate/checks/hygiene.ts",
     target: "every source file is text a search can read",
     subject: "services/zz-core/src/platform-db.ts",
-    find: "  const key = bound ? `${email}\\u0000${bound}` : email;",
+    find: "  const key = `${email}\\u0000${bound}\\u0000${session}`;",
     // The escape is written back as the raw byte. Identical behaviour, and every grep over this
     // repository — including the sweeps that find defects around it — skips the file whole.
-    replace: "  const key = bound ? `${email}" + "\u0000" + "${bound}` : email;",
+    replace: "  const key = `${email}" + "\u0000" + "${bound}" + "\u0000" + "${session}`;",
     planted: "a control byte goes back into a source file as a raw byte instead of an escape, so " +
       "grep calls the file binary and prints nothing, and the team cache's key is in a file no " +
       "search can read",

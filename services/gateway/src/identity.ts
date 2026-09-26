@@ -34,6 +34,11 @@ export interface Identity {
   /** Which team a token is confined to, when one is. Answers "acting inside which team",
    *  not "may do what". */
   patTeam?: string | null;
+  /** The team this browser session acts for, when the caller arrived on one. The console's
+   *  own switch moves it, and it moves that browser alone: the agents that authenticate as the
+   *  same person keep reading the principal's. Null for every other credential, which has no
+   *  session to carry a team. */
+  sessionTeam?: string | null;
 }
 
 declare module "express-serve-static-core" {
@@ -188,13 +193,17 @@ async function resolvePat(token: string): Promise<Identity | null> {
  * request. COUPLED: a change to either belongs in both.
  *
  * No team binding, unlike a PAT: a session carries the person's whole
- * membership, exactly as an unbound token does. */
+ * membership, exactly as an unbound token does. It carries a team of its own
+ * instead — the console's switch moves that column, and only that browser
+ * follows it. */
 async function resolveSession(token: string): Promise<Identity | null> {
   if (!platformDbReady()) return null;
   const db = platformDb();
-  const r = await db.query<{ id: string; email: string; status: string }>(
-    `select s.id, p.email, p.status
-       from console_session s join principal p on p.id = s.principal_id
+  const r = await db.query<{ id: string; email: string; status: string; team_slug: string | null }>(
+    `select s.id, p.email, p.status, t.slug as team_slug
+       from console_session s
+       join principal p on p.id = s.principal_id
+       left join team t on t.id = s.team_id and t.status = 'active'
       where s.token_hash = $1 and s.revoked_at is null and s.expires_at > now()`,
     [sha256(token)],
   );
@@ -204,7 +213,16 @@ async function resolveSession(token: string): Promise<Identity | null> {
     .catch((err) => console.error("console_session.last_seen_at update failed:", err));
   const base = await principalByEmail(row.email);
   if (!base) return null;
-  return { ...base, via: "session" };
+  // The session's own team, which `actingTeam` reads as the stored choice for this request —
+  // the principal's, resolved by principalByEmail, is the fallback when the session has none.
+  // A session team that is no longer a live membership cannot win either: which team is live
+  // is actingTeam's question, answered once for the whole platform.
+  return {
+    ...base,
+    activeTeam: actingTeam(base.teams, row.team_slug ?? base.activeTeam, null),
+    via: "session",
+    sessionTeam: row.team_slug,
+  };
 }
 
 /** The person whose browser this is, or null — the session door on its own.
@@ -384,10 +402,13 @@ export function identityMiddleware() {
       // request.
       req.headers["x-zz-via"] = id.via;
 
-      // The team a person acts for is not on this request: it is a column on their principal,
-      // switched in ZZ Access, and zz-core reads it per call. x-zz-pat-team means one thing
-      // only — a token bound to a team.
+      // x-zz-pat-team means one thing only — a token bound to a team. The team a person acts
+      // for is otherwise a column on their principal, switched in ZZ Access and read per call;
+      // a console session carries its own team beside it, which is what x-zz-session-team is
+      // for. Both are stamped on every request and never merged with what arrived, so a caller
+      // writing either one by hand cannot move a team.
       req.headers["x-zz-pat-team"] = id.patTeam ?? "";
+      req.headers["x-zz-session-team"] = id.sessionTeam ?? "";
       next();
     })().catch((err: unknown) => {
       console.error("identity resolution failed:", err);
@@ -404,13 +425,15 @@ export function identityMiddleware() {
  *
  * No scope: authority is read from the principal, every time. `patTeam` answers a different
  * question — which team this token acts inside — which is not a claim about what its holder
- * may do. */
+ * may do, and `sessionTeam` answers a third: the team the console session that forwarded this
+ * request acts for. */
 function callerAuth(headers: Record<string, string | string[] | undefined>): {
-  via: "pat" | "forwarded"; patTeam: string | null;
+  via: "pat" | "forwarded"; patTeam: string | null; sessionTeam: string | null;
 } {
   return {
     via: one(headers["x-zz-via"]) === "pat" ? "pat" : "forwarded",
     patTeam: one(headers["x-zz-pat-team"]) || null,
+    sessionTeam: one(headers["x-zz-session-team"]) || null,
   };
 }
 
@@ -489,6 +512,7 @@ export async function callerIdentity(): Promise<Identity | null> {
   const auth = callerAuth(headers);
   const bound = boundMemberships(teams.rows, auth.patTeam);
   if (!bound) return null;
+  const chosen = await chosenTeam(p.rows[0].id);
   return {
     email: p.rows[0].email,
     displayName: p.rows[0].display_name,
@@ -496,7 +520,10 @@ export async function callerIdentity(): Promise<Identity | null> {
     // Narrowed to the token's team, exactly as the middleware does: this rebuild asks the
     // database who the person is, and the database has never heard of their token.
     teams: bound,
-    activeTeam: actingTeam(teams.rows, await chosenTeam(p.rows[0].id), auth.patTeam ?? null),
+    // The session's team outranks the principal's column here too, or a console request that
+    // reached a tool would act for one team while the same request's HTTP half acted for
+    // another. Both headers are the middleware's own, rewritten on every request.
+    activeTeam: actingTeam(teams.rows, auth.sessionTeam ?? chosen, auth.patTeam ?? null),
     ...auth,
   };
 }

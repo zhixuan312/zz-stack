@@ -74,9 +74,12 @@ export function myTeamsSummary(id: Identity):
       ? { note: `Your token is BOUND to ${id.activeTeam}, so team_switch cannot move it. ` +
                 `A token bound to a team is what makes it safe to leave running.` }
       : teams.length > 1
-      ? { note: `team_switch moves you to another one. You act for exactly one team at a ` +
-                `time, so switching changes what every client shows you — including which ` +
-                `agents you have.` }
+      ? { note: id.via === "session"
+                ? `Switching here moves this browser only. Your agents keep the team they ` +
+                  `act for — team_switch on the /manage door moves that.`
+                : `team_switch moves you to another one. You act for exactly one team at a ` +
+                  `time, so switching changes what every client shows you — including which ` +
+                  `agents you have.` }
       : {}),
   };
 }

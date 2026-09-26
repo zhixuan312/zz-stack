@@ -253,8 +253,7 @@ check("the committed judged dataset is exactly what its generator produces, byte
 // Nothing in `checks/` is invisible to this file
 
 /**
- * Files in `checks/` this gate deliberately does not register, and why. Empty: every check in
- * the directory is registered.
+ * Files in `checks/` this gate deliberately does not register, and why.
  *
  * Named one by one, because a rule that exempted a check for failing would exempt every broken
  * check dropped in this directory.
@@ -262,7 +261,12 @@ check("the committed judged dataset is exactly what its generator produces, byte
  * COUPLED: `working-checks-registered.ts` parses this map, so a name here exempts a file from
  * both rules.
  */
-const notRegistered = new Map<string, string>([]);
+const notRegistered = new Map<string, string>([
+  // Transient by construction: the check names `services/gateway/src/mcp-oauth.ts` correctly, and
+  // that file is task I-11's, which lands in wave 3. It is registered in `suites-data.ts` and this
+  // entry deleted in the same commit — a name here and a registration there is a red gate.
+  ["pat-one-live-per-label.ts", "services/gateway/src/mcp-oauth.ts is task I-11, fixed in wave 3"],
+]);
 
 check("every check in checks/ is registered here, or named here with a reason", () => {
   // DELIBERATE: a cross-validator, not a loop. Registering the directory with a `for` would be

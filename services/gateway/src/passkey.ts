@@ -129,8 +129,8 @@ async function takeChallenge(
   if (!id || !/^[0-9a-f-]{36}$/.test(id)) return null;
   const r = await platformDb().query<{ challenge: string; principal_id: string | null; redirect_to: string | null }>(
     `delete from zz.passkey_challenge
-      where id = $1 and kind = $2 and created_at > now() - ($3 || ' milliseconds')::interval
-      returning challenge, principal_id, redirect_to`, [id, kind, String(CHALLENGE_TTL_MS)]);
+      where id = $1 and kind = $2 and expires_at > now()
+      returning challenge, principal_id, redirect_to`, [id, kind]);
   if (!r.rows.length) return null;
   const row = r.rows[0];
   return { challenge: row.challenge, principalId: row.principal_id, redirectTo: row.redirect_to ?? "/" };
@@ -142,16 +142,17 @@ async function takeChallenge(
  * to the browser's history, and to the `Referer` of anything the page loads. A fragment never
  * leaves the browser, and the enrolment page reads it with script and POSTs it.
  *
- * `issuedBy` is null when an operator mints this from the host, which is the bootstrap. */
+ * The issuer is not a column: the gateway path records it as an `admin.issue_enrolment` event,
+ * and the host path has no signed-in person to name. */
 export async function issueEnrolment(
-  principalId: string, issuedBy: string | null,
+  principalId: string,
 ): Promise<{ url: string; expiresAt: Date }> {
   const token = `zze_${b64(randomBytes(32))}`;
   const r = await platformDb().query<{ expires_at: Date }>(
-    `insert into zz.passkey_enrolment (token_hash, principal_id, issued_by, expires_at)
-     values ($1, $2, $3, now() + ($4 || ' milliseconds')::interval)
+    `insert into zz.passkey_enrolment (token_hash, principal_id, expires_at)
+     values ($1, $2, now() + ($3 || ' milliseconds')::interval)
      returning expires_at`,
-    [sha256(token), principalId, issuedBy, String(ENROLMENT_TTL_MS)]);
+    [sha256(token), principalId, String(ENROLMENT_TTL_MS)]);
   return { url: `${PUBLIC_URL}/enrol#t=${token}`, expiresAt: r.rows[0].expires_at };
 }
 
@@ -239,9 +240,9 @@ export function mountPasskey(app: Express): void {
       });
 
       const saved = await platformDb().query<{ id: string }>(
-        `insert into zz.passkey_challenge (challenge, kind, principal_id, redirect_to)
-         values ($1, 'register', $2, $3) returning id`,
-        [options.challenge, who.principalId, safeNext((req.body ?? {}).next)]);
+        `insert into zz.passkey_challenge (challenge, kind, principal_id, redirect_to, expires_at)
+         values ($1, 'register', $2, $3, now() + ($4 || ' milliseconds')::interval) returning id`,
+        [options.challenge, who.principalId, safeNext((req.body ?? {}).next), String(CHALLENGE_TTL_MS)]);
       setCeremonyCookie(res, saved.rows[0].id);
       res.json(options);
     })().catch((err: unknown) => {
@@ -314,9 +315,9 @@ export function mountPasskey(app: Express): void {
         // are first, and answering that from an email is an account-existence oracle.
       });
       const saved = await platformDb().query<{ id: string }>(
-        `insert into zz.passkey_challenge (challenge, kind, redirect_to)
-         values ($1, 'login', $2) returning id`,
-        [options.challenge, safeNext((req.body ?? {}).next)]);
+        `insert into zz.passkey_challenge (challenge, kind, redirect_to, expires_at)
+         values ($1, 'login', $2, now() + ($3 || ' milliseconds')::interval) returning id`,
+        [options.challenge, safeNext((req.body ?? {}).next), String(CHALLENGE_TTL_MS)]);
       setCeremonyCookie(res, saved.rows[0].id);
       res.json(options);
     })().catch((err: unknown) => {
@@ -430,17 +431,19 @@ export function mountPasskey(app: Express): void {
   });
 }
 
-/** Delete what has expired: sessions, half-finished ceremonies, and unopened invitations.
+/** Delete what has expired: sessions, half-finished ceremonies, unopened invitations, and
+ * authorization codes nobody exchanged.
  *
  * On a timer rather than at read time — `resolveSession` runs on every request, and a read that
- * also writes turns each page load into a transaction. One pass for all three. Called from
+ * also writes turns each page load into a transaction. One pass for all four. Called from
  * server startup. */
 export async function sweepSessions(): Promise<void> {
   if (!platformDbReady()) return;
   const db = platformDb();
   await db.query(
     "delete from zz.console_session where expires_at < now() - interval '7 days' or revoked_at < now() - interval '7 days'");
-  await db.query("delete from zz.passkey_challenge where created_at < now() - interval '1 hour'");
+  await db.query("delete from zz.passkey_challenge where expires_at < now()");
   await db.query(
     "delete from zz.passkey_enrolment where expires_at < now() - interval '7 days' or used_at < now() - interval '7 days'");
+  await db.query("delete from zz.mcp_oauth_authz where expires_at < now()");
 }

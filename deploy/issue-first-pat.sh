@@ -13,7 +13,8 @@
 #   ./deploy/issue-first-pat.sh                     # uses SUPERADMIN_EMAIL from deploy/.env
 #   ./deploy/issue-first-pat.sh someone@example.com
 #
-# Run it again and you get another token; existing ones keep working until revoked.
+# Run it again and the token it wrote last time is revoked and replaced: the label names one
+# purpose, so one deployment has one bootstrap token. The notice below says when that happened.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -53,18 +54,43 @@ if [ "$(printf '%s' "$EXISTS" | tr -d '[:space:]')" != "1" ]; then
   exit 1
 fi
 
+# The label names one purpose, so the token a previous run wrote under it is revoked before this
+# one is written — revoked, never deleted, because its `last_used_at` is how anyone finds out
+# whether production was still using it. The revoke and the insert go in one transaction, so a
+# failed insert cannot leave the deployment with no bootstrap token at all.
+#
+# DELIBERATE: `-tA` without `-q`, because the UPDATE's own command tag is how the notice below
+# learns whether anything was revoked. `ON_ERROR_STOP` aborts before the COMMIT.
+#
 # No `scope`: authority is a fact about the person, read from their principal, never the token.
-printf '%s\n' "insert into zz.pat (principal_id, token_hash, label)
-   select id, :'hash', 'bootstrap — issue-first-pat.sh'
-   from zz.principal where email = :'email';" \
-  | docker compose exec -T postgres psql -U "${POSTGRES_USER:-zz}" -d "${POSTGRES_DB:-zz}" -q \
-      -v email="$EMAIL" -v hash="$HASH" >/dev/null
+REVOKED="$(printf '%s\n' \
+  "begin;
+   update zz.pat set revoked_at = now()
+     where principal_id = (select id from zz.principal where email = :'email')
+       and label = 'bootstrap — issue-first-pat.sh'
+       and revoked_at is null;
+   insert into zz.pat (principal_id, token_hash, label)
+     select id, :'hash', 'bootstrap — issue-first-pat.sh'
+     from zz.principal where email = :'email';
+   commit;" \
+  | docker compose exec -T postgres psql -U "${POSTGRES_USER:-zz}" -d "${POSTGRES_DB:-zz}" \
+      -tA -v ON_ERROR_STOP=1 -v email="$EMAIL" -v hash="$HASH" \
+  | awk '/^UPDATE [0-9]+$/ { print $2; exit }')"
+
+if [ "${REVOKED:-0}" -gt 0 ]; then
+  REPLACED_NOTE="
+REVOKED ${REVOKED} previous bootstrap token(s) carrying this label. Anything that was still
+using one has stopped working."
+else
+  REPLACED_NOTE=""
+fi
 
 cat <<MSG
 
 Platform token for $EMAIL
 
   $TOKEN
+$REPLACED_NOTE
 
 SHOWN ONCE. Store it now — only its hash is kept, so it cannot be printed again.
 Use it as: Authorization: Bearer $TOKEN

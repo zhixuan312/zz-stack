@@ -150,9 +150,11 @@ export async function buildAccessServer(
     {
       description:
         "WHEN the work belongs to a different team than the one you are acting for. RETURNS " +
-        "confirmation that you now act for that team: your documents and knowledge store are " +
-        "that team's everywhere from here, and work you left unfinished stays " +
-        "with the team you left it in, where its members can pick it up. REFUSES any team " +
+        "confirmation that the agents acting as you now act for that team: your documents and " +
+        "knowledge store are that team's everywhere from here, and work you left unfinished stays " +
+        "with the team you left it in, where its members can pick it up. It moves the team on " +
+        "your principal, which every credential of yours reads; a signed-in console browser " +
+        "carries a team of its own and switches that in Settings. REFUSES any team " +
         "you are not a member of and any archived team, and names the ones you do have " +
         "instead — call team_mine first if you are not sure.",
       inputSchema: { team: z.string() },
@@ -163,8 +165,8 @@ export async function buildAccessServer(
       // A bound token cannot move anybody, including itself. `actingTeam` reads a bound token's
       // own team whatever this column says, so the switch would change nothing for it — while
       // `active_team_id` is where every other credential that person holds reads their team
-      // from, so a left-running automation could silently move its owner's browser session and
-      // every unbound agent token to a different team. The console route refuses it too.
+      // from, so a left-running automation could silently move its owner's agents and every
+      // unbound agent token to a different team. The console route keeps the same refusal.
       const bound = (await callerIdentity())?.patTeam;
       if (bound) {
         return text(
@@ -179,7 +181,7 @@ export async function buildAccessServer(
       // that writes, so there is no window between deciding and doing.
       const done = await db.query<{ slug: string }>(
         `update zz.principal p
-            set active_team_id = t.id, updated_at = now()
+            set active_team_id = t.id
            from zz.team t
           where lower(p.email) = $1
             and t.slug = $2 and t.status = 'active'

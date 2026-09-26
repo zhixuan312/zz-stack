@@ -7,7 +7,7 @@
 import { platformDb } from "../db.js";
 import { auditAdmin, type Identity } from "../identity.js";
 import { issueEnrolment } from "../passkey.js";
-import { principalId, superOnly } from "./authority.js";
+import { superOnly } from "./authority.js";
 
 // The guarded bodies behind person_list, person_add, person_deactivate, team_create and
 // team_archive.
@@ -69,7 +69,7 @@ export async function deactivatePerson(
   try {
     await client.query("begin");
     const who = await client.query<{ id: string }>(
-      "update principal set status='deactivated', updated_at=now() where email=$1 returning id",
+      "update principal set status='deactivated' where email=$1 returning id",
       [email.toLowerCase()]);
     const principal = who.rows[0]?.id ?? null;
     const pats = await client.query(
@@ -120,8 +120,7 @@ export async function issueEnrolmentLink(
   if (r.rows[0].status !== "active") {
     return { ok: false, status: 400, error: `principal ${email} is ${r.rows[0].status}` };
   }
-  const issuedBy = await principalId(db, id.email);
-  const link = await issueEnrolment(r.rows[0].id, issuedBy);
+  const link = await issueEnrolment(r.rows[0].id);
   auditAdmin(id, "issue_enrolment", email, { ...extraDetail });
   return { ok: true, url: link.url, expiresAt: link.expiresAt, message:
     `Enrolment link for ${email}, good until ${link.expiresAt.toISOString()} and usable once. ` +

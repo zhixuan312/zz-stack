@@ -65,10 +65,9 @@ if [ "$(printf '%s' "$EXISTS" | tr -d '[:space:]')" != "1" ]; then
   exit 1
 fi
 
-# issued_by is null: the host's shell authorised this, not a signed-in person. Naming the
-# person the link is for would read as self-issued.
-printf '%s\n' "insert into zz.passkey_enrolment (token_hash, principal_id, issued_by, expires_at)
-   select :'hash', id, null, now() + interval '7 days'
+# No issuer column: the host's shell authorised this, and there is no signed-in person to name.
+printf '%s\n' "insert into zz.passkey_enrolment (token_hash, principal_id, expires_at)
+   select :'hash', id, now() + interval '7 days'
    from zz.principal where email = :'email';" \
   | docker compose exec -T postgres psql -U "${POSTGRES_USER:-zz}" -d "${POSTGRES_DB:-zz}" -q \
       -v email="$EMAIL" -v hash="$HASH" >/dev/null

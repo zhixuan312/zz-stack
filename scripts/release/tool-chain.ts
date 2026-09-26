@@ -95,10 +95,20 @@ export function walkToolChain(version: string | undefined): void {
     // that script and this disagree, the bootstrap is broken and nothing else would say so.
     const token = `zzp_${randomBytes(24).toString("hex")}`;
     const hash = createHash("sha256").update(token).digest("hex");
+    // One live token per label, as every other writer of `pat` keeps: the row a label names is
+    // revoked before the next one is written, so a second chain check replaces its own token
+    // instead of tripping the partial unique index. Both statements go in one `-c`, wrapped in a
+    // transaction, so a failed insert cannot leave the previous token dead with nothing to
+    // replace it.
     run("docker", ["exec", pg, "psql", "-U", "zz", "-d", "zz", "-q", "-c",
-                   `insert into zz.pat (principal_id, token_hash, label)
+                   `begin;
+                    update zz.pat set revoked_at = now()
+                      where principal_id = (select id from zz.principal where email = '${OPERATOR}')
+                        and label = 'release chain-check' and revoked_at is null;
+                    insert into zz.pat (principal_id, token_hash, label)
                       select id, '${hash}', 'release chain-check'
-                      from zz.principal where email = '${OPERATOR}'`]);
+                      from zz.principal where email = '${OPERATOR}';
+                    commit;`]);
 
     log("  walking the tool chain against this release's own image");
     execFileSync("node", [join(root, "packages/tools/dist/testing/chain-check.js")],

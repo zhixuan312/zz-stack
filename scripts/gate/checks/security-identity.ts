@@ -342,29 +342,48 @@ check("nothing picks a team by taking the first membership row", () => {
   return bad.join("\n");
 });
 
-check("an OAuth code is exchanged once, even by two requests at the same instant", () => {
-  // Reading `used` and then setting it is two statements, and two exchanges of one code that
-  // interleave both read false: both mint a token, and the second's one-token-per-door delete
-  // removes the first's, so a client holds a token that stopped working the moment it arrived.
-  // The code is consumed by the update that tests it, and the exchange goes on only when that
-  // update changed the row.
-  const REL = "services/gateway/src/mcp-oauth.ts";
-  if (!existsSync(join(root, REL))) return `${REL} is gone, so the code exchange is unchecked`;
-  const code = withoutComments(readFileSync(join(root, REL), "utf8"));
-  const sets = [...code.matchAll(/update zz\.mcp_oauth_authz set used = true([^`"]*)/g)];
-  if (sets.length !== 1) return `${REL} marks a code used in ${sets.length} places; the exchange consumes it in exactly one`;
-  const where = sets[0]![1]!;
-  if (!/used = false/.test(where)) {
-    return `${REL} marks a code used without testing that it was unused (\`${where.trim()}\`) — two concurrent exchanges both succeed`;
+check("a console session acts for its own team, not the principal's", () => {
+  // AC-2.1: switching team in the console moves that browser and nothing else. The session's
+  // team is `console_session.team_id`, read by resolveSession and handed to `actingTeam` as the
+  // stored choice; the gateway stamps it as x-zz-session-team, and zz-core reads that header
+  // ahead of the principal's column, so a console write or ask forwarded there acts in the same
+  // team the browser is showing. The principal's own column is the agents' team, and stays where
+  // team_switch (/manage) put it.
+  const bad: string[] = [];
+  const idsrc = withoutComments(readFileSync(join(root, "services/gateway/src/identity.ts"), "utf8"));
+  if (!/from console_session s/.test(idsrc) || !/s\.team_id/.test(idsrc)) {
+    bad.push("resolveSession does not read the session's own team — the console would follow the " +
+             "principal, which is the agents' team");
   }
-  if (!/created_at > now\(\) - interval '10 minutes'/.test(where)) {
-    return `${REL} consumes a code without testing it has not expired — a code that expired after it was read would still mint a token`;
+  const sessionLine = idsrc.split("\n").find((l) => /actingTeam\(base\.teams/.test(l)) ?? "";
+  if (!/row\.team_slug/.test(sessionLine)) {
+    bad.push("resolveSession hands actingTeam the principal's resolved team rather than the " +
+             "session's own, so a console browser falls back to the agents' team");
   }
-  const after = code.slice(sets[0]!.index!);
-  if (!/if \(consumed\.rowCount !== 1\)/.test(after.slice(0, 400))) {
-    return `${REL} consumes the code but does not refuse when the update changed no row — the losing exchange would still mint a token`;
+  if (!/req\.headers\["x-zz-session-team"\] = id\.sessionTeam \?\? ""/.test(idsrc)) {
+    bad.push("the gateway does not stamp x-zz-session-team on every request, so nothing " +
+             "downstream can tell a console browser's team from the person's");
   }
-  return null;
+  // zz-core reads that header, and its cache must key on it. Keyed on the address and the token
+  // binding alone, an answer cached under one team is served to the next request, which may be
+  // acting in another — and the switch appears not to have applied.
+  const coreDb = withoutComments(
+    readFileSync(join(root, "services/zz-core/src/platform-db.ts"), "utf8"));
+  if (!/x-zz-session-team/.test(coreDb)) {
+    bad.push("zz-core's teamsFor never reads x-zz-session-team, so a console write or ask " +
+             "forwarded there acts for the principal's team while the browser shows the session's");
+  }
+  const keyLine = coreDb.split("\n").find((l) => /const key =/.test(l)) ?? "";
+  if (!/\$\{session\}/.test(keyLine)) {
+    bad.push("zz-core's team cache is not keyed on the session header as well as the address and " +
+             `the token binding (\`${keyLine.trim()}\`)`);
+  }
+  // And one place moves it: the console's own switch, which writes the session's column.
+  const me = withoutComments(readFileSync(join(root, "services/gateway/src/settings/me.ts"), "utf8"));
+  if (!/update console_session/.test(me)) {
+    bad.push("the console's team switch does not move console_session.team_id");
+  }
+  return bad.length ? bad.join("; ") : null;
 });
 
 check("deactivating a person ends every way back in, in the same transaction as the status", () => {

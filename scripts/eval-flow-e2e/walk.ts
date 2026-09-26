@@ -77,7 +77,7 @@ export async function discover(w: Walk): Promise<number> {
 /** The reference protocol for zz-core, the sample the define stage starts from, with DISCOVER's
  *  open candidates folded into its failure taxonomy. */
 function protocolBody(version: number, open: readonly Reply[]): Record<string, unknown> {
-  const parsed: unknown = JSON.parse(readFileSync(join(live, "catalog/zz/zz-plugin-eval/protocols/zz-core.v1.json"), "utf8"));
+  const parsed: unknown = JSON.parse(readFileSync(join(live, "catalog/zz/zz-plugin-eval/protocols/zz-core.json"), "utf8"));
   if (!parsed || typeof parsed !== "object") throw new Error("the reference protocol is not an object");
   const body = { ...(parsed as Record<string, unknown>) };
   body.version = version;

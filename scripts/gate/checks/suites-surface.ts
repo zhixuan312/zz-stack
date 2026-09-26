@@ -189,7 +189,7 @@ check("release_prepare and proposal_prepare take only the initiative: the eval_r
       runsCheck("eval-prepare-from-initiative.ts"));
 check("a record stage's ids come back from initiative_status in a new conversation, and next_move names the first record stage that has none",
       runsCheck("eval-stage-records.ts"));
-check("a model-backed measure qualifies against its own declared anchors, faults and controls: a truthful evaluator reaches operationally_qualified, a mislabelled anchor is unqualified naming anchorPassRate and the anchor id, and every zz-core.v1 semantic measure carries anchors of both answers",
+check("a model-backed measure qualifies against its own declared anchors, faults and controls: a truthful evaluator reaches operationally_qualified, a mislabelled anchor is unqualified naming anchorPassRate and the anchor id, and every zz-core reference semantic measure carries anchors of both answers",
       runsCheck("eval-qualify-anchors.ts"));
 check("one excluded measure lowers its dimension's coverage but never nulls the dimension or the overall; the status reads the run's coverage against a named floor", runsCheck("eval-score-coverage.ts"));
 check("OBSERVE counts only a plugin's own tools, attributed by the door that serves them, so observed never exceeds total, and its traces return the observed run ids with their team", runsCheck("eval-observe-surface.ts"));

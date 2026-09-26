@@ -15,6 +15,20 @@ import { HOST, REMOTE, asExecError, log, run, ssh } from "../deployment.ts";
 
 const regPsql = `ssh ${HOST} docker compose -f ${REMOTE}/deploy/docker-compose.yml exec -T postgres psql -U zz -d zz`;
 
+/** The pre-deploy half: catalog skills whose registered version holds different bytes. Refused
+ *  before anything is built — register-skills never rewrites a registered version, so a skill
+ *  edited without a version bump would otherwise ship under its old hash. A registry this cannot
+ *  read is reported the same way, since nothing then says the versions are sound. */
+export function skillVersionsMoved(): string[] {
+  try {
+    run("node", ["packages/tools/dist/ops/register-skills.js", "--root", ".", "--psql", regPsql, "--check"]);
+    return [];
+  } catch (e) {
+    const out = asExecError(e);
+    return [`register-skills --check: ${(out.stderr || out.message).trim().slice(0, 600)}`];
+  }
+}
+
 /** Returns what failed in a way step 5 must treat as the release not working — empty when
  *  nothing did. `ownerTeam` is the release's resolved `catalogOwnerTeam()`, which register-plugins
  *  refuses to run without. */

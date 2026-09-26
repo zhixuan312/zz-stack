@@ -26,7 +26,7 @@ assert.equal(refKindOf("bug:0b7c7a9e-1111-4222-8333-444455556666"), "bug");
 assert.equal(subjectKindOf(measure("a", "bounded_semantic", { definition: { subjectKind: "run" }, question: "Read this document." })), "run",
   "a declared subjectKind wins over the question");
 // Every model-backed measure of the live zz-core protocol routes to a kind — none falls back to "every ref".
-const protocol = JSON.parse(readFileSync("catalog/zz/zz-plugin-eval/protocols/zz-core.v1.json", "utf8"));
+const protocol = JSON.parse(readFileSync("catalog/zz/zz-plugin-eval/protocols/zz-core.json", "utf8"));
 const kinds: Record<string, string | null> = {};
 for (const d of protocol.dimensions) for (const pm of d.measures) {
   if (!pm.evaluator) continue;
@@ -35,6 +35,7 @@ for (const d of protocol.dimensions) for (const pm of d.measures) {
 const expected: Record<string, string> = {
   bug_report_evidence_discipline: "bug", document_gate_readiness: "document",
   knowledge_capture_effectiveness: "knowledge", call_economy: "run", refusal_explains_itself: "run",
+  refusal_recovery_path: "run", cross_flow_reuse: "knowledge",
 };
 for (const [k, kind] of Object.entries(expected)) if (k in kinds) assert.equal(kinds[k], kind, `${k} routes to ${kind}`);
 assert.ok(Object.keys(kinds).length > 0, "the protocol names model-backed measures to route");
@@ -50,8 +51,9 @@ const measures = [
   measure("refusal_explains", "bounded_semantic", { question: "Read this run. Where it refused ..." }),
   measure("unqualified_doc", "bounded_semantic", { question: "Read this document. Does it ..." }),
 ];
+const noText = () => undefined;
 const plan = planAssessment({ measures, subjectRefs: refs, runLevel: run, alreadyAssessed: new Set(),
-  qualified: (x: { key: string }) => x.key !== "unqualified_doc" });
+  qualified: (x: { key: string }) => x.key !== "unqualified_doc", textOf: noText });
 const asks = plan.filter((p: { ask: boolean }) => p.ask);
 const pairs = asks.map((p: { measure: { key: string }; subjectRef: string }) => `${p.measure.key} @ ${p.subjectRef}`);
 assert.deepEqual(pairs.sort(), [
@@ -72,10 +74,31 @@ assert.ok(!refs.some((r) => isRunLevelRef(r)), "no subject ref reads as run-leve
 // Once per run holds across calls: a second call on the same run adds no run-level row.
 const again = planAssessment({ measures, subjectRefs: [refs[0]], runLevel: run,
   alreadyAssessed: new Set(plan.map((p: { measure: { id: string } }) => p.measure.id)),
-  qualified: (x: { key: string }) => x.key !== "unqualified_doc" });
+  qualified: (x: { key: string }) => x.key !== "unqualified_doc", textOf: noText });
 assert.deepEqual(again.map((p: { measure: { key: string } }) => p.measure.key), ["frontmatter"],
   "the deterministic fact and every run-level exclusion are written once per run, not once per call, " +
   "and a measure already asked of a run is not re-marked excluded by a call with no run ref");
+
+// -- appliesWhen "refused": asked only of runs whose trace refused a call ------------------------
+const refusedRun = "0b7c7a9e-1111-4222-8333-444455556666";
+const cleanRun = "1c8d8b0f-2222-4333-8444-555566667777";
+const texts: Record<string, string> = {
+  [refusedRun]: `RUN ${refusedRun}:\n10:00:01  core:document_approve  x/spec.md  REFUSED  ERROR: present it first\n10:00:04  core:document_present  x/spec.md  ok`,
+  [cleanRun]: `RUN ${cleanRun}:\n10:00:01  core:document_read  x/spec.md  ok`,
+};
+const recovery = measure("recovery", "bounded_semantic", { definition: { subjectKind: "run", appliesWhen: "refused" } });
+const economy = measure("economy", "bounded_semantic", { definition: { subjectKind: "run" } });
+const conditional = planAssessment({ measures: [recovery, economy], subjectRefs: [refusedRun, cleanRun], runLevel: run,
+  alreadyAssessed: new Set(), qualified: () => true, textOf: (r: string) => texts[r] });
+assert.deepEqual(conditional.filter((p: { ask: boolean }) => p.ask)
+  .map((p: { measure: { key: string }; subjectRef: string }) => `${p.measure.key} @ ${p.subjectRef}`).sort(),
+  [`economy @ ${cleanRun}`, `economy @ ${refusedRun}`, `recovery @ ${refusedRun}`].sort(),
+  "a refusal measure is asked only of the run that refused; an unconditional one of both");
+const none = planAssessment({ measures: [recovery], subjectRefs: [cleanRun], runLevel: run,
+  alreadyAssessed: new Set(), qualified: () => true, textOf: (r: string) => texts[r] });
+assert.equal(none.length, 1);
+assert.equal(none[0].ask, false);
+assert.match(none[0].excluded_reason, /applies only where one did/);
 
 // -- no model call for an unqualified evaluator, even through answerMeasure --------------------
 let asked = false;

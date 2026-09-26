@@ -48,7 +48,7 @@ import { chainCheck } from "./release/chain-live.ts";
 import { args, dryRun, preflightMode, rollbackMode, version } from "./release/config.ts";
 import { consoleImage, resolveDashboard } from "./release/dashboard.ts";
 import { preflight } from "./release/preflight.ts";
-import { writeRegistries } from "./release/registries.ts";
+import { skillVersionsMoved, writeRegistries } from "./release/registries.ts";
 import { rollback } from "./release/rollback.ts";
 import { verifyLive, verifyPredeploy } from "./release/verify.ts";
 
@@ -197,9 +197,10 @@ if (!ownerTeam) {
 if (!dryRun) {
   step("1b", "pre-deploy probes");
   const pre = verifyPredeploy();
-  if (pre.wrong.length || pre.unknown.length) {
+  const moved = skillVersionsMoved();
+  if (pre.wrong.length || pre.unknown.length || moved.length) {
     die("the pre-deploy probes disagree with, or could not read, the live data — nothing was " +
-        "built or deployed:\n" + [...pre.wrong, ...pre.unknown].map((x) => `        - ${x}`).join("\n"));
+        "built or deployed:\n" + [...pre.wrong, ...pre.unknown, ...moved].map((x) => `        - ${x}`).join("\n"));
   }
 }
 

@@ -3,6 +3,7 @@
  *
  *   zz-tool register-skills
  *   zz-tool register-skills --psql '<command>' --dry-run
+ *   zz-tool register-skills --psql '<command>' --check
  *
  * The files stay the source of truth for what a skill says; this copies name, kind, version and
  * content hash into zz.skill and zz.skill_version so a skill can be joined against events. No
@@ -140,8 +141,22 @@ function assetsFor(dir: string): { kind: AssetKind; path: string }[] {
   return out;
 }
 
+/** Catalog skills whose (name, version) is registered with different bytes. */
+function changedWithoutBump(psql: string, found: readonly Found[]): Found[] {
+  if (!found.length) return [];
+  const held = psqlRows<{ name: string; version: string; content_hash: string }>(psql, `
+    select s.name, sv.version, sv.content_hash
+      from zz.skill_version sv join zz.skill s on s.id = sv.skill_id
+     where s.name in (${found.map((f) => lit(f.name)).join(", ")})`);
+  const hash = new Map(held.map((h) => [`${h.name}@${h.version}`, h.content_hash]));
+  return found.filter((f) => {
+    const was = hash.get(`${f.name}@${f.version}`);
+    return was !== undefined && was !== f.hash;
+  });
+}
+
 function main(argv: string[]): number {
-  const args = parseArgs(argv, ["dry-run"]);
+  const args = parseArgs(argv, ["dry-run", "check"]);
   const psql = args.flags.get("psql") || DEFAULT_PSQL;
   const root = optional(args, "root", "the repository root") ?? process.cwd();
 
@@ -149,6 +164,26 @@ function main(argv: string[]): number {
   if (!found.length) {
     console.log("\n  No SKILL.md anywhere under the catalog or skills/. Nothing to register.\n");
     return 0;
+  }
+
+  // A registered version names its bytes for good: runs, documents and every evaluation subject
+  // join through it, and a version whose hash moved under them is two different skills under one
+  // name. `--check` is the release's pre-deploy question — does any catalog skill carry bytes its
+  // registered version never had — asked before anything is built, so the answer is "bump the
+  // version" rather than a registry quietly rewritten.
+  const moved = changedWithoutBump(psql, found);
+  if (args.flags.has("check")) {
+    if (!moved.length) {
+      console.log(`\n  every catalog skill version matches its registered bytes (${found.length} skill(s))\n`);
+      return 0;
+    }
+    console.error(`\n  ${moved.length} skill(s) changed without a version bump — bump \`version:\` in each SKILL.md:`);
+    for (const m of moved) console.error(`    ${m.name} ${m.version}`);
+    console.error("");
+    return 1;
+  }
+  for (const m of moved) {
+    console.error(`  WARNING: ${m.name} ${m.version} changed without a version bump; its registered hash is kept`);
   }
 
   let assets = 0;
@@ -161,14 +196,13 @@ function main(argv: string[]): number {
                                        retired = false`);
     // `released_at` named, not left to its default. The column decides which version wrote a
     // document older than the run link — the console reads it as a window — so it records the
-    // first time this row is written and never again. The conflict branch does not touch it:
-    // re-registering an unchanged version is not a re-release.
+    // first time this row is written and never again. A registered version is never rewritten:
+    // re-registering it is not a re-release, and its hashes are what it was released as.
     psqlText(psql, `
       insert into zz.skill_version (skill_id, version, content_hash, body_hash, released_at)
       select id, ${lit(s.version)}, ${lit(s.hash)}, ${lit(s.bodyHash)}, now()
         from zz.skill where name = ${lit(s.name)}
-      on conflict (skill_id, version) do update set content_hash = excluded.content_hash,
-                                                    body_hash = excluded.body_hash`);
+      on conflict (skill_id, version) do nothing`);
     for (const a of assetsFor(s.dir)) {
       psqlText(psql, `
         insert into zz.skill_asset (skill_version_id, kind, path)

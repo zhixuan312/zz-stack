@@ -33,10 +33,10 @@ import { z } from "zod";
 import { entryOf, servesOwnDoor, toolsNamedBy } from "./plugin-eval.js";
 import {
   latencyAndByteFacts, outcomeAndApprovalFacts, refusalDetail, tokenAndCostFacts,
-  rate, type ObservedFact,
+  measured, rate, type ObservedFact,
 } from "./observe-facts.js";
 import {
-  ownTools, pluginTraces, surfaceCoverage, unboundedRunsClause, type EvidenceWindow,
+  ownTools, pluginTraces, surfaceCoverage, unboundedRunsClause, versionsWithRuns, type EvidenceWindow,
 } from "./plugin-profile.js";
 import { OWN_TOOLS } from "../door.js";
 import { withIdempotency, canonicalJson, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
@@ -164,6 +164,8 @@ async function computeObservation(
   const noSteps = "no run in this window recorded a step";
   const noCalls = "no tool call is recorded for this subject in this window";
   const noRefusals = "no refusal is recorded for this subject in this window";
+  const noStages = "this plugin's manifest declares no stage order, so the steps its runs record " +
+    "belong to the flows that called it and neither a return nor an unplaced step is defined";
 
   const facts: Record<string, ObservedFact> = {
     // The two facts this measure system read as special-cased raw columns before `facts` existed —
@@ -176,12 +178,18 @@ async function computeObservation(
     usable_run_coverage: rate(traces.usable_runs, traces.runs, traces.usable_runs, traces.runs, noEvents),
     tool_coverage: rate(called.observed, called.total, called.observed, called.total,
       "this plugin's skills name no tool this scan can check reachability for"),
-    stage_return_rate: rate(traces.returns.length, totalStepVisits,
-      traces.coverage.with_step, traces.coverage.events, noSteps),
-    unplaced_step_rate: rate(totalUnplaced, totalStepVisits,
-      traces.coverage.with_step, traces.coverage.events, noSteps),
-    tool_call_volume: rate(totalCalls, traces.coverage.events,
-      totalCalls, traces.coverage.events, noEvents),
+    // A return and an unplaced step are defined against the stage order this plugin's own
+    // manifest declares. A plugin that declares none — a door like zz-core, whose runs record
+    // the steps of whichever flow was calling it — has no order for either to be measured
+    // against; every step came out "unplaced", reported as a rate of 1.
+    stage_return_rate: stages.length
+      ? rate(traces.returns.length, totalStepVisits, traces.coverage.with_step, traces.coverage.events, noSteps)
+      : { value: null, reason: noStages },
+    unplaced_step_rate: stages.length
+      ? rate(totalUnplaced, totalStepVisits, traces.coverage.with_step, traces.coverage.events, noSteps)
+      : { value: null, reason: noStages },
+    // Calls per run: a volume, not a rate, so its coverage is the runs it is averaged over.
+    tool_call_volume: measured(traces.runs ? totalCalls / traces.runs : null, traces.runs, traces.runs, noEvents),
     tool_refusal_rate: { ...rate(totalRefusals, totalCalls, totalCalls, totalCalls, noCalls), detail },
     dependency_failure_rate: rate(totalTheirs, totalRefusals,
       attributedRefusals, totalRefusals, noRefusals),
@@ -221,10 +229,17 @@ function respond(
     facts: observation.facts,
     environment_digest: sha256(canonicalJson(observation.runtimeIdentity)),
     evidence_digest: evidenceDigest,
-    // Extra context beyond the contract's own fields — the raw traces this snapshot's facts
-    // were rolled up from, for a reader (or DISCOVER, later) that wants the detail rather than
-    // the summary.
-    traces: observation.traces,
+    // Extra context beyond the contract's own fields — the traces this snapshot's facts were
+    // rolled up from. Every stage visit is summarised rather than listed: at 95 runs the list
+    // alone was 25KB of a 71KB response, more than a calling agent's context takes in one
+    // result, and nothing downstream reads it from here — DISCOVER recomputes it.
+    traces: {
+      ...observation.traces,
+      stage_paths: {
+        initiatives: observation.traces.stage_paths.length,
+        visits: observation.traces.stage_paths.reduce((n, p) => n + p.steps.length, 0),
+      },
+    },
     sufficient_for_judging: observation.traces.sufficient,
     ...(drift ? {
       replayed: true,
@@ -280,6 +295,21 @@ export function registerObserveTools(server: McpServer): void {
       const serves = servesOwnDoor(plugin);
       const window = await resolveWindow(pool, plugin, declaredVersion, serves, evidence_window);
       const observation = await computeObservation(pool, plugin, declaredVersion, window);
+      // An empty window is refused, not recorded: a snapshot of nothing carried an evaluation
+      // through DISCOVER and DEFINE on no evidence at all. The usual cause is evaluating the
+      // version just released, which nobody but the evaluation has used yet — so the refusal
+      // names the versions that do have runs.
+      if (observation.traces.runs === 0) {
+        const withRuns = await versionsWithRuns(pool, plugin, serves);
+        throw new Refusal(
+          `ERROR: ${plugin} ${declaredVersion} has no run in this window (${window.from} to ${window.to}), ` +
+          "not counting evaluations' own calls — there is nothing to observe. " +
+          (withRuns.length
+            ? `Versions of ${plugin} with runs: ${withRuns.map((v) =>
+                `${v.version} (${v.runs} run${v.runs === 1 ? "" : "s"}, last ${v.last_run})`).join("; ")}. ` +
+              "IDENTIFY one of those with plugin_locate(version), or wait for real use of this one."
+            : `No version of ${plugin} has a run yet.`));
+      }
 
       const principal = parseCaller(requestHeaders()).email;
       const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(

@@ -66,7 +66,7 @@ export async function resolveProtocol(p: pg.Pool, protocolVersionId: string): Pr
 /** FR-6's gate, read where it matters: `protocol_record` writes every version with
  *  `approved_document_path` null, and only `protocol_affirm` sets it, once a person approved the
  *  `protocol.md` quoting its digest. Nothing is qualified or scored against a
- *  version that never got there. No exemption for a bootstrap protocol (`zz-core.v1`): it is
+ *  version that never got there. No exemption for a bootstrap protocol: it is
  *  recorded through `protocol_record` like any other body and affirmed the same way —
  *  `scoring.establishment.bootstrap` only caps what its score may claim. */
 export function unaffirmedRefusal(protocolVersionId: string, protocol: ProtocolContext): string | null {

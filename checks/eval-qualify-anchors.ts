@@ -16,15 +16,15 @@ const { qualificationState, resolveThresholds } = await load("services/zz-core/d
 type Anchor = { id: string; role: "anchor" | "fault" | "control"; text: string; expected: string };
 type Measure = { key: string; evaluatorType: string; definition: { qualification?: { anchors: Anchor[] } } };
 
-const protocol = JSON.parse(readFileSync("catalog/zz/zz-plugin-eval/protocols/zz-core.v1.json", "utf8"));
+const protocol = JSON.parse(readFileSync("catalog/zz/zz-plugin-eval/protocols/zz-core.json", "utf8"));
 const measures: Measure[] = protocol.dimensions.flatMap((d: { measures: Measure[] }) => d.measures);
 const semantic = measures.filter((m) => m.evaluatorType === "bounded_semantic" || m.evaluatorType === "generative_critic");
 const { thresholds } = resolveThresholds(protocol.qualification.thresholds);
 
 // 1. The reference protocol validates, and every model-backed measure carries anchors of both
 // answers, a fault and a control.
-assert.equal(EvaluationProtocol.safeParse(protocol).success, true, "zz-core.v1.json no longer validates");
-assert.ok(semantic.length > 0, "zz-core.v1.json has no model-backed measure to qualify");
+assert.equal(EvaluationProtocol.safeParse(protocol).success, true, "zz-core.json no longer validates");
+assert.ok(semantic.length > 0, "zz-core.json has no model-backed measure to qualify");
 for (const m of semantic) {
   const anchors = m.definition.qualification?.anchors ?? [];
   const roles = new Set(anchors.map((a) => a.role));

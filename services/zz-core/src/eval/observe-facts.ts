@@ -12,7 +12,7 @@
  */
 import type pg from "pg";
 
-import { toolCallEvents, type EvidenceWindow } from "./plugin-profile.js";
+import { NOT_EVALUATION_EVENT, toolCallEvents, type EvidenceWindow } from "./plugin-profile.js";
 
 /** Every fact key `plugin_profile` (observe.ts) writes into `zz.eval_observation_snapshot.facts`
  *  (001, fix dispatch on I-29's own follow-on) — the canonical list `protocol-record.ts`
@@ -141,9 +141,16 @@ export async function refusalDetail(
   return rows.map((r) => ({ text: r.normalized, owner: r.owner, count: Number(r.n) }));
 }
 
-/** Document outcomes and approvals, scoped to the initiatives this plugin's own door traffic
- *  touched in this window — never the whole platform's `zz.doc` table, which would make these
- *  facts a statement about the install rather than about the subject and window being observed.
+/** Initiative outcomes and document approvals, scoped to the initiatives this plugin's own door
+ *  traffic touched in this window — never the whole platform's `zz.doc` table, which would make
+ *  these facts a statement about the install rather than about the subject and window observed.
+ *
+ *  An outcome belongs to an initiative, not to a document: `initiative_close` stamps it on the
+ *  one agreement document of a closed initiative. So each outcome rate is over the touched
+ *  initiatives that closed, and its coverage is how many of the touched initiatives closed at
+ *  all. Divided by every document instead, one accepted close among 284 documents read as an
+ *  acceptance rate of 0.0035. Approvals are a property of documents and stay per document.
+ *
  *  `null` for a plugin that wrote no document in this window: a flow plugin, a door plugin that
  *  was merely read from, or a window with no matching traffic at all. */
 export async function outcomeAndApprovalFacts(
@@ -161,33 +168,40 @@ export async function outcomeAndApprovalFacts(
     };
   }
   const row = (await pool.query<{
-    documents: string; delivered: string; accepted: string; abandoned: string;
-    closed: string; approved: string;
+    initiatives: string; closed: string; delivered: string; accepted: string; abandoned: string;
+    documents: string; approved: string;
   }>(`
     with touched as (
-      select distinct e.initiative from zz.event e
+      select distinct e.team_slug, e.initiative from zz.event e
        where e.plugin = $1 and e.kind = 'tool_call'
          and e.ts between $2 and $3
          and e.initiative is not null and e.initiative <> ''
+         and ${NOT_EVALUATION_EVENT}
     ),
-    live as (select * from zz.doc d
-              where d.path not like '\\_versions/%'
-                and d.initiative in (select initiative from touched))
-    select count(*)::text as documents,
-           count(*) filter (where outcome = 'delivered')::text as delivered,
-           count(*) filter (where outcome = 'accepted')::text as accepted,
-           count(*) filter (where outcome = 'abandoned')::text as abandoned,
-           count(*) filter (where outcome is not null)::text as closed,
-           count(*) filter (where approved_by is not null)::text as approved
-      from live`,
+    live as (select d.* from zz.doc d
+               join touched t on t.team_slug = d.team_slug and t.initiative = d.initiative
+              where d.path not like '\\_versions/%'),
+    closes as (select team_slug, initiative, min(outcome) as outcome
+                 from live where outcome is not null group by team_slug, initiative)
+    select (select count(*) from (select distinct team_slug, initiative from live) i)::text as initiatives,
+           (select count(*) from closes)::text as closed,
+           (select count(*) from closes where outcome = 'delivered')::text as delivered,
+           (select count(*) from closes where outcome = 'accepted')::text as accepted,
+           (select count(*) from closes where outcome = 'abandoned')::text as abandoned,
+           (select count(*) from live)::text as documents,
+           (select count(*) from live where approved_by is not null)::text as approved`,
     [plugin, window.from, window.to])).rows[0];
 
-  const documents = N(row?.documents);
+  const initiatives = N(row?.initiatives);
   const closed = N(row?.closed);
+  const documents = N(row?.documents);
+  const noClose = initiatives
+    ? `none of the ${initiatives} initiative(s) this window touched has closed — no outcome is recorded yet`
+    : noDocs;
   return {
-    outcome_delivered_rate: rate(N(row?.delivered), documents, closed, documents, noDocs),
-    outcome_accepted_rate: rate(N(row?.accepted), documents, closed, documents, noDocs),
-    outcome_abandoned_rate: rate(N(row?.abandoned), documents, closed, documents, noDocs),
+    outcome_delivered_rate: rate(N(row?.delivered), closed, closed, initiatives, noClose),
+    outcome_accepted_rate: rate(N(row?.accepted), closed, closed, initiatives, noClose),
+    outcome_abandoned_rate: rate(N(row?.abandoned), closed, closed, initiatives, noClose),
     doc_approval_rate: rate(N(row?.approved), documents, documents, documents, noDocs),
   };
 }

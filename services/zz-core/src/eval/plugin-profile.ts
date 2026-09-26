@@ -100,6 +100,45 @@ interface PluginTraces {
   reason?: string;
 }
 
+/** The evaluator is not evidence about what it evaluates. An evaluation calls zz-core (it opens
+ *  an initiative, reads skills, writes protocol.md) and, when it improves a plugin, that plugin's
+ *  door too; counted as the subject's own use, the first runs after a release were nothing but
+ *  the evaluation observing itself, and release_verify's post-release run floor could be met by
+ *  the evaluation alone. A run or event belongs to an evaluation when its skill is one of the
+ *  zz-plugin-eval flow's, or when its initiative is an evaluation — recorded as that flow, or
+ *  holding a run of one of its skills (`zz.initiative.flow` is filled in later, from the first
+ *  document written) — or, for a run outside any initiative, when its session also ran an
+ *  evaluation stage: every evaluation opens by reading the platform skill before it has an
+ *  initiative, and that read alone gave each fresh release one run of "use". zz-plugin-eval's
+ *  own evidence IS its evaluations, so nothing is excluded for it. `$1` is the plugin in every
+ *  query these fragments join. */
+const EVAL_FLOW = "zz-plugin-eval";
+const EVAL_SESSION = (session: string): string => `
+  exists (select 1 from zz.run sr
+            join zz.skill_version ssv on ssv.id = sr.skill_version_id
+            join zz.skill ss on ss.id = ssv.skill_id
+           where sr.caller_session = ${session} and ss.flow = '${EVAL_FLOW}')`;
+const EVAL_INITIATIVES = `
+  select ei.id from zz.initiative ei
+   where ei.flow = '${EVAL_FLOW}'
+      or exists (select 1 from zz.run er
+                   join zz.skill_version esv on esv.id = er.skill_version_id
+                   join zz.skill es on es.id = esv.skill_id
+                  where er.initiative_id = ei.id and es.flow = '${EVAL_FLOW}')`;
+const NOT_EVALUATION_RUN = `
+  ($1 = '${EVAL_FLOW}' or (
+     not exists (select 1 from zz.skill_version esv join zz.skill es on es.id = esv.skill_id
+                  where esv.id = r.skill_version_id and es.flow = '${EVAL_FLOW}')
+     and (r.initiative_id is null or r.initiative_id not in (${EVAL_INITIATIVES}))
+     and not (r.initiative_id is null and ${EVAL_SESSION("r.caller_session")})))`;
+export const NOT_EVALUATION_EVENT = `
+  ($1 = '${EVAL_FLOW}' or (
+     not exists (select 1 from zz.skill es where es.name = e.step and es.flow = '${EVAL_FLOW}')
+     and not exists (select 1 from zz.initiative ii join zz.team it on it.id = ii.team_id
+                      where it.slug = e.team_slug and ii.slug = e.initiative
+                        and ii.id in (${EVAL_INITIATIVES}))
+     and not (coalesce(e.initiative, '') = '' and ${EVAL_SESSION("e.detail->>'run'")})))`;
+
 /** The runs belonging to one plugin version, through its recorded skill membership, bounded to
  *  the caller's window.
  *
@@ -112,7 +151,8 @@ const RUNS_BY_SKILL = `
   join zz.plugin_version pv on pv.id = pvs.plugin_version_id
   join zz.plugin p on p.id = pv.plugin_id
  where p.name = $1 and pv.version = $2
-   and r.started_at between $3 and $4`;
+   and r.started_at between $3 and $4
+   and ${NOT_EVALUATION_RUN}`;
 
 /** The other kind of plugin, and the other place its evidence lives — bounded the same way
  *  RUNS_BY_SKILL is, through the door event itself.
@@ -132,7 +172,8 @@ const RUNS_ON_DOOR = `
  where exists (select 1 from zz.event e
                 where e.run_id = r.id and e.plugin = $1 and e.plugin_version = $2
                   and e.ts between $3 and $4)
-   and r.started_at between $3 and $4`;
+   and r.started_at between $3 and $4
+   and ${NOT_EVALUATION_RUN}`;
 
 /** The exact event population `use` is aggregated over: `$1`=plugin, `$2`=version, `$3`/`$4`=the
  *  resolved window. Exported so observe.ts's new facts (Task I-7 — latency, bytes, refusal
@@ -142,7 +183,8 @@ export function toolCallEvents(servesOwnDoor: boolean): string {
   return servesOwnDoor
     ? `from zz.event e
         where e.plugin = $1 and e.plugin_version = $2 and e.kind = 'tool_call'
-          and e.ts between $3 and $4`
+          and e.ts between $3 and $4
+          and ${NOT_EVALUATION_EVENT}`
     : `from zz.event e
         where e.run_id in (select r.id ${RUNS_BY_SKILL})
           and e.kind = 'tool_call'`;
@@ -158,12 +200,37 @@ export function unboundedRunsClause(servesOwnDoor: boolean): string {
   return servesOwnDoor
     ? `from zz.run r
         where exists (select 1 from zz.event e
-                       where e.run_id = r.id and e.plugin = $1 and e.plugin_version = $2)`
+                       where e.run_id = r.id and e.plugin = $1 and e.plugin_version = $2)
+          and ${NOT_EVALUATION_RUN}`
     : `from zz.run r
         join zz.plugin_version_skill pvs on pvs.skill_version_id = r.skill_version_id
         join zz.plugin_version pv on pv.id = pvs.plugin_version_id
         join zz.plugin p on p.id = pv.plugin_id
-       where p.name = $1 and pv.version = $2`;
+       where p.name = $1 and pv.version = $2
+         and ${NOT_EVALUATION_RUN}`;
+}
+
+/** This plugin's versions that have runs other than evaluations', newest use first — what a
+ *  refused empty observation offers instead. The same population `unboundedRunsClause` counts,
+ *  grouped by version rather than filtered to one. */
+export async function versionsWithRuns(
+  pool: pg.Pool, plugin: string, servesOwnDoor: boolean,
+): Promise<{ version: string; runs: number; last_run: string }[]> {
+  const rows = (await pool.query<{ version: string; runs: string; last_run: string }>(servesOwnDoor
+    ? `select e.plugin_version as version, count(distinct r.id)::text as runs,
+              to_char(max(r.started_at), 'YYYY-MM-DD HH24:MI') as last_run
+         from zz.run r join zz.event e on e.run_id = r.id
+        where e.plugin = $1 and e.plugin_version is not null and ${NOT_EVALUATION_RUN}
+        group by e.plugin_version order by max(r.started_at) desc limit 5`
+    : `select pv.version, count(distinct r.id)::text as runs,
+              to_char(max(r.started_at), 'YYYY-MM-DD HH24:MI') as last_run
+         from zz.run r
+         join zz.plugin_version_skill pvs on pvs.skill_version_id = r.skill_version_id
+         join zz.plugin_version pv on pv.id = pvs.plugin_version_id
+         join zz.plugin p on p.id = pv.plugin_id
+        where p.name = $1 and ${NOT_EVALUATION_RUN}
+        group by pv.version order by max(r.started_at) desc limit 5`, [plugin])).rows;
+  return rows.map((r) => ({ version: r.version, runs: Number(r.runs), last_run: r.last_run }));
 }
 
 export async function pluginTraces(
@@ -339,6 +406,7 @@ export async function pluginTraces(
            where e.plugin = $1 and e.kind = 'tool_call'
              and e.ts between $2 and $3
              and e.initiative is not null and e.initiative <> ''
+             and ${NOT_EVALUATION_EVENT}
         ),
         live as (select * from zz.doc d
                   where d.path not like '\\_versions/%'

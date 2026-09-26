@@ -374,6 +374,9 @@ export function subjectKindOf(measure: MeasureRow): SubjectKind | null {
   return noun === "bug report" ? "bug" : noun === "record" ? "knowledge" : (noun as SubjectKind);
 }
 
+/** A refused call in a run's trace, as `traceOf` (judge-trace.ts) renders it. COUPLED. */
+const REFUSED_LINE = /^\S+ {2}.* {2}REFUSED\b/m;
+
 /** One row `evaluation_assess` will write: `ask` true when `answerMeasure` runs for it (a
  *  deterministic read or a model call), false when it is recorded excluded with `excluded_reason`
  *  and nothing runs. */
@@ -399,8 +402,10 @@ interface PlannedAssessment {
 export function planAssessment(opts: {
   measures: readonly MeasureRow[]; subjectRefs: readonly string[]; runLevel: string;
   qualified: (measure: MeasureRow) => boolean; alreadyAssessed: ReadonlySet<string>;
+  /** The text each ref resolved to — what `appliesWhen` is decided on, the same text the judge reads. */
+  textOf: (ref: string) => string | undefined;
 }): PlannedAssessment[] {
-  const { measures, subjectRefs, runLevel, qualified, alreadyAssessed } = opts;
+  const { measures, subjectRefs, runLevel, qualified, alreadyAssessed, textOf } = opts;
   const out: PlannedAssessment[] = [];
   const once = (measure: MeasureRow, ask: boolean, excluded_reason: string | null): void => {
     if (!alreadyAssessed.has(measure.id)) out.push({ measure, subjectRef: runLevel, ask, excluded_reason });
@@ -423,9 +428,15 @@ export function planAssessment(opts: {
       continue;
     }
     const kind = subjectKindOf(measure);
-    const matching = kind === null ? subjectRefs : subjectRefs.filter((r) => refKindOf(r) === kind);
-    if (!matching.length) {
+    const ofKind = kind === null ? subjectRefs : subjectRefs.filter((r) => refKindOf(r) === kind);
+    if (!ofKind.length) {
       once(measure, false, `no subject_ref of kind "${kind}" was assessed — this measure judges only that kind`);
+      continue;
+    }
+    const refusedOnly = measure.definition.appliesWhen === "refused";
+    const matching = refusedOnly ? ofKind.filter((r) => REFUSED_LINE.test(textOf(r) ?? "")) : ofKind;
+    if (!matching.length) {
+      once(measure, false, `none of the ${ofKind.length} subject_ref(s) of its kind refused a call — this measure applies only where one did`);
       continue;
     }
     for (const subjectRef of matching) out.push({ measure, subjectRef, ask: true, excluded_reason: null });

@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define-qualify
-version: 0.7
+version: 0.8
 description: Stage 4 of zz-plugin-eval (DEFINE/QUALIFY), and the one gate that matters most. Derive what good means for THIS plugin from its own profile and DISCOVER's candidates, write it into protocol.md, get a person to agree it, then qualify every model-backed evaluator it names before anything is scored.
 when_to_use: "The fourth stage of zz-plugin-eval, after DISCOVER. Conditional: protocol_read decides create/revise/reuse, and this stage only writes when it says create or revise. Produces protocol.md, gated — protocol_affirm refuses to bind it until somebody approves it. No shell required."
 ---
@@ -77,7 +77,12 @@ Inside a dimension, one or more **measures** actually produce a mark. Each carri
   `protocol_record` refuses a `bounded_semantic`/`generative_critic` measure that carries none.
   **`definition.qualification.anchors` is required too** — the known-answer texts QUALIFY asks
   this measure's own question about; `protocol_record` refuses the body without them. See
-  *Writing anchors* below.
+  *Writing anchors* below. `definition.subjectKind` (`run`, `document`, `knowledge`, `bug`) names
+  the artifact it reads, and `definition.appliesWhen: "refused"` asks a run measure only of runs
+  that refused a call — any question about how a refusal read or was recovered from needs it,
+  or every run without a refusal answers it vacuously. The judge reads at most 24,000 characters
+  of an artifact: a question about a whole long document has to be answerable from its opening
+  part, and say so.
 - **`deterministic` / `outcome`** — a tool computes a fact and the measure reads it off OBSERVE's
   own snapshot, by a dotted `definition.factPath`: the fact's own name (`tool_refusal_rate`,
   `latency_p50_ms`, `outcome_delivered_rate`, ...) — every name `plugin_profile` computes is listed
@@ -200,7 +205,8 @@ initiative you wrote it into.
 
 `definition.qualification.anchors: [{ id, role, text, expected }]` — short, unambiguous examples
 of the very artifact the measure judges (a spec for a document question, a `RUN <id>:` trace of
-`<time>  <tool>  ok|REFUSED  <refusal>` lines for a run question), each with the answer a
+`HH:MM:SS  core:<tool>  <target>  ok|REFUSED  <refusal>` lines for a run question — the target is
+the path or name the call acted on, absent for a call with none), each with the answer a
 truthful evaluator gives to THIS measure's question (`yes`/`no` for a noul, a criterion key for a
 choice):
 

@@ -43,16 +43,16 @@
   },
   "zz-plugin-eval": {
     "version": "0.76.4",
-    "digest": "c4f98b3a",
+    "digest": "dfa7163b",
     "skills": {
-      "zz-plugin-define-qualify": "bfd3b977e7b2",
+      "zz-plugin-define-qualify": "c2e20b3d879a",
       "zz-plugin-discover": "9e4f866421af",
       "zz-plugin-eval": "ff799fe40724",
       "zz-plugin-evaluate": "3d07df83d8ce",
       "zz-plugin-explain": "31e3572df5b6",
       "zz-plugin-identify": "048a5cc37a08",
       "zz-plugin-improve": "b07afbe310ae",
-      "zz-plugin-observe": "43894ee26501",
+      "zz-plugin-observe": "a0579ab80dde",
       "zz-plugin-promote-verify": "5b280a81685d"
     }
   }

@@ -1,32 +1,49 @@
 {
   "protocolKey": "zz-core-reference-protocol",
   "version": 1,
-  "pluginPurpose": "zz-core owns the record every flow writes into: identity, documents, gates, knowledge and telemetry, and what anybody reports broken. This protocol measures whether zz-core actually holds up that record so a decision a team made once stays durable, findable, and gated before anything downstream depends on it. It is the initiative's bootstrap reference protocol (FR-57, spec v8): sufficient to validate the architecture end to end, not a claim about zz-core's real quality — scoring.establishment.bootstrap=true keeps every run at best provisional until the first real post-close OBSERVE/DISCOVER cycle.",
+  "pluginPurpose": "To own the record every flow writes into — identity, documents, gates, knowledge, telemetry, and what anybody reports broken — and the method for using it. A capability belongs here when every flow needs it and no flow owns it; anything one flow owns belongs in that flow. Filing a defect and answering one are the same subject and live together here; which half you are offered is your role's answer, not the door's.",
   "observableSurfaces": [
-    "mcp:bug_*",
-    "mcp:document_*",
-    "mcp:initiative_*",
-    "mcp:knowledge_*",
-    "mcp:skill_*",
-    "mcp:source_*",
-    "mcp:session_*",
-    "mcp:assess",
-    "stage_paths",
-    "step_returns",
+    "assess",
+    "bug_delete",
+    "bug_list",
+    "bug_report",
+    "bug_resolve",
+    "document_approve",
+    "document_list",
+    "document_patch",
+    "document_present",
+    "document_read",
+    "document_revise",
+    "document_write",
+    "initiative_close",
+    "initiative_open",
+    "initiative_status",
+    "knowledge_add",
+    "knowledge_reconcile",
+    "knowledge_reindex",
+    "knowledge_search",
+    "knowledge_supersede",
+    "session_whoami",
+    "skill_list",
+    "skill_read",
+    "source_add",
+    "source_list",
+    "team_switch",
     "tool_refusals",
     "dependency_failures",
     "document_outcomes_and_approvals",
     "latency_and_request_response_bytes",
-    "token_usage"
+    "bug_reports"
   ],
   "failureTaxonomy": [
+    "refusal_that_does_not_resolve",
+    "guardrail_refusal_of_caller_mistake",
+    "schema_validation_refusal",
+    "guidance_no_tool_can_satisfy",
     "unattributed_refusal",
     "dependency_failure",
-    "guardrail_refusal",
-    "unplaced_step",
     "never_called_tool",
-    "stage_return_without_progress",
-    "missing_token_or_cost_accounting"
+    "fixed_bug_left_open"
   ],
   "dimensions": [
     {
@@ -72,12 +89,13 @@
                   "expected": "no"
                 }
               ]
-            }
+            },
+            "subjectKind": "document"
           },
           "evaluator": {
             "stable_key": "zz-core.document-gate-readiness",
             "kind": "noul",
-            "question": "Read this document. Does it give a reader everything its flow's gate needs to decide -- every required section present and substantive -- with nothing the gate requires left for the reader to infer or chase down elsewhere?",
+            "question": "Read this document; a long one may be cut off at the end. Is every section shown substantive -- each heading followed by real content, none left empty, marked TBD, or deferred to somewhere else?",
             "answer_schema": {
               "type": "noul"
             },
@@ -123,7 +141,8 @@
                   "expected": "no"
                 }
               ]
-            }
+            },
+            "subjectKind": "knowledge"
           },
           "evaluator": {
             "stable_key": "zz-core.knowledge-capture-effectiveness",
@@ -174,34 +193,36 @@
                 {
                   "id": "named-refusal",
                   "role": "anchor",
-                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n2026-09-20T10:00:01Z  document_write  REFUSED  ERROR: spec.md has no frontmatter field \"role\" -- add role: spec to its envelope and write it again\n2026-09-20T10:00:09Z  document_write  ok",
-                  "expected": "yes"
+                  "expected": "yes",
+                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n10:00:01  core:document_write  2026-09-20-export/spec.md  REFUSED  ERROR: 2026-09-20-export/spec.md has no section \"Acceptance criteria\" -- add it and write the document again\n10:00:09  core:document_write  2026-09-20-export/spec.md  ok"
                 },
                 {
                   "id": "bare-refusal",
                   "role": "anchor",
-                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n2026-09-20T10:00:01Z  document_write  REFUSED  ERROR\n2026-09-20T10:00:09Z  document_write  REFUSED  ERROR",
-                  "expected": "no"
+                  "expected": "no",
+                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n10:00:01  core:document_write  2026-09-20-export/spec.md  REFUSED  ERROR\n10:00:09  core:document_write  2026-09-20-export/spec.md  REFUSED  ERROR"
                 },
                 {
                   "id": "named-refusal-made-generic",
                   "role": "fault",
-                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n2026-09-20T10:00:01Z  document_write  REFUSED  ERROR: invalid input\n2026-09-20T10:00:09Z  document_write  ok",
-                  "expected": "no"
+                  "expected": "no",
+                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n10:00:01  core:document_write  2026-09-20-export/spec.md  REFUSED  ERROR: invalid input\n10:00:09  core:document_write  2026-09-20-export/spec.md  ok"
                 },
                 {
                   "id": "npm-login-refusal",
                   "role": "control",
-                  "text": "$ npm publish\nnpm ERR! 403 Forbidden - you must be logged in to publish packages. Run `npm login` first, then publish again.",
-                  "expected": "yes"
+                  "expected": "yes",
+                  "text": "$ npm publish\nnpm ERR! 403 Forbidden - you must be logged in to publish packages. Run `npm login` first, then publish again."
                 }
               ]
-            }
+            },
+            "subjectKind": "run",
+            "appliesWhen": "refused"
           },
           "evaluator": {
             "stable_key": "zz-core.refusal-explains-itself",
             "kind": "noul",
-            "question": "Read this run. Where it refused a call or ended in an error, did the refusal name what was wrong and what the caller should do instead, rather than a bare or generic error?",
+            "question": "Read this run. Does each refused call's error name what was wrong and what the caller should do instead, rather than a bare or generic error?",
             "answer_schema": {
               "type": "noul"
             },
@@ -270,7 +291,8 @@
                   "expected": "yes"
                 }
               ]
-            }
+            },
+            "subjectKind": "bug"
           },
           "evaluator": {
             "stable_key": "zz-core.bug-report-evidence-discipline",
@@ -310,34 +332,36 @@
                 {
                   "id": "corrected-after-refusal",
                   "role": "anchor",
-                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n2026-09-20T10:00:01Z  document_approve  REFUSED  ERROR: spec.md has not been presented -- call document_present first\n2026-09-20T10:00:04Z  document_present  ok\n2026-09-20T10:00:07Z  document_approve  ok",
-                  "expected": "yes"
+                  "expected": "yes",
+                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n10:00:01  core:document_approve  2026-09-20-export/spec.md  REFUSED  ERROR: 2026-09-20-export/spec.md has not been presented -- call document_present first\n10:00:04  core:document_present  2026-09-20-export/spec.md  ok\n10:00:07  core:document_approve  2026-09-20-export/spec.md  ok"
                 },
                 {
-                  "id": "stops-after-refusal",
+                  "id": "ends-at-refusal",
                   "role": "anchor",
-                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n2026-09-20T10:00:00Z  session_whoami  ok\n2026-09-20T10:00:01Z  document_approve  REFUSED  ERROR: spec.md has not been presented -- call document_present first",
-                  "expected": "no"
+                  "expected": "no",
+                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n10:00:00  core:session_whoami  ok\n10:00:01  core:document_approve  2026-09-20-export/spec.md  REFUSED  ERROR: 2026-09-20-export/spec.md has not been presented -- call document_present first"
                 },
                 {
-                  "id": "correction-removed",
+                  "id": "moves-on-after-refusal",
                   "role": "fault",
-                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n2026-09-20T10:00:01Z  document_approve  REFUSED  ERROR: spec.md has not been presented -- call document_present first\n2026-09-20T10:00:04Z  session_whoami  ok",
-                  "expected": "no"
+                  "expected": "no",
+                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n10:00:01  core:document_approve  2026-09-20-export/spec.md  REFUSED  ERROR: 2026-09-20-export/spec.md has not been presented -- call document_present first\n10:00:04  core:knowledge_search  csv export  ok\n10:00:09  core:document_read  2026-09-20-export/plan.md  ok"
                 },
                 {
                   "id": "git-push-rejected-then-rebased",
                   "role": "control",
-                  "text": "$ git push\n ! [rejected]  main -> main (fetch first)\n$ git pull --rebase\n$ git push\n   4c1d2e0..9a8b7c6  main -> main",
-                  "expected": "yes"
+                  "expected": "yes",
+                  "text": "$ git push\n ! [rejected]  main -> main (fetch first)\n$ git pull --rebase\n$ git push\n   4c1d2e0..9a8b7c6  main -> main"
                 }
               ]
-            }
+            },
+            "subjectKind": "run",
+            "appliesWhen": "refused"
           },
           "evaluator": {
             "stable_key": "zz-core.refusal-recovery-path",
             "kind": "noul",
-            "question": "Read this run. After a refusal or error occurred partway through it, is there a concrete next step recorded -- a retry, a corrected call, an escalation to a person -- rather than the run simply stopping with nothing named to do next?",
+            "question": "Read this run. After each refused call, does a later call in the same run act on it -- a retry or a corrected call on the same target -- rather than the run ending at the refusal or moving on to something else?",
             "answer_schema": {
               "type": "noul"
             },
@@ -372,34 +396,41 @@
                 {
                   "id": "one-call-each",
                   "role": "anchor",
-                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n2026-09-20T10:00:00Z  session_whoami  ok\n2026-09-20T10:00:02Z  document_read  ok\n2026-09-20T10:00:05Z  document_write  ok",
-                  "expected": "yes"
+                  "expected": "yes",
+                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n10:00:00  core:session_whoami  ok\n10:00:02  core:document_read  2026-09-20-export/spec.md  ok\n10:00:05  core:document_write  2026-09-20-export/plan.md  ok"
+                },
+                {
+                  "id": "different-targets",
+                  "role": "anchor",
+                  "expected": "yes",
+                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n10:00:01  core:document_read  2026-09-20-export/explore.md  ok\n10:00:02  core:document_read  2026-09-20-export/spec.md  ok\n10:00:03  core:document_read  2026-09-20-export/review.md  ok\n10:00:04  core:skill_read  sdlc-plan  ok\n10:00:09  core:document_write  2026-09-20-export/plan.md  ok"
                 },
                 {
                   "id": "same-read-six-times",
                   "role": "anchor",
-                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n2026-09-20T10:00:00Z  document_read  ok\n2026-09-20T10:00:01Z  document_read  ok\n2026-09-20T10:00:02Z  document_read  ok\n2026-09-20T10:00:03Z  document_read  ok\n2026-09-20T10:00:04Z  document_read  ok\n2026-09-20T10:00:05Z  document_read  ok\n2026-09-20T10:00:09Z  document_write  ok",
-                  "expected": "no"
+                  "expected": "no",
+                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n10:00:00  core:document_read  2026-09-20-export/spec.md  ok\n10:00:01  core:document_read  2026-09-20-export/spec.md  ok\n10:00:02  core:document_read  2026-09-20-export/spec.md  ok\n10:00:03  core:document_read  2026-09-20-export/spec.md  ok\n10:00:04  core:document_read  2026-09-20-export/spec.md  ok\n10:00:05  core:document_read  2026-09-20-export/spec.md  ok\n10:00:09  core:document_write  2026-09-20-export/plan.md  ok"
                 },
                 {
                   "id": "one-call-each-read-repeated",
                   "role": "fault",
-                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n2026-09-20T10:00:00Z  session_whoami  ok\n2026-09-20T10:00:01Z  document_read  ok\n2026-09-20T10:00:02Z  document_read  ok\n2026-09-20T10:00:03Z  document_read  ok\n2026-09-20T10:00:04Z  document_read  ok\n2026-09-20T10:00:05Z  document_read  ok\n2026-09-20T10:00:08Z  document_write  ok",
-                  "expected": "no"
+                  "expected": "no",
+                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n10:00:00  core:session_whoami  ok\n10:00:01  core:document_read  2026-09-20-export/spec.md  ok\n10:00:02  core:document_read  2026-09-20-export/spec.md  ok\n10:00:03  core:document_read  2026-09-20-export/spec.md  ok\n10:00:04  core:document_read  2026-09-20-export/spec.md  ok\n10:00:05  core:document_read  2026-09-20-export/spec.md  ok\n10:00:08  core:document_write  2026-09-20-export/plan.md  ok"
                 },
                 {
                   "id": "shell-status-loop",
                   "role": "control",
-                  "text": "$ git status\n$ git status\n$ git status\n$ git status\n$ git status\n$ git status\n$ git status\n$ git status\n$ git commit -m \"fix typo\"",
-                  "expected": "no"
+                  "expected": "no",
+                  "text": "$ git status\n$ git status\n$ git status\n$ git status\n$ git status\n$ git status\n$ git status\n$ git status\n$ git commit -m \"fix typo\""
                 }
               ]
-            }
+            },
+            "subjectKind": "run"
           },
           "evaluator": {
             "stable_key": "zz-core.call-economy",
             "kind": "noul",
-            "question": "Read this run's own sequence of tool calls. Did it reach its outcome without calling the same tool for the same purpose more times than the work actually needed?",
+            "question": "Read this run's own sequence of tool calls, each with the target it acted on. Did it avoid calling the same tool on the same target more times than the work needed -- repeating an identical read or write with nothing changed in between?",
             "answer_schema": {
               "type": "noul"
             },
@@ -480,7 +511,8 @@
                   "expected": "yes"
                 }
               ]
-            }
+            },
+            "subjectKind": "knowledge"
           },
           "evaluator": {
             "stable_key": "zz-core.cross-flow-reuse",
@@ -527,7 +559,7 @@
   },
   "scoring": {
     "establishment": {
-      "bootstrap": true,
+      "bootstrap": false,
       "minCoverage": {
         "minUsableRuns": 5,
         "minSubjectRefs": 5

@@ -13,7 +13,7 @@
  *
  * `LADDER_THRESHOLD_KEYS` names every key this function reads off `thresholds` (a `FreeformRecord`
  * — spec v8 fixes no shape for it) — the vocabulary Task I-29's bootstrap protocol writes into
- * `catalog/zz/zz-plugin-eval/protocols/zz-core.v1.json` has to match, so it is exported rather
+ * `catalog/zz/zz-plugin-eval/protocols/zz-core.json` has to match, so it is exported rather
  * than left implicit in this file's own reads.
  */
 import type { EVAL_STATE_ENUMS } from "@zz/contracts";

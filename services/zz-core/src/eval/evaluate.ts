@@ -354,6 +354,7 @@ export function registerEvaluationTools(server: McpServer): void {
             where eval_run_id = $1::uuid`, [eval_run_id])).rows.map((r) => r.measure_id));
         const plan = planAssessment({
           measures, subjectRefs: subject_refs, runLevel, alreadyAssessed,
+          textOf: (ref) => resolvedRefs.get(ref),
           qualified: (m) => {
             const q = m.evaluator_version_id ? qualification.get(m.evaluator_version_id) : null;
             return !!q && q.state !== "unqualified";

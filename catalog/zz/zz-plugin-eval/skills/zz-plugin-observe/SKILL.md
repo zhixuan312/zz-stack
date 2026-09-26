@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-observe
-version: 0.3
+version: 0.4
 description: Stage 2 of zz-plugin-eval (OBSERVE). Compute the pre-protocol observation snapshot — production facts from this subject's real runs, in one resolved window — with its sufficiency verdict and the coverage it was derived from. No model touches any of it.
 when_to_use: "The second stage of zz-plugin-eval, after IDENTIFY has settled subject_version_id. Also the stage that decides whether there is enough evidence for DISCOVER and EVALUATE to work from. No shell required."
 ---
@@ -36,11 +36,19 @@ to call this — OBSERVE runs before DEFINE/QUALIFY ever needs to (FR-8).
 |---|---|
 | **5 usable runs** | a floor for a signal to exist, not a claim about power |
 
-**A thin window does not stop this flow.** Report it as thin and go on. The stop condition is
-`sufficient_for_judging: false` — and even then, IDENTIFY and OBSERVE still ran and still
-reported, and the snapshot is still written. **A plugin nobody has used is a correct and
-complete outcome**, not a failure. Say so plainly rather than treating it as an error, or the
-next agent starts inventing data to get past it.
+**A thin window does not stop this flow.** Report it as thin and go on: `sufficient_for_judging:
+false` still writes the snapshot, and DISCOVER still runs over it.
+
+**A window with no run at all is refused**, and the refusal names this plugin's versions that do
+have runs, with counts. The usual cause is evaluating the version just released: every platform
+release gives every catalog plugin a new version, and nobody has used it yet. IDENTIFY one of the
+named versions — `plugin_locate` with that `version` — and observe that, or wait for real use of
+the new one — never carry an empty snapshot into DISCOVER.
+
+**The evaluation is not evidence about what it evaluates.** Every population here leaves out
+evaluations' own traffic — runs of this flow's skills, runs inside an evaluation initiative, and
+an evaluation session's reads before it has one — except when the subject is zz-plugin-eval
+itself, whose evidence is exactly that.
 
 ## What the response actually says
 
@@ -91,8 +99,8 @@ here — a starting point DEFINE can read.
 
 ## Pitfalls
 
-❌ **Stopping on a thin window.** Only a subject with no runs recorded anywhere is a stop, and
-even that still returns a snapshot — an empty one, with named reasons.
+❌ **Stopping on a thin window.** Only a window with no run is refused — pick a version the
+refusal names.
 
 ❌ **Reading a fact without its own `coverage`.** The top-level `coverage.surface` and a single
 fact's `coverage` answer different questions.
@@ -121,6 +129,7 @@ resolved.
 and say what the window shows. The exit is DISCOVER (`zz-plugin-discover`), always, whatever the
 window's sufficiency — a thin window still has failure modes worth mining, even if few.
 
-**Degraded behaviour:** a subject with zero runs recorded anywhere still gets a snapshot — every
-fact `{value: null, reason: "..."}`, `sufficient_for_judging: false` — and that is the honest,
-complete OBSERVE outcome, not a stop.
+**Degraded behaviour:** a window with runs too few to judge still gets a snapshot, facts with
+empty populations `{value: null, reason: "..."}` and `sufficient_for_judging: false`. A window
+with no run is refused by name, with the versions that have runs; a plugin with no run in any
+version is reported as unused, which is a complete outcome, not a failure.

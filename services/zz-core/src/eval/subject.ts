@@ -120,11 +120,11 @@ async function resolveSubject(pool: pg.Pool, plugin: string, version: string | u
     })),
   ];
   if (entry) {
-    // The manifest @zz/catalog already parsed and validated for us — `entryOf` runs through
-    // `catalogEntries()`, which is @zz/catalog's own `manifestAt`. Hashing that object, never a
-    // second raw read of flow.json off disk, is what keeps this the only reader a flow's
-    // manifest has: catalog-manifest.ts's gate check refuses a second one.
-    components.push({ kind: "flow", name: entry.flow, digest: sha256(JSON.stringify(entry.manifest)) });
+    // The flow AS RELEASED: the digest register-plugins recorded for this version from the
+    // marketplace lock, never a hash of the manifest on disk today. Hashed from today's
+    // manifest, a past version's identity moved whenever the catalog did, and the same release
+    // located twice answered with two subject_version_ids.
+    components.push({ kind: "flow", name: entry.flow, digest: head.digest });
   }
 
   return {

@@ -131,6 +131,7 @@ export const MeasureQualification = z.object({ anchors: z.array(MeasureAnchor) }
 export type MeasureQualification = z.infer<typeof MeasureQualification>;
 
 const MODEL_BACKED_TYPES: readonly string[] = ["bounded_semantic", "generative_critic"];
+const APPLIES_WHEN: readonly string[] = ["refused"];
 
 export const Measure = z.object({
   key: z.string().min(1),
@@ -143,6 +144,15 @@ export const Measure = z.object({
   definition: FreeformRecord,
   evaluator: FreeformRecord.nullable(),
 }).superRefine((m, ctx) => {
+  // `appliesWhen: "refused"` asks a run measure only of runs that refused a call — a question
+  // about how a refusal read or was recovered from has no answer on a run that had none, and
+  // asked of every run it scores the runs it does not apply to.
+  if (m.definition.appliesWhen !== undefined && !APPLIES_WHEN.includes(String(m.definition.appliesWhen))) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ["definition", "appliesWhen"],
+      message: `measure "${m.key}" has appliesWhen "${String(m.definition.appliesWhen)}"; the one condition is "refused"`,
+    });
+  }
   // A model-backed measure is qualified against its own known-answer texts, so it has to carry
   // enough of them for every rung below human_calibrated: anchors with at least two different
   // expected answers (an evaluator that always says one thing cannot pass), a fault and a control.

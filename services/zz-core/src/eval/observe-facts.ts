@@ -28,7 +28,7 @@ import { toolCallEvents, type EvidenceWindow } from "./plugin-profile.js";
  *  call, whose `facts` keys are compared against this list, catches that. */
 export const OBSERVATION_FACT_KEYS = [
   "usable_run_coverage", "tool_coverage",
-  "stage_return_rate", "unplaced_step_rate", "tool_call_volume", "tool_refusal_rate",
+  "stage_return_rate", "unplaced_step_rate", "repeat_read_rate", "tool_call_volume", "tool_refusal_rate",
   "dependency_failure_rate", "never_called_rate",
   "latency_p50_ms", "latency_p90_ms", "request_bytes_avg", "response_bytes_avg",
   "outcome_delivered_rate", "outcome_accepted_rate", "outcome_abandoned_rate", "doc_approval_rate",

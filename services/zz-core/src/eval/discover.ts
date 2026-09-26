@@ -55,10 +55,10 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
-import { entryOf, helperSkillsOf, servesOwnDoor, toolsNamedBy } from "./plugin-eval.js";
+import { entryOf, helperSkillsOf, servesOwnDoor, stageDocumentsOf, toolsNamedBy } from "./plugin-eval.js";
 import { pluginTraces, type EvidenceWindow } from "./plugin-profile.js";
 import {
-  refusalGroups, refusalKey, returnGroups, returnKey, totalToolCallEvents, totalStepVisits,
+  refusalGroups, refusalKey, returnGroups, returnKey, totalToolCallEvents,
   type RefusalGroup, type ReturnGroup,
 } from "./discover-groups.js";
 import { registerEvaluator, type EvaluatorDefinition } from "./evaluators.js";
@@ -364,13 +364,13 @@ async function planCandidates(
 
   const traces = await pluginTraces(
     pool, snapshot.plugin, snapshot.declared_version, reachable, stages, serves, snapshot.window,
-    helperSkillsOf(snapshot.plugin));
+    helperSkillsOf(snapshot.plugin), stageDocumentsOf(snapshot.plugin));
   const [refusals, totalCalls] = await Promise.all([
     refusalGroups(pool, snapshot.plugin, snapshot.declared_version, serves, snapshot.window),
     totalToolCallEvents(pool, snapshot.plugin, snapshot.declared_version, serves, snapshot.window),
   ]);
   const returns = returnGroups(traces.returns);
-  const totalVisits = totalStepVisits(traces.stage_paths);
+  const totalWrites = traces.stage_document_writes;
 
   const outage: Outage = { owner: null, critic: null };
   const planned: PlannedCandidate[] = [];
@@ -407,7 +407,7 @@ async function planCandidates(
 
   for (const g of returns) {
     const description = `The flow returned to stage "${g.back_to_step}" after already reaching ` +
-      `stage "${g.from_step}" ${g.count} of ${totalVisits} step visit(s) in this window, across ` +
+      `stage "${g.from_step}" ${g.count} of ${totalWrites} stage-document write(s) in this window, across ` +
       `${g.sample_initiatives.length} initiative(s).`;
     const classification = await classifyOwnerKind(
       evaluatorVersionId, returnSubject(g), pluginContext(snapshot), principal, outage);
@@ -418,7 +418,7 @@ async function planCandidates(
         owner_ref: ownerRef(classification.owner_kind, snapshot.plugin) },
       { kind: "discovery_run", principal, idempotency_key: idempotencyKey },
     ];
-    planned.push({ stableKey: returnKey(g), description, prevalence: { numerator: g.count, denominator: totalVisits }, classification, evidenceRefs });
+    planned.push({ stableKey: returnKey(g), description, prevalence: { numerator: g.count, denominator: totalWrites }, classification, evidenceRefs });
   }
 
   return planned;

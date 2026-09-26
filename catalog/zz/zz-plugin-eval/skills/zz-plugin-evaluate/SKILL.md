@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-evaluate
-version: 0.8
+version: 0.9
 description: Stage 5 of zz-plugin-eval (EVALUATE). Bind an approved protocol version to a subject's own observation snapshot, route every measure the protocol names to the real evidence it judges, and reduce the result to one deterministic overall score with its status, coverage and guardrails. No recommendation — that is EXPLAIN.
 when_to_use: "The fifth stage of zz-plugin-eval, once a protocol version is affirmed (or was already reusable). Produces no document — its output is durable score data EXPLAIN reads. No shell required."
 ---
@@ -15,7 +15,9 @@ evaluation_score(eval_run_id, idempotency_key, initiative)
 
 In a new conversation, `subject_version_id` and `observation_snapshot_id` are
 `initiative_status`'s `records["zz-plugin-observe"]` — the snapshot OBSERVE recorded, never a
-fresh `plugin_profile` — and `protocol_version_id` is `protocol_read(subject_version_id)`'s. Pass
+fresh `plugin_profile` — and `protocol_version_id` is `protocol_read(subject_version_id)`'s.
+`evaluation_start` returns the snapshot's own `run_refs` and `refusal_refs` beside the run it
+opens: those are the run-kind and event-kind `subject_refs`, whichever conversation calls it. Pass
 `initiative` to `evaluation_score`: it records `eval_run_id` as this stage's record, which is how
 EXPLAIN finds the run.
 
@@ -41,8 +43,8 @@ kind:
 | `<initiative>/<doc>.md`, read off your own team's artifact store | document |
 | `_knowledge/nodes/<node>.md` | knowledge |
 | `bug:<id>`, from its bug report | bug |
-| a bare `run_id` — from OBSERVE's `traces.run_refs` | run |
-| `event:<id>` — a door's refused call, from OBSERVE's `traces.refusal_refs` | event |
+| a bare `run_id` — from `evaluation_start`'s `run_refs` (OBSERVE's `traces.run_refs`) | run |
+| `event:<id>` — a door's refused call, from `evaluation_start`'s `refusal_refs` | event |
 
 **REFUSES BY NAME any ref that resolves to nothing** — a model is never silently handed a
 templated sentence naming the ref instead of the thing it names. A ref is never a tool name: the

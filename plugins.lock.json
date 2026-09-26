@@ -1,6 +1,6 @@
 {
   "sdlc": {
-    "version": "0.78.0",
+    "version": "0.79.0",
     "digest": "aacc6923",
     "skills": {
       "sdlc-audit-criteria": "115360726930",
@@ -19,7 +19,7 @@
     }
   },
   "zz-access": {
-    "version": "0.78.0",
+    "version": "0.79.0",
     "digest": "530b3083",
     "skills": {
       "zz-access": "a40c67ebf69f",
@@ -30,7 +30,7 @@
     }
   },
   "zz-core": {
-    "version": "0.78.0",
+    "version": "0.79.0",
     "digest": "adfb87f1",
     "skills": {
       "zz-authoring": "60f258ebec54",
@@ -42,8 +42,8 @@
     }
   },
   "zz-plugin-eval": {
-    "version": "0.78.0",
-    "digest": "6c71b990",
+    "version": "0.79.0",
+    "digest": "821176da",
     "skills": {
       "zz-plugin-define-qualify": "3bc090075fb2",
       "zz-plugin-discover": "95c1b3245921",

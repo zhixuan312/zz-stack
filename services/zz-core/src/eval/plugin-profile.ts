@@ -61,12 +61,21 @@ interface PluginTraces {
   stage_paths: { initiative: string; steps: { step: string; first_ts: string; last_ts: string }[] }[];
   /** Counted, never classified. See the header.
    *
-   * Only over the stages that reached the door. A step is attributed from the last `skill_read`
-   * a caller asked for, so a stage whose worker loaded its skill out of its own plugin directory
-   * leaves no step at all — and a return is a relation between stages, so one missing stage
-   * silently removes every return through it. Zero returns therefore means "no return was
-   * recorded", never "the flow never went back"; read it beside `coverage` and `unplaced`. */
+   * A return is a successful write to a stage's document after a later stage's document of the
+   * same initiative already existed: `back_to_step` wrote it, `from_step` is the furthest stage
+   * whose document was there. Read off the documents, never off the step: a step is whichever
+   * skill the caller read last, so an agent that reads every stage skill while orienting has
+   * "reached review" before it writes a spec, and a main agent and its sub-agent interleave on
+   * one caller key. Counted that way, sdlc's returns were 109 of 153 step visits; the documents
+   * showed 13 of 109 writes going back. A re-audit that changed no document is not a return. */
   returns: { initiative: string; from_step: string; back_to_step: string; ts: string }[];
+  /** Successful writes to a stage's document — `returns`' population. */
+  stage_document_writes: number;
+  /** Successful `document_read` calls with a path, and the ones that read a path the same run had
+   *  already read with no successful write to it in between. A read of a section, an offset or
+   *  an older version is a part, never a repeat. `skill_read` is left out: the platform's own
+   *  next_move asks for a stage's skill on entering it. */
+  document_reads: { reads: number; repeats: number };
   /** Steps that appear in the log and in no declared stage. Reported rather than dropped: a step
    *  nothing placed is either a stage somebody removed from the manifest or a name that has
    *  drifted, and both are worth a person's attention. */
@@ -241,6 +250,37 @@ export async function versionsWithUse(
   return rows.map((r) => ({ version: r.version, uses: Number(r.uses), unit: servesOwnDoor ? "call" : "run", last: r.last }));
 }
 
+/** What EVALUATE can hand a judge from one plugin version's window: its runs (newest first,
+ *  capped) and, for a door, its refused calls. `pluginTraces` reports them, and
+ *  `evaluation_start` returns them again for the snapshot it binds, so a conversation that only
+ *  has the snapshot id need not replay OBSERVE to find them. */
+export async function subjectRefsOf(
+  pool: pg.Pool, plugin: string, version: string, servesOwnDoor: boolean, window: EvidenceWindow,
+): Promise<Pick<PluginTraces, "run_refs" | "run_refs_truncated" | "refusal_refs">> {
+  const RUNS_OF = servesOwnDoor ? RUNS_ON_DOOR : RUNS_BY_SKILL;
+  const params = [plugin, version, window.from, window.to];
+  const runRefs = (await pool.query<{ run_id: string; team: string | null; initiative: string | null; started_at: string }>(`
+    select r.id::text as run_id, r.started_at::text as started_at,
+           coalesce((select t.slug from zz.initiative i join zz.team t on t.id = i.team_id
+                      where i.id = r.initiative_id),
+                    (select e.team_slug from zz.event e
+                      where e.run_id = r.id and e.kind = 'tool_call' and e.team_slug is not null limit 1)) as team,
+           (select i.slug from zz.initiative i where i.id = r.initiative_id) as initiative
+      ${RUNS_OF}
+       and exists (select 1 from zz.event e where e.run_id = r.id)
+     order by r.started_at desc
+     limit ${RUN_REFS_CAP + 1}`, params)).rows;
+  return {
+    run_refs: runRefs.slice(0, RUN_REFS_CAP),
+    run_refs_truncated: runRefs.length > RUN_REFS_CAP,
+    refusal_refs: servesOwnDoor
+      ? (await pool.query<{ id: string }>(
+          `select e.id::text as id ${toolCallEvents(true)} and e.ok is false order by e.ts desc limit ${RUN_REFS_CAP}`,
+          params)).rows.map((r) => `event:${r.id}`)
+      : [],
+  };
+}
+
 export async function pluginTraces(
   pool: pg.Pool, plugin: string, version: string,
   /** Tools this plugin's skills can reach, from the catalog — the gate's own rule, not a second
@@ -261,6 +301,9 @@ export async function pluginTraces(
   /** This flow's own skills that are not stages (`helperSkillsOf`). Left out of the stage path:
    *  a helper step is its stage at work, neither a return nor an unplaced step. */
   helpers: readonly string[] = [],
+  /** Each document this flow's stages write (`stageDocumentsOf`) — what a return is counted
+   *  against. */
+  stageDocuments: readonly { document: string; stage: string }[] = [],
 ): Promise<PluginTraces> {
   const RUNS_OF = servesOwnDoor ? RUNS_ON_DOOR : RUNS_BY_SKILL;
   const params = [plugin, version, window.from, window.to];
@@ -274,17 +317,7 @@ export async function pluginTraces(
       and exists (select 1 from zz.event e
                    where e.run_id = r.id and e.step is not null and e.step <> '')`);
 
-  const runRefs = (await pool.query<{ run_id: string; team: string | null; initiative: string | null; started_at: string }>(`
-    select r.id::text as run_id, r.started_at::text as started_at,
-           coalesce((select t.slug from zz.initiative i join zz.team t on t.id = i.team_id
-                      where i.id = r.initiative_id),
-                    (select e.team_slug from zz.event e
-                      where e.run_id = r.id and e.kind = 'tool_call' and e.team_slug is not null limit 1)) as team,
-           (select i.slug from zz.initiative i where i.id = r.initiative_id) as initiative
-      ${RUNS_OF}
-       and exists (select 1 from zz.event e where e.run_id = r.id)
-     order by r.started_at desc
-     limit ${RUN_REFS_CAP + 1}`, params)).rows;
+  const refs = await subjectRefsOf(pool, plugin, version, servesOwnDoor, window);
 
   // Coverage over the events these runs own. `resolvable` is the count that can be placed on a
   // stage at all; the gap between it and `events` is what every other figure here is missing.
@@ -331,25 +364,67 @@ export async function pluginTraces(
     entry.steps.push({ step: row.step, first_ts: row.first_ts, last_ts: row.last_ts });
   }
 
-  // A return is a step entered after a later-positioned step has already run. Nothing more: the
-  // classification a reader wants — re-grounding or thrash — belongs to the ruler.
+  // A step no declared stage places. A plugin that declares no stage order has none to place a
+  // step against: its runs record the steps of whichever flow called it.
   const at = new Map(stages.map((s, i) => [s, i]));
-  const returns: PluginTraces["returns"] = [];
   const unplacedCount = new Map<string, number>();
-  for (const path of stage_paths) {
-    let furthest = -1;
-    let furthestStep = "";
-    for (const s of path.steps) {
-      const pos = at.get(s.step);
-      if (pos === undefined) {
-        unplacedCount.set(s.step, (unplacedCount.get(s.step) ?? 0) + 1);
-        continue;
+  if (stages.length) {
+    for (const path of stage_paths) {
+      for (const s of path.steps) {
+        if (!at.has(s.step)) unplacedCount.set(s.step, (unplacedCount.get(s.step) ?? 0) + 1);
       }
-      if (pos < furthest) {
-        returns.push({ initiative: path.initiative, from_step: furthestStep, back_to_step: s.step, ts: s.first_ts });
-      } else { furthest = pos; furthestStep = s.step; }
     }
   }
+
+  // A return, off the documents (see `returns`). Nothing more: the classification a reader
+  // wants — re-grounding or thrash — belongs to the ruler. The initiative is the written path's,
+  // not the event's: a caller working on one initiative can revise another's document.
+  const placed = stageDocuments.filter((d) => at.has(d.stage));
+  const writeRows = placed.length ? (await pool.query<{ initiative: string; ts: string; back_to_step: string; from_step: string | null }>(`
+    with pos(doc, stage, p) as (select * from unnest($5::text[], $6::text[], $7::int[])),
+    w as (
+      select e.ts, e.team_slug,
+             split_part(e.detail->'ids'->>'path', '/', 1) as initiative,
+             split_part(e.detail->'ids'->>'path', '/', 2) as doc
+        from zz.event e
+       where e.run_id in (select r.id ${RUNS_OF})
+         and e.kind = 'tool_call' and e.ok is true
+         and split_part(coalesce(e.tool_key, e.subject), ':', 2) in ('document_write', 'document_revise', 'document_patch')
+    )
+    select w.initiative, w.ts::text as ts, wp.stage as back_to_step,
+           (select lp.stage from zz.doc d join pos lp on lp.doc = d.path
+             where d.team_slug = w.team_slug and d.initiative = w.initiative
+               and lp.p > wp.p and d.created_at < w.ts
+             order by lp.p desc limit 1) as from_step
+      from w join pos wp on wp.doc = w.doc
+     order by w.ts`,
+    [...params, placed.map((d) => d.document), placed.map((d) => d.stage), placed.map((d) => at.get(d.stage) ?? 0)])).rows : [];
+  const returns: PluginTraces["returns"] = writeRows.flatMap((r) => r.from_step
+    ? [{ initiative: r.initiative, from_step: r.from_step, back_to_step: r.back_to_step, ts: r.ts }] : []);
+
+  // A repeated read, off the event rows: the same path, the same run, nothing written to it
+  // between. What a judge was asked of each run's trace, and left a quarter of them unanswered.
+  const readRow = (await pool.query<{ reads: string; repeats: string }>(`
+    with ev as (
+      select e.run_id, e.ts, split_part(coalesce(e.tool_key, e.subject), ':', 2) as tool,
+             e.detail->'ids'->>'path' as target, coalesce(e.detail->'args', '[]'::jsonb) as args
+        from zz.event e
+       where e.run_id in (select r.id ${RUNS_OF}) and e.kind = 'tool_call' and e.ok is true
+    ),
+    reads as (
+      select * from ev
+       where tool = 'document_read' and target is not null
+         and not (jsonb_typeof(args) = 'array' and args ?| array['section', 'offset', 'limit', 'version'])
+    )
+    select count(*)::text as reads,
+           count(*) filter (where exists (
+             select 1 from reads r0
+              where r0.run_id = r.run_id and r0.target = r.target and r0.ts < r.ts
+                and not exists (select 1 from ev w
+                                 where w.run_id = r.run_id and w.target = r.target
+                                   and w.tool in ('document_write', 'document_revise', 'document_patch')
+                                   and w.ts > r0.ts and w.ts < r.ts)))::text as repeats
+      from reads r`, params)).rows[0];
 
   // Through tool_key, the alias-resolved name — never the raw subject. `subject` is what the
   // caller literally typed; `tool_key` folds a rename onto one series. Read raw, one tool appears
@@ -456,13 +531,7 @@ export async function pluginTraces(
     runs,
     usable_runs: usable,
     sufficient: usable >= USABLE_RUNS_FLOOR,
-    run_refs: runRefs.slice(0, RUN_REFS_CAP),
-    run_refs_truncated: runRefs.length > RUN_REFS_CAP,
-    refusal_refs: servesOwnDoor
-      ? (await pool.query<{ id: string }>(
-          `select e.id::text as id ${toolCallEvents(true)} and e.ok is false order by e.ts desc limit ${RUN_REFS_CAP}`,
-          params)).rows.map((r) => `event:${r.id}`)
-      : [],
+    ...refs,
     reason: runs > 0 ? undefined :
       `no run is recorded against ${plugin} ${version} in this window (${window.from} to ` +
       `${window.to}). A run belongs to a version through the skill versions that version ` +
@@ -478,6 +547,8 @@ export async function pluginTraces(
     },
     stage_paths,
     returns,
+    stage_document_writes: writeRows.length,
+    document_reads: { reads: Number(readRow?.reads ?? 0), repeats: Number(readRow?.repeats ?? 0) },
     unplaced: [...unplacedCount].map(([step, count]) => ({ step, count })).sort((a, b) => b.count - a.count),
     use,
     never_called: reachable.filter((t) => !called.has(t)).sort(),

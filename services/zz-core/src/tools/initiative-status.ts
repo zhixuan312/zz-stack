@@ -113,7 +113,9 @@ function owedActs(
   }
   const owed = (record.qualify_owed ?? "").split(",").filter(Boolean)
     .filter((k) => !record[`qualified.${k}`]);
-  const version = record.protocol_version_id ?? "<protocol_version_id from protocol_read>";
+  // Not protocol_read's: on a revise it answers the version being replaced, and binding that one
+  // would affirm the old protocol under the new document.
+  const version = record.protocol_version_id ?? "<the protocol_version_id protocol_record returned, the version protocol.md quotes>";
   const why: Record<string, string> = {
     protocol_affirm: `protocol.md is approved but not bound to the protocol — call protocol_affirm("${version}", ` +
       `initiative: "${initiative}"). Nothing qualifies or scores against an unaffirmed version`,

@@ -33,6 +33,49 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.79.0] — 2026-09-26
+
+### Added
+- **`repeat_read_rate`**, a fact: the `document_read` calls that read a path the same run had
+  already read with nothing written to it between, over the run's document reads. A read of a
+  section, an offset or an older version is a part, never a repeat. The zz-core reference
+  protocol's efficiency dimension reads it in place of `call_economy`, whose judge left a quarter
+  of the runs it was asked about unanswered on a question the event rows answer exactly.
+- **`evaluation_start` returns the snapshot's `run_refs` and `refusal_refs`** beside the run it
+  opens, so a conversation that has only the snapshot id from `initiative_status` has the
+  subject refs to assess. They were in `plugin_profile`'s response alone.
+
+### Changed
+- **Breaking: a stage return is read off the documents.** A return is a successful write to a
+  stage's document after a later stage's document of the same initiative existed, and
+  `stage_return_rate` is returns over successful stage-document writes. It was a step visited
+  after a later step, and a step is whichever skill the caller read last: an agent reading every
+  stage skill while it oriented had "reached review" before writing a spec, and a main agent and
+  its sub-agent interleaved on one caller key. On the same sdlc window the rate moves from 109 of
+  153 step visits to 13 of 109 writes. DISCOVER's return candidates change key with it, so the
+  next `protocol_read` for a flow opens a revision.
+- **zz-core refuses an unknown argument by name.** A call its schema refuses that also carried a
+  name the tool does not take now says so and lists the tool's arguments ("document_read takes
+  no `doc_path`; its arguments are `path`, …"). The SDK's own text, "Invalid input at path", never
+  said which name was wrong. A call the schema accepts is untouched.
+- **A long document is never cut after a heading with no text of its own.** The heading travels
+  with the section it introduces. Parts ending "### Proposed design" and "## Risks & Mitigations"
+  read as empty sections, and a spec with none scored 0.14 on the zz-core gate-readiness measure.
+- **`evaluation_assess` skips a not-applicable dimension's measures** rather than reporting each
+  as excluded, as if it were missing evidence.
+- `initiative_status` no longer tells a revise to affirm the version `protocol_read` returned —
+  that is the version being replaced — but the one `protocol_record` returned.
+
+### Fixed
+- **`readings` drops a measure's "no subject_ref of its kind" row** once a later
+  `evaluation_assess` call has assessed that kind; it contradicted the score beside it.
+- **A plugin that declares no stage order lists no unplaced steps.** zz-core's traces listed 13
+  while its fact said the notion is undefined.
+
+### Upgrade notes
+- A protocol whose efficiency measure is `call_economy` keeps working; the reference protocol
+  moves to `repeat_read_rate`, and a new protocol version is where an evaluator adopts it.
+
 ## [0.78.0] — 2026-09-26
 
 ### Added

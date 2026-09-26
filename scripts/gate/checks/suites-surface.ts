@@ -193,6 +193,7 @@ check("a model-backed measure qualifies against its own declared anchors, faults
       runsCheck("eval-qualify-anchors.ts"));
 check("one excluded measure lowers its dimension's coverage but never nulls the dimension or the overall; the status reads the run's coverage against a named floor", runsCheck("eval-score-coverage.ts"));
 check("OBSERVE counts only a plugin's own tools, attributed by the door that serves them, so observed never exceeds total, and its traces return the observed run ids with their team", runsCheck("eval-observe-surface.ts"));
+check("a completed eval_run is never scored again: a new key is refused naming the run, the key that completed it replays, and the write itself only lands on a run not yet completed", runsCheck("eval-score-once.ts"));
 check("evaluation_score's interval resamples the subjects and recomputes the run's own overall, so it contains the overall it describes", runsCheck("eval-score-interval.ts"));
 check("a call its schema refuses names the arguments the tool does not take, and the ones it does", runsCheck("door-unknown-arguments.ts"));
 check("evaluation_assess asks a model-backed measure only about refs of its own kind, never asks an unqualified evaluator, reads a deterministic fact once per run, and evaluation_score returns every reading with its assessment_id", runsCheck("eval-assess-routing.ts"));

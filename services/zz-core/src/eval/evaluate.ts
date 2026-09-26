@@ -455,8 +455,10 @@ export function registerEvaluationTools(server: McpServer): void {
         "guardrail_status, coverage, readings } — readings is every stored answer, per measure key, " +
         "per subject_ref, with its assessment_id, which is what a finding cites — and stores the " +
         "score on zz.eval_run, moving run_status to " +
-        "'completed'. REFUSES an eval_run_id nothing minted and a run with no assessment recorded " +
-        "against it. A mutator: writes through the FR-59 idempotency ledger.",
+        "'completed'. REFUSES an eval_run_id nothing minted, a run with no assessment recorded " +
+        "against it, and a run already completed — its score is published, so a re-score is a new " +
+        "eval_run. A mutator: writes through the FR-59 idempotency ledger; a retry with the key that " +
+        "completed the run replays rather than refusing.",
       inputSchema: {
         eval_run_id: z.string(), idempotency_key: z.string().min(1),
         initiative: z.string().optional().describe(
@@ -469,6 +471,18 @@ export function registerEvaluationTools(server: McpServer): void {
       if (!p) return noDb();
       const run = await loadRunContext(p, eval_run_id);
       if (!run) return text("ERROR: unknown eval_run_id");
+
+      // A completed run's score is published — findings cite it and release_verify reads it — so
+      // it is never scored again: a re-score is a new eval_run. The retry of the call that
+      // completed it is recognised first and answers as that call did.
+      const principal = parseCaller(requestHeaders()).email;
+      const alreadyScored = `ERROR: eval_run ${eval_run_id} is already completed and its score is ` +
+        "published; scoring it again would overwrite that result. A re-score is a new eval_run — " +
+        "call evaluation_start";
+      if (run.run_status === "completed" &&
+          !(await decideBeforeWork(principal, "evaluation_score", idempotency_key, { eval_run_id })).replayed) {
+        return text(alreadyScored);
+      }
 
       const dims = await loadDimensions(p, run.protocol_version_id);
       const measures = dims.flatMap((d) => d.measures);
@@ -596,20 +610,22 @@ export function registerEvaluationTools(server: McpServer): void {
         ...(qualification_met ? [] : ["a required model-backed measure's evaluator is below the protocol's qualification minimum, or the protocol is a bootstrap"]),
       ];
 
-      const principal = parseCaller(requestHeaders()).email;
       const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
         principal, "evaluation_score", idempotency_key, { eval_run_id },
         async (client): Promise<MutatorOutcome<{ id: string }>> => {
-          await client.query(`
+          // The status test is repeated here because a concurrent score under another key can
+          // complete the run between the check above and this write.
+          const written = await client.query(`
             update zz.eval_run
                set run_status = 'completed', score_status = $2, overall_score = $3,
                    score_interval = $4::jsonb, dimension_scores = $5::jsonb, guardrail_status = $6,
                    guardrails = $7::jsonb,
                    coverage = coalesce(coverage, '{}'::jsonb) || $8::jsonb
-             where id = $1::uuid`,
+             where id = $1::uuid and run_status <> 'completed'`,
             [eval_run_id, scored.status, scored.overall, JSON.stringify(score_interval),
              JSON.stringify(dimension_scores), scored.guardrail_status, JSON.stringify(guardrailResults),
              JSON.stringify({ measures: scored.coverage, measures_floor: scored.coverage_floor, establishment_blocked_by })]);
+          if (written.rowCount !== 1) throw new Refusal(alreadyScored);
           return { result: { id: eval_run_id }, result_table: "zz.eval_run", result_id: eval_run_id };
         },
       );

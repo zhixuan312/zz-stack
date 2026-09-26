@@ -411,9 +411,17 @@ async function main(): Promise<number> {
       source_content: "chain-check rewrote its own closing document to prove the outcome survives a revision.",
       source_title: "chain-check: revising a closed document",
     }), false);
-  // Matched on the kernel's words, because the kernel is where the rule lives: `closeInitiative`
-  // words the refusal "the disposition that closed the work is not written twice".
-  check("revising the closing document does not let the initiative close twice",
+  // Two guards stand behind "closes once" after a revision, and each is walked. The revision
+  // withdrew the closing document's approval, so the control loop refuses the claim first; once
+  // the revised document is approved again, the kernel refuses the second close in its own words:
+  // `closeInitiative` words it "the disposition that closed the work is not written twice".
+  check("revising the closing document withdraws its approval, so a second close is refused",
+    await call("initiative_close", { initiative: INIT, disposition: "finished", accepted_by: "Chain Check" }),
+    true, /needs 1 approval/);
+  await call("document_present", { path: `${INIT}/${closing}` });
+  check("the revised closing document can be approved again",
+    await call("document_approve", { path: `${INIT}/${closing}`, on_behalf_of: "Chain Check" }), false);
+  check("re-approving the closing document does not let the initiative close twice",
     await call("initiative_close", { initiative: INIT, disposition: "finished", accepted_by: "Chain Check" }),
     true, /not written twice/);
 

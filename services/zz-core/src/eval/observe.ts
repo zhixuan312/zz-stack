@@ -36,7 +36,7 @@ import {
   measured, rate, type ObservedFact,
 } from "./observe-facts.js";
 import {
-  ownTools, pluginTraces, surfaceCoverage, unboundedRunsClause, versionsWithRuns, type EvidenceWindow,
+  ownTools, pluginTraces, surfaceCoverage, unboundedRunsClause, versionsWithUse, type EvidenceWindow,
 } from "./plugin-profile.js";
 import { OWN_TOOLS } from "../door.js";
 import { withIdempotency, canonicalJson, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
@@ -298,17 +298,20 @@ export function registerObserveTools(server: McpServer): void {
       // An empty window is refused, not recorded: a snapshot of nothing carried an evaluation
       // through DISCOVER and DEFINE on no evidence at all. The usual cause is evaluating the
       // version just released, which nobody but the evaluation has used yet — so the refusal
-      // names the versions that do have runs.
-      if (observation.traces.runs === 0) {
-        const withRuns = await versionsWithRuns(pool, plugin, serves);
+      // names the versions that were used. A door's use is its calls, which an admin act makes
+      // outside any run; a flow's is its runs.
+      const calls = observation.traces.use.reduce((n, u) => n + u.calls, 0);
+      if (serves ? calls === 0 : observation.traces.runs === 0) {
+        const used = await versionsWithUse(pool, plugin, serves);
+        const unit = serves ? "call" : "run";
         throw new Refusal(
-          `ERROR: ${plugin} ${declaredVersion} has no run in this window (${window.from} to ${window.to}), ` +
-          "not counting evaluations' own calls — there is nothing to observe. " +
-          (withRuns.length
-            ? `Versions of ${plugin} with runs: ${withRuns.map((v) =>
-                `${v.version} (${v.runs} run${v.runs === 1 ? "" : "s"}, last ${v.last_run})`).join("; ")}. ` +
+          `ERROR: ${plugin} ${declaredVersion} has no ${unit} in this window (${window.from} to ${window.to}), ` +
+          "not counting evaluations' own — there is nothing to observe. " +
+          (used.length
+            ? `Versions of ${plugin} that were used: ${used.map((v) =>
+                `${v.version} (${v.uses} ${v.unit}${v.uses === 1 ? "" : "s"}, last ${v.last})`).join("; ")}. ` +
               "IDENTIFY one of those with plugin_locate(version), or wait for real use of this one."
-            : `No version of ${plugin} has a run yet.`));
+            : `No version of ${plugin} has been used yet.`));
       }
 
       const principal = parseCaller(requestHeaders()).email;

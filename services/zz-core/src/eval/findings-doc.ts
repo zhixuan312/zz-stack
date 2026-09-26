@@ -189,8 +189,9 @@ export function renderFindings(findings: FindingRow[], kind: FindingRow["kind"])
   // The id is printed because IMPROVE's `improvement_start` names findings by it, and a fresh
   // conversation has this document, not EXPLAIN's `finding_record` responses.
   return rows.map((f) =>
-    `- ${f.pattern} (id: \`${f.id}\`, owner: ${f.owner_kind ?? "unknown"}${f.owner_ref ? ` ${f.owner_ref}` : ""}, ` +
-    `decision: ${f.decision})` +
+    `- ${f.pattern} (id: \`${f.id}\`, owner: ${f.owner_kind ?? "unknown"}${f.owner_ref ? ` ${f.owner_ref}` : ""}` +
+    // A strength is not open work: it is not IMPROVE's to act on, so it carries no decision.
+    `${f.kind === "strength" ? "" : `, decision: ${f.decision}`})` +
     (replaced.has(f.id) ? ` — corrects \`${replaced.get(f.id)!.id}\`, which said: "${replaced.get(f.id)!.pattern}"` : "")).join("\n");
 }
 

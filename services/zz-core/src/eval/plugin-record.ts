@@ -171,8 +171,10 @@ export function registerPluginRecordTools(server: McpServer): void {
       return json({
         eval_run_id, finding: result, ...(supersedes !== undefined ? { superseded: supersedes } : {}),
         findings_md: doc === undefined ? undefined : typeof doc === "string" ? { refused: doc } : doc,
-        next: "This finding is DEFERRED. It stays open, counting against this plugin's headroom, " +
-              "until finding_decide records that somebody applied or rejected it.",
+        next: result.kind === "strength"
+          ? "A strength is recorded as what is working. It is not open work and IMPROVE never reads it."
+          : "This finding is DEFERRED. It stays open, counting against this plugin's headroom, " +
+            "until finding_decide records that somebody applied or rejected it.",
       });
     },
   );

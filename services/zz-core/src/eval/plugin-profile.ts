@@ -210,27 +210,29 @@ export function unboundedRunsClause(servesOwnDoor: boolean): string {
          and ${NOT_EVALUATION_RUN}`;
 }
 
-/** This plugin's versions that have runs other than evaluations', newest use first — what a
- *  refused empty observation offers instead. The same population `unboundedRunsClause` counts,
- *  grouped by version rather than filtered to one. */
-export async function versionsWithRuns(
+/** This plugin's versions that were used other than by evaluations, most recent use first — what
+ *  a refused empty observation offers instead. A door is used by its calls, which need not belong
+ *  to any run (an admin act outside every initiative), so a door's versions are counted by calls;
+ *  a flow's by its runs, the same population `unboundedRunsClause` counts. */
+export async function versionsWithUse(
   pool: pg.Pool, plugin: string, servesOwnDoor: boolean,
-): Promise<{ version: string; runs: number; last_run: string }[]> {
-  const rows = (await pool.query<{ version: string; runs: string; last_run: string }>(servesOwnDoor
-    ? `select e.plugin_version as version, count(distinct r.id)::text as runs,
-              to_char(max(r.started_at), 'YYYY-MM-DD HH24:MI') as last_run
-         from zz.run r join zz.event e on e.run_id = r.id
-        where e.plugin = $1 and e.plugin_version is not null and ${NOT_EVALUATION_RUN}
-        group by e.plugin_version order by max(r.started_at) desc limit 5`
-    : `select pv.version, count(distinct r.id)::text as runs,
-              to_char(max(r.started_at), 'YYYY-MM-DD HH24:MI') as last_run
+): Promise<{ version: string; uses: number; unit: "call" | "run"; last: string }[]> {
+  const rows = (await pool.query<{ version: string; uses: string; last: string }>(servesOwnDoor
+    ? `select e.plugin_version as version, count(*)::text as uses,
+              to_char(max(e.ts), 'YYYY-MM-DD HH24:MI') as last
+         from zz.event e
+        where e.plugin = $1 and e.kind = 'tool_call' and e.plugin_version is not null
+          and ${NOT_EVALUATION_EVENT}
+        group by e.plugin_version order by max(e.ts) desc limit 5`
+    : `select pv.version, count(distinct r.id)::text as uses,
+              to_char(max(r.started_at), 'YYYY-MM-DD HH24:MI') as last
          from zz.run r
          join zz.plugin_version_skill pvs on pvs.skill_version_id = r.skill_version_id
          join zz.plugin_version pv on pv.id = pvs.plugin_version_id
          join zz.plugin p on p.id = pv.plugin_id
         where p.name = $1 and ${NOT_EVALUATION_RUN}
         group by pv.version order by max(r.started_at) desc limit 5`, [plugin])).rows;
-  return rows.map((r) => ({ version: r.version, runs: Number(r.runs), last_run: r.last_run }));
+  return rows.map((r) => ({ version: r.version, uses: Number(r.uses), unit: servesOwnDoor ? "call" : "run", last: r.last }));
 }
 
 export async function pluginTraces(

@@ -33,6 +33,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.79.3] — 2026-09-26
+
+### Fixed
+- **A re-seen failure mode is merged into the current protocol's entry — for real this time.**
+  0.79.2 ordered the rows with the key, and a re-sighting merged into an old entry was itself the
+  newest row, handing the old entry on to every sighting after it. The rows are now ordered by the
+  entry they point at: the newest accepted one.
+
 ## [0.79.2] — 2026-09-26
 
 ### Fixed

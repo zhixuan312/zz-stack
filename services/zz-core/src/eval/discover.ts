@@ -297,17 +297,19 @@ async function insertCandidate(
   // into an accepted entry) or still waiting for one (candidate) — is recorded as merged into it
   // rather than as new. A merged row points at the entry it was folded into.
   const known = (await client.query<{ id: string }>(`
-    select coalesce(c.merged_into_id, c.id)::text as id
+    select e.id::text as id
       from zz.eval_failure_mode_candidate c
+      join zz.eval_failure_mode_candidate e on e.id = coalesce(c.merged_into_id, c.id)
       join zz.eval_observation_snapshot os on os.id = c.observation_snapshot_id
       join zz.eval_subject_version sv on sv.id = os.subject_version_id
      where c.stable_key = $2 and c.status in ('accepted', 'merged', 'candidate')
        and sv.plugin_id = (select s2.plugin_id from zz.eval_observation_snapshot o2
                              join zz.eval_subject_version s2 on s2.id = o2.subject_version_id
                             where o2.id = $1::uuid)
-     -- The newest accepted row is the current protocol version's entry; an older one belongs to
-     -- a version since replaced.
-     order by (c.status = 'accepted') desc, (c.status = 'merged') desc, c.created_at desc
+     -- Ordered by the entry a row points at, not by the row: the newest accepted entry is the
+     -- current protocol version's. Ordered by the row, a later re-sighting merged into an old
+     -- entry handed that old entry on to every sighting after it.
+     order by (e.status = 'accepted') desc, e.created_at desc
      limit 1`, [observationSnapshotId, stableKey])).rows[0];
   const row = (await client.query<{
     id: string; description: string; prevalence: { numerator: number; denominator: number };

@@ -33,6 +33,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.77.4] — 2026-09-26
+
+### Changed
+- **evaluation_assess accepts an empty `subject_refs`** and reads the run's facts alone. A door
+  used only outside initiatives — zz-access issuing tokens, adding members — leaves no run,
+  document or bug report to judge, and the call used to refuse before any fact was read.
+
+### Fixed
+- **DISCOVER reads a refusal's owner the way the platform defines it.** It told the owner-kind
+  evaluator that `ours` meant the platform's own code failing; `ours` is a malformed call the
+  calling flow could have avoided (a missing argument, an input the schema rejects). zz-core's two
+  schema-validation refusals were classified as the plugin's own failures under the old wording.
+
 ## [0.77.3] — 2026-09-26
 
 ### Fixed

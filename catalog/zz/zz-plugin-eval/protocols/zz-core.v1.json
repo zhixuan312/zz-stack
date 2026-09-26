@@ -46,8 +46,32 @@
           "required": true,
           "definition": {
             "qualification": {
-              "positive": "yes",
-              "zero": "no"
+              "anchors": [
+                {
+                  "id": "complete-spec",
+                  "role": "anchor",
+                  "text": "# Spec: export a team's decisions as CSV\n\n## Problem\nTeam leads copy decisions out of the knowledge store by hand every month; it takes an hour and misses entries.\n\n## Scope\nIn: one CSV export per team, from the console. Out: scheduling, other formats.\n\n## Requirements\nFR-1 The export holds every approved decision with its date, title and initiative.\nFR-2 Only members of the team may export it.\n\n## Acceptance criteria\nAC-1 Exporting a team with 3 approved decisions yields a CSV of 3 rows plus a header.\nAC-2 A non-member's export request is refused with 403.",
+                  "expected": "yes"
+                },
+                {
+                  "id": "headings-only-spec",
+                  "role": "anchor",
+                  "text": "# Spec: export decisions\n\n## Problem\nTBD\n\n## Scope\nTBD\n\n## Requirements\n\n## Acceptance criteria\nTBD",
+                  "expected": "no"
+                },
+                {
+                  "id": "complete-spec-no-criteria",
+                  "role": "fault",
+                  "text": "# Spec: export a team's decisions as CSV\n\n## Problem\nTeam leads copy decisions out of the knowledge store by hand every month; it takes an hour and misses entries.\n\n## Scope\nIn: one CSV export per team, from the console. Out: scheduling, other formats.\n\n## Requirements\nFR-1 The export holds every approved decision with its date, title and initiative.\nFR-2 Only members of the team may export it.\n\n## Acceptance criteria\nTBD -- see the ticket.",
+                  "expected": "no"
+                },
+                {
+                  "id": "meeting-agenda",
+                  "role": "control",
+                  "text": "Team sync, Tuesday\n\nAgenda:\n1. TBD\n2. Any other business",
+                  "expected": "no"
+                }
+              ]
             }
           },
           "evaluator": {
@@ -73,8 +97,32 @@
           "required": true,
           "definition": {
             "qualification": {
-              "positive": "yes",
-              "zero": "no"
+              "anchors": [
+                {
+                  "id": "decision-with-why",
+                  "role": "anchor",
+                  "text": "Decision: gated documents are stored in Postgres, not as files on disk. Why: in 0.40 two writers raced on the file lock and one approval was lost; Postgres row locks serialise them. Applies to: any tool that writes or approves a gated document.",
+                  "expected": "yes"
+                },
+                {
+                  "id": "bare-note",
+                  "role": "anchor",
+                  "text": "Fixed it, see the chat.",
+                  "expected": "no"
+                },
+                {
+                  "id": "decision-without-subject",
+                  "role": "fault",
+                  "text": "Decision: it now goes in the other one instead. Why: see above. Applies to: this.",
+                  "expected": "no"
+                },
+                {
+                  "id": "wip-commit",
+                  "role": "control",
+                  "text": "wip",
+                  "expected": "no"
+                }
+              ]
             }
           },
           "evaluator": {
@@ -122,8 +170,32 @@
           "required": true,
           "definition": {
             "qualification": {
-              "positive": "yes",
-              "zero": "no"
+              "anchors": [
+                {
+                  "id": "named-refusal",
+                  "role": "anchor",
+                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n2026-09-20T10:00:01Z  document_write  REFUSED  ERROR: spec.md has no frontmatter field \"role\" -- add role: spec to its envelope and write it again\n2026-09-20T10:00:09Z  document_write  ok",
+                  "expected": "yes"
+                },
+                {
+                  "id": "bare-refusal",
+                  "role": "anchor",
+                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n2026-09-20T10:00:01Z  document_write  REFUSED  ERROR\n2026-09-20T10:00:09Z  document_write  REFUSED  ERROR",
+                  "expected": "no"
+                },
+                {
+                  "id": "named-refusal-made-generic",
+                  "role": "fault",
+                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n2026-09-20T10:00:01Z  document_write  REFUSED  ERROR: invalid input\n2026-09-20T10:00:09Z  document_write  ok",
+                  "expected": "no"
+                },
+                {
+                  "id": "npm-login-refusal",
+                  "role": "control",
+                  "text": "$ npm publish\nnpm ERR! 403 Forbidden - you must be logged in to publish packages. Run `npm login` first, then publish again.",
+                  "expected": "yes"
+                }
+              ]
             }
           },
           "evaluator": {
@@ -165,42 +237,39 @@
       "notApplicableReason": null,
       "measures": [
         {
-          "key": "document_frontmatter_conformance",
-          "evaluatorType": "bounded_semantic",
-          "weight": 0.5,
-          "suite": "production",
-          "required": true,
-          "definition": {
-            "qualification": {
-              "positive": "yes",
-              "zero": "no"
-            }
-          },
-          "evaluator": {
-            "stable_key": "zz-core.document-frontmatter-conformance",
-            "kind": "noul",
-            "question": "Read this document. Does it carry the frontmatter and gate state the platform's document contract requires -- role, gate status, approval -- before anything downstream may treat it as approved?",
-            "answer_schema": {
-              "type": "noul"
-            },
-            "polarity": {
-              "good_when": "yes"
-            },
-            "model_policy": {
-              "requestedModel": "typesafe/jev-latest"
-            }
-          }
-        },
-        {
           "key": "bug_report_evidence_discipline",
           "evaluatorType": "bounded_semantic",
-          "weight": 0.5,
+          "weight": 1,
           "suite": "production",
           "required": true,
           "definition": {
             "qualification": {
-              "positive": "yes",
-              "zero": "no"
+              "anchors": [
+                {
+                  "id": "evidence-report",
+                  "role": "anchor",
+                  "text": "What happened: at 2026-09-20 10:04 document_approve on 2026-09-20-export/spec.md returned \"ERROR: spec.md has not been presented\", although document_present on the same file returned ok at 10:03 (run 3f2a9c1e).\nExpected: approve succeeds once the document has been presented.",
+                  "expected": "yes"
+                },
+                {
+                  "id": "diagnosis-only",
+                  "role": "anchor",
+                  "text": "The cache is broken. Fix: flush redis on every deploy.",
+                  "expected": "no"
+                },
+                {
+                  "id": "evidence-replaced-by-diagnosis",
+                  "role": "fault",
+                  "text": "What happened: approve is broken because the present flag is cached wrongly.\nExpected: fix the cache.",
+                  "expected": "no"
+                },
+                {
+                  "id": "other-project-issue",
+                  "role": "control",
+                  "text": "Steps: on macOS 15.1, run `ls -l /private/var/db`.\nActual: \"ls: /private/var/db: Operation not permitted\".\nExpected: the directory listing, as on macOS 14.",
+                  "expected": "yes"
+                }
+              ]
             }
           },
           "evaluator": {
@@ -237,8 +306,32 @@
           "required": true,
           "definition": {
             "qualification": {
-              "positive": "yes",
-              "zero": "no"
+              "anchors": [
+                {
+                  "id": "corrected-after-refusal",
+                  "role": "anchor",
+                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n2026-09-20T10:00:01Z  document_approve  REFUSED  ERROR: spec.md has not been presented -- call document_present first\n2026-09-20T10:00:04Z  document_present  ok\n2026-09-20T10:00:07Z  document_approve  ok",
+                  "expected": "yes"
+                },
+                {
+                  "id": "stops-after-refusal",
+                  "role": "anchor",
+                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n2026-09-20T10:00:00Z  session_whoami  ok\n2026-09-20T10:00:01Z  document_approve  REFUSED  ERROR: spec.md has not been presented -- call document_present first",
+                  "expected": "no"
+                },
+                {
+                  "id": "correction-removed",
+                  "role": "fault",
+                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n2026-09-20T10:00:01Z  document_approve  REFUSED  ERROR: spec.md has not been presented -- call document_present first\n2026-09-20T10:00:04Z  session_whoami  ok",
+                  "expected": "no"
+                },
+                {
+                  "id": "git-push-rejected-then-rebased",
+                  "role": "control",
+                  "text": "$ git push\n ! [rejected]  main -> main (fetch first)\n$ git pull --rebase\n$ git push\n   4c1d2e0..9a8b7c6  main -> main",
+                  "expected": "yes"
+                }
+              ]
             }
           },
           "evaluator": {
@@ -275,8 +368,32 @@
           "required": true,
           "definition": {
             "qualification": {
-              "positive": "yes",
-              "zero": "no"
+              "anchors": [
+                {
+                  "id": "one-call-each",
+                  "role": "anchor",
+                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n2026-09-20T10:00:00Z  session_whoami  ok\n2026-09-20T10:00:02Z  document_read  ok\n2026-09-20T10:00:05Z  document_write  ok",
+                  "expected": "yes"
+                },
+                {
+                  "id": "same-read-six-times",
+                  "role": "anchor",
+                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n2026-09-20T10:00:00Z  document_read  ok\n2026-09-20T10:00:01Z  document_read  ok\n2026-09-20T10:00:02Z  document_read  ok\n2026-09-20T10:00:03Z  document_read  ok\n2026-09-20T10:00:04Z  document_read  ok\n2026-09-20T10:00:05Z  document_read  ok\n2026-09-20T10:00:09Z  document_write  ok",
+                  "expected": "no"
+                },
+                {
+                  "id": "one-call-each-read-repeated",
+                  "role": "fault",
+                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n2026-09-20T10:00:00Z  session_whoami  ok\n2026-09-20T10:00:01Z  document_read  ok\n2026-09-20T10:00:02Z  document_read  ok\n2026-09-20T10:00:03Z  document_read  ok\n2026-09-20T10:00:04Z  document_read  ok\n2026-09-20T10:00:05Z  document_read  ok\n2026-09-20T10:00:08Z  document_write  ok",
+                  "expected": "no"
+                },
+                {
+                  "id": "shell-status-loop",
+                  "role": "control",
+                  "text": "$ git status\n$ git status\n$ git status\n$ git status\n$ git status\n$ git status\n$ git status\n$ git status\n$ git commit -m \"fix typo\"",
+                  "expected": "no"
+                }
+              ]
             }
           },
           "evaluator": {
@@ -337,8 +454,32 @@
           "required": true,
           "definition": {
             "qualification": {
-              "positive": "yes",
-              "zero": "no"
+              "anchors": [
+                {
+                  "id": "general-rule",
+                  "role": "anchor",
+                  "text": "Write every date as YYYY-MM-DD, so documents sort by name in any folder.",
+                  "expected": "yes"
+                },
+                {
+                  "id": "one-case-instruction",
+                  "role": "anchor",
+                  "text": "For Ann's Q3 billing initiative, use the blue template she mentioned on Tuesday.",
+                  "expected": "no"
+                },
+                {
+                  "id": "general-rule-pinned-to-one-case",
+                  "role": "fault",
+                  "text": "Write the date in 2026-09-20-billing/spec.md the way Ann asked on Tuesday.",
+                  "expected": "no"
+                },
+                {
+                  "id": "style-guide-rule",
+                  "role": "control",
+                  "text": "Use the serial comma in every list of three or more items.",
+                  "expected": "yes"
+                }
+              ]
             }
           },
           "evaluator": {
@@ -402,10 +543,6 @@
     "criticalGuardrails": [
       {
         "key": "document_gate_readiness",
-        "threshold": 0.5
-      },
-      {
-        "key": "document_frontmatter_conformance",
         "threshold": 0.5
       }
     ],

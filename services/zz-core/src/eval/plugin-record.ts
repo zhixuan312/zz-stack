@@ -26,6 +26,11 @@
  * column points at it.
  *
  * It does not approve. A finding lands `deferred`. The platform holds what was decided.
+ *
+ * A finding is never edited. A wrong one is corrected by recording its replacement with
+ * `supersedes`: in one transaction the new finding lands and the old one is closed — rejected,
+ * its note naming the replacement, `superseded_by` pointing at it — so findings.md shows only the
+ * current one, with the correction said, and no reader counts the wrong one as open.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { EVAL_STATE_ENUMS, parseCaller } from "@zz/contracts";
@@ -60,7 +65,10 @@ export function registerPluginRecordTools(server: McpServer): void {
         "document. Cite the measure a finding is evidence for by its measure_key, as written in " +
         "the protocol this eval_run was scored against. REFUSES an eval_run_id nothing minted, a " +
         "call missing owner_kind, and a measure_key that protocol version does not have (naming " +
-        "the keys it does). A " +
+        "the keys it does). To correct a finding already recorded, record the corrected one with " +
+        "`supersedes: <its id>` — the old one is closed as superseded in the same write and " +
+        "findings.md renders only the current one, noting the correction; REFUSES superseding a " +
+        "finding of another eval_run, or one already decided or superseded. A " +
         "mutator: writes through the FR-59 idempotency ledger.",
       inputSchema: {
         eval_run_id: z.string(),
@@ -75,11 +83,13 @@ export function registerPluginRecordTools(server: McpServer): void {
           expected_effect: z.record(z.string(), z.unknown()).optional()
             .describe("what changing this is expected to move — omit when owner_kind is not 'plugin'"),
         }),
+        supersedes: z.string().optional()
+          .describe("the id of an earlier, still-deferred finding of this eval_run that this one corrects"),
         idempotency_key: z.string().min(1),
         initiative: z.string().optional().describe("regenerate <initiative>/findings.md after recording"),
       },
     },
-    async ({ eval_run_id, finding, idempotency_key, initiative }) => {
+    async ({ eval_run_id, finding, supersedes, idempotency_key, initiative }) => {
       const p = db();
       if (!p) return noDb();
       const run = (await p.query<{ id: string; protocol_version_id: string }>(
@@ -93,10 +103,26 @@ export function registerPluginRecordTools(server: McpServer): void {
         if ("error" in measure) return text(measure.error);
         measureId = measure.id;
       }
+      // Checked before the ledger too, so a correction aimed at the wrong finding anchors nothing.
+      if (supersedes !== undefined) {
+        const old = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(supersedes)
+          ? (await p.query<{ eval_run_id: string | null; decision: string; superseded_by: string | null }>(
+              "select eval_run_id::text as eval_run_id, decision, superseded_by::text as superseded_by " +
+              "from zz.eval_finding where id = $1::uuid", [supersedes])).rows[0]
+          : undefined;
+        if (!old) return text(`ERROR: supersedes names no finding (${supersedes}) — ids come from finding_record`);
+        if (old.eval_run_id !== eval_run_id) {
+          return text(`ERROR: finding ${supersedes} belongs to eval_run ${old.eval_run_id ?? "(a legacy round)"}, not ${eval_run_id} — a correction stays in its own run`);
+        }
+        if (old.superseded_by) return text(`ERROR: finding ${supersedes} was already superseded by ${old.superseded_by} — correct that one instead`);
+        if (old.decision !== "deferred") {
+          return text(`ERROR: finding ${supersedes} is already ${old.decision} — a decided finding stands; record what the next round found instead`);
+        }
+      }
 
       const principal = parseCaller(requestHeaders()).email;
       const outcome: IdempotencyOutcome<{ id: string; kind: string; pattern: string }> = await withIdempotency(
-        principal, "finding_record", idempotency_key, { eval_run_id, finding },
+        principal, "finding_record", idempotency_key, { eval_run_id, finding, supersedes },
         async (client): Promise<MutatorOutcome<{ id: string; kind: string; pattern: string }>> => {
           const row = (await client.query<{ id: string }>(`
             insert into zz.eval_finding
@@ -108,6 +134,17 @@ export function registerPluginRecordTools(server: McpServer): void {
              measureId, JSON.stringify(finding.evidence_refs ?? []),
              finding.expected_effect ? JSON.stringify(finding.expected_effect) : null])).rows[0];
           if (!row) throw new Error("insert into zz.eval_finding produced no row");
+          if (supersedes !== undefined) {
+            // Guarded in the where clause: a finding decided or superseded since the check above
+            // refuses here, and the insert rolls back with it.
+            const closed = await client.query(`
+              update zz.eval_finding
+                 set superseded_by = $2::uuid, decision = 'rejected', decided_by = $3, decided_at = now(),
+                     decision_note = $4
+               where id = $1::uuid and decision = 'deferred' and superseded_by is null`,
+              [supersedes, row.id, principal, `superseded by ${row.id}, which corrects it`]);
+            if (closed.rowCount !== 1) throw new Refusal(`ERROR: finding ${supersedes} was decided or superseded while this call ran — nothing was recorded`);
+          }
           return {
             result: { id: row.id, kind: finding.kind, pattern: finding.pattern },
             result_table: "zz.eval_finding", result_id: row.id,
@@ -132,7 +169,7 @@ export function registerPluginRecordTools(server: McpServer): void {
         user: principal, action: "finding_record", eval_run_id, finding_id: result.id, replayed: outcome.replayed,
       });
       return json({
-        eval_run_id, finding: result,
+        eval_run_id, finding: result, ...(supersedes !== undefined ? { superseded: supersedes } : {}),
         findings_md: doc === undefined ? undefined : typeof doc === "string" ? { refused: doc } : doc,
         next: "This finding is DEFERRED. It stays open, counting against this plugin's headroom, " +
               "until finding_decide records that somebody applied or rejected it.",

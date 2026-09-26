@@ -20,19 +20,20 @@
  * protocol version the caller already names.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { QualificationPolicy, parseCaller } from "@zz/contracts";
+import { MeasureQualification, QualificationPolicy, parseCaller, type MeasureAnchor } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
 import {
-  gatherCountedEvidence, labelEvidence, mappingFor, parseLabelMappings, type SnapshotRow,
+  gatherCountedEvidence, labelEvidence, mappingFor, parseLabelMappings, type AnchorResult,
 } from "./qualify-evidence.js";
 import { qualificationState, resolveThresholds, type LadderEvidence } from "./qualify-ladder.js";
+import { recordQualified } from "./stage-record.js";
 import {
   decideBeforeWork, withIdempotency, type IdempotencyOutcome, type MutatorOutcome,
 } from "./idempotency.js";
-import { insertEvaluatorAnswer, type AskedEvaluatorAnswer } from "../semantic.js";
+import { askEvaluatorQuestion, insertEvaluatorAnswer, type AskedEvaluatorAnswer } from "../semantic.js";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
 import { db } from "../platform-db.js";
@@ -113,38 +114,20 @@ export async function measureByKey(
   return { id, evaluator_type, evaluator_version_id };
 }
 
-interface MeasureBinding {
-  measureId: string;
-  vocabulary: { positive: string; zero: string } | null;
-}
-
-/** The measure the caller already resolved, read for its anchor vocabulary. `null` — an evaluator
- *  no protocol measure defers to — is the `no_anchors` path, never a refusal of the call itself
- *  (the contract wants that reported as an evidence-shaped answer, not an error).
+/** The measure's own known-answer texts (`definition.qualification.anchors`). An empty list — a
+ *  version recorded without them, or a definition that no longer parses — is the `no_anchors`
+ *  path, never a refusal of the call itself (the contract wants that reported as an
+ *  evidence-shaped answer, not an error).
  *
  *  DELIBERATE: by id, never re-found by evaluator version. Two measures may defer to the same
  *  evaluator version (`registerEvaluator` is idempotent by content), and a `limit 1` lookup would
- *  read whichever one's vocabulary came first rather than the measure the caller named. */
-async function resolveMeasure(p: pg.Pool, measureId: string | null): Promise<MeasureBinding | null> {
-  if (!measureId) return null;
-  const row = (await p.query<{ id: string; definition: unknown }>(
-    "select id::text as id, definition from zz.eval_measure where id = $1::uuid", [measureId])).rows[0];
-  if (!row) return null;
-  const def = (row.definition ?? {}) as Record<string, unknown>;
-  const q = def.qualification as Record<string, unknown> | undefined;
-  const positive = typeof q?.positive === "string" ? q.positive : null;
-  const zero = typeof q?.zero === "string" ? q.zero : null;
-  return { measureId: row.id, vocabulary: positive !== null && zero !== null ? { positive, zero } : null };
-}
-
-async function latestSnapshot(p: pg.Pool, pluginId: string, exclude: boolean): Promise<SnapshotRow | null> {
-  const row = (await p.query<{ id: string; usable_run_count: number; total_run_count: number; coverage: SnapshotRow["coverage"] }>(`
-    select os.id::text as id, os.usable_run_count, os.total_run_count, os.coverage
-      from zz.eval_observation_snapshot os
-      join zz.eval_subject_version sv on sv.id = os.subject_version_id
-     where sv.plugin_id ${exclude ? "<>" : "="} $1::uuid
-     order by os.created_at desc limit 1`, [pluginId])).rows[0];
-  return row ?? null;
+ *  read whichever one's anchors came first rather than the measure the caller named. */
+async function measureAnchors(p: pg.Pool, measureId: string): Promise<MeasureAnchor[]> {
+  const row = (await p.query<{ definition: unknown }>(
+    "select definition from zz.eval_measure where id = $1::uuid", [measureId])).rows[0];
+  const def = (row?.definition ?? {}) as Record<string, unknown>;
+  const parsed = MeasureQualification.safeParse(def.qualification);
+  return parsed.success ? parsed.data.anchors : [];
 }
 
 interface QualifyResult {
@@ -157,10 +140,13 @@ interface QualifyResult {
     stability: { agreeing: number; total: number };
     labels: { n: number; tpr: number; tnr: number } | null;
     reason: string | null;
+    results: readonly AnchorResult[];
   };
 }
 
-function respond(counted: LadderEvidence, state: string, reason: string | null, qualificationId: string): QualifyResult {
+function respond(
+  counted: LadderEvidence, results: readonly AnchorResult[], state: string, reason: string | null, qualificationId: string,
+): QualifyResult {
   return {
     qualification_id: qualificationId, state,
     evidence: {
@@ -168,7 +154,7 @@ function respond(counted: LadderEvidence, state: string, reason: string | null, 
       planted_faults: { killed: counted.planted_faults.passed, total: counted.planted_faults.total },
       controls: { failed_as_expected: counted.controls.passed, total: counted.controls.total },
       stability: { agreeing: counted.stability.passed, total: counted.stability.total },
-      labels: counted.labels, reason,
+      labels: counted.labels, reason, results,
     },
   };
 }
@@ -191,35 +177,39 @@ interface GatheredQualification {
   readonly state: string;
   readonly reason: string | null;
   readonly evidence: LadderEvidence;
+  readonly results: readonly AnchorResult[];
   readonly asked: readonly AskedEvaluatorAnswer[];
 }
 
 /** The qualification run itself (FR-16), split in two so no model call ever runs inside a
- *  transaction: this half reads on the pool and asks every question (anchors, faults, controls,
- *  stability — up to nine calls of up to ~100s each) and writes nothing; `recordQualification`
- *  writes the answers and the row through `evaluator_qualify`'s ledger transaction client. */
+ *  transaction: this half reads on the pool and asks every question (each declared anchor, fault
+ *  and control, then the first anchor twice more for stability) and writes nothing;
+ *  `recordQualification` writes the answers and the row through `evaluator_qualify`'s ledger
+ *  transaction client. */
 async function gatherQualification(
-  p: pg.Pool, protocolVersionId: string, evaluatorVersionId: string, measureId: string | null,
+  p: pg.Pool, protocolVersionId: string, evaluatorVersionId: string, measureId: string,
   protocol: ProtocolContext, stableKey: string, principal: string,
 ): Promise<GatheredQualification> {
-  const measure = await resolveMeasure(p, measureId);
+  const anchors = await measureAnchors(p, measureId);
   const { thresholds } = resolveThresholds(protocol.policy?.thresholds);
 
-  const snapshot = measure ? await latestSnapshot(p, protocol.pluginId, false) : null;
-  const foreignSnapshot = measure && snapshot ? await latestSnapshot(p, protocol.pluginId, true) : null;
-
-  const { counts, asked } = await gatherCountedEvidence({
-    evaluatorVersionId, principal, snapshot, foreignSnapshot,
-    vocabulary: measure?.vocabulary ?? null,
+  const asked: AskedEvaluatorAnswer[] = [];
+  const { counts, results } = await gatherCountedEvidence({
+    anchors,
+    ask: async (subject) => {
+      const answer = await askEvaluatorQuestion({
+        evaluator_version_id: evaluatorVersionId, subject_text: subject, askedBy: principal,
+      });
+      asked.push(answer);
+      return answer.result;
+    },
   });
   const mappings = parseLabelMappings(protocol.policy?.labelMappings ?? []);
-  const labels = measure
-    ? await labelEvidence(p, measure.measureId, evaluatorVersionId, mappingFor(mappings, stableKey))
-    : null;
+  const labels = await labelEvidence(p, measureId, evaluatorVersionId, mappingFor(mappings, stableKey));
 
   const evidence: LadderEvidence = { ...counts, labels };
   const { state, reason } = qualificationState(evidence, thresholds);
-  return { protocolVersionId, evaluatorVersionId, pluginId: protocol.pluginId, state, reason, evidence, asked };
+  return { protocolVersionId, evaluatorVersionId, pluginId: protocol.pluginId, state, reason, evidence, results, asked };
 }
 
 /** The write half: every asked answer's `zz.assessment` row, then the one
@@ -233,10 +223,10 @@ async function recordQualification(writer: Writer, g: GatheredQualification): Pr
     values ($1::uuid, $2::uuid, $3::jsonb, $4, $5::jsonb, now())
     returning id::text as id`,
     [g.evaluatorVersionId, g.protocolVersionId, JSON.stringify({ plugin_id: g.pluginId }),
-     g.state, JSON.stringify({ ...g.evidence, reason: g.reason })])).rows[0];
+     g.state, JSON.stringify({ ...g.evidence, reason: g.reason, results: g.results })])).rows[0];
   if (!row) throw new Error("insert into zz.eval_evaluator_qualification produced no row");
 
-  return respond(g.evidence, g.state, g.reason, row.id);
+  return respond(g.evidence, g.results, g.state, g.reason, row.id);
 }
 
 export function registerEvaluatorQualifyTools(server: McpServer): void {
@@ -248,32 +238,34 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
         "(or re-established) against one protocol version, before its answers may back a score. " +
         "Name the measure by the measure_key you wrote into protocol_body; the evaluator version " +
         "it defers to is resolved from that protocol version, never passed in. Runs the " +
-        "protocol's own QualificationPolicy over four evidence categories — anchors " +
-        "(known answers derived from the plugin's own OBSERVE snapshot facts), planted faults " +
-        "(the same facts, sign-flipped, killed when the evaluator's answer flips with them), " +
-        "controls (the same facts read off another plugin's own real snapshot, never a " +
-        "mutation) and stability (one anchor asked three times) — plus labels, ONLY where the " +
+        "protocol's own QualificationPolicy thresholds over the measure's OWN known-answer texts, " +
+        "declared in protocol_body as definition.qualification.anchors [{ id, role, text, expected }], " +
+        "each asked the measure's own question: role anchor (anchor pass rate; the first is asked " +
+        "twice more for stability), fault (a good example with one planted defect — killed when " +
+        "the answer flips) and control (an artifact of another kind) — plus labels, ONLY where the " +
         "protocol's qualification.labelMappings names this evaluator's stable_key. RETURNS " +
         "{ measure_key, evaluator_version_id, qualification_id, state, evidence: { anchors: " +
         "{passed, total}, planted_faults: {killed, total}, controls: {failed_as_expected, total}, " +
-        "stability: {agreeing, total}, labels: {n, tpr, tnr} | null } }, writing exactly one " +
+        "stability: {agreeing, total}, labels: {n, tpr, tnr} | null, reason, results: [{ id, role, " +
+        "expected, got }] } }, writing exactly one " +
         "zz.eval_evaluator_qualification row scoped to { plugin_id } (derived from the protocol). " +
+        "reason names every threshold that stopped the climb, as '<key> <rate> < <bar> (passed/total)'. " +
         "REFUSES an unknown protocol_version_id; one protocol_affirm has not bound (not yet approved); " +
         "a measure_key this protocol version does not " +
         "have (naming the keys it does have); a key two dimensions share; and a " +
         "deterministic/outcome/human measure, which is not qualified. NEVER refuses on thin " +
-        "evidence — no anchor can be built (the measure's own definition.qualification names no " +
-        "{positive, zero} vocabulary, or the plugin has no OBSERVE snapshot yet) answers " +
-        "state=unqualified, reason=no_anchors instead. A mutator: writes through the FR-59 " +
+        "evidence — a measure with no declared anchors answers state=unqualified, " +
+        "reason=no_anchors instead. A mutator: writes through the FR-59 " +
         "idempotency ledger, so a retried call with the same idempotency_key replays the same " +
-        "row rather than re-asking any model.",
+        "row rather than re-asking any model. Pass `initiative` to record the state on the initiative.",
       inputSchema: {
         protocol_version_id: z.string(),
         measure_key: z.string().min(1).describe("The measure's key as written in protocol_body."),
         idempotency_key: z.string().min(1),
+        initiative: z.string().optional().describe("The initiative this evaluation runs in: records this measure's qualification state, which initiative_status reads to route to EVALUATE once every owed measure has one."),
       },
     },
-    async ({ protocol_version_id, measure_key, idempotency_key }) => {
+    async ({ protocol_version_id, measure_key, idempotency_key, initiative }) => {
       const p = db();
       if (!p) return noDb();
 
@@ -328,7 +320,8 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
         user: principal, action: "evaluator_qualify", protocol_version_id, measure_key, evaluator_version_id,
         state: result.state, replayed: outcome.replayed,
       });
-      return json({ measure_key, evaluator_version_id, ...result });
+      const recorded = await recordQualified(initiative, protocol_version_id, measure_key, result.state);
+      return json({ measure_key, evaluator_version_id, ...result, ...recorded });
     },
   );
 }

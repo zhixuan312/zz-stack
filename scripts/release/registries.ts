@@ -2,16 +2,25 @@
  * What a release writes into the registries after the stack is up — and the restart that lets the
  * platform record its own surface.
  *
- * Everything here runs after the deploy, against a database that is already serving, and none of it
- * can fail the release: a stale registry costs the ability to measure this release, and rolling a
- * good deployment back over that is the worse trade. Every step is loud and none is fatal.
+ * Everything here runs after the deploy, against a database that is already serving. The skill
+ * registry and the surface restart are loud and not fatal: a stale one costs the ability to
+ * measure this release, and rolling a good deployment back over that is the worse trade.
+ *
+ * register-plugins is the exception, and its failure is returned so step 5 counts it as a
+ * verification failure. zz.plugin_version is an evaluation's subject and zz.plugin.release_owners
+ * is what lets IMPROVE release at all: 0.76.2 failed this step with a warning, left every plugin
+ * with release_owners [] and the newest plugin version at 0.75.0, and reported itself released.
  */
-import { HOST, REMOTE, log, run, ssh } from "../deployment.ts";
+import { HOST, REMOTE, asExecError, log, run, ssh } from "../deployment.ts";
 
 const regPsql = `ssh ${HOST} docker compose -f ${REMOTE}/deploy/docker-compose.yml exec -T postgres psql -U zz -d zz`;
 
-export function writeRegistries(): void {
-// The registry learns what this release ships.
+/** Returns what failed in a way step 5 must treat as the release not working — empty when
+ *  nothing did. `ownerTeam` is the release's resolved `catalogOwnerTeam()`, which register-plugins
+ *  refuses to run without. */
+export function writeRegistries(ownerTeam: string): string[] {
+  const failures: string[] = [];
+  // The registry learns what this release ships.
   //
   // zz.skill_version is what every question about a skill joins against: which version wrote this
   // document, which rubric judged it, what it scored. register-skills mirrors the catalog into it,
@@ -44,7 +53,8 @@ export function writeRegistries(): void {
   // exists.
   try {
     const out = run("node", ["packages/tools/dist/ops/register-plugins.js",
-                             "--root", ".", "--psql", regPsql]);
+                             "--root", ".", "--psql", regPsql],
+                    { env: { ...process.env, ZZ_CATALOG_OWNER_TEAM: ownerTeam } });
     // Unresolved is not a statistic. Zero is the only correct value: a member is a skill version
     // this lock names, and every one was written by register-skills two steps earlier. Any other
     // number means the lock is describing a catalog that is not the one being released, so it is
@@ -57,7 +67,7 @@ export function writeRegistries(): void {
           `--write\`, commit it, then re-run register-plugins. Nothing about the deployment is ` +
           `wrong; what is wrong is which version its work will be attributed to.\x1b[0m`);
     } else {
-      log("  plugin registry updated from plugins.lock.json");
+      log(`  plugin registry updated from plugins.lock.json — owner and release_owners: ${ownerTeam}`);
       // And only now can zz-core record its own surface. recordOwnSurface attaches the tools it
       // registered to the zz.plugin_version row for the version it is running, and refuses to invent
       // that row. The deploy above restarts zz-core before this step creates the row, so at boot the
@@ -76,9 +86,11 @@ export function writeRegistries(): void {
       }
     }
   } catch (e) {
-    // Loud, not fatal, for the same reason as the step above: a stale plugin registry costs the
-    // ability to evaluate this release.
-    log(`  WARNING: register-plugins failed, so no plugin VERSION row exists for this release. ` +
-        `zz-plugin-eval will not find a subject until it is run: ${String(e).slice(0, 200)}`);
+    // A failure, not a warning: see the module note.
+    // Its own words, not execFileSync's message, which opens with the whole command line.
+    const x = asExecError(e);
+    failures.push(`register-plugins failed, so no plugin version row and no release_owners exist ` +
+                  `for this release: ${(x.stderr || x.stdout || x.message).trim().slice(-300)}`);
   }
+  return failures;
 }

@@ -1,6 +1,6 @@
 ---
 name: sdlc-flow
-version: 2.11
+version: 2.12
 description: Start and run software delivery — explore the ground, agree a spec, audit it, plan it, audit that, build it, review the code, then close it and hand it to zz-handover. The entry point for the SDLC flow.
 when_to_use: "Someone brings software delivery work — a brain dump to ground, an agreement to write, a plan to build from, a change to make — or you need to know which stage an initiative is at. This is the entry point: start here rather than at a stage. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -33,7 +33,11 @@ explore → spec → audit → plan → audit → execute → review → close (
 ```
 
 Not a ratchet. An audit that finds the spec rests on an unsettled decision sends you back into
-`sdlc-spec`, and that is the method working.
+`sdlc-spec`, and that is the method working. And plan → audit → execute is a loop, one phase
+per turn: the spec's `## Phase outline` names the phases, `sdlc-plan` writes one, it is audited
+and approved, `sdlc-execute` builds it and appends `### As built`, and the next phase is planned
+from that — until the outline's last phase is built, and review runs. A phase that disproves a
+spec core statement goes back to `sdlc-spec` (see `sdlc-method`).
 
 | # | Stage | Produces | Runs in |
 |---|---|---|---|
@@ -42,7 +46,7 @@ Not a ratchet. An audit that finds the spec rests on an unsettled decision sends
 | 3 | `sdlc-spec-audit` | a SOURCE supporting `spec.md` | subagent per round, sequential, rounds routed by evidence |
 | 4 | `sdlc-plan` | `plan.md` | **main agent** → the person approves |
 | 5 | `sdlc-plan-audit` | a SOURCE supporting `plan.md` | subagent per round, sequential, rounds routed by evidence |
-| 6 | `sdlc-execute` | the change itself, and no document | subagent per plan item |
+| 6 | `sdlc-execute` | the change itself, and the phase's `### As built` in `plan.md` | subagent per plan item |
 | 7 | `sdlc-review` | `review.md` — and it closes the initiative — plus a SOURCE per sweep round | **main agent** for the evidence; subagent per round, sequential, rounds routed by evidence |
 
 Four documents, and the audits produce none of them. An audit report is a SOURCE: it is the
@@ -81,7 +85,9 @@ in the room, and the agreement is written the moment they settle. A handoff betw
 halves loses exactly what was agreed.
 
 **The person agrees before anything proceeds.** Auditing a document nobody agreed to audits
-your own guess.
+your own guess. The spec also carries the `## Phase outline` the plan will grow from and the
+`## Core statements` the design rests on, each tested by a spike run while writing it — the
+approval is refused without them.
 
 ### 3 & 5 · Two audits, each sequential, each routed by evidence
 
@@ -134,7 +140,8 @@ about that.
 
 ### 6 · Execute
 
-One subagent per plan item. You keep the sequence and report what changed.
+One phase per run, one subagent per plan item. You keep the sequence, report what changed, and
+append the phase's `### As built` before the next phase is planned.
 
 ### 7 · Review: acceptance evidence first, then a bounded sweep
 

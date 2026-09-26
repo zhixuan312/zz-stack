@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan-audit
-version: 2.6
+version: 2.7
 description: Audit plan.md — the eleven prose failure modes plus the plan's own contract: AC traceability, task contracts, checks that compile, the format the executor depends on, dependency order and ownership, the walking skeleton, the full-suite gate. Read-only. Dispatched, one round at a time; how many is routed by evidence.
 when_to_use: "plan.md is written and someone is about to execute it. Runs after sdlc-plan and before sdlc-execute. Dispatched by the main agent, one round at a time."
 ---
@@ -35,6 +35,26 @@ dispatching its tasks one by one, it is what tells anyone later that somebody wh
 the plan read it, and it is what the platform requires the next version of the plan to cite. It
 is not a document of the flow: an audit report is the material that makes a revision necessary.
 `sdlc-audit-criteria` carries how to write it and the exact call.
+
+## Audit the current phase only
+
+The plan grows one phase at a time (`sdlc-plan`), so a round audits **the current phase** — the
+first `## Phase N` with tasks and no `### As built`; `initiative_status`'s `plan.current_phase`
+names it. Built phases are history: their `### As built` is what happened, and a finding against
+it is not a plan finding. Later phases with no tasks yet are not gaps. Keep it light:
+
+- **The structural report first.** `initiative_status`'s `plan` carries the structural report. A
+  violation there is a finding, quoted as it reads; do not re-derive by hand what it already
+  checked (ids, Output, Dependencies, Owns, cycles, waves).
+- **The previous phase's real results.** Read the last `### As built`. Does this phase build on
+  what was actually delivered, or on what the previous phase was planned to deliver? A task
+  resting on something the as-built says did not land is the most valuable finding here. A
+  deviation that disproves a spec core statement is not a plan finding at all: report it as
+  `changes_commitment` material, because the spec has to change first.
+- **Traceability is to the outline.** Point 1 below reads: every AC the spec's `## Phase outline`
+  puts in this phase is traced to one of its tasks.
+
+The contract points below apply to the current phase's tasks.
 
 ## Twelve: the plan's own contract
 
@@ -113,8 +133,9 @@ nothing else in the flow is positioned to see it.
 
 ## Skill contract
 
-**Outcome:** one round's findings on `plan.md` — the eleven prose failure modes plus the fourteen
-points of the plan's own contract — registered with `source_add` as a SOURCE supporting that
+**Outcome:** one round's findings on the current phase of `plan.md` — the eleven prose failure
+modes plus the fourteen points of the plan's own contract, read against the structural report and
+the previous phase's `### As built` — registered with `source_add` as a SOURCE supporting that
 document, and handed back to the caller as one JSON block. This round writes no document of the
 flow and changes nothing in the plan.
 
@@ -136,15 +157,14 @@ because nothing else in the flow is positioned to see it.
 who owns the plan decides what to fix, and you present nothing to them. The consumer everything
 here is calibrated against is a low-judgement worker that follows the plan literally and will not
 stop to check. Where the caller said what the last round raised, confirm each fix and look
-instead for what the changes introduced. The platform asks two bounded questions of your round
-when it is recorded, and routes on them; you ask none, and severity stays yours to calibrate.
+instead for what the changes introduced. The platform asks one bounded question of your round
+when it is recorded, and routes on it; you ask none, and severity stays yours to calibrate.
 
 **Checkpoints:**
 
 | Where | Question ID | Asked about |
 |---|---|---|
 | When `source_add` records your round — asked by the platform | `changes_commitment` | whether the round reopens something the document records as agreed — `yes` makes the next move `decide`, waiting on the stakeholder, instead of another round |
-| The same, from round 2 on | `repeats_finding` | whether the round mostly repeats the rounds before it — the next move says so; it does not change the move |
 
 **Action and exit paths:** the action is the eleven failure modes one at a time, then the plan's
 fourteen, then consolidation. Two exits, both taken every round: `source_add` carrying the prose

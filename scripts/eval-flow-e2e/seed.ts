@@ -33,7 +33,13 @@ const WANTS = [
 const SEEDED = 8;
 
 const SPEC = ["Context", "Problem", "Goals & Requirements", "Alternatives", "Approach, Method & Structure",
-  "Verification Plan", "Risks & Mitigations", "Stakeholders & Work"];
+  "Verification Plan", "Risks & Mitigations", "Stakeholders & Work", "Phase outline", "Core statements"];
+/** The two sections a spec's approval reads, which one line of prose would not pass. */
+const SPEC_BODY: Record<string, string> = {
+  "Phase outline": "- **Phase 0 — Change:** the request is built end to end.",
+  "Core statements": "| ID | Statement | If false | Status | Evidence | Note |\n|---|---|---|---|---|---|\n" +
+    "| CS-1 | The change is seeded usage. | Nothing is evaluated. | fails | run:eval-flow-seed — `seeded` | resolved-by-design-change: seeded usage has no design |",
+};
 
 /** `round: "use"` is the use before the evaluation; `round: "after"` is real use of the released
  *  version, marked (see the module note). */
@@ -64,7 +70,7 @@ export async function seedUsage(url: string, pat: string, tag: string, round: "u
       await c.call("core", "document_write", { path: `${name}/plan.md`, content: `## Full-suite gate\nnpm run gate.\n` },
         { refusal: /^ERROR/ });
     }
-    await doc("spec.md", SPEC.map((h) => `## ${h}\nChange ${topic} as asked in request ${i}.${mark}\n`).join("\n"));
+    await doc("spec.md", SPEC.map((h) => `## ${h}\n${SPEC_BODY[h] ?? `Change ${topic} as asked in request ${i}.${mark}`}\n`).join("\n"));
     await sign("spec.md");
     await c.call("core", "source_add", { initiative: name, title: `spec audit ${i}`,
       content: "Audit round 1 of spec.md: no blocking findings.", supports: ["spec.md"], stage: "sdlc-spec-audit" });
@@ -75,6 +81,10 @@ export async function seedUsage(url: string, pat: string, tag: string, round: "u
       content: "Audit round 1 of plan.md: no blocking findings.", supports: ["plan.md"], stage: "sdlc-plan-audit" });
     await c.skill("sdlc-review");
     await doc("review.md", `## Verdict\nShips: request ${i} is done.\n`);
+    // review.md approves only once its sweep has run a round, and the round carries its ledger.
+    await c.call("core", "source_add", { initiative: name, title: `review round ${i}`, supports: ["review.md"],
+      stage: "sdlc-review", content: "Review round 1: nothing blocking.\n\n```json\n" +
+        JSON.stringify({ round: 1, scope: { base: "HEAD~1", head: "HEAD" }, findings: [], resolved: [] }) + "\n```\n" });
     await sign("review.md");
     await c.call("core", "initiative_close", { initiative: name, disposition: "finished" });
     names.push(name);

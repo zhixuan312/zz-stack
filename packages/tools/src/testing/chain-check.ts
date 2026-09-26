@@ -112,6 +112,13 @@ const evalDoor = new Mcp(`${GW}/eval/mcp`, { pat: PAT, client: "chain-check" });
 const callEval = (tool: string, args: unknown): Promise<string> => evalDoor.call(tool, args);
 
 
+/** What the two sections a spec's approval reads must hold, where a probe body would be refused. */
+const SECTION_BODY: Record<string, string> = {
+  "Phase outline": "- **Phase 0 — Probe:** the chain check runs end to end.",
+  "Core statements": "| ID | Statement | If false | Status | Evidence | Note |\n|---|---|---|---|---|---|\n" +
+    "| CS-1 | The probe runs. | Nothing is checked. | fails | run:chain-check — `probe` | resolved-by-design-change: a probe has no design |",
+};
+
 /**
  * A probe document: the body, and nothing else.
  *
@@ -122,7 +129,7 @@ function doc(body: string, name = ""): string {
   const wanted = sectionsFor(name);
   // Each heading gets a line of its own under it: the platform refuses a declared section that
   // is present as a heading and empty underneath.
-  const sections = wanted.map((h) => `## ${h}\n\n${body}\n`).join("\n");
+  const sections = wanted.map((h) => `## ${h}\n\n${SECTION_BODY[h] ?? body}\n`).join("\n");
   return `# chain check\n\n${body}\n${sections ? `\n${sections}` : ""}`;
 }
 
@@ -282,6 +289,16 @@ async function main(): Promise<number> {
     if (settled.has(name)) continue;
     check(`write ${name}`, await writeDoc(`${INIT}/${name}`, name), false);
     if (gatedName.has(name)) {
+      // A verifying document (review.md) approves only once its sweep has run a round: one
+      // source naming the stage that writes it, carrying an empty ledger.
+      const verifying = DECLARED.documents.find((d) => d.name === name && d.verifies?.length);
+      if (verifying?.stage) {
+        check(`a review round attaches a source supporting ${name}`, await call("source_add", {
+          initiative: INIT, title: `chain-check review of ${name}`, supports: [name], stage: verifying.stage,
+          content: "A round ran and found nothing blocking. Written by chain-check.\n\n```json\n" +
+            JSON.stringify({ round: 1, scope: { base: "HEAD~1", head: "HEAD" }, findings: [], resolved: [] }) + "\n```\n",
+        }), false);
+      }
       await call("document_present", { path: `${INIT}/${name}` });
       check(`approve ${name}`, await call("document_approve", { path: `${INIT}/${name}`, on_behalf_of: "Chain Check" }), false);
     }

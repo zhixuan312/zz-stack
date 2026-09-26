@@ -8,13 +8,12 @@
  * `run_status = 'pending'`. `release_verify` (release-verify.ts) reads the same runs back: a
  * released subject is judged by an evaluation of its real post-release runs, started here.
  *
- * `evaluation_assess` runs every measure of every dimension against every `subject_ref` the
- * caller names, through `evaluate-measures.ts`'s `answerMeasure`, and writes one
- * `zz.eval_assessment` row per (measure, subject_ref) pair — `deterministic`/`outcome` read a
- * named fact off the run's own bound observation snapshot, by a dotted `definition.factPath`
- * (migration 001 — the snapshot now carries the whole facts map, not just the two `evaluate-
- * measures.ts` used to special-case), `bounded_semantic`/`generative_critic` ask the measure's
- * bound evaluator and record an `assessment_id`, `human` is recorded as excluded (no ingestion
+ * `evaluation_assess` writes the rows `planAssessment` (evaluate-measures.ts) routes:
+ * `deterministic`/`outcome` read a named fact off the run's own bound observation snapshot, by a
+ * dotted `definition.factPath`, ONCE per run under the run-level ref; `bounded_semantic`/
+ * `generative_critic` ask the measure's bound evaluator only about refs of the kind the measure
+ * judges, and only when that evaluator is qualified — otherwise one run-level row records the
+ * exclusion by name and no model is called; `human` is recorded as excluded (no ingestion
  * pipeline yet).
  *
  * `evaluation_score` reduces those rows back (`reduceMeasureAnswers`), calls `scoreRun` (pure,
@@ -35,7 +34,8 @@ import type pg from "pg";
 import { z } from "zod";
 
 import {
-  answerMeasure, evaluateGuardrails, parseCriticalGuardrails, recordMeasureAnswer, reduceMeasureAnswers,
+  answerMeasure, evaluateGuardrails, excludedAnswer, isRunLevelRef, parseCriticalGuardrails, planAssessment,
+  readingsOf, recordMeasureAnswer, reduceMeasureAnswers, runLevelRef,
   type AnsweredMeasure, type CriticalGuardrail, type DimensionRow, type MeasureAnswer, type MeasureRow,
   type SnapshotFacts,
 } from "./evaluate-measures.js";
@@ -96,9 +96,12 @@ async function loadDimensions(p: pg.Pool, protocolVersionId: string): Promise<Di
       from zz.eval_dimension where protocol_version_id = $1::uuid order by key`, [protocolVersionId])).rows;
   if (!dims.length) return [];
   const measures = (await p.query<MeasureRow & { dimension_id: string }>(`
-    select id::text as id, dimension_id::text as dimension_id, key, evaluator_type,
-           weight::float8 as weight, required, definition, evaluator_version_id::text as evaluator_version_id
-      from zz.eval_measure where dimension_id = any($1::uuid[]) order by key`,
+    select m.id::text as id, m.dimension_id::text as dimension_id, m.key, m.evaluator_type,
+           m.weight::float8 as weight, m.required, m.definition,
+           m.evaluator_version_id::text as evaluator_version_id, ev.question
+      from zz.eval_measure m
+      left join zz.eval_evaluator_version ev on ev.id = m.evaluator_version_id
+     where m.dimension_id = any($1::uuid[]) order by m.key`,
     [dims.map((d) => d.id)])).rows;
   return dims.map((d) => ({ ...d, measures: measures.filter((m) => m.dimension_id === d.id) }));
 }
@@ -287,14 +290,16 @@ export function registerEvaluationTools(server: McpServer): void {
     {
       description:
         "WHEN eval_run_id is pending or running: resolves every subject_ref to its real content — " +
-        "an <initiative>/<doc>.md ref is read off the caller's own team's artifact store, a bare " +
-        "run_id ref is rendered from its own zz.event rows (subject-ref.ts) — then runs every " +
-        "measure of every dimension in that run's protocol version against that resolved text, " +
-        "and writes one zz.eval_assessment row per (measure, subject_ref) — deterministic/outcome " +
-        "read a named fact off the run's bound observation snapshot instead (never the resolved " +
-        "text), bounded_semantic/generative_critic ask the measure's bound evaluator about the " +
-        "resolved text (recording an assessment_id), human is recorded as excluded. RETURNS " +
-        "{ eval_run_id, assessment_count, measures_assessed }. REFUSES an eval_run_id nothing " +
+        "an <initiative>/<doc>.md ref is read off the caller's own team's artifact store (one under " +
+        "_knowledge/ is a knowledge node), bug:<id> from its bug report, a bare run_id (plugin_profile's " +
+        "traces.run_refs) from its own zz.event rows — then routes each measure: deterministic/outcome " +
+        "read a named fact off the run's bound observation snapshot ONCE per run; bounded_semantic/" +
+        "generative_critic ask the measure's bound evaluator only about refs of the kind it judges " +
+        "(definition.subjectKind, else its question's \"Read this run/document/bug report/record\"), " +
+        "and only when that evaluator is qualified against this protocol version — otherwise one " +
+        "row records the exclusion by name and no model is called; human is recorded as excluded. " +
+        "RETURNS { eval_run_id, assessment_count, measures_assessed, model_calls, excluded }. " +
+        "REFUSES an eval_run_id nothing " +
         "minted, an eval_run already completed/failed/cancelled, an empty subject_refs list, and " +
         "BY NAME any subject_ref that resolves to neither a real document nor a real run — a " +
         "model asked to judge nothing is never silently handed a templated sentence naming the " +
@@ -337,22 +342,44 @@ export function registerEvaluationTools(server: McpServer): void {
       const prior = await decideBeforeWork(principal, "evaluation_assess", idempotency_key, ledgerArgs);
       const answered: { subjectRef: string; measure: MeasureRow; answer: AnsweredMeasure }[] = [];
       if (!prior.replayed) {
-        for (const subjectRef of subject_refs) {
-          const subjectText = resolvedRefs.get(subjectRef);
-          for (const measure of measures) {
-            answered.push({ subjectRef, measure, answer: await answerMeasure({
-              measure, snapshot, subjectRef, principal, subjectText,
-              qualificationOf: (evId) => latestQualification(p, evId, run.protocol_version_id),
-            }) });
+        const runLevel = runLevelRef(run.observation_snapshot_id);
+        const qualification = new Map<string, { id: string; state: string } | null>();
+        for (const m of measures) {
+          if (m.evaluator_version_id && !qualification.has(m.evaluator_version_id)) {
+            qualification.set(m.evaluator_version_id, await latestQualification(p, m.evaluator_version_id, run.protocol_version_id));
           }
+        }
+        const alreadyAssessed = new Set((await p.query<{ measure_id: string }>(
+          `select distinct measure_id::text as measure_id from zz.eval_assessment
+            where eval_run_id = $1::uuid`, [eval_run_id])).rows.map((r) => r.measure_id));
+        const plan = planAssessment({
+          measures, subjectRefs: subject_refs, runLevel, alreadyAssessed,
+          qualified: (m) => {
+            const q = m.evaluator_version_id ? qualification.get(m.evaluator_version_id) : null;
+            return !!q && q.state !== "unqualified";
+          },
+        });
+        for (const item of plan) {
+          const q = item.measure.evaluator_version_id ? qualification.get(item.measure.evaluator_version_id) ?? null : null;
+          const answer: AnsweredMeasure = item.ask
+            ? await answerMeasure({
+                measure: item.measure, snapshot, subjectRef: item.subjectRef, principal,
+                subjectText: resolvedRefs.get(item.subjectRef),
+                qualificationOf: async () => q,
+              })
+            : { ...excludedAnswer(item.excluded_reason ?? "excluded"), evaluator_version_id: item.measure.evaluator_version_id,
+                qualification_id: q?.id ?? null, qualification_state: q?.state ?? null, pending: null };
+          answered.push({ subjectRef: item.subjectRef, measure: item.measure, answer });
         }
       }
 
-      const outcome: IdempotencyOutcome<{ assessment_count: number; measures_assessed: number }> = prior.replayed
+      type AssessResult = { assessment_count: number; measures_assessed: number; model_calls: number;
+                            excluded: { measure: string; subject_ref: string; reason: string | null }[] };
+      const outcome: IdempotencyOutcome<AssessResult> = prior.replayed
         ? prior
         : await withIdempotency(
           principal, "evaluation_assess", idempotency_key, ledgerArgs,
-          async (client): Promise<MutatorOutcome<{ assessment_count: number; measures_assessed: number }>> => {
+          async (client): Promise<MutatorOutcome<AssessResult>> => {
             if (run.run_status === "pending") {
               await client.query("update zz.eval_run set run_status = 'running' where id = $1::uuid", [eval_run_id]);
             }
@@ -368,19 +395,31 @@ export function registerEvaluationTools(server: McpServer): void {
                  JSON.stringify(answer), String(run.protocol_version)]);
             }
             return {
-              result: { assessment_count: answered.length, measures_assessed: measures.length },
+              result: {
+                assessment_count: answered.length, measures_assessed: measures.length,
+                model_calls: answered.filter((a) => a.answer.pending !== null).length,
+                excluded: answered.filter((a) => a.answer.excluded)
+                  .map((a) => ({ measure: a.measure.key, subject_ref: a.subjectRef, reason: a.answer.excluded_reason })),
+              },
               result_table: "zz.eval_run", result_id: eval_run_id,
             };
           },
         );
 
-      const result = outcome.replayed
-        ? (await p.query<{ n: string }>(
-            "select count(*)::text as n from zz.eval_assessment where eval_run_id = $1::uuid", [eval_run_id]))
-            .rows[0]
-        : null;
-      const response = outcome.replayed
-        ? { assessment_count: Number(result?.n ?? 0), measures_assessed: measures.length }
+      // A replay answers from the rows this run holds — the same fields, read back, never re-asked.
+      const stored = outcome.replayed
+        ? (await p.query<{ key: string; subject_ref: string; answer: MeasureAnswer }>(`
+            select m.key, ea.subject_ref, ea.answer from zz.eval_assessment ea
+              join zz.eval_measure m on m.id = ea.measure_id
+             where ea.eval_run_id = $1::uuid`, [eval_run_id])).rows
+        : [];
+      const response: AssessResult = outcome.replayed
+        ? {
+            assessment_count: stored.length, measures_assessed: measures.length,
+            model_calls: stored.filter((r) => r.answer.assessment_id !== null).length,
+            excluded: stored.filter((r) => r.answer.excluded)
+              .map((r) => ({ measure: r.key, subject_ref: r.subject_ref, reason: r.answer.excluded_reason })),
+          }
         : outcome.result;
       logActivity(await userRoot(), null,
         { user: principal, action: "evaluation_assess", eval_run_id, replayed: outcome.replayed });
@@ -395,12 +434,16 @@ export function registerEvaluationTools(server: McpServer): void {
         "WHEN evaluation_assess has run against every subject_ref this evaluation needs: reduces " +
         "the stored zz.eval_assessment rows measure by measure and calls the pure scoreRun once " +
         "for the run's own dimension_scores and once per subject_ref for a percentile bootstrap " +
-        "interval. Computes coverage_met from the protocol's own EstablishmentPolicy.minCoverage " +
+        "interval. A dimension scores from whichever of its measures were scored and reports its " +
+        "coverage (scored weight over declared weight); overall is null only when nothing scored, " +
+        "and the status reads the coverage. Computes coverage_met from the protocol's own EstablishmentPolicy.minCoverage " +
         "and qualification_met from every model-backed measure's evaluator qualification against " +
         "QualificationPolicy.boundedSemanticMinimum — a bootstrap protocol " +
         "(scoring.establishment.bootstrap=true) forces qualification_met=false regardless (plan " +
-        "I-29). RETURNS { overall_score, score_status, score_interval, dimension_scores, " +
-        "guardrail_status, coverage } and stores the same on zz.eval_run, moving run_status to " +
+        "I-29). RETURNS { overall_score, score_status, score_coverage, score_interval, dimension_scores, " +
+        "guardrail_status, coverage, readings } — readings is every stored answer, per measure key, " +
+        "per subject_ref, with its assessment_id, which is what a finding cites — and stores the " +
+        "score on zz.eval_run, moving run_status to " +
         "'completed'. REFUSES an eval_run_id nothing minted and a run with no assessment recorded " +
         "against it. A mutator: writes through the FR-59 idempotency ledger.",
       inputSchema: {
@@ -433,14 +476,19 @@ export function registerEvaluationTools(server: McpServer): void {
       };
       const byMeasure = new Map<string, MeasureAnswer[]>();
       const bySubjectAndMeasure = new Map<string, Map<string, MeasureAnswer[]>>();
+      // Run-level rows (a fact read once per run, a run-level exclusion) are not a subject: they
+      // count toward no subject floor and are folded into every subject's own score below.
+      const runLevel = new Map<string, MeasureAnswer[]>();
       const subjectRefs = new Set<string>();
       for (const r of rows) {
-        subjectRefs.add(r.subject_ref);
         pushInto(byMeasure, r.measure_id, r.answer);
+        if (isRunLevelRef(r.subject_ref)) { pushInto(runLevel, r.measure_id, r.answer); continue; }
+        subjectRefs.add(r.subject_ref);
         const perSubject = bySubjectAndMeasure.get(r.subject_ref) ?? new Map<string, MeasureAnswer[]>();
         bySubjectAndMeasure.set(r.subject_ref, perSubject);
         pushInto(perSubject, r.measure_id, r.answer);
       }
+      const readings = readingsOf(rows, new Map(measures.map((m) => [m.id, m.key])));
 
       const policy = await loadProtocolPolicy(p, run.protocol_version_id);
       const snapshot = await loadSnapshotFacts(p, run.observation_snapshot_id);
@@ -494,7 +542,8 @@ export function registerEvaluationTools(server: McpServer): void {
         const outScore = scored.dimensions.find((s) => s.key === d.key);
         const measuresRows = d.measures.map((m) => overallDetail.get(m.id)!);
         return {
-          key: d.key, canonical_kind: d.canonical_kind, score: outScore?.score ?? null, applicable: d.applicable,
+          key: d.key, canonical_kind: d.canonical_kind, score: outScore?.score ?? null,
+          coverage: outScore?.coverage ?? null, applicable: d.applicable,
           not_applicable_reason: d.not_applicable_reason, weight: d.weight, required: d.required,
           measures_scored: measuresRows.filter((m) => !m.excluded).length, measures_total: measuresRows.length,
           measures: measuresRows,
@@ -503,7 +552,8 @@ export function registerEvaluationTools(server: McpServer): void {
 
       const perSubjectOveralls: number[] = [];
       for (const subjectRef of subjectRefs) {
-        const detail = measureDetail(bySubjectAndMeasure.get(subjectRef) ?? new Map());
+        const own = bySubjectAndMeasure.get(subjectRef) ?? new Map<string, MeasureAnswer[]>();
+        const detail = measureDetail(new Map([...runLevel, ...own]));
         const subjectDims = dims.map((d) => ({
           key: d.key, canonical_kind: d.canonical_kind, weight: d.weight, required: d.required,
           applicable: d.applicable, not_applicable_reason: d.not_applicable_reason,
@@ -513,7 +563,11 @@ export function registerEvaluationTools(server: McpServer): void {
         if (subjectScore.overall !== null) perSubjectOveralls.push(subjectScore.overall);
       }
       const uncertainty = resolveUncertainty(policy.uncertainty, eval_run_id);
-      const score_interval = bootstrapInterval(perSubjectOveralls, uncertainty);
+      const interval = bootstrapInterval(perSubjectOveralls, uncertainty);
+      const score_interval = interval.degenerate ? interval : {
+        ...interval,
+        note: "each subject is scored on the measures routed to its kind, plus the run-level facts",
+      };
 
       const principal = parseCaller(requestHeaders()).email;
       const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
@@ -523,10 +577,12 @@ export function registerEvaluationTools(server: McpServer): void {
             update zz.eval_run
                set run_status = 'completed', score_status = $2, overall_score = $3,
                    score_interval = $4::jsonb, dimension_scores = $5::jsonb, guardrail_status = $6,
-                   guardrails = $7::jsonb
+                   guardrails = $7::jsonb,
+                   coverage = coalesce(coverage, '{}'::jsonb) || $8::jsonb
              where id = $1::uuid`,
             [eval_run_id, scored.status, scored.overall, JSON.stringify(score_interval),
-             JSON.stringify(dimension_scores), scored.guardrail_status, JSON.stringify(guardrailResults)]);
+             JSON.stringify(dimension_scores), scored.guardrail_status, JSON.stringify(guardrailResults),
+             JSON.stringify({ measures: scored.coverage, measures_floor: scored.coverage_floor })]);
           return { result: { id: eval_run_id }, result_table: "zz.eval_run", result_id: eval_run_id };
         },
       );
@@ -540,7 +596,8 @@ export function registerEvaluationTools(server: McpServer): void {
       const recorded = await recordStage(initiative, "zz-plugin-evaluate", { eval_run_id });
       return json({
         eval_run_id, overall_score: scored.overall, score_status: scored.status,
-        score_interval, dimension_scores, guardrail_status: scored.guardrail_status, coverage, ...recorded,
+        score_coverage: scored.coverage, coverage_floor: scored.coverage_floor,
+        score_interval, dimension_scores, guardrail_status: scored.guardrail_status, coverage, readings, ...recorded,
       });
     },
   );

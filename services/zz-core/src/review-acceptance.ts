@@ -12,6 +12,8 @@
  * exactly one technical acceptance criterion and no other id.
  *
  * Deterministic, at `document_approve`, refused by name:
+ *   - the review sweep recorded at least one round and nothing in it blocks — unless no round
+ *     ran and a stakeholder source waives the sweep, which the approval's answer then says;
  *   - every declared criterion has a row, and no row names a criterion nobody declared;
  *   - a status is established, not_established, blocked or deferred;
  *   - an established or blocked row names its evidence by kind (`check:`, `run:`, `probe:`,
@@ -33,13 +35,16 @@ import { join } from "node:path";
 import { documentBody } from "@zz/contracts";
 import { decisionRows } from "@zz/indexing";
 
-import { names, reviewMove, stakeholderSources, unbackloggedFindings } from "./review-rounds.js";
+import { names, reviewMove, reviewRounds, stakeholderSources, unbackloggedFindings } from "./review-rounds.js";
 import { assessFamily, type Assessment } from "./semantic.js";
 import type { Chain } from "./write-guards.js";
 
 const AC_STATUSES = ["established", "not_established", "blocked", "deferred"] as const;
 const EVIDENCE_KIND = /^(check|run|probe|test):\S+/;
 const QUOTED = /`[^`]+`|"[^"]+"|“[^”]+”/;
+/** A stakeholder's waiver of the sweep: a waive word and the sweep or review on one line. Bare
+ *  "waive" is not enough — a source deferring a criterion may use the word about that. */
+const WAIVER = /\bwaive[sd]?\b[^\n]*\b(?:sweep|review)\b|\b(?:sweep|review)\b[^\n]*\bwaive[sd]?\b/i;
 
 export interface Criterion { id: string; text: string; from: string }
 interface AcceptanceRow { id: string; status: string; evidence: string; note: string }
@@ -160,10 +165,20 @@ export async function acceptanceApprovalRefusal(root: string, chain: Chain, relP
   const backlog = unbackloggedFindings(root, initiative, doc.stage, doc.name, body);
   const criteria = declaredCriteria(dir, doc.verifies);
   const bad: string[] = [];
-  // The sweep has to be settled. Zero rounds still approves (the move is round 1 owed), which the
-  // seeds rely on; any round recorded holds the approval until nothing blocks.
+  // The sweep has to have run and be settled: round 1 at least, or a stakeholder's explicit
+  // waiver, and then nothing blocking.
   const sweep = reviewMove(root, initiative, doc.stage, doc.name);
-  if (sweep && ["fix", "run_experiment", "decide"].includes(sweep.action)) {
+  let waived = "";
+  if (!reviewRounds(dir, doc.stage, doc.name).length) {
+    const waiver = stakeholderSources(dir, doc.name).find((s) => WAIVER.test(s.body));
+    if (waiver) waived = `The review sweep ran no round: sources/${waiver.file} waives it. `;
+    else {
+      bad.push(`no round of ${doc.stage} is recorded — the sweep runs at least once: record round 1 with ` +
+               `source_add(initiative: "${initiative}", title, content, supports: ["${doc.name}"], stage: "${doc.stage}"). ` +
+               `Only the stakeholder can waive it, with source_add(supports: ["${doc.name}"]) whose content ` +
+               "says so on one line, e.g. \"The review sweep is waived: <why>.\"");
+    }
+  } else if (sweep && ["fix", "run_experiment", "decide"].includes(sweep.action)) {
     bad.push(`the review sweep still has an open blocking finding — next move ${sweep.action}: ${sweep.why}`);
   }
   if (backlog.length) {
@@ -173,7 +188,7 @@ export async function acceptanceApprovalRefusal(root: string, chain: Chain, relP
   const table = acceptanceTable(body);
   if (!criteria.length) {
     return { refusal: bad.length ? lead + bad.join("; ") : null,
-             note: `${doc.verifies.join(" and ")} declare no acceptance criterion, so no acceptance evidence is owed.` };
+             note: waived + `${doc.verifies.join(" and ")} declare no acceptance criterion, so no acceptance evidence is owed.` };
   }
   if (!table) {
     return { refusal: lead + [...bad, `it has no \`## Acceptance evidence\` section, and ${doc.verifies.join(" and ")} ` +
@@ -228,7 +243,7 @@ export async function acceptanceApprovalRefusal(root: string, chain: Chain, relP
   }
   if (bad.length) return { refusal: lead + bad.join("; "), note: "" };
   return { refusal: null,
-           note: `Acceptance evidence: ${table.length} row(s) against ${criteria.length} declared criteria` +
+           note: waived + `Acceptance evidence: ${table.length} row(s) against ${criteria.length} declared criteria` +
                  (unavailable.length
                    ? `; evidence_relation unavailable for ${unavailable.join(", ")}, so those rows rest on the deterministic rules alone.`
                    : ".") };

@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.16
+version: 1.17
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -38,6 +38,33 @@ agent that ultimately executes it needs far less than this; the richness is for 
 **Completion test (the real bar):** a competent engineer, reading only this plan, could execute every
 phase and task in order and arrive at the working, spec-satisfying solution — without the plan's
 author present. If a human could not follow it to the end, it is not done.
+
+## One phase at a time — the plan grows as it is built
+
+**The plan is not written up front.** The spec's `## Phase outline` already fixed the
+destination and the phases that reach it, agreed with the person. This stage writes ONE phase:
+its tasks, in full. `sdlc-plan-audit` audits that phase, `sdlc-execute` builds it, runs the
+skeleton, and appends `### As built` under it — what actually landed, deviations, decisions.
+Only then is the next phase planned, from what the last one really produced. The finished plan
+is a record of what happened, not a forecast.
+
+- **First cycle:** `document_write` the header (Goal … File Structure), then EVERY phase heading
+  from the spec's outline with its "what works at the end" line and the same number. Only the
+  current phase — Phase 0 — carries tasks; every later phase says `Planned after Phase N is
+  built.` and nothing else. Then `## Integration hotspots`, `## Full-suite gate` and the
+  traceability table for the ACs planned so far.
+- **Every later cycle:** read the last phase's `### As built` first. If it disproved a core
+  statement from the spec, stop: this is not a planning problem, it goes back to `sdlc-spec`, and
+  the person agrees the changed destination before any further phase is planned. Otherwise
+  `document_revise` the plan, citing the execution report as its source, and fill in the next
+  phase's tasks. Task ids continue straight through: Phase 2's first task follows Phase 1's last.
+- **Only written phases are validated.** `validatePlan` checks every task written and lists a
+  phase with no tasks as not yet planned; `initiative_status`'s `plan` reports the current phase
+  (the first with tasks and no `### As built`) and that phase's waves.
+- **Approval is per phase, and quick.** Each phase's plan still passes the `plan.md` gate. Where
+  the person has delegated it, the approval rests on the plan-audit round and the structural
+  report for that phase — record it under their delegation and carry on; do not re-present the
+  whole plan for a fresh verdict on phases already built.
 
 ## What the plan must express
 
@@ -297,8 +324,9 @@ has not decided how anyone will know it still works.
 1. **No implementation code and no final deliverable content in the plan.** A task's closing line is
    exactly `**Plan boundary:** final deliverable content is not in this plan.`
 2. **Business AC → technical AC, traced.** Every task cites the spec business AC(s) it delivers
-   (`← AC-N.N`) and states its own technical acceptance criterion. Every spec AC maps to at least one
-   task.
+   (`← AC-N.N`) and states its own technical acceptance criterion. Every spec AC the current phase
+   covers in the spec's `## Phase outline` maps to at least one of its tasks; by the last phase,
+   every spec AC does.
 3. **Every path is exact**, verified against ground truth at HEAD. No guessed paths.
 4. **Every `Run:` command** uses the project's real check runner and is a whitespace-delimited argv
    with **no shell metacharacters** (`| & ; < > $ \` ( )` or quotes).
@@ -441,8 +469,9 @@ read last time.
 
 ## Skill contract
 
-**Outcome:** `plan.md` in the initiative — a Phase 0 walking skeleton every later phase ends by
-running, phases each stating what works at the end, `### Task I-N` headings numbered straight
+**Outcome:** `plan.md` in the initiative, grown by one fully written phase per cycle — every
+phase from the spec's outline headed, built phases carrying `### As built`, a Phase 0 walking
+skeleton every later phase ends by running, phases each stating what works at the end, `### Task I-N` headings numbered straight
 through with a one-line `**Output:**`, `**Dependencies:**` and `**Owns:**`, an
 `## Integration hotspots` list, no volatile facts about the tree, a
 five-bullet contract and a technical acceptance criterion traced `← AC-N.N`, plan-authored checks
@@ -470,7 +499,9 @@ on, so none is asked.
 **Action and exit paths:** the action is ground truth, state the production method in prose,
 scaffold in one write with a uniquely-id'd marker per task, fill one task at a time until no
 marker remains, close with the gate and the traceability table, present, ask. The forward exit is
-`sdlc-plan-audit`, once the approval is recorded. The return exit is `document_revise` citing the
+`sdlc-plan-audit`, once the approval is recorded. After `sdlc-execute` appends a phase's
+`### As built`, this stage runs again for the next phase; a phase that disproved a core statement
+exits back to `sdlc-spec` instead. The return exit is `document_revise` citing the
 source that sent it back — `document_write` and `document_patch` are refused on an approved plan,
 because writing over one leaves the approver's name standing on bytes they never read. Writing a
 second plan is not an exit at all: execution needs one document.

@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.17
+version: 1.18
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -70,6 +70,28 @@ when the plan is written, because deciding it when two workers collide costs the
 
 **The plan says what and how-done, never a fact the tree will move under** — no migration
 numbers, line counts or exact SQL; the executor reads those from the repository.
+
+## The spec fixes the destination; the plan grows phase by phase
+
+The person takes part at the spec, so that is where the destination is settled: every phase to
+the final shape (`## Phase outline`, each AC in the phase that delivers it) and the 3–6
+assumptions the design rests on (`## Core statements`, each tested by a spike run in code while
+the spec is written, with its decisive output quoted). `document_approve` refuses a spec that
+leaves an AC out of every phase, or a statement without a spike, or a failed statement nothing
+settled.
+
+The plan is then written one phase at a time, and each loop is:
+
+```
+plan Phase N (its tasks only) → audit Phase N (structural report + Phase N-1's as-built) → approve
+  → execute Phase N (waves, skeleton) → append "### As built" → plan Phase N+1
+```
+
+So each phase is planned from what the last one actually produced, and the finished plan is
+what happened. Per-phase approvals are quick: the audit round and the structural report are the
+evidence, recorded under the person's delegation. **A phase that disproves a core statement
+returns to the spec** — the destination changed, so the person agrees it again before another
+phase is planned; an audit round that reopens an agreement already routes to them.
 
 ## Why the rest are yours
 

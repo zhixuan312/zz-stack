@@ -77,7 +77,9 @@
           "Approach, Method & Structure",
           "Verification Plan",
           "Risks & Mitigations",
-          "Stakeholders & Work"
+          "Stakeholders & Work",
+          "Phase outline",
+          "Core statements"
         ],
         "emitted_from": "catalog/sdlc/sdlc-flow/flow.json documents[name=spec.md].sections"
       },
@@ -85,6 +87,22 @@
         "sdlc-spec/SKILL.md",
         "sdlc-spec/SKILL.md",
         "sdlc-spec-audit/SKILL.md"
+      ]
+    },
+    {
+      "rule_id": "spec.phase_outline_and_core_statements_at_approval",
+      "skill": "sdlc-spec",
+      "locator": "## Component catalog",
+      "claim": "`document_approve` reads them: a spec whose Phase outline leaves an AC out of every phase, or whose Core statements carry a row without a kind-prefixed locator and quoted spike output, or a `fails`/`partial` row neither resolved by a design change nor named by a stakeholder source, is refused; a `holds` row is read by `evidence_relation`.",
+      "enforcement_class": "platform",
+      "schema": "catalog/sdlc/sdlc-flow/flow.json documents[name=spec.md].sections — `Phase outline` and `Core statements`",
+      "handler": "services/zz-core/src/spec-gate.ts::specApprovalRefusal, called by services/zz-core/src/tools/initiative-acts.ts::registerInitiativeActTools (document_approve)",
+      "behavioural_test": "checks/spec-gate.ts — no outline, an uncovered AC, a stray AC, no statements, no locator, no quote, an unsettled `fails` row and each evidence_relation reading are refused; a complete spec, a design-resolved and a stakeholder-decided `fails` row pass; the replay of 2026-09-24-plugin-eval-next-version comes out `fails`",
+      "test_drives": "services/zz-core/dist/spec-gate.js",
+      "report": "node checks/spec-gate.ts",
+      "also_claimed_in": [
+        "sdlc-method/SKILL.md",
+        "sdlc-flow/SKILL.md"
       ]
     },
     {
@@ -354,9 +372,9 @@
       "claim": "The platform asks bounded questions itself and routes on the answers; you ask none",
       "enforcement_class": "platform",
       "schema": "packages/contracts/src/assessment.ts::QUESTION_FAMILIES",
-      "handler": "services/zz-core/src/semantic.ts::assessFamily — refuses a family QUESTION_FAMILIES does not register, and records every answer in zz.assessment; reached by the assess tool (services/zz-core/src/tools/assess.ts) and, for changes_commitment and repeats_finding, by source_add when an audit round lands (services/zz-core/src/audit-rounds.ts::assessRound)",
+      "handler": "services/zz-core/src/semantic.ts::assessFamily — refuses a family QUESTION_FAMILIES does not register, and records every answer in zz.assessment; reached by the assess tool (services/zz-core/src/tools/assess.ts) and, for changes_commitment, by source_add when an audit round lands (services/zz-core/src/audit-rounds.ts::assessRound)",
       "behavioural_test": "checks/audit-rounds.ts §7 — every registered family carries an instruction, an unregistered family is refused, and an unconfigured service answers unavailable with its reason",
-      "note": "Registered: the nine families are QUESTION_FAMILIES, each with the instruction the typed service is asked. A skill names only a family whose answer code reads: changes_commitment and repeats_finding when an audit round lands (audit-rounds.ts), repeats_finding per new S1/S2 review finding (review-rounds.ts), evidence_relation per established acceptance row (review-acceptance.ts). scripts/gate/checks/checkpoints-consumed.ts fails a skill that names any other.",
+      "note": "Registered: the nine families are QUESTION_FAMILIES, each with the instruction the typed service is asked. A skill names only a family whose answer code reads: changes_commitment when an audit round lands (audit-rounds.ts), repeats_finding per new S1/S2 review finding (review-rounds.ts), evidence_relation per established acceptance row (review-acceptance.ts) and per `holds` core statement at spec approval (spec-gate.ts). scripts/gate/checks/checkpoints-consumed.ts fails a skill that names any other.",
       "enum": {
         "name": "question IDs cited in the skills' Checkpoints tables",
         "closed": true,

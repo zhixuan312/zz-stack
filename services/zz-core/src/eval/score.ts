@@ -4,27 +4,40 @@
  * produces the same output, so every caller (round scoring, a replay, a check) gets an answer it
  * can recompute rather than one it has to trust.
  *
- * Two re-normalising sums, nested:
- *   - inside a dimension, over its measures — an optional measure with no value is dropped and
- *     the remaining weights re-normalised to 1; a *required* measure with no value makes the
- *     whole dimension's score `null` rather than silently shrinking the sum around the gap;
+ * Two re-normalising sums, nested, each reporting how much of what it was asked to cover it
+ * actually covered:
+ *   - inside a dimension, over its measures — a measure with no value (required or not) is
+ *     dropped and the remaining weights re-normalised to 1. The dimension reports `coverage`:
+ *     scored measure weight over declared measure weight. One excluded measure never nulls a
+ *     dimension whose other measures were scored; it lowers that dimension's coverage, and the
+ *     run's status reads the coverage;
  *   - across dimensions, over the ones that are both `applicable` (a `false` one names why in
  *     `not_applicable_reason` and carries no weight here — see Dimension's own superRefine in
- *     `@zz/contracts`) and scored (not `null`) — the same drop-and-re-normalise shape, one level
- *     up. A missing dimension is not a zero: a zero would pull the average down for a gap in
- *     coverage, not in the plugin's own performance.
+ *     `@zz/contracts`) and scored (at least one measure) — the same drop-and-re-normalise shape,
+ *     one level up, with the run's `coverage` the dimension-weighted mean of the applicable
+ *     dimensions' coverage. A missing dimension is not a zero: a zero would pull the average
+ *     down for a gap in coverage, not in the plugin's own performance.
  *
- * `status` and `guardrail_status` are read off the same input, never off `overall`:
- * `established` needs every *required, applicable* dimension present AND `coverage_met` AND
- * `qualification_met` — unqualified evidence, however complete, cannot establish. A guardrail
- * failure changes `guardrail_status` only; AC-23.1 is explicit that the number must not move for
- * it, because a report that quietly re-averages the score away also throws away the reason a
- * guardrail firing needs to be looked at as its own thing.
+ * `overall` is null ONLY when no dimension scored anything. `status` and `guardrail_status` are
+ * read off the same input, never off `overall`: `established` needs every required measure of
+ * every *required, applicable* dimension scored AND `coverage_met` AND `qualification_met` —
+ * unqualified evidence, however complete, cannot establish; `provisional` needs a number and a
+ * run coverage at or above `PROVISIONAL_COVERAGE_FLOOR`; anything else is `not_established`,
+ * which may still carry the number it has, so a reader sees what was measured beside how little
+ * of the protocol that was. A guardrail failure changes `guardrail_status` only; AC-23.1 is
+ * explicit that the number must not move for it, because a report that quietly re-averages the
+ * score away also throws away the reason a guardrail firing needs to be looked at as its own
+ * thing.
  */
 
-/** One weighted component of a dimension. `required: false` on a measure with no `value` is
- *  simply dropped from that dimension's sum; `required: true` with no `value` makes the whole
- *  dimension unscored — see the module doc for why a dimension is never partially covered. */
+/** The run coverage below which a number is reported but not called even provisional: under
+ *  half the protocol's declared weight scored is a reading of a different, smaller protocol.
+ *  Echoed on every output so a reader knows which floor was applied. */
+export const PROVISIONAL_COVERAGE_FLOOR = 0.5;
+
+/** One weighted component of a dimension. A measure with no `value` is dropped from that
+ *  dimension's sum and lowers its coverage; `required: true` with no `value` also withholds
+ *  `established` — see the module doc. */
 interface Measure {
   weight: number;
   required: boolean;
@@ -54,14 +67,21 @@ interface ScoreRunInput {
 interface DimensionOutput {
   key: string;
   canonical_kind: string;
-  /** Rounded to 4 decimals; `null` when not applicable or when a required measure is missing. */
+  /** Rounded to 4 decimals; `null` when not applicable or when no measure scored. */
   score: number | null;
   applicable: boolean;
+  /** Scored measure weight over declared measure weight, 4 decimals; `null` when not applicable. */
+  coverage: number | null;
 }
 
 interface ScoreRunOutput {
-  /** Rounded to 2 decimals; `null` exactly when no dimension scored (`status === "not_established"`). */
+  /** Rounded to 2 decimals; `null` exactly when no dimension scored. */
   overall: number | null;
+  /** Dimension-weighted mean of the applicable dimensions' coverage, 4 decimals; `null` when no
+   *  dimension is applicable. */
+  coverage: number | null;
+  /** `PROVISIONAL_COVERAGE_FLOOR`, echoed. */
+  coverage_floor: number;
   status: "established" | "provisional" | "not_established";
   dimensions: DimensionOutput[];
   guardrail_status: "pass" | "fail" | "not_established";
@@ -83,13 +103,17 @@ function weightedMean(items: { weight: number; value: number }[]): number | null
   return items.reduce((sum, i) => sum + (i.weight / totalWeight) * i.value, 0);
 }
 
-/** A required measure with no value makes the dimension `null` outright (AC-19.1); otherwise an
- *  optional missing measure is dropped and the rest re-normalised (AC-21.1). */
-function dimensionScore(dim: DimensionInput): number | null {
-  if (dim.measures.some((m) => m.required && m.value === null)) return null;
+/** A dimension's score over whichever of its measures have a value, re-normalised (AC-21.1),
+ *  and its coverage: the scored share of its declared measure weight. */
+function dimensionScore(dim: DimensionInput): { score: number | null; coverage: number } {
   const usable = dim.measures.filter((m): m is Measure & { value: number } => m.value !== null);
   const mean = weightedMean(usable.map((m) => ({ weight: m.weight, value: m.value })));
-  return mean === null ? null : round(mean, 4);
+  const declared = dim.measures.reduce((sum, m) => sum + m.weight, 0);
+  const scored = usable.reduce((sum, m) => sum + m.weight, 0);
+  return {
+    score: mean === null ? null : round(mean, 4),
+    coverage: declared > 0 ? round(scored / declared, 4) : 0,
+  };
 }
 
 function guardrailStatus(guardrails: ScoreRunInput["guardrails"]): ScoreRunOutput["guardrail_status"] {
@@ -112,33 +136,42 @@ export function scoreRun(input: ScoreRunInput): ScoreRunOutput {
     }
   }
 
-  const dimensions: DimensionOutput[] = input.dimensions.map((dim) => ({
-    key: dim.key,
-    canonical_kind: dim.canonical_kind,
-    score: dim.applicable ? dimensionScore(dim) : null,
-    applicable: dim.applicable,
-  }));
+  const dimensions: DimensionOutput[] = input.dimensions.map((dim) => {
+    const scored = dim.applicable ? dimensionScore(dim) : null;
+    return {
+      key: dim.key, canonical_kind: dim.canonical_kind,
+      score: scored?.score ?? null, applicable: dim.applicable, coverage: scored?.coverage ?? null,
+    };
+  });
 
   // Applicable and scored — the same pair of exclusions the overall mean and the "is this
   // dimension present" check both apply, so status and overall never disagree about what counts.
   const applicable = input.dimensions.filter((dim) => dim.applicable);
-  const scoredByKey = new Map(dimensions.map((d) => [d.key, d.score]));
-  const present = applicable.filter((dim) => scoredByKey.get(dim.key) !== null);
+  const outByKey = new Map(dimensions.map((d) => [d.key, d]));
+  const present = applicable.filter((dim) => outByKey.get(dim.key)?.score !== null);
 
   const overallMean = weightedMean(
-    present.map((dim) => ({ weight: dim.weight, value: scoredByKey.get(dim.key) as number })),
+    present.map((dim) => ({ weight: dim.weight, value: outByKey.get(dim.key)!.score as number })),
   );
   const overall = overallMean === null ? null : round(overallMean * 10, 2);
+  const coverageMean = weightedMean(
+    applicable.map((dim) => ({ weight: dim.weight, value: outByKey.get(dim.key)!.coverage ?? 0 })),
+  );
+  const coverage = coverageMean === null ? null : round(coverageMean, 4);
 
   const requiredApplicable = applicable.filter((dim) => dim.required);
-  const allRequiredPresent = requiredApplicable.length > 0
-    && requiredApplicable.every((dim) => scoredByKey.get(dim.key) !== null);
+  const requiredComplete = requiredApplicable.length > 0
+    && requiredApplicable.every((dim) => dim.measures.every((m) => !m.required || m.value !== null)
+      && outByKey.get(dim.key)?.score !== null);
 
-  const status: ScoreRunOutput["status"] = allRequiredPresent && input.coverage_met && input.qualification_met
+  const status: ScoreRunOutput["status"] = requiredComplete && input.coverage_met && input.qualification_met
     ? "established"
-    : present.length > 0
+    : overall !== null && coverage !== null && coverage >= PROVISIONAL_COVERAGE_FLOOR
       ? "provisional"
       : "not_established";
 
-  return { overall, status, dimensions, guardrail_status: guardrailStatus(input.guardrails) };
+  return {
+    overall, coverage, coverage_floor: PROVISIONAL_COVERAGE_FLOOR, status, dimensions,
+    guardrail_status: guardrailStatus(input.guardrails),
+  };
 }

@@ -23,10 +23,36 @@ const USABLE_RUNS_FLOOR = 5;
  *  timestamps stays the only query, whichever way the caller asked for the window. */
 export interface EvidenceWindow { readonly from: string; readonly to: string }
 
+/** How many run refs a trace hands back, newest first. `runs` still counts them all. */
+const RUN_REFS_CAP = 100;
+
+/** The tools that are this plugin's own: the ones its skills name, narrowed — when the plugin
+ *  serves a door — to the tools that door serves. A skill may name a tool another door serves
+ *  (zz-core's skills name /manage's team_switch); counted as zz-core's, it put 16 observed over
+ *  15 total. `doorTools` null means no door surface is known, and the skill-named set stands. */
+export function ownTools(namedBySkills: readonly string[], doorTools: readonly string[] | null): string[] {
+  if (!doorTools) return [...namedBySkills];
+  const served = new Set(doorTools);
+  return namedBySkills.filter((t) => served.has(t));
+}
+
+/** Observed over total for `ownTools`: only a called tool in the own set counts, so observed can
+ *  never exceed total. `called` holds door-prefixed or bare names; compared on the bare half. */
+export function surfaceCoverage(called: Iterable<string>, own: readonly string[]): { observed: number; total: number } {
+  const bare = new Set([...called].map((t) => t.split(":").pop() ?? t));
+  return { observed: own.filter((t) => bare.has(t)).length, total: own.length };
+}
+
 interface PluginTraces {
   runs: number;
   usable_runs: number;
   sufficient: boolean;
+  /** The runs themselves, newest first, capped at `RUN_REFS_CAP` — each one a `run_id` that
+   *  `evaluation_assess` resolves as a run-kind subject_ref (only runs with events are listed, the
+   *  same condition the resolver checks), with the team it acted for: an initiative slug is only
+   *  unique within a team, so neither is given without the other. */
+  run_refs: { run_id: string; team: string | null; initiative: string | null; started_at: string }[];
+  run_refs_truncated: boolean;
   coverage: { events: number; with_step: number; with_initiative: number; resolvable: number };
   stage_paths: { initiative: string; steps: { step: string; first_ts: string; last_ts: string }[] }[];
   /** Counted, never classified. See the header.
@@ -169,6 +195,18 @@ export async function pluginTraces(
       and r.initiative_id is not null
       and exists (select 1 from zz.event e
                    where e.run_id = r.id and e.step is not null and e.step <> '')`);
+
+  const runRefs = (await pool.query<{ run_id: string; team: string | null; initiative: string | null; started_at: string }>(`
+    select r.id::text as run_id, r.started_at::text as started_at,
+           coalesce((select t.slug from zz.initiative i join zz.team t on t.id = i.team_id
+                      where i.id = r.initiative_id),
+                    (select e.team_slug from zz.event e
+                      where e.run_id = r.id and e.kind = 'tool_call' and e.team_slug is not null limit 1)) as team,
+           (select i.slug from zz.initiative i where i.id = r.initiative_id) as initiative
+      ${RUNS_OF}
+       and exists (select 1 from zz.event e where e.run_id = r.id)
+     order by r.started_at desc
+     limit ${RUN_REFS_CAP + 1}`, params)).rows;
 
   // Coverage over the events these runs own. `resolvable` is the count that can be placed on a
   // stage at all; the gap between it and `events` is what every other figure here is missing.
@@ -337,6 +375,8 @@ export async function pluginTraces(
     runs,
     usable_runs: usable,
     sufficient: usable >= USABLE_RUNS_FLOOR,
+    run_refs: runRefs.slice(0, RUN_REFS_CAP),
+    run_refs_truncated: runRefs.length > RUN_REFS_CAP,
     reason: runs > 0 ? undefined :
       `no run is recorded against ${plugin} ${version} in this window (${window.from} to ` +
       `${window.to}). A run belongs to a version through the skill versions that version ` +

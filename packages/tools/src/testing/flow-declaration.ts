@@ -22,7 +22,7 @@ import { manifestAt } from "@zz/catalog";
 export interface SourceStage { readonly name?: string; readonly produces?: string; readonly supports?: string }
 
 interface FlowDeclaration {
-  readonly documents: { name: string; sections?: string[]; gate?: boolean }[];
+  readonly documents: { name: string; sections?: string[]; gate?: boolean; stage?: string; verifies?: string[] }[];
   /** Only the stages that produce a source, each with the document it supports. */
   readonly sourceStages: SourceStage[];
 }

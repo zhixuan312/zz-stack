@@ -466,8 +466,8 @@ export function registerArtifactTools(server: McpServer): void {
       const sourceTeam = await teamFor(who.email);
       if (round && !review) await noteSource(governing, rel, round.document, who.email, sourceTeam);
       // The round is assessed the moment it lands, so the next move can route on it: does it
-      // reopen something already agreed, and does it only repeat the round before it. A review
-      // round asks the second question once per S1/S2 finding it introduces.
+      // reopen something already agreed. A review round asks `repeats_finding` once per S1/S2
+      // finding it introduces.
       const assessed = review
         ? await assessReviewRound(root, initiative, rel, review.stage, review.document, who.email)
         : round ? await assessRound(root, initiative, rel, round.document, content, who.email) : null;

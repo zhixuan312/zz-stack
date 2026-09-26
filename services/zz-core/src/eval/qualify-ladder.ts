@@ -99,11 +99,12 @@ const rate = (c: LadderCounts): number => (c.total > 0 ? c.passed / c.total : 0)
  *      reason no_anchors". Checked first and unconditionally: a protocol with generous
  *      thresholds cannot turn zero evidence into a passing rate.
  *   2. `mechanically_qualified` needs the anchor pass rate AND the stability agreement rate each
- *      at or above their threshold — an evaluator that cannot repeat itself is not mechanically
+ *      at or above their threshold (below either, `reason` names each failing key, its rate, its
+ *      bar and its counts) — an evaluator that cannot repeat itself is not mechanically
  *      sound even if its first answer happened to be right.
  *   3. `operationally_qualified` additionally needs BOTH planted-fault and control evidence to
  *      exist (`total > 0` — a threshold cleared against zero attempts is not evidence) and each
- *      rate at or above its own threshold.
+ *      rate at or above its own threshold (short of it, `mechanically_qualified` names why).
  *   4. `human_calibrated` additionally needs non-null `labels` with `n` at or above its minimum
  *      and both `tpr` and `tnr` at or above their thresholds.
  *
@@ -115,21 +116,18 @@ export function qualificationState(
   if (evidence.anchors.total === 0) {
     return { state: "unqualified", reason: "no_anchors" };
   }
-  const mechanicallySound =
-    rate(evidence.anchors) >= thresholds.anchorPassRate &&
-    rate(evidence.stability) >= thresholds.stabilityRate;
-  if (!mechanicallySound) {
-    return {
-      state: "unqualified",
-      reason: `anchor pass rate ${rate(evidence.anchors).toFixed(2)} or stability rate ` +
-        `${rate(evidence.stability).toFixed(2)} is below threshold`,
-    };
-  }
-  const operationallySound =
-    evidence.planted_faults.total > 0 && evidence.controls.total > 0 &&
-    rate(evidence.planted_faults) >= thresholds.faultKillRate &&
-    rate(evidence.controls) >= thresholds.controlCatchRate;
-  if (!operationallySound) return { state: "mechanically_qualified", reason: null };
+  const below = (key: LadderThresholdKey, c: LadderCounts): string | null => (
+    rate(c) >= thresholds[key] ? null : `${key} ${rate(c).toFixed(2)} < ${thresholds[key].toFixed(2)} (${c.passed}/${c.total})`
+  );
+  const mechanical = [below("anchorPassRate", evidence.anchors), below("stabilityRate", evidence.stability)]
+    .filter((r): r is string => r !== null);
+  if (mechanical.length) return { state: "unqualified", reason: mechanical.join("; ") };
+
+  const operational = [
+    evidence.planted_faults.total === 0 ? "no planted faults asked" : below("faultKillRate", evidence.planted_faults),
+    evidence.controls.total === 0 ? "no controls asked" : below("controlCatchRate", evidence.controls),
+  ].filter((r): r is string => r !== null);
+  if (operational.length) return { state: "mechanically_qualified", reason: operational.join("; ") };
 
   const labels = evidence.labels;
   const humanCalibrated =

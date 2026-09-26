@@ -118,11 +118,6 @@ export async function defineQualify(w: Walk): Promise<{ protocol: string; qualif
   await c.call("core", "document_present", { path });
   await c.call("core", "document_approve", { path });
   await c.call("eval", "protocol_affirm", { protocol_version_id: protocol, initiative: w.initiative, idempotency_key: c.key("affirm") });
-  // Controls read another plugin's snapshot, and this deployment has profiled none yet.
-  const other = await c.call("eval", "plugin_locate", { plugin: "zz-plugin-eval", idempotency_key: c.key("locate-other") });
-  await c.call("eval", "plugin_profile", { subject_version_id: str(other, "subject_version_id", "plugin_locate"),
-    evidence_window: { last_runs: 100 }, idempotency_key: c.key("profile-other") },
-    { note: (r) => `control snapshot ${String(r.observation_snapshot_id)} (zz-plugin-eval)` });
   const qualified: Record<string, string> = {};
   for (const m of dims.flatMap((d) => d.measures).filter((m) => MODEL_BACKED.has(m.evaluatorType))) {
     const q = await c.call("eval", "evaluator_qualify", { protocol_version_id: protocol, measure_key: m.key, idempotency_key: c.key(`qualify-${m.key}`) },

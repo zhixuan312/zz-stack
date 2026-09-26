@@ -95,6 +95,7 @@
 -- absorbs: 075_the_flow_comment_names_a_file_that_is_gone.sql
 -- absorbs: 076_semantic_assessment.sql
 -- absorbs: 002_plugin_eval_next.sql
+-- absorbs: 002_remove_replay.sql
 --
 -- requires-extension: citext
 -- requires-extension: pg_textsearch
@@ -402,8 +403,6 @@ CREATE TABLE zz.candidate (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     improvement_run_id uuid NOT NULL,
     base_subject_version_id uuid NOT NULL,
-    generation integer NOT NULL,
-    parent_ids jsonb NOT NULL,
     hypothesis text NOT NULL,
     expected_effect jsonb NOT NULL,
     patchset jsonb NOT NULL,
@@ -414,12 +413,11 @@ CREATE TABLE zz.candidate (
     proposer_identity jsonb NOT NULL,
     status text NOT NULL,
     created_at timestamp with time zone NOT NULL,
-    validating_since timestamp with time zone,
     build_requested_at timestamp with time zone,
     build_requested_by text,
     build_result jsonb,
     build_recorded_at timestamp with time zone,
-    CONSTRAINT candidate_status_check CHECK ((status = ANY (ARRAY['recorded'::text, 'rejected_precheck'::text, 'awaiting_build'::text, 'validating'::text, 'valid'::text, 'invalid'::text, 'selected'::text, 'proving'::text, 'proof_passed'::text, 'proof_failed'::text, 'proof_not_established'::text, 'stale'::text, 'released'::text, 'rolled_back'::text])))
+    CONSTRAINT candidate_status_check CHECK ((status = ANY (ARRAY['recorded'::text, 'awaiting_build'::text, 'valid'::text, 'invalid'::text, 'released'::text, 'rolled_back'::text])))
 );
 
 
@@ -431,21 +429,10 @@ COMMENT ON COLUMN zz.candidate.status IS 'rolled_back: release_record set the sa
 
 
 --
--- Name: candidate_evaluation; Type: TABLE; Schema: zz; Owner: -
+-- Name: COLUMN candidate.build_result; Type: COMMENT; Schema: zz; Owner: -
 --
 
-CREATE TABLE zz.candidate_evaluation (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    candidate_id uuid NOT NULL,
-    split text NOT NULL,
-    aggregate_score jsonb NOT NULL,
-    dimension_scores jsonb NOT NULL,
-    guardrails jsonb NOT NULL,
-    statistics jsonb NOT NULL,
-    resource_usage jsonb NOT NULL,
-    created_at timestamp with time zone NOT NULL,
-    CONSTRAINT candidate_evaluation_split_check CHECK ((split = ANY (ARRAY['validation'::text, 'proof'::text, 'post_release'::text])))
-);
+COMMENT ON COLUMN zz.candidate.build_result IS 'What npm run candidate-build recorded through candidate_build_record: {ok, stage, log_tail, commands, patch_digest}. Kept once candidate_validate consumes it, so improvement.md and the console can say how the released patch was built and gated.';
 
 
 --
@@ -706,8 +693,7 @@ COMMENT ON COLUMN zz.eval.headroom_state IS 'One of: no change needed, change id
 
 CREATE TABLE zz.eval_assessment (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    eval_run_id uuid,
-    replay_run_id uuid,
+    eval_run_id uuid NOT NULL,
     measure_id uuid NOT NULL,
     evaluator_version_id uuid,
     assessment_id bigint,
@@ -717,8 +703,7 @@ CREATE TABLE zz.eval_assessment (
     answer jsonb NOT NULL,
     policy_version text NOT NULL,
     resulting_action text,
-    created_at timestamp with time zone NOT NULL,
-    CONSTRAINT eval_assessment_check CHECK (((eval_run_id IS NULL) <> (replay_run_id IS NULL)))
+    created_at timestamp with time zone NOT NULL
 );
 
 
@@ -793,7 +778,6 @@ CREATE TABLE zz.eval_evidence_snapshot (
     observation_snapshot_id uuid NOT NULL,
     subject_version_id uuid NOT NULL,
     protocol_version_id uuid NOT NULL,
-    case_set_version_id uuid,
     coverage jsonb NOT NULL,
     content_digest text NOT NULL,
     created_at timestamp with time zone NOT NULL
@@ -960,7 +944,6 @@ CREATE TABLE zz.eval_protocol_version (
     observable_surfaces jsonb NOT NULL,
     failure_taxonomy jsonb NOT NULL,
     suites jsonb NOT NULL,
-    replay_policy jsonb NOT NULL,
     qualification_policy jsonb NOT NULL,
     scoring_policy jsonb NOT NULL,
     improvement_policy jsonb NOT NULL,
@@ -1180,10 +1163,7 @@ CREATE TABLE zz.improvement_run (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     eval_run_id uuid NOT NULL,
     finding_ids jsonb NOT NULL,
-    search_policy jsonb NOT NULL,
-    status text NOT NULL,
-    created_at timestamp with time zone NOT NULL,
-    CONSTRAINT improvement_run_status_check CHECK ((status = ANY (ARRAY['open'::text, 'searching'::text, 'selected'::text, 'proofing'::text, 'proof_failed'::text, 'ready_for_approval'::text, 'released'::text, 'closed'::text, 'cancelled'::text])))
+    created_at timestamp with time zone NOT NULL
 );
 
 
@@ -1511,6 +1491,13 @@ CREATE TABLE zz.release_attempt (
 
 
 --
+-- Name: COLUMN release_attempt.verification; Type: COMMENT; Schema: zz; Owner: -
+--
+
+COMMENT ON COLUMN zz.release_attempt.verification IS 'release_verify''s decision, once it has one: {verdict (established | rolled_back | not_established), reason, evidence: {post_release_runs, released_eval_run_id, released_overall, base_eval_run_id, base_overall, delta, regression_band, guardrail_status}, rollback_plan}. Null until the released subject has enough real runs and an evaluation to judge.';
+
+
+--
 -- Name: COLUMN release_attempt.reason; Type: COMMENT; Schema: zz; Owner: -
 --
 
@@ -1536,111 +1523,6 @@ COMMENT ON COLUMN zz.release_attempt.applied_by IS 'The principal whose release_
 --
 
 COMMENT ON COLUMN zz.release_attempt.applying_at IS 'When release_apply moved this attempt to applying. An attempt still applying long after the CLI''s own gate and release timeouts is stale: release_apply names it for reconciliation.';
-
-
---
--- Name: replay_case; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.replay_case (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    case_set_id uuid NOT NULL,
-    source_initiative text,
-    case_digest text NOT NULL,
-    split text,
-    status text NOT NULL,
-    not_replayable_reason text,
-    user_oracle_coverage integer NOT NULL,
-    decisions_only_in_documents boolean NOT NULL,
-    CONSTRAINT replay_case_check CHECK (((split IS NOT NULL) OR (status = 'not_replayable'::text))),
-    CONSTRAINT replay_case_split_check CHECK ((split = ANY (ARRAY['evolve'::text, 'validation'::text, 'proof'::text]))),
-    CONSTRAINT replay_case_status_check CHECK ((status = ANY (ARRAY['replayable'::text, 'not_replayable'::text])))
-);
-
-
---
--- Name: replay_case_set; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.replay_case_set (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    plugin_id uuid NOT NULL,
-    version integer NOT NULL,
-    source_snapshot_digest text NOT NULL,
-    split_seed text NOT NULL,
-    created_at timestamp with time zone NOT NULL,
-    proof_spent_at timestamp with time zone,
-    proof_spent_by_candidate_id uuid
-);
-
-
---
--- Name: replay_event; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.replay_event (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    case_id uuid NOT NULL,
-    seq integer NOT NULL,
-    actor text NOT NULL,
-    visibility text NOT NULL,
-    kind text NOT NULL,
-    payload jsonb NOT NULL,
-    payload_digest text NOT NULL,
-    CONSTRAINT replay_event_visibility_check CHECK ((visibility = ANY (ARRAY['actor'::text, 'user_oracle'::text, 'evaluation_oracle'::text])))
-);
-
-
---
--- Name: replay_run; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.replay_run (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    case_id uuid NOT NULL,
-    subject_version_id uuid,
-    candidate_id uuid,
-    protocol_version_id uuid NOT NULL,
-    environment_digest text NOT NULL,
-    sandbox_ref text NOT NULL,
-    status text NOT NULL,
-    score jsonb,
-    guardrails jsonb,
-    model_usage jsonb,
-    cost numeric,
-    duration_ms bigint,
-    created_at timestamp with time zone NOT NULL,
-    principal text NOT NULL,
-    team_slug text NOT NULL,
-    pat_id uuid NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
-    produced jsonb,
-    verifier_allocation_id uuid,
-    CONSTRAINT replay_run_status_check CHECK ((status = ANY (ARRAY['registered'::text, 'running'::text, 'completed'::text, 'failed'::text, 'not_replayable'::text, 'cancelled'::text])))
-);
-
-
---
--- Name: COLUMN replay_run.verifier_allocation_id; Type: COMMENT; Schema: zz; Owner: -
---
-
-COMMENT ON COLUMN zz.replay_run.verifier_allocation_id IS 'Set by replay_start when context = verifier, from the verifier_token presented. Null for a search-context run. candidate_prove''s cancelProofRuns filters on this column so two concurrent proof allocations against the same base subject never cancel each other''s runs.';
-
-
---
--- Name: replay_verifier_token; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.replay_verifier_token (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    token_hash text NOT NULL,
-    candidate_id uuid NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
-    revoked_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    case_set_id uuid,
-    released_subject_version_id uuid
-);
 
 
 --
@@ -2070,14 +1952,6 @@ ALTER TABLE ONLY zz.bug
 
 
 --
--- Name: candidate_evaluation candidate_evaluation_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.candidate_evaluation
-    ADD CONSTRAINT candidate_evaluation_pkey PRIMARY KEY (id);
-
-
---
 -- Name: candidate candidate_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -2238,11 +2112,11 @@ ALTER TABLE ONLY zz.eval_evaluator_version
 
 
 --
--- Name: eval_evidence_snapshot eval_evidence_snapshot_observation_snapshot_id_protocol_ver_key; Type: CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_evidence_snapshot eval_evidence_snapshot_observation_protocol_key; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.eval_evidence_snapshot
-    ADD CONSTRAINT eval_evidence_snapshot_observation_snapshot_id_protocol_ver_key UNIQUE NULLS NOT DISTINCT (observation_snapshot_id, protocol_version_id, case_set_version_id);
+    ADD CONSTRAINT eval_evidence_snapshot_observation_protocol_key UNIQUE (observation_snapshot_id, protocol_version_id);
 
 
 --
@@ -2606,78 +2480,6 @@ ALTER TABLE ONLY zz.release_attempt
 
 
 --
--- Name: replay_case replay_case_case_set_id_case_digest_key; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_case
-    ADD CONSTRAINT replay_case_case_set_id_case_digest_key UNIQUE (case_set_id, case_digest);
-
-
---
--- Name: replay_case replay_case_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_case
-    ADD CONSTRAINT replay_case_pkey PRIMARY KEY (id);
-
-
---
--- Name: replay_case_set replay_case_set_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_case_set
-    ADD CONSTRAINT replay_case_set_pkey PRIMARY KEY (id);
-
-
---
--- Name: replay_case_set replay_case_set_plugin_id_version_key; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_case_set
-    ADD CONSTRAINT replay_case_set_plugin_id_version_key UNIQUE (plugin_id, version);
-
-
---
--- Name: replay_event replay_event_case_id_seq_key; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_event
-    ADD CONSTRAINT replay_event_case_id_seq_key UNIQUE (case_id, seq);
-
-
---
--- Name: replay_event replay_event_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_event
-    ADD CONSTRAINT replay_event_pkey PRIMARY KEY (id);
-
-
---
--- Name: replay_run replay_run_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_run
-    ADD CONSTRAINT replay_run_pkey PRIMARY KEY (id);
-
-
---
--- Name: replay_verifier_token replay_verifier_token_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_verifier_token
-    ADD CONSTRAINT replay_verifier_token_pkey PRIMARY KEY (id);
-
-
---
--- Name: replay_verifier_token replay_verifier_token_token_hash_key; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_verifier_token
-    ADD CONSTRAINT replay_verifier_token_token_hash_key UNIQUE (token_hash);
-
-
---
 -- Name: rubric_dimension rubric_dimension_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -2897,13 +2699,6 @@ CREATE INDEX bug_open ON zz.bug USING btree (status, reported_at DESC);
 --
 
 CREATE INDEX bug_team ON zz.bug USING btree (team_slug, reported_at DESC);
-
-
---
--- Name: candidate_evaluation_one_validation; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE UNIQUE INDEX candidate_evaluation_one_validation ON zz.candidate_evaluation USING btree (candidate_id) WHERE (split = 'validation'::text);
 
 
 --
@@ -3299,14 +3094,6 @@ ALTER TABLE ONLY zz.candidate
 
 
 --
--- Name: candidate_evaluation candidate_evaluation_candidate_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.candidate_evaluation
-    ADD CONSTRAINT candidate_evaluation_candidate_id_fkey FOREIGN KEY (candidate_id) REFERENCES zz.candidate(id);
-
-
---
 -- Name: candidate candidate_improvement_run_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -3411,14 +3198,6 @@ ALTER TABLE ONLY zz.eval_assessment
 
 
 --
--- Name: eval_assessment eval_assessment_replay_run_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_assessment
-    ADD CONSTRAINT eval_assessment_replay_run_id_fkey FOREIGN KEY (replay_run_id) REFERENCES zz.replay_run(id);
-
-
---
 -- Name: eval eval_controls_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -3456,14 +3235,6 @@ ALTER TABLE ONLY zz.eval_evaluator_qualification
 
 ALTER TABLE ONLY zz.eval_evaluator_version
     ADD CONSTRAINT eval_evaluator_version_evaluator_id_fkey FOREIGN KEY (evaluator_id) REFERENCES zz.eval_evaluator(id);
-
-
---
--- Name: eval_evidence_snapshot eval_evidence_snapshot_case_set_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_evidence_snapshot
-    ADD CONSTRAINT eval_evidence_snapshot_case_set_version_id_fkey FOREIGN KEY (case_set_version_id) REFERENCES zz.replay_case_set(id);
 
 
 --
@@ -3880,110 +3651,6 @@ ALTER TABLE ONLY zz.release_attempt
 
 ALTER TABLE ONLY zz.release_attempt
     ADD CONSTRAINT release_attempt_released_subject_version_id_fkey FOREIGN KEY (released_subject_version_id) REFERENCES zz.eval_subject_version(id);
-
-
---
--- Name: replay_case replay_case_case_set_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_case
-    ADD CONSTRAINT replay_case_case_set_id_fkey FOREIGN KEY (case_set_id) REFERENCES zz.replay_case_set(id);
-
-
---
--- Name: replay_case_set replay_case_set_plugin_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_case_set
-    ADD CONSTRAINT replay_case_set_plugin_id_fkey FOREIGN KEY (plugin_id) REFERENCES zz.plugin(id);
-
-
---
--- Name: replay_case_set replay_case_set_proof_spent_by_candidate_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_case_set
-    ADD CONSTRAINT replay_case_set_proof_spent_by_candidate_id_fkey FOREIGN KEY (proof_spent_by_candidate_id) REFERENCES zz.candidate(id);
-
-
---
--- Name: replay_event replay_event_case_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_event
-    ADD CONSTRAINT replay_event_case_id_fkey FOREIGN KEY (case_id) REFERENCES zz.replay_case(id);
-
-
---
--- Name: replay_run replay_run_candidate_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_run
-    ADD CONSTRAINT replay_run_candidate_id_fkey FOREIGN KEY (candidate_id) REFERENCES zz.candidate(id);
-
-
---
--- Name: replay_run replay_run_case_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_run
-    ADD CONSTRAINT replay_run_case_id_fkey FOREIGN KEY (case_id) REFERENCES zz.replay_case(id);
-
-
---
--- Name: replay_run replay_run_pat_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_run
-    ADD CONSTRAINT replay_run_pat_id_fkey FOREIGN KEY (pat_id) REFERENCES zz.pat(id);
-
-
---
--- Name: replay_run replay_run_protocol_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_run
-    ADD CONSTRAINT replay_run_protocol_version_id_fkey FOREIGN KEY (protocol_version_id) REFERENCES zz.eval_protocol_version(id);
-
-
---
--- Name: replay_run replay_run_subject_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_run
-    ADD CONSTRAINT replay_run_subject_version_id_fkey FOREIGN KEY (subject_version_id) REFERENCES zz.eval_subject_version(id);
-
-
---
--- Name: replay_run replay_run_verifier_allocation_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_run
-    ADD CONSTRAINT replay_run_verifier_allocation_id_fkey FOREIGN KEY (verifier_allocation_id) REFERENCES zz.replay_verifier_token(id);
-
-
---
--- Name: replay_verifier_token replay_verifier_token_candidate_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_verifier_token
-    ADD CONSTRAINT replay_verifier_token_candidate_id_fkey FOREIGN KEY (candidate_id) REFERENCES zz.candidate(id);
-
-
---
--- Name: replay_verifier_token replay_verifier_token_case_set_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_verifier_token
-    ADD CONSTRAINT replay_verifier_token_case_set_id_fkey FOREIGN KEY (case_set_id) REFERENCES zz.replay_case_set(id);
-
-
---
--- Name: replay_verifier_token replay_verifier_token_released_subject_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.replay_verifier_token
-    ADD CONSTRAINT replay_verifier_token_released_subject_version_id_fkey FOREIGN KEY (released_subject_version_id) REFERENCES zz.eval_subject_version(id);
 
 
 --

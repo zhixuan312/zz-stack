@@ -108,6 +108,30 @@ const FreeformRecord = z.record(z.string(), z.unknown());
 // Dimension / Measure — one canonical scoring dimension inside a protocol version, and the
 // weighted measures inside it. Mirrors zz.eval_dimension / zz.eval_measure (001).
 
+/** How a known-answer text feeds the qualification ladder: an `anchor` is a clear example of the
+ *  artifact the measure judges (anchor pass rate; the first one is also asked three times for
+ *  stability); a `fault` is a good example with one defect planted, so the truthful answer flips
+ *  (fault kill rate); a `control` is an artifact of a different kind entirely, whose answer is
+ *  still obvious (control catch rate). */
+const ANCHOR_ROLES = ["anchor", "fault", "control"] as const;
+
+/** One known-answer text a model-backed measure is qualified against: the measure's OWN question
+ *  is asked about `text`, and `expected` is the answer a truthful evaluator gives, in its own
+ *  vocabulary (`yes`/`no` for a noul, a criterion key for a choice). */
+export const MeasureAnchor = z.object({
+  id: z.string().min(1),
+  role: z.enum(ANCHOR_ROLES),
+  text: z.string().min(1),
+  expected: z.string().min(1),
+});
+export type MeasureAnchor = z.infer<typeof MeasureAnchor>;
+
+/** `definition.qualification` on a bounded_semantic/generative_critic measure. */
+export const MeasureQualification = z.object({ anchors: z.array(MeasureAnchor) });
+export type MeasureQualification = z.infer<typeof MeasureQualification>;
+
+const MODEL_BACKED_TYPES: readonly string[] = ["bounded_semantic", "generative_critic"];
+
 export const Measure = z.object({
   key: z.string().min(1),
   evaluatorType: z.enum(EVALUATOR_TYPES),
@@ -118,6 +142,51 @@ export const Measure = z.object({
   required: z.boolean(),
   definition: FreeformRecord,
   evaluator: FreeformRecord.nullable(),
+}).superRefine((m, ctx) => {
+  // A model-backed measure is qualified against its own known-answer texts, so it has to carry
+  // enough of them for every rung below human_calibrated: anchors with at least two different
+  // expected answers (an evaluator that always says one thing cannot pass), a fault and a control.
+  if (!MODEL_BACKED_TYPES.includes(m.evaluatorType)) return;
+  const path = ["definition", "qualification", "anchors"];
+  const q = MeasureQualification.safeParse(m.definition.qualification);
+  if (!q.success) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path,
+      message: `measure "${m.key}" is ${m.evaluatorType} and needs definition.qualification.anchors: ` +
+        "[{ id, role: anchor|fault|control, text, expected }]",
+    });
+    return;
+  }
+  const entries = q.data.anchors;
+  const anchors = entries.filter((a) => a.role === "anchor");
+  if (new Set(anchors.map((a) => a.expected)).size < 2) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path,
+      message: `measure "${m.key}" needs role "anchor" entries with at least two different expected answers`,
+    });
+  }
+  for (const role of ["fault", "control"] as const) {
+    if (!entries.some((a) => a.role === role)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: `measure "${m.key}" needs at least one role "${role}" entry` });
+    }
+  }
+  const ids = entries.map((a) => a.id);
+  const repeated = ids.filter((id, i) => ids.indexOf(id) !== i);
+  if (repeated.length) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: `measure "${m.key}" repeats anchor id(s) ${[...new Set(repeated)].join(", ")}` });
+  }
+  const schema = (m.evaluator?.answer_schema ?? null) as { type?: unknown; criteria?: unknown } | null;
+  const allowed = schema?.type === "noul" ? ["yes", "no"]
+    : schema?.type === "choice" && schema.criteria && typeof schema.criteria === "object" ? Object.keys(schema.criteria)
+    : null;
+  if (allowed) {
+    for (const a of entries.filter((e) => !allowed.includes(e.expected))) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom, path,
+        message: `measure "${m.key}" anchor "${a.id}" expects "${a.expected}", which its evaluator cannot answer — one of ${allowed.join(", ")}`,
+      });
+    }
+  }
 });
 export type Measure = z.infer<typeof Measure>;
 

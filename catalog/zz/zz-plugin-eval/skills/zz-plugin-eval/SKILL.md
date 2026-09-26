@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-eval
-version: 2.5
+version: 2.6
 description: "The front door to plugin evaluation and governed improvement. Eight stages — IDENTIFY, OBSERVE, DISCOVER, DEFINE/QUALIFY, EVALUATE, EXPLAIN, IMPROVE, PROMOTE/VERIFY — over one plugin at one exact content, against a protocol somebody agreed BEFORE any scoring. Load it whenever somebody wants a plugin graded, scored, marked down, or confirmed as good or bad, including when they have already reached a conclusion and want it checked. Also when a plugin-owned defect is worth fixing, or a plugin needs release, verification on real use and rollback through its own authorized owners. Measurement never bends toward a change somebody already wanted; promotion never happens without the required owners' say-so."
 when_to_use: "Someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?'. Answering either from your own read is the failure this flow exists to prevent, so load it before agreeing or disagreeing. Also whenever a plugin is up for keeping, changing or retiring; a plugin-owned defect is worth fixing; or a candidate patch needs releasing through its own owners and judging on real use. This is the entry point: start here rather than at a stage. IDENTIFY through EXPLAIN run on any client with no shell; IMPROVE and PROMOTE/VERIFY need Claude Code."
 ---
@@ -96,6 +96,12 @@ stage — `records["zz-plugin-identify"].subject_version_id`,
 — and while a record stage ahead of the next document has recorded nothing, `next_move` answers
 `action: run_stage` naming it. From IMPROVE on, `findings.md` carries the eval run and the
 tools resolve the rest from the initiative.
+
+**Approved is not finished for DEFINE/QUALIFY.** Once `protocol.md` is approved, `next_move` stays
+on `run_stage zz-plugin-define-qualify` — first until `protocol_affirm(protocol_version_id,
+initiative, idempotency_key)` binds it, then until `evaluator_qualify` has been called for every measure key the
+affirm returned as `qualify_owed` — and only then moves to EVALUATE. Its `why` names the call and
+the keys still owed. Pass `initiative` to `protocol_read` so the stage records what it owes.
 
 **A fact this flow has not yet decided reads `resolve_branch`, not an error.** Call
 `initiative_status` after DISCOVER has recorded and before DEFINE/QUALIFY's own `protocol_read` and it answers

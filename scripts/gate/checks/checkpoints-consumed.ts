@@ -31,15 +31,14 @@ const CONSUMED: readonly Consumer[] = [
   ...["sdlc-flow", "sdlc-spec-audit", "sdlc-plan-audit"].map((skill) => ({
     skill, family: "changes_commitment", module: AUDIT, reads: [/a\.changes_commitment\?\.reading === "yes"/],
   })),
-  // Annotates the audit's next-move text only; it changes no move.
-  ...["sdlc-spec-audit", "sdlc-plan-audit"].map((skill) => ({
-    skill, family: "repeats_finding", module: AUDIT, reads: [/a\.repeats_finding\?\.reading === "yes"/],
-  })),
   // yes: the finding does not block and does not count toward the convergence test.
   { skill: "sdlc-review", family: "repeats_finding", module: REVIEW_ROUNDS,
     reads: [/a\.family === "repeats_finding"[^\n]*\?\.reading/, /repeats\(introduced, f\.id\) === "yes"/] },
   // no refuses the row at approval; unclear asks once for sharper evidence, then the stakeholder.
   { skill: "sdlc-review", family: "evidence_relation", module: REVIEW_ACCEPTANCE,
+    reads: [/family: "evidence_relation"/, /now\.reading === "no"/, /now\.reading === "unclear"/] },
+  // no refuses the spec's approval; unclear asks once for sharper evidence, then the stakeholder.
+  { skill: "sdlc-spec", family: "evidence_relation", module: "services/zz-core/src/spec-gate.ts",
     reads: [/family: "evidence_relation"/, /now\.reading === "no"/, /now\.reading === "unclear"/] },
 ];
 

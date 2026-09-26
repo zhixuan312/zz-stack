@@ -24,12 +24,18 @@
  * the integration step after each wave, never by a task. A plan where no task declares Owns runs
  * one task per wave.
  *
+ * The plan is written one phase at a time: `## Phase N` headings group tasks, a phase whose
+ * block carries `### As built` has been built, and a phase heading with no tasks under it is one
+ * the spec's outline names and nobody has planned yet. Only the tasks written are checked; the
+ * current phase — the first with tasks and no `### As built` — is the one audited and executed
+ * next, and `phases` carries each phase's own waves.
+ *
  * `### Task I-N:`, `Output`, `Dependencies` and `Owns` are this flow's conventions, not the
  * document kernel's — the kernel stores and gates documents of any shape.
  */
 import { createHash } from "node:crypto";
 
-import { executableWaves, ownershipViolations, type OwnedTask } from "./plan-ownership.js";
+import { executableWaves, ownershipViolations, planPhases, type OwnedTask, type PlanPhase } from "./plan-ownership.js";
 
 // Deliberately narrow. Every pattern below matches something a writer can see in their own
 // text: a structural refusal a human cannot reproduce by looking at the line gets routed around
@@ -166,6 +172,11 @@ export interface PlanStructuralReport {
   /** Tasks grouped into waves that may run in parallel, in order. One task per wave when no task
    *  declares Owns. Empty when the report is not ok. */
   readonly waves: readonly (readonly string[])[];
+  /** Every `## Phase N` block in document order, written or not. Empty for a plan without them. */
+  readonly phases: readonly PlanPhase[];
+  /** The first phase with tasks and no `### As built`: the one to audit and build next. Null when
+   *  every written phase is built, or the plan has no phases. */
+  readonly currentPhase: number | null;
 }
 
 // Reading the document
@@ -556,6 +567,7 @@ export function validatePlan(text: string, target?: string): PlanStructuralRepor
 
   const order = executableOrder(ids, graph.edges);
   const ok = violations.length === 0;
+  const phases = planPhases(source.text, parsed.tasks, graph.edges, ok && order ? order : null);
   return {
     ok,
     target: target ?? `sha256:${digest}`,
@@ -565,6 +577,8 @@ export function validatePlan(text: string, target?: string): PlanStructuralRepor
     order: order ?? [],
     hotspots,
     waves: ok && order ? executableWaves(parsed.tasks, graph.edges, order) : [],
+    phases,
+    currentPhase: phases.find((p) => p.taskIds.length > 0 && !p.built)?.phase ?? null,
   };
 }
 

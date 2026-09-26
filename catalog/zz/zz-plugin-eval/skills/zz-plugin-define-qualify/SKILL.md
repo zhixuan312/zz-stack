@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define-qualify
-version: 0.6
+version: 0.7
 description: Stage 4 of zz-plugin-eval (DEFINE/QUALIFY), and the one gate that matters most. Derive what good means for THIS plugin from its own profile and DISCOVER's candidates, write it into protocol.md, get a person to agree it, then qualify every model-backed evaluator it names before anything is scored.
 when_to_use: "The fourth stage of zz-plugin-eval, after DISCOVER. Conditional: protocol_read decides create/revise/reuse, and this stage only writes when it says create or revise. Produces protocol.md, gated — protocol_affirm refuses to bind it until somebody approves it. No shell required."
 ---
@@ -75,9 +75,9 @@ Inside a dimension, one or more **measures** actually produce a mark. Each carri
   bounded question. The question has to be answerable from the text alone, and its `evaluator`
   field is **required** — `{ stable_key, kind, question, answer_schema, polarity, model_policy }`.
   `protocol_record` refuses a `bounded_semantic`/`generative_critic` measure that carries none.
-  **`definition.qualification.{positive, zero}` is required too** — QUALIFY below cannot build an
-  anchor without it, and a measure that never gets one answers `unqualified, reason: no_anchors`
-  forever.
+  **`definition.qualification.anchors` is required too** — the known-answer texts QUALIFY asks
+  this measure's own question about; `protocol_record` refuses the body without them. See
+  *Writing anchors* below.
 - **`deterministic` / `outcome`** — a tool computes a fact and the measure reads it off OBSERVE's
   own snapshot, by a dotted `definition.factPath`: the fact's own name (`tool_refusal_rate`,
   `latency_p50_ms`, `outcome_delivered_rate`, ...) — every name `plugin_profile` computes is listed
@@ -196,13 +196,32 @@ protocol_affirm(protocol_version_id, initiative, idempotency_key)
 `protocol.md` lives at `<initiative>/protocol.md` in your team's store, and this is the
 initiative you wrote it into.
 
+### Writing anchors
+
+`definition.qualification.anchors: [{ id, role, text, expected }]` — short, unambiguous examples
+of the very artifact the measure judges (a spec for a document question, a `RUN <id>:` trace of
+`<time>  <tool>  ok|REFUSED  <refusal>` lines for a run question), each with the answer a
+truthful evaluator gives to THIS measure's question (`yes`/`no` for a noul, a criterion key for a
+choice):
+
+- `role: "anchor"` — at least one clearly good and one clearly bad example (two different
+  `expected` values). The first anchor is also asked three times for stability.
+- `role: "fault"` — a good anchor with ONE defect planted, so the truthful answer flips.
+- `role: "control"` — an artifact of another kind (a shell session, another project's issue)
+  whose answer to the same question is still obvious.
+
+Write a text a stranger would answer the same way. If you have to argue for its `expected`, it is
+not an anchor — sharpen it or pick another. Never a sentence *about* the artifact ("Of 9 runs, 3
+were usable"): the evaluator is asked the measure's question about the text itself.
+
 ## QUALIFY — every model-backed measure, before anything is scored
 
 Once `protocol_affirm` has bound the approval, qualify each `bounded_semantic`/
-`generative_critic` measure's own evaluator:
+`generative_critic` measure's own evaluator — `protocol_affirm` returns them as `qualify_owed`.
+Pass `initiative` so the state is recorded and `initiative_status` can route to EVALUATE:
 
 ```
-evaluator_qualify(protocol_version_id, measure_key, idempotency_key)
+evaluator_qualify(protocol_version_id, measure_key, idempotency_key, initiative)
 ```
 
 `measure_key` is the measure's own `key`, exactly as you wrote it into `protocol_body`. The tool
@@ -210,26 +229,19 @@ resolves the evaluator version that measure defers to from this protocol version
 pass one. It REFUSES a protocol version `protocol_affirm` has not bound, a key this protocol
 version does not have (naming the keys it does), a key two dimensions of an older version share,
 and a `deterministic`/`outcome`/`human` measure, which is never qualified. It runs the protocol's own `QualificationPolicy` over four evidence
-categories — **anchors** (known answers derived from OBSERVE's own snapshot facts), **planted
-faults** (the same facts, sign-flipped, killed when the evaluator's answer flips with them),
-**controls** (the same facts read off another plugin's own real snapshot, never a mutation —
-passed when the evaluator answers what THAT plugin's numbers say) and
-**stability** (one anchor asked three times) — plus **labels**, only where the protocol's
-`qualification.labelMappings` names this evaluator's `stable_key`.
+categories, all from the measure's own `definition.qualification.anchors` — **anchors**,
+**planted faults** and **controls** (each entry of that role, passed when the answer is its
+`expected`) and **stability** (the first anchor asked three times) — plus **labels**, only where
+the protocol's `qualification.labelMappings` names this evaluator's `stable_key`.
 
 RETURNS `{ measure_key, evaluator_version_id, qualification_id, state, evidence: { anchors,
-planted_faults, controls, stability, labels } }` — `state` is one of `unqualified`, `mechanically_qualified`,
-`operationally_qualified` or `human_calibrated`. A new evaluator version always starts
-`unqualified`; `unqualified` with `evidence.reason: no_anchors` means this measure's own
-`definition.qualification` names no `{positive, zero}` vocabulary yet, or the plugin has no
-OBSERVE snapshot to derive an anchor from — not a call failure, and not this tool's fault to fix.
+planted_faults, controls, stability, labels, reason, results } }` — `state` is one of
+`unqualified`, `mechanically_qualified`, `operationally_qualified` or `human_calibrated`.
+`reason` names every threshold that stopped the climb (`anchorPassRate 0.50 < 0.80 (1/2)`), and
+`results` lists each text's `{ id, role, expected, got }` — read them before blaming the
+evaluator: a text whose `got` a person would also give is a mislabelled anchor, fixed in a new
+protocol version. `unqualified` with `reason: no_anchors` means the measure declares no anchors.
 **Never refuses on thin evidence** — it always writes a row, honestly stating how thin.
-
-**Controls need another plugin's snapshot.** They read the most recently observed OTHER plugin;
-when this deployment has profiled no other plugin, every measure answers with `controls.total: 0`
-and stops at `mechanically_qualified`. Before qualifying, observe one other plugin —
-`plugin_locate` and `plugin_profile` for it, WITHOUT `initiative`, since it is not the subject of
-this evaluation.
 
 **Qualify every `bounded_semantic`/`generative_critic` measure this protocol version names**
 before handing off, not only the ones you expect to be asked about — `evaluation_score` reads
@@ -245,9 +257,9 @@ of it keeps the whole run's `qualification_met` false, so the score cannot be `e
 
 ❌ **Reusing another plugin's protocol because it looks similar.**
 
-❌ **A `bounded_semantic`/`generative_critic` measure with no `definition.qualification.{positive,
-zero}`.** It will sit `unqualified, reason: no_anchors` forever — write the anchor vocabulary
-when you write the measure, not after QUALIFY reports the gap.
+❌ **Anchors that do not fit the question.** A text the measure's own question cannot be
+answered about — a sentence about counts put to a question about a document — fails every
+truthful evaluator, and the measure never scores.
 
 ❌ **Calling `protocol_affirm` before `document_approve`, or before quoting `content_digest` in
 the body.** It will refuse, and it is right to.

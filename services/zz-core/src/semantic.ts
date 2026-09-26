@@ -8,9 +8,9 @@
  * `readingOf`, never by the model.
  *
  * The callers that ask a family:
- *   - `source_add`, which asks `changes_commitment` and `repeats_finding` about an audit round the
- *     moment it lands, so `initiative_status` can route the next move on the answer, and
- *     `repeats_finding` once per new S1/S2 finding of a review round (review-rounds.ts);
+ *   - `source_add`, which asks `changes_commitment` about an audit round the moment it lands, so
+ *     `initiative_status` can route the next move on the answer, and `repeats_finding` once per
+ *     new S1/S2 finding of a review round (review-rounds.ts);
  *   - `document_write`/`document_patch` and `document_approve` on a verifying document, which ask
  *     `evidence_relation` of each established acceptance row (review-acceptance.ts);
  *   - the `assess` tool, which any stage uses to ask one family about one subject.

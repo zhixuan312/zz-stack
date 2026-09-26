@@ -15,6 +15,8 @@
  *   6. `auditRoundOf` counts only a stage that produces a source supporting that document
  *   7. `readingOf` bands, and the nine families each carry an instruction
  *   8. `nextMoveLine` says the next move, and nothing for a freeform initiative
+ *   9. a round is asked `changes_commitment` only: `repeats_finding` routes no audit move, so it
+ *      is not asked, and a repeating round still owes the revision its round
  *
  * Run: node checks/audit-rounds.ts   (also run by scripts/gate.ts)
  */
@@ -28,7 +30,7 @@ delete process.env.TYPESAFE_API_KEY;
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { initiativeState, nextMoveLine } = await load("services/zz-core/dist/tools/initiative-status.js");
-const { auditRoundOf, ROUND_BUDGET } = await load("services/zz-core/dist/audit-rounds.js");
+const { assessRound, auditRoundOf, ROUND_BUDGET } = await load("services/zz-core/dist/audit-rounds.js");
 const sem = await load("services/zz-core/dist/semantic.js");
 const rec = await load("services/zz-core/dist/initiative-record.js");
 const { chainFor } = await load("services/zz-core/dist/chain.js");
@@ -146,6 +148,24 @@ try {
   is(/Next move: write_document plan\.md/.test(line), `nextMoveLine said ${JSON.stringify(line)}`);
   rec.recordOpen(root, "2026-09-24-freeform", null, "ada@zz.test");
   is(nextMoveLine(root, "2026-09-24-freeform") === "", "a freeform initiative was given a next move");
+
+  // 9. one question per round, and a repeating round changes no move
+  const d = fresh(1);
+  round(d.name, 1, 1);
+  const f2 = round(d.name, 2, 1);
+  const said = await assessRound(root, d.name, `${d.name}/sources/${f2}`, "spec.md", "Round 2 findings.", "ada@zz.test");
+  const asked = Object.keys(sem.readRoundAssessments(root, d.name, f2));
+  is(asked.length === 1 && asked[0] === "changes_commitment" && !/repeats_finding/.test(said),
+     `an audit round was asked ${JSON.stringify(asked)} (${said}); only changes_commitment routes a move`);
+  sem.writeRoundAssessments(root, d.name, f2, [{
+    family: "repeats_finding", instruction_version: 1, question_digest: sem.questionDigest("repeats_finding"),
+    reading: "yes", probability: 0.9, requested_model: null, resolved_model: null, identity_assurance: null,
+    reason: null, initiative: d.name, about: `sources/${f2}`, asked_by: "ada@zz.test", asked_at: "2026-09-24T02:00:00.000Z" }]);
+  spec(d.name, 2);
+  m = move(d);
+  // NOT A TOOL: `add_source` is next_move's own action vocabulary; the call it asks for is source_add.
+  is(m?.action === "add_source" && /Round 3 checks the revision/.test(m?.why ?? "") && !/repeat/.test(m?.why ?? ""),
+     `a stray repeats_finding reading changed the audit's move: ${JSON.stringify(m)}`);
 } finally {
   rmSync(root, { recursive: true, force: true });
 }

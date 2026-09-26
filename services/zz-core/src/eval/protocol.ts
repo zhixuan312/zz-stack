@@ -51,6 +51,7 @@ import { z } from "zod";
 
 import { latestProtocolVersion, triggersFor } from "./protocol-triggers.js";
 import { recordProtocolVersion } from "./protocol-record.js";
+import { recordAffirmed, recordDefineOwes } from "./stage-record.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { factsFor, lockInitiativeFacts, withInitiativeFactsLock, writeFacts } from "../initiative-record.js";
 import { logActivity } from "../persist.js";
@@ -204,7 +205,7 @@ export function registerProtocolTools(server: McpServer): void {
         "awaiting_affirmation: { version, content_digest } — with no trigger, get that version's " +
         "protocol.md approved and affirmed rather than recording another. Also RETURNS " +
         "open_candidates: every DISCOVER candidate of this plugin still at status candidate " +
-        "({ id, description, prevalence, owner_kind }) — the ids a failureTaxonomy entry's " +
+        "({ id, description, prevalence, owner_kind, owner_ref — the plugin's name when owner_kind is plugin }) — the ids a failureTaxonomy entry's " +
         "candidateId/mergedCandidateIds fold in. Computed entirely from live state — no document, " +
         "no protocol_body — from the plugin plugin_locate/plugin_register already IDENTIFY'd. " +
         "Pass `initiative` to record protocol_action as that initiative's durable branch fact " +
@@ -263,8 +264,10 @@ export function registerProtocolTools(server: McpServer): void {
       // What DISCOVER left for this stage to fold in or leave uncited, read here rather than
       // carried from DISCOVER's own reply: a DEFINE opened in a new conversation has no other
       // door to them, and re-running failure_discover would mint a duplicate set.
-      response.open_candidates = (await p.query<{ id: string; description: string; prevalence: unknown; owner_kind: string }>(`
-        select c.id::text as id, c.description, c.prevalence, c.owner_kind
+      response.open_candidates = (await p.query<{ id: string; description: string; prevalence: unknown; owner_kind: string; owner_ref: string | null }>(`
+        select c.id::text as id, c.description, c.prevalence, c.owner_kind,
+               (select r->>'owner_ref' from jsonb_array_elements(c.evidence_refs) r
+                 where r->>'kind' = 'ownership' limit 1) as owner_ref
           from zz.eval_failure_mode_candidate c
           join zz.eval_observation_snapshot os on os.id = c.observation_snapshot_id
           join zz.eval_subject_version sv on sv.id = os.subject_version_id
@@ -272,9 +275,13 @@ export function registerProtocolTools(server: McpServer): void {
          order by c.created_at`, [subject.pluginId])).rows;
       if (!initiative) return json({ ...response, facts_recorded: false });
       const written = await writeBranchFacts(initiative, { protocol_action: response.protocol_action as string });
+      // create/revise: once protocol.md is approved this initiative owes the bind and the
+      // qualification, which initiative_status routes to before EVALUATE (stage-record.ts).
+      const owes = response.protocol_action === "reuse" ? {}
+        : await recordDefineOwes(initiative);
       return json(typeof written === "string"
-        ? { ...response, facts_recorded: false, facts_refused: written }
-        : { ...response, facts_recorded: true, facts: written });
+        ? { ...response, ...owes, facts_recorded: false, facts_refused: written }
+        : { ...response, ...owes, facts_recorded: true, facts: written });
     },
   );
 
@@ -343,7 +350,9 @@ export function registerProtocolTools(server: McpServer): void {
         "protocol means — after that, never before. It reads <initiative>/protocol.md from " +
         "YOUR team's artifact store — pass the initiative the define stage wrote it into, " +
         "since a bare protocol_version_id names no path on its own — and RETURNS " +
-        "{ approved_document_path, approved_by } once bound. REFUSES ERROR: protocol.md at " +
+        "{ approved_document_path, approved_by, qualify_owed } once bound — qualify_owed is every " +
+        "model-backed measure key evaluator_qualify must now be called for, and is recorded on " +
+        "the initiative so initiative_status routes to it before EVALUATE. REFUSES ERROR: protocol.md at " +
         "this version is not approved — when the document does not exist, is not " +
         "status: approved, or does not quote this version's content_digest anywhere in its " +
         "body: a document approved for a DIFFERENT version of this protocol is not approved " +
@@ -391,7 +400,14 @@ export function registerProtocolTools(server: McpServer): void {
       logActivity(await userRoot(), null, {
         user: principal, action: "protocol_affirm", protocol_version_id, path, replayed: outcome.replayed,
       });
-      return json({ approved_document_path: path, approved_by: env.approved_by ?? null });
+      // What evaluator_qualify now owes: every model-backed measure this version names.
+      const owed = (await p.query<{ key: string }>(`
+        select distinct m.key from zz.eval_measure m join zz.eval_dimension d on d.id = m.dimension_id
+         where d.protocol_version_id = $1::uuid and m.evaluator_type in ('bounded_semantic', 'generative_critic')
+         order by m.key`, [protocol_version_id])).rows.map((r) => r.key);
+      const recorded = await recordAffirmed(initiative, protocol_version_id, path, owed);
+      return json({ approved_document_path: path, approved_by: env.approved_by ?? null,
+                    qualify_owed: owed, ...recorded });
     },
   );
 }

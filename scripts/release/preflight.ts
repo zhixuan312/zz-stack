@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { DASH_IMAGE, DASH_SRC, HOST, REMOTE, envToken, initFrame, log, probeToken, publicUrl, root, run, ssh } from "../deployment.ts";
+import { DASH_IMAGE, DASH_SRC, HOST, REMOTE, catalogOwnerTeam, envToken, initFrame, log, probeToken, publicUrl, root, run, ssh } from "../deployment.ts";
 import { exportMode } from "./config.ts";
 import { consoleImage, resolveDashboard } from "./dashboard.ts";
 import { verifyPredeploy } from "./verify.ts";
@@ -105,6 +105,12 @@ export function preflight(): void {
       address ? (fromHost ? `read from ${HOST}:${REMOTE}/deploy/.env` : "from the environment")
               : `could not reach ${HOST} — set it by hand`);
   if (address) out.push(`export ZZ_PUBLIC_URL=${address}`);
+
+  /* The team register-plugins writes as every catalog plugin's owner. COUPLED: through
+   * `catalogOwnerTeam`, the resolver release.ts refuses on before it builds anything. */
+  const owner = safe(() => catalogOwnerTeam({ quiet: true }), "");
+  row(!!owner, `ZZ_CATALOG_OWNER_TEAM ${owner || "(unresolved)"}`,
+      owner ? null : `not in the environment, ${root}/.env or ${HOST}:${REMOTE}/deploy/.env — the release refuses without it`);
 
   /* The token is the one input the release never validated before spending a whole
    * gate-build-push-deploy cycle on it.

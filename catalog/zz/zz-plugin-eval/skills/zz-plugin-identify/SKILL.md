@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-identify
-version: 0.3
+version: 0.4
 description: Stage 1 of zz-plugin-eval (IDENTIFY). Settle which plugin is being evaluated, at which exact content — catalog release or third-party capture — before any other tool on the door will resolve anything against it. Writes an immutable subject_version.
 when_to_use: "The first stage of zz-plugin-eval, once an initiative exists. Never on its own — every later stage takes the subject_version_id this settles. No shell required."
 ---
@@ -15,8 +15,8 @@ plugin_locate(plugin, version?, idempotency_key, initiative)
 
 is IDENTIFY for a catalog plugin — `sdlc`, `zz-core`, `zz-access`, `zz-plugin-eval` itself.
 It RETURNS FR-1's immutable `subject_version`: `subject_version_id`, declared version,
-whole-plugin content digest, per-component manifest (skill/server/flow/config digests, never
-the environment), ownership and its release mode, and `latest_protocol_version_id` — the plugin's
+whole-plugin content digest, per-component manifest (skill/server/flow/config digests, each a
+sha256 of the component's content, never the environment), ownership and its release mode, and `latest_protocol_version_id` — the plugin's
 newest protocol version if one exists, affirmed or not and with no compatibility check: whether it
 still applies is DEFINE/QUALIFY's `protocol_read`, never this. It is a mutator — it upserts `zz.eval_subject_version` through the FR-59 idempotency
 ledger, so a retried call with the same `idempotency_key` replays the same row rather than

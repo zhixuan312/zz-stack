@@ -2,7 +2,7 @@
 name: "eval"
 description: "Run the ZZ Plugin Evaluation flow for your team."
 when_to_use: "The person typed /zz-plugin-eval:eval. This is a command, not an auto-matched skill."
-version: "0.76.2"
+version: "0.76.3"
 disable-model-invocation: true
 ---
 
@@ -97,6 +97,12 @@ stage — `records["zz-plugin-identify"].subject_version_id`,
 — and while a record stage ahead of the next document has recorded nothing, `next_move` answers
 `action: run_stage` naming it. From IMPROVE on, `findings.md` carries the eval run and the
 tools resolve the rest from the initiative.
+
+**Approved is not finished for DEFINE/QUALIFY.** Once `protocol.md` is approved, `next_move` stays
+on `run_stage zz-plugin-define-qualify` — first until `protocol_affirm(protocol_version_id,
+initiative, idempotency_key)` binds it, then until `evaluator_qualify` has been called for every measure key the
+affirm returned as `qualify_owed` — and only then moves to EVALUATE. Its `why` names the call and
+the keys still owed. Pass `initiative` to `protocol_read` so the stage records what it owes.
 
 **A fact this flow has not yet decided reads `resolve_branch`, not an error.** Call
 `initiative_status` after DISCOVER has recorded and before DEFINE/QUALIFY's own `protocol_read` and it answers

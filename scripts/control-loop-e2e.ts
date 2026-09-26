@@ -104,11 +104,19 @@ async function main(): Promise<void> {
   };
 
   await doc("explore.md", "## Background\nx\n\n## Current state\nx\n\n## Rough direction\nx\n");
-  await doc("spec.md", "## Context\nx\n\n## Problem\nx\n\n## Goals & Requirements\nx\n\n## Alternatives\nx\n\n## Approach, Method & Structure\nx\n\n## Verification Plan\nx\n\n## Risks & Mitigations\nx\n\n## Stakeholders & Work\nx\n");
+  await doc("spec.md", "## Context\nx\n\n## Problem\nx\n\n## Goals & Requirements\nx\n\n## Alternatives\nx\n\n## Approach, Method & Structure\nx\n\n## Verification Plan\nx\n\n## Risks & Mitigations\nx\n\n## Stakeholders & Work\nx\n\n" +
+    "## Phase outline\n- **Phase 0 — Loop:** the control loop runs end to end.\n\n" +
+    "## Core statements\n| ID | Statement | If false | Status | Evidence | Note |\n|---|---|---|---|---|---|\n" +
+    "| CS-1 | The loop runs. | Nothing is checked. | fails | run:control-loop-e2e — `loop` | resolved-by-design-change: a probe has no design |\n");
   await sign("spec.md");
   await doc("plan.md", "## Full-suite gate\nx\n");
   await sign("plan.md");
   await doc("review.md", "## Verdict\nx\n");
+  // review.md approves only once its sweep has run a round. A review round is not audit evidence,
+  // so the two audit rows asserted below stay two.
+  await call("source_add", { initiative: name, title: "review round", supports: ["review.md"], stage: "sdlc-review",
+    content: "no blocking findings\n\n```json\n" +
+      JSON.stringify({ round: 1, scope: { base: "HEAD~1", head: "HEAD" }, findings: [], resolved: [] }) + "\n```\n" });
   await sign("review.md");
 
   // Every document the flow declares is written and approved, so `documentGuards` is fully

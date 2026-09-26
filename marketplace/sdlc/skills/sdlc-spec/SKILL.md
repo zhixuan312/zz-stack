@@ -1,6 +1,6 @@
 ---
 name: sdlc-spec
-version: 1.11
+version: 1.12
 description: Open the option space with the person, close it to confirmed decisions, and write the agreement at <initiative>/spec.md — what ships, why it is worth building, and what "done" means. Brainstorm and spec are one skill because they are one conversation. Main agent only.
 when_to_use: "Explore has established what is true and the person is ready to decide what to build. Covers both halves: deciding with them, and writing what was decided. If nothing has been established yet, run sdlc-explore first. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -104,10 +104,28 @@ decision log that captures the *rationale*, not just the choice. Those become th
 `Alternatives` decision records and its `Context` vocabulary — write them down as you go and
 Part two is half-written already.
 
+## Spike what the design rests on
+
+**The spec settles the destination; the plan is written one phase at a time after it.** So the
+assumptions the design rests on are tested here, while changing them is cheap, and not
+discovered three phases into the build.
+
+Once the approach is taking shape, name its **core statements**: the three to six claims that,
+if false, break the design — *"the runtime image carries a repo checkout"*, *"the queue keeps
+order per tenant"*. For each, run a **bounded spike in code** — a command, a probe, a scratch
+test, read-only against anything real — and keep its decisive output line. A statement is
+`holds`, `fails` or `partial` on what the spike printed, never on how plausible it sounds. A
+statement you cannot spike is not a core statement yet; say what would test it and ask the
+person whether the design may rest on it untested.
+
+**A statement that fails changes the design before anyone plans on it.** Bring it to the person
+as a decision: the design changes (and the row's note says how), or they accept the risk (and
+their decision is recorded with `source_add`). Never write it down as `holds` and hope.
+
 ## Phase 3 — confirm the whole set
 
 When every component is clear, present the confirmed decisions as a numbered list, one line per
-component. **This is the last checkpoint before the document exists.** They may revise anything,
+component — with the phase outline and every core statement's result. **This is the last checkpoint before the document exists.** They may revise anything,
 add a constraint, or cut scope. Only continue once they confirm.
 
 ## Then continue into Part two
@@ -168,9 +186,9 @@ write, and so is the numbered list at the end of Phase B — three reproductions
 any of them ever reads differently from the manifest, the manifest is what runs and the skill is
 the thing that is wrong.
 
-The eight:
+The eight, and the two sections after them:
 
-| The eight components |
+| The eight components, then the two sections |
 |---|
 | `## Context` |
 | `## Problem` |
@@ -180,6 +198,23 @@ The eight:
 | `## Verification Plan` |
 | `## Risks & Mitigations` |
 | `## Stakeholders & Work` |
+| `## Phase outline` |
+| `## Core statements` |
+
+**And two more sections, which the approval itself rests on.** `flow.json` declares them after
+the eight, and `document_approve` reads them (they are not components; the audit judges the
+eight):
+
+| Section | What it holds | What approval refuses |
+|---|---|---|
+| `## Phase outline` | The phases to the final shape, one line each: `- **Phase N — name:** one or two sentences. Covers AC-x.y, AC-x.z.` | No `Phase N` line; an `AC-N.N` the spec declares that no phase names (list each id — a range is not read); an id the spec does not declare |
+| `## Core statements` | One row per statement: `\| ID \| Statement \| If false \| Status \| Evidence \| Note \|` with `CS-N` ids | A row without the statement or what breaks if false; a status other than `holds`, `fails`, `partial`; evidence without a `check:`, `run:` or `test:` locator and the spike's decisive output quoted in backticks; a `fails` or `partial` row whose note is not `resolved-by-design-change: <what changed>` and that no stakeholder source names |
+
+A `holds` row is also read by `evidence_relation` — the statement as the claim, its evidence as
+the support. `no` refuses the approval: run a spike that actually tests the statement, or mark it
+`fails`. `unclear` refuses once, asking for the decisive output line instead of a summary;
+`unclear` again on different evidence goes to the person, whose `source_add` naming the row
+accepts it.
 
 Three of these read as neutral labels rather than engineering ones, deliberately: a spec for a
 policy, a study or a syllabus should not open by telling its reader they are holding a piece of
@@ -251,7 +286,7 @@ may have no Verification Plan worth writing — then `## Verification Plan` is p
 "None: this is a process change; correctness is judged by the review in Stakeholders & Work",
 or whatever is true. That is a sentence a reader can disagree with, which an absent heading is
 not, and it keeps the labels the next two stages lift from. Never add a component outside the
-eight.
+eight; `## Phase outline` and `## Core statements` follow them, and are not components.
 
 Do NOT try to write the whole spec in one pass — long single-pass documents come out slow and uneven and often truncate or fail before the last section. Instead, first create the spec file as a **complete skeleton**: the title and ALL EIGHT `##` component headings, each `###` section within them, each `####` sub-part, with a single one-line **brief** immediately under each `###` section stating what that section will contain (drawn from the confirmed decisions). Write this skeleton in ONE `document_write` call into the initiative — `document_write(path: "<initiative>/spec.md", content: "<the body>")`. Send the body only; the platform writes the envelope. It is small and fast.
 
@@ -397,6 +432,17 @@ concrete error states or rejection conditions where applicable.]
 [Who needs what from this deliverable, and the work that implies — not necessarily agile
 story format. Numbered AC-N.N with checkboxes. EVERY functional requirement must map to at
 least one acceptance criterion. Group by workstream if multiple workstreams exist.]
+
+## Phase outline
+[One line per phase to the final shape: `- **Phase N — name:** what exists when it is built.
+Covers AC-x.y, …`. Phase 0 is the walking skeleton, the thinnest thing that runs end to end. Every AC above appears in
+exactly the phase that delivers it. The plan is written one phase at a time from this.]
+
+## Core statements
+[| ID | Statement | If false | Status | Evidence | Note | — one CS-N row per assumption the
+design rests on, each from a spike run while writing this spec: `run:<command>` and its decisive
+output in backticks. `fails`/`partial` rows carry `resolved-by-design-change: <what changed>` or
+a recorded stakeholder decision.]
 ````
 
 **The canonical `##` component labels, in this exact order — all eight, every time:**
@@ -408,6 +454,11 @@ least one acceptance criterion. Group by workstream if multiple workstreams exis
 6. `## Verification Plan`
 7. `## Risks & Mitigations`
 8. `## Stakeholders & Work`
+9. `## Phase outline`
+10. `## Core statements`
+
+The last two follow the eight and are not components: the approval rests on them (see the
+Component catalog).
 
 These labels are the specification standard for this flow, and they are read by people and by the next two stages: `sdlc-spec-audit` checks that the eight components are present under these exact headings, and `sdlc-plan` lifts `Alternatives` and the acceptance criteria straight out of them. Different heading levels or different labels break both.
 
@@ -430,7 +481,7 @@ Each section you enrich must satisfy these Section Rules:
 ### Phase D — Self-Validation
 
 Before finishing, verify:
-- All eight top-level `##` components are present, none outside the eight is added, and zero `<!-- brief:` markers remain. A component that does not apply says so under its own heading rather than being left out — the platform refuses the approval of a spec missing one.
+- All eight top-level `##` components are present, followed by `## Phase outline` and `## Core statements`, nothing else is added, and zero `<!-- brief:` markers remain. A component that does not apply says so under its own heading rather than being left out — the platform refuses the approval of a spec missing one.
 - **Zero `<!-- brief:` markers remain** — every section has been enriched with final content
 - Every component heading is present, using its label from the Component catalog. Check them against the numbered list at the end of Phase B rather than against a comma-separated run of them — `Approach, Method & Structure` is ONE label containing a comma, and read out of a comma list it turns into two components that do not exist. A component outside the eight is a defect, not a bonus: remove it before you finish.
 - Nothing in the file is a heading the manifest does not declare at `##` level. A `##` heading of your own invention is not refused, but it is also nobody's requirement, and the next two stages read the spec by these labels and will not see it.
@@ -446,6 +497,8 @@ Before finishing, verify:
 - All frozen contracts are inlined verbatim (no external references)
 - If multiple workstreams exist, they are explicitly enumerated in Delivery order
 - Blocking prerequisites are flagged with artifact paths and unblocking conditions
+- Every `AC-N.N` is named, by id, in exactly one line of `## Phase outline`
+- Every core statement has a spike you actually ran, its decisive output quoted, and every `fails` or `partial` row is settled by a design change or a recorded stakeholder decision
 
 ## Output
 
@@ -470,7 +523,8 @@ there, because it holds for every flow.
 
 **Outcome:** `spec.md` in the initiative — all eight canonical components under their exact
 labels, a proposed deliverable contract under `## Context`, every `FR-N` mapped to at least one
-checkable `AC-N.N`, zero surviving brief markers — presented to the person in full and carrying
+checkable `AC-N.N`, every `AC-N.N` placed in a phase of `## Phase outline`, every core statement
+backed by a spike's quoted output, zero surviving brief markers — presented to the person in full and carrying
 their recorded agreement.
 
 **Required evidence:** the numbered list of decisions you and the person confirmed at the end of
@@ -489,12 +543,15 @@ questions — a signature, a path, prior art, what was already settled — go to
 one question each, and you come back with the answer rather than with the question. The writing is
 this agent's own; there is no worker to check.
 
-**Checkpoints:** none. No bounded question at this stage has an answer the platform routes
-on, so none is asked.
+**Checkpoints:** `evidence_relation`, asked by `document_approve` of each `holds` core statement
+against its evidence. `no` refuses the approval; `unclear` asks once for sharper evidence, then
+the person decides.
 
-**Action and exit paths:** the action is name the destination, grill one decision at a time,
+**Action and exit paths:** the action is name the destination, grill one decision at a time, spike the core statements,
 confirm the whole set, scaffold in one write, enrich one section at a time, present, ask, hold.
-The forward exit is `sdlc-spec-audit`, and only once the agreement is recorded on the document —
+A phase that later disproves a core statement comes back here: the spec is revised and
+agreed again before the next phase is planned. The forward exit is `sdlc-spec-audit`, and only
+once the agreement is recorded on the document —
 an agreement that stays in the conversation stops the flow at its next step. The backward exit is
 `sdlc-explore`, taken when the person cannot name a destination; interviewing into fog is not a
 third option.

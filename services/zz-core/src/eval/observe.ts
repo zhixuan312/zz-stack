@@ -24,6 +24,7 @@
 import { createHash } from "node:crypto";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { pluginForDoor } from "@zz/catalog";
 import { parseCaller } from "@zz/contracts";
 import { requestHeaders, serviceVersion, text } from "@zz/mcp-http";
 import type pg from "pg";
@@ -35,8 +36,9 @@ import {
   rate, type ObservedFact,
 } from "./observe-facts.js";
 import {
-  pluginTraces, unboundedRunsClause, type EvidenceWindow,
+  ownTools, pluginTraces, surfaceCoverage, unboundedRunsClause, type EvidenceWindow,
 } from "./plugin-profile.js";
+import { OWN_TOOLS } from "../door.js";
 import { withIdempotency, canonicalJson, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { recordStage } from "./stage-record.js";
 import { logActivity } from "../persist.js";
@@ -94,10 +96,29 @@ async function resolveWindow(
   return { from: row.from, to: row.to };
 }
 
+/** The tools this plugin's own door serves at `version`, and where that answer came from: the
+ *  surface recorded for that release (zz.plugin_tool), else what this process registered for the
+ *  door the plugin's manifest names, else null — a plugin with no door of its own, or a door
+ *  nothing here recorded, whose skill-named tools then stand unnarrowed (`ownTools`). */
+async function doorSurface(
+  pool: pg.Pool, plugin: string, version: string, serves: boolean,
+): Promise<{ tools: string[] | null; source: string }> {
+  if (!serves) return { tools: null, source: "no door of its own: the tools its skills name" };
+  const recorded = (await pool.query<{ name: string }>(`
+    select pt.name from zz.plugin_tool pt
+      join zz.plugin_version pv on pv.id = pt.plugin_version_id
+      join zz.plugin p on p.id = pv.plugin_id
+     where p.name = $1 and pv.version = $2`, [plugin, version])).rows.map((r) => r.name);
+  if (recorded.length) return { tools: recorded, source: `zz.plugin_tool at ${version}` };
+  const registered = [...OWN_TOOLS].filter(([, door]) => pluginForDoor(door) === plugin).map(([name]) => name);
+  if (registered.length) return { tools: registered, source: "this service's registered door (no surface recorded for this version)" };
+  return { tools: null, source: "no surface recorded for this door: the tools its skills name, unnarrowed" };
+}
+
 interface Observation {
   traces: Awaited<ReturnType<typeof pluginTraces>>;
   facts: Record<string, ObservedFact>;
-  coverageSurface: { observed: number; total: number };
+  coverageSurface: { observed: number; total: number; source: string };
   runtimeIdentity: { service_versions: Record<string, string>; models: string[] };
 }
 
@@ -109,8 +130,9 @@ async function computeObservation(
 ): Promise<Observation> {
   const entry = entryOf(plugin);
   const stages: string[] = (entry?.manifest.stages ?? []).map((s) => s.name);
-  const reachable = toolsNamedBy(plugin);
   const serves = servesOwnDoor(plugin);
+  const surface = await doorSurface(pool, plugin, version, serves);
+  const reachable = ownTools(toolsNamedBy(plugin), surface.tools);
 
   const traces = await pluginTraces(pool, plugin, version, reachable, stages, serves, window);
   const writesDocuments = traces.record !== null;
@@ -135,7 +157,7 @@ async function computeObservation(
   const attributedRefusals = totalGuardrail + totalOurs + totalTheirs;
   const totalStepVisits = traces.stage_paths.reduce((s, p) => s + p.steps.length, 0);
   const totalUnplaced = traces.unplaced.reduce((s, u) => s + u.count, 0);
-  const called = new Set(traces.use.map((u) => u.tool.split(":").pop() ?? u.tool));
+  const called = surfaceCoverage(traces.use.map((u) => u.tool), reachable);
 
   const noEvents = "no event is recorded for this subject in this window";
   const noSteps = "no run in this window recorded a step";
@@ -151,7 +173,7 @@ async function computeObservation(
     // coverage-floor check reads the raw counts, not a rate) — this is the SAME numbers, read a
     // second way, never a second computation.
     usable_run_coverage: rate(traces.usable_runs, traces.runs, traces.usable_runs, traces.runs, noEvents),
-    tool_coverage: rate(called.size, reachable.length, called.size, reachable.length,
+    tool_coverage: rate(called.observed, called.total, called.observed, called.total,
       "this plugin's skills name no tool this scan can check reachability for"),
     stage_return_rate: rate(traces.returns.length, totalStepVisits,
       traces.coverage.with_step, traces.coverage.events, noSteps),
@@ -172,7 +194,7 @@ async function computeObservation(
 
   return {
     traces, facts,
-    coverageSurface: { observed: called.size, total: reachable.length },
+    coverageSurface: { ...called, source: surface.source },
     runtimeIdentity: {
       service_versions: { "zz-core": serviceVersion(import.meta.url) },
       models: models.rows.map((r) => r.model),

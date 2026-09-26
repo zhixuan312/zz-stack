@@ -91,6 +91,27 @@ function sourceReport(dir: string, statusOf: (docName: string) => string | null)
   return { sourceFiles, needsRefinement };
 }
 
+/** What a stage's record says it still owes, first first, each as the sentence `next_move.why`
+ *  carries. Empty for a record that owes nothing or has discharged it.
+ *
+ *  COUPLED: the record shape eval/stage-record.ts writes — `owes`, one key per act once it
+ *  lands, `qualify_owed` and `qualified.<measure>`. Read here rather than imported: the
+ *  evaluation modules are reached from the evaluation side only (checks/eval-tools-moved.ts). */
+function owedActs(record: Readonly<Record<string, string>> | undefined, initiative: string): string[] {
+  if (!record?.owes) return [];
+  const owed = (record.qualify_owed ?? "").split(",").filter(Boolean)
+    .filter((k) => !record[`qualified.${k}`]);
+  const version = record.protocol_version_id ?? "<protocol_version_id from protocol_read>";
+  const why: Record<string, string> = {
+    protocol_affirm: `protocol.md is approved but not bound to the protocol — call protocol_affirm("${version}", ` +
+      `initiative: "${initiative}"). Nothing qualifies or scores against an unaffirmed version`,
+    evaluator_qualify: `the affirmed protocol's model-backed evaluators are not all qualified — call ` +
+      `evaluator_qualify("${version}", measure_key, initiative: "${initiative}") for ` +
+      `${owed.length ? owed.join(", ") : "each model-backed measure"} before EVALUATE scores`,
+  };
+  return record.owes.split(",").filter((act) => act && !record[act]).map((act) => why[act] ?? `call ${act}`);
+}
+
 /** The platform's own closing step, told apart from the flow's own documents.
  *
  * `deriveChain` appends it with `role: "handover"`; a flow that declares its own is matched
@@ -182,13 +203,25 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
     const spec = docs.find((d) => d.name === docName);
     return spec?.when ? documentApplies(spec, facts) : "applies";
   };
+  // The document this branch closes on. `chain.closingDoc` is per flow, and a `when`-conditional
+  // one (zz-plugin-eval's improvement.md, promotable only) is ruled out on every other branch,
+  // which then closes on the furthest document it applies — proposal.md, or findings.md.
+  // COUPLED: the `close` move below and initiative_close (initiative-close.ts) land there too.
+  const branchClosing = ((): string => {
+    if (!chain.closingDoc || appliesOf(chain.closingDoc) !== "not_applicable") return chain.closingDoc;
+    const applies = docs.filter((d) => !isHandover(d) && appliesOf(d.name) !== "not_applicable");
+    return applies[applies.length - 1]?.name ?? chain.closingDoc;
+  })();
   const states: DocState[] = docs.map((d) => {
     const env = envelopeOf(join(dir, d.name));
     return {
       name: d.name, role: d.role, exists: existsSync(join(dir, d.name)),
       status: env.status ?? null, gate: !!d.gate,
       approved_by: env.approved_by || undefined, approved_at: env.approved_at || undefined,
-      requires: d.requires,
+      // The handover follows whichever document closes this branch, not the flow's declared one:
+      // on a branch that rules improvement.md out, "requires improvement.md" names a document
+      // that will never exist.
+      requires: isHandover(d) && d.requires ? branchClosing || d.requires : d.requires,
       sections: d.sections?.length ? d.sections : undefined,
       applies: d.when ? documentApplies(d, facts) : undefined,
     };
@@ -296,8 +329,15 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
     // DISCOVER. Each record stage's tool writes its record when handed the initiative.
     const stages = chain.stages ?? [];
     const writtenAt = pending ? stages.findIndex((st) => st.name === docs.find((d) => d.name === pending.name)?.stage) : -1;
+    //
+    // A stage whose document is settled can still owe acts no document records — DEFINE/QUALIFY's
+    // protocol_affirm and evaluator_qualify once protocol.md is approved (stage-record.ts). Its
+    // record names them, and a stage with one still missing is unfinished the same way.
+    const owing = (st: (typeof stages)[number]): string[] =>
+      st.produces.endsWith(".md") && appliesOf(st.produces) === "applies" &&
+      requirementMet(st.produces) ? owedActs(records[st.name], name) : [];
     const unrecorded = stages.slice(0, writtenAt < 0 ? stages.length : writtenAt)
-      .find((st) => st.produces === "record" && !records[st.name]);
+      .find((st) => st.produces === "record" ? !records[st.name] : owing(st).length > 0);
     // A document that `verifies` others owes its review rounds before it is written or awaited:
     // once its requirement is met and until it is approved, `reviewMove` routes the sweep, and
     // its null — the rounds settled — hands over to the ordinary write/await answer below.
@@ -313,6 +353,11 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
     });
     if (awaiting && awaiting.name !== owedReview?.document) {
       next = awaitApproval(awaiting);
+    } else if (unrecorded && unrecorded.produces !== "record") {
+      next = {
+        action: "run_stage", stage: unrecorded.name, waiting_on: "agent",
+        why: `${unrecorded.name} is not finished: ${owing(unrecorded)[0]}`,
+      };
     } else if (unrecorded) {
       // NOT A TOOL: `run_stage` is `next_move.action`'s own vocabulary, like `resolve_branch`.
       next = {
@@ -366,13 +411,9 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
         // `not_applicable` on every other branch — the same question `initiative_close`
         // (initiative-close.ts) and `closeCheck` (guards.ts) both ask before deciding where a
         // close actually lands, asked here too so this call never names a document those two
-        // would refuse to close on. `flowDocs` is already filtered to what applies on this
-        // branch and, by construction of this `else` arm, every one of them exists — so its
-        // last entry IS the furthest document this branch actually wrote.
-        : { action: "close",
-            document: chain.closingDoc && appliesOf(chain.closingDoc) === "not_applicable"
-              ? flowDocs[flowDocs.length - 1]?.name ?? chain.closingDoc
-              : chain.closingDoc,
+        // would refuse to close on. By construction of this `else` arm every document that
+        // applies exists, so `branchClosing` IS the furthest document this branch wrote.
+        : { action: "close", document: branchClosing,
             waiting_on: "agent",
             // Every gate being recorded is a statement about approvals; acceptance is a
             // different act by a different person, so the `why` has to name both.

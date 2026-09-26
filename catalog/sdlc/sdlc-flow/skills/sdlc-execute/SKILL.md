@@ -1,6 +1,6 @@
 ---
 name: sdlc-execute
-version: 1.12
+version: 1.13
 description: Build what the approved plan describes — one subagent per task, one wave of tasks with disjoint ownership at a time, each making its task's contract true and its plan-authored checks pass. Main agent orchestrates and stays accountable for the sequence; the work itself is dispatched.
 when_to_use: "plan.md exists, has been audited, and the person has approved it. Implements its tasks. If there is no plan on disk, this is not the stage — the plan is what makes each task dispatchable. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -18,6 +18,11 @@ when_to_use: "plan.md exists, has been audited, and the person has approved it. 
 
 **Read `sdlc-method` first.** This stage is unusual in the same way `sdlc-explore` is: the work
 is dispatched, the orchestration is not.
+
+**You build one phase per run.** The plan grows a phase at a time (`sdlc-plan`): this run builds
+the current phase — `initiative_status`'s `plan.current_phase`, the first `## Phase N` with tasks
+and no `### As built` — and ends by writing down what actually landed, so the next phase is
+planned from reality rather than from the forecast.
 
 **You keep the sequence and the accountability.** You dispatch one subagent per task, a wave at a
 time, and you are the one who says what changed. Two reasons this is not fully delegated: it
@@ -59,8 +64,8 @@ that appears after the worker has been told what "done" means is a check the wor
 routed around — activating on time is exactly as load-bearing as activating only the one file.
 
 **4. Read the waves and the hotspots from the platform.** Call `initiative_status` on the
-initiative: its `plan` field is `validatePlan` run on the current plan.md — `waves`, `hotspots`,
-`ok` and `violations`. Run the tasks in the order of `plan.waves`: every task in one wave may be
+initiative: its `plan` field is `validatePlan` run on the current plan.md — `current_phase`, that
+phase's `waves`, `hotspots`, `ok` and `violations`. Run the tasks in the order of `plan.waves`: every task in one wave may be
 dispatched in parallel, a wave starts only when the previous one has landed, and nobody but the
 integration step writes a path in `plan.hotspots`. If `plan.ok` is false the waves are empty —
 an overlap or an owned hotspot is a race the plan left undecided, so it goes back to `sdlc-plan`;
@@ -175,6 +180,21 @@ already succeeded, and on a sequential plan it can undo them.
 they did not know. If two workers fail the same task the same way, the contract is probably wrong
 — say so, and take it back to `sdlc-plan` rather than trying a third time.
 
+## When the phase is built — append what actually happened
+
+After the phase's last wave, its gate and its skeleton run, **append `### As built` under the
+phase's heading** in `plan.md` with `document_revise`, citing what happened as its
+`source_content` (the skeleton's output, the gate result, the deviations). It says, briefly and
+from the tree: which tasks landed, what differs from their contracts and why, decisions taken on
+the way, and the skeleton command's decisive output line. This is what the next phase is planned
+from, and what makes the finished plan the record of what was built.
+
+**A phase that disproves a spec core statement stops the loop.** If what was built shows an
+assumption in the spec's `## Core statements` is false, say so in the as-built and go back to
+`sdlc-spec`: the spec is revised, and a revised agreement goes to the person before any further
+phase is planned. Otherwise the next move is `sdlc-plan` for the next phase, or — when the
+outline's last phase is built — the end-of-plan report below.
+
 ## When every task is done
 
 **Report what changed, from the tree rather than from the reports.** `git diff --name-only`
@@ -216,9 +236,9 @@ failure mode, not an optimisation.
 
 ## Skill contract
 
-**Outcome:** the change the approved plan describes, built one dispatched worker per task, a wave
+**Outcome:** the current phase of the approved plan, built one dispatched worker per task, a wave
 of tasks with disjoint ownership at a time, integrated after each wave, each task's contract made true and each plan-authored check passing, with what changed
-reported from the tree. This stage writes no document of the flow.
+reported from the tree, and appended to `plan.md` as the phase's `### As built`.
 
 **Required evidence:** the approval on `plan.md`, read from its frontmatter rather than from your
 memory of the conversation. Each task's checks run by you — the worker's report is a claim, the
@@ -247,8 +267,10 @@ on, so none is asked.
 **Action and exit paths:** the action is freeze every check up front, derive the waves, then per
 wave: activate its checks, dispatch its tasks together, check ownership, run the tasks' checks,
 integrate the hotspots, run the full-suite gate (and the skeleton at a phase end), compare the
-hashes. Three
-exits. Every task done, so report from the tree, ask about committing, and hand to `sdlc-review`.
+hashes; at the phase end, append `### As built`. Five
+exits. The phase built and more remain, so back to `sdlc-plan` for the next phase. Every phase
+built, so report from the tree, ask about committing, and hand to `sdlc-review`. A phase that
+disproved a core statement, so back to `sdlc-spec`.
 A contract defect, or the same failure twice, so back to `sdlc-plan` naming the unmet clause or
 the faulty check. The gate red, so stop — the next worker would inherit the breakage and spend its
 turn on somebody else's bug.

@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-explain
-version: 0.4
+version: 0.5
 description: Stage 6 of zz-plugin-eval (EXPLAIN). Record what EVALUATE's own score and assessments actually found — strengths, defects, unknowns, each with an owner — and let findings.md regenerate itself from the current record. Ungated measurement output, never an approval gate.
 when_to_use: "The sixth stage of zz-plugin-eval, once evaluation_score has completed. Produces findings.md — ungated, and every branch of this flow reaches it before anything else happens. No shell required."
 ---
@@ -40,6 +40,12 @@ material; report the rest honestly and move on. Cite `finding.measure_key` — t
 measure this finding is evidence for, as the protocol this eval_run was scored against names it —
 and `evidence_refs` wherever the finding traces back to something `evaluation_assess` actually
 read. A key that protocol version does not have is refused by name, with the keys it does have.
+
+**Cite the judge's own answer, not your paraphrase of it.** `evaluation_score`'s `readings` holds
+every stored answer per measure key, per ref — its value, its reading and its `assessment_id` —
+or the named reason it was excluded. Put the `assessment_id`s and the refs (a run by its
+`run_id`, from OBSERVE's `traces.run_refs`) into `evidence_refs`. A measure whose readings are
+all exclusions is an `unknown`, never a defect: nothing judged it.
 
 ## ONE CHANGE, AND SAY WHAT YOU EXPECT IT TO DO
 

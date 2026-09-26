@@ -31,6 +31,7 @@ import { logActivity, persistDocument, putEnvelopeField } from "../persist.js";
 import { teamFor } from "../platform-db.js";
 import { improvementApprovalRefusal } from "../release-owners.js";
 import { acceptanceApprovalRefusal } from "../review-acceptance.js";
+import { specApprovalRefusal } from "../spec-gate.js";
 import { isoToday, normalizeSections } from "../write-guards.js";
 
 import { registerInitiativeCloseTool } from "./initiative-close.js";
@@ -131,6 +132,10 @@ export function registerInitiativeActTools(server: McpServer): void {
       // documentGuards, which runs on every draft write and would refuse a table being filled in.
       const acceptance = await acceptanceApprovalRefusal(root, chain, relPath, doc, who.email);
       if (acceptance.refusal) return text(acceptance.refusal);
+      // A spec whose flow declares a phase outline and core statements is approved on them: every
+      // criterion placed in a phase, every statement backed by a spike — spec-gate.ts's rules.
+      const foundation = await specApprovalRefusal(root, chain, relPath, doc, who.email);
+      if (foundation.refusal) return text(foundation.refusal);
       const already = parseEnvelope(doc).status === "approved";
       doc = putEnvelopeField(doc, "status", "approved");
       doc = putEnvelopeField(doc, "approved_by", signer);
@@ -149,6 +154,7 @@ export function registerInitiativeActTools(server: McpServer): void {
         (on_behalf_of ? ` (on their behalf, by ${who.email})` : "") + ".\n" +
         (already ? "It was already approved; the record now carries this verdict instead.\n" : "") +
         (acceptance.note ? `${acceptance.note}\n` : "") +
+        (foundation.note ? `${foundation.note}\n` : "") +
         (fixed.renamed.length ? `Renamed to the heading this flow declares: ${fixed.renamed.join(", ")}.\n` : "") +
         // True only of the flip. A snapshot is written when a document goes draft -> approved and on no
         // other write (persist.ts), so re-approving an approved document freezes nothing and the copy in

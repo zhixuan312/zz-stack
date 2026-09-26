@@ -65,16 +65,16 @@ const evidence = (over: Partial<{
   const r = qualificationState(
     evidence({ anchors: counts(5, 5), stability: counts(3, 3), planted_faults: counts(0, 0), controls: counts(0, 0) }),
     thresholds);
-  is(r.state === "mechanically_qualified" && r.reason === null,
-     `perfect anchors+stability with no fault/control evidence should stop at mechanically_qualified: ${JSON.stringify(r)}`);
+  is(r.state === "mechanically_qualified" && r.reason === "no planted faults asked; no controls asked",
+     `perfect anchors+stability with no fault/control evidence should stop at mechanically_qualified, naming both gaps: ${JSON.stringify(r)}`);
 }
 
 // 4. 50% anchor pass rate under an 0.8 bar -> unqualified, even with perfect stability.
 {
   const { thresholds } = resolveThresholds({ anchorPassRate: 0.8, stabilityRate: 1 });
   const r = qualificationState(evidence({ anchors: counts(2, 4), stability: counts(3, 3) }), thresholds);
-  is(r.state === "unqualified" && typeof r.reason === "string" && r.reason.length > 0,
-     `a 50% anchor pass rate under a 0.8 bar must not qualify: ${JSON.stringify(r)}`);
+  is(r.state === "unqualified" && r.reason === "anchorPassRate 0.50 < 0.80 (2/4)",
+     `a 50% anchor pass rate under a 0.8 bar must not qualify, and the reason names only the threshold that failed: ${JSON.stringify(r)}`);
 }
 
 // 5. One of three stability answers agreeing (a third) under a 1.0 bar -> unqualified, even with
@@ -82,7 +82,8 @@ const evidence = (over: Partial<{
 {
   const { thresholds } = resolveThresholds({ anchorPassRate: 0.8, stabilityRate: 1 });
   const r = qualificationState(evidence({ anchors: counts(5, 5), stability: counts(1, 3) }), thresholds);
-  is(r.state === "unqualified", `1/3 stability agreement under a 1.0 bar must not qualify: ${JSON.stringify(r)}`);
+  is(r.state === "unqualified" && r.reason === "stabilityRate 0.33 < 1.00 (1/3)",
+     `1/3 stability agreement under a 1.0 bar must not qualify, naming stability alone: ${JSON.stringify(r)}`);
 }
 
 // 6. Mechanically sound + faults killed + controls caught -> operationally_qualified, with no

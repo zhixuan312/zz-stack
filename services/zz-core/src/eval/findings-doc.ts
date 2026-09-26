@@ -53,15 +53,18 @@ export interface MeasureScoreRow {
 }
 
 export interface DimensionScoreRow {
-  key: string; canonical_kind: string; score: number | null; applicable: boolean;
+  key: string; canonical_kind: string; score: number | null; coverage: number | null; applicable: boolean;
   not_applicable_reason: string | null; weight: number; required: boolean;
   measures_scored: number; measures_total: number; measures: MeasureScoreRow[];
 }
 
-interface FindingRow {
+export interface FindingRow {
   id: string; kind: "strength" | "defect" | "unknown"; pattern: string;
   owner_kind: string | null; owner_ref: string | null;
   evidence_refs: unknown[]; decision: string; decision_note: string | null;
+  /** The finding that corrected this one — a superseded finding is not rendered, its correction
+   *  is, naming it. */
+  superseded_by: string | null;
 }
 
 interface EvaluatorTrustRow { stable_key: string; state: string | null; qualified_at: string | null }
@@ -114,7 +117,8 @@ async function loadEvaluatorTrust(p: pg.Pool, protocolVersionId: string): Promis
 
 async function loadFindings(p: pg.Pool, evalRunId: string): Promise<FindingRow[]> {
   return (await p.query<FindingRow>(`
-    select id::text as id, kind, pattern, owner_kind, owner_ref, evidence_refs, decision, decision_note
+    select id::text as id, kind, pattern, owner_kind, owner_ref, evidence_refs, decision, decision_note,
+           superseded_by::text as superseded_by
       from zz.eval_finding where eval_run_id = $1::uuid order by created_at`, [evalRunId])).rows;
 }
 
@@ -123,7 +127,8 @@ function renderDimensions(dims: DimensionScoreRow[]): string {
   return dims.map((d) => {
     const head = d.applicable
       ? `- **${d.key}** (${d.canonical_kind}) — ${d.score === null ? "not scored" : d.score.toFixed(4)}, ` +
-        `${d.measures_scored}/${d.measures_total} measure(s) scored, weight ${d.weight}` +
+        `${d.measures_scored}/${d.measures_total} measure(s) scored` +
+        `${d.coverage === null || d.coverage === undefined ? "" : ` (${pct(d.coverage)} of its weight)`}, weight ${d.weight}` +
         `${d.required ? ", required" : ""}`
       : `- **${d.key}** (${d.canonical_kind}) — not applicable: ${d.not_applicable_reason ?? "no reason recorded"}`;
     const measures = d.measures.map((m) =>
@@ -131,6 +136,24 @@ function renderDimensions(dims: DimensionScoreRow[]): string {
         : `${m.value?.toFixed(4) ?? "—"}`}${m.guardrail ? " — guardrail" : ""}`).join("\n");
     return measures ? `${head}\n${measures}` : head;
   }).join("\n");
+}
+
+const pct = (v: number): string => `${Math.round(v * 100)}%`;
+
+/** The stored interval, as a sentence: bounds, level and how many subjects it resampled — or why
+ *  there is no real interval. Never the raw JSON. */
+export function renderInterval(i: Record<string, unknown> | null): string {
+  if (!i) return "not computed";
+  const n = typeof i.n_subjects === "number" ? i.n_subjects : 0;
+  const level = typeof i.level === "number" ? pct(i.level) : "?";
+  const bound = (v: unknown) => (typeof v === "number" ? v.toFixed(2) : "—");
+  if (i.degenerate) {
+    return n === 0 ? `none — ${String(i.note ?? "no subject was scored")}`
+      : `${bound(i.lower)} (one subject; ${String(i.note ?? "nothing to resample")})`;
+  }
+  const iterations = typeof i.iterations === "number" ? `, ${i.iterations} resamples` : "";
+  return `${bound(i.lower)}–${bound(i.upper)} (${level} bootstrap over ${n} subjects${iterations})` +
+    (i.note ? ` — ${String(i.note)}` : "");
 }
 
 function renderGuardrails(dims: DimensionScoreRow[], status: string | null): string {
@@ -151,14 +174,18 @@ function renderTrust(rows: EvaluatorTrustRow[]): string {
     (r.qualified_at ? ` (as of ${r.qualified_at})` : "")).join("\n");
 }
 
-function renderFindings(findings: FindingRow[], kind: FindingRow["kind"]): string {
-  const rows = findings.filter((f) => f.kind === kind);
+/** One kind's CURRENT findings — a superseded one is left out, and the finding that corrected it
+ *  says so, with what it replaced, so the correction is visible without the wrong figure standing. */
+export function renderFindings(findings: FindingRow[], kind: FindingRow["kind"]): string {
+  const replaced = new Map(findings.filter((f) => f.superseded_by).map((f) => [f.superseded_by as string, f]));
+  const rows = findings.filter((f) => f.kind === kind && !f.superseded_by);
   if (!rows.length) return `No ${kind} is recorded against this run.`;
   // The id is printed because IMPROVE's `improvement_start` names findings by it, and a fresh
   // conversation has this document, not EXPLAIN's `finding_record` responses.
   return rows.map((f) =>
     `- ${f.pattern} (id: \`${f.id}\`, owner: ${f.owner_kind ?? "unknown"}${f.owner_ref ? ` ${f.owner_ref}` : ""}, ` +
-    `decision: ${f.decision})`).join("\n");
+    `decision: ${f.decision})` +
+    (replaced.has(f.id) ? ` — corrects \`${replaced.get(f.id)!.id}\`, which said: "${replaced.get(f.id)!.pattern}"` : "")).join("\n");
 }
 
 function renderBody(
@@ -175,7 +202,11 @@ function renderBody(
     `- Status: **${run.score_status ?? "not_established"}**`,
     `- Overall: ${run.overall_score === null ? "—" : Number(run.overall_score).toFixed(2)} / 10`,
     `- Protocol: \`${protocol.protocol_key}\` version ${protocol.version}`,
-    `- Interval: ${run.score_interval ? JSON.stringify(run.score_interval) : "not computed"}`,
+    `- Interval: ${renderInterval(run.score_interval)}`,
+    `- Coverage: ${typeof run.coverage?.measures === "number"
+      ? `${pct(run.coverage.measures)} of the protocol's measure weight scored` +
+        (typeof run.coverage.measures_floor === "number" ? ` (provisional needs ${pct(run.coverage.measures_floor)})` : "")
+      : "not recorded"}`,
     `- eval_run_id: \`${run.id}\``,
     "",
     "## Dimensions",

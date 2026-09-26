@@ -1,6 +1,6 @@
 ---
 name: sdlc-spec-audit
-version: 2.5
+version: 2.6
 description: Audit spec.md — the eleven prose failure modes plus the spec's own contract: eight components, FR-to-AC traceability, the deliverable contract, frozen values inlined, scope exhaustive. Read-only. Dispatched, one round at a time; how many is routed by evidence.
 when_to_use: "spec.md is written and agreed by the person, and someone is about to plan from it. Runs after sdlc-spec and before sdlc-plan. Dispatched by the main agent, one round at a time."
 ---
@@ -43,9 +43,10 @@ makes a spec a spec, and it is where a spec most often fails without reading bad
 
 Walk each and record findings the same way:
 
-1. **Component completeness.** The eight canonical components are present with their displayed
-   labels — Context · Problem · Goals & Requirements · Alternatives · Approach, Method & Structure ·
-   Verification Plan · Risks & Mitigations · Stakeholders & Work. A missing one is a finding
+1. **Component completeness.** The eight canonical components, then the two sections the approval
+   rests on, are present with their displayed labels — Context · Problem · Goals & Requirements ·
+   Alternatives · Approach, Method & Structure · Verification Plan · Risks & Mitigations ·
+   Stakeholders & Work · Phase outline · Core statements. A missing one is a finding
    with no exception: the platform refuses the approval of a spec missing any of them, so a
    spec you are auditing without one cannot pass its gate whatever you conclude.
 
@@ -77,6 +78,13 @@ Walk each and record findings the same way:
    gates, the buildable implementation, governance sign-offs — Delivery order enumerates them. A
    spec that folds governance into the implementation workstream produces a plan that cannot
    sequence them.
+8. **The phase outline and the core statements hold up.** The platform already refuses an AC left
+   out of every phase and a statement without a quoted spike, so do not re-check those. Read what
+   it cannot: does each phase leave something a person could run, and is Phase 0 a skeleton that
+   runs end to end? Is a statement's spike actually testing the statement, or a neighbour of it?
+   Is an assumption the Approach plainly rests on missing from the table? A `fails` row whose
+   `resolved-by-design-change` note names a change the Approach does not actually make is a
+   critical finding — the spec says it moved and did not.
 
 Add `spec-contract` to `criteriaCovered` when you have walked these.
 
@@ -91,7 +99,7 @@ Alternatives records option A as the decision" is — and it is a critical one.
 
 ## Skill contract
 
-**Outcome:** one round's findings on `spec.md` — the eleven prose failure modes plus the seven
+**Outcome:** one round's findings on `spec.md` — the eleven prose failure modes plus the eight
 points of the spec's own contract — registered as a SOURCE supporting that document with
 `source_add`, and returned to the caller as one JSON block. No document of the flow, and no change
 to the spec.
@@ -113,18 +121,17 @@ option B while Alternatives records option A as the decision" is, and it is crit
 document; running it yourself re-reads your own reasoning and finds it sound. The person who owns
 the spec decides what to fix, and you present nothing to them — the main agent decides what
 anybody is shown. Where the caller said what the last round raised, confirm each fix rather
-than re-reporting it. The platform asks two bounded questions of your round when it is recorded,
-and routes on them; you ask none, and severity stays yours to calibrate.
+than re-reporting it. The platform asks one bounded question of your round when it is recorded,
+and routes on it; you ask none, and severity stays yours to calibrate.
 
 **Checkpoints:**
 
 | Where | Question ID | Asked about |
 |---|---|---|
 | When `source_add` records your round — asked by the platform | `changes_commitment` | whether the round reopens something the document records as agreed — `yes` makes the next move `decide`, waiting on the stakeholder, instead of another round |
-| The same, from round 2 on | `repeats_finding` | whether the round mostly repeats the rounds before it — the next move says so; it does not change the move |
 
 **Action and exit paths:** the action is the eleven failure modes one at a time, then the spec's
-seven, then consolidation. Two exits, both taken every round: `source_add` carrying the prose
+eight, then consolidation. Two exits, both taken every round: `source_add` carrying the prose
 findings and naming `spec.md`, and the JSON block as your final text. The exit that does not exist
 is fixing what you found — an audit that edits the document destroys the caller's ability to
 decide which findings to accept and removes the evidence that anything was ever wrong.

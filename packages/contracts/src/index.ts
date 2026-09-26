@@ -37,7 +37,7 @@ export { BANDS, NOT_MEASURABLE, band,
 // check, draw their vocabulary from.
 export {
   PROTOCOL_ENUMS, EVAL_STATE_ENUMS,
-  EvaluationProtocol, Dimension, Measure,
+  EvaluationProtocol, Dimension, Measure, MeasureAnchor, MeasureQualification,
   QualificationPolicy, EstablishmentPolicy, UncertaintyPolicy,
   ReleasePolicy, Guardrail, FailureMode,
 } from "./eval-protocol.js";

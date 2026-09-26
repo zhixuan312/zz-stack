@@ -13,7 +13,7 @@
  *   2. `reviewRoundOf` counts only the verifying document's own stage
  *   3. every reviewMove branch: round 1, fix, run_experiment, settled, out-of-scope, S1
  *      reproduced out of scope, a repeat, the budget on a non-converging review, a renewal, an accepted residual
- *   4. the approval rules: no section, a missing row, a stray row, a bad status, no locator, no
+ *   4. the approval rules: no round and no waiver, a stakeholder's waiver, no section, a missing row, a stray row, a bad status, no locator, no
  *      quote, deferred with and without a stakeholder source, the Backlog, and `unavailable`
  *   5. the readings: `no` refuses, `unclear` asks to sharpen, `unclear` again on new evidence
  *      goes to the stakeholder, whose source accepts it
@@ -175,8 +175,20 @@ try {
   const ok1 = "| AC-1.1 | established | check:intake — `intake: ok` | |";
   const ok2 = "| AC-2.1 | established | test:checks/close.ts — `close: ok` | |";
   const okT = "| I-1 | established | check:intake — `intake: 1 case` | |";
+  const w = fresh();
+  let got = await approval(w, table([ok1, ok2, okT]));
+  is(/no round of sdlc-review is recorded.*stage: "sdlc-review".*Only the stakeholder can waive it/.test(got.refusal ?? ""),
+     `zero rounds refuse the approval by name: ${got.refusal}`);
+  stakeholder(w, "2026-09-26T00:10:00.000Z", "AC-2.1 is waived for now.");
+  got = await approval(w, table([ok1, ok2, okT]));
+  is(/no round of sdlc-review is recorded/.test(got.refusal ?? ""), `waiving a criterion is not waiving the sweep: ${got.refusal}`);
+  stakeholder(w, "2026-09-26T00:20:00.000Z", "The review sweep is waived: a docs-only change.");
+  got = await approval(w, table([ok1, ok2, okT]));
+  is(got.refusal === null && /review sweep ran no round: sources\/2026-09-26-decision-\S+ waives it/.test(got.note),
+     `a stakeholder's waiver approves, and the approval says so: ${JSON.stringify(got)}`);
   const e = fresh();
-  let got = await approval(e, "# Review\n\n## Verdict\n\nShips.\n");
+  round(e, ledger(1, []), "2026-09-26T00:30:00.000Z");
+  got = await approval(e, "# Review\n\n## Verdict\n\nShips.\n");
   is(/no `## Acceptance evidence` section.*AC-1\.1, AC-2\.1, I-1/.test(got.refusal ?? ""), `no section: ${got.refusal}`);
   got = await approval(e, table([ok1, okT]));
   is(/no row for AC-2\.1/.test(got.refusal ?? ""), `a missing row: ${got.refusal}`);
@@ -201,7 +213,7 @@ try {
   round(h, ledger(2, [], ["R1-B"]), "2026-09-26T02:00:00.000Z");
   got = await approval(h, table([ok1, ok2, okT]));
   is(got.refusal === null, `a settled sweep lets it approve: ${got.refusal}`);
-  round(e, ledger(1, [finding("R1-Z", "S2", "cited", false)]), "2026-09-26T06:00:00.000Z");
+  round(e, ledger(2, [finding("R1-Z", "S2", "cited", false)]), "2026-09-26T06:00:00.000Z");
   got = await approval(e, table([ok1, ok2, okT]));
   is(/`## Backlog` does not name them: R1-Z/.test(got.refusal ?? ""), `an unbacklogged out-of-scope finding: ${got.refusal}`);
   got = await approval(e, table([ok1, ok2, okT], "\n## Backlog\n\n- R1-Z (S2) — next initiative\n"));
@@ -209,6 +221,7 @@ try {
 
   // 5. the readings
   const r = fresh();
+  round(r, ledger(1, []), "2026-09-26T00:30:00.000Z");
   const texts = new Map((acc.declaredCriteria(join(root, r.name), ["spec.md", "plan.md"]) as Array<{ id: string; text: string }>)
     .map((x) => [x.id, x.text]));
   is(texts.get("I-1") === "the intake check passes on a sample email.", `a task's criterion is its technical AC: ${texts.get("I-1")}`);

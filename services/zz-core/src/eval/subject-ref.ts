@@ -6,9 +6,11 @@
  * path, `evaluation_assess`'s own `eval_run`, the same way: what a model-backed measure is
  * actually asked to judge, resolved from the ref alone, never a sentence naming it.
  *
- * Two shapes an `eval_run`'s own `subject_ref` can take:
+ * Three shapes an `eval_run`'s own `subject_ref` can take:
  *   - `<initiative>/<doc>.md` — a governed document, read off the artifact store the way
- *     `findings-doc.ts` writes one and `bodyOf` below reads one, team-scoped.
+ *     `findings-doc.ts` writes one and `bodyOf` below reads one, team-scoped. One under
+ *     `_knowledge/` is a knowledge node, and resolves as that kind;
+ *   - `bug:<uuid>` — a bug report, rendered from its own `zz.bug` row;
  *   - a bare UUID — a `zz.event.run_id`, rendered from its own `zz.event` rows through
  *     `judge-trace.ts`'s `traceOf`, the platform's one existing "render a run as text" function —
  *     never a second renderer invented here.
@@ -25,6 +27,7 @@ import { join } from "node:path";
 import { ARTIFACTS_DIR } from "@zz/indexing";
 import type pg from "pg";
 
+import type { SubjectKind } from "./evaluate-measures.js";
 import { traceOf } from "./judge-trace.js";
 import { sanitize } from "../paths.js";
 
@@ -41,7 +44,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 interface ResolvedSubject {
   readonly text: string;
-  readonly kind: "document" | "run";
+  readonly kind: SubjectKind;
 }
 
 /** A malformed or absent `<initiative>/<doc>.md` split reads as "not a document ref" rather than
@@ -74,6 +77,20 @@ export async function resolveSubjectRef(
     return { text: `RUN ${subjectRef}:\n${trace.text}`, kind: "run" };
   }
 
+  if (subjectRef.startsWith("bug:")) {
+    const id = subjectRef.slice("bug:".length);
+    const bug = UUID_RE.test(id)
+      ? (await p.query<{ title: string; detail: string; impact: string; status: string; surface: string | null }>(
+          "select title, detail, impact, status, surface from zz.bug where id = $1::uuid", [id])).rows[0]
+      : undefined;
+    if (!bug) return { error: `ERROR: subject_ref "${subjectRef}" names no bug report — nothing to judge` };
+    return {
+      text: `BUG REPORT ${id} (${bug.impact}, ${bug.status}${bug.surface ? `, ${bug.surface}` : ""}):\n` +
+        `${bug.title}\n\n${bug.detail}`,
+      kind: "bug",
+    };
+  }
+
   const doc = splitDocumentRef(subjectRef);
   if (doc) {
     if (!team) {
@@ -89,7 +106,7 @@ export async function resolveSubjectRef(
           `in team "${team}"'s artifact store — nothing to judge`,
       };
     }
-    return { text: body, kind: "document" };
+    return { text: body, kind: doc.initiative === "_knowledge" ? "knowledge" : "document" };
   }
 
   return {

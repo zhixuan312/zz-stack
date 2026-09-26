@@ -43,7 +43,7 @@ import { basename, join } from "node:path";
 
 import { buildAndSmoke } from "./release/build.ts";
 import { ATTEST, fitForPurpose } from "./release/fit-for-purpose.ts";
-import { DASH_IMAGE, DASH_REMOTE, DASH_SRC, HOST, IMAGE, REMOTE, asExecError, die, envToken, log, probeToken, publicUrl, root, run, ssh, step, warn } from "./deployment.ts";
+import { DASH_IMAGE, DASH_REMOTE, DASH_SRC, HOST, IMAGE, REMOTE, asExecError, catalogOwnerTeam, die, envToken, log, probeToken, publicUrl, root, run, ssh, step, warn } from "./deployment.ts";
 import { chainCheck } from "./release/chain-live.ts";
 import { args, dryRun, preflightMode, rollbackMode, version } from "./release/config.ts";
 import { consoleImage, resolveDashboard } from "./release/dashboard.ts";
@@ -180,6 +180,15 @@ if (!dryRun && !probeToken()) {
   warn("  no ZZ_PROBE_TOKEN: the live chain check's superadmin probes (bug_list, bug_resolve,\n" +
        "  knowledge_reindex) will report unknown, and step 5 will leave this release UNTAGGED.\n" +
        `  Set ZZ_PROBE_TOKEN in ${root}/.env to a superadmin's PAT to verify them.`);
+}
+
+// The team register-plugins writes as every catalog plugin's owner, resolved before anything is
+// built: discovered after the deploy, its absence fails step 5 and rolls a working release back.
+const ownerTeam = catalogOwnerTeam();
+if (!ownerTeam) {
+  die(`no ZZ_CATALOG_OWNER_TEAM — not in the environment, ${root}/.env or ${HOST}:${REMOTE}/deploy/.env.\n` +
+      "        register-plugins writes it as every catalog plugin's owner and release_owners, and " +
+      "refuses to run without it.");
 }
 
 // The doctor's pre-deploy probes: disagreements already true of the live data against this
@@ -353,13 +362,14 @@ try {
        `  ${(e.stderr ?? e.message).trim().split("\n")[0]}`);
 }
 
-writeRegistries();
+const registryFailures = writeRegistries(ownerTeam);
 
 /* 5 · verify the live deployment */
 step(5, "verify");
 execSync("sleep 12");
 const verdict = verifyLive();
-const problems = verdict.wrong;
+// A registry the release could not write is a failed verification (registries.ts).
+const problems = [...verdict.wrong, ...registryFailures];
 
 // The tool chain, not only the door and the surface — see chainCheck()'s own docstring.
 const chained = chainCheck();

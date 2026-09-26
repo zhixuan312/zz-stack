@@ -1,7 +1,7 @@
 ---
 name: zz-plugin-evaluate
-version: 0.5
-description: Stage 5 of zz-plugin-eval (EVALUATE). Bind an approved protocol version to a subject's own observation snapshot, run every measure the protocol names against real evidence, and reduce the result to one deterministic overall score with its status, coverage and guardrails. No recommendation — that is EXPLAIN.
+version: 0.6
+description: Stage 5 of zz-plugin-eval (EVALUATE). Bind an approved protocol version to a subject's own observation snapshot, route every measure the protocol names to the real evidence it judges, and reduce the result to one deterministic overall score with its status, coverage and guardrails. No recommendation — that is EXPLAIN.
 when_to_use: "The fifth stage of zz-plugin-eval, once a protocol version is affirmed (or was already reusable). Produces no document — its output is durable score data EXPLAIN reads. No shell required."
 ---
 
@@ -33,31 +33,51 @@ and compares the two numbers.
 
 ## `subject_refs` — what the measures actually read
 
-`evaluation_assess` resolves every entry in `subject_refs` to real content — an
-`<initiative>/<doc>.md` path is read off your own team's artifact store, a bare `run_id` is
-rendered from its own event rows — then runs every measure of every dimension in the run's
-protocol against that resolved text. **REFUSES BY NAME any ref that resolves to neither a real
-document nor a real run** — a model is never silently handed a templated sentence naming the ref
-instead of the thing it names. A ref is a document path or a run id, never a tool name: the
-protocol's own `observableSurfaces` names the tools whose output matters, so pick the documents
-and runs those tools produced — the ones worth judging, not an arbitrary sample.
+`evaluation_assess` resolves every entry in `subject_refs` to real content, and each ref has a
+kind:
+
+| ref | kind |
+|---|---|
+| `<initiative>/<doc>.md`, read off your own team's artifact store | document |
+| `_knowledge/nodes/<node>.md` | knowledge |
+| `bug:<id>`, from its bug report | bug |
+| a bare `run_id` — from OBSERVE's `traces.run_refs` | run |
+
+**REFUSES BY NAME any ref that resolves to nothing** — a model is never silently handed a
+templated sentence naming the ref instead of the thing it names. A ref is never a tool name: the
+protocol's own `observableSurfaces` names the tools whose output matters, so pick the documents,
+runs and reports those tools produced — the ones worth judging, not an arbitrary sample. **Give
+refs of every kind the protocol's measures judge**: a measure is asked only about refs of its
+own kind (`definition.subjectKind`, else the "Read this run / document / bug report / record"
+its evaluator's question opens with), so a protocol with a run measure and no run ref leaves
+that measure excluded, by name.
 
 `deterministic`/`outcome` measures read a named fact off the run's own bound observation
-snapshot, never the resolved text — the same fact OBSERVE computed. `bounded_semantic`/
-`generative_critic` measures ask the measure's own qualified evaluator about the resolved text,
-recording an `assessment_id` you can trace back to the underlying `zz.assessment` row.
-`human` measures are recorded as excluded — nothing here ingests one yet.
+snapshot, ONCE per run — never the resolved text, never once per ref. `bounded_semantic`/
+`generative_critic` measures ask the measure's own evaluator about each ref of their kind,
+recording an `assessment_id` you can trace back to the underlying `zz.assessment` row — **but
+only when that evaluator is qualified against this protocol version.** An unqualified one is not
+asked at all: one row records the exclusion by name, and no model call is spent on an answer
+that could not count. `human` measures are recorded as excluded — nothing here ingests one yet.
 
-RETURNS `{ eval_run_id, assessment_count, measures_assessed }`. Call it again with more
+RETURNS `{ eval_run_id, assessment_count, measures_assessed, model_calls, excluded }` —
+`excluded` names every measure that was not scored and why. Call it again with more
 `subject_refs` to widen coverage before scoring — every call adds assessments, it never resets
-what is already there.
+what is already there, and never re-reads a fact already read for this run.
 
 ## `evaluation_score` — the one number, deterministically
 
 Reduces every stored assessment, calls the pure `scoreRun` once for the run's own numbers and
 once per subject_ref for a percentile bootstrap interval. RETURNS `{ overall_score, score_status,
-score_interval, dimension_scores, guardrail_status, coverage }` and stores the same on
-`zz.eval_run`, moving `run_status` to `'completed'`.
+score_coverage, coverage_floor, score_interval, dimension_scores, guardrail_status, coverage,
+readings }` and stores the score on `zz.eval_run`, moving `run_status` to `'completed'`.
+`readings` is every stored answer, per measure, per ref, with its `assessment_id` — what EXPLAIN
+cites a finding by.
+
+A dimension scores from whichever of its measures were scored, re-weighted among them, and
+reports its own `coverage` — the scored share of its declared measure weight. One excluded
+measure never empties its dimension, and `overall_score` is null only when nothing scored at all.
+`score_coverage` is the same share over the whole protocol.
 
 **`overall_score = 10 x sum(dimension_weight x dimension_score)`** — code computes it; no model
 prose ever supplies it directly. `score_status` is one of `established | provisional |
@@ -71,7 +91,9 @@ not_established`:
   any individual qualification row says.** FR-57's own reference protocol for `zz-core` is
   bootstrap: it must not publish an `established` score before the first real post-close OBSERVE/
   DISCOVER run.
-- Both must be true, plus every required guardrail resolved, for `score_status: established`.
+- Both must be true, and every required measure scored, for `score_status: established`.
+- Short of that, `provisional` needs `score_coverage` at or above `coverage_floor`; under it the
+  number is still reported, as `not_established` — a reading of a much smaller protocol.
 
 `guardrail_status` never disappears inside the average: a critical guardrail's own numeric value
 is still visible for diagnosis, and a released improvement whose own evaluation fails one is

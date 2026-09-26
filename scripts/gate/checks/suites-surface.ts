@@ -46,6 +46,9 @@ check("audit rounds follow evidence, a spent budget or a reopened agreement wait
 check("review rounds follow evidence — fix, run_experiment, decide at the budget, settle — and a verifying document is approved on one acceptance-evidence row per declared criterion",
       runsCheck("review-rounds.ts"));
 
+check("a spec is approved on a phase outline covering every AC and on core statements a spike actually tested",
+      runsCheck("spec-gate.ts"));
+
 check("a document's `when` decides applicability by code from durable facts, never by confidence",
       runsCheck("flow-when.ts"));
 
@@ -118,7 +121,7 @@ check("the evaluator registry's question digest matches the plan header's formul
 check("the qualification ladder is earned bottom-up from evidence counts and a protocol's own thresholds, zero anchors always refuses, and a 0-total category never counts as cleared",
       runsCheck("eval-qualification-ladder.ts"));
 
-check("a run's overall score re-normalises across applicable and present dimensions, a missing required measure voids its dimension, unqualified evidence cannot establish, and a guardrail firing never moves the number",
+check("a run's overall score re-normalises across applicable and present dimensions, a missing required measure withholds establishment without voiding its dimension, unqualified evidence cannot establish, and a guardrail firing never moves the number",
       runsCheck("eval-score-formula.ts"));
 
 check("a candidate build's environment is an allowlist with no model or platform credential in it, and the build installs a standalone clone of the subject's own release tag",
@@ -183,8 +186,16 @@ check("release_prepare and proposal_prepare take only the initiative: the eval_r
       runsCheck("eval-prepare-from-initiative.ts"));
 check("a record stage's ids come back from initiative_status in a new conversation, and next_move names the first record stage that has none",
       runsCheck("eval-stage-records.ts"));
-check("a qualification control passes when the evaluator answers what the other plugin's numbers say, same-sign counts included",
-      runsCheck("eval-qualify-controls.ts"));
+check("a model-backed measure qualifies against its own declared anchors, faults and controls: a truthful evaluator reaches operationally_qualified, a mislabelled anchor is unqualified naming anchorPassRate and the anchor id, and every zz-core.v1 semantic measure carries anchors of both answers",
+      runsCheck("eval-qualify-anchors.ts"));
+check("one excluded measure lowers its dimension's coverage but never nulls the dimension or the overall; the status reads the run's coverage against a named floor", runsCheck("eval-score-coverage.ts"));
+check("OBSERVE counts only a plugin's own tools, attributed by the door that serves them, so observed never exceeds total, and its traces return the observed run ids with their team", runsCheck("eval-observe-surface.ts"));
+check("evaluation_assess asks a model-backed measure only about refs of its own kind, never asks an unqualified evaluator, reads a deterministic fact once per run, and evaluation_score returns every reading with its assessment_id", runsCheck("eval-assess-routing.ts"));
+check("a finding is corrected by recording its replacement with supersedes: the old one closes in the same write, a correction stays in its own eval_run, and findings.md renders only current findings, naming what each correction replaced", runsCheck("eval-finding-supersede.ts"));
+check("the release reads the catalog owner team off the host's deploy/.env, hands it to register-plugins as owner and release_owners, and a register-plugins failure is a verification failure", runsCheck("release-plugin-owners.ts"));
+check("a registered skill's content_hash is the sha256 of its SKILL.md", runsCheck("skill-digest-sha256.ts"));
+check("DISCOVER folds one refusal rule into one candidate whatever files it named, and a two-decimal-rounded distribution is answered", runsCheck("eval-discover-rules.ts"));
+check("handover.md requires the document its branch closes on, and is writable once the initiative closes there", runsCheck("eval-handover-branch.ts"));
 
 check("a waiver covers only its own step's unmet rule of exactly its kind — never a kind it is a substring of, one named in an about tail, or another step's same-kind gap",
       runsCheck("store-waivers.ts"));

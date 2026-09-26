@@ -6,6 +6,9 @@
  * other, so the plan decided their order rather than leaving it to whichever worker finishes
  * last. Paths under `## Integration hotspots` belong to the integration step after each wave.
  *
+ * A plan is written one phase at a time, so waves are also computed per `## Phase N` block: the
+ * phase being built next runs its own tasks, with every earlier phase's tasks already done.
+ *
  * Read by `validatePlan`, which owns the parsing; this file sees only what was parsed.
  */
 import type { PlanViolation } from "./plan-validation.js";
@@ -119,4 +122,46 @@ export function executableWaves(
     waves.push(wave);
   }
   return waves;
+}
+
+/** `## Phase 2 — Candidates: built in isolation`. The number is the phase's name. */
+const PHASE_HEADING = /^##\s+Phase\s+(\d+)\b/i;
+
+/** What `sdlc-execute` appends under a phase once it is built: what was actually done. */
+const AS_BUILT_HEADING = /^###\s+As[ -]built\b/i;
+
+/** One `## Phase N` block: its tasks in document order, whether it was built, and its waves —
+ *  tasks of earlier phases count as done. `waves` is empty when there is no executable order. */
+export interface PlanPhase {
+  readonly phase: number;
+  readonly line: number;
+  readonly taskIds: readonly string[];
+  readonly built: boolean;
+  readonly waves: readonly (readonly string[])[];
+}
+
+/** Every phase block, running to the next `## ` heading, with the tasks under it. A phase with no
+ *  tasks is one the spec outlines and nobody has planned yet; it is listed, never refused. */
+export function planPhases(
+  lines: readonly string[],
+  tasks: readonly OwnedTask[],
+  edges: ReadonlyMap<string, readonly string[]>,
+  order: readonly string[] | null,
+): PlanPhase[] {
+  const blocks: Array<{ phase: number; line: number; end: number; built: boolean }> = [];
+  for (const [i, line] of lines.entries()) {
+    const open = blocks.at(-1);
+    if (/^##\s/.test(line) && open && open.end === -1) open.end = i;
+    const heading = PHASE_HEADING.exec(line);
+    if (heading) blocks.push({ phase: Number(heading[1]), line: i + 1, end: -1, built: false });
+    else if (AS_BUILT_HEADING.test(line) && open && open.end === -1) open.built = true;
+  }
+  return blocks.map((b) => {
+    const end = b.end === -1 ? lines.length : b.end;
+    const mine = tasks.filter((t) => t.line > b.line && t.line <= end);
+    const ids = new Set(mine.map((t) => t.id));
+    const within = new Map(mine.map((t) => [t.id, (edges.get(t.id) ?? []).filter((d) => ids.has(d))]));
+    return { phase: b.phase, line: b.line, built: b.built, taskIds: mine.map((t) => t.id),
+             waves: order ? executableWaves(mine, within, order.filter((id) => ids.has(id))) : [] };
+  });
 }

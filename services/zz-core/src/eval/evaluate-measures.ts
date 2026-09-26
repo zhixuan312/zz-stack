@@ -30,9 +30,9 @@
  * `{ factPath: string, normalize?: "rate" | "inverted_rate" | "threshold", max?: number, min?:
  * number }` — `normalize` defaults to `"rate"` when omitted, so the two original facts
  * (`usable_run_coverage`, `tool_coverage`, already rates in `[0,1]`) need not declare one.
- * `qualification?: {positive, zero}` is the SAME vocabulary `qualify.ts` already reads off a
- * measure for anchor-building — reused here, never redefined, so a protocol author writes one
- * vocabulary and both EVALUATE and QUALIFY read it. `improvement.criticalGuardrails` (protocol-
+ * A model-backed measure's `definition.qualification` is `{ anchors: [{id, role, text,
+ * expected}] }`, which QUALIFY (`qualify.ts`) reads to qualify its evaluator; EVALUATE reads only
+ * an optional `definition.qualification.positive` — see `valueFromAnswer`. `improvement.criticalGuardrails` (protocol-
  * level, `@zz/contracts`'s `Guardrail`) is now the ONLY guardrail mechanism — see
  * `evaluateGuardrails` below; a measure's own `definition` no longer carries `guardrail`/
  * `guardrailThreshold`.
@@ -63,6 +63,9 @@ export interface MeasureRow {
   readonly required: boolean;
   readonly definition: Record<string, unknown>;
   readonly evaluator_version_id: string | null;
+  /** The bound evaluator's question, when one is bound — what `subjectKindOf` derives a kind
+   *  from when the measure declares none. */
+  readonly question?: string | null;
 }
 
 export interface DimensionRow {
@@ -163,7 +166,7 @@ function normalizeFactValue(raw: number, definition: Record<string, unknown>, fa
   };
 }
 
-function excludedAnswer(reason: string): MeasureAnswer {
+export function excludedAnswer(reason: string): MeasureAnswer {
   return {
     value: null, excluded: true, excluded_reason: reason,
     evaluator_version_id: null, assessment_id: null, qualification_id: null, qualification_state: null,
@@ -211,9 +214,8 @@ function deterministicAnswer(measure: MeasureRow, snapshot: SnapshotFacts): Meas
 /** What one asked answer reduces to in `[0, 1]`. A `noul`'s own probability IS already the
  *  probability of `yes` (`semantic.ts`'s `readingOf` only thresholds it into a reading; the
  *  number itself is never rescaled), so it is the value directly. A `choice`/`score`'s
- *  distribution is read against the measure's own `{positive, zero}` vocabulary when the
- *  protocol names one — the probability mass on `positive` IS the value, the same number
- *  `qualify-evidence.ts`'s stability/anchor comparisons already treat as "the" answer. With no
+ *  distribution is read against `definition.qualification.positive` when the measure names
+ *  one — the probability mass on that answer IS the value. With no
  *  named vocabulary, the distribution's keys are read as an ordered scale (first = worst, last =
  *  best) and reduced to a probability-weighted position — a reasonable default for an
  *  unconfigured `score`/`choice` measure, not a fixed contract (this task's own plan boundary). */
@@ -231,10 +233,9 @@ function valueFromAnswer(r: Omit<EvaluatorAssessmentResult, "assessment_id">, de
   return keys.reduce((sum, k, i) => sum + (r.distribution?.[k] ?? 0) * (i / span), 0);
 }
 
-/** bounded_semantic / generative_critic: ask the bound evaluator, exclude the value (never the
- *  assessment row — the answer is still recorded) when the evaluator's qualification for THIS
- *  protocol version is missing or `unqualified` — the contract's own Errors clause: "an
- *  unqualified evaluator's measure is recorded but excluded, making the dimension missing". */
+/** bounded_semantic / generative_critic: ask the bound evaluator — unless its qualification for
+ *  THIS protocol version is missing or `unqualified`, in which case the measure is recorded as
+ *  excluded, by name, and no model is called. */
 async function modelBackedAnswer(
   measure: MeasureRow, subjectText: string, context: string | undefined, principal: string,
   qualificationOf: (evaluatorVersionId: string) => Promise<{ id: string; state: string } | null>,
@@ -246,21 +247,28 @@ async function modelBackedAnswer(
       detail: {}, pending: null,
     };
   }
+  // Qualification first: an evaluator that is unqualified (or never qualified) against this
+  // protocol version is not asked at all. Its answer could not count, and asking it anyway spent
+  // one model call per ref for nothing.
+  const qual = await qualificationOf(measure.evaluator_version_id);
+  if (!qual || qual.state === "unqualified") {
+    return {
+      ...excludedAnswer(`evaluator is ${qual ? "unqualified" : "never qualified"} against this protocol version — not asked`),
+      evaluator_version_id: measure.evaluator_version_id,
+      qualification_id: qual?.id ?? null, qualification_state: qual?.state ?? null, pending: null,
+    };
+  }
   const asked = await askEvaluatorQuestion({
     evaluator_version_id: measure.evaluator_version_id, subject_text: subjectText, context, askedBy: principal,
   });
   const result = asked.result;
-  const qual = await qualificationOf(measure.evaluator_version_id);
-  const unqualified = !qual || qual.state === "unqualified";
   const raw = valueFromAnswer(result, measure.definition);
   return {
-    value: unqualified ? null : raw,
-    excluded: unqualified || raw === null,
-    excluded_reason: unqualified
-      ? `evaluator is ${qual ? "unqualified" : "never qualified"} against this protocol version`
-      : raw === null ? "the evaluator returned no comparable answer" : null,
+    value: raw,
+    excluded: raw === null,
+    excluded_reason: raw === null ? "the evaluator returned no comparable answer" : null,
     evaluator_version_id: measure.evaluator_version_id, assessment_id: null,
-    qualification_id: qual?.id ?? null, qualification_state: qual?.state ?? null,
+    qualification_id: qual.id, qualification_state: qual.state,
     detail: { answer_kind: result.answer_kind, reading: result.reading, probability: result.probability,
               distribution: result.distribution, raw_value: raw },
     pending: asked,
@@ -325,6 +333,124 @@ export function reduceMeasureAnswers(answers: readonly MeasureAnswer[]): number 
   const usable = answers.filter((a): a is MeasureAnswer & { value: number } => !a.excluded && a.value !== null);
   if (!usable.length) return null;
   return usable.reduce((s, a) => s + a.value, 0) / usable.length;
+}
+
+// -------------------------------------------------------------------------------------------
+// Routing: which measure is asked of which subject_ref. Pure, so a check can prove what is NOT
+// asked without a model or a database.
+
+/** What a subject_ref is, and what a model-backed measure judges. */
+export type SubjectKind = "run" | "document" | "knowledge" | "bug";
+const SUBJECT_KINDS: readonly SubjectKind[] = ["run", "document", "knowledge", "bug"];
+
+/** The subject_ref a once-per-run row is stored under: a deterministic/outcome fact read off the
+ *  run's own observation snapshot, and every run-level exclusion. `evaluation_score` keeps these
+ *  rows out of the subject count and folds them into every subject's own score. */
+export const runLevelRef = (observationSnapshotId: string): string => `observation_snapshot:${observationSnapshotId}`;
+export const isRunLevelRef = (ref: string): boolean => ref.startsWith("observation_snapshot:");
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A subject_ref's kind from its shape alone — the shapes `resolveSubjectRef` resolves. */
+export function refKindOf(ref: string): SubjectKind | null {
+  if (UUID_RE.test(ref)) return "run";
+  if (ref.startsWith("bug:")) return "bug";
+  if (ref.startsWith("_knowledge/") && ref.endsWith(".md")) return "knowledge";
+  if (ref.endsWith(".md")) return "document";
+  return null;
+}
+
+/** The kind a model-backed measure judges: `definition.subjectKind` when the protocol declares
+ *  it, else read off the opening of its evaluator's question ("Read this run", "Read this bug
+ *  report", ...). Null when neither says, and such a measure is asked of every ref, as before. */
+export function subjectKindOf(measure: MeasureRow): SubjectKind | null {
+  const declared = measure.definition.subjectKind;
+  if (typeof declared === "string" && (SUBJECT_KINDS as readonly string[]).includes(declared)) {
+    return declared as SubjectKind;
+  }
+  const opening = /^\s*Read this (run|document|bug report|record)\b/i.exec(measure.question ?? "");
+  if (!opening) return null;
+  const noun = opening[1].toLowerCase();
+  return noun === "bug report" ? "bug" : noun === "record" ? "knowledge" : (noun as SubjectKind);
+}
+
+/** One row `evaluation_assess` will write: `ask` true when `answerMeasure` runs for it (a
+ *  deterministic read or a model call), false when it is recorded excluded with `excluded_reason`
+ *  and nothing runs. */
+interface PlannedAssessment {
+  readonly measure: MeasureRow;
+  readonly subjectRef: string;
+  readonly ask: boolean;
+  readonly excluded_reason: string | null;
+}
+
+/** Every (measure, subject_ref) row one `evaluation_assess` call writes.
+ *   - deterministic/outcome: once per run, under the run-level ref — the fact is the same whatever
+ *     the ref, so it is read once, never once per ref;
+ *   - human: once per run, excluded (no label ingestion exists);
+ *   - model-backed with no evaluator, or one `qualified` says is not: once per run, excluded by
+ *     name, never asked;
+ *   - model-backed otherwise: asked of each ref of the kind it judges only, or — no such ref in
+ *     this call — once per run, excluded by name.
+ *  `alreadyAssessed` is the measures a previous call on this run already wrote any row for: a
+ *  run-level row is never written for them again, so "once per run" holds across calls, and a
+ *  measure asked of its kind in one call is not marked excluded by a later call that brings no
+ *  ref of that kind. */
+export function planAssessment(opts: {
+  measures: readonly MeasureRow[]; subjectRefs: readonly string[]; runLevel: string;
+  qualified: (measure: MeasureRow) => boolean; alreadyAssessed: ReadonlySet<string>;
+}): PlannedAssessment[] {
+  const { measures, subjectRefs, runLevel, qualified, alreadyAssessed } = opts;
+  const out: PlannedAssessment[] = [];
+  const once = (measure: MeasureRow, ask: boolean, excluded_reason: string | null): void => {
+    if (!alreadyAssessed.has(measure.id)) out.push({ measure, subjectRef: runLevel, ask, excluded_reason });
+  };
+  for (const measure of measures) {
+    if (measure.evaluator_type === "deterministic" || measure.evaluator_type === "outcome") {
+      once(measure, true, null);
+      continue;
+    }
+    if (measure.evaluator_type === "human") {
+      once(measure, false, "no human-label ingestion pipeline exists yet");
+      continue;
+    }
+    if (!measure.evaluator_version_id) {
+      once(measure, false, `measure "${measure.key}" names no evaluator`);
+      continue;
+    }
+    if (!qualified(measure)) {
+      once(measure, false, "evaluator is not qualified against this protocol version — not asked");
+      continue;
+    }
+    const kind = subjectKindOf(measure);
+    const matching = kind === null ? subjectRefs : subjectRefs.filter((r) => refKindOf(r) === kind);
+    if (!matching.length) {
+      once(measure, false, `no subject_ref of kind "${kind}" was assessed — this measure judges only that kind`);
+      continue;
+    }
+    for (const subjectRef of matching) out.push({ measure, subjectRef, ask: true, excluded_reason: null });
+  }
+  return out;
+}
+
+/** Every stored answer of one run, per measure key, compactly — what `evaluation_score` hands
+ *  back so a finding can cite the judge's own answer by `assessment_id` rather than a paraphrase
+ *  of it. An excluded row carries its reason instead of a value. */
+export function readingsOf(
+  rows: readonly { measure_id: string; subject_ref: string; answer: MeasureAnswer }[],
+  keyOf: ReadonlyMap<string, string>,
+): Record<string, Record<string, unknown>[]> {
+  const readings: Record<string, Record<string, unknown>[]> = {};
+  for (const r of rows) {
+    const key = keyOf.get(r.measure_id) ?? r.measure_id;
+    const reading = r.answer.detail?.reading;
+    (readings[key] ??= []).push(r.answer.excluded
+      ? { ref: r.subject_ref, excluded: r.answer.excluded_reason }
+      : { ref: r.subject_ref, value: r.answer.value === null ? null : Number(r.answer.value.toFixed(4)),
+          ...(reading !== undefined ? { reading } : {}),
+          ...(r.answer.assessment_id !== null ? { assessment_id: r.answer.assessment_id } : {}) });
+  }
+  return readings;
 }
 
 // -------------------------------------------------------------------------------------------

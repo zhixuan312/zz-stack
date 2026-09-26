@@ -326,7 +326,10 @@ function readSignals(
       values[key] = n;
       total += n;
     }
-    if (Math.abs(total - 1) > 1e-3) {
+    // A supplier that rounds each key to two decimals without renormalising (Jev does) is off by
+    // at most 0.005 per key, so a well-formed four-key reply can sum to 0.99. That much is
+    // rounding; anything beyond it is a distribution that is wrong. The values are kept as sent.
+    if (Math.abs(total - 1) > Math.max(1e-3, 0.005 * Object.keys(values).length)) {
       return { signals, distribution, error: `the native distribution sums to ${total}, not to 1` };
     }
     distribution = Object.freeze(values);

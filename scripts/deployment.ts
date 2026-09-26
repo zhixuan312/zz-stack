@@ -91,11 +91,36 @@ export function publicUrl({ quiet = false }: { quiet?: boolean } = {}): string {
   if (resolved !== null) return resolved;
   resolved = (process.env.ZZ_PUBLIC_URL || "").trim();
   if (!resolved) {
-    try { resolved = ssh(`grep -oP '(?<=^GATEWAY_PUBLIC_URL=).*' ${REMOTE}/deploy/.env`).trim(); }
-    catch { resolved = ""; }
+    resolved = hostEnv("GATEWAY_PUBLIC_URL");
     if (resolved && !quiet) log(`  ZZ_PUBLIC_URL ${resolved} — read from ${HOST}:${REMOTE}/deploy/.env`);
   }
   return resolved;
+}
+
+/** One value from the host's own deploy/.env — "" when it is unset there or the host cannot be
+ *  read. The host's file is the deployment's configuration; a laptop's copy is only an opinion
+ *  about it. */
+function hostEnv(name: string): string {
+  try { return ssh(`grep -oP '(?<=^${name}=).*' ${REMOTE}/deploy/.env`).trim(); }
+  catch { return ""; }
+}
+
+/* The team every catalog plugin belongs to, which register-plugins writes as each plugin's
+ * owner_team and release_owners. The host's deploy/.env already sets it for the containers, so a
+ * release reads it from there rather than asking every release machine to carry a second copy;
+ * the real environment and this repository's .env override it, in that order.
+ *
+ * 0.76.2 ran register-plugins without it: the step failed, every plugin kept release_owners [],
+ * and zz-core became proposal_only. */
+let ownerTeam: string | null = null;
+export function catalogOwnerTeam({ quiet = false }: { quiet?: boolean } = {}): string {
+  if (ownerTeam !== null) return ownerTeam;
+  ownerTeam = cfg(process.env.ZZ_CATALOG_OWNER_TEAM, DOTENV.get("ZZ_CATALOG_OWNER_TEAM"));
+  if (!ownerTeam) {
+    ownerTeam = hostEnv("ZZ_CATALOG_OWNER_TEAM");
+    if (ownerTeam && !quiet) log(`  ZZ_CATALOG_OWNER_TEAM ${ownerTeam} — read from ${HOST}:${REMOTE}/deploy/.env`);
+  }
+  return ownerTeam;
 }
 
 /* Does this exact image already exist in the registry? Asked of the registry, not answered

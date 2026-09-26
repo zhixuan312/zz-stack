@@ -33,6 +33,76 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [Unreleased]
+
+### Changed
+- **sdlc-flow: the spec settles the destination and the plan grows one phase at a time.**
+  `spec.md` declares `## Phase outline` and `## Core statements`. `document_approve` refuses a
+  spec whose outline leaves an AC out of every phase, whose core statements lack a kind-prefixed
+  locator and quoted spike output, or that has a `fails`/`partial` row neither
+  `resolved-by-design-change` nor named by a stakeholder source. `holds` rows are read by
+  `evidence_relation` (spec-gate.ts). `validatePlan` reports `phases` and `currentPhase`, and
+  `initiative_status`'s plan answers `current_phase` and that phase's waves. `sdlc-plan` writes
+  one phase, `sdlc-plan-audit` audits it against the previous `### As built`, and `sdlc-execute`
+  appends `### As built`.
+- Audit rounds no longer ask `repeats_finding`: no audit move depended on its answer. Review
+  rounds still ask it per new S1/S2 finding.
+- `finding_record` takes `supersedes: <finding id>` to correct an earlier, still-deferred finding
+  of the same eval_run. The old finding is closed as rejected, its note names the replacement,
+  and `zz.eval_finding.superseded_by` points at it; `findings.md` renders only current findings
+  and notes each correction.
+- `initiative_status` routes an approved `protocol.md` to `protocol_affirm`, then to
+  `evaluator_qualify` until every model-backed measure has a qualification state, and only then
+  to EVALUATE. `protocol_read`, `protocol_affirm` and `evaluator_qualify` record these acts on the
+  initiative, and `protocol_affirm` returns `qualify_owed`.
+- DISCOVER groups refusals by the rule they state, not by the files they named. For a plugin that
+  serves its own door, a `platform` ownership answer is recorded as `plugin`, with `owner_ref`
+  naming the plugin. A native distribution may now miss 1 by up to 0.005 per key.
+
+### Fixed
+- Every model-backed evaluator came back unqualified (anchors 0/2): qualification asked fixed
+  sentences about snapshot counts against questions about documents and runs, so a truthful
+  evaluator answered no. Each measure now declares its own known-answer texts, and the refusal
+  names the failing threshold and every text's expected/got.
+- The release reads `ZZ_CATALOG_OWNER_TEAM` from the host's `deploy/.env` when neither the
+  environment nor the local `.env` sets it, and refuses before building without it. A failed
+  `register-plugins` is now a verification failure and the release rolls back; 0.76.2 logged it
+  as a warning and left every plugin with `release_owners` [].
+- `handover.md` now requires the document its branch closes on (`findings.md`, `proposal.md` or
+  `improvement.md`), not `improvement.md` on every branch.
+- A skill's registered `content_hash` is now the sha256 of its SKILL.md, not `<size>-<length>`.
+
+### Upgrade notes
+- **Migration:** `002_remove_replay.sql` (shipped in 0.76.2) is absorbed into `001_init.sql`. This
+  release's one migration is `002_a_finding_can_be_corrected.sql`, which adds
+  `zz.eval_finding.superseded_by`.
+- **Breaking:** an sdlc-flow spec without `## Phase outline` and `## Core statements` is no longer
+  approvable; every caller approving an sdlc-flow spec must write them.
+- **Breaking:** `document_approve` refuses `review.md` until at least one sdlc-review round is
+  recorded; a stakeholder source saying "The review sweep is waived: <why>" is the only exception,
+  and the approval names it. Record round 1 (or the waiver) before approving. sdlc-review 1.10.
+- **Breaking:** a `bounded_semantic`/`generative_critic` measure's `definition.qualification` is
+  now `{ anchors: [{ id, role: anchor|fault|control, text, expected }] }`, not
+  `{ positive, zero }`. `protocol_record` refuses a model-backed measure without anchors of two
+  answers, a fault and a control. Re-record protocols with anchors; see the define-qualify skill.
+  `evaluator_qualify` evidence gains `reason` (named thresholds) and `results`. The zz-core
+  reference protocol drops `document_frontmatter_conformance` and its guardrail.
+- **Breaking:** `scoreRun` and `evaluation_score`: a dimension scores from its scored measures and
+  reports `coverage`. The run returns `score_coverage` and `coverage_floor` (0.5), and
+  `eval_run.coverage` gets `measures` and `measures_floor`. `overall_score` is null only when
+  nothing scored, so a not_established run can now carry a number. Status: provisional needs
+  coverage >= 0.5; established needs every required measure scored. `evaluation_score` also
+  returns `readings`, and `dimension_scores[].coverage` is new.
+- **Breaking:** `plugin_profile`: `coverage.surface` counts only the plugin's own tools
+  (skill-named tools that are also on its door's recorded surface) and carries `source`.
+  `never_called` and `tool_coverage` use the same set. `traces.run_refs` and
+  `traces.run_refs_truncated` are new.
+- **Breaking:** `evaluation_assess`: a measure is asked only of refs of its kind. Unqualified
+  evaluators are no longer asked; they get one run-level excluded row. Deterministic, outcome and
+  human measures are one row per run under `observation_snapshot:<id>`. The response adds
+  `model_calls` and `excluded`. `subject_ref` accepts `bug:<uuid>`, and `_knowledge/` paths count
+  as kind knowledge.
+
 ## [0.76.2] — 2026-09-26
 
 ### Changed

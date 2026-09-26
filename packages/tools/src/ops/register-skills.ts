@@ -14,7 +14,7 @@
  *                is zz.plugin_version_skill, written per release by register-plugins.
  */
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { manifestAt } from "@zz/catalog";
@@ -107,9 +107,10 @@ function findSkills(root: string): Found[] {
         kind: flow ? "flow_step" : "plugin_skill",
         flow,
         version: field(text, "version") || "unknown",
-        // The hash of the file, so a score can prove which bytes it belongs to. Not of the
-        // parsed fields: a change to the prose is exactly the change worth detecting.
-        hash: String(statSync(p).size) + "-" + text.length.toString(16),
+        // sha256 of the file, so a score can prove which bytes it belongs to — the same kind of
+        // digest plugin_locate gives a server or a flow beside it. Not of the parsed fields: a
+        // change to the prose is exactly the change worth detecting.
+        hash: createHash("sha256").update(text).digest("hex"),
         bodyHash: bodyHashOf(text),
         dir,
       });

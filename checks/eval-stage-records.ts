@@ -8,6 +8,12 @@
 // Drives the real `initiativeState` and `writeStageRecord` over a fixture chain shaped like
 // zz-plugin-eval's own: record stages ahead of a `when`-conditional document, and one between two
 // documents.
+//
+// And the acts DEFINE/QUALIFY owes after protocol.md is approved (2026-09-26-eval-zz-core, where
+// next_move said run EVALUATE while protocol_affirm and evaluator_qualify were still owed): once
+// protocol_read has recorded `owes`, an approved protocol.md routes to affirm, then to qualify
+// until every owed measure has a state, and only then to EVALUATE. The record is written in the
+// shape stage-record.ts's helpers write, through their own pure half.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +22,7 @@ import { pathToFileURL } from "node:url";
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { initiativeState } = await load("services/zz-core/dist/tools/initiative-status.js");
 const { recordsFor, writeStageRecord } = await load("services/zz-core/dist/initiative-record.js");
+const { qualifiedUpdate } = await load("services/zz-core/dist/eval/stage-record.js");
 
 const fail: string[] = [];
 const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
@@ -63,7 +70,28 @@ try {
   writeFileSync(join(root, I, "_facts.json"), JSON.stringify({ protocol_action: "create" }));
   writeFileSync(join(root, I, "protocol.md"), "---\ntitle: P\nstatus: approved\napproved_by: ada@zz.test\n---\n\n# P\n");
   n = next();
-  is(n.action === "run_stage" && n.stage === "evaluate", `protocol.md approved: next_move is ${JSON.stringify(n)}, not run_stage evaluate`);
+  is(n.action === "run_stage" && n.stage === "evaluate", `protocol.md approved, nothing owed: next_move is ${JSON.stringify(n)}, not run_stage evaluate`);
+
+  // protocol_read recorded what DEFINE owes: approved is not bound, bound is not qualified.
+  writeStageRecord(root, I, "define", { owes: "protocol_affirm,evaluator_qualify" });
+  n = next();
+  is(n.action === "run_stage" && n.stage === "define" && /protocol_affirm\(/.test(n.why),
+     `protocol.md approved, not affirmed: next_move is ${JSON.stringify(n)}, not run_stage define naming protocol_affirm`);
+  writeStageRecord(root, I, "define", { protocol_version_id: "pv-1", protocol_affirm: `${I}/protocol.md`, qualify_owed: "m.a,m.b" });
+  n = next();
+  is(n.action === "run_stage" && n.stage === "define" && /evaluator_qualify\("pv-1"/.test(n.why) && /m\.a, m\.b/.test(n.why),
+     `affirmed, nothing qualified: next_move is ${JSON.stringify(n)}, not run_stage define naming evaluator_qualify for m.a, m.b`);
+  const held = () => recordsFor(root, I).define;
+  is(qualifiedUpdate(held(), "pv-other", "m.a", "qualified") === null,
+     "a qualification of a version this initiative did not affirm is recorded");
+  writeStageRecord(root, I, "define", qualifiedUpdate(held(), "pv-1", "m.a", "qualified"));
+  n = next();
+  is(n.action === "run_stage" && n.stage === "define" && /for m\.b before/.test(n.why),
+     `one of two qualified: next_move is ${JSON.stringify(n)}, not run_stage define naming m.b alone`);
+  writeStageRecord(root, I, "define", qualifiedUpdate(held(), "pv-1", "m.b", "unqualified"));
+  n = next();
+  is(n.action === "run_stage" && n.stage === "evaluate",
+     `every owed measure has a state: next_move is ${JSON.stringify(n)}, not run_stage evaluate`);
   writeStageRecord(root, I, "evaluate", { eval_run_id: "e-1" });
   n = next();
   is(n.action === "write_document" && n.document === "findings.md", `evaluate recorded: next_move is ${JSON.stringify(n)}, not findings.md`);

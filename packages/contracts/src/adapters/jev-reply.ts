@@ -33,8 +33,8 @@
  * reads the status alone.
  *
  * DELIBERATE: the score distribution does not go through the port's native channel, which
- * requires a distribution to sum to one within 1e-3. The supplier rounds each level to two
- * decimals without renormalising, so a well-formed reply summing to 0.99 would be refused. The
+ * requires a distribution to sum to one within its rounding bound (0.005 per key). The supplier's
+ * per-level probabilities are carried as readings, not as the port's distribution. The
  * shape is checked here instead — every key a level this question declared, every value a
  * probability — and the map is carried verbatim, unsummed and unnormalised.
  *

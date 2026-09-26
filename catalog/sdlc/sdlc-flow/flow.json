@@ -78,7 +78,9 @@
         "Approach, Method & Structure",
         "Verification Plan",
         "Risks & Mitigations",
-        "Stakeholders & Work"
+        "Stakeholders & Work",
+        "Phase outline",
+        "Core statements"
       ],
       "stage": "sdlc-spec"
     },

@@ -4,32 +4,32 @@
     "sha": "115360726930"
   },
   "sdlc-execute": {
-    "version": "1.12",
-    "sha": "e0e1e2b0f03b"
+    "version": "1.13",
+    "sha": "c175871d18e8"
   },
   "sdlc-explore": {
     "version": "1.10",
     "sha": "476be4f41550"
   },
   "sdlc-flow": {
-    "version": "2.11",
-    "sha": "7828861c8ce0"
+    "version": "2.12",
+    "sha": "f14d68f464bd"
   },
   "sdlc-investigate": {
     "version": "1.4",
     "sha": "9c23d509eaeb"
   },
   "sdlc-method": {
-    "version": "1.17",
-    "sha": "97f5a1cfba37"
+    "version": "1.18",
+    "sha": "992f74febdfe"
   },
   "sdlc-plan-audit": {
-    "version": "2.6",
-    "sha": "b363bfa72cf0"
+    "version": "2.7",
+    "sha": "965b82d7a92c"
   },
   "sdlc-plan": {
-    "version": "1.16",
-    "sha": "7938cfad68ca"
+    "version": "1.17",
+    "sha": "adf202160c3f"
   },
   "sdlc-recall": {
     "version": "1.11",
@@ -40,16 +40,16 @@
     "sha": "aa813e7243b0"
   },
   "sdlc-review": {
-    "version": "1.9",
-    "sha": "89bdd9a085ee"
+    "version": "1.10",
+    "sha": "76fd58d4fa0a"
   },
   "sdlc-spec-audit": {
-    "version": "2.5",
-    "sha": "6b66398b8905"
+    "version": "2.6",
+    "sha": "3b3ff23aa985"
   },
   "sdlc-spec": {
-    "version": "1.11",
-    "sha": "bdc33d47864d"
+    "version": "1.12",
+    "sha": "1e19dcd52b85"
   },
   "zz-access": {
     "version": "2.6",
@@ -72,36 +72,36 @@
     "sha": "a5d73e2d40eb"
   },
   "zz-plugin-define-qualify": {
-    "version": "0.6",
-    "sha": "2c1fc03379e3"
+    "version": "0.7",
+    "sha": "bfd3b977e7b2"
   },
   "zz-plugin-discover": {
-    "version": "0.2",
-    "sha": "c1aa0b1efc30"
+    "version": "0.3",
+    "sha": "9e4f866421af"
   },
   "zz-plugin-eval": {
-    "version": "2.5",
-    "sha": "ebad285aea69"
+    "version": "2.6",
+    "sha": "ff799fe40724"
   },
   "zz-plugin-evaluate": {
-    "version": "0.5",
-    "sha": "c6f1bf1dbd82"
+    "version": "0.6",
+    "sha": "3d07df83d8ce"
   },
   "zz-plugin-explain": {
-    "version": "0.4",
-    "sha": "f78027925f93"
+    "version": "0.5",
+    "sha": "31e3572df5b6"
   },
   "zz-plugin-identify": {
-    "version": "0.3",
-    "sha": "43922e8fc94f"
+    "version": "0.4",
+    "sha": "048a5cc37a08"
   },
   "zz-plugin-improve": {
     "version": "0.10",
     "sha": "b07afbe310ae"
   },
   "zz-plugin-observe": {
-    "version": "0.2",
-    "sha": "f2cb98fea501"
+    "version": "0.3",
+    "sha": "43894ee26501"
   },
   "zz-plugin-promote-verify": {
     "version": "0.9",

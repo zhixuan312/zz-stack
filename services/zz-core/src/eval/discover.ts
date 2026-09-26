@@ -309,6 +309,13 @@ async function insertCandidate(
   };
 }
 
+/** Which owner an owner_kind names, where the evidence says: `plugin` is the plugin under
+ *  evaluation, by name. Null where nothing here knows which part of the platform, dependency,
+ *  environment or input it was. */
+function ownerRef(ownerKind: string, plugin: string): string | null {
+  return ownerKind === "plugin" ? plugin : null;
+}
+
 /** One candidate row, fully decided and not yet written. */
 interface PlannedCandidate {
   readonly description: string;
@@ -353,12 +360,19 @@ async function planCandidates(
             `(platform-attributed owner: ${g.owner}).`,
           source: { kind: "description_source", method: "deterministic" } as Record<string, unknown> }
       : await criticDescribe(pool, snapshot, g, outage);
-    const classification = await classifyOwnerKind(
+    const asked = await classifyOwnerKind(
       evaluatorVersionId, refusalSubject(g), pluginContext(snapshot), principal, outage);
+    // A plugin that serves its own door IS platform code: its refusals come from its own tools,
+    // so "platform" names no owner a finding could be routed to, and IMPROVE refuses anything
+    // not owned by `plugin`. The evaluator's own answer stays on the ref as `folded_from`.
+    const folded = serves && asked.owner_kind === "platform";
+    const classification: Classification = folded ? { ...asked, owner_kind: "plugin" } : asked;
     const evidenceRefs: unknown[] = [
       ...g.sample_event_ids.map((event_id) => ({ kind: "event", event_id })),
       built.source,
-      { kind: "ownership", evaluator: "discover.owner_kind", reason: classification.note },
+      { kind: "ownership", evaluator: "discover.owner_kind", reason: classification.note,
+        owner_ref: ownerRef(classification.owner_kind, snapshot.plugin),
+        ...(folded ? { folded_from: "platform" } : {}) },
       { kind: "discovery_run", principal, idempotency_key: idempotencyKey },
     ];
     planned.push({
@@ -376,7 +390,8 @@ async function planCandidates(
     const evidenceRefs: unknown[] = [
       ...g.sample_initiatives.map((initiative) => ({ kind: "initiative", initiative })),
       { kind: "description_source", method: "deterministic" },
-      { kind: "ownership", evaluator: "discover.owner_kind", reason: classification.note },
+      { kind: "ownership", evaluator: "discover.owner_kind", reason: classification.note,
+        owner_ref: ownerRef(classification.owner_kind, snapshot.plugin) },
       { kind: "discovery_run", principal, idempotency_key: idempotencyKey },
     ];
     planned.push({ description, prevalence: { numerator: g.count, denominator: totalVisits }, classification, evidenceRefs });

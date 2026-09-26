@@ -6,7 +6,7 @@
  *
  * Two grouping passes, because the plan header names two evidence shapes and "prevalence" means
  * a different population for each:
- *   - REFUSAL groups: one (tool, normalised refusal text, owner) triple per group, over the
+ *   - REFUSAL groups: one (tool, refusal rule, owner) triple per group, over the
  *     exact event population `toolCallEvents` already bounds `pluginTraces`' own `use` rows to.
  *     Denominator is the total tool-call events in the window — the same population
  *     `tool_refusal_rate` (observe-facts.ts) reports against, so a reader can cross-check one
@@ -78,7 +78,7 @@ export async function refusalGroups(
      order by count(*) desc
      limit 50`,
     [plugin, version, window.from, window.to])).rows;
-  return rows.map((r) => ({
+  return foldByRule(rows.map((r) => ({
     kind: "refusal" as const,
     tool: r.tool,
     normalized_text: r.normalized,
@@ -86,7 +86,59 @@ export async function refusalGroups(
     count: Number(r.n),
     sample_event_ids: r.sample_ids ?? [],
     sample_raw_texts: r.sample_raw ?? [],
-  }));
+  })));
+}
+
+/** Grammatical number, folded to one form: the same refusal says "supports … was added" for one
+ *  file and "support … were added" for two. Only these pairs — a rule is otherwise its words. */
+const NUMBER: readonly [RegExp, string][] = [
+  [/\bsupports\b/g, "support"], [/\bwere\b/g, "was"], [/\bare\b/g, "is"], [/\bthey\b/g, "it"],
+  [/\bthem\b/g, "it"], [/\bthese\b/g, "this"], [/\bthose\b/g, "that"], [/\bhave\b/g, "has"],
+];
+
+/** The rule a normalised refusal states, with the files it happened to name folded out. The
+ *  normalised text still carries paths and document names, so one refusal family — "a source
+ *  added after the version you are replacing must be cited" — arrived as one candidate per
+ *  document it named (spec.md, plan.md) and per count of sources. A token with a `/` in it, or
+ *  a name with a file extension, is a file; a list of files is one. */
+export function refusalRule(normalized: string): string {
+  let rule = foldFiles(normalized);
+  for (const [from, to] of NUMBER) rule = rule.replace(from, () => to);
+  return rule;
+}
+
+/** The refusal with its files folded out and its grammar left alone — what a candidate's
+ *  description says and the owner-kind evaluator reads. `refusalRule` is only the merge key. */
+function foldFiles(normalized: string): string {
+  const folded = normalized.split(/(\s+)/).map((tok) => {
+    const m = /^([`'"(]*)(.*?)([`'"),.;:]*)$/.exec(tok);
+    if (!m || !m[2]) return tok;
+    const core = m[2];
+    return core.includes("/") || /^[\w<>#-]+\.(md|json|ya?ml|ts|js|txt)$/.test(core) ? `${m[1]}<file>${m[3]}` : tok;
+  }).join("");
+  return folded.replace(/<file>(?:,\s*<file>)*(?:,?\s+and\s+<file>)?/g, "<file>");
+}
+
+/** One group per (tool, rule, owner): the rows `refusalRule` says state the same rule are one
+ *  failure mode, their counts summed and their samples pooled. Most frequent first, as before. */
+export function foldByRule(groups: readonly RefusalGroup[]): RefusalGroup[] {
+  const byKey = new Map<string, RefusalGroup & { sample_event_ids: string[]; sample_raw_texts: string[] }>();
+  for (const g of groups) {
+    const rule = refusalRule(g.normalized_text);
+    const key = `${g.tool}\u0000${rule}\u0000${g.owner}`;
+    const had = byKey.get(key);
+    if (!had) {
+      byKey.set(key, { ...g, normalized_text: foldFiles(g.normalized_text), sample_event_ids: [...g.sample_event_ids],
+                       sample_raw_texts: [...g.sample_raw_texts] });
+      continue;
+    }
+    byKey.set(key, {
+      ...had, count: had.count + g.count,
+      sample_event_ids: [...new Set([...had.sample_event_ids, ...g.sample_event_ids])].slice(0, 5),
+      sample_raw_texts: [...new Set([...had.sample_raw_texts, ...g.sample_raw_texts])].slice(0, 3),
+    });
+  }
+  return [...byKey.values()].sort((a, b) => b.count - a.count);
 }
 
 /** The total tool-call population `refusalGroups`' own denominators are a share of — the exact

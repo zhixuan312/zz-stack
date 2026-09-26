@@ -23,7 +23,7 @@ import { join } from "node:path";
 
 import { ENVELOPE_BLOCK, parseEnvelope } from "@zz/contracts";
 
-import { assessFamily, readRoundAssessments, writeRoundAssessments, type Assessment } from "./semantic.js";
+import { assessFamily, readRoundAssessments, writeRoundAssessments } from "./semantic.js";
 import type { Chain } from "./write-guards.js";
 
 const stripEnvelope = (s: string): string => s.replace(ENVELOPE_BLOCK, "");
@@ -44,7 +44,7 @@ export function auditRoundOf(chain: Chain, stage: string | undefined,
   return doc && supports.includes(doc) ? { stage, document: doc } : null;
 }
 
-interface Round { file: string; version: number; added_at: string; title: string }
+interface Round { file: string; version: number; added_at: string }
 
 const supportsOf = (env: Record<string, string>) =>
   (env.supports || "").split(",").map((x) => x.trim()).filter(Boolean);
@@ -57,8 +57,7 @@ function roundsOf(dir: string, stage: string, document: string): Round[] {
   for (const f of readdirSync(src).filter((x) => x.endsWith(".md"))) {
     const env = parseEnvelope(readFileSync(join(src, f), "utf8"));
     if (env.stage !== stage || !supportsOf(env).includes(document)) continue;
-    out.push({ file: f, version: Number(env.audits_version) || 1, added_at: env.added_at || "",
-               title: env.title || f });
+    out.push({ file: f, version: Number(env.audits_version) || 1, added_at: env.added_at || "" });
   }
   return out.sort((a, b) => a.added_at.localeCompare(b.added_at) || a.file.localeCompare(b.file));
 }
@@ -75,34 +74,25 @@ function decidedSince(dir: string, document: string, since: string): boolean {
 }
 
 /**
- * Ask the two questions an audit round's routing depends on, record them, and say what came back.
- * Runs inside `source_add`; an unavailable service is recorded as such and the deterministic rule
- * routes alone.
+ * Ask the one question an audit round's routing depends on — does it reopen something already
+ * agreed — record it, and say what came back. Runs inside `source_add`; an unavailable service is
+ * recorded as such and the deterministic rule routes alone.
+ *
+ * DELIBERATE: `repeats_finding` is not asked. No move depends on it: a round on the current
+ * version that reopens nothing already settles, and a revision after the last round owes a round
+ * whether or not that round repeated the one before — its findings are what the revision answered.
  */
 export async function assessRound(root: string, initiative: string, rel: string, document: string,
                                   content: string, by: string): Promise<string> {
   const dir = join(root, initiative);
   const file = rel.split("/").pop() ?? rel;
-  const env = parseEnvelope(readFileSync(join(dir, "sources", file), "utf8"));
-  const earlier = roundsOf(dir, env.stage, document).filter((r) => r.file !== file);
   const agreed = existsSync(join(dir, document)) ? stripEnvelope(readFileSync(join(dir, document), "utf8")) : "";
-  const previous = earlier.map((r) =>
-    `## ${r.title} (read v${r.version})\n` +
-    stripEnvelope(readFileSync(join(dir, "sources", r.file), "utf8"))).join("\n\n");
-  const about = `sources/${file}`;
-  const asked: Array<Promise<Assessment>> = [
-    assessFamily({ family: "changes_commitment", subject: content, context: agreed,
-                   initiative, about, askedBy: by }),
-  ];
-  if (earlier.length) {
-    asked.push(assessFamily({ family: "repeats_finding", subject: content, context: previous,
-                              initiative, about, askedBy: by }));
-  }
-  const answers = await Promise.all(asked);
-  writeRoundAssessments(root, initiative, file, answers);
-  return "assessed: " + answers.map((a) =>
-    `${a.family} = ${a.reading}` + (a.probability !== null ? ` (p=${a.probability.toFixed(2)})` : "") +
-    (a.reason ? ` — ${a.reason}` : "")).join("; ");
+  const answer = await assessFamily({ family: "changes_commitment", subject: content, context: agreed,
+                                      initiative, about: `sources/${file}`, askedBy: by });
+  writeRoundAssessments(root, initiative, file, [answer]);
+  return `assessed: ${answer.family} = ${answer.reading}` +
+    (answer.probability !== null ? ` (p=${answer.probability.toFixed(2)})` : "") +
+    (answer.reason ? ` — ${answer.reason}` : "");
 }
 
 interface AuditMove { action: string; document: string; waiting_on: string; why: string }
@@ -128,7 +118,6 @@ export function auditMove(root: string, initiative: string, stage: string, docum
   const n = rounds.length;
   const a = readRoundAssessments(root, initiative, last.file);
   const reopens = a.changes_commitment?.reading === "yes";
-  const repeats = a.repeats_finding?.reading === "yes";
   const decided = decidedSince(dir, document, last.added_at);
   if (reopens && last.version === version && !decided) {
     return { action: "decide", document, waiting_on: "stakeholder",
@@ -142,9 +131,8 @@ export function auditMove(root: string, initiative: string, stage: string, docum
     if (n < ROUND_BUDGET) {
       // NOT A TOOL: `add_source` is next_move's own vocabulary; the call is source_add, named in `why`.
       return { action: "add_source", document, waiting_on: "agent",
-               why: `${document} is v${version}; round ${n} read v${last.version}` +
-                    (repeats ? " and mostly repeated the round before it" : "") +
-                    `. Round ${n + 1} checks the revision — dispatch it, then ${call}.` };
+               why: `${document} is v${version}; round ${n} read v${last.version}. ` +
+                    `Round ${n + 1} checks the revision — dispatch it, then ${call}.` };
     }
     if (!decided) {
       return { action: "decide", document, waiting_on: "stakeholder",

@@ -1,222 +1,96 @@
 /**
  * Evidence gathering for `evaluator_qualify` (Task I-11): anchors, planted faults, controls,
- * stability and labels, each read from the same sources the contract names.
+ * stability and labels.
  *
- *   - Anchors are known answers derived from snapshot facts (FR-16): this platform's own
- *     `zz.eval_observation_snapshot` already carries `usable_run_count`/`total_run_count` and a
- *     `coverage.surface.{observed,total}` pair — real counted numbers, not recomputed here — so
- *     an anchor is a plain-English statement of one of those counts, with a YES/NO-shaped truth
- *     value ("more than zero") the evaluator is asked to read off it. Which two strings in the
- *     evaluator's OWN vocabulary count as "yes" and "no" is protocol content this task's own
- *     boundary leaves free ("final deliverable content is not in this plan"): the bound
- *     `zz.eval_measure.definition.qualification` object names them as `{ positive, zero }`. No
- *     measure bound to this evaluator in this protocol version, or no `qualification` object on
- *     it, means no anchor can be built — the contract's own `no_anchors` path.
- *   - Planted faults are mutations of an anchor built from the evaluator's own failure mode: the
- *     one fact this file can mutate cheaply and still know the true answer to is the count's own
- *     sign, so a fault flips "more than zero" to "zero" (or back) and asks again. Killed means
- *     the evaluator's answer flipped with it — proof it is reading the number, not repeating a
- *     memorised answer.
- *   - Controls are another plugin's own real evidence (never a mutation): the same fact,
- *     unmutated, read off the most recently observed OTHER plugin. A control passes (the
- *     response's `failed_as_expected`) when the evaluator answers what the FOREIGN number says —
- *     proof it reads the number in front of it rather than an answer it holds for this plugin.
- *   - Stability is the first anchor, asked three times; `agreeing` counts the modal answer.
+ *   - Anchors, faults and controls are the measure's OWN known-answer texts, declared in the
+ *     protocol as `definition.qualification.anchors: [{ id, role, text, expected }]`
+ *     (`MeasureQualification` in `@zz/contracts`). Each is asked the measure's own question —
+ *     the evaluator version is the measure's — and passes when the answer is `expected`. An
+ *     earlier version built anchors from snapshot counts ("Of N runs … M were usable") and asked
+ *     them against questions about documents and runs: a truthful evaluator answered no to every
+ *     one, and no model-backed measure could ever qualify.
+ *   - `role: "anchor"` feeds the anchor pass rate, `"fault"` (a good example with one planted
+ *     defect) the fault kill rate, `"control"` (an artifact of another kind) the control catch rate.
+ *   - Stability is the first `anchor` entry, asked three more times; `agreeing` counts the modal
+ *     answer.
  *   - Labels come only through the protocol's `qualification.labelMappings`, matched by this
  *     evaluator's own `stable_key` — see `parseLabelMappings`/`mappingFor`. The correlation this
  *     needs (a specific evaluator answer tied to a specific `zz.eval_finding` decision, through
  *     `zz.eval_assessment`) has no writer yet: EVALUATE, a later task, is what populates
  *     `zz.eval_assessment`. The query below is real and will be exercised the day that exists;
- *     until then it finds nothing, and `labels: null` is not a shortfall here — it is what
- *     "final deliverable content is not in this plan" means for the fourth rung.
+ *     until then it finds nothing, and `labels: null` is not a shortfall here.
  */
 import type pg from "pg";
 
-import { askEvaluatorQuestion, type AskedEvaluatorAnswer, type EvaluatorAssessmentResult } from "../semantic.js";
+import type { MeasureAnchor } from "@zz/contracts";
+
+import type { EvaluatorAssessmentResult } from "../semantic.js";
 import type { LadderCounts, LadderLabels } from "./qualify-ladder.js";
 
-/** The evaluator's own vocabulary for "this count is positive" / "this count is zero", named by
- *  the bound measure's `definition.qualification` — the one piece of protocol content an anchor
- *  needs and this task does not fix a platform-wide value for (a `choice` evaluator's criteria
- *  keys are its own protocol's business). Not exported: `qualify.ts` passes this shape into
- *  `gatherCountedEvidence` structurally, never by this type's name. */
-interface AnchorVocabulary { readonly positive: string; readonly zero: string }
-
-/** The two counted facts this file knows how to state in English, each a real column (or a
- *  column's own nested field) already stored on `zz.eval_observation_snapshot` — never
- *  recomputed, so gathering evidence costs no re-derivation of OBSERVE's own work. */
-const FACT_STATEMENTS: Readonly<Record<string, (n: number, d: number) => string>> = Object.freeze({
-  usable_run_coverage: (n, d) =>
-    `Of ${d} run(s) recorded for this plugin in its most recently observed window, ${n} were usable.`,
-  tool_coverage: (n, d) =>
-    `Of ${d} tool(s) this plugin can reach, ${n} were actually called in its most recently observed window.`,
-});
-
-export interface SnapshotRow {
-  readonly id: string;
-  readonly usable_run_count: number;
-  readonly total_run_count: number;
-  readonly coverage: { surface?: { observed?: number; total?: number } } | null;
-}
-
-function factValue(key: string, snapshot: SnapshotRow): { n: number; d: number } | null {
-  if (key === "usable_run_coverage") {
-    const d = snapshot.total_run_count;
-    return d > 0 ? { n: snapshot.usable_run_count, d } : null;
-  }
-  if (key === "tool_coverage") {
-    const d = snapshot.coverage?.surface?.total ?? 0;
-    const n = snapshot.coverage?.surface?.observed ?? 0;
-    return d > 0 ? { n, d } : null;
-  }
-  return null;
-}
-
-/** One anchor as this file builds it: which fact it came from, the counted numbers behind it (so
- *  a fault or a control can recompute the statement against a different numerator), the subject
- *  text the evaluator is actually asked about, and the expected answer in the evaluator's own
- *  vocabulary. */
-interface Anchor {
-  readonly key: string;
-  readonly n: number;
-  readonly d: number;
-  readonly subject: string;
-  readonly expected: string;
-}
-
-/** Every anchor this snapshot and this vocabulary can support — at most one per entry in
- *  `FACT_STATEMENTS`, so at most two today. `vocabulary === null` (no bound measure, or a bound
- *  measure with no usable `qualification` object) yields no anchors at all: the contract's own
- *  `no_anchors` path, reached honestly rather than guessed at. */
-function buildAnchors(snapshot: SnapshotRow | null, vocabulary: AnchorVocabulary | null): Anchor[] {
-  if (!snapshot || !vocabulary) return [];
-  const anchors: Anchor[] = [];
-  for (const key of Object.keys(FACT_STATEMENTS)) {
-    const fact = factValue(key, snapshot);
-    if (!fact) continue;
-    const expected = fact.n > 0 ? vocabulary.positive : vocabulary.zero;
-    anchors.push({ key, n: fact.n, d: fact.d, subject: FACT_STATEMENTS[key](fact.n, fact.d), expected });
-  }
-  return anchors;
-}
-
-/** The same fact, its numerator's sign flipped ("more than zero" <-> "zero"), which flips the
- *  expected answer with it. This IS the mutation: the evaluator's failure mode this file can
- *  target without a model of its own is "answers from memory rather than from the number it was
- *  handed", and flipping the sign is the smallest change that tests exactly that. */
-function faultOf(anchor: Anchor, vocabulary: AnchorVocabulary): Anchor {
-  const n = anchor.n > 0 ? 0 : anchor.d;
-  const expected = n > 0 ? vocabulary.positive : vocabulary.zero;
-  return { key: anchor.key, n, d: anchor.d, subject: FACT_STATEMENTS[anchor.key](n, anchor.d), expected };
-}
-
-/** The same fact key, read off a DIFFERENT plugin's own real (unmutated) snapshot — the
- *  contract's "controls come from other plugins' artifacts" — with the answer ITS numbers call
- *  for. `null` when the foreign snapshot never recorded this fact (a zero denominator) — that
- *  fact key simply contributes no control. */
-export function controlOf(anchor: Anchor, foreign: SnapshotRow, vocabulary: AnchorVocabulary): { subject: string; expected: string } | null {
-  const fact = factValue(anchor.key, foreign);
-  if (!fact) return null;
-  return { subject: FACT_STATEMENTS[anchor.key](fact.n, fact.d), expected: fact.n > 0 ? vocabulary.positive : vocabulary.zero };
-}
+type Answer = Pick<EvaluatorAssessmentResult, "answer_kind" | "reading" | "distribution">;
 
 /** What one asked answer reduces to, in whatever vocabulary the evaluator's own kind speaks: a
  *  `noul`'s `yes`/`no` reading (never `unclear`/`unavailable` — those match no anchor's expected
  *  string by construction), or a `choice`/`score`'s highest-probability option. `null` means no
  *  comparable answer came back — a distribution-less choice/score, or an unavailable noul. */
-function normalizeAnswer(r: Pick<EvaluatorAssessmentResult, "answer_kind" | "reading" | "distribution">): string | null {
+function normalizeAnswer(r: Answer): string | null {
   if (r.answer_kind === "noul") return r.reading === "yes" || r.reading === "no" ? r.reading : null;
   if (!r.distribution) return null;
   const top = Object.entries(r.distribution).sort((a, b) => b[1] - a[1])[0];
   return top ? top[0] : null;
 }
 
-/** anchors + planted faults + controls + stability, all four counted-evidence categories the
- *  ladder reads, gathered against one evaluator version. Every ask goes through
- *  `askEvaluatorQuestion` directly (this file already holds the `evaluator_version_id` it
- *  needs — the same reason `discover.ts` bypasses `evaluators.ts`'s `askEvaluator` wrapper) and
- *  records NOTHING: each answer comes back in `asked`, in ask order, for the caller to write
- *  through its own transaction (`qualify.ts`'s `recordQualification`). Asking here and writing
- *  there keeps every model call (up to nine, each up to ~100s) outside any open transaction. */
+/** One known-answer text as it came back: which entry, what it expected, what the evaluator said.
+ *  `role: "stability"` rows are the repeated asks of the first anchor. */
+export interface AnchorResult {
+  readonly id: string;
+  readonly role: MeasureAnchor["role"] | "stability";
+  readonly expected: string;
+  readonly got: string | null;
+}
+
+/** anchors + planted faults + controls + stability, the four counted-evidence categories the
+ *  ladder reads, from the measure's declared texts. `ask` is the one model call — `qualify.ts`
+ *  hands in one that asks the measure's evaluator version and keeps every answer for its own
+ *  transaction to write; a check hands in a stub. Nothing here touches a database. */
 export async function gatherCountedEvidence(opts: {
-  evaluatorVersionId: string;
-  principal: string;
-  snapshot: SnapshotRow | null;
-  foreignSnapshot: SnapshotRow | null;
-  vocabulary: AnchorVocabulary | null;
+  anchors: readonly MeasureAnchor[];
+  ask: (text: string) => Promise<Answer>;
 }): Promise<{
   counts: { anchors: LadderCounts; planted_faults: LadderCounts; controls: LadderCounts; stability: LadderCounts };
-  asked: AskedEvaluatorAnswer[];
+  results: AnchorResult[];
 }> {
-  const asked: AskedEvaluatorAnswer[] = [];
-  const ask = async (subject: string): Promise<string | null> => {
-    const answer = await askEvaluatorQuestion({
-      evaluator_version_id: opts.evaluatorVersionId, subject_text: subject, askedBy: opts.principal,
-    });
-    asked.push(answer);
-    return normalizeAnswer(answer.result);
-  };
-  const anchors = buildAnchors(opts.snapshot, opts.vocabulary);
-  if (!anchors.length) {
-    return {
-      counts: {
-        anchors: { passed: 0, total: 0 }, planted_faults: { passed: 0, total: 0 },
-        controls: { passed: 0, total: 0 }, stability: { passed: 0, total: 0 },
-      },
-      asked,
-    };
+  const results: AnchorResult[] = [];
+  const empty = { passed: 0, total: 0 };
+  const first = opts.anchors.find((a) => a.role === "anchor");
+  if (!first) {
+    return { counts: { anchors: empty, planted_faults: empty, controls: empty, stability: empty }, results };
   }
 
-  let anchorsPassed = 0;
-  for (const a of anchors) {
-    const answer = await ask(a.subject);
-    if (answer === a.expected) anchorsPassed += 1;
+  const tally = { anchor: { passed: 0, total: 0 }, fault: { passed: 0, total: 0 }, control: { passed: 0, total: 0 } };
+  for (const a of opts.anchors) {
+    const got = normalizeAnswer(await opts.ask(a.text));
+    results.push({ id: a.id, role: a.role, expected: a.expected, got });
+    tally[a.role].total += 1;
+    if (got === a.expected) tally[a.role].passed += 1;
   }
 
-  let faultsKilled = 0;
-  let faultsTotal = 0;
-  if (opts.vocabulary) {
-    for (const a of anchors) {
-      const fault = faultOf(a, opts.vocabulary);
-      faultsTotal += 1;
-      const answer = await ask(fault.subject);
-      if (answer === fault.expected) faultsKilled += 1;
-    }
-  }
-
-  let controlsFailedAsExpected = 0;
-  let controlsTotal = 0;
-  if (opts.foreignSnapshot && opts.vocabulary) {
-    for (const a of anchors) {
-      const control = controlOf(a, opts.foreignSnapshot, opts.vocabulary);
-      if (!control) continue;
-      controlsTotal += 1;
-      const answer = await ask(control.subject);
-      // Passed when the evaluator answers what the FOREIGN number says. Measuring it against this
-      // plugin's own anchor instead failed every truthful evaluator whenever the other plugin's
-      // count had the same sign as this one's — two plugins both in use, the ordinary case — and
-      // capped every measure at mechanically_qualified for reading correctly.
-      if (answer === control.expected) controlsFailedAsExpected += 1;
-    }
-  }
-
-  const stabilityAnchor = anchors[0];
-  const stabilityAnswers: (string | null)[] = [];
-  for (let i = 0; i < 3; i += 1) {
-    stabilityAnswers.push(await ask(stabilityAnchor.subject));
+  const firstAnswer = results.find((r) => r.id === first.id)?.got ?? null;
+  const repeats: (string | null)[] = [firstAnswer];
+  for (let i = 0; i < 2; i += 1) {
+    const got = normalizeAnswer(await opts.ask(first.text));
+    results.push({ id: first.id, role: "stability", expected: first.expected, got });
+    repeats.push(got);
   }
   const modal = new Map<string | null, number>();
-  for (const a of stabilityAnswers) modal.set(a, (modal.get(a) ?? 0) + 1);
-  const agreeing = Math.max(...modal.values());
+  for (const a of repeats) modal.set(a, (modal.get(a) ?? 0) + 1);
 
   return {
     counts: {
-      anchors: { passed: anchorsPassed, total: anchors.length },
-      planted_faults: { passed: faultsKilled, total: faultsTotal },
-      controls: { passed: controlsFailedAsExpected, total: controlsTotal },
-      stability: { passed: agreeing, total: 3 },
+      anchors: tally.anchor, planted_faults: tally.fault, controls: tally.control,
+      stability: { passed: Math.max(...modal.values()), total: repeats.length },
     },
-    asked,
+    results,
   };
 }
 

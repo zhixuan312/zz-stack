@@ -6,6 +6,9 @@
  * running the plan derived its waves by hand. This reads the plan the flow declares, runs the
  * same validator over the bytes on disk, and returns ids rather than bodies so the answer stays
  * small enough to sit in every status call.
+ *
+ * A plan grows one `## Phase N` at a time, so a plan with phases answers the waves of its current
+ * phase — the first with tasks and no `### As built` — and never re-offers a built phase's tasks.
  */
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -16,7 +19,10 @@ export interface PlanStructure {
   document: string;
   ok: boolean;
   violations: Array<{ kind: string; task: string | null; line: number; message: string }>;
-  /** Task ids grouped into waves that may run in parallel, in order. Empty when not ok. */
+  /** The phase being built next, or null — no phases, or every written phase is built. */
+  current_phase: number | null;
+  /** Task ids grouped into waves that may run in parallel, in order: the current phase's when the
+   *  plan has phases, the whole plan's when it has none. Empty when not ok or nothing is left. */
   waves: string[][];
   hotspots: string[];
 }
@@ -33,7 +39,10 @@ export function planStructure(dir: string, docs: readonly FlowDoc[]): PlanStruct
     document: plan.name,
     ok: report.ok,
     violations: report.violations.map((v) => ({ kind: v.kind, task: v.taskId, line: v.line, message: v.detail })),
-    waves: report.waves.map((w) => [...w]),
+    current_phase: report.currentPhase,
+    waves: (report.phases.length
+      ? report.phases.find((p) => p.phase === report.currentPhase)?.waves ?? []
+      : report.waves).map((w) => [...w]),
     hotspots: [...report.hotspots],
   };
 }

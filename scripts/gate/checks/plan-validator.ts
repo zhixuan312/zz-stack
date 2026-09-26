@@ -68,3 +68,32 @@ check("a plan that declares no Owns runs one task per wave", () => {
     return `a plan with no Owns ran in waves ${JSON.stringify(report.waves)}`;
   }
 });
+
+check("a plan written one phase at a time validates on the phases written, and yields the current phase's waves", () => {
+  const phase1 = "## Phase 1 — Skeleton: runs end to end\n" +
+    task(1, "none", "`packages/a/**`") + task(2, "none", "`packages/b/x.ts`") + task(3, "Task I-1", "`packages/a/y.ts`");
+  const pending = "## Phase 2 — Candidates: built in isolation\n";
+  const tail = "## Integration hotspots\n- `CHANGELOG.md`\n## Full-suite gate\n`npm run gate`\n";
+  const report = validatePlan(phase1 + pending + tail);
+  if (!report.ok) return `a plan with Phase 2 not yet written failed: ${kinds(phase1 + pending + tail).join(", ")}`;
+  const [one, two] = report.phases;
+  if (report.phases.length !== 2 || one?.phase !== 1 || two?.phase !== 2) return `phases read as ${JSON.stringify(report.phases)}`;
+  if (JSON.stringify(one.waves) !== JSON.stringify([["I-1", "I-2"], ["I-3"]])) return `Phase 1's waves read as ${JSON.stringify(one.waves)}`;
+  if (two.taskIds.length || two.waves.length) return "the unwritten Phase 2 carried tasks";
+  if (report.currentPhase !== 1) return `the current phase read as ${report.currentPhase}, not 1`;
+
+  // Phase 1 built, Phase 2 planned: Phase 2 is current, and its waves treat Phase 1 as done.
+  const built = phase1 + "### As built\nI-1..I-3 landed; I-2 wrote one extra fixture.\n" +
+    "## Phase 2 — Candidates: built in isolation\n" +
+    task(4, "Task I-3", "`packages/c/**`") + task(5, "Tasks I-1, I-4", "`packages/d.ts`") + tail;
+  const next = validatePlan(built);
+  if (!next.ok) return `a plan with Phase 1 built and Phase 2 planned failed: ${kinds(built).join(", ")}`;
+  if (next.currentPhase !== 2 || !next.phases[0]?.built) return `after Phase 1 was built the current phase read as ${next.currentPhase}`;
+  if (JSON.stringify(next.phases[1]?.waves) !== JSON.stringify([["I-4"], ["I-5"]])) {
+    return `Phase 2's waves read as ${JSON.stringify(next.phases[1]?.waves)}`;
+  }
+  // A task written in the phase being planned is held to every rule a whole plan is.
+  if (validatePlan(phase1 + "## Phase 2 — C\n### Task I-4: T4 (← AC-1.4)\n**Output:** o\n" + tail).ok) {
+    return "a Phase 2 task with no Dependencies passed because its phase was the latest";
+  }
+});

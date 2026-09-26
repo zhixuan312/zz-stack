@@ -12,9 +12,9 @@
  *     `tool_refusal_rate` (observe-facts.ts) reports against, so a reader can cross-check one
  *     figure against the other.
  *   - RETURN groups: one (from_step, back_to_step) pair per group, folded from `pluginTraces`'
- *     own `returns` array — a stage revisited after a later one already ran. Denominator is the
- *     total step visits, matching `stage_return_rate`'s own population. A plugin that declares
- *     no stages (zz-core) produces no returns at all and this pass reports an empty array — an
+ *     own `returns` array — a stage's document rewritten after a later stage's document existed.
+ *     Denominator is `stage_document_writes`, `stage_return_rate`'s own population. A plugin that
+ *     declares no stages (zz-core) produces no returns at all and this pass reports an empty array — an
  *     honest "nothing to group", not a missing feature.
  *
  * DELIBERATE: no fact here is classified. A group's `tool`/`normalized_text`/`from_step`/
@@ -186,13 +186,6 @@ export function returnGroups(returns: Traces["returns"]): ReturnGroup[] {
       sample_initiatives: [...g.initiatives],
     }))
     .sort((a, b) => b.count - a.count);
-}
-
-/** The total step-visit population `returnGroups`' own denominators are a share of — identical
- *  to observe.ts's own `stage_return_rate` denominator, so DISCOVER's prevalence for a return
- *  pattern and OBSERVE's aggregate return rate read against the same whole. */
-export function totalStepVisits(stagePaths: Traces["stage_paths"]): number {
-  return stagePaths.reduce((sum, p) => sum + p.steps.length, 0);
 }
 
 /** A candidate's identity across snapshots: the same refusal rule on the same tool, or the same

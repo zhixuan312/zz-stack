@@ -391,62 +391,16 @@
       "notApplicableReason": null,
       "measures": [
         {
-          "key": "call_economy",
-          "evaluatorType": "generative_critic",
+          "key": "repeat_read_rate",
+          "evaluatorType": "deterministic",
           "weight": 0.6,
           "suite": "production",
           "required": true,
           "definition": {
-            "qualification": {
-              "anchors": [
-                {
-                  "id": "one-call-each",
-                  "role": "anchor",
-                  "expected": "yes",
-                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n10:00:00  core:session_whoami  ok\n10:00:02  core:document_read  2026-09-20-export/spec.md  ok\n10:00:05  core:document_write  2026-09-20-export/plan.md  ok"
-                },
-                {
-                  "id": "different-targets",
-                  "role": "anchor",
-                  "expected": "yes",
-                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n10:00:01  core:document_read  2026-09-20-export/explore.md  ok\n10:00:02  core:document_read  2026-09-20-export/spec.md  ok\n10:00:03  core:document_read  2026-09-20-export/review.md  ok\n10:00:04  core:skill_read  sdlc-plan  ok\n10:00:09  core:document_write  2026-09-20-export/plan.md  ok"
-                },
-                {
-                  "id": "same-read-six-times",
-                  "role": "anchor",
-                  "expected": "no",
-                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n10:00:00  core:document_read  2026-09-20-export/spec.md  ok\n10:00:01  core:document_read  2026-09-20-export/spec.md  ok\n10:00:02  core:document_read  2026-09-20-export/spec.md  ok\n10:00:03  core:document_read  2026-09-20-export/spec.md  ok\n10:00:04  core:document_read  2026-09-20-export/spec.md  ok\n10:00:05  core:document_read  2026-09-20-export/spec.md  ok\n10:00:09  core:document_write  2026-09-20-export/plan.md  ok"
-                },
-                {
-                  "id": "one-call-each-read-repeated",
-                  "role": "fault",
-                  "expected": "no",
-                  "text": "RUN 3f2a9c1e-0b7d-4e2a-9f1c-5d6e7a8b9c0d:\n10:00:00  core:session_whoami  ok\n10:00:01  core:document_read  2026-09-20-export/spec.md  ok\n10:00:02  core:document_read  2026-09-20-export/spec.md  ok\n10:00:03  core:document_read  2026-09-20-export/spec.md  ok\n10:00:04  core:document_read  2026-09-20-export/spec.md  ok\n10:00:05  core:document_read  2026-09-20-export/spec.md  ok\n10:00:08  core:document_write  2026-09-20-export/plan.md  ok"
-                },
-                {
-                  "id": "shell-status-loop",
-                  "role": "control",
-                  "expected": "no",
-                  "text": "$ git status\n$ git status\n$ git status\n$ git status\n$ git status\n$ git status\n$ git status\n$ git status\n$ git commit -m \"fix typo\""
-                }
-              ]
-            },
-            "subjectKind": "run"
+            "factPath": "repeat_read_rate",
+            "normalize": "inverted_rate"
           },
-          "evaluator": {
-            "stable_key": "zz-core.call-economy",
-            "kind": "noul",
-            "question": "Read this run's own sequence of tool calls, each with the target it acted on. Did it avoid reading the same target again when nothing had written to that target in between?",
-            "answer_schema": {
-              "type": "noul"
-            },
-            "polarity": {
-              "good_when": "yes"
-            },
-            "model_policy": {
-              "requestedModel": "typesafe/jev-latest"
-            }
-          }
+          "evaluator": null
         },
         {
           "key": "latency_within_budget",

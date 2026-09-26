@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-discover
-version: 0.4
+version: 0.5
 description: Stage 3 of zz-plugin-eval (DISCOVER). Mine one OBSERVE snapshot's own real refusals and stage returns for candidate failure modes, before any protocol exists — so DEFINE/QUALIFY freezes questions worth asking, not questions invented from nothing.
 when_to_use: "The third stage of zz-plugin-eval, after OBSERVE has written an observation_snapshot_id. Always run before DEFINE/QUALIFY on a subject whose protocol is being created or revised — reuse skips it. No shell required."
 ---
@@ -28,7 +28,10 @@ something real to accept, merge or leave uncited.
 
 Groups refusals — by failing tool and the rule the refusal states, with the files and document
 names it happened to cite folded out, so one refusal family is one candidate — and stage-return
-patterns deterministically (code, no model). Classifies each group's ownership through the registered
+patterns deterministically (code, no model). A return is a stage's document rewritten after a
+later stage's document of the same initiative existed, counted against successful stage-document
+writes — read off the documents, so an agent reading every stage skill while it orients, or two
+agents sharing one caller, is not a return. Classifies each group's ownership through the registered
 `discover.owner_kind` evaluator, a bounded choice over `plugin | dependency | platform |
 environment | user_input | unknown`. Only for a refusal group with **no recorded text at all**
 does it propose a description with one generative-critic call, and that call's own provenance is

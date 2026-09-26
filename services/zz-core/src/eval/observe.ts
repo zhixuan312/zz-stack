@@ -30,13 +30,13 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
-import { entryOf, helperSkillsOf, servesOwnDoor, toolsNamedBy } from "./plugin-eval.js";
+import { entryOf, helperSkillsOf, servesOwnDoor, stageDocumentsOf, toolsNamedBy } from "./plugin-eval.js";
 import {
   latencyAndByteFacts, outcomeAndApprovalFacts, refusalDetail, tokenAndCostFacts,
   measured, rate, type ObservedFact,
 } from "./observe-facts.js";
 import {
-  ownTools, pluginTraces, surfaceCoverage, unboundedRunsClause, versionsWithUse, type EvidenceWindow,
+  ownTools, pluginTraces, subjectRefsOf, surfaceCoverage, unboundedRunsClause, versionsWithUse, type EvidenceWindow,
 } from "./plugin-profile.js";
 import { OWN_TOOLS } from "../door.js";
 import { withIdempotency, canonicalJson, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
@@ -152,7 +152,8 @@ async function computeObservation(
   const surface = await doorSurface(pool, plugin, version, serves);
   const reachable = ownTools(toolsNamedBy(plugin), surface.tools);
 
-  const traces = await pluginTraces(pool, plugin, version, reachable, stages, serves, window, helperSkillsOf(plugin));
+  const traces = await pluginTraces(pool, plugin, version, reachable, stages, serves, window, helperSkillsOf(plugin),
+    stageDocumentsOf(plugin));
   // Whoever's calls wrote a document: a door's own record, or a flow's runs writing through the
   // baseline door. Read off `record` alone, every flow reported "wrote no document".
   const writesDocuments = traces.use.some((u) =>
@@ -202,12 +203,16 @@ async function computeObservation(
     // manifest declares. A plugin that declares none — a door like zz-core, whose runs record
     // the steps of whichever flow was calling it — has no order for either to be measured
     // against; every step came out "unplaced", reported as a rate of 1.
+    // Returns over stage-document writes, both off the documents (pluginTraces' `returns`).
     stage_return_rate: stages.length
-      ? rate(traces.returns.length, totalStepVisits, traces.coverage.with_step, traces.coverage.events, noSteps)
+      ? rate(traces.returns.length, traces.stage_document_writes, traces.stage_document_writes,
+          traces.stage_document_writes, "no run in this window wrote a stage's document")
       : { value: null, reason: noStages },
     unplaced_step_rate: stages.length
       ? rate(totalUnplaced, totalStepVisits, traces.coverage.with_step, traces.coverage.events, noSteps)
       : { value: null, reason: noStages },
+    repeat_read_rate: rate(traces.document_reads.repeats, traces.document_reads.reads,
+      traces.document_reads.reads, traces.document_reads.reads, "no run in this window read a document"),
     // Calls per run: a volume, not a rate, so its coverage is the runs it is averaged over.
     tool_call_volume: measured(traces.runs ? totalCalls / traces.runs : null, traces.runs, traces.runs, noEvents),
     tool_refusal_rate: { ...rate(totalRefusals, totalCalls, totalCalls, totalCalls, noCalls), detail },
@@ -229,6 +234,23 @@ async function computeObservation(
       models: models.rows.map((r) => r.model),
     },
   };
+}
+
+/** The runs and refused calls an observation snapshot's own window holds, recomputed from the
+ *  row: what `evaluation_start` hands a conversation that has only the snapshot id. */
+export async function snapshotSubjectRefs(pool: pg.Pool, snapshotId: string): Promise<{
+  run_refs: { run_id: string; team: string | null; initiative: string | null }[];
+  run_refs_truncated: boolean; refusal_refs: string[];
+} | null> {
+  const row = (await pool.query<{ plugin: string; version: string; window: EvidenceWindow | null }>(`
+    select pl.name as plugin, sv.declared_version as version, os.production_window->'resolved' as window
+      from zz.eval_observation_snapshot os
+      join zz.eval_subject_version sv on sv.id = os.subject_version_id
+      join zz.plugin pl on pl.id = sv.plugin_id
+     where os.id = $1::uuid`, [snapshotId])).rows[0];
+  if (!row?.window) return null;
+  const refs = await subjectRefsOf(pool, row.plugin, row.version, servesOwnDoor(row.plugin), row.window);
+  return { ...refs, run_refs: refs.run_refs.map(({ run_id, team, initiative }) => ({ run_id, team, initiative })) };
 }
 
 function returnsByPair(returns: Observation["traces"]["returns"]): { from_step: string; back_to_step: string; count: number }[] {

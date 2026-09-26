@@ -36,7 +36,7 @@ for (const d of protocol.dimensions) for (const pm of d.measures) {
 }
 const expected: Record<string, string> = {
   bug_report_evidence_discipline: "bug", document_gate_readiness: "document",
-  knowledge_capture_effectiveness: "knowledge", call_economy: "run", refusal_explains_itself: "run",
+  knowledge_capture_effectiveness: "knowledge", refusal_explains_itself: "run",
   refusal_recovery_path: "run", cross_flow_reuse: "knowledge",
 };
 for (const [k, kind] of Object.entries(expected)) if (k in kinds) assert.equal(kinds[k], kind, `${k} routes to ${kind}`);
@@ -121,6 +121,12 @@ assert.match(docsNone[0].excluded_reason, /is one of the documents it judges \(s
   assert.equal(parts.map((p: string) => p.replace(/^\[Part \d+ of \d+ of one document\]\n/, "")).join(""), doc,
     "the parts together are the whole document, nothing dropped");
   assert.deepEqual(documentParts("short", 22000), ["short"], "a short document is one unlabelled part");
+  // A heading with no text of its own is never the last thing in a part: zz-core's spec read 0.14
+  // on parts ending "### Proposed design" and "## Risks & Mitigations".
+  const nested = `## Risks\n\n### Named\n\n${"r".repeat(15000)}\n`;
+  const cut = documentParts(`# Spec\n\n${"a".repeat(15000)}\n\n${nested}`, 22000);
+  for (const part of cut) assert.doesNotMatch(part.trimEnd(), /\n#{1,6} [^\n]*$/, "no part ends on a heading");
+  assert.ok(cut.some((part: string) => part.includes("## Risks\n\n### Named\n\nrrr")), "a heading chain travels with its content");
 }
 
 // -- no model call for an unqualified evaluator, even through answerMeasure --------------------
@@ -142,6 +148,12 @@ assert.deepEqual(readings, {
   frontmatter: [{ ref: refs[0], value: 0.9123, reading: "yes", assessment_id: 42 }],
   bug_evidence: [{ ref: run, excluded: "no bug ref" }],
 });
+// A later call that assessed the kind supersedes the run-level "no ref of its kind" row.
+const later = readingsOf([
+  { measure_id: "bug_evidence-id", subject_ref: run, answer: { value: null, excluded: true, excluded_reason: "no bug ref", assessment_id: null, detail: {} } },
+  { measure_id: "bug_evidence-id", subject_ref: "bug:1", answer: { value: 0.9, excluded: false, excluded_reason: null, assessment_id: 7, detail: { reading: "yes" } } },
+], new Map([["bug_evidence-id", "bug_evidence"]]));
+assert.deepEqual(later, { bug_evidence: [{ ref: "bug:1", value: 0.9, reading: "yes", assessment_id: 7 }] });
 
 // -- findings.md renders the interval as a sentence, never raw JSON -------------------------------
 const line = renderInterval({ lower: 6.1, upper: 7.85, level: 0.95, iterations: 1000, n_subjects: 6, degenerate: false, note: null });

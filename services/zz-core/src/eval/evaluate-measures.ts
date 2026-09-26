@@ -295,7 +295,15 @@ const PART_CHARS = 22_000;
  *  sits, so a judge reads every part whole. A single section longer than `limit` is cut inside. */
 export function documentParts(text: string, limit: number): string[] {
   if (text.length <= limit) return [text];
-  const sections = text.split(/(?=^#{1,6} )/m);
+  // A heading with no text of its own travels with the section after it: cut between them, a
+  // part ends on an empty-looking section and the judge rightly calls it empty. zz-core's spec
+  // read 0.14 on parts ending "### Proposed design" and "## Risks & Mitigations".
+  const sections = text.split(/(?=^#{1,6} )/m).reduce<string[]>((out, section) => {
+    const last = out[out.length - 1];
+    if (last !== undefined && /^(#{1,6} [^\n]*\s*)+$/.test(last)) out[out.length - 1] = last + section;
+    else out.push(section);
+    return out;
+  }, []);
   const chunks: string[] = [];
   let current = "";
   for (const section of sections) {
@@ -495,7 +503,11 @@ export function readingsOf(
   keyOf: ReadonlyMap<string, string>,
 ): Record<string, Record<string, unknown>[]> {
   const readings: Record<string, Record<string, unknown>[]> = {};
+  // A measure's run-level exclusion ("no subject_ref of its kind") is what one assess call wrote
+  // before another brought refs of that kind; once any ref-level row exists it no longer holds.
+  const judged = new Set(rows.filter((r) => !isRunLevelRef(r.subject_ref)).map((r) => r.measure_id));
   for (const r of rows) {
+    if (r.answer.excluded && judged.has(r.measure_id) && isRunLevelRef(r.subject_ref)) continue;
     const key = keyOf.get(r.measure_id) ?? r.measure_id;
     const reading = r.answer.detail?.reading;
     (readings[key] ??= []).push(r.answer.excluded

@@ -16,6 +16,7 @@
  * build records here against what that function returns.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { text } from "@zz/mcp-http";
 
 import { Refusal } from "./refusal.js";
@@ -64,5 +65,43 @@ export function recordingDoor(server: McpServer, door: string): McpServer {
       }
     }) as never);
   }) as RegisterTool;
+  namesUnknownArguments(server);
   return server;
+}
+
+/** The argument names a tool's input schema declares. */
+function declaredArguments(schema: unknown): string[] {
+  const shape = (schema as { shape?: unknown } | undefined)?.shape;
+  return shape && typeof shape === "object" ? Object.keys(shape) : [];
+}
+
+/**
+ * An argument a tool does not take is dropped before its schema is checked, so a caller who wrote
+ * `doc_path` hears "Invalid input at path" and never learns which name it used — a refusal the
+ * zz-core evaluation read as one that does not explain itself. Where the SDK's validation refuses
+ * a call that also carried names the tool does not declare, the refusal names them and the
+ * arguments the tool does take. A call the schema accepts is untouched, extra names and all.
+ *
+ * DELIBERATE: patched on the instance, like `registerTool` above — `validateToolInput` is the
+ * SDK's one validation path and has no hook. checks/door-unknown-arguments.ts pins it to the
+ * installed SDK.
+ */
+function namesUnknownArguments(server: McpServer): void {
+  type Validate = (tool: { inputSchema?: unknown }, args: unknown, name: string) => Promise<unknown>;
+  const inner = server as unknown as { validateToolInput: Validate };
+  const rawValidate: Validate = inner.validateToolInput.bind(server);
+  inner.validateToolInput = async (tool, args, name) => {
+    try {
+      return await rawValidate(tool, args, name);
+    } catch (err) {
+      if (!(err instanceof McpError) || err.code !== ErrorCode.InvalidParams) throw err;
+      const takes = declaredArguments(tool.inputSchema);
+      const unknown = args && typeof args === "object" ? Object.keys(args).filter((k) => !takes.includes(k)) : [];
+      if (!unknown.length) throw err;
+      const said = err.message.replace(/^MCP error -?\d+: /, "");
+      throw new McpError(ErrorCode.InvalidParams,
+        `${said} — ${name} takes no ${unknown.map((k) => `\`${k}\``).join(", ")}; its arguments are ` +
+        `${takes.map((k) => `\`${k}\``).join(", ")}`);
+    }
+  };
 }

@@ -98,6 +98,15 @@ export function helperSkillsOf(plugin: string): string[] {
     .map((d) => d.name).sort();
 }
 
+/** Each document this flow's stages write, with the stage that writes it — what a return is
+ *  counted against (`pluginTraces`). Empty for a plugin whose stages write no document. */
+export function stageDocumentsOf(plugin: string): { document: string; stage: string }[] {
+  const manifest = entryOf(plugin)?.manifest;
+  const stages = new Set((manifest?.stages ?? []).map((st) => st.name));
+  return (manifest?.documents ?? []).flatMap((d) =>
+    d.stage && stages.has(d.stage) ? [{ document: d.name, stage: d.stage }] : []);
+}
+
 /** Every tool this plugin's own skills tell an agent to call — not every tool on the surfaces
  * it declares. A tool in this set that was never called is a finding; a tool merely present on
  * a shared door and unused says nothing about this plugin.

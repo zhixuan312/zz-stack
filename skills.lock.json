@@ -76,16 +76,16 @@
     "sha": "3bc090075fb2"
   },
   "zz-plugin-discover": {
-    "version": "0.4",
-    "sha": "95c1b3245921"
+    "version": "0.5",
+    "sha": "4cf7dac6a58d"
   },
   "zz-plugin-eval": {
     "version": "2.6",
     "sha": "ff799fe40724"
   },
   "zz-plugin-evaluate": {
-    "version": "0.8",
-    "sha": "63450a4aefd7"
+    "version": "0.9",
+    "sha": "2a8d3866fa48"
   },
   "zz-plugin-explain": {
     "version": "0.5",
@@ -100,8 +100,8 @@
     "sha": "b07afbe310ae"
   },
   "zz-plugin-observe": {
-    "version": "0.4",
-    "sha": "a0579ab80dde"
+    "version": "0.5",
+    "sha": "af18b6d3dfeb"
   },
   "zz-plugin-promote-verify": {
     "version": "0.9",

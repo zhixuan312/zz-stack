@@ -41,6 +41,7 @@ import {
 } from "./evaluate-measures.js";
 import { bootstrapInterval, resolveUncertainty } from "./evaluate-interval.js";
 import { canonicalJson, decideBeforeWork, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { snapshotSubjectRefs } from "./observe.js";
 import { recordStage } from "./stage-record.js";
 import { resolveProtocol, unaffirmedRefusal } from "./qualify.js";
 import { scoreRun } from "./score.js";
@@ -196,7 +197,9 @@ export function registerEvaluationTools(server: McpServer): void {
       description:
         "WHEN a protocol version and an observation snapshot are ready to be scored together: " +
         "atomically binds them into one immutable zz.eval_evidence_snapshot, and opens one zz.eval_run at run_status='pending' " +
-        "against it. RETURNS { eval_run_id, evidence_snapshot_id, run_status }. REFUSES an " +
+        "against it. RETURNS { eval_run_id, evidence_snapshot_id, run_status, run_refs, refusal_refs } — " +
+        "the last two are the snapshot's own runs and refused door calls, the subject_refs " +
+        "evaluation_assess takes, so a conversation holding only the snapshot id has them. REFUSES an " +
         "observation_snapshot_id nothing minted; a protocol_version_id nothing minted, or one " +
         "protocol_affirm has not bound to an approved protocol.md (named, with its version); and an " +
         "observation snapshot belonging to a DIFFERENT subject than subject_version_id names — " +
@@ -281,7 +284,7 @@ export function registerEvaluationTools(server: McpServer): void {
       }
       logActivity(await userRoot(), null,
         { user: principal, action: "evaluation_start", eval_run_id: result.eval_run_id, replayed: outcome.replayed });
-      return json(result);
+      return json({ ...result, ...(await snapshotSubjectRefs(p, observation_snapshot_id)) });
     },
   );
 
@@ -324,7 +327,9 @@ export function registerEvaluationTools(server: McpServer): void {
       }
 
       const dims = await loadDimensions(p, run.protocol_version_id);
-      const measures = dims.flatMap((d) => d.measures);
+      // A dimension the protocol marks not applicable has nothing to assess: its measures are
+      // named for a reader, and reporting each as excluded read as missing evidence.
+      const measures = dims.filter((d) => d.applicable).flatMap((d) => d.measures);
       const snapshot = await loadSnapshotFacts(p, run.observation_snapshot_id);
       const principal = parseCaller(requestHeaders()).email;
 

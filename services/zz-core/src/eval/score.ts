@@ -21,8 +21,11 @@
  * `overall` is null ONLY when no dimension scored anything. `status` and `guardrail_status` are
  * read off the same input, never off `overall`: `established` needs every required measure of
  * every *required, applicable* dimension scored AND `coverage_met` AND `qualification_met` —
- * unqualified evidence, however complete, cannot establish; `provisional` needs a number and a
- * run coverage at or above `PROVISIONAL_COVERAGE_FLOOR`; anything else is `not_established`,
+ * unqualified evidence, however complete, cannot establish; `provisional` needs a number, a
+ * run coverage at or above `PROVISIONAL_COVERAGE_FLOOR`, AND `coverage_met` — the protocol's own
+ * evidence floor. Below that floor a number is still reported, never labelled provisional: zz-access,
+ * on 10 calls and no run, read "provisional 8.0" beside a reliability of 1.0 over 2 refusals.
+ * Anything else is `not_established`,
  * which may still carry the number it has, so a reader sees what was measured beside how little
  * of the protocol that was. A guardrail failure changes `guardrail_status` only; AC-23.1 is
  * explicit that the number must not move for it, because a report that quietly re-averages the
@@ -166,7 +169,7 @@ export function scoreRun(input: ScoreRunInput): ScoreRunOutput {
 
   const status: ScoreRunOutput["status"] = requiredComplete && input.coverage_met && input.qualification_met
     ? "established"
-    : overall !== null && coverage !== null && coverage >= PROVISIONAL_COVERAGE_FLOOR
+    : overall !== null && coverage !== null && coverage >= PROVISIONAL_COVERAGE_FLOOR && input.coverage_met
       ? "provisional"
       : "not_established";
 

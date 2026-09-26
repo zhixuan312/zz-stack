@@ -16,6 +16,9 @@ const none = scoreRun({ dimensions: dims([null, null, null, null, null, null]), 
 assert.equal(none.status, "not_established"); assert.equal(none.overall, null);
 const unq = scoreRun({ dimensions: dims([1, 1, 1, 1, 1, 1]), coverage_met: true, qualification_met: false, guardrails: [] });
 assert.equal(unq.status, "provisional", "unqualified evidence cannot establish");
+const thin = scoreRun({ dimensions: dims([1, 1, 1, 1, 1, 1]), coverage_met: false, qualification_met: true, guardrails: [] });
+assert.equal(thin.status, "not_established", "below the protocol's evidence floor a number is not even provisional");
+assert.equal(thin.overall, 10, "and the number it has is still reported");
 const g = scoreRun({ dimensions: dims([1, 1, 1, 1, 1, 1]), coverage_met: true, qualification_met: true, guardrails: ["pass", "fail"] });
 assert.equal(g.guardrail_status, "fail"); assert.equal(g.overall, 10, "guardrail never changes the number");
 const na = dims([1, 1, 1, 1, 1, 0]); na[5].applicable = false; na[5].not_applicable_reason = "no OOD cases";

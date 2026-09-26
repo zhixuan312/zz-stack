@@ -3,7 +3,6 @@
 #
 #   ./deploy/zz-tool call /core/mcp session_whoami
 #   ./deploy/zz-tool audit --manifest /catalog/sdlc/sdlc-flow/flow.json --store /artifacts/teams/<team>
-#   ./deploy/zz-tool migrate-initiative-files --store /artifacts
 #   ./deploy/zz-tool register-skills
 #   ./deploy/zz-tool                       # list what there is
 #
@@ -43,7 +42,6 @@ declare -A TOOLS=(
   [sql-check]=testing/sql-check
   # Task I-8's one-shot backfill of zz.initiative's lifecycle columns from the file store.
   # Deleted, and this entry with it, when Phase 0's migration folds into 001_init.sql.
-  [migrate-initiative-files]=migrate/initiative-files
 )
 
 name="${1:-}"

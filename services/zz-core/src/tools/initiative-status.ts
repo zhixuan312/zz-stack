@@ -188,13 +188,12 @@ export function initiativeState(
       files.map((f) => ({ name: f, ...envelopeOf(join(dir, f)) }));
     const closer = envs.find((e) => e.outcome);
     // An initiative holding no document at all — opened by mistake, then abandoned — has no
-    // envelope to read an outcome off. `anchor`, when given, is authoritative (the row is where
-    // `initiative_close` now records this); with no database, `openRecord`'s file is what
-    // `initiative_close` still falls back to for the same fact.
+    // envelope to read an outcome off; `initiative_close` records it on the row, so only the
+    // anchor can say so. Without one, the open record still names the flow.
     const rec = anchor ? null : openRecord(root, name);
     const declaredFlow = anchor ? anchor.flow : (rec?.flow ?? null);
-    const abandonedAt = anchor ? anchor.closed_at : (rec?.abandoned_at ?? null);
-    const abandonedBy = anchor ? anchor.closed_by : (rec?.abandoned_by ?? null);
+    const abandonedAt = anchor ? anchor.closed_at : null;
+    const abandonedBy = anchor ? anchor.closed_by : null;
     if (!closer && abandonedAt) {
       return {
         initiative: name, flow: declaredFlow, documents: envs, sources: 0,

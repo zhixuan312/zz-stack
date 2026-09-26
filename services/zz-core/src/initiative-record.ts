@@ -32,10 +32,6 @@ export const OPEN_RECORD = "_open.json";
 
 interface OpenRecord {
   initiative: string;
-  /** Set only when an initiative holding no document was abandoned — see recordAbandoned.
-   *  Its presence is what `initiative_status` reads to stop offering a next move. */
-  abandoned_by?: string;
-  abandoned_at?: string;
   /** The flow that governs this initiative, or null, which is a declared freeform rather than
    * an unanswered question. Telling the two apart is why this file is written for a freeform
    * open as well. */
@@ -91,9 +87,8 @@ export function openRecord(root: string, name: string): OpenRecord | null {
  *  that resolves a conditional document's `when` — the same division `_open.json` above draws
  *  between the tool that opens an initiative and the one that reads it back, except that here
  *  BOTH halves live in this module: `writeBranchFacts` (services/zz-core/src/eval/protocol.ts,
- *  Task I-27) owns the refuse-on-change decision and calls `writeFacts` for the mechanical part,
- *  the same split `recordAbandoned` below keeps from `closeInitiative`. Underscore-prefixed, so
- *  no listing treats it as a document.
+ *  Task I-27) owns the refuse-on-change decision and calls `writeFacts` for the mechanical part.
+ *  Underscore-prefixed, so no listing treats it as a document.
  *
  *  DELIBERATE: not exported. `factsOrDamaged`/`writeFacts` below are the only two touching the
  *  filename; a second module reaching for it directly would be reading or writing `_facts.json`

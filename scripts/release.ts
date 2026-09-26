@@ -50,6 +50,7 @@ import { consoleImage, resolveDashboard } from "./release/dashboard.ts";
 import { preflight } from "./release/preflight.ts";
 import { skillVersionsMoved, writeRegistries } from "./release/registries.ts";
 import { rollback } from "./release/rollback.ts";
+import { tagVerifiedLive } from "./release/tag-live.ts";
 import { verifyLive, verifyPredeploy } from "./release/verify.ts";
 
 if (preflightMode) { preflight(); process.exit(0); }
@@ -72,6 +73,8 @@ if (args.includes("--verify-only")) {
         found.unknown.map((x) => `        - ${x}`).join("\n"));
   }
   log("\n\x1b[32m  LIVE DEPLOYMENT HEALTHY\x1b[0m");
+  // What a release that went live untagged was told to come back for.
+  tagVerifiedLive(live);
   process.exit(0);
 }
 

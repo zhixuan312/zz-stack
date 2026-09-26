@@ -217,7 +217,7 @@ export async function restartGateway(stack: Stack): Promise<void> {
  *  after it is stamped with the released version, the way real use of a deployed release is.
  *  The code stays the tree under evaluation — the walk's candidate changes a skill's words, which
  *  no door call reads — only the version it announces moves. */
-export async function deployRelease(stack: Stack, version: string): Promise<void> {
+export async function deployRelease(stack: Pick<Stack, "seed" | "prefix" | "url" | "pat">, version: string): Promise<void> {
   const pkg = join(stack.seed, "services", "zz-core", "package.json");
   const parsed = JSON.parse(readFileSync(pkg, "utf8")) as Record<string, unknown>;
   writeFileSync(pkg, `${JSON.stringify({ ...parsed, version }, null, 2)}\n`);

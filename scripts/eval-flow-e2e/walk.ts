@@ -120,7 +120,9 @@ export async function defineQualify(w: Walk): Promise<{ protocol: string; qualif
   await c.call("eval", "protocol_affirm", { protocol_version_id: protocol, initiative: w.initiative, idempotency_key: c.key("affirm") });
   const qualified: Record<string, string> = {};
   for (const m of dims.flatMap((d) => d.measures).filter((m) => MODEL_BACKED.has(m.evaluatorType))) {
-    const q = await c.call("eval", "evaluator_qualify", { protocol_version_id: protocol, measure_key: m.key, idempotency_key: c.key(`qualify-${m.key}`) },
+    // With `initiative`, as the define-qualify skill says: the state is what initiative_status
+    // routes EVALUATE on, and without it every measure stays owed.
+    const q = await c.call("eval", "evaluator_qualify", { protocol_version_id: protocol, measure_key: m.key, initiative: w.initiative, idempotency_key: c.key(`qualify-${m.key}`) },
       { note: (r) => `${m.key}: ${String(r.state)}` });
     qualified[m.key] = String(q.state);
   }
@@ -146,7 +148,7 @@ export async function evaluate(w: Walk): Promise<{ evalRun: string; score: Reply
   await c.call("eval", "evaluation_assess", { eval_run_id: evalRun, subject_refs: refs, idempotency_key: c.key("assess") },
     { note: (r) => `${String(r.assessment_count)} assessments over ${refs.length} refs` });
   const score = await c.call("eval", "evaluation_score", { eval_run_id: evalRun, idempotency_key: c.key("score"), initiative: w.initiative },
-    { note: (r) => `overall ${String(r.overall_score)} status ${String(r.score_status)} guardrails ${String(r.guardrail_status)}` });
+    { note: (r) => `overall ${String(r.overall_score)} status ${String(r.score_status)} guardrails ${String(r.guardrail_status)} blocked by ${JSON.stringify(r.establishment_blocked_by)}` });
   if (score.record_refused) throw new Error(`evaluation_score did not record: ${String(score.record_refused)}`);
   return { evalRun, score };
 }

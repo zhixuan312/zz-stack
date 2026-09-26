@@ -139,7 +139,7 @@ export async function promoteVerify(w: Walk, stack: Stack, tag: string): Promise
   await e.call("eval", "evaluation_assess", { eval_run_id: evalRun, subject_refs: refs, idempotency_key: e.key("assess") },
     { note: (r) => `${String(r.assessment_count)} assessments over ${refs.length} refs` });
   await e.call("eval", "evaluation_score", { eval_run_id: evalRun, idempotency_key: e.key("score") },
-    { note: (r) => `overall ${String(r.overall_score)} status ${String(r.score_status)} guardrails ${String(r.guardrail_status)}` });
+    { note: (r) => `overall ${String(r.overall_score)} status ${String(r.score_status)} guardrails ${String(r.guardrail_status)} blocked by ${JSON.stringify(r.establishment_blocked_by)}` });
 
   const decided = await verify(w, "decide");
   const verdict = String(decided.v.verdict ?? "");

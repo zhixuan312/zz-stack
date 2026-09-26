@@ -71,10 +71,13 @@ export function releaseCommands(stack: Stack): { release: string; rollback: stri
     `ZZ_CATALOG_OWNER_TEAM=${TEAM} node ${live}/packages/tools/dist/ops/register-plugins.js --root . --psql "${psql}"`,
   ].join("\n") + "\n", { mode: 0o755 });
   const rollback = join(stack.work, "rollback.sh");
+  // A catalog plugin's current version is the one the deployment runs, so restoring the prior
+  // release means deploying it again, as the operator would; the CLI hands ZZ_URL and ZZ_TOKEN on.
   writeFileSync(rollback, [
     "#!/bin/sh", "set -e",
     'echo "restoring v$1"',
     'git rev-parse -q --verify "refs/tags/v$1" >/dev/null',
+    `node ${join(live, "scripts", "eval-flow-e2e", "redeploy.ts")} "${stack.seed}" "${stack.prefix}" "$1"`,
   ].join("\n") + "\n", { mode: 0o755 });
   return { release: `sh ${release}`, rollback: `sh ${rollback} {version}`, version };
 }

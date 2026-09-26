@@ -5,20 +5,34 @@
  *
  * Every answer is read off the question and the state text, never off the call order: an answer
  * that depends on how many calls came before it passes a walk for a reason nobody can name. The
- * rules are TRUTHFUL where the text carries a truth (a counted sentence says N of D) and MARKED
+ * rules are TRUTHFUL where the text carries a truth (a known-answer text the reference protocol
+ * declares, answered with its own `expected`) and MARKED
  * where it cannot: the use the walk seeds after the release carries `RELEASED_MARKER` in its
  * documents, and every judgement of a text carrying it comes back poor — the released version
  * regresses on purpose, because rolling it back is part of what the walk exercises.
  *
  * Probabilities stay out of 0.35–0.65, where semantic.ts reads a yes/no as `unclear`.
  */
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
+import { join } from "node:path";
+
+import { live } from "./stack.ts";
 
 export const RELEASED_MARKER = "EVAL-FLOW-RELEASED";
 
 const OWNER_KINDS = ["plugin", "dependency", "platform", "environment", "user_input", "unknown"];
-const COUNTED = /^SUBJECT:\nOf (\d+) (?:run|tool)\(s\) .*?, (\d+) were (?:usable|actually called)/;
+
+/** Every known-answer text the walk's reference protocol declares, with the answer it expects:
+ *  QUALIFY asks each one, and a truthful evaluator gives exactly that answer. */
+function knownAnswers(): readonly { text: string; expected: string }[] {
+  const body = JSON.parse(readFileSync(join(live, "catalog/zz/zz-plugin-eval/protocols/zz-core.json"), "utf8")) as {
+    dimensions?: { measures?: { definition?: { qualification?: { anchors?: { text: string; expected: string }[] } } }[] }[];
+  };
+  return (body.dimensions ?? []).flatMap((d) => (d.measures ?? []).flatMap((m) => m.definition?.qualification?.anchors ?? []))
+    .sort((x, y) => y.text.length - x.text.length);
+}
+const KNOWN = knownAnswers();
 
 interface Question { type?: string; instructions?: string; criteria?: unknown }
 type Answer = Record<string, unknown>;
@@ -39,10 +53,8 @@ function answer(state: string, q: Question): { family: string; a: Answer } {
   if (q.type === "choice" && OWNER_KINDS.every((k) => keys.includes(k))) {
     return { family: "discover.owner_kind", a: choice(keys, "plugin") };
   }
-  const counted = COUNTED.exec(state);
-  if (counted) {
-    return { family: "qualify.counted_fact", a: noul(Number(counted[2]) > 0 ? 0.95 : 0.05) };
-  }
+  const known = KNOWN.find((k) => state.includes(k.text));
+  if (known && q.type === "noul") return { family: "qualify.known_answer", a: noul(known.expected === "yes" ? 0.95 : 0.05) };
   // Use of the released version: judged poor, whatever the question — see the module note.
   if (state.includes(RELEASED_MARKER)) {
     if (q.type === "score") return { family: "released", a: { type: "score", score: 0, confidence: 0.9 } };

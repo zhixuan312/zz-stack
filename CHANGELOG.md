@@ -33,6 +33,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.77.1] — 2026-09-26
+
+### Fixed
+- **evaluation_score's interval is an interval of its own overall.** It bootstrapped the mean of
+  each subject's own overall — a different estimator — and zz-core's overall of 8.26 sat outside
+  its reported 95% interval of 8.61-8.78. It now resamples the subjects and recomputes the run's
+  overall from each resample.
+- **A provisional score says why.** `evaluation_score` returns `establishment_blocked_by` (each
+  required measure left unscored, each policy not met), and findings.md prints it by the status.
+- **Re-observing a plugin no longer demands a new protocol version.** DISCOVER gives every
+  candidate a `stable_key` — the tool and refusal rule, or the two stages of a return — and records
+  one the plugin already has as `merged` into it. Candidates recorded before this release have no
+  key, so the next DISCOVER of each plugin still finds its failure modes once more.
+- **A revised protocol owes its own bind and qualification.** protocol_read's create/revise
+  replaced nothing, so the previous version's affirm and qualifications routed initiative_status
+  straight to EVALUATE; it now resets the initiative's DEFINE record.
+
 ## [0.77.0] — 2026-09-26
 
 ### Changed

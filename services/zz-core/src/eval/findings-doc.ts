@@ -156,6 +156,12 @@ export function renderInterval(i: Record<string, unknown> | null): string {
     (i.note ? ` — ${String(i.note)}` : "");
 }
 
+/** Why a score is not established, as `evaluation_score` recorded it — nothing when it is. */
+function blockedBy(reasons: unknown): string {
+  if (!Array.isArray(reasons) || !reasons.length) return "";
+  return ` — not established because: ${reasons.map(String).join("; ")}`;
+}
+
 function renderGuardrails(dims: DimensionScoreRow[], status: string | null): string {
   const flagged = dims.flatMap((d) => d.measures.filter((m) => m.guardrail).map((m) => ({ ...m, dimension: d.key })));
   const lines = [`Overall guardrail status: **${status ?? "not_established"}**.`];
@@ -199,7 +205,7 @@ function renderBody(
     `# Findings — ${subject.plugin} ${subject.declared_version}`,
     "",
     "## Score",
-    `- Status: **${run.score_status ?? "not_established"}**`,
+    `- Status: **${run.score_status ?? "not_established"}**` + blockedBy(run.coverage?.establishment_blocked_by),
     `- Overall: ${run.overall_score === null ? "—" : Number(run.overall_score).toFixed(2)} / 10`,
     `- Protocol: \`${protocol.protocol_key}\` version ${protocol.version}`,
     `- Interval: ${renderInterval(run.score_interval)}`,

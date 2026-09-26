@@ -198,6 +198,7 @@ if (!dryRun) {
   step("1b", "pre-deploy probes");
   const pre = verifyPredeploy();
   const moved = skillVersionsMoved();
+  if (!moved.length) log("  every catalog skill version matches its registered bytes");
   if (pre.wrong.length || pre.unknown.length || moved.length) {
     die("the pre-deploy probes disagree with, or could not read, the live data — nothing was " +
         "built or deployed:\n" + [...pre.wrong, ...pre.unknown, ...moved].map((x) => `        - ${x}`).join("\n"));

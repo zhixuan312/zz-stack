@@ -21,6 +21,8 @@
  * `back_to_step` are names read straight off the event log; discover.ts is the only place that
  * turns a group into a description, a prevalence share of a whole and an owner_kind.
  */
+import { createHash } from "node:crypto";
+
 import type pg from "pg";
 
 import { toolCallEvents, type EvidenceWindow, type pluginTraces } from "./plugin-profile.js";
@@ -191,4 +193,17 @@ export function returnGroups(returns: Traces["returns"]): ReturnGroup[] {
  *  pattern and OBSERVE's aggregate return rate read against the same whole. */
 export function totalStepVisits(stagePaths: Traces["stage_paths"]): number {
   return stagePaths.reduce((sum, p) => sum + p.steps.length, 0);
+}
+
+/** A candidate's identity across snapshots: the same refusal rule on the same tool, or the same
+ *  return between the same stages, is the same failure mode whichever window found it. Without
+ *  one, every re-observation re-surfaced failure modes a protocol had already folded in, and
+ *  `new_recurring_failure` demanded a new protocol version for nothing new. */
+export function refusalKey(g: Pick<RefusalGroup, "tool" | "normalized_text">): string {
+  // `refusalRule`, the key `foldByRule` merges on — never the text a folded group happens to
+  // carry, which is whichever of its singular and plural wordings came first.
+  return `refusal:${g.tool}:${createHash("sha256").update(refusalRule(g.normalized_text)).digest("hex").slice(0, 16)}`;
+}
+export function returnKey(g: Pick<ReturnGroup, "from_step" | "back_to_step">): string {
+  return `return:${g.from_step}->${g.back_to_step}`;
 }

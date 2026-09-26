@@ -17,8 +17,8 @@
  * pipeline yet).
  *
  * `evaluation_score` reduces those rows back (`reduceMeasureAnswers`), calls `scoreRun` (pure,
- * `score.ts`) once for the run's own numbers and once per subject_ref for `evaluate-interval.ts`'s
- * bootstrap, computes `coverage_met` and `qualification_met` (see `qualificationMet` below — the
+ * `score.ts`) once for the run's own numbers and once per resample of the subjects for
+ * `evaluate-interval.ts`'s bootstrap of that same overall, computes `coverage_met` and `qualification_met` (see `qualificationMet` below — the
  * bootstrap-protocol override this file must apply is Task I-29's: `scoring.establishment.bootstrap
  * = true` forces `qualification_met = false` regardless of what every measure's own evaluator
  * qualification says), evaluates the protocol's own `improvement.criticalGuardrails` (Task I-29's
@@ -434,14 +434,14 @@ export function registerEvaluationTools(server: McpServer): void {
       description:
         "WHEN evaluation_assess has run against every subject_ref this evaluation needs: reduces " +
         "the stored zz.eval_assessment rows measure by measure and calls the pure scoreRun once " +
-        "for the run's own dimension_scores and once per subject_ref for a percentile bootstrap " +
-        "interval. A dimension scores from whichever of its measures were scored and reports its " +
+        "for the run's own dimension_scores and once per resample of its subjects for a percentile " +
+        "bootstrap interval of that same overall. A dimension scores from whichever of its measures were scored and reports its " +
         "coverage (scored weight over declared weight); overall is null only when nothing scored, " +
         "and the status reads the coverage. Computes coverage_met from the protocol's own EstablishmentPolicy.minCoverage " +
         "and qualification_met from every model-backed measure's evaluator qualification against " +
         "QualificationPolicy.boundedSemanticMinimum — a bootstrap protocol " +
         "(scoring.establishment.bootstrap=true) forces qualification_met=false regardless (plan " +
-        "I-29). RETURNS { overall_score, score_status, score_coverage, score_interval, dimension_scores, " +
+        "I-29). RETURNS { overall_score, score_status, establishment_blocked_by (every reason it is not established), score_coverage, score_interval, dimension_scores, " +
         "guardrail_status, coverage, readings } — readings is every stored answer, per measure key, " +
         "per subject_ref, with its assessment_id, which is what a finding cites — and stores the " +
         "score on zz.eval_run, moving run_status to " +
@@ -551,24 +551,37 @@ export function registerEvaluationTools(server: McpServer): void {
         };
       });
 
-      const perSubjectOveralls: number[] = [];
-      for (const subjectRef of subjectRefs) {
-        const own = bySubjectAndMeasure.get(subjectRef) ?? new Map<string, MeasureAnswer[]>();
-        const detail = measureDetail(new Map([...runLevel, ...own]));
-        const subjectDims = dims.map((d) => ({
-          key: d.key, canonical_kind: d.canonical_kind, weight: d.weight, required: d.required,
-          applicable: d.applicable, not_applicable_reason: d.not_applicable_reason,
-          measures: d.measures.map((m) => ({ weight: m.weight, required: m.required, value: detail.get(m.id)!.value })),
-        }));
-        const subjectScore = scoreRun({ dimensions: subjectDims, coverage_met: true, qualification_met: true, guardrails: [] });
-        if (subjectScore.overall !== null) perSubjectOveralls.push(subjectScore.overall);
-      }
-      const uncertainty = resolveUncertainty(policy.uncertainty, eval_run_id);
-      const interval = bootstrapInterval(perSubjectOveralls, uncertainty);
-      const score_interval = interval.degenerate ? interval : {
-        ...interval,
-        note: "each subject is scored on the measures routed to its kind, plus the run-level facts",
+      // The run's own overall, recomputed over a resample of its subjects — what the interval
+      // is an interval OF. Run-level rows (the facts) are in every resample, as in the run.
+      const subjects = [...subjectRefs];
+      const overallOf = (indices: readonly number[]): number | null => {
+        const merged = new Map<string, MeasureAnswer[]>([...runLevel].map(([k, v]) => [k, [...v]]));
+        for (const i of indices) {
+          for (const [measureId, answers] of bySubjectAndMeasure.get(subjects[i]) ?? []) {
+            const list = merged.get(measureId);
+            if (list) list.push(...answers); else merged.set(measureId, [...answers]);
+          }
+        }
+        const detail = measureDetail(merged);
+        return scoreRun({
+          dimensions: dims.map((d) => ({
+            key: d.key, canonical_kind: d.canonical_kind, weight: d.weight, required: d.required,
+            applicable: d.applicable, not_applicable_reason: d.not_applicable_reason,
+            measures: d.measures.map((m) => ({ weight: m.weight, required: m.required, value: detail.get(m.id)!.value })),
+          })),
+          coverage_met: true, qualification_met: true, guardrails: [],
+        }).overall;
       };
+      const score_interval = bootstrapInterval(subjects.length, overallOf, resolveUncertainty(policy.uncertainty, eval_run_id));
+
+      // Why a score is not established, said rather than left for a reader to reverse-engineer
+      // from three flags: every required measure left unscored, and each policy not met.
+      const establishment_blocked_by = scored.status === "established" ? [] : [
+        ...dimension_scores.flatMap((d) => d.measures.filter((m) => m.required && m.excluded)
+          .map((m) => `required measure ${m.key} not scored: ${m.excluded_reason ?? "no assessment"}`)),
+        ...(coverage_met ? [] : [`coverage floor not met: ${snapshot.usable_run_count} usable run(s), ${subjectRefs.size} subject ref(s)`]),
+        ...(qualification_met ? [] : ["a required model-backed measure's evaluator is below the protocol's qualification minimum, or the protocol is a bootstrap"]),
+      ];
 
       const principal = parseCaller(requestHeaders()).email;
       const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
@@ -583,7 +596,7 @@ export function registerEvaluationTools(server: McpServer): void {
              where id = $1::uuid`,
             [eval_run_id, scored.status, scored.overall, JSON.stringify(score_interval),
              JSON.stringify(dimension_scores), scored.guardrail_status, JSON.stringify(guardrailResults),
-             JSON.stringify({ measures: scored.coverage, measures_floor: scored.coverage_floor })]);
+             JSON.stringify({ measures: scored.coverage, measures_floor: scored.coverage_floor, establishment_blocked_by })]);
           return { result: { id: eval_run_id }, result_table: "zz.eval_run", result_id: eval_run_id };
         },
       );
@@ -596,7 +609,7 @@ export function registerEvaluationTools(server: McpServer): void {
         "select coverage from zz.eval_run where id = $1::uuid", [eval_run_id])).rows[0]?.coverage ?? null;
       const recorded = await recordStage(initiative, "zz-plugin-evaluate", { eval_run_id });
       return json({
-        eval_run_id, overall_score: scored.overall, score_status: scored.status,
+        eval_run_id, overall_score: scored.overall, score_status: scored.status, establishment_blocked_by,
         score_coverage: scored.coverage, coverage_floor: scored.coverage_floor,
         score_interval, dimension_scores, guardrail_status: scored.guardrail_status, coverage, readings, ...recorded,
       });

@@ -193,6 +193,7 @@ check("a model-backed measure qualifies against its own declared anchors, faults
       runsCheck("eval-qualify-anchors.ts"));
 check("one excluded measure lowers its dimension's coverage but never nulls the dimension or the overall; the status reads the run's coverage against a named floor", runsCheck("eval-score-coverage.ts"));
 check("OBSERVE counts only a plugin's own tools, attributed by the door that serves them, so observed never exceeds total, and its traces return the observed run ids with their team", runsCheck("eval-observe-surface.ts"));
+check("evaluation_score's interval resamples the subjects and recomputes the run's own overall, so it contains the overall it describes", runsCheck("eval-score-interval.ts"));
 check("evaluation_assess asks a model-backed measure only about refs of its own kind, never asks an unqualified evaluator, reads a deterministic fact once per run, and evaluation_score returns every reading with its assessment_id", runsCheck("eval-assess-routing.ts"));
 check("a finding is corrected by recording its replacement with supersedes: the old one closes in the same write, a correction stays in its own eval_run, and findings.md renders only current findings, naming what each correction replaced", runsCheck("eval-finding-supersede.ts"));
 check("the release reads the catalog owner team off the host's deploy/.env, hands it to register-plugins as owner and release_owners, and a register-plugins failure is a verification failure", runsCheck("release-plugin-owners.ts"));

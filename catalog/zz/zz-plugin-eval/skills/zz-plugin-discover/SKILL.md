@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-discover
-version: 0.3
+version: 0.4
 description: Stage 3 of zz-plugin-eval (DISCOVER). Mine one OBSERVE snapshot's own real refusals and stage returns for candidate failure modes, before any protocol exists — so DEFINE/QUALIFY freezes questions worth asking, not questions invented from nothing.
 when_to_use: "The third stage of zz-plugin-eval, after OBSERVE has written an observation_snapshot_id. Always run before DEFINE/QUALIFY on a subject whose protocol is being created or revised — reuse skips it. No shell required."
 ---
@@ -39,9 +39,13 @@ come from its own tools, so an evaluator answer of `platform` is recorded as `ow
 with `folded_from: platform` on the candidate's `ownership` evidence ref. Every `plugin`-owned
 candidate's ref carries `owner_ref`: the plugin's own name.
 
-RETURNS `candidates: [{ id, stable_key, description, prevalence: {numerator, denominator},
-owner_kind, confidence, evidence_refs }]` — every one persisted as a
-`zz.eval_failure_mode_candidate` row, `status: 'candidate'`, before any protocol exists. A
+RETURNS `candidates: [{ id, stable_key, status, merged_into, description, prevalence:
+{numerator, denominator}, owner_kind, confidence, evidence_refs }]` — every one persisted as a
+`zz.eval_failure_mode_candidate` row before any protocol exists. `stable_key` is the failure
+mode's identity across windows (the tool and the refusal rule, or the two stages of a return).
+A candidate whose key this plugin already has — folded into a protocol, or found by an earlier
+DISCOVER and still open — is `status: 'merged'`, `merged_into` that one: the same failure mode
+seen again, which asks for no new protocol version. The rest are `status: 'candidate'`. A
 mutator: writes through the FR-59 idempotency ledger, so a retried call with the same
 `idempotency_key` replays the exact same candidate set rather than re-asking any model.
 

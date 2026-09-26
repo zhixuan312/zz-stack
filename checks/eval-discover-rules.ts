@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
-const { foldByRule, refusalRule } = await load("services/zz-core/dist/eval/discover-groups.js");
+const { foldByRule, refusalRule, refusalKey, returnKey } = await load("services/zz-core/dist/eval/discover-groups.js");
 const { interpret } = await load("packages/contracts/dist/assessment.js");
 
 const fail: string[] = [];
@@ -51,6 +51,15 @@ const rounded = interpret(question, reply([0.05, 0.02, 0.86, 0.02, 0.02, 0.02]))
 is(rounded.status === "answered", `a two-decimal-rounded distribution summing to 0.99 is ${rounded.status}: ${rounded.failure_reason}`);
 const wrong = interpret(question, reply([0.05, 0.02, 0.77, 0.02, 0.02, 0.02]));
 is(wrong.status === "invalid_response", `a distribution summing to 0.9 is ${wrong.status}, not refused`);
+
+// A failure mode keeps its identity across snapshots: the same rule found in another window, in
+// another order, is the same key, so DISCOVER records it as merged rather than new.
+const again = foldByRule([...groups].reverse()).find((g: { tool: string }) => g.tool === REVISE);
+is(revise && again && refusalKey(revise) === refusalKey(again),
+   `the same refusal rule found in another order has another key: ${revise && refusalKey(revise)} vs ${again && refusalKey(again)}`);
+const patch = folded.find((g: { tool: string }) => g.tool === "core:document_patch");
+is(patch && revise && refusalKey(patch) !== refusalKey(revise), "two rules share one key");
+is(returnKey({ from_step: "sdlc-plan", back_to_step: "sdlc-spec" }) === "return:sdlc-plan->sdlc-spec", "a return's key names its two stages");
 
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }
 console.log("ok eval-discover-rules");

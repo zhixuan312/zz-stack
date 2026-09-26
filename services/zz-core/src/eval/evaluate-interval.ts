@@ -61,36 +61,47 @@ interface ScoreInterval {
   readonly note: string | null;
 }
 
-/** Percentile bootstrap over per-subject overall scores. Fewer than two subjects makes a
- *  resample meaningless — there is only one value to draw, every resample is it, and reporting a
- *  point interval as a computed one would claim a precision this evidence does not have, so that
- *  case is named `degenerate` rather than silently narrowed to a zero-width interval. */
+/** Percentile bootstrap of the run's OWN statistic: resample the subjects with replacement and
+ *  recompute the overall from each resample, exactly as the run's overall is computed from all of
+ *  them. The earlier form bootstrapped the mean of each subject's own overall — a different
+ *  estimator, since a document subject scored on document measures alone and a run subject on run
+ *  measures alone — and its interval (8.61-8.78) did not contain the overall it described (8.26).
+ *  Fewer than two subjects makes a resample meaningless, so that case is named `degenerate`
+ *  rather than silently narrowed to a zero-width interval. A resample the statistic cannot score
+ *  is left out of the percentiles and counted in the note. */
 export function bootstrapInterval(
-  perSubjectScores: readonly number[], settings: UncertaintySettings,
+  nSubjects: number, statistic: (indices: readonly number[]) => number | null,
+  settings: UncertaintySettings,
 ): ScoreInterval {
-  const n = perSubjectScores.length;
-  if (n === 0) {
+  const all = Array.from({ length: nSubjects }, (_, i) => i);
+  if (nSubjects === 0) {
     return { lower: null, upper: null, level: settings.level, iterations: settings.iterations,
               n_subjects: 0, degenerate: true, note: "no subject was scored" };
   }
-  if (n === 1) {
-    const only = perSubjectScores[0];
+  if (nSubjects === 1) {
+    const only = statistic(all);
     return { lower: only, upper: only, level: settings.level, iterations: settings.iterations,
               n_subjects: 1, degenerate: true,
               note: "one subject scored — a bootstrap over a single value has nothing to resample" };
   }
   const rand = mulberry32(seedFrom(settings.seed));
-  const means: number[] = [];
+  const values: number[] = [];
   for (let it = 0; it < settings.iterations; it++) {
-    let sum = 0;
-    for (let i = 0; i < n; i++) sum += perSubjectScores[Math.floor(rand() * n)];
-    means.push(sum / n);
+    const pick = all.map(() => Math.floor(rand() * nSubjects));
+    const v = statistic(pick);
+    if (v !== null) values.push(v);
   }
-  means.sort((a, b) => a - b);
+  if (values.length < 2) {
+    return { lower: null, upper: null, level: settings.level, iterations: settings.iterations,
+              n_subjects: nSubjects, degenerate: true, note: "no resample of the subjects could be scored" };
+  }
+  values.sort((a, b) => a - b);
   const tail = (1 - settings.level) / 2;
-  const at = (p: number) => means[Math.min(means.length - 1, Math.max(0, Math.floor(p * means.length)))];
+  const at = (q: number) => values[Math.min(values.length - 1, Math.max(0, Math.floor(q * values.length)))];
+  const unscored = settings.iterations - values.length;
   return {
     lower: at(tail), upper: at(1 - tail), level: settings.level, iterations: settings.iterations,
-    n_subjects: n, degenerate: false, note: null,
+    n_subjects: nSubjects, degenerate: false,
+    note: unscored ? `${unscored} resample(s) scored nothing and are left out` : null,
   };
 }

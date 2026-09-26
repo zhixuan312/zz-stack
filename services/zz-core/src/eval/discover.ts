@@ -58,7 +58,7 @@ import { z } from "zod";
 import { entryOf, servesOwnDoor, toolsNamedBy } from "./plugin-eval.js";
 import { pluginTraces, type EvidenceWindow } from "./plugin-profile.js";
 import {
-  refusalGroups, returnGroups, totalToolCallEvents, totalStepVisits,
+  refusalGroups, refusalKey, returnGroups, returnKey, totalToolCallEvents, totalStepVisits,
   type RefusalGroup, type ReturnGroup,
 } from "./discover-groups.js";
 import { registerEvaluator, type EvaluatorDefinition } from "./evaluators.js";
@@ -124,6 +124,9 @@ const OWNER_KIND_EVALUATOR: EvaluatorDefinition = {
 interface CandidateOut {
   id: string;
   stable_key: string | null;
+  /** `candidate`, or `merged` when this plugin already has the same failure mode (`merged_into`). */
+  status: string;
+  merged_into: string | null;
   description: string;
   prevalence: { numerator: number; denominator: number };
   owner_kind: string;
@@ -284,25 +287,42 @@ async function criticDescribe(
 }
 
 async function insertCandidate(
-  client: pg.PoolClient, observationSnapshotId: string, description: string,
+  client: pg.PoolClient, observationSnapshotId: string, stableKey: string, description: string,
   prevalence: { numerator: number; denominator: number }, classification: Classification,
   evidenceRefs: unknown[],
 ): Promise<CandidateOut> {
   if (classification.pending) await insertEvaluatorAnswer(client, classification.pending);
+  // The same failure mode this plugin already has — folded into a protocol (accepted) or still
+  // waiting for one (candidate) — is recorded as merged into it rather than as new.
+  const known = (await client.query<{ id: string }>(`
+    select c.id::text as id
+      from zz.eval_failure_mode_candidate c
+      join zz.eval_observation_snapshot os on os.id = c.observation_snapshot_id
+      join zz.eval_subject_version sv on sv.id = os.subject_version_id
+     where c.stable_key = $2 and c.status in ('accepted', 'candidate')
+       and sv.plugin_id = (select s2.plugin_id from zz.eval_observation_snapshot o2
+                             join zz.eval_subject_version s2 on s2.id = o2.subject_version_id
+                            where o2.id = $1::uuid)
+     order by (c.status = 'accepted') desc, c.created_at
+     limit 1`, [observationSnapshotId, stableKey])).rows[0];
   const row = (await client.query<{
     id: string; description: string; prevalence: { numerator: number; denominator: number };
     owner_kind: string; confidence: string | null; evidence_refs: unknown; stable_key: string | null;
+    status: string; merged_into: string | null;
   }>(`
     insert into zz.eval_failure_mode_candidate
       (observation_snapshot_id, stable_key, description, prevalence, owner_kind, confidence,
-       evidence_refs, status, created_at)
-    values ($1::uuid, $2, $3, $4::jsonb, $5, $6, $7::jsonb, $8, now())
-    returning id::text as id, description, prevalence, owner_kind, confidence, evidence_refs, stable_key`,
-    [observationSnapshotId, null, description, JSON.stringify(prevalence), classification.owner_kind,
-     classification.confidence, JSON.stringify(evidenceRefs), CANDIDATE_STATUS])).rows[0];
+       evidence_refs, status, merged_into_id, created_at)
+    values ($1::uuid, $2, $3, $4::jsonb, $5, $6, $7::jsonb, $8, $9::uuid, now())
+    returning id::text as id, description, prevalence, owner_kind, confidence, evidence_refs, stable_key,
+              status, merged_into_id::text as merged_into`,
+    [observationSnapshotId, stableKey, description, JSON.stringify(prevalence), classification.owner_kind,
+     classification.confidence, JSON.stringify(evidenceRefs), known ? "merged" : CANDIDATE_STATUS,
+     known?.id ?? null])).rows[0];
   if (!row) throw new Error("insert into zz.eval_failure_mode_candidate produced no row");
   return {
-    id: row.id, stable_key: row.stable_key, description: row.description,
+    id: row.id, stable_key: row.stable_key, status: row.status, merged_into: row.merged_into,
+    description: row.description,
     prevalence: row.prevalence, owner_kind: row.owner_kind,
     confidence: row.confidence === null ? null : Number(row.confidence),
     evidence_refs: row.evidence_refs,
@@ -318,6 +338,7 @@ function ownerRef(ownerKind: string, plugin: string): string | null {
 
 /** One candidate row, fully decided and not yet written. */
 interface PlannedCandidate {
+  readonly stableKey: string;
   readonly description: string;
   readonly prevalence: { numerator: number; denominator: number };
   readonly classification: Classification;
@@ -376,6 +397,7 @@ async function planCandidates(
       { kind: "discovery_run", principal, idempotency_key: idempotencyKey },
     ];
     planned.push({
+      stableKey: refusalKey(g),
       description: built.description, prevalence: { numerator: g.count, denominator: totalCalls },
       classification, evidenceRefs,
     });
@@ -394,7 +416,7 @@ async function planCandidates(
         owner_ref: ownerRef(classification.owner_kind, snapshot.plugin) },
       { kind: "discovery_run", principal, idempotency_key: idempotencyKey },
     ];
-    planned.push({ description, prevalence: { numerator: g.count, denominator: totalVisits }, classification, evidenceRefs });
+    planned.push({ stableKey: returnKey(g), description, prevalence: { numerator: g.count, denominator: totalVisits }, classification, evidenceRefs });
   }
 
   return planned;
@@ -408,7 +430,7 @@ async function insertPlanned(
   const candidates: CandidateOut[] = [];
   for (const c of planned) {
     candidates.push(await insertCandidate(
-      client, observationSnapshotId, c.description, c.prevalence, c.classification, c.evidenceRefs));
+      client, observationSnapshotId, c.stableKey, c.description, c.prevalence, c.classification, c.evidenceRefs));
   }
   return { candidates };
 }
@@ -430,8 +452,10 @@ async function readBackCandidates(
   const { rows } = await pool.query<{
     id: string; description: string; prevalence: { numerator: number; denominator: number };
     owner_kind: string; confidence: string | null; evidence_refs: unknown; stable_key: string | null;
+    status: string; merged_into: string | null;
   }>(`
-    select id::text as id, description, prevalence, owner_kind, confidence, evidence_refs, stable_key
+    select id::text as id, description, prevalence, owner_kind, confidence, evidence_refs, stable_key,
+           status, merged_into_id::text as merged_into
       from zz.eval_failure_mode_candidate c
      where c.observation_snapshot_id = $1::uuid
        and exists (
@@ -441,7 +465,8 @@ async function readBackCandidates(
      order by created_at`, [observationSnapshotId, principal, idempotencyKey]);
   return {
     candidates: rows.map((r) => ({
-      id: r.id, stable_key: r.stable_key, description: r.description, prevalence: r.prevalence,
+      id: r.id, stable_key: r.stable_key, status: r.status, merged_into: r.merged_into,
+      description: r.description, prevalence: r.prevalence,
       owner_kind: r.owner_kind, confidence: r.confidence === null ? null : Number(r.confidence),
       evidence_refs: r.evidence_refs,
     })),
@@ -460,9 +485,11 @@ export function registerFailureDiscoverTools(server: McpServer): void {
         "plugin | dependency | platform | environment | user_input | unknown), and — only for " +
         "a refusal group with no recorded text at all — proposes a description with one " +
         "generative-critic call, recorded with its provenance. RETURNS candidates: [{ id, " +
-        "stable_key, description, prevalence: {numerator, denominator}, owner_kind, " +
+        "stable_key, status, merged_into, description, prevalence: {numerator, denominator}, owner_kind, " +
         "confidence, evidence_refs }], every one persisted as zz.eval_failure_mode_candidate " +
-        "rows with status='candidate', before any protocol exists. A mutator: writes through " +
+        "rows with status='candidate' — or 'merged', merged_into the one this plugin already has, " +
+        "when its stable_key (the tool and refusal rule, or the two stages of a return) is a failure " +
+        "mode a protocol already folded in or a DISCOVER already found. A mutator: writes through " +
         "the FR-59 idempotency ledger, so a retried call with the same idempotency_key replays " +
         "the exact same candidate set rather than re-asking any model. REFUSES an " +
         "observation_snapshot_id nothing minted; never drops a candidate for a model outage — " +

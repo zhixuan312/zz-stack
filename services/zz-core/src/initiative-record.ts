@@ -334,9 +334,11 @@ export function recordsFor(root: string, initiative: string): Record<string, Rec
 }
 
 /** Merge `ids` into `stage`'s record. Temp file then rename, as `writeFacts` does. */
-export function writeStageRecord(root: string, initiative: string, stage: string, ids: Record<string, string>): void {
+export function writeStageRecord(
+  root: string, initiative: string, stage: string, ids: Record<string, string>, replace = false,
+): void {
   const records = recordsFor(root, initiative);
-  records[stage] = { ...(records[stage] ?? {}), ...ids };
+  records[stage] = replace ? { ...ids } : { ...(records[stage] ?? {}), ...ids };
   const file = join(root, initiative, RECORDS_FILE);
   const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(records, null, 2)}\n`);

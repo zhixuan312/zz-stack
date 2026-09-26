@@ -39,20 +39,22 @@ async function located(initiative: string): Promise<{ root: string } | { record_
 }
 
 export async function recordStage(
-  initiative: string | undefined, stage: string, ids: Record<string, string>,
+  initiative: string | undefined, stage: string, ids: Record<string, string>, replace = false,
 ): Promise<{ record_refused?: string }> {
   if (!initiative) return {};
   const at = await located(initiative);
   if ("record_refused" in at) return at;
   // Read-merge-write: two stages recording into one initiative at once must not lose either.
-  await withInitiativeFactsLock(initiative, async () => writeStageRecord(at.root, initiative, stage, ids));
+  await withInitiativeFactsLock(initiative, async () => writeStageRecord(at.root, initiative, stage, ids, replace));
   return {};
 }
 
 /** protocol_read said create or revise: DEFINE/QUALIFY will owe the bind and the qualification
- *  once protocol.md is approved. */
+ *  once protocol.md is approved. The record is REPLACED: a revise means a new version, and the
+ *  previous version's bind and qualifications discharge nothing for it — merged, they routed
+ *  initiative_status straight past v3's affirm and qualification to EVALUATE. */
 export async function recordDefineOwes(initiative: string | undefined): Promise<{ record_refused?: string }> {
-  return recordStage(initiative, DEFINE_STAGE, { owes: DEFINE_OWES.join(",") });
+  return recordStage(initiative, DEFINE_STAGE, { owes: DEFINE_OWES.join(",") }, true);
 }
 
 /** protocol_affirm bound `path` to this version. `qualifyOwed` is every model-backed measure key

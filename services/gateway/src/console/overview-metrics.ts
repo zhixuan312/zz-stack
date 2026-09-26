@@ -121,13 +121,22 @@ function quantile(xs: number[], q: number): number | null {
   return s[Math.min(s.length - 1, Math.floor(s.length * q))];
 }
 
-/** Where one initiative has got to, from the documents that exist and their approvals. */
+/** Where one initiative has got to, from the documents that exist and their approvals.
+ *
+ * `closed` is `zz.initiative.closed_at is not null` — the caller's own authority, not
+ * derived from any document here. */
 function progressOf(
   flow: string,
-  docs: { path: string; status: string | null; outcome: string | null; updatedAt?: string | null }[],
+  docs: { path: string; status: string | null; updatedAt?: string | null }[],
+  closed: boolean,
 ): { completeness: number | null; stage: Stage; waiting: string[] } {
   const declared = flowShape(flow || null);
-  if (declared.size === 0) return { completeness: null, stage: "noflow", waiting: [] };
+  // `closed` wins even here: it is `zz.initiative.closed_at`, true regardless of whether this
+  // checkout's catalog can still resolve the flow this initiative ran under. Before the anchor,
+  // an initiative closed under a flow later renamed or retired could read as merely `noflow` —
+  // the same silent miscount `closingDoc` matching by name caused when a flow moved its closing
+  // document. Completeness genuinely cannot be scored with no manifest to score it against.
+  if (declared.size === 0) return { completeness: null, stage: closed ? "closed" : "noflow", waiting: [] };
 
   const byPath = new Map(docs.map((d) => [d.path, d.status]));
   let score = 0, present = 0, approved = 0, gates = 0, gatesCleared = 0;
@@ -156,15 +165,8 @@ function progressOf(
   }
   const completeness = (score / declared.size) * 100;
   /* Clearing every gate is not being done. An initiative can have every gate approved and still be
-   * open. Closure is recorded as an `outcome` on the flow's closing document and nowhere else —
-   * `initiative.closed_at` is written by nothing and the schema does not carry it — so `gated` is its
-   * own rung on the ladder. */
-  const closingDoc = [...declared].find(([, d]) => d.closing)?.[0];
-  const closed = closingDoc
-    ? docs.some((d) => d.path === closingDoc && d.outcome !== null)
-    // A flow that declares no closing document records its outcome wherever it likes; any
-    // document carrying one closes it. Never "no closing document, therefore never closed".
-    : docs.some((d) => d.outcome !== null);
+   * open — `closed` is the caller's own read of `zz.initiative.closed_at`, so `gated` is its own
+   * rung on the ladder regardless of how many gates this flow declares. */
   const allGates = gates > 0 ? gatesCleared >= gates : present >= declared.size && approved > 0;
   const stage: Stage = closed ? "closed"
     : present === 0 ? "notstarted"
@@ -187,8 +189,8 @@ function progressOf(
  * Active means a tool call, not any event: most events on this platform carry no run and are bulk
  * import or admin rather than somebody working.
  *
- * Initiatives are not deleted here; they are closed with an outcome recorded on the flow's closing
- * document.
+ * Initiatives are not deleted here; they are closed with `closed_at`/`outcome` recorded on
+ * `zz.initiative` itself.
  */
 export async function readMetrics(
   db: Pool, scope: ResolvedScope, since: Date | null, prevSince: Date | null,
@@ -249,17 +251,17 @@ export async function readMetrics(
                   and $1::timestamptz is not null and n.created_at < $1)             as prev_imported
            from node n join peak p on p.src = n.src`,
         [since, IMPORT_NODES_PER_HOUR]),
-      db.query<{ slug: string; team: string; flow: string;
-                 docs: { path: string; status: string | null; outcome: string | null;
+      db.query<{ slug: string; team: string; flow: string; closed: boolean;
+                 docs: { path: string; status: string | null;
                          updatedAt: string | null }[] }>(
-        `select i.slug, t.slug as team, coalesce(i.flow,'') as flow,
+        `select i.slug, t.slug as team, coalesce(i.flow,'') as flow, i.closed_at is not null as closed,
                 coalesce((select json_agg(json_build_object('path', d.path, 'status', d.status,
-                                                           'outcome', d.outcome, 'updatedAt', d.updated_at))
+                                                           'updatedAt', d.updated_at))
                             from zz.doc d
                            where d.initiative = i.slug and d.team_slug = t.slug), '[]'::json) as docs
            from zz.initiative i join zz.team t on t.id = i.team_id
           where ($1::timestamptz is null
-                 or i.created_at >= $1
+                 or i.opened_at >= $1
                  or exists (select 1 from zz.event e
                              where e.kind = 'tool_call'
                                and e.initiative = i.slug and e.team_id = i.team_id and e.ts >= $1))`,
@@ -329,18 +331,18 @@ export async function readMetrics(
                   and $1::timestamptz is not null and n.created_at < $1)             as prev_imported
            from node n join peak p on p.src = n.src`,
         [since, IMPORT_NODES_PER_HOUR, scope.slug]),
-      db.query<{ slug: string; team: string; flow: string;
-                 docs: { path: string; status: string | null; outcome: string | null;
+      db.query<{ slug: string; team: string; flow: string; closed: boolean;
+                 docs: { path: string; status: string | null;
                          updatedAt: string | null }[] }>(
-        `select i.slug, t.slug as team, coalesce(i.flow,'') as flow,
+        `select i.slug, t.slug as team, coalesce(i.flow,'') as flow, i.closed_at is not null as closed,
                 coalesce((select json_agg(json_build_object('path', d.path, 'status', d.status,
-                                                           'outcome', d.outcome, 'updatedAt', d.updated_at))
+                                                           'updatedAt', d.updated_at))
                             from zz.doc d
                            where d.initiative = i.slug and d.team_slug = t.slug), '[]'::json) as docs
            from zz.initiative i join zz.team t on t.id = i.team_id
           where t.slug = $2
             and ($1::timestamptz is null
-                 or i.created_at >= $1
+                 or i.opened_at >= $1
                  or exists (select 1 from zz.event e
                              where e.kind = 'tool_call'
                                and e.initiative = i.slug and e.team_id = i.team_id and e.ts >= $1))`,
@@ -371,7 +373,7 @@ export async function readMetrics(
   let waiting = 0;
   let oldest: number | null = null;
   for (const row of inits.rows) {
-    const { completeness, stage, waiting: openGates } = progressOf(row.flow, row.docs ?? []);
+    const { completeness, stage, waiting: openGates } = progressOf(row.flow, row.docs ?? [], row.closed);
     stages[stage]++;
     if (completeness !== null && stage !== "closed") scores.push(completeness);
     if (stage === "closed") continue;

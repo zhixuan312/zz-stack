@@ -159,8 +159,10 @@ probe("no document carries a status its flow does not gate", () => {
   const rows = psql(
     "select flow, regexp_replace(path,'^.*/',''), status from zz.doc " +
     "where status <> '' and path not like '\\_versions/%' " +
-    "and not exists (select 1 from zz.doc c where c.team_slug = zz.doc.team_slug " +
-    "and c.initiative = zz.doc.initiative and c.outcome <> '')").split("\n").filter(Boolean);
+    // Closed is zz.initiative's own closed_at, never a document's outcome.
+    "and not exists (select 1 from zz.initiative i join zz.team t on t.id = i.team_id " +
+    "where t.slug = zz.doc.team_slug and i.slug = zz.doc.initiative and i.closed_at is not null)")
+    .split("\n").filter(Boolean);
   const bad: string[] = [];
   for (const line of rows) {
     const [flow, name, status] = line.split("|");

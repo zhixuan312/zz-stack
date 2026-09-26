@@ -147,13 +147,24 @@ async function main(): Promise<number> {
   // the platform, which prepends today's date to the slug.
   if (!INIT) {
     const body = await call("initiative_open", { slug: SLUG, flow: FLOW });
-    const parsed = JSON.parse(body) as { initiative?: string };
+    const parsed = JSON.parse(body) as { initiative?: string; opened_at?: string; opened_by?: string };
     if (!parsed.initiative) {
       console.log(`  FAIL  initiative_open returned no name: ${body.slice(0, 300)}`);
       return 1;
     }
     INIT = parsed.initiative;
     console.log(`  ok    initiative_open("${SLUG}", "${FLOW}") -> ${INIT}`);
+    // The anchor row (002_initiative_anchor.sql, Task I-6): opened_at/opened_by are inserted in
+    // the same call, not derived later by a reconciler. There is no MCP surface for the row
+    // itself, so this is asserted through the tool's own response.
+    record(typeof parsed.opened_at === "string" && parsed.opened_at.length > 0,
+      "initiative_open records opened_at on the anchor row in the same call", body.slice(0, 300));
+    let callerEmail = "";
+    try {
+      callerEmail = ((JSON.parse(await call("session_whoami", {})) as { email?: string }).email ?? "").trim();
+    } catch { /* no identity to compare opened_by against */ }
+    record(!callerEmail || parsed.opened_by === callerEmail,
+      "initiative_open records opened_by as the caller on the anchor row", body.slice(0, 300));
     // Before the first write, so every body carries what the platform will demand of it.
     await loadSectionsFromPlatform(INIT);
     // A second open of the same slug is refused. Two folders for one slug diverge with nothing
@@ -175,6 +186,21 @@ async function main(): Promise<number> {
   // A gate is passed by a person, on a day, and the platform is what knows both. A hand-written
   // `status` field is refused by ownershipCheck, one layer before the attribution guard.
   check("a draft needs no approver", await writeDoc(`${INIT}/${OPENS_ON}`, "intent"), false);
+
+  // `indexDoc` (packages/indexing/src/index.ts, Task I-6) resolves `zz.doc.initiative_id` inline,
+  // in the same insert that writes the document's row — no reindex or reconciler needed to catch
+  // up. `doc_index`, reported by `initiative_status` for a named initiative, is the one MCP
+  // surface for that column (`zz.doc.initiative_id` itself has none): `tagged === total`
+  // immediately after this first write is the observable proof.
+  const afterFirstWrite = JSON.parse(
+    await call("initiative_status", { initiative: INIT })) as { doc_index?: { total: number; tagged: number } };
+  if (afterFirstWrite.doc_index) {
+    record(afterFirstWrite.doc_index.tagged === afterFirstWrite.doc_index.total,
+      "a document written into the initiative carries initiative_id immediately",
+      JSON.stringify(afterFirstWrite.doc_index));
+  } else {
+    console.log("  skip  a document written into the initiative carries initiative_id immediately — no database");
+  }
 
   // The platform authored `status` on that write. Nothing else could have: the document went
   // in without the field.
@@ -387,6 +413,17 @@ async function main(): Promise<number> {
   const closedDoc = await call("document_read", { path: `${INIT}/${closing}` });
   record(/outcome: accepted/.test(closedDoc) && /accepted_by: \S/.test(closedDoc),
          "a close with nobody named records the caller as the acceptor", closedDoc);
+
+  // The anchor row (002_initiative_anchor.sql, Task I-6): the same close records closed_at,
+  // closed_by and outcome on the row in the same call, and initiative_status now reads all
+  // three from it. Asserted through initiative_status's own answer, the one MCP surface for
+  // the row.
+  const afterClose = JSON.parse(
+    await call("initiative_status", { initiative: INIT })) as { outcome?: string; closed_by?: string };
+  record(afterClose.outcome === "accepted",
+    "initiative_status reads outcome from the anchor row after a close", JSON.stringify(afterClose));
+  record(!!afterClose.closed_by,
+    "initiative_status reads closed_by from the anchor row after a close", JSON.stringify(afterClose));
 
   // An initiative closes once. A second close must not overwrite the document's outcome while
   // ledgerOnClose skips the second row — the document and the team's ledger would say different

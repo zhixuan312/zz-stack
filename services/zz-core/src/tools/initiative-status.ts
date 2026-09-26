@@ -27,6 +27,21 @@ import { logActivity } from "../persist.js";
 import { db, teamFor } from "../platform-db.js";
 import { type Chain } from "../write-guards.js";
 
+/** The lifecycle facts `zz.initiative`'s anchor row carries (002_initiative_anchor.sql),
+ *  resolved once by the async tool handler and handed to the (still synchronous)
+ *  `initiativeState` below — see its own docstring for why the row is a parameter rather than
+ *  a query this function makes itself.
+ *
+ *  `closed_by` is already the closer's email, joined from `zz.principal` by the caller: the
+ *  column itself is a uuid, and this function's callers and its fixtures both deal in the
+ *  email string every other field here already uses. */
+interface InitiativeAnchor {
+  flow: string | null;
+  closed_at: string | null;
+  closed_by: string | null;
+  outcome: string | null;
+}
+
 interface DocState {
   name: string; role?: string; exists: boolean; status: string | null;
   gate: boolean; approved_by?: string; approved_at?: string; requires?: string;
@@ -142,8 +157,17 @@ function isHandover(d: { name: string; role?: string }): boolean {
  * COUPLED: `checks/initiative-open.ts` drives it.
  *
  * `next_move` is null exactly when nothing declared a chain, and `next_move_absent` says why
- * in that case and is undefined otherwise. */
-export function initiativeState(root: string, name: string, chain: Chain, docs: FlowDoc[]) {
+ * in that case and is undefined otherwise.
+ *
+ * `anchor`, when given, is `zz.initiative`'s own row (002_initiative_anchor.sql, Task I-6):
+ * flow, abandonment and outcome are read from it rather than from `_open.json` or a document's
+ * envelope. Optional and trailing, so this stays a synchronous function a fixture-driven check
+ * can call directly with no database at all (`checks/initiative-open.ts` and its neighbours) —
+ * they get today's file/envelope-derived answer; the registered tools below resolve the row
+ * first and pass it in. */
+export function initiativeState(
+  root: string, name: string, chain: Chain, docs: FlowDoc[], anchor?: InitiativeAnchor | null,
+) {
   const dir = join(root, name);
   // No chain, so no next move — an answer rather than a gap. A freeform initiative is one
   // nobody drove with a flow: every document operation works, every gate still gates and the
@@ -164,18 +188,21 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
       files.map((f) => ({ name: f, ...envelopeOf(join(dir, f)) }));
     const closer = envs.find((e) => e.outcome);
     // An initiative holding no document at all — opened by mistake, then abandoned — has no
-    // envelope to read an outcome off.
-    // COUPLED: initiative_close records abandoned_at/abandoned_by on `_open.json`.
-    const rec = openRecord(root, name);
-    if (!closer && rec?.abandoned_at) {
+    // envelope to read an outcome off. `anchor`, when given, is authoritative (the row is where
+    // `initiative_close` now records this); with no database, `openRecord`'s file is what
+    // `initiative_close` still falls back to for the same fact.
+    const rec = anchor ? null : openRecord(root, name);
+    const declaredFlow = anchor ? anchor.flow : (rec?.flow ?? null);
+    const abandonedAt = anchor ? anchor.closed_at : (rec?.abandoned_at ?? null);
+    const abandonedBy = anchor ? anchor.closed_by : (rec?.abandoned_by ?? null);
+    if (!closer && abandonedAt) {
       return {
-        initiative: name, flow: rec.flow, documents: envs, sources: 0,
+        initiative: name, flow: declaredFlow, documents: envs, sources: 0,
         sources_after_approval: [],
-        outcome: OUTCOME_STOPPED, closed_by: rec.abandoned_by ?? null,
+        outcome: OUTCOME_STOPPED, closed_by: abandonedBy ?? null,
         next_move: { action: "closed", waiting_on: "nobody",
-                     why: `abandoned on ${rec.abandoned_at} — it holds no document, so the ` +
-                          "outcome is recorded on its own open record and no ledger row was " +
-                          "appended" },
+                     why: `abandoned on ${abandonedAt} — it holds no document, so the outcome ` +
+                          "is recorded on its own anchor row and no ledger row was appended" },
       };
     }
     // The same two source fields the governed return carries: freeform has no manifest but
@@ -184,7 +211,7 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
     const freeSources = sourceReport(dir, (d) => envs.find((e) => e.name === d)?.status ?? null);
     return {
       initiative: name,
-      flow: null,
+      flow: declaredFlow,
       documents: envs,
       sources: freeSources.sourceFiles.length,
       sources_after_approval: freeSources.needsRefinement,
@@ -242,8 +269,11 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
   });
   // The close is wherever initiative_close wrote it. A flow can move its closing document, so
   // an initiative closed earlier carries its outcome on a document today's manifest does not
-  // name. Only initiative_close writes an outcome.
+  // name. Only initiative_close writes an outcome — and, with a database, it writes the anchor
+  // row in the same call, which is what this reads first. `closingEnv` stays the fallback for a
+  // caller with no row to hand in (the fixture-driven checks).
   const closingEnv = ((): Record<string, string> => {
+    if (anchor) return {};
     const today = envelopeOf(join(dir, chain.closingDoc));
     if (today.outcome || !existsSync(dir)) return today;
     for (const f of readdirSync(dir).filter((x) => x.endsWith(".md") && !x.startsWith("_")).sort()) {
@@ -252,10 +282,11 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
     }
     return today;
   })();
-  const outcome = closingEnv.outcome || null;
-  // Who recorded the close, beside what it was. Both sit on the closing document's envelope,
-  // stamped by initiative_close(). DocState carries no `closed_by`.
-  const closedBy = closingEnv.closed_by || null;
+  const outcome = (anchor ? anchor.outcome : closingEnv.outcome) || null;
+  // Who recorded the close, beside what it was. With a database this is the anchor row's
+  // `closed_by`, joined back to an email by the caller; without one it is the closing
+  // document's envelope, stamped by initiative_close().
+  const closedBy = (anchor ? anchor.closed_by : closingEnv.closed_by) || null;
 
   // the next move, in the flow's own declared order
   let next: { action: string; document?: string; stage?: string; waiting_on: string; why: string };
@@ -473,6 +504,29 @@ const chainArgs = (root: string, name: string): [Chain, FlowDoc[]] => {
   return [chain, chain.documents];
 };
 
+/** The anchor row for every named initiative, in one query — never one query per initiative.
+ *  Null (no database, no team, or the row does not exist) reads as "no anchor", which is
+ *  `initiativeState`'s cue to fall back to the file/envelope answer. */
+async function anchorsFor(
+  team: string | null, names: readonly string[],
+): Promise<Map<string, InitiativeAnchor>> {
+  const out = new Map<string, InitiativeAnchor>();
+  const p = db();
+  if (!p || !team || !names.length) return out;
+  const { rows } = await p.query<{ slug: string; flow: string | null; closed_at: string | null;
+    closed_by: string | null; outcome: string | null }>(
+    `select i.slug, i.flow, i.closed_at::text, pc.email as closed_by, i.outcome
+       from zz.initiative i
+       join zz.team t on t.id = i.team_id
+       left join zz.principal pc on pc.id = i.closed_by
+      where t.slug = $1 and i.slug = any($2::text[])`,
+    [team, names]);
+  for (const r of rows) {
+    out.set(r.slug, { flow: r.flow, closed_at: r.closed_at, closed_by: r.closed_by, outcome: r.outcome });
+  }
+  return out;
+}
+
 /** The no-argument `initiative_status`: every OPEN initiative, and a count of the closed ones.
  *  Closed ones are counted rather than dropped, so a filtered answer is not mistaken for an
  *  empty one.
@@ -481,7 +535,9 @@ const chainArgs = (root: string, name: string): [Chain, FlowDoc[]] => {
  *  refuses by name) is reported against that initiative, with its text, and the listing goes
  *  on — one folder must not take down the listing of every initiative beside it. Anything else
  *  still throws: an error nobody named is not a fact about one initiative. */
-export function initiativeListing(root: string, names: readonly string[]) {
+export function initiativeListing(
+  root: string, names: readonly string[], anchors?: Map<string, InitiativeAnchor>,
+) {
   const open = [];
   let closedCount = 0;
   for (const name of names) {
@@ -491,7 +547,7 @@ export function initiativeListing(root: string, names: readonly string[]) {
     }
     let state;
     try {
-      state = initiativeState(root, name, ...chainArgs(root, name));
+      state = initiativeState(root, name, ...chainArgs(root, name), anchors?.get(name) ?? null);
     } catch (err) {
       if (!(err instanceof Refusal)) throw err;
       open.push({ initiative: name, damaged: true, error: err.message });
@@ -546,12 +602,34 @@ export function registerInitiativeStatusTools(server: McpServer): void {
         // `.git` in every root. COUPLED: walk() in @zz/indexing applies the same filter.
         : readdirSync(root).filter((n) => !n.startsWith("_") && !n.startsWith(".") &&
             !n.endsWith(".md") && statSync(join(root, n)).isDirectory());
+      const team = await teamFor(who.email);
+      // One query for every name in this call, never one per initiative — a caller with no
+      // database or no team reads back an empty map, and every initiative falls back to its
+      // file/envelope answer exactly as it did before the anchor row existed.
+      const anchors = await anchorsFor(team, names);
       // Named: that one initiative, and a damaged one refuses — the caller asked about it.
-      const answer = initiative
+      const base = initiative
         ? (existsSync(join(root, initiative))
-          ? initiativeState(root, initiative, ...chainArgs(root, initiative))
+          ? initiativeState(root, initiative, ...chainArgs(root, initiative), anchors.get(initiative) ?? null)
           : { initiative, error: "no such initiative" })
-        : initiativeListing(root, names);
+        : initiativeListing(root, names, anchors);
+      // How many of this initiative's documents `indexDoc` has already stamped with
+      // `initiative_id` (packages/indexing/src/index.ts, Task I-6) against how many it holds —
+      // reported only for a named initiative, since it is one extra query nobody asked for on
+      // the whole-store listing. `tagged === total` is the observable proof that a document
+      // written into an open initiative carries `initiative_id` immediately, with no reindex or
+      // reconciler in between; there is no other MCP surface for that column.
+      let docIndex: { total: number; tagged: number } | undefined;
+      const p = db();
+      if (initiative && p && team && !("error" in base)) {
+        const cov = (await p.query<{ total: string; tagged: string }>(
+          `select count(*)::text as total, count(d.initiative_id)::text as tagged
+             from zz.doc d join zz.team t on t.slug = d.team_slug
+            where t.slug = $1 and d.initiative = $2`,
+          [team, initiative])).rows[0];
+        if (cov) docIndex = { total: Number(cov.total), tagged: Number(cov.tagged) };
+      }
+      const answer = docIndex ? { ...base, doc_index: docIndex } : base;
       logActivity(root, null, { user: who.email, action: "initiative_status", initiative: initiative ?? "*" });
       return text(JSON.stringify(answer, null, 2));
     },

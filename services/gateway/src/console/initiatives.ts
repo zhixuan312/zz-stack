@@ -37,9 +37,10 @@ export function mountInitiatives(app: Express): void {
     /* Not `DocRow`, which is the shape of a document read. This route builds a summary per
        initiative — count, stage, who signed — and reads none of the body. Typing the rows as
        DocRow puts `length(coalesce(body,''))` in the select, and Postgres detoasts every body
-       to answer it. */
+       to answer it. Carries neither `flow` nor `outcome`: both are the initiative's own, read
+       from `zz.initiative` below, never from a document. */
     type ListRow = StageDoc & {
-      team_slug: string; initiative: string; flow: string | null;
+      team_slug: string; initiative: string;
       approved_by: string | null; updated_at: string;
     };
     // FR-58 (Task I-27): the same three scope shapes as the docs query above, mirrored for
@@ -64,22 +65,48 @@ export function mountInitiatives(app: Express): void {
       factsByInit.set(key, got);
     }
 
+    // The initiative's own lifecycle: `flow`, whether it is closed, and its outcome, all read
+    // from `zz.initiative` — the one authority for a state no document derivation may answer
+    // any more. Same three scope shapes as the queries above, for the same `check:sql` reason.
+    type AnchorRow = { team: string; slug: string; flow: string | null; closed: boolean; outcome: string | null };
+    const { rows: anchorRows } = scope.kind !== "platform"
+      ? await db.query<AnchorRow>(
+      `select t.slug as team, i.slug, i.flow, i.closed_at is not null as closed, i.outcome
+         from zz.initiative i join zz.team t on t.id = i.team_id
+        where t.slug = $1`, [scope.slug])
+      : want !== null
+      ? await db.query<AnchorRow>(
+      `select t.slug as team, i.slug, i.flow, i.closed_at is not null as closed, i.outcome
+         from zz.initiative i join zz.team t on t.id = i.team_id
+        where t.slug = $1`, [want])
+      : await db.query<AnchorRow>(
+      `select t.slug as team, i.slug, i.flow, i.closed_at is not null as closed, i.outcome
+         from zz.initiative i join zz.team t on t.id = i.team_id`);
+    const anchorByInit = new Map<string, { flow: string | null; closed: boolean; outcome: string | null }>();
+    for (const r of anchorRows) {
+      anchorByInit.set(`${r.team}/${r.slug}`, { flow: r.flow, closed: r.closed, outcome: r.outcome });
+    }
+    // A document group with no `zz.initiative` row yet — the reconcile lag Q2/E of the schema
+    // review names — reads as open with no declared flow, the same answer this route gave every
+    // initiative before this row existed at all.
+    const noAnchor = { flow: null as string | null, closed: false, outcome: null as string | null };
+
     const { rows } = scope.kind !== "platform"
       ? await db.query<ListRow>(
-      `select team_slug, initiative, flow, path, type, status, outcome, approved_by, supports,
+      `select team_slug, initiative, path, type, status, approved_by, supports,
               to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
          from zz.doc
         where initiative <> '_knowledge' and team_slug = $1
         order by team_slug, initiative, path`, [scope.slug])
       : want !== null
       ? await db.query<ListRow>(
-      `select team_slug, initiative, flow, path, type, status, outcome, approved_by, supports,
+      `select team_slug, initiative, path, type, status, approved_by, supports,
               to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
          from zz.doc
         where initiative <> '_knowledge' and team_slug = $1
         order by team_slug, initiative, path`, [want])
       : await db.query<ListRow>(
-      `select team_slug, initiative, flow, path, type, status, outcome, approved_by, supports,
+      `select team_slug, initiative, path, type, status, approved_by, supports,
               to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
          from zz.doc
         where initiative <> '_knowledge'
@@ -96,9 +123,10 @@ export function mountInitiatives(app: Express): void {
       const cut = key.indexOf("/");
       const teamSlug = key.slice(0, cut), slug = key.slice(cut + 1);
       const live = docs.filter((d) => !d.path.startsWith("_versions/"));
+      const anchor = anchorByInit.get(key) ?? noAnchor;
       return {
         team: teamSlug, slug,
-        flow: docs.map((d) => d.flow).find(Boolean) ?? null,
+        flow: anchor.flow,
         // `approvals`, not revisions: a `_versions/` file is written when a document is
         // approved, and a revision that was never approved leaves none. Counting it as
         // revisions under-reports every revision a later one replaced before anyone signed.
@@ -107,7 +135,8 @@ export function mountInitiatives(app: Express): void {
         // Whoever approved something is the person the work belongs to. There is no owner
         // column, and the first document's author is whoever typed first, not who signed.
         stakeholder: docs.map((d) => d.approved_by).find(Boolean) ?? null,
-        ...stageOf(docs, docs.map((d) => d.flow).find(Boolean) ?? null, factsByInit.get(key) ?? {}),
+        ...stageOf(docs, anchor.flow, { closed: anchor.closed, outcome: anchor.outcome },
+                   factsByInit.get(key) ?? {}),
       };
     }).sort((a, b) => b.updated.localeCompare(a.updated));
     res.json({ initiatives });
@@ -146,10 +175,11 @@ export function mountInitiatives(app: Express): void {
       res.status(404).json({ error: `no initiative ${team}/${slug}` });
       return;
     }
-    const [docs, decisions, facts] = await Promise.all([
+    const [docs, decisions, facts, anchor] = await Promise.all([
+      // `flow`/`outcome` stay in this select as this document's own metadata — what the
+      // dashboard renders per row. Neither drives `stageOf` below any more; the anchor query
+      // does.
       db.query<DocRow & { flow: string | null }>(
-        // `flow` as well, because which documents are gated is the flow's
-        // declaration and there is no way to ask the manifest without it.
         `select path, type, status, outcome, approved_by, title, flow, supports,
                 to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
                 length(coalesce(body,'')) as bytes
@@ -162,10 +192,19 @@ export function mountInitiatives(app: Express): void {
       // read for `stageOf` below the same way the list route reads it for every initiative.
       db.query<{ fact: string; value: string }>(
         `select fact, value from zz.initiative_fact where team = $1 and initiative = $2`, [team, slug]),
+      // The initiative's own lifecycle — `flow`, whether it is closed, and its outcome — read
+      // from `zz.initiative`, the one authority for a state no document may answer any more.
+      db.query<{ flow: string | null; closed: boolean; outcome: string | null }>(
+        `select i.flow, i.closed_at is not null as closed, i.outcome
+           from zz.initiative i join zz.team t on t.id = i.team_id
+          where t.slug = $1 and i.slug = $2`, [team, slug]),
     ]);
     if (!docs.rows.length) { res.status(404).json({ error: `no initiative ${team}/${slug}` }); return; }
     const factMap = Object.fromEntries(facts.rows.map((f) => [f.fact, f.value]));
-    const shape = flowShape(docs.rows.map((d) => (d as { flow?: string }).flow).find(Boolean) ?? null);
+    // No `zz.initiative` row yet is the same reconcile lag the list route allows for: read as
+    // open, no declared flow.
+    const lifecycle = anchor.rows[0] ?? { flow: null, closed: false, outcome: null };
+    const shape = flowShape(lifecycle.flow);
     res.json({
       team, slug,
       documents: docs.rows.map((d) => {
@@ -192,7 +231,7 @@ export function mountInitiatives(app: Express): void {
         withQualifier: decisions.rows.filter((d) => (d as { qualifier: string }).qualifier).length,
         withChecker: decisions.rows.filter((d) => (d as { checker: string }).checker).length,
       },
-      ...stageOf(docs.rows, docs.rows.map((d) => d.flow).find(Boolean) ?? null, factMap),
+      ...stageOf(docs.rows, lifecycle.flow, { closed: lifecycle.closed, outcome: lifecycle.outcome }, factMap),
     });
   }));
 

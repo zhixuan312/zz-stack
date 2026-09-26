@@ -66,18 +66,6 @@ export function recordOpen(root: string, name: string, flow: string | null, who:
   return record;
 }
 
-/** Mark an initiative that holds no document as abandoned, on the record of its own opening.
- *
- * DELIBERATE: an outcome belongs on a document, and this is the one case where there is none
- * and never will be. The alternative is writing a document no stage produced to satisfy a
- * gate, so the open record carries it instead. */
-export function recordAbandoned(root: string, name: string, who: string): void {
-  const rec = openRecord(root, name);
-  if (!rec) return;
-  writeFileSync(join(root, name, OPEN_RECORD),
-                `${JSON.stringify({ ...rec, abandoned_by: who, abandoned_at: isoToday() }, null, 2)}\n`);
-}
-
 /** The record, or null when there is none.
  *
  * DELIBERATE: the whole record is returned rather than a `declaredFlow(root, name)` helper.

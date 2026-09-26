@@ -14,6 +14,7 @@ check("an aggregate nothing measured renders as null, never a confident zero",
 
 check("SCHEMA.md states the standard the spec fixed", runsCheck("schema-standard.ts"));
 check("the real migrations produce SCHEMA_TARGET's catalog, exactly", runsCheck("schema-inventory.ts"));
+check("no initiative reader derives closed, outcome or flow from zz.doc", runsCheck("initiative-lifecycle-readers.ts"));
 check("every tool the spec renamed resolves through one frozen map", runsCheck("alias-maps.ts"));
 
 check("the resolvers are applied wherever a stored name is read", runsCheck("alias-applied.ts"));

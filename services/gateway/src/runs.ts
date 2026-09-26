@@ -60,66 +60,16 @@ const VERSION_AT_EVENT = `
          order by v.released_at desc limit 1
       ) sv on true`;
 
-export async function reconcileRuns(): Promise<{ initiatives: number; runs: number; linked: number; docs: number }> {
-  if (!platformDbReady()) return { initiatives: 0, runs: 0, linked: 0, docs: 0 };
+export async function reconcileRuns(): Promise<{ runs: number; linked: number; docs: number }> {
+  if (!platformDbReady()) return { runs: 0, linked: 0, docs: 0 };
   const db = platformDb();
 
-  // The initiatives first, because a run points at one: zz.run.initiative_id is a foreign key,
-  // so a run cannot be recorded for an initiative the table has never heard of.
-  const i = await db.query(`
-    insert into zz.initiative (team_id, slug, created_at)
-    select t.id, e.initiative, min(e.ts)
-      from zz.event e join zz.team t on t.slug = e.team_slug
-     -- An initiative is a folder something was written into, and _knowledge is not one: it is
-     -- the reserved directory the knowledge store lives in. Three conditions, each dropping a
-     -- different kind of ghost:
-     --   ok          -- nobody accepted this argument, so it says nothing
-     --   the shape   -- initiative_open composes <YYYY-MM-DD>-<slug> from the platform's own
-     --                  clock and safeName refuses a separator, so anything else was never a
-     --                  name this platform created
-     --   a write     -- reading an initiative is not evidence it is yours; only an act that put
-     --                  something in the folder counts, which is also what makes the row true
-     --                  of the team it is filed under
-     -- Through coalesce(tool_key, subject) and both spellings, because older rows carry no
-     -- tool_key -- see @zz/contracts' TOOL_ALIAS.
-     -- DELIBERATE: no backticks in these comments; they sit inside a template literal.
-     where e.initiative is not null and e.initiative not in ('', '_knowledge')
-       and e.ok
-       and e.initiative ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9][a-z0-9-]*$'
-       and coalesce(e.tool_key, e.subject) in (
-             'core:initiative_open', 'core:initiative_close', 'core:close',
-             'core:document_write', 'core:write_file',
-             'core:document_patch', 'core:patch_file',
-             'core:document_revise', 'core:revise_document',
-             'core:document_approve', 'core:approve',
-             'core:source_add', 'core:add_source')
-     group by t.id, e.initiative
-    on conflict (team_id, slug) do nothing`);
-  // And from the documents, which are the record of what actually exists.
-  //
-  // The insert above derives an initiative from events, and events are telemetry: they can be
-  // absent and they can predate a column, so a real initiative with documents can have no row
-  // at all and be invisible to the progress tile and the stage bar. A folder holding a
-  // document is an initiative, so the two sources are unioned and the count stops depending on
-  // which table a reader happened to ask.
-  const d = await db.query(`
-    insert into zz.initiative (team_id, slug, created_at)
-    select t.id, d.initiative, min(d.updated_at)
-      from zz.doc d join zz.team t on t.slug = d.team_slug
-     where d.initiative is not null and d.initiative not in ('', '_knowledge')
-     group by t.id, d.initiative
-    on conflict (team_id, slug) do nothing`);
-  // The flow, from the documents rather than from the events. zz.doc carries the flow the
-  // platform resolved and stamped; zz.event's own `flow` column is thinner, because the calls
-  // made before any flow was resolved carry none. An initiative row
-  // whose flow is blank is one the console cannot group.
-  await db.query(`
-    update zz.initiative i set flow = d.flow
-      from (select distinct on (team_slug, initiative) team_slug, initiative, flow
-              from zz.doc where flow is not null and flow <> ''
-             order by team_slug, initiative, created_at) d
-      join zz.team t on t.slug = d.team_slug
-     where i.team_id = t.id and i.slug = d.initiative and i.flow <> d.flow`);
+  // zz.initiative is no longer derived here (002_initiative_anchor.sql, Task I-6):
+  // `initiative_open` inserts the row itself, synchronously, in the same call that opens the
+  // work — including `opened_at`/`opened_by`, which this reconciler never knew. An event or a
+  // document naming an initiative this table has never heard of is now telemetry for work that
+  // predates a database, or a store this reconciler cannot repair; it is no longer grounds to
+  // mint a row for it.
 
   // Then the runs. The statistics are recomputed rather than added to: an event arriving late
   // for a run that already exists has to change that run's counts, and `do update` is what
@@ -212,12 +162,11 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
   // first renames a document. `stage` on a declared document says which step writes it and
   // `role` says what the document is, so the pairs are read off the catalog and passed as data.
   //
-  // First the document's own initiative, because the attribution below joins on it.
-  const di = await db.query(`
-    update zz.doc d set initiative_id = i.id
-      from zz.team t join zz.initiative i on i.team_id = t.id
-     where d.initiative_id is null and t.slug = d.team_slug and i.slug = d.initiative`);
-
+  // `zz.doc.initiative_id` is no longer backfilled here (Task I-6): `indexDoc`
+  // (packages/indexing/src/index.ts) resolves it inline, in the same insert that writes the
+  // row, from the anchor row `initiative_open` now writes synchronously. A document indexed
+  // before this release, or before its initiative's anchor row existed, still carries null
+  // until it is next written or reindexed — a knowing loss, not a gap this reconciler fills.
   const pairs: { skill: string; role: string }[] = [];
   for (const e of catalogEntries()) {
     for (const d of e.manifest.documents ?? []) {
@@ -242,8 +191,7 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
       [pairs.map((x) => x.skill), pairs.map((x) => x.role)]);
     docs = a.rowCount ?? 0;
   }
-  docs += di.rowCount ?? 0;
 
-  return { initiatives: (i.rowCount ?? 0) + (d.rowCount ?? 0), runs: (r.rowCount ?? 0) + (r2.rowCount ?? 0),
+  return { runs: (r.rowCount ?? 0) + (r2.rowCount ?? 0),
            linked: (l.rowCount ?? 0) + (l2.rowCount ?? 0), docs };
 }

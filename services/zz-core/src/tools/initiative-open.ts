@@ -31,7 +31,7 @@ import { openRun } from "../host/store.js";
 import { slugify, slugRefusal } from "../document-rules.js";
 import { initiativeNameFor, OPEN_RECORD, recordOpen, takenRefusal } from "../initiative-record.js";
 import { userRoot } from "../paths.js";
-import { teamFor } from "../platform-db.js";
+import { db, teamFor } from "../platform-db.js";
 import { logActivity } from "../persist.js";
 
 import { packagedModules } from "../reviewed-modules.js";
@@ -97,6 +97,39 @@ export function registerInitiativeOpenTool(server: McpServer): void {
       }
 
       const name = initiativeNameFor(slug);
+
+      // The anchor row (002_initiative_anchor.sql): the platform's one state-machine record of
+      // this initiative's lifecycle, inserted in this same call — never derived later by a
+      // reconciler. Refused without a database, because there is then nowhere to put it and no
+      // silent file-only fallback would give a caller an honest answer to `initiative_status`.
+      const p = db();
+      if (!p) {
+        return text(
+          "ERROR: no platform database configured — initiative_open needs one to record the " +
+          "initiative's anchor row (opened_at, opened_by). Nothing was written.");
+      }
+      const team = await teamFor(who);
+      if (!team) {
+        return text(
+          "ERROR: no team — initiative_open records the anchor row against the team that owns " +
+          "this work, and you belong to none. Nothing was written.");
+      }
+      // team_id and opened_by are resolved here, inline, from the same statement that writes
+      // the row — the same reason services/gateway/src/events.ts resolves team_id inline: a
+      // second round trip can disagree with this one about a team or a person renamed between
+      // the two.
+      const anchorRows = (await p.query<{ id: string; opened_at: string }>(
+        `insert into zz.initiative (team_id, slug, flow, opened_at, opened_by)
+         values ((select id from zz.team where slug = $1), $2, $3, now(),
+                 (select id from zz.principal where email = $4 and status = 'active'))
+         returning id, opened_at`,
+        [team, name, flow?.trim() || null, who.toLowerCase()],
+      )).rows;
+      const anchor = anchorRows[0];
+      if (!anchor) {
+        return text(`ERROR: ${name} could not be recorded on the platform database. Nothing was written.`);
+      }
+
       const record = recordOpen(root, name, flow ?? null, who);
       // Into the initiative's own log, which is why this runs after recordOpen: the folder has
       // to exist for logActivity to place the line there rather than in the team-wide
@@ -125,23 +158,28 @@ export function registerInitiativeOpenTool(server: McpServer): void {
       const governed = moduleForFlow(packagedModules, record.flow ?? null);
       let control: string | null = null;
       if (governed) {
-        const team = await teamFor(who);
-        if (team) {
-          control = await openRun({
-            team, initiative: name, module: governed.module, digest: governed.digest,
-            subject: name, profile: [], by: who,
-          });
-        }
+        control = await openRun({
+          team, initiative: name, module: governed.module, digest: governed.digest,
+          subject: name, profile: [], by: who,
+        });
       }
 
       // COUPLED: one source for "what comes next" — the same `initiativeState` that
       // `initiative_status` answers from, run over the folder just created. chainFor picks the
       // declaration up from the record written above; there is no document yet to read one off.
       const chain = chainFor(root, `${name}/x.md`);
-      const state = initiativeState(root, name, chain, chain.documents);
+      // The row this call just inserted, handed straight to `initiativeState` rather than
+      // re-queried: nothing else could have closed an initiative in the instant between the
+      // INSERT above and here.
+      const state = initiativeState(root, name, chain, chain.documents,
+        { flow: record.flow, closed_at: null, closed_by: null, outcome: null });
       return text(JSON.stringify({
         initiative: name,
         flow: record.flow,
+        // The anchor row's own opened_at/opened_by, reported rather than implied — chain-check
+        // and any other reader can see the row was actually written in this call.
+        opened_at: anchor.opened_at,
+        opened_by: who,
         next_move: state.next_move,
         next_move_absent: state.next_move_absent,
         // Which module governs this, and whether a run is open. Reported rather than implied,

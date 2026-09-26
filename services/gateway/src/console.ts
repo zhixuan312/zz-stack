@@ -28,9 +28,9 @@
  * over every team, which are SQL questions. The two knowledge endpoints here read zz.doc, which
  * carries the body already.
  *
- * Initiatives come from zz.doc, not zz.initiative. The initiative table is an index nothing has been
- * maintaining; the documents are the record, and deriving from them is what makes this API agree
- * with what people see.
+ * An initiative's lifecycle — whether it is closed, its outcome, its flow — comes from
+ * zz.initiative, the one record of it, written by initiative_open and initiative_close; the
+ * documents inside an initiative remain the content record, read from zz.doc.
  */
 
 import type { Express } from "express";

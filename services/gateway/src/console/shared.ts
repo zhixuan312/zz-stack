@@ -150,7 +150,7 @@ export function grainForSpan(days: number): Grain {
  *
  * `type` is read by the no-manifest fallback in `stageOf`. */
 export interface StageDoc {
-  path: string; type: string; status: string | null; outcome: string | null;
+  path: string; type: string; status: string | null;
   /** Which documents this one bears on, comma-joined — a source's own declaration. It
    *  evidences a stage that produces evidence rather than a deliverable. */
   supports?: string | null;
@@ -198,7 +198,14 @@ export function flowShape(flow: string | null): Map<string, { gate: boolean; clo
  *  passes a plain `Record<string, string>` it structurally matches. */
 type InitiativeFacts = Record<string, string>;
 
-export function stageOf(docs: StageDoc[], flow: string | null, facts: InitiativeFacts = {}): {
+/** An initiative's own lifecycle, read from `zz.initiative` — the one authority for whether
+ *  it is closed and what it concluded. `flow` above and `lifecycle` here both come from that
+ *  same row; `stageOf` never derives either from a document. */
+export interface InitiativeLifecycle { closed: boolean; outcome: string | null }
+
+export function stageOf(
+  docs: StageDoc[], flow: string | null, lifecycle: InitiativeLifecycle, facts: InitiativeFacts = {},
+): {
   at: number; of: number; stage: string;
   /** Every step of the diagram in order, bookends included. `open` and `closed` are acts of
    * every initiative and no manifest declares them; between them are the flow's stages.
@@ -273,16 +280,11 @@ export function stageOf(docs: StageDoc[], flow: string | null, facts: Initiative
                      // and unapproved one waits on a person.
                      written: byName.has(d.name),
                      after: stageIndex(d.stage) }));
-    const closing = declared.find((d) => d.closing === true);
     // The outcome, not just whether it was accepted: `initiative_close()` records `accepted`,
-    // `delivered` or `abandoned`, and all three mean closed.
-    //
-    // Read from the manifest's closing document, then from whichever document carries an
-    // outcome at all — a flow can move its close, and an initiative closed under the older
-    // manifest carries its outcome on the document that was closing then. Only
-    // initiative_close writes an outcome, so any document carrying one is the record.
-    const outcome = (closing ? byName.get(closing.name)?.outcome : null)
-      ?? live.find((d) => d.outcome)?.outcome ?? null;
+    // `delivered` or `abandoned`, and all three mean closed. Read from `zz.initiative` itself
+    // (the caller's `lifecycle`), never from a document — a flow can move its closing document,
+    // and `zz.initiative.outcome`/`closed_at` do not move with it.
+    const { closed, outcome } = lifecycle;
     const accepted = outcome === "accepted";
     // The stage list is the flow's if it declares one; otherwise the documents stand in for
     // it, which is the same shape and never a different flow's vocabulary.
@@ -303,7 +305,6 @@ export function stageOf(docs: StageDoc[], flow: string | null, facts: Initiative
     // A close is an act, not a position: being closed is its own step at the end, and it does
     // not tick the stages before it. Opening is the same act at the other end. No manifest
     // declares either.
-    const closed = outcome !== null;
     const at = closed
       ? Math.max(1, reached)
       : Math.min(stages.length, Math.max(1, reached + 1));
@@ -415,9 +416,10 @@ export function stageOf(docs: StageDoc[], flow: string | null, facts: Initiative
   const g1 = intent?.status === "approved";
   const g2 = spec?.status === "approved";
   const g3 = plan?.status === "approved";
-  const accepted = spec?.outcome === "accepted";
-  // Closed on any of the three outcomes, not on acceptance alone.
-  const closed = (spec?.outcome ?? null) !== null;
+  // Closed and outcome come from `zz.initiative` (the caller's `lifecycle`), same as the
+  // manifest branch above — never from a document, even the fallback's own `spec`.
+  const { closed, outcome } = lifecycle;
+  const accepted = outcome === "accepted";
   let at = 1;
   if (ver) at = 6;
   else if (g3) at = 5;
@@ -441,8 +443,7 @@ export function stageOf(docs: StageDoc[], flow: string | null, facts: Initiative
   const currentAt = fallbackSteps.findIndex((st) => st.state !== "done");
   if (!closed && currentAt >= 0) fallbackSteps[currentAt].current = true;
   return {
-    at, of: STAGES.length, stage: STAGES[at - 1], accepted, closed,
-    outcome: spec?.outcome ?? null,
+    at, of: STAGES.length, stage: STAGES[at - 1], accepted, closed, outcome,
     complete: !!g1 && !!g2 && !!g3 && accepted,
     steps: [
       { name: "open", what: "the initiative exists: its folder was created and it was opened",

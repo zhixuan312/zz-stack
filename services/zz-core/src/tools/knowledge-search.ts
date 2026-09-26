@@ -92,12 +92,22 @@ export function registerKnowledgeSearch(server: McpServer): void {
        * a person agreed, a node is `adopted` until something better replaces it. Each side maps
        * its own vocabulary into the shared shape here, once. `subject` travels with the row so
        * a reader can tell them apart without inferring it from the path. A node has no flow,
-       * outcome or approval, so those are constants on that side. */
+       * outcome or approval, so those are constants on that side.
+       *
+       * `flow`/`outcome` on the document arm come from `zz.initiative`, not `zz.doc`: both are
+       * the initiative's own — `zz.doc.flow` was only ever the same flow copied onto every one
+       * of its documents, and `zz.doc.outcome` is the initiative's outcome stamped on the one
+       * document that closed it, never a property of that document alone. Reading `zz.doc`
+       * returned it on that one row and `null` on every sibling; the anchor answers it for all
+       * of them alike. Joined by (team slug, initiative slug), not `zz.doc.initiative_id` — that
+       * column is filled by a lazy reconcile pass and can lag a document's own write. */
       const SOURCE = `(
-        select initiative, path, flow, type, status, outcome, approved_by, approved_at,
-               updated_at, title, tags, evidence, superseded_by, team_slug, body, body_tsv,
-               'document' as subject
-          from zz.doc
+        select d.initiative, d.path, coalesce(i.flow,'') as flow, d.type, d.status, i.outcome,
+               d.approved_by, d.approved_at, d.updated_at, d.title, d.tags, d.evidence,
+               d.superseded_by, d.team_slug, d.body, d.body_tsv, 'document' as subject
+          from zz.doc d
+          left join zz.team t on t.slug = d.team_slug
+          left join zz.initiative i on i.team_id = t.id and i.slug = d.initiative
         union all
         select '_knowledge' as initiative, path, '' as flow, kind as type, lifecycle as status,
                null as outcome, null as approved_by, null::date as approved_at,

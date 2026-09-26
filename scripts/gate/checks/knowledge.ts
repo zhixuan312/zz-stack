@@ -10,26 +10,36 @@ import { catalogSource, gatewaySource, root, withoutComments, zzCoreSource } fro
 import { check } from "../run.ts";
 import { catalogRoot, flows } from "../facts.ts";
 
-check("_knowledge is never recorded as an initiative", () => {
-  // `_knowledge` is the reserved directory the knowledge store lives in. Both the insert and
-  // the update in reconcileRuns must exclude it, or runs are filed against an initiative row
-  // nobody can open.
-  const src = readFileSync(join(root, "services/gateway/src/runs.ts"), "utf8");
-  const ins = /insert into zz\.initiative[\s\S]*?on conflict/.exec(src)?.[0] ?? "";
-  const bad: string[] = [];
-  if (!ins) return "reconcileRuns no longer inserts initiatives — this check reads nothing";
-  // Comments are stripped first: the word `_knowledge` in the comment explaining the
-  // exclusion would otherwise satisfy the test.
-  const sql = ins.replace(/--[^\n]*/g, "");
-  if (!/_knowledge/.test(sql)) {
-    bad.push("the insert into zz.initiative does not exclude _knowledge, though the update " +
-             "below it does — that disagreement is what created the rows");
+check("_knowledge can never reach zz.initiative", () => {
+  // `_knowledge` is the reserved directory the knowledge store lives in. Until Task I-6,
+  // zz.initiative was derived in reconcileRuns() from arbitrary event/document text, which
+  // could carry `_knowledge` and had to exclude it by name. `initiative_open` is now the one
+  // writer (002_initiative_anchor.sql): it never derives a slug from event or document text,
+  // so the guard changes shape — from an exclusion in a derivation query to asserting the row
+  // is minted only from the platform's own dated name, never a caller's raw, unrefused slug.
+  const rel = "services/zz-core/src/tools/initiative-open.ts";
+  const src = readFileSync(join(root, rel), "utf8");
+  const code = withoutComments(src);
+  const ins = /insert into zz\.initiative[\s\S]*?returning/.exec(code)?.[0] ?? "";
+  if (!ins) {
+    return `${rel} no longer inserts into zz.initiative — initiative_open is meant to be its ` +
+           "one writer, and nothing else should be relied on to mint the row instead";
   }
-  // A backtick inside a SQL comment closes the template literal the statement lives in, so no
-  // SQL comment in runs.ts may contain one.
-  const lits = src.match(/`[\s\S]*?`/g) ?? [];
-  for (const l of lits) {
-    if (/^\s*--.*`/m.test(l.slice(1, -1))) bad.push("a SQL comment inside a template literal contains a backtick");
+  // `runs.ts` must not have grown the insert back — the two are not meant to agree on this,
+  // one of them is meant to have stopped.
+  const runsSrc = withoutComments(readFileSync(join(root, "services/gateway/src/runs.ts"), "utf8"));
+  const bad: string[] = [];
+  if (/insert into zz\.initiative/.test(runsSrc)) {
+    bad.push("services/gateway/src/runs.ts inserts into zz.initiative again — initiative_open " +
+             "is meant to be its one writer");
+  }
+  // The bound slug must be the dated `name` (`initiativeNameFor(slug)`), not the caller's raw
+  // `slug`: `slugRefusal`/`safeName` refuse a separator and the date prefix is the platform's
+  // own clock, so a dated name can never be `_knowledge`. Binding the raw slug instead would
+  // reopen exactly the hole the old exclusion closed.
+  if (!/\[\s*team\s*,\s*name\s*,/.test(code)) {
+    bad.push(`${rel} does not bind the insert's slug to the dated \`name\` — a raw, unrefused ` +
+             "slug could reach the row");
   }
   return bad.length ? bad.join("; ") : null;
 });

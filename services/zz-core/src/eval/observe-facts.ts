@@ -153,11 +153,12 @@ const DEFERRAL = String.raw`(\yas (agreed|discussed)\y|\yper (the|our) (call|mee
  *  traffic touched in this window — never the whole platform's `zz.doc` table, which would make
  *  these facts a statement about the install rather than about the subject and window observed.
  *
- *  An outcome belongs to an initiative, not to a document: `initiative_close` stamps it on the
- *  one agreement document of a closed initiative. So each outcome rate is over the touched
- *  initiatives that closed, and its coverage is how many of the touched initiatives closed at
- *  all. Divided by every document instead, one accepted close among 284 documents read as an
- *  acceptance rate of 0.0035. Approvals are a property of gated documents and stay per document.
+ *  An outcome belongs to an initiative, not to a document: `initiative_close` stamps
+ *  `closed_at`/`outcome` on the `zz.initiative` row itself, and that row, never `zz.doc`, is
+ *  read here. So each outcome rate is over the touched initiatives that closed, and its
+ *  coverage is how many of the touched initiatives closed at all. Divided by every document
+ *  instead, one accepted close among 284 documents read as an acceptance rate of 0.0035.
+ *  Approvals are a property of gated documents and stay per document.
  *
  *  `null` for a plugin that wrote no document in this window: a door that was merely read from,
  *  or a window with no matching traffic at all. A flow's documents are written by its runs'
@@ -191,8 +192,14 @@ export async function outcomeAndApprovalFacts(
     live as (select d.* from zz.doc d
                join touched t on t.team_slug = d.team_slug and t.initiative = d.initiative
               where d.path not like '\\_versions/%'),
-    closes as (select team_slug, initiative, min(outcome) as outcome
-                 from live where outcome is not null group by team_slug, initiative)
+    -- The outcome is zz.initiative's own, never a document's: initiative_close stamps
+    -- closed_at/outcome on the row itself, and that row is the one authority for whether a
+    -- touched initiative closed at all.
+    closes as (select i.outcome
+                 from zz.initiative i
+                 join zz.team tm on tm.id = i.team_id
+                 join touched t on t.team_slug = tm.slug and t.initiative = i.slug
+                where i.closed_at is not null)
     select (select count(*) from (select distinct team_slug, initiative from live) i)::text as initiatives,
            (select count(*) from closes)::text as closed,
            (select count(*) from closes where outcome = 'delivered')::text as delivered,

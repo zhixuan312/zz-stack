@@ -13,7 +13,7 @@ import { documentApplies, OUTCOME_STOPPED, closeInitiative, parseCaller, parseEn
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { closingDocRuledOut, factsFor, factsForWrite, OPEN_RECORD, openRecord, recordAbandoned } from "../initiative-record.js";
+import { closingDocRuledOut, factsFor, factsForWrite, OPEN_RECORD } from "../initiative-record.js";
 import { chainFor, frontmatterStatus } from "../chain.js";
 import { oneLine } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
@@ -21,7 +21,7 @@ import { moduleForFlow } from "../host/index.js";
 import { claimFor } from "../host/store.js";
 import { safeName, safePath, userRoot, writeGuard } from "../paths.js";
 import { logActivity, persistDocument, putEnvelopeField } from "../persist.js";
-import { teamFor } from "../platform-db.js";
+import { db, teamFor } from "../platform-db.js";
 import { packagedModules } from "../reviewed-modules.js";
 
 /** The action a completed flow grants. The module declares it on its closing step and this is the
@@ -69,6 +69,20 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       const who = parseCaller(requestHeaders());
       const root = await userRoot();
       const team = await teamFor(who.email);
+      // The anchor row (002_initiative_anchor.sql) is where every disposition of this call now
+      // records the close, in the same call — refused without a database rather than falling
+      // back to a file-only close nothing downstream would then agree with.
+      const p = db();
+      if (!p) {
+        return text(
+          "ERROR: no platform database configured — initiative_close needs one to record the " +
+          "close on the initiative's anchor row. Nothing was written.");
+      }
+      if (!team) {
+        return text(
+          "ERROR: no team — initiative_close records the close on the anchor row of the team " +
+          "that opened this initiative, and you belong to none. Nothing was written.");
+      }
       const badName = safeName(initiative, "initiative");
       if (badName) return text(badName);
       const acceptor = (accepted_by ?? "").trim();
@@ -170,16 +184,19 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         : named;
       if (!closingDoc) {
         if (stopped) {
-          // An empty initiative is abandoned on its own record, not on a document nobody wrote —
-          // an initiative opened by mistake has no documents by definition and never will.
-          //
-          // `_open.json` is the platform's own record of the open, so it is where the platform
-          // records that the open was undone. No ledger row is appended: a team's counts are built
-          // from work that happened, and this is the record of work that did not.
-          const rec = openRecord(root, initiative);
-          if (!rec) {
+          // An empty initiative is abandoned on its own anchor row, not on a document nobody
+          // wrote — an initiative opened by mistake has no documents by definition and never
+          // will. No ledger row is appended: a team's counts are built from work that happened,
+          // and this is the record of work that did not.
+          const anchor = (await p.query<{ closed_at: string | null; outcome: string | null }>(
+            `select i.closed_at::text, i.outcome from zz.initiative i
+               join zz.team t on t.id = i.team_id
+              where t.slug = $1 and i.slug = $2`,
+            [team, initiative],
+          )).rows[0];
+          if (!anchor) {
             return text(
-              `ERROR: ${initiative} has neither a document nor an open record, so there is ` +
+              `ERROR: ${initiative} has neither a document nor an anchor row, so there is ` +
               "nothing here to mark and nothing that says it was ever opened.");
           }
           if (readdirSync(join(root, initiative)).some((f: string) => f.endsWith(".md"))) {
@@ -187,33 +204,37 @@ export function registerInitiativeCloseTool(server: McpServer): void {
               `ERROR: ${initiative} holds documents but none its flow declares, so the close ` +
               "has nowhere it belongs by default. Name one: `document: \"<name>.md\"`.");
           }
-          // And it closes once, like every other initiative. The kernel is what refuses, from the
-          // fact this reads back; no gate posture is passed, because an initiative holding no
-          // document declares no gate to anybody.
-          //
-          // COUPLED: `abandoned_at` is the marker, and initiative_status reads the same one — that
-          // branch tests `rec?.abandoned_at` and prints `abandoned_by ?? null` beside it. Asking
-          // `abandoned_by` here instead makes the two disagree on a record carrying one and not the
-          // other (`openRecord` validates no field), and status would go on offering a close this
-          // refuses.
-          const undo = closeInitiative({ disposition, already: Boolean(rec.abandoned_at) });
+          // The kernel is what refuses, from the fact this reads back; no gate posture is
+          // passed, because an initiative holding no document declares no gate to anybody.
+          const undo = closeInitiative({ disposition, already: Boolean(anchor.closed_at) });
           if (!undo.ok) {
             return text(
               `ERROR: ${undo.refusals.join("; ")}.\n\n${initiative} holds no document and was ` +
-              `already abandoned on ${rec.abandoned_at}` +
-              // Named only when the record names somebody: "abandoned by undefined" reports this
-              // sentence's own missing field, not who did it.
-              `${rec.abandoned_by ? `, by ${rec.abandoned_by}` : ""}, on its own open record. ` +
-              "Nothing here is left to mark. If that was wrong, record WHY as a journal " +
-              "node against this initiative — a correction somebody can find beats a second " +
-              "write nobody can.");
+              `already closed as \`${anchor.outcome}\` on ${anchor.closed_at}, on its own ` +
+              "anchor row. Nothing here is left to mark. If that was wrong, record WHY as a " +
+              "journal node against this initiative — a correction somebody can find beats a " +
+              "second write nobody can.");
           }
-          recordAbandoned(root, initiative, who.email);
+          // One conditional update, guarded on the same fact the read above already found true —
+          // the row, not this call, is what a second concurrent close is refused by.
+          const closed = (await p.query<{ closed_at: string }>(
+            `update zz.initiative i set closed_at = now(), outcome = 'abandoned',
+                    closed_by = (select id from zz.principal where email = $3 and status = 'active')
+               from zz.team t
+              where i.team_id = t.id and t.slug = $1 and i.slug = $2 and i.closed_at is null
+              returning i.closed_at::text`,
+            [team, initiative, who.email],
+          )).rows[0];
+          if (!closed) {
+            return text(
+              `ERROR: ${initiative} was closed by someone else just now — call initiative_status ` +
+              "to see how.");
+          }
           logActivity(root, `${initiative}/${OPEN_RECORD}`,
             { user: who.email, action: "initiative_close", initiative, outcome: OUTCOME_STOPPED });
           return text(
             `${initiative} abandoned — it holds no document, so the outcome is recorded on its ` +
-            "own open record and no ledger row is appended. A team's counts are built from work " +
+            "own anchor row and no ledger row is appended. A team's counts are built from work " +
             "that happened; this is the record of work that did not.");
         }
         return text(
@@ -352,6 +373,33 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       if (!signedBy && reason) doc = putEnvelopeField(doc, "no_signoff_reason", reason);
       const bad = documentGuards(chain, root, relPath, doc, team, "initiative_close");
       if (bad) return text(bad);
+      // The anchor row, before the document: `accepted_by`/`no_signoff_reason` satisfy the same
+      // two CHECKs the migration declares (an `accepted` outcome always names an accepted_by;
+      // the two are never both set) by construction of `signedBy`/`reason` above. Guarded on
+      // `closed_at is null` — the row, not `already` above, is what a genuinely concurrent
+      // second close is refused by; `already` (read from the document before this point) is
+      // what gives the refusal above its wording when the two calls are not concurrent.
+      //
+      // Not transactional with the document write below: the anchor row and the file store are
+      // two stores, and a crash between the two would leave the row closed and the document
+      // not yet carrying `outcome`. The row is treated as authoritative going forward
+      // (initiative-status.ts reads it first), so that order — row, then document — is chosen
+      // deliberately over the reverse.
+      const anchorClosed = (await p.query<{ closed_at: string }>(
+        `update zz.initiative i set closed_at = now(), outcome = $4,
+                closed_by = (select id from zz.principal where email = $3 and status = 'active'),
+                accepted_by = $5, no_signoff_reason = $6
+           from zz.team t
+          where i.team_id = t.id and t.slug = $1 and i.slug = $2 and i.closed_at is null
+          returning i.closed_at::text`,
+        [team, initiative, who.email, outcome, signedBy || null,
+         (!signedBy && reason) ? reason : null],
+      )).rows[0];
+      if (!anchorClosed) {
+        return text(
+          `ERROR: ${initiative} was closed on its own anchor row by a concurrent call — the ` +
+          "document was not written. Call initiative_status to see how it closed.");
+      }
       persistDocument(chain, root, relPath, target, doc, `close ${outcome}`);
       logActivity(root, relPath,
         { user: who.email, action: "initiative_close", initiative, outcome, accepted_by: signedBy || null });

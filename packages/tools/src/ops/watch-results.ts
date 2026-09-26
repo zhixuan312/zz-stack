@@ -8,7 +8,8 @@
  * The failures that cost something look nothing like an outage: five initiatives stuck on the same
  * gate, a refusal class that tripled this week, a tool whose latency doubled, a team that has
  * produced nothing for seven days. Every one is invisible to a health endpoint and visible in data
- * the platform already writes — everything here reads zz.event and zz.doc, and collects nothing new.
+ * the platform already writes — everything here reads zz.event, zz.doc and zz.initiative, and
+ * collects nothing new.
  *
  * An empty window is an alert here, never an all-clear: if this cannot see any activity at all, the
  * likely explanation is that it is looking at the wrong place.
@@ -35,9 +36,9 @@ interface EventRow {
   duration_ms: number | null;
 }
 interface DocRow {
-  team_slug: string; initiative: string; path: string; status: string;
-  outcome: string | null; updated_at: string;
+  team_slug: string; initiative: string; path: string; status: string; updated_at: string;
 }
+interface ClosedInitiativeRow { team_slug: string; slug: string }
 
 
 const median = (ns: number[]): number => {
@@ -61,7 +62,11 @@ function main(): number {
     "  from zz.event where kind = 'tool_call'" +
     "   and ts <= now() - (:'w')::interval and ts > now() - 2 * (:'w')::interval", { w: window });
   const docs = psqlRows<DocRow>(psql,
-    "select team_slug, initiative, path, status, outcome, updated_at from zz.doc", {});
+    "select team_slug, initiative, path, status, updated_at from zz.doc", {});
+  // Which initiatives are closed — zz.initiative's own closed_at, never a document's outcome.
+  const closed = psqlRows<ClosedInitiativeRow>(psql,
+    "select t.slug as team_slug, i.slug from zz.initiative i" +
+    "  join zz.team t on t.id = i.team_id where i.closed_at is not null", {});
 
   const alerts: string[] = [];
 
@@ -133,12 +138,10 @@ function main(): number {
   // 3. Documents stuck at a gate. A draft nobody approved is normal for a day and a question after
   //    a fortnight, and a gate waiting on a person looks identical to one forgotten.
   //
-  //    The outcome is the initiative's, not the document's. Only the closing document carries it,
-  //    so skipping rows that have one skips exactly one file per initiative and leaves every other
-  //    document of a closed initiative in the count — and those never change again, so the alert
-  //    would fire identically every run forever.
-  const closedInitiatives = new Set(
-    docs.filter((d) => d.outcome).map((d) => `${d.team_slug} ${d.initiative}`));
+  //    A closed initiative's own gates never change again, so skipping its documents is what
+  //    stops the alert firing identically every run forever. Read from zz.initiative.closed_at,
+  //    never from a document's outcome.
+  const closedInitiatives = new Set(closed.map((d) => `${d.team_slug} ${d.slug}`));
   const stuck = new Map<string, number>();
   for (const d of docs) {
     if (closedInitiatives.has(`${d.team_slug} ${d.initiative}`)) continue;

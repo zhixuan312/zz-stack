@@ -229,12 +229,21 @@ export async function indexDoc(root: string, relPath: string, content: string, s
     // foreign key an acceptance criterion joins back to its spec on. A backfill cannot hold
     // it: this function deletes and re-inserts a document's claims on every reindex.
     const inserted = await p.query<{ id: string }>(
-      `insert into zz.doc (team_slug, initiative, path, flow, type, status, outcome, approved_by, approved_at, closed_by, updated_at, body, title, tags, evidence, superseded_by, content_hash, supports, analyzer_version, body_tsv)
+      `insert into zz.doc (team_slug, initiative, initiative_id, path, flow, type, status, outcome, approved_by, approved_at, closed_by, updated_at, body, title, tags, evidence, superseded_by, content_hash, supports, analyzer_version, body_tsv)
        -- When the document changed, not when the indexer last ran: a reindex touches every file
        -- it re-derives and must not restamp the corpus. The envelope's updated_at is stamped by
        -- the platform on every write, so it is authoritative; now() is the fallback for a
        -- document whose envelope has no date at all.
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, coalesce($17::timestamptz, now()), $11,$12,$13::text[],$14::text[],$15,$16, $18, $27,
+       --
+       -- initiative_id is resolved here, inline, from the same $1/$2 this statement already
+       -- binds team_slug/initiative from — the same reason services/gateway/src/events.ts
+       -- resolves team_id inline: the id has to come from the same statement that writes the
+       -- row, not a second round trip that can disagree with it. Null when the initiative row
+       -- does not exist (a store predating 002_initiative_anchor.sql, or a caller writing
+       -- outside a database-backed initiative_open) — the same as today, until reindexed.
+       values ($1,$2, (select i.id from zz.initiative i join zz.team t on t.id = i.team_id
+                        where t.slug = $1 and i.slug = $2),
+               $3,$4,$5,$6,$7,$8,$9,$10, coalesce($17::timestamptz, now()), $11,$12,$13::text[],$14::text[],$15,$16, $18, $27,
                -- title A, tags B, body C: the analyzer's own terms for each field ($19-$26, from
                -- buildRowVector/bodyTsvParams above), not the raw columns re-parsed by a prose
                -- text-search configuration, which would take an unspaced Han run as one opaque word.
@@ -244,6 +253,7 @@ export async function indexDoc(root: string, relPath: string, content: string, s
                -- and no dictionary lookup, so they are stored exactly as the analyzer emitted them.
                ${bodyTsvSql(19)})
        on conflict (team_slug, initiative, path) do update set
+         initiative_id=excluded.initiative_id,
          flow=excluded.flow, type=excluded.type, status=excluded.status, outcome=excluded.outcome,
          approved_by=excluded.approved_by, approved_at=excluded.approved_at,
          closed_by=excluded.closed_by, updated_at=excluded.updated_at,

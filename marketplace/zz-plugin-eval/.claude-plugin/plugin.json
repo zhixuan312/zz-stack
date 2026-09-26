@@ -1,7 +1,7 @@
 {
   "name": "zz-plugin-eval",
   "description": "Measure a whole plugin by what its real runs did, then — for plugins this team owns — release an authorized improvement and judge it on real use.",
-  "version": "0.79.3+76263e3a",
+  "version": "0.80.0+390d1806",
   "author": {
     "name": "ZZ Stack",
     "url": "https://github.com/zhixuan312/zz-stack"

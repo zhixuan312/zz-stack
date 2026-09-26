@@ -33,6 +33,51 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.80.0] — 2026-09-26
+
+### Changed
+- **The console's plugin list shows the newest evaluation run.** It showed each plugin's last
+  legacy round verdict (from 2026-09-19), so the evaluation runs scored since never reached it.
+  It now shows the newest completed `eval_run`: the overall score, or its status word when the run
+  is `not_established`; the score status with open plugin-owned defects; and when it was measured.
+- **OBSERVE no longer reports model facts it could never measure.** `tokens_per_model_call_avg`,
+  `cost_per_model_call_avg` and `runtime_identity.models` were empty in every snapshot: the rows
+  they read are the platform's own evaluation calls, not a plugin's model use, which the platform
+  never sees. They are removed, and a measure whose `factPath` names either fact is refused.
+- **A completed evaluation run refuses to be scored again.** `evaluation_score` overwrote the
+  published result of a run already scored (two runs were). A re-score is a new `eval_run`; a retry
+  under the key that completed the run still replays.
+
+### Fixed
+- **The control loop honours a re-approval after a revision.** Stored evidence was replayed
+  without its withdrawals, and the rule applying them ignored order, so one revision would have
+  withdrawn every later approval of that document. A withdrawal now removes only earlier entries,
+  and a run whose stored history no longer replays is refused by name instead of judged on part
+  of it. No past close changes; one open initiative whose review was revised and never re-approved
+  is now correctly refused at close.
+- **An MCP OAuth code is exchanged once.** Two concurrent exchanges could both mint a token, the
+  second deleting the first. The code is now consumed in the statement that tests it.
+- **Deactivating a person ends everything they held.** Their console sessions and unused passkey
+  enrolment links stayed live, and re-adding the person revived them. All are ended in one
+  transaction with the tokens.
+- **Every release logged `register-skills failed`.** Its retired-skills report queried a column
+  `zz.eval` never had; the report prints again.
+- **The run reconcile no longer rewrites unchanged rows.** Every five minutes it updated every
+  `zz.run` row whether or not anything changed.
+
+### Upgrade notes
+- Re-pull clients: the `zz-plugin-eval` skills `zz-plugin-define-qualify` and `zz-plugin-observe`
+  changed.
+- Breaking: `/api/console/plugins` `latestEval` is `{ version, overallScore, scoreStatus,
+  guardrailStatus, openDefects, at }`; console 0.21.0 reads it. New OBSERVE snapshots have a
+  different `environment_digest`. No migration.
+
+### zz-stack-dashboard 0.21.0
+
+- **The plugin list reads the newest evaluation run**: Eval score, Status (with open defects) and
+  Evaluated, linking to the plugin page. The Room to improve column is gone with the legacy
+  verdict it showed.
+
 ## [0.79.3] — 2026-09-26
 
 ### Fixed

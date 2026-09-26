@@ -201,3 +201,87 @@ check("a fact a later entry withdrew stops being counted, and the log still only
   if (bad.length) return bad.join("; ");
   return null;
 });
+
+check("a stored run replays its withdrawals in order: a re-approval after a revision stands, and a run that does not replay in full is refused", () => {
+  // The durable path, not the kernel alone. A run is judged by replaying its stored evidence
+  // into a fresh host, and ids repeat there: a document approved, revised and approved again
+  // records the same approval id twice. So this drives `judgeClaim`, the function `claimFor`
+  // hands its loaded facts to, with that exact history.
+  //
+  // Three answers, each the one a reversed or dropped withdrawal gets wrong. Approve → revise
+  // must refuse: a replay that dropped `supersedes` grants it. Approve → revise → re-approve
+  // must grant: a withdrawal that reached forward to later entries of the same id refuses it.
+  // And an entry the module no longer accepts must refuse the claim by name rather than be
+  // left out of a verdict that then describes a shorter run.
+  const dist = join(root, "services/zz-core/dist");
+  if (!existsSync(join(dist, "host/store.js"))) {
+    return "services/zz-core is not built, so the stored-run replay cannot be driven — run `npx tsc -b` before the gate";
+  }
+  const probe = `
+    import { judgeClaim } from ${JSON.stringify(join(dist, "host/store.js"))};
+    import { packagedModules } from ${JSON.stringify(join(dist, "reviewed-modules.js"))};
+    const bad = [];
+    const SUBJECT = "replay probe";
+    for (const m of packagedModules.bodies.values()) {
+      const gated = m.steps.find((s) => s.completion.some((c) => c.kind === "approval"));
+      const last = m.steps[m.steps.length - 1];
+      if (!gated || !last.grants.length || !gated.accepts.some((k) => k.name === "document")) continue;
+      const action = last.grants[0];
+      const run = { id: "replay-probe", team_slug: "gate", initiative: SUBJECT, module_id: m.id,
+                    module_digest: "", subject: SUBJECT, profile: m.enrolment.requires };
+      const stored = [];
+      const add = (step, e) => stored.push({ ...e, stepId: step, step_id: step, note: "replayed by the gate" });
+      for (const step of m.steps) {
+        for (const rule of step.completion) {
+          for (let n = 0; n < rule.atLeast; n++) {
+            const about = rule.about === undefined ? SUBJECT
+              : stored.filter((e) => e.kind === rule.about).map((e) => e.id).pop();
+            add(step.id, { id: step.id + "/" + rule.kind + "/" + n, kind: rule.kind, about });
+          }
+        }
+      }
+      const claim = (evidence) => judgeClaim(run, m, evidence, [], last.id, action);
+      const whole = claim(stored);
+      if (!whole.grant.granted) {
+        bad.push(m.id + ": the complete stored run was refused before anything was withdrawn — " + whole.grant.refusal);
+        continue;
+      }
+      const approval = stored.find((e) => e.kind === "approval" && e.stepId === gated.id);
+      const revised = [...stored];
+      revised.push({ id: gated.id + "/document/v2", stepId: gated.id, step_id: gated.id, kind: "document",
+                     about: SUBJECT, note: "revised", supersedes: approval.id });
+      const onRevised = claim(revised);
+      if (onRevised.grant.granted) {
+        bad.push(m.id + ": approve → revise was granted " + action + " through the stored replay — the " +
+                 "revision's withdrawal did not survive rehydration");
+      } else if (!onRevised.grant.refusal.includes(gated.id)) {
+        bad.push(m.id + ": approve → revise was refused, but not for " + gated.id + " — \\"" +
+                 onRevised.grant.refusal + "\\", so the withdrawal is unproven");
+      }
+      const reapproved = [...revised, { ...approval }];
+      const onReapproved = claim(reapproved);
+      if (!onReapproved.grant.granted) {
+        bad.push(m.id + ": approve → revise → re-approve under the same approval id was refused — \\"" +
+                 onReapproved.grant.refusal + "\\". A withdrawal reached forward to an entry recorded after it");
+      }
+      const foreign = { id: "replay-probe/unaccepted", stepId: m.steps[0].id, step_id: m.steps[0].id,
+                        kind: "a kind no step accepts", about: SUBJECT, note: "unreplayable" };
+      const onForeign = claim([...stored, foreign]);
+      if (onForeign.grant.granted || onForeign.standing.clear) {
+        bad.push(m.id + ": a run holding an entry that no longer replays was still judged on the rest of it");
+      } else if (!onForeign.grant.refusal.includes(foreign.id)) {
+        bad.push(m.id + ": a run that does not replay in full was refused without naming the entry — \\"" +
+                 onForeign.grant.refusal + "\\"");
+      }
+    }
+    console.log(JSON.stringify(bad));
+  `;
+  let out: string;
+  try {
+    out = execFileSync(process.execPath, ["--input-type=module", "-e", probe], { encoding: "utf8" });
+  } catch (err) {
+    return `the stored-run replay probe could not run, so this is unchecked: ${execStderr(err).slice(0, 300)}`;
+  }
+  const bad = JSON.parse(out.trim()) as string[];
+  return bad.length ? bad.join("; ") : null;
+});

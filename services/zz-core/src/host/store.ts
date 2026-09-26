@@ -144,9 +144,10 @@ function rehydrate(
   const unreplayable: string[] = [];
   for (const e of evidence) {
     try {
-      host.evidenceRecord(kernelRunId, e.step_id, { id: e.id, kind: e.kind, about: e.about, note: e.note });
+      host.evidenceRecord(kernelRunId, e.step_id,
+                          { id: e.id, kind: e.kind, about: e.about, note: e.note, supersedes: e.supersedes });
     } catch (err) {
-      unreplayable.push(`${e.step_id}/${e.kind}: ${err instanceof Error ? err.message : String(err)}`);
+      unreplayable.push(`${e.id} at ${e.step_id}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
   return { host, kernelRunId, unreplayable };
@@ -280,9 +281,35 @@ export async function claimFor(
 ): Promise<{ grant: ActionGrant; standing: StandingVerdict } | null> {
   const run = await runFor(team, initiative);
   if (!run) return null;
-  const { host, kernelRunId } = rehydrate(run, module, await evidenceFor(run.id));
+  return judgeClaim(run, module, await evidenceFor(run.id), await waiversFor(run.id),
+                    stepId, action, ruledOutSteps);
+}
+
+/** `claimFor` once the run's facts are loaded: replay them, then claim.
+ *
+ *  A run whose history no longer replays in full is refused, naming each entry that did not
+ *  replay. Judging the entries that did would answer for a shorter run than the one recorded,
+ *  and a withdrawal among the dropped entries would leave standing what it withdrew.
+ *
+ *  Exported for scripts/gate/checks/host-chain.ts. */
+export function judgeClaim(
+  run: StoredRun, module: ReviewedModule, evidence: readonly (EvidenceEntry & { step_id: string })[],
+  waivers: readonly StoredWaiver[], stepId: string, action: string,
+  ruledOutSteps: readonly string[] = [],
+): { grant: ActionGrant; standing: StandingVerdict } {
+  const { host, kernelRunId, unreplayable } = rehydrate(run, module, evidence);
+  if (unreplayable.length) {
+    const unmet = unreplayable.map((u) => `recorded entry ${u}`);
+    return {
+      grant: { action, granted: false, refusal:
+        `this run's history cannot be replayed in full against ${module.id} as registered now, ` +
+        `and a verdict on the shorter history would judge a run that never happened — ` +
+        `${unmet.length} recorded ${unmet.length === 1 ? "entry does" : "entries do"} not replay: ` +
+        unmet.join("; ") },
+      standing: { satisfied: false, unmet, dischargedBy: [], clear: false },
+    };
+  }
   const grant = host.actionClaim(kernelRunId, stepId, action);
-  const standing = withWaivers(
-    host.controlEvaluate(kernelRunId, stepId), await waiversFor(run.id), ruledOutSteps);
+  const standing = withWaivers(host.controlEvaluate(kernelRunId, stepId), waivers, ruledOutSteps);
   return { grant, standing };
 }

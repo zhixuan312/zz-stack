@@ -101,7 +101,8 @@ export interface EvidenceEntry {
   readonly kind: string;
   readonly about: string;
   readonly note: string;
-  /** The id of an earlier entry this one withdraws, if any.
+  /** The id of an earlier entry this one withdraws, if any: every entry carrying that id
+   *  recorded before this one, and none recorded after it.
    *
    *  The log stays append-only: the earlier fact really happened, so deleting the entry would
    *  falsify the history, but counting it would answer a question about the run's current
@@ -171,14 +172,24 @@ function met(rule: CompletionRule, evidence: readonly EvidenceEntry[], stepId: s
   // What a later entry withdrew is not counted, on either side of the back-reference: an
   // approval standing on a withdrawn document entry would be a reference into history rather
   // than into the run's current state. One set, applied twice.
-  const withdrawn = new Set(
-    evidence.map((e) => e.supersedes).filter((s): s is string => s !== undefined && s !== ""));
+  //
+  // Withdrawal is positional. An entry withdraws the entries carrying that id that were
+  // recorded BEFORE it, never one recorded after: ids repeat — a document approved, revised and
+  // approved again records the same approval id twice — and the second approval answers the
+  // revision rather than being withdrawn by it. The set holds entries, not ids, for that reason.
+  const withdrawn = new Set<EvidenceEntry>();
+  evidence.forEach((e, at) => {
+    if (e.supersedes === undefined || e.supersedes === "") return;
+    for (const earlier of evidence.slice(0, at)) {
+      if (earlier.id === e.supersedes) withdrawn.add(earlier);
+    }
+  });
   const here = evidence.filter(
-    (e) => e.stepId === stepId && e.kind === rule.kind && !withdrawn.has(e.id));
+    (e) => e.stepId === stepId && e.kind === rule.kind && !withdrawn.has(e));
   const counted = rule.about === undefined
     ? here
     : here.filter((e) => evidence.some(
-        (p) => p.kind === rule.about && p.id === e.about && !withdrawn.has(p.id)));
+        (p) => p.kind === rule.about && p.id === e.about && !withdrawn.has(p)));
   return counted.length >= rule.atLeast;
 }
 

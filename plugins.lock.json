@@ -43,12 +43,12 @@
   },
   "zz-plugin-eval": {
     "version": "0.77.3",
-    "digest": "bc2a9f09",
+    "digest": "aaacdf38",
     "skills": {
       "zz-plugin-define-qualify": "c2e20b3d879a",
       "zz-plugin-discover": "95c1b3245921",
       "zz-plugin-eval": "ff799fe40724",
-      "zz-plugin-evaluate": "3d07df83d8ce",
+      "zz-plugin-evaluate": "09436082a9b5",
       "zz-plugin-explain": "31e3572df5b6",
       "zz-plugin-identify": "048a5cc37a08",
       "zz-plugin-improve": "b07afbe310ae",

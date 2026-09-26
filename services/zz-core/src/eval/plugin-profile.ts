@@ -70,8 +70,10 @@ interface PluginTraces {
   /** Per tool: how often it was called, how often it refused, and whose refusal each was.
    *
    *  A bare refusal count answers the wrong question: `guardrail` is the platform refusing on
-   *  purpose, `ours` is this platform failing, and `theirs` is somebody else's service failing
-   *  underneath it. Those are opposite findings with the same number. */
+   *  purpose, `ours` is a malformed call the caller could have avoided (a missing argument, an
+   *  input the schema rejects — @zz/contracts' `refusalOwner`, named from the calling flow's
+   *  side), and `theirs` is somebody else's service failing underneath it. Those are opposite
+   *  findings with the same number. */
   use: { tool: string; calls: number; refusals: number;
          guardrail: number; ours: number; theirs: number; unattributed: number }[];
   /** Reachable, named by a skill, green on every gate check — and never called once IN THIS

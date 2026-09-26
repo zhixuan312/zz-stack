@@ -217,15 +217,16 @@ function refusalSubject(g: RefusalGroup): string {
   const raw = g.sample_raw_texts.filter(Boolean).map((t) => `"${t}"`).join("; ") || "(none recorded)";
   return `A tool named "${g.tool}" refused ${g.count} time(s) with refusal text (normalised): ` +
     `"${g.normalized_text || "(no text recorded)"}". The platform's own attribution for these ` +
-    `refusals is "${g.owner}" (guardrail = the platform refusing on purpose, ours = this ` +
-    "platform's own code failing, theirs = a dependency failing underneath it, unattributed = " +
-    `nothing attributed it yet). Raw examples: ${raw}`;
+    `refusals is "${g.owner}" (guardrail = the platform refusing on purpose, by a rule it names; ` +
+    "ours = the caller sent a malformed call — a missing argument, an input the tool's schema " +
+    "rejects — which the calling flow could have avoided; theirs = a dependency failing " +
+    `underneath it; unattributed = nothing attributed it yet). Raw examples: ${raw}`;
 }
 function pluginContext(snapshot: Snapshot): string {
   return `PLUGIN: ${snapshot.plugin} version ${snapshot.declared_version}\n` +
     `SERVES ITS OWN DOOR: ${servesOwnDoor(snapshot.plugin)
-      ? "yes — its tools are this plugin itself, so \"ours\" here means this plugin"
-      : "no — it is a flow reached through the shared baseline door, so \"ours\" there can mean the platform"}\n` +
+      ? "yes — its tools are this plugin itself, so a guardrail refusal is this plugin's own rule"
+      : "no — it is a flow reached through the shared baseline door, whose tools are the platform's"}\n` +
     `WINDOW: ${snapshot.window.from} to ${snapshot.window.to}`;
 }
 function returnSubject(g: ReturnGroup): string {

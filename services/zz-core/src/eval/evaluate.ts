@@ -300,12 +300,16 @@ export function registerEvaluationTools(server: McpServer): void {
         "row records the exclusion by name and no model is called; human is recorded as excluded. " +
         "RETURNS { eval_run_id, assessment_count, measures_assessed, model_calls, excluded }. " +
         "REFUSES an eval_run_id nothing " +
-        "minted, an eval_run already completed/failed/cancelled, an empty subject_refs list, and " +
+        "minted, an eval_run already completed/failed/cancelled, and " +
         "BY NAME any subject_ref that resolves to neither a real document nor a real run — a " +
         "model asked to judge nothing is never silently handed a templated sentence naming the " +
         "ref instead. A mutator: writes through the FR-59 idempotency ledger.",
       inputSchema: {
-        eval_run_id: z.string(), subject_refs: z.array(z.string()).min(1),
+        eval_run_id: z.string(),
+        subject_refs: z.array(z.string()).describe(
+          "The run ids, documents, bug reports and knowledge nodes to judge. Empty reads the run's " +
+          "facts alone — for a plugin whose use left none of those, like a door used only outside " +
+          "initiatives."),
         idempotency_key: z.string().min(1),
       },
     },

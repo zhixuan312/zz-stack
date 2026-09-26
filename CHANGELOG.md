@@ -33,6 +33,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.79.2] — 2026-09-26
+
+### Fixed
+- **A re-seen failure mode is merged into the current protocol's entry.** DISCOVER picked the
+  oldest row with the key, so a refusal the newest protocol version folded in pointed at an entry
+  of a version since replaced.
+- **A not-applicable dimension's measures carry its reason** in `evaluation_score`, not
+  "no assessment recorded", which read as missing evidence.
+
 ## [0.79.1] — 2026-09-26
 
 ### Fixed

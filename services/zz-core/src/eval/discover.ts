@@ -305,7 +305,9 @@ async function insertCandidate(
        and sv.plugin_id = (select s2.plugin_id from zz.eval_observation_snapshot o2
                              join zz.eval_subject_version s2 on s2.id = o2.subject_version_id
                             where o2.id = $1::uuid)
-     order by (c.status = 'accepted') desc, (c.status = 'merged') desc, c.created_at
+     -- The newest accepted row is the current protocol version's entry; an older one belongs to
+     -- a version since replaced.
+     order by (c.status = 'accepted') desc, (c.status = 'merged') desc, c.created_at desc
      limit 1`, [observationSnapshotId, stableKey])).rows[0];
   const row = (await client.query<{
     id: string; description: string; prevalence: { numerator: number; denominator: number };

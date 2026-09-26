@@ -33,7 +33,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
-## [Unreleased]
+## [0.76.4] — 2026-09-26
 
 ### Fixed
 - **plugin_locate and release_apply read a catalog plugin's current version from the running

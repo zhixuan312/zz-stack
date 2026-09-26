@@ -36,7 +36,9 @@ function serializeValue(v: unknown, indent: string): string {
 function orderedTable(t: TableTarget): Record<string, unknown> {
   const fk = (f: ForeignKeyTarget) => ({
     columns: f.columns, refTable: f.refTable, refColumns: f.refColumns,
-    onDelete: f.onDelete, deferrable: f.deferrable,
+    onDelete: f.onDelete,
+    ...(f.onDeleteColumns ? { onDeleteColumns: f.onDeleteColumns } : {}),
+    deferrable: f.deferrable,
   });
   return {
     columns: t.columns,

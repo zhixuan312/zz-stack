@@ -123,7 +123,7 @@ async function main(): Promise<void> {
 
         console.log("");
         console.log("row counts and content hashes (before -> after):");
-        const after = await captureSnapshot(client);
+        const after = await captureSnapshot(client, pendingMigrations);
         const { lines, diffs: snapshotDiffs } = diffSnapshots(before ?? {}, after, pendingMigrations);
         for (const line of formatTableReport(lines)) console.log(line);
         allDiffs.push(...snapshotDiffs);
@@ -160,8 +160,10 @@ async function main(): Promise<void> {
         try {
           await client.query("set search_path = ''");
           const beforeNames = await schemaMigrationNames(client);
-          before = await captureSnapshot(client);
+          // The pending set comes first: the before snapshot is hashed the way these migrations'
+          // expectations ask for, and it must be read identically to the after one.
           pendingMigrations = pendingMigrationFiles(beforeNames);
+          before = await captureSnapshot(client, pendingMigrations);
           console.log(`migrations: ${pendingMigrations.length === 0 ? "none pending" : `${pendingMigrations.length} pending — ${pendingMigrations.join(", ")}`}`);
         } finally {
           await client.end();

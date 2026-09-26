@@ -14,6 +14,12 @@ export interface ForeignKeyTarget {
   refColumns: string[];
   /** `pg_constraint.confdeltype`, spelled out: NO ACTION, RESTRICT, CASCADE, SET NULL, SET DEFAULT. */
   onDelete: string;
+  /** `pg_constraint.confdelsetcols` — the referencing columns an `on delete set null (<columns>)`
+   *  names, in the same order as `columns`. Absent when the action sets every referencing column
+   *  null, or is not `SET NULL` at all. The key is left out rather than written as `undefined`:
+   *  `compare.ts` compares foreign keys by `JSON.stringify`, so an explicit `undefined` and a
+   *  missing key would read as different. */
+  onDeleteColumns?: string[];
   deferrable: boolean;
 }
 

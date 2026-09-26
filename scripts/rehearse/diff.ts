@@ -5,27 +5,12 @@
  * rehearsal a unit test could drive without Docker.
  */
 import type { Snapshot } from "./snapshot.ts";
-import { MIGRATION_EXPECTATIONS, type CountExpectation, type TableExpectation } from "./expect.ts";
+import { foldedTableExpectation, type CountExpectation, type FoldedExpectation } from "./expect.ts";
 
 function describeCount(exp: CountExpectation): string {
   if (exp === "unchanged") return "unchanged";
   if (exp === "any") return "any";
   return `Δ${exp.delta >= 0 ? "+" : ""}${exp.delta}`;
-}
-
-/** The last migration to name a table wins over an earlier one naming the same table — the
- *  same "later entry overrides" rule a single map would give for free, kept explicit because
- *  this is folding several maps rather than reading one. */
-function tableExpectation(table: string, pendingMigrations: readonly string[]): Required<TableExpectation> {
-  let count: CountExpectation = "unchanged";
-  let contentHash: "unchanged" | "skip" = "unchanged";
-  for (const migration of pendingMigrations) {
-    const exp = MIGRATION_EXPECTATIONS[migration]?.tables?.[table];
-    if (!exp) continue;
-    if (exp.count !== undefined) count = exp.count;
-    if (exp.contentHash !== undefined) contentHash = exp.contentHash;
-  }
-  return { count, contentHash };
 }
 
 interface TableReportLine {
@@ -56,7 +41,7 @@ export function diffSnapshots(
       diffs.push(`${table}: missing from the ${!b ? "before" : "after"} snapshot`);
       continue;
     }
-    const exp = tableExpectation(table, pendingMigrations);
+    const exp: FoldedExpectation = foldedTableExpectation(table, pendingMigrations);
     const delta = a.count - b.count;
     const countOk = exp.count === "any" ? true
       : exp.count === "unchanged" ? delta === 0
@@ -64,10 +49,15 @@ export function diffSnapshots(
     if (!countOk) {
       diffs.push(`${table}: row count ${b.count} -> ${a.count} (Δ${delta}), expected ${describeCount(exp.count)}`);
     }
+    // A snapshot's `hash` is null exactly when its expectation skips it, so a null under an
+    // expectation that requires one is a disagreement between the two — reported, never read as
+    // a pass. Both snapshots are captured with the same pending set, so this cannot be a miss.
     const hashChecked = exp.contentHash === "unchanged";
-    const hashOk = !hashChecked || a.hash === b.hash;
+    const hashOk = !hashChecked || (b.hash !== null && a.hash !== null && a.hash === b.hash);
     if (hashChecked && !hashOk) {
-      diffs.push(`${table}: content hash changed (before ${b.hash.slice(0, 12)}…, after ${a.hash.slice(0, 12)}…)`);
+      diffs.push(b.hash === null || a.hash === null
+        ? `${table}: content hash required by the expectation but not captured`
+        : `${table}: content hash changed (before ${b.hash.slice(0, 12)}…, after ${a.hash.slice(0, 12)}…)`);
     }
     lines.push({
       table, before: b.count, after: a.count, expectedCount: describeCount(exp.count),

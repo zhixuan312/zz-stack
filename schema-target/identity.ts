@@ -43,12 +43,6 @@ export const IDENTITY: Record<string, TableTarget> = {
         "now()",
       ],
       [
-        "updated_at",
-        "timestamp with time zone",
-        false,
-        "now()",
-      ],
-      [
         "active_team_id",
         "uuid",
         true,
@@ -64,6 +58,22 @@ export const IDENTITY: Record<string, TableTarget> = {
       ],
     ],
     foreignKeys: [
+      {
+        columns: [
+          "active_team_id",
+          "id",
+        ],
+        refTable: "membership",
+        refColumns: [
+          "team_id",
+          "principal_id",
+        ],
+        onDelete: "SET NULL",
+        onDeleteColumns: [
+          "active_team_id",
+        ],
+        deferrable: false,
+      },
       {
         columns: [
           "active_team_id",
@@ -145,6 +155,7 @@ export const IDENTITY: Record<string, TableTarget> = {
       },
     ],
     checks: [
+      "CHECK ((slug ~ '^[a-z0-9][a-z0-9_-]{1,63}$'::text))",
       "CHECK ((status = ANY (ARRAY['active'::text, 'archived'::text])))",
     ],
     indexes: [],
@@ -227,7 +238,9 @@ export const IDENTITY: Record<string, TableTarget> = {
     checks: [
       "CHECK ((role = ANY (ARRAY['admin'::text, 'member'::text])))",
     ],
-    indexes: [],
+    indexes: [
+      "CREATE INDEX membership_principal ON zz.membership USING btree (principal_id)",
+    ],
     comment: null,
     columnComments: {},
   },
@@ -287,6 +300,12 @@ export const IDENTITY: Record<string, TableTarget> = {
         false,
         "now()",
       ],
+      [
+        "oauth_client_id",
+        "text",
+        true,
+        null,
+      ],
     ],
     primaryKey: [
       "id",
@@ -297,6 +316,17 @@ export const IDENTITY: Record<string, TableTarget> = {
       ],
     ],
     foreignKeys: [
+      {
+        columns: [
+          "oauth_client_id",
+        ],
+        refTable: "mcp_oauth_client",
+        refColumns: [
+          "client_id",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
       {
         columns: [
           "principal_id",
@@ -321,7 +351,10 @@ export const IDENTITY: Record<string, TableTarget> = {
       },
     ],
     checks: [],
-    indexes: [],
+    indexes: [
+      "CREATE UNIQUE INDEX pat_live_label ON zz.pat USING btree (principal_id, label) WHERE ((revoked_at IS NULL) AND (label <> ''::text))",
+      "CREATE INDEX pat_principal ON zz.pat USING btree (principal_id)",
+    ],
     comment: null,
     columnComments: {},
   },
@@ -381,6 +414,12 @@ export const IDENTITY: Record<string, TableTarget> = {
         true,
         null,
       ],
+      [
+        "team_id",
+        "uuid",
+        true,
+        null,
+      ],
     ],
     primaryKey: [
       "id",
@@ -400,6 +439,17 @@ export const IDENTITY: Record<string, TableTarget> = {
           "id",
         ],
         onDelete: "CASCADE",
+        deferrable: false,
+      },
+      {
+        columns: [
+          "team_id",
+        ],
+        refTable: "team",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "SET NULL",
         deferrable: false,
       },
     ],

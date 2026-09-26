@@ -30,7 +30,7 @@ interface ColumnRow { name: string; type: string; nullable: boolean; default_exp
 interface KeyRow { conname: string; cols: string[] }
 interface ForeignKeyRow {
   conname: string; ref_table: string; columns: string[]; ref_columns: string[];
-  confdeltype: string; condeferrable: boolean;
+  on_delete_columns: string[] | null; confdeltype: string; condeferrable: boolean;
 }
 interface DefRow { def: string }
 interface CommentRow { attname: string; comment: string | null }
@@ -92,12 +92,20 @@ async function readUniques(client: pg.Client, oid: string): Promise<string[][]> 
   return rows.map((r) => r.cols);
 }
 
+// DELIBERATE: `on_delete_columns` is aggregated with a FILTER rather than read from
+// `confdelsetcols` directly: `confdelsetcols` holds the referencing table's `attnum`s, and the
+// target names columns. The lateral `unnest(c.conkey)` above already walks those attnums in key
+// order, so filtering it to the set `confdelsetcols` names yields them in the order `columns` is
+// in. `filter` returns null when the set is empty — an `on delete set null` that names nothing,
+// or any other delete action — which is the key being absent.
 async function readForeignKeys(client: pg.Client, oid: string): Promise<ForeignKeyTarget[]> {
   const { rows } = await client.query<ForeignKeyRow>(`
     select c.conname,
            rc.relname as ref_table,
            array_agg(la.attname::text order by k.ord) as columns,
            array_agg(ra.attname::text order by k.ord) as ref_columns,
+           array_agg(la.attname::text order by k.ord)
+             filter (where k.attnum = any (c.confdelsetcols)) as on_delete_columns,
            c.confdeltype,
            c.condeferrable
     from pg_constraint c
@@ -109,11 +117,12 @@ async function readForeignKeys(client: pg.Client, oid: string): Promise<ForeignK
     group by c.oid, c.conname, rc.relname, c.confdeltype, c.condeferrable
     order by c.conname
   `, [oid]);
-  return rows.map((r) => ({
+  return rows.map((r): ForeignKeyTarget => ({
     columns: r.columns,
     refTable: r.ref_table,
     refColumns: r.ref_columns,
     onDelete: DELETE_ACTION[r.confdeltype] ?? r.confdeltype,
+    ...(r.on_delete_columns ? { onDeleteColumns: r.on_delete_columns } : {}),
     deferrable: r.condeferrable,
   }));
 }

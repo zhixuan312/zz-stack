@@ -1,5 +1,6 @@
 /**
- * How a person signs in: passkeys, their ceremonies and enrolments, and the MCP OAuth handshake.
+ * Sign-in: passkeys, the ceremonies that enrol and use them, and the OAuth clients and
+ * authorization codes the hosted MCP clients arrive through.
  */
 import type { TableTarget } from "../scripts/schema/types.ts";
 
@@ -117,6 +118,12 @@ export const SIGN_IN: Record<string, TableTarget> = {
         false,
         "now()",
       ],
+      [
+        "expires_at",
+        "timestamp with time zone",
+        false,
+        null,
+      ],
     ],
     primaryKey: [
       "id",
@@ -137,9 +144,10 @@ export const SIGN_IN: Record<string, TableTarget> = {
     ],
     checks: [
       "CHECK ((kind = ANY (ARRAY['register'::text, 'login'::text])))",
+      "CHECK (((kind = 'register'::text) = (principal_id IS NOT NULL)))",
     ],
     indexes: [
-      "CREATE INDEX passkey_challenge_age ON zz.passkey_challenge USING btree (created_at)",
+      "CREATE INDEX passkey_challenge_expiry ON zz.passkey_challenge USING btree (expires_at)",
     ],
     comment: null,
     columnComments: {},
@@ -159,12 +167,6 @@ export const SIGN_IN: Record<string, TableTarget> = {
         null,
       ],
       [
-        "issued_by",
-        "uuid",
-        true,
-        null,
-      ],
-      [
         "expires_at",
         "timestamp with time zone",
         false,
@@ -176,29 +178,12 @@ export const SIGN_IN: Record<string, TableTarget> = {
         true,
         null,
       ],
-      [
-        "created_at",
-        "timestamp with time zone",
-        false,
-        "now()",
-      ],
     ],
     primaryKey: [
       "token_hash",
     ],
     uniques: [],
     foreignKeys: [
-      {
-        columns: [
-          "issued_by",
-        ],
-        refTable: "principal",
-        refColumns: [
-          "id",
-        ],
-        onDelete: "SET NULL",
-        deferrable: false,
-      },
       {
         columns: [
           "principal_id",
@@ -245,6 +230,12 @@ export const SIGN_IN: Record<string, TableTarget> = {
         false,
         "now()",
       ],
+      [
+        "revoked_at",
+        "timestamp with time zone",
+        true,
+        null,
+      ],
     ],
     primaryKey: [
       "client_id",
@@ -259,12 +250,6 @@ export const SIGN_IN: Record<string, TableTarget> = {
   mcp_oauth_authz: {
     columns: [
       [
-        "id",
-        "text",
-        false,
-        null,
-      ],
-      [
         "client_id",
         "text",
         false,
@@ -273,7 +258,7 @@ export const SIGN_IN: Record<string, TableTarget> = {
       [
         "principal_id",
         "uuid",
-        true,
+        false,
         null,
       ],
       [
@@ -289,22 +274,10 @@ export const SIGN_IN: Record<string, TableTarget> = {
         null,
       ],
       [
-        "state",
-        "text",
-        false,
-        "''::text",
-      ],
-      [
         "resource",
         "text",
         false,
         "''::text",
-      ],
-      [
-        "used",
-        "boolean",
-        false,
-        "false",
       ],
       [
         "created_at",
@@ -312,12 +285,41 @@ export const SIGN_IN: Record<string, TableTarget> = {
         false,
         "now()",
       ],
+      [
+        "code_hash",
+        "text",
+        false,
+        null,
+      ],
+      [
+        "expires_at",
+        "timestamp with time zone",
+        false,
+        null,
+      ],
+      [
+        "used_at",
+        "timestamp with time zone",
+        true,
+        null,
+      ],
     ],
     primaryKey: [
-      "id",
+      "code_hash",
     ],
     uniques: [],
     foreignKeys: [
+      {
+        columns: [
+          "client_id",
+        ],
+        refTable: "mcp_oauth_client",
+        refColumns: [
+          "client_id",
+        ],
+        onDelete: "CASCADE",
+        deferrable: false,
+      },
       {
         columns: [
           "principal_id",

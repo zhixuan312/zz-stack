@@ -12,7 +12,7 @@
  */
 import type pg from "pg";
 
-import { NOT_EVALUATION_EVENT, toolCallEvents, type EvidenceWindow } from "./plugin-profile.js";
+import { toolCallEvents, type EvidenceWindow } from "./plugin-profile.js";
 
 /** Every fact key `plugin_profile` (observe.ts) writes into `zz.eval_observation_snapshot.facts`
  *  (001, fix dispatch on I-29's own follow-on) — the canonical list `protocol-record.ts`
@@ -149,12 +149,14 @@ export async function refusalDetail(
  *  one agreement document of a closed initiative. So each outcome rate is over the touched
  *  initiatives that closed, and its coverage is how many of the touched initiatives closed at
  *  all. Divided by every document instead, one accepted close among 284 documents read as an
- *  acceptance rate of 0.0035. Approvals are a property of documents and stay per document.
+ *  acceptance rate of 0.0035. Approvals are a property of gated documents and stay per document.
  *
- *  `null` for a plugin that wrote no document in this window: a flow plugin, a door plugin that
- *  was merely read from, or a window with no matching traffic at all. */
+ *  `null` for a plugin that wrote no document in this window: a door that was merely read from,
+ *  or a window with no matching traffic at all. A flow's documents are written by its runs'
+ *  calls, so a flow has outcomes — the effectiveness a flow exists for. */
 export async function outcomeAndApprovalFacts(
-  pool: pg.Pool, plugin: string, writesDocuments: boolean, window: EvidenceWindow,
+  pool: pg.Pool, plugin: string, version: string, servesOwnDoor: boolean, writesDocuments: boolean,
+  window: EvidenceWindow,
 ): Promise<Record<string, ObservedFact>> {
   const noDocs = writesDocuments
     ? "no document in the initiatives this window's calls touched is live (or none was found)"
@@ -171,12 +173,11 @@ export async function outcomeAndApprovalFacts(
     initiatives: string; closed: string; delivered: string; accepted: string; abandoned: string;
     documents: string; approved: string;
   }>(`
+    -- The initiatives this subject's own calls touched: a door's calls, or the calls inside a
+    -- flow's runs — the same population every other fact here is drawn from (toolCallEvents).
     with touched as (
-      select distinct e.team_slug, e.initiative from zz.event e
-       where e.plugin = $1 and e.kind = 'tool_call'
-         and e.ts between $2 and $3
+      select distinct e.team_slug, e.initiative ${toolCallEvents(servesOwnDoor)}
          and e.initiative is not null and e.initiative <> ''
-         and ${NOT_EVALUATION_EVENT}
     ),
     live as (select d.* from zz.doc d
                join touched t on t.team_slug = d.team_slug and t.initiative = d.initiative
@@ -188,9 +189,11 @@ export async function outcomeAndApprovalFacts(
            (select count(*) from closes where outcome = 'delivered')::text as delivered,
            (select count(*) from closes where outcome = 'accepted')::text as accepted,
            (select count(*) from closes where outcome = 'abandoned')::text as abandoned,
-           (select count(*) from live)::text as documents,
-           (select count(*) from live where approved_by is not null)::text as approved`,
-    [plugin, window.from, window.to])).rows[0];
+           -- Gated documents only — the ones a flow puts a status on. Sources and free documents
+           -- are never approved by design; counted in, 259 sources put sdlc at 13 of 291.
+           (select count(*) from live where status <> '')::text as documents,
+           (select count(*) from live where status <> '' and approved_by is not null)::text as approved`,
+    [plugin, version, window.from, window.to])).rows[0];
 
   const initiatives = N(row?.initiatives);
   const closed = N(row?.closed);

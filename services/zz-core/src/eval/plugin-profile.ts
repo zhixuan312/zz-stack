@@ -133,7 +133,7 @@ const NOT_EVALUATION_RUN = `
                   where esv.id = r.skill_version_id and es.flow = '${EVAL_FLOW}')
      and (r.initiative_id is null or r.initiative_id not in (${EVAL_INITIATIVES}))
      and not (r.initiative_id is null and ${EVAL_SESSION("r.caller_session")})))`;
-export const NOT_EVALUATION_EVENT = `
+const NOT_EVALUATION_EVENT = `
   ($1 = '${EVAL_FLOW}' or (
      not exists (select 1 from zz.skill es where es.name = e.step and es.flow = '${EVAL_FLOW}')
      and not exists (select 1 from zz.initiative ii join zz.team it on it.id = ii.team_id
@@ -254,6 +254,9 @@ export async function pluginTraces(
    *  a caller wanting a plugin's whole history names `{ from: "-infinity", to: "infinity" }`
    *  itself rather than this function silently choosing "everything" for an omitted argument. */
   window: EvidenceWindow,
+  /** This flow's own skills that are not stages (`helperSkillsOf`). Left out of the stage path:
+   *  a helper step is its stage at work, neither a return nor an unplaced step. */
+  helpers: readonly string[] = [],
 ): Promise<PluginTraces> {
   const RUNS_OF = servesOwnDoor ? RUNS_ON_DOOR : RUNS_BY_SKILL;
   const params = [plugin, version, window.from, window.to];
@@ -316,7 +319,9 @@ export async function pluginTraces(
      order by initiative, min(ts)`, params)).rows;
 
   const stage_paths: PluginTraces["stage_paths"] = [];
+  const helper = new Set(helpers);
   for (const row of pathRows) {
+    if (helper.has(row.step)) continue;
     let entry = stage_paths.find((s) => s.initiative === row.initiative);
     if (!entry) { entry = { initiative: row.initiative, steps: [] }; stage_paths.push(entry); }
     entry.steps.push({ step: row.step, first_ts: row.first_ts, last_ts: row.last_ts });

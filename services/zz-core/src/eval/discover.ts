@@ -55,7 +55,7 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
-import { entryOf, servesOwnDoor, toolsNamedBy } from "./plugin-eval.js";
+import { entryOf, helperSkillsOf, servesOwnDoor, toolsNamedBy } from "./plugin-eval.js";
 import { pluginTraces, type EvidenceWindow } from "./plugin-profile.js";
 import {
   refusalGroups, refusalKey, returnGroups, returnKey, totalToolCallEvents, totalStepVisits,
@@ -363,7 +363,8 @@ async function planCandidates(
   const serves = servesOwnDoor(snapshot.plugin);
 
   const traces = await pluginTraces(
-    pool, snapshot.plugin, snapshot.declared_version, reachable, stages, serves, snapshot.window);
+    pool, snapshot.plugin, snapshot.declared_version, reachable, stages, serves, snapshot.window,
+    helperSkillsOf(snapshot.plugin));
   const [refusals, totalCalls] = await Promise.all([
     refusalGroups(pool, snapshot.plugin, snapshot.declared_version, serves, snapshot.window),
     totalToolCallEvents(pool, snapshot.plugin, snapshot.declared_version, serves, snapshot.window),

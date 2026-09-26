@@ -84,6 +84,20 @@ export function servesOwnDoor(plugin: string): boolean {
   return (entryOf(plugin)?.manifest.servers?.length ?? 0) > 0;
 }
 
+/** The skills this flow ships that are not stages of it — the helpers a stage loads (sdlc's
+ *  audit-criteria, method, recall, research, investigate, and the flow skill itself). A step
+ *  recorded under one is the stage that loaded it at work, not a stage out of order: counted as
+ *  unplaced, sdlc read 40 of 193 step visits as drift. */
+export function helperSkillsOf(plugin: string): string[] {
+  const entry = entryOf(plugin);
+  const skills = skillsDirOf(plugin);
+  if (!entry || !skills || !existsSync(skills)) return [];
+  const stages = new Set((entry.manifest.stages ?? []).map((st) => st.name));
+  return readdirSync(skills, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && existsSync(join(skills, d.name, "SKILL.md")) && !stages.has(d.name))
+    .map((d) => d.name).sort();
+}
+
 /** Every tool this plugin's own skills tell an agent to call — not every tool on the surfaces
  * it declares. A tool in this set that was never called is a finding; a tool merely present on
  * a shared door and unused says nothing about this plugin.

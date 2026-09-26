@@ -30,7 +30,7 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
-import { entryOf, servesOwnDoor, toolsNamedBy } from "./plugin-eval.js";
+import { entryOf, helperSkillsOf, servesOwnDoor, toolsNamedBy } from "./plugin-eval.js";
 import {
   latencyAndByteFacts, outcomeAndApprovalFacts, refusalDetail, tokenAndCostFacts,
   measured, rate, type ObservedFact,
@@ -152,12 +152,15 @@ async function computeObservation(
   const surface = await doorSurface(pool, plugin, version, serves);
   const reachable = ownTools(toolsNamedBy(plugin), surface.tools);
 
-  const traces = await pluginTraces(pool, plugin, version, reachable, stages, serves, window);
-  const writesDocuments = traces.record !== null;
+  const traces = await pluginTraces(pool, plugin, version, reachable, stages, serves, window, helperSkillsOf(plugin));
+  // Whoever's calls wrote a document: a door's own record, or a flow's runs writing through the
+  // baseline door. Read off `record` alone, every flow reported "wrote no document".
+  const writesDocuments = traces.use.some((u) =>
+    ["document_write", "document_patch", "document_revise"].includes(u.tool.split(":").pop() ?? ""));
 
   const [latencyBytes, outcomes, tokens, detail, models] = await Promise.all([
     latencyAndByteFacts(pool, plugin, version, serves, window),
-    outcomeAndApprovalFacts(pool, plugin, writesDocuments, window),
+    outcomeAndApprovalFacts(pool, plugin, version, serves, writesDocuments, window),
     tokenAndCostFacts(pool, plugin, version, window),
     refusalDetail(pool, plugin, version, serves, window),
     pool.query<{ model: string }>(`
@@ -228,6 +231,16 @@ async function computeObservation(
   };
 }
 
+function returnsByPair(returns: Observation["traces"]["returns"]): { from_step: string; back_to_step: string; count: number }[] {
+  const by = new Map<string, { from_step: string; back_to_step: string; count: number }>();
+  for (const r of returns) {
+    const k = `${r.from_step}\u0000${r.back_to_step}`;
+    const had = by.get(k);
+    if (had) had.count++; else by.set(k, { from_step: r.from_step, back_to_step: r.back_to_step, count: 1 });
+  }
+  return [...by.values()].sort((a, b) => b.count - a.count);
+}
+
 /** The response shape, built once for a fresh write and once (with the drift fields added) for
  *  a replay — so the two paths cannot silently disagree about what a snapshot's response looks
  *  like. */
@@ -256,6 +269,10 @@ function respond(
         initiatives: observation.traces.stage_paths.length,
         visits: observation.traces.stage_paths.reduce((n, p) => n + p.steps.length, 0),
       },
+      // Counted per pair of stages, not listed per visit: 109 returns were 17KB of sdlc's reply.
+      returns: returnsByPair(observation.traces.returns),
+      // What EVALUATE needs to cite a run, and nothing it does not.
+      run_refs: observation.traces.run_refs.map(({ run_id, team, initiative }) => ({ run_id, team, initiative })),
     },
     sufficient_for_judging: observation.traces.sufficient,
     ...(drift ? {

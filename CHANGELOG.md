@@ -33,6 +33,44 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.77.0] — 2026-09-26
+
+### Changed
+- **plugin_profile refuses a window with no run.** It used to record an empty snapshot, and the
+  evaluation carried on through DISCOVER and DEFINE on no evidence. The refusal names this plugin's
+  versions that do have runs, with counts and the last one. Evaluating a version the moment it is
+  released is the usual cause: every platform release gives every catalog plugin a new version.
+- **An evaluation is no longer evidence about what it evaluates.** Runs of zz-plugin-eval's own
+  skills, runs inside an evaluation initiative and an evaluation session's reads before it opens
+  one are left out of every population OBSERVE, DISCOVER and release_verify count — except for
+  zz-plugin-eval itself. The only zz-core runs on 0.76.4 were the evaluator's, and they could meet
+  a release's post-release run floor on their own.
+- **Outcome rates are per closed initiative.** `outcome_*_rate` divided by every document the
+  window touched (one accepted close read as 1/284); it is now over the touched initiatives that
+  closed, with coverage over all of them.
+- **Stage facts are null for a plugin with no stage order.** zz-core reported every step
+  "unplaced" (226/226) because its runs record the steps of the flows calling it.
+  `tool_call_volume` is calls per run.
+- **Run traces name what each call acted on.** A judge reads `10:19:22  core:document_revise
+  <path>  REFUSED  …`, so six reads of one file are distinguishable from six different reads.
+- **The zz-core reference protocol is `protocols/zz-core.json`,** replacing `zz-core.v1.json`:
+  the manifest's purpose, the exact tool surface, a subject kind per measure, refusal measures
+  asked only of runs that refused, run anchors in the real trace shape, and bootstrap off.
+
+### Added
+- **`definition.appliesWhen: "refused"`** asks a run measure only of runs whose trace refused a
+  call. Asked of every run, a question about how a refusal read scored the runs it did not apply to.
+- **`register-skills --check`**, run by the release before anything is built: a catalog skill whose
+  bytes differ from its registered version is refused with "bump `version:`".
+
+### Fixed
+- **The same release located twice has one subject.** plugin_locate hashed a past version's flow
+  from today's manifest, and register-skills rewrote a registered version's hash in place, so
+  zz-core 0.75.0 answered with two subject ids a few hours apart. The flow component is now the
+  digest recorded at release, and a registered skill version is never rewritten.
+- **plugin_profile's response fits an agent's context.** Stage paths are summarised (initiatives,
+  visits) rather than listed; at 95 runs the response was 71KB.
+
 ## [0.76.4] — 2026-09-26
 
 ### Fixed

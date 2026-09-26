@@ -9,7 +9,7 @@
  *
  * Its own token: ZZ_PROBE_TOKEN, a superadmin's. Part of the chain — bug_list, bug_resolve,
  * knowledge_reindex — is registered only for a superadmin, and chain-check skips what the token is
- * not offered. Walked with ZZ_TOKEN (an admin's, which every other probe is content with), those
+ * not offered. Walked with ZZ_TOKEN (whoever's it is — on this machine a member's smoke-test PAT), those
  * probes printed `skip` and the release read the run as a pass. Now, with no probe token, the chain
  * is still walked with ZZ_TOKEN and its superadmin probes come back `unknown: no probe token`; with
  * one that is not a superadmin's, the same probes come back `unknown` naming that. Never green,
@@ -24,6 +24,7 @@ import { join } from "node:path";
 import { asExecError, envToken, probeToken, publicUrl, root, run } from "../deployment.ts";
 import { chainOutcome, chainToken, type Verdict } from "./chain-verdict.ts";
 import { purgeProbes } from "./probe-purge.ts";
+import { tokenHolder } from "./token-holder.ts";
 
 export function chainCheck(): Verdict {
   const gw = publicUrl();
@@ -32,7 +33,8 @@ export function chainCheck(): Verdict {
   try {
     const out = run("node", [join(root, "packages/tools/dist/testing/chain-check.js")],
                     { env: { ...process.env, ZZ_GATEWAY: gw, ZZ_PAT: walk.token } });
-    return chainOutcome(out, walk.probe);
+    const outcome = chainOutcome(out, walk.probe);
+    return outcome ? chainOutcome(out, walk.probe, tokenHolder(gw, walk.token)) : null;
   } catch (err) {
     // What chain-check itself printed, not the exception execFileSync wraps a nonzero exit
     // in — its FAILED lines already name the tool and the rule.

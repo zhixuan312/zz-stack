@@ -32,14 +32,18 @@ export function chainToken(gateway: string, envTok: string, probeTok: string):
 }
 
 /** The verdict on a run that exited 0: clean, or `unknown` naming the superadmin probes it
- *  skipped and why — no probe token, or a probe token that is not a superadmin's. */
-export function chainOutcome(out: string, probe: boolean): Verdict {
+ *  skipped and why — no probe token, or a probe token that is not a superadmin's — and whose
+ *  token walked the chain (`walkedAs`, from tokenHolder), so the operator sees which credential
+ *  was short rather than guessing. */
+export function chainOutcome(out: string, probe: boolean, walkedAs: string | null = null): Verdict {
   const skipped = skippedSuperadmin(out);
   if (!skipped.length) return null;
+  const who = walkedAs ? `, which is ${walkedAs}` : "";
   return { verdict: "unknown",
     detail: (probe
-      ? `chain-check skipped ${skipped.length} superadmin probe(s) — ZZ_PROBE_TOKEN is not a superadmin's`
-      : `chain-check: no probe token — ${skipped.length} superadmin probe(s) did not run. Set ` +
-        "ZZ_PROBE_TOKEN in this repository's .env to a superadmin's PAT") +
+      ? `chain-check skipped ${skipped.length} superadmin probe(s) — ZZ_PROBE_TOKEN is not a superadmin's${who}`
+      : `chain-check: no probe token — ${skipped.length} superadmin probe(s) did not run: the chain ` +
+        `walked with ZZ_TOKEN${who}, and only a superadmin is offered them. Set ZZ_PROBE_TOKEN in ` +
+        "this repository's .env to a superadmin's PAT") +
       `: ${skipped.join(" | ")}` };
 }

@@ -43,6 +43,9 @@ is(absent?.verdict === "unknown" && /no probe token/.test(absent.detail) && /2 s
 const wrongRole = chainOutcome(run, true);
 is(wrongRole?.verdict === "unknown" && /not a superadmin's/.test(wrongRole.detail),
    "a probe token that still skipped superadmin probes is not an unknown naming its role");
+const named = chainOutcome(run, false, "smoke@example.com (member)");
+is(named !== null && /walked with ZZ_TOKEN, which is smoke@example\.com \(member\)/.test(named.detail),
+   "the unknown does not say whose token walked the chain");
 is(chainOutcome(`ok\n${OTHER}\n40/40 platform checks passed\n`, false) === null,
    "a skip that is not a superadmin's turned a clean run into an unknown");
 
@@ -56,7 +59,7 @@ for (const f of ["packages/tools/src/testing/chain-check.ts", "packages/tools/sr
 // 4. The token it reads
 const src = readFileSync("scripts/release/chain-live.ts", "utf8");
 const body = src.slice(src.indexOf("export function chainCheck"));
-is(/chainToken\(gw, envToken\(\), probeToken\(\)\)/.test(body) && /chainOutcome\(out, walk\.probe\)/.test(body),
+is(/chainToken\(gw, envToken\(\), probeToken\(\)\)/.test(body) && /chainOutcome\(out, walk\.probe[,)]/.test(body),
    "chainCheck no longer selects its token through chainToken, or no longer tells chainOutcome which it used");
 
 if (fail.length) {

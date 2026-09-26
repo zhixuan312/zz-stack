@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { DASH_IMAGE, DASH_SRC, HOST, REMOTE, catalogOwnerTeam, envToken, initFrame, log, probeToken, publicUrl, root, run, ssh } from "../deployment.ts";
 import { exportMode } from "./config.ts";
 import { consoleImage, resolveDashboard } from "./dashboard.ts";
+import { tokenHolder } from "./token-holder.ts";
 import { verifyPredeploy } from "./verify.ts";
 
 export function preflight(): void {
@@ -143,8 +144,10 @@ export function preflight(): void {
   const probe = probeToken();
   const probeSrc = process.env.ZZ_PROBE_TOKEN ? "$ZZ_PROBE_TOKEN" : `${root}/.env`;
   if (!probe) {
-    row(false, `probe token (${probeSrc})`, "no ZZ_PROBE_TOKEN — the live chain check's superadmin " +
-        "probes will report unknown and the release will go live UNTAGGED; set it to a superadmin's PAT");
+    const holder = address ? tokenHolder(address, envToken()) : null;
+    row(false, `probe token (${probeSrc})`, `no ZZ_PROBE_TOKEN — the chain walks with ZZ_TOKEN` +
+        `${holder ? `, which is ${holder}` : ""}, so its superadmin probes will report unknown and the ` +
+        "release will go live UNTAGGED; set ZZ_PROBE_TOKEN to a superadmin's PAT");
   } else if (!address) {
     row(null, `probe token (${probeSrc})`, "present, but unverified without an address");
   } else {

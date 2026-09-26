@@ -12,6 +12,7 @@ import { runsCheck } from "../suite-runner.ts";
 check("an aggregate nothing measured renders as null, never a confident zero",
       runsCheck("console-nulls.ts"));
 
+check("SCHEMA.md states the standard the spec fixed", runsCheck("schema-standard.ts"));
 check("every tool the spec renamed resolves through one frozen map", runsCheck("alias-maps.ts"));
 
 check("the resolvers are applied wherever a stored name is read", runsCheck("alias-applied.ts"));

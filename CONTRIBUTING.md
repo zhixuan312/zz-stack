@@ -67,6 +67,14 @@ processes, `catalog/` is what a team installs, `skills/` is what everyone gets,
 held a whole second subject. There is no exemption list, because a list of files allowed to be
 large is a list nobody prunes.
 
+## Schema changes
+
+Read `SCHEMA.md` first — it states the five questions, the six classes, the twelve
+rules and the comment contract the schema is judged by. Declare the change in
+`schema-target.ts` before writing any migration; a migration nothing has checked
+against the target is not proven. Then write the release's `002_<name>.sql`
+migration, and let the gate's schema inventory check prove it matches.
+
 ## House rules
 
 - **Branches are `master` or `release/<version>`.** Nothing else.

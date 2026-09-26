@@ -10,5 +10,5 @@
     "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": ["scripts/**/*.ts", "checks/**/*.ts", "testing/**/*.ts", "catalog/zz/zz-access/skills/**/*.ts"]
+  "include": ["schema-target.ts", "schema-target/**/*.ts", "scripts/**/*.ts", "checks/**/*.ts", "testing/**/*.ts", "catalog/zz/zz-access/skills/**/*.ts"]
 }

@@ -209,8 +209,12 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             precondition cannot be waived by deep-copying the document and trying,
             and refuses to start if any database URL is set in the environment —
             it exits non-zero while a precondition is blocked, which today is all
-            eight of them) and build-image.sh (the runtime image, from the
-            lockfile).
+            eight of them), schema-target-extract.ts (writes the baseline of
+            the root-level schema target from a throwaway database the real migration runner
+            built; `--check` proves the committed baseline reproduces byte for
+            byte — schema/ holds the throwaway database, the catalog reader and
+            the serializer the inventory check and the rehearsal share) and
+            build-image.sh (the runtime image, from the lockfile).
             tenant-info/ is `npm run tenant-info` — cli.ts's six verbs (baseline,
             fixtures, verify, benchmark, migrate, export), each requiring a workspace
             outside this checkout and none of them running anything at import time,

@@ -20,8 +20,8 @@ import { root, sourceFiles } from "../scripts/gate/read.ts";
 const fail: string[] = [];
 // MANAGE_ALIAS holds names that changed, so a tool that has always had one name is invisible
 // to it. `whoami` is the only one. COUPLED: checks/manage-surface.ts names it for the same
-// reason.
-const manageNames = [...new Set([...Object.values(MANAGE_ALIAS), "whoami"])];
+// reason — and `client_list` and `client_revoke` beside it, which are new rather than renamed.
+const manageNames = [...new Set([...Object.values(MANAGE_ALIAS), "whoami", "client_list", "client_revoke"])];
 const src = (rel: string): string => { try { return readFileSync(join(root, rel), "utf8"); } catch { return ""; } };
 const ts = (dirs: string[]): string[] => sourceFiles(dirs, [".ts"]).filter((f) => !f.includes("/dist/"));
 
@@ -161,6 +161,7 @@ const TOOL_DOMAIN: Record<string, string> = {
   team_list: "access", team_mine: "access", team_switch: "access",
   member_add: "access", member_remove: "access",
   pat_issue: "access", pat_list: "access", pat_revoke: "access", whoami: "access",
+  client_list: "access", client_revoke: "access",
   // Evaluation — the only subject in which a model's judgement becomes a score.
   plugin_locate: "evaluation", plugin_profile: "evaluation", plugin_conform: "evaluation",
   plugin_register: "evaluation",

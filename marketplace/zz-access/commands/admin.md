@@ -29,8 +29,9 @@ people depend on, and the register is the truth — not your memory of it.
 
 ## Look before you change
 
-`person_list`, `team_list` and `pat_list` answer who exists, who is in what, and which
-tokens are live. **An access review is those three**,
+`person_list`, `team_list`, `pat_list` and `client_list` answer who exists, who is in what,
+which tokens are live, and which applications can reach the platform. **An access review is
+those four**,
 and every change below should start with whichever of them names the thing you are about
 to touch.
 
@@ -45,6 +46,7 @@ which is almost always the answer to "why was that a 403".
 | who exists, and what they hold | `person_list` `pat_list` `whoami` |
 | a person on the platform | `person_add` `person_deactivate` |
 | a way for a person to get in | `enrolment_issue` (passkey) · `pat_issue` `pat_revoke` (machine) |
+| an application that can reach the platform | `client_list` `client_revoke` |
 | a team | `team_create` `team_archive` `team_list` |
 | who is in a team | `member_add` `member_remove` |
 | a person's or a team's generated setup | `client_setup` (pass `email`) |
@@ -85,6 +87,36 @@ Deleting is for rows that were **never anybody's report** — a probe row `chain
 it walks this tracker against the live deployment. Resolving one would write a fake decision into
 the record of what this platform has fixed, so it is deleted instead — logged, attributed, and
 irreversible. You will rarely call it: the walk removes its own row.
+
+## Cutting off an application
+
+An MCP client — a connector, an editor, anything that speaks to this platform's doors — gets in
+by registering itself at `/oauth/register`, and **every registration is open to anyone**. So a
+client row is evidence that a registration happened, not that anybody vouched for it, and the
+question you will actually be asked is "what is this, and why does it have access".
+
+`client_list` answers it: the id, the name it registered with, the redirect URIs it may be sent
+to, and when it registered. Revoked clients are listed too — the row is kept on purpose, because
+it is the provenance of the tokens that client obtained, and an access review asks when access
+was cut off as well as whether it was.
+
+`client_revoke` takes the id and does two acts as one, in a transaction:
+
+- the client is marked revoked — never deleted, for the reason above;
+- **every live token it obtained is revoked with it.** They are found by the client that minted
+  them, so a token is revoked because of who asked for it, not because of its label.
+
+A grant the client is still holding is refused as well: a code is exchanged only against a live
+client, so a code issued before the revocation no longer works after it. Revoking ends what the
+client already has, not only what it would register next.
+
+**A client already revoked is reported as such**, with the time, rather than as a fresh
+revocation — the same rule as everywhere else here: say what actually happened. And the refusal
+for an id no client has is not a revocation either; `client_list` names the ones that exist.
+
+Reconnecting is a fresh registration, and the new client gets a new id: there is nothing to
+un-revoke. For a token whose client is fine, `pat_revoke` is the tool — revoking a client is for
+the application itself being wrong.
 
 ## Rebuilding a knowledge index
 

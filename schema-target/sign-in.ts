@@ -334,7 +334,7 @@ export const SIGN_IN: Record<string, TableTarget> = {
     ],
     checks: [],
     indexes: [
-      "CREATE INDEX mcp_oauth_authz_age ON zz.mcp_oauth_authz USING btree (created_at)",
+      "CREATE INDEX mcp_oauth_authz_expiry ON zz.mcp_oauth_authz USING btree (expires_at)",
     ],
     comment: null,
     columnComments: {},

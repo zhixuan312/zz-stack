@@ -262,10 +262,10 @@ check("the committed judged dataset is exactly what its generator produces, byte
  * both rules.
  */
 const notRegistered = new Map<string, string>([
-  // Transient by construction: the check names `services/gateway/src/mcp-oauth.ts` correctly, and
-  // that file is task I-11's, which lands in wave 3. It is registered in `suites-data.ts` and this
-  // entry deleted in the same commit — a name here and a registration there is a red gate.
-  ["pat-one-live-per-label.ts", "services/gateway/src/mcp-oauth.ts is task I-11, fixed in wave 3"],
+  // Empty: every check in `checks/` is registered. `pat-one-live-per-label.ts` was named here
+  // for one wave, while `services/gateway/src/mcp-oauth.ts` was the last insert path that did
+  // not revoke — I-11 landed that fix, and the registration above replaced the exemption in the
+  // same commit, because a name here and a registration there is a red gate.
 ]);
 
 check("every check in checks/ is registered here, or named here with a reason", () => {

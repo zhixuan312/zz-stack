@@ -126,7 +126,9 @@ alter table zz.mcp_oauth_client add column revoked_at timestamp with time zone;
 -- 13. mcp_oauth_authz: the raw code is replaced by its hash (AC-2.2), so a reader of the table
 --     cannot replay a grant; `state` was never read back and `used` becomes the `used_at`
 --     instant the exchange stamps. `principal_id` is not null because a code is only ever
---     issued for a signed-in principal.
+--     issued for a signed-in principal. The index moves to the deadline for the same reason
+--     it does on `passkey_challenge`: the sweep and the consumption both read `expires_at`,
+--     and an index on `created_at` served the age filter that is now this column.
 alter table zz.mcp_oauth_authz
   drop column id,
   drop column state,
@@ -140,3 +142,5 @@ alter table zz.mcp_oauth_authz add constraint mcp_oauth_authz_pkey primary key (
 alter table zz.mcp_oauth_authz
   add constraint mcp_oauth_authz_client_id_fkey
   foreign key (client_id) references zz.mcp_oauth_client (client_id) on delete cascade;
+drop index zz.mcp_oauth_authz_age;
+create index mcp_oauth_authz_expiry on zz.mcp_oauth_authz (expires_at);

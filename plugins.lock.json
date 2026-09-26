@@ -20,10 +20,10 @@
   },
   "zz-access": {
     "version": "0.81.1",
-    "digest": "530b3083",
+    "digest": "7bb5682c",
     "skills": {
       "zz-access": "a40c67ebf69f",
-      "zz-admin": "118accd960db",
+      "zz-admin": "bd24fc7841f8",
       "zz-doctor": "b3960436e687",
       "zz-migrate": "2ccb1e0161d2",
       "zz-update": "a5d73e2d40eb"

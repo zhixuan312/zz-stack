@@ -82,14 +82,15 @@ const LEAD = ["member_add", "member_remove"];
 // The bug tools and knowledge_reindex are on /core, still superadmin: a tool's door is decided
 // by its subject, and role decides only who sees it.
 const SUPER = ["person_list", "person_add", "enrolment_issue", "person_deactivate",
-               "team_create", "team_archive"];
+               "team_create", "team_archive", "client_list", "client_revoke"];
 
 // The tiers and the rename table have to describe the same door. Without this, a name could be
 // dropped from a tier and from the rename table together and every count below would agree.
 //
 // `whoami` is named rather than derived: MANAGE_ALIAS is a table of names that changed, so a
-// tool that never had an old name cannot come out of it.
-const expected = new Set([...Object.values(MANAGE_ALIAS), "whoami"]);
+// tool that never had an old name cannot come out of it. `client_list` and `client_revoke` are
+// named for the same reason — they are new, not renamed.
+const expected = new Set([...Object.values(MANAGE_ALIAS), "whoami", "client_list", "client_revoke"]);
 const tiered = new Set([...MEMBER, ...LEAD, ...SUPER]);
 for (const n of expected) {
   if (!tiered.has(n)) fail.push(`${n} is a current /manage name and no tier above claims it`);
@@ -124,7 +125,7 @@ for (const [who, got, want] of tierSets) {
 }
 
 // The size is written once, so the condition and the message cannot disagree.
-const DOOR_SIZE = 17;
+const DOOR_SIZE = 19;
 if (registered.size !== DOOR_SIZE) {
   fail.push(`/manage registers ${registered.size} tools, expected ${DOOR_SIZE}. ` +
             `Registered: ${[...registered.keys()].sort().join(", ")}`);

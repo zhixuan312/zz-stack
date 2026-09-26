@@ -19,7 +19,7 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 
-import { mintPat } from "@zz/contracts";
+import { issuePat } from "@zz/contracts";
 import type { Express, Request, Response } from "express";
 
 import { platformDb, platformDbReady } from "./db.js";
@@ -245,10 +245,18 @@ export function mountMcpOauth(app: Express): void {
       // Every refusal before the redirect is validated goes to the person, not to the client:
       // bouncing an error to an unverified redirect_uri makes this an open redirect on its
       // error path instead of its success path.
-      const { rows } = await platformDb().query<{ redirect_uris: string[]; name: string }>(
-        "select redirect_uris, name from zz.mcp_oauth_client where client_id = $1", [clientId]);
+      const { rows } = await platformDb().query<{ redirect_uris: string[]; name: string; revoked_at: Date | null }>(
+        "select redirect_uris, name, revoked_at from zz.mcp_oauth_client where client_id = $1", [clientId]);
       const client = rows[0];
       if (!client) { say(res, 400, "Unknown application", "This sign-in link came from an application this platform does not know. Ask it to register again."); return; }
+      // Revocation is checked here, ahead of everything the client asked for: the row stays
+      // because it is the provenance of the tokens that client obtained, and a revoked client
+      // is refused every new code rather than only the exchange that would consume one.
+      if (client.revoked_at) {
+        say(res, 400, "This application has been disconnected",
+            "Its access to this platform was revoked. Nothing has been shared; ask it to register again.");
+        return;
+      }
       if (!client.redirect_uris.includes(redirectUri)) {
         say(res, 400, "That address is not registered",
             "The application asked us to send the result somewhere it did not register. Nothing has been shared.");
@@ -306,13 +314,17 @@ export function mountMcpOauth(app: Express): void {
       /* A door on this gateway is the only resource: a plugin declares the servers its own
          skills call and the gateway proxies to none of them, so the token is minted here, once,
          for the caller this request already identified. */
+      //
+      // The code is stored as its hash alone, with the ten minutes it is good for: the raw code
+      // exists only in the redirect that carries it, so a reader of this table cannot replay a
+      // grant. Expired rows are swept by `sweepSessions`, not deleted on the read path.
       const code = b64(randomBytes(32));
       await platformDb().query(
-        `insert into zz.mcp_oauth_authz (id, client_id, principal_id, redirect_uri, code_challenge, state, resource)
-         values ($1,$2,$3,$4,$5,$6,$7)`,
+        `insert into zz.mcp_oauth_authz
+           (code_hash, client_id, principal_id, redirect_uri, code_challenge, resource, expires_at)
+         values ($1,$2,$3,$4,$5,$6, now() + interval '10 minutes')`,
         // The principal is known here, always — there is no third party left to wait for.
-        [code, clientId, principalId, redirectUri, challenge, state, door]);
-      await platformDb().query("delete from zz.mcp_oauth_authz where created_at < now() - interval '10 minutes'");
+        [sha256(code), clientId, principalId, redirectUri, challenge, door]);
 
       // A loopback client gets its code without a screen: the code can only reach a program on
       // the person's own machine, and a screen that only ever has one honest answer teaches
@@ -355,20 +367,32 @@ export function mountMcpOauth(app: Express): void {
       }
       const code = str("code");
       const verifier = str("code_verifier");
+      // Read by the hash of what was presented, never by the code: the raw code is not in this
+      // table, and hashing it here is the one place the two representations meet.
+      const codeHash = sha256(code);
       // Single use, marked rather than deleted: a replay finds a row it may not use, which is a
       // different fact from finding nothing, and is what lets the log below say "replayed".
       const { rows } = await platformDb().query<{
-        client_id: string; principal_id: string; redirect_uri: string;
-        code_challenge: string; resource: string; used: boolean; email: string;
+        client_id: string; principal_id: string; redirect_uri: string; code_challenge: string;
+        resource: string; used_at: Date | null; expired: boolean; email: string; revoked_at: Date | null;
       }>(
         `select a.client_id, a.principal_id::text as principal_id, a.redirect_uri,
-                a.code_challenge, a.resource, a.used,
-                (select email from principal where id = a.principal_id) as email
+                a.code_challenge, a.resource, a.used_at, a.expires_at <= now() as expired,
+                (select email from principal where id = a.principal_id) as email,
+                c.revoked_at
            from zz.mcp_oauth_authz a
-          where a.id = $1 and a.created_at > now() - interval '10 minutes'`, [code]);
+           join zz.mcp_oauth_client c on c.client_id = a.client_id
+          where a.code_hash = $1`, [codeHash]);
       const authz = rows[0];
-      if (!authz || authz.used || !authz.principal_id) {
-        res.status(400).json({ error: "invalid_grant", error_description: authz?.used ? "that code has already been exchanged" : "unknown or expired code" });
+      if (!authz || authz.used_at || authz.expired || !authz.principal_id) {
+        res.status(400).json({ error: "invalid_grant", error_description: authz?.used_at ? "that code has already been exchanged" : "unknown or expired code" });
+        return;
+      }
+      // A client revoked after it was handed this code cannot exchange it. Checked before the
+      // code is spent, so a person reconnecting after a revocation is not told "replayed" for a
+      // grant that was never theirs to keep.
+      if (authz.revoked_at) {
+        res.status(400).json({ error: "invalid_grant", error_description: "this application's access to the platform has been revoked" });
         return;
       }
       if (authz.client_id !== str("client_id") || authz.redirect_uri !== str("redirect_uri")) {
@@ -382,14 +406,27 @@ export function mountMcpOauth(app: Express): void {
         return;
       }
       // Consumed in one statement, so two exchanges of one code cannot both pass: the reads
-      // above decide which refusal a bad request gets, and this decides which request wins.
-      const consumed = await platformDb().query(
-        `update zz.mcp_oauth_authz set used = true
-          where id = $1 and used = false and created_at > now() - interval '10 minutes'`, [code]);
-      if (consumed.rowCount !== 1) {
-        const { rows: current } = await platformDb().query<{ used: boolean }>(
-          "select used from zz.mcp_oauth_authz where id = $1", [code]);
-        res.status(400).json({ error: "invalid_grant", error_description: current[0]?.used ? "that code has already been exchanged" : "unknown or expired code" });
+      // above decide which refusal a bad request gets, and this decides which request wins. The
+      // client's own revocation is read in the same statement as the code it issued — a client
+      // revoked a moment ago takes its outstanding codes with it, and this cannot race with it.
+      const consumed = await platformDb().query<{ principal_id: string; client_id: string; resource: string }>(
+        `update zz.mcp_oauth_authz a set used_at = now()
+           from zz.mcp_oauth_client c
+          where a.code_hash = $1 and a.used_at is null and a.expires_at > now()
+            and c.client_id = a.client_id and c.revoked_at is null
+         returning a.principal_id::text as principal_id, a.client_id, a.resource`, [codeHash]);
+      const won = consumed.rows[0];
+      if (consumed.rowCount !== 1 || !won) {
+        const { rows: current } = await platformDb().query<{ used_at: Date | null; revoked_at: Date | null }>(
+          `select a.used_at, c.revoked_at
+             from zz.mcp_oauth_authz a
+             left join zz.mcp_oauth_client c on c.client_id = a.client_id
+            where a.code_hash = $1`, [codeHash]);
+        const now = current[0];
+        res.status(400).json({ error: "invalid_grant", error_description:
+          now?.used_at ? "that code has already been exchanged"
+            : now?.revoked_at ? "this application's access to the platform has been revoked"
+            : "unknown or expired code" });
         return;
       }
 
@@ -398,28 +435,29 @@ export function mountMcpOauth(app: Express): void {
       //
       // The label is named for the protocol, not for one client — any client speaking the MCP
       // OAuth exchange lands here — and it is what a person reads in their token list when
-      // deciding what to revoke.
-      const label = `mcp oauth — ${authz.resource} — ${authz.email}`;
-      const token = mintPat();
-      const expiry = new Date(Date.now() + TOKEN_TTL_DAYS * 86_400_000);
-      // One live token per person per door. Reconnecting is something people do when something
-      // looks wrong, so without this the `pat` table grows a row every time anyone presses a
-      // button, and revoking access means hunting through them.
-      await platformDb().query(
-        "delete from pat where principal_id = $1 and label = $2", [authz.principal_id, label]);
-      await platformDb().query(
-        "insert into pat (principal_id, token_hash, label, expires_at) values ($1,$2,$3,$4)",
-        [authz.principal_id, sha256(token), label, expiry.toISOString()]);
+      // deciding what to revoke. Production's three clients are all the same client
+      // re-registering, so one token per door is what a reconnect should leave.
+      const label = `mcp oauth — ${won.resource} — ${authz.email}`;
+      const expiry = new Date(Date.now() + TOKEN_TTL_DAYS * 86_400_000).toISOString();
+      // issuePat is the one mint-and-store path: it revokes the live token of the same
+      // (principal, label) and writes the new row in one transaction, which is the rule the
+      // partial unique index states. Replaced, never deleted — the token it supersedes keeps
+      // what it obtained and its `last_used_at`. `oauthClientId` is the client this token came
+      // from, so revoking that client takes its tokens with it.
+      const { token } = await issuePat(platformDb(), {
+        principalId: won.principal_id, teamId: null, label, expiresAt: expiry,
+        oauthClientId: won.client_id,
+      });
       logEvent({
         actor: authz.email, teamSlug: null, kind: "credential.set",
-        subject: `oauth:${authz.resource}`,
-        detail: { via: "mcp-oauth", expires_at: expiry.toISOString() },
+        subject: `oauth:${won.resource}`,
+        detail: { via: "mcp-oauth", client_id: won.client_id, expires_at: expiry },
       });
       res.json({
         access_token: token,
         token_type: "Bearer",
         expires_in: TOKEN_TTL_DAYS * 86_400,
-        scope: authz.resource,
+        scope: won.resource,
       });
     })().catch((err: unknown) => {
       console.error("oauth token failed:", err);

@@ -16,6 +16,7 @@ import { text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { principalId, superOnly, teamAuthority, teamId } from "./admin/authority.js";
+import { listOauthClients, revokeOauthClient } from "./admin/oauth-clients.js";
 import { addPerson, deactivatePerson, issueEnrolmentLink, listPeople } from "./admin/people.js";
 import { addMember, archiveTeam, createTeam, removeMember } from "./admin/teams.js";
 import { platformDb } from "./db.js";
@@ -105,6 +106,39 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   }, async ({ email, confirm }) => {
     const id = await caller();
     const r = await deactivatePerson(id, email, confirm);
+    return text(r.ok ? r.message : `ERROR: ${r.error}`);
+  });
+
+  if (sup) server.registerTool("client_list", {
+    description:
+      "WHEN an access review asks which applications can reach this platform — every OAuth " +
+      "client that registered itself, which is what a connector is — or when one has to be cut " +
+      "off and its id is needed. RETURNS each client's id, the name it registered with, the " +
+      "redirect URIs it may be sent to, when it registered, and when it was revoked (null while " +
+      "it is live). REFUSES anyone but a superadmin, and never returns a token: a client holds " +
+      "what it obtained, and those are pat_list's to show.",
+    inputSchema: {},
+  }, async () => {
+    const id = await caller();
+    const r = await listOauthClients(id);
+    if (!r.ok) return text(`ERROR: ${r.error}`);
+    return text(JSON.stringify(r.rows));
+  });
+
+  if (sup) server.registerTool("client_revoke", {
+    description:
+      "WHEN an application should no longer reach this platform — the call after somebody " +
+      "reports a connector they do not recognise, which is the one that matters since a " +
+      "registration is open to anyone. RETURNS confirmation, and says plainly when the client " +
+      "was already revoked rather than reporting a revocation that did not happen: every live " +
+      "token it obtained is revoked with it, and a code it is still holding is refused at the " +
+      "exchange. REFUSES anyone but a superadmin, and an id no client has. It cannot be undone " +
+      "— the row stays as the provenance of those tokens, and reconnecting means registering " +
+      "again. Use pat_revoke for a token whose client is fine.",
+    inputSchema: { client_id: z.string() },
+  }, async ({ client_id }) => {
+    const id = await caller();
+    const r = await revokeOauthClient(id, client_id);
     return text(r.ok ? r.message : `ERROR: ${r.error}`);
   });
 
@@ -227,9 +261,12 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     // One live token per person per label: a label names a purpose, and a purpose has one
     // current credential. Otherwise a provisioner that mints on every run leaves a pile of
     // indistinguishable tokens, and revoking that person's access means finding all of them.
-    // issuePat is the one mint-and-store path — provisionReplayTeam (packages/contracts)
-    // goes through the same function rather than a second copy of it.
-    const { token, replaced } = await issuePat(db, { principalId: pid, teamId: tid, label, expiresAt: expiry });
+    // issuePat is the one mint-and-store path: every writer in this repository calls it, and
+    // the ones that cannot — the psql statements in `deploy/` and the two e2e harnesses — are
+    // held to the same rule by `checks/pat-one-live-per-label.ts`. A second copy of the
+    // statement is a second credential mechanism.
+    const { token, replaced } = await issuePat(db, {
+      principalId: pid, teamId: tid, label, expiresAt: expiry, oauthClientId: null });
     auditAdmin(id, "issue_pat", target,
                { team: team ?? null, label: label ?? "", expires_at: expiry,
                  ...(replaced ? { replaced } : {}) },

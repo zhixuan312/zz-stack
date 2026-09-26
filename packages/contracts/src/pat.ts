@@ -30,9 +30,16 @@ interface DbConnection {
 /** Mint a token, hash it, and write the one row that makes it live — revoking any live token
  *  with the same label first, because a label names one purpose and a purpose has one current
  *  credential. Returns the plaintext (shown once, never stored again), the new row's id, and
- *  how many rows the revoke took out. */
+ *  how many rows the revoke took out.
+ *
+ *  Every field the `pat` table needs is a parameter, so no caller has a reason to write its own
+ *  insert: a second copy of this statement is a second credential mechanism, and one that would
+ *  silently stop revoking the moment this one changed. `oauthClientId` is required rather than
+ *  optional for the same reason — a caller with no client states `null` instead of leaving the
+ *  provenance unrecorded by omission. */
 export async function issuePat(db: Db, args: {
   principalId: string; teamId: string | null; label?: string; expiresAt: string | null;
+  oauthClientId: string | null;
 }): Promise<{ token: string; patId: string; replaced: number }> {
   const token = mintPat();
   const label = args.label ?? "";
@@ -55,9 +62,9 @@ export async function issuePat(db: Db, args: {
       "where principal_id = $1 and label = $2 and label <> '' and revoked_at is null",
       [args.principalId, label]);
     const issued = await client.query(
-      `insert into zz.pat (principal_id, token_hash, label, team_id, expires_at)
-       values ($1,$2,$3,$4,$5) returning id`,
-      [args.principalId, sha256(token), label, args.teamId, args.expiresAt],
+      `insert into zz.pat (principal_id, token_hash, label, team_id, expires_at, oauth_client_id)
+       values ($1,$2,$3,$4,$5,$6) returning id`,
+      [args.principalId, sha256(token), label, args.teamId, args.expiresAt, args.oauthClientId],
     );
     await client.query("commit");
     patId = String(issued.rows[0].id);

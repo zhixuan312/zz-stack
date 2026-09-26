@@ -27,6 +27,12 @@ check("an insert names as many values as it names columns",
 check("a query binds as many parameters as its statement names",
       runsCheck("query-arity.ts"));
 
+check("one live token per purpose, on every writer of a platform access token",
+      runsCheck("pat-one-live-per-label.ts"));
+
+check("an authorization code is stored as its hash and spent exactly once",
+      runsCheck("oauth-code-consumed.ts"));
+
 check("the definition this platform is built on holds in its source",
       runsCheck("definition-rules.ts"));
 

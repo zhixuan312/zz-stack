@@ -33,6 +33,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.81.1] — 2026-09-27
+
+0.81.0 again, released after the step it depended on had run. **0.81.0 was deployed, failed
+verification and was rolled back to 0.80.0**: the doctor's "no document carries a status its
+flow does not gate" probe now reads which initiatives are closed from `zz.initiative`, and the
+release verified the deployment before any lifecycle had been carried into it, so twelve
+approved `findings.md` of closed evaluation initiatives read as open. A rollback restores the
+image, not the database: `002_initiative_anchor.sql` stayed applied. The lifecycle was then
+carried into production from the live stores (47 initiatives closed: 27 accepted, 10 delivered,
+10 abandoned; 48 given their opener; a second run changed nothing), the probe agreed, and this
+release applies nothing new to the database.
+
+### Changed
+- `initiative_status` reads a document-less abandonment only from `zz.initiative`; the open
+  record no longer carries it.
+
+### Upgrade notes
+- **Replaces 0.81.0's upgrade note.** The lifecycle carry cannot run through `zz-tool`: it reads
+  the database through `psql`, which the image's one-shot container cannot reach. It was run
+  from a checkout, `npm run migrate-initiative-files -- --store <copy of the stores> --psql
+  "<ssh … psql>"`, the way the release runs `register-skills`. It is done for this deployment.
+- No migration beyond 0.81.0's, no client re-pull.
+
 ## [0.81.0] — 2026-09-27
 
 Phase 0 of the schema first-principles review (initiative
@@ -70,8 +93,7 @@ initiative as the one record of its own lifecycle.
 ### Upgrade notes
 - **Migration `002_initiative_anchor.sql`** runs on the gateway's next start: `zz.initiative`
   gains its lifecycle columns, `created_at` becomes `opened_at`, and `flow` may be null.
-  Immediately after the deploy run `./deploy/zz-tool migrate-initiative-files` once (it fills
-  only empty fields; a second run changes nothing).
+  The lifecycle carry that follows it is described under 0.81.1.
 - `initiative_open` and `initiative_close` refuse without `TEAM_DB_URL`.
 - No client re-pull: no skill changed.
 

@@ -33,6 +33,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.77.6] — 2026-09-26
+
+### Fixed
+- **A flow plugin has outcome and approval facts.** They were null for every flow ("this plugin
+  wrote no document"), because the test read a door's own record. A flow's runs write documents
+  through the baseline door; the initiatives its own calls touched now carry its outcomes.
+- **A flow's helper skills are not unplaced steps.** Skills a flow ships that are not stages
+  (sdlc's audit-criteria, method, recall, research, investigate) are left out of the stage path;
+  they were 40 of sdlc's 193 step visits.
+- **doc_approval_rate counts gated documents only.** Sources are never approved by design; 259
+  of them put sdlc at 13/291 instead of 13/16.
+- **plugin_profile's reply is smaller:** returns are counted per stage pair, and run_refs carry only
+  what EVALUATE cites.
+
 ## [0.77.5] — 2026-09-26
 
 ### Changed

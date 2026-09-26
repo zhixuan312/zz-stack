@@ -78,8 +78,16 @@ async function waitReachable(url: string): Promise<void> {
  * render `zz.*` names fully qualified, regardless of what search_path a caller's own session
  * would otherwise have carried. The container is removed when `fn` returns, throws, or is
  * killed by anything else that runs first — always, including on failure.
+ *
+ * `beforeMigrate`, when given, runs once the container is reachable and before `initPlatformDb`
+ * migrates it — `scripts/rehearse.ts`'s one caller for this: it restores a production dump into
+ * the empty container there, so the real runner then migrates a production copy instead of an
+ * empty database. Every other caller leaves it out and gets exactly the behaviour above.
  */
-export async function withThrowawayDb<T>(fn: (client: pg.Client) => Promise<T>): Promise<T> {
+export async function withThrowawayDb<T>(
+  fn: (client: pg.Client) => Promise<T>,
+  beforeMigrate?: (url: string) => Promise<void>,
+): Promise<T> {
   const preset = process.env.PLATFORM_DB_URL ? "PLATFORM_DB_URL" : process.env.TEAM_DB_URL ? "TEAM_DB_URL" : null;
   if (preset) {
     throw new Error(`${preset} is already set in this process's environment — ` +
@@ -100,6 +108,8 @@ export async function withThrowawayDb<T>(fn: (client: pg.Client) => Promise<T>):
     if (!port) throw new Error(`could not read the mapped port for ${container} (docker port said "${mapped}")`);
     const url = `postgresql://zz:${pwd}@127.0.0.1:${port}/zz`;
     await waitReachable(url);
+
+    if (beforeMigrate) await beforeMigrate(url);
 
     process.env.TEAM_DB_URL = url;
     const dbModule = (await import(pathToFileURL(`${root}/services/gateway/dist/db.js`).href)) as

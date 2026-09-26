@@ -213,7 +213,13 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             the root-level schema target from a throwaway database the real migration runner
             built; `--check` proves the committed baseline reproduces byte for
             byte — schema/ holds the throwaway database, the catalog reader and
-            the serializer the inventory check and the rehearsal share) and
+            the serializer the inventory check and the rehearsal share), rehearse.ts
+            (restores a production backup into a throwaway container the real runner then
+            migrates, and proves nothing moved that rehearse/expect.ts did not declare —
+            restore, migrations applied, inventory, and a before/after row-count and
+            content-hash table, ending REHEARSAL OK; refuses outright if
+            TEAM_DB_URL/PLATFORM_DB_URL is already set — rehearse/ holds the expectations,
+            the restore, the snapshot and join checks, and the artifacts unpack) and
             build-image.sh (the runtime image, from the lockfile).
             tenant-info/ is `npm run tenant-info` — cli.ts's six verbs (baseline,
             fixtures, verify, benchmark, migrate, export), each requiring a workspace

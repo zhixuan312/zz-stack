@@ -111,6 +111,23 @@ async function doorSurface(
       join zz.plugin p on p.id = pv.plugin_id
      where p.name = $1 and pv.version = $2`, [plugin, version])).rows.map((r) => r.name);
   if (recorded.length) return { tools: recorded, source: `zz.plugin_tool at ${version}` };
+  // A version released before its door recorded a surface (/manage recorded none before 0.77.3):
+  // the nearest recorded version's, named, rather than every tool its skills mention — which
+  // counted /core's tools as zz-access's and as never called.
+  const nearest = (await pool.query<{ version: string; names: string[] }>(`
+    select pv.version, array_agg(pt.name order by pt.name) as names
+      from zz.plugin_tool pt
+      join zz.plugin_version pv on pv.id = pt.plugin_version_id
+      join zz.plugin p on p.id = pv.plugin_id
+     where p.name = $1 and pv.version ~ '^[0-9]+\\.[0-9]+\\.[0-9]+$' and $2 ~ '^[0-9]+\\.[0-9]+\\.[0-9]+$'
+     group by pv.version
+     -- the first recorded version at or after this one, else the newest before it
+     order by (string_to_array(pv.version, '.')::int[] >= string_to_array($2, '.')::int[]) desc,
+              case when string_to_array(pv.version, '.')::int[] >= string_to_array($2, '.')::int[]
+                   then string_to_array(pv.version, '.')::int[] end asc,
+              string_to_array(pv.version, '.')::int[] desc
+     limit 1`, [plugin, version])).rows[0];
+  if (nearest) return { tools: nearest.names, source: `zz.plugin_tool at ${nearest.version}, the nearest version that recorded one` };
   const registered = [...OWN_TOOLS].filter(([, door]) => pluginForDoor(door) === plugin).map(([name]) => name);
   if (registered.length) return { tools: registered, source: "this service's registered door (no surface recorded for this version)" };
   return { tools: null, source: "no surface recorded for this door: the tools its skills name, unnarrowed" };

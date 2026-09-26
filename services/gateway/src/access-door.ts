@@ -68,15 +68,27 @@ const ACCESS_INSTRUCTIONS =
  * refusal would. Two things carry that explanation instead — `whoami`, registered for everyone
  * so the question "why can I not see it" has a tool, and the zz-access skill, which says a
  * tool missing from your list is a fact about your role. */
-export async function buildAccessServer(): Promise<McpServer> {
+export async function buildAccessServer(
+  /** Boot only (access-surface.ts): every role's registrations, each name handed to `onTool`, so
+   *  the recorded surface is the whole door rather than the one a member sees. A server built
+   *  this way is never served. */
+  everything?: { onTool: (name: string) => void },
+): Promise<McpServer> {
   // `instructions` goes in the second argument, `ServerOptions`; the first argument is
   // `Implementation` and carries only name/version/title.
   const server = new McpServer({ name: "zz-access", version: serviceVersion(import.meta.url) },
                                { instructions: ACCESS_INSTRUCTIONS });
-  const id = await callerIdentity();
+  if (everything) {
+    const register = server.registerTool.bind(server);
+    (server as unknown as { registerTool: typeof register }).registerTool = ((name: string, ...rest: unknown[]) => {
+      everything.onTool(name);
+      return (register as (...a: unknown[]) => unknown)(name, ...rest);
+    }) as typeof register;
+  }
+  const id = everything ? null : await callerIdentity();
   // Operator tools on this door take the same reading of "operator" the handlers do. See the
   // note over registerAdminTools: visibility must never be wider than executability.
-  const sup = !!id && isSuper(id);
+  const sup = !!everything || (!!id && isSuper(id));
 
   // The shelf. It lives with the registry code that answers it, and is mounted here because
   // this is the door a person has: /manage is a person's own access, and "what may I install"
@@ -216,7 +228,7 @@ export async function buildAccessServer(): Promise<McpServer> {
 
   // People, teams, tokens, the registry and the projections — registered by role, guarded
   // per call. admin.ts owns both halves of that; this is the only place it is mounted.
-  registerAdminTools(server, id);
+  registerAdminTools(server, id, !!everything);
 
   return server;
 }

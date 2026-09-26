@@ -91,10 +91,11 @@ export function writeRegistries(ownerTeam: string): string[] {
       // One restart of one service, after the row exists. The doors are stateless, so this costs a
       // few seconds of that service and nothing else.
       try {
-        ssh(`cd ${REMOTE}/deploy && docker compose restart zz-core`);
-        log("  zz-core restarted so it records this version's tool surface");
+        // And cred-proxy, which serves /manage — zz-access's door — and records it the same way.
+        ssh(`cd ${REMOTE}/deploy && docker compose restart zz-core cred-proxy`);
+        log("  zz-core and cred-proxy restarted so they record this version's tool surfaces");
       } catch {
-        log("  WARNING: zz-core could not be restarted, so zz.plugin_tool has no row for this " +
+        log("  WARNING: zz-core and cred-proxy could not be restarted, so zz.plugin_tool has no row for this " +
             "version — a surface diff will report this release as having no tools rather than as " +
             "unchanged. Restart it by hand; nothing else about the deployment is affected.");
       }

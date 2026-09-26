@@ -12,6 +12,7 @@ import express from "express";
 import { z } from "zod";
 
 import { buildAccessServer } from "./access-door.js";
+import { recordAccessSurface } from "./access-surface.js";
 import { mountConsoleAsk } from "./console-ask.js";
 import { mountConsoleWrite } from "./console-write.js";
 import { mountConsole } from "./console.js";
@@ -314,6 +315,7 @@ initPlatformDb()
       .catch((err: unknown) => console.error("run reconcile failed:", err));
     runs();
     setInterval(runs, 5 * 60_000).unref();
+    void recordAccessSurface();
     app.listen(8000, "0.0.0.0", () =>
       // Printed from DOORS, the same list served at `/`, so the boot line cannot drift from
       // what is mounted.

@@ -97,6 +97,7 @@
 -- absorbs: 002_plugin_eval_next.sql
 -- absorbs: 002_remove_replay.sql
 -- absorbs: 002_a_finding_can_be_corrected.sql
+-- absorbs: 002_initiative_anchor.sql
 --
 -- requires-extension: citext
 -- requires-extension: pg_textsearch
@@ -1184,9 +1185,104 @@ CREATE TABLE zz.initiative (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     team_id uuid NOT NULL,
     slug text NOT NULL,
-    flow text DEFAULT ''::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    flow text,
+    opened_at timestamp with time zone DEFAULT now() NOT NULL,
+    opened_by uuid,
+    closed_at timestamp with time zone,
+    closed_by uuid,
+    outcome text,
+    accepted_by text,
+    no_signoff_reason text,
+    CONSTRAINT initiative_accepted_by_check CHECK (((outcome <> 'accepted'::text) OR (accepted_by IS NOT NULL))),
+    CONSTRAINT initiative_closed_envelope_check CHECK ((((closed_at IS NULL) = (outcome IS NULL)) AND ((closed_at IS NULL) = (closed_by IS NULL)))),
+    CONSTRAINT initiative_outcome_check CHECK (((outcome IS NULL) OR (outcome = ANY (ARRAY['accepted'::text, 'delivered'::text, 'abandoned'::text])))),
+    CONSTRAINT initiative_signoff_check CHECK (((accepted_by IS NULL) OR (no_signoff_reason IS NULL))),
+    CONSTRAINT initiative_slug_check CHECK ((slug ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9][a-z0-9-]*$'::text))
 );
+
+
+--
+-- Name: TABLE initiative; Type: COMMENT; Schema: zz; Owner: -
+--
+
+COMMENT ON TABLE zz.initiative IS 'class=state_machine; authority=this; question=what is the lifecycle state of one piece of delivery work, from opened to its outcome?; transitions=open->accepted,open->delivered,open->abandoned';
+
+
+--
+-- Name: COLUMN initiative.id; Type: COMMENT; Schema: zz; Owner: -
+--
+
+COMMENT ON COLUMN zz.initiative.id IS 'class=state_machine; authority=this; question=what is this initiative''s own identity?';
+
+
+--
+-- Name: COLUMN initiative.team_id; Type: COMMENT; Schema: zz; Owner: -
+--
+
+COMMENT ON COLUMN zz.initiative.team_id IS 'class=relation; authority=this; question=which team owns this initiative?';
+
+
+--
+-- Name: COLUMN initiative.slug; Type: COMMENT; Schema: zz; Owner: -
+--
+
+COMMENT ON COLUMN zz.initiative.slug IS 'class=state_machine; authority=this; question=what is this initiative''s stable, human-chosen identifier within its team?';
+
+
+--
+-- Name: COLUMN initiative.flow; Type: COMMENT; Schema: zz; Owner: -
+--
+
+COMMENT ON COLUMN zz.initiative.flow IS 'class=state_machine; authority=this; question=which flow does this initiative run, if any?';
+
+
+--
+-- Name: COLUMN initiative.opened_at; Type: COMMENT; Schema: zz; Owner: -
+--
+
+COMMENT ON COLUMN zz.initiative.opened_at IS 'class=state_machine; authority=this; question=when did this initiative''s lifecycle begin?';
+
+
+--
+-- Name: COLUMN initiative.opened_by; Type: COMMENT; Schema: zz; Owner: -
+--
+
+COMMENT ON COLUMN zz.initiative.opened_by IS 'class=state_machine; authority=this; question=which principal opened this initiative?';
+
+
+--
+-- Name: COLUMN initiative.closed_at; Type: COMMENT; Schema: zz; Owner: -
+--
+
+COMMENT ON COLUMN zz.initiative.closed_at IS 'class=state_machine; authority=this; question=when did this initiative''s lifecycle end, if it has?';
+
+
+--
+-- Name: COLUMN initiative.closed_by; Type: COMMENT; Schema: zz; Owner: -
+--
+
+COMMENT ON COLUMN zz.initiative.closed_by IS 'class=state_machine; authority=this; question=which principal closed this initiative, if it has?';
+
+
+--
+-- Name: COLUMN initiative.outcome; Type: COMMENT; Schema: zz; Owner: -
+--
+
+COMMENT ON COLUMN zz.initiative.outcome IS 'class=state_machine; authority=this; question=what did this initiative''s lifecycle conclude, if it has closed?';
+
+
+--
+-- Name: COLUMN initiative.accepted_by; Type: COMMENT; Schema: zz; Owner: -
+--
+
+COMMENT ON COLUMN zz.initiative.accepted_by IS 'class=state_machine; authority=this; question=who is recorded as having signed off on this initiative''s accepted outcome, if it was accepted?';
+
+
+--
+-- Name: COLUMN initiative.no_signoff_reason; Type: COMMENT; Schema: zz; Owner: -
+--
+
+COMMENT ON COLUMN zz.initiative.no_signoff_reason IS 'class=state_machine; authority=this; question=why was this initiative''s accepted outcome accepted without a named sign-off, if so?';
 
 
 --
@@ -2302,6 +2398,14 @@ ALTER TABLE ONLY zz.initiative_fact
 
 ALTER TABLE ONLY zz.initiative
     ADD CONSTRAINT initiative_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: initiative initiative_team_id_id_key; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.initiative
+    ADD CONSTRAINT initiative_team_id_id_key UNIQUE (team_id, id);
 
 
 --
@@ -3492,6 +3596,22 @@ ALTER TABLE ONLY zz.event
 
 ALTER TABLE ONLY zz.improvement_run
     ADD CONSTRAINT improvement_run_eval_run_id_fkey FOREIGN KEY (eval_run_id) REFERENCES zz.eval_run(id);
+
+
+--
+-- Name: initiative initiative_closed_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.initiative
+    ADD CONSTRAINT initiative_closed_by_fkey FOREIGN KEY (closed_by) REFERENCES zz.principal(id);
+
+
+--
+-- Name: initiative initiative_opened_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.initiative
+    ADD CONSTRAINT initiative_opened_by_fkey FOREIGN KEY (opened_by) REFERENCES zz.principal(id);
 
 
 --

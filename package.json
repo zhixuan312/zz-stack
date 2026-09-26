@@ -35,7 +35,6 @@
     "check:redaction": "node services/gateway/dist/redact-check.js",
     "plugin-surface": "node packages/tools/dist/ops/plugin-surface.js",
     "register-skills": "node packages/tools/dist/ops/register-skills.js",
-    "migrate-initiative-files": "node packages/tools/dist/migrate/initiative-files.js",
     "register-plugins": "node packages/tools/dist/ops/register-plugins.js"
   },
   "devDependencies": {

@@ -51,9 +51,7 @@ packages/indexing/    the knowledge index: the row a document gets in zz.doc, th
                       both doors index — zz-core on every document write, the gateway for
                       knowledge_reindex — and a service cannot import another service
 packages/tools/       the platform's command-line tools: the testing engines under
-                      src/testing/, day-2 ops under src/ops/, one-shot migration
-                      backfills under src/migrate/ (zz-tool only, deleted with
-                      the migration they backfill), shared libraries under
+                      src/testing/, day-2 ops under src/ops/, shared libraries under
                       src/lib/. Every testing and ops tool has an npm script, and the
                       gate refuses a script whose tool is not in the tree
 services/zz-core/     process MCP: skills library, team-shared knowledge store,

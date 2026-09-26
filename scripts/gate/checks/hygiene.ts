@@ -66,7 +66,8 @@ check("nothing is exported that nobody imports", () => {
   // trees are kept out of `sources`, so nothing here is judged for its own exports.
   //
   // The walk is recursive — scripts/probes/ holds consumers a flat readdir never sees.
-  for (const f of sourceFiles(["scripts", "checks", "testing"], [".ts"])) {
+  // The declared schema target is a consumer as well: it types itself with the shared shape.
+  for (const f of [...sourceFiles(["scripts", "checks", "testing", "schema-target"], [".ts"]), "schema-target.ts"]) {
     text.set(join(root, f), withoutComments(readFileSync(join(root, f), "utf8")));
   }
 

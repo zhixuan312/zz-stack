@@ -5,8 +5,8 @@
  *
  *   node checks/schema-inventory.ts   # migrates a throwaway container and compares
  *
- * `SCHEMA_TARGET` is never regenerated here — it is the frozen baseline, edited by hand as
- * later phases add to it. This only ever checks the real migrations against it.
+ * `SCHEMA_TARGET` is never regenerated — it is declared by hand, phase by phase, from the spec.
+ * This only ever checks the real migrations against it.
  *
  * `scripts/rehearse.ts` compares its restored production copy by calling `compareWithTarget`
  * in-process on the client of the container it started. There is deliberately no way to hand

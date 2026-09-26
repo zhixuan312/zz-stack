@@ -9,8 +9,11 @@
  * its data declares that table explicitly; everything else stays proven unchanged rather than
  * silently unchecked.
  *
- * Today there is no pending migration on this tree, so this map is empty and `scripts/rehearse.ts`
- * runs the full default — every design table unchanged — against the restored production dump.
+ * `002_initiative_anchor.sql` reshapes `zz.initiative` in place (a rename, a dropped default,
+ * new columns): its row count stays the default `"unchanged"`, but its content changes for
+ * every row, so its hash is declared `"skip"` rather than proven equal to a hash taken under
+ * the old columns. Every other table gets the full default — unchanged count and hash — against
+ * the restored production dump.
  */
 import type pg from "pg";
 
@@ -52,4 +55,10 @@ interface MigrationExpectation {
   withArtifacts?: (artifactsDir: string, client: pg.Client) => Promise<string[]>;
 }
 
-export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {};
+export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
+  "002_initiative_anchor.sql": {
+    tables: {
+      initiative: { contentHash: "skip" },
+    },
+  },
+};

@@ -4,7 +4,7 @@
  *
  * Every table's PostgreSQL system catalogs are read straight off `pg_catalog`: no ORM, no
  * `information_schema` (which hides constraint deferrability, delete actions and the exact
- * `format_type`/`pg_get_*` rendering this baseline is compared byte for byte against). The
+ * `format_type`/`pg_get_*` rendering the target is compared byte for byte against). The
  * caller's client must already have run `set search_path = ''` — `withThrowawayDb` does this —
  * so every `pg_get_constraintdef`/`pg_get_indexdef` below renders `zz.*` fully qualified
  * regardless of whatever search_path a different session would have carried.

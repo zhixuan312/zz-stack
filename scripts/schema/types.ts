@@ -1,9 +1,8 @@
 /**
  * The one shape every schema-target reader and writer agrees on.
  *
- * `catalog.ts` reads a live database into this shape; `schema-target.ts` (and its
- * `schema-target/` parts) commit it as the frozen baseline; `scripts/schema-target-extract.ts`
- * compares the two.
+ * `catalog.ts` reads a live database into this shape; `schema-target.ts` and its area files under
+ * `schema-target/` declare the target in it by hand; `compare.ts` diffs the two.
  */
 
 export interface ForeignKeyTarget {

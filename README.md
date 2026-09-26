@@ -209,11 +209,12 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             precondition cannot be waived by deep-copying the document and trying,
             and refuses to start if any database URL is set in the environment —
             it exits non-zero while a precondition is blocked, which today is all
-            eight of them), schema-target-extract.ts (writes the baseline of
-            the root-level schema target from a throwaway database the real migration runner
-            built; `--check` proves the committed baseline reproduces byte for
-            byte — schema/ holds the throwaway database, the catalog reader and
-            the serializer the inventory check and the rehearsal share), rehearse.ts
+            eight of them), schema-target-extract.ts (prints how PostgreSQL renders the tables
+            named, from a throwaway database this checkout's migrations built, so a
+            hand-written entry of the root-level schema target spells its types, checks
+            and indexes exactly; it writes nothing — schema/ holds the throwaway database,
+            the catalog reader, the comparison and the renderer the inventory check and
+            the rehearsal share), rehearse.ts
             (restores a production backup into a throwaway container the real runner then
             migrates, and proves nothing moved that rehearse/expect.ts did not declare —
             restore, migrations applied, inventory, and a before/after row-count and

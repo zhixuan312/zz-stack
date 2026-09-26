@@ -1,26 +1,33 @@
 /**
- * The frozen baseline catalog: 67 design tables, extracted by
- * `scripts/schema-target-extract.ts` from a fresh `services/gateway/migrations/001_init.sql`
- * run. `schema_migration` and the three `search_*_default` partitions are excluded — see
- * `scripts/schema/catalog.ts`.
+ * The schema this checkout declares, as delivered through the current phase of the approved
+ * spec (`2026-09-21-schema-first-principles-review`). `checks/schema-inventory.ts` fails the gate
+ * when a database migrated from `services/gateway/migrations/` differs from it in any table,
+ * column, key, foreign key, check, index or comment. `SCHEMA.md` states the rules it follows.
  *
- * Do not edit by hand; regenerate with the extractor and let `--check` confirm the tree
- * still matches it.
+ * Edited by hand, one area file per subject under `schema-target/`: a change is declared here
+ * first and the migration is written to match it — never regenerated from a migrated catalog,
+ * because a target derived from what it checks proves nothing. To see how PostgreSQL renders a
+ * type, check or index, `node scripts/schema-target-extract.ts <table>…` prints the entries of a
+ * database built from this checkout's migrations. `schema_migration` and the `search_*_default`
+ * partitions are not design tables and are not listed.
  */
 import type { SchemaTarget } from "./scripts/schema/types.ts";
-import { TABLES_1 } from "./schema-target/part-1.ts";
-import { TABLES_2 } from "./schema-target/part-2.ts";
-import { TABLES_3 } from "./schema-target/part-3.ts";
-import { TABLES_4 } from "./schema-target/part-4.ts";
-import { TABLES_5 } from "./schema-target/part-5.ts";
-import { TABLES_6 } from "./schema-target/part-6.ts";
-import { TABLES_7 } from "./schema-target/part-7.ts";
-import { TABLES_8 } from "./schema-target/part-8.ts";
-import { TABLES_9 } from "./schema-target/part-9.ts";
-import { TABLES_10 } from "./schema-target/part-10.ts";
-import { TABLES_11 } from "./schema-target/part-11.ts";
+import { IDENTITY } from "./schema-target/identity.ts";
+import { SIGN_IN } from "./schema-target/sign-in.ts";
+import { DELIVERY } from "./schema-target/delivery.ts";
+import { KNOWLEDGE } from "./schema-target/knowledge.ts";
+import { TELEMETRY } from "./schema-target/telemetry.ts";
+import { CATALOG } from "./schema-target/catalog.ts";
+import { EVAL_LEGACY } from "./schema-target/eval-legacy.ts";
+import { EVAL_PROTOCOL } from "./schema-target/eval-protocol.ts";
+import { EVAL_OBSERVE } from "./schema-target/eval-observe.ts";
+import { EVAL_RUN } from "./schema-target/eval-run.ts";
+import { IMPROVE } from "./schema-target/improve.ts";
+import { CONTROL } from "./schema-target/control.ts";
+import { ARTIFACT } from "./schema-target/artifact.ts";
+import { SEARCH } from "./schema-target/search.ts";
 
 export const SCHEMA_TARGET: SchemaTarget = {
   phase: 0,
-  tables: { ...TABLES_1, ...TABLES_2, ...TABLES_3, ...TABLES_4, ...TABLES_5, ...TABLES_6, ...TABLES_7, ...TABLES_8, ...TABLES_9, ...TABLES_10, ...TABLES_11 },
+  tables: { ...IDENTITY, ...SIGN_IN, ...DELIVERY, ...KNOWLEDGE, ...TELEMETRY, ...CATALOG, ...EVAL_LEGACY, ...EVAL_PROTOCOL, ...EVAL_OBSERVE, ...EVAL_RUN, ...IMPROVE, ...CONTROL, ...ARTIFACT, ...SEARCH },
 };

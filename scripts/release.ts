@@ -378,6 +378,38 @@ try {
 
 const registryFailures = writeRegistries(ownerTeam);
 
+/* 4b · the release's own one-shot data step, where it has one */
+// DELIBERATE: between the deploy and the probes, and nowhere else. A release that ships a
+// migration which MOVES data — rather than one that only changes a shape — leaves the platform
+// answering from an empty table until that data arrives, and the probes read documents. 0.81.0
+// taught this the hard way: verification ran before its one-shot carry, the probes reported a
+// deployment with no documents, and the release rolled back — and `--rollback` reverts images
+// only, never a migration, so the old image was then running against the new schema.
+//
+// It runs LOCALLY as the operator's own command, because the data it moves is not always on the
+// host the deploy reaches (this platform's file store is read from a checkout) and because which
+// command must run is a sentence in the release's notes, not something this script can guess. It
+// is re-runnable and idempotent by contract; a failure is a verification failure, because a
+// deployment whose data did not arrive is not a deployment that works.
+const dataStep = args.find((a) => a.startsWith("--data-step="))?.slice("--data-step=".length);
+let dataStepProblem: string | null = null;
+if (dataStep) {
+  step("4b", "one-shot data step");
+  log(`  ${dataStep}`);
+  try {
+    // A shell, because the step is a pipeline more often than it is one command — the carry, then
+    // the backfill, then the archive — and composing that here would put four scripts' worth of
+    // one migration's knowledge into the release tool.
+    execFileSync("sh", ["-c", dataStep], { cwd: root, stdio: "inherit" });
+  } catch (err) {
+    const e = asExecError(err);
+    dataStepProblem =
+      `${version} was deployed, but its one-shot data step failed, so the deployment is ` +
+      `serving from data that did not arrive: ` +
+      `${(e.stderr ?? e.message).trim().split("\n").slice(-3).join("; ")}`;
+  }
+}
+
 /* 5 · verify the live deployment */
 step(5, "verify");
 
@@ -397,7 +429,7 @@ purgeProbes();
 execSync("sleep 12");
 const verdict = verifyLive();
 // A registry the release could not write is a failed verification (registries.ts).
-const problems = [...verdict.wrong, ...registryFailures];
+const problems = [...verdict.wrong, ...registryFailures, ...(dataStepProblem ? [dataStepProblem] : [])];
 
 // The tool chain, not only the door and the surface — see chainCheck()'s own docstring.
 const chained = chainCheck();

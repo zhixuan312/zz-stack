@@ -97,7 +97,13 @@ const deploy = rel.indexOf('step(4, "deploy")');
 is(resolved > 0 && refused > resolved && refused < deploy,
    "release.ts does not resolve the owner team and refuse without it before step 4");
 const written = rel.indexOf("writeRegistries(ownerTeam)");
-const counted = rel.search(/const problems = \[\.\.\.verdict\.wrong, \.\.\.registryFailures\]/);
+// DELIBERATE: the claim, not a spelling of it. What has to hold is that `registryFailures` is
+// counted in the array the rollback reads — pinned to one exact line, this reported a correct
+// release as broken the moment a second contributor joined that array (the one-shot data step).
+const problemsLine = /const problems = \[([^\]]*)\]/.exec(rel);
+const counted = problemsLine && /\bregistryFailures\b/.test(problemsLine[1])
+  ? rel.indexOf(problemsLine[0])
+  : -1;
 const rolled = rel.indexOf("/* 6 · roll back if verification failed */");
 is(written > 0 && counted > written && counted < rolled,
    "release.ts does not count writeRegistries' failures among step 5's problems before the rollback");

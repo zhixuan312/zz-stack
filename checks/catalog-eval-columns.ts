@@ -2,8 +2,8 @@
  * checks/catalog-eval-columns.ts — no statement in the write trees names a table or a column the
  * phase-3 migration retires.
  *
- * `002_catalog_evaluation.sql` drops nine legacy evaluation tables whole and `skill_asset` with
- * them, gives `skill` its `flow` instead of a `kind` and its name instead of an `ordinal`, gives
+ * The phase-3 migration dropped nine legacy evaluation tables whole and `skill_asset` with
+ * them, gave `skill` its `flow` instead of a `kind` and its name instead of an `ordinal`, gave
  * `plugin_version` one identity instead of a `rubric_id`, moves a plugin's ownership off
  * `plugin.evolvable` and the `release_owners` jsonb, and reshapes `eval_run` and
  * `eval_assessment` — whose `evidence_snapshot_id`, `run_status`, `dimension_scores`,

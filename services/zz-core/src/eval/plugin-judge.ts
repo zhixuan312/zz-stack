@@ -4,8 +4,8 @@
  *
  * A round was a plugin version marked by a judge against the ruler it declared, the two axes
  * computed onto the row, and a blind control beside it. The tools that wrote one are gone
- * (`round_judge`, `round_score`, 0.76.0), and the phase-3 migration closes the history as well:
- * `002_catalog_evaluation.sql` archives the whole legacy evaluation family into a large object in
+ * (`round_judge`, `round_score`, 0.76.0), and the phase-3 migration closed the history as well: it archived the whole legacy evaluation
+ * family into a large object in
  * the platform's own database and then DROPS the tables that held it, together with the
  * `eval_finding` rows that carried an `eval_id`. The migration's own head names them; this file
  * deliberately does not, because `checks/catalog-eval-columns.ts` reads every string literal under

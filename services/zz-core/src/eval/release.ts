@@ -121,15 +121,15 @@ async function loadSubject(p: pg.Pool, subjectVersionId: string): Promise<Subjec
  *  version it was scored under — the baseline improvement.md quotes and release_verify's own
  *  comparison starts from.
  *
- *  The per-guardrail list is NOT a column of `zz.eval_run` any more: `002_catalog_evaluation.sql`
- *  drops the `guardrails` jsonb, because a guardrail is a MEASURE's own bar now
+ *  The per-guardrail list is NOT a column of `zz.eval_run` any more: the phase-3 migration
+ *  dropped the `guardrails` jsonb, because a guardrail is a MEASURE's own bar now
  *  (`eval_measure.guardrail_threshold`, written by `protocol_record` from the
  *  `improvement.criticalGuardrails` entry that named the measure). A statement selecting that
  *  column therefore fails to PREPARE on any migrated database, which is why the list is derived
  *  here the way `evaluation_score` derives it (`evaluate.ts`): the run's own measures through
  *  `guardrailsOfMeasures`, evaluated by `evaluateGuardrails` against the value each of those
  *  measures reduced to over the run's stored answers. That is exactly what the dropped column
- *  held — `001_init.sql:967` documents it as `evaluateGuardrails()`'s own
+ *  held — `001_init.sql` documents it as `evaluateGuardrails()`'s own
  *  `[{key, threshold, value, status}]` output — and a scored run is terminal, so re-deriving it
  *  from the run's immutable rows reproduces the figures that were scored. */
 async function loadBaseScore(

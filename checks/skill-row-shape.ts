@@ -3,7 +3,7 @@
  * checks/skill-row-shape.ts — no statement in the write trees inserts a catalog table or column
  * the phase-3 migration retires.
  *
- * `002_catalog_evaluation.sql` drops `skill_asset` whole, gives `skill` its `flow` instead of a
+ * The phase-3 migration dropped `skill_asset` whole and gave `skill` its `flow` instead of a
  * `kind` and its name instead of an `ordinal`, moves `plugin`'s ownership off the `owner_team`
  * text column and the `release_owners` jsonb, and gives `plugin_version_skill` a `skill_id` so its
  * key is `(plugin_version_id, skill_id)`. Every one of those names compiles today and stops

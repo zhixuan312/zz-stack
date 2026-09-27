@@ -7,7 +7,7 @@
  * update. The table carries no lifecycle column for the same reason: there is no state for a
  * `set` to move. `plugin_locate` is what used to violate this, recomputing a whole-plugin content
  * digest and upserting a second row per released thing (`zz.eval_subject_version`, folded onto
- * this table by `002_catalog_evaluation.sql`); it resolves the row now and writes nothing to it.
+ * this table by the phase-3 migration); it resolves the row now and writes nothing to it.
  *
  * Why a check and not a constraint: nothing enforces "this table's rows never change" — a `set`
  * on it compiles, runs, and silently rewrites the digest every earlier evaluation of that release
@@ -40,9 +40,9 @@
  *
  * EXEMPT, each with the reason it is:
  *
- *   `services/gateway/migrations/` — an applied migration is history. `001_init.sql` creates this
- *   table and `002_catalog_evaluation.sql` gives it its phase-3 shape; the files that write its
- *   DDL are exactly the files that must still spell it. `checks/dropped-columns.ts` and
+ *   `services/gateway/migrations/` — an applied migration is history. `001_init.sql` declares this
+ *   table, the phase-3 migration that gave it its shape having folded back into it; the file
+ *   that writes its DDL is exactly the file that must still spell it. `checks/dropped-columns.ts` and
  *   `checks/catalog-eval-columns.ts` carry this exemption for the same reason.
  *
  *   `checks/` — deliberately not a scan root, for the reason `checks/catalog-eval-columns.ts`

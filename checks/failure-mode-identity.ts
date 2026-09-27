@@ -8,7 +8,7 @@
  * directions, and the split is what stops them fighting: the identity is current state (a later
  * run that finds the same rule on the same tool resolves to the row it already has), and a
  * sighting is immutable history (its prevalence, owner and evidence are that snapshot's, and
- * nothing rewrites them). `002_catalog_evaluation.sql` performs the split and drops the candidate
+ * nothing rewrites them). The phase-3 migration performed the split and dropped the candidate
  * table. This is the static half of proving the split holds:
  *
  *   - a failure mode is identified by `(plugin_id, stable_key)` — the table carries exactly that
@@ -32,9 +32,9 @@
  *
  * EXEMPT, each with the reason it is:
  *
- *   `services/gateway/migrations/` — an applied migration is history. `001_init.sql` creates the
- *   candidate table and `002_catalog_evaluation.sql` splits it; the file that retires a name is
- *   exactly the file that must still spell it. `checks/catalog-eval-columns.ts:44-48` carries this
+ *   `services/gateway/migrations/` — an applied migration is history. `001_init.sql` declares the
+ *   split table, the phase-3 migration that made it having folded back into it; the file that
+ *   retires a name is exactly the file that must still spell it. `checks/catalog-eval-columns.ts:44-48` carries this
  *   exemption for the same reason.
  *
  *   `scripts/mutation/specs*.ts` — a mutation spec quotes a statement in order to plant a defect
@@ -297,7 +297,7 @@ for (const { path, src } of writeTrees) {
     scanned++;
     files.add(path);
     if (new RegExp(`\\bzz\\.${DROPPED_TABLE}\\b`, "i").test(st)) {
-      fail.push(`FAIL: ${path} — a statement names zz.${DROPPED_TABLE}, which 002_catalog_evaluation.sql ` +
+      fail.push(`FAIL: ${path} — a statement names zz.${DROPPED_TABLE}, which the phase-3 migration ` +
                 `drops; the same fact is a zz.${IDENTITY} row and a zz.${SIGHTING} row`);
     }
     if (new RegExp(`\\bupdate\\s+(?:zz\\.)?${SIGHTING}\\b|\\bdelete\\s+from\\s+(?:zz\\.)?${SIGHTING}\\b`, "i").test(st)) {

@@ -8,14 +8,15 @@
  *   The static half: no statement that reads the evaluation family names a table or a column the
  *   phase-3 migration drops. `checks/catalog-eval-columns.ts` asks that question of a NAMED list
  *   of names — the phase's own technical acceptance criterion, deliberately narrower than the
- *   migration. This one reads the migration itself (`services/gateway/migrations/`) and takes
- *   every `drop table`, every `drop column` and every `rename column` it performs, so a reader
- *   that kept `eval_run.coverage`, `eval_run.score_interval`, `eval_run.guardrails` or
+ *   migration. This one carries the migration's OWN list — read off it while it was pending, and
+ *   frozen beside this check below — of every `drop table`, every `drop column` and every
+ *   `rename column` it performed, so a reader that kept `eval_run.coverage`,
+ *   `eval_run.score_interval`, `eval_run.guardrails` or
  *   `eval_observation_snapshot.subject_version_id` is reported here even though that check's list
  *   stops short of them — `score_interval` and `coverage` among them are exactly what
- *   `findings-doc.ts` was still reading when this task began, and the column the migration drops
- *   and puts back (`eval_protocol_version.observable_surfaces`) is NOT reported: the target the
- *   migration leaves still carries it.
+ *   `findings-doc.ts` was still reading when this task began, and the column the migration
+ *   dropped and put back (`eval_protocol_version.observable_surfaces`) is NOT reported: the
+ *   target the migration left still carries it.
  *
  *   The live half: the statement is EXECUTED — planned, never run — against a throwaway
  *   PostgreSQL migrated from this tree's own migrations (`scripts/schema/throwaway.ts`), the
@@ -46,15 +47,17 @@
  * or a failure message that tells its reader about a table this phase drops is wrong in the message
  * too, and that is the only way `round_scores` — which issues no statement — can be reached.
  *
- * DELIBERATE: the roots and the migration are relative to `process.cwd()`, not to this file's own
- * location, so the check can be pointed at a scratch tree that plants a violation.
+ * DELIBERATE: the roots are relative to `process.cwd()`, not to this file's own location, so the
+ * check can be pointed at a scratch tree that plants a violation. The retired names are declared
+ * in this file, so there is nothing else for a caller to point anywhere.
  *
  * EXEMPT, each with the reason it is:
  *
- *   `services/gateway/migrations/` — an applied migration is history. `001_init.sql` creates every
- *   table this phase drops and every column it retires; the file that retires them is exactly the
- *   file that must still spell them. `checks/dropped-columns.ts:47-51` carries this exemption for
- *   the same reason, and the migration is ALSO read below for the names it drops.
+ *   `services/gateway/migrations/` — an applied migration is history, and it states a schema
+ *   rather than reading one: the names it spells are a declaration, not a call site. The phase-3
+ *   file folded back into `001_init.sql` once release 0.84.0 was verified in production; the
+ *   exemption stays because the next phase's pending migration spells ITS retired names there for
+ *   as long as it is pending. `checks/dropped-columns.ts:47-51` carries it for the same reason.
  *
  *   `checks/` — deliberately not a scan root. This check reads files; `checks/` plants defects in
  *   them and quotes them in its own messages, this file's own doc included.
@@ -65,14 +68,9 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { SCHEMA_TARGET } from "../schema-target.ts";
-
 /** The trees that write to a database — the same four `checks/catalog-eval-columns.ts` scans. */
 const ROOTS = ["services", "packages", "scripts", "deploy"];
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
-/** The migration that drops the legacy evaluation family. Read for the names it drops, and exempt
- *  from the scan for the same reason `checks/dropped-columns.ts` exempts it. */
-const MIGRATION = "services/gateway/migrations/002_catalog_evaluation.sql";
 /** The tree the evaluation family's own readers live in — the half of the live pass that is
  *  EXECUTED. Every module that reads `zz.eval_*`, `zz.plugin_version`, `zz.plugin_release_owner`,
  *  `zz.candidate`, `zz.improvement_run` or `zz.release_attempt` is a file under it, and a
@@ -347,98 +345,138 @@ function bareMention(sql: string, column: string): boolean {
   return false;
 }
 
-// -------------------------------------------------------------------------------------------
-// The names the phase drops, read from the migration itself.
+// The names the phase-3 migration retires, declared here rather than read from a file.
 
-/** Every table the migration drops whole, and every column it drops from a table that survives —
- *  keyed by the table's name with `zz.` stripped, because that is the name a statement binds.
+/** Every table the phase dropped whole, and every column it dropped from a table that survives —
+ * keyed by the table's name with `zz.` stripped, because that is the name a statement binds.
  *
- *  A name the migration drops and then puts back is NOT retired: `observable_surfaces` is dropped
- *  only so it can be re-added as a `text[]` under a scratch name and renamed into place, and the
- *  readers of it are correct. `SCHEMA_TARGET` is the shape the migration LEAVES — the same target
- *  `checks/schema-inventory.ts` holds the migration to — so a name the target still carries was
- *  re-added, and a table the target still carries was recreated. */
-function droppedBy(migration: string): { tables: Set<string>; columns: Map<string, string[]> } {
-  const tables = new Set<string>();
-  const columns = new Map<string, string[]>();
-  const kept = (table: string, column: string): boolean =>
-    (SCHEMA_TARGET.tables[canonical(table)]?.columns ?? []).some((c) => c[0].toLowerCase() === column);
-  const add = (table: string, column: string): void => {
-    const t = canonical(table);
-    if (kept(t, column.toLowerCase())) return;
-    columns.set(t, [...(columns.get(t) ?? []), column.toLowerCase()]);
-  };
-  for (const m of migration.matchAll(
-    /alter\s+table\s+(?:only\s+)?((?:zz\.)?[a-z_]\w*)\s+drop\s+column\s+(?:if\s+exists\s+)?([a-z_]\w*)/gi)) {
-    add(m[1], m[2]);
-  }
-  // A rename is a drop of the old name and an addition of the new one: a reader still naming the
-  // old name reads a column that is gone.
-  for (const m of migration.matchAll(
-    /alter\s+table\s+(?:only\s+)?((?:zz\.)?[a-z_]\w*)\s+rename\s+column\s+([a-z_]\w*)\s+to\s+([a-z_]\w*)/gi)) {
-    add(m[1], m[2]);
-  }
-  for (const m of migration.matchAll(/drop\s+table\s+(?:if\s+exists\s+)?((?:zz\.)?[a-z_]\w*)\s*(?:cascade)?;/gi)) {
-    const t = canonical(m[1]);
-    if (!SCHEMA_TARGET.tables[t]) tables.add(t);
-  }
-  return { tables, columns };
-}
+ * READ OFF A FILE THAT IS GONE, SO FROZEN. This was taken from `002_catalog_evaluation.sql`'s own
+ * `drop table`, `drop column` and `rename column` statements while that file was pending, and the
+ * file folded back into `001_init.sql` once release 0.84.0 was verified in production.
+ * `001_init.sql` drops nothing — it declares the shape the phase left — so a reader that went on
+ * parsing it would find an empty list and report every statement clean without reading one.
+ *
+ * SCOPED TO THIS CHECK, NOT THE RECORD OF WHAT PHASES RETIRE. What is here is what the statements
+ * this check scans can name: the evaluation family, the catalog names they bind, and the telemetry
+ * and artifact tables those columns also live on. `checks/dropped-columns.ts` keeps the wider
+ * record, phase by phase, and it is the file a later phase extends; the two overlap for phase 3's
+ * columns by construction — both say what one migration retired — and the overlap is left standing
+ * rather than reconciled, so neither file is the place the other's list has to be read from.
+ *
+ * IF A LATER PHASE RETIRES NAMES UNDER THE TREES THIS CHECK READS, THIS LIST MUST BE EXTENDED WITH
+ * THEM. Nothing derives it any more, so a phase that does not extend it leaves this check scanning
+ * a smaller past than the schema has, and reporting it green.
+ *
+ * A name the phase dropped and then put back is NOT retired: `observable_surfaces` was dropped
+ * only so it could be re-added as a `text[]` under a scratch name and renamed into place, and the
+ * readers of it are correct — which is why `observable_surfaces` is absent here and its scratch
+ * name `observable_surfaces_text` is not. `SCHEMA_TARGET` is still the shape the phase LEAVES, and
+ * `checks/schema-inventory.ts` is what holds `001_init.sql` to it.
+ */
+const RETIRED_TABLES = new Set<string>([
+  "eval", "eval_evaluator", "eval_evidence_snapshot", "eval_failure_mode_candidate",
+  "eval_protocol", "eval_score", "eval_subject", "eval_subject_version", "rubric",
+  "rubric_dimension", "skill_asset",
+]);
 
-/** Every table's columns BEFORE this phase, from `001_init.sql` — the file that creates them.
- *  A dropped name is a name that was a column, so the pre-state is what tells a retired name
- *  apart from a name that was never one. */
-function columnsBefore(init: string): Map<string, Set<string>> {
-  const out = new Map<string, Set<string>>();
-  for (const m of init.matchAll(/create\s+table\s+(?:if\s+not\s+exists\s+)?((?:zz\.)?[a-z_]\w*)\s*\(([\s\S]*?)\n\);/gi)) {
-    const table = canonical(m[1]);
-    const cols = new Set<string>();
-    for (const line of m[2].split("\n")) {
-      const col = /^\s*([a-z_]\w*)\s+/.exec(line)?.[1];
-      if (col && !/^(constraint|primary|unique|foreign|check|exclude|like|inherits)$/i.test(col)) {
-        cols.add(col.toLowerCase());
-      }
-    }
-    out.set(table, cols);
-  }
-  return out;
-}
+/** The columns the phase retired, keyed by the table they were retired from — the name a
+ *  statement binds, which for a renamed column is the NEW name. Read off the same file, frozen for
+ *  the same reason, scoped and extended the same way as the tables above. */
+const RETIRED_COLUMNS = new Map<string, string[]>([
+  ["eval_assessment", ["evaluator_version_id", "subject_ref", "evidence_ref", "answer", "policy_version", "resulting_action"]],
+  ["eval_dimension", ["name"]],
+  ["eval_evaluator_qualification", ["evaluator_version_id", "protocol_version_id", "subject_scope"]],
+  ["eval_evaluator_version", ["evaluator_id", "model_policy", "polarity"]],
+  ["eval_idempotency", ["principal"]],
+  ["eval_measure", ["suite"]],
+  ["eval_observation_snapshot", ["production_window", "coverage", "runtime_identity", "environment_digest", "subject_version_id"]],
+  ["eval_protocol_version", ["protocol_id", "subject_compatibility", "suites", "approved_document_path", "failure_taxonomy", "observable_surfaces_text"]],
+  ["eval_run", ["subject_version_id", "evidence_snapshot_id", "run_status", "score_interval", "guardrails", "coverage", "dimension_scores"]],
+  ["plugin", ["owner_team", "evolvable", "release_owners"]],
+  ["plugin_version", ["rubric_id"]],
+  ["skill", ["kind", "ordinal"]],
+]);
+
+/** Every pre-phase table that carried one of the retired column names, keyed by the column.
+ *
+ * The one fact about the pre-state this check still needs: a bare mention resolves to the one
+ * bound table that carried it, so "which tables carried it" is what decides whether the statement
+ * still reads — and `001_init.sql` is the state AFTER the phase, which cannot answer it. Taken
+ * from the phase-2 baseline the same way the list above was taken, and for the same reason.
+ *
+ * EXTEND IT WITH THE LIST ABOVE, name for name. A retired column with no entry here is a bare
+ * mention this check stops reporting: it cannot say which bound table carried the name before the
+ * phase, so it cannot tell that only one did.
+ */
+const CARRIED_BEFORE = new Map<string, string[]>([
+  ["answer", ["eval_assessment"]],
+  ["approved_document_path", ["eval_protocol_version"]],
+  ["coverage", ["eval_evidence_snapshot", "eval_observation_snapshot", "eval_run"]],
+  ["dimension_scores", ["eval_run"]],
+  ["environment_digest", ["eval_observation_snapshot"]],
+  ["evaluator_id", ["eval_evaluator_version"]],
+  ["evaluator_version_id", ["assessment", "eval_assessment", "eval_evaluator_qualification", "eval_measure"]],
+  ["evidence_ref", ["eval_assessment"]],
+  ["evidence_snapshot_id", ["eval_run"]],
+  ["evolvable", ["plugin"]],
+  ["failure_taxonomy", ["eval_protocol_version"]],
+  ["guardrails", ["eval_run"]],
+  ["kind", ["artifact_edge", "artifact_event", "control_evidence", "control_waiver", "eval_evaluator", "eval_finding", "event", "knowledge_node", "passkey_challenge", "rubric_dimension", "skill", "skill_asset"]],
+  ["model_policy", ["eval_evaluator_version"]],
+  ["name", ["eval_dimension", "mcp_oauth_client", "plugin", "plugin_tool", "rubric_dimension", "skill", "team"]],
+  ["ordinal", ["artifact_passage", "rubric_dimension", "skill"]],
+  ["owner_team", ["plugin"]],
+  ["polarity", ["eval_evaluator_version"]],
+  ["policy_version", ["eval_assessment"]],
+  ["principal", ["eval_idempotency"]],
+  ["production_window", ["eval_observation_snapshot"]],
+  ["protocol_id", ["eval_protocol_version"]],
+  ["protocol_version_id", ["eval_dimension", "eval_evaluator_qualification", "eval_evidence_snapshot", "eval_run"]],
+  ["release_owners", ["plugin"]],
+  ["resulting_action", ["eval_assessment"]],
+  ["rubric_id", ["eval", "plugin_version", "rubric_dimension"]],
+  ["run_status", ["eval_run"]],
+  ["runtime_identity", ["eval_observation_snapshot"]],
+  ["score_interval", ["eval_run"]],
+  ["subject_compatibility", ["eval_protocol_version"]],
+  ["subject_ref", ["eval_assessment"]],
+  ["subject_scope", ["eval_evaluator_qualification"]],
+  ["subject_version_id", ["eval_evidence_snapshot", "eval_observation_snapshot", "eval_run"]],
+  ["suite", ["eval_measure"]],
+  ["suites", ["eval_protocol_version"]],
+]);
 
 // -------------------------------------------------------------------------------------------
 // The two halves.
 
 const root = process.cwd();
-let migration: string;
-let init: string;
-try {
-  migration = readFileSync(join(root, MIGRATION), "utf8");
-  init = readFileSync(join(root, "services/gateway/migrations/001_init.sql"), "utf8");
-} catch (err) {
-  console.error(`FAIL: the migrations cannot be read from ${root} — this check reads the names ` +
-    `the phase drops out of them: ${(err as Error).message}`);
-  process.exit(1);
-}
-
-const dropped = droppedBy(migration);
-const before = columnsBefore(init);
 const fail: string[] = [];
 
-/** What a statement reads that the migration removes, or nothing. */
+// The retired-name record is declared data now, so nothing in the tree proves it is still there —
+// and an emptied record is the one failure this check cannot see from its output, because every
+// statement it reads would be reported clean. Named here rather than left to whoever reads the
+// list next, which is the same reason the record carries the paragraph above it.
+if (RETIRED_TABLES.size === 0 || RETIRED_COLUMNS.size === 0 || CARRIED_BEFORE.size === 0) {
+  fail.push("FAIL: the retired-name record beside this check is empty — every statement would be " +
+            "reported clean, which is what it looked like the last time this list was right");
+}
+
+/** What a statement reads that the phase removes, or nothing. */
 function retiredNames(sql: string, bound: readonly string[]): string[] {
   const found = new Set<string>();
   for (const t of bound) {
-    if (dropped.tables.has(t)) found.add(`zz.${t} is dropped whole by this phase`);
+    if (RETIRED_TABLES.has(t)) found.add(`zz.${t} is dropped whole by this phase`);
   }
   for (const m of sql.matchAll(/\bzz\.([a-z_]\w*)\b/gi)) {
     const t = m[1].toLowerCase();
-    if (dropped.tables.has(t)) found.add(`zz.${t} is dropped whole by this phase`);
+    if (RETIRED_TABLES.has(t)) found.add(`zz.${t} is dropped whole by this phase`);
   }
   const binds = bindings(sql);
   // A qualified column, through the alias it was bound under, the table's own name or `zz.<t>`.
   for (const b of binds) {
     const t = canonical(b.table);
     const quals = new Set([b.alias, t, `zz.${t}`].filter((q): q is string => !!q));
-    for (const column of dropped.columns.get(t) ?? []) {
+    for (const column of RETIRED_COLUMNS.get(t) ?? []) {
       for (const q of quals) {
         if (new RegExp(`\\b${q}\\.${column}\\b`, "i").test(sql)) {
           found.add(`${t}.${column} is retired by this phase (through \`${q}\`)`);
@@ -449,10 +487,12 @@ function retiredNames(sql: string, bound: readonly string[]): string[] {
   // A bare column: Postgres resolves it to the one bound table that carried it before this phase,
   // so what it resolves to now is what decides whether the statement still reads.
   const ctes = cteNames(sql);
-  for (const column of ctes.size ? [] : new Set([...bound].flatMap((t) => dropped.columns.get(t) ?? []))) {
+  for (const column of ctes.size ? [] : new Set([...bound].flatMap((t) => RETIRED_COLUMNS.get(t) ?? []))) {
     if (!bareMention(sql, column)) continue;
-    const carried = bound.filter((t) => (before.get(t) ?? new Set()).has(column));
-    if (carried.length === 1 && (dropped.columns.get(carried[0]) ?? []).includes(column)) {
+    // A bare column resolves to the one bound table that carried it BEFORE the phase, which is
+    // the fact `CARRIED_BEFORE` is frozen from — `001_init.sql` is the state after it.
+    const carried = bound.filter((t) => (CARRIED_BEFORE.get(column) ?? []).includes(t));
+    if (carried.length === 1 && (RETIRED_COLUMNS.get(carried[0]) ?? []).includes(column)) {
       found.add(`${carried[0]}.${column} is retired by this phase (bare, and it is the only ` +
                 `table this statement binds that carried it)`);
     }
@@ -523,7 +563,7 @@ async function main(): Promise<void> {
       if (r.kind !== "literal") continue;
       const line = src.slice(0, r.start).split("\n").length;
       for (const m of src.slice(r.start + 1, r.end - 1).matchAll(/\bzz\.([a-z_]\w*)\b/gi)) {
-        if (dropped.tables.has(m[1].toLowerCase())) {
+        if (RETIRED_TABLES.has(m[1].toLowerCase())) {
           fail.push(`FAIL: ${path}:${line} — a literal under the reader tree names zz.${m[1]}, ` +
             "which this phase drops whole");
         }

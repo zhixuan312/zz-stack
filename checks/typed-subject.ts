@@ -7,21 +7,24 @@
 // idempotency_key)` rather than by the address the call was made from.
 //
 // Both were broken in the same way — the migration moved and every reader and writer kept spelling
-// the old shape. `002_catalog_evaluation.sql:1041-1155` replaces `eval_assessment.subject_ref` with
-// six typed columns and adds the kind-shape CHECK that makes a wrong combination unwritable;
-// `:1157-1180` replaces `eval_idempotency.principal` with `principal_id uuid not null`, re-keys the
-// primary key and adds the foreign key. A statement still writing `principal` dies with `column
-// "principal" does not exist` BEFORE its own work, which is how every `/eval` mutator was dead on a
-// migrated database while this suite was green.
+// the old shape. The phase-3 migration replaced `eval_assessment.subject_ref` with six typed
+// columns and added the kind-shape CHECK that makes a wrong combination unwritable; it replaced
+// `eval_idempotency.principal` with `principal_id uuid not null`, re-keyed the primary key and
+// added the foreign key. A statement still writing `principal` dies with `column "principal"
+// does not exist` BEFORE its own work, which is how every `/eval` mutator was dead on a migrated
+// database while this suite was green. The migration folded back into `001_init.sql` once release
+// 0.84.0 was verified in production, and that declaration is what this reads.
 //
-// Read, not run. The migration is plain SQL, so the constraint text is read directly; in the write
-// trees a statement is the text of the string or template literal that carries it, found from the
-// verb that opens it — `checks/insert-arity.ts` reads statements the same way, and
-// `checks/dropped-columns.ts` carries the scanner this file's `literalAround` is a narrow form of.
+// Read, not run. The declaration is plain SQL, so the constraint text and the column lists are read
+// directly — `pg_dump` output, so its keywords are upper case and its shape is `CREATE TABLE`
+// clauses where the migration had `alter table`; in the write trees a statement is the text of the
+// string or template literal that carries it, found from the verb that opens it —
+// `checks/insert-arity.ts` reads statements the same way, and `checks/dropped-columns.ts` carries
+// the scanner this file's `literalAround` is a narrow form of.
 //
 // What is asserted, and why each half needs the other:
 //
-//   the shape the migration leaves   the five child columns and their foreign keys, the kind-shape
+//   the shape the declaration leaves the five child columns and their foreign keys, the kind-shape
 //                                    CHECK covering all six kinds and no seventh, one child per
 //                                    kind and none for `run_level`, the subject key, and the
 //                                    value/excluded_reason exclusivity.
@@ -31,7 +34,7 @@
 //                                    from a per-kind resolver that sets exactly the one child its
 //                                    kind names. A writer that guessed a kind would be refused by
 //                                    the CHECK, and the row would be lost rather than recorded.
-//   the ledger key                   the migration's new key, and every statement in
+//   the ledger key                   the declaration's key, and every statement in
 //                                    `eval/idempotency.ts` that touches the ledger naming
 //                                    `principal_id` and never the retired `principal` column.
 //
@@ -52,9 +55,10 @@ import { join } from "node:path";
 const ROOTS = ["services", "packages", "scripts", "deploy"];
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
 
-/** The migration that gives the table this shape. `001_init.sql` creates `subject_ref` and
- *  `principal`; this is the file that retires both, so it is the one read for the target shape. */
-const MIGRATION = "services/gateway/migrations/002_catalog_evaluation.sql";
+/** The declaration that gives the table this shape. The phase-3 migration was the file that
+ *  retired `subject_ref` and `principal`; it folded back into `001_init.sql` once 0.84.0 was
+ *  verified in production, so `001_init.sql` is now the one read for the target shape. */
+const MIGRATION = "services/gateway/migrations/001_init.sql";
 
 /** The five child foreign keys, in the order the table declares them. `run_level` names none of
  *  them. `doc_revision` is not here: it is not a foreign key, and Phase 6 owns it. */
@@ -75,24 +79,53 @@ const fail: string[] = [];
 const read = (p: string): string => readFileSync(p, "utf8");
 
 // ---------------------------------------------------------------------------------------------
-// The migration's own text.
+// The declaration's own text.
 // ---------------------------------------------------------------------------------------------
+//
+// DELIBERATE: lower-cased once, here. `001_init.sql` is `pg_dump` output and `pg_dump` spells
+// every keyword in upper case (`ADD CONSTRAINT`, `CHECK`, `IS NULL`); the readers below are
+// written in the case SQL is normally written in, and a second spelling of each pattern would be
+// the same assertion twice with two chances to drift.
 
 let migration: string;
 try {
-  migration = read(MIGRATION);
+  migration = read(MIGRATION).toLowerCase();
 } catch {
-  console.error(`FAIL: ${MIGRATION} cannot be read — the migration this check reads the target ` +
+  console.error(`FAIL: ${MIGRATION} cannot be read — the declaration this check reads the target ` +
                 "shape from is not at that path");
   process.exit(1);
 }
 
-/** The text of one `add constraint <name> …` clause, up to the `;` that closes it. */
+/** The text of one `<name>` constraint clause, up to the `;` that closes it.
+ *
+ *  Two spellings, because the declaration states them two ways: a `CREATE TABLE` clause carries a
+ *  CHECK inline (`CONSTRAINT <name> CHECK (…)`), and `pg_dump` writes every key as a later
+ *  `ALTER TABLE … ADD CONSTRAINT <name> …`. The `add constraint` spelling is tried first: the
+ *  inline one is a substring of it, so the other order would read a key's clause from the middle
+ *  of the `alter table` that declares it. */
 function constraint(name: string): string | null {
-  const at = migration.indexOf(`add constraint ${name}`);
+  const added = migration.indexOf(`add constraint ${name} `);
+  const at = added >= 0 ? added : migration.indexOf(`constraint ${name} `);
   if (at < 0) return null;
   const end = migration.indexOf(";", at);
   return end < 0 ? migration.slice(at) : migration.slice(at, end);
+}
+
+/** One `create table zz.<table>` clause's own column declarations, as `<column> -> the clause that
+ *  declares it`. The declaration states the shape directly, which is what lets a fact the
+ *  migration established with `alter table … add column` be read here as "is the column in the
+ *  list" and "does its own clause say not null". */
+function columnsOf(table: string): Map<string, string> {
+  const at = migration.indexOf(`create table ${table} (`);
+  if (at < 0) return new Map();
+  const closed = migration.indexOf("\n);", at);
+  const out = new Map<string, string>();
+  for (const line of migration.slice(at, closed < 0 ? migration.length : closed).split("\n").slice(1)) {
+    const m = /^\s*([a-z_]\w*)\s+(.*)$/.exec(line);
+    if (!m || /^(constraint|primary|unique|foreign|check|exclude|like|inherits)$/.test(m[1])) continue;
+    out.set(m[1], m[2].replace(/,$/, ""));
+  }
+  return out;
 }
 
 // Every kind branch of the kind-shape CHECK, as `<kind> -> the five columns it requires set`.
@@ -189,7 +222,7 @@ for (const column of CHILD_COLUMNS) {
   const text = constraint(`eval_assessment_${column}_fkey`);
   const target = CHILD_TARGET[column];
   if (!text) {
-    fail.push(`FAIL: ${MIGRATION} adds no eval_assessment_${column}_fkey — the column a "${column}"
+    fail.push(`FAIL: ${MIGRATION} declares no eval_assessment_${column}_fkey — the column a "${column}"
                  kind resolves into would hold anything, including an id nothing answers to`
       .replace(/\s+/g, " "));
     continue;
@@ -201,30 +234,26 @@ for (const column of CHILD_COLUMNS) {
   }
 }
 
-for (const [pattern, want] of [
-  [/alter table zz\.eval_assessment add column (\w+) (?:uuid|text|integer|bigint);/g,
-   ["subject_kind", "run_id", "doc_id", "doc_revision", "knowledge_node_id", "bug_id", "event_id"]],
-  [/alter table zz\.eval_assessment add column (value|excluded_reason) /g,
-   ["value", "excluded_reason"]],
-] as const) {
-  const seen = new Set([...migration.matchAll(pattern)].map((m) => m[1]));
-  for (const column of want) {
-    if (!seen.has(column)) fail.push(`FAIL: ${MIGRATION} adds no eval_assessment.${column}`);
-  }
+// The seven columns the typed subject is spelled with, and the two the value half is — the
+// migration added each of them, and the declaration carries them in the table's own column list.
+const SUBJECT_COLUMNS = columnsOf("zz.eval_assessment");
+for (const column of ["subject_kind", "run_id", "doc_id", "doc_revision", "knowledge_node_id",
+                      "bug_id", "event_id", "value", "excluded_reason"]) {
+  if (!SUBJECT_COLUMNS.has(column)) fail.push(`FAIL: ${MIGRATION} declares no eval_assessment.${column}`);
 }
 
 // The retired spellings: a column the writer must not name, and the free-text ref they replace.
-for (const [pattern, why] of [
-  [/alter table zz\.eval_assessment drop column subject_ref;/, "subject_ref"],
-  [/alter table zz\.eval_assessment drop column answer;/, "answer"],
-] as const) {
-  if (!pattern.test(migration)) {
-    fail.push(`FAIL: ${MIGRATION} does not drop eval_assessment.${why} — the table would carry the ` +
+// The migration dropped both, and the declaration states that by not carrying them: either name
+// in the column list means the table carries the free-text shape beside the typed one, and a
+// reader could not say which is the subject.
+for (const gone of ["subject_ref", "answer"]) {
+  if (SUBJECT_COLUMNS.has(gone)) {
+    fail.push(`FAIL: ${MIGRATION} still declares eval_assessment.${gone} — the table carries the ` +
               "free-text shape beside the typed one, and a reader could not say which is the subject");
   }
 }
-if (!/alter table zz\.eval_assessment alter column subject_kind set not null;/.test(migration)) {
-  fail.push("FAIL: eval_assessment.subject_kind is left nullable — a row with no kind is a row no " +
+if (!/\bnot null\b/.test(SUBJECT_COLUMNS.get("subject_kind") ?? "")) {
+  fail.push("FAIL: eval_assessment.subject_kind is nullable — a row with no kind is a row no " +
             "reader can resolve, and it is exactly what the CHECK cannot refuse");
 }
 if (!/add constraint eval_assessment_subject_key unique nulls not distinct[\s\S]*?\(\s*eval_run_id,\s*measure_id,\s*subject_kind[\s\S]*?\)/.test(migration)) {
@@ -232,7 +261,9 @@ if (!/add constraint eval_assessment_subject_key unique nulls not distinct[\s\S]
             "could be assessed twice against one subject in one run, and the two rows would " +
             "disagree with nothing to settle which is the reading");
 }
-if (!/add constraint eval_assessment_value_check check \(\(value is null\) = \(excluded_reason is not null\)\)/.test(migration)) {
+// `pg_dump` wraps the equality in a pair of parentheses of its own, so the pattern tolerates them:
+// the fact asserted is the equality and the two clauses it relates, not the rendering.
+if (!/constraint eval_assessment_value_check check \(+\s*\(value is null\)\s*=\s*\(excluded_reason is not null\)\s*\)+/.test(migration)) {
   fail.push("FAIL: eval_assessment has no value/excluded_reason exclusivity check — a row carrying " +
             "both, or neither, says nothing a reducer can read");
 }
@@ -428,10 +459,23 @@ for (const path of writerPaths) {
 // The ledger.
 // ---------------------------------------------------------------------------------------------
 
+// `principal_id` and the retired `principal` address are read off the table's own column list —
+// "declared not null" and "not declared" are the same two facts the migration established with
+// `alter table` — and the two keys as the constraints the declaration carries.
+const LEDGER_COLUMNS = columnsOf("zz.eval_idempotency");
+if (!LEDGER_COLUMNS.has("principal_id")) {
+  fail.push(`FAIL: ${MIGRATION} declares no eval_idempotency.principal_id — the ledger is not ` +
+            "keyed to the principal that made the call");
+} else if (!/\bnot null\b/.test(LEDGER_COLUMNS.get("principal_id") ?? "")) {
+  fail.push(`FAIL: ${MIGRATION} declares eval_idempotency.principal_id nullable — the ledger is ` +
+            "not keyed to the principal that made the call");
+}
+if (LEDGER_COLUMNS.has("principal")) {
+  fail.push(`FAIL: ${MIGRATION} still declares the retired eval_idempotency.principal address ` +
+            "beside principal_id — two spellings of the caller, and which one a row carries is " +
+            "whatever its writer happened to fill");
+}
 for (const [pattern, why] of [
-  [/alter table zz\.eval_idempotency add column principal_id uuid;/, "add principal_id"],
-  [/alter table zz\.eval_idempotency alter column principal_id set not null;/, "make principal_id not null"],
-  [/alter table zz\.eval_idempotency drop column principal;/, "drop the retired `principal` address"],
   [/add constraint eval_idempotency_pkey primary key \(principal_id, tool, idempotency_key\)/, "re-key the primary key to (principal_id, tool, idempotency_key)"],
   [/add constraint eval_idempotency_principal_id_fkey foreign key \(principal_id\) references zz\.principal\(id\)/, "point principal_id at zz.principal"],
 ] as const) {

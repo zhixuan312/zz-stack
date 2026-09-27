@@ -101,6 +101,7 @@
 -- absorbs: 002_identity_access.sql
 -- absorbs: 002_delivery_telemetry.sql
 -- absorbs: 003_a_run_the_timer_invented.sql
+-- absorbs: 002_catalog_evaluation.sql
 --
 -- requires-extension: citext
 -- requires-extension: pg_textsearch
@@ -618,51 +619,6 @@ CREATE TABLE zz.doc_artifact (
 
 
 --
--- Name: eval; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.eval (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    rubric_id uuid NOT NULL,
-    judge_model text DEFAULT ''::text NOT NULL,
-    selection_note text DEFAULT ''::text NOT NULL,
-    doc_count integer DEFAULT 0 NOT NULL,
-    started_at timestamp with time zone DEFAULT now() NOT NULL,
-    finished_at timestamp with time zone,
-    is_control boolean DEFAULT false NOT NULL,
-    plugin_version_id uuid NOT NULL,
-    controls uuid,
-    initiative text,
-    team_slug text,
-    effectiveness numeric,
-    headroom_points numeric,
-    headroom_named integer,
-    headroom_state text
-);
-
-
---
--- Name: COLUMN eval.initiative; Type: COMMENT; Schema: zz; Owner: -
---
-
-COMMENT ON COLUMN zz.eval.initiative IS 'The initiative this round was run inside — stamped by round_judge from its caller, never inferred from a name or a date. Null on rounds taken before migration 067.';
-
-
---
--- Name: COLUMN eval.effectiveness; Type: COMMENT; Schema: zz; Owner: -
---
-
-COMMENT ON COLUMN zz.eval.effectiveness IS '0-10, as judge-score.ts computed it at round_recommend. Null when the round was void (a collapsed control), and null on rounds taken before migration 067.';
-
-
---
--- Name: COLUMN eval.headroom_state; Type: COMMENT; Schema: zz; Owner: -
---
-
-COMMENT ON COLUMN zz.eval.headroom_state IS 'One of: no change needed, change identified, unexplained gap, not measured. The second axis. It reports what the evidence says about the gap and prescribes nothing — whether a change CAN be made is not something a score establishes.';
-
-
---
 -- Name: eval_assessment; Type: TABLE; Schema: zz; Owner: -
 --
 
@@ -670,15 +626,23 @@ CREATE TABLE zz.eval_assessment (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     eval_run_id uuid NOT NULL,
     measure_id uuid NOT NULL,
-    evaluator_version_id uuid,
     assessment_id bigint,
     qualification_id uuid,
-    subject_ref text NOT NULL,
-    evidence_ref text NOT NULL,
-    answer jsonb NOT NULL,
-    policy_version text NOT NULL,
-    resulting_action text,
-    created_at timestamp with time zone NOT NULL
+    created_at timestamp with time zone NOT NULL,
+    subject_kind text NOT NULL,
+    run_id uuid,
+    doc_id uuid,
+    doc_revision integer,
+    knowledge_node_id uuid,
+    bug_id uuid,
+    event_id bigint,
+    value numeric,
+    raw_value jsonb,
+    numerator integer,
+    denominator integer,
+    excluded_reason text,
+    CONSTRAINT eval_assessment_subject_kind_check CHECK ((((subject_kind = 'run_level'::text) AND (run_id IS NULL) AND (doc_id IS NULL) AND (knowledge_node_id IS NULL) AND (bug_id IS NULL) AND (event_id IS NULL)) OR ((subject_kind = 'run'::text) AND (run_id IS NOT NULL) AND (doc_id IS NULL) AND (knowledge_node_id IS NULL) AND (bug_id IS NULL) AND (event_id IS NULL)) OR ((subject_kind = 'document'::text) AND (run_id IS NULL) AND (doc_id IS NOT NULL) AND (knowledge_node_id IS NULL) AND (bug_id IS NULL) AND (event_id IS NULL)) OR ((subject_kind = 'knowledge'::text) AND (run_id IS NULL) AND (doc_id IS NULL) AND (knowledge_node_id IS NOT NULL) AND (bug_id IS NULL) AND (event_id IS NULL)) OR ((subject_kind = 'bug'::text) AND (run_id IS NULL) AND (doc_id IS NULL) AND (knowledge_node_id IS NULL) AND (bug_id IS NOT NULL) AND (event_id IS NULL)) OR ((subject_kind = 'event'::text) AND (run_id IS NULL) AND (doc_id IS NULL) AND (knowledge_node_id IS NULL) AND (bug_id IS NULL) AND (event_id IS NOT NULL)))),
+    CONSTRAINT eval_assessment_value_check CHECK (((value IS NULL) = (excluded_reason IS NOT NULL)))
 );
 
 
@@ -690,25 +654,14 @@ CREATE TABLE zz.eval_dimension (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     protocol_version_id uuid NOT NULL,
     key text NOT NULL,
-    name text NOT NULL,
     canonical_kind text NOT NULL,
     weight numeric NOT NULL,
     required boolean NOT NULL,
     applicable boolean DEFAULT true NOT NULL,
     not_applicable_reason text,
     CONSTRAINT eval_dimension_canonical_kind_check CHECK ((canonical_kind = ANY (ARRAY['effectiveness'::text, 'reliability'::text, 'constraint_adherence'::text, 'recovery_robustness'::text, 'efficiency'::text, 'generalization'::text]))),
-    CONSTRAINT eval_dimension_check CHECK (((applicable AND (not_applicable_reason IS NULL)) OR ((NOT applicable) AND (not_applicable_reason IS NOT NULL))))
-);
-
-
---
--- Name: eval_evaluator; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.eval_evaluator (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    stable_key text NOT NULL,
-    kind text NOT NULL
+    CONSTRAINT eval_dimension_check CHECK (((applicable AND (not_applicable_reason IS NULL)) OR ((NOT applicable) AND (not_applicable_reason IS NOT NULL)))),
+    CONSTRAINT eval_dimension_weight_check CHECK (((weight >= (0)::numeric) AND (weight <= (1)::numeric)))
 );
 
 
@@ -718,12 +671,11 @@ CREATE TABLE zz.eval_evaluator (
 
 CREATE TABLE zz.eval_evaluator_qualification (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    evaluator_version_id uuid NOT NULL,
-    protocol_version_id uuid NOT NULL,
-    subject_scope jsonb NOT NULL,
     state text NOT NULL,
     evidence jsonb NOT NULL,
     qualified_at timestamp with time zone NOT NULL,
+    measure_id uuid NOT NULL,
+    qualified_by uuid NOT NULL,
     CONSTRAINT eval_evaluator_qualification_state_check CHECK ((state = ANY (ARRAY['unqualified'::text, 'mechanically_qualified'::text, 'operationally_qualified'::text, 'human_calibrated'::text])))
 );
 
@@ -734,49 +686,51 @@ CREATE TABLE zz.eval_evaluator_qualification (
 
 CREATE TABLE zz.eval_evaluator_version (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    evaluator_id uuid NOT NULL,
     version integer NOT NULL,
     question text NOT NULL,
     answer_schema jsonb NOT NULL,
-    polarity jsonb NOT NULL,
-    model_policy jsonb NOT NULL,
-    content_digest text NOT NULL
+    positive_answer text,
+    content_digest text NOT NULL,
+    stable_key text NOT NULL
 );
 
 
 --
--- Name: eval_evidence_snapshot; Type: TABLE; Schema: zz; Owner: -
+-- Name: eval_failure_mode; Type: TABLE; Schema: zz; Owner: -
 --
 
-CREATE TABLE zz.eval_evidence_snapshot (
+CREATE TABLE zz.eval_failure_mode (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    observation_snapshot_id uuid NOT NULL,
-    subject_version_id uuid NOT NULL,
-    protocol_version_id uuid NOT NULL,
-    coverage jsonb NOT NULL,
-    content_digest text NOT NULL,
+    plugin_id uuid NOT NULL,
+    stable_key text NOT NULL,
+    description text NOT NULL,
     created_at timestamp with time zone NOT NULL
 );
 
 
 --
--- Name: eval_failure_mode_candidate; Type: TABLE; Schema: zz; Owner: -
+-- Name: eval_failure_mode_sighting; Type: TABLE; Schema: zz; Owner: -
 --
 
-CREATE TABLE zz.eval_failure_mode_candidate (
+CREATE TABLE zz.eval_failure_mode_sighting (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
+    failure_mode_id uuid NOT NULL,
     observation_snapshot_id uuid NOT NULL,
-    stable_key text,
     description text NOT NULL,
-    prevalence jsonb NOT NULL,
+    prevalence_numerator integer NOT NULL,
+    prevalence_denominator integer NOT NULL,
     owner_kind text NOT NULL,
+    owner_ref text,
+    ownership_reason text,
     confidence numeric,
+    assessment_id bigint,
+    description_model_call_id bigint,
     evidence_refs jsonb NOT NULL,
-    status text NOT NULL,
-    merged_into_id uuid,
+    discovered_by uuid,
+    discovery_key text,
     created_at timestamp with time zone NOT NULL,
-    CONSTRAINT eval_failure_mode_candidate_owner_kind_check CHECK ((owner_kind = ANY (ARRAY['plugin'::text, 'dependency'::text, 'platform'::text, 'environment'::text, 'user_input'::text, 'unknown'::text]))),
-    CONSTRAINT eval_failure_mode_candidate_status_check CHECK ((status = ANY (ARRAY['candidate'::text, 'accepted'::text, 'rejected'::text, 'merged'::text])))
+    CONSTRAINT eval_failure_mode_sighting_owner_kind_check CHECK ((owner_kind = ANY (ARRAY['plugin'::text, 'dependency'::text, 'platform'::text, 'environment'::text, 'user_input'::text, 'unknown'::text]))),
+    CONSTRAINT eval_failure_mode_sighting_prevalence_check CHECK ((prevalence_numerator <= prevalence_denominator))
 );
 
 
@@ -847,13 +801,13 @@ COMMENT ON COLUMN zz.eval_finding.superseded_by IS 'The finding that corrected t
 --
 
 CREATE TABLE zz.eval_idempotency (
-    principal text NOT NULL,
     tool text NOT NULL,
     idempotency_key text NOT NULL,
     request_digest text NOT NULL,
     result_table text NOT NULL,
     result_id uuid NOT NULL,
-    created_at timestamp with time zone NOT NULL
+    created_at timestamp with time zone NOT NULL,
+    principal_id uuid NOT NULL
 );
 
 
@@ -867,13 +821,17 @@ CREATE TABLE zz.eval_measure (
     key text NOT NULL,
     evaluator_type text NOT NULL,
     weight numeric NOT NULL,
-    suite text NOT NULL,
     required boolean NOT NULL,
     definition jsonb NOT NULL,
     evaluator_version_id uuid,
+    protocol_version_id uuid NOT NULL,
+    fact_key text,
+    subject_kind text,
+    guardrail_threshold numeric,
     CONSTRAINT eval_measure_check CHECK (((evaluator_type <> ALL (ARRAY['bounded_semantic'::text, 'generative_critic'::text])) OR (evaluator_version_id IS NOT NULL))),
     CONSTRAINT eval_measure_evaluator_type_check CHECK ((evaluator_type = ANY (ARRAY['deterministic'::text, 'outcome'::text, 'bounded_semantic'::text, 'generative_critic'::text, 'human'::text]))),
-    CONSTRAINT eval_measure_suite_check CHECK ((suite = ANY (ARRAY['capability'::text, 'regression'::text, 'production'::text])))
+    CONSTRAINT eval_measure_evaluator_version_check CHECK (((evaluator_type = ANY (ARRAY['bounded_semantic'::text, 'generative_critic'::text])) = (evaluator_version_id IS NOT NULL))),
+    CONSTRAINT eval_measure_fact_key_check CHECK (((evaluator_type = ANY (ARRAY['deterministic'::text, 'outcome'::text])) = (fact_key IS NOT NULL)))
 );
 
 
@@ -883,16 +841,21 @@ CREATE TABLE zz.eval_measure (
 
 CREATE TABLE zz.eval_observation_snapshot (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    subject_version_id uuid NOT NULL,
-    production_window jsonb NOT NULL,
-    coverage jsonb NOT NULL,
     usable_run_count integer NOT NULL,
     total_run_count integer NOT NULL,
-    runtime_identity jsonb NOT NULL,
-    environment_digest text NOT NULL,
     evidence_digest text NOT NULL,
     created_at timestamp with time zone NOT NULL,
-    facts jsonb
+    facts jsonb,
+    plugin_version_id uuid NOT NULL,
+    window_from timestamp with time zone,
+    window_to timestamp with time zone,
+    surface_observed integer NOT NULL,
+    surface_total integer NOT NULL,
+    surface_source text,
+    platform_version text NOT NULL,
+    recorded_by uuid NOT NULL,
+    CONSTRAINT eval_observation_snapshot_run_count_check CHECK ((usable_run_count <= total_run_count)),
+    CONSTRAINT eval_observation_snapshot_window_check CHECK ((window_from <= window_to))
 );
 
 
@@ -904,13 +867,12 @@ COMMENT ON COLUMN zz.eval_observation_snapshot.facts IS 'Every ObservedFact comp
 
 
 --
--- Name: eval_protocol; Type: TABLE; Schema: zz; Owner: -
+-- Name: eval_protocol_failure_mode; Type: TABLE; Schema: zz; Owner: -
 --
 
-CREATE TABLE zz.eval_protocol (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    plugin_id uuid NOT NULL,
-    protocol_key text NOT NULL
+CREATE TABLE zz.eval_protocol_failure_mode (
+    protocol_version_id uuid NOT NULL,
+    failure_mode_id uuid NOT NULL
 );
 
 
@@ -920,19 +882,21 @@ CREATE TABLE zz.eval_protocol (
 
 CREATE TABLE zz.eval_protocol_version (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    protocol_id uuid NOT NULL,
     version integer NOT NULL,
-    subject_compatibility jsonb NOT NULL,
     purpose text NOT NULL,
-    observable_surfaces jsonb NOT NULL,
-    failure_taxonomy jsonb NOT NULL,
-    suites jsonb NOT NULL,
     qualification_policy jsonb NOT NULL,
     scoring_policy jsonb NOT NULL,
     improvement_policy jsonb NOT NULL,
     content_digest text NOT NULL,
-    approved_document_path text,
-    created_at timestamp with time zone NOT NULL
+    created_at timestamp with time zone NOT NULL,
+    plugin_id uuid NOT NULL,
+    protocol_key text NOT NULL,
+    observable_surfaces text[] NOT NULL,
+    approved_doc_id uuid,
+    affirmed_by uuid,
+    affirmed_at timestamp with time zone,
+    recorded_by uuid NOT NULL,
+    CONSTRAINT eval_protocol_version_affirmation_check CHECK ((((approved_doc_id IS NULL) = (affirmed_by IS NULL)) AND ((approved_doc_id IS NULL) = (affirmed_at IS NULL))))
 );
 
 
@@ -942,96 +906,40 @@ CREATE TABLE zz.eval_protocol_version (
 
 CREATE TABLE zz.eval_run (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    subject_version_id uuid NOT NULL,
     protocol_version_id uuid NOT NULL,
-    evidence_snapshot_id uuid NOT NULL,
-    run_status text NOT NULL,
     score_status text,
     overall_score numeric,
-    score_interval jsonb,
-    dimension_scores jsonb,
     guardrail_status text,
-    coverage jsonb NOT NULL,
     created_at timestamp with time zone NOT NULL,
-    guardrails jsonb,
+    team_id uuid NOT NULL,
+    initiative_id uuid,
+    observation_snapshot_id uuid NOT NULL,
+    score_lower numeric,
+    score_upper numeric,
+    measure_coverage numeric,
+    establishment_blocked_by text[],
+    scorer_version text,
+    started_by uuid NOT NULL,
+    scored_at timestamp with time zone,
     CONSTRAINT eval_run_guardrail_status_check CHECK ((guardrail_status = ANY (ARRAY['pass'::text, 'fail'::text, 'not_established'::text]))),
-    CONSTRAINT eval_run_run_status_check CHECK ((run_status = ANY (ARRAY['pending'::text, 'running'::text, 'completed'::text, 'failed'::text, 'cancelled'::text]))),
-    CONSTRAINT eval_run_score_status_check CHECK ((score_status = ANY (ARRAY['established'::text, 'provisional'::text, 'not_established'::text])))
+    CONSTRAINT eval_run_overall_score_check CHECK (((overall_score >= (0)::numeric) AND (overall_score <= (10)::numeric))),
+    CONSTRAINT eval_run_score_status_check CHECK ((score_status = ANY (ARRAY['established'::text, 'provisional'::text, 'not_established'::text]))),
+    CONSTRAINT eval_run_scored_check CHECK (((scored_at IS NULL) = (score_status IS NULL)))
 );
 
 
 --
--- Name: COLUMN eval_run.guardrails; Type: COMMENT; Schema: zz; Owner: -
+-- Name: eval_run_dimension; Type: TABLE; Schema: zz; Owner: -
 --
 
-COMMENT ON COLUMN zz.eval_run.guardrails IS 'evaluateGuardrails() output for this run''s protocol.improvement.criticalGuardrails: [{key, threshold, value, status}]. guardrail_status is the reduced pass/fail/not_established this column explains.';
-
-
---
--- Name: eval_score; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.eval_score (
-    eval_id uuid NOT NULL,
-    subject_id uuid NOT NULL,
+CREATE TABLE zz.eval_run_dimension (
+    eval_run_id uuid NOT NULL,
+    protocol_version_id uuid NOT NULL,
     dimension_id uuid NOT NULL,
-    score numeric(2,1) NOT NULL,
-    quote text DEFAULT ''::text NOT NULL,
-    reason text DEFAULT ''::text NOT NULL,
-    is_control boolean DEFAULT false NOT NULL,
-    confidence numeric,
-    probabilities jsonb,
-    CONSTRAINT eval_score_score_check CHECK (((score >= (1)::numeric) AND (score <= (5)::numeric)))
-);
-
-
---
--- Name: COLUMN eval_score.score; Type: COMMENT; Schema: zz; Owner: -
---
-
-COMMENT ON COLUMN zz.eval_score.score IS 'One dimension, 1.0-5.0. Halves allowed: a judge who means 4.5 must not be recorded as 5.';
-
-
---
--- Name: eval_subject; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.eval_subject (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    eval_id uuid NOT NULL,
-    team_id uuid,
-    initiative_slug text NOT NULL,
-    path text,
-    content_hash text DEFAULT ''::text NOT NULL,
-    git_commit text DEFAULT ''::text NOT NULL,
-    doc_id uuid,
-    evaluated_at timestamp with time zone DEFAULT now() NOT NULL,
-    run_id uuid,
-    plugin_version_id uuid,
-    CONSTRAINT eval_subject_names_its_subject CHECK ((((path IS NOT NULL) AND (run_id IS NULL)) OR ((path IS NULL) AND (run_id IS NOT NULL))))
-);
-
-
---
--- Name: COLUMN eval_subject.run_id; Type: COMMENT; Schema: zz; Owner: -
---
-
-COMMENT ON COLUMN zz.eval_subject.run_id IS 'The window of work judged, when a skill produces no document. Exactly one of path/run_id.';
-
-
---
--- Name: eval_subject_version; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.eval_subject_version (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    plugin_id uuid NOT NULL,
-    declared_version text NOT NULL,
-    content_digest text NOT NULL,
-    component_manifest jsonb NOT NULL,
-    source_locator jsonb NOT NULL,
-    release_identity jsonb NOT NULL,
-    captured_at timestamp with time zone NOT NULL
+    score numeric,
+    coverage numeric,
+    CONSTRAINT eval_run_dimension_coverage_check CHECK (((coverage >= (0)::numeric) AND (coverage <= (1)::numeric))),
+    CONSTRAINT eval_run_dimension_score_check CHECK (((score >= (0)::numeric) AND (score <= (10)::numeric)))
 );
 
 
@@ -1442,10 +1350,18 @@ CREATE TABLE zz.plugin (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     name text NOT NULL,
     origin text NOT NULL,
-    owner_team text,
-    evolvable boolean DEFAULT false NOT NULL,
-    release_owners jsonb DEFAULT '[]'::jsonb NOT NULL,
+    owner_team_id uuid,
     CONSTRAINT plugin_origin_check CHECK ((origin = ANY (ARRAY['platform'::text, 'third_party'::text])))
+);
+
+
+--
+-- Name: plugin_release_owner; Type: TABLE; Schema: zz; Owner: -
+--
+
+CREATE TABLE zz.plugin_release_owner (
+    plugin_id uuid NOT NULL,
+    team_id uuid NOT NULL
 );
 
 
@@ -1456,7 +1372,8 @@ CREATE TABLE zz.plugin (
 CREATE TABLE zz.plugin_tool (
     plugin_version_id uuid NOT NULL,
     name text NOT NULL,
-    door text NOT NULL
+    door text NOT NULL,
+    CONSTRAINT plugin_tool_door_check CHECK ((door = ANY (ARRAY['core'::text, 'eval'::text, 'manage'::text])))
 );
 
 
@@ -1469,7 +1386,11 @@ CREATE TABLE zz.plugin_version (
     plugin_id uuid NOT NULL,
     version text NOT NULL,
     digest text NOT NULL,
-    rubric_id uuid
+    released_at timestamp with time zone DEFAULT now() NOT NULL,
+    component_manifest jsonb,
+    source_locator jsonb,
+    tree_digest text,
+    resolved_commit text
 );
 
 
@@ -1479,7 +1400,8 @@ CREATE TABLE zz.plugin_version (
 
 CREATE TABLE zz.plugin_version_skill (
     plugin_version_id uuid NOT NULL,
-    skill_version_id uuid NOT NULL
+    skill_version_id uuid NOT NULL,
+    skill_id uuid NOT NULL
 );
 
 
@@ -1558,56 +1480,6 @@ COMMENT ON COLUMN zz.release_attempt.applied_by IS 'The principal whose release_
 --
 
 COMMENT ON COLUMN zz.release_attempt.applying_at IS 'When release_apply moved this attempt to applying. An attempt still applying long after the CLI''s own gate and release timeouts is stale: release_apply names it for reconciliation.';
-
-
---
--- Name: rubric; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.rubric (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    version text NOT NULL,
-    derived_from_eval uuid,
-    approved_by text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    subject text DEFAULT 'auto'::text NOT NULL,
-    plugin_id uuid NOT NULL,
-    CONSTRAINT rubric_subject_check CHECK ((subject = ANY (ARRAY['auto'::text, 'document'::text, 'trace'::text, 'initiative'::text])))
-);
-
-
---
--- Name: COLUMN rubric.subject; Type: COMMENT; Schema: zz; Owner: -
---
-
-COMMENT ON COLUMN zz.rubric.subject IS 'What this ruler is applied to: the documents the subject produced, its run traces, or auto — documents where they exist and traces otherwise.';
-
-
---
--- Name: rubric_dimension; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.rubric_dimension (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    rubric_id uuid NOT NULL,
-    name text NOT NULL,
-    five_means text NOT NULL,
-    one_means text NOT NULL,
-    ordinal integer DEFAULT 0 NOT NULL,
-    kind text DEFAULT 'qualitative'::text NOT NULL,
-    threshold text DEFAULT ''::text NOT NULL,
-    threshold_reason text DEFAULT ''::text NOT NULL,
-    levels text[],
-    reads text[] DEFAULT '{}'::text[] NOT NULL,
-    CONSTRAINT rubric_dimension_kind_check CHECK ((kind = ANY (ARRAY['qualitative'::text, 'quantitative'::text])))
-);
-
-
---
--- Name: COLUMN rubric_dimension.reads; Type: COMMENT; Schema: zz; Owner: -
---
-
-COMMENT ON COLUMN zz.rubric_dimension.reads IS 'Dotted paths into the facts sheet plugin_profile produces, e.g. record.revised_with_evidence_pct. Empty for a qualitative dimension, which reads the artifact instead. A quantitative dimension whose paths are not on the sheet cannot be measured, and is refused at ruler_record.';
 
 
 --
@@ -1764,11 +1636,8 @@ CREATE TABLE zz.search_history_default (
 CREATE TABLE zz.skill (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     name text NOT NULL,
-    kind text NOT NULL,
     flow text,
-    ordinal integer,
-    retired boolean DEFAULT false NOT NULL,
-    CONSTRAINT skill_belongs_correctly CHECK ((((kind = 'flow_step'::text) AND (flow IS NOT NULL)) OR ((kind = 'plugin_skill'::text) AND (flow IS NULL))))
+    retired boolean DEFAULT false NOT NULL
 );
 
 
@@ -1777,21 +1646,6 @@ CREATE TABLE zz.skill (
 --
 
 COMMENT ON COLUMN zz.skill.retired IS 'No longer in the catalog. Kept because zz.run and zz.doc attribute documents to its versions.';
-
-
---
--- Name: skill_asset; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.skill_asset (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    skill_version_id uuid NOT NULL,
-    kind text NOT NULL,
-    path text NOT NULL,
-    content_hash text DEFAULT ''::text NOT NULL,
-    description text DEFAULT ''::text NOT NULL,
-    CONSTRAINT skill_asset_kind_check CHECK ((kind = ANY (ARRAY['script'::text, 'reference'::text, 'tool_index'::text])))
-);
 
 
 --
@@ -2086,6 +1940,22 @@ ALTER TABLE ONLY zz.eval_assessment
 
 
 --
+-- Name: eval_assessment eval_assessment_subject_key; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_assessment
+    ADD CONSTRAINT eval_assessment_subject_key UNIQUE NULLS NOT DISTINCT (eval_run_id, measure_id, subject_kind, run_id, doc_id, doc_revision, knowledge_node_id, bug_id, event_id);
+
+
+--
+-- Name: eval_dimension eval_dimension_id_protocol_version_id_key; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_dimension
+    ADD CONSTRAINT eval_dimension_id_protocol_version_id_key UNIQUE (id, protocol_version_id);
+
+
+--
 -- Name: eval_dimension eval_dimension_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -2094,11 +1964,11 @@ ALTER TABLE ONLY zz.eval_dimension
 
 
 --
--- Name: eval_evaluator eval_evaluator_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_dimension eval_dimension_protocol_version_id_key_key; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
-ALTER TABLE ONLY zz.eval_evaluator
-    ADD CONSTRAINT eval_evaluator_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY zz.eval_dimension
+    ADD CONSTRAINT eval_dimension_protocol_version_id_key_key UNIQUE (protocol_version_id, key);
 
 
 --
@@ -2110,22 +1980,6 @@ ALTER TABLE ONLY zz.eval_evaluator_qualification
 
 
 --
--- Name: eval_evaluator eval_evaluator_stable_key_key; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_evaluator
-    ADD CONSTRAINT eval_evaluator_stable_key_key UNIQUE (stable_key);
-
-
---
--- Name: eval_evaluator_version eval_evaluator_version_evaluator_id_version_key; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_evaluator_version
-    ADD CONSTRAINT eval_evaluator_version_evaluator_id_version_key UNIQUE (evaluator_id, version);
-
-
---
 -- Name: eval_evaluator_version eval_evaluator_version_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -2134,27 +1988,43 @@ ALTER TABLE ONLY zz.eval_evaluator_version
 
 
 --
--- Name: eval_evidence_snapshot eval_evidence_snapshot_observation_protocol_key; Type: CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_evaluator_version eval_evaluator_version_stable_key_content_digest_key; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
-ALTER TABLE ONLY zz.eval_evidence_snapshot
-    ADD CONSTRAINT eval_evidence_snapshot_observation_protocol_key UNIQUE (observation_snapshot_id, protocol_version_id);
-
-
---
--- Name: eval_evidence_snapshot eval_evidence_snapshot_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_evidence_snapshot
-    ADD CONSTRAINT eval_evidence_snapshot_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY zz.eval_evaluator_version
+    ADD CONSTRAINT eval_evaluator_version_stable_key_content_digest_key UNIQUE (stable_key, content_digest);
 
 
 --
--- Name: eval_failure_mode_candidate eval_failure_mode_candidate_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_evaluator_version eval_evaluator_version_stable_key_version_key; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
-ALTER TABLE ONLY zz.eval_failure_mode_candidate
-    ADD CONSTRAINT eval_failure_mode_candidate_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY zz.eval_evaluator_version
+    ADD CONSTRAINT eval_evaluator_version_stable_key_version_key UNIQUE (stable_key, version);
+
+
+--
+-- Name: eval_failure_mode eval_failure_mode_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_failure_mode
+    ADD CONSTRAINT eval_failure_mode_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: eval_failure_mode eval_failure_mode_plugin_id_stable_key_key; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_failure_mode
+    ADD CONSTRAINT eval_failure_mode_plugin_id_stable_key_key UNIQUE (plugin_id, stable_key);
+
+
+--
+-- Name: eval_failure_mode_sighting eval_failure_mode_sighting_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_failure_mode_sighting
+    ADD CONSTRAINT eval_failure_mode_sighting_pkey PRIMARY KEY (id);
 
 
 --
@@ -2170,7 +2040,7 @@ ALTER TABLE ONLY zz.eval_finding
 --
 
 ALTER TABLE ONLY zz.eval_idempotency
-    ADD CONSTRAINT eval_idempotency_pkey PRIMARY KEY (principal, tool, idempotency_key);
+    ADD CONSTRAINT eval_idempotency_pkey PRIMARY KEY (principal_id, tool, idempotency_key);
 
 
 --
@@ -2182,6 +2052,14 @@ ALTER TABLE ONLY zz.eval_measure
 
 
 --
+-- Name: eval_measure eval_measure_protocol_version_id_key_key; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_measure
+    ADD CONSTRAINT eval_measure_protocol_version_id_key_key UNIQUE (protocol_version_id, key);
+
+
+--
 -- Name: eval_observation_snapshot eval_observation_snapshot_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -2190,27 +2068,11 @@ ALTER TABLE ONLY zz.eval_observation_snapshot
 
 
 --
--- Name: eval eval_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_protocol_failure_mode eval_protocol_failure_mode_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
-ALTER TABLE ONLY zz.eval
-    ADD CONSTRAINT eval_pkey PRIMARY KEY (id);
-
-
---
--- Name: eval_protocol eval_protocol_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_protocol
-    ADD CONSTRAINT eval_protocol_pkey PRIMARY KEY (id);
-
-
---
--- Name: eval_protocol eval_protocol_plugin_id_protocol_key_key; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_protocol
-    ADD CONSTRAINT eval_protocol_plugin_id_protocol_key_key UNIQUE (plugin_id, protocol_key);
+ALTER TABLE ONLY zz.eval_protocol_failure_mode
+    ADD CONSTRAINT eval_protocol_failure_mode_pkey PRIMARY KEY (protocol_version_id, failure_mode_id);
 
 
 --
@@ -2222,11 +2084,27 @@ ALTER TABLE ONLY zz.eval_protocol_version
 
 
 --
--- Name: eval_protocol_version eval_protocol_version_protocol_id_version_key; Type: CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_protocol_version eval_protocol_version_plugin_id_version_key; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.eval_protocol_version
-    ADD CONSTRAINT eval_protocol_version_protocol_id_version_key UNIQUE (protocol_id, version);
+    ADD CONSTRAINT eval_protocol_version_plugin_id_version_key UNIQUE (plugin_id, version);
+
+
+--
+-- Name: eval_run_dimension eval_run_dimension_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_run_dimension
+    ADD CONSTRAINT eval_run_dimension_pkey PRIMARY KEY (eval_run_id, dimension_id);
+
+
+--
+-- Name: eval_run eval_run_id_protocol_version_id_key; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_run
+    ADD CONSTRAINT eval_run_id_protocol_version_id_key UNIQUE (id, protocol_version_id);
 
 
 --
@@ -2235,46 +2113,6 @@ ALTER TABLE ONLY zz.eval_protocol_version
 
 ALTER TABLE ONLY zz.eval_run
     ADD CONSTRAINT eval_run_pkey PRIMARY KEY (id);
-
-
---
--- Name: eval_score eval_score_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_score
-    ADD CONSTRAINT eval_score_pkey PRIMARY KEY (eval_id, subject_id, dimension_id, is_control);
-
-
---
--- Name: eval_subject eval_subject_eval_id_initiative_slug_path_key; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_subject
-    ADD CONSTRAINT eval_subject_eval_id_initiative_slug_path_key UNIQUE (eval_id, initiative_slug, path);
-
-
---
--- Name: eval_subject eval_subject_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_subject
-    ADD CONSTRAINT eval_subject_pkey PRIMARY KEY (id);
-
-
---
--- Name: eval_subject_version eval_subject_version_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_subject_version
-    ADD CONSTRAINT eval_subject_version_pkey PRIMARY KEY (id);
-
-
---
--- Name: eval_subject_version eval_subject_version_plugin_id_declared_version_content_dig_key; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_subject_version
-    ADD CONSTRAINT eval_subject_version_plugin_id_declared_version_content_dig_key UNIQUE (plugin_id, declared_version, content_digest);
 
 
 --
@@ -2446,6 +2284,14 @@ ALTER TABLE ONLY zz.plugin
 
 
 --
+-- Name: plugin_release_owner plugin_release_owner_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.plugin_release_owner
+    ADD CONSTRAINT plugin_release_owner_pkey PRIMARY KEY (plugin_id, team_id);
+
+
+--
 -- Name: plugin_tool plugin_tool_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -2474,7 +2320,7 @@ ALTER TABLE ONLY zz.plugin_version
 --
 
 ALTER TABLE ONLY zz.plugin_version_skill
-    ADD CONSTRAINT plugin_version_skill_pkey PRIMARY KEY (plugin_version_id, skill_version_id);
+    ADD CONSTRAINT plugin_version_skill_pkey PRIMARY KEY (plugin_version_id, skill_id);
 
 
 --
@@ -2502,27 +2348,19 @@ ALTER TABLE ONLY zz.release_attempt
 
 
 --
--- Name: rubric_dimension rubric_dimension_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
+-- Name: skill_run run_initiative_id_skill_version_id_caller_session_key; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
-ALTER TABLE ONLY zz.rubric_dimension
-    ADD CONSTRAINT rubric_dimension_pkey PRIMARY KEY (id);
-
-
---
--- Name: rubric_dimension rubric_dimension_rubric_id_name_key; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.rubric_dimension
-    ADD CONSTRAINT rubric_dimension_rubric_id_name_key UNIQUE (rubric_id, name);
+ALTER TABLE ONLY zz.skill_run
+    ADD CONSTRAINT run_initiative_id_skill_version_id_caller_session_key UNIQUE (initiative_id, skill_version_id, session);
 
 
 --
--- Name: rubric rubric_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
+-- Name: skill_run run_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
-ALTER TABLE ONLY zz.rubric
-    ADD CONSTRAINT rubric_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY zz.skill_run
+    ADD CONSTRAINT run_pkey PRIMARY KEY (id);
 
 
 --
@@ -2574,22 +2412,6 @@ ALTER TABLE ONLY zz.search_history_default
 
 
 --
--- Name: skill_asset skill_asset_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.skill_asset
-    ADD CONSTRAINT skill_asset_pkey PRIMARY KEY (id);
-
-
---
--- Name: skill_asset skill_asset_skill_version_id_path_key; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.skill_asset
-    ADD CONSTRAINT skill_asset_skill_version_id_path_key UNIQUE (skill_version_id, path);
-
-
---
 -- Name: skill skill_name_key; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -2606,22 +2428,6 @@ ALTER TABLE ONLY zz.skill
 
 
 --
--- Name: skill_run run_initiative_id_skill_version_id_caller_session_key; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.skill_run
-    ADD CONSTRAINT run_initiative_id_skill_version_id_caller_session_key UNIQUE (initiative_id, skill_version_id, session);
-
-
---
--- Name: skill_run run_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.skill_run
-    ADD CONSTRAINT run_pkey PRIMARY KEY (id);
-
-
---
 -- Name: skill_run skill_run_team_id_id_key; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -2630,11 +2436,27 @@ ALTER TABLE ONLY zz.skill_run
 
 
 --
+-- Name: skill_version skill_version_content_hash_check; Type: CHECK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE zz.skill_version
+    ADD CONSTRAINT skill_version_content_hash_check CHECK ((content_hash ~ '^[0-9a-f]{64}$'::text)) NOT VALID;
+
+
+--
 -- Name: skill_version skill_version_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.skill_version
     ADD CONSTRAINT skill_version_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: skill_version skill_version_skill_id_id_key; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.skill_version
+    ADD CONSTRAINT skill_version_skill_id_id_key UNIQUE (skill_id, id);
 
 
 --
@@ -2795,24 +2617,24 @@ CREATE INDEX doc_tsv ON zz.doc USING gin (body_tsv);
 
 
 --
--- Name: eval_controls_idx; Type: INDEX; Schema: zz; Owner: -
+-- Name: eval_assessment_eval_run_id_idx; Type: INDEX; Schema: zz; Owner: -
 --
 
-CREATE INDEX eval_controls_idx ON zz.eval USING btree (controls) WHERE (controls IS NOT NULL);
-
-
---
--- Name: eval_latest_for_plugin_idx; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX eval_latest_for_plugin_idx ON zz.eval USING btree (plugin_version_id, started_at DESC) WHERE ((NOT is_control) AND (headroom_state IS NOT NULL));
+CREATE INDEX eval_assessment_eval_run_id_idx ON zz.eval_assessment USING btree (eval_run_id);
 
 
 --
--- Name: eval_subject_doc; Type: INDEX; Schema: zz; Owner: -
+-- Name: eval_evaluator_qualification_measure_id_qualified_at_idx; Type: INDEX; Schema: zz; Owner: -
 --
 
-CREATE INDEX eval_subject_doc ON zz.eval_subject USING btree (initiative_slug, path);
+CREATE INDEX eval_evaluator_qualification_measure_id_qualified_at_idx ON zz.eval_evaluator_qualification USING btree (measure_id, qualified_at DESC);
+
+
+--
+-- Name: eval_run_protocol_version_id_created_at_idx; Type: INDEX; Schema: zz; Owner: -
+--
+
+CREATE INDEX eval_run_protocol_version_id_created_at_idx ON zz.eval_run USING btree (protocol_version_id, created_at DESC);
 
 
 --
@@ -2939,13 +2761,6 @@ CREATE UNIQUE INDEX release_attempt_applying_plugin_idx ON zz.release_attempt US
 --
 
 CREATE UNIQUE INDEX release_attempt_live_candidate_idx ON zz.release_attempt USING btree (candidate_id) WHERE (status = ANY (ARRAY['applying'::text, 'released'::text]));
-
-
---
--- Name: rubric_plugin_id_version_key; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE UNIQUE INDEX rubric_plugin_id_version_key ON zz.rubric USING btree (plugin_id, version);
 
 
 --
@@ -3158,7 +2973,7 @@ ALTER TABLE ONLY zz.bug
 --
 
 ALTER TABLE ONLY zz.candidate
-    ADD CONSTRAINT candidate_base_subject_version_id_fkey FOREIGN KEY (base_subject_version_id) REFERENCES zz.eval_subject_version(id);
+    ADD CONSTRAINT candidate_base_subject_version_id_fkey FOREIGN KEY (base_subject_version_id) REFERENCES zz.plugin_version(id);
 
 
 --
@@ -3226,6 +3041,22 @@ ALTER TABLE ONLY zz.eval_assessment
 
 
 --
+-- Name: eval_assessment eval_assessment_bug_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_assessment
+    ADD CONSTRAINT eval_assessment_bug_id_fkey FOREIGN KEY (bug_id) REFERENCES zz.bug(id);
+
+
+--
+-- Name: eval_assessment eval_assessment_doc_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_assessment
+    ADD CONSTRAINT eval_assessment_doc_id_fkey FOREIGN KEY (doc_id) REFERENCES zz.doc(id);
+
+
+--
 -- Name: eval_assessment eval_assessment_eval_run_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -3234,11 +3065,19 @@ ALTER TABLE ONLY zz.eval_assessment
 
 
 --
--- Name: eval_assessment eval_assessment_evaluator_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_assessment eval_assessment_event_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.eval_assessment
-    ADD CONSTRAINT eval_assessment_evaluator_version_id_fkey FOREIGN KEY (evaluator_version_id) REFERENCES zz.eval_evaluator_version(id);
+    ADD CONSTRAINT eval_assessment_event_id_fkey FOREIGN KEY (event_id) REFERENCES zz.event(id);
+
+
+--
+-- Name: eval_assessment eval_assessment_knowledge_node_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_assessment
+    ADD CONSTRAINT eval_assessment_knowledge_node_id_fkey FOREIGN KEY (knowledge_node_id) REFERENCES zz.knowledge_node(id);
 
 
 --
@@ -3258,11 +3097,11 @@ ALTER TABLE ONLY zz.eval_assessment
 
 
 --
--- Name: eval eval_controls_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_assessment eval_assessment_run_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
-ALTER TABLE ONLY zz.eval
-    ADD CONSTRAINT eval_controls_fkey FOREIGN KEY (controls) REFERENCES zz.eval(id) ON DELETE SET NULL;
+ALTER TABLE ONLY zz.eval_assessment
+    ADD CONSTRAINT eval_assessment_run_id_fkey FOREIGN KEY (run_id) REFERENCES zz.skill_run(id);
 
 
 --
@@ -3274,75 +3113,67 @@ ALTER TABLE ONLY zz.eval_dimension
 
 
 --
--- Name: eval_evaluator_qualification eval_evaluator_qualification_evaluator_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_evaluator_qualification eval_evaluator_qualification_measure_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.eval_evaluator_qualification
-    ADD CONSTRAINT eval_evaluator_qualification_evaluator_version_id_fkey FOREIGN KEY (evaluator_version_id) REFERENCES zz.eval_evaluator_version(id);
+    ADD CONSTRAINT eval_evaluator_qualification_measure_id_fkey FOREIGN KEY (measure_id) REFERENCES zz.eval_measure(id);
 
 
 --
--- Name: eval_evaluator_qualification eval_evaluator_qualification_protocol_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_evaluator_qualification eval_evaluator_qualification_qualified_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.eval_evaluator_qualification
-    ADD CONSTRAINT eval_evaluator_qualification_protocol_version_id_fkey FOREIGN KEY (protocol_version_id) REFERENCES zz.eval_protocol_version(id);
+    ADD CONSTRAINT eval_evaluator_qualification_qualified_by_fkey FOREIGN KEY (qualified_by) REFERENCES zz.principal(id);
 
 
 --
--- Name: eval_evaluator_version eval_evaluator_version_evaluator_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_failure_mode eval_failure_mode_plugin_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
-ALTER TABLE ONLY zz.eval_evaluator_version
-    ADD CONSTRAINT eval_evaluator_version_evaluator_id_fkey FOREIGN KEY (evaluator_id) REFERENCES zz.eval_evaluator(id);
-
-
---
--- Name: eval_evidence_snapshot eval_evidence_snapshot_observation_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_evidence_snapshot
-    ADD CONSTRAINT eval_evidence_snapshot_observation_snapshot_id_fkey FOREIGN KEY (observation_snapshot_id) REFERENCES zz.eval_observation_snapshot(id);
+ALTER TABLE ONLY zz.eval_failure_mode
+    ADD CONSTRAINT eval_failure_mode_plugin_id_fkey FOREIGN KEY (plugin_id) REFERENCES zz.plugin(id);
 
 
 --
--- Name: eval_evidence_snapshot eval_evidence_snapshot_protocol_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_failure_mode_sighting eval_failure_mode_sighting_assessment_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
-ALTER TABLE ONLY zz.eval_evidence_snapshot
-    ADD CONSTRAINT eval_evidence_snapshot_protocol_version_id_fkey FOREIGN KEY (protocol_version_id) REFERENCES zz.eval_protocol_version(id);
-
-
---
--- Name: eval_evidence_snapshot eval_evidence_snapshot_subject_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_evidence_snapshot
-    ADD CONSTRAINT eval_evidence_snapshot_subject_version_id_fkey FOREIGN KEY (subject_version_id) REFERENCES zz.eval_subject_version(id);
+ALTER TABLE ONLY zz.eval_failure_mode_sighting
+    ADD CONSTRAINT eval_failure_mode_sighting_assessment_id_fkey FOREIGN KEY (assessment_id) REFERENCES zz.assessment(id);
 
 
 --
--- Name: eval_failure_mode_candidate eval_failure_mode_candidate_merged_into_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_failure_mode_sighting eval_failure_mode_sighting_description_model_call_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
-ALTER TABLE ONLY zz.eval_failure_mode_candidate
-    ADD CONSTRAINT eval_failure_mode_candidate_merged_into_id_fkey FOREIGN KEY (merged_into_id) REFERENCES zz.eval_failure_mode_candidate(id);
-
-
---
--- Name: eval_failure_mode_candidate eval_failure_mode_candidate_observation_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_failure_mode_candidate
-    ADD CONSTRAINT eval_failure_mode_candidate_observation_snapshot_id_fkey FOREIGN KEY (observation_snapshot_id) REFERENCES zz.eval_observation_snapshot(id);
+ALTER TABLE ONLY zz.eval_failure_mode_sighting
+    ADD CONSTRAINT eval_failure_mode_sighting_description_model_call_id_fkey FOREIGN KEY (description_model_call_id) REFERENCES zz.model_call(id);
 
 
 --
--- Name: eval_finding eval_finding_eval_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_failure_mode_sighting eval_failure_mode_sighting_discovered_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
-ALTER TABLE ONLY zz.eval_finding
-    ADD CONSTRAINT eval_finding_eval_id_fkey FOREIGN KEY (eval_id) REFERENCES zz.eval(id) ON DELETE CASCADE;
+ALTER TABLE ONLY zz.eval_failure_mode_sighting
+    ADD CONSTRAINT eval_failure_mode_sighting_discovered_by_fkey FOREIGN KEY (discovered_by) REFERENCES zz.principal(id);
+
+
+--
+-- Name: eval_failure_mode_sighting eval_failure_mode_sighting_failure_mode_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_failure_mode_sighting
+    ADD CONSTRAINT eval_failure_mode_sighting_failure_mode_id_fkey FOREIGN KEY (failure_mode_id) REFERENCES zz.eval_failure_mode(id);
+
+
+--
+-- Name: eval_failure_mode_sighting eval_failure_mode_sighting_observation_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_failure_mode_sighting
+    ADD CONSTRAINT eval_failure_mode_sighting_observation_snapshot_id_fkey FOREIGN KEY (observation_snapshot_id) REFERENCES zz.eval_observation_snapshot(id);
 
 
 --
@@ -3378,11 +3209,27 @@ ALTER TABLE ONLY zz.eval_finding
 
 
 --
+-- Name: eval_idempotency eval_idempotency_principal_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_idempotency
+    ADD CONSTRAINT eval_idempotency_principal_id_fkey FOREIGN KEY (principal_id) REFERENCES zz.principal(id);
+
+
+--
 -- Name: eval_measure eval_measure_dimension_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.eval_measure
     ADD CONSTRAINT eval_measure_dimension_id_fkey FOREIGN KEY (dimension_id) REFERENCES zz.eval_dimension(id);
+
+
+--
+-- Name: eval_measure eval_measure_dimension_id_protocol_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_measure
+    ADD CONSTRAINT eval_measure_dimension_id_protocol_version_id_fkey FOREIGN KEY (dimension_id, protocol_version_id) REFERENCES zz.eval_dimension(id, protocol_version_id);
 
 
 --
@@ -3394,51 +3241,91 @@ ALTER TABLE ONLY zz.eval_measure
 
 
 --
--- Name: eval_observation_snapshot eval_observation_snapshot_subject_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_observation_snapshot eval_observation_snapshot_plugin_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.eval_observation_snapshot
-    ADD CONSTRAINT eval_observation_snapshot_subject_version_id_fkey FOREIGN KEY (subject_version_id) REFERENCES zz.eval_subject_version(id);
+    ADD CONSTRAINT eval_observation_snapshot_plugin_version_id_fkey FOREIGN KEY (plugin_version_id) REFERENCES zz.plugin_version(id);
 
 
 --
--- Name: eval eval_plugin_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_observation_snapshot eval_observation_snapshot_recorded_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
-ALTER TABLE ONLY zz.eval
-    ADD CONSTRAINT eval_plugin_version_id_fkey FOREIGN KEY (plugin_version_id) REFERENCES zz.plugin_version(id);
-
-
---
--- Name: eval_protocol eval_protocol_plugin_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_protocol
-    ADD CONSTRAINT eval_protocol_plugin_id_fkey FOREIGN KEY (plugin_id) REFERENCES zz.plugin(id);
+ALTER TABLE ONLY zz.eval_observation_snapshot
+    ADD CONSTRAINT eval_observation_snapshot_recorded_by_fkey FOREIGN KEY (recorded_by) REFERENCES zz.principal(id);
 
 
 --
--- Name: eval_protocol_version eval_protocol_version_protocol_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_protocol_failure_mode eval_protocol_failure_mode_failure_mode_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_protocol_failure_mode
+    ADD CONSTRAINT eval_protocol_failure_mode_failure_mode_id_fkey FOREIGN KEY (failure_mode_id) REFERENCES zz.eval_failure_mode(id);
+
+
+--
+-- Name: eval_protocol_failure_mode eval_protocol_failure_mode_protocol_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_protocol_failure_mode
+    ADD CONSTRAINT eval_protocol_failure_mode_protocol_version_id_fkey FOREIGN KEY (protocol_version_id) REFERENCES zz.eval_protocol_version(id);
+
+
+--
+-- Name: eval_protocol_version eval_protocol_version_affirmed_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.eval_protocol_version
-    ADD CONSTRAINT eval_protocol_version_protocol_id_fkey FOREIGN KEY (protocol_id) REFERENCES zz.eval_protocol(id);
+    ADD CONSTRAINT eval_protocol_version_affirmed_by_fkey FOREIGN KEY (affirmed_by) REFERENCES zz.principal(id);
 
 
 --
--- Name: eval eval_rubric_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_protocol_version eval_protocol_version_approved_doc_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
-ALTER TABLE ONLY zz.eval
-    ADD CONSTRAINT eval_rubric_id_fkey FOREIGN KEY (rubric_id) REFERENCES zz.rubric(id);
+ALTER TABLE ONLY zz.eval_protocol_version
+    ADD CONSTRAINT eval_protocol_version_approved_doc_id_fkey FOREIGN KEY (approved_doc_id) REFERENCES zz.doc(id);
 
 
 --
--- Name: eval_run eval_run_evidence_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_protocol_version eval_protocol_version_plugin_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_protocol_version
+    ADD CONSTRAINT eval_protocol_version_plugin_id_fkey FOREIGN KEY (plugin_id) REFERENCES zz.plugin(id);
+
+
+--
+-- Name: eval_protocol_version eval_protocol_version_recorded_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_protocol_version
+    ADD CONSTRAINT eval_protocol_version_recorded_by_fkey FOREIGN KEY (recorded_by) REFERENCES zz.principal(id);
+
+
+--
+-- Name: eval_run_dimension eval_run_dimension_dimension_id_protocol_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_run_dimension
+    ADD CONSTRAINT eval_run_dimension_dimension_id_protocol_version_id_fkey FOREIGN KEY (dimension_id, protocol_version_id) REFERENCES zz.eval_dimension(id, protocol_version_id);
+
+
+--
+-- Name: eval_run_dimension eval_run_dimension_eval_run_id_protocol_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_run_dimension
+    ADD CONSTRAINT eval_run_dimension_eval_run_id_protocol_version_id_fkey FOREIGN KEY (eval_run_id, protocol_version_id) REFERENCES zz.eval_run(id, protocol_version_id);
+
+
+--
+-- Name: eval_run eval_run_observation_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.eval_run
-    ADD CONSTRAINT eval_run_evidence_snapshot_id_fkey FOREIGN KEY (evidence_snapshot_id) REFERENCES zz.eval_evidence_snapshot(id);
+    ADD CONSTRAINT eval_run_observation_snapshot_id_fkey FOREIGN KEY (observation_snapshot_id) REFERENCES zz.eval_observation_snapshot(id);
 
 
 --
@@ -3450,75 +3337,19 @@ ALTER TABLE ONLY zz.eval_run
 
 
 --
--- Name: eval_run eval_run_subject_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_run eval_run_started_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.eval_run
-    ADD CONSTRAINT eval_run_subject_version_id_fkey FOREIGN KEY (subject_version_id) REFERENCES zz.eval_subject_version(id);
+    ADD CONSTRAINT eval_run_started_by_fkey FOREIGN KEY (started_by) REFERENCES zz.principal(id);
 
 
 --
--- Name: eval_score eval_score_dimension_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+-- Name: eval_run eval_run_team_id_initiative_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
-ALTER TABLE ONLY zz.eval_score
-    ADD CONSTRAINT eval_score_dimension_id_fkey FOREIGN KEY (dimension_id) REFERENCES zz.rubric_dimension(id);
-
-
---
--- Name: eval_score eval_score_eval_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_score
-    ADD CONSTRAINT eval_score_eval_id_fkey FOREIGN KEY (eval_id) REFERENCES zz.eval(id) ON DELETE CASCADE;
-
-
---
--- Name: eval_score eval_score_subject_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_score
-    ADD CONSTRAINT eval_score_subject_id_fkey FOREIGN KEY (subject_id) REFERENCES zz.eval_subject(id) ON DELETE CASCADE;
-
-
---
--- Name: eval_subject eval_subject_eval_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_subject
-    ADD CONSTRAINT eval_subject_eval_id_fkey FOREIGN KEY (eval_id) REFERENCES zz.eval(id) ON DELETE CASCADE;
-
-
---
--- Name: eval_subject eval_subject_plugin_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_subject
-    ADD CONSTRAINT eval_subject_plugin_version_id_fkey FOREIGN KEY (plugin_version_id) REFERENCES zz.plugin_version(id);
-
-
---
--- Name: eval_subject eval_subject_run_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_subject
-    ADD CONSTRAINT eval_subject_run_id_fkey FOREIGN KEY (run_id) REFERENCES zz.skill_run(id) ON DELETE SET NULL;
-
-
---
--- Name: eval_subject eval_subject_team_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_subject
-    ADD CONSTRAINT eval_subject_team_id_fkey FOREIGN KEY (team_id) REFERENCES zz.team(id);
-
-
---
--- Name: eval_subject_version eval_subject_version_plugin_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_subject_version
-    ADD CONSTRAINT eval_subject_version_plugin_id_fkey FOREIGN KEY (plugin_id) REFERENCES zz.plugin(id);
+ALTER TABLE ONLY zz.eval_run
+    ADD CONSTRAINT eval_run_team_id_initiative_id_fkey FOREIGN KEY (team_id, initiative_id) REFERENCES zz.initiative(team_id, id);
 
 
 --
@@ -3594,6 +3425,14 @@ ALTER TABLE ONLY zz.initiative
 
 
 --
+-- Name: initiative_fact initiative_fact_initiative_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.initiative_fact
+    ADD CONSTRAINT initiative_fact_initiative_id_fkey FOREIGN KEY (initiative_id) REFERENCES zz.initiative(id) ON DELETE CASCADE;
+
+
+--
 -- Name: initiative initiative_opened_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -3610,15 +3449,7 @@ ALTER TABLE ONLY zz.initiative
 
 
 --
--- Name: initiative_fact initiative_fact_initiative_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.initiative_fact
-    ADD CONSTRAINT initiative_fact_initiative_id_fkey FOREIGN KEY (initiative_id) REFERENCES zz.initiative(id) ON DELETE CASCADE;
-
-
---
--- Name: mcp_oauth_authz mcp_oauth_authz_principal_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+-- Name: mcp_oauth_authz mcp_oauth_authz_client_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.mcp_oauth_authz
@@ -3706,6 +3537,30 @@ ALTER TABLE ONLY zz.pat
 
 
 --
+-- Name: plugin plugin_owner_team_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.plugin
+    ADD CONSTRAINT plugin_owner_team_id_fkey FOREIGN KEY (owner_team_id) REFERENCES zz.team(id);
+
+
+--
+-- Name: plugin_release_owner plugin_release_owner_plugin_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.plugin_release_owner
+    ADD CONSTRAINT plugin_release_owner_plugin_id_fkey FOREIGN KEY (plugin_id) REFERENCES zz.plugin(id) ON DELETE CASCADE;
+
+
+--
+-- Name: plugin_release_owner plugin_release_owner_team_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.plugin_release_owner
+    ADD CONSTRAINT plugin_release_owner_team_id_fkey FOREIGN KEY (team_id) REFERENCES zz.team(id);
+
+
+--
 -- Name: plugin_tool plugin_tool_plugin_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -3722,14 +3577,6 @@ ALTER TABLE ONLY zz.plugin_version
 
 
 --
--- Name: plugin_version plugin_version_rubric_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.plugin_version
-    ADD CONSTRAINT plugin_version_rubric_id_fkey FOREIGN KEY (rubric_id) REFERENCES zz.rubric(id);
-
-
---
 -- Name: plugin_version_skill plugin_version_skill_plugin_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -3738,11 +3585,11 @@ ALTER TABLE ONLY zz.plugin_version_skill
 
 
 --
--- Name: plugin_version_skill plugin_version_skill_skill_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+-- Name: plugin_version_skill plugin_version_skill_skill_id_skill_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.plugin_version_skill
-    ADD CONSTRAINT plugin_version_skill_skill_version_id_fkey FOREIGN KEY (skill_version_id) REFERENCES zz.skill_version(id);
+    ADD CONSTRAINT plugin_version_skill_skill_id_skill_version_id_fkey FOREIGN KEY (skill_id, skill_version_id) REFERENCES zz.skill_version(skill_id, id);
 
 
 --
@@ -3766,7 +3613,7 @@ ALTER TABLE ONLY zz.principal
 --
 
 ALTER TABLE ONLY zz.release_attempt
-    ADD CONSTRAINT release_attempt_base_subject_version_id_fkey FOREIGN KEY (base_subject_version_id) REFERENCES zz.eval_subject_version(id);
+    ADD CONSTRAINT release_attempt_base_subject_version_id_fkey FOREIGN KEY (base_subject_version_id) REFERENCES zz.plugin_version(id);
 
 
 --
@@ -3790,31 +3637,7 @@ ALTER TABLE ONLY zz.release_attempt
 --
 
 ALTER TABLE ONLY zz.release_attempt
-    ADD CONSTRAINT release_attempt_released_subject_version_id_fkey FOREIGN KEY (released_subject_version_id) REFERENCES zz.eval_subject_version(id);
-
-
---
--- Name: rubric_dimension rubric_dimension_rubric_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.rubric_dimension
-    ADD CONSTRAINT rubric_dimension_rubric_id_fkey FOREIGN KEY (rubric_id) REFERENCES zz.rubric(id);
-
-
---
--- Name: rubric rubric_plugin_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.rubric
-    ADD CONSTRAINT rubric_plugin_id_fkey FOREIGN KEY (plugin_id) REFERENCES zz.plugin(id);
-
-
---
--- Name: skill_asset skill_asset_skill_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.skill_asset
-    ADD CONSTRAINT skill_asset_skill_version_id_fkey FOREIGN KEY (skill_version_id) REFERENCES zz.skill_version(id);
+    ADD CONSTRAINT release_attempt_released_subject_version_id_fkey FOREIGN KEY (released_subject_version_id) REFERENCES zz.plugin_version(id);
 
 
 --

@@ -142,7 +142,7 @@ async function readIndexes(client: pg.Client, oid: string): Promise<string[]> {
   // Phase 3's migration added the first foreign key that references a NON-primary unique index on
   // another table. `conindid` is the index a constraint is built on — but for a FOREIGN KEY it is
   // the index on the table being REFERENCED, so `eval_protocol_version_approved_doc_id_fkey` and
-  // `eval_assessment_doc_id_fkey` (both added by `002_catalog_evaluation.sql`, both referencing
+  // `eval_assessment_doc_id_fkey` (both added by the phase-3 migration, both referencing
   // `zz.doc(id)`) each had `conindid = doc_id_unique`'s index. Unscoped, the predicate then read
   // `doc_id_unique` — a plain unique index, not a constraint — as constraint-backed and dropped it
   // from `indexes`, so `checks/schema-inventory.ts` reported a target index the migrated catalog

@@ -40,9 +40,9 @@
 //
 // EXEMPT, each with the reason it is:
 //
-//   `services/gateway/migrations/` — an applied migration is history. `001_init.sql` creates
-//   this table and `002_catalog_evaluation.sql` gives it its phase-3 shape; the files that write
-//   its DDL are exactly the files that must still spell it. `checks/dropped-columns.ts`,
+//   `services/gateway/migrations/` — an applied migration is history. `001_init.sql` declares
+//   this table, the phase-3 migration that gave it its shape having folded back into it; the
+//   file that writes its DDL is exactly the file that must still spell it. `checks/dropped-columns.ts`,
 //   `checks/catalog-eval-columns.ts` and `checks/plugin-version-immutable.ts` carry this
 //   exemption for the same reason.
 //

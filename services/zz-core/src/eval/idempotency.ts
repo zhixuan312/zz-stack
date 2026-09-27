@@ -3,9 +3,9 @@
  * `zz.eval_idempotency` (001), so a retried mutator call either replays the first
  * attempt's result or is refused as a conflict, and never re-runs a write it already made.
  *
- * KEYED TO THE PRINCIPAL, NOT TO THE ADDRESS (002_catalog_evaluation.sql:1157-1180): the phase-3
- * migration replaces the `principal` email text with `principal_id uuid not null` and re-keys the
- * primary key to `(principal_id, tool, idempotency_key)`. Every caller here still names its caller
+ * KEYED TO THE PRINCIPAL, NOT TO THE ADDRESS: the phase-3 migration replaced the `principal`
+ * email text with `principal_id uuid not null` and re-keyed the primary key to
+ * `(principal_id, tool, idempotency_key)`. Every caller here still names its caller
  * by the email address the door resolved, so the address is what this module is given and
  * `zz.principal` is what turns it into the key the table now holds. The lookup joins through that
  * table; the insert resolves the id in its own `values`, so a caller the platform has no principal

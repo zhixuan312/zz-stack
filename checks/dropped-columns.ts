@@ -91,11 +91,11 @@ const RETIRED: Record<string, string[]> = {
   assessment: ["requested_model", "initiative"],
   initiative_fact: ["id", "team", "initiative"],
   bug: ["team_slug", "initiative"],
-  // Phase 3's migration (`002_catalog_evaluation.sql`). This is that migration's NET effect, read
+  // Phase 3's migration. This is that migration's NET effect, read
   // off the target against the folded baseline — not off its `drop column` statements, which is a
   // list that lies: `observable_surfaces` is dropped, re-added as `observable_surfaces_text` and
-  // renamed back (002:406), so a list built from the drops alone reports a live column as retired.
-  // `polarity` (002:550) is the mirror case, retired by a rename the drops never name.
+  // renamed back, so a list built from the drops alone reports a live column as retired.
+  // `polarity` is the mirror case, retired by a rename the drops never name.
   //
   // Why this list exists at all: the plan gave this phase a check for the names its own statements
   // had to stop using (`catalog-eval-columns.ts`, I-20) and no check for the rest of its drops, so

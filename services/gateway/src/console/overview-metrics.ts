@@ -239,9 +239,18 @@ export async function readMetrics(
       db.query<{ from_work: string; imported: string; prev_from_work: string; prev_imported: string }>(
         // The shelf is a stock, so it is counted as it stands, and the comparison is the
         // same stock as it stood one window ago — not what was minted inside the window.
+        //
+        // A node's source is its first citation, and citations are rows now: the relation names
+        // an initiative id, so the slug the tile groups by is resolved through `zz.initiative`
+        // rather than read out of an array. Ordered, because a relation has no order of its own
+        // and the tile needs the same answer on every read.
         `with node as (
-           select coalesce(evidence[1],'') as src, created_at
-             from zz.knowledge_node),
+           select coalesce(e.slug, '') as src, k.created_at
+             from zz.knowledge_node k
+             left join lateral (
+               select i.slug from zz.knowledge_node_evidence ne
+                 join zz.initiative i on i.id = ne.initiative_id
+                where ne.node_id = k.id order by i.slug limit 1) e on true),
          peak as (
            select src, max(c) as ph from (
              select src, date_trunc('hour', created_at) as h, count(*) as c
@@ -319,9 +328,17 @@ export async function readMetrics(
           order by r.started_at desc limit 400`,
         [since, prevSince, scope.slug]),
       db.query<{ from_work: string; imported: string; prev_from_work: string; prev_imported: string }>(
+        // The same tile, scoped to one team: the shelf is a relation to `zz.team` now, so the
+        // team is joined on `team_id` rather than matched against a column that held the slug.
         `with node as (
-           select coalesce(evidence[1],'') as src, created_at
-             from zz.knowledge_node where team_slug = $3),
+           select coalesce(e.slug, '') as src, k.created_at
+             from zz.knowledge_node k
+             join zz.team t on t.id = k.team_id
+             left join lateral (
+               select i.slug from zz.knowledge_node_evidence ne
+                 join zz.initiative i on i.id = ne.initiative_id
+                where ne.node_id = k.id order by i.slug limit 1) e on true
+            where t.slug = $3),
          peak as (
            select src, max(c) as ph from (
              select src, date_trunc('hour', created_at) as h, count(*) as c

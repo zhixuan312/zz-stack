@@ -95,6 +95,75 @@ export function configureIndexing(accessor: () => pg.Pool | null): void {
   db = accessor;
 }
 
+/** The `zz.team.id` a shelf slug names, or null when no team carries it.
+ *
+ *  A knowledge node's shelf is a relation to `team` now, so the slug a directory is named by has
+ *  to be resolved once and the id carried from there — a node written against a slug would sit
+ *  on a shelf no reader can reach it from. */
+async function teamIdOf(p: pg.Pool, teamSlug: string): Promise<string | null> {
+  const row = (await p.query<{ id: string }>(
+    "select id::text as id from zz.team where slug=$1", [teamSlug])).rows[0];
+  return row?.id ?? null;
+}
+
+/** The same, refusing by name: a node whose directory names no team has no shelf to sit on, and
+ *  the column would refuse a null anyway — with a message that never says which slug. */
+async function teamIdFor(p: pg.Pool, teamSlug: string): Promise<string> {
+  const id = await teamIdOf(p, teamSlug);
+  if (!id) {
+    throw new Error(
+      `knowledge node on the shelf "${teamSlug}", and no team carries that slug — its team_id ` +
+      "has no row to name, so the node is refused rather than written onto a shelf nobody reads");
+  }
+  return id;
+}
+
+/** The node a recorded successor ordinal names on one shelf, or null when it is not indexed yet.
+ *  The ordinal is the file's own spelling, which is what `node_ordinal` stores. */
+async function nodeIdForOrdinal(p: pg.Pool, teamId: string, ordinal: string): Promise<string | null> {
+  const row = (await p.query<{ id: string }>(
+    `select id::text as id from zz.knowledge_node
+      where team_id=$1::uuid and node_ordinal=$2`, [teamId, ordinal])).rows[0];
+  return row?.id ?? null;
+}
+
+/** The rebuild's second pass over one shelf's supersessions: every node whose file records a
+ *  successor ordinal is re-keyed to the row that ordinal names.
+ *
+ *  A node can be indexed before its successor exists — the walk is alphabetical and `0008` sorts
+ *  before `0099` — so the first pass leaves its `superseded_by_id` null and its row `adopted`.
+ *  The ordinal is recorded in the file and not in the table, which is why this reads the shelf
+ *  again rather than the rows: the row that would say it is the one being repaired.
+ *
+ *  `lifecycle` moves with the key, because the table's own check keeps `superseded` and a named
+ *  successor together; a node that names its own ordinal is left alone, as nothing supersedes
+ *  itself. */
+async function resolveSupersessions(p: pg.Pool, teamId: string | null, root: string): Promise<number> {
+  if (!teamId) return 0;
+  const ndir = join(root, "_knowledge", "nodes");
+  if (!existsSync(ndir)) return 0;
+  let repaired = 0;
+  for (const abs of walk(ndir)) {
+    const rel = abs.slice(root.length + 1);
+    if (!indexable(rel)) continue;
+    const named = /^_knowledge\/nodes\/([0-9]+)-(.+)\.md$/.exec(rel);
+    if (!named) continue;
+    const recorded = (parseEnvelope(readFileSync(abs, "utf8")).supersededBy ?? "")
+      .replace(/^["']|["']$/g, "").trim();
+    if (!recorded || recorded === "null" || recorded === named[1]) continue;
+    const r = await p.query(
+      `update zz.knowledge_node k
+          set superseded_by_id = s.id,
+              lifecycle = 'superseded'
+         from zz.knowledge_node s
+        where k.team_id = $1::uuid and k.node_ordinal = $2
+          and s.team_id = $1::uuid and s.node_ordinal = $3`,
+      [teamId, named[1], recorded]);
+    repaired += r.rowCount ?? 0;
+  }
+  return repaired;
+}
+
 /** Write one file's row into zz.doc — envelope fields plus full text, derived and
  * rebuildable. Returns true when the index actually changed.
  *
@@ -126,19 +195,44 @@ export async function indexDoc(root: string, relPath: string, content: string, s
     // A knowledge node is not a document and goes to its own table. A node is adopted until
     // something better replaces it; nobody approves one, so `zz.doc.status` would have to
     // carry both a gate verdict and a lifecycle. Recognised by both halves, which agree on
-    // every row in the store: the initiative is `_knowledge` and the path is under `nodes/`.
+    // every row in the store: the initiative is `_knowledge` and the address is under `nodes/`.
     // Returning early is what keeps the two subjects from sharing a row.
     if (parts[0] === "_knowledge" && parts[1] === "nodes") {
+      // The shelf is a team row now, not a slug: a node's `team_id` is a key, and a directory
+      // whose slug names no team has no shelf for the row to sit on. Refused by name — the
+      // column would refuse a null anyway, with a message that never says which slug.
+      const teamId = await teamIdFor(p, teamSlug);
+      // The file's name is the address, and it carries both halves: `nodes/0028-a-lesson.md`
+      // is ordinal `0028` and slug `a-lesson`, which is what the spec's
+      // `unique (team_id, node_ordinal)` is for. A name that is not that shape has no honest
+      // pair to write, so it is refused rather than split by a guess.
+      const address = parts.slice(1).join("/");
+      const named = /^nodes\/([0-9]+)-(.+)\.md$/.exec(address);
+      if (!named) {
+        throw new Error(
+          `knowledge node ${relPath} is not <nodes>/<ordinal>-<slug>.md — the ordinal and the ` +
+          "slug are its address now, and a name that carries neither has no honest pair");
+      }
+      const [, nodeOrdinal, slug] = named;
       const kind = env.type ?? "knowledge";
-      const lifecycle = env.status === "superseded" ? "superseded" : "adopted";
-      const supersededBy = (env.supersededBy ?? "").replace(/^["']|["']$/g, "").trim();
+      const cited = list(env.evidence);
+      // The successor is recorded in the file as an ordinal, which is what a reader is sent to;
+      // the row holds the key, resolved here. A node indexed before its successor exists
+      // resolves to nothing — `reindexTeam`'s second pass re-keys it afterwards — and
+      // `lifecycle` follows the resolution rather than the file, because the table's own check
+      // keeps `superseded` and a named successor together and the file cannot name one.
+      const successorOrdinal = (env.supersededBy ?? "").replace(/^["']|["']$/g, "").trim();
+      const successorId = successorOrdinal && successorOrdinal !== "null"
+        ? await nodeIdForOrdinal(p, teamId, successorOrdinal)
+        : null;
+      const lifecycle = env.status === "superseded" && successorId ? "superseded" : "adopted";
       const nodeHash = createHash("sha256")
-        .update(JSON.stringify([kind, lifecycle, supersededBy, title, body,
-                                list(env.tags), list(env.evidence)])).digest("hex").slice(0, 32);
+        .update(JSON.stringify([kind, lifecycle, successorOrdinal, title, body,
+                                list(env.tags), cited])).digest("hex").slice(0, 32);
       if (skipIfHash) {
         const cur = await p.query<{ content_hash: string }>(
-          "select content_hash from zz.knowledge_node where team_slug=$1 and path=$2",
-          [teamSlug, parts.slice(1).join("/")]);
+          "select content_hash from zz.knowledge_node where team_id=$1::uuid and node_ordinal=$2",
+          [teamId, nodeOrdinal]);
         if (cur.rows[0]?.content_hash === nodeHash) return false;
       }
       // Analysed by `zz-lexical-v2`, not parsed as prose in SQL. `buildRowVector` is the
@@ -150,30 +244,52 @@ export async function indexDoc(root: string, relPath: string, content: string, s
       // the `catch` at the foot of this function: the write fails outright, with no prose
       // fallback.
       const nodeVector = buildRowVector({ title, tags: list(env.tags), body });
-      await p.query(
+      const node = (await p.query<{ id: string }>(
         `insert into zz.knowledge_node
-           (team_slug, path, kind, lifecycle, superseded_by,
-            title, body, tags, evidence, content_hash, updated_at, analyzer_version, body_tsv)
+           (team_id, node_ordinal, slug, kind, lifecycle, superseded_by_id,
+            title, body, tags, content_hash, updated_at, analyzer_version, body_tsv)
          -- The node's own recorded date, not the moment the index ran: a rebuild must not restamp
          -- the journal. The date field is what knowledge_add writes into the node frontmatter;
          -- now() is the fallback for a node that carries none, because a null would lose the
          -- ordering entirely.
-         values ($1,$2,$3,$4,$5,$6,$7,$8::text[],$9::text[],$10,
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9::text[],$10,
                  coalesce($11::timestamptz, now()), $20,
                  ${bodyTsvSql(12)})
-         on conflict (team_slug, path) do update set
-           kind=excluded.kind, lifecycle=excluded.lifecycle,
-           superseded_by=excluded.superseded_by, title=excluded.title, body=excluded.body,
-           tags=excluded.tags, evidence=excluded.evidence, content_hash=excluded.content_hash,
+         on conflict (team_id, node_ordinal) do update set
+           slug=excluded.slug, kind=excluded.kind, lifecycle=excluded.lifecycle,
+           superseded_by_id=excluded.superseded_by_id, title=excluded.title, body=excluded.body,
+           tags=excluded.tags, content_hash=excluded.content_hash,
            updated_at=excluded.updated_at, analyzer_version=excluded.analyzer_version,
-           body_tsv=excluded.body_tsv`,
-        [teamSlug, parts.slice(1).join("/"), kind, lifecycle,
-         supersededBy && supersededBy !== "null" ? supersededBy : null,
-         title, body, list(env.tags), list(env.evidence), nodeHash,
+           body_tsv=excluded.body_tsv
+         returning id::text as id`,
+        [teamId, nodeOrdinal, slug, kind, lifecycle, successorId,
+         title, body, list(env.tags), nodeHash,
          /^\d{4}-\d{2}-\d{2}$/.test((env.date ?? "").trim()) ? env.date.trim() : null,
          // $12-$19 — the eight `bodyTsvSql` binds: the two configuration names, then the
          // six space-joined term strings (A/B/C x latin/han). $20 is the analyzer.
-         ...bodyTsvParams(nodeVector), nodeVector.analyzer]);
+         ...bodyTsvParams(nodeVector), nodeVector.analyzer])).rows[0];
+      // The citations are rows now, not a slug array: a slug is team-scoped, so the store's 58
+      // citations that point at another shelf could not be told apart from a same-named
+      // initiative on the node's own. Rewritten wholesale rather than diffed — the file is the
+      // source of truth for what a node cites, and the set is a handful of rows.
+      //
+      // A cited slug that names no initiative on any shelf inserts nothing, which is the
+      // reading the migration takes of a citation it cannot resolve; `knowledge_add` refuses
+      // one at the door, so this is the repair path for a store that changed underneath it.
+      // The citing node's own team wins a tie, the way the migration resolves the ambiguity.
+      await p.query("delete from zz.knowledge_node_evidence where node_id=$1::uuid", [node.id]);
+      for (const citedSlug of cited) {
+        await p.query(
+          `insert into zz.knowledge_node_evidence (node_id, initiative_id)
+           select $1::uuid, i.id
+             from zz.initiative i
+             join zz.team t on t.id = i.team_id
+            where i.slug = $2
+            order by (t.id = $3::uuid) desc, i.id
+            limit 1
+           on conflict do nothing`,
+          [node.id, citedSlug, teamId]);
+      }
       return true;
     }
 
@@ -323,10 +439,18 @@ export async function reindexTeam(teamSlug: string, force = false): Promise<{ sc
   if (!existsSync(root)) {
     const r = await p.query("delete from zz.doc where team_slug=$1", [teamSlug]);
     // And the knowledge shelf: a team's nodes live in their own table, so cleaning zz.doc
-    // alone leaves a retired team's journal answering knowledge_search.
-    const n = await p.query("delete from zz.knowledge_node where team_slug=$1", [teamSlug]);
+    // alone leaves a retired team's journal answering knowledge_search. The shelf is a team
+    // row now, so the cleanup keys on its id rather than on the slug the directory was named by.
+    const teamId = await teamIdOf(p, teamSlug);
+    const n = teamId
+      ? await p.query("delete from zz.knowledge_node where team_id=$1::uuid", [teamId])
+      : { rowCount: 0 };
     return { scanned: 0, indexed: 0, removed: (r.rowCount ?? 0) + (n.rowCount ?? 0) };
   }
+  // Resolved once for the whole walk: the node reaping and the supersession pass behind it both
+  // key on `team_id`, and the nodes themselves resolve it again per file because the write path
+  // has only the directory to read it from.
+  const teamId = await teamIdOf(p, teamSlug);
   const found = new Set<string>();
   let scanned = 0, indexed = 0;
   for (const abs of walk(root)) {
@@ -342,14 +466,19 @@ export async function reindexTeam(teamSlug: string, force = false): Promise<{ sc
   const gone = rows.rows.filter((r) => !found.has(`${r.initiative}\u0000${r.path}`));
   // The knowledge shelf is reaped too, from its own table. The walk above adds a node to
   // `found` like any other file, keyed the way the walk keys it: a node's `initiative`
-  // segment is the literal `_knowledge` directory and its path is the rest.
-  const nodeRows = await p.query<{ path: string }>(
-    "select path from zz.knowledge_node where team_slug=$1", [teamSlug]);
-  const nodesGone = nodeRows.rows.filter((r) => !found.has(`_knowledge\u0000${r.path}`));
+  // segment is the literal `_knowledge` directory and the rest of the name is its address,
+  // which the table now splits into the ordinal and the slug. Rebuilt here from the two
+  // columns, because that pair is what the row carries.
+  const nodeRows = await p.query<{ node_ordinal: string; slug: string }>(
+    "select node_ordinal, slug from zz.knowledge_node where team_id=$1::uuid", [teamId]);
+  const nodesGone = nodeRows.rows
+    .filter((r) => !found.has(`_knowledge\u0000nodes/${r.node_ordinal}-${r.slug}.md`));
   for (const g of nodesGone) {
-    await p.query("delete from zz.knowledge_node where team_slug=$1 and path=$2",
-      [teamSlug, g.path]);
+    await p.query("delete from zz.knowledge_node where team_id=$1::uuid and node_ordinal=$2",
+      [teamId, g.node_ordinal]);
   }
+  // Before the removals are reported, so a node repaired here is not also counted as reaped.
+  await resolveSupersessions(p, teamId, root);
   for (const g of gone) {
     await p.query("delete from zz.doc where team_slug=$1 and initiative=$2 and path=$3",
       [teamSlug, g.initiative, g.path]);
@@ -383,11 +512,15 @@ export async function reindexAllTeams(force = false): Promise<TeamReindex[]> {
   const dirs = readdirSync(teamsDir, { withFileTypes: true })
     .filter((t) => t.isDirectory()).map((t) => t.name);
   // Both tables: a team can hold knowledge nodes and no documents at all, so asking zz.doc
-  // alone leaves exactly that team unvisited.
+  // alone leaves exactly that team unvisited. The node half is its own literal because the
+  // table no longer carries a shelf slug: it resolves one through `zz.team`, and a statement
+  // that names `zz.knowledge_node` names no column this reshape retired.
+  const nodeShelves =
+    "select t.slug from zz.knowledge_node k join zz.team t on t.id = k.team_id";
   const indexed = (await p.query<{ team_slug: string }>(
     `select team_slug from zz.doc
      union
-     select team_slug from zz.knowledge_node`)).rows.map((r) => r.team_slug);
+     ${nodeShelves}`)).rows.map((r) => r.team_slug);
   const out: TeamReindex[] = [];
   for (const name of [...new Set([...dirs, ...indexed])].sort()) {
     // One team's failure is one team's: an uncaught throw would end the boot rebuild and

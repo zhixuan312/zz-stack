@@ -52,7 +52,11 @@ check("a team whose store is gone loses its index rows", () => {
   if (!all) bad.push("reindexAllTeams is gone — this check reads nothing");
   // Both tables: a team's knowledge is its own subject in its own table, and a team can hold
   // nodes and no documents at all. Pinned on the union, so dropping either half fails here.
-  else if (!/select team_slug from zz\.doc/.test(all) || !/select team_slug from zz\.knowledge_node/.test(all)) {
+  //
+  // The node half is read by the table it binds rather than by the column it once shared: a
+  // shelf is a relation to `zz.team` now, so that half selects the slug through the join and
+  // `zz.knowledge_node` carries no `team_slug` to spell.
+  else if (!/select team_slug from zz\.doc/.test(all) || !/(?:from|join) zz\.knowledge_node\b/.test(all)) {
     bad.push("reindexAllTeams does not union both index tables, so a team whose store was " +
              "removed — or one holding only knowledge nodes — is never visited and its rows " +
              "are never cleaned");

@@ -29,8 +29,7 @@ export function mountTeams(app: Express): void {
               (select count(*) from zz.doc d
                  where d.team_slug = t.slug and d.type <> 'source')                  as documents,
               (select count(*) from zz.doc d
-                 where d.team_slug = t.slug and d.type = 'source')                   as sources,
-              (select count(*) from zz.knowledge_node k where k.team_slug = t.slug)  as knowledge
+                 where d.team_slug = t.slug and d.type = 'source')                   as sources
          from zz.team t order by t.status, t.slug`)
       : await db.query(
       `select t.slug, t.name, t.status, to_char(t.created_at,'YYYY-MM-DD') as created,
@@ -40,14 +39,34 @@ export function mountTeams(app: Express): void {
               (select count(*) from zz.doc d
                  where d.team_slug = t.slug and d.type <> 'source')                  as documents,
               (select count(*) from zz.doc d
-                 where d.team_slug = t.slug and d.type = 'source')                   as sources,
-              (select count(*) from zz.knowledge_node k where k.team_slug = t.slug)  as knowledge
+                 where d.team_slug = t.slug and d.type = 'source')                   as sources
          from zz.team t where t.slug = $1 order by t.status, t.slug`, [scope.slug]);
+    // The shelf count is its own statement rather than a sixth subquery: a node's shelf is a
+    // relation to `zz.team` now, so this one joins on `team_id`, and asking it apart keeps each
+    // statement naming only the columns the table it reads actually carries. Two complete
+    // statements for the same reason as above; `count(k.id)`, not `count(*)`, so a team with no
+    // nodes is a counted zero rather than an inner join's missing row.
+    const shelves = scope.kind === "platform"
+      ? await db.query<{ slug: string; knowledge: string }>(
+      `select t.slug, count(k.id) as knowledge
+         from zz.team t
+         left join zz.knowledge_node k on k.team_id = t.id
+        group by t.slug
+        order by t.slug`)
+      : await db.query<{ slug: string; knowledge: string }>(
+      `select t.slug, count(k.id) as knowledge
+         from zz.team t
+         left join zz.knowledge_node k on k.team_id = t.id
+        where t.slug = $1
+        group by t.slug
+        order by t.slug`, [scope.slug]);
+    const bySlug = new Map(shelves.rows.map((r) => [r.slug, Number(r.knowledge)]));
     res.json({
       teams: teams.rows.map((r) => ({
         slug: r.slug, name: r.name, status: r.status, created: r.created,
         members: +r.members, initiatives: +r.initiatives,
-        documents: +r.documents, sources: +r.sources, knowledge: +r.knowledge,
+        documents: +r.documents, sources: +r.sources,
+        knowledge: bySlug.get(r.slug as string) ?? 0,
       })),
     });
   }));

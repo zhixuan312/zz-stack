@@ -71,6 +71,10 @@ check("eval_finding holds one lifecycle, and a strength carries no decision",
 // declared on it and on `doc`.
 check("the artifact and search tables are gone, knowledge_node is the spec's shape, and Chinese retrieval has its index",
       runsCheck("artifact-layer-removed.ts"));
+// `knowledge-node-ids.ts` is I-34's: no statement names the retired text relations, and each
+// of `team_id`, `node_ordinal`, `slug` and `superseded_by_id` has a writer.
+check("knowledge_node's writers and readers answer from the ids, and the evidence relation is written and read",
+      runsCheck("knowledge-node-ids.ts"));
 
 check("the resolvers are applied wherever a stored name is read", runsCheck("alias-applied.ts"));
 

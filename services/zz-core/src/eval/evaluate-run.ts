@@ -173,29 +173,47 @@ async function subjectColumnsOf(
     };
   }
   if (kind === "document") {
+    // The ref is `<initiative>/<path>`, and the two are compared as the two columns they are:
+    // an initiative slug carries no separator, so the first `/` is the split.
+    const cut = ref.indexOf("/");
+    if (cut < 0) return { error: `ERROR: subject_ref "${ref}" names no document — a document ref is <initiative>/<path>` };
     const row = (await p.query<{ id: string }>(`
-      select d.id::text as id from zz.doc d
-       where d.team_slug = $1 and (d.initiative || '/' || d.path) = $2`, [team, ref])).rows[0];
+      select d.id::text as id
+        from zz.doc d
+       where d.team_slug = $1 and d.initiative = $2 and d.path = $3`,
+      [team, ref.slice(0, cut), ref.slice(cut + 1)])).rows[0];
     if (!row) return { error: `ERROR: subject_ref "${ref}" names no document in team "${team}"'s index — nothing to record` };
     return { subject_kind: "document", ...NO_CHILD, doc_id: row.id };
   }
-  const path = ref.replace(/^_knowledge\//, "");
-  const row = (await p.query<{ id: string }>(`
-    select k.id::text as id from zz.knowledge_node k
-     where k.team_slug = $1 and k.path = $2`, [team, path])).rows[0];
+  // A knowledge node is addressed by the two halves its file's name carries: `node_ordinal` and
+  // `slug`, which is what the reshape left where one address column used to be. The ref arrives
+  // as `_knowledge/nodes/<ordinal>-<slug>.md`, so both are read out of it and compared to their
+  // own columns; a ref of any other shape names no node.
+  const named = /^_knowledge\/nodes\/([0-9]+)-(.+)\.md$/.exec(ref);
+  const row = named
+    ? (await p.query<{ id: string }>(`
+        select k.id::text as id
+          from zz.knowledge_node k
+          join zz.team t on t.id = k.team_id
+         where t.slug = $1 and k.node_ordinal = $2 and k.slug = $3`,
+      [team, named[1], named[2]])).rows[0]
+    : undefined;
   if (!row) return { error: `ERROR: subject_ref "${ref}" names no knowledge node in team "${team}"'s index — nothing to record` };
   return { subject_kind: "knowledge", ...NO_CHILD, knowledge_node_id: row.id };
 }
 
 /** The ref label a stored row is read back under — the same spelling `evaluate-measures.ts`'s own
- *  `runLevelRef` produces for the run-level rows, so `isRunLevelRef` keeps recognising them. */
+ *  `runLevelRef` produces for the run-level rows, so `isRunLevelRef` keeps recognising them.
+ *
+ *  A knowledge node's address is reassembled from the two columns the file's name splits into;
+ *  `zz.knowledge_node` has held no single address column since the reshape. */
 const SUBJECT_REF_SQL = `
   case a.subject_kind
     when 'run_level' then 'observation_snapshot:' || er.observation_snapshot_id::text
     when 'run' then a.run_id::text
     when 'bug' then 'bug:' || a.bug_id::text
     when 'event' then 'event:' || a.event_id::text
-    when 'knowledge' then '_knowledge/' || k.path
+    when 'knowledge' then '_knowledge/nodes/' || k.node_ordinal || '-' || k.slug || '.md'
     when 'document' then d.initiative || '/' || d.path
   end`;
 

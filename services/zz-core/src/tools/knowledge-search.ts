@@ -23,6 +23,16 @@ import { db, teamFor } from "../platform-db.js";
  *  added there is searchable here without anybody remembering this file. */
 import { SUBJECT_KINDS } from "./knowledge.js";
 
+/** A row of the union below: `KbRow` is the shape the answer is built from, plus the three
+ *  columns the citation graph is matched on. `subject` tells the two subjects apart, and the
+ *  two id arrays are what the neighbour lane joins on — a node's citations are rows keyed by
+ *  an initiative id, a document's are slugs, and neither is guessed at from the other. */
+interface SearchRow extends KbRow {
+  subject: string;
+  initiative_id: string | null;
+  cited_ids: string[] | null;
+}
+
 /** What an empty answer concludes, and the signals it concludes from. That file decides which
  *  kind of empty an empty answer is; this one produces its inputs. */
 import { recallOutcomeFrom, type RecallSignals } from "./knowledge-search-verdict.js";
@@ -84,9 +94,16 @@ export function registerKnowledgeSearch(server: McpServer): void {
 
       // `team_slug` is selected because the query spans two shelves and a caller reads a path
       // back with `document_read`, which is scoped to their own team. A row that does not carry
-      // its shelf answers "does not exist" for a node sitting on the platform's.
+      // its shelf answers "does not exist" for a node sitting on the platform's. It is a
+      // derived column on the node side — the shelf is `team_id` there, joined back to the
+      // slug a caller reads.
+      //
+      // `initiative_id` and `cited_ids` are the citation graph in keys: a document's own
+      // initiative row, and the initiative ids its citations name. The neighbour lane below
+      // matches on them, because a slug is team-scoped and two teams can each carry one.
       const COLS = `initiative, path, flow, type, status, outcome, approved_by, approved_at,
-                    updated_at, title, tags, evidence, superseded_by, team_slug, subject`;
+                    updated_at, title, tags, evidence, superseded_by, team_slug, subject,
+                    initiative_id, cited_ids`;
       /* The two subjects, unioned here and nowhere else. A team's documents and the platform's
        * journal are separate tables because their lifecycles are: a document is `approved` when
        * a person agreed, a node is `adopted` until something better replaces it. Each side maps
@@ -100,20 +117,46 @@ export function registerKnowledgeSearch(server: McpServer): void {
        * document that closed it, never a property of that document alone. Reading `zz.doc`
        * returned it on that one row and `null` on every sibling; the anchor answers it for all
        * of them alike. Joined by (team slug, initiative slug), not `zz.doc.initiative_id` — that
-       * column is filled by a lazy reconcile pass and can lag a document's own write. */
+       * column is filled by a lazy reconcile pass and can lag a document's own write.
+       *
+       * The node arm is its own literal, and the union's column names come from the document
+       * arm, which is why it aliases none of them. Every column it renames for the node is
+       * DERIVED from the keys the reshape left: the shelf through `team_id`, the address from
+       * the ordinal and the slug the file's name carries, the successor from `superseded_by_id`,
+       * the citations from `knowledge_node_evidence`. */
+      const NODE_ARM = `(
+        select '_knowledge', 'nodes/' || k.node_ordinal || '-' || k.slug || '.md', '', k.kind,
+               k.lifecycle, null, null, null::date, k.updated_at, k.title, k.tags,
+               -- The citations, spelled back as the team-scoped slugs a caller reads and filters
+               -- by. The relation names an initiative, so this is the one place the two are
+               -- reconciled — and the ids travel beside them, which is what the neighbour lane
+               -- matches on.
+               (select coalesce(array_agg(i.slug order by i.slug), '{}')
+                  from zz.knowledge_node_evidence ne
+                  join zz.initiative i on i.id = ne.initiative_id
+                 where ne.node_id = k.id),
+               -- The successor as the ordinal the shelf records, which is what a reader is sent
+               -- to; the key the row holds is the successor's id.
+               (select s.node_ordinal from zz.knowledge_node s where s.id = k.superseded_by_id),
+               t.slug, k.body, k.body_tsv, 'node', null,
+               (select coalesce(array_agg(ne.initiative_id), '{}')
+                  from zz.knowledge_node_evidence ne
+                 where ne.node_id = k.id)
+          from zz.knowledge_node k
+          join zz.team t on t.id = k.team_id)`;
       const SOURCE = `(
         select d.initiative, d.path, coalesce(i.flow,'') as flow, d.type, d.status, i.outcome,
                d.approved_by, d.approved_at, d.updated_at, d.title, d.tags, d.evidence,
-               d.superseded_by, d.team_slug, d.body, d.body_tsv, 'document' as subject
+               d.superseded_by, d.team_slug, d.body, d.body_tsv, 'document' as subject,
+               -- The union's column names come from this arm, so the two the node arm derives are
+               -- named here: a bare i.id would arrive as id and a bare empty-array literal as
+               -- ?column?, and the lanes below join on these two by name.
+               i.id as initiative_id, '{}'::uuid[] as cited_ids
           from zz.doc d
           left join zz.team t on t.slug = d.team_slug
           left join zz.initiative i on i.team_id = t.id and i.slug = d.initiative
         union all
-        select '_knowledge' as initiative, path, '' as flow, kind as type, lifecycle as status,
-               null as outcome, null as approved_by, null::date as approved_at,
-               updated_at, title, tags, evidence, superseded_by, team_slug, body, body_tsv,
-               'node' as subject
-          from zz.knowledge_node
+        ${NODE_ARM}
       ) k`;
       /* The query itself, through `buildSearchPredicate`: the platform's query grammar reads
        * quotes, exclusions and an explicit `OR` on the raw text, and `zz-lexical-v2` analyses
@@ -145,7 +188,7 @@ export function registerKnowledgeSearch(server: McpServer): void {
                    from ${SOURCE} where ${primary.sql}
                    order by ${query ? "rank desc, updated_at desc" : "updated_at desc"}
                    limit ${CANDIDATE_CAP}`;
-      let lexical = (await p.query(sql, primary.args)).rows as KbRow[];
+      let lexical = (await p.query(sql, primary.args)).rows as SearchRow[];
 
       /* Nothing came back, so ask the same question with OR before answering "nothing is known".
        * `websearch_to_tsquery` joins unquoted terms with AND, so a long question requires one
@@ -173,7 +216,7 @@ export function registerKnowledgeSearch(server: McpServer): void {
             `select ${COLS}, ${wRank} as rank, ${wHead} as snippet
                from ${SOURCE} where ${wide.sql}
               order by rank desc, updated_at desc
-              limit ${CANDIDATE_CAP}`, wide.args)).rows as KbRow[];
+              limit ${CANDIDATE_CAP}`, wide.args)).rows as SearchRow[];
           broadened = lexical.length > 0;
         }
       }
@@ -201,29 +244,39 @@ export function registerKnowledgeSearch(server: McpServer): void {
            from ${SOURCE} where ${tCond.join(" and ")}
            order by cardinality(array(select unnest(tags) intersect select unnest($2::text[]))) desc,
                     updated_at desc
-           limit 50`, tArgs)).rows as KbRow[];
+           limit 50`, tArgs)).rows as SearchRow[];
       }
 
-      /* Expand to graph neighbours of the top hits. A node's `evidence` names the initiatives
-       * it was learned from, so a node citing the same initiative as a strong hit is about the
-       * same work even when it shares no vocabulary. Bounded by (seeds x their evidence),
-       * fetched in one targeted query — never a scan. */
+      /* Expand to graph neighbours of the top hits. A node's citations are rows in
+       * `knowledge_node_evidence` — the initiatives it was learned from, keyed by initiative id
+       * — so a node citing the same initiative as a strong hit is about the same work even when
+       * it shares no vocabulary. The lane matches on those ids rather than on the slugs they
+       * spell: a slug is team-scoped, and two teams can each carry one. A document still cites
+       * its evidence as text this phase does not reshape, so the lane carries both keys and
+       * reads each subject by the one its citations are stored in. Bounded by (seeds x their
+       * citations), fetched in one targeted query — never a scan. */
       const seen = new Set([...lexical, ...tagged].map((r) => `${r.initiative}/${r.path}`));
       // Seeds come from both retrieved lists: a node found only by its tags is as good a
-      // starting point for the evidence graph as one found by its words.
-      const seedInitiatives = [...new Set(
-        [...lexical.slice(0, 10), ...tagged.slice(0, 10)].flatMap((r) => [...(r.evidence ?? []), r.initiative]),
-      )];
-      let neighbours: KbRow[] = [];
-      if (query && seedInitiatives.length) {
-        const nArgs: unknown[] = [[team, KNOWLEDGE_TEAM], seedInitiatives];
+      // starting point for the citation graph as one found by its words. Re-read as `SearchRow`
+      // here and not in the lists above: the three extra columns are what this lane joins on and
+      // nothing else reads them.
+      const seeds = [...lexical.slice(0, 10), ...tagged.slice(0, 10)] as SearchRow[];
+      const seedIds = [...new Set(seeds.flatMap((r) =>
+        [...(r.cited_ids ?? []), ...(r.initiative_id ? [r.initiative_id] : [])]))];
+      const seedSlugs = [...new Set(seeds.filter((r) => r.subject === "document")
+        .flatMap((r) => [...(r.evidence ?? []), r.initiative]))];
+      let neighbours: SearchRow[] = [];
+      if (query && (seedIds.length || seedSlugs.length)) {
+        const nArgs: unknown[] = [[team, KNOWLEDGE_TEAM], seedIds, seedSlugs];
         const nPut = (v: unknown) => { nArgs.push(v); return `$${nArgs.length}`; };
-        const nCond = ["team_slug = any($1::text[])", "(initiative = any($2::text[]) or evidence && $2::text[])"];
+        const nCond = ["team_slug = any($1::text[])",
+          "(initiative_id = any($2::uuid[]) or cited_ids && $2::uuid[]" +
+          " or (subject = 'document' and (initiative = any($3::text[]) or evidence && $3::text[])))"];
         applyFilters((c) => nCond.push(c), nPut);
         neighbours = ((await p.query(
           `select ${COLS}, 0::float4 as rank, left(body, 400) as snippet
            from ${SOURCE} where ${nCond.join(" and ")} order by updated_at desc limit 50`, nArgs,
-        )).rows as KbRow[]).filter((r) => !seen.has(`${r.initiative}/${r.path}`));
+        )).rows as SearchRow[]).filter((r) => !seen.has(`${r.initiative}/${r.path}`));
       }
 
       /* Reciprocal rank fusion over three ranked lists, k=60. The three signals are not on a

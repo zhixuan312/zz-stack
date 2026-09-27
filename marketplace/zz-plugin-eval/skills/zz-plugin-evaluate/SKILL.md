@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-evaluate
-version: 0.9
+version: 1.0
 description: Stage 5 of zz-plugin-eval (EVALUATE). Bind an approved protocol version to a subject's own observation snapshot, route every measure the protocol names to the real evidence it judges, and reduce the result to one deterministic overall score with its status, coverage and guardrails. No recommendation — that is EXPLAIN.
 when_to_use: "The fifth stage of zz-plugin-eval, once a protocol version is affirmed (or was already reusable). Produces no document — its output is durable score data EXPLAIN reads. No shell required."
 ---

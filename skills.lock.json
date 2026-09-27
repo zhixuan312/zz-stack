@@ -72,28 +72,28 @@
     "sha": "a5d73e2d40eb"
   },
   "zz-plugin-define-qualify": {
-    "version": "0.10",
-    "sha": "79bbf17eac62"
+    "version": "0.11",
+    "sha": "15de6bc1da86"
   },
   "zz-plugin-discover": {
-    "version": "0.5",
-    "sha": "29d81ee2bcb7"
+    "version": "0.6",
+    "sha": "6ee695cb7f52"
   },
   "zz-plugin-eval": {
     "version": "2.6",
     "sha": "ff799fe40724"
   },
   "zz-plugin-evaluate": {
-    "version": "0.9",
-    "sha": "b6930a3bc028"
+    "version": "1.0",
+    "sha": "4fbf0f92f5fd"
   },
   "zz-plugin-explain": {
     "version": "0.5",
     "sha": "31e3572df5b6"
   },
   "zz-plugin-identify": {
-    "version": "0.4",
-    "sha": "fb3b5479a3d5"
+    "version": "0.5",
+    "sha": "7c490d9ae3ab"
   },
   "zz-plugin-improve": {
     "version": "0.10",
@@ -104,8 +104,8 @@
     "sha": "552b8d705468"
   },
   "zz-plugin-promote-verify": {
-    "version": "0.9",
-    "sha": "b425ccbcb372"
+    "version": "1.0",
+    "sha": "ba849bed98ba"
   },
   "zz-authoring": {
     "version": "1.1",

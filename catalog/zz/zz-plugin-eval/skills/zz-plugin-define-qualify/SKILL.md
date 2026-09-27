@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define-qualify
-version: 0.10
+version: 0.11
 description: Stage 4 of zz-plugin-eval (DEFINE/QUALIFY), and the one gate that matters most. Derive what good means for THIS plugin from its own profile and DISCOVER's candidates, write it into protocol.md, get a person to agree it, then qualify every model-backed evaluator it names before anything is scored.
 when_to_use: "The fourth stage of zz-plugin-eval, after DISCOVER. Conditional: protocol_read decides create/revise/reuse, and this stage only writes when it says create or revise. Produces protocol.md, gated — protocol_affirm refuses to bind it until somebody approves it. No shell required."
 ---

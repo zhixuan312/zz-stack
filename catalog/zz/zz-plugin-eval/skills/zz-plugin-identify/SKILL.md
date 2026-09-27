@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-identify
-version: 0.4
+version: 0.5
 description: Stage 1 of zz-plugin-eval (IDENTIFY). Settle which plugin is being evaluated, at which exact content — catalog release or third-party capture — before any other tool on the door will resolve anything against it. Writes an immutable subject_version.
 when_to_use: "The first stage of zz-plugin-eval, once an initiative exists. Never on its own — every later stage takes the subject_version_id this settles. No shell required."
 ---

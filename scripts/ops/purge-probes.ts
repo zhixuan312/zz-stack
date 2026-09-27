@@ -50,7 +50,13 @@ async function census() {
   const one = async (label: string, sql: string) =>
     [label, Number((await db.query(sql)).rows[0].n)] as const;
   return Object.fromEntries(await Promise.all([
-    one("doc", `select count(*) n from zz.doc where initiative like '${LIKE}'`),
+    // `zz.doc` no longer carries the initiative's own name: those columns went with the file
+    // store, and a document's initiative is the row it is filed under. Counting on the retired
+    // column is what killed this script mid-purge and left probe litter that then failed every
+    // later release's verification — the litter this very sweep exists to remove.
+    one("doc", `select count(*) n from zz.doc d
+                  join zz.initiative i on i.id = d.initiative_id
+                 where i.slug like '${LIKE}'`),
     one("initiative", `select count(*) n from zz.initiative where slug like '${LIKE}'`),
     one("event", `select count(*) n from zz.event where initiative_id in (${PROBES})`),
     one("run", `select count(*) n from zz.skill_run r where r.initiative_id in (${PROBES})`),
@@ -63,8 +69,9 @@ async function census() {
     // Initiative documents only — nodes are their own table. Counting both makes deleting probe
     // nodes look like real documents going missing, and fires the survivor assertion on a purge that
     // did the right thing.
-    one("REAL doc", `select count(*) n from zz.doc
-                     where initiative not like '${LIKE}' and path not like 'nodes/%'`),
+    one("REAL doc", `select count(*) n from zz.doc d
+                       join zz.initiative i on i.id = d.initiative_id
+                      where i.slug not like '${LIKE}' and d.path not like 'nodes/%'`),
     one("REAL node", `select count(*) n from zz.knowledge_node where slug not ilike '${LIKE}'`),
   ]));
 }
@@ -160,7 +167,9 @@ if (!APPLY) {
 // measurements this purge exists to clean, while pointing at nothing a reader could open.
 await db.query("begin");
 try {
-  const d = await db.query(`delete from zz.doc where initiative like '${LIKE}'`);
+  const d = await db.query(
+    `delete from zz.doc d using zz.initiative i
+      where i.id = d.initiative_id and i.slug like '${LIKE}'`);
   const e = await db.query(`delete from zz.event where initiative_id in (${PROBES})`);
   // The chain check asks `assess` and records two audit rounds, and every answer is a row here.
   const a = await db.query(`delete from zz.assessment where initiative_id in (${PROBES})`);

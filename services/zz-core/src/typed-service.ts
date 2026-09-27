@@ -312,7 +312,7 @@ interface TypedUsage { input_tokens: number | null; output_tokens: number | null
  *  identity lives on each answer's record.
  *
  *  `error` is where a call that did not answer says why: the column's name since
- *  `002_delivery_telemetry.sql`, which also dropped the judge's `confidence` mark — what a typed
+ *  the phase-2 migration, which also dropped the judge's `confidence` mark — what a typed
  *  call spends is what this row records now, and the answer's own shape carries what it was worth.
  *
  *  Never throws: this is bookkeeping beside an answer already in hand, and a database hiccup

@@ -42,7 +42,7 @@ const count = (v: unknown): number | null =>
  * one and making two callers' spend indistinguishable.
  *
  * `_plugin` is kept to hold the positional argument `discover.ts` passes. It is named and not
- * written: `002_delivery_telemetry.sql` drops `zz.model_call.plugin`, because a row that already
+ * written: the phase-2 migration drops `zz.model_call.plugin`, because a row that already
  * says what purpose it served does not need a second copy of it. */
 export async function ask(p: pg.Pool, _plugin: string | null,
                    system: string, user: string, purpose: string): Promise<Record<string, unknown> | null> {

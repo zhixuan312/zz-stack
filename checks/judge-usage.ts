@@ -69,7 +69,7 @@ const { Refusal } = (await import(pathToFileURL(refusalDist.pathname).href)) as
 
 const fail: string[] = [];
 
-/** The columns `002_delivery_telemetry.sql` drops from `zz.model_call`. A statement still writing
+/** The columns the phase-2 migration drops from `zz.model_call`. A statement still writing
  *  one is refused by the migrated table, so writing it is a call that never lands. */
 const RETIRED_MODEL_CALL = ["plugin", "confidence", "note", "event_id"];
 
@@ -153,7 +153,7 @@ function one(rows: Record<string, unknown>[], scenario: string): Record<string, 
   for (const c of RETIRED_MODEL_CALL) {
     if (c in rows[0]) {
       fail.push(`${scenario}: the insert writes zz.model_call.${c}, which ` +
-                "002_delivery_telemetry.sql drops — the migrated table refuses the statement");
+                "the phase-2 migration drops — the migrated table refuses the statement");
     }
   }
   return rows[0];

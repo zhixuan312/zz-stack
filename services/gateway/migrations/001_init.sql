@@ -99,6 +99,8 @@
 -- absorbs: 002_a_finding_can_be_corrected.sql
 -- absorbs: 002_initiative_anchor.sql
 -- absorbs: 002_identity_access.sql
+-- absorbs: 002_delivery_telemetry.sql
+-- absorbs: 003_a_run_the_timer_invented.sql
 --
 -- requires-extension: citext
 -- requires-extension: pg_textsearch
@@ -305,22 +307,24 @@ CREATE TABLE zz.assessment (
     question_digest text NOT NULL,
     reading text,
     probability numeric,
-    requested_model text,
     resolved_model text,
     identity_assurance text,
     reason text,
-    initiative text,
     about text,
-    asked_by text NOT NULL,
     asked_at timestamp with time zone DEFAULT now() NOT NULL,
     evaluator_version_id uuid,
     distribution jsonb,
     answer_kind text DEFAULT 'noul'::text NOT NULL,
+    team_id uuid NOT NULL,
+    initiative_id uuid,
+    model_call_id bigint,
+    asked_by uuid NOT NULL,
     CONSTRAINT assessment_answer_kind_check CHECK ((answer_kind = ANY (ARRAY['noul'::text, 'choice'::text, 'score'::text]))),
     CONSTRAINT assessment_choice_score_distribution_check CHECK (((answer_kind <> ALL (ARRAY['choice'::text, 'score'::text])) OR (distribution IS NOT NULL) OR ((reading = 'unavailable'::text) AND (reason IS NOT NULL)))),
     CONSTRAINT assessment_family_implies_noul_check CHECK (((family IS NULL) OR ((reading IS NOT NULL) AND (answer_kind = 'noul'::text)))),
     CONSTRAINT assessment_family_xor_evaluator_check CHECK (((family IS NOT NULL) <> (evaluator_version_id IS NOT NULL))),
-    CONSTRAINT assessment_reading_check CHECK ((reading = ANY (ARRAY['yes'::text, 'no'::text, 'unclear'::text, 'unavailable'::text])))
+    CONSTRAINT assessment_reading_check CHECK ((reading = ANY (ARRAY['yes'::text, 'no'::text, 'unclear'::text, 'unavailable'::text]))),
+    CONSTRAINT assessment_reading_reason_check CHECK (((reading = 'unavailable'::text) = (reason IS NOT NULL)))
 );
 
 
@@ -373,20 +377,23 @@ ALTER TABLE zz.assessment ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 CREATE TABLE zz.bug (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     reported_at timestamp with time zone DEFAULT now() NOT NULL,
-    reported_by text NOT NULL,
-    team_slug text,
     title text NOT NULL,
     detail text NOT NULL,
     surface text,
-    initiative text,
     platform_version text,
     impact text DEFAULT 'wrong_result'::text NOT NULL,
     status text DEFAULT 'open'::text NOT NULL,
     resolution text,
-    resolved_by text,
     resolved_at timestamp with time zone,
+    team_id uuid,
+    initiative_id uuid,
+    duplicate_of uuid,
+    reported_by uuid NOT NULL,
+    resolved_by uuid,
+    CONSTRAINT bug_duplicate_of_check CHECK (((status = 'duplicate'::text) = (duplicate_of IS NOT NULL))),
     CONSTRAINT bug_impact_check CHECK ((impact = ANY (ARRAY['blocks_work'::text, 'wrong_result'::text, 'confusing'::text, 'cosmetic'::text]))),
-    CONSTRAINT bug_resolved_says_why CHECK ((((status = 'open'::text) AND (resolution IS NULL) AND (resolved_by IS NULL) AND (resolved_at IS NULL)) OR ((status <> 'open'::text) AND (resolution IS NOT NULL) AND (resolved_by IS NOT NULL) AND (resolved_at IS NOT NULL)))),
+    CONSTRAINT bug_initiative_id_team_id_check CHECK (((initiative_id IS NULL) OR (team_id IS NOT NULL))),
+    CONSTRAINT bug_not_self_duplicate_check CHECK (((duplicate_of IS NULL) OR (duplicate_of <> id))),
     CONSTRAINT bug_status_check CHECK ((status = ANY (ARRAY['open'::text, 'fixed'::text, 'not_a_bug'::text, 'duplicate'::text])))
 );
 
@@ -542,42 +549,6 @@ CREATE SEQUENCE zz.control_waiver_seq_seq
 --
 
 ALTER SEQUENCE zz.control_waiver_seq_seq OWNED BY zz.control_waiver.seq;
-
-
---
--- Name: decision; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.decision (
-    team_slug text NOT NULL,
-    initiative text NOT NULL,
-    path text NOT NULL,
-    role text NOT NULL,
-    key text NOT NULL,
-    verdict text DEFAULT ''::text NOT NULL,
-    qualifier text DEFAULT ''::text NOT NULL,
-    detail text DEFAULT ''::text NOT NULL,
-    checker text DEFAULT ''::text NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    doc_id uuid,
-    CONSTRAINT decision_verdict_closed CHECK ((verdict = ANY (ARRAY[''::text, 'native'::text, 'achievable'::text, 'workaround'::text, 'not_possible'::text])))
-);
-
-
---
--- Name: discussion_message; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.discussion_message (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    team_slug text NOT NULL,
-    initiative text NOT NULL,
-    doc_path text NOT NULL,
-    seq integer NOT NULL,
-    principal_id uuid NOT NULL,
-    body text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
-);
 
 
 --
@@ -1071,15 +1042,9 @@ CREATE TABLE zz.eval_subject_version (
 CREATE TABLE zz.event (
     id bigint NOT NULL,
     ts timestamp with time zone DEFAULT now() NOT NULL,
-    actor text NOT NULL,
-    team_slug text,
     kind text NOT NULL,
     subject text DEFAULT ''::text NOT NULL,
     detail jsonb DEFAULT '{}'::jsonb NOT NULL,
-    initiative text,
-    flow text,
-    step text,
-    step_version text,
     ok boolean,
     refusal text,
     run_id uuid,
@@ -1091,37 +1056,17 @@ CREATE TABLE zz.event (
     plugin text,
     plugin_version text,
     tool_key text,
-    refusal_owner text
+    refusal_owner text,
+    actor_id uuid,
+    initiative_id uuid,
+    session text DEFAULT ''::text NOT NULL,
+    skill_version_id uuid,
+    CONSTRAINT event_initiative_id_team_id_check CHECK (((initiative_id IS NULL) OR (team_id IS NOT NULL))),
+    CONSTRAINT event_kind_check CHECK ((kind ~ '^[a-z_]+(\.[a-z_]+)?$'::text)),
+    CONSTRAINT event_refusal_owner_check CHECK (((refusal_owner IS NULL) OR ((refusal_owner = ANY (ARRAY['guardrail'::text, 'ours'::text, 'theirs'::text, 'other'::text])) AND (ok = false)))),
+    CONSTRAINT event_run_id_team_id_check CHECK (((run_id IS NULL) OR (team_id IS NOT NULL))),
+    CONSTRAINT event_tool_call_names_its_tool_check CHECK (((kind <> 'tool_call'::text) OR ((ok IS NOT NULL) AND (tool_key IS NOT NULL))))
 );
-
-
---
--- Name: COLUMN event.initiative; Type: COMMENT; Schema: zz; Owner: -
---
-
-COMMENT ON COLUMN zz.event.initiative IS 'Join key to zz.doc and zz.decision. Carried forward per caller from the last call that named
-   one, because most calls do not take it as an argument.';
-
-
---
--- Name: COLUMN event.flow; Type: COMMENT; Schema: zz; Owner: -
---
-
-COMMENT ON COLUMN zz.event.flow IS 'The flow the call''s initiative runs, as declared at initiative_open; empty for a call made outside any initiative. Not attribution: use plugin / plugin_version for which plugin owns this call.';
-
-
---
--- Name: COLUMN event.step; Type: COMMENT; Schema: zz; Owner: -
---
-
-COMMENT ON COLUMN zz.event.step IS 'The skill this call was following, or NULL when none was. Never the empty string: `??` does not coalesce it, so an empty step reaches this column verbatim and is unjoinable to zz.skill while still looking like a value. Producers say unknown by omitting the field.';
-
-
---
--- Name: COLUMN event.step_version; Type: COMMENT; Schema: zz; Owner: -
---
-
-COMMENT ON COLUMN zz.event.step_version IS 'The version declared by the skill that was served WHOLE, or NULL. A supporting file beside a skill carries no version, and that is recorded as NULL rather than as an empty string, for the same reason as step.';
 
 
 --
@@ -1292,12 +1237,10 @@ COMMENT ON COLUMN zz.initiative.no_signoff_reason IS 'class=state_machine; autho
 --
 
 CREATE TABLE zz.initiative_fact (
-    id bigint NOT NULL,
-    team text NOT NULL,
-    initiative text NOT NULL,
     fact text NOT NULL,
     value text NOT NULL,
-    set_at timestamp with time zone DEFAULT now() NOT NULL
+    set_at timestamp with time zone DEFAULT now() NOT NULL,
+    initiative_id uuid NOT NULL
 );
 
 
@@ -1306,20 +1249,6 @@ CREATE TABLE zz.initiative_fact (
 --
 
 COMMENT ON TABLE zz.initiative_fact IS 'Mirror of <initiative>/_facts.json for the console. The file is authoritative; a row here is never updated once written for a given (team, initiative, fact).';
-
-
---
--- Name: initiative_fact_id_seq; Type: SEQUENCE; Schema: zz; Owner: -
---
-
-ALTER TABLE zz.initiative_fact ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME zz.initiative_fact_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
-);
 
 
 --
@@ -1415,8 +1344,6 @@ CREATE TABLE zz.membership (
 CREATE TABLE zz.model_call (
     id bigint NOT NULL,
     ts timestamp with time zone DEFAULT now() NOT NULL,
-    event_id bigint,
-    plugin text,
     purpose text NOT NULL,
     model text NOT NULL,
     input_tokens integer,
@@ -1425,8 +1352,8 @@ CREATE TABLE zz.model_call (
     duration_ms integer,
     ok boolean NOT NULL,
     attempts integer DEFAULT 1 NOT NULL,
-    confidence numeric,
-    note text
+    error text,
+    CONSTRAINT model_call_error_check CHECK (((error IS NULL) OR (NOT ok)))
 );
 
 
@@ -1684,31 +1611,6 @@ COMMENT ON COLUMN zz.rubric_dimension.reads IS 'Dotted paths into the facts shee
 
 
 --
--- Name: run; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.run (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    initiative_id uuid,
-    skill_version_id uuid,
-    caller_session text DEFAULT ''::text NOT NULL,
-    turns integer DEFAULT 0 NOT NULL,
-    calls integer DEFAULT 0 NOT NULL,
-    refusals integer DEFAULT 0 NOT NULL,
-    bytes_total bigint,
-    started_at timestamp with time zone DEFAULT now() NOT NULL,
-    ended_at timestamp with time zone
-);
-
-
---
--- Name: COLUMN run.bytes_total; Type: COMMENT; Schema: zz; Owner: -
---
-
-COMMENT ON COLUMN zz.run.bytes_total IS 'Sum of response_bytes over the run''s events. Null when no event in the run was measured — distinct from 0, which means measured and empty. Zeros written before migration 051 are ambiguous and were deliberately not converted.';
-
-
---
 -- Name: search_current; Type: TABLE; Schema: zz; Owner: -
 --
 
@@ -1893,6 +1795,33 @@ CREATE TABLE zz.skill_asset (
 
 
 --
+-- Name: skill_run; Type: TABLE; Schema: zz; Owner: -
+--
+
+CREATE TABLE zz.skill_run (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    initiative_id uuid,
+    skill_version_id uuid NOT NULL,
+    session text DEFAULT ''::text NOT NULL,
+    calls integer DEFAULT 0 NOT NULL,
+    refusals integer DEFAULT 0 NOT NULL,
+    bytes_total bigint,
+    started_at timestamp with time zone DEFAULT now() NOT NULL,
+    ended_at timestamp with time zone NOT NULL,
+    team_id uuid NOT NULL,
+    CONSTRAINT skill_run_ended_at_check CHECK ((ended_at >= started_at)),
+    CONSTRAINT skill_run_refusals_check CHECK (((0 <= refusals) AND (refusals <= calls)))
+);
+
+
+--
+-- Name: COLUMN skill_run.bytes_total; Type: COMMENT; Schema: zz; Owner: -
+--
+
+COMMENT ON COLUMN zz.skill_run.bytes_total IS 'Sum of response_bytes over the run''s events. Null when no event in the run was measured — distinct from 0, which means measured and empty. Zeros written before migration 051 are ambiguous and were deliberately not converted.';
+
+
+--
 -- Name: skill_version; Type: TABLE; Schema: zz; Owner: -
 --
 
@@ -2061,6 +1990,14 @@ ALTER TABLE ONLY zz.bug
 
 
 --
+-- Name: bug bug_team_id_id_key; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.bug
+    ADD CONSTRAINT bug_team_id_id_key UNIQUE (team_id, id);
+
+
+--
 -- Name: candidate candidate_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -2114,30 +2051,6 @@ ALTER TABLE ONLY zz.control_run
 
 ALTER TABLE ONLY zz.control_waiver
     ADD CONSTRAINT control_waiver_pkey PRIMARY KEY (seq);
-
-
---
--- Name: decision decision_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.decision
-    ADD CONSTRAINT decision_pkey PRIMARY KEY (team_slug, initiative, path, key);
-
-
---
--- Name: discussion_message discussion_message_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.discussion_message
-    ADD CONSTRAINT discussion_message_pkey PRIMARY KEY (id);
-
-
---
--- Name: discussion_message discussion_message_team_slug_initiative_doc_path_seq_key; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.discussion_message
-    ADD CONSTRAINT discussion_message_team_slug_initiative_doc_path_seq_key UNIQUE (team_slug, initiative, doc_path, seq);
 
 
 --
@@ -2385,15 +2298,7 @@ ALTER TABLE ONLY zz.improvement_run
 --
 
 ALTER TABLE ONLY zz.initiative_fact
-    ADD CONSTRAINT initiative_fact_pkey PRIMARY KEY (id);
-
-
---
--- Name: initiative_fact initiative_fact_team_initiative_fact_key; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.initiative_fact
-    ADD CONSTRAINT initiative_fact_team_initiative_fact_key UNIQUE (team, initiative, fact);
+    ADD CONSTRAINT initiative_fact_pkey PRIMARY KEY (initiative_id, fact);
 
 
 --
@@ -2621,22 +2526,6 @@ ALTER TABLE ONLY zz.rubric
 
 
 --
--- Name: run run_initiative_id_skill_version_id_caller_session_key; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.run
-    ADD CONSTRAINT run_initiative_id_skill_version_id_caller_session_key UNIQUE (initiative_id, skill_version_id, caller_session);
-
-
---
--- Name: run run_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.run
-    ADD CONSTRAINT run_pkey PRIMARY KEY (id);
-
-
---
 -- Name: search_current search_current_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -2714,6 +2603,30 @@ ALTER TABLE ONLY zz.skill
 
 ALTER TABLE ONLY zz.skill
     ADD CONSTRAINT skill_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: skill_run run_initiative_id_skill_version_id_caller_session_key; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.skill_run
+    ADD CONSTRAINT run_initiative_id_skill_version_id_caller_session_key UNIQUE (initiative_id, skill_version_id, session);
+
+
+--
+-- Name: skill_run run_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.skill_run
+    ADD CONSTRAINT run_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: skill_run skill_run_team_id_id_key; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.skill_run
+    ADD CONSTRAINT skill_run_team_id_id_key UNIQUE (team_id, id);
 
 
 --
@@ -2798,24 +2711,10 @@ CREATE INDEX artifact_passage_owner ON zz.artifact_passage USING btree (owner_id
 
 
 --
--- Name: assessment_initiative_idx; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX assessment_initiative_idx ON zz.assessment USING btree (initiative, asked_at);
-
-
---
 -- Name: bug_open; Type: INDEX; Schema: zz; Owner: -
 --
 
 CREATE INDEX bug_open ON zz.bug USING btree (status, reported_at DESC);
-
-
---
--- Name: bug_team; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX bug_team ON zz.bug USING btree (team_slug, reported_at DESC);
 
 
 --
@@ -2851,20 +2750,6 @@ CREATE INDEX control_evidence_supersedes ON zz.control_evidence USING btree (run
 --
 
 CREATE INDEX control_waiver_run ON zz.control_waiver USING btree (run_id);
-
-
---
--- Name: decision_team_initiative; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX decision_team_initiative ON zz.decision USING btree (team_slug, initiative);
-
-
---
--- Name: discussion_thread; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX discussion_thread ON zz.discussion_message USING btree (team_slug, initiative, doc_path, seq);
 
 
 --
@@ -2931,13 +2816,6 @@ CREATE INDEX eval_subject_doc ON zz.eval_subject USING btree (initiative_slug, p
 
 
 --
--- Name: event_initiative; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX event_initiative ON zz.event USING btree (team_slug, initiative) WHERE (initiative IS NOT NULL);
-
-
---
 -- Name: event_kind_ts; Type: INDEX; Schema: zz; Owner: -
 --
 
@@ -2956,27 +2834,6 @@ CREATE INDEX event_refusal_owner_idx ON zz.event USING btree (refusal_owner) WHE
 --
 
 CREATE INDEX event_run ON zz.event USING btree (run_id) WHERE (run_id IS NOT NULL);
-
-
---
--- Name: event_step; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX event_step ON zz.event USING btree (step, step_version) WHERE (step IS NOT NULL);
-
-
---
--- Name: event_team_ts; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX event_team_ts ON zz.event USING btree (team_slug, ts);
-
-
---
--- Name: initiative_fact_lookup_idx; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX initiative_fact_lookup_idx ON zz.initiative_fact USING btree (team, initiative);
 
 
 --
@@ -3019,13 +2876,6 @@ CREATE INDEX membership_principal ON zz.membership USING btree (principal_id);
 --
 
 CREATE INDEX model_call_failed_ts ON zz.model_call USING btree (ts DESC) WHERE (NOT ok);
-
-
---
--- Name: model_call_plugin_ts; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX model_call_plugin_ts ON zz.model_call USING btree (plugin, ts);
 
 
 --
@@ -3099,17 +2949,10 @@ CREATE UNIQUE INDEX rubric_plugin_id_version_key ON zz.rubric USING btree (plugi
 
 
 --
--- Name: run_no_initiative; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE UNIQUE INDEX run_no_initiative ON zz.run USING btree (skill_version_id, caller_session) WHERE (initiative_id IS NULL);
-
-
---
 -- Name: run_skill_version; Type: INDEX; Schema: zz; Owner: -
 --
 
-CREATE INDEX run_skill_version ON zz.run USING btree (skill_version_id, started_at DESC);
+CREATE INDEX run_skill_version ON zz.skill_run USING btree (skill_version_id, started_at DESC);
 
 
 --
@@ -3152,6 +2995,13 @@ CREATE INDEX search_history_default_tags ON zz.search_history_default USING gin 
 --
 
 CREATE INDEX search_history_default_tsv ON zz.search_history_default USING gin (to_tsvector('english'::regconfig, raw_body));
+
+
+--
+-- Name: skill_run_identity; Type: INDEX; Schema: zz; Owner: -
+--
+
+CREATE UNIQUE INDEX skill_run_identity ON zz.skill_run USING btree (team_id, initiative_id, skill_version_id, session) NULLS NOT DISTINCT;
 
 
 --
@@ -3216,11 +3066,91 @@ ALTER TABLE ONLY zz.artifact_revision
 
 
 --
+-- Name: assessment assessment_asked_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.assessment
+    ADD CONSTRAINT assessment_asked_by_fkey FOREIGN KEY (asked_by) REFERENCES zz.principal(id);
+
+
+--
 -- Name: assessment assessment_evaluator_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.assessment
     ADD CONSTRAINT assessment_evaluator_version_id_fkey FOREIGN KEY (evaluator_version_id) REFERENCES zz.eval_evaluator_version(id);
+
+
+--
+-- Name: assessment assessment_model_call_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.assessment
+    ADD CONSTRAINT assessment_model_call_id_fkey FOREIGN KEY (model_call_id) REFERENCES zz.model_call(id);
+
+
+--
+-- Name: assessment assessment_team_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.assessment
+    ADD CONSTRAINT assessment_team_id_fkey FOREIGN KEY (team_id) REFERENCES zz.team(id);
+
+
+--
+-- Name: assessment assessment_team_id_initiative_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.assessment
+    ADD CONSTRAINT assessment_team_id_initiative_id_fkey FOREIGN KEY (team_id, initiative_id) REFERENCES zz.initiative(team_id, id) ON DELETE SET NULL (initiative_id);
+
+
+--
+-- Name: bug bug_duplicate_of_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.bug
+    ADD CONSTRAINT bug_duplicate_of_fkey FOREIGN KEY (team_id, duplicate_of) REFERENCES zz.bug(team_id, id);
+
+
+--
+-- Name: bug bug_initiative_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.bug
+    ADD CONSTRAINT bug_initiative_id_fkey FOREIGN KEY (initiative_id) REFERENCES zz.initiative(id) ON DELETE SET NULL;
+
+
+--
+-- Name: bug bug_reported_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.bug
+    ADD CONSTRAINT bug_reported_by_fkey FOREIGN KEY (reported_by) REFERENCES zz.principal(id);
+
+
+--
+-- Name: bug bug_resolved_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.bug
+    ADD CONSTRAINT bug_resolved_by_fkey FOREIGN KEY (resolved_by) REFERENCES zz.principal(id);
+
+
+--
+-- Name: bug bug_team_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.bug
+    ADD CONSTRAINT bug_team_id_fkey FOREIGN KEY (team_id) REFERENCES zz.team(id);
+
+
+--
+-- Name: bug bug_team_id_initiative_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.bug
+    ADD CONSTRAINT bug_team_id_initiative_id_fkey FOREIGN KEY (team_id, initiative_id) REFERENCES zz.initiative(team_id, id) ON DELETE SET NULL (initiative_id);
 
 
 --
@@ -3272,22 +3202,6 @@ ALTER TABLE ONLY zz.control_waiver
 
 
 --
--- Name: decision decision_doc_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.decision
-    ADD CONSTRAINT decision_doc_id_fkey FOREIGN KEY (doc_id) REFERENCES zz.doc(id) ON DELETE CASCADE;
-
-
---
--- Name: discussion_message discussion_message_principal_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.discussion_message
-    ADD CONSTRAINT discussion_message_principal_id_fkey FOREIGN KEY (principal_id) REFERENCES zz.principal(id);
-
-
---
 -- Name: doc doc_initiative_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -3300,7 +3214,7 @@ ALTER TABLE ONLY zz.doc
 --
 
 ALTER TABLE ONLY zz.doc
-    ADD CONSTRAINT doc_produced_by_run_id_fkey FOREIGN KEY (produced_by_run_id) REFERENCES zz.run(id) ON DELETE SET NULL;
+    ADD CONSTRAINT doc_produced_by_run_id_fkey FOREIGN KEY (produced_by_run_id) REFERENCES zz.skill_run(id) ON DELETE SET NULL;
 
 
 --
@@ -3588,7 +3502,7 @@ ALTER TABLE ONLY zz.eval_subject
 --
 
 ALTER TABLE ONLY zz.eval_subject
-    ADD CONSTRAINT eval_subject_run_id_fkey FOREIGN KEY (run_id) REFERENCES zz.run(id) ON DELETE SET NULL;
+    ADD CONSTRAINT eval_subject_run_id_fkey FOREIGN KEY (run_id) REFERENCES zz.skill_run(id) ON DELETE SET NULL;
 
 
 --
@@ -3608,11 +3522,35 @@ ALTER TABLE ONLY zz.eval_subject_version
 
 
 --
+-- Name: event event_actor_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.event
+    ADD CONSTRAINT event_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES zz.principal(id);
+
+
+--
+-- Name: event event_initiative_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.event
+    ADD CONSTRAINT event_initiative_id_fkey FOREIGN KEY (initiative_id) REFERENCES zz.initiative(id) ON DELETE SET NULL;
+
+
+--
 -- Name: event event_run_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.event
-    ADD CONSTRAINT event_run_id_fkey FOREIGN KEY (run_id) REFERENCES zz.run(id) ON DELETE SET NULL;
+    ADD CONSTRAINT event_run_id_fkey FOREIGN KEY (run_id) REFERENCES zz.skill_run(id) ON DELETE SET NULL;
+
+
+--
+-- Name: event event_skill_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.event
+    ADD CONSTRAINT event_skill_version_id_fkey FOREIGN KEY (skill_version_id) REFERENCES zz.skill_version(id);
 
 
 --
@@ -3621,6 +3559,22 @@ ALTER TABLE ONLY zz.event
 
 ALTER TABLE ONLY zz.event
     ADD CONSTRAINT event_team_id_fkey FOREIGN KEY (team_id) REFERENCES zz.team(id);
+
+
+--
+-- Name: event event_team_id_initiative_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.event
+    ADD CONSTRAINT event_team_id_initiative_id_fkey FOREIGN KEY (team_id, initiative_id) REFERENCES zz.initiative(team_id, id) ON DELETE SET NULL (initiative_id);
+
+
+--
+-- Name: event event_team_id_run_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.event
+    ADD CONSTRAINT event_team_id_run_id_fkey FOREIGN KEY (team_id, run_id) REFERENCES zz.skill_run(team_id, id) ON DELETE SET NULL (run_id);
 
 
 --
@@ -3653,6 +3607,14 @@ ALTER TABLE ONLY zz.initiative
 
 ALTER TABLE ONLY zz.initiative
     ADD CONSTRAINT initiative_team_id_fkey FOREIGN KEY (team_id) REFERENCES zz.team(id);
+
+
+--
+-- Name: initiative_fact initiative_fact_initiative_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.initiative_fact
+    ADD CONSTRAINT initiative_fact_initiative_id_fkey FOREIGN KEY (initiative_id) REFERENCES zz.initiative(id) ON DELETE CASCADE;
 
 
 --
@@ -3693,14 +3655,6 @@ ALTER TABLE ONLY zz.membership
 
 ALTER TABLE ONLY zz.membership
     ADD CONSTRAINT membership_team_id_fkey FOREIGN KEY (team_id) REFERENCES zz.team(id);
-
-
---
--- Name: model_call model_call_event_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.model_call
-    ADD CONSTRAINT model_call_event_id_fkey FOREIGN KEY (event_id) REFERENCES zz.event(id) ON DELETE SET NULL;
 
 
 --
@@ -3856,27 +3810,43 @@ ALTER TABLE ONLY zz.rubric
 
 
 --
--- Name: run run_initiative_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.run
-    ADD CONSTRAINT run_initiative_id_fkey FOREIGN KEY (initiative_id) REFERENCES zz.initiative(id) ON DELETE CASCADE;
-
-
---
--- Name: run run_skill_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.run
-    ADD CONSTRAINT run_skill_version_id_fkey FOREIGN KEY (skill_version_id) REFERENCES zz.skill_version(id);
-
-
---
 -- Name: skill_asset skill_asset_skill_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.skill_asset
     ADD CONSTRAINT skill_asset_skill_version_id_fkey FOREIGN KEY (skill_version_id) REFERENCES zz.skill_version(id);
+
+
+--
+-- Name: skill_run run_initiative_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.skill_run
+    ADD CONSTRAINT run_initiative_id_fkey FOREIGN KEY (initiative_id) REFERENCES zz.initiative(id) ON DELETE CASCADE;
+
+
+--
+-- Name: skill_run run_skill_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.skill_run
+    ADD CONSTRAINT run_skill_version_id_fkey FOREIGN KEY (skill_version_id) REFERENCES zz.skill_version(id);
+
+
+--
+-- Name: skill_run skill_run_team_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.skill_run
+    ADD CONSTRAINT skill_run_team_id_fkey FOREIGN KEY (team_id) REFERENCES zz.team(id);
+
+
+--
+-- Name: skill_run skill_run_team_id_initiative_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.skill_run
+    ADD CONSTRAINT skill_run_team_id_initiative_id_fkey FOREIGN KEY (team_id, initiative_id) REFERENCES zz.initiative(team_id, id) ON DELETE CASCADE;
 
 
 --

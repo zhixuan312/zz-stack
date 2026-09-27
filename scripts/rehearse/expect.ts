@@ -121,104 +121,14 @@ export function declaredTableNames(pendingMigrations: readonly string[]): string
 }
 
 /**
- * What `002_delivery_telemetry.sql` is expected to move. Every hash lists only columns that exist
- * on both sides of the migration, and omits every column the migration owns — the ones it adds,
- * renames, or fills from another source — because a digest carrying them would differ for that
- * reason alone rather than proving the rest of the row survived.
+ * What each pending migration is expected to move, keyed by its filename. Empty whenever a
+ * release's migrations have folded back into `001_init.sql`: the pending files are gone, so there
+ * is no before->after pair left to declare, and a key naming a file that no longer exists would
+ * make the rehearsal look up an expectation nothing can satisfy.
+ *
+ * Every hash lists only columns that exist on both sides of a migration, and omits every column
+ * the migration owns — the ones it adds, renames, or fills from another source — because a digest
+ * carrying them would differ for that reason alone rather than proving the rest of the row
+ * survived. `scripts/rehearse.ts:142` looks a migration up here BY FILENAME.
  */
-export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
-  "002_delivery_telemetry.sql": {
-    tables: {
-      // The rename and the reshape, so its count is compared as one table rather than as a
-      // removal and an addition, and the count is asserted equal: "every run kept" is the claim
-      // this declaration exists to produce, and a count that may differ by any amount makes it
-      // decorative. The one legitimate exception is `delete from zz.skill_run where team_id is
-      // null` (`002_delivery_telemetry.sql:68`) — a run that resolves no team cannot satisfy
-      // `team_id not null`. That delete matches 0 rows on the 0.82.0 backup, so the count is
-      // unchanged there (743 -> 743), and if a count line ever fails, the migration's own `raise
-      // notice` names the delete and how many rows it took. No hash: `team_id` is derived and
-      // `ended_at` is filled, so the rows the migration keeps are not the rows it was given.
-      skill_run: { count: "unchanged", contentHash: "skip", was: "run" },
-      // Everything the migration leaves alone. It adds four columns, drops six, fills `run_id`,
-      // `session`, `actor_id`, `initiative_id` and `skill_version_id` from the rows that remain —
-      // none of which is in this list — and re-fills `duration_ms` and `response_bytes` from the
-      // detail bag for rows written before 2026-09-14 that carried the figure in the bag only
-      // (`002_delivery_telemetry.sql:150-154`; 2,684 `ms` rows and 2,728 `bytes` rows on the 0.82.0
-      // backup). Those two are the migration's own columns here, so they are out of the digest: a
-      // digest carrying them would differ for that reason alone. `request_bytes` stays: the
-      // migration never writes it.
-      event: {
-        hashColumns: [
-          "ts", "kind", "subject", "detail", "ok", "refusal", "refusal_owner", "request_bytes",
-          "batched", "plugin", "plugin_version", "tool_key",
-        ],
-      },
-      // `note` becomes `error`, and its value moves with it — neither is hashable on both sides.
-      model_call: {
-        hashColumns: [
-          "id", "ts", "purpose", "model", "input_tokens", "output_tokens", "cache_read_tokens",
-          "duration_ms", "ok", "attempts",
-        ],
-      },
-      // `team_id`, `initiative_id` and `model_call_id` are new, and `asked_by` changes from an
-      // email to a principal id — the four columns the migration owns.
-      assessment: {
-        hashColumns: [
-          "id", "family", "instruction_version", "question_digest", "reading", "probability",
-          "resolved_model", "identity_assurance", "reason", "about", "asked_at",
-          "evaluator_version_id", "distribution", "answer_kind",
-        ],
-      },
-      // A fact whose slugs resolve to no initiative cannot satisfy `initiative_id not null` and
-      // is dropped, and `id` is gone, so only the count is meaningful — and only as "any".
-      initiative_fact: { count: "any", contentHash: "skip" },
-      // Everything but the identity columns the migration resolves: `reported_by` and
-      // `resolved_by` become principal references, and `team_id`, `initiative_id` and
-      // `duplicate_of` are new. `reported_at` is the report's own timestamp, unchanged.
-      bug: {
-        hashColumns: [
-          "title", "detail", "surface", "platform_version", "impact", "status", "resolution",
-          "resolved_at", "reported_at",
-        ],
-      },
-      // Dropped whole. Declared, not hashed: there is no after side to compare them with.
-      decision: { dropped: true },
-      discussion_message: { dropped: true },
-    },
-    joins: [
-      {
-        name: "an attributed event's run belongs to the event's team",
-        violatingCount:
-          "select count(*)::int as n from zz.event e join zz.skill_run r on r.id = e.run_id where e.team_id is distinct from r.team_id",
-      },
-      {
-        name: "a bug's team and initiative agree",
-        violatingCount:
-          "select count(*)::int as n from zz.bug b join zz.initiative i on i.id = b.initiative_id where b.team_id is distinct from i.team_id",
-      },
-      {
-        name: "every fact's initiative exists",
-        violatingCount:
-          "select count(*)::int as n from zz.initiative_fact f left join zz.initiative i on i.id = f.initiative_id where i.id is null",
-      },
-    ],
-  },
-  // The run the timer invented, deleted. `skill_run` is named here so this migration's count wins
-  // over `"002_delivery_telemetry.sql"`'s `"unchanged"` — the fold takes the last migration to name
-  // a table — and the two together move it by exactly one row: the run whose evidence names no
-  // skill version, which is the same row as the one whose stamped version postdates it. Everything
-  // else in the backup is untouched, and the join below is what says the deletion was complete
-  // rather than merely that it ran.
-  "003_a_run_the_timer_invented.sql": {
-    tables: {
-      skill_run: { count: { delta: -1 }, contentHash: "skip", was: "run" },
-    },
-    joins: [
-      {
-        name: "every run's evidence names a skill version released no later than the run",
-        violatingCount:
-          "select count(*)::int as n from zz.skill_run r where not exists (select 1 from zz.event e where e.run_id = r.id and e.skill_version_id is not null) or exists (select 1 from zz.skill_version v where v.id = r.skill_version_id and v.released_at > r.started_at)",
-      },
-    ],
-  },
-};
+export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {};

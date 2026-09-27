@@ -25,7 +25,7 @@
  *
  * The row names a principal and a team, not the text the caller handed over: `asked_by` is the
  * principal whose email was passed, `initiative_id` the initiative that slug names, and `team_id`
- * the team the judgment belongs to — resolved the way `002_delivery_telemetry.sql` resolved them
+ * the team the judgment belongs to — resolved the way the phase-2 migration resolved them
  * for the rows already in the table, so a row written from now on and a row the migration carried
  * agree row for row.
  *
@@ -194,7 +194,7 @@ export async function assessFamily(opts: {
 }
 
 /** One `zz.assessment` row, in the shape the table itself declares (001, reshaped by
- *  `002_delivery_telemetry.sql`): a family question xor an evaluator question, and only a
+ *  the phase-2 migration): a family question xor an evaluator question, and only a
  *  `choice`/`score` answer ever carries a `distribution`. Building it in one place is what keeps
  *  `assessFamily` and `recordEvaluatorAssessment` writing rows the table's own checks agree on.
  *

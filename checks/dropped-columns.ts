@@ -1,6 +1,6 @@
 /**
  * checks/dropped-columns.ts — no statement in the write trees names a table or a column
- * `002_delivery_telemetry.sql` retires.
+ * the phase-2 migration retires.
  *
  * The migration renames `zz.run` to `zz.skill_run`, drops `decision` and `discussion_message`
  * whole, and leaves six columns of `event`, four of `model_call`, two of `assessment`, three of
@@ -488,4 +488,4 @@ if (fail.length) {
   process.exit(1);
 }
 console.log(`dropped columns: ${scanned} statement(s) in ${files.size} file(s) under ` +
-            `${ROOTS.join(", ")} name no table or column 002_delivery_telemetry.sql retires`);
+            `${ROOTS.join(", ")} name no table or column the phase-2 migration retires`);

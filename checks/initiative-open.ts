@@ -18,20 +18,95 @@
  *
  * Run: node checks/initiative-open.ts   (also run by scripts/gate.ts)
  */
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+
+import pg from "pg";
 
 // The catalog is set before any import: @zz/catalog reads CATALOG_DIR into a module-level
 // const at load time, defaulting to the deployment's `/catalog` mount, which does not exist
 // here. COUPLED: section 4b drives the real `chainFor` against a real flow manifest, and
 // without this it would resolve nothing and pass for the wrong reason.
 process.env.ZZ_CATALOG_DIR = join(process.cwd(), "catalog");
+process.env.TEAM_DB_URL = "postgresql://stub@127.0.0.1:1/stub";
+
+const TEAM = "t1";
+/** One initiative's world: its own row, its documents, its branch facts and its stage records.
+ *  A document is a `zz.doc` row plus the revision it points at — the store's files, as rows. */
+interface W { flow: string | null; docs: Record<string, unknown>[]; facts: Record<string, string>;
+             records: Record<string, Record<string, string>> }
+const world = new Map<string, W>();
+let seq = 0;
+const ensure = (name: string): W => {
+  let w = world.get(name);
+  if (!w) { w = { flow: null, docs: [], facts: {}, records: {} }; world.set(name, w); }
+  return w;
+};
+/** A document written into an initiative, from the envelope TEXT a caller would have sent. The
+ *  columns come off the frontmatter and everything else is the revision's payload — which is
+ *  exactly how the writer splits them. */
+const COLUMN_KEYS = new Set(["status", "outcome", "closed_by", "approved_by", "approved_at", "title", "version", "flow"]);
+const wrote = (initiative: string, path: string, text: string): void => {
+  const w = ensure(initiative);
+  const block = /^---\n([\s\S]*?)\n---/.exec(text);
+  const env: Record<string, string> = {};
+  for (const line of (block?.[1] ?? "").split("\n")) {
+    const cut = line.indexOf(":");
+    if (cut > 0) env[line.slice(0, cut).trim()] = line.slice(cut + 1).trim();
+  }
+  w.docs = w.docs.filter((d) => d.path !== path);
+  w.docs.push({ id: `d${++seq}`, path, initiative, flow: env.flow ?? "", type: "",
+    status: env.status ?? "", outcome: env.outcome ?? null, approved_by: env.approved_by ?? null,
+    approved_at: env.approved_at ?? null, closed_by: env.closed_by ?? null,
+    updated_at: "2026-09-14T00:00:00.000Z", title: env.title ?? path,
+    body: text.slice(block ? block[0].length : 0).trim(), tags: [],
+    current_revision: Number(env.version) || 1, approved_revision: null,
+    fields: Object.fromEntries(Object.entries(env).filter(([k]) => !COLUMN_KEYS.has(k))) });
+};
+
+pg.Pool.prototype.query = (async function query(text: string, values: unknown[] = []) {
+  const sql = String(text).replace(/\s+/g, " ").trim();
+  const one = (rows: Record<string, unknown>[]) => ({ rows, rowCount: rows.length });
+  const bySlug = world.get(String(values[1] ?? ""));
+  // `recordOpen` resolves the team id before it writes the row.
+  if (/select id::text as id from zz\.team where slug = \$1/.test(sql)) return one([{ id: "t-1" }]);
+  // `takenRefusal` asks the roster for the slugs that match a prefix.
+  if (/i\.slug ~ \('\^\\d\{4\}-/.test(sql)) {
+    return one([...world.keys()].filter((k) => new RegExp(`^\\d{4}-\\d{2}-\\d{2}-${values[1]}$`).test(k))
+      .sort().map((slug) => ({ slug })));
+  }
+  if (/select i\.slug, i\.flow, i\.closed_at::text/.test(sql)) {
+    const names = (values[1] as string[]) ?? [];
+    return one(names.filter((n) => world.has(n)).map((n) => ({
+      slug: n, flow: world.get(n)!.flow, closed_at: null, closed_by: null, outcome: null })));
+  }
+  if (/select i\.slug from zz\.initiative i join zz\.team t on t\.id = i\.team_id where t\.slug = \$1 order by i\.slug/.test(sql)) {
+    return one([...world.keys()].sort().map((slug) => ({ slug })));
+  }
+  // `recordOpen` writes the initiative's own row, and that row IS the record.
+  if (/insert into zz\.initiative\b/.test(sql)) {
+    const w = ensure(String(values[1]));
+    w.flow = values[2] === null || values[2] === undefined ? null : String(values[2]);
+    return one([{ flow: w.flow, opened_at: isoToday(), opened_by: String(values[3]) }]);
+  }
+  if (/from zz\.initiative i join zz\.team t on t\.id = i\.team_id/.test(sql)) {
+    return one(bySlug ? [{ id: "i1", flow: bySlug.flow, opened_at: "2026-09-14",
+                           opened_by: "ada@zz.test", slug: String(values[1]) }] : []);
+  }
+  if (/from zz\.initiative_fact f\b/.test(sql)) {
+    return one(Object.entries(bySlug?.facts ?? {}).map(([fact, value]) => ({ fact, value })));
+  }
+  if (/from zz\.initiative_record r\b/.test(sql)) return one([]);
+  if (/from zz\.doc d\b/.test(sql)) return one(world.get(String(values[0]))?.docs ?? []);
+  return one([]);
+}) as unknown as typeof pg.Pool.prototype.query;
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { initiativeState } = await load("services/zz-core/dist/tools/initiative-status.js");
-const rec = await load("services/zz-core/dist/initiative-record.js");
+const { initiativeNameFor, openRecord, recordOpen, takenRefusal, unopenedRefusal } =
+  await load("services/zz-core/dist/initiative-record.js");
+const { db } = await load("services/zz-core/dist/platform-db.js");
 const { slugRefusal } = await load("services/zz-core/dist/document-rules.js");
 const { chainFor } = await load("services/zz-core/dist/chain.js");
 const wg = await load("services/zz-core/dist/write-guards.js");
@@ -86,15 +161,15 @@ if (!def) {
 }
 
 // 2. The name the platform composes
-is(rec.initiativeNameFor("payment-retries") === `${isoToday()}-payment-retries`,
-   `initiativeNameFor produced ${rec.initiativeNameFor("payment-retries")}, not ` +
+is(initiativeNameFor("payment-retries") === `${isoToday()}-payment-retries`,
+   `initiativeNameFor produced ${initiativeNameFor("payment-retries")}, not ` +
    `${isoToday()}-payment-retries — the folder is not stamped from the platform's own clock`);
-is(rec.initiativeNameFor("  spaced  ") === `${isoToday()}-spaced`,
+is(initiativeNameFor("  spaced  ") === `${isoToday()}-spaced`,
    "a slug's surrounding whitespace reaches the folder name");
 // The function takes no date. Arity is the only statement of that a comment cannot
 // contradict.
-is(rec.initiativeNameFor.length === 1,
-   `initiativeNameFor takes ${rec.initiativeNameFor.length} arguments — the date must come ` +
+is(initiativeNameFor.length === 1,
+   `initiativeNameFor takes ${initiativeNameFor.length} arguments — the date must come ` +
    "from the platform's clock inside it, never from a caller");
 
 // A slug that already carries a date would be dated twice, and the result still sorts, so
@@ -109,7 +184,6 @@ is(slugRefusal("payment-retries") === null,
    "an ordinary slug is refused — slugRefusal refuses more than the contract names");
 
 // 3. The store, and the two directions of next_move
-const root = mkdtempSync(join(tmpdir(), "zz-open-"));
 
 /** The shape chain.ts derives. Built inline because EMPTY_CHAIN is not exported and
  * `deriveChain([], null)` is deterministic — a flow that declares nothing. */
@@ -141,11 +215,11 @@ const doc = (fields: Record<string, string>, body: string) =>
 
 // 3a. Freeform: a folder somebody assembled by hand
 const FREE = "2026-09-14-hand-assembled";
-mkdirSync(join(root, FREE, "sources"), { recursive: true });
-writeFileSync(join(root, FREE, "notes.md"), doc({ title: "Notes" }, "# Notes\n\nWhat we found."));
-writeFileSync(join(root, FREE, "decision.md"), doc({ title: "Decision" }, "# Decision"));
 
-const free = initiativeState(root, FREE, EMPTY, EMPTY.documents);
+wrote(FREE, "notes.md", doc({ title: "Notes" }, "# Notes\n\nWhat we found."));
+wrote(FREE, "decision.md", doc({ title: "Decision" }, "# Decision"));
+
+const free = await initiativeState(db()!, TEAM, FREE, EMPTY, EMPTY.documents);
 // Strictly null. `undefined` would serialise away entirely and the caller would read a
 // response with no `next_move` key at all, which is a missing answer rather than an answer.
 is(free.next_move === null,
@@ -164,9 +238,9 @@ is(free.documents.map((d: { name: string }) => d.name).sort().join(",") === "dec
 // one — the same document initiative_close was told to write it on. The no-argument listing
 // filters on `next_move?.action === "closed"`, so reporting null here would make every
 // freeform close invisible.
-writeFileSync(join(root, FREE, "decision.md"),
+wrote(FREE, "decision.md",
   doc({ title: "Decision", outcome: "delivered", closed_by: "cy@zz.test" }, "# Decision"));
-const freeClosed = initiativeState(root, FREE, EMPTY, EMPTY.documents);
+const freeClosed = await initiativeState(db()!, TEAM, FREE, EMPTY, EMPTY.documents);
 is(freeClosed.outcome === "delivered",
    `a closed freeform initiative reports outcome ${JSON.stringify(freeClosed.outcome)} — with ` +
    "no manifest to name a closing document the outcome must be read off whichever document " +
@@ -177,8 +251,8 @@ is(freeClosed.next_move?.action === "closed",
    `a closed freeform initiative's next_move is ${JSON.stringify(freeClosed.next_move)} — the ` +
    "no-argument listing filters on `closed`, so this one is reported as open for good");
 // Restore the fixture to its open state; everything after this reads it as freeform-and-open.
-writeFileSync(join(root, FREE, "decision.md"), doc({ title: "Decision" }, "# Decision"));
-is(initiativeState(root, FREE, EMPTY, EMPTY.documents).next_move === null,
+wrote(FREE, "decision.md", doc({ title: "Decision" }, "# Decision"));
+is((await initiativeState(db()!, TEAM, FREE, EMPTY, EMPTY.documents)).next_move === null,
    "an OPEN freeform initiative is reported closed — the outcome scan is matching a document " +
    "that carries none");
 
@@ -187,9 +261,9 @@ is(initiativeState(root, FREE, EMPTY, EMPTY.documents).next_move === null,
 // This is the assertion a null-always implementation fails; everything in 3a is satisfied by
 // `return { next_move: null }`.
 const GOV = "2026-09-14-governed";
-mkdirSync(join(root, GOV), { recursive: true });
 
-let gov = initiativeState(root, GOV, GOVERNED, GOVERNED.documents);
+
+let gov = await initiativeState(db()!, TEAM, GOV, GOVERNED, GOVERNED.documents);
 is(gov.next_move?.action === "write_document" && gov.next_move?.document === "spec.md",
    `an initiative governed by a flow answered ${JSON.stringify(gov.next_move)} — it must name ` +
    "the flow's first declared document, and a null here is the platform refusing to say what " +
@@ -197,17 +271,17 @@ is(gov.next_move?.action === "write_document" && gov.next_move?.document === "sp
 is(gov.next_move_absent === undefined,
    "a governed initiative carries a next_move_absent reason beside a real next move");
 
-writeFileSync(join(root, GOV, "spec.md"), doc({ title: "Spec", status: "draft" }, "# Spec"));
-gov = initiativeState(root, GOV, GOVERNED, GOVERNED.documents);
+wrote(GOV, "spec.md", doc({ title: "Spec", status: "draft" }, "# Spec"));
+gov = await initiativeState(db()!, TEAM, GOV, GOVERNED, GOVERNED.documents);
 is(gov.next_move?.action === "await_approval" && gov.next_move?.document === "spec.md",
    `with spec.md written and unapproved the next move is ${JSON.stringify(gov.next_move)}, ` +
    "not the gate — the gates a flow declares are what a governed initiative gets and a " +
    "freeform one does not");
 
-writeFileSync(join(root, GOV, "spec.md"),
+wrote(GOV, "spec.md",
   doc({ title: "Spec", status: "approved", approved_by: "ada@zz.test", approved_at: "2026-09-14" },
       "# Spec"));
-gov = initiativeState(root, GOV, GOVERNED, GOVERNED.documents);
+gov = await initiativeState(db()!, TEAM, GOV, GOVERNED, GOVERNED.documents);
 is(gov.next_move?.action === "write_document" && gov.next_move?.document === "plan.md",
    `once spec.md is approved the next move is ${JSON.stringify(gov.next_move)}, not plan.md — ` +
    "the flow's declared ORDER is not being walked");
@@ -233,11 +307,11 @@ const AUDITED = ((): Chain => {
   ] };
 })();
 const AUD = "2026-09-14-audited";
-mkdirSync(join(root, AUD, "sources"), { recursive: true });
-writeFileSync(join(root, AUD, "spec.md"),
+
+wrote(AUD, "spec.md",
   doc({ title: "Spec", status: "approved", approved_by: "ada@zz.test", approved_at: "2026-09-14" },
       "# Spec"));
-let aud = initiativeState(root, AUD, AUDITED, AUDITED.documents);
+let aud = await initiativeState(db()!, TEAM, AUD, AUDITED, AUDITED.documents);
 // NOT A TOOL: `add_source` is a member of next_move.action's own vocabulary, beside
 // write_document and await_approval. The tool the move asks for is `source_add`.
 is(aud.next_move?.action === "add_source" && aud.next_move?.document === "spec.md",
@@ -247,10 +321,10 @@ is(aud.next_move?.action === "add_source" && aud.next_move?.document === "spec.m
 
 // And it stops asking once the round is on the record — a source naming its stage and the
 // version it read. How many rounds follow is checks/audit-rounds.ts's subject.
-writeFileSync(join(root, AUD, "sources", "spec-audit.md"),
+wrote(AUD, "sources/spec-audit.md",
   doc({ title: "Spec audit round 1", supports: "spec.md", stage: "sdlc-spec-audit",
         audits_version: "1", added_at: "2026-09-14T10:00:00.000Z" }, "No blocking findings."));
-aud = initiativeState(root, AUD, AUDITED, AUDITED.documents);
+aud = await initiativeState(db()!, TEAM, AUD, AUDITED, AUDITED.documents);
 is(aud.next_move?.action === "write_document" && aud.next_move?.document === "plan.md",
    `with the audit source recorded the next move is ${JSON.stringify(aud.next_move)} — the ` +
    "stage is satisfied and the walk must move on to the next document the flow declares");
@@ -258,9 +332,9 @@ is(aud.next_move?.action === "write_document" && aud.next_move?.document === "pl
 // A stage whose document is not yet finished is not owed: the document's own stage is unmet
 // first.
 const DRAFTED = "2026-09-14-audited-draft";
-mkdirSync(join(root, DRAFTED, "sources"), { recursive: true });
-writeFileSync(join(root, DRAFTED, "spec.md"), doc({ title: "Spec", status: "draft" }, "# Spec"));
-const drafted = initiativeState(root, DRAFTED, AUDITED, AUDITED.documents);
+
+wrote(DRAFTED, "spec.md", doc({ title: "Spec", status: "draft" }, "# Spec"));
+const drafted = await initiativeState(db()!, TEAM, DRAFTED, AUDITED, AUDITED.documents);
 is(drafted.next_move?.action === "await_approval" && drafted.next_move?.document === "spec.md",
    `with spec.md still draft the next move is ${JSON.stringify(drafted.next_move)} — the audit ` +
    "of an unapproved document must not be demanded ahead of its gate");
@@ -277,28 +351,28 @@ const CLOSING = ((): Chain => {
   return { ...c, stages: [{ name: "sdlc-spec", produces: "spec.md" }] };
 })();
 const CLO = "2026-09-14-closed-with-a-handover";
-mkdirSync(join(root, CLO), { recursive: true });
+
 const signedSpec = doc({ title: "Spec", status: "approved", approved_by: "ada@zz.test",
   approved_at: "2026-09-14", outcome: "accepted", closed_by: "ada@zz.test" }, "# Spec");
 
 // (a) no handover at all — the invitation is the right answer.
-writeFileSync(join(root, CLO, "spec.md"), signedSpec);
-let clo = initiativeState(root, CLO, CLOSING, CLOSING.documents);
+wrote(CLO, "spec.md", signedSpec);
+let clo = await initiativeState(db()!, TEAM, CLO, CLOSING, CLOSING.documents);
 is(/skill_read/.test(clo.next_move?.why ?? ""),
    `a closed initiative with no handover was told ${JSON.stringify(clo.next_move?.why)} — it ` +
    "should be invited to write one, which is the only case the old static sentence fitted");
 
 // (b) written and unapproved — waiting on a verdict, and owed by nobody.
-writeFileSync(join(root, CLO, "handover.md"), doc({ title: "Handover", status: "draft" }, "# H"));
-clo = initiativeState(root, CLO, CLOSING, CLOSING.documents);
+wrote(CLO, "handover.md", doc({ title: "Handover", status: "draft" }, "# H"));
+clo = await initiativeState(db()!, TEAM, CLO, CLOSING, CLOSING.documents);
 is(!/skill_read/.test(clo.next_move?.why ?? "") && /verdict/.test(clo.next_move?.why ?? ""),
    `a closed initiative whose handover is written and unapproved was told ` +
    `${JSON.stringify(clo.next_move?.why)} — it is not being asked to write one again`);
 
 // (c) approved — say so, and name who signed it.
-writeFileSync(join(root, CLO, "handover.md"),
+wrote(CLO, "handover.md",
   doc({ title: "Handover", status: "approved", approved_by: "ada@zz.test", approved_at: "2026-09-14" }, "# H"));
-clo = initiativeState(root, CLO, CLOSING, CLOSING.documents);
+clo = await initiativeState(db()!, TEAM, CLO, CLOSING, CLOSING.documents);
 is(/recorded/.test(clo.next_move?.why ?? "") && /ada@zz\.test/.test(clo.next_move?.why ?? "")
    && !/skill_read/.test(clo.next_move?.why ?? ""),
    `a closed initiative with an APPROVED handover was told ${JSON.stringify(clo.next_move?.why)} ` +
@@ -306,33 +380,37 @@ is(/recorded/.test(clo.next_move?.why ?? "") && /ada@zz\.test/.test(clo.next_mov
 
 // 4. The open record: written, invisible as a document, and read by chainFor
 const GOVERNED_NAME = `${isoToday()}-with-a-flow`;
-const written = rec.recordOpen(root, GOVERNED_NAME, "sdlc-flow", "ada@zz.test");
+const written = await recordOpen(db()!, TEAM, GOVERNED_NAME, "sdlc-flow", "ada@zz.test");
 is(written.flow === "sdlc-flow" && written.opened_by === "ada@zz.test"
    && written.opened_at === isoToday(),
    `the open record is ${JSON.stringify(written)} — it does not carry the flow, the opener ` +
    "and the platform's own date");
-is(rec.openRecord(root, GOVERNED_NAME)?.flow === "sdlc-flow",
+is((await openRecord(db()!, TEAM, GOVERNED_NAME))?.flow === "sdlc-flow",
    "the flow an initiative was opened with cannot be read back");
 
 const FREEFORM_NAME = `${isoToday()}-opened-freeform`;
-is(rec.recordOpen(root, FREEFORM_NAME, null, "bo@zz.test").flow === null,
+is((await recordOpen(db()!, TEAM, FREEFORM_NAME, null, "bo@zz.test")).flow === null,
    "a freeform open records something other than null for its flow");
 // A declared freeform and no record at all are different facts, and the resolver has to tell
 // them apart: one is a person saying nothing governs this, the other is silence. A helper
 // collapsing both to null lets the single-flow fallback below overrule the first.
-is(rec.openRecord(root, FREEFORM_NAME)?.flow === null,
+is((await openRecord(db()!, TEAM, FREEFORM_NAME))?.flow === null,
    "an initiative opened deliberately freeform reads back as governed by something");
-is(rec.openRecord(root, `${isoToday()}-never-opened`) === null,
+is(await openRecord(db()!, TEAM, `${isoToday()}-never-opened`) === null,
    "an initiative with no record reports one");
 
-// The record must not be mistaken for a document. Every listing filters `_`-prefixed entries,
-// and a record reported as a document would appear with no status, no gate and no place in any
-// chain. Asked of what recordOpen actually wrote, not of a constant.
-is(readdirSync(join(root, FREEFORM_NAME)).every((f) => f.startsWith("_")),
-   `opening wrote ${JSON.stringify(readdirSync(join(root, FREEFORM_NAME)))} into the folder — ` +
-   "anything without a leading underscore is listed as one of the team's documents");
-writeFileSync(join(root, FREEFORM_NAME, "notes.md"), doc({ title: "N" }, "# N"));
-const openedFree = initiativeState(root, FREEFORM_NAME, EMPTY, EMPTY.documents);
+// The record must not be mistaken for a document. Opening writes the initiative's OWN ROW and no
+// document, so a record can never appear in a listing with no status, no gate and no place in any
+// chain. Asked of what recordOpen actually wrote, not of a constant: the store's `_open.json` was
+// a file in the folder, and the row is not a file at all.
+{
+  const heldAfterOpen = world.get(FREEFORM_NAME)!.docs.map((d) => d.path);
+  is(heldAfterOpen.length === 0,
+     `opening wrote ${JSON.stringify(heldAfterOpen)} as documents of the initiative — the record ` +
+     "is the initiative's own row, and something nothing wrote must not be listed as a document");
+}
+wrote(FREEFORM_NAME, "notes.md", doc({ title: "N" }, "# N"));
+const openedFree = await initiativeState(db()!, TEAM, FREEFORM_NAME, EMPTY, EMPTY.documents);
 is(openedFree.documents.map((d: { name: string }) => d.name).join(",") === "notes.md",
    `an opened freeform initiative lists ${JSON.stringify(openedFree.documents.map((d: { name: string }) => d.name))}` +
    " — the platform's own record is being reported as one of the team's documents");
@@ -345,7 +423,7 @@ is(openedFree.next_move === null, "an initiative opened deliberately freeform is
 // is exactly when a resuming agent calls
 // initiative_status. `chainFor` returns an unnamed chain with no record, so only the record
 // written above can produce a named chain here.
-const resolved = chainFor(root, `${GOVERNED_NAME}/x.md`);
+const resolved = await chainFor(db()!, TEAM, `${GOVERNED_NAME}/x.md`);
 is(resolved.name === "sdlc-flow",
    `chainFor answered ${JSON.stringify(resolved.name)} for an initiative opened WITH a flow ` +
    "and no documents yet — the open record is not consulted, so the platform reports work " +
@@ -354,7 +432,7 @@ is(resolved.documents.length > 0,
    "the chain resolved off the open record declares no documents, so there is nothing to " +
    "compute a next move over and a governed initiative still answers like a freeform one");
 // The control, in the other direction: an initiative opened freeform must not acquire one.
-is(chainFor(root, `${FREEFORM_NAME}/x.md`).name === null,
+is((await chainFor(db()!, TEAM, `${FREEFORM_NAME}/x.md`)).name === null,
    "an initiative opened freeform resolves to a named chain — the record is being read as a " +
    "declaration where it declares nothing, which is the platform choosing a flow for somebody");
 
@@ -364,20 +442,23 @@ is(chainFor(root, `${FREEFORM_NAME}/x.md`).name === null,
 // resort does not know that on its own: the oldest-document walk takes whatever `flow:` it
 // finds in an envelope. A stray envelope inside a declared-freeform initiative must not win.
 const STRAY = `${isoToday()}-freeform-with-a-stray-envelope`;
-mkdirSync(join(root, STRAY), { recursive: true });
-rec.recordOpen(root, STRAY, null, "cy@zz.test");
-writeFileSync(join(root, STRAY, "notes.md"),
+
+await recordOpen(db()!, TEAM, STRAY, null, "cy@zz.test");
+wrote(STRAY, "notes.md",
   doc({ title: "Notes", flow: "sdlc-flow" }, "# Notes"));
-is(chainFor(root, `${STRAY}/other.md`).name === null,
+is((await chainFor(db()!, TEAM, `${STRAY}/other.md`)).name === null,
    "an initiative opened deliberately freeform picked up a flow from a fallback further down " +
    "chainFor — a `flow: null` record is a person declining a flow, and anything that overrules " +
    "it adopts one on their behalf at open time, which is adopting a flow after the fact");
 // And the control for that: without a record, the envelope must still answer, or this
 // short-circuit has broken resolution for every initiative written before the record existed.
 const LEGACY = `${isoToday()}-no-record-at-all`;
-mkdirSync(join(root, LEGACY), { recursive: true });
-writeFileSync(join(root, LEGACY, "spec.md"), doc({ title: "S", flow: "sdlc-flow" }, "# S"));
-is(chainFor(root, `${LEGACY}/other.md`).name === "sdlc-flow",
+// The flow a legacy initiative declares lives on its own row: the carry moved the file-only
+// facts onto the anchor, so nothing walks the documents for one any more.
+ensure(LEGACY).flow = "sdlc-flow";
+
+wrote(LEGACY, "spec.md", doc({ title: "S", flow: "sdlc-flow" }, "# S"));
+is((await chainFor(db()!, TEAM, `${LEGACY}/other.md`)).name === "sdlc-flow",
    "an initiative with NO open record no longer resolves its flow from its own documents — " +
    "every initiative written before the record existed just became ungoverned");
 
@@ -390,36 +471,38 @@ is(chainFor(root, `${LEGACY}/other.md`).name === "sdlc-flow",
 // Driven by deleting the log and re-asking. The event is still logged beside the record,
 // because the open is an event; what this asserts is that nothing reads the declaration from
 // there.
-rmSync(join(root, GOVERNED_NAME, "activity.jsonl"), { force: true });
-is(chainFor(root, `${GOVERNED_NAME}/x.md`).name === "sdlc-flow",
+// The declaration is the initiative's own ROW, and nothing reads it out of telemetry: the store's
+// per-initiative `activity.jsonl` is gone with the store, so there is no best-effort log an append
+// could have failed to reach.
+is((await chainFor(db()!, TEAM, `${GOVERNED_NAME}/x.md`)).name === "sdlc-flow",
    "with the activity log deleted the flow can no longer be resolved — the declaration is " +
    "being read out of best-effort telemetry, so an append that silently failed leaves an " +
    "initiative somebody governed reporting as freeform for the rest of its life");
 
 // 5. The slug is what is taken
-is(rec.takenRefusal(root, "hand-assembled") !== null,
+is(await takenRefusal(db()!, TEAM, "hand-assembled") !== null,
    "a slug an existing initiative already uses is accepted — two folders with the same slug " +
    "and different dates diverge, and nothing downstream can say which one was meant");
-is(/2026-09-14-hand-assembled/.test(rec.takenRefusal(root, "hand-assembled") ?? ""),
+is(/2026-09-14-hand-assembled/.test(await takenRefusal(db()!, TEAM, "hand-assembled") ?? ""),
    "the taken refusal does not NAME the existing initiative, so the caller cannot continue it");
-is(rec.takenRefusal(root, "something-nobody-opened") === null,
+is(await takenRefusal(db()!, TEAM, "something-nobody-opened") === null,
    "an unused slug is refused as taken");
 // A slug that is a prefix of an existing one is not the same slug.
-rec.recordOpen(root, `${isoToday()}-payment-retries`, null, "ada@zz.test");
-is(rec.takenRefusal(root, "payment") === null,
+await recordOpen(db()!, TEAM, `${isoToday()}-payment-retries`, null, "ada@zz.test");
+is(await takenRefusal(db()!, TEAM, "payment") === null,
    "`payment` is refused because `payment-retries` exists — a prefix match blocks slugs " +
    "nobody has taken");
 
 // 6. Neither write path creates any more: the refusal, driven
-is(typeof rec.unopenedRefusal(root, `${isoToday()}-never-opened/spec.md`) === "string",
+is(typeof await unopenedRefusal(db()!, TEAM, `${isoToday()}-never-opened/spec.md`) === "string",
    "a write into an initiative nobody opened is accepted — the write still creates the " +
    "initiative, and initiative_open is decorative");
-is(/initiative_open/.test(rec.unopenedRefusal(root, `${isoToday()}-never-opened/spec.md`) ?? ""),
+is(/initiative_open/.test(await unopenedRefusal(db()!, TEAM, `${isoToday()}-never-opened/spec.md`) ?? ""),
    "the refusal does not name initiative_open, so it is a dead end rather than an instruction");
-is(rec.unopenedRefusal(root, `${FREE}/anything.md`) === null,
+is(await unopenedRefusal(db()!, TEAM, `${FREE}/anything.md`) === null,
    "a write into an initiative that WAS opened is refused — the guard is too wide, and every " +
    "document after the first would be blocked");
-is(rec.unopenedRefusal(root, "README.md") === null,
+is(await unopenedRefusal(db()!, TEAM, "README.md") === null,
    "a file at the root of the store is treated as an initiative document");
 
 // 7. Two source-level assertions, and what each catches
@@ -535,22 +618,12 @@ is(closeDef.document?.safeParse("notes.md").success
    "a closing document off, and the alternatives are all the platform guessing which file the " +
    "team's ledger row should sit on");
 
-// 8c. The frozen copy and the ledger row, which are what make an approval and a close real.
-const persist = stripped("services/zz-core/src/persist.ts");
-is(!/\|\|\s*!chain\.docs\.has\(parts\[1\]\)\) return;/.test(persist)
-   && /chain\.documents\.length && !chain\.docs\.has\(parts\[1\]\)\) return;/.test(persist),
-   "snapshotOnApproval's membership test is not narrowed by the flow's own declaration — as " +
-   "a bare `!chain.docs.has(...)` it returns for every document of a freeform initiative, so " +
-   "an approval there files no frozen copy at all and the approver's name stands on bytes " +
-   "with nothing recording what they were");
-is(!/chain\.closingDoc && parts\[1\] !== chain\.closingDoc/.test(persist),
-   "ledgerOnClose still skips a close that did not land on the manifest's closing " +
-   "document. An ABANDONED initiative is exactly that close — the work stopped before the " +
-   "closing document was written, so initiative_close records it on the furthest document " +
-   "that exists — and the ledger, which the team's counts are totalled from, never received " +
-   "the one outcome it most needs. The outcome's PRESENCE is the signal: outcomeCheck " +
-   "refuses an outcome typed by hand, initiative_close writes exactly one, and the " +
-   "already-closed test stops a second row");
+// 8c. DELIBERATE: the file version's two assertions here read `services/zz-core/src/persist.ts`
+// — `snapshotOnApproval`'s membership test and `ledgerOnClose`'s closing-document skip — and
+// neither subject survives. The frozen copy an approval filed is a `doc_revision` row now, so
+// there is no directory walk to widen or narrow; and the ledger is no longer a file the close
+// appends a row to. Both modules were deleted with the store, and a check that read them would
+// report a blind scan rather than a pass.
 
 // First, ahead of everything else: if a path could not be read, every assertion over it passed
 // on the empty string.

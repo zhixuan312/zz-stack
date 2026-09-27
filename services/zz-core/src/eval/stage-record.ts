@@ -17,25 +17,33 @@
  *
  * COUPLED: each caller passes the stage name catalog/zz/zz-plugin-eval/flow.json declares for it.
  */
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import type pg from "pg";
 
-import { recordsFor, withInitiativeFactsLock, writeStageRecord } from "../initiative-record.js";
-import { safeName, userRoot } from "../paths.js";
+import { parseCaller } from "@zz/contracts";
+import { requestHeaders } from "@zz/mcp-http";
+
+import { initiativeIdFor, recordsFor, withInitiativeFactsLock, writeStageRecord } from "../initiative-record.js";
+import { safeName } from "../paths.js";
+import { db, teamFor } from "../platform-db.js";
 
 /** COUPLED: catalog/zz/zz-plugin-eval/flow.json's stage that produces protocol.md. */
 const DEFINE_STAGE = "zz-plugin-define-qualify";
 /** The acts DEFINE/QUALIFY owes after protocol.md is approved, in the order they run. */
 const DEFINE_OWES = ["protocol_affirm", "evaluator_qualify"] as const;
 
-async function located(initiative: string): Promise<{ root: string } | { record_refused: string }> {
+async function located(initiative: string):
+  Promise<{ p: pg.Pool; team: string; initiativeId: string } | { record_refused: string }> {
   const bad = safeName(initiative, "initiative");
   if (bad) return { record_refused: bad };
-  const root = await userRoot();
-  if (!existsSync(join(root, initiative))) {
-    return { record_refused: `no initiative named "${initiative}" in your team's store — call initiative_open first` };
+  const p = db();
+  if (!p) return { record_refused: "no platform database — a stage record is a row, and there is nowhere to write one" };
+  const team = await teamFor(parseCaller(requestHeaders()).email);
+  if (!team) return { record_refused: "this caller resolves to no team, so the record has no initiative to be filed under" };
+  const initiativeId = await initiativeIdFor(p, team, initiative);
+  if (!initiativeId) {
+    return { record_refused: `no initiative named "${initiative}" — call initiative_open first` };
   }
-  return { root };
+  return { p, team, initiativeId };
 }
 
 export async function recordStage(
@@ -45,7 +53,7 @@ export async function recordStage(
   const at = await located(initiative);
   if ("record_refused" in at) return at;
   // Read-merge-write: two stages recording into one initiative at once must not lose either.
-  await withInitiativeFactsLock(initiative, async () => writeStageRecord(at.root, initiative, stage, ids, replace));
+  await withInitiativeFactsLock(initiative, async () => writeStageRecord(at.p, at.initiativeId, stage, ids, replace));
   return {};
 }
 
@@ -84,8 +92,9 @@ export async function recordQualified(
   const at = await located(initiative);
   if ("record_refused" in at) return at;
   await withInitiativeFactsLock(initiative, async () => {
-    const update = qualifiedUpdate(recordsFor(at.root, initiative)[DEFINE_STAGE] ?? {}, protocolVersionId, measureKey, state);
-    if (update) writeStageRecord(at.root, initiative, DEFINE_STAGE, update);
+    const records = await recordsFor(at.p, at.team, initiative);
+    const update = qualifiedUpdate(records[DEFINE_STAGE] ?? {}, protocolVersionId, measureKey, state);
+    if (update) await writeStageRecord(at.p, at.initiativeId, DEFINE_STAGE, update);
   });
   return {};
 }

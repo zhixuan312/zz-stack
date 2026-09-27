@@ -6,13 +6,36 @@
  *
  * This module holds no policy: it answers questions, `server.ts` decides what to say about the
  * answers, and nothing here refuses anything.
+ *
+ * COUPLED: the record it reads is a COLUMN. `doc_revision.presented_at` is set by
+ * `document_present`, and `presented_at > written_at` is the whole of the question below. It
+ * used to be a line in `<initiative>/activity.jsonl` — permanent and per-initiative — and then a
+ * `zz.event` row, and that second home was wrong for one reason: an event table is unbounded and
+ * ephemeral, and the spec requires such a table to declare its retention. `zz.event` declares
+ * none, so the day somebody writes one, a sweep would delete the evidence and `document_approve`
+ * would stop refusing. **That gate fails OPEN**, and the person harmed is whoever's document goes
+ * through unread. A revision is not swept, and presentation is about the current bytes.
+ *
+ * DELIBERATE: the `shown` row in `zz.event` stays, written by the same presenter, as a
+ * projection. It answers "what has been fetched across this initiative", which a per-revision
+ * column cannot; nothing reads it for the gate any more.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import type pg from "pg";
 
-/** Actions that change a document's bytes. A `shown` after one of these is a fetch of the
- * current content; a `shown` before them is a fetch of something else. */
-const CHANGED = new Set(["document_write", "document_patch", "document_revise"]);
+/** The `kind` every document act is recorded under: `document.<action>`. Exported because
+ *  `recordAct` (versions.ts) is the writer and this module is the reader of the two acts they
+ *  share — the `shown` projection and the part-coverage rows below — and a prefix spelled twice
+ *  is one that drifts. */
+export const DOCUMENT_EVENT_PREFIX = "document.";
+
+/** The document's address split the way every reader splits it: the initiative, and the name
+ *  inside it. `null` for a path that is not `<initiative>/<document>` — a bare name, or a
+ *  document under a folder of its own. */
+export function splitDocPath(relPath: string): { initiative: string; path: string } | null {
+  const parts = relPath.replace(/^\/+/, "").split("/");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+  return { initiative: parts[0], path: parts[1] };
+}
 
 /** Was this document fetched back since the last time its content changed?
  *
@@ -20,39 +43,59 @@ const CHANGED = new Set(["document_write", "document_patch", "document_revise"])
  * `true` or `null`.
  *
  * Since the last content change, not "at this version". A `document_patch` does not bump
- * `version`, so a document can be shown at v1, patched eight times and approved while the log
- * still reads "shown v1", which version-matching would call fetched. Filling a scaffold is
- * exactly that shape.
+ * `version`, so a document can be shown at v1, patched eight times and approved while a
+ * version-comparison would still call it fetched. Filling a scaffold is exactly that shape. The
+ * column makes the same distinction for free: a patch rewrites the current revision in place, so
+ * its `written_at` moves forward while `presented_at` stays where the present left it.
  *
- * Returns null when the question cannot be answered — no log, unreadable, or no recorded
- * change to be "since". A warning invented from a missing record teaches the reader that this
- * line does not mean anything.
- */
-export function shownSinceLastChange(root: string, relPath: string): boolean | null {
+ * Returns null when the question cannot be answered — no such document, no current revision, a
+ * path that is not `<initiative>/<document>`, or a caller this deployment cannot place. A warning
+ * invented from a missing record teaches the reader that this line does not mean anything. */
+export async function shownSinceLastChange(
+  p: Pick<pg.Pool, "query">, team: string | null, relPath: string,
+): Promise<boolean | null> {
+  const at = splitDocPath(relPath);
+  if (!at || !team) return null;
   try {
-    const parts = relPath.replace(/^\/+/, "").split("/");
-    if (parts.length !== 2) return null;
-    const log = join(root, parts[0], "activity.jsonl");
-    if (!existsSync(log)) return null;
-    let lastChange = -1;
-    let lastShown = -1;
-    let i = 0;
-    for (const line of readFileSync(log, "utf8").split("\n")) {
-      if (!line.trim()) continue;
-      i += 1;
-      let e: { action?: string; path?: string };
-      try {
-        e = JSON.parse(line) as { action?: string; path?: string };
-      } catch {
-        continue;
-      }
-      if (e.path !== relPath) continue;
-      if (CHANGED.has(e.action ?? "")) lastChange = i;
-      else if (e.action === "shown") lastShown = i;
-    }
-    if (lastChange < 0) return null;
-    return lastShown > lastChange;
+    const { rows } = await p.query<{ presented_at: string | null; written_at: string | null }>(
+      `select r.presented_at::text as presented_at, r.written_at::text as written_at
+         from zz.doc d
+         join zz.initiative i on i.id = d.initiative_id
+         join zz.team t on t.id = i.team_id
+         join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
+        where t.slug = $1 and i.slug = $2 and d.path = $3`,
+      [team, at.initiative, at.path]);
+    const row = rows[0];
+    if (!row?.written_at) return null;
+    // STRICTLY later. The journal version compared positions, and a present that is not after the
+    // write it is meant to attest is no attestation — `>=` would let the same instant count.
+    return row.presented_at !== null && Date.parse(row.presented_at) > Date.parse(row.written_at);
   } catch {
     return null;
+  }
+}
+
+/** Record that a person was shown this document's CURRENT revision.
+ *
+ * Called by `document_present` alone, and it is the only writer of the column. The `shown`
+ * projection row is written beside it by `recordAct`, and this is what the gate reads. */
+export async function recordPresented(
+  p: Pick<pg.Pool, "query">, team: string | null, relPath: string,
+): Promise<boolean> {
+  const at = splitDocPath(relPath);
+  if (!at || !team) return false;
+  try {
+    const done = await p.query(
+      `update zz.doc_revision r set presented_at = now()
+         from zz.doc d, zz.initiative i, zz.team t
+        where d.initiative_id = i.id and i.team_id = t.id
+          and r.doc_id = d.id and r.revision = d.current_revision
+          and t.slug = $1 and i.slug = $2 and d.path = $3`,
+      [team, at.initiative, at.path]);
+    return (done.rowCount ?? 0) > 0;
+  } catch {
+    // A present that could not be recorded costs the record and never the fetch: the caller is
+    // holding the document either way, and `document_approve` will refuse it until one lands.
+    return false;
   }
 }

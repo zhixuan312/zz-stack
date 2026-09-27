@@ -30,12 +30,12 @@
  * `no` refuses; `unclear` asks once for sharper evidence, then goes to the stakeholder;
  * `unavailable` blocks nothing and is said so.
  */
-import { join } from "node:path";
-
 import { documentBody } from "@zz/contracts";
 import { decisionRows } from "@zz/indexing";
+import type pg from "pg";
 
-import { readAcceptanceCache, rowDigest, writeAcceptanceCache } from "./review-acceptance.js";
+import type { DocRow } from "./indexing.js";
+import { readAcceptanceCache, rowDigest } from "./review-acceptance.js";
 import { names, stakeholderSources } from "./review-rounds.js";
 import { assessFamily } from "./semantic.js";
 import type { Chain } from "./write-guards.js";
@@ -115,15 +115,17 @@ function statementProblems(rows: Statement[] | null, vouched: (id: string) => bo
  * Why approving this spec is refused, or null, with a note for the approval's answer either way.
  * Stands aside for a document whose flow declares neither section.
  */
-export async function specApprovalRefusal(root: string, chain: Chain, relPath: string, content: string,
-                                          by: string): Promise<{ refusal: string | null; note: string }> {
+export async function specApprovalRefusal(
+  p: pg.Pool, team: string, chain: Chain, relPath: string, content: string, by: string,
+  sources: readonly DocRow[],
+): Promise<{ refusal: string | null; note: string }> {
   const [initiative = "", name = ""] = relPath.replace(/^\/+/, "").split("/");
   const sections = chain.documents.find((d) => d.name === name)?.sections ?? [];
   const wantsOutline = sections.includes(PHASE_OUTLINE);
   const wantsStatements = sections.includes(CORE_STATEMENTS);
   if (!wantsOutline && !wantsStatements) return { refusal: null, note: "" };
   const body = documentBody(content);
-  const decisions = stakeholderSources(join(root, initiative), name);
+  const decisions = stakeholderSources(sources, name);
   const vouched = (id: string) => decisions.some((d) => names(d.body, id));
   const statementsSection = sectionOf(body, CORE_STATEMENTS);
   const rows = statementsSection === null ? null : statementRows(statementsSection);
@@ -136,20 +138,20 @@ export async function specApprovalRefusal(root: string, chain: Chain, relPath: s
   if (!wantsStatements || !rows) return { refusal: null, note: "" };
 
   // Only rows that passed every deterministic rule are read, and a row nobody asked about yet is
-  // asked now. Cached apart from any acceptance table the same document might carry.
-  const cacheName = name.replace(/\.md$/, ".statements.md");
-  const cache = readAcceptanceCache(root, initiative, cacheName);
+  // asked now.
+  //
+  // COUPLED: the memo is `zz.assessment`, keyed by the `about` an answer was asked under, and the
+  // statement rows are asked under `<doc>.statements#<id>#<digest>` — the `.statements` suffix
+  // because a spec may also carry an acceptance table, and the two memos must not answer for each
+  // other; the digest because a reading taken on other evidence is not a reading of this one.
+  const memoDoc = name.replace(/\.md$/, ".statements.md");
+  const cache = await readAcceptanceCache(p, team, initiative, memoDoc);
   const holds = rows.filter((r) => r.status === "holds").map((r) => ({ r, digest: rowDigest(r.statement, r.evidence) }));
   const due = holds.filter((x) => !(cache[x.r.id] ?? []).some((c) => c.digest === x.digest && c.reading !== "unavailable"));
-  const answers = await Promise.all(due.map((x) => assessFamily({
+  // No write back: `assessFamily` persists every one of these as it takes it.
+  await Promise.all(due.map((x) => assessFamily({
     family: "evidence_relation", subject: `${x.r.id}: ${x.r.statement}`, context: x.r.evidence,
-    initiative, about: `${name}#${x.r.id}`, askedBy: by })));
-  due.forEach((x, i) => {
-    const a = answers[i];
-    cache[x.r.id] = [...(cache[x.r.id] ?? []).filter((c) => c.digest !== x.digest),
-      { digest: x.digest, reading: a.reading, probability: a.probability, reason: a.reason, asked_at: a.asked_at }];
-  });
-  if (due.length) writeAcceptanceCache(root, initiative, cacheName, cache);
+    initiative, about: `${memoDoc}#${x.r.id}#${x.digest}`, askedBy: by })));
 
   const unavailable: string[] = [];
   for (const { r, digest } of holds) {

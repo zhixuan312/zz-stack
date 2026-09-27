@@ -4,61 +4,85 @@
  *
  * Fixtures rather than a live store: the answer must not depend on a machine or a network.
  *
+ * COUPLED: the record is `doc_revision.presented_at`, read against the revision's own
+ * `written_at`, so the fixture is a stubbed `pg.Pool` rather than a temporary activity log. The
+ * cases are the same ones the journal version drove, because the question is the same one — only
+ * its home moved, and the move is the whole point: a log can be swept, and the gate it backs
+ * fails OPEN when it is.
+ *
  * Run: node checks/attest-shown.ts   (also run by scripts/gate.ts)
  */
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { readFileSync } from "node:fs";
 
-const mod = join(process.cwd(), "services/zz-core/dist/attest.js");
-const { shownSinceLastChange } = await import(pathToFileURL(mod).href);
+import pg from "pg";
 
-const root = mkdtempSync(join(tmpdir(), "zz-attest-"));
+process.env.TEAM_DB_URL = "postgresql://stub@127.0.0.1:1/stub";
+
 const INIT = "2026-01-01-fixture";
-mkdirSync(join(root, INIT), { recursive: true });
+const TEAM = "t1";
+const T0 = "2026-01-01T00:00:00.000Z";
+const at = (n: number) => new Date(Date.parse(T0) + n * 1000).toISOString();
 
-/** One activity.jsonl line per entry: [action, document]. */
-const write = (entries: [string, string][]) =>
-  writeFileSync(
-    join(root, INIT, "activity.jsonl"),
-    entries.map(([action, doc]) => JSON.stringify({
-      ts: "2026-01-01T00:00:00.000Z", user: "a@b", action, path: `${INIT}/${doc}`,
-    })).join("\n") + "\n",
-  );
+/** The fixture's documents: which revision each is at, when it was written, and whether anybody
+ *  has been shown it. A document with no entry is one this initiative does not hold. */
+type Rev = { written_at: string | null; presented_at: string | null };
+let docs = new Map<string, Rev>();
 
-const cases: [string, boolean | null, [string, string][]][] = [
+pg.Pool.prototype.query = (async function query(text: string, values: unknown[] = []) {
+  const sql = String(text).replace(/\s+/g, " ").trim();
+  if (!/select r\.presented_at::text as presented_at/.test(sql)) return { rows: [], rowCount: 0 };
+  if (values[0] !== TEAM || values[1] !== INIT) return { rows: [], rowCount: 0 };
+  const rev = docs.get(String(values[2]));
+  return rev
+    ? { rows: [{ presented_at: rev.presented_at, written_at: rev.written_at }], rowCount: 1 }
+    : { rows: [], rowCount: 0 };
+}) as unknown as typeof pg.Pool.prototype.query;
+
+const load = (p: string) => import(new URL(`file://${process.cwd()}/${p}`).href);
+const { shownSinceLastChange } = await load("services/zz-core/dist/attest.js");
+const { db } = await load("services/zz-core/dist/platform-db.js");
+
+/** A present is recorded against the current revision and is strictly after its write. */
+const shown = (rev: Rev): Rev => ({ ...rev, presented_at: at(9) });
+
+const cases: [string, boolean | null, Map<string, Rev>][] = [
   ["written then shown then approved      -> fetched", true,
-   [["document_write", "d.md"], ["shown", "d.md"], ["document_approve", "d.md"]]],
-  ["revised then approved, never shown    -> NOT fetched", false,
-   [["document_write", "d.md"], ["shown", "d.md"], ["document_approve", "d.md"],
-    ["document_revise", "d.md"], ["document_approve", "d.md"]]],
-  ["shown, then PATCHED, then approved    -> NOT fetched", false,
-   [["document_write", "d.md"], ["shown", "d.md"], ["document_patch", "d.md"], ["document_approve", "d.md"]]],
-  ["shown AFTER the last patch            -> fetched", true,
-   [["document_write", "d.md"], ["document_patch", "d.md"], ["shown", "d.md"], ["document_approve", "d.md"]]],
-  // Another document's fetch must not vouch for this one — the log is shared per initiative.
+   new Map([["d.md", shown({ written_at: at(1), presented_at: null })]])],
+  ["revised after the present             -> NOT fetched", false,
+   // The revision was shown at v1 and then revised: a NEW revision, whose own `presented_at` is
+   // null because nobody has been shown it.
+   new Map([["d.md", { written_at: at(3), presented_at: at(2) }]])],
+  ["shown, then the bytes REWRITTEN in place -> NOT fetched", false,
+   // A patch rewrites the current revision, so its `written_at` moves past the present while
+   // `presented_at` stays where the present left it. This is the case a version comparison
+   // cannot see and the reason the comparison is on instants.
+   new Map([["d.md", { written_at: at(3), presented_at: at(2) }]])],
+  ["shown AFTER the last write            -> fetched", true,
+   new Map([["d.md", { written_at: at(2), presented_at: at(3) }]])],
+  // Another document's fetch must not vouch for this one — the column is per revision.
   ["another document was the one shown    -> NOT fetched", false,
-   [["document_write", "d.md"], ["shown", "other.md"], ["document_approve", "d.md"]]],
+   new Map([["d.md", { written_at: at(2), presented_at: null }],
+            ["other.md", shown({ written_at: at(1), presented_at: null })]])],
   // Silence, not a warning, when there is nothing to be "since".
-  ["no recorded change at all             -> null (silent)", null,
-   [["shown", "d.md"]]],
+  ["a revision with no recorded write     -> null (silent)", null,
+   new Map([["d.md", { written_at: null, presented_at: at(2) }]])],
 ];
 
 let failed = 0;
-for (const [name, want, entries] of cases) {
-  write(entries);
-  const got = shownSinceLastChange(root, `${INIT}/d.md`);
+for (const [name, want, fixture] of cases) {
+  docs = fixture;
+  const got = await shownSinceLastChange(db()!, TEAM, `${INIT}/d.md`);
   const ok = got === want;
   if (!ok) failed += 1;
   console.log(`  ${ok ? "ok  " : "FAIL"} ${name}  (got ${got})`);
 }
-// No log file at all, and a path that is not '<initiative>/<doc>.md'.
+// No such document, and a path that is not '<initiative>/<doc>.md'.
 for (const [name, arg, want] of [
-  ["no activity log at all                -> null (silent)", "2026-01-01-absent/d.md", null],
+  ["no such document at all              -> null (silent)", `${INIT}/absent.md`, null],
   ["a path that is not initiative/doc     -> null (silent)", "d.md", null],
-]) {
-  const got = shownSinceLastChange(root, arg);
+] as const) {
+  docs = new Map([["d.md", shown({ written_at: at(1), presented_at: null })]]);
+  const got = await shownSinceLastChange(db()!, TEAM, arg);
   const ok = got === want;
   if (!ok) failed += 1;
   console.log(`  ${ok ? "ok  " : "FAIL"} ${name}  (got ${got})`);
@@ -66,9 +90,9 @@ for (const [name, arg, want] of [
 
 // And the approval path actually asks
 //
-// Everything above drives `shownSinceLastChange` against a temporary store, which proves the
-// function is right and nothing about whether anything calls it: unwire the call from
-// `document_approve`, leave the import in place, and every case above still passes.
+// Everything above drives `shownSinceLastChange` against a fixture, which proves the function is
+// right and nothing about whether anything calls it: unwire the call from `document_approve`,
+// leave the import in place, and every case above still passes.
 // `checks/eval-tools-moved.ts` asserts initiative-acts imports attest, and an unused import is
 // still an import.
 const HANDLER = "services/zz-core/src/tools/initiative-acts.ts";

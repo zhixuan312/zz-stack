@@ -227,7 +227,9 @@ check("nothing under a store root that begins with a dot is reachable", () => {
     [".git/hooks/pre-commit", true], [".git/config", true], ["/.git/config", true],
     ["a/.git/objects/ab/cdef", true], [".zz/i/spec.md", true], ["~/i/spec.md", true],
     ["2026-08-30-sample-intake/spec.md", false], ["i/sources/2026-08-30-note.md", false],
-    ["_knowledge/nodes/0001-x.md", false], ["i/_versions/spec.v1.md", false],
+    // An underscore-prefixed segment is a reserved NAME, not a path that leaves anything: the
+    // shape rule must allow it, which is what keeps `writeGuard` the thing that refuses it.
+    ["_knowledge/nodes/0001-x.md", false],
   ];
   for (const [p, shouldRefuse] of want) {
     const got = !!refuse(p);

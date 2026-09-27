@@ -1,6 +1,6 @@
 /**
  * What a flow's manifest declares, against what its skills and the platform actually do —
- * stages, the sections a document owes, overlays.
+ * stages, the sections a document owes, and the flow's own skills.
  *
  * Nothing in a flow package fails when the two drift: the stage simply does something other
  * than what the manifest says.
@@ -176,29 +176,17 @@ check("no evaluation tool is wired to one flow", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-check("a team overlay adds and cannot replace", () => {
-  // An overlay is appended to the skill, never substituted for it: the shelf's text is
-  // returned first and entire, the team's follows under a heading naming it. Substitution is
-  // not something the code can express, so no overlay can shadow zz-platform or take over a
-  // stage.
-  //
-  // Reads for that shape — the platform's text concatenated ahead of the team's — because an
-  // overlay that replaced would be a one-character change here.
-  const src = withoutComments(zzCoreSource());
-  const bad: string[] = [];
-  if (!/readFileSync\(path, "utf8"\) \+ await teamOverlay\(name\)/.test(src)) {
-    bad.push("skill_read no longer appends the team overlay to the skill — an overlay that is not appended is a replacement");
-  }
-  // It must read from the team's store, not from a skills root, or it would be competing
-  // for the same names the platform's skills use.
-  if (!/join\(await userRoot\(\), "overlays", name, "SKILL\.md"\)/.test(src)) {
-    bad.push("the overlay no longer comes from the team's own overlays/ directory");
-  }
-  // The overlay rule is a platform rule and lives on the spine skill, so the check reads
-  // skills/zz-platform rather than any one flow's usage skill.
-  const usage = join(root, "skills/zz-platform/SKILL.md");
-  if (!readFileSync(usage, "utf8").includes("overlays/")) {
-    bad.push("no skill tells a team the overlay exists");
-  }
-  return bad.length ? bad.join("; ") : null;
-});
+/* REMOVED: "a team overlay adds and cannot replace".
+ *
+ * It asserted the shape of a team's own skill text — an overlay appended after the shelf's, and
+ * a skill root under the team's store — and both subjects are gone with the store. `teamOverlay`
+ * read `join(await userRoot(), "overlays", name, "SKILL.md")`, and `userRoot()` was
+ * `join(ARTIFACTS_DIR, "teams", sanitize(team))`: the overlay WAS the store. Re-pointing it would
+ * mean naming where an overlay lives now, and the answer is nowhere — measured against 0.86.0's
+ * production artifacts, no team root carries an `overlays/` directory or a `<team>/skills/`, so
+ * this is a path nothing has ever taken rather than a capability somebody depends on. A check
+ * whose whole subject is gone loses its assertion; it is not re-pointed at a spelling.
+ *
+ * The prose that taught it is gone from skills/zz-platform/SKILL.md in the same pass, which is
+ * the half that matters more: a stale check fails and gets noticed, and stale prose teaches the
+ * next reader to build something that cannot work. */

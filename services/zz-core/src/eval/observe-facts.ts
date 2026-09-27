@@ -197,9 +197,17 @@ export async function outcomeAndApprovalFacts(
         join zz.initiative ii on ii.id = t.initiative_id
         join zz.team et on et.id = ii.team_id
     ),
-    live as (select d.* from zz.doc d
-               join touched t on t.team_slug = d.team_slug and t.initiative = d.initiative
-              where d.path not like '\\_versions/%'),
+    -- A document reaches its initiative through initiative_id and its approval through the
+    -- revision it currently points at; zz.doc carries neither. A revision filed at an
+    -- approval is a doc_revision row, never a second zz.doc row, so there is no snapshot
+    -- path to exclude and one document is one row.
+    live as (select distinct et.slug as team_slug, i.slug as initiative, d.status, d.body,
+                    r.approved_by
+               from zz.doc d
+               join zz.initiative i on i.id = d.initiative_id
+               join zz.team et on et.id = i.team_id
+               left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
+               join touched t on t.team_slug = et.slug and t.initiative = i.slug),
     -- The outcome is zz.initiative's own, never a document's: initiative_close stamps
     -- closed_at/outcome on the row itself, and that row is the one authority for whether a
     -- touched initiative closed at all.

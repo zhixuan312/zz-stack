@@ -7,38 +7,27 @@
  * actually asked to judge, resolved from the ref alone, never a sentence naming it.
  *
  * Three shapes an `eval_run`'s own `subject_ref` can take:
- *   - `<initiative>/<doc>.md` — a governed document, read off the artifact store the way
- *     `findings-doc.ts` writes one and `bodyOf` below reads one, team-scoped. One under
- *     `_knowledge/` is a knowledge node, and resolves as that kind;
+ *   - `<initiative>/<doc>.md` — a governed document, read from `zz.doc`/`zz.doc_revision` the
+ *     way `findings-doc.ts` writes one, team-scoped. One under `_knowledge/` is a knowledge
+ *     node, and resolves as that kind from `zz.knowledge_node`;
  *   - `bug:<uuid>` — a bug report, rendered from its own `zz.bug` row;
  *   - a bare UUID — a `zz.event.run_id`, rendered from its own `zz.event` rows through
  *     `judge-trace.ts`'s `traceOf`, the platform's one existing "render a run as text" function —
  *     never a second renderer invented here.
  *
- * A `subject_ref` that resolves to neither — no such document on disk, no `zz.event` row for
+ * A `subject_ref` that resolves to neither — no such document row, no `zz.event` row for
  * that `run_id` — REFUSES BY NAME (this task's own contract clause): a model asked to judge
  * nothing silently invents the templated sentence instead, which is exactly the defect this file
  * exists to close, so resolving to nothing is never treated as "score it excluded" the way an
  * unqualified evaluator's answer is.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-
-import { ARTIFACTS_DIR } from "@zz/indexing";
 import type pg from "pg";
+
+import { KNOWLEDGE_TEAM } from "../paths.js";
+import { loadDocument } from "../versions.js";
 
 import type { SubjectKind } from "./evaluate-measures.js";
 import { traceOf } from "./judge-trace.js";
-import { sanitize } from "../paths.js";
-
-/** A governed document's body, out of the artifact store. Resolved here and never passed in, which
- *  keeps what a measure is asked to judge out of the conversation: the caller names a ref. */
-function bodyOf(team: string, initiative: string, path: string): string | null {
-  try {
-    const f = join(ARTIFACTS_DIR, "teams", sanitize(team), initiative, path);
-    return existsSync(f) ? readFileSync(f, "utf8") : null;
-  } catch { return null; }
-}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -119,14 +108,33 @@ export async function resolveSubjectRef(
           "no team — a document ref can only be read from the caller's own store",
       };
     }
-    const body = bodyOf(team, doc.initiative, doc.docPath);
-    if (body === null) {
+    // A journal node is not a document: it is a `zz.knowledge_node` row on the platform shelf,
+    // addressed by its ordinal and slug. Recognised by both halves, the same way `knowledge_add`
+    // decides which shelf a node lands on.
+    if (doc.initiative === "_knowledge") {
+      const named = /^nodes\/(\d+)-(.+)\.md$/.exec(doc.docPath);
+      const row = named
+        ? (await p.query<{ title: string | null; body: string | null }>(
+            `select k.title, k.body from zz.knowledge_node k
+               join zz.team t on t.id = k.team_id
+              where t.slug = $1 and k.node_ordinal = $2`,
+            [KNOWLEDGE_TEAM, named[1]])).rows[0]
+        : undefined;
+      if (!row) {
+        return {
+          error: `ERROR: subject_ref "${subjectRef}" names no journal node — nothing to judge`,
+        };
+      }
+      return { text: `${row.title ?? ""}\n\n${row.body ?? ""}`, kind: "knowledge" };
+    }
+    const loaded = await loadDocument(team, `${doc.initiative}/${doc.docPath}`);
+    if (!loaded.ok) {
       return {
         error: `ERROR: subject_ref "${subjectRef}" names no document at ${doc.initiative}/${doc.docPath} ` +
-          `in team "${team}"'s artifact store — nothing to judge`,
+          `in team "${team}" — nothing to judge`,
       };
     }
-    return { text: body, kind: doc.initiative === "_knowledge" ? "knowledge" : "document" };
+    return { text: loaded.text, kind: "document" };
   }
 
   return {

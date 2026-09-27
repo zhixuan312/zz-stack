@@ -5,7 +5,6 @@
  * flow names or, for an abandon that never reached that document, on the furthest one the work did
  * reach.
  */
-import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -13,17 +12,17 @@ import { documentApplies, OUTCOME_STOPPED, closeInitiative, parseCaller, parseEn
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { closingDocRuledOut, factsFor, factsForWrite } from "../initiative-record.js";
+import { closingDocRuledOut, factsFor } from "../initiative-record.js";
 import { chainFor, frontmatterStatus } from "../chain.js";
-import { oneLine } from "../document-rules.js";
+import { documentPaths, loadDocument } from "../versions.js";
+import { oneLine, putEnvelopeField } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
 import { moduleForFlow } from "../host/index.js";
 import { claimFor } from "../host/store.js";
-import { safeName, safePath, userRoot, writeGuard } from "../paths.js";
+import { safeName, safePath, writeGuard } from "../paths.js";
 import { platformEvent, sealOf } from "../indexing.js";
 import { saveDocument } from "../versions.js";
 import { stampEnvelope } from "../write-guards.js";
-import { putEnvelopeField } from "../persist.js";
 import { db, teamFor } from "../platform-db.js";
 import { packagedModules } from "../reviewed-modules.js";
 
@@ -70,7 +69,6 @@ export function registerInitiativeCloseTool(server: McpServer): void {
     },
     async ({ initiative, disposition, accepted_by, no_signoff_reason, document }) => {
       const who = parseCaller(requestHeaders());
-      const root = await userRoot();
       const team = await teamFor(who.email);
       // The anchor row (002_initiative_anchor.sql) is where every disposition of this call now
       // records the close, in the same call — refused without a database rather than falling
@@ -108,8 +106,8 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       // Refused, not silently corrected: `delivered` is a claim about the work and only the caller
       // can make it. The platform's job is to say the two do not agree.
       if (disposition === OUTCOME_STOPPED) {
-        const chain = chainFor(root, join(initiative, "probe.md"));
-        const dir = join(root, initiative);
+        const chain = await chainFor(p, team, join(initiative, "probe.md"));
+        const held = new Set(await documentPaths(team, initiative));
         // FR-58 (Task I-26): a gate or a requiredForClose document the branch has ruled out
         // (`not_applicable`) is excluded here too, for the same reason handover.md is —
         // without this, ANY flow declaring a conditional gate could never trip the refusal
@@ -118,7 +116,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         // APPLICABLE gate is passed and everything the branch actually required exists.
         // A damaged `_facts.json` reads as no facts here (`factsForWrite`): the abandon is the
         // way out of an initiative whose branch cannot be read, so it must not refuse on it.
-        const facts = factsForWrite(root, initiative, true) ?? {};
+        const facts = await factsFor(p, team, initiative);
         const ruledOut = (d: { name: string; when?: Record<string, string | string[]> }): boolean =>
           !!d.when && documentApplies(d, facts) === "not_applicable";
         // DELIBERATE: `handover.md` is excluded from the gate set. It is derived onto
@@ -128,12 +126,13 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         // to pass to be finished; it is what the platform asks for afterwards.
         const gates = chain.documents
           .filter((d) => d.gate === true && d.name !== "handover.md" && !ruledOut(d));
-        const gatesPassed = gates.length > 0 && gates.every(
-          (d) => frontmatterStatus(join(dir, d.name)) === "approved");
+        const gatesPassed = gates.length > 0 && (await Promise.all(
+          gates.map((d) => frontmatterStatus(p, team, initiative, d.name))))
+          .every((st) => st === "approved");
         const requiredForClose = chain.closeRequires
           .filter((n) => !ruledOut(chain.documents.find((d) => d.name === n) ?? { name: n }));
         const requiredPresent = requiredForClose.length > 0
-          && requiredForClose.every((n) => existsSync(join(dir, n)));
+          && requiredForClose.every((n) => held.has(`${initiative}/${n}`));
         if (gatesPassed && requiredPresent) {
           return text(
             `ERROR: ${initiative} does not look abandoned. Every gate this flow declares is ` +
@@ -154,7 +153,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       // facts on the store, not only arguments to this call. `closeInitiative` in `@zz/contracts`
       // performs it — this file names none of the three outcome words and cannot.
       const probe = join(initiative, "probe.md");
-      const chain = chainFor(root, probe);
+      const chain = await chainFor(p, team, probe);
       // A freeform initiative closes too, and the caller says on what. There is no manifest to read
       // a closing document off, and the outcome is the row a team's counts are built from, so it
       // cannot sit on a document nobody chose. A flow that does declare one keeps answering for
@@ -166,7 +165,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       // furthest declared document that exists instead. A caller may still name one with
       // `document`.
       const stopped = disposition === OUTCOME_STOPPED;
-      const dirOf = join(root, initiative);
+      const dirOf = await documentPaths(team, initiative);
       // FR-58 (Task I-28): the flow's declared closing document (`chain.closingDoc`) can itself
       // be `when`-conditional — `improvement.md`, promotable only — and ruled out on every other
       // branch. That is not "stopped before it was written"; it is "this branch closes
@@ -175,11 +174,12 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       // document the branch ruled out. `closingDocRuledOut` is the one question guards.ts's
       // `closeCheck` asks too, so the two never disagree about which document a close lands on.
       const declaredDoc = chain.documents.find((d) => d.name === chain.closingDoc);
-      const ruledOut = closingDocRuledOut(declaredDoc, factsForWrite(root, initiative, stopped) ?? {});
-      const missing = stopped && !!chain.closingDoc && !existsSync(join(dirOf, chain.closingDoc));
+      const ruledOut = closingDocRuledOut(declaredDoc, await factsFor(p, team, initiative));
+      const held = new Set(dirOf);
+      const missing = stopped && !!chain.closingDoc && !held.has(`${initiative}/${chain.closingDoc}`);
       const furthest = (ruledOut || missing)
         ? [...chain.documents].reverse()
-          .find((d) => d.name !== "handover.md" && existsSync(join(dirOf, d.name)))?.name
+          .find((d) => d.name !== "handover.md" && held.has(`${initiative}/${d.name}`))?.name
         : undefined;
       const named = (document ?? "").trim();
       const closingDoc = chain.closingDoc
@@ -202,7 +202,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
               `ERROR: ${initiative} has neither a document nor an anchor row, so there is ` +
               "nothing here to mark and nothing that says it was ever opened.");
           }
-          if (readdirSync(join(root, initiative)).some((f: string) => f.endsWith(".md"))) {
+          if (dirOf.some((f: string) => f.endsWith(".md"))) {
             return text(
               `ERROR: ${initiative} holds documents but none its flow declares, so the close ` +
               "has nowhere it belongs by default. Name one: `document: \"<name>.md\"`.");
@@ -251,11 +251,15 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       const relPath = `${initiative}/${closingDoc}`;
       const blocked = writeGuard(relPath);
       if (blocked) return text(blocked);
-      const target = await safePath(relPath);
-      if (!existsSync(target)) {
+      await safePath(relPath);
+      // The document's own current revision, which is the text the close is recorded onto —
+      // `zz.doc_revision` is the bytes a document IS now, and a path that names no row is a
+      // document that does not exist.
+      const loaded = await loadDocument(team, relPath);
+      if (!loaded.ok) {
         return text(`ERROR: ${relPath} does not exist — a close is recorded ON a document, so it must be written first.`);
       }
-      let doc = readFileSync(target, "utf8");
+      let doc = loaded.text;
       // An initiative closes once. A second close overwrites `outcome` on the document while
       // ledgerOnClose returns early when one is already there, so the document says the new word and
       // the ledger goes on saying the first.
@@ -318,7 +322,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
           // the step's own completion rule would read `unmet` forever. A step with no document at
           // all, or one whose document still applies, is untouched — `documentApplies` answers
           // `applies` for anything carrying no `when`.
-          const facts = factsFor(root, initiative);
+          const facts = await factsFor(p, team, initiative);
           const ruledOutSteps = governed.module.steps
             .filter((st) => {
               const docs = chain.documents.filter((d) => d.stage === st.id);
@@ -380,7 +384,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       doc = putEnvelopeField(doc, "closed_by", who.email);
       if (signedBy) doc = putEnvelopeField(doc, "accepted_by", signedBy);
       if (!signedBy && reason) doc = putEnvelopeField(doc, "no_signoff_reason", reason);
-      const bad = await documentGuards(chain, root, relPath, doc, team, "initiative_close");
+      const bad = await documentGuards(chain, relPath, doc, team, "initiative_close");
       if (bad) return text(bad);
       // The anchor row, before the document: `accepted_by`/`no_signoff_reason` satisfy the same
       // two CHECKs the migration declares (an `accepted` outcome always names an accepted_by;

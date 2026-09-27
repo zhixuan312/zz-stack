@@ -140,9 +140,10 @@ export function registerKnowledgeSearch(server: McpServer): void {
         // Lowercased because the stored side is. A caller who filters `plugin:Sdlc` against
         // lowercase-stored tags otherwise gets an empty result that reads as "nothing is known".
         if (tags?.length) push(`tags && ${add(tags.map((t) => t.trim().toLowerCase()))}::text[]`);
-        // "Replaced" is recorded in two columns and a current-state filter reads both:
-        // `status = 'superseded'` is the journal node's convention, set by knowledge_supersede;
-        // `superseded_by` is the pointer, and it is what a _versions/ snapshot carries.
+        // "Replaced" is recorded in two places and a current-state filter reads both:
+        // `status = 'superseded'` is the journal node's convention, set by knowledge_supersede,
+        // and `superseded_by` is the successor a node names — a document has none, so its own
+        // status is the whole of the answer for it.
         if (!withHistory) push(`superseded_by is null and status <> 'superseded'`);
       };
 
@@ -199,16 +200,26 @@ export function registerKnowledgeSearch(server: McpServer): void {
           from zz.knowledge_node k
           join zz.team t on t.id = k.team_id)`;
       const SOURCE = `(
-        select d.initiative, d.path, coalesce(i.flow,'') as flow, d.type, d.status, i.outcome,
-               d.approved_by, d.approved_at, d.updated_at, d.title, d.tags, d.evidence,
-               d.superseded_by, d.team_slug, d.body, d.body_tsv, 'document' as subject,
+        select i.slug as initiative, d.path, coalesce(i.flow,'') as flow, d.type, d.status,
+               i.outcome, a.email as approved_by, r.approved_at, d.updated_at, d.title, d.tags,
+               -- The envelope key the current revision carries, read back as the array the union's
+               -- other arm produces. A document's citations are the cites links beside it.
+               string_to_array(coalesce(r.fields->>'evidence',''), ', ') as evidence,
+               -- A document has no successor pointer: a later revision of it is a doc_revision
+               -- row, and a document replaced by another one is status: superseded. The node
+               -- arm is the one that still names one.
+               null::text as superseded_by,
+               t.slug as team_slug, coalesce(r.body, d.body) as body, d.body_tsv,
+               'document' as subject,
                -- The union's column names come from this arm, so the two the node arm derives are
                -- named here: a bare i.id would arrive as id and a bare empty-array literal as
                -- ?column?, and the lanes below join on these two by name.
                i.id as initiative_id, '{}'::uuid[] as cited_ids
           from zz.doc d
-          left join zz.team t on t.slug = d.team_slug
-          left join zz.initiative i on i.team_id = t.id and i.slug = d.initiative
+          left join zz.initiative i on i.id = d.initiative_id
+          left join zz.team t on t.id = i.team_id
+          left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
+          left join zz.principal a on a.id = r.approved_by
         union all
         ${NODE_ARM}
       ) k`;

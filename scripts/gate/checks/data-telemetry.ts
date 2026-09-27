@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, functionBody, root, sourceFiles, toolsIn, zzCoreSource, zzCoreTools, withoutComments} from "../read.ts";
+import { between, root, sourceFiles, toolsIn, zzCoreSource, zzCoreTools, withoutComments} from "../read.ts";
 import { check } from "../run.ts";
 import { schemaColumns } from "../facts.ts";
 
@@ -100,17 +100,18 @@ check("telemetry keeps identifiers and never the team's own words", () => {
 check("a record that is counted is a record that is written once", () => {
   // Both halves have to hold: the ledger appends once, and the close refuses a second one.
   // Either alone lets the ledger's count and the closing document's outcome diverge.
-  const src = zzCoreSource();
   const bad: string[] = [];
-  // The guard, matched on the behaviour and not on a comment that explains it.
-  //
-  // Sliced first, stripped second: `withoutComments` shortens what it replaces, so stripping
-  // before slicing moves every offset the slice depends on.
-  const ledger = withoutComments(functionBody(src, "ledgerOnClose") ?? "");
-  if (!ledger) {
-    bad.push("ledgerOnClose() is not a function this can read — the append-once guard cannot be checked");
-  } else if (!/parseEnvelope\([a-z]+\)\.outcome\)\s*return/.test(ledger)) {
-    bad.push("ledgerOnClose no longer returns early on a document that already carries an outcome — a reclose would count twice");
+  // COUPLED: `ledgerOnClose` went with the store. It appended one row per close to
+  // `<team>/_ledger.md`, and that ledger is a query over `zz.initiative` now — `closed_at`,
+  // `outcome` and the counts the console derives. So the append-once guard has ONE home rather
+  // than two, and it is the anchor row: the UPDATE that closes an initiative is guarded on
+  // `closed_at is null`, which is the ROW refusing a second close rather than a file the close
+  // chooses not to append to. A guard that reads the row it is about to write is stronger than
+  // one that reads a ledger beside it, and the check follows it there rather than dropping it.
+  const closeBody = zzCoreTools().find((t) => t.name === "initiative_close")?.body ?? "";
+  if (!/i\.closed_at is null/.test(withoutComments(closeBody))) {
+    bad.push("initiative_close's anchor update is not guarded on `closed_at is null` — a second " +
+             "close would land, and the count a team's ledger derives would double");
   }
   // The refusal, in initiative_close() itself: read the outcome already on the document and
   // stop. Located through zzCoreTools(), which is format-independent.

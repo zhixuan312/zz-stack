@@ -29,14 +29,15 @@
  * the row accepts it. `unavailable` blocks nothing and is said so.
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { documentBody } from "@zz/contracts";
 import { decisionRows } from "@zz/indexing";
+import type pg from "pg";
 
-import { names, reviewMove, reviewRounds, stakeholderSources, unbackloggedFindings } from "./review-rounds.js";
-import { db, teamFor } from "./platform-db.js";
+import type { DocRow } from "./indexing.js";
+
+import { names, reviewMove, reviewRounds, stakeholderSources, unbackloggedFindings,
+         type RoundAssessments } from "./review-rounds.js";
 import { loadDocument } from "./versions.js";
 import { assessFamily, type Assessment } from "./semantic.js";
 import type { Chain } from "./write-guards.js";
@@ -76,29 +77,16 @@ function criteriaIn(doc: string, body: string, out: Map<string, Criterion>): voi
   }
 }
 
-/** Every criterion the verified documents declare, read from the store on disk. The fixture path:
- *  the check that guards this module drives it over a directory it built. */
-export function declaredCriteria(dir: string, verifies: string[]): Criterion[] {
-  const out = new Map<string, Criterion>();
-  for (const doc of verifies) {
-    if (!existsSync(join(dir, doc))) continue;
-    criteriaIn(doc, documentBody(readFileSync(join(dir, doc), "utf8")), out);
-  }
-  return [...out.values()];
-}
-
-/** The same criteria, read from the rows: the body of the revision `doc.current_revision` names.
- *  This is the read an approval is actually held to, so a document revised since its criteria
- *  were last read is judged on what it now says.
+/** The criteria a verifying document's targets declare, read from their own current revisions.
  *
- * DELIBERATE: a deployment with no database falls back to the store on disk, because a store
- * with no rows still has the documents in it. */
-async function declaredCriteriaOf(
-  dir: string, team: string | null, initiative: string, verifies: string[],
+ *  Exported because a check has to name the same criteria the reader computes — the memo key is a
+ *  digest of the criterion's text, so a check that parsed the table itself would be keying a
+ *  digest of something the reader never sees. */
+export async function declaredCriteriaOf(
+  team: string | null, initiative: string, verifies: string[],
 ): Promise<Criterion[]> {
-  const p = db();
-  if (!p || !team) return declaredCriteria(dir, verifies);
   const out = new Map<string, Criterion>();
+  if (!team) return [];
   for (const doc of verifies) {
     const loaded = await loadDocument(team, `${initiative}/${doc}`);
     if (!loaded.ok) continue;
@@ -133,29 +121,54 @@ export function rowDigest(criterion: string, evidence: string): string {
 interface CachedReading { digest: string; reading: Assessment["reading"]; probability: number | null;
                                  reason: string | null; asked_at: string }
 type Cache = Record<string, CachedReading[]>;
-const cacheFile = (root: string, initiative: string, doc: string) =>
-  join(root, initiative, "_assessments", doc.replace(/\.md$/, ".acceptance.json"));
-
-export function readAcceptanceCache(root: string, initiative: string, doc: string): Cache {
-  const f = cacheFile(root, initiative, doc);
-  if (!existsSync(f)) return {};
-  try { return (JSON.parse(readFileSync(f, "utf8")) as { rows?: Cache }).rows ?? {}; } catch { return {}; }
-}
-export function writeAcceptanceCache(root: string, initiative: string, doc: string, rows: Cache): void {
-  mkdirSync(join(root, initiative, "_assessments"), { recursive: true });
-  writeFileSync(cacheFile(root, initiative, doc), JSON.stringify({ document: doc, rows }, null, 2) + "\n");
+/** The readings already taken, keyed by criterion id — the memo that keeps this from asking the
+ *  same question of the same evidence on every write.
+ *
+ *  COUPLED: the memo is `zz.assessment`, and there is no second copy. `assessFamily` persists
+ *  every answer as it takes it, so the row IS the record; `<initiative>/_assessments/` and the
+ *  `.acceptance.json` files in it were that record written twice, and a second copy is what
+ *  drifts. Nothing is written back here for the same reason.
+ *
+ *  DELIBERATE: the memo is keyed by the DIGEST of the criterion and the evidence, and `about`
+ *  carries it — `<doc>#<row id>#<digest>`. `zz.assessment` has no column for the third and the
+ *  other two are already in `about` for every other family, so the key is composed there rather
+ *  than a column added for one family's benefit. Without it the memo cannot tell "already asked
+ *  about these bytes" from "asked about the bytes this table carried before the revision", and a
+ *  stale reading is how an approval passes on evidence nobody checked. */
+export async function readAcceptanceCache(
+  p: pg.Pool, team: string, initiative: string, doc: string,
+): Promise<Cache> {
+  const { rows } = await p.query<{ about: string; reading: Assessment["reading"]; probability: string | null;
+                                   reason: string | null; asked_at: string }>(
+    `select a.about, a.reading, a.probability::text as probability, a.reason, a.asked_at::text as asked_at
+       from zz.assessment a
+       join zz.initiative i on i.id = a.initiative_id
+       join zz.team t on t.id = i.team_id
+      where t.slug = $1 and i.slug = $2 and a.about like $3
+      order by a.asked_at, a.id`, [team, initiative, `${doc}#%`]);
+  const out: Cache = {};
+  for (const r of rows) {
+    const parts = r.about.split("#");
+    const id = parts[1] ?? "";
+    const digest = parts[2] ?? "";
+    if (!id || !digest) continue;
+    (out[id] ??= []).push({ digest, reading: r.reading,
+                            probability: r.probability === null ? null : Number(r.probability),
+                            reason: r.reason, asked_at: r.asked_at });
+  }
+  return out;
 }
 
 /** Ask `evidence_relation` of every established row whose current evidence nobody asked about
  *  yet, a few at a time, and cache the answers. Returns one line for the caller, or "". */
-export async function assessAcceptance(root: string, initiative: string, doc: { name: string; verifies: string[] },
+export async function assessAcceptance(p: pg.Pool, team: string, initiative: string,
+                                       doc: { name: string; verifies: string[] },
                                        body: string, by: string): Promise<string> {
   const table = acceptanceTable(body);
   if (!table) return "";
-  const criteria = new Map((await declaredCriteriaOf(join(root, initiative), await teamFor(by),
-                                                      initiative, doc.verifies))
+  const criteria = new Map((await declaredCriteriaOf(team, initiative, doc.verifies))
     .map((c) => [c.id, c]));
-  const cache = readAcceptanceCache(root, initiative, doc.name);
+  const cache = await readAcceptanceCache(p, team, initiative, doc.name);
   const due = table.filter((r) => r.status === "established" && criteria.has(r.id) && QUOTED.test(r.evidence))
     .map((r) => ({ row: r, text: criteria.get(r.id)?.text ?? "", digest: rowDigest(criteria.get(r.id)?.text ?? "", r.evidence) }))
     // An `unavailable` answer is asked again: it says the service was down, not what it thinks.
@@ -165,15 +178,10 @@ export async function assessAcceptance(root: string, initiative: string, doc: { 
   for (let i = 0; i < due.length; i += 8) {
     answers.push(...await Promise.all(due.slice(i, i + 8).map((x) => assessFamily({
       family: "evidence_relation", subject: `${x.row.id}: ${x.text}`, context: x.row.evidence,
-      initiative, about: `${doc.name}#${x.row.id}`, askedBy: by }))));
+      initiative, about: `${doc.name}#${x.row.id}#${x.digest}`, askedBy: by }))));
   }
-  due.forEach((x, i) => {
-    const a = answers[i];
-    cache[x.row.id] = (cache[x.row.id] ?? []).filter((c) => c.digest !== x.digest);
-    cache[x.row.id].push({ digest: x.digest, reading: a.reading, probability: a.probability,
-                                     reason: a.reason, asked_at: a.asked_at });
-  });
-  writeAcceptanceCache(root, initiative, doc.name, cache);
+  // No write back: every one of these answers is a `zz.assessment` row already, written by
+  // `assessFamily` as it took it, and the memo above reads them from there next time.
   const count = (r: string) => answers.filter((a) => a.reading === r).length;
   return `evidence_relation asked of ${due.length} row(s): ${count("yes")} yes, ${count("no")} no, ` +
          `${count("unclear")} unclear, ${count("unavailable")} unavailable.`;
@@ -183,23 +191,24 @@ export async function assessAcceptance(root: string, initiative: string, doc: { 
  * Why approving this verifying document is refused, or null, with a note for the approval's
  * answer either way. Deterministic rules first; the semantic reading only of rows that pass them.
  */
-export async function acceptanceApprovalRefusal(root: string, chain: Chain, relPath: string, content: string,
-                                                by: string): Promise<{ refusal: string | null; note: string }> {
+export async function acceptanceApprovalRefusal(
+  p: pg.Pool, team: string, chain: Chain, relPath: string, content: string, by: string,
+  sources: readonly DocRow[], answers: RoundAssessments,
+): Promise<{ refusal: string | null; note: string }> {
   const doc = verifyingDoc(chain, relPath);
   if (!doc) return { refusal: null, note: "" };
   const initiative = relPath.replace(/^\/+/, "").split("/")[0];
-  const dir = join(root, initiative);
   const body = documentBody(content);
   const lead = `ERROR: ${relPath} is not approved — `;
-  const backlog = unbackloggedFindings(root, initiative, doc.stage, doc.name, body);
-  const criteria = await declaredCriteriaOf(dir, await teamFor(by), initiative, doc.verifies);
+  const backlog = unbackloggedFindings(doc.stage, doc.name, body, sources);
+  const criteria = await declaredCriteriaOf(team, initiative, doc.verifies);
   const bad: string[] = [];
   // The sweep has to have run and be settled: round 1 at least, or a stakeholder's explicit
   // waiver, and then nothing blocking.
-  const sweep = reviewMove(root, initiative, doc.stage, doc.name);
+  const sweep = reviewMove(initiative, doc.stage, doc.name, sources, answers);
   let waived = "";
-  if (!reviewRounds(dir, doc.stage, doc.name).length) {
-    const waiver = stakeholderSources(dir, doc.name).find((s) => WAIVER.test(s.body));
+  if (!reviewRounds(sources, doc.stage, doc.name).length) {
+    const waiver = stakeholderSources(sources, doc.name).find((s) => WAIVER.test(s.body));
     if (waiver) waived = `The review sweep ran no round: sources/${waiver.file} waives it. `;
     else {
       bad.push(`no round of ${doc.stage} is recorded — the sweep runs at least once: record round 1 with ` +
@@ -226,7 +235,7 @@ export async function acceptanceApprovalRefusal(root: string, chain: Chain, relP
   }
   const byId = new Map(table.map((r) => [r.id, r]));
   const declared = new Set(criteria.map((c) => c.id));
-  const decisions = stakeholderSources(dir, doc.name);
+  const decisions = stakeholderSources(sources, doc.name);
   const vouched = (id: string) => decisions.some((d) => names(d.body, id));
   const missing = criteria.filter((c) => !byId.has(c.id)).map((c) => c.id);
   if (missing.length) bad.push(`no row for ${missing.join(", ")}`);
@@ -247,8 +256,8 @@ export async function acceptanceApprovalRefusal(root: string, chain: Chain, relP
   if (bad.length) return { refusal: lead + bad.join("; "), note: "" };
 
   // Only rows that passed every deterministic rule are read; a row nobody asked about yet is asked now.
-  await assessAcceptance(root, initiative, doc, body, by);
-  const cache = readAcceptanceCache(root, initiative, doc.name);
+  await assessAcceptance(p, team, initiative, doc, body, by);
+  const cache = await readAcceptanceCache(p, team, initiative, doc.name);
   const text = new Map(criteria.map((c) => [c.id, c.text]));
   const unavailable: string[] = [];
   for (const r of table.filter((x) => x.status === "established")) {

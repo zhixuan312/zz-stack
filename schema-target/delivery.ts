@@ -192,7 +192,7 @@ export const DELIVERY: Record<string, TableTarget> = {
     ],
     checks: [],
     indexes: [],
-    comment: "Mirror of <initiative>/_facts.json for the console. The file is authoritative; a row here is never updated once written for a given (team, initiative, fact).",
+    comment: "An initiative's durable branch facts, written once by the stage that decides each and never revised. `<initiative>/_facts.json` was the other half of this record and is retired with the store, so the row is now the authority. A stage's own record of what it minted is `initiative_record`, which is latest-wins and is a different shape.",
     columnComments: {},
   },
   bug: {
@@ -383,6 +383,77 @@ export const DELIVERY: Record<string, TableTarget> = {
       "CREATE INDEX bug_open ON zz.bug USING btree (status, reported_at DESC)",
     ],
     comment: "Bugs reported by the people using this platform. Written by bug_report on /core, read by bug_list, closed by bug_resolve. Not knowledge (a report needs no evidence) and not an event (an event has no author).",
+    columnComments: {},
+  },
+  // What each `produces: "record"` stage of an initiative minted: the ids a later stage needs
+  // and, being in no document, could otherwise only find in the conversation that ran it.
+  //
+  // DELIBERATE: its own table, and NOT `initiative_fact` beside it. The two look alike — both
+  // are key/value rows about one initiative — and they are opposite shapes. A branch fact is
+  // recorded ONCE by the stage that decides it and is never revised; a stage record is
+  // LATEST-WINS, because a second profile or a re-score supersedes what the stage recorded
+  // before, which is exactly what "resume from the initiative" means. One table cannot be both,
+  // and a row whose own comment says it is never updated while a writer updates it is a fact
+  // with two homes and a false comment in one of them.
+  //
+  // This is the table that makes the spec's store-migration sentence true: `<initiative>/`
+  // `_records.json` is one of the four per-initiative JSON state files it names as already in
+  // tables, and it was the one with no table.
+  initiative_record: {
+    columns: [
+      [
+        "initiative_id",
+        "uuid",
+        false,
+        null,
+      ],
+      [
+        "stage",
+        "text",
+        false,
+        null,
+      ],
+      [
+        "id_name",
+        "text",
+        false,
+        null,
+      ],
+      [
+        "value",
+        "text",
+        false,
+        null,
+      ],
+      [
+        "set_at",
+        "timestamp with time zone",
+        false,
+        "now()",
+      ],
+    ],
+    primaryKey: [
+      "initiative_id",
+      "stage",
+      "id_name",
+    ],
+    uniques: [],
+    foreignKeys: [
+      {
+        columns: [
+          "initiative_id",
+        ],
+        refTable: "initiative",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "CASCADE",
+        deferrable: false,
+      },
+    ],
+    checks: [],
+    indexes: [],
+    comment: null,
     columnComments: {},
   },
 };

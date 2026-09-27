@@ -29,7 +29,11 @@ const REVIEW_ACCEPTANCE = "services/zz-core/src/review-acceptance.ts";
 const CONSUMED: readonly Consumer[] = [
   // yes on a round that read the current version: the next move is `decide`, for the stakeholder.
   ...["sdlc-flow", "sdlc-spec-audit", "sdlc-plan-audit"].map((skill) => ({
-    skill, family: "changes_commitment", module: AUDIT, reads: [/a\.changes_commitment\?\.reading === "yes"/],
+    // COUPLED: the reading arrives in the `answers` map the caller passes (`assessmentsFor`), so
+    // the family is found by name and its reading compared on the value that comes back. Same two
+    // facts the file-store spelling asserted: the family is named, and `yes` is what it routes on.
+    skill, family: "changes_commitment", module: AUDIT,
+    reads: [/x\.family === "changes_commitment"/, /a\?\.reading === "yes"/],
   })),
   // yes: the finding does not block and does not count toward the convergence test.
   { skill: "sdlc-review", family: "repeats_finding", module: REVIEW_ROUNDS,

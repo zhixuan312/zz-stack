@@ -4,9 +4,12 @@
  * COUPLED: the row a document IS — `zz.doc` + `zz.doc_revision` — is written by `saveDocument`
  * in `versions.ts`, the ONE insert path into that shape. Nothing here writes a second one: two
  * writers for one row shape drift, and this platform's two already had (the path column, the
- * revision numbering, what a revision's `body` holds). The store's own file, its `_versions/`
- * snapshot, its `_ledger.md` row and its git commit live there too, until Task I-41 retires
- * them with the layer.
+ * revision numbering, what a revision's `body` holds).
+ *
+ * The file store and its git history are gone with phase 6, so every fact a guard reads is a
+ * row: a document's initiative and flow come from `zz.initiative`, a revision's approval from
+ * `zz.doc_revision`, and the close's own `outcome`/`closed_by` from the revision's `fields`
+ * payload — the envelope's open half, which is where a key no column carries lands.
  *
  * What is here is zz-core's alone: `platformEvent` writes `zz.event` and is the one call a
  * mutating tool makes to record that it did; `journalLog` is the knowledge tools' spelling of
@@ -139,21 +142,36 @@ export interface DocRow {
   outcome: string | null; approved_by: string | null; approved_at: string | null;
   closed_by: string | null; updated_at: string; title: string; body: string; tags: string[];
   current_revision: number | null; approved_revision: number | null;
+  /** The current revision's ENVELOPE PAYLOAD — the keys no column of `doc` or `doc_revision`
+   *  carries. `stage` and `supports` are what `initiative_status` reads a source's own
+   *  declaration out of; `stakeholder` and a flow's own fields are the rest of why it exists.
+   *  Null when the revision carries nothing outside the columns, which is the common case. */
+  fields: Record<string, string> | null;
 }
-/** One document by the path the store addresses it by: the initiative and the name inside it. */
+/** One document by the path the store addresses it by: the initiative and the name inside it.
+ *
+ * COUPLED: the initiative is a slug on `zz.initiative` and the flow with it, the approval is a
+ * column of the CURRENT revision, and the close's own `outcome`/`closed_by` are keys of that
+ * revision's `fields` payload — the envelope's open half, where a key no column carries lands.
+ * `zz.doc` itself carries neither: it is the document's identity and its status. */
 export async function docRow(
   p: pg.Pool, team: string | null, initiative: string, docPath: string,
 ): Promise<DocRow | null> {
   const row = (await p.query<DocRow>(`
-    select d.id::text as id, d.path, d.initiative, d.flow, d.type, d.status, d.outcome,
-           d.approved_by, d.approved_at::text as approved_at, d.closed_by,
+    select d.id::text as id, d.path, i.slug as initiative, coalesce(i.flow, '') as flow,
+           d.type, d.status, r.fields->>'outcome' as outcome,
+           a.email as approved_by, r.approved_at::text as approved_at,
+           r.fields->>'closed_by' as closed_by,
            d.updated_at::text as updated_at, d.title, coalesce(r.body, d.body) as body,
            coalesce(d.tags, '{}'::text[]) as tags,
-           d.current_revision, d.approved_revision
+           d.current_revision, d.approved_revision, r.fields
       from zz.doc d
+      join zz.initiative i on i.id = d.initiative_id
+      join zz.team t on t.id = i.team_id
       left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
-     where d.initiative = $1 and d.path = $2
-       and ($3::text is null or d.team_slug = $3)
+      left join zz.principal a on a.id = r.approved_by
+     where i.slug = $1 and d.path = $2
+       and ($3::text is null or t.slug = $3)
      order by d.updated_at desc limit 1`, [initiative, docPath, team])).rows[0];
   return row ?? null;
 }
@@ -162,14 +180,19 @@ export async function docRow(
  *  a document up by, so the two agree about which document a flow's declaration names. */
 export async function docRows(p: pg.Pool, team: string | null, initiative: string): Promise<DocRow[]> {
   return (await p.query<DocRow>(`
-    select d.id::text as id, d.path, d.initiative, d.flow, d.type, d.status, d.outcome,
-           d.approved_by, d.approved_at::text as approved_at, d.closed_by,
+    select d.id::text as id, d.path, i.slug as initiative, coalesce(i.flow, '') as flow,
+           d.type, d.status, r.fields->>'outcome' as outcome,
+           a.email as approved_by, r.approved_at::text as approved_at,
+           r.fields->>'closed_by' as closed_by,
            d.updated_at::text as updated_at, d.title, coalesce(r.body, d.body) as body,
            coalesce(d.tags, '{}'::text[]) as tags,
-           d.current_revision, d.approved_revision
+           d.current_revision, d.approved_revision, r.fields
       from zz.doc d
+      join zz.initiative i on i.id = d.initiative_id
+      join zz.team t on t.id = i.team_id
       left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
-     where d.initiative = $1 and ($2::text is null or d.team_slug = $2)
+      left join zz.principal a on a.id = r.approved_by
+     where i.slug = $1 and ($2::text is null or t.slug = $2)
      order by d.path`, [initiative, team])).rows;
 }
 /** The approval a write carries forward, as `saveDocument` takes it.

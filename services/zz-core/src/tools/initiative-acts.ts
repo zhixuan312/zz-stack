@@ -15,9 +15,6 @@
  * approver's name would stand on bytes they never read. It files a new `doc_revision`, returns
  * `doc` to draft, clears the stale approval and leaves the approved revision untouched.
  */
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { documentBody, parseCaller } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
@@ -26,12 +23,11 @@ import { z } from "zod";
 
 import { shownSinceLastChange } from "../attest.js";
 import { chainFor } from "../chain.js";
-import { fieldRefusal, frontmatterRefusal, oneLine, renderEnvelope } from "../document-rules.js";
+import { fieldRefusal, frontmatterRefusal, oneLine, putEnvelopeField, renderEnvelope } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
 import { noteDocument, noteRevision } from "../host/observe.js";
-import { sourceDocument } from "../indexing.js";
-import { DOC_REF, safePath, tagRefusal, titleSlug, userRoot, writeGuard } from "../paths.js";
-import { putEnvelopeField } from "../persist.js";
+import { docRows, sourceDocument } from "../indexing.js";
+import { DOC_REF, safePath, tagRefusal, titleSlug, writeGuard } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
 import { improvementApprovalRefusal } from "../release-owners.js";
 import { acceptanceApprovalRefusal } from "../review-acceptance.js";
@@ -42,6 +38,7 @@ import { isoToday, normalizeSections } from "../write-guards.js";
 
 import { registerInitiativeCloseTool } from "./initiative-close.js";
 import { registerInitiativeOpenTool } from "./initiative-open.js";
+import { assessmentsFor } from "../review-rounds.js";
 import { nextMoveLine } from "./initiative-status.js";
 
 /** A deployment with no database has no store left: the columns are where a document lives, and
@@ -86,7 +83,6 @@ export function registerInitiativeActTools(server: McpServer): void {
     },
     async ({ path: relPath, on_behalf_of }) => {
       const who = parseCaller(requestHeaders());
-      const root = await userRoot();
       const p = db();
       if (!p) return text(NO_DB);
       const team = await teamFor(who.email);
@@ -104,7 +100,7 @@ export function registerInitiativeActTools(server: McpServer): void {
           ? `ERROR: ${relPath} does not exist — approve records a verdict on a document that is already written`
           : loaded.refusal);
       }
-      const chain = chainFor(root, relPath, loaded.text);
+      const chain = await chainFor(p, team, relPath, loaded.text);
       // DELIBERATE: only a flow can say a document is not its business. A freeform initiative
       // resolves to EMPTY_CHAIN, so whatever is in its folder is approvable; a flow that declared its
       // documents refuses one it never named.
@@ -132,7 +128,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       // verdict on it. `false` only — `null` is a record that cannot answer (no activity log, or
       // no recorded change to be "since"), and a refusal invented from a missing record would
       // stop an approval over the platform's own gap. Asked before anything is read or written.
-      const fetched = shownSinceLastChange(root, relPath);
+      const fetched = await shownSinceLastChange(p, team, relPath);
       if (fetched === false) {
         return text(
           `ERROR: present it first — ${relPath} changed after it was last presented, so no ` +
@@ -153,18 +149,24 @@ export function registerInitiativeActTools(server: McpServer): void {
       // A document that `verifies` others is approved on evidence: one acceptance row per
       // criterion they declare, each held to review-acceptance.ts's rules. Asked here and not in
       // documentGuards, which runs on every draft write and would refuse a table being filled in.
-      const acceptance = await acceptanceApprovalRefusal(root, chain, relPath, doc, who.email);
+      // Every source and every typed answer this initiative holds, in two queries, for the two
+      // gates below — a review round's routing and a spec's statements both read them, and both
+      // read the rows rather than a second copy of them.
+      const sources = await docRows(p, team, parts[0]);
+      const answers = await assessmentsFor(p, team, parts[0]);
+      const acceptance = await acceptanceApprovalRefusal(p, team, chain, relPath, doc, who.email,
+                                                          sources, answers);
       if (acceptance.refusal) return text(acceptance.refusal);
       // A spec whose flow declares a phase outline and core statements is approved on them: every
       // criterion placed in a phase, every statement backed by a spike — spec-gate.ts's rules.
-      const foundation = await specApprovalRefusal(root, chain, relPath, doc, who.email);
+      const foundation = await specApprovalRefusal(p, team, chain, relPath, doc, who.email, sources);
       if (foundation.refusal) return text(foundation.refusal);
       const already = loaded.doc.status === "approved";
       doc = putEnvelopeField(doc, "status", "approved");
       doc = putEnvelopeField(doc, "approved_by", signer);
       doc = putEnvelopeField(doc, "approved_at", isoToday());
       const fixed = normalizeSections(chain, relPath, doc);
-      const bad = await documentGuards(chain, root, relPath, fixed.content, team, "document_approve");
+      const bad = await documentGuards(chain, relPath, fixed.content, team, "document_approve");
       if (bad) return text(bad);
       // The seal, the status and the revision move together, in one statement's worth of write:
       // `doc_current_revision_required` holds that `status: approved` is true exactly when
@@ -176,7 +178,7 @@ export function registerInitiativeActTools(server: McpServer): void {
         mode: "rewrite", act: "document_approve", seal: { by: signer, at: isoToday() },
       });
       if ("refusal" in sealed) return text(sealed.refusal);
-      recordAct(root, relPath, { user: who.email, action: "document_approve", path: relPath, signer, fetched });
+      recordAct(relPath, { user: who.email, action: "document_approve", path: relPath, signer, fetched });
       // An approval is a separate fact from the document: a gated step requires `1x document` and
       // `1x approval`, so recording only one leaves the step a requirement short or credits a
       // document nobody wrote.
@@ -197,7 +199,7 @@ export function registerInitiativeActTools(server: McpServer): void {
             "seal is on it.") +
         // What the flow expects next, computed the way initiative_status computes it: an approval
         // is where an owed audit round or a close is most often forgotten.
-        nextMoveLine(root, parts[0]),
+        await nextMoveLine(p, team, parts[0]),
       );
     },
   );
@@ -210,7 +212,7 @@ export function registerInitiativeActTools(server: McpServer): void {
         "platform writes the frontmatter. The platform bumps the " +
         "`version` (v1 -> v2), puts `status` back to draft so the gate goes to a human again, " +
         "clears the stale approval, and links the material behind the change; the previously " +
-        "approved version stays in _versions/. " +
+        "approved revision stays filed beside it. " +
         "EVERY VERSION NAMES THE MATERIAL BEHIND IT. Cite what is already on the record with " +
         "`sources` — an audit round, a decision written down — or pass the words themselves as " +
         "`source_content` and the platform stores them as a source and links them. A revision " +
@@ -259,7 +261,6 @@ export function registerInitiativeActTools(server: McpServer): void {
           "the BODY that may not change with the reason left off the record.");
       }
       const who = parseCaller(requestHeaders());
-      const root = await userRoot();
       const p = db();
       if (!p) return text(NO_DB);
       const team = await teamFor(who.email);
@@ -277,7 +278,7 @@ export function registerInitiativeActTools(server: McpServer): void {
           ? `ERROR: ${relPath} does not exist — document_write creates a document; document_revise changes one`
           : loaded.refusal);
       }
-      const chain = chainFor(root, relPath, loaded.text);
+      const chain = await chainFor(p, team, relPath, loaded.text);
       // A document the flow does not declare is exempt from its rules, not refused by them — the same
       // condition `write-guards.ts` uses to stand aside. `document_revise` is the only call that
       // records why a document changed, so refusing it here would leave exactly the documents a flow
@@ -333,14 +334,12 @@ export function registerInitiativeActTools(server: McpServer): void {
       //
       // DELIBERATE: refused rather than linked silently. What changed a gated document is the caller's
       // claim to make.
-      const dir = join(root, parts[0]);
-      const sourceDir = join(dir, "sources");
       // A source added after the revision being replaced, whose `cites` links name this document,
       // is by its own record what this revision answers. Compared on the rows, which is where
-      // "added after" is a fact: the file's mtime is when the mirror wrote it, not when the
-      // source landed.
+      // "added after" is a fact: a file's mtime was when the mirror wrote it, not when the source
+      // landed.
       const owed: string[] = [];
-      for (const rel of existsSync(sourceDir) ? await documentPaths(team, `${parts[0]}/sources`) : []) {
+      for (const rel of await documentPaths(team, `${parts[0]}/sources`)) {
         if (!rel.endsWith(".md")) continue;
         const at = await documentAt(p, team, rel);
         if (!at) continue;
@@ -450,7 +449,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       const fixed = normalizeSections(chain, relPath, doc);
       // `via`: document_revise is an act whose job is to move the governance fields, so it passes the
       // guard that refuses a model writing them by hand.
-      const bad = await documentGuards(chain, root, relPath, fixed.content, team, "document_revise");
+      const bad = await documentGuards(chain, relPath, fixed.content, team, "document_revise");
       if (bad) return text(bad);
 
       // The revision is allowed, so the source that explains it is written now — before the
@@ -461,12 +460,12 @@ export function registerInitiativeActTools(server: McpServer): void {
           by: who.email, flow: "", type: "source", mode: "create", act: "source",
         });
         if ("refusal" in src) return text(src.refusal);
-        recordAct(root, pendingSource.rel,
+        recordAct(pendingSource.rel,
           { user: who.email, action: "source_add", path: pendingSource.rel, supports: parts[1] });
       }
-      // The revision is filed through the one insert path, so its rows and the bytes mirrored
-      // into the store land together. `seal` is set only where the initiative is closed: the
-      // revision of a closed record inherits the verdict the close rested on.
+      // The revision is filed through the one insert path, so its rows land together. `seal` is
+      // set only where the initiative is closed: the revision of a closed record inherits the
+      // verdict the close rested on.
       const written = await saveDocument({
         team, relPath, initiative: parts[0], text: fixed.content, by: who.email,
         flow: chain.name ?? undefined, type: role,
@@ -482,7 +481,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       // DELIBERATE: this comment sits above the call, not inside it. The gate check holding both names
       // to this payload reads a window around `action: "document_revise"`, so a comment inside the
       // object naming them would satisfy it after the fields were deleted.
-      recordAct(root, relPath, {
+      recordAct(relPath, {
         user: who.email, action: "document_revise", path: relPath,
         version: nextVersion, sources: [...linked].join(","), explained,
       });
@@ -518,7 +517,7 @@ export function registerInitiativeActTools(server: McpServer): void {
           : gatedHere
           ? "Nothing downstream may be written until this document is approved again."
           : "This document carries no gate, so nothing downstream is waiting on it.") +
-        (closedOutcome ? "" : nextMoveLine(root, parts[0])),
+        (closedOutcome ? "" : await nextMoveLine(p, team, parts[0])),
       );
     },
   );

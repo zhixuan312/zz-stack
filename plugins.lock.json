@@ -31,13 +31,13 @@
   },
   "zz-core": {
     "version": "0.86.2",
-    "digest": "adfb87f1",
+    "digest": "669cad96",
     "skills": {
       "zz-authoring": "60f258ebec54",
       "zz-breakout": "8ec4136f1e82",
       "zz-deck": "ad14925b6473",
       "zz-handover": "d07ca4b6f509",
-      "zz-platform": "c63c42beae3b",
+      "zz-platform": "762e6d1351c5",
       "zz-tldr": "ac9890b7fffb"
     }
   },

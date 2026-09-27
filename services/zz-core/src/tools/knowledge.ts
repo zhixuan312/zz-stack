@@ -5,47 +5,33 @@
  * entry that holds for everybody, `"team"` for a fact about how this team works. Guessing it
  * from context is how a team's own circumstances end up on the shelf every team reads.
  *
+ * A node IS a row: `zz.knowledge_node` carries its ordinal, slug, kind, lifecycle, title, body
+ * and tags, and `zz.knowledge_node_evidence` records which initiatives it cites. The journal
+ * files under `_knowledge/nodes/` are retired with the store, so both tools below write the row
+ * through `indexNode`/`supersedeNode` — the package's one writer for that shape.
+ *
  * A node that contradicts an existing one goes through `knowledge_supersede` rather than
  * beside it, and supersession refuses a pair that spans both shelves: the two are different
  * kinds of claim and one cannot retire the other.
  */
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
-
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { catalogEntries } from "@zz/catalog";
 import { parseCaller } from "@zz/contracts";
-import { ARTIFACTS_DIR } from "@zz/indexing";
+import { indexNode, supersedeNode } from "@zz/indexing";
 import { requestHeaders, text } from "@zz/mcp-http";
+import type pg from "pg";
 import { z } from "zod";
 
 import { journalLog, platformEvent } from "../indexing.js";
-import { KNOWLEDGE_TEAM, PLAIN_TOKEN, knowledgeRoot, sanitize, tagRefusal, titleSlug, userRoot, yamlValue } from "../paths.js";
-import { setEnvelopeField } from "../persist.js";
+import { KNOWLEDGE_TEAM, PLAIN_TOKEN, tagRefusal, titleSlug } from "../paths.js";
 import { db, subjectVersionFor, teamFor, teamsFor } from "../platform-db.js";
-import { writeStoreFile } from "../versions.js";
-import { isoToday } from "../write-guards.js";
-
-/** Every node id this shelf's journal has ever issued, deleted ones included.
- *
- * `log.md` is appended on every mint and rewritten by nothing, which makes it the high-water
- * mark for allocation. A shelf with no log yet answers with nothing, and the directory decides
- * alone. */
-function journalIds(kdir: string): number[] {
-  const log = join(kdir, "log.md");
-  if (!existsSync(log)) return [];
-  return readFileSync(log, "utf8").split("\n")
-    .map((line) => /^\|[^|]*\|[^|]*\|\s*(\d+)\s*\|/.exec(line)?.[1])
-    .filter((x): x is string => !!x)
-    .map((x) => parseInt(x, 10))
-    .filter((n) => !isNaN(n));
-}
 
 import { registerKnowledgeSearch } from "./knowledge-search.js";
 
 /** The highest ordinal a shelf's rows say it has issued, or 0 — the high-water mark an id is
- *  allocated above. Read from the rows because they outlive the files: a node whose file was
- *  deleted still holds its number, and reissuing it would make one id name two nodes. */
+ *  allocated above. Read from the rows because they are the whole record: the journal's
+ *  append-only `log.md` was the other half and it is retired with the store, so a number once
+ *  issued is held by the row that carries it. */
 async function issuedOrdinals(shelf: string | null): Promise<number> {
   const p = db();
   if (!p || !shelf) return 0;
@@ -103,12 +89,33 @@ function subjectTagError(tags: string[] | undefined): string | null {
   return null;
 }
 
+/** The initiatives a set of slugs names across the shelves this caller may already read, as
+ *  `(slug, id)` pairs. One query, because the evidence existence check and the row's evidence
+ *  relation ask the same question.
+ *
+ *  DELIBERATE: the shelves are the caller's own teams, plus the platform's — a platform-team
+ *  member records a generalisable finding on the platform shelf with a tenant's initiative as
+ *  evidence, and nobody may cite a shelf they cannot already read. */
+async function initiativesNamed(
+  p: pg.Pool, slugs: string[], shelves: string[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (!slugs.length || !shelves.length) return out;
+  const { rows } = await p.query<{ slug: string; id: string }>(
+    `select i.slug, i.id::text as id from zz.initiative i
+       join zz.team t on t.id = i.team_id
+      where i.slug = any($1::text[]) and t.slug = any($2::text[])`,
+    [slugs, shelves]);
+  for (const r of rows) if (!out.has(r.slug)) out.set(r.slug, r.id);
+  return out;
+}
+
 export function registerKnowledgeTools(server: McpServer): void {
   server.registerTool(
     "knowledge_add",
     {
       description:
-        "Mint a knowledge-journal node in the team's _knowledge/: numbered, typed, evidence-linked. " +
+        "Mint a knowledge-journal node in the team's journal: numbered, typed, evidence-linked. " +
         "type: decision|design|behavior|process|knowledge|style. evidence: initiative folder(s) the " +
         "lesson comes from — a node without evidence is an opinion and is refused. " +
         "WHEN THE LESSON IS ABOUT SOMETHING THE PLATFORM PLUGS IN rather than about your own " +
@@ -147,14 +154,12 @@ export function registerKnowledgeTools(server: McpServer): void {
       const badTag = subjectTagError(tags);
       if (badTag) return text(badTag);
 
-      // The stores this caller may cite from: the one they act in, and every other team they
-      // belong to. One lookup, shared by the team-scoped refusal below and the evidence-root
-      // list further down.
+      // The shelves this caller may cite from: the one they act in, and every other team they
+      // belong to, plus the platform's own.
       const { active: team, all: evidenceTeams } = await teamsFor(who.email);
-      // userRoot() falls back to a personal directory outside teams/ when teamFor() is falsy, so
-      // a team-scoped node from a teamless caller would report success and land where team-gated
-      // search cannot reach it. `scope: "platform"` is untouched — that shelf is not
-      // team-resolved, so a teamless caller writes there regardless.
+      // A team-scoped node from a teamless caller would land on a shelf team-gated search
+      // cannot reach. `scope: "platform"` is untouched — that shelf is not team-resolved, so a
+      // teamless caller writes there regardless.
       if (scope === "team" && !team) {
         return text("ERROR: you are not in a team — the knowledge base is team-scoped");
       }
@@ -181,91 +186,69 @@ export function registerKnowledgeTools(server: McpServer): void {
         }
       }
 
-      // Every list value is written straight into the node's YAML and read back by a
-      // comma-splitter, so the check is about YAML, not about paths: a comma splits one
-      // evidence entry into two, and `]` plus a newline closes the array and injects a second
-      // frontmatter line that parseEnvelope, which takes the last, would read as the document's.
+      const p = db();
+      if (!p) return text("ERROR: no platform database — there is nowhere to write this node.");
+
+      // Every list value is written straight into the node's row, so the check is about the
+      // token shape: evidence names an initiative, and a comma or a bracket in one would split
+      // it into two entries nothing can resolve.
       //
-      // The shelf comes from `scope` — a team-scoped lesson lands under the caller's own team,
-      // a platform-scoped one under knowledgeRoot().
-      const root = scope === "platform" ? knowledgeRoot() : await userRoot();
-      // The platform store stays in this set whatever the scope is, so the platform's
-      // initiatives are citable as evidence by a caller who is not a zz-platform member. Listed
-      // first and separately from `root`, which the scope routes.
-      const evidenceRoots = [knowledgeRoot(), root, ...evidenceTeams.map((t) => join(ARTIFACTS_DIR, "teams", sanitize(t)))];
-      for (const e of evidence) {
-        if (!PLAIN_TOKEN.test(e.trim())) {
+      // The shelf comes from `scope` — a team-scoped lesson lands on the caller's own shelf, a
+      // platform-scoped one on KNOWLEDGE_TEAM's.
+      const shelf = scope === "platform" ? KNOWLEDGE_TEAM : team as string;
+      const shelves = [...new Set([...evidenceTeams, KNOWLEDGE_TEAM, shelf])];
+      const names = evidence.map((e) => e.trim());
+      for (const e of names) {
+        if (!PLAIN_TOKEN.test(e)) {
           return text(`ERROR: evidence entry "${e}" must be an initiative folder name — ` +
                       "letters, digits, dot, dash or underscore, nothing else");
         }
-        // Existence, not shape: an evidence entry has to name an initiative that is really
-        // there, or the node reads as checked while its link goes nowhere.
-        //
-        // Any team the caller is in, not only the one they are acting for — a platform-team
-        // member records a generalisable finding on the platform shelf with a tenant's
-        // initiative as evidence. The set is exactly the stores this caller may already read,
-        // so a member of one team still cannot cite another's.
-        if (!evidenceRoots.some((r) => existsSync(join(r, e.trim())))) {
-          return text(`ERROR: evidence entry "${e}" is not an initiative in any store you are a ` +
-                      `member of (${evidenceTeams.join(", ") || "none"}). document_list with no ` +
-                      "argument shows what is in the one you are acting for. Evidence names " +
-                      "where the lesson came from, and a node whose evidence points at nothing " +
-                      "is the opinion this tool exists to refuse.");
-        }
+      }
+      // Existence, not shape: an evidence entry has to name an initiative that is really
+      // there, or the node reads as checked while its link goes nowhere. The set is exactly the
+      // shelves this caller may already read, so a member of one team still cannot cite
+      // another's.
+      const found = await initiativesNamed(p, names, shelves);
+      const missing = names.filter((e) => !found.has(e));
+      if (missing.length) {
+        return text(`ERROR: evidence entry "${missing[0]}" is not an initiative in any shelf ` +
+                    `you are a member of (${shelves.join(", ") || "none"}). document_list with ` +
+                    "no argument shows what is in the one you are acting for. Evidence names " +
+                    "where the lesson came from, and a node whose evidence points at nothing " +
+                    "is the opinion this tool exists to refuse.");
       }
       const badTagShape = tagRefusal(tags);
       if (badTagShape) return text(badTagShape);
 
-      const kdir = join(root, "_knowledge");
-      const ndir = join(kdir, "nodes");
       const slug = titleSlug(title, type);
-      const date = isoToday();
-      // The shelf this node lands on — the platform's or the caller's own — and the highest
-      // ordinal its rows say it has issued.
-      const issued = await issuedOrdinals(scope === "platform" ? KNOWLEDGE_TEAM : team);
-
-      // Resolved from the registry when the node is about a plugin and the caller did not
-      // say: a claim with no version behind it cannot be retired when the plugin moves.
+      // Resolved from the registry when the node is about a plugin and the caller did not say:
+      // a claim with no version behind it cannot be retired when the plugin moves.
+      //
+      // COUPLED: `verified_against` and the version resolved for it are recorded on the ACT —
+      // the `zz.event` row below — and not on the node. `zz.knowledge_node` has no column for
+      // either, so a node carries them nowhere; the fact survives on the event that minted it.
       const version = await subjectVersionFor(tags);
-      // Allocate the id and claim it in one step, retrying if someone got there first: the
-      // store is team-shared and reachable from every client at once, so two calls reading the
-      // same maximum is ordinary. `wx` fails if the file exists, which makes the filesystem the
-      // arbiter rather than a lock this process would hold across an await.
-      let id = "", file = "";
+      const pinned = (verified_against ?? "").trim() || version || "";
+      // Allocate the ordinal and claim it in one step, retrying if somebody got there first:
+      // the shelf is shared and reachable from every client at once, so two calls reading the
+      // same maximum is ordinary. The row's own unique key is the arbiter — `indexNode` inserts
+      // with `on conflict do nothing` and answers `taken` when the number was not free.
+      const issued = await issuedOrdinals(shelf);
       for (let attempt = 0; attempt < 50; attempt++) {
-        // parseInt on the whole name, not on the first four characters: ids are padded to four
-        // digits and grow past it, and parseInt stops at the dash by itself with no ceiling.
-        const ids = readdirSync(ndir).map((f) => parseInt(f, 10)).filter((n) => !isNaN(n));
-        // Every id ever issued on this shelf, not only the ones whose file is still here: an
-        // id names one node forever, so deleting the newest must not make its number available
-        // again. The ROWS are what holds that now — a node whose file is gone still has its
-        // ordinal — and `log.md` and the directory cover a shelf the rows do not describe yet.
-        const highest = Math.max(0, ...ids, ...journalIds(kdir), issued);
-        id = String(highest + 1).padStart(4, "0");
-        file = `${id}-${slug}.md`;
-        const doc = [
-          "---", `id: "${id}"`, `title: ${yamlValue(title)}`, `type: ${type}`,
-          "status: adopted", `date: ${date}`, `author: ${who.email}`,
-          `evidence: [${evidence.join(", ")}]`,
-          `tags: [${(tags ?? []).join(", ")}]`,
-          `verified_against: ${yamlValue(verified_against ?? version ?? "")}`,
-          "supersededBy: null", "---", "", body, "",
-        ].filter((l) => l !== null).join("\n");
-        // Through the store's one writer, which claims the name, commits it and has the
-        // indexer derive the node's row. A name taken between the read and the write answers
-        // false and the loop recomputes.
-        if (await writeStoreFile(`_knowledge/nodes/${file}`, doc, `journal ${id}`, true)) break;
-        id = "";
+        const ordinal = String(issued + 1 + attempt).padStart(4, "0");
+        const written = await indexNode({
+          team: shelf, ordinal, slug, kind: type, title, body, tags: tags ?? [], cited: names,
+        });
+        if ("taken" in written) continue;
+        if ("refusal" in written) return text(written.refusal);
+        journalLog(shelf, "create", ordinal, title);
+        platformEvent({
+          actor: who.email, kind: "knowledge.add", subject: ordinal, team: shelf,
+          detail: { title, type, scope, verified_against: pinned || undefined },
+        });
+        return text(`journal node ${ordinal} created on ${shelf}'s shelf`);
       }
-      if (!id) return text("ERROR: could not allocate a journal node id after 50 attempts");
-      journalLog(root, "create", id, title);
-      const shelfName = scope === "platform" ? KNOWLEDGE_TEAM : team;
-      platformEvent({
-        actor: who.email, kind: "knowledge.add", subject: id, team: shelfName,
-        detail: { title, type, scope, file },
-      });
-      const shelf = shelfName ? `${shelfName}'s shelf` : "your personal shelf";
-      return text(`journal node ${id} created (${file}) on ${shelf}`);
+      return text("ERROR: could not allocate a journal node id after 50 attempts");
     },
   );
 
@@ -288,25 +271,28 @@ export function registerKnowledgeTools(server: McpServer): void {
     },
     async ({ old_id, new_id, shelf }) => {
       const who = parseCaller(requestHeaders());
+      const p = db();
+      if (!p) return text("ERROR: no platform database — there is no node to supersede.");
       // Ids are allocated per shelf, so a bare id is ambiguous. Resolving hands back which
-      // shelf a node was found on, not just a path, or a cross-shelf pair would relabel
-      // whichever node was looked at first.
-      //
-      // The team shelf is checked only when teamFor() gives a team: userRoot() falls back to a
-      // personal directory outside teams/, which is not a shelf a node can be superseded on.
+      // shelf a node was found on, not just which one it is, or a cross-shelf pair would
+      // relabel whichever node was looked at first.
       const team = await teamFor(who.email);
-      const resolve = (id: string, shelf: "team" | "platform", root: string) => {
-        const ndir = join(root, "_knowledge", "nodes");
-        const file = existsSync(ndir) ? readdirSync(ndir).find((f) => f.startsWith(id + "-")) : undefined;
-        return file ? { shelf, root, file } : null;
+      const resolve = async (id: string, which: "team" | "platform") => {
+        const row = (await p.query<{ id: string; slug: string }>(
+          `select k.id::text as id, k.slug from zz.knowledge_node k
+             join zz.team t on t.id = k.team_id
+            where t.slug = $1 and k.node_ordinal = $2`, [which, id])).rows[0];
+        return row ? { shelf: which, id: row.id, slug: row.slug } : null;
       };
       // Ambiguous is refused, not guessed: an id present on both shelves is an error the
       // caller settles with `shelf`, and the refusal names which two nodes it could mean.
       // Resolving team-first and returning the first hit would relabel unrelated team nodes
       // for a caller superseding two platform ones.
       async function findId(id: string) {
-        const onTeam = team ? resolve(id, "team", await userRoot()) : null;
-        const onPlatform = resolve(id, "platform", knowledgeRoot());
+        // The team shelf is looked up only when the caller resolves to one: a teamless caller
+        // has no shelf there, and `team` is null rather than a personal name beside it.
+        const onTeam = team ? await resolve(id, "team") : null;
+        const onPlatform = await resolve(id, "platform");
         // An explicit shelf is a choice between the two, never a third answer: asking for a
         // shelf the id is not on is refused as "no node", not fallen back to the other.
         if (shelf) return (shelf === "team" ? onTeam : onPlatform);
@@ -324,7 +310,7 @@ export function registerKnowledgeTools(server: McpServer): void {
       const oldFound = await findId(old_id);
       if (!oldFound) return text(`ERROR: no node ${old_id}`);
       if ("ambiguous" in oldFound) {
-        return text(bothShelves(old_id, oldFound.onTeam.file, oldFound.onPlatform.file));
+        return text(bothShelves(old_id, oldFound.onTeam.slug, oldFound.onPlatform.slug));
       }
       const oldNode = oldFound;
       // The replacement must exist, or recall surfaces "we moved past this — see 0099"
@@ -332,45 +318,35 @@ export function registerKnowledgeTools(server: McpServer): void {
       const newFound = await findId(new_id);
       if (!newFound) return text(`ERROR: no node ${new_id} — supersede with a node that exists`);
       if ("ambiguous" in newFound) {
-        return text(bothShelves(new_id, newFound.onTeam.file, newFound.onPlatform.file));
+        return text(bothShelves(new_id, newFound.onTeam.slug, newFound.onPlatform.slug));
       }
       const newNode = newFound;
       if (old_id === new_id) return text("ERROR: a node cannot supersede itself");
       // A node is superseded by one on the same shelf. Promoting a team lesson to the platform
       // is writing a new platform node with the old one as evidence, not relabelling it across
       // shelves.
-      if (oldNode.root !== newNode.root) {
+      if (oldNode.shelf !== newNode.shelf) {
         return text(
           `ERROR: \`${old_id}\` is on the \`${oldNode.shelf}\` shelf and \`${new_id}\` is on ` +
           `the \`${newNode.shelf}\` shelf. A node is superseded by one on the same shelf; ` +
           "promoting a lesson means writing a new platform node, not superseding across shelves."
         );
       }
-      const root = oldNode.root;
-      const oldFile = oldNode.file;
-      const nodeRel = `_knowledge/nodes/${oldFile}`;
-      const path = join(root, nodeRel);
-      let doc = readFileSync(path, "utf8");
-      doc = setEnvelopeField(doc, "status", "superseded");
-      doc = setEnvelopeField(doc, "supersededBy", `"${new_id}"`);
-      // Through the store's one writer, which re-indexes as it writes: knowledge_search reads
-      // the node's row, which otherwise keeps `lifecycle: adopted` and `superseded_by_id: null`
-      // until the next reindex.
-      await writeStoreFile(nodeRel, doc, `journal supersede ${old_id} -> ${new_id}`);
-      journalLog(root, "supersede", old_id, `superseded by ${new_id}`);
-      // The shelf is read from the root the old node was found on, not from the caller's team:
+      await supersedeNode(oldNode.id, newNode.id);
+      journalLog(oldNode.shelf, "supersede", old_id, `superseded by ${new_id}`);
+      // The shelf is read from where the old node was found, not from the caller's team:
       // `findId` searches both, so a platform node superseded by somebody with a team of their
       // own still belongs to the platform shelf.
       platformEvent({
         actor: who.email, kind: "knowledge.supersede", subject: old_id,
-        team: root === knowledgeRoot() ? KNOWLEDGE_TEAM : team,
-        detail: { supersededBy: new_id, file: oldFile },
+        team: oldNode.shelf,
+        detail: { supersededBy: new_id },
       });
       return text(`node ${old_id} superseded by ${new_id}`);
     },
   );
 
   // The read side is its own file: `knowledge_search` shares nothing with the two tools above
-  // but the store they write into. See knowledge-search.ts.
+  // but the rows they write into. See knowledge-search.ts.
   registerKnowledgeSearch(server);
 }

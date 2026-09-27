@@ -516,27 +516,34 @@ export async function pluginTraces(
     ? (await pool.query<{ documents: string; revised: string; revised_with_evidence: string;
                           patched: string; patched_with_evidence: string }>(`
         with touched as (
-          select distinct ii.slug from zz.event e
+          select distinct ii.id as initiative_id from zz.event e
             join zz.initiative ii on ii.id = e.initiative_id
            where e.plugin = $1 and e.kind = 'tool_call'
              and e.ts between $2 and $3
              and ${NOT_EVALUATION_EVENT}
         ),
-        live as (select * from zz.doc d
-                  where d.path not like '\\_versions/%'
-                    and d.initiative in (select slug from touched)),
-        rev as (select l.evidence,
-                       exists (select 1 from zz.doc v
-                                where v.team_slug = l.team_slug and v.initiative = l.initiative
-                                  and v.path like '\\_versions/%' || replace(l.path, '.md', '') || '.v%') as revised,
-                       -- The same initiative, in the same team, named by an event rather than
-                       -- spelled by one: both ids have to resolve to the document's pair.
+        -- A revised document is one with a second revision beside it: a revision was filed and
+        -- the current-revision pointer moved off the first. The frozen file an approval used to
+        -- write is a doc_revision row now, so the row's own count is the platform's record of
+        -- a version change. Its evidence is the envelope key the revision carries — a
+        -- comma-joined list, read back as the array the counts below ask for.
+        live as (select d.id,
+                        r.fields->>'evidence' as evidence_text,
+                        exists (select 1 from zz.doc_revision r2
+                                 where r2.doc_id = d.id and r2.revision > 1) as revised,
+                        i.id as initiative_id
+                   from zz.doc d
+                   join zz.initiative i on i.id = d.initiative_id
+                   left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
+                  where i.id in (select initiative_id from touched)),
+        rev as (select string_to_array(coalesce(l.evidence_text, ''), ', ') as evidence,
+                       l.revised,
+                       -- The same initiative, named by an event rather than spelled by one: the
+                       -- document's own initiative id is what the call has to match.
                        exists (select 1 from zz.event e
-                                join zz.initiative ei on ei.id = e.initiative_id
-                                join zz.team et on et.id = ei.team_id
                                 where e.kind = 'tool_call' and e.ok is not false
-                                  and split_part(coalesce(e.tool_key, e.subject), ':', 2) = 'document_patch'
-                                  and ei.slug = l.initiative and et.slug = l.team_slug) as patched
+                                  and e.initiative_id = l.initiative_id
+                                  and split_part(coalesce(e.tool_key, e.subject), ':', 2) = 'document_patch') as patched
                   from live l)
         select count(*)::text as documents,
                count(*) filter (where revised)::text as revised,

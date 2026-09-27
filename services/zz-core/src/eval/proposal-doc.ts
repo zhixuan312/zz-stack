@@ -39,7 +39,6 @@
  * never folded into the "no source" framing, because a later call against the same
  * improvement_run_id can still pick up a built candidate once one lands.
  */
-import { existsSync, readFileSync } from "node:fs";
 
 import { parseCaller, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
 import { requestHeaders } from "@zz/mcp-http";
@@ -48,9 +47,9 @@ import type pg from "pg";
 import { chainFor } from "../chain.js";
 import { documentGuards } from "../guards.js";
 import { unopenedRefusal } from "../initiative-record.js";
-import { safeName, safePath, userRoot } from "../paths.js";
+import { safeName, safePath } from "../paths.js";
 import { sealOf } from "../indexing.js";
-import { saveDocument } from "../versions.js";
+import { loadDocument, saveDocument } from "../versions.js";
 import { stampEnvelope } from "../write-guards.js";
 import { teamFor } from "../platform-db.js";
 import { envelopeFor, normalizeSections } from "../write-guards.js";
@@ -258,13 +257,20 @@ export async function writeProposalDoc(
   const body = renderBody(
     initiative, improvementRunId, run.eval_run_id, subject, findings, sourceAvailable,
     sourceAvailable ? reportable : []);
-  const root = await userRoot();
+  const team = await teamFor(parseCaller(requestHeaders()).email);
+  if (!team) {
+    return "ERROR: this caller resolves to no team, so the document has no shelf to be filed on";
+  }
   const path = `${initiative}/proposal.md`;
-  const unopened = unopenedRefusal(root, path);
+  const unopened = await unopenedRefusal(p, team, path);
   if (unopened) return unopened;
-  const target = await safePath(path);
-  const chain = chainFor(root, path, body);
-  const onDisk = existsSync(target) ? parseEnvelope(readFileSync(target, "utf8")) : {};
+  await safePath(path);
+  const chain = await chainFor(p, team, path, body);
+  const existing = await loadDocument(team, path);
+  // The carry is read from the document's own current revision — the rows a document IS
+  // — rather than from a file the store used to hold. A document this team does not have
+  // yet carries nothing, which is the same answer a missing file gave.
+  const onDisk = existing.ok ? parseEnvelope(existing.text) : {};
   const carry: Record<string, string> = {};
   for (const k of [...PLATFORM_OWNED, "version"]) {
     if (onDisk[k]) carry[k] = onDisk[k];
@@ -275,18 +281,13 @@ export async function writeProposalDoc(
     carry,
   });
   const fixed = normalizeSections(chain, path, content);
-  const team = await teamFor(parseCaller(requestHeaders()).email);
-  const gate = await documentGuards(chain, root, path, fixed.content, team);
+  const gate = await documentGuards(chain, path, fixed.content, team);
   if (gate) return gate;
-  // The ONE insert path: I-39's `saveDocument`, which stamps, files the row and its revision,
-  // and mirrors the bytes into the store. Not a second one here — two writers for one row shape
-  // drift, and these two already had.
+  // The ONE insert path: `saveDocument`, which stamps, files the row and its revision. Not a
+  // second one here — two writers for one row shape drift, and these two already had.
   //
   // `chars` is the stamped document's length, so the count this returns is the bytes that were
   // filed rather than the bytes that were passed in.
-  // A row is filed under a team, so a caller who resolves to none has no document to file. The
-  // guard's own answer above already ran over the store; this is the one case it cannot see.
-  if (!team) return "ERROR: this caller resolves to no team, so the document has no shelf to be filed on";
   const stamped = stampEnvelope(chain, path, fixed.content);
   const actor = parseCaller(requestHeaders()).email;
   const saved = await saveDocument({

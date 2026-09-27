@@ -46,9 +46,6 @@
  * a measure that silently never happened, so its insert failure is thrown, not swallowed.
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-
 import { QUESTION_FAMILIES } from "@zz/contracts";
 import type pg from "pg";
 
@@ -554,32 +551,18 @@ export async function recordEvaluatorAssessment(opts: {
   return insertEvaluatorAnswer(p, asked);
 }
 
-/** Where an audit round's assessments live in the store. Underscore-prefixed, so no listing,
- *  index or document count treats it as a document. */
-function assessmentFile(root: string, initiative: string, sourceFile: string): string {
-  return join(root, initiative, "_assessments", sourceFile.replace(/\.md$/, ".json"));
-}
+// DELIBERATE: the three functions that lived here — `writeRoundAssessments`,
+// `readRoundAssessmentList` and `readRoundAssessments` — are DELETED, not converted.
+//
+// They wrote and read `<initiative>/_assessments/<source>.json`, and `assessFamily` above persists
+// every answer as a `zz.assessment` row the moment it takes it. The file was therefore a SECOND
+// copy of a record that already existed, and the spec's store-migration paragraph names
+// `_assessments/*.json` as one of the four per-initiative JSON state files that "are already in
+// tables and are verified, not copied" — this is the last of the four to become true.
+//
+// Their two callers (`review-rounds.ts`'s `assessReviewRound`, `audit-rounds.ts`'s `assessRound`)
+// already read the rows back through `assessmentsFor`, so nothing calls these any more: converting
+// them would have been writing code with no caller. `scripts/store-migration/records.ts` verifies
+// that every file's `question_digest` has a matching row, which is what makes the claim checkable
+// rather than asserted.
 
-export function writeRoundAssessments(root: string, initiative: string, sourceFile: string,
-                                      assessments: Assessment[]): void {
-  mkdirSync(join(root, initiative, "_assessments"), { recursive: true });
-  writeFileSync(assessmentFile(root, initiative, sourceFile),
-                JSON.stringify({ source: `sources/${sourceFile}`, assessments }, null, 2) + "\n");
-}
-
-/** Every assessment recorded for one round, in the order they were written. A review round
- *  asks one family once per finding, so a map keyed by family would keep only the last. */
-export function readRoundAssessmentList(root: string, initiative: string,
-                                        sourceFile: string): Assessment[] {
-  const file = assessmentFile(root, initiative, sourceFile);
-  if (!existsSync(file)) return [];
-  try {
-    return (JSON.parse(readFileSync(file, "utf8")) as { assessments?: Assessment[] }).assessments ?? [];
-  } catch { return []; }
-}
-
-/** One audit round's recorded assessments, keyed by family. Empty when none were taken. */
-export function readRoundAssessments(root: string, initiative: string,
-                                     sourceFile: string): Record<string, Assessment> {
-  return Object.fromEntries(readRoundAssessmentList(root, initiative, sourceFile).map((a) => [a.family, a]));
-}

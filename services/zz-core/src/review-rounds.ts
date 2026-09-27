@@ -29,13 +29,64 @@
  *     fewer new evidenced blockers than the one before (not converging) -> decide
  *   - nothing blocks                            -> settled; the acceptance evidence is next
  */
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-
-import { ENVELOPE_BLOCK, parseEnvelope } from "@zz/contracts";
+import type pg from "pg";
 
 import { ROUND_BUDGET } from "./audit-rounds.js";
-import { assessFamily, readRoundAssessmentList, writeRoundAssessments } from "./semantic.js";
+import { docRows, type DocRow } from "./indexing.js";
+import { assessFamily, type Assessment } from "./semantic.js";
+
+/** The answers already recorded for an initiative's sources, keyed by the `about` they were asked
+ *  under — `sources/<file>` for a round's own question, `sources/<file>#<finding id>` for the
+ *  repeat question that follows it.
+ *
+ *  COUPLED: these are `zz.assessment` ROWS, and the caller reads them with one query.
+ *  `assessFamily` persists every answer as it is taken, so the memo is the record and nothing has
+ *  to be written beside it — the `<initiative>/_assessments/*.json` files this used to read were a
+ *  second copy of rows that already existed, and a second copy is what drifts.
+ *
+ *  The map is a PARAMETER and not a query made here, so `reviewMove` stays a pure function of what
+ *  its caller holds: the same rule the source rows follow. */
+export type RoundAssessments = ReadonlyMap<string, readonly Assessment[]>;
+
+/** Every typed answer recorded against one initiative, keyed by the `about` it was asked under.
+ *
+ *  COUPLED: `zz.assessment` is where `assessFamily` puts every answer as it takes it, including
+ *  the `unavailable` ones — a reading of unavailable is a fact about the service, and a caller
+ *  that re-asks on the strength of it is answered by the reading rather than by a missing row. */
+export async function assessmentsFor(
+  p: pg.Pool, team: string, initiative: string,
+): Promise<RoundAssessments> {
+  const out = new Map<string, Assessment[]>();
+  if (!team) return out;
+  const { rows } = await p.query<{
+    family: string; instruction_version: number; question_digest: string;
+    reading: Assessment["reading"]; probability: string | null;
+    resolved_model: string | null; identity_assurance: string | null; reason: string | null;
+    initiative: string | null; about: string | null; asked_by: string; asked_at: string;
+  }>(
+    // COUPLED: `requested_model` is NOT selected, and the column is not there to select. Phase 2
+    // retired it from `zz.assessment` — `checks/dropped-columns.ts` still watches for it and
+    // reports a statement that reaches for it. `Assessment.requested_model` survives because
+    // `assessFamily` sets it in memory from the typed call; a row cannot carry it, so a reader
+    // answers null rather than inventing one.
+    `select a.family, a.instruction_version, a.question_digest, a.reading,
+            a.probability::text as probability, a.resolved_model,
+            a.identity_assurance, a.reason, i.slug as initiative, a.about,
+            p.email as asked_by, a.asked_at::text as asked_at
+       from zz.assessment a
+       join zz.initiative i on i.id = a.initiative_id
+       join zz.team t on t.id = i.team_id
+       left join zz.principal p on p.id = a.asked_by
+      where t.slug = $1 and i.slug = $2 and a.about is not null
+      order by a.asked_at, a.id`, [team, initiative]);
+  for (const r of rows) {
+    const list = out.get(r.about as string) ?? [];
+    list.push({ ...r, requested_model: null,
+                probability: r.probability === null ? null : Number(r.probability) });
+    out.set(r.about as string, list);
+  }
+  return out;
+}
 import type { Chain } from "./write-guards.js";
 
 const IMPACTS = ["S1", "S2", "S3", "S4"] as const;
@@ -53,10 +104,16 @@ export interface Ledger {
   findings: Finding[]; resolved: Resolution[];
 }
 
-const stripEnvelope = (s: string): string => s.replace(ENVELOPE_BLOCK, "");
 const str = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
-const supportsOf = (env: Record<string, string>) =>
-  (env.supports || "").split(",").map((x) => x.trim()).filter(Boolean);
+
+/** The source rows a review reads. `stage` and `supports` are the revision's own envelope
+ *  payload, `added_at` the day `source_add` stamped, and `body` the revision's bytes — a source's
+ *  file used to be read and stripped of its envelope, and the row's body IS the stripped body. */
+const stageOf = (d: DocRow): string => (d.fields?.stage ?? "").trim();
+const addedAtOf = (d: DocRow): string => d.fields?.added_at ?? d.updated_at;
+const sourceName = (d: DocRow): string => d.path.slice("sources/".length);
+const supportsOf = (d: DocRow): string[] =>
+  (d.fields?.supports || "").split(",").map((x) => x.trim()).filter(Boolean);
 
 /** The verifying document this source is a review round of, or null: a stage that writes a
  *  document declaring `verifies`, and a source supporting that document. */
@@ -135,16 +192,14 @@ interface ReviewRound { file: string; added_at: string; ledger: Ledger }
 
 /** The recorded rounds of one review, oldest first. A source that names the stage but whose
  *  ledger no longer parses (it cannot have landed through source_add) is skipped. */
-export function reviewRounds(dir: string, stage: string, document: string): ReviewRound[] {
-  const src = join(dir, "sources");
-  if (!existsSync(src)) return [];
+export function reviewRounds(sources: readonly DocRow[], stage: string, document: string): ReviewRound[] {
   const out: ReviewRound[] = [];
-  for (const f of readdirSync(src).filter((x) => x.endsWith(".md"))) {
-    const text = readFileSync(join(src, f), "utf8");
-    const env = parseEnvelope(text);
-    if (env.stage !== stage || !supportsOf(env).includes(document)) continue;
-    const ledger = parseLedger(stripEnvelope(text));
-    if (typeof ledger !== "string") out.push({ file: f, added_at: env.added_at || "", ledger });
+  for (const d of sources) {
+    if (stageOf(d) !== stage || !supportsOf(d).includes(document)) continue;
+    const ledger = parseLedger(d.body);
+    if (typeof ledger !== "string") {
+      out.push({ file: sourceName(d), added_at: addedAtOf(d), ledger });
+    }
   }
   return out.sort((a, b) => a.added_at.localeCompare(b.added_at) || a.file.localeCompare(b.file));
 }
@@ -153,15 +208,11 @@ interface StakeholderSource { file: string; added_at: string; body: string }
 
 /** Material supporting the document that no stage produced: a stakeholder's decision, their
  *  acceptance of a residual finding, their deferral of a criterion. */
-export function stakeholderSources(dir: string, document: string): StakeholderSource[] {
-  const src = join(dir, "sources");
-  if (!existsSync(src)) return [];
-  return readdirSync(src).filter((x) => x.endsWith(".md")).flatMap((f) => {
-    const text = readFileSync(join(src, f), "utf8");
-    const env = parseEnvelope(text);
-    return !env.stage && supportsOf(env).includes(document)
-      ? [{ file: f, added_at: env.added_at || "", body: stripEnvelope(text) }] : [];
-  }).sort((a, b) => a.added_at.localeCompare(b.added_at));
+export function stakeholderSources(sources: readonly DocRow[], document: string): StakeholderSource[] {
+  return sources
+    .filter((d) => !stageOf(d) && supportsOf(d).includes(document))
+    .map((d) => ({ file: sourceName(d), added_at: addedAtOf(d), body: d.body }))
+    .sort((a, b) => a.added_at.localeCompare(b.added_at));
 }
 
 /** Whether `text` names `id` as a whole token — `R1-C1` is not named by `R1-C10`. */
@@ -175,11 +226,10 @@ export function names(text: string, id: string): boolean {
  * earlier round's findings. S3/S4 answers would route nothing, so they are not asked. Runs
  * inside `source_add`, after the round is written.
  */
-export async function assessReviewRound(root: string, initiative: string, rel: string,
+export async function assessReviewRound(p: pg.Pool, team: string, initiative: string, rel: string,
                                         stage: string, document: string, by: string): Promise<string> {
-  const dir = join(root, initiative);
   const file = rel.split("/").pop() ?? rel;
-  const rounds = reviewRounds(dir, stage, document);
+  const rounds = reviewRounds(await docRows(p, team, initiative), stage, document);
   const own = rounds.find((r) => r.file === file);
   if (!own) return "";
   const earlier = rounds.filter((r) => r.file !== file);
@@ -191,7 +241,7 @@ export async function assessReviewRound(root: string, initiative: string, rel: s
   const answers = await Promise.all(asked.map((f) => assessFamily({
     family: "repeats_finding", subject: `${f.id} [${f.impact}] ${f.locator}: ${f.claim}`, context,
     initiative, about: `sources/${file}#${f.id}`, askedBy: by })));
-  writeRoundAssessments(root, initiative, file, answers);
+  // Persisted by `assessFamily` itself as each answer was taken, so the memo IS the record.
   return "assessed: " + answers.map((a, i) => `repeats_finding(${asked[i].id}) = ${a.reading}` +
     (a.probability !== null ? ` (p=${a.probability.toFixed(2)})` : "")).join("; ");
 }
@@ -287,23 +337,21 @@ function routeReview(initiative: string, stage: string, document: string, rounds
 }
 
 /** The next move a verifying document's review owes, or null when the rounds are settled. */
-export function reviewMove(root: string, initiative: string, stage: string, document: string): ReviewMove | null {
-  const dir = join(root, initiative);
-  const rounds = reviewRounds(dir, stage, document);
-  const readings = new Map(rounds.map((r) => [r.file, readRoundAssessmentList(root, initiative, r.file)]));
-  const repeats = (file: string, id: string) => readings.get(file)
-    ?.find((a) => a.family === "repeats_finding" && a.about === `sources/${file}#${id}`)?.reading;
-  return routeReview(initiative, stage, document, rounds, repeats, stakeholderSources(dir, document));
+export function reviewMove(initiative: string, stage: string, document: string,
+                           sources: readonly DocRow[], answers: RoundAssessments): ReviewMove | null {
+  const rounds = reviewRounds(sources, stage, document);
+  const repeats = (file: string, id: string) => answers.get(`sources/${file}#${id}`)
+    ?.find((a) => a.family === "repeats_finding")?.reading;
+  return routeReview(initiative, stage, document, rounds, repeats, stakeholderSources(sources, document));
 }
 
 /** The out-of-scope findings still open that `## Backlog` in the document does not name. */
-export function unbackloggedFindings(root: string, initiative: string, stage: string, document: string,
-                                     body: string): string[] {
-  const dir = join(root, initiative);
-  const rounds = reviewRounds(dir, stage, document);
+export function unbackloggedFindings(stage: string, document: string,
+                                     body: string, sources: readonly DocRow[]): string[] {
+  const rounds = reviewRounds(sources, stage, document);
   if (!rounds.length) return [];
   const backlog = /^##[ \t]+Backlog[ \t]*$([\s\S]*?)(?=^##[ \t]|(?![\s\S]))/m.exec(body)?.[1] ?? "";
-  const decisions = stakeholderSources(dir, document);
+  const decisions = stakeholderSources(sources, document);
   return findingStates(rounds, () => undefined, decisions)
     .filter((s) => s.open && !s.accepted && !s.finding.introduced_by_scope && !names(backlog, s.finding.id))
     .map((s) => `${s.finding.id} (${s.finding.impact})`);

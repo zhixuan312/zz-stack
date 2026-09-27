@@ -23,43 +23,62 @@ const indexerSource = () => {
   return existsSync(f) ? readFileSync(f, "utf8") : "";
 };
 
-check("a team whose store is gone loses its index rows", () => {
-  // reindexTeam must distinguish two absences:
-  //   teams/ missing        -> the volume is not mounted; touching anything would empty the index
-  //   teams/<slug> missing  -> that team's store was removed; its rows must go with it
-  // Conflating them leaves a retired team's rows behind, and reindexAllTeams walking teams/
-  // alone can never visit the one team that needs cleaning.
+check("a team's rebuild touches that team's rows and no others", () => {
+  // The store a rebuild used to read was a directory per team, so "which team" was answered by
+  // the path. The rows are the record now, and a document reaches its team through the
+  // initiative it is filed under while a knowledge node carries `team_id` itself — two
+  // different joins, one per table. A rebuild that scoped either of them wrongly would rewrite
+  // another team's `body_tsv`, which is silent: the vector is derived, so the wrong one still
+  // answers, just to the wrong words.
   //
-  // DELIBERATE: the trailing `"` in the delete pattern below is load-bearing. Unanchored,
-  // `delete from zz.doc where team_slug=$1` also matches the per-document cleanup at the
-  // foot of the same function (`... and initiative=$2 and path=$3`). The closing quote plus the
-  // argument list is what tells the two apart.
+  // DELIBERATE: the two corpora are asserted TOGETHER and by their scope, not by their table
+  // name alone. `zz.knowledge_node` appears once in the file, inside the corpus list, and a
+  // second statement naming it later would be a second writer of the same column.
+  // COUPLED: the two corpora are declared in ONE list, and that list is the whole of "which rows
+  // a rebuild touches" — the table, the scope that reaches it, and the statement that moves the
+  // derived columns. Read from the list rather than from `reindexTeam`'s own body, because a
+  // check that sliced the body would see a loop over `corpus.table` and never the table's name:
+  // the scopes are what it is about, and they live where they are declared.
   const src = indexerSource();
+  const corpora = /const CORPORA = \[[\s\S]*?\] as const;/.exec(src)?.[0] ?? "";
   const fn = /async function reindexTeam\([\s\S]*?\n}/.exec(src)?.[0] ?? "";
   const all = /async function reindexAllTeams\([\s\S]*?\n}/.exec(src)?.[0] ?? "";
   const bad = [];
-  if (!fn) bad.push("reindexTeam is gone — this check reads nothing");
-  else {
-    if (!/existsSync\(join\(ARTIFACTS_DIR,\s*"teams"\)\)/.test(fn)) {
-      bad.push("reindexTeam does not distinguish a missing teams/ mount from a missing team " +
-               "directory, so either it empties the index on an unmounted volume or it leaves " +
-               "ghost rows for a team that no longer has a store");
+  if (!corpora) {
+    bad.push("the corpus list is gone — this check reads nothing");
+  } else {
+    // `zz.doc` reaches its team through the initiative a document is filed under — `zz.doc` has
+    // no team column at all, so a scope that named one would not prepare.
+    if (!/table: "zz\.doc"/.test(corpora)
+        || !/initiative_id in \(select id from zz\.initiative where team_id = \$1::uuid\)/.test(corpora)) {
+      bad.push("the zz.doc corpus does not reach the team through the initiative a document is " +
+               "filed under, so either it rebuilds another team's documents or it rebuilds none");
     }
-    if (!/delete from zz\.doc where team_slug=\$1", \[teamSlug\]/.test(fn)) {
-      bad.push("reindexTeam never deletes a vanished team's zz.doc rows");
+    if (!/table: "zz\.knowledge_node"/.test(corpora) || !/team_id = \$1::uuid/.test(corpora)) {
+      bad.push("the zz.knowledge_node corpus is not scoped by team_id, so a team's rebuild " +
+               "rewrites another shelf's node vectors");
+    }
+    // `update`, not `insert into`: a re-derivation moves the columns of a row that is already
+    // there, and both corpora must name both of them.
+    for (const [what, table] of [["zz.doc", "zz\.doc"], ["zz.knowledge_node", "zz\.knowledge_node"]] as const) {
+      const stmt = new RegExp(`update ${table} set analyzer_version[\\s\\S]*?body_tsv`).test(corpora);
+      if (!stmt) {
+        bad.push(`the ${what} corpus moves neither derived column, so a rebuild that changed the ` +
+                 "derivation leaves every row as it was");
+      }
     }
   }
+  if (!fn) bad.push("reindexTeam is gone — this check reads nothing");
+  else if (!/\$\{corpus\.table\}/.test(fn) || !/\$\{corpus\.scope\}/.test(fn)) {
+    bad.push("reindexTeam does not run the declared corpora — a list nothing iterates is a list " +
+             "that scopes nothing");
+  }
   if (!all) bad.push("reindexAllTeams is gone — this check reads nothing");
-  // Both tables: a team's knowledge is its own subject in its own table, and a team can hold
-  // nodes and no documents at all. Pinned on the union, so dropping either half fails here.
-  //
-  // The node half is read by the table it binds rather than by the column it once shared: a
-  // shelf is a relation to `zz.team` now, so that half selects the slug through the join and
-  // `zz.knowledge_node` carries no `team_slug` to spell.
-  else if (!/select team_slug from zz\.doc/.test(all) || !/(?:from|join) zz\.knowledge_node\b/.test(all)) {
-    bad.push("reindexAllTeams does not union both index tables, so a team whose store was " +
-             "removed — or one holding only knowledge nodes — is never visited and its rows " +
-             "are never cleaned");
+  // The team list is the roster, not the rows: a team that holds nothing yet is on it, and a
+  // team whose rows are stale is on it either way.
+  else if (!/select\s+slug\s+from\s+zz\.team\b/.test(all)) {
+    bad.push("reindexAllTeams does not walk the roster, so a team holding no row is never " +
+             "visited and one whose derivation moved is never rebuilt");
   }
   return bad.length ? bad.join("; ") : null;
 });

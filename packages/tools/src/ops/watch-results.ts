@@ -63,8 +63,13 @@ function main(): number {
     "  from zz.event e left join zz.team t on t.id = e.team_id" +
     " where e.kind = 'tool_call'" +
     "   and e.ts <= now() - (:'w')::interval and e.ts > now() - 2 * (:'w')::interval", { w: window });
+  // COUPLED: a document reaches its team and its initiative through `initiative_id` — `zz.doc`
+  // carries neither slug — so both come from the joins rather than from retired columns.
   const docs = psqlRows<DocRow>(psql,
-    "select team_slug, initiative, path, status, updated_at from zz.doc", {});
+    "select t.slug as team_slug, i.slug as initiative, d.path, d.status, d.updated_at" +
+    "  from zz.doc d" +
+    "  join zz.initiative i on i.id = d.initiative_id" +
+    "  join zz.team t on t.id = i.team_id", {});
   // Which initiatives are closed — zz.initiative's own closed_at, never a document's outcome.
   const closed = psqlRows<ClosedInitiativeRow>(psql,
     "select t.slug as team_slug, i.slug from zz.initiative i" +

@@ -16,24 +16,15 @@
  * every `initiative_close` would be refused. That is why this module is `async`: reading a
  * database is not synchronous, and one `await` at each call site is the whole cost.
  *
- * DELIBERATE: the store is read only where the deployment HAS no database. `TEAM_DB_URL` unset
- * is an ordinary configuration here — `platform-db.ts` says so — so a guard that abstained for
- * want of rows would admit
- * every write on such a deployment, which is the one direction a guard must never fail in.
- * `documents()` below is the single seam: one `Map` of the facts these checks judge, built from
- * the rows when there is a database and from the initiative's own documents when there is not.
- * No check reads either source itself.
- *
- * COUPLED: `root` is still a parameter, because that seam needs it — and because
- * `factsForWrite` reads the branch's `_facts.json` off the initiative folder, which is
- * `initiative-record.ts`'s to move and not this module's.
+ * DELIBERATE: there is no second source. The file store a deployment without a database used to
+ * fall back to is retired with the store, so `documents()` has one reading and a deployment that
+ * cannot reach its rows has nothing for a guard to judge — which is the refusal, not the
+ * admission, a guard must fail towards.
  */
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-
 import { admitEntry, documentApplies, OUTCOME_STOPPED, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
+import type pg from "pg";
 
-import { closingDocRuledOut, factsForWrite } from "./initiative-record.js";
+import { closingDocRuledOut, factsFor } from "./initiative-record.js";
 import { docRows } from "./indexing.js";
 import { db } from "./platform-db.js";
 import { attributionCheck, type Chain, outcomeCheck, sectionCheck, statusCheck } from "./write-guards.js";
@@ -51,34 +42,16 @@ interface HeldDoc {
   closed_by: string | null;
 }
 /** Every document one initiative holds, keyed by the name inside it — the one seam between
- *  these checks and whichever store the deployment keeps.
+ *  these checks and the rows.
  *
- *  With a database: the rows. Without one: the initiative's own documents, read the way the
- *  guards read them before there were rows. Both answer the same question, so every check below
- *  is written once. */
-async function documents(root: string, team: string | null, initiative: string): Promise<Map<string, HeldDoc>> {
+ *  With no pool the map is empty, and an empty map is what every check below reads as "this
+ *  initiative holds nothing": a deployment that cannot reach its rows cannot certify that a
+ *  gate was passed, and refusing is the direction a guard fails in. */
+async function documents(p: pg.Pool, team: string | null, initiative: string): Promise<Map<string, HeldDoc>> {
   const out = new Map<string, HeldDoc>();
-  const p = db();
-  if (p) {
-    for (const d of await docRows(p, team, initiative)) {
-      out.set(d.path, { status: d.status, approved_by: d.approved_by, approved_at: d.approved_at,
-                        outcome: d.outcome, closed_by: d.closed_by });
-    }
-    return out;
-  }
-  const dir = join(root, initiative);
-  if (!existsSync(dir)) return out;
-  for (const name of readdirSync(dir)) {
-    // The same narrowing the store's own listings apply: a document is a `.md` that is not a
-    // mechanical record, and `_facts.json`, `_versions/`, `activity.jsonl` and the like are not
-    // documents of this initiative.
-    if (!name.endsWith(".md") || name.startsWith("_")) continue;
-    try {
-      const env = parseEnvelope(readFileSync(join(dir, name), "utf8"));
-      out.set(name, { status: env.status ?? "", approved_by: env.approved_by ?? null,
-                      approved_at: env.approved_at ?? null, outcome: env.outcome ?? null,
-                      closed_by: env.closed_by ?? null });
-    } catch { /* unreadable: the document is not held, which is the stricter reading */ }
+  for (const d of await docRows(p, team, initiative)) {
+    out.set(d.path, { status: d.status, approved_by: d.approved_by, approved_at: d.approved_at,
+                      outcome: d.outcome, closed_by: d.closed_by });
   }
   return out;
 }
@@ -100,24 +73,24 @@ const STOPPED_GROUND =
  * `team` is the caller's own. A caller resolving to no team reads the slug across every team,
  * which is the same widening `protocol_affirm` already takes — an initiative slug is
  * team-scoped, so "no team" is only ever a caller whose team the database could not answer. */
-async function held(root: string, team: string | null, relPath: string):
+async function held(p: pg.Pool, team: string | null, relPath: string):
   Promise<{ doc: HeldDoc | null; initiative: string; name: string }> {
   const parts = relPath.replace(/^\/+/, "").split("/");
   if (parts.length !== 2) return { doc: null, initiative: parts[0] ?? "", name: parts[1] ?? "" };
   return {
-    doc: (await documents(root, team, parts[0])).get(parts[1]) ?? null,
+    doc: (await documents(p, team, parts[0])).get(parts[1]) ?? null,
     initiative: parts[0], name: parts[1],
   };
 }
 /** Closing an initiative (writing `outcome:` into the manifest's closing document) requires
  * every document the manifest marks `requiredForClose`. */
-async function closeCheck(chain: Chain, root: string, team: string | null, relPath: string,
+async function closeCheck(p: pg.Pool, chain: Chain, team: string | null, relPath: string,
                           content: string): Promise<string | null> {
   const parts = relPath.replace(/^\/+/, "").split("/");
   if (parts.length !== 2) return null;
   const env = parseEnvelope(content);
   if (!env.outcome) return null;
-  const rows = await documents(root, team, parts[0]);
+  const rows = await documents(p, team, parts[0]);
   // FR-58 (Task I-28): `chain.closingDoc` is a static, per-flow answer — a `when`-conditional
   // closing document (`improvement.md`, promotable only) is `not_applicable` on every other
   // branch, and the branch still has to close somewhere. `closingDocRuledOut` is the same
@@ -126,9 +99,7 @@ async function closeCheck(chain: Chain, root: string, team: string | null, relPa
   // that call already does when a caller names a document explicitly, rather than recomputing
   // "the furthest one" a second way here.
   const stop = env.outcome === OUTCOME_STOPPED;
-  // A stop reads a damaged `_facts.json` as no facts rather than refusing (`factsForWrite`): the
-  // abandon is the one act that must still work on an initiative whose branch cannot be read.
-  const facts = factsForWrite(root, parts[0], stop) ?? {};
+  const facts = await factsFor(p, team, parts[0]);
   const ruledOut = closingDocRuledOut(chain.documents.find((d) => d.name === chain.closingDoc), facts);
   const missing = stop && !!chain.closingDoc && !rows.has(chain.closingDoc);
   const isClosingWrite = parts[1] === chain.closingDoc
@@ -168,7 +139,7 @@ async function closeCheck(chain: Chain, root: string, team: string | null, relPa
   // (`stop` is computed once, above, before the branch-aware `isClosingWrite` check.)
   const self = chain.documents.find((d) => d.name === parts[1]);
   // FR-58 (Task I-26): a document whose branch has not resolved yet — a named fact `when`
-  // depends on is absent from `_facts.json` — blocks a FINISHED close outright. The platform
+  // depends on is absent from the branch facts — blocks a FINISHED close outright. The platform
   // does not know whether it is required, so it cannot certify that every required gate is
   // recorded; `branch_undetermined` is refused by name, the same way `stale_baseline` names its
   // own refusal elsewhere in this initiative's contract. An ABANDONED close is unaffected: the
@@ -181,7 +152,7 @@ async function closeCheck(chain: Chain, root: string, team: string | null, relPa
       const absent = Object.keys(undetermined.when!).filter((f) => !facts[f]);
       return (
         `ERROR: branch_undetermined — ${undetermined.name} declares \`when\` over ` +
-        `${absent.join(", ")}, and _facts.json does not record ${absent.length === 1 ? "it" : "them"} ` +
+        `${absent.join(", ")}, and the branch facts do not record ${absent.length === 1 ? "it" : "them"} ` +
         `yet, so the platform cannot say whether ${undetermined.name} is required before ` +
         `${parts[0]} closes. Run the stage that decides the branch first. If the ` +
         `work stopped rather than finished, initiative_close(initiative, "${OUTCOME_STOPPED}") ` +
@@ -290,10 +261,10 @@ async function closeCheck(chain: Chain, root: string, team: string | null, relPa
  *
  * Gated documents only, and only while approved. A flow may mark an ungated document
  * `approved` as a working state, and editing that is ordinary work, as is editing a draft. */
-async function approvedDocumentGuard(chain: Chain, root: string, team: string | null, relPath: string,
+async function approvedDocumentGuard(p: pg.Pool, chain: Chain, team: string | null, relPath: string,
                                      via: string | null): Promise<string | null> {
   if (via) return null;                       // document_approve(), initiative_close() and document_revise own their writes
-  const { doc } = await held(root, team, relPath);
+  const { doc } = await held(p, team, relPath);
   if (!doc || doc.status !== "approved") return null;
   // A signature in the revision table, not a line in a manifest. Testing the manifest's `gate`
   // instead would abstain for every document of a freeform initiative, where `document_approve`
@@ -324,10 +295,10 @@ async function approvedDocumentGuard(chain: Chain, root: string, team: string | 
  * `document_revise` freezes the signed text, bumps the version, carries the outcome forward
  * and requires a source or `source_content`; `document_write` does none of that. A closed
  * record may be corrected, and a correction says what caused it. */
-async function closedDocumentGuard(root: string, team: string | null, relPath: string,
+async function closedDocumentGuard(p: pg.Pool, team: string | null, relPath: string,
                                    via: string | null): Promise<string | null> {
   if (via) return null;                       // initiative_close and document_revise own their writes
-  const { doc } = await held(root, team, relPath);
+  const { doc } = await held(p, team, relPath);
   if (!doc?.outcome) return null;
   return (
     `ERROR: ${relPath} is the document this initiative CLOSED on (outcome: ${doc.outcome}), so it ` +
@@ -347,8 +318,8 @@ async function closedDocumentGuard(root: string, team: string | null, relPath: s
  * the work reached. An outcome anywhere in the initiative is the proof: it is written by
  * initiative_close and by nothing else, and a close asserts exactly what the prerequisite
  * exists to establish. The narrower rule still applies to every open initiative. */
-async function closedOnSomeDocument(root: string, team: string | null, initiative: string): Promise<boolean> {
-  return [...(await documents(root, team, initiative)).values()].some((d) => !!d.outcome);
+async function closedOnSomeDocument(p: pg.Pool, team: string | null, initiative: string): Promise<boolean> {
+  return [...(await documents(p, team, initiative)).values()].some((d) => !!d.outcome);
 }
 /** May this document be written at all, given the branch the initiative is on (FR-58, Task
  *  I-26) — distinct from `gateCheck` below, which asks whether an EARLIER document's gate has
@@ -360,28 +331,26 @@ async function closedOnSomeDocument(root: string, team: string | null, initiativ
  *  same as `document_write`.
  *  `undetermined`: the branch has not resolved yet; the contract calls this "not writable yet",
  *  not a refusal about approval or ownership. */
-function applicabilityCheck(chain: Chain, root: string, relPath: string, stop: boolean): string | null {
+async function applicabilityCheck(p: pg.Pool, team: string | null, chain: Chain, relPath: string): Promise<string | null> {
   const parts = relPath.replace(/^\/+/, "").split("/");
   if (parts.length !== 2) return null;
   const doc = chain.documents.find((d) => d.name === parts[1]);
   if (!doc?.when) return null;
-  // An abandon over a damaged `_facts.json` is not asked: the branch cannot be read, and a stop
-  // asks no branch to have been decided.
-  const facts = factsForWrite(root, parts[0], stop);
-  if (!facts) return null;
+  const facts = await factsFor(p, team, parts[0]);
+  const recorded = `this initiative's branch facts (zz.initiative_fact)`;
   const applic = documentApplies(doc, facts);
   if (applic === "applies") return null;
   if (applic === "not_applicable") {
     return (
       `ERROR: ${parts[1]} does not apply on this branch — its \`when\` (${JSON.stringify(doc.when)}) ` +
-      `does not match the facts recorded in _facts.json (${JSON.stringify(facts)}). A document a ` +
+      `does not match the facts recorded in ${recorded} (${JSON.stringify(facts)}). A document a ` +
       "branch rules out is never written, on this branch."
     );
   }
   const missing = Object.keys(doc.when).filter((f) => !facts[f]);
   return (
     `ERROR: ${parts[1]} is not writable yet — its \`when\` names ${missing.join(", ")}, and ` +
-    `_facts.json does not record ${missing.length === 1 ? "it" : "them"} yet, so the platform ` +
+    `${recorded} does not record ${missing.length === 1 ? "it" : "them"} yet, so the platform ` +
     `cannot say whether ${parts[1]} applies. Run the stage that decides the branch first.`
   );
 }
@@ -394,8 +363,8 @@ function applicabilityCheck(chain: Chain, root: string, relPath: string, stop: b
  * What stays here is what the kernel must not know: that a prerequisite is a document the
  * store holds a revision of, that `gate: true` is what ratifies one, and what to tell an agent
  * that has been refused. */
-async function gateCheck(chain: Chain, root: string, team: string | null, relPath: string,
-                         stop: boolean): Promise<string | null> {
+async function gateCheck(p: pg.Pool, chain: Chain, team: string | null, relPath: string,
+                         ): Promise<string | null> {
   const clean = relPath.replace(/^\/+/, "");
   const parts = clean.split("/");
   if (parts.length !== 2) return null;
@@ -404,11 +373,8 @@ async function gateCheck(chain: Chain, root: string, team: string | null, relPat
   // FR-58 (Task I-26): a dependency the branch has ruled out is discharged, not missing — the
   // ground below is what lets a document downstream of a not_applicable one still be written.
   const depDoc = chain.documents.find((d) => d.name === dep);
-  // An abandon over a damaged `_facts.json` cannot tell whether a conditional dependency applied,
-  // and a stop asks no branch to have been decided — so the dependency is discharged, on that
-  // ground, rather than left to refuse the one act that still works on such an initiative.
-  const depFacts = depDoc?.when ? factsForWrite(root, parts[0], stop) : {};
-  const depApplic = !depDoc?.when ? "applies" : depFacts ? documentApplies(depDoc, depFacts) : "unreadable";
+  const depFacts = depDoc?.when ? await factsFor(p, team, parts[0]) : {};
+  const depApplic = !depDoc?.when ? "applies" : documentApplies(depDoc, depFacts);
   // A non-gated prerequisite is satisfied by existing. `gate: false` says no approval is
   // required, so nothing ever approves such a document and its status stays `draft` for the
   // life of the initiative — demanding `approved` here would make the next document
@@ -420,7 +386,7 @@ async function gateCheck(chain: Chain, root: string, team: string | null, relPat
   // when it is not. The kernel states it as `EvidenceStandard`: a gated prerequisite is
   // required `ratified`, an ungated one `recorded`.
   const depGate = depDoc?.gate === true;
-  const depRow = (await documents(root, team, parts[0])).get(dep) ?? null;
+  const depRow = (await documents(p, team, parts[0])).get(dep) ?? null;
   const exists = depRow !== null;
   const status = depRow?.status ?? null;
   const admission = admitEntry(
@@ -434,7 +400,7 @@ async function gateCheck(chain: Chain, root: string, team: string | null, relPat
     // discharging that too would let a closed initiative write over a gate a person was
     // still owed a say in.
     [
-      ...(!exists && await closedOnSomeDocument(root, team, parts[0])
+      ...(!exists && await closedOnSomeDocument(p, team, parts[0])
         ? [{ kind: dep, ground: `this initiative is closed, and the close settled ${dep} by landing its outcome elsewhere` }]
         : []),
       // FR-58 (Task I-26): a dependency the branch has ruled out is never going to exist, on
@@ -442,9 +408,6 @@ async function gateCheck(chain: Chain, root: string, team: string | null, relPat
       // permanently unwritable, on the one branch where the contract says it never applied.
       ...(depApplic === "not_applicable"
         ? [{ kind: dep, ground: `${dep} does not apply on this branch (\`when\`: ${JSON.stringify(depDoc!.when)})` }]
-        : []),
-      ...(depApplic === "unreadable"
-        ? [{ kind: dep, ground: `${STOPPED_GROUND}, and _facts.json is damaged, so whether ${dep} applied cannot be read` }]
         : []),
     ],
   );
@@ -475,10 +438,10 @@ async function gateCheck(chain: Chain, root: string, team: string | null, relPat
  * Change is the test, not presence: re-sending an unchanged approval line while patching a
  * typo is not an attempt to forge one, and comparing against the stored revision is what tells
  * those apart. */
-async function ownershipCheck(root: string, team: string | null, relPath: string, content: string,
+async function ownershipCheck(p: pg.Pool, team: string | null, relPath: string, content: string,
                               via: string | null): Promise<string | null> {
   if (via) return null;
-  const { doc } = await held(root, team, relPath);
+  const { doc } = await held(p, team, relPath);
   // The fields PLATFORM_OWNED names, as the row the store holds carries them. A field the row
   // does not carry is absent, which is the stricter reading and the one a new document gets.
   const prev: Record<string, string> = {};
@@ -524,20 +487,25 @@ async function ownershipCheck(root: string, team: string | null, relPath: string
  *
  * `initiativeNameTaken` is not here: it is about creating a name, not about the content of a
  * write, and only `initiative_open` creates. */
-export async function documentGuards(chain: Chain, root: string, relPath: string, content: string,
+export async function documentGuards(chain: Chain, relPath: string, content: string,
                                team: string | null, via: string | null = null): Promise<string | null> {
-  // COUPLED: the one question closeCheck asks too — a write recording an abandon is judged
-  // over a damaged `_facts.json` instead of refused by it.
-  const stop = parseEnvelope(content).outcome === OUTCOME_STOPPED;
+  // Resolved once, here, and threaded to every check: one pool read for the whole guard run, and
+  // a deployment that cannot reach its rows gets the refusal the checks below build from an
+  // empty map rather than a second failure mode.
+  const p = db();
+  if (!p) {
+    return "ERROR: no platform database — the store is the database now, so no document can be " +
+      "judged and none is written. Configure TEAM_DB_URL and call again.";
+  }
   // Run in order, stopping at the first refusal: each check is cheaper than the ones below it,
   // and short-circuiting is what keeps a refused write from reading rows it will not judge.
   const checks: (() => Promise<string | null>)[] = [
-    () => ownershipCheck(root, team, relPath, content, via),
-    () => closedDocumentGuard(root, team, relPath, via),
-    () => approvedDocumentGuard(chain, root, team, relPath, via),
-    async () => applicabilityCheck(chain, root, relPath, stop),
-    () => gateCheck(chain, root, team, relPath, stop),
-    () => closeCheck(chain, root, team, relPath, content),
+    () => ownershipCheck(p, team, relPath, content, via),
+    () => closedDocumentGuard(p, team, relPath, via),
+    () => approvedDocumentGuard(p, chain, team, relPath, via),
+    async () => applicabilityCheck(p, team, chain, relPath),
+    () => gateCheck(p, chain, team, relPath),
+    () => closeCheck(p, chain, team, relPath, content),
     async () => statusCheck(chain, relPath, content),
     async () => outcomeCheck(chain, relPath, content),
     async () => attributionCheck(chain, relPath, content, team),

@@ -6,14 +6,18 @@
  * asks this first, so it is resolved once per flow and cached: a team running two flows must
  * get the right answer for each. An initiative that declares no flow is freeform, and nothing
  * is enforced on it.
+ *
+ * COUPLED: the declaration is read from two ROWS and never from a directory. A document's own
+ * `flow:` is the most specific answer, and `zz.initiative.flow` — the flow the initiative was
+ * OPENED with — is what answers in the window before its first document exists, which is exactly
+ * when a resuming agent calls `initiative_status`. The oldest-document walk that used to be the
+ * last resort is gone with the store: it read the team's files, and the row it was imitating is
+ * the one this reads directly.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
-
 import { type FlowDoc, parseEnvelope } from "@zz/contracts";
 import { catalogManifest, isFlow, withHandover } from "@zz/catalog";
 
-import { openRecord } from "./initiative-record.js";
+import { openRecord, type RecordClient } from "./initiative-record.js";
 import { type Chain } from "./write-guards.js";
 
 function deriveChain(list: FlowDoc[], name: string | null = null): Chain {
@@ -76,11 +80,15 @@ function chainForFlow(declared: string): Chain | null {
  *
  * `content`, when given, is the document about to be written, and it is consulted first:
  * without it the first document of a new initiative cannot resolve a chain, because the
- * folder is empty, so its `flow:` is never stamped and the second cannot resolve one either.
+ * envelope has no `flow:` yet — and that is the case `zz.initiative.flow` answers.
  *
  * DELIBERATE: the initiative answers, and nothing else does. A team's installs are not the
- * initiative's declaration. An initiative that declares nothing is freeform. */
-export function chainFor(root: string, relPath: string, content?: string): Chain {
+ * initiative's declaration. An initiative that declares nothing is freeform.
+ *
+ * An unresolvable declaration falls through to `EMPTY_CHAIN`, never to another flow's chain. */
+export async function chainFor(
+  p: RecordClient, team: string | null, relPath: string, content?: string,
+): Promise<Chain> {
   const parts = relPath.replace(/^\/+/, "").split("/");
   if (parts.length !== 2) return EMPTY_CHAIN;   // not an initiative document
   const declaredHere = parseEnvelope(content ?? "").flow;
@@ -88,47 +96,36 @@ export function chainFor(root: string, relPath: string, content?: string): Chain
     const own = chainForFlow(declaredHere);
     if (own) return own;
   }
-  // The declaration made at open time, before any document exists to carry one. Between
-  // `initiative_open("x", "sdlc-flow")` and the first document there is no envelope to read a
-  // `flow:` off, and that is exactly when an agent picks the work up through
-  // `initiative_status`.
+  // The declaration made at open time, before any document exists to carry one. Read from
+  // `zz.initiative`, which is where `initiative_open` records it.
   //
   // DELIBERATE: after `content`. A document's own declaration is the one thing more specific
-  // than the folder's.
-  const opened = openRecord(root, parts[0]);
+  // than the initiative's.
+  if (!team) return EMPTY_CHAIN;
+  const opened = await openRecord(p, team, parts[0]);
   if (opened?.flow) {
     const own = chainForFlow(opened.flow);
     if (own) return own;
   }
-  // DELIBERATE: a declared freeform outranks the walk below. `flow: null` in the record is a
-  // person saying "nothing governs this". The platform does not stamp `flow:` onto a freeform
-  // document, so an envelope carrying one here was hand-written or predates the record, and the
-  // record is the more explicit of the two. An initiative with no record falls through to both.
-  if (opened && !opened.flow) return EMPTY_CHAIN;
-  // The oldest document answers, not whichever one readdir hands back first: the first document
-  // is what declares the flow, and on ext4 readdir order is a hash of the names.
-  //
-  // DELIBERATE: by mtime. The platform stamps the flow it resolved onto each governed document,
-  // so one wrong resolution becomes a written declaration and two files disagree; the input is
-  // older than anything stamped from it.
-  try {
-    const dir = join(root, parts[0]);
-    const dated = readdirSync(dir)
-      .filter((f) => f.endsWith(".md") && !f.startsWith("_"))
-      .map((f) => ({ f, at: statSync(join(dir, f)).mtimeMs }))
-      .sort((a, b) => a.at - b.at);
-    for (const { f } of dated) {
-      const fl = parseEnvelope(readFileSync(join(dir, f), "utf8")).flow;
-      // DELIBERATE: an unresolvable declaration falls through to EMPTY_CHAIN, never to another
-      // flow's chain.
-      const declared = fl ? chainForFlow(fl) : null;
-      if (declared) return declared;
-      if (fl) break;
-    }
-  } catch { /* folder does not exist yet */ }
+  // `flow: null` on the row is a person saying "nothing governs this", and no record at all is
+  // an initiative this deployment cannot place. Neither is a flow, and neither may acquire one:
+  // adopting a flow after the fact is what the whole declaration exists to refuse.
   return EMPTY_CHAIN;
 }
-export function frontmatterStatus(file: string): string | null {
-  if (!existsSync(file)) return null;
-  return parseEnvelope(readFileSync(file, "utf8")).status ?? null;
+/** The status a document's own revision carries, or null when the team holds no such document.
+ *
+ * COUPLED: `zz.doc.status` is the document's own — a revision sealed at an approval reads
+ * `approved` because it was — and this answers for the CURRENT revision alone, which is what
+ * every caller of the file reader this replaced asked. */
+export async function frontmatterStatus(
+  p: RecordClient, team: string | null, initiative: string, name: string,
+): Promise<string | null> {
+  if (!team) return null;
+  const { rows } = await p.query<{ status: string }>(
+    `select d.status from zz.doc d
+       join zz.initiative i on i.id = d.initiative_id
+       join zz.team t on t.id = i.team_id
+      where t.slug = $1 and i.slug = $2 and d.path = $3`,
+    [team, initiative, name]);
+  return rows[0]?.status ?? null;
 }

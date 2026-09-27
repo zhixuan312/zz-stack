@@ -1,10 +1,10 @@
 /**
  * The run relation: one row per conversation of one skill version, and the timer that repairs it.
  *
- * `zz.skill_run.skill_version_id` attributes work to a version of a skill, `zz.doc.produced_by_run_id`
- * hangs off it, and the evaluation track judges a skill from the documents and traces its runs point
- * at. A skill whose runs stop being recorded is indistinguishable, in every query, from one nobody
- * used.
+ * `zz.skill_run.skill_version_id` attributes work to a version of a skill, the event log names the
+ * document a call wrote, and the evaluation track judges a skill from the documents and traces its
+ * runs point at. A skill whose runs stop being recorded is indistinguishable, in every query, from
+ * one nobody used.
  *
  * Stamped at the door, not derived on a timer (FR-19, FR-20). Phase 0 argued the opposite here —
  * that a run is a grouping of events and writing rows per call would put a second write in the hot
@@ -134,22 +134,21 @@ export async function reconcileRuns(): Promise<{ runs: number; linked: number; d
      where r.id = c.id and ${CHANGED("r", "c")}
     returning (select count(*) from zz.event x where x.run_id = r.id) as events`);
 
-  // And the document side.
+  // And the document side: how many documents this window's runs wrote, read from the event
+  // log rather than repaired onto the document.
   //
-  // `zz.doc.produced_by_run_id` is how a document is attributed to the version of the skill
-  // that wrote it — the join the whole evaluation track stands on. A document carrying NULL is
-  // invisible to every round.
+  // DELIBERATE: nothing is written. `zz.doc.produced_by_run_id` was the column this repair
+  // filled and it was this platform's most productive source of wrong attribution: the join it
+  // fed resolved a document to whichever run happened to be recorded against it, it was null
+  // for every document indexed before the column existed, and it could not tell a rewrite from
+  // the original write. The run a document was written under is named by the event that
+  // recorded the write — `zz.event.run_id` on the row whose `subject` is the document's path —
+  // so this is a count of those rows and no column is involved.
   //
   // From the manifest, not from a table of flow names: hardcoding one flow's step-to-role
   // pairs into the SQL attributes nothing for a second flow and attributes wrongly the day the
   // first renames a document. `stage` on a declared document says which step writes it and
   // `role` says what the document is, so the pairs are read off the catalog and passed as data.
-  //
-  // `zz.doc.initiative_id` is no longer backfilled here (Task I-6): `indexDoc`
-  // (packages/indexing/src/index.ts) resolves it inline, in the same insert that writes the
-  // row, from the anchor row `initiative_open` now writes synchronously. A document indexed
-  // before this release, or before its initiative's anchor row existed, still carries null
-  // until it is next written or reindexed — a knowing loss, not a gap this reconciler fills.
   const pairs: { skill: string; role: string }[] = [];
   for (const e of catalogEntries()) {
     for (const d of e.manifest.documents ?? []) {
@@ -158,21 +157,22 @@ export async function reconcileRuns(): Promise<{ runs: number; linked: number; d
   }
   let docs = 0;
   if (pairs.length) {
-    const a = await db.query(`
-      update zz.doc d set produced_by_run_id = run.id
-        from zz.skill_run run
+    const a = await db.query<{ n: string }>(`
+      select count(distinct e.subject)::text as n
+        from zz.event e
+        join zz.skill_run run on run.id = e.run_id
         join zz.skill_version sv on sv.id = run.skill_version_id
-        join zz.skill s on s.id = sv.skill_id,
+        join zz.skill s on s.id = sv.skill_id
+        join zz.initiative i on i.id = e.initiative_id
+        join zz.doc d on d.initiative_id = i.id and d.path = split_part(e.subject, '/', 2),
              unnest($1::text[], $2::text[]) as m(skill, role)
-       -- DELIBERATE: every condition touching the update target is in WHERE. Postgres does not admit
-       -- the target inside a FROM-clause join, and this reconcile swallows its errors, so such a
-       -- repair would silently never run.
-       where d.produced_by_run_id is null
-         and run.initiative_id = d.initiative_id
-         and m.skill = s.name and m.role = d.type
-         and d.path not like '\\_versions/%'`,
+       -- DELIBERATE: subject is the path the write named, so the document is matched inside
+       -- the initiative the event itself resolved to. run_id non-null is the whole of "a run
+       -- wrote this" — the door stamps it on the row it writes, and the repair never sets one.
+       where e.run_id is not null
+         and m.skill = s.name and m.role = d.type`,
       [pairs.map((x) => x.skill), pairs.map((x) => x.role)]);
-    docs = a.rowCount ?? 0;
+    docs = Number(a.rows[0]?.n ?? "0");
   }
 
   return { runs: repaired.rowCount ?? 0,

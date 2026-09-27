@@ -1,33 +1,23 @@
 /**
- * A document too long for one tool result, read and presented in parts.
+ * A document too long for one tool result, read in parts.
  *
  * A client caps what one tool result may carry — a 130k-character review.md could not be read at
  * all — so `document_read` and `document_present` take a part: a `section` by heading, and/or an
  * `offset` and `limit` in characters. Every part says the total size and which characters it is,
  * so a reader always knows what it has not seen.
  *
- * Presenting in parts keeps the approval rule honest. A part records a `shown_part` row, which
- * attest.ts shownSinceLastChange does not count. Once the parts presented since the content last
- * changed cover every character of the current body, one `shown` row is appended — the same row a
- * whole present writes — and only then does the document count as presented.
- *
- * Everything takes `root` explicitly and touches no request, so checks/document-parts.ts drives
- * the real functions over a fixture store.
+ * What is here is the SLICING: which characters of a body a caller asked for, and the line that
+ * says what the part is. Nothing here reads a store — a part is cut from bytes the caller
+ * already holds, and the bytes come from `doc_revision` through `versions.ts`.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-
-import { documentBody, parseEnvelope } from "@zz/contracts";
-
-import { logActivity } from "./persist.js";
-import { documentVersions, versionRefusal } from "./document-versions.js";
 
 /** The size above which a present comes back in parts unasked. Characters, not tokens: a client's
  *  cap is in tokens, and 60k characters stays under the common 25k-token result cap even for
  *  markdown dense with tables and code. */
 export const PART_LIMIT = 60_000;
 
-type PartAsk = { section?: string; offset?: number; limit?: number };
+/** What a caller asked a present for: a heading, an offset, a cap, or none of them. */
+export type PartAsk = { section?: string; offset?: number; limit?: number };
 type Part = { text: string; start: number; end: number; total: number };
 type Heading = { level: number; title: string; at: number };
 
@@ -112,81 +102,4 @@ export function partHeader(rel: string, part: Part, of: string, text: string): s
     if (hs.length) lines.push(`Sections: ${listed(hs)}.`);
   }
   return lines.join("\n");
-}
-
-/** Actions that change a document's bytes. COUPLED: attest.ts CHANGED holds the same three —
- *  coverage is counted since the same moment shownSinceLastChange counts from. */
-const CHANGED = new Set(["document_write", "document_patch", "document_revise"]);
-
-/** How much of the current body has been presented since its content last changed: `shown`
- * when a whole present (or an earlier completed set of parts) already stands, `covered` when the
- * parts alone reach every character, `partial` otherwise.
- *
- * Parts are compared on `total`: a part cut from a body of another length is a part of other
- * bytes. `shown` is told apart from `covered` so a completed set of parts appends its `shown`
- * row once, never a second time. */
-function partsCover(root: string, relPath: string, total: number): "shown" | "covered" | "partial" {
-  const log = join(root, relPath.replace(/^\/+/, "").split("/")[0], "activity.jsonl");
-  if (!existsSync(log)) return "partial";
-  let spans: [number, number][] = [];
-  let whole = false;
-  for (const line of readFileSync(log, "utf8").split("\n")) {
-    if (!line.trim()) continue;
-    let e: { action?: string; path?: string; start?: number; end?: number; total?: number };
-    try { e = JSON.parse(line) as typeof e; } catch { continue; }
-    if (e.path !== relPath) continue;
-    if (CHANGED.has(e.action ?? "")) { spans = []; whole = false; }
-    else if (e.action === "shown") whole = true;
-    else if (e.action === "shown_part" && e.total === total &&
-             typeof e.start === "number" && typeof e.end === "number") spans.push([e.start, e.end]);
-  }
-  if (whole) return "shown";
-  let reached = 0;
-  for (const [s, e] of spans.sort((a, b) => a[0] - b[0])) {
-    if (s > reached) break;
-    reached = Math.max(reached, e);
-  }
-  return reached >= total ? "covered" : "partial";
-}
-
-/** One part of a document presented, and the record of it.
- *
- * The same resolution as document-versions.ts presentDocument — `version: N` reads the frozen
- * copy and records against that copy's path — and the same body: frontmatter excluded, trimmed,
- * so the offsets a part states are offsets into what the person is shown. */
-export function presentPart(
-  root: string, relPath: string, version: number | undefined, user: string, ask: PartAsk,
-): string {
-  const rows = documentVersions(root, relPath);
-  let readRel = relPath;
-  if (version !== undefined) {
-    const hit = rows.find((v) => v.version === version);
-    if (!hit) return versionRefusal(root, relPath, version) ?? `ERROR: \`${relPath}\` has no version ${version}.`;
-    readRel = hit.rel;
-  }
-  const content = readFileSync(join(root, readRel), "utf8");
-  const env = parseEnvelope(content);
-  const body = documentBody(content).trim();
-  const part = slicePart(body, ask);
-  if (typeof part === "string") return part;
-  const facts = [`This is ${readRel}`];
-  if (env.version) facts.push(`version ${env.version}`);
-  if (env.status) facts.push(`status ${env.status}`);
-  const signed = env.approved_by
-    ? ` Approved by ${env.approved_by}${env.approved_at ? ` on ${env.approved_at}` : ""}.` : "";
-  // The two journal appends below are the same deliberate bridge `versions.ts` keeps and
-  // explains at its header: `attest.ts` reads `activity.jsonl`, and `checks/document-parts.ts`
-  // asserts these exact rows. Task I-41 retires them with the layer the two modules still call.
-  logActivity(root, readRel, { user, action: "shown_part", path: readRel, version: env.version ?? "",
-                               start: part.start, end: part.end, total: part.total });
-  const covered = partsCover(root, readRel, part.total);
-  if (covered === "covered") {
-    logActivity(root, readRel, { user, action: "shown", path: readRel, version: env.version ?? "", via: "parts" });
-  }
-  const standing = covered !== "partial"
-    ? "Every character of the current body has now been presented, in parts — it counts as presented."
-    : "Presented in part. It does NOT yet count as presented: present the remaining characters " +
-      "(every part since the last change counts) before the document is approved.";
-  return `${facts.join(", ")}.${signed}\n${partHeader(readRel, part, "the body, frontmatter excluded", body)}\n` +
-         `${standing}\n\n${part.text}\n`;
 }

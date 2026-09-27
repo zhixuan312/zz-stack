@@ -2,31 +2,34 @@
 /**
  * A document too long for one result reads, and presents, in parts — and the parts round-trip.
  *
- * Runs the code over a fixture store rather than matching its text:
  *   1. a 130k-character body sliced by `offset` from each part's own "Next" line reassembles to
  *      exactly the body, every part under the limit, no surrogate pair split;
  *   2. `section` returns one heading's subtree, ignores a heading inside a code fence, and
  *      refuses an absent or ambiguous heading by name;
  *   3. presenting that document in parts records `shown_part` rows, counts as presented
  *      (shownSinceLastChange) only once the parts cover the body, appends exactly one `shown`,
- *      and a patch after that makes it unpresented again;
+ *      and a rewrite after that makes it unpresented again;
  *   4. the real `document_read` and `document_present` schemas accept `section`, `offset` and
  *      `limit`.
  *
+ * COUPLED: the fact behind "counts as presented" is `doc_revision.presented_at`, and the part
+ * spans are `zz.event` rows — a column cannot hold a span set — so the fixture is a stubbed
+ * `pg.Pool` that records what the presenter writes and answers what the reader asks. The span
+ * bookkeeping is the one thing that still lives in the event table, and losing it makes a
+ * partly-presented document read as unpresented: it fails CLOSED.
+ *
  * Run: node checks/document-parts.ts
  */
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
-const { PART_LIMIT, slicePart, presentPart } = await load("services/zz-core/dist/document-parts.js");
-const { shownSinceLastChange } = await load("services/zz-core/dist/attest.js");
-const { registerArtifactTools } = await load("services/zz-core/dist/tools/artifacts.js");
+import pg from "pg";
 
-const fail: string[] = [];
-const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
+process.env.TEAM_DB_URL = "postgresql://stub@127.0.0.1:1/stub";
+
+const TEAM = "t1";
+const INIT = "2026-09-26-parts";
+const REL = `${INIT}/review.md`;
 
 // A body of ~130k characters, the size that could not be read, with an emoji every line so a
 // cut that ignored surrogate pairs would show.
@@ -38,6 +41,67 @@ for (let s = 1; lines.join("\n").length < 130_000; s++) {
 }
 lines.push("## Ends", "", "the last line");
 const body = lines.join("\n");
+const content = `---\ntitle: Review\nversion: 1\nstatus: draft\n---\n\n${body}\n`;
+
+/** The fixture: one document, one revision, and the rows the presenter and the reader write. */
+const doc = { written_at: "2026-09-26T00:00:00.000Z", presented_at: null as string | null };
+const events: { kind: string; subject: string; detail: Record<string, unknown> }[] = [];
+
+pg.Pool.prototype.query = (async function query(text: string, values: unknown[] = []) {
+  const sql = String(text).replace(/\s+/g, " ").trim();
+  const one = (rows: Record<string, unknown>[]) => ({ rows, rowCount: rows.length });
+  // `revisionsOf` — the bytes
+  if (/from zz\.doc_revision r\b/.test(sql) && /where r\.doc_id = \$1::uuid/.test(sql)) {
+    return one([{ revision: 1, content_state: "retained", title: "Review", body: content, tags: [],
+                  content_hash: "h", revision_note: null, fields: null, written_by: "u@zz.test",
+                  written_at: doc.written_at, approved_by: null, approved_at: null }]);
+  }
+  // `citationsOf`
+  if (/from zz\.doc_link l\b/.test(sql)) return one([]);
+  // THE FACT
+  if (/select r\.presented_at::text as presented_at/.test(sql)) {
+    if (values[0] !== TEAM || values[1] !== INIT || values[2] !== "review.md") return one([]);
+    return one([{ presented_at: doc.presented_at, written_at: doc.written_at }]);
+  }
+  // THE WRITE
+  if (/update zz\.doc_revision r set presented_at = now\(\)/.test(sql)) {
+    doc.presented_at = new Date(Date.parse(doc.written_at) + 1000).toISOString();
+    return { rows: [], rowCount: 1 };
+  }
+  // DELIBERATE: the routes that decide this check come FIRST. The generic `from zz.doc d` arm
+  // matches the presented_at select's own text too — it has `d.path = $3` — and answering that
+  // with a document row, which carries no `presented_at`, reads as "nobody was shown it"
+  // whatever the fixture says. A router answers by first match.
+  if (/from zz\.doc d\b/.test(sql) && /d\.path = \$3/.test(sql)) {
+    if (values[0] !== TEAM || values[1] !== INIT || values[2] !== "review.md") return one([]);
+    return one([{ id: "d1", initiative: INIT, path: "review.md", flow: "", type: "", status: "draft",
+                  outcome: null, current_revision: 1, approved_revision: null, updated_at: doc.written_at }]);
+  }
+  // The part spans, and the `shown` projection
+  if (/select e\.kind, \(e\.detail->>'start'\)::int as start/.test(sql)) {
+    return one(events.filter((e) => e.subject === String(values[3]) && e.kind !== "document.shown"
+                               || (e.subject === String(values[3]) && e.kind === "document.shown"))
+      .map((e) => ({ kind: e.kind, start: e.detail.start ?? null, end: e.detail.end ?? null,
+                     total: e.detail.total ?? null })));
+  }
+  // `recordAct` -> `platformEvent`'s insert: four params are enough to keep what this check reads.
+  if (/insert into zz\.event\b/.test(sql)) {
+    events.push({ kind: String(values[3] ?? ""), subject: String(values[4] ?? ""),
+                  detail: JSON.parse(String(values[5] ?? "{}")) });
+    return one([]);
+  }
+  if (/from zz\.team where slug = \$1|select slug from zz\.team/.test(sql)) return one([{ slug: TEAM }]);
+  return one([]);
+}) as unknown as typeof pg.Pool.prototype.query;
+
+const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
+const { PART_LIMIT, slicePart } = await load("services/zz-core/dist/document-parts.js");
+const { present } = await load("services/zz-core/dist/document-present.js");
+const { shownSinceLastChange } = await load("services/zz-core/dist/attest.js");
+const { db } = await load("services/zz-core/dist/platform-db.js");
+
+const fail: string[] = [];
+const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
 
 // 1. Offset paging round-trips
 {
@@ -73,46 +137,50 @@ const body = lines.join("\n");
 
 // 3. Presenting in parts, and what it counts as
 {
-  const root = mkdtempSync(join(tmpdir(), "zz-parts-"));
-  const INIT = "2026-09-26-parts";
-  const rel = `${INIT}/review.md`;
-  mkdirSync(join(root, INIT), { recursive: true });
-  writeFileSync(join(root, rel), `---\ntitle: Review\nversion: 1\nstatus: draft\n---\n\n${body}\n`);
-  const act = (action: string) => appendFileSync(join(root, INIT, "activity.jsonl"),
-    JSON.stringify({ ts: new Date().toISOString(), user: "u@zz.test", action, path: rel }) + "\n");
-  const rows = () => readFileSync(join(root, INIT, "activity.jsonl"), "utf8").trim().split("\n")
-    .map((l) => JSON.parse(l) as { action: string; via?: string });
-  act("document_write");
+  /** Stand in for a write: the revision's bytes are new, so its `written_at` moves past the
+   *  present. An in-place patch does exactly this, which is why the comparison is `>`. */
+  const rewrite = () => {
+    const base = doc.presented_at ? Date.parse(doc.presented_at) : Date.parse(doc.written_at);
+    doc.written_at = new Date(base + 1000).toISOString();
+  };
+  const rows = () => events.filter((e) => e.kind === "document.shown" || e.kind === "document.shown_part");
 
-  const first = presentPart(root, rel, undefined, "u@zz.test", {});
+  rewrite();
+  const first = await present(db()!, TEAM, REL, undefined, "u@zz.test", {});
   is(first.includes("does NOT yet count as presented") && first.includes("Next: offset"),
      "a first part does not say it is incomplete and where to continue");
-  is(shownSinceLastChange(root, rel) === false, "one part of three counts as presented");
+  is(await shownSinceLastChange(db()!, TEAM, REL) === false, "one part of three counts as presented");
 
   let next = Number(/Next: offset (\d+)/.exec(first)?.[1]);
   let last = first;
   for (let i = 0; Number.isFinite(next) && i < 20; i++) {
-    last = presentPart(root, rel, undefined, "u@zz.test", { offset: next });
+    last = await present(db()!, TEAM, REL, undefined, "u@zz.test", { offset: next });
     next = Number(/Next: offset (\d+)/.exec(last)?.[1]);
   }
+  console.error("DEBUG events:", JSON.stringify(events.map(e=>[e.kind, e.detail.start, e.detail.end, e.detail.total])));
+  console.error("DEBUG tail:", JSON.stringify(last.slice(0,300)));
   is(last.includes("it counts as presented"), "the last part does not say the document now counts as presented");
-  is(shownSinceLastChange(root, rel) === true, "every part presented, and the approval rule still reads it as unpresented");
-  is(rows().filter((r) => r.action === "shown").length === 1 && rows().some((r) => r.via === "parts"),
+  is(await shownSinceLastChange(db()!, TEAM, REL) === true,
+     "every part presented, and the approval rule still reads it as unpresented");
+  is(rows().filter((e) => e.kind === "document.shown").length === 1
+     && rows().some((e) => e.detail.via === "parts"),
      "completing the parts did not append exactly one `shown` row marked as reached through parts");
 
-  presentPart(root, rel, undefined, "u@zz.test", { offset: 0 });
-  is(rows().filter((r) => r.action === "shown").length === 1, "presenting a part again appended a second `shown`");
+  await present(db()!, TEAM, REL, undefined, "u@zz.test", { offset: 0 });
+  is(rows().filter((e) => e.kind === "document.shown").length === 1, "presenting a part again appended a second `shown`");
 
-  act("document_patch");
-  is(shownSinceLastChange(root, rel) === false, "a patch after the parts left the document counted as presented");
-  presentPart(root, rel, undefined, "u@zz.test", { section: "Section 1" });
-  is(shownSinceLastChange(root, rel) === false, "one section after a patch counts as presenting the whole document");
+  rewrite();
+  is(await shownSinceLastChange(db()!, TEAM, REL) === false, "a rewrite after the parts left the document counted as presented");
+  await present(db()!, TEAM, REL, undefined, "u@zz.test", { section: "Section 1" });
+  is(await shownSinceLastChange(db()!, TEAM, REL) === false,
+     "one section after a rewrite counts as presenting the whole document");
 }
 
 // 4. The real schemas take the part arguments
 {
   interface ZodLike { safeParse: (v: unknown) => { success: boolean } }
   const tools = new Map<string, { inputSchema?: Record<string, ZodLike> }>();
+  const { registerArtifactTools } = await load("services/zz-core/dist/tools/artifacts.js");
   registerArtifactTools({ registerTool: (name: string, def: { inputSchema?: Record<string, ZodLike> }) => tools.set(name, def) });
   for (const name of ["document_read", "document_present"]) {
     const shape = tools.get(name)?.inputSchema ?? {};

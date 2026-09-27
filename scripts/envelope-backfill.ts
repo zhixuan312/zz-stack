@@ -201,7 +201,7 @@ function payloadFor(teamDir: string, doc: DocRow, rev: RevisionRow):
     { ok: true; payload: Record<string, string> | null } | { ok: false; why: string } {
   const bytes = revisionBytes(teamDir, doc, rev.revision);
   if (bytes === null) {
-    return { ok: false, why: "the store holds no copy of these bytes (working tree, _versions/ and the history all answer none)" };
+    return { ok: false, why: "the store holds no copy of these bytes (the working tree and the history both answer none)" };
   }
   const hash = hashBytes(bytes);
   if (rev.content_hash !== hash) {
@@ -228,9 +228,11 @@ export async function backfill(
   }
 
   const docs = (await db.query<DocRow>(
-    `select d.id::text as id, d.team_slug, d.initiative, d.path, d.current_revision
+    `select d.id::text as id, t.slug as team_slug, i.slug as initiative, d.path, d.current_revision
        from zz.doc d
-      order by d.team_slug, d.initiative, d.path`)).rows;
+       join zz.initiative i on i.id = d.initiative_id
+       join zz.team t on t.id = i.team_id
+      order by t.slug, i.slug, d.path`)).rows;
   report.documents = docs.length;
   const byId = new Map(docs.map((d) => [d.id, d]));
 

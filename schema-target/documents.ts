@@ -345,6 +345,16 @@ export const DOCUMENTS: Record<string, TableTarget> = {
         true,
         null,
       ],
+      // The presentation fact: the instant this revision's bytes were put in front of a person.
+      // A COLUMN and not a row in the event log, because `document_approve` is refused by it and an
+      // approval gate whose evidence is sweepable fails OPEN — the one direction a gate must never
+      // fail in. The `shown` rows stay in `zz.event` as a projection beside it.
+      [
+        "presented_at",
+        "timestamp with time zone",
+        true,
+        null,
+      ],
     ],
     primaryKey: [
       "doc_id",
@@ -377,7 +387,8 @@ export const DOCUMENTS: Record<string, TableTarget> = {
     ],
     indexes: [],
     comment: null,
-    columnComments: {},
+    columnComments: {
+      presented_at: "class=current_state; authority=this; question=When were these exact bytes put in front of a person? It is what `document_approve` is refused by, and a column rather than an event row so no sweep can take it.",},
   },
   doc_link: {
     columns: [

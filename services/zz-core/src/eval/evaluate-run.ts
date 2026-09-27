@@ -187,7 +187,9 @@ async function subjectColumnsOf(
     const row = (await p.query<{ id: string; current_revision: number | null }>(`
       select d.id::text as id, d.current_revision
         from zz.doc d
-       where d.team_slug = $1 and d.initiative = $2 and d.path = $3`,
+        join zz.initiative i on i.id = d.initiative_id
+        join zz.team t on t.id = i.team_id
+       where t.slug = $1 and i.slug = $2 and d.path = $3`,
       [team, ref.slice(0, cut), ref.slice(cut + 1)])).rows[0];
     if (!row) return { error: `ERROR: subject_ref "${ref}" names no document in team "${team}"'s index — nothing to record` };
     // AC-6.7: the pin is exact or the row is refused. A null here reads back as "no revision
@@ -232,7 +234,7 @@ const SUBJECT_REF_SQL = `
     when 'bug' then 'bug:' || a.bug_id::text
     when 'event' then 'event:' || a.event_id::text
     when 'knowledge' then '_knowledge/nodes/' || k.node_ordinal || '-' || k.slug || '.md'
-    when 'document' then d.initiative || '/' || d.path
+    when 'document' then i.slug || '/' || d.path
   end`;
 
 /** The stored rows of one run, in the shape `readingsOf`/`reduceMeasureAnswers` read: the ref
@@ -248,6 +250,7 @@ export const STORED_ANSWERS_SQL = `
     from zz.eval_assessment a
     join zz.eval_run er on er.id = a.eval_run_id
     left join zz.doc d on d.id = a.doc_id
+    left join zz.initiative i on i.id = d.initiative_id
     left join zz.knowledge_node k on k.id = a.knowledge_node_id`;
 
 /** A jsonb column takes the JSON text or nothing — never the string "undefined" and never a
@@ -481,6 +484,7 @@ export async function assessEvaluation(
         join zz.eval_measure m on m.id = a.measure_id
         join zz.eval_run er on er.id = a.eval_run_id
         left join zz.doc d on d.id = a.doc_id
+        left join zz.initiative i on i.id = d.initiative_id
         left join zz.knowledge_node k on k.id = a.knowledge_node_id
        where a.eval_run_id = $1::uuid`, [eval_run_id])).rows;
     return {

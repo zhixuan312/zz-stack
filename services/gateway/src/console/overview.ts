@@ -98,11 +98,16 @@ export function mountOverview(app: Express): void {
                 (select count(*) from zz.team where status='active')          as active,
                 (select count(*) from zz.principal)                           as people,
                 (select count(*) from zz.principal where role='superadmin')   as supers,
+                -- A document reaches its team and its initiative through the initiative row it
+                -- is filed under, so the de-duplication key is the pair of slugs joined from
+                -- there rather than two columns zz.doc no longer carries.
                 (select count(*) from zz.doc
                   where ($1::timestamptz is null or updated_at >= $1))        as docs,
-                (select count(distinct (team_slug, initiative)) from zz.doc
-                   where initiative <> '_knowledge'
-                     and ($1::timestamptz is null or updated_at >= $1))       as initiatives`,
+                (select count(distinct (t.slug, i.slug)) from zz.doc d
+                   join zz.initiative i on i.id = d.initiative_id
+                   join zz.team t on t.id = i.team_id
+                   where i.slug <> '_knowledge'
+                     and ($1::timestamptz is null or d.updated_at >= $1))     as initiatives`,
         [since]),
       db.query<{ events: string; failures: string; unattributed: string }>(
         // `unattributed` because the per-team rows cannot sum to this total. Turns, tool
@@ -199,12 +204,16 @@ export function mountOverview(app: Express): void {
                    join zz.team t on t.id = m.team_id
                    join zz.principal p on p.id = m.principal_id
                   where t.slug = $1 and p.role='superadmin')                  as supers,
-                (select count(*) from zz.doc
-                  where team_slug = $1
-                    and ($2::timestamptz is null or updated_at >= $2))        as docs,
-                (select count(distinct initiative) from zz.doc
-                  where team_slug = $1 and initiative <> '_knowledge'
-                    and ($2::timestamptz is null or updated_at >= $2))        as initiatives`,
+                (select count(*) from zz.doc d
+                   join zz.initiative i on i.id = d.initiative_id
+                   join zz.team t on t.id = i.team_id
+                  where t.slug = $1
+                    and ($2::timestamptz is null or d.updated_at >= $2))      as docs,
+                (select count(distinct i.slug) from zz.doc d
+                   join zz.initiative i on i.id = d.initiative_id
+                   join zz.team t on t.id = i.team_id
+                  where t.slug = $1 and i.slug <> '_knowledge'
+                    and ($2::timestamptz is null or d.updated_at >= $2))      as initiatives`,
         [scope.slug, since]),
       db.query<{ events: string; failures: string; unattributed: string }>(
         // `0 as unattributed` is arithmetic, not a decision: this set is reached through

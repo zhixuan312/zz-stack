@@ -271,7 +271,7 @@ export async function readMetrics(
                 coalesce((select json_agg(json_build_object('path', d.path, 'status', d.status,
                                                            'updatedAt', d.updated_at))
                             from zz.doc d
-                           where d.initiative = i.slug and d.team_slug = t.slug), '[]'::json) as docs
+                           where d.initiative_id = i.id), '[]'::json) as docs
            from zz.initiative i join zz.team t on t.id = i.team_id
           where ($1::timestamptz is null
                  or i.opened_at >= $1
@@ -359,7 +359,7 @@ export async function readMetrics(
                 coalesce((select json_agg(json_build_object('path', d.path, 'status', d.status,
                                                            'updatedAt', d.updated_at))
                             from zz.doc d
-                           where d.initiative = i.slug and d.team_slug = t.slug), '[]'::json) as docs
+                           where d.initiative_id = i.id), '[]'::json) as docs
            from zz.initiative i join zz.team t on t.id = i.team_id
           where t.slug = $2
             and ($1::timestamptz is null

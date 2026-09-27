@@ -24,22 +24,28 @@ export function mountTeams(app: Express): void {
       ? await db.query(
       `select t.slug, t.name, t.status, to_char(t.created_at,'YYYY-MM-DD') as created,
               (select count(*) from zz.membership m where m.team_id = t.id)          as members,
-              (select count(distinct d.initiative) from zz.doc d
-                 where d.team_slug = t.slug and d.initiative <> '_knowledge')        as initiatives,
+              (select count(distinct i.slug) from zz.doc d
+                 join zz.initiative i on i.id = d.initiative_id
+                where i.team_id = t.id and i.slug <> '_knowledge')                   as initiatives,
               (select count(*) from zz.doc d
-                 where d.team_slug = t.slug and d.type <> 'source')                  as documents,
+                 join zz.initiative i on i.id = d.initiative_id
+                where i.team_id = t.id and d.type <> 'source')                       as documents,
               (select count(*) from zz.doc d
-                 where d.team_slug = t.slug and d.type = 'source')                   as sources
+                 join zz.initiative i on i.id = d.initiative_id
+                where i.team_id = t.id and d.type = 'source')                        as sources
          from zz.team t order by t.status, t.slug`)
       : await db.query(
       `select t.slug, t.name, t.status, to_char(t.created_at,'YYYY-MM-DD') as created,
               (select count(*) from zz.membership m where m.team_id = t.id)          as members,
-              (select count(distinct d.initiative) from zz.doc d
-                 where d.team_slug = t.slug and d.initiative <> '_knowledge')        as initiatives,
+              (select count(distinct i.slug) from zz.doc d
+                 join zz.initiative i on i.id = d.initiative_id
+                where i.team_id = t.id and i.slug <> '_knowledge')                   as initiatives,
               (select count(*) from zz.doc d
-                 where d.team_slug = t.slug and d.type <> 'source')                  as documents,
+                 join zz.initiative i on i.id = d.initiative_id
+                where i.team_id = t.id and d.type <> 'source')                       as documents,
               (select count(*) from zz.doc d
-                 where d.team_slug = t.slug and d.type = 'source')                   as sources
+                 join zz.initiative i on i.id = d.initiative_id
+                where i.team_id = t.id and d.type = 'source')                        as sources
          from zz.team t where t.slug = $1 order by t.status, t.slug`, [scope.slug]);
     // The shelf count is its own statement rather than a sixth subquery: a node's shelf is a
     // relation to `zz.team` now, so this one joins on `team_id`, and asking it apart keeps each

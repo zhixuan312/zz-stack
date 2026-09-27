@@ -86,16 +86,13 @@ export const COV_CATALOG: readonly MutationSpec[] = [
       "directory, so every evaluation of an unknown plugin silently reads sdlc's skills and " +
       "reports the result as that plugin's",
   },
-  {
-    check: "scripts/gate/checks/catalog-stages.ts",
-    target: "a team overlay adds and cannot replace",
-    subject: "services/zz-core/src/tools/skills.ts",
-    find: `text(readFileSync(path, "utf8") + await teamOverlay(name))`,
-    replace: `text((await teamOverlay(name)) || readFileSync(path, "utf8"))`,
-    planted: "a team's overlay is returned INSTEAD of the skill rather than after it. Any team " +
-      "with an overlay of that name shadows the platform's own text — zz-platform included — " +
-      "so a rule the platform sets can be taken over by a file in a team's own store",
-  },
+  // REMOVED: the spec for "a team overlay adds and cannot replace". The check is gone, and it
+  // went for a reason that takes the spec with it: its whole subject — a team's own text under a
+  // skill root the platform kept for them — was the store, and the store is retired. The plant
+  // cannot be left behind either. `find` named `text(readFileSync(path, "utf8") + await
+  // teamOverlay(name))`, and `services/zz-core/src/tools/skills.ts` no longer calls `teamOverlay`
+  // at all, so the substitution lands nowhere and the row would report as coverage. A spec whose
+  // subject has gone is deleted, not re-pointed at a spelling.
 
   // catalog-manifest.ts
   {
@@ -157,7 +154,7 @@ export const COV_CATALOG: readonly MutationSpec[] = [
     replace: `    } catch { return out; }          // a file where an owner directory was expected`,
     planted: "a file where an owner directory was expected ends the catalog walk instead of " +
       "being skipped. `.DS_Store` sorts first, so the answer is the empty list: no platform " +
-      "skills, no flow stage skills, no team overlays, and the only symptom anybody sees is " +
+      "skills, no flow stage skills, and the only symptom anybody sees is " +
       "that every skill has vanished",
   },
   {

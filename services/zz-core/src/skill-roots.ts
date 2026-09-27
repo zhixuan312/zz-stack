@@ -1,8 +1,13 @@
 /**
  * Where a skill can come from, and in what order two of one name are resolved.
  *
- * Three sources, and the order between them is the whole rule: the platform's own `/skills`, then
- * every package in `/catalog`, then the team's own store.
+ * Two sources, and the order between them is the whole rule: the platform's own `/skills`, then
+ * every package in `/catalog`.
+ *
+ * DELIBERATE: there was a third — `<team root>/skills`, the team's own store — and it is gone
+ * with the store. A team's own skills were files in a git repository the platform kept for them;
+ * the store is retired, so a skill a team wrote for itself is no longer a place a skill can come
+ * from, and a name it used to shadow resolves to the catalog's own or to nothing.
  *
  * Every catalog package is readable by everyone. The platform cannot see what is on a person's
  * machine, so it does not decide what they may read either.
@@ -11,8 +16,6 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { catalogPackages } from "@zz/catalog";
-
-import { userRoot } from "./paths.js";
 
 /** Where a skill can come from before the catalog is consulted. Readable by everyone. A flow's
  * skills are not here — those are served from /catalog.
@@ -48,16 +51,9 @@ function catalogSkillRoots(): string[] {
 }
 /** Every place a skill can come from, in the order that decides which wins.
  *
- * Last is the team's own store — `<team root>/skills/<name>/SKILL.md` — because skill_read returns
- * the first match, so a root that comes after can add a name but can never take one. A team cannot
- * shadow the zz-platform SKILL by accident, and cannot shadow a stage of a flow. The store is
- * already theirs, already a git repository, and already the thing they take with them. Additive,
- * never a replacement. */
-export async function allSkillRoots(): Promise<string[]> {
-  const roots = [...SKILL_ROOTS, ...catalogSkillRoots()];
-  try {
-    const own = join(await userRoot(), "skills");
-    if (existsSync(own)) roots.push(own);
-  } catch { /* no store yet: a person with nothing written has nothing to add */ }
-  return roots;
+ * The platform's own first, then the catalog's packages in `catalogSkillRoots`' order, because
+ * skill_read returns the first match and the order is what decides which of two skills of one
+ * name answers. */
+export function allSkillRoots(): string[] {
+  return [...SKILL_ROOTS, ...catalogSkillRoots()];
 }

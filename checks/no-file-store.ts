@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// What this asserts is narrower than it looks, deliberately: the four files this task owns stop
-// CALLING the store, and the layer itself survives them (I-41 removes it). So the matcher is on
-// call sites — a declaration such as `export function commitStore(` is not a caller, and a check
-// that matched it could only be satisfied by deleting a module this task does not own. The
-// assertion the AC's first clause really makes is about a write path reaching a document, and the
-// primitive for that is writeFileSync, which is asserted per file with the one exemption named.
+// What this asserts is narrower than it looks, deliberately: the files this task owns stop
+// CALLING the store, and the layer itself is gone. So the matcher is on call sites — a
+// declaration such as `export function commitStore(` is not a caller, and a check that matched it
+// could only be satisfied by deleting a module this task does not own. The assertion the AC's
+// first clause really makes is about a write path reaching a document, and the primitive for that
+// is writeFileSync, which is asserted per file with the one exemption named.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
@@ -46,7 +46,10 @@ for (const f of ["services/zz-core/src/tools/artifacts.ts",
   assert.ok(/doc_revision/.test(readFileSync(f, "utf8")), `${f} reads the revision table`);
 }
 
-// And the store layer is still there — this task stops callers, it does not retire the layer.
-assert.ok(existsSync("services/zz-core/src/persist.ts"), "the store layer survives this task");
+// And the store layer is GONE, which is the half this task makes true: its six importers have
+// all moved, so there is nothing left for it to be imported by. Asserting that it survives was
+// the earlier task's clause, and it outlived the work it described.
+assert.ok(!existsSync("services/zz-core/src/persist.ts"), "the store layer is deleted");
 
 console.log("ok no-file-store");
+

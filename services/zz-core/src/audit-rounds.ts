@@ -18,15 +18,24 @@
  * A stakeholder's decision is recorded as material supporting the document after the round,
  * which is what settles the two waiting states.
  */
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { ENVELOPE_BLOCK } from "@zz/contracts";
+import type pg from "pg";
 
-import { ENVELOPE_BLOCK, parseEnvelope } from "@zz/contracts";
-
-import { assessFamily, readRoundAssessments, writeRoundAssessments } from "./semantic.js";
+import { assessFamily } from "./semantic.js";
+import { docRows, type DocRow } from "./indexing.js";
+import type { RoundAssessments } from "./review-rounds.js";
 import type { Chain } from "./write-guards.js";
 
 const stripEnvelope = (s: string): string => s.replace(ENVELOPE_BLOCK, "");
+
+/** The source rows an audit reads, as the fields this module routes on. The two live in the
+ *  revision's own envelope payload — `stage` and `supports` name which round a source is, and
+ *  `audits_version` says which revision it read — so both are read off the row rather than parsed
+ *  out of a file. */
+const stageOf = (d: DocRow): string => (d.fields?.stage ?? "").trim();
+const auditsVersionOf = (d: DocRow): number => Number(d.fields?.audits_version) || 1;
+const addedAtOf = (d: DocRow): string => d.fields?.added_at ?? d.updated_at;
+const sourceName = (d: DocRow): string => d.path.slice("sources/".length);
 
 /** Rounds an audit may use before the stakeholder decides. The approved control-loop design:
  *  "up to three independent auditor dispatches as a provisional resource limit, never as a
@@ -46,31 +55,25 @@ export function auditRoundOf(chain: Chain, stage: string | undefined,
 
 interface Round { file: string; version: number; added_at: string }
 
-const supportsOf = (env: Record<string, string>) =>
-  (env.supports || "").split(",").map((x) => x.trim()).filter(Boolean);
+/** The sources an audit reads, as the `DocRow`s an initiative holds under `sources/`. */
+const supportsOf = (d: DocRow): string[] =>
+  (d.fields?.supports || "").split(",").map((x) => x.trim()).filter(Boolean);
 
 /** The rounds of one audit stage on one document, oldest first. */
-function roundsOf(dir: string, stage: string, document: string): Round[] {
-  const src = join(dir, "sources");
-  if (!existsSync(src)) return [];
+function roundsOf(sources: readonly DocRow[], stage: string, document: string): Round[] {
   const out: Round[] = [];
-  for (const f of readdirSync(src).filter((x) => x.endsWith(".md"))) {
-    const env = parseEnvelope(readFileSync(join(src, f), "utf8"));
-    if (env.stage !== stage || !supportsOf(env).includes(document)) continue;
-    out.push({ file: f, version: Number(env.audits_version) || 1, added_at: env.added_at || "" });
+  for (const d of sources) {
+    if (stageOf(d) !== stage || !supportsOf(d).includes(document)) continue;
+    out.push({ file: sourceName(d), version: auditsVersionOf(d), added_at: addedAtOf(d) });
   }
   return out.sort((a, b) => a.added_at.localeCompare(b.added_at) || a.file.localeCompare(b.file));
 }
 
 /** Material supporting the document that landed after a given moment and is not itself a round:
  *  where a stakeholder's decision on a round is recorded. */
-function decidedSince(dir: string, document: string, since: string): boolean {
-  const src = join(dir, "sources");
-  if (!existsSync(src)) return false;
-  return readdirSync(src).filter((x) => x.endsWith(".md")).some((f) => {
-    const env = parseEnvelope(readFileSync(join(src, f), "utf8"));
-    return !env.stage && supportsOf(env).includes(document) && (env.added_at || "") > since;
-  });
+function decidedSince(sources: readonly DocRow[], document: string, since: string): boolean {
+  return sources.some((d) =>
+    !stageOf(d) && supportsOf(d).includes(document) && addedAtOf(d) > since);
 }
 
 /**
@@ -82,14 +85,16 @@ function decidedSince(dir: string, document: string, since: string): boolean {
  * version that reopens nothing already settles, and a revision after the last round owes a round
  * whether or not that round repeated the one before — its findings are what the revision answered.
  */
-export async function assessRound(root: string, initiative: string, rel: string, document: string,
-                                  content: string, by: string): Promise<string> {
-  const dir = join(root, initiative);
+export async function assessRound(p: pg.Pool, team: string, initiative: string,
+                                  rel: string, document: string, content: string, by: string): Promise<string> {
   const file = rel.split("/").pop() ?? rel;
-  const agreed = existsSync(join(dir, document)) ? stripEnvelope(readFileSync(join(dir, document), "utf8")) : "";
-  const answer = await assessFamily({ family: "changes_commitment", subject: content, context: agreed,
+  const rows = await docRows(p, team, initiative);
+  const agreed = rows.find((d) => d.path === document)?.body ?? "";
+  // Persisted by `assessFamily` itself as the answer was taken: the `zz.assessment` row IS the
+  // memo, and the `<initiative>/_assessments/*.json` file this used to write was a second copy of
+  // it. A second copy is what drifts.
+  const answer = await assessFamily({ family: "changes_commitment", subject: content, context: stripEnvelope(agreed),
                                       initiative, about: `sources/${file}`, askedBy: by });
-  writeRoundAssessments(root, initiative, file, [answer]);
   return `assessed: ${answer.family} = ${answer.reading}` +
     (answer.probability !== null ? ` (p=${answer.probability.toFixed(2)})` : "") +
     (answer.reason ? ` — ${answer.reason}` : "");
@@ -102,10 +107,10 @@ interface AuditMove { action: string; document: string; waiting_on: string; why:
  * `version` is the document as it stands; the caller has already routed a document awaiting
  * approval, so this is asked only of an approved one.
  */
-export function auditMove(root: string, initiative: string, stage: string, document: string,
-                          version: number): AuditMove | null {
-  const dir = join(root, initiative);
-  const rounds = roundsOf(dir, stage, document);
+export function auditMove(initiative: string, stage: string, document: string,
+                          version: number, sources: readonly DocRow[],
+                          answers: RoundAssessments): AuditMove | null {
+  const rounds = roundsOf(sources, stage, document);
   const call = `source_add(initiative: "${initiative}", title, content, supports: ["${document}"], stage: "${stage}")`;
   if (!rounds.length) {
     // NOT A TOOL: `add_source` is next_move's own vocabulary; the call is source_add, named in `why`.
@@ -116,13 +121,13 @@ export function auditMove(root: string, initiative: string, stage: string, docum
   }
   const last = rounds[rounds.length - 1];
   const n = rounds.length;
-  const a = readRoundAssessments(root, initiative, last.file);
-  const reopens = a.changes_commitment?.reading === "yes";
-  const decided = decidedSince(dir, document, last.added_at);
+  const a = answers.get(`sources/${last.file}`)?.find((x) => x.family === "changes_commitment");
+  const reopens = a?.reading === "yes";
+  const decided = decidedSince(sources, document, last.added_at);
   if (reopens && last.version === version && !decided) {
     return { action: "decide", document, waiting_on: "stakeholder",
              why: `round ${n} (${last.file}) reopens something ${document} records as agreed ` +
-                  `(changes_commitment p=${a.changes_commitment.probability?.toFixed(2)}). That is the ` +
+                  `(changes_commitment p=${a?.probability?.toFixed(2)}). That is the ` +
                   `stakeholder's to decide, not the audit's: if they change the agreement, ` +
                   `document_revise ${document} citing sources/${last.file}; if they keep it, record ` +
                   `their decision with source_add(supports: ["${document}"]) and the audit continues.` };

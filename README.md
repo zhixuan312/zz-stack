@@ -107,7 +107,7 @@ skills/     the baseline plugin's skills, served whatever flow a team runs. They
             generated router skill rather than in the catalog. Two are
             universal and bookend every flow: zz-platform (the spine, loaded first
             — file tools, gates, documents, credentials, the tag kinds the
-            knowledge base enforces, and what a team overlay may and may not do)
+            knowledge base enforces, and which door serves which tool)
             and zz-handover (the handover, run last — one closed initiative's
             documents and telemetry turned into what the next team should know).
             Three more are typed rather than loaded, and ship as the baseline's

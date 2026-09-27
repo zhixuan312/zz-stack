@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.71
+version: 3.72
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store outside a flow."
 ---
@@ -651,22 +651,31 @@ names, ARE the record that it was addressed. A source you did not act on
 stays visible, which is the point: nothing lets you mark it handled without
 the document moving.
 
-## Adding your team's own way of doing a step
+## A team cannot change what a skill says
 
-Your team can add to any skill of the flow it runs, without forking it and without asking
-anybody. Put the addition in your own store at `overlays/<skill-name>/SKILL.md` — for
-example `overlays/sdlc-plan/SKILL.md` — and it is appended whenever anyone on the team loads
-that skill, under a heading saying it is yours.
+A team used to be able to add to any skill of the flow it ran, without forking it, in two
+ways: an overlay at `overlays/<skill-name>/SKILL.md` in the team's own store, appended
+whenever anyone on the team loaded that skill, and a skills root of its own at
+`<team root>/skills/<name>/SKILL.md`, which could answer a name the platform's roots also
+carried. Both were files in a store this platform kept for the team, and **both are gone with
+that store — a team's own changes to a platform skill are no longer a mechanism this platform
+has.** `skill_read` returns the shelf's text, and only the shelf's text.
 
-- **It adds; it never replaces.** The shelf's skill arrives first and entire, yours follows.
-  Where the two differ on a rule the platform sets, the platform's wins — an overlay cannot
-  shadow `zz-platform` or take over a stage, because appending is the only thing it can do.
-- **Structure stays the platform's.** Which documents a flow has, which carry gates, and
-  which headings they need are `flow.json`'s, not an overlay's. An overlay that talks an
-  agent into writing different headings meets the section check at the write.
-- **Use it for what only you know**: the vendors you may not use, the question your director
-  always asks, the system that must never be touched on a Friday. That is the kind of thing
-  no shelf skill can carry for you.
+That removes a question rather than an answer. There is no rule ordering a team's text against
+the platform's any more, because there is only one text:
+
+- **Nothing can shadow a platform rule.** An overlay could only ever append, so `zz-platform`
+  and the stages could never be taken over; and there is no team text left that could.
+- **A skill of one name resolves in a fixed order**: the platform's own skills first, then the
+  catalog's packages, platform-owned ones ahead of every other. The first match answers, and
+  the order is the same in every container.
+- **Structure was never a team's to change.** Which documents a flow has, which carry gates,
+  and which headings they need are `flow.json`'s. That has not moved, and an agent that writes
+  different headings still meets the section check at the write.
+- **What only your team knows goes on an initiative.** The vendors you may not use, the
+  question your director always asks, the system that must never be touched on a Friday — those
+  are facts about a piece of work, and a document is where the next reader, and the gates, find
+  them.
 
 ## Tagging what the platform learns
 

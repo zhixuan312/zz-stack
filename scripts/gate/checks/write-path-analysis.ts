@@ -1,26 +1,39 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildRowVector, bodyTsvParams } from "@zz/indexing";
-import { root } from "../read.ts";
+import { root, withoutComments } from "../read.ts";
 import { check } from "../run.ts";
 
 check("new writes carry the analyzer's han terms and the row's own latin text, each to its own half", () => {
-  const src = readFileSync(join(root, "packages/indexing/src/index.ts"), "utf8");
-  // Both INSERTs must build `body_tsv` from the shared construction. Read from the source rather
-  // than the SQL string: the failure guarded against is a statement that goes back to re-parsing
-  // the raw prose columns, where a prose configuration tokenizes on whitespace and punctuation
-  // and an unspaced Han run goes in as one opaque word. COUPLED:
-  // `text-search-config-agreement.ts` separately forbids naming a configuration here at all.
-  const wired = src.match(/\$\{bodyTsvSql\(\d+\)\}/g) ?? [];
-  if (wired.length !== 2) {
-    return `index.ts builds body_tsv from bodyTsvSql in ${wired.length} of its 2 INSERTs, so a `
-         + `newly written document is indexed by something other than the analyzer — the backfill `
-         + `in I-13 would fix the corpus that exists and nothing written after it`;
-  }
-  const bound = src.match(/\.\.\.bodyTsvParams\(\w+\)/g) ?? [];
-  if (bound.length !== 2) {
-    return `index.ts binds bodyTsvParams in ${bound.length} of its 2 INSERTs; a statement whose `
-         + `parameters do not come from the same construction as its SQL cannot execute at all`;
+  // COUPLED: EVERY statement that assigns `body_tsv` must build it from the shared construction,
+  // and there are two files to hold: `packages/indexing/src/index.ts` writes a journal node's row,
+  // and `services/zz-core/src/versions.ts` writes a document's. Read from the source rather than
+  // the SQL string: the failure guarded against is a statement that goes back to re-parsing the
+  // raw prose columns, where a prose configuration tokenizes on whitespace and punctuation and an
+  // unspaced Han run goes in as one opaque word.
+  //
+  // Counted per file and compared, rather than pinned to a number: what has to hold is that no
+  // statement assigns the column by any other route, and a count that drifts with the number of
+  // write paths is one somebody updates instead of reading.
+  // Counted against the column's own name: a statement that writes `body_tsv` and does not build
+  // it from `bodyTsvSql` is the failure, and the two counts are equal exactly when there is none.
+  // A count pinned to a number instead would drift with the number of write paths, and somebody
+  // would update it rather than read it.
+  const WRITERS = ["packages/indexing/src/index.ts", "services/zz-core/src/versions.ts"];
+  for (const rel of WRITERS) {
+    const src = withoutComments(readFileSync(join(root, rel), "utf8"));
+    const names = (src.match(/\bbody_tsv\b/g) ?? []).length;
+    const wired = (src.match(/bodyTsvSql\(\d+\)/g) ?? []).length;
+    if (names === 0) return `${rel} names body_tsv nowhere — this check reads nothing there`;
+    if (wired !== names) {
+      return `${rel} builds body_tsv from bodyTsvSql in ${wired} of its ${names} SQL mentions of `
+           + `the column, so a newly written row is indexed by something other than the analyzer — `
+           + `the backfill in I-13 would fix the corpus that exists and nothing written after it`;
+    }
+    if (!/bodyTsvParams\(/.test(src)) {
+      return `${rel} binds no bodyTsvParams; a statement whose parameters do not come from the same `
+           + `construction as its SQL cannot execute at all`;
+    }
   }
   // `terms` is a list of { term, weight }, never a list of strings.
   const v = buildRowVector({ title: "迁移说明", tags: ["迁移"], body: "这个迁移会破坏旧的模式" });

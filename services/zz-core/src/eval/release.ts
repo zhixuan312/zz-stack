@@ -67,12 +67,11 @@ import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from ".
 import { improvementRunOf, releasableCandidateOf } from "./initiative-run.js";
 import { loadSubjectForEvalRun, writeProposalDoc } from "./proposal-doc.js";
 import { describeApplyOutcomeForReplay, planApply, type ApplyResult } from "./release-apply.js";
-import { prepareWithBranchFact } from "./release-prepare.js";
+import { initiativePlace, prepareWithBranchFact } from "./release-prepare.js";
 import { describeRecordOutcomeForReplay, recordRelease, type RecordResult } from "./release-record.js";
 import { loadReleasePolicy, verifyRelease, type VerifyOutcome } from "./release-verify.js";
 import { platformEvent } from "../indexing.js";
-import { userRoot } from "../paths.js";
-import { db, teamFor } from "../platform-db.js";
+import { db } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
 import { memberTeams } from "../release-owners.js";
 
@@ -283,9 +282,11 @@ export function registerReleaseTools(server: McpServer): void {
       // already left is a real cross-tool inconsistency, not the informational drift
       // protocol_read's own resume case allows. One transaction, one connection
       // (release-prepare.ts).
+      const placeForRelease = await initiativePlace(principal, initiative);
+      if (typeof placeForRelease === "string") return text(placeForRelease);
       const { outcome, facts } = await prepareWithBranchFact<{ id: string }>(
         principal, "release_prepare", idempotency_key, { candidate_id, initiative },
-        { root: await userRoot(), team: await teamFor(principal), initiative }, "promotable",
+        placeForRelease, "promotable",
         async (client): Promise<MutatorOutcome<{ id: string }>> => {
           // The promotion package no longer copies anything off the candidate: the base release
           // and the approved digest are the candidate's own immutable columns, read from it by
@@ -650,9 +651,11 @@ export function registerReleaseTools(server: McpServer): void {
       // transaction as the ledger row, so an initiative whose release_mode is already promotable
       // never gets an ungated proposal.md sitting beside a promotable attempt.
       const principal = parseCaller(requestHeaders()).email;
+      const placeForProposal = await initiativePlace(principal, initiative);
+      if (typeof placeForProposal === "string") return text(placeForProposal);
       const { outcome, facts } = await prepareWithBranchFact<{ id: string }>(
         principal, "proposal_prepare", idempotency_key, { improvement_run_id, initiative },
-        { root: await userRoot(), team: await teamFor(principal), initiative }, "proposal_only",
+        placeForProposal, "proposal_only",
         async (client): Promise<MutatorOutcome<{ id: string }>> => {
           // No new row — zz.improvement_run's own already-existing row is this ledger's anchor.
           // proposal.md is regenerated fresh from current state below on every call (see this

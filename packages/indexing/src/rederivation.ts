@@ -1,10 +1,11 @@
 /**
  * A generation-aware rederivation pass over rows that already exist in
- * `zz.doc`/`zz.knowledge_node`, not over files on disk. `body_tsv` and `analyzer_version` are
- * the only columns it may touch; content, revisions, approvals and historical citations stay
- * as they are, and a row's `content_hash` never gates it. An analyzer generation bump changes
- * what a row's vector should be while its content stays byte-identical.
- * COUPLED: `index.ts`'s `reindexTeam`/`reindexAllTeams` rebuild rows from `.md` files instead.
+ * `zz.doc`/`zz.knowledge_node`. `body_tsv` and `analyzer_version` are the only columns it may
+ * touch; content, revisions, approvals and historical citations stay as they are, and a row's
+ * `content_hash` never gates it. An analyzer generation bump changes what a row's vector should
+ * be while its content stays byte-identical.
+ * COUPLED: `index.ts`'s `reindexTeam`/`reindexAllTeams` are the per-team entry point over the
+ * same two columns; both derive a row's vector through `rebuildRowVector` below.
  *
  * Generation, not content, is the cursor. A row's `analyzer_version` column says which
  * analyzer last wrote its `body_tsv`, and is `null` for every row older than the column. A
@@ -157,52 +158,45 @@ export interface CorpusRebuildRecord {
 
 const DEFAULT_BATCH_SIZE = 200;
 
-// zz.doc: primary key is the (team_slug, initiative, path) triple
+// zz.doc: primary key is the uuid `id` column
 
-interface DocKey { readonly team_slug: string; readonly initiative: string; readonly path: string; }
-
-function encodeDocKey(k: DocKey): string { return JSON.stringify([k.team_slug, k.initiative, k.path]); }
-function decodeDocKey(w: string): DocKey {
-  const [team_slug, initiative, path] = JSON.parse(w) as [string, string, string];
-  return { team_slug, initiative, path };
-}
-
-interface DocRow extends DocKey {
+interface DocRow {
+  readonly id: string;
   readonly title: string | null;
   readonly tags: readonly string[] | null;
   readonly body: string | null;
   readonly analyzer_version: string | null;
 }
 
-async function fetchDocPage(client: RederivationClient, after: DocKey | null, limit: number): Promise<DocRow[]> {
+async function fetchDocPage(client: RederivationClient, after: string | null, limit: number): Promise<DocRow[]> {
   const result = after
     ? await client.query<DocRow>(
-        `select team_slug, initiative, path, title, tags, body, analyzer_version
+        `select id::text as id, title, tags, body, analyzer_version
            from zz.doc
-          where (team_slug, initiative, path) > ($1, $2, $3)
-          order by team_slug, initiative, path
-          limit $4`,
-        [after.team_slug, after.initiative, after.path, limit])
+          where id > $1::uuid
+          order by id
+          limit $2`,
+        [after, limit])
     : await client.query<DocRow>(
-        `select team_slug, initiative, path, title, tags, body, analyzer_version
+        `select id::text as id, title, tags, body, analyzer_version
            from zz.doc
-          order by team_slug, initiative, path
+          order by id
           limit $1`,
         [limit]);
   return result.rows;
 }
 
 async function writeDocRow(
-  client: RederivationClient, key: DocKey, vector: ReturnType<typeof rebuildRowVector>, analyzer: string,
+  client: RederivationClient, id: string, vector: ReturnType<typeof rebuildRowVector>, analyzer: string,
 ): Promise<void> {
   // Only the two derived columns move. Every other column is absent from this statement
   // entirely, not merely left out of the SET list.
   await client.query(
     `update zz.doc
-        set analyzer_version = $4,
-            body_tsv = ${bodyTsvSql(5)}
-      where team_slug = $1 and initiative = $2 and path = $3`,
-    [key.team_slug, key.initiative, key.path, analyzer, ...bodyTsvParams(vector)]);
+        set analyzer_version = $2,
+            body_tsv = ${bodyTsvSql(3)}
+      where id = $1::uuid`,
+    [id, analyzer, ...bodyTsvParams(vector)]);
 }
 
 // zz.knowledge_node: primary key is the uuid `id` column
@@ -282,23 +276,22 @@ export async function rederiveCorpus(
   let complete = false;
 
   if (corpus === "zz.doc") {
-    let after = watermark ? decodeDocKey(watermark) : null;
+    let after = watermark;
     for (;;) {
       const page = await fetchDocPage(client, after, limit);
       for (const row of page) {
-        const key: DocKey = { team_slug: row.team_slug, initiative: row.initiative, path: row.path };
         try {
           if (row.analyzer_version !== request.analyzer) {
-            await writeDocRow(client, key, rebuildRowVector(row), request.analyzer);
+            await writeDocRow(client, row.id, rebuildRowVector(row), request.analyzer);
             rederived++;
           } else {
             skipped++;
           }
         } catch (err) {
-          failures.push({ key: encodeDocKey(key), reason: err instanceof Error ? err.message : String(err) });
+          failures.push({ key: row.id, reason: err instanceof Error ? err.message : String(err) });
         }
-        after = key;
-        watermark = encodeDocKey(key);
+        after = row.id;
+        watermark = row.id;
       }
       if (page.length < limit) { complete = true; break; }
     }

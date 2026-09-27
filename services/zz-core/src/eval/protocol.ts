@@ -39,7 +39,7 @@
  * knows its initiative and what it decided.
  *
  * The store write follows `writeRoundAssessments` (semantic.ts): `initiative-record.ts` owns
- * `_facts.json`'s name and mechanical write (`factsFor`/`writeFacts`); this function owns the
+ * the rows' name and mechanical write (`factsFor`/`writeFacts`); this function owns the
  * one rule that write must obey — a fact already set refuses a different value, forever — and
  * mirrors every set fact into `zz.initiative_fact` (001) so the console, which
  * reads `zz.doc` alone, can compute the same `documentApplies` answer. The mirror is written
@@ -47,9 +47,6 @@
  * result is merely slow to find, but a stale console stepper is a wrong answer about whether an
  * initiative may close.
  */
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { EvaluationProtocol, parseCaller } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
@@ -60,9 +57,9 @@ import { latestProtocolVersion, triggersFor } from "./protocol-triggers.js";
 import { affirmProtocolVersion, recordProtocolVersion } from "./protocol-record.js";
 import { recordAffirmed, recordDefineOwes } from "./stage-record.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
-import { factsFor, initiativeIdFor, lockInitiativeFacts, mirrorFacts, withInitiativeFactsLock, writeFacts } from "../initiative-record.js";
+import { factsFor, initiativeIdFor, lockInitiativeFacts, withInitiativeFactsLock, writeFacts } from "../initiative-record.js";
 import { platformEvent } from "../indexing.js";
-import { safeName, userRoot } from "../paths.js";
+import { safeName } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
 
@@ -91,57 +88,37 @@ interface BranchFacts {
   release_mode?: string;
 }
 
-/** Where a branch-fact write lands and what it writes through: the team store's root, the team
- *  the mirror row is keyed on, and the one client inside an open transaction that takes the
- *  cross-process lock and writes the mirror (null only when this deployment has no database).
- *  DELIBERATE: resolved by the caller BEFORE its transaction — `userRoot`/`teamFor` query the
- *  pool on a cache miss, and a second connection taken while this one is held is how the
- *  four-connection pool starves. */
+/** Where a branch-fact write lands and what it writes through: the team that owns the
+ *  initiative, and the one client inside an open transaction that takes the cross-process lock
+ *  and writes the rows. There is no store root any more — the facts ARE `zz.initiative_fact`
+ *  rows, and a file was only ever the other half of the same record.
+ *
+ *  DELIBERATE: resolved by the caller BEFORE its transaction — `teamFor` queries the pool on a
+ *  cache miss, and a second connection taken while this one is held is how the four-connection
+ *  pool starves. */
 interface FactsTransaction {
-  readonly client: Pick<pg.PoolClient, "query"> | null;
-  readonly root: string;
-  readonly team: string | null;
+  readonly client: Pick<pg.PoolClient, "query">;
+  readonly team: string;
 }
 
-/** Mirror every fact the file holds into `zz.initiative_fact`, on every call — not only the
- *  ones this call set. A mirror that ran only for fresh facts would never repair one an earlier
- *  call wrote to the file and then failed to mirror (a caller with no team at the time), and the
- *  console would read that initiative's branch as undetermined forever. The row is written by the
- *  initiative's own id — `zz.initiative_fact`'s whole key — and `mirrorFacts`'s
- *  `on conflict do nothing` makes the repeat free and is the second half of append-only: even a
- *  caller racing this exact insert cannot make the row disagree with the file, because the
- *  refuse-on-change check already refused a disagreeing value before either write ran.
+/** The read, the refuse-on-change decision and the write, under both halves of the facts lock:
+ *  the caller holds `withInitiativeFactsLock`, and this takes the transaction lock on
+ *  `tx.client`. Two callers deciding different values would otherwise both pass on the same
+ *  empty read, and the second write would silently replace a fact the first had recorded.
  *
- *  The id is resolved ONCE per call, before the rows are written, through the same team and store
- *  name every other reader of this initiative uses (`initiativeIdFor`) — the table is keyed on it,
- *  so a slug written into a slug column is a mirror the console cannot join.
- *
- *  No team to mirror under is not an error — `userRoot()` resolves a team-less shelf for a
- *  caller `teamFor` cannot place, and the file write is what stands for such a caller; the
- *  console has nothing to draw for them either way. Nor is an initiative whose anchor row is
- *  missing: the file is authoritative and holds the fact, and only the console's copy of it has
- *  nowhere to go. */
-async function mirrorBranchFacts(tx: FactsTransaction, initiative: string, facts: Record<string, string>): Promise<void> {
-  const entries = Object.entries(facts);
-  if (!tx.team || !tx.client || !entries.length) return;
-  const initiativeId = await initiativeIdFor(tx.client, tx.team, initiative);
-  if (!initiativeId) return;
-  await mirrorFacts(tx.client, initiativeId, Object.fromEntries(entries));
-}
-
-/** The read, the refuse-on-change decision, the file write and the mirror, under both halves of
- *  the facts lock: the caller holds `withInitiativeFactsLock`, and this takes the transaction
- *  lock on `tx.client`. Two callers deciding different values would otherwise both pass on the
- *  same empty read, and the second write would silently replace a fact the first had recorded. */
+ *  COUPLED: the write IS the row. `zz.initiative_fact` is keyed on the initiative's own id, so
+ *  a slug written into a slug column is a fact nothing can join; the id is resolved here, from
+ *  the same team and slug every other reader of this initiative uses. */
 async function decideBranchFacts(
   tx: FactsTransaction, initiative: string, updates: BranchFacts,
 ): Promise<string | Record<string, string>> {
-  if (!existsSync(join(tx.root, initiative))) {
+  const initiativeId = await initiativeIdFor(tx.client, tx.team, initiative);
+  if (!initiativeId) {
     return `ERROR: no initiative named "${initiative}" — branch facts are recorded against an ` +
       "opened one; call initiative_open first.";
   }
-  if (tx.client) await lockInitiativeFacts(tx.client, initiative);
-  const current = factsFor(tx.root, initiative);
+  await lockInitiativeFacts(tx.client, initiative);
+  const current = await factsFor(tx.client, tx.team, initiative);
   const entries = (Object.entries(updates) as [string, string | undefined][])
     .filter((e): e is [string, string] => e[1] !== undefined && e[1] !== "");
   for (const [fact, value] of entries) {
@@ -151,8 +128,10 @@ async function decideBranchFacts(
   const fresh = entries.filter(([fact, value]) => current[fact] !== value);
   const next = { ...current };
   for (const [fact, value] of fresh) next[fact] = value;
-  if (fresh.length) writeFacts(tx.root, initiative, next);
-  await mirrorBranchFacts(tx, initiative, next);
+  // Every fact this call holds, not only the fresh ones: a caller that already had a value here
+  // gets the same merged object back, so "I set this" and "this was already true" are one answer
+  // to a caller resuming after somebody else wrote it first.
+  if (fresh.length) await writeFacts(tx.client, initiativeId, next);
   return next;
 }
 
@@ -163,9 +142,9 @@ async function decideBranchFacts(
  * "I set this" and "this was already true".
  *
  * `within`: a caller already inside a transaction (release_prepare/proposal_prepare, which write
- * a ledger row and this fact together) passes its own client, root and team, and the lock and
- * the mirror go through that one connection. Without it, this opens one short transaction of its
- * own for the lock and the mirror, and holds nothing else while it does.
+ * a ledger row and this fact together) passes its own client and team, and the lock and the
+ * write go through that one connection. Without it, this opens one short transaction of its own
+ * for the lock and the write, and holds nothing else while it does.
  *
  * RETURNS the merged facts object on success, or an `ERROR: …` string naming the fact and its
  * standing value — callers that treat a re-derived value as informational (protocol_read, where
@@ -181,15 +160,17 @@ export async function writeBranchFacts(
   if (badInitiative) return badInitiative;
   if (within) return withInitiativeFactsLock(initiative, () => decideBranchFacts(within, initiative, updates));
 
-  const root = await userRoot();
   const team = await teamFor(parseCaller(requestHeaders()).email);
   const p = db();
+  if (!p || !team) {
+    return "ERROR: no platform database, or a caller this deployment cannot place — branch " +
+      "facts are rows, and there is nowhere to record one.";
+  }
   return withInitiativeFactsLock(initiative, async () => {
-    if (!p) return decideBranchFacts({ client: null, root, team }, initiative, updates);
     const client = await p.connect();
     try {
       await client.query("BEGIN");
-      const decided = await decideBranchFacts({ client, root, team }, initiative, updates);
+      const decided = await decideBranchFacts({ client, team }, initiative, updates);
       await client.query("COMMIT");
       return decided;
     } catch (err) {
@@ -433,12 +414,15 @@ export function registerProtocolTools(server: McpServer): void {
         id: string; current_revision: number | null; status: string;
         approved_by: string | null; body: string;
       }>(`
-        select d.id::text as id, d.current_revision, d.status, d.approved_by,
+        select d.id::text as id, d.current_revision, d.status, a.email as approved_by,
                coalesce(r.body, d.body) as body
           from zz.doc d
+          join zz.initiative i on i.id = d.initiative_id
+          join zz.team t on t.id = i.team_id
           left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
-         where d.initiative = $1 and d.path = 'protocol.md'
-           and ($2::text is null or d.team_slug = $2)
+          left join zz.principal a on a.id = r.approved_by
+         where i.slug = $1 and d.path = 'protocol.md'
+           and ($2::text is null or t.slug = $2)
          order by d.updated_at desc limit 1`, [initiative, team])).rows[0];
       if (!docRow) {
         return text(`ERROR: no approved ${path} is recorded for ${team ?? "this caller"}'s team — ` +

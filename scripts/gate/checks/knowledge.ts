@@ -17,13 +17,23 @@ check("_knowledge can never reach zz.initiative", () => {
   // writer (002_initiative_anchor.sql): it never derives a slug from event or document text,
   // so the guard changes shape — from an exclusion in a derivation query to asserting the row
   // is minted only from the platform's own dated name, never a caller's raw, unrefused slug.
-  const rel = "services/zz-core/src/tools/initiative-open.ts";
-  const src = readFileSync(join(root, rel), "utf8");
-  const code = withoutComments(src);
-  const ins = /insert into zz\.initiative[\s\S]*?returning/.exec(code)?.[0] ?? "";
+  // COUPLED: the INSERT moved, and the door did not. `initiative_open` is still the one act that
+  // opens an initiative, and it now goes through `recordOpen` in
+  // `services/zz-core/src/initiative-record.ts`, where the row is minted. The store's
+  // `_open.json` and the anchor row became ONE record when the store retired, so the write and
+  // the declaration are the same act and there is one statement to keep honest rather than two.
+  const door = "services/zz-core/src/tools/initiative-open.ts";
+  const writer = "services/zz-core/src/initiative-record.ts";
+  const doorCode = withoutComments(readFileSync(join(root, door), "utf8"));
+  const src = withoutComments(readFileSync(join(root, writer), "utf8"));
+  const ins = /insert into zz\.initiative[\s\S]*?returning/.exec(src)?.[0] ?? "";
   if (!ins) {
-    return `${rel} no longer inserts into zz.initiative — initiative_open is meant to be its ` +
-           "one writer, and nothing else should be relied on to mint the row instead";
+    return `${writer} no longer inserts into zz.initiative — that is where the one writer lives ` +
+           "now, and nothing else should be relied on to mint the row instead";
+  }
+  if (!/await recordOpen\(/.test(doorCode)) {
+    return `${door} does not call recordOpen — initiative_open is meant to be the one act that ` +
+           "opens an initiative, and a door that mints the row some other way is a second writer";
   }
   // `runs.ts` must not have grown the insert back — the two are not meant to agree on this,
   // one of them is meant to have stopped.
@@ -37,9 +47,16 @@ check("_knowledge can never reach zz.initiative", () => {
   // `slug`: `slugRefusal`/`safeName` refuse a separator and the date prefix is the platform's
   // own clock, so a dated name can never be `_knowledge`. Binding the raw slug instead would
   // reopen exactly the hole the old exclusion closed.
-  if (!/\[\s*team\s*,\s*name\s*,/.test(code)) {
-    bad.push(`${rel} does not bind the insert's slug to the dated \`name\` — a raw, unrefused ` +
-             "slug could reach the row");
+  if (!/\[\s*teamId\s*,\s*name\s*,/.test(src)) {
+    bad.push(`${writer} does not bind the insert's slug to the dated \`name\` — a raw, ` +
+             "unrefused slug could reach the row");
+  }
+  // And the door hands over the composed name, never the slug it was given: the composition is
+  // the platform's clock, so a dated name can never be `_knowledge`.
+  if (!/const name = initiativeNameFor\(slug\)/.test(doorCode)
+      || !/recordOpen\([^)]*\bname\b[^)]*\)/.test(doorCode)) {
+    bad.push(`${door} does not pass the composed \`name\` to recordOpen — the insert's slug ` +
+             "has to come from the platform's own clock, not from the caller");
   }
   return bad.length ? bad.join("; ") : null;
 });
@@ -241,14 +258,17 @@ check("a knowledge node is written to the shelf its scope names", () => {
   if (at < 0) return "knowledge_add is no longer registered";
   const body = withoutComments(src.slice(at, src.indexOf("\n  );", at)));
   const bad: string[] = [];
-  if (!/knowledgeRoot\(\)/.test(body)) bad.push("the platform shelf is unreachable from knowledge_add");
-  if (!/userRoot\(\)/.test(body)) bad.push("the team shelf is unreachable from knowledge_add");
-  const inverted = /scope\s*===\s*"platform"\s*\?\s*(await\s+)?userRoot\(\)/;
-  const ternary = /scope\s*===\s*"platform"\s*\?\s*knowledgeRoot\(\)\s*:\s*(await\s+)?userRoot\(\)/;
-  if (inverted.test(body)) {
-    bad.push("the platform branch resolves userRoot() — the shelves are swapped, and every node would be filed on the wrong one");
-  } else if (!ternary.test(body) && !/scope\s*===\s*"team"/.test(body)) {
-    bad.push("the root is not chosen from `scope` in a form this check can read — write it as `scope === \"platform\" ? knowledgeRoot() : await userRoot()` so the direction is visible");
+  // COUPLED: the two shelves are `KNOWLEDGE_TEAM` and the caller's own team now, not two
+  // directories — a node is a `zz.knowledge_node` row whose shelf is a `team_id`, so the shelf
+  // is chosen by NAME and resolved to a row. The direction is what this check is for, and it is
+  // asserted in the shape the code writes it in.
+  if (!/KNOWLEDGE_TEAM/.test(body)) bad.push("the platform shelf is unreachable from knowledge_add");
+  if (!/scope\s*===\s*"platform"\s*\?\s*KNOWLEDGE_TEAM\s*:\s*team/.test(body)
+      && !/scope\s*===\s*"team"/.test(body)) {
+    bad.push("the shelf is not chosen from `scope` in a form this check can read — write it as `scope === \"platform\" ? KNOWLEDGE_TEAM : team` so the direction is visible");
+  }
+  if (/scope\s*===\s*"platform"\s*\?\s*team/.test(body)) {
+    bad.push("the platform branch resolves the caller's own team — the shelves are swapped, and every node would be filed on the wrong one");
   }
   return bad.length ? bad.join("; ") : null;
 });
@@ -334,8 +354,15 @@ check("supersession stays on one shelf and knows which", () => {
   if (at < 0) return "knowledge_supersede is no longer registered";
   const body = withoutComments(src.slice(at, src.indexOf("\n  );", at)));
   const bad: string[] = [];
-  if (!/userRoot\(\)/.test(body)) bad.push("supersede cannot see the team shelf");
-  if (!/knowledgeRoot\(\)/.test(body)) bad.push("supersede cannot see the platform shelf");
+  // COUPLED: a shelf is a NAME resolved to `zz.knowledge_node.team_id` now, so the resolver takes
+  // the shelf it is looking on rather than a root. Both must be looked at, and the refusal must
+  // still name the shelf a cross-shelf pair spans.
+  if (!/"team"/.test(body)) bad.push("supersede cannot see the team shelf");
+  if (!/"platform"/.test(body)) bad.push("supersede cannot see the platform shelf");
+  if (!/from zz\.knowledge_node\b/.test(body)) {
+    bad.push("supersede does not read `zz.knowledge_node` — a shelf is a team row, and a resolver " +
+             "that cannot read one cannot tell the two shelves apart");
+  }
   if (!/ERROR:[^\n]*shelf/.test(body)) bad.push("no refusal for a cross-shelf supersession");
   return bad.length ? bad.join("; ") : null;
 });

@@ -5,8 +5,14 @@
  * date and the team this person acts for — and the rest of the door is the skill library:
  * what is installed and what a skill says.
  *
- * A team's own overlay is resolved here rather than at each call, because a skill of one
- * name can exist in three places and only the order between them decides which answers.
+ * Two places can carry a skill of one name, and the order between them is the whole rule: the
+ * platform's own `/skills`, then the catalog's packages, platform-owned ones first. That order
+ * is `skill-roots.ts`'s, and it is the only thing that decides which of two answers.
+ *
+ * DELIBERATE: there was a third — a team's own overlay under the team root, and a skills root
+ * of the team's own beside it — and both are gone with the store. Something used to be layered
+ * on top of the shelf's text here; now nothing is. A layer that silently stopped arriving is
+ * exactly what a reader would not notice, so it is stated rather than left to the absence.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -17,7 +23,7 @@ import { parseCaller, parseEnvelope } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { safeName, safeRelPath, userRoot } from "../paths.js";
+import { safeName, safeRelPath } from "../paths.js";
 import { platformEvent } from "../indexing.js";
 import { teamsFor } from "../platform-db.js";
 import { allSkillRoots } from "../skill-roots.js";
@@ -118,9 +124,9 @@ export function registerSkillTools(server: McpServer): void {
       const roots = await allSkillRoots();
 
       // Where a root came from, decided by matching it rather than by spelling a path. The
-      // catalog's location is settable (`CATALOG_DIR`) and the team's own store is under an
-      // artifact root that varies per caller, so both are matched against the values that
-      // produced them, and the platform's own `/skills` is what is left.
+      // catalog's location is settable (`CATALOG_DIR`), so a root is matched against the value
+      // that produced it, and the platform's own `/skills` is what is left. There is no team
+      // root any more: a team's own skills were store files, and the store is retired.
       const packageAt = new Map<string, { owner: string; name: string; dir: string }>();
       for (const p of catalogPackages()) packageAt.set(join(p.dir, "skills"), p);
       const stagesOf = new Map<string, Map<string, { at: number; of: number; produces: string }>>();
@@ -134,13 +140,6 @@ export function registerSkillTools(server: McpServer): void {
         stagesOf.set(e.dir, stages);
         if (e.manifest.agentName) agentNameOf.set(e.dir, e.manifest.agentName);
       }
-      let teamRoot = "";
-      let teamSlug: string | null = null;
-      try {
-        teamRoot = join(await userRoot(), "skills");
-        teamSlug = (await teamsFor(parseCaller(requestHeaders()).email)).active;
-      } catch { /* no store and no team yet: a person with nothing written has nothing to add */ }
-
       /** The reference material beside a SKILL.md — what `skill_read(name, file)` can open.
        *
        * Named here because nothing else names them: skill_read takes an exact relative path, and
@@ -208,12 +207,10 @@ export function registerSkillTools(server: McpServer): void {
         if (!existsSync(root)) continue;
         const pkg = packageAt.get(root);
         const agent = pkg ? agentNameOf.get(pkg.dir) : undefined;
-        const id = pkg ? pkg.name : root === teamRoot ? (teamSlug ?? "your-team") : "zz-core";
+        const id = pkg ? pkg.name : "zz-core";
         const label = pkg
           ? `${pkg.name}${agent ? ` (${agent})` : ""} — a plugin, owned by ${pkg.owner}`
-          : root === teamRoot
-            ? `${teamSlug ?? "your-team"} — your team's own store`
-            : "zz-core — the platform's own, readable by everybody";
+          : "zz-core — the platform's own, readable by everybody";
         const stages = pkg ? stagesOf.get(pkg.dir) : undefined;
         const g = groupFor(id, label);
         for (const entry of readdirSync(root).sort()) {
@@ -250,35 +247,6 @@ export function registerSkillTools(server: McpServer): void {
     },
   );
 
-  /** A team's own additions to a stage of the flow they run, appended to it.
-   *
-   * A team running ops-flow may want two more considerations at ops-select. That is not a
-   * different ops-select and they should not have to fork one to say it.
-   *
-   * DELIBERATE: appended, never substituted. The shelf's text arrives first and entire, the
-   * team's follows under a heading that says whose it is, and no overlay can shadow zz-platform
-   * or a stage of the flow — substitution is not a thing this can express.
-   *
-   * Structure stays the platform's: flow.json — documents, gate, requires, closing, sections — is
-   * untouched. An overlay changes how a step is done, never which steps exist or which of them a
-   * person must sign, and sectionCheck holds that boundary at the write.
-   *
-   * Lives in the team's own store, so it costs no approval from us. */
-  async function teamOverlay(name: string): Promise<string> {
-    try {
-      const f = join(await userRoot(), "overlays", name, "SKILL.md");
-      if (!existsSync(f)) return "";
-      const body = readFileSync(f, "utf8").trim();
-      if (!body) return "";
-      return `\n\n---\n\n## Your team's additions to ${name}\n\n` +
-        "*From your team's own store, layered on top of the skill above. It adds to that " +
-        "method and never replaces it — where the two differ on a rule the platform sets, " +
-        "the skill above wins.*\n\n" + body + "\n";
-    } catch {
-      return "";   // no store yet: an overlay is an addition, and its absence is normal
-    }
-  }
-
   server.registerTool(
     "skill_read",
     {
@@ -307,7 +275,11 @@ export function registerSkillTools(server: McpServer): void {
         const path = join(dir, "SKILL.md");
         if (existsSync(path)) {
           platformEvent({ actor: parseCaller(requestHeaders()).email, kind: "skill_read", skill: name });
-          if (file === undefined) return text(readFileSync(path, "utf8") + await teamOverlay(name));
+          // DELIBERATE: nothing is layered on top. A team's own overlay was a file in the store
+          // the platform kept for them — `<team root>/overlays/<name>/SKILL.md` — and the store
+          // is retired, so the shelf's text IS the text. An overlay that silently stopped
+          // arriving is exactly the failure this line would otherwise hide.
+          if (file === undefined) return text(readFileSync(path, "utf8"));
           // Resolved inside the skill already found, never searched for on its own. Two
           // packages may ship a skill of one name — the roots are ordered so the first wins —
           // and an independent lookup could splice one package's reference onto another
@@ -318,8 +290,9 @@ export function registerSkillTools(server: McpServer): void {
               `ERROR: '${name}' ships no file at '${file}'. Its SKILL.md names the ` +
               "supporting files it has; read the skill first and follow what it points at.");
           }
-          // No team overlay on a supporting file. An overlay is a team's addition to a skill's
-          // instructions, not to a reference document.
+          // Read straight out of the skill's own directory. Nothing is layered on a supporting
+          // file, and never was: the team layer that used to exist was a team's addition to a
+          // skill's instructions, and a reference document is not instructions.
           return text(readFileSync(sub, "utf8"));
         }
       }

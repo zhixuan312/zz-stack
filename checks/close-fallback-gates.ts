@@ -25,23 +25,67 @@
  *
  * Run: node checks/close-fallback-gates.ts   (also run by scripts/gate.ts)
  */
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import pg from "pg";
+
 process.env.ZZ_CATALOG_DIR = join(process.cwd(), "catalog");
+process.env.TEAM_DB_URL = "postgresql://stub@127.0.0.1:1/stub";
+
+const TEAM = "t1";
+interface W { flow: string | null; docs: Record<string, unknown>[]; facts: Record<string, string>;
+             records: Record<string, Record<string, string>> }
+const world = new Map<string, W>();
+let seq = 0;
+
+pg.Pool.prototype.query = (async function query(text: string, values: unknown[] = []) {
+  const sql = String(text).replace(/\s+/g, " ").trim();
+  const one = (rows: Record<string, unknown>[]) => ({ rows, rowCount: rows.length });
+  const bySlug = world.get(String(values[1] ?? ""));
+  if (/select i\.slug from zz\.initiative i join zz\.team t on t\.id = i\.team_id where t\.slug = \$1 order by i\.slug/.test(sql)) {
+    return one([...world.keys()].sort().map((slug) => ({ slug })));
+  }
+  if (/select i\.slug, i\.flow, i\.closed_at::text/.test(sql)) {
+    const names = (values[1] as string[]) ?? [];
+    return one(names.filter((n) => world.has(n)).map((n) => ({
+      slug: n, flow: world.get(n)!.flow, closed_at: null, closed_by: null, outcome: null })));
+  }
+  if (/from zz\.initiative i join zz\.team t on t\.id = i\.team_id/.test(sql)) {
+    return one(bySlug ? [{ id: "i1", flow: bySlug.flow, opened_at: "2026-09-25",
+                           opened_by: "ada@zz.test", slug: String(values[1]) }] : []);
+  }
+  if (/from zz\.doc d\b/.test(sql) && /order by d\.path/.test(sql)) {
+    return one(world.get(String(values[0]))?.docs ?? []);
+  }
+  if (/from zz\.doc d\b/.test(sql)) {
+    const hit = (bySlug?.docs ?? []).filter((d) => d.path === values[2]);
+    return one(hit.length ? [hit[hit.length - 1]] : []);
+  }
+  if (/from zz\.doc_revision r\b/.test(sql) && /where r\.doc_id = \$1::uuid/.test(sql)) {
+    const d = [...world.values()].flatMap((x) => x.docs).find((x) => x.id === String(values[0]));
+    return one(d ? [{ revision: 1, content_state: "retained", title: d.title, body: d.body,
+                      tags: [], content_hash: "h", fields: d.fields, revision_note: null,
+                      written_by: "ada@zz.test", written_at: d.updated_at,
+                      approved_by: d.approved_by, approved_at: d.approved_at }] : []);
+  }
+  if (/from zz\.initiative_fact f\b/.test(sql)) {
+    return one(Object.entries(bySlug?.facts ?? {}).map(([fact, value]) => ({ fact, value })));
+  }
+  if (/from zz\.initiative_record r\b/.test(sql)) {
+    return one(Object.entries(bySlug?.records ?? {}).flatMap(([stage, ids]) =>
+      Object.entries(ids).map(([id_name, value]) => ({ stage, id_name, value }))));
+  }
+  return one([]);
+}) as unknown as typeof pg.Pool.prototype.query;
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { chainFor } = await load("services/zz-core/dist/chain.js");
 const { documentGuards } = await load("services/zz-core/dist/guards.js");
-const rec = await load("services/zz-core/dist/initiative-record.js");
-const { initiativeListing, initiativeState } = await load("services/zz-core/dist/tools/initiative-status.js");
+const { db } = await load("services/zz-core/dist/platform-db.js");
 
 const fail: string[] = [];
 const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
-
-const root = mkdtempSync(join(tmpdir(), "close-fallback-gates-"));
 
 interface Doc { name: string; sections?: string[] }
 interface Chain { documents: Doc[]; closingDoc: string }
@@ -56,26 +100,37 @@ const body = (chain: Chain, name: string, fields: Record<string, string>): strin
 const APPROVED = { status: "approved", approved_by: "ada@zz.test", approved_at: "2026-09-25" };
 const FINISHED = { outcome: "delivered", closed_by: "ada@zz.test", no_signoff_reason: "nobody signed" };
 const STOPPED = { outcome: "abandoned", closed_by: "ada@zz.test" };
+/** The columns a doc row carries; every other key is the revision's own envelope payload. */
+const COLUMNS = new Set(["status", "outcome", "approved_by", "approved_at", "closed_by", "title", "flow", "version"]);
+const row = (initiative: string, path: string, fields: Record<string, string>, text: string) => ({
+  id: `d${++seq}`, path, initiative, flow: "", type: "",
+  status: fields.status ?? "", outcome: fields.outcome ?? null,
+  approved_by: fields.approved_by ?? null, approved_at: fields.approved_at ?? null,
+  closed_by: fields.closed_by ?? null, updated_at: "2026-09-25T00:00:00.000Z",
+  title: fields.title ?? path, body: text.split("\n---\n\n")[1] ?? text, tags: [],
+  current_revision: Number(fields.version) || 1, approved_revision: null,
+  fields: Object.fromEntries(Object.entries(fields).filter(([k]) => !COLUMNS.has(k))),
+});
 
 let n = 0;
-function open(flow: string, facts: Record<string, string> | null) {
+async function open(flow: string, facts: Record<string, string> | null) {
   const name = `2026-09-25-close-${++n}`;
-  rec.recordOpen(root, name, flow, "ada@zz.test");
-  if (facts) rec.writeFacts(root, name, facts);
-  const chain: Chain = chainFor(root, `${name}/x.md`);
+  const w: W = { flow, docs: [], facts: facts ?? {}, records: {} };
+  world.set(name, w);
+  const chain: Chain = await chainFor(db()!, TEAM, `${name}/x.md`) as Chain;
   const write = (doc: string, fields: Record<string, string>) =>
-    writeFileSync(join(root, name, doc), body(chain, doc, { title: doc, flow, ...fields }));
-  // `async` because the guard reads the rows now: a database read cannot be synchronous, and the
-  // close is the load-bearing case — it asks whether each required document exists, which is a
-  // question only the rows can answer once documents stop being files.
+    w.docs.push(row(name, doc, { title: doc, flow, ...fields }, body(chain, doc, { title: doc, flow, ...fields })));
+  // The guard reads the rows: a database read cannot be synchronous, and the close is the
+  // load-bearing case — it asks whether each required document exists, which is a question only
+  // the rows can answer once documents stop being files.
   const close = async (doc: string, fields: Record<string, string>): Promise<string | null> =>
-    await documentGuards(chain, root, `${name}/${doc}`, body(chain, doc, { title: doc, flow, ...fields }), null, "fixture");
+    await documentGuards(chain, `${name}/${doc}`, body(chain, doc, { title: doc, flow, ...fields }), TEAM, "fixture");
   return { name, chain, write, close };
 }
 
 // 1. skip: improvement ruled out, proposal ruled out — closes on findings.md
 {
-  const i = open("zz-plugin-eval", { protocol_action: "reuse", improvement_mode: "skip", release_mode: "not_applicable" });
+  const i = await open("zz-plugin-eval", { protocol_action: "reuse", improvement_mode: "skip", release_mode: "not_applicable" });
   is(i.chain.closingDoc === "improvement.md",
      `zz-plugin-eval's declared closing document is ${i.chain.closingDoc}, not improvement.md — this check's premise moved`);
   i.write("findings.md", {});
@@ -85,7 +140,7 @@ function open(flow: string, facts: Record<string, string> | null) {
 
 // 2. proposal_only: closes on proposal.md; findings.md alone is not enough
 {
-  const i = open("zz-plugin-eval", { protocol_action: "reuse", improvement_mode: "proposal", release_mode: "proposal_only" });
+  const i = await open("zz-plugin-eval", { protocol_action: "reuse", improvement_mode: "proposal", release_mode: "proposal_only" });
   i.write("findings.md", {});
   const early = await i.close("findings.md", FINISHED);
   is(typeof early === "string" && /proposal\.md does not exist/.test(early),
@@ -97,7 +152,7 @@ function open(flow: string, facts: Record<string, string> | null) {
 
 // 3. promotable: closes on improvement.md, which is gated and the declared closing document
 {
-  const i = open("zz-plugin-eval", { protocol_action: "reuse", improvement_mode: "release", release_mode: "promotable" });
+  const i = await open("zz-plugin-eval", { protocol_action: "reuse", improvement_mode: "release", release_mode: "promotable" });
   i.write("findings.md", {});
   i.write("improvement.md", {});
   const draft = await i.close("improvement.md", FINISHED);
@@ -109,7 +164,7 @@ function open(flow: string, facts: Record<string, string> | null) {
 
 // 4. sdlc-flow abandoned with its gates in draft — the stop lands on the furthest document
 {
-  const i = open("sdlc-flow", null);
+  const i = await open("sdlc-flow", null);
   is(i.chain.closingDoc === "review.md",
      `sdlc-flow's declared closing document is ${i.chain.closingDoc}, not review.md — this check's premise moved`);
   i.write("explore.md", {});
@@ -120,7 +175,7 @@ function open(flow: string, facts: Record<string, string> | null) {
   is(finished === null || !/own approval is unrecorded/.test(finished),
      `sdlc: a finished outcome on spec.md was judged as a close on it: ${JSON.stringify(finished)}`);
 
-  const j = open("sdlc-flow", null);
+  const j = await open("sdlc-flow", null);
   j.write("explore.md", {});
   j.write("spec.md", APPROVED);
   j.write("plan.md", { status: "draft" });
@@ -128,49 +183,15 @@ function open(flow: string, facts: Record<string, string> | null) {
   is(plan === null, `sdlc: abandoning on a draft plan.md was refused: ${JSON.stringify(plan)}`);
 }
 
-// 5. a damaged _facts.json refuses its own initiative and does not take down the listing
-{
-  const bad = open("zz-plugin-eval", null);
-  writeFileSync(join(root, bad.name, "_facts.json"), "{ truncated");
-  let direct: unknown = null;
-  try { direct = initiativeState(root, bad.name, bad.chain, bad.chain.documents); } catch (err) { direct = err; }
-  is(direct instanceof Error && /_facts\.json is not a JSON object/.test(direct.message),
-     `a damaged _facts.json was not refused by name for its own initiative: ${String(direct)}`);
-  const good = open("sdlc-flow", null);
-  good.write("explore.md", {});
-  const listed = initiativeListing(root, [bad.name, good.name]);
-  const damaged = listed.open.find((s: { initiative: string }) => s.initiative === bad.name);
-  is(damaged?.damaged === true && /_facts\.json is not a JSON object/.test(damaged?.error ?? ""),
-     `the listing did not report the damaged initiative with its refusal: ${JSON.stringify(damaged)}`);
-  is(listed.open.some((s: { name?: string; initiative?: string; next_move?: unknown }) =>
-       (s.name ?? s.initiative) === good.name && s.next_move),
-     `the listing dropped the healthy initiative beside a damaged one: ${JSON.stringify(listed)}`);
-}
-
-// 6. a damaged _facts.json still lets the work stop, and says how to repair it otherwise
-{
-  const i = open("zz-plugin-eval", null);
-  i.write("findings.md", {});
-  writeFileSync(join(root, i.name, "_facts.json"), "[\"not an object\"]");
-  let finished: unknown = null;
-  try { finished = await i.close("findings.md", FINISHED); } catch (err) { finished = err; }
-  const said = finished instanceof Error ? finished.message : String(finished);
-  // The repair names the mirror row by the initiative's own id — the only key `zz.initiative_fact`
-  // has left — so the instruction is a lookup by id rather than by a team and a slug.
-  is(/_facts\.json is not a JSON object/.test(said) && /initiative_close\(.*"abandoned"\)/.test(said) &&
-     /zz\.initiative_fact/.test(said) && /initiative_id/.test(said),
-     `a finished close over a damaged _facts.json did not refuse naming the abandon and the repair: ${said}`);
-  let stopped: unknown = null;
-  try { stopped = await i.close("findings.md", STOPPED); } catch (err) { stopped = err; }
-  is(stopped === null, `an abandon over a damaged _facts.json was refused: ${String(stopped)}`);
-}
-
-rmSync(root, { recursive: true, force: true });
+// DELIBERATE: the file version's cases 5 and 6 — a DAMAGED `_facts.json` refusing its own
+// initiative, and an abandon still landing over it — have nothing left to assert. A row is written
+// whole by the database or not at all, so the truncated or non-object file they guarded cannot
+// arise; the refusals they proved named a state the store can no longer be in. `factsFor`
+// (initiative-record.ts) carries that reasoning in its own docstring.
 
 if (fail.length) {
   console.error(`close-fallback-gates: ${fail.length} failure(s)\n  - ${fail.join("\n  - ")}`);
   process.exit(1);
 }
 console.log("close-fallback-gates: skip, proposal_only and promotable each close where their branch " +
-            "lands, a stop on a fallback draft is not asked for that draft's approval, and a damaged " +
-            "_facts.json still lets the work stop");
+            "lands, and a stop on a fallback draft is not asked for that draft's approval");

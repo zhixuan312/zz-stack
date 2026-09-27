@@ -217,7 +217,7 @@ check("a stray file in the catalog cannot empty it", () => {
   // The catalog's two levels are walked once, through @zz/catalog, which tolerates a file where
   // an owner directory was expected. A single try around both levels does not: a stray file
   // throws ENOTDIR, the catch returns whatever had accumulated, and `.DS_Store` sorts first, so
-  // what comes back is nothing at all — no platform skills, no stage skills, no team overlays.
+  // what comes back is nothing at all — no platform skills, no stage skills.
   // This runs the walk over a catalog containing exactly that stray file.
   const bad = [];
   for (const rel of sourceFiles(["services", "packages"], [".ts"])) {

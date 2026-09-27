@@ -6,28 +6,34 @@
  * from where it stopped rather than from what anybody remembers.
  *
  * `knowledge_reconcile` returns the claims a stage recorded. Nothing joins them to telemetry.
+ *
+ * COUPLED: everything here is computed from `zz.initiative`, `zz.doc`, `zz.doc_revision` and the
+ * initiative's own key/value state — there is no directory left to walk. What a document "is"
+ * comes from the row the revision store holds, and what an initiative declares comes from the
+ * row `initiative_open` wrote.
  */
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import type pg from "pg";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { documentApplies, OUTCOME_STOPPED, parseCaller, parseEnvelope, type Applicability,
-         type FlowDoc } from "@zz/contracts";
-import { decisionRows, type DecisionRow } from "@zz/indexing";
+import { documentApplies, parseCaller, type Applicability, type FlowDoc } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { auditMove } from "../audit-rounds.js";
-import { reviewMove } from "../review-rounds.js";
-import { factsFor, openRecord, recordsFor } from "../initiative-record.js";
+import { assessmentsFor, reviewMove } from "../review-rounds.js";
+import { factsFor, recordsFor } from "../initiative-record.js";
 import { chainFor } from "../chain.js";
+import { type DocRow, docRows } from "../indexing.js";
 import { planStructure, planStructureNote, type PlanStructure } from "../plan-structure.js";
 import { isHandover, owedActs } from "../stage-records.js";
-import { safeName, userRoot } from "../paths.js";
+import { safeName } from "../paths.js";
 import { Refusal } from "../refusal.js";
 import { platformEvent } from "../indexing.js";
 import { db, teamFor } from "../platform-db.js";
 import { type Chain } from "../write-guards.js";
+
+import { registerKnowledgeReconcileTool } from "./knowledge-reconcile.js";
+
 
 /** The lifecycle facts `zz.initiative`'s anchor row carries (002_initiative_anchor.sql),
  *  resolved once by the async tool handler and handed to the (still synchronous)
@@ -58,13 +64,41 @@ interface DocState {
   applies?: Applicability;
 }
 
-/** A document's frontmatter, or {} when there is no document there.
+/* ──────────────────────────────────────────────────────────────────────────────────────────
+ * The document facts every computation below reads, taken from a `DocRow` map.
  *
- * DELIBERATE: the isFile() test stays. An unresolved chain's closingDoc is the empty string,
- * and join(dir, "") is the directory, which readFileSync throws EISDIR on. */
-function envelopeOf(file: string): Record<string, string> {
-  if (!existsSync(file) || !statSync(file).isFile()) return {};
-  return parseEnvelope(readFileSync(file, "utf8"));
+ * DELIBERATE: one shape, one place. `envelopeOf` used to parse a file; the same seven keys —
+ * status, outcome, closed_by, approved_by, approved_at, version and the open payload — are
+ * columns of `zz.doc` and of the revision it points at, so `docFacts` names them ONCE and every
+ * reader below is written against it rather than against a parse.
+ * ────────────────────────────────────────────────────────────────────────────────────────── */
+
+/** A document's envelope facts, or `{}` when this initiative holds no such document.
+ *
+ * COUPLED: an unresolved chain's `closingDoc` is the empty string, and the file version returned
+ * `{}` for it (`readFileSync` of the directory threw EISDIR). A map lookup of a name nothing
+ * holds answers `{}` for exactly the same reason. */
+function docFacts(rows: Map<string, DocRow>, name: string): Record<string, string> {
+  const d = rows.get(name);
+  if (!d) return {};
+  const env: Record<string, string> = {};
+  if (d.status) env.status = d.status;
+  if (d.outcome) env.outcome = d.outcome;
+  if (d.closed_by) env.closed_by = d.closed_by;
+  if (d.approved_by) env.approved_by = d.approved_by;
+  if (d.approved_at) env.approved_at = d.approved_at;
+  if (d.current_revision !== null) env.version = String(d.current_revision);
+  if (d.flow) env.flow = d.flow;
+  for (const [k, v] of Object.entries(d.fields ?? {})) env[k] = v;
+  return env;
+}
+
+/** The documents an initiative holds under `sources/`, by their name inside it — the material
+ *  `source_add` recorded, which is what an audit round and a review round are read out of. */
+function sourceRows(rows: Map<string, DocRow>): DocRow[] {
+  return [...rows.values()]
+    .filter((d) => d.path.startsWith("sources/") && d.path.endsWith(".md"))
+    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
 /** The initiative's registered sources, and which of them landed after the document they
@@ -73,35 +107,29 @@ function envelopeOf(file: string): Record<string, string> {
  * Compares file mtimes, not the dates people type: `approved_at` is day-granular and
  * hand-written, while the approval snapshot in _versions/ and the source file both carry a
  * mtime the platform wrote itself. */
-function sourceReport(dir: string, statusOf: (docName: string) => string | null): {
+function sourceReport(rows: Map<string, DocRow>): {
   sourceFiles: string[];
   needsRefinement: Array<{ document: string; source: string; title: string }>;
 } {
-  const srcDir = join(dir, "sources");
-  const sourceFiles = existsSync(srcDir) ? readdirSync(srcDir).filter((f) => f.endsWith(".md")) : [];
-  const approvalTime = (docName: string): number => {
-    const vdir = join(dir, "_versions");
-    let latest = 0;
-    if (existsSync(vdir)) {
-      const stem = docName.replace(/\.md$/, "") + ".v";
-      for (const v of readdirSync(vdir)) {
-        if (!v.startsWith(stem)) continue;
-        latest = Math.max(latest, statSync(join(vdir, v)).mtimeMs);
-      }
-    }
-    // no snapshot -> the document's own mtime is when it last changed, approval included
-    return latest || (existsSync(join(dir, docName)) ? statSync(join(dir, docName)).mtimeMs : 0);
-  };
+  const sources = sourceRows(rows);
+  const sourceFiles = sources.map((d) => d.path.slice("sources/".length));
+  // The two instants this compares are the database's own: when the source was last written and
+  // when the document it bears on was approved. Both are timestamps the platform wrote, and
+  // comparing them as instants rather than as text is what keeps two offsets from deciding.
+  const at = (ts: string | null): number => (ts ? Date.parse(ts) : 0);
   const needsRefinement: Array<{ document: string; source: string; title: string }> = [];
-  for (const f of sourceFiles) {
-    const env = parseEnvelope(readFileSync(join(srcDir, f), "utf8"));
+  for (const src of sources) {
+    if (!src.path.endsWith(".md")) continue;
     // An audit round lands on an approved document by design; the next move routes it.
-    if (env.stage) continue;
-    const sourceTime = statSync(join(srcDir, f)).mtimeMs;
-    for (const d of (env.supports || "").split(",").map((x) => x.trim()).filter(Boolean)) {
-      if (statusOf(d) !== "approved") continue;
-      if (sourceTime > approvalTime(d)) {
-        needsRefinement.push({ document: d, source: `sources/${f}`, title: env.title || f });
+    if (src.fields?.stage) continue;
+    const sourceTime = at(src.updated_at);
+    const supports = (src.fields?.supports || "").split(",").map((x) => x.trim()).filter(Boolean);
+    for (const d of supports) {
+      const target = rows.get(d);
+      if (!target || target.status !== "approved") continue;
+      if (sourceTime > at(target.approved_at)) {
+        needsRefinement.push({ document: d, source: src.path,
+                               title: src.title || src.path.slice("sources/".length) });
       }
     }
   }
@@ -111,22 +139,25 @@ function sourceReport(dir: string, statusOf: (docName: string) => string | null)
 /** What state an initiative is in, and what the next move is — the one computation both
  * `initiative_status` and `initiative_open` answer from.
  *
- * Exported and taking `root` explicitly so it can be run over a fixture store.
- * COUPLED: `checks/initiative-open.ts` drives it.
+ * COUPLED: three queries and nothing else — the initiative's own row, its documents' rows, and
+ * its key/value state. The directory listing, the envelope parses and the source-file walks this
+ * used to do are all rows now, and `docFacts` is the one place a row becomes the envelope facts
+ * every branch below reads.
  *
  * `next_move` is null exactly when nothing declared a chain, and `next_move_absent` says why
  * in that case and is undefined otherwise.
  *
- * `anchor`, when given, is `zz.initiative`'s own row (002_initiative_anchor.sql, Task I-6):
- * flow, abandonment and outcome are read from it rather than from `_open.json` or a document's
- * envelope. Optional and trailing, so this stays a synchronous function a fixture-driven check
- * can call directly with no database at all (`checks/initiative-open.ts` and its neighbours) —
- * they get today's file/envelope-derived answer; the registered tools below resolve the row
- * first and pass it in. */
-export function initiativeState(
-  root: string, name: string, chain: Chain, docs: FlowDoc[], anchor?: InitiativeAnchor | null,
+ * `anchor`, when given, is this initiative's own row — the one query the no-argument listing
+ * resolves for EVERY initiative at once, so it is not re-read once per initiative. Omitted, it
+ * is read here, which is what the named form and `initiative_open` want. */
+export async function initiativeState(
+  p: pg.Pool, team: string | null, name: string, chain: Chain, docs: FlowDoc[],
+  anchor?: InitiativeAnchor | null,
 ) {
-  const dir = join(root, name);
+  const rowList = team ? await docRows(p, team, name) : [];
+  const rows = new Map(rowList.map((d) => [d.path, d]));
+  // The initiative's own row: its flow, and whether and how it closed.
+  const own = anchor !== undefined ? anchor : (await anchorsFor(p, team, [name])).get(name) ?? null;
   // No chain, so no next move — an answer rather than a gap. A freeform initiative is one
   // nobody drove with a flow: every document operation works, every gate still gates and the
   // close works, but there is no declared chain to read a next stage off. A flow cannot be
@@ -136,67 +167,65 @@ export function initiativeState(
   // nothing to compute a next move over either. `chain.name` is therefore null whenever this
   // fires, which is what makes `flow: null` below the truth rather than a guess.
   if (docs.length === 0) {
-    const files = existsSync(dir)
-      ? readdirSync(dir).filter((f) => f.endsWith(".md") && !f.startsWith("_")).sort()
-      : [];
+    const files = [...rows.keys()].filter((f) => f.endsWith(".md") && !f.startsWith("_")).sort();
     // No manifest names a closing document, so the outcome is read off whichever document
     // carries one — where initiative_close wrote it.
     // COUPLED: the no-argument listing filters on `next_move.action === "closed"`.
     const envs: Array<{ name: string } & Record<string, string>> =
-      files.map((f) => ({ name: f, ...envelopeOf(join(dir, f)) }));
+      files.map((f) => ({ name: f, ...docFacts(rows, f) }));
     const closer = envs.find((e) => e.outcome);
     // An initiative holding no document at all — opened by mistake, then abandoned — has no
-    // envelope to read an outcome off; `initiative_close` records it on the row, so only the
-    // anchor can say so. Without one, the open record still names the flow.
-    const rec = anchor ? null : openRecord(root, name);
-    const declaredFlow = anchor ? anchor.flow : (rec?.flow ?? null);
-    const abandonedAt = anchor ? anchor.closed_at : null;
-    const abandonedBy = anchor ? anchor.closed_by : null;
-    if (!closer && abandonedAt) {
+    // document to read an outcome off; `initiative_close` records it on the row, so only the
+    // anchor can say so.
+    const abandonedAt = own?.closed_at ?? null;
+    const abandonedBy = own?.closed_by ?? null;
+    if (!closer && own?.outcome) {
       return {
-        initiative: name, flow: declaredFlow, documents: envs, sources: 0,
+        initiative: name, flow: own.flow, documents: envs, sources: 0,
         sources_after_approval: [],
-        outcome: OUTCOME_STOPPED, closed_by: abandonedBy ?? null,
+        outcome: own.outcome, closed_by: abandonedBy ?? null,
         next_move: { action: "closed", waiting_on: "nobody",
-                     why: `abandoned on ${abandonedAt} — it holds no document, so the outcome ` +
-                          "is recorded on its own anchor row and no ledger row was appended" },
+                     why: `abandoned on ${abandonedAt ?? "an unrecorded date"} — it holds no ` +
+                          "document, so the outcome is recorded on its own anchor row and no " +
+                          "ledger row was appended" },
       };
     }
     // The same two source fields the governed return carries: freeform has no manifest but
-    // still has a `sources/` directory, `source_add` still writes into it, and
-    // `document_revise` still refuses a revision that cites nothing.
-    const freeSources = sourceReport(dir, (d) => envs.find((e) => e.name === d)?.status ?? null);
+    // still has sources, `source_add` still writes them, and `document_revise` still refuses a
+    // revision that cites nothing.
+    const freeSources = sourceReport(rows);
     return {
       initiative: name,
-      flow: declaredFlow,
+      flow: own?.flow ?? null,
       documents: envs,
       sources: freeSources.sourceFiles.length,
       sources_after_approval: freeSources.needsRefinement,
-      outcome: closer?.outcome ?? null,
-      closed_by: closer?.closed_by ?? null,
-      next_move: closer
-        // The one next move a freeform initiative has: read off the outcome already written
-        // down, not computed from a chain.
+      outcome: own?.outcome ?? closer?.outcome ?? null,
+      closed_by: own?.closed_by ?? closer?.closed_by ?? null,
+      next_move: closer || own?.outcome
+        // The one next move a freeform initiative has: read off the outcome already recorded,
+        // not computed from a chain.
         ? { action: "closed", waiting_on: "nobody",
-            why: `closed with outcome: ${closer.outcome}` }
+            why: `closed with outcome: ${own?.outcome ?? closer?.outcome}` }
         : null,
       // Stated, not left to be inferred from the null: "freeform, and that is fine" and "the
       // platform failed to compute one" want opposite reactions.
-      next_move_absent: closer ? undefined :
+      next_move_absent: (closer || own?.outcome) ? undefined :
         "no flow governs this initiative, so there is no declared chain and therefore no " +
         "next stage to name. That is the answer, not a gap. NO GATE AND NO REQUIRED " +
         "DOCUMENT IS ENFORCED HERE — nothing is refused for want of an approval, and " +
         "nothing has to exist before this closes. Every act still WORKS and still records: " +
-        "document_approve stamps a real approval, initiative_close writes a real outcome and " +
-        "a real ledger row — name the document it goes on, since no manifest does. A flow " +
+        "document_approve stamps a real approval, initiative_close writes a real outcome — " +
+        "name the document it goes on, since no manifest does. A flow " +
         "cannot be adopted after an initiative exists; open a new one with `flow` if you " +
         "want its order and its gates enforced.",
     };
   }
-  // FR-58 (Task I-26): read once, against every document's own `when` — `_facts.json` is
-  // per-initiative, never per-flow, so it cannot live on the cached `chain` the way `docs` does.
-  const facts = factsFor(root, name);
-  const records = recordsFor(root, name);
+  // FR-58 (Task I-26): read once, against every document's own `when` — an initiative's branch
+  // facts are per-initiative, never per-flow, so they cannot live on the cached `chain` the way
+  // `docs` does.
+  const facts = await factsFor(p, team, name);
+  const records = await recordsFor(p, team, name);
   const appliesOf = (docName: string): Applicability => {
     const spec = docs.find((d) => d.name === docName);
     return spec?.when ? documentApplies(spec, facts) : "applies";
@@ -211,9 +240,9 @@ export function initiativeState(
     return applies[applies.length - 1]?.name ?? chain.closingDoc;
   })();
   const states: DocState[] = docs.map((d) => {
-    const env = envelopeOf(join(dir, d.name));
+    const env = docFacts(rows, d.name);
     return {
-      name: d.name, role: d.role, exists: existsSync(join(dir, d.name)),
+      name: d.name, role: d.role, exists: rows.has(d.name),
       status: env.status ?? null, gate: !!d.gate,
       approved_by: env.approved_by || undefined, approved_at: env.approved_at || undefined,
       // The handover follows whichever document closes this branch, not the flow's declared one:
@@ -224,32 +253,33 @@ export function initiativeState(
       applies: d.when ? documentApplies(d, facts) : undefined,
     };
   });
-  // The close is wherever initiative_close wrote it. A flow can move its closing document, so
-  // an initiative closed earlier carries its outcome on a document today's manifest does not
-  // name. Only initiative_close writes an outcome — and, with a database, it writes the anchor
-  // row in the same call, which is what this reads first. `closingEnv` stays the fallback for a
-  // caller with no row to hand in (the fixture-driven checks).
+  // The close is wherever initiative_close recorded it. A flow can move its closing document,
+  // so an initiative closed earlier carries its outcome somewhere today's manifest may not
+  // name — so the row's own outcome is read first, and the documents' payloads are the fallback
+  // for a close that landed before the anchor row carried one.
   const closingEnv = ((): Record<string, string> => {
-    if (anchor) return {};
-    const today = envelopeOf(join(dir, chain.closingDoc));
-    if (today.outcome || !existsSync(dir)) return today;
-    for (const f of readdirSync(dir).filter((x) => x.endsWith(".md") && !x.startsWith("_")).sort()) {
-      const env = envelopeOf(join(dir, f));
+    if (own?.outcome) return {};
+    const today = docFacts(rows, chain.closingDoc);
+    if (today.outcome) return today;
+    for (const f of [...rows.keys()].filter((x) => x.endsWith(".md") && !x.startsWith("_")).sort()) {
+      const env = docFacts(rows, f);
       if (env.outcome) return env;
     }
     return today;
   })();
-  const outcome = (anchor ? anchor.outcome : closingEnv.outcome) || null;
-  // Who recorded the close, beside what it was. With a database this is the anchor row's
-  // `closed_by`, joined back to an email by the caller; without one it is the closing
-  // document's envelope, stamped by initiative_close().
-  const closedBy = (anchor ? anchor.closed_by : closingEnv.closed_by) || null;
+  const outcome = (own?.outcome || closingEnv.outcome) || null;
+  const closedBy = (own?.closed_by || closingEnv.closed_by) || null;
 
   // the next move, in the flow's own declared order
   let next: { action: string; document?: string; stage?: string; waiting_on: string; why: string };
   // The current plan's structure: waves an executor may run in parallel, or why it cannot. Read
   // here because `current_phase` below decides which move the chain answers.
-  const plan: PlanStructure | undefined = planStructure(dir, docs);
+  //
+  // COUPLED: the plan's own BODY, out of the row — `planStructure` validates text, and there is
+  // no file to hand it.
+  const planDoc = docs.find((d) => d.role === "plan");
+  const plan: PlanStructure | undefined =
+    planStructure(docs, planDoc ? rows.get(planDoc.name)?.body ?? null : null);
   // A plan that still declares a phase to build is mid-execution. `sdlc-execute` writes no
   // document and records nothing the platform can see, so nothing else in this function catches
   // it — and the review round would sweep a change that is a fraction built. `current_phase` is
@@ -261,13 +291,13 @@ export function initiativeState(
     // gets captured does not depend on the flow author. It is not verified mid-flow: execute
     // and review happen in the caller's own terminal, which the platform cannot see.
     //
-    // The handover is a knowledge node minted by zz-handover, not a file. Zero nodes is a
+    // The handover is a knowledge node minted by zz-handover, not a document. Zero nodes is a
     // legitimate outcome, so the completion signal is handover.md's own approval, read
     // through the same `states` machinery as every other gated document.
     //
-    // A closed initiative owes nothing: the close is the terminal act whatever it closed on,
-    // and the ledger row is the record. The handover stays writeable afterwards — the guard
-    // in guards.ts lets a closed initiative satisfy a prerequisite its close skipped.
+    // A closed initiative owes nothing: the close is the terminal act whatever it closed on.
+    // The handover stays writeable afterwards — the guard in guards.ts lets a closed initiative
+    // satisfy a prerequisite its close skipped.
     //
     // The note states what is true of this initiative's handover, and a flow that declares
     // no handover at all is closed rather than stuck.
@@ -281,7 +311,7 @@ export function initiativeState(
         : "If the cycle taught something worth keeping, `skill_read(\"zz-handover\")` mints it and " +
           "writes handover.md; the close satisfies that document's prerequisite.";
     next = { action: "closed", waiting_on: "nobody",
-             why: `closed with outcome: ${outcome}. Nothing further is owed — the ledger row is ` +
+             why: `closed with outcome: ${outcome}. Nothing further is owed — the row is ` +
                   `the record. ${handoverNote}` };
   } else {
     // A requirement is met by the only thing its target can offer. Nothing ever approves a
@@ -327,12 +357,17 @@ export function initiativeState(
     // `requirementMet` alone is not enough here: it reads `not_applicable` as discharged
     // (true), which is right for a document another one merely *requires*, but an audit of a
     // ruled-out document is not owed at all — it is excluded explicitly, first.
+    const sources = sourceRows(rows);
+    // The answers already taken about this initiative's sources, in one query. A round's routing
+    // depends on what `changes_commitment`/`repeats_finding` said, and those are `zz.assessment`
+    // rows — the same memo every other reader of them uses, and not a second copy.
+    const answers = team ? await assessmentsFor(p, team, name) : new Map();
     const owedAudit = (chain.stages ?? [])
       .filter((st): st is Extract<typeof st, { produces: "source" }> => st.produces === "source")
       .filter((st) => Boolean(st.supports) && appliesOf(st.supports as string) !== "not_applicable"
                      && requirementMet(st.supports as string))
-      .map((st) => auditMove(root, name, st.name ?? "", st.supports as string,
-                             Number(envelopeOf(join(dir, st.supports as string)).version) || 1))
+      .map((st) => auditMove(name, st.name ?? "", st.supports as string,
+                             rows.get(st.supports as string)?.current_revision ?? 1, sources, answers))
       .find((m): m is NonNullable<typeof m> => m !== null);
     // A stage that produces a `record` writes no document, so `pending` cannot see it. The first
     // such stage ahead of the pending document's own stage that has recorded nothing is what runs
@@ -344,10 +379,7 @@ export function initiativeState(
     // A stage whose document is settled can still owe acts no document records — DEFINE/QUALIFY's
     // protocol_affirm and evaluator_qualify once protocol.md is approved (stage-record.ts). Its
     // record names them, and a stage with one still missing is unfinished the same way.
-    const producedText = (doc: string): string => {
-      const file = join(dir, doc);
-      return existsSync(file) && statSync(file).isFile() ? readFileSync(file, "utf8") : "";
-    };
+    const producedText = (doc: string): string => rows.get(doc)?.body ?? "";
     const owing = (st: (typeof stages)[number]): string[] =>
       st.produces.endsWith(".md") && appliesOf(st.produces) === "applies" &&
       requirementMet(st.produces) ? owedActs(records[st.name], name, producedText(st.produces)) : [];
@@ -360,7 +392,8 @@ export function initiativeState(
     const verifying = flowDocs.find((d) => docs.find((x) => x.name === d.name)?.verifies?.length &&
       d.status !== "approved" && (!d.requires || requirementMet(d.requires)));
     const owedReview = verifying && executingPhase === null
-      ? reviewMove(root, name, docs.find((x) => x.name === verifying.name)?.stage ?? "", verifying.name)
+      ? reviewMove(name, docs.find((x) => x.name === verifying.name)?.stage ?? "", verifying.name,
+                   sources, answers)
       : null;
     const awaitApproval = (d: DocState) => ({
       action: "await_approval", document: d.name, waiting_on: "stakeholder",
@@ -415,8 +448,8 @@ export function initiativeState(
         .filter((fact) => !facts[fact]);
       next = {
         action: "resolve_branch", document: pending.name, waiting_on: "agent",
-        why: `${pending.name} declares \`when\` over ${missing.join(", ")}, and _facts.json ` +
-             `does not record ${missing.length === 1 ? "it" : "them"} yet — the stage that ` +
+        why: `${pending.name} declares \`when\` over ${missing.join(", ")}, and the branch ` +
+             `facts do not record ${missing.length === 1 ? "it" : "them"} yet — the stage that ` +
              `decides the branch has to run before ${pending.name} can be written one way or ` +
              "the other",
       };
@@ -428,7 +461,7 @@ export function initiativeState(
       // FR-58 exclusion `flowDocs` applies above, applied here to `closeRequires`.
       const missing = chain.closeRequires
         .filter((n) => appliesOf(n) !== "not_applicable")
-        .filter((n) => !existsSync(join(dir, n)));
+        .filter((n) => !rows.has(n));
       next = missing.length
         ? { action: "write_document", document: missing[0], waiting_on: "agent",
             why: `${missing[0]} is required before this initiative can close` }
@@ -459,12 +492,11 @@ export function initiativeState(
   if (next.action !== "closed") {
     next.why += planStructureNote(plan, states.find((d) => d.name === plan?.document)?.status ?? null);
   }
-  const { sourceFiles, needsRefinement } =
-    sourceReport(dir, (d) => states.find((x) => x.name === d)?.status ?? null);
+  const { sourceFiles, needsRefinement } = sourceReport(rows);
   return { initiative: name,
            // The chain already knows which flow governs this initiative — it was resolved
-           // to build `docs`. The envelope fallback answers only when it does not.
-           flow: chain.name ?? (envelopeOf(join(dir, docs[0]?.name ?? "")).flow || null),
+           // to build `docs`. The row answers only when it does not.
+           flow: chain.name ?? own?.flow ?? null,
            documents: states, outcome, closed_by: closedBy, sources: sourceFiles.length,
            // reported, never enforced: material that landed after an approval may warrant
            // a revision — the team decides, and document_revise is how they do it
@@ -477,9 +509,8 @@ export function initiativeState(
            // shape and a caller can read the field without knowing which branch answered.
            next_move_absent: undefined as string | undefined };
 }
-
-const chainArgs = (root: string, name: string): [Chain, FlowDoc[]] => {
-  const chain = chainFor(root, `${name}/x.md`);
+const chainArgs = async (p: pg.Pool, team: string | null, name: string): Promise<[Chain, FlowDoc[]]> => {
+  const chain = await chainFor(p, team, `${name}/x.md`);
   return [chain, chain.documents];
 };
 
@@ -487,11 +518,10 @@ const chainArgs = (root: string, name: string): [Chain, FlowDoc[]] => {
  *  Null (no database, no team, or the row does not exist) reads as "no anchor", which is
  *  `initiativeState`'s cue to fall back to the file/envelope answer. */
 async function anchorsFor(
-  team: string | null, names: readonly string[],
+  p: pg.Pool, team: string | null, names: readonly string[],
 ): Promise<Map<string, InitiativeAnchor>> {
   const out = new Map<string, InitiativeAnchor>();
-  const p = db();
-  if (!p || !team || !names.length) return out;
+  if (!team || !names.length) return out;
   const { rows } = await p.query<{ slug: string; flow: string | null; closed_at: string | null;
     closed_by: string | null; outcome: string | null }>(
     `select i.slug, i.flow, i.closed_at::text, pc.email as closed_by, i.outcome
@@ -510,26 +540,25 @@ async function anchorsFor(
  *  Closed ones are counted rather than dropped, so a filtered answer is not mistaken for an
  *  empty one.
  *
- *  DELIBERATE: a `Refusal` from one initiative (a damaged `_facts.json`, which `factsFor`
- *  refuses by name) is reported against that initiative, with its text, and the listing goes
- *  on — one folder must not take down the listing of every initiative beside it. Anything else
- *  still throws: an error nobody named is not a fact about one initiative. */
-export function initiativeListing(
-  root: string, names: readonly string[], anchors?: Map<string, InitiativeAnchor>,
+ *  DELIBERATE: a `Refusal` from one initiative is reported against that initiative, with its
+ *  text, and the listing goes on — one initiative must not take down the listing of every other.
+ *  Anything else still throws: an error nobody named is not a fact about one initiative. */
+async function initiativeListing(
+  p: pg.Pool, team: string | null, names: readonly string[], anchors?: Map<string, InitiativeAnchor>,
 ) {
   const open = [];
   let closedCount = 0;
   for (const name of names) {
-    if (!existsSync(join(root, name))) {
+    if (!(anchors?.has(name) ?? false)) {
       open.push({ initiative: name, error: "no such initiative" });
       continue;
     }
     let state;
     try {
-      state = initiativeState(root, name, ...chainArgs(root, name), anchors?.get(name) ?? null);
+      state = await initiativeState(p, team, name, ...await chainArgs(p, team, name), anchors?.get(name) ?? null);
     } catch (err) {
       if (!(err instanceof Refusal)) throw err;
-      open.push({ initiative: name, damaged: true, error: err.message });
+      open.push({ initiative: name, error: err.message });
       continue;
     }
     // DELIBERATE: optional-chained — `next_move` is null for a freeform initiative, and one
@@ -543,11 +572,13 @@ export function initiativeListing(
 /** The next move, as one line appended to the result of a tool that just changed an
  *  initiative — so a caller who never asks `initiative_status` is still told what the flow
  *  expects next. Empty for a freeform initiative, a closed one, or a name that is not one. */
-export function nextMoveLine(root: string, initiative: string): string {
+export async function nextMoveLine(
+  p: pg.Pool, team: string | null, initiative: string,
+): Promise<string> {
   try {
-    if (!initiative || !existsSync(join(root, initiative))) return "";
-    const chain = chainFor(root, `${initiative}/x.md`);
-    const move = initiativeState(root, initiative, chain, chain.documents).next_move;
+    if (!initiative || !team) return "";
+    const [chain, chainDocs] = await chainArgs(p, team, initiative);
+    const move = (await initiativeState(p, team, initiative, chain, chainDocs)).next_move;
     if (!move || move.action === "closed") return "";
     return `\n\nNext move: ${move.action}${"document" in move && move.document ? ` ${move.document}` : ""}` +
            ` (waiting on ${move.waiting_on}) — ${move.why}`;
@@ -574,105 +605,34 @@ export function registerInitiativeStatusTools(server: McpServer): void {
         if (bad) return text(bad);
       }
       const who = parseCaller(requestHeaders());
-      const root = await userRoot();
+      const team = await teamFor(who.email);
+      const p = db();
+      if (!p || !team) {
+        return text(
+          "ERROR: no platform database, or a caller this deployment cannot place — an " +
+          "initiative is a row now, so there is nothing to read without one."
+        );
+      }
+      // The team's whole roster, or the one named. A slug the team does not hold is reported
+      // per-initiative rather than refused, which is what the named form has always done.
       const names = initiative
         ? [initiative]
-        // Dot-entries are not initiatives, and the store is a git repository, so there is a
-        // `.git` in every root. COUPLED: walk() in @zz/indexing applies the same filter.
-        : readdirSync(root).filter((n) => !n.startsWith("_") && !n.startsWith(".") &&
-            !n.endsWith(".md") && statSync(join(root, n)).isDirectory());
-      const team = await teamFor(who.email);
-      // One query for every name in this call, never one per initiative — a caller with no
-      // database or no team reads back an empty map, and every initiative falls back to its
-      // file/envelope answer exactly as it did before the anchor row existed.
-      const anchors = await anchorsFor(team, names);
-      // Named: that one initiative, and a damaged one refuses — the caller asked about it.
+        : (await p.query<{ slug: string }>(
+            `select i.slug from zz.initiative i join zz.team t on t.id = i.team_id
+              where t.slug = $1 order by i.slug`, [team])).rows.map((r) => r.slug);
+      // One query for every name in this call, never one per initiative.
+      const anchors = await anchorsFor(p, team, names);
+      // Named: that one initiative, and an unknown name says so — the caller asked about it.
       const base = initiative
-        ? (existsSync(join(root, initiative))
-          ? initiativeState(root, initiative, ...chainArgs(root, initiative), anchors.get(initiative) ?? null)
+        ? (anchors.has(initiative)
+          ? await initiativeState(p, team, initiative, ...await chainArgs(p, team, initiative))
           : { initiative, error: "no such initiative" })
-        : initiativeListing(root, names, anchors);
-      // How many of this initiative's documents `indexDoc` has already stamped with
-      // `initiative_id` (packages/indexing/src/index.ts, Task I-6) against how many it holds —
-      // reported only for a named initiative, since it is one extra query nobody asked for on
-      // the whole-store listing. `tagged === total` is the observable proof that a document
-      // written into an open initiative carries `initiative_id` immediately, with no reindex or
-      // reconciler in between; there is no other MCP surface for that column.
-      let docIndex: { total: number; tagged: number } | undefined;
-      const p = db();
-      if (initiative && p && team && !("error" in base)) {
-        const cov = (await p.query<{ total: string; tagged: string }>(
-          `select count(*)::text as total, count(d.initiative_id)::text as tagged
-             from zz.doc d join zz.team t on t.slug = d.team_slug
-            where t.slug = $1 and d.initiative = $2`,
-          [team, initiative])).rows[0];
-        if (cov) docIndex = { total: Number(cov.total), tagged: Number(cov.tagged) };
-      }
-      const answer = docIndex ? { ...base, doc_index: docIndex } : base;
+        : await initiativeListing(p, team, names, anchors);
       platformEvent({ actor: who.email, kind: "initiative_status", initiative: initiative ?? "*" });
-      return text(JSON.stringify(answer, null, 2));
+      return text(JSON.stringify(base, null, 2));
     },
   );
 
-  server.registerTool(
-    "knowledge_reconcile",
-    {
-      description:
-        "What a stage committed to, for one initiative: the fit ledger keyed by acceptance " +
-        "criterion, the criteria themselves and who verifies each, as the stage recorded them. " +
-        "Ask by `initiative`. It returns the claims only — nothing records which plugin a claim " +
-        "is about, so nothing joins them to tool-call telemetry.",
-      inputSchema: {
-        initiative: z.string().min(1).describe("Reconcile this one initiative."),
-      },
-    },
-    async ({ initiative }) => {
-      const p = db();
-      if (!p) return text("ERROR: no platform database — reconciliation reads the indexed document bodies");
-
-      const who = parseCaller(requestHeaders());
-      const team = await teamFor(who.email);
-      if (!team) return text("ERROR: no team — reconciliation is scoped to the team that made the predictions");
-      const bad = safeName(initiative, "initiative");
-      if (bad) return text(bad);
-      // What was claimed, computed from the documents' own bodies: a stage states them in the
-      // text it writes for a reader, and `decisionRows` parses that text back out.
-      const { rows: docs } = await p.query<{ path: string; type: string | null; body: string | null }>(
-        `select path, type, body from zz.doc
-          where team_slug = $1 and initiative = $2 and path not like '_versions/%'
-          order by path`,
-        [team, initiative]);
-      const claims: (DecisionRow & { path: string })[] = [];
-      for (const d of docs) {
-        // A snapshot is skipped — its claims are the live document's, so reading both would
-        // count every prediction twice — as is a type that states no claims; a body this cannot
-        // read is one document with no claims, never an empty answer for the whole initiative.
-        const role = (d.type ?? "").trim();
-        if (!/^(selection|agreement|plan)$/.test(role) || typeof d.body !== "string") continue;
-        for (const c of decisionRows(d.body).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))) {
-          claims.push({ path: d.path, ...c });
-        }
-      }
-      if (!claims.length) {
-        return text(`No claims recorded for ${initiative}. A stage records them by writing its fit ledger or its acceptance criteria; nothing to reconcile until one has.`);
-      }
-
-      // Claims only: nothing records which plugin a claim is about, so nothing joins these to
-      // `zz.event`.
-      const out = claims.map((c) => ({
-        initiative,
-        key: c.key,
-        predicted: { verdict: c.verdict, qualifier: c.qualifier || null, by: c.detail || null,
-                     verified_by: c.checker || null },
-      }));
-      return text(JSON.stringify({
-        team,
-        scope: { initiative },
-        claims: out.length,
-        note: "What a stage predicted, in the flow's own words. Nothing records which plugin a " +
-              "claim is about, so a claim listed here has not been checked against anything.",
-        claims_recorded: out,
-      }, null, 2));
-    },
-  );
+  // The reconciliation reader is its own subject and its own module.
+  registerKnowledgeReconcileTool(server);
 }

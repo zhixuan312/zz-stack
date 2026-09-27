@@ -229,11 +229,13 @@ if (!gate) {
      "itself never visits the one team whose rows need cleaning"],
     [/reindexTeam\(/,
      "knowledge_reindex does not call reindexTeam, so a named team rebuilds nothing"],
-    [/existsSync\(join\(ARTIFACTS_DIR, "teams"\)\)/,
-     "knowledge_reindex does not check that the artifact store is MOUNTED before rebuilding " +
-     "from it \u2014 the indexer reads a missing teams/ directory as \"the volume is not mounted, " +
-     "touch nothing\" and answers in the same shape it uses for a team that had nothing to do, " +
-     "so a gateway that can see no files at all reports \"nothing had changed\""],
+    // The store is a database now, so the precondition is the database rather than a mounted
+    // volume. What the clause is for is unchanged: a rebuild that cannot happen must say so
+    // rather than answer in the shape it uses for a team that had nothing to do.
+    [/if \(!db\(\)\) return text\(/,
+     "knowledge_reindex does not refuse when this deployment has no database \u2014 it rebuilds " +
+     "from the rows, so a service that cannot reach them has nothing to rebuild and answers in " +
+     "the same shape it uses for a team that had nothing to do"],
     // Schema-qualified, because zz-core names its schema on every query.
     [/from zz\.team where slug = \$1/,
      "knowledge_reindex does not look the team up before rebuilding it — reindexTeam DELETES " +
@@ -249,7 +251,7 @@ if (!gate) {
 // assertion above passes: two indexers agree until the day somebody edits one. Comments
 // stripped, because this file's own explanation of the move names both functions.
 const INDEXER = "packages/indexing/src/index.ts";
-for (const fn of ["indexDoc", "reindexTeam"]) {
+for (const fn of ["indexNode", "reindexTeam"]) {
   const defs: string[] = [];
   for (const p of ["services", "packages"].flatMap((t) => walk(t))) {
     if (!/\.tsx?$/.test(p) || p.endsWith(".d.ts")) continue;
@@ -274,8 +276,11 @@ const REACHES: [string, RegExp, string, string][] = [
    "reindexTeam", "knowledge_reindex rebuilds one team through it"],
   [DOOR, /import \{[^}]*\breindexAllTeams\b[^}]*\} from "@zz\/indexing"/,
    "reindexAllTeams", "knowledge_reindex walks every team through it"],
-  ["services/zz-core/src/persist.ts", /import \{[^}]*\bindexDoc\b[^}]*\} from "@zz\/indexing"/,
-   "indexDoc", "zz-core indexes every document it writes, in the same call"],
+  // A journal node is a row, so zz-core writes it through the package's own writer rather than
+  // composing the insert itself. The file store's `indexDoc` is gone with the store; this is
+  // what took its place, and one definition of it is what keeps the two doors' nodes identical.
+  ["services/zz-core/src/tools/knowledge.ts", /import \{[^}]*\bindexNode\b[^}]*\} from "@zz\/indexing"/,
+   "indexNode", "zz-core writes every journal node through it, in the same call"],
 ];
 for (const [file, re, fn, why] of REACHES) {
   if (!re.test(read(file) ?? "")) {

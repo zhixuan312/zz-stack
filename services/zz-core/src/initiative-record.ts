@@ -1,20 +1,25 @@
 /**
- * The record an initiative is opened with, and the two questions asked of it.
+ * The record an initiative is opened with, and the questions asked of it.
  *
- * `chainFor` resolves a flow from a document's envelope, and an initiative is an empty folder
- * until its first document is written. In that window there is no envelope to read, so without
- * this record an initiative opened with a flow reads back as governed by nothing — which is
- * exactly when `initiative_status` is called.
+ * COUPLED: every one of these reads or writes a ROW, and none of them reads a file. The store
+ * the platform kept for a team — its working tree, the per-initiative JSON state files and its
+ * git repository — is retired, so the four facts that used to live beside a team's documents
+ * live where the rest of the initiative does:
  *
- * DELIBERATE: the record does not say whether the initiative was opened. That is the folder's
- * own existence, and a second source for it would eventually disagree with the filesystem.
+ *   `_open.json`     → `zz.initiative` — `slug`, `flow`, `opened_at`, `opened_by`
+ *   `_facts.json`    → `zz.initiative_fact`, keyed by the initiative's own id
+ *   `_records.json`  → `zz.initiative_fact` too, under a two-part fact name — see `recordsFor`
  *
- * COUPLED: read by chain.ts resolving a flow, by document_write refusing an unopened name,
- * and by initiative_open itself — hence its own module rather than a corner of the tool.
+ * A declaration and no declaration are still different facts, which is why a freeform open still
+ * writes a row (with `flow` null) and `openRecord` still returns null rather than an empty record
+ * when nothing carries the slug. A helper collapsing both would let a fallback overrule a person
+ * saying "nothing governs this".
+ *
+ * DELIBERATE: `chainFor` needs the flow of an initiative that has no document yet, which is the
+ * window between `initiative_open` and the first write. The row answers it, and it is the same
+ * answer the folder's `_open.json` gave.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { documentApplies, OUTCOME_STOPPED } from "@zz/contracts";
 import type pg from "pg";
@@ -22,20 +27,19 @@ import type pg from "pg";
 import { Refusal } from "./refusal.js";
 import { isoToday } from "./write-guards.js";
 
-/** The declaration, beside the documents rather than among them.
- *
- * Exported so `initiative_open` can log its event against this path and land the line in the
- * initiative's own activity log rather than the team-wide one.
- *
- * COUPLED: the leading underscore is what keeps it out of every listing — initiative_status,
- * chainFor's oldest-document walk and document_list all skip `_`-prefixed entries. */
-export const OPEN_RECORD = "_open.json";
+/** The query surface everything here takes: the pool, or a client already inside a transaction.
+ *  ONE parameter rather than a resolved pool, so a caller inside a transaction reads the row it
+ *  is about to write through the same connection that holds its lock. */
+export type RecordClient = Pick<pg.PoolClient, "query">;
 
+/** The declaration, as `zz.initiative` holds it.
+ *
+ * DELIBERATE: the shape is the file's, because that is what a caller reads and what
+ * `initiative_open` hands back. `flow: null` is a declared freeform, never "no record". */
 interface OpenRecord {
   initiative: string;
   /** The flow that governs this initiative, or null, which is a declared freeform rather than
-   * an unanswered question. Telling the two apart is why this file is written for a freeform
-   * open as well. */
+   * an unanswered question. */
   flow: string | null;
   opened_by: string;
   opened_at: string;
@@ -45,128 +49,183 @@ interface OpenRecord {
  *
  * DELIBERATE: there is no argument for the date and no way to pass one. `isoToday()` is the
  * same clock and timezone `envelopeFor` stamps `updated_at` from, so a document's date and
- * its folder's cannot disagree. */
+ * its initiative's cannot disagree. */
 export function initiativeNameFor(slug: string): string {
   return `${isoToday()}-${slug.trim()}`;
 }
 
-/** Write the declaration, creating the folder. */
-export function recordOpen(root: string, name: string, flow: string | null, who: string): OpenRecord {
-  const record: OpenRecord = {
-    initiative: name,
-    flow: flow?.trim() || null,
-    opened_by: who,
-    opened_at: isoToday(),
-  };
-  mkdirSync(join(root, name), { recursive: true });
-  writeFileSync(join(root, name, OPEN_RECORD), `${JSON.stringify(record, null, 2)}\n`);
-  return record;
+/** The `zz.team.id` a slug names, or null when no team carries it. */
+async function teamIdOf(client: RecordClient, team: string): Promise<string | null> {
+  const { rows } = await client.query<{ id: string }>(
+    "select id::text as id from zz.team where slug = $1", [team]);
+  return rows[0]?.id ?? null;
 }
 
-/** The record, or null when there is none.
+/** Write the declaration. The initiative row IS the initiative: there is no folder to create,
+ *  and a slug this team already carries is left exactly as it was rather than re-opened.
  *
- * DELIBERATE: the whole record is returned rather than a `declaredFlow(root, name)` helper.
- * `flow: null` is a declaration that nothing governs this, and a caller has to tell it apart
- * from no record at all.
+ *  DELIBERATE: `do update set slug = excluded.slug` and not `do nothing`. A no-op update is what
+ *  makes the `returning` clause answer on BOTH paths — a row that was already there comes back
+ *  with its own opener and date rather than with nothing. */
+export async function recordOpen(
+  client: RecordClient, team: string, name: string, flow: string | null, who: string,
+): Promise<OpenRecord> {
+  const teamId = await teamIdOf(client, team);
+  if (!teamId) {
+    throw new Refusal(
+      `ERROR: no team "${team}" — an initiative belongs to a team's roster, and nothing ` +
+      "carries that slug on this deployment.");
+  }
+  const declared = flow?.trim() || null;
+  const { rows } = await client.query<{ flow: string | null; opened_at: string; opened_by: string | null }>(
+    `insert into zz.initiative (team_id, slug, flow, opened_at, opened_by)
+     values ($1::uuid, $2, $3, now(),
+             (select p.id from zz.principal p where lower(p.email) = lower($4) and p.status = 'active'))
+     on conflict (team_id, slug) do update set slug = excluded.slug
+     returning flow, to_char(opened_at, 'YYYY-MM-DD') as opened_at,
+               (select p.email from zz.principal p where p.id = opened_by) as opened_by`,
+    [teamId, name, declared, who]);
+  const row = rows[0];
+  return { initiative: name, flow: row?.flow ?? declared, opened_by: row?.opened_by ?? who,
+           opened_at: row?.opened_at ?? isoToday() };
+}
+
+/** The record, or null when this team holds no initiative under `name`. */
+export async function openRecord(
+  client: RecordClient, team: string, name: string,
+): Promise<OpenRecord | null> {
+  const { rows } = await client.query<{ flow: string | null; opened_at: string; opened_by: string | null }>(
+    `select i.flow, to_char(i.opened_at, 'YYYY-MM-DD') as opened_at,
+            (select p.email from zz.principal p where p.id = i.opened_by) as opened_by
+       from zz.initiative i join zz.team t on t.id = i.team_id
+      where t.slug = $1 and i.slug = $2`, [team, name]);
+  const row = rows[0];
+  return row ? { initiative: name, flow: row.flow, opened_by: row.opened_by ?? "",
+                 opened_at: row.opened_at } : null;
+}
+
+/** The `zz.initiative.id` a slug names inside a team, or null. Resolved THROUGH the team, never
+ * by the slug alone: two teams' initiatives may share one. */
+export async function initiativeIdFor(
+  client: RecordClient, team: string, initiative: string,
+): Promise<string | null> {
+  const { rows } = await client.query<{ id: string }>(
+    `select i.id::text as id from zz.initiative i join zz.team t on t.id = i.team_id
+      where t.slug = $1 and i.slug = $2`, [team, initiative]);
+  return rows[0]?.id ?? null;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────────────────────
+ * An initiative's durable state, in two tables, because the two shapes are opposite:
  *
- * DELIBERATE: a malformed record is null rather than a throw. `initiative_status` is the call
- * every agent makes before continuing work, and an unparseable byte must not take it down. */
-export function openRecord(root: string, name: string): OpenRecord | null {
-  const file = join(root, name, OPEN_RECORD);
-  if (!existsSync(file)) return null;
-  try {
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as OpenRecord;
-    return typeof parsed === "object" && parsed !== null ? parsed : null;
-  } catch {
-    return null;
+ *   `zz.initiative_fact`    a BRANCH FACT — `protocol_action`, `improvement_mode`, `release_mode`
+ *                           — recorded once by the stage that decides it and never revised;
+ *
+ *   `zz.initiative_record`  a STAGE RECORD — `define_qualify.protocol_version_id` — the id a
+ *                           `produces: "record"` stage minted, written again when that stage runs
+ *                           again, because a second profile or a re-score SUPERSEDES what it
+ *                           recorded before. "Resume from the initiative" is what latest-wins
+ *                           means.
+ * ────────────────────────────────────────────────────────────────────────────────────────── */
+
+/** The durable branch facts, or `{}` when none are recorded.
+ *
+ * DELIBERATE: no damage case. The file could be truncated by a writer that died between two
+ * bytes, and `factsFor` used to throw a `Refusal` naming it; a row is written whole by the
+ * database or not at all, so there is nothing here to be damaged and no refusal to invent. */
+export async function factsFor(
+  client: RecordClient, team: string | null, initiative: string,
+): Promise<Record<string, string>> {
+  // A caller this deployment cannot place has no initiative, so it has no facts: `{}`, which is
+  // every named fact reading `undetermined` rather than a guess at whose work this is.
+  if (!team) return {};
+  const { rows } = await client.query<{ fact: string; value: string }>(
+    `select f.fact, f.value from zz.initiative_fact f
+       join zz.initiative i on i.id = f.initiative_id
+       join zz.team t on t.id = i.team_id
+      where t.slug = $1 and i.slug = $2`,
+    [team, initiative]);
+  return Object.fromEntries(rows.map((r) => [r.fact, r.value]));
+}
+
+/** Write the durable branch facts.
+ *
+ * DELIBERATE: no merge and no refusal here — `writeBranchFacts` (eval/protocol.ts) reads the
+ * current facts with `factsFor` above, decides whether a requested change is a refusal, and
+ * passes the whole merged object down, so the only row this can meet is one already saying this.
+ *
+ * COUPLED: `on conflict do nothing`, never `do update`. A branch fact is recorded once by the
+ * stage that decides it and is never revised — that is what makes the refuse-on-change rule safe,
+ * and it is what `zz.initiative_fact`'s own comment states. An `update` here would make that
+ * comment false, and a comment that is false is worse than no comment: a stage record, which IS
+ * latest-wins, has its own table for exactly this reason. */
+export async function writeFacts(
+  client: RecordClient, initiativeId: string, facts: Record<string, string>,
+): Promise<void> {
+  for (const [fact, value] of Object.entries(facts)) {
+    await client.query(
+      `insert into zz.initiative_fact (initiative_id, fact, value) values ($1::uuid, $2, $3)
+       on conflict (initiative_id, fact) do nothing`,
+      [initiativeId, fact, value]);
   }
 }
 
-
-/** Where a flow's durable branch facts live (FR-58, Task I-26): `protocol_action`,
- *  `improvement_mode`, `release_mode`. Written by `writeFacts` below and read by every caller
- *  that resolves a conditional document's `when` — the same division `_open.json` above draws
- *  between the tool that opens an initiative and the one that reads it back, except that here
- *  BOTH halves live in this module: `writeBranchFacts` (services/zz-core/src/eval/protocol.ts,
- *  Task I-27) owns the refuse-on-change decision and calls `writeFacts` for the mechanical part.
- *  Underscore-prefixed, so no listing treats it as a document.
+/** What each `produces: "record"` stage of an initiative minted — the ids a later stage needs
+ *  and, being in no document, could otherwise only find in the conversation that ran it. A stage
+ *  that starts in a new conversation reads them back through `initiative_status` (`records`),
+ *  and `next_move` names the first record stage that has none yet.
  *
- *  DELIBERATE: not exported. `factsOrDamaged`/`writeFacts` below are the only two touching the
- *  filename; a second module reaching for it directly would be reading or writing `_facts.json`
- *  a second way. */
-const FACTS_FILE = "_facts.json";
-
-/** An initiative's durable branch facts, or `{}` when none are recorded yet.
- *
- * No `_facts.json` is not an error — it is every named fact reading `undetermined`
- * (`documentApplies`, ./flow-when.js) rather than this call throwing.
- *
- * DELIBERATE: a malformed or non-object file IS an error, thrown as a `Refusal` naming the file.
- * `writeFacts` below replaces the file atomically, so no reader ever sees a partial write, and a
- * file that does not parse is damage. Reading it as `{}` would turn every fact back into
- * `undetermined` — and a fact that was set once is exactly what the refuse-on-change rule
- * protects, so `{}` would let the next write record the opposite branch over it. */
-export function factsFor(root: string, initiative: string): Record<string, string> {
-  const facts = factsOrDamaged(root, initiative);
-  if (facts) return facts;
-  throw new Refusal(
-    `ERROR: ${initiative}/${FACTS_FILE} is not a JSON object, so this initiative's branch facts ` +
-    "cannot be read. The platform writes that file whole and atomically, so this is damage, not " +
-    "a write in progress, and nothing reads or writes this initiative's branch until it is " +
-    `repaired. Two ways out. To stop the work: initiative_close("${initiative}", ` +
-    `"${OUTCOME_STOPPED}") — an abandon does not read this file. To continue it: an operator ` +
-    `rewrites ${initiative}/${FACTS_FILE} in the team's store on the platform host as a JSON ` +
-    "object of fact → value, from the platform database's mirror of it — the rows carrying this " +
-    "initiative's own id, which is the whole of the mirror's key: " +
-    "(select f.fact, f.value from zz.initiative_fact f where f.initiative_id = " +
-    "(select i.id from zz.initiative i join zz.team t on t.id = i.team_id " +
-    `where i.slug = '${initiative}' and t.slug = '<team>')) — or deletes it when the mirror ` +
-    "holds no row — each stage that decides a fact records it again when it next runs.");
-}
-
-/** `factsFor`'s read without the throw: the facts, or null when the file is damaged.
- *
- * For the one act that must proceed over damage — an abandoned close, which asks no branch to
- * have been decided (guards.ts `closeCheck`, initiative-close.ts). Without it a damaged file
- * would leave the initiative unable to advance AND unable to stop, and nothing on the platform
- * repairs it on its own.
- *
- * A non-string value under a fact name is dropped rather than coerced: `documentApplies` compares
- * strings, and a caller-written number or object is not one. */
-function factsOrDamaged(root: string, initiative: string): Record<string, string> | null {
-  const file = join(root, initiative, FACTS_FILE);
-  if (!existsSync(file)) return {};
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(file, "utf8"));
-  } catch {
-    return null;
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-    if (typeof v === "string") out[k] = v;
+ *  Keyed by stage, then by id name. The rows are their own table and not
+ *  `zz.initiative_fact` — see this module's header for why the two shapes cannot share one. */
+export async function recordsFor(
+  client: RecordClient, team: string | null, initiative: string,
+): Promise<Record<string, Record<string, string>>> {
+  if (!team) return {};
+  const { rows } = await client.query<{ stage: string; id_name: string; value: string }>(
+    `select r.stage, r.id_name, r.value from zz.initiative_record r
+       join zz.initiative i on i.id = r.initiative_id
+       join zz.team t on t.id = i.team_id
+      where t.slug = $1 and i.slug = $2`,
+    [team, initiative]);
+  const out: Record<string, Record<string, string>> = {};
+  for (const { stage, id_name, value } of rows) {
+    out[stage] = { ...(out[stage] ?? {}), [id_name]: value };
   }
   return out;
 }
 
-/** The facts a write is judged against: `factsFor`'s, except that a write recording an abandon
- *  (`stopping`, an `outcome:` of OUTCOME_STOPPED) gets null for a damaged file rather than a
- *  throw — a stop asks no branch to have been decided, so each caller discharges what the facts
- *  would have answered. One function so guards.ts's three fact readers and initiative-close.ts
- *  agree on when damage is survivable. */
-export function factsForWrite(root: string, initiative: string, stopping: boolean): Record<string, string> | null {
-  return stopping ? factsOrDamaged(root, initiative) : factsFor(root, initiative);
+/** Merge `ids` into `stage`'s record. Latest wins per id, which is what a stage run again means:
+ *  a second profile or a re-score supersedes what it recorded before rather than adding to it. */
+export async function writeStageRecord(
+  client: RecordClient, initiativeId: string, stage: string,
+  ids: Record<string, string>, replace = false,
+): Promise<void> {
+  if (replace) {
+    // The whole stage, and the `stage` column is compared as a VALUE — never as a pattern. A
+    // `like` here would read an underscore in a stage name as a wildcard and delete a
+    // neighbouring stage's keys with it, which surfaces later as data nobody can account for.
+    await client.query(
+      "delete from zz.initiative_record where initiative_id = $1::uuid and stage = $2",
+      [initiativeId, stage]);
+  }
+  for (const [idName, value] of Object.entries(ids)) {
+    await client.query(
+      `insert into zz.initiative_record (initiative_id, stage, id_name, value)
+       values ($1::uuid, $2, $3, $4)
+       on conflict (initiative_id, stage, id_name)
+       do update set value = excluded.value, set_at = now()`,
+      [initiativeId, stage, idName, value]);
+  }
 }
 
 const factsLockHeld = new AsyncLocalStorage<ReadonlySet<string>>();
 const inProcessFactsLocks = new Map<string, Promise<unknown>>();
 
 /** Run `fn` holding this process's lock on an initiative's branch facts — the in-process half of
- *  a `_facts.json` read-check-write (`writeBranchFacts`, eval/protocol.ts, and release_prepare /
- *  proposal_prepare, eval/release-prepare.ts), which two concurrent callers would otherwise both
- *  pass on the same old read and then both write. With a database, the cross-process half is
- *  `lockInitiativeFacts` below, taken by `fn` on the one transaction it writes through.
+ *  a read-check-write (`writeBranchFacts`, eval/protocol.ts, and release_prepare /
+ *  proposal_prepare), which two concurrent callers would otherwise both pass on the same old read
+ *  and then both write. The cross-process half is `lockInitiativeFacts` below, taken by `fn` on
+ *  the one transaction it writes through.
  *
  *  DELIBERATE: the queue comes first even with a database. Without it every waiter in this
  *  process would hold a pooled connection while blocked on the advisory lock — the pool is four.
@@ -209,59 +268,6 @@ export async function lockInitiativeFacts(
   await client.query("select pg_advisory_xact_lock(hashtext($1))", [`initiative_facts:${initiative}`]);
 }
 
-/** Write the durable branch facts, replacing whatever `factsFor` would have read back.
- *
- * DELIBERATE: no merge and no refusal here — `writeBranchFacts` (eval/protocol.ts) reads the
- * current facts with `factsFor` above, decides whether a requested change is a refusal, and
- * passes the whole merged object down. This call is the mechanical write, append-only only
- * because its one caller never asks it to drop a fact that was already set. */
-export function writeFacts(root: string, initiative: string, facts: Record<string, string>): void {
-  // Temp file, then rename: a rename within one directory is atomic, so a concurrent `factsFor`
-  // reads the old facts or the new ones and never a truncated file between the two.
-  const file = join(root, initiative, FACTS_FILE);
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(facts, null, 2)}\n`);
-  renameSync(tmp, file);
-}
-
-/** The query surface the two fact-row functions below take: the pool, or a client already inside
- *  the transaction that holds the facts lock. Structurally `FactsTransaction`'s own client
- *  (eval/protocol.ts), so the mirror goes through the one connection its caller already holds. */
-type FactsClient = Pick<pg.PoolClient, "query">;
-
-/** The id of the initiative a team's store holds under `initiative` — the folder name, which is
- *  `zz.initiative.slug` — or null when nothing carries it.
- *
- *  The mirror in `zz.initiative_fact` is keyed on that id and on nothing else, so this is the one
- *  lookup between a store's paths and that table: a folder whose anchor row is missing (one opened
- *  before the anchor existed, or on a deployment with no database) has no id and nothing to
- *  mirror under. Resolved through the team as well as the slug, because two teams' initiatives
- *  share a slug, and an id from the wrong team's row would be a fact filed against another team's
- *  work. */
-export async function initiativeIdFor(
-  client: FactsClient, team: string, initiative: string,
-): Promise<string | null> {
-  const { rows } = await client.query<{ id: string }>(
-    `select i.id::text as id from zz.initiative i join zz.team t on t.id = i.team_id
-      where t.slug = $1 and i.slug = $2`, [team, initiative]);
-  return rows[0]?.id ?? null;
-}
-
-/** Mirror facts into `zz.initiative_fact`, keyed by the initiative's own id.
- *
- * DELIBERATE: `on conflict do nothing`, not an update. The file is authoritative and the mirror
- * is append-only: the refuse-on-change rule (`writeBranchFacts`) already refused a disagreeing
- * value before either was written, so the only row this can meet is one already saying this. */
-export async function mirrorFacts(
-  client: FactsClient, initiativeId: string, facts: Record<string, string>,
-): Promise<void> {
-  for (const [fact, value] of Object.entries(facts)) {
-    await client.query(
-      `insert into zz.initiative_fact (initiative_id, fact, value) values ($1::uuid, $2, $3)
-       on conflict (initiative_id, fact) do nothing`, [initiativeId, fact, value]);
-  }
-}
-
 /** Is the flow's DECLARED closing document (`chain.closingDoc`) ruled out for this initiative
  *  (FR-58, Task I-28)? `zz-plugin-eval` is the first flow whose closing document is itself
  *  `when`-conditional — `improvement.md`, promotable only — so a branch that never reaches
@@ -287,16 +293,20 @@ export function closingDocRuledOut(
 /** An initiative this slug would collide with, or null.
  *
  * DELIBERATE: the slug is what is taken, not the dated name. Testing `<today>-<slug>` alone
- * lets the same work be opened again tomorrow under a second folder.
+ * lets the same work be opened again tomorrow under a second initiative.
  *
  * Anchored, so a slug that is a prefix of an existing one is free: `payment` is not taken by
  * `payment-retries`. */
-export function takenRefusal(root: string, slug: string): string | null {
+export async function takenRefusal(
+  client: RecordClient, team: string, slug: string,
+): Promise<string | null> {
   const v = slug.trim();
-  const escaped = v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const existing = (existsSync(root) ? readdirSync(root) : [])
-    .filter((n) => new RegExp(`^\\d{4}-\\d{2}-\\d{2}-${escaped}$`).test(n))
-    .sort();
+  if (!v) return null;
+  const { rows } = await client.query<{ slug: string }>(
+    `select i.slug from zz.initiative i join zz.team t on t.id = i.team_id
+      where t.slug = $1 and i.slug ~ ('^\\d{4}-\\d{2}-\\d{2}-' || $2 || '$')
+      order by i.slug`, [team, v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")]);
+  const existing = rows.map((r) => r.slug);
   if (!existing.length) return null;
   return (
     `ERROR: "${v}" is already taken by ${existing.join(", ")}. Continue that one — ` +
@@ -306,16 +316,19 @@ export function takenRefusal(root: string, slug: string): string | null {
   );
 }
 
-/** The refusal for a path whose initiative nobody opened, or null. A single existence test:
- * the name shape, the taken check and the flow declaration are `initiative_open`'s, asked
- * once, before there is a folder.
+/** The refusal for a path whose initiative nobody opened, or null. A single existence test
+ * against the roster: the name shape, the taken check and the flow declaration are
+ * `initiative_open`'s, asked once, before there is an initiative.
  *
  * A path that is not an initiative document — a bare file at the root of the store — is not
  * this function's business and passes. */
-export function unopenedRefusal(root: string, relPath: string): string | null {
+export async function unopenedRefusal(
+  client: RecordClient, team: string, relPath: string,
+): Promise<string | null> {
   const parts = relPath.replace(/^\/+/, "").split("/");
   if (parts.length < 2 || !parts[0]) return null;
-  if (existsSync(join(root, parts[0]))) return null;
+  const id = await initiativeIdFor(client, team, parts[0]);
+  if (id) return null;
   return (
     `ERROR: there is no initiative named "${parts[0]}" — writing into one no longer creates ` +
     "it. Open it first with `initiative_open(\"<slug>\")`: send the SLUG alone and use the " +
@@ -325,46 +338,6 @@ export function unopenedRefusal(root: string, relPath: string): string | null {
   );
 }
 
-/** What each `produces: "record"` stage of an initiative minted — the ids a later stage needs
- *  and, being in no document, could otherwise only find in the conversation that ran it. A stage
- *  that starts in a new conversation reads them back through `initiative_status` (`records`),
- *  and `next_move` names the first record stage that has none yet.
- *
- *  Keyed by stage, then by id name. Latest wins, per id: a stage run again (a second profile,
- *  a re-score) supersedes what it recorded before, which is what "resume from the initiative"
- *  must mean. Nothing here decides a branch — branch facts are `_facts.json`, append-only.
- *
- *  DELIBERATE: not exported. `recordsFor`/`writeStageRecord` are the only two touching it. */
-const RECORDS_FILE = "_records.json";
-
-export function recordsFor(root: string, initiative: string): Record<string, Record<string, string>> {
-  const file = join(root, initiative, RECORDS_FILE);
-  if (!existsSync(file)) return {};
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const out: Record<string, Record<string, string>> = {};
-    for (const [stage, ids] of Object.entries(parsed as Record<string, unknown>)) {
-      if (!ids || typeof ids !== "object" || Array.isArray(ids)) continue;
-      out[stage] = Object.fromEntries(Object.entries(ids as Record<string, unknown>)
-        .filter((e): e is [string, string] => typeof e[1] === "string"));
-    }
-    return out;
-  } catch {
-    // Unreadable is "nothing recorded": every id in it can be minted again by the stage that
-    // owns it, unlike a branch fact, whose loss would let the opposite branch be recorded.
-    return {};
-  }
-}
-
-/** Merge `ids` into `stage`'s record. Temp file then rename, as `writeFacts` does. */
-export function writeStageRecord(
-  root: string, initiative: string, stage: string, ids: Record<string, string>, replace = false,
-): void {
-  const records = recordsFor(root, initiative);
-  records[stage] = replace ? { ...ids } : { ...(records[stage] ?? {}), ...ids };
-  const file = join(root, initiative, RECORDS_FILE);
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(records, null, 2)}\n`);
-  renameSync(tmp, file);
-}
+/** The stop word, re-exported so a caller naming the abandon outcome does not reach past this
+ *  module for it. See @zz/contracts for what it says. */
+export { OUTCOME_STOPPED };

@@ -134,7 +134,7 @@ export function frontmatterRefusal(content: string, tool: string): string | null
  * them, and it is the field that decides which gates, which required documents and which
  * closing rule govern the initiative. `version` is the same shape — document_revise owns it,
  * stampEnvelope adds it only when absent, so a patched one stands and desynchronises the
- * document from its own snapshots in _versions/.
+ * document from its own revisions.
  *
  * There is no repair route through a patch: the flow is declared to `initiative_open` and
  * cannot be adopted afterwards. Every skill that teaches document_patch teaches it for
@@ -191,4 +191,44 @@ export function renderEnvelope(env: Record<string, string>, order: string[]): st
   const keys = [...order.filter((k) => env[k] !== undefined),
                 ...Object.keys(env).filter((k) => !order.includes(k))];
   return "---\n" + keys.map((k) => `${k}: ${oneLine(env[k])}`).join("\n") + "\n---\n";
+}
+
+/** Replace a field's line inside the frontmatter, leaving the body alone.
+ *
+ * A bare `doc.replace(/^status: .*$/m, …)` is applied to the whole document and rewrites
+ * whichever line comes first, and a journal node has body lines that begin with a word and a
+ * colon.
+ *
+ * COUPLED: pure — no database, no store — which is why it lives here rather than beside the
+ * write path it was born in. `initiative_close` passes the model's `accepted_by` through
+ * `putEnvelopeField` below. */
+export function setEnvelopeField(doc: string, field: string, value: string): string {
+  const m = doc.match(ENVELOPE_BLOCK);
+  if (!m) return doc;
+  const line = new RegExp(`^${field}:.*$`, "m");
+  if (!line.test(m[1])) return doc;
+  // Function replacements, both of them: a string replacement interprets $$, $&, $` and $',
+  // and `value` is not always the platform's own — initiative_close() passes the model's
+  // `accepted_by` through putEnvelopeField below, so `$'` in a name duplicates the rest of the
+  // document into its envelope.
+  //
+  // oneLine() for the other half: a newline in a value adds a field rather than corrupting
+  // one, and parseEnvelope takes the last value of a repeated key, so `"Dana Reyes\nflow:
+  // other"` sets a flow the platform never chose. Applied here rather than at the four call
+  // sites. ownershipCheck cannot catch it: approve and close pass `via`, and that check returns
+  // null on `via`.
+  return doc.replace(m[0], () => m[0].replace(line, () => `${field}: ${oneLine(value)}`));
+}
+/** Set an envelope field, adding it when it is not already there.
+ *
+ * setEnvelopeField only replaces: it returns the document untouched when the field is absent,
+ * and the governance fields are stamped onto documents that have never carried them. The
+ * insert goes at the end of the frontmatter block, so `flow` and `type` stay at the top where
+ * a reader scans for them. */
+export function putEnvelopeField(doc: string, field: string, value: string): string {
+  const m = doc.match(ENVELOPE_BLOCK);
+  if (!m) return doc;
+  if (new RegExp(`^${field}:.*$`, "m").test(m[1])) return setEnvelopeField(doc, field, value);
+  const block = m[0].replace(/\n---[ \t]*\n?$/, () => `\n${field}: ${oneLine(value)}\n---\n`);
+  return doc.replace(m[0], () => block);
 }

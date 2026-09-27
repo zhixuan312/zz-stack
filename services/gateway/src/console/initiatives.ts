@@ -26,16 +26,14 @@ interface ClaimRow {
  *
  * The claims are not stored: a stage states them in the text it writes for a reader, and
  * `decisionRows` parses that text back out on every read, so nothing can drift from the body
- * the console shows beside it. A snapshot is skipped — its claims are the live document's, so
- * reading both would count every prediction twice — and so is a document whose type is not one
- * of the three stages that state claims.
+ * the console shows beside it. A document whose type is not one of the three stages that state
+ * claims is skipped.
  *
  * COUPLED: the initiative view and the document view both compute their ledger through here,
  * and `knowledge_reconcile` in zz-core reads the same bodies the same way. */
 function claimsOf(docs: { path: string; type: string | null; body: string | null }[]): ClaimRow[] {
   const out: ClaimRow[] = [];
   for (const d of docs) {
-    if (d.path.startsWith("_versions/")) continue;
     const role = (d.type ?? "").trim();
     if (!CLAIM_ROLES.test(role)) continue;
     // A body this cannot read is one document with no claims, never an empty panel for the
@@ -82,7 +80,24 @@ export function mountInitiatives(app: Express): void {
     type ListRow = StageDoc & {
       team_slug: string; initiative: string;
       approved_by: string | null; updated_at: string;
+      /** How many revisions of this document carry a seal. A document is approved once per
+       *  revision, so this is what the panel's "approvals" column counts — the frozen copy an
+       *  approval used to file beside the document is a `doc_revision` row now. */
+      approvals: string;
     };
+    /* THREE complete statements, not one assembled at request time.
+       COUPLED: check:sql PREPAREs every query call in this repository against a live schema
+       (scripts/gate/checks/console.ts, through packages/tools/src/lib/sql-scan.ts), and a query
+       built from a `where` argument is a variable to that scan — there is no longer one statement
+       for it to read, so it is neither prepared nor checked. Written out per branch, the same
+       reason the fact and anchor queries above are.
+       DELIBERATE: the names in this comment carry no backticks. The scanner reads this file as
+       text, comments included, so a backtick here opens a template literal it then parses as code
+       — which is how this comment broke the very check it is describing.
+       COUPLED: a document reaches its team and its initiative through initiative_id — zz.doc
+       carries neither slug — its approver through the revision it currently points at, and its
+       supports through that revision's envelope payload. None of the four is a column of zz.doc,
+       so a select naming them off it would stop preparing the day the migration lands. */
     // FR-58 (Task I-27): the same three scope shapes as the docs query above, mirrored for
     // `zz.initiative_fact` (001) — the console's own copy of `<initiative>/
     // _facts.json`, which it cannot read directly (it has no filesystem access to the store).
@@ -145,24 +160,45 @@ export function mountInitiatives(app: Express): void {
 
     const { rows } = scope.kind !== "platform"
       ? await db.query<ListRow>(
-      `select team_slug, initiative, path, type, status, approved_by, supports,
-              to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
-         from zz.doc
-        where initiative <> '_knowledge' and team_slug = $1
-        order by team_slug, initiative, path`, [scope.slug])
+      `select t.slug as team_slug, i.slug as initiative, d.path, d.type, d.status,
+              a.email as approved_by, r.fields->>'supports' as supports,
+              (select count(*) from zz.doc_revision r2
+                where r2.doc_id = d.id and r2.approved_by is not null)::text as approvals,
+              to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+         from zz.doc d
+         join zz.initiative i on i.id = d.initiative_id
+         join zz.team t on t.id = i.team_id
+         left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
+         left join zz.principal a on a.id = r.approved_by
+        where i.slug <> '_knowledge' and t.slug = $1
+        order by t.slug, i.slug, d.path`, [scope.slug])
       : want !== null
       ? await db.query<ListRow>(
-      `select team_slug, initiative, path, type, status, approved_by, supports,
-              to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
-         from zz.doc
-        where initiative <> '_knowledge' and team_slug = $1
-        order by team_slug, initiative, path`, [want])
+      `select t.slug as team_slug, i.slug as initiative, d.path, d.type, d.status,
+              a.email as approved_by, r.fields->>'supports' as supports,
+              (select count(*) from zz.doc_revision r2
+                where r2.doc_id = d.id and r2.approved_by is not null)::text as approvals,
+              to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+         from zz.doc d
+         join zz.initiative i on i.id = d.initiative_id
+         join zz.team t on t.id = i.team_id
+         left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
+         left join zz.principal a on a.id = r.approved_by
+        where i.slug <> '_knowledge' and t.slug = $1
+        order by t.slug, i.slug, d.path`, [want])
       : await db.query<ListRow>(
-      `select team_slug, initiative, path, type, status, approved_by, supports,
-              to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
-         from zz.doc
-        where initiative <> '_knowledge'
-        order by team_slug, initiative, path`);
+      `select t.slug as team_slug, i.slug as initiative, d.path, d.type, d.status,
+              a.email as approved_by, r.fields->>'supports' as supports,
+              (select count(*) from zz.doc_revision r2
+                where r2.doc_id = d.id and r2.approved_by is not null)::text as approvals,
+              to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+         from zz.doc d
+         join zz.initiative i on i.id = d.initiative_id
+         join zz.team t on t.id = i.team_id
+         left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
+         left join zz.principal a on a.id = r.approved_by
+        where i.slug <> '_knowledge'
+        order by t.slug, i.slug, d.path`);
     const byInit = new Map<string, typeof rows>();
     for (const r of rows) {
       // "/" as the separator, because a team slug cannot contain one (TEAM_SLUG is [a-z0-9_-]),
@@ -174,15 +210,16 @@ export function mountInitiatives(app: Express): void {
     const initiatives = [...byInit.entries()].map(([key, docs]) => {
       const cut = key.indexOf("/");
       const teamSlug = key.slice(0, cut), slug = key.slice(cut + 1);
-      const live = docs.filter((d) => !d.path.startsWith("_versions/"));
       const anchor = anchorByInit.get(key) ?? noAnchor;
       return {
         team: teamSlug, slug,
         flow: anchor.flow,
-        // `approvals`, not revisions: a `_versions/` file is written when a document is
-        // approved, and a revision that was never approved leaves none. Counting it as
-        // revisions under-reports every revision a later one replaced before anyone signed.
-        documents: live.length, approvals: docs.length - live.length,
+        // `approvals`, not revisions: a seal lands on a revision, and a revision nobody
+        // approved carries none. What each row counts is the sealed revisions of ONE document,
+        // so the initiative's total is their sum — not the document count, which would report
+        // a document approved twice as one approval.
+        documents: docs.length,
+        approvals: docs.reduce((n, d) => n + Number(d.approvals ?? 0), 0),
         updated: docs.reduce((a, d) => (d.updated_at > a ? d.updated_at : a), ""),
         // Whoever approved something is the person the work belongs to. There is no owner
         // column, and the first document's author is whoever typed first, not who signed.
@@ -227,18 +264,30 @@ export function mountInitiatives(app: Express): void {
     const [docs, claimDocs, facts, anchor] = await Promise.all([
       // `flow`/`outcome` stay in this select as this document's own metadata — what the
       // dashboard renders per row. Neither drives `stageOf` below any more; the anchor query
-      // does.
+      // does, and both are read from where they live now: the initiative's `flow`, and the
+      // revision's own `outcome` key.
       db.query<DocRow & { flow: string | null }>(
-        `select path, type, status, outcome, approved_by, title, flow, supports,
-                to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
-                length(coalesce(body,'')) as bytes
-           from zz.doc where team_slug = $1 and initiative = $2 order by path`, [team, slug]),
+        `select d.path, d.type, d.status, r.fields->>'outcome' as outcome,
+                a.email as approved_by, d.title, coalesce(i.flow,'') as flow,
+                r.fields->>'supports' as supports,
+                to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+                length(coalesce(r.body,'')) as bytes
+           from zz.doc d
+           join zz.initiative i on i.id = d.initiative_id
+           join zz.team t on t.id = i.team_id
+           left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
+           left join zz.principal a on a.id = r.approved_by
+          where t.slug = $1 and i.slug = $2 order by d.path`, [team, slug]),
       // The bodies the claims are recomputed from, in their own statement: the select above
       // reads `length(body)` and must not detoast every document to answer it.
       db.query<{ path: string; type: string | null; body: string | null }>(
-        `select path, type, body from zz.doc
-          where team_slug = $1 and initiative = $2 and path not like '_versions/%'
-          order by path`, [team, slug]),
+        `select d.path, d.type, coalesce(r.body, d.body) as body
+           from zz.doc d
+           join zz.initiative i on i.id = d.initiative_id
+           join zz.team t on t.id = i.team_id
+           left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
+          where t.slug = $1 and i.slug = $2
+          order by d.path`, [team, slug]),
       // FR-58 (Task I-27): this initiative's own mirror of `_facts.json` (001),
       // read for `stageOf` below the same way the list route reads it for every initiative.
       db.query<{ fact: string; value: string }>(
@@ -264,9 +313,9 @@ export function mountInitiatives(app: Express): void {
     res.json({
       team, slug,
       documents: docs.rows.map((d) => {
-        // A snapshot answers to the same rules as the document it froze.
-        const name = d.path.replace(/^_versions\//, "").replace(/\.v\d+\.md$/, ".md");
-        const rule = shape.get(name);
+        // Every row here is a live document: a version is a revision row now, so no row is a
+        // frozen copy of another and none of them answers to a neighbour's rules.
+        const rule = shape.get(d.path);
         return {
           ...d, bytes: +d.bytes,
           // Null when the flow declares nothing about this file — a source, or a
@@ -308,38 +357,59 @@ export function mountInitiatives(app: Express): void {
       res.status(404).json({ error: `no document ${team}/${initiative}/${path}` });
       return;
     }
-    // The live document is `spec.md`; its frozen predecessors are `_versions/spec.v1.md`,
-    // `spec.v2.md` and so on. Derived from the name rather than stored, because that is the
-    // convention the store is written with and a second copy of it could drift.
-    const base = path.replace(/^_versions\//, "").replace(/\.v\d+\.md$/, ".md");
+    // The document's address, with no snapshot name to strip: a version is a `doc_revision`
+    // row, not a second `zz.doc` row filed under a snapshot name, so the path asked for IS the
+    // document's own.
+    const base = path;
     const [doc, versions, sources] = await Promise.all([
       db.query(
-        `select team_slug as team, initiative, path, flow, type, status, outcome,
-                approved_by, approved_at, closed_by, title, tags, evidence,
-                superseded_by, body,
-                to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
-                length(coalesce(body,'')) as bytes
-           from zz.doc where team_slug = $1 and initiative = $2 and path = $3`,
+        `select t.slug as team, i.slug as initiative, d.path, coalesce(i.flow,'') as flow,
+                d.type, d.status, r.fields->>'outcome' as outcome,
+                a.email as approved_by, r.approved_at, r.fields->>'closed_by' as closed_by,
+                d.title, d.tags, r.fields->>'evidence' as evidence,
+                d.status = 'superseded' as superseded,
+                coalesce(r.body, d.body) as body,
+                to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+                length(coalesce(r.body,'')) as bytes
+           from zz.doc d
+           join zz.initiative i on i.id = d.initiative_id
+           join zz.team t on t.id = i.team_id
+           left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
+           left join zz.principal a on a.id = r.approved_by
+          where t.slug = $1 and i.slug = $2 and d.path = $3`,
         [team, initiative, path]),
-      // Every version of this document, oldest first — the frozen snapshots plus the live one.
+      // Every version of this document, oldest first — the revision rows themselves, which ARE
+      // the history now that a version is a row rather than a frozen copy beside the document.
       db.query(
-        `select path, body, status, approved_by,
-                to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
-                length(coalesce(body,'')) as bytes,
-                coalesce((regexp_match(path, '\\.v(\\d+)\\.md$'))[1]::int, 9999) as version
-           from zz.doc
-          where team_slug = $1 and initiative = $2
-            and (path = $3 or path = '_versions/' || replace($3, '.md', '') || '.v' || (regexp_match(path, '\\.v(\\d+)\\.md$'))[1] || '.md')
-          order by version`, [team, initiative, base]),
-      // Why it changed. Every source declares the document it was attached to, which is the
-      // chain from "what we learned" to "what we changed".
+        `select d.path, coalesce(r.body, d.body) as body, r.revision as version,
+                case when r.approved_by is not null then 'approved'
+                     when r.revision = d.current_revision then d.status
+                     else 'draft' end as status,
+                a.email as approved_by,
+                to_char(coalesce(r.written_at, d.updated_at) at time zone 'UTC',
+                        'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+                length(coalesce(r.body,'')) as bytes
+           from zz.doc d
+           join zz.initiative i on i.id = d.initiative_id
+           join zz.team t on t.id = i.team_id
+           join zz.doc_revision r on r.doc_id = d.id
+           left join zz.principal a on a.id = r.approved_by
+          where t.slug = $1 and i.slug = $2 and d.path = $3
+          order by r.revision`, [team, initiative, path]),
+      // Why it changed. A source declares the document it was attached to — the chain from
+      // "what we learned" to "what we changed" — and that declaration is the `supports` key of
+      // the revision the source wrote.
       db.query(
-        `select path, title, body, supports,
-                to_char(updated_at,'YYYY-MM-DD') as added,
-                length(coalesce(body,'')) as bytes
-           from zz.doc
-          where team_slug = $1 and initiative = $2 and supports = $3
-          order by updated_at, path`, [team, initiative, base]),
+        `select s.path, s.title, coalesce(sr.body, s.body) as body,
+                sr.fields->>'supports' as supports,
+                to_char(s.updated_at,'YYYY-MM-DD') as added,
+                length(coalesce(sr.body,'')) as bytes
+           from zz.doc s
+           join zz.initiative i on i.id = s.initiative_id
+           join zz.team t on t.id = i.team_id
+           left join zz.doc_revision sr on sr.doc_id = s.id and sr.revision = s.current_revision
+          where t.slug = $1 and i.slug = $2 and sr.fields->>'supports' = $3
+          order by s.updated_at, s.path`, [team, initiative, base]),
     ]);
     if (!doc.rows.length) {
       res.status(404).json({ error: `no document ${team}/${initiative}/${path}` });

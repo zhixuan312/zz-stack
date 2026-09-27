@@ -4,15 +4,16 @@
  * `validatePlan` already computes, from the text alone, whether a plan can be executed from and
  * which tasks may run in parallel. Before this, only the gate called it, so the orchestrator
  * running the plan derived its waves by hand. This reads the plan the flow declares, runs the
- * same validator over the bytes on disk, and returns ids rather than bodies so the answer stays
- * small enough to sit in every status call.
+ * same validator over its TEXT, and returns ids rather than bodies so the answer stays small
+ * enough to sit in every status call.
+ *
+ * COUPLED: the text is a parameter, not a path. A document's bytes are a `doc_revision` row now,
+ * so the caller holds them and there is no file to open; taking the body also means this function
+ * reads nothing and can be driven straight from a fixture.
  *
  * A plan grows one `## Phase N` at a time, so a plan with phases answers the waves of its current
  * phase — the first with tasks and no `### As built` — and never re-offers a built phase's tasks.
  */
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
-
 import { validatePlan, type FlowDoc } from "@zz/contracts";
 
 export interface PlanStructure {
@@ -28,13 +29,15 @@ export interface PlanStructure {
 }
 
 /** The report for the document the flow declares with `role: "plan"`, or undefined when the
- *  flow declares none or it has not been written yet. */
-export function planStructure(dir: string, docs: readonly FlowDoc[]): PlanStructure | undefined {
+ *  flow declares none or it has not been written yet.
+ *
+ *  `body` is that document's own current revision, or null when the initiative holds no such
+ *  document — the two are the same answer as `undefined` here, which is what a missing file gave
+ *  before. */
+export function planStructure(docs: readonly FlowDoc[], body: string | null): PlanStructure | undefined {
   const plan = docs.find((d) => d.role === "plan");
-  if (!plan) return undefined;
-  const file = join(dir, plan.name);
-  if (!existsSync(file) || !statSync(file).isFile()) return undefined;
-  const report = validatePlan(readFileSync(file, "utf8"));
+  if (!plan || body === null) return undefined;
+  const report = validatePlan(body);
   return {
     document: plan.name,
     ok: report.ok,

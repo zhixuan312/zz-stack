@@ -22,24 +22,63 @@
  *
  * Run: node checks/spec-gate.ts   (also run by scripts/gate.ts)
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import pg from "pg";
+
+process.env.TEAM_DB_URL = "postgresql://stub@127.0.0.1:1/stub";
 process.env.ZZ_CATALOG_DIR = join(process.cwd(), "catalog");
 delete process.env.TYPESAFE_API_KEY;
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { specApprovalRefusal } = await load("services/zz-core/dist/spec-gate.js");
 const acc = await load("services/zz-core/dist/review-acceptance.js");
-const rec = await load("services/zz-core/dist/initiative-record.js");
 const { chainFor } = await load("services/zz-core/dist/chain.js");
+const { db } = await load("services/zz-core/dist/platform-db.js");
 
 const fail: string[] = [];
 const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
 
-const root = mkdtempSync(join(tmpdir(), "spec-gate-"));
+// The fixture is rows under a stubbed `pg.Pool`: a document is a `zz.doc` row and a source's own
+// declarations — `supports`, `added_at` — are the revision's envelope payload.
+const TEAM = "t1";
+interface W { flow: string | null; docs: Record<string, unknown>[];
+             answers: { about: string; family: string; reading: string; probability: number | null; asked_at: string }[] }
+const world = new Map<string, W>();
+let seq = 0;
+const row = (initiative: string, path: string, payload: Record<string, string> | null, text: string) => ({
+  id: `d${++seq}`, path, initiative, flow: "", type: "", status: "", outcome: null,
+  approved_by: null, approved_at: null, closed_by: null, updated_at: "2026-09-26T00:00:00.000Z",
+  title: "", body: text, tags: [], current_revision: 1, approved_revision: null, fields: payload });
+
+pg.Pool.prototype.query = (async function query(text: string, values: unknown[] = []) {
+  const sql = String(text).replace(/\s+/g, " ").trim();
+  const one = (rows: Record<string, unknown>[]) => ({ rows, rowCount: rows.length });
+  const bySlug = world.get(String(values[1] ?? ""));
+  if (/select i\.slug, i\.flow, i\.closed_at::text/.test(sql)) {
+    const names = (values[1] as string[]) ?? [];
+    return one(names.filter((n) => world.has(n)).map((n) => ({
+      slug: n, flow: world.get(n)!.flow, closed_at: null, closed_by: null, outcome: null })));
+  }
+  if (/from zz\.initiative i join zz\.team t on t\.id = i\.team_id/.test(sql)) {
+    return one(bySlug ? [{ id: "i1", flow: bySlug.flow, opened_at: "2026-09-26",
+                           opened_by: "ada@zz.test", slug: String(values[1]) }] : []);
+  }
+  if (/from zz\.doc d\b/.test(sql) && /order by d\.path/.test(sql)) {
+    return one(world.get(String(values[0]))?.docs ?? []);
+  }
+  // The statement memo: the readings already taken, keyed by the `about` they were asked under.
+  if (/select a\.about, a\.reading/.test(sql)) {
+    const prefix = String(values[2]).replace(/%$/, "");
+    return one((bySlug?.answers ?? []).filter((a) => a.about.startsWith(prefix))
+      .map((a) => ({ about: a.about, reading: a.reading,
+                     probability: a.probability === null ? null : String(a.probability),
+                     reason: null, asked_at: a.asked_at })));
+  }
+  return one([]);
+}) as unknown as typeof pg.Pool.prototype.query;
+
 const doc = (fields: Record<string, string>, body: string) =>
   `---\n${Object.entries(fields).map(([k, v]) => `${k}: ${v}`).join("\n")}\n---\n\n${body}\n`;
 
@@ -57,27 +96,27 @@ let n = 0;
 /** A fresh sdlc-flow initiative; returns what approving `body` as its spec answers. */
 function fresh(): string {
   const name = `2026-09-26-spec-${++n}`;
-  rec.recordOpen(root, name, "sdlc-flow", "ada@zz.test");
-  mkdirSync(join(root, name, "sources"), { recursive: true });
+  world.set(name, { flow: "sdlc-flow", docs: [], answers: [] });
   return name;
 }
 const specApproval = async (name: string, body: string) => {
-  const chain = chainFor(root, `${name}/x.md`);
+  const chain = await chainFor(db()!, TEAM, `${name}/x.md`);
   is(chain.name === "sdlc-flow", `${name}: the fixture did not resolve to sdlc-flow — every assertion would pass on nothing`);
   const content = doc({ title: "Spec", flow: "sdlc-flow" }, body);
-  writeFileSync(join(root, name, "spec.md"), content);
-  return specApprovalRefusal(root, chain, `${name}/spec.md`, content, "ada@zz.test") as
-    Promise<{ refusal: string | null; note: string }>;
+  world.get(name)!.docs = world.get(name)!.docs.filter((d) => d.path !== "spec.md");
+  world.get(name)!.docs.push(row(name, "spec.md", null, content));
+  return specApprovalRefusal(db()!, TEAM, chain, `${name}/spec.md`, content, "ada@zz.test",
+                             world.get(name)!.docs) as Promise<{ refusal: string | null; note: string }>;
 };
 const refused = async (body: string, mentions: RegExp, why: string, name = fresh()) => {
   const r = await specApproval(name, body);
   is(r.refusal && mentions.test(r.refusal), `${why} — got ${r.refusal ?? "an approval"}`);
 };
 const stakeholder = (name: string, text: string) =>
-  writeFileSync(join(root, name, "sources", `2026-09-26-decision-${text.length}.md`),
-    doc({ title: "Decision", supports: "spec.md", added_at: "2026-09-26T00:00:00.000Z" }, text));
+  world.get(name)!.docs.push(row(name, `sources/2026-09-26-decision-${text.length}.md`,
+    { supports: "spec.md", added_at: "2026-09-26T00:00:00.000Z" }, text));
 
-try {
+//
   // 1. The deterministic refusals.
   await refused("# Spec\n\n" + ACS + statements(HOLDS), /no `## Phase outline`/, "a spec with no Phase outline was approved");
   await refused("# Spec\n\n" + ACS + "## Phase outline\n\nWe will see.\n\n" + statements(HOLDS),
@@ -118,9 +157,12 @@ try {
   // 3. The readings of a holds row, written where the approval writes them.
   const digestOf = (evidence: string) => acc.rowDigest("The mail relay delivers to the intake queue.", evidence);
   const EVIDENCE = "run:relay-spike — `delivered 1/1 to intake`";
+  // The reading is a `zz.assessment` row, keyed by `<doc>.statements#<row>#<digest>` — the memo
+  // the approval reads, and the only copy of it.
   const seed = (name: string, readings: Array<[string, string]>) =>
-    acc.writeAcceptanceCache(root, name, "spec.statements.md", { "CS-1": readings.map(([evidence, reading]) =>
-      ({ digest: digestOf(evidence), reading, probability: reading === "no" ? 0.1 : 0.5, reason: null, asked_at: "2026-09-26" })) });
+    readings.forEach(([evidence, reading]) => world.get(name)!.answers.push({
+      about: `spec.statements.md#CS-1#${digestOf(evidence)}`, family: "evidence_relation", reading,
+      probability: reading === "no" ? 0.1 : 0.5, asked_at: "2026-09-26" }));
   const no = fresh(); seed(no, [[EVIDENCE, "no"]]);
   await refused(SPEC, /CS-1: evidence_relation reads its evidence as not supporting/, "a `no` reading was approved", no);
   const unclear = fresh(); seed(unclear, [[EVIDENCE, "unclear"]]);
@@ -132,8 +174,10 @@ try {
 
   // 4. A flow that does not declare the sections is untouched.
   const free = "2026-09-26-freeform";
-  mkdirSync(join(root, free), { recursive: true });
-  const none = await specApprovalRefusal(root, chainFor(root, `${free}/x.md`), `${free}/spec.md`, "# Spec\n", "ada@zz.test");
+  // No flow: an initiative that declares nothing is freeform, and no manifest declares sections.
+  world.set(free, { flow: null, docs: [], answers: [] });
+  const none = await specApprovalRefusal(db()!, TEAM, await chainFor(db()!, TEAM, `${free}/x.md`),
+    `${free}/spec.md`, "# Spec\n", "ada@zz.test", []);
   is(none.refusal === null && none.note === "", `a spec in a flow declaring neither section was held: ${none.refusal}`);
 
   // 5. The replay. The spike, run 2026-09-26 against the image 0.76.2 released:
@@ -159,15 +203,12 @@ try {
   // Had it been written `holds`, as the design assumed, the spike's own output is what the
   // reading answers; a `no` there refuses it just the same.
   const assumed = fresh();
-  acc.writeAcceptanceCache(root, assumed, "spec.statements.md", { "CS-1": [{ digest: acc.rowDigest(
+  world.get(assumed)!.answers.push({ about: `spec.statements.md#CS-1#${acc.rowDigest(
     "A candidate can be built and tested inside the zz-core process: the image carries a repo checkout " +
-    "(`candidate_validate`: build/test).", SPIKE), reading: "no", probability: 0.04, reason: null, asked_at: "2026-09-26" }] });
+    "(`candidate_validate`: build/test).", SPIKE)}`,
+    family: "evidence_relation", reading: "no", probability: 0.04, asked_at: "2026-09-26" });
   await refused("# Spec\n\n" + replayAcs + replayOutline + statements(CS1.replace("| fails |", "| holds |")),
     /CS-1: evidence_relation reads its evidence as not supporting/, "the replayed statement written as holds was approved", assumed);
-} finally {
-  rmSync(root, { recursive: true, force: true });
-}
-
 if (fail.length) {
   console.error(`spec-gate: ${fail.length} failure(s)\n  - ${fail.join("\n  - ")}`);
   process.exit(1);

@@ -239,9 +239,9 @@ export function stageOf(
    *  All three mean closed — see @zz/contracts OUTCOMES for what each says. */
   outcome: string | null;
 } {
-  // `_versions/` holds snapshots carrying the same type as the document they snapshot, so
-  // they are dropped before anything counts documents.
-  const live = docs.filter((d) => !d.path.startsWith("_versions/"));
+  // Every row is a live document. A version is a `doc_revision` row now, so no row is a frozen
+  // copy of another carrying the same type, and nothing has to be dropped before counting.
+  const live = docs;
 
   // The flow's own stages and gates, read from its manifest, so a flow that adds a stage is
   // described correctly with no change here.

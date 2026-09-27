@@ -163,12 +163,16 @@ probe("no document carries a status its flow does not gate", () => {
     for (const d of m.documents ?? []) gated.set(`${m.name ?? ""}/${d.name}`, d.gate === true);
   }
   if (!gated.size) throw new Error("no flow manifest in this checkout declares a document");
+  // COUPLED: a document's flow is the initiative's own `flow` and its closure is the
+  // initiative's own `closed_at`; `zz.doc` carries neither. A revision filed at an approval is
+  // a `doc_revision` row and never a second `zz.doc` row, so there is no snapshot path to
+  // exclude here.
   const rows = psql(
-    "select flow, regexp_replace(path,'^.*/',''), status from zz.doc " +
-    "where status <> '' and path not like '\\_versions/%' " +
-    // Closed is zz.initiative's own closed_at, never a document's outcome.
+    "select coalesce(i.flow,''), regexp_replace(d.path,'^.*/',''), d.status " +
+    "from zz.doc d join zz.initiative i on i.id = d.initiative_id " +
+    "where d.status <> '' " +
     "and not exists (select 1 from zz.initiative i join zz.team t on t.id = i.team_id " +
-    "where t.slug = zz.doc.team_slug and i.slug = zz.doc.initiative and i.closed_at is not null)")
+    "where i.id = d.initiative_id and i.closed_at is not null)")
     .split("\n").filter(Boolean);
   const bad: string[] = [];
   for (const line of rows) {

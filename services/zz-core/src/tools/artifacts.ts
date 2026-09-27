@@ -16,8 +16,6 @@
  * `shown` entry naming the path and version for each document it fetched. That is what makes
  * "was this fetched before its gate was approved" answerable per document.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, sep } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
@@ -28,18 +26,20 @@ import { z } from "zod";
 import { chainFor } from "../chain.js";
 import { envelopeEditRefusal, fieldRefusal, frontmatterRefusal } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
+import { type Chain } from "../write-guards.js";
 import { auditRoundOf, assessRound } from "../audit-rounds.js";
+import { docRows } from "../indexing.js";
 import { assessAcceptance, verifyingDoc } from "../review-acceptance.js";
 import { assessReviewRound, ledgerRefusal, reviewRoundOf, reviewRounds } from "../review-rounds.js";
 import { noteDocument, noteSource } from "../host/observe.js";
 import { sourceDocument } from "../indexing.js";
 import { unopenedRefusal } from "../initiative-record.js";
-import { PLAIN_TOKEN, platformPath, safeName, safePath, tagRefusal, titleSlug, userRoot, writeGuard } from "../paths.js";
+import { KNOWLEDGE_TEAM, PLAIN_TOKEN, safeName, safePath, tagRefusal, titleSlug, writeGuard } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
 import { citationsOf, dayOf, documentAt, documentPaths, loadDocument, recordAct, revisionsOf,
          saveDocument } from "../versions.js";
-import { presentDocument } from "../document-versions.js";
-import { asksPart, PART_LIMIT, partHeader, presentPart, slicePart } from "../document-parts.js";
+import { present } from "../document-present.js";
+import { asksPart, PART_LIMIT, partHeader, slicePart } from "../document-parts.js";
 
 import { envelopeFor, isoToday, normalizeSections } from "../write-guards.js";
 import { nextMoveLine } from "./initiative-status.js";
@@ -95,7 +95,6 @@ export function registerArtifactTools(server: McpServer): void {
       if (refused) return text(refused);
       const p = db();
       if (!p) return text(NO_DB);
-      const root = await userRoot();
       const who = parseCaller(requestHeaders()).email;
       const team = await teamFor(who);
       if (!team) return text(NO_TEAM);
@@ -106,12 +105,12 @@ export function registerArtifactTools(server: McpServer): void {
       // This write does not create an initiative — `initiative_open` does, and the name shape,
       // the taken check and the flow declaration are asked there, once. What is left here is
       // an existence test.
-      const unopened = unopenedRefusal(root, path);
+      const unopened = await unopenedRefusal(p, team, path);
       if (unopened) return text(unopened);
       // The flow is read from the record `initiative_open` wrote, never from an argument here:
       // an initiative that acquired a manifest on its second document would have that
       // manifest's gates land on documents already written and unapproved.
-      const chain = chainFor(root, path, content);
+      const chain = await chainFor(p, team, path, content);
       // The document already there is read before it is overwritten: the overwrite half of
       // "create or overwrite" has to preserve the fields the platform wrote on the previous
       // copy — see envelopeFor's `carry`. Read from the rows, which are the authority: a
@@ -137,7 +136,7 @@ export function registerArtifactTools(server: McpServer): void {
       }
       content = envelopeFor(chain, path, content, { stakeholder, tags, title, fields, carry });
       const fixed = normalizeSections(chain, path, content);
-      const gate = await documentGuards(chain, root, path, fixed.content, team);
+      const gate = await documentGuards(chain, path, fixed.content, team);
       if (gate) return text(gate);
       const written = await saveDocument({
         team, relPath: path, initiative: path.split("/")[0], text: fixed.content, by: who,
@@ -145,7 +144,7 @@ export function registerArtifactTools(server: McpServer): void {
         mode: prev ? "rewrite" : "create", act: "write",
       });
       if ("refusal" in written) return text(written.refusal);
-      recordAct(root, path, { user: who, action: "document_write", path, chars: fixed.content.length });
+      recordAct(path, { user: who, action: "document_write", path, chars: fixed.content.length });
       // The control loop is told after the write succeeded, never before. `noteDocument`
       // cannot refuse anything — `documentGuards` above has already decided — it only records
       // the fact the close is later derived from.
@@ -153,10 +152,10 @@ export function registerArtifactTools(server: McpServer): void {
       // DELIBERATE: awaited, not fired and forgotten. A write that returned before its
       // evidence landed would let a caller write a document and be told the step is unmet.
       await noteDocument(chain, path, "document", who, team);
-      const assessed = await acceptanceLine(root, chain, path, fixed.content);
+      const assessed = await acceptanceLine(p, team, chain, path, fixed.content);
       return text(`written: ${path} (${fixed.content.length} chars)` +
         (fixed.renamed.length ? `\nRenamed to the heading this flow declares: ${fixed.renamed.join(", ")}.` : "") +
-        assessed + nextMoveLine(root, path.split("/")[0]));
+        assessed + await nextMoveLine(p, team, path.split("/")[0]));
     },
   );
 
@@ -199,6 +198,9 @@ export function registerArtifactTools(server: McpServer): void {
                     "of the two.");
       }
       const team = await teamFor(parseCaller(requestHeaders()).email);
+      // Resolved here rather than inside the platform-shelf branch: a node is a row, and the
+      // branch that reads one is not the branch that reads a document.
+      const p = db();
       const single = !Array.isArray(path);
       const rows: { rel: string; body: string }[] = [];
       // One bad entry does not cost the others: nothing returns from inside this loop, and
@@ -208,15 +210,22 @@ export function registerArtifactTools(server: McpServer): void {
           let readRel = rel;
           // The shared journal is the one shelf a `doc` row does not address: a node lives in
           // `zz.knowledge_node`, under the platform team, and the document tools are not its
-          // readers. It is read where it is written.
+          // readers. It is read where it is written — the row, by the ordinal and the slug the
+          // path carries.
           if (scope === "platform") {
-            const target = platformPath(readRel);
-            if (!existsSync(target)) {
+            const named = /^_knowledge\/nodes\/(\d+)-(.+)\.md$/.exec(readRel.replace(/^\/+/, ""));
+            const node = named && p
+              ? (await p.query<{ title: string | null; body: string | null }>(
+                  `select k.title, k.body from zz.knowledge_node k
+                     join zz.team t on t.id = k.team_id
+                    where t.slug = $1 and k.node_ordinal = $2`,
+                  [KNOWLEDGE_TEAM, named[1]])).rows[0]
+              : undefined;
+            if (!node) {
               rows.push({ rel, body: `ERROR: ${rel} does not exist on the platform shelf` });
               continue;
             }
-            const bytes = readFileSync(target, "utf8");
-            rows.push({ rel: readRel, body: bytes });
+            rows.push({ rel: readRel, body: `${node.title ?? ""}\n\n${node.body ?? ""}` });
             continue;
           }
           if (!team) { rows.push({ rel, body: NO_TEAM }); continue; }
@@ -313,44 +322,43 @@ export function registerArtifactTools(server: McpServer): void {
       },
     },
     async ({ path, version, section, offset, limit }) => {
-      const root = await userRoot();
       const user = parseCaller(requestHeaders()).email;
+      const team = await teamFor(user);
+      const p = db();
+      if (!p || !team) return text(NO_TEAM);
       const single = !Array.isArray(path);
       const out: string[] = [];
-      // COUPLED: `shown` is written by presentDocument, once per document, and nothing in
-      // this registration touches the record. attest.ts shownSinceLastChange answers per
-      // document, so one `shown` per batch would make an approval look attested when only a
-      // neighbouring document had been opened. checks/document-reads.ts asserts both halves.
+      // COUPLED: the `shown` record and the `presented_at` column are both written by
+      // `present` (document-present.ts), once per document, and nothing in this registration
+      // touches the record. `shownSinceLastChange` answers per document, so one record for a
+      // batch would make an approval look attested when only a neighbouring document was
+      // opened. checks/document-reads.ts and checks/approve-needs-present.ts assert both halves.
       for (const rel of (single ? [path as string] : path as string[])) {
-        const target = await safePath(rel);
-        // A directory passes `existsSync` and readFileSync on one throws EISDIR, which would
-        // reach the caller as a raw error instead of this file's refusal.
-        if (!existsSync(target) || !statSync(target).isFile()) {
-          // The initiative is taken off the resolved path, never off the argument — safePath
-          // has already refused anything that walks out of the store.
-          const initiative = target.slice(root.length + 1).split(sep)[0];
-          const folder = join(root, initiative);
-          const held = existsSync(folder) && statSync(folder).isDirectory()
-            ? readdirSync(folder).filter((f) => f.endsWith(".md")).sort()
-            : [];
-          // Two answers: an empty list means either the folder is there and holds no
-          // document, or there is no such folder, and those want different next moves.
+        await safePath(rel);
+        // A path that names no document is answered with what the initiative DOES hold. The
+        // initiative is taken off the path, never off a resolved one — `safePath` has already
+        // refused anything that walks out.
+        const at = await documentAt(p, team, rel);
+        if (!at) {
+          const initiative = rel.replace(/^\/+/, "").split("/")[0];
+          const held = (await documentPaths(team, initiative))
+            .filter((x) => x.startsWith(`${initiative}/`) && x.slice(initiative.length + 1).indexOf("/") < 0)
+            .map((x) => x.slice(initiative.length + 1)).sort();
+          // Two answers: an empty list means either the initiative is there and holds no
+          // document, or there is no such initiative, and those want different next moves.
           out.push(held.length
             ? `ERROR: no document at \`${rel}\`. The initiative holds: ${held.join(", ")}. ` +
               `Ask for one of those by its full path, \`${initiative}/<name>\`, or call ` +
               "document_list to see the rest of the store."
             : `ERROR: no document at \`${rel}\`. The initiative holds: nothing this tool can ` +
-              `show — \`${initiative}\` is empty or is not a folder in your team's store. Call ` +
+              `show — \`${initiative}\` is empty or is not an initiative in your team. Call ` +
               "document_list to see what the store does hold, then ask again by full path.");
           continue;
         }
         // Whole when it fits and no part was asked for; otherwise one part, which records a
-        // `shown_part` and counts as presented only once the parts cover the body.
-        const ask = { section, offset, limit };
-        const long = !asksPart(ask) && readFileSync(target, "utf8").length > PART_LIMIT;
-        out.push(asksPart(ask) || long
-          ? presentPart(root, rel, version, user, ask)
-          : presentDocument(root, rel, version, user));
+        // `shown_part` and counts as presented only once the parts cover the body. `present`
+        // makes that choice, so a second caller cannot forget it.
+        out.push(await present(p, team, rel, version, user, { section, offset, limit }));
       }
       return text(out.join("\n\n────────\n\n"));
     },
@@ -372,7 +380,6 @@ export function registerArtifactTools(server: McpServer): void {
       if (blocked) return text(blocked);
       const p = db();
       if (!p) return text(NO_DB);
-      const root = await userRoot();
       const who = parseCaller(requestHeaders()).email;
       const team = await teamFor(who);
       if (!team) return text(NO_TEAM);
@@ -401,11 +408,11 @@ export function registerArtifactTools(server: McpServer): void {
       const edited = envelopeEditRefusal(body, result);
       if (edited) return text(edited);
       // The chain comes from `result`, which is the same expression document_write uses.
-      const chain = chainFor(root, path, result);
+      const chain = await chainFor(p, team, path, result);
       // Against the resulting document, not the replacement fragment: a fragment is a few
       // lines with no frontmatter, and the guards have to see the whole thing.
       const fixed = normalizeSections(chain, path, result);
-      const bad = await documentGuards(chain, root, path, fixed.content, team);
+      const bad = await documentGuards(chain, path, fixed.content, team);
       if (bad) return text(bad);
       const written = await saveDocument({
         team, relPath: path, initiative: path.split("/")[0], text: fixed.content, by: who,
@@ -413,8 +420,8 @@ export function registerArtifactTools(server: McpServer): void {
         mode: "rewrite", act: "patch",
       });
       if ("refusal" in written) return text(written.refusal);
-      recordAct(root, path, { user: who, action: "document_patch", path });
-      const assessed = await acceptanceLine(root, chain, path, fixed.content);
+      recordAct(path, { user: who, action: "document_patch", path });
+      const assessed = await acceptanceLine(p, team, chain, path, fixed.content);
       return text(`patched: ${path}`
         + (fixed.renamed.length ? `\nRenamed to the heading this flow declares: ${fixed.renamed.join(", ")}.` : "")
         + assessed);
@@ -469,7 +476,6 @@ export function registerArtifactTools(server: McpServer): void {
       const badInitiative = safeName(initiative, "initiative");
       if (badInitiative) return text(badInitiative);
       const who = parseCaller(requestHeaders());
-      const root = await userRoot();
       // The string form is split on commas, so `supports: "intent.md, spec.md"` and the array
       // form mean the same thing. Unsplit it is one entry containing a comma, which the check
       // below refuses.
@@ -494,13 +500,15 @@ export function registerArtifactTools(server: McpServer): void {
       // The second creation path: `mkdirSync(..., {recursive:true})` below would build
       // `<initiative>/sources/` for an initiative nobody opened, leaving a half-initiative
       // with material in it and no record of anyone opening it.
-      const unopened = unopenedRefusal(root, rel);
+      const p0 = db();
+      if (!p0) return text(NO_DB);
+      const team0 = await teamFor(who.email);
+      if (!team0) return text(NO_TEAM);
+      const unopened = await unopenedRefusal(p0, team0, rel);
       if (unopened) return text(unopened);
       await safePath(rel);
-      const p = db();
-      if (!p) return text(NO_DB);
-      const team = await teamFor(who.email);
-      if (!team) return text(NO_TEAM);
+      const p = p0;
+      const team = team0;
       if (await documentAt(p, team, rel)) {
         return text(`ERROR: ${rel} already exists — sources are immutable; add a new file`);
       }
@@ -508,12 +516,13 @@ export function registerArtifactTools(server: McpServer): void {
       // that stage audits. Anything else is material, however it is titled: a stakeholder's
       // answers support spec.md too, and counting them as a round would let a spec pass its
       // audit without anybody auditing it.
-      const governing = chainFor(root, `${initiative}/x.md`);
+      const governing = await chainFor(p, team, `${initiative}/x.md`);
       const review = reviewRoundOf(governing, stage, list);
       // A review round's ledger is what the next move is computed from, so a malformed one is
       // refused here, before anything is written: a source cannot be corrected once it lands.
       if (review) {
-        const earlier = reviewRounds(join(root, initiative), review.stage, review.document).map((r) => r.ledger);
+        const earlier = reviewRounds(await docRows(p, team, initiative), review.stage, review.document)
+          .map((r) => r.ledger);
         const refused = ledgerRefusal(content, earlier, review.document);
         if (refused) return text(refused);
       }
@@ -534,7 +543,7 @@ export function registerArtifactTools(server: McpServer): void {
         mode: "create", act: "source",
       });
       if ("refusal" in wrote) return text(wrote.refusal);
-      recordAct(root, rel, { user: who.email, action: "source_add", path: rel, supports: list.join(",") });
+      recordAct(rel, { user: who.email, action: "source_add", path: rel, supports: list.join(",") });
       // which of the named documents were already approved when this landed? An audit round
       // lands on an approved document by design — the next move says what follows from it.
       const stale: string[] = [];
@@ -560,8 +569,8 @@ export function registerArtifactTools(server: McpServer): void {
       // reopen something already agreed. A review round asks `repeats_finding` once per S1/S2
       // finding it introduces.
       const assessed = review
-        ? await assessReviewRound(root, initiative, rel, review.stage, review.document, who.email)
-        : round ? await assessRound(root, initiative, rel, round.document, content, who.email) : null;
+        ? await assessReviewRound(p, team, initiative, rel, review.stage, review.document, who.email)
+        : round ? await assessRound(p, team, initiative, rel, round.document, content, who.email) : null;
       const stageNote = stage && !round
         ? `\n\nNOT COUNTED AS A ROUND: "${stage}" is not a stage of this flow that produces a source ` +
           `supporting ${list.join(", ") || "nothing"}, so this was recorded as material only.`
@@ -579,7 +588,7 @@ export function registerArtifactTools(server: McpServer): void {
             `sources_after_approval. Whether to change the document is the team's call — if they ` +
             `decide to, document_revise bumps the version, links this source and re-opens the gate.`
           : list.length && !round ? "\n\nNo approved document is affected." : "") +
-        nextMoveLine(root, initiative),
+        await nextMoveLine(p, team, initiative),
       );
     },
   );
@@ -640,11 +649,11 @@ async function citedRevisions(
 
 /** After a verifying document is written or patched: ask `evidence_relation` of the acceptance
  *  rows nobody asked about yet, so approval reads a cache instead of waiting on the service. */
-async function acceptanceLine(root: string, chain: ReturnType<typeof chainFor>, path: string,
+async function acceptanceLine(p: pg.Pool, team: string, chain: Chain, path: string,
                               content: string): Promise<string> {
   const doc = verifyingDoc(chain, path);
   if (!doc) return "";
-  const said = await assessAcceptance(root, path.split("/")[0], doc, content,
+  const said = await assessAcceptance(p, team, path.split("/")[0], doc, content,
                                       parseCaller(requestHeaders()).email);
   return said ? `\n${said}` : "";
 }

@@ -126,11 +126,13 @@ async function buildCitations(
   if (results.length === 0) return [];
   const keyed = [...new Map(results.map((r) => [`${r.initiative}/${r.path}`, r])).values()];
   const { rows } = await db.query(
-    `select d.team_slug, m.initiative, m.path
+    `select t.slug as team_slug, i.slug as initiative, d.path
        from zz.doc d
+       join zz.initiative i on i.id = d.initiative_id
+       join zz.team t on t.id = i.team_id
        join unnest($2::text[], $3::text[]) as m(initiative, path)
-         on d.initiative = m.initiative and d.path = m.path
-      where d.team_slug = any($1::text[])`,
+         on i.slug = m.initiative and d.path = m.path
+      where t.slug = any($1::text[])`,
     [[callerTeam, PLATFORM_TEAM], keyed.map((r) => r.initiative), keyed.map((r) => r.path)],
   );
   const teamByKey = new Map<string, string>();

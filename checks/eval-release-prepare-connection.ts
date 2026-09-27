@@ -9,8 +9,6 @@
 // initiative's own id, resolved once per call — asserted here, because a slug written into a uuid
 // column is a row the console cannot join. A conflicting fact rolls everything back.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -25,16 +23,37 @@ let maxOutstanding = 0;
 let connects = 0;
 let poolQueriesWhileHeld = 0;
 
-/** The initiative row the mirror's id resolution reads back. The fact row is keyed on it, so the
- *  check can assert the id the resolver handed over is the one the insert was written with. */
-const INITIATIVE_ID = "b0000000-0000-4000-8000-000000000001";
+// COUPLED: the fixture is ROWS, not files. A branch fact is a `zz.initiative_fact` row keyed by
+// the initiative's own id, so the stub serves the id resolution, the fact read and the fact write
+// from one map — and the check can still assert that the id the resolver handed over is the one
+// the insert was written with.
+const IDS: Record<string, string> = {
+  "init-a": "b0000000-0000-4000-8000-000000000001",
+  "init-b": "b0000000-0000-4000-8000-000000000002",
+};
+const factsBySlug: Record<string, Record<string, string>> = {};
+const slugOfId = (id: string): string | undefined => Object.keys(IDS).find((s) => IDS[s] === id);
 
-function answer(sql: string): Result {
+function answer(sql: string, values: unknown[] = []): Result {
   if (/from zz\.eval_idempotency/.test(sql)) return { rows: [], rowCount: 0 };
   if (/insert into zz\.release_attempt/.test(sql)) return { rows: [{ id: "a0000000-0000-4000-8000-000000000001" }], rowCount: 1 };
-  // `initiativeIdFor` (initiative-record.ts): the mirror is keyed by the initiative's own id, so
-  // this lookup stands between the store's initiative name and the fact row.
-  if (/from zz\.initiative i/.test(sql)) return { rows: [{ id: INITIATIVE_ID }], rowCount: 1 };
+  // `initiativeIdFor` (initiative-record.ts): the fact row is keyed by the initiative's own id, so
+  // this lookup stands between the initiative's name and the row.
+  if (/select i\.id::text as id from zz\.initiative i/.test(sql)) {
+    const id = IDS[String(values[1])];
+    return { rows: id ? [{ id }] : [], rowCount: id ? 1 : 0 };
+  }
+  // `factsFor`: the branch facts this initiative already carries.
+  if (/from zz\.initiative_fact f/.test(sql)) {
+    return { rows: Object.entries(factsBySlug[String(values[1])] ?? {})
+      .map(([fact, value]) => ({ fact, value })), rowCount: 0 };
+  }
+  // `writeFacts`: append-only, and the row is the record.
+  if (/insert into zz\.initiative_fact/.test(sql)) {
+    const slug = slugOfId(String(values[0]));
+    if (slug) factsBySlug[slug] = { ...(factsBySlug[slug] ?? {}), [String(values[1])]: String(values[2]) };
+    return { rows: [], rowCount: 1 };
+  }
   return { rows: [], rowCount: 0 };
 }
 const tick = () => new Promise((r) => setTimeout(r, 2));
@@ -49,7 +68,7 @@ pg.Pool.prototype.connect = (async function connect() {
       const sql = text.replace(/\s+/g, " ").trim();
       statements.push({ on: id, sql, values: values ?? [] });
       await tick();
-      return answer(sql);
+      return answer(sql, values ?? []);
     },
     release() {
       assert.ok(!released, "a client released twice");
@@ -61,13 +80,12 @@ pg.Pool.prototype.connect = (async function connect() {
 pg.Pool.prototype.query = (async function query(text: string) {
   if (outstanding) poolQueriesWhileHeld += 1;
   statements.push({ on: "pool", sql: text.replace(/\s+/g, " ").trim(), values: [] });
-  return answer(text);
+  return answer(text, []);
 }) as unknown as typeof pg.Pool.prototype.query;
 
 const { prepareWithBranchFact } = await import(
   pathToFileURL(join(process.cwd(), "services/zz-core/dist/eval/release-prepare.js")).href);
 
-const root = mkdtempSync(join(tmpdir(), "zz-prepare-conn-"));
 const reset = () => { statements.length = 0; connects = 0; maxOutstanding = 0; poolQueriesWhileHeld = 0; };
 const insertAttempt = async (client: { query(sql: string): Promise<Result> }) => {
   const row = (await client.query("insert into zz.release_attempt (candidate_id) values ('c') returning id::text as id")).rows[0];
@@ -75,12 +93,10 @@ const insertAttempt = async (client: { query(sql: string): Promise<Result> }) =>
 };
 const prepare = (initiative: string, key: string) => prepareWithBranchFact(
   "owner@example.test", "release_prepare", key, { candidate_id: "c", initiative },
-  { root, team: "xuan", initiative }, "promotable", insertAttempt);
-const facts = (initiative: string) => JSON.parse(readFileSync(join(root, initiative, "_facts.json"), "utf8"));
+  { team: "xuan", initiative }, "promotable", insertAttempt);
+const facts = (initiative: string) => factsBySlug[initiative] ?? {};
 
-try {
   // One prepare: one connection, the lock and the mirror on it, nothing on the pool meanwhile.
-  mkdirSync(join(root, "init-a"));
   reset();
   const one = await prepare("init-a", "k1");
   assert.equal(connects, 1, "a prepare takes exactly one connection");
@@ -100,7 +116,7 @@ try {
   assert.ok(mirror, "the fact is mirrored");
   assert.match(mirror.sql, /insert into zz\.initiative_fact \(initiative_id, fact, value\)/,
     `the mirror writes by id: ${mirror.sql}`);
-  assert.deepEqual(mirror.values, [INITIATIVE_ID, "release_mode", "promotable"],
+  assert.deepEqual(mirror.values, [IDS["init-a"], "release_mode", "promotable"],
     "the mirrored row carries the resolved id, the fact and its value");
   assert.equal(one.outcome.replayed, false);
   assert.deepEqual(one.facts, { release_mode: "promotable" });
@@ -115,8 +131,7 @@ try {
   assert.equal(poolQueriesWhileHeld, 0);
 
   // A conflicting fact: refused, rolled back, nothing committed and the file untouched.
-  mkdirSync(join(root, "init-b"));
-  writeFileSync(join(root, "init-b", "_facts.json"), `${JSON.stringify({ release_mode: "proposal_only" })}\n`);
+  factsBySlug["init-b"] = { release_mode: "proposal_only" };
   reset();
   await assert.rejects(prepare("init-b", "k7"), /release_mode is already proposal_only/);
   const conflictSqls = statements.map((s) => s.sql);
@@ -129,9 +144,6 @@ try {
   reset();
   await assert.rejects(prepare("init-missing", "k8"), /no initiative named "init-missing"/);
   assert.ok(!statements.some((s) => s.sql === "COMMIT"));
-} finally {
-  rmSync(root, { recursive: true, force: true });
-}
 
 console.log("ok eval-release-prepare-connection");
 process.exit(0);

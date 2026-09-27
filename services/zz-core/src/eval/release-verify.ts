@@ -127,9 +127,9 @@ interface Subject { readonly plugin: string; readonly declared_version: string }
 
 async function loadSubject(p: pg.Pool, subjectVersionId: string): Promise<Subject | null> {
   const row = (await p.query<Subject>(`
-    select pl.name as plugin, sv.declared_version
-      from zz.eval_subject_version sv join zz.plugin pl on pl.id = sv.plugin_id
-     where sv.id = $1::uuid`, [subjectVersionId])).rows[0];
+    select pl.name as plugin, pv.version as declared_version
+      from zz.plugin_version pv join zz.plugin pl on pl.id = pv.plugin_id
+     where pv.id = $1::uuid`, [subjectVersionId])).rows[0];
   return row ?? null;
 }
 
@@ -141,18 +141,21 @@ async function postReleaseRuns(p: pg.Pool, subject: Subject): Promise<number> {
   return Number(row?.n ?? 0);
 }
 
-/** The newest completed evaluation of the released subject under the base's protocol version,
- *  observed over at least `minRuns` runs — an evaluation of fewer judges too little use. */
+/** The newest scored evaluation of the released subject under the base's protocol version,
+ *  observed over at least `minRuns` runs — an evaluation of fewer judges too little use.
+ *
+ *  The subject release is the observation snapshot's own `plugin_version_id` (the run carries no
+ *  second copy of it), and `scored_at is not null` is what makes an evaluation one this can read:
+ *  an open run has published no result. */
 async function releasedEvaluation(
   p: pg.Pool, subjectVersionId: string, protocolVersionId: string, minRuns: number,
 ): Promise<{ id: string; overall: number | null; guardrail_status: string | null } | null> {
   const row = (await p.query<{ id: string; overall: string | null; guardrail_status: string | null }>(`
     select er.id::text as id, er.overall_score::text as overall, er.guardrail_status
       from zz.eval_run er
-      join zz.eval_evidence_snapshot es on es.id = er.evidence_snapshot_id
-      join zz.eval_observation_snapshot os on os.id = es.observation_snapshot_id
-     where er.subject_version_id = $1::uuid and er.protocol_version_id = $2::uuid
-       and er.run_status = 'completed' and os.total_run_count >= $3
+      join zz.eval_observation_snapshot os on os.id = er.observation_snapshot_id
+     where os.plugin_version_id = $1::uuid and er.protocol_version_id = $2::uuid
+       and er.scored_at is not null and os.total_run_count >= $3
      order by er.created_at desc limit 1`, [subjectVersionId, protocolVersionId, minRuns])).rows[0];
   return row ? { id: row.id, overall: row.overall === null ? null : Number(row.overall), guardrail_status: row.guardrail_status } : null;
 }
@@ -162,11 +165,12 @@ async function baseScore(
   p: pg.Pool, subjectVersionId: string, protocolVersionId: string,
 ): Promise<{ id: string; overall: number } | null> {
   const row = (await p.query<{ id: string; overall: string }>(`
-    select id::text as id, overall_score::text as overall
-      from zz.eval_run
-     where subject_version_id = $1::uuid and protocol_version_id = $2::uuid and run_status = 'completed'
-       and score_status in ('established', 'provisional') and overall_score is not null
-     order by created_at desc limit 1`, [subjectVersionId, protocolVersionId])).rows[0];
+    select er.id::text as id, er.overall_score::text as overall
+      from zz.eval_run er
+      join zz.eval_observation_snapshot os on os.id = er.observation_snapshot_id
+     where os.plugin_version_id = $1::uuid and er.protocol_version_id = $2::uuid and er.scored_at is not null
+       and er.score_status in ('established', 'provisional') and er.overall_score is not null
+     order by er.created_at desc limit 1`, [subjectVersionId, protocolVersionId])).rows[0];
   return row ? { id: row.id, overall: Number(row.overall) } : null;
 }
 

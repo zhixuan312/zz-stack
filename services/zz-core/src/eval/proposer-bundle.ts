@@ -11,6 +11,8 @@
  */
 import type pg from "pg";
 
+import { STORED_ANSWERS_SQL } from "./evaluate-run.js";
+
 /** A candidate counts as a prior REJECTION — for `candidates.ts`'s duplicate-hypothesis refusal
  *  and for the bundle's `prior_rejected_hypotheses` alike — when its status is one of these:
  *  `invalid` failed its own build or gate, `rolled_back` was released and measured worse on real
@@ -128,12 +130,16 @@ export async function loadProposerBundle(p: pg.Pool, improvementRunId: string): 
   const ref = await loadRunRef(p, improvementRunId);
   if (!ref) return null;
 
-  const runRow = (await p.query<{ subject_version_id: string }>(
-    "select subject_version_id::text as subject_version_id from zz.eval_run where id = $1::uuid",
-    [ref.eval_run_id])).rows[0];
+  // The run reaches its release through the observation snapshot it was bound to (FR-27), and a
+  // release is one `plugin_version` — the second row per released thing folds onto it.
+  const runRow = (await p.query<{ plugin_version_id: string }>(`
+    select os.plugin_version_id::text as plugin_version_id
+      from zz.eval_run er
+      join zz.eval_observation_snapshot os on os.id = er.observation_snapshot_id
+     where er.id = $1::uuid`, [ref.eval_run_id])).rows[0];
   const pluginRow = runRow ? (await p.query<{ plugin_id: string }>(
-    "select plugin_id::text as plugin_id from zz.eval_subject_version where id = $1::uuid",
-    [runRow.subject_version_id])).rows[0] : null;
+    "select plugin_id::text as plugin_id from zz.plugin_version where id = $1::uuid",
+    [runRow.plugin_version_id])).rows[0] : null;
 
   const findings = ref.finding_ids.length
     ? (await p.query<RawFinding>(
@@ -141,16 +147,27 @@ export async function loadProposerBundle(p: pg.Pool, improvementRunId: string): 
         [ref.finding_ids])).rows
     : [];
 
+  // The ref label and the four figures come from the one projection `evaluation_score` reads the
+  // run's stored answers through (`evaluate-run.ts`'s `STORED_ANSWERS_SQL`), so a subject is
+  // spelled the same way here as it is in the score this bundle is proposed against. The detail
+  // bag is rebuilt from what the row still holds — the model answer itself moved to the
+  // assessment the value came from, and `reading` is read there rather than off a jsonb the
+  // assessment no longer carries.
   const assessments = (await p.query<{
     measure_key: string; subject_ref: string; value: string | null; excluded_reason: string | null;
     detail: Record<string, unknown> | null;
   }>(`
-    select m.key as measure_key, a.subject_ref,
-           a.answer->>'value' as value, a.answer->>'excluded_reason' as excluded_reason,
-           a.answer->'detail' as detail
-      from zz.eval_assessment a
-      join zz.eval_measure m on m.id = a.measure_id
-     where a.eval_run_id = $1::uuid`, [ref.eval_run_id])).rows
+    select m.key as measure_key, x.subject_ref,
+           x.answer->>'value' as value, x.answer->>'excluded_reason' as excluded_reason,
+           jsonb_strip_nulls(jsonb_build_object(
+             'reading', s.reading, 'probability', s.probability, 'answer_kind', s.answer_kind,
+             'distribution', s.distribution, 'model_call_id', s.model_call_id,
+             'raw_value', x.answer->'detail'->'raw_value')) as detail
+      from (${STORED_ANSWERS_SQL}
+            where a.eval_run_id = $1::uuid) x
+      join zz.eval_measure m on m.id = x.measure_id::uuid
+      left join zz.assessment s on s.id = (x.answer->>'assessment_id')::bigint`,
+    [ref.eval_run_id])).rows
     .map((r): RawAssessment => ({
       measure_key: r.measure_key, subject_ref: r.subject_ref,
       value: r.value === null ? null : Number(r.value), excluded_reason: r.excluded_reason,
@@ -161,8 +178,8 @@ export async function loadProposerBundle(p: pg.Pool, improvementRunId: string): 
     ? (await p.query<{ candidate_id: string; hypothesis: string; status: string }>(`
         select c.id::text as candidate_id, c.hypothesis, c.status
           from zz.candidate c
-          join zz.eval_subject_version sv on sv.id = c.base_subject_version_id
-         where sv.plugin_id = $1::uuid and c.status = any($2::text[])
+          join zz.plugin_version pv on pv.id = c.base_subject_version_id
+         where pv.plugin_id = $1::uuid and c.status = any($2::text[])
          order by c.created_at desc`,
         [pluginRow.plugin_id, [...REJECTED_CANDIDATE_STATUSES]])).rows
     : [];

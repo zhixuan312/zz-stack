@@ -31,6 +31,11 @@ import { parseCaller, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
 import { requestHeaders } from "@zz/mcp-http";
 import type pg from "pg";
 
+import {
+  guardrailsOfMeasures, reduceMeasureAnswers,
+  type MeasureAnswer,
+} from "./evaluate-measures.js";
+import { loadDimensions, STORED_ANSWERS_SQL } from "./evaluate-run.js";
 import { chainFor } from "../chain.js";
 import { documentGuards } from "../guards.js";
 import { unopenedRefusal } from "../initiative-record.js";
@@ -39,12 +44,17 @@ import { persistDocument } from "../persist.js";
 import { teamFor } from "../platform-db.js";
 import { envelopeFor, normalizeSections } from "../write-guards.js";
 
+/** One run, as this document reads it back. Nothing here is a second copy of a fact: the subject
+ *  release is reached through the observation snapshot the run is bound to (FR-27), the score is
+ *  the run's own published columns, and the per-dimension results come from
+ *  `zz.eval_run_dimension` — the jsonb array the run used to carry is gone. */
 interface EvalRunRow {
-  id: string; subject_version_id: string; protocol_version_id: string;
-  run_status: string; score_status: string | null; overall_score: string | null;
-  score_interval: Record<string, unknown> | null;
-  dimension_scores: DimensionScoreRow[] | null;
-  guardrail_status: string | null; coverage: Record<string, unknown>;
+  id: string; plugin_version_id: string; protocol_version_id: string;
+  score_status: string | null; overall_score: string | null;
+  score_lower: number | null; score_upper: number | null;
+  measure_coverage: number | null;
+  establishment_blocked_by: string[] | null;
+  guardrail_status: string | null;
 }
 
 export interface MeasureScoreRow {
@@ -69,50 +79,67 @@ export interface FindingRow {
 
 interface EvaluatorTrustRow { stable_key: string; state: string | null; qualified_at: string | null }
 
+/** The run's own published result. The subject release is reached through the observation
+ *  snapshot the run is bound to — the run carries no second copy of it — and the per-dimension
+ *  results are rows of `zz.eval_run_dimension`, read separately below. */
 async function loadEvalRun(p: pg.Pool, evalRunId: string): Promise<EvalRunRow | null> {
   const row = (await p.query<EvalRunRow>(`
-    select id::text as id, subject_version_id::text as subject_version_id,
-           protocol_version_id::text as protocol_version_id, run_status,
-           score_status, overall_score::text as overall_score, score_interval, dimension_scores,
-           guardrail_status, coverage
-      from zz.eval_run where id = $1::uuid`, [evalRunId])).rows[0];
+    select er.id::text as id, os.plugin_version_id::text as plugin_version_id,
+           er.protocol_version_id::text as protocol_version_id, er.score_status,
+           er.overall_score::text as overall_score, er.score_lower::float8 as score_lower,
+           er.score_upper::float8 as score_upper, er.measure_coverage::float8 as measure_coverage,
+           er.establishment_blocked_by, er.guardrail_status
+      from zz.eval_run er
+      join zz.eval_observation_snapshot os on os.id = er.observation_snapshot_id
+     where er.id = $1::uuid`, [evalRunId])).rows[0];
   return row ?? null;
 }
 
-async function loadSubject(p: pg.Pool, subjectVersionId: string) {
+/** The subject release, as `plugin_locate` reads it back: `plugin_version` joined to its plugin,
+ *  with the owner team and the release-owner teams resolved through the relations that replaced
+ *  the `owner_team` text column, `evolvable` and the `release_owners` jsonb. */
+async function loadSubject(p: pg.Pool, pluginVersionId: string) {
   return (await p.query<{
     plugin: string; declared_version: string; origin: string; owner_team: string | null;
-    evolvable: boolean; release_owners: string[];
+    release_owners: string[];
   }>(`
-    select pl.name as plugin, sv.declared_version, pl.origin, pl.owner_team, pl.evolvable, pl.release_owners
-      from zz.eval_subject_version sv join zz.plugin pl on pl.id = sv.plugin_id
-     where sv.id = $1::uuid`, [subjectVersionId])).rows[0];
+    select pl.name as plugin, pv.version as declared_version, pl.origin, t.slug as owner_team,
+           owners.slugs as release_owners
+      from zz.plugin_version pv
+      join zz.plugin pl on pl.id = pv.plugin_id
+      left join zz.team t on t.id = pl.owner_team_id
+      left join lateral (
+        select coalesce(array_agg(t2.slug order by t2.slug), '{}'::text[]) as slugs
+          from zz.plugin_release_owner r
+          join zz.team t2 on t2.id = r.team_id
+         where r.plugin_id = pl.id) owners on true
+     where pv.id = $1::uuid`, [pluginVersionId])).rows[0];
 }
 
+/** The protocol version this run was scored under. The `eval_protocol` header folded into the
+ *  version row, so the key is a column of the one table and this is a single-table read. */
 async function loadProtocol(p: pg.Pool, protocolVersionId: string) {
   return (await p.query<{ protocol_key: string; version: number }>(`
-    select pr.protocol_key as protocol_key, pv.version as version
-      from zz.eval_protocol_version pv join zz.eval_protocol pr on pr.id = pv.protocol_id
-     where pv.id = $1::uuid`, [protocolVersionId])).rows[0];
+    select protocol_key, version from zz.eval_protocol_version where id = $1::uuid`,
+    [protocolVersionId])).rows[0];
 }
 
-/** Every distinct evaluator a bounded_semantic/generative_critic measure of this protocol
- *  version names, with its newest qualification state against THIS protocol version — read live
- *  off `zz.eval_evaluator_qualification`, never off `eval_run`, which stores no evaluator-trust
- *  column of its own: qualification is a property of (evaluator version, protocol version), not
- *  of a run. */
+/** Every distinct evaluator a model-backed measure of this protocol version names, with its
+ *  newest qualification state against THIS protocol version — read live off
+ *  `zz.eval_evaluator_qualification`, never off `eval_run`, which stores no evaluator-trust
+ *  column of its own. A qualification is a property of a MEASURE now (it is the measure row that
+ *  names both the evaluator version and the protocol version), so the join is on `measure_id` and
+ *  the evaluator version it is about is reached through that row. */
 async function loadEvaluatorTrust(p: pg.Pool, protocolVersionId: string): Promise<EvaluatorTrustRow[]> {
   return (await p.query<EvaluatorTrustRow>(`
-    select distinct on (ee.stable_key) ee.stable_key as stable_key,
+    select distinct on (ev.stable_key) ev.stable_key as stable_key,
            q.state as state, q.qualified_at::text as qualified_at
       from zz.eval_measure m
       join zz.eval_dimension d on d.id = m.dimension_id
       join zz.eval_evaluator_version ev on ev.id = m.evaluator_version_id
-      join zz.eval_evaluator ee on ee.id = ev.evaluator_id
-      left join zz.eval_evaluator_qualification q
-        on q.evaluator_version_id = ev.id and q.protocol_version_id = $1::uuid
+      left join zz.eval_evaluator_qualification q on q.measure_id = m.id
      where d.protocol_version_id = $1::uuid and m.evaluator_version_id is not null
-     order by ee.stable_key, q.qualified_at desc nulls last`, [protocolVersionId])).rows;
+     order by ev.stable_key, q.qualified_at desc nulls last`, [protocolVersionId])).rows;
 }
 
 async function loadFindings(p: pg.Pool, evalRunId: string): Promise<FindingRow[]> {
@@ -120,6 +147,57 @@ async function loadFindings(p: pg.Pool, evalRunId: string): Promise<FindingRow[]
     select id::text as id, kind, pattern, owner_kind, owner_ref, evidence_refs, decision, decision_note,
            superseded_by::text as superseded_by
       from zz.eval_finding where eval_run_id = $1::uuid order by created_at`, [evalRunId])).rows;
+}
+
+/** The run's per-dimension result, rebuilt from the rows the reshape left. The published
+ *  `zz.eval_run_dimension` row carries the score and the coverage that were scored; the protocol's
+ *  own `eval_dimension`/`eval_measure` rows carry the keys, the weights and the bars; and each
+ *  measure's value is reduced from the run's stored answers by the same `reduceMeasureAnswers`
+ *  `evaluation_score` scored with — a scored run is terminal, so re-deriving a figure reproduces
+ *  the one that was published rather than replacing it. */
+async function loadDimensionScores(p: pg.Pool, run: EvalRunRow): Promise<DimensionScoreRow[]> {
+  const dims = await loadDimensions(p, run.protocol_version_id);
+  if (!dims.length) return [];
+  const published = new Map((await p.query<{
+    dimension_id: string; score: number | null; coverage: number | null;
+  }>(`
+    select dimension_id::text as dimension_id, score::float8 as score, coverage::float8 as coverage
+      from zz.eval_run_dimension where eval_run_id = $1::uuid`, [run.id])).rows
+    .map((r) => [r.dimension_id, r]));
+
+  const answers = new Map<string, MeasureAnswer[]>();
+  for (const a of (await p.query<{ measure_id: string; answer: MeasureAnswer }>(
+    `${STORED_ANSWERS_SQL} where a.eval_run_id = $1::uuid`, [run.id])).rows) {
+    const list = answers.get(a.measure_id);
+    if (list) list.push(a.answer); else answers.set(a.measure_id, [a.answer]);
+  }
+  // A measure is a guardrail exactly when its own `guardrail_threshold` is set — the same
+  // derivation `evaluation_score` reduces the run's guardrail status from, read off the run's own
+  // measures rather than parsed out of a policy object.
+  const critical = new Set(guardrailsOfMeasures(dims.flatMap((d) => d.measures)).map((g) => g.key));
+
+  return dims.map((d): DimensionScoreRow => {
+    // A dimension that does not apply was never assessed; its measures carry its reason, not an
+    // exclusion that reads as missing evidence.
+    const measured = d.applicable ? undefined : `not applicable: ${d.not_applicable_reason ?? "the protocol says so"}`;
+    const measures = d.measures.map((m): MeasureScoreRow => {
+      const mine = answers.get(m.id) ?? [];
+      const value = reduceMeasureAnswers(mine);
+      return {
+        key: m.key, evaluator_type: m.evaluator_type, weight: m.weight, required: m.required,
+        value, excluded: value === null, guardrail: critical.has(m.key),
+        excluded_reason: value === null ? (measured ?? mine[0]?.excluded_reason ?? "no assessment recorded") : null,
+      };
+    });
+    return {
+      key: d.key, canonical_kind: d.canonical_kind,
+      score: published.get(d.id)?.score ?? null, coverage: published.get(d.id)?.coverage ?? null,
+      applicable: d.applicable, not_applicable_reason: d.not_applicable_reason,
+      weight: d.weight, required: d.required,
+      measures_scored: measures.filter((m) => !m.excluded).length, measures_total: measures.length,
+      measures,
+    };
+  });
 }
 
 function renderDimensions(dims: DimensionScoreRow[]): string {
@@ -141,19 +219,39 @@ function renderDimensions(dims: DimensionScoreRow[]): string {
 const pct = (v: number): string => `${Math.round(v * 100)}%`;
 
 /** The stored interval, as a sentence: bounds, level and how many subjects it resampled — or why
- *  there is no real interval. Never the raw JSON. */
+ *  there is no real interval. Never the raw JSON.
+ *
+ *  A run scored under the reshaped family carries only its two bounds
+ *  (`zz.eval_run.score_lower`/`score_upper`): the level, the resample count and the subject count
+ *  were fields of the `score_interval` jsonb this phase drops, so there is nothing to report but
+ *  the interval itself. That shape is rendered as the bounds alone — a level printed as `?` and a
+ *  resample count printed as zero would be two figures nobody measured. */
 export function renderInterval(i: Record<string, unknown> | null): string {
   if (!i) return "not computed";
   const n = typeof i.n_subjects === "number" ? i.n_subjects : 0;
+  const bound = (v: unknown) => (typeof v === "number" ? v.toFixed(2) : null);
+  const bounds = [bound(i.lower), bound(i.upper)];
+  if (typeof i.level !== "number" && typeof i.iterations !== "number" && !("n_subjects" in i)) {
+    const said = bounds[0] === null && bounds[1] === null
+      ? "not computed — this run published no interval bounds"
+      : `${bounds[0] ?? "—"}–${bounds[1] ?? "—"}`;
+    return i.note ? `${said} — ${String(i.note)}` : said;
+  }
   const level = typeof i.level === "number" ? pct(i.level) : "?";
-  const bound = (v: unknown) => (typeof v === "number" ? v.toFixed(2) : "—");
   if (i.degenerate) {
     return n === 0 ? `none — ${String(i.note ?? "no subject was scored")}`
-      : `${bound(i.lower)} (one subject; ${String(i.note ?? "nothing to resample")})`;
+      : `${bounds[0] ?? "—"} (one subject; ${String(i.note ?? "nothing to resample")})`;
   }
   const iterations = typeof i.iterations === "number" ? `, ${i.iterations} resamples` : "";
-  return `${bound(i.lower)}–${bound(i.upper)} (${level} bootstrap over ${n} subjects${iterations})` +
+  return `${bounds[0] ?? "—"}–${bounds[1] ?? "—"} (${level} bootstrap over ${n} subjects${iterations})` +
     (i.note ? ` — ${String(i.note)}` : "");
+}
+
+/** The interval a run published, in the shape `renderInterval` reads it: the two bounds it stores
+ *  and nothing else — see that function's own note on why the rest is absent rather than zero. */
+function storedInterval(run: EvalRunRow): Record<string, unknown> | null {
+  if (run.score_lower === null && run.score_upper === null) return null;
+  return { lower: run.score_lower, upper: run.score_upper };
 }
 
 /** Why a score is not established, as `evaluation_score` recorded it — nothing when it is. */
@@ -197,23 +295,22 @@ export function renderFindings(findings: FindingRow[], kind: FindingRow["kind"])
 
 function renderBody(
   run: EvalRunRow, subject: { plugin: string; declared_version: string; origin: string;
-    owner_team: string | null; evolvable: boolean; release_owners: string[] },
+    owner_team: string | null; release_owners: string[] },
+  dims: DimensionScoreRow[],
   protocol: { protocol_key: string; version: number },
   trust: EvaluatorTrustRow[], findings: FindingRow[],
 ): string {
-  const dims = run.dimension_scores ?? [];
   return [
     `# Findings — ${subject.plugin} ${subject.declared_version}`,
     "",
     "## Score",
-    `- Status: **${run.score_status ?? "not_established"}**` + blockedBy(run.coverage?.establishment_blocked_by),
+    `- Status: **${run.score_status ?? "not_established"}**` + blockedBy(run.establishment_blocked_by),
     `- Overall: ${run.overall_score === null ? "—" : Number(run.overall_score).toFixed(2)} / 10`,
     `- Protocol: \`${protocol.protocol_key}\` version ${protocol.version}`,
-    `- Interval: ${renderInterval(run.score_interval)}`,
-    `- Coverage: ${typeof run.coverage?.measures === "number"
-      ? `${pct(run.coverage.measures)} of the protocol's measure weight scored` +
-        (typeof run.coverage.measures_floor === "number" ? ` (provisional needs ${pct(run.coverage.measures_floor)})` : "")
-      : "not recorded"}`,
+    `- Interval: ${renderInterval(storedInterval(run))}`,
+    `- Coverage: ${run.measure_coverage === null
+      ? "not recorded"
+      : `${pct(run.measure_coverage)} of the protocol's measure weight scored`}`,
     `- eval_run_id: \`${run.id}\``,
     "",
     "## Dimensions",
@@ -237,7 +334,11 @@ function renderBody(
     "## Ownership",
     `- Origin: ${subject.origin}`,
     `- Owner team: ${subject.owner_team ?? "none recorded"}`,
-    `- Evolvable: ${subject.evolvable ? "yes" : "no"}`,
+    // `evolvable` is gone with the flag it held: whether this subject can be promoted follows from
+    // whose release owners it has (FR-47), which is the same derivation `plugin_locate` answers
+    // `release_mode` with one table over. `not_applicable` is not reachable here — it belongs to
+    // an initiative that never reached a release stage, which a scored run is not.
+    `- Release mode: ${subject.release_owners.length ? "promotable" : "proposal_only"}`,
     `- Release owners: ${subject.release_owners.length ? subject.release_owners.join(", ") : "none"}`,
     "",
   ].join("\n");
@@ -256,13 +357,14 @@ export async function writeFindingsDoc(
 
   const run = await loadEvalRun(p, evalRunId);
   if (!run) return `ERROR: no eval_run ${evalRunId}`;
-  const [subject, protocol, trust, findings] = await Promise.all([
-    loadSubject(p, run.subject_version_id), loadProtocol(p, run.protocol_version_id),
+  const [subject, protocol, trust, findings, dims] = await Promise.all([
+    loadSubject(p, run.plugin_version_id), loadProtocol(p, run.protocol_version_id),
     loadEvaluatorTrust(p, run.protocol_version_id), loadFindings(p, evalRunId),
+    loadDimensionScores(p, run),
   ]);
   if (!subject || !protocol) return `ERROR: eval_run ${evalRunId} names a subject or protocol version this call cannot read back`;
 
-  const body = renderBody(run, subject, protocol, trust, findings);
+  const body = renderBody(run, subject, dims, protocol, trust, findings);
   const root = await userRoot();
   const path = `${initiative}/findings.md`;
   const unopened = unopenedRefusal(root, path);

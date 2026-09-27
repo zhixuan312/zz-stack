@@ -150,18 +150,18 @@ export function mountCatalog(app: Express): void {
                            and e.skill_version_id in (select v.id from zz.skill_version v
                                                        where v.skill_id = s.id))                  as last_run
                   from zz.skill s`),
-      // What was released, and how many completed evaluation runs scored each released version.
-      // An evaluation's subject names the release it digested in `release_identity`.
+      // What was released, and how many scored evaluation runs measured each released version.
+      // An evaluation's release is its observation snapshot's `plugin_version_id` (FR-29), and a
+      // scored run is one with `scored_at` set.
       db.query(`select p.name as plugin, pv.version, pv.digest,
                        (select count(*) from zz.eval_run er
-                          join zz.eval_subject_version sv on sv.id = er.subject_version_id
-                         where sv.release_identity->>'plugin_version_id' = pv.id::text
-                           and er.run_status = 'completed') as evals
+                          join zz.eval_observation_snapshot os on os.id = er.observation_snapshot_id
+                         where os.plugin_version_id = pv.id
+                           and er.scored_at is not null) as evals
                   from zz.plugin p
                   join zz.plugin_version pv on pv.plugin_id = p.id`),
-      // The newest completed evaluation run, one per plugin. Only a completed run carries a
-      // score; a pending, running, failed or cancelled one would blank the column beside a good
-      // earlier result.
+      // The newest scored evaluation run, one per plugin. Only a scored run carries a score; a
+      // run that was never scored would blank the column beside a good earlier result.
       //
       // Across versions, not within one: the answer is the last time anybody measured the
       // plugin, and pinning to the shelf version would blank the column on every release day.
@@ -169,18 +169,19 @@ export function mountCatalog(app: Express): void {
       //
       // COUPLED: `/api/console/plugins/:plugin/eval` (plugin-eval.ts) reads the same run for the
       // plugin's own page; both count a defect as open while its plugin-owned finding is deferred.
-      db.query(`select distinct on (sv.plugin_id)
-                       p.name as plugin, sv.declared_version as version,
+      db.query(`select distinct on (pv.plugin_id)
+                       p.name as plugin, pv.version,
                        er.overall_score::text as overall_score, er.score_status, er.guardrail_status,
                        (select count(*) from zz.eval_finding f
                          where f.eval_run_id = er.id and f.kind = 'defect'
                            and f.owner_kind = 'plugin' and f.decision = 'deferred') as open_defects,
                        to_char(er.created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as at
                   from zz.eval_run er
-                  join zz.eval_subject_version sv on sv.id = er.subject_version_id
-                  join zz.plugin p on p.id = sv.plugin_id
-                 where er.run_status = 'completed'
-                 order by sv.plugin_id, er.created_at desc`),
+                  join zz.eval_observation_snapshot os on os.id = er.observation_snapshot_id
+                  join zz.plugin_version pv on pv.id = os.plugin_version_id
+                  join zz.plugin p on p.id = pv.plugin_id
+                 where er.scored_at is not null
+                 order by pv.plugin_id, er.created_at desc`),
     ]);
 
     /** The newest completed evaluation per plugin, by name. */

@@ -7,11 +7,12 @@
  * Four triggers, and any one of them turns `protocol_action` from `reuse` into `revise`:
  *   - `purpose_changed`   the plugin's own catalog manifest states a purpose that no longer
  *                         matches the protocol version's recorded `purpose`.
- *   - `new_recurring_failure`  DISCOVER (Task I-9) has written a `zz.eval_failure_mode_candidate`
- *                         row for this plugin that is still `status = 'candidate'` — nothing has
- *                         folded it into a protocol's `failure_taxonomy` yet. Folding one in is
- *                         exactly what flips its status away from `candidate` (`protocol-record.ts`),
- *                         so this reads as "unfolded lineage exists" by construction.
+ *   - `new_recurring_failure`  DISCOVER (Task I-9) has written a `zz.eval_failure_mode_sighting`
+ *                         for this plugin's failure modes that no protocol version has folded in
+ *                         yet. Folding one in is exactly what writes the `eval_protocol_failure_mode`
+ *                         row (`protocol-record.ts`), so this reads as "unfolded lineage exists"
+ *                         by construction — the sighting's own mutable `status` is gone with
+ *                         Task I-24's split of a failure mode into an identity and a sighting.
  *   - `evaluator_drift`   a measure under the latest version defers to an evaluator version that
  *                         is no longer that evaluator's newest — `evaluators.ts` minted a later
  *                         one since this protocol version was recorded.
@@ -35,53 +36,58 @@ interface LatestProtocolVersion {
   version: number;
   purpose: string;
   observable_surfaces: string[];
-  /** Null until `protocol_affirm` binds an approved protocol.md — protocol_read's own answer. */
-  approved_document_path: string | null;
+  /** Whether `protocol_affirm` bound an approved `protocol.md` to this version — the whole of
+   *  what `approved_doc_id` says, read by `protocol_read`'s own answer. */
+  affirmed: boolean;
   content_digest: string;
   /** Whether any version of this plugin's protocol was ever affirmed: an unaffirmed newest one
    *  is still the `create` its lineage began with when none was. */
   any_affirmed: boolean;
 }
 
+/** The newest version of this plugin's protocol lineage, or null when it has none. The plugin is
+ *  the version's own `plugin_id` now — `zz.eval_protocol` was a header carrying a plugin and a
+ *  key and no other fact, so the phase-3 migration folded both onto the version. */
 export async function latestProtocolVersion(p: pg.Pool, pluginId: string): Promise<LatestProtocolVersion | null> {
   const row = (await p.query<LatestProtocolVersion>(`
     select epv.id::text as id, epv.version, epv.purpose, epv.observable_surfaces,
-           epv.approved_document_path, epv.content_digest,
-           exists (select 1 from zz.eval_protocol_version a join zz.eval_protocol ap on ap.id = a.protocol_id
-                    where ap.plugin_id = $1::uuid and a.approved_document_path is not null) as any_affirmed
+           epv.approved_doc_id is not null as affirmed, epv.content_digest,
+           exists (select 1 from zz.eval_protocol_version a
+                    where a.plugin_id = $1::uuid and a.approved_doc_id is not null) as any_affirmed
       from zz.eval_protocol_version epv
-      join zz.eval_protocol ep on ep.id = epv.protocol_id
-     where ep.plugin_id = $1::uuid
+     where epv.plugin_id = $1::uuid
      order by epv.version desc limit 1`, [pluginId])).rows[0];
   return row ?? null;
 }
 
-/** Any DISCOVER candidate on this plugin still waiting to be folded in. Status flips away from
- *  `candidate` only when `protocol_record` accepts or merges it (see this file's header), so a
- *  row found here by construction names lineage no protocol version has read yet. */
+/** Any failure-mode sighting of this plugin's that no protocol version has folded in yet —
+ *  unfolded lineage, by construction: `protocol_record` writes the `eval_protocol_failure_mode`
+ *  row that folds one in, and nothing else does. */
 async function newRecurringFailure(p: pg.Pool, pluginId: string): Promise<boolean> {
   const row = (await p.query<{ n: string }>(`
     select count(*)::text as n
-      from zz.eval_failure_mode_candidate c
-      join zz.eval_observation_snapshot os on os.id = c.observation_snapshot_id
-      join zz.eval_subject_version sv on sv.id = os.subject_version_id
-     where sv.plugin_id = $1::uuid and c.status = 'candidate'`, [pluginId])).rows[0];
+      from zz.eval_failure_mode_sighting s
+      join zz.eval_failure_mode fm on fm.id = s.failure_mode_id
+     where fm.plugin_id = $1::uuid
+       and not exists (select 1 from zz.eval_protocol_failure_mode pfm
+                         join zz.eval_protocol_version pv on pv.id = pfm.protocol_version_id
+                        where pfm.failure_mode_id = fm.id and pv.plugin_id = $1::uuid)`,
+    [pluginId])).rows[0];
   return Number(row?.n ?? 0) > 0;
 }
 
 /** A measure under this protocol version whose evaluator has since been superseded — a later
  *  version of the same `stable_key` now exists (`evaluators.ts`'s `registerEvaluator` mints one
  *  whenever a caller registers a changed definition), and this version still points at the old
- *  one. */
+ *  one. The identity is the version's own `stable_key`: `zz.eval_evaluator` is gone. */
 async function evaluatorDrift(p: pg.Pool, protocolVersionId: string): Promise<boolean> {
   const row = (await p.query<{ n: string }>(`
     select count(*)::text as n
       from zz.eval_measure m
-      join zz.eval_dimension d on d.id = m.dimension_id
       join zz.eval_evaluator_version v on v.id = m.evaluator_version_id
-     where d.protocol_version_id = $1::uuid
+     where m.protocol_version_id = $1::uuid
        and v.version < (
-         select max(v2.version) from zz.eval_evaluator_version v2 where v2.evaluator_id = v.evaluator_id
+         select max(v2.version) from zz.eval_evaluator_version v2 where v2.stable_key = v.stable_key
        )`, [protocolVersionId])).rows[0];
   return Number(row?.n ?? 0) > 0;
 }

@@ -84,17 +84,23 @@ export function currentVersion(
   return newestVersion(versions.filter((v) => !retracted.includes(v)));
 }
 
-/** The versions of a plugin a rollback retracted (FR-50): every `declared_version` a
- *  `rolled_back` release attempt had released. A rollback of a plugin outside the catalog makes
- *  the prior version current again without deleting the `zz.plugin_version` row the retracted
- *  release registered. A catalog plugin is at whatever the running deployment declares. That row
- *  stays: an exact-version locate still resolves it, because verifying and explaining the
- *  rolled-back release needs it. */
+/** The versions of a plugin a rollback retracted (FR-50): every version a `rolled_back` release
+ *  attempt had released. A rollback of a plugin outside the catalog makes the prior version
+ *  current again without deleting the `zz.plugin_version` row the retracted release registered —
+ *  the released subject IS that row (FR-24), so the join is by id and the version is its own
+ *  column. A catalog plugin is at whatever the running deployment declares. The row stays: an
+ *  exact-version locate still resolves it, because verifying and explaining the rolled-back
+ *  release needs it.
+ *
+ *  `as declared_version`, not `as version`: this is the version the release DECLARES, which is
+ *  the name every subject-shaped reader on this side already uses for that value
+ *  (`plugin_locate`'s own response, `release_record`'s subject lookup), and the fold moved the
+ *  column without moving the word. */
 export async function retractedVersions(runner: Queryable, pluginId: string): Promise<string[]> {
   return (await runner.query<{ declared_version: string }>(`
-    select distinct sv.declared_version
+    select distinct pv.version as declared_version
       from zz.release_attempt ra
-      join zz.eval_subject_version sv on sv.id = ra.released_subject_version_id
+      join zz.plugin_version pv on pv.id = ra.released_subject_version_id
      where ra.plugin_id = $1::uuid and ra.status = 'rolled_back'`, [pluginId])).rows
     .map((r) => r.declared_version);
 }

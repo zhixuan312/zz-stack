@@ -134,17 +134,6 @@ export const IMPROVE: Record<string, TableTarget> = {
     foreignKeys: [
       {
         columns: [
-          "eval_id",
-        ],
-        refTable: "eval",
-        refColumns: [
-          "id",
-        ],
-        onDelete: "CASCADE",
-        deferrable: false,
-      },
-      {
-        columns: [
           "eval_run_id",
         ],
         refTable: "eval_run",
@@ -368,7 +357,7 @@ export const IMPROVE: Record<string, TableTarget> = {
         columns: [
           "base_subject_version_id",
         ],
-        refTable: "eval_subject_version",
+        refTable: "plugin_version",
         refColumns: [
           "id",
         ],
@@ -505,7 +494,7 @@ export const IMPROVE: Record<string, TableTarget> = {
         columns: [
           "base_subject_version_id",
         ],
-        refTable: "eval_subject_version",
+        refTable: "plugin_version",
         refColumns: [
           "id",
         ],
@@ -538,7 +527,7 @@ export const IMPROVE: Record<string, TableTarget> = {
         columns: [
           "released_subject_version_id",
         ],
-        refTable: "eval_subject_version",
+        refTable: "plugin_version",
         refColumns: [
           "id",
         ],

@@ -69,9 +69,13 @@ interface AttemptRow {
   readonly required_owners: string[]; readonly verdict: string | null; readonly plugin_id: string;
 }
 
+/** The plugin a subject version belongs to, and the version it names — the release's own row
+ *  (FR-24: a subject version IS a `plugin_version`), so both facts are its columns. `as
+ *  declared_version`: that is the name every subject-shaped reader on this side uses for the
+ *  version a release declares, and the fold moved the column without moving the word. */
 async function subjectOf(client: Pick<pg.PoolClient, "query">, id: string): Promise<{ plugin_id: string; declared_version: string } | null> {
   const row = (await client.query<{ plugin_id: string; declared_version: string }>(
-    "select plugin_id::text as plugin_id, declared_version from zz.eval_subject_version where id = $1::uuid",
+    "select plugin_id::text as plugin_id, version as declared_version from zz.plugin_version where id = $1::uuid",
     [id])).rows[0];
   return row ?? null;
 }
@@ -117,8 +121,8 @@ export async function recordRelease(
     // inside this transaction, so the retraction and its confirmation commit together or not at
     // all. A newer release that is not retracted still stands over the prior one; recording
     // rolled_back then would claim a restore that did not happen. Compared by VERSION, not by
-    // subject id: the head's newest capture of the prior version need not be the very row the
-    // attempt was based on.
+    // the row id: the head names one `plugin_version` row per (plugin, version) and the row the
+    // attempt was based on need not be that one.
     const head = await currentReleasedHead(client, attempt.plugin_id);
     const prior = await subjectOf(client, attempt.base_subject_version_id);
     if (!head || !prior || compareSemver(head.version, prior.declared_version) !== 0) {

@@ -18,6 +18,36 @@ check("no initiative reader derives closed, outcome or flow from zz.doc", runsCh
 check("every tool the spec renamed resolves through one frozen map", runsCheck("alias-maps.ts"));
 check("no statement in the write trees names a table or column the migration retires",
       runsCheck("dropped-columns.ts"));
+// Phase 3's pair, registered by the integration step after wave 2 — the wave that creates them.
+// `catalog-eval-columns.ts` reads whether a statement can still be READ once the migration lands;
+// these two ask whether a row can still be WRITTEN (I-21) and whether a release identity is ever
+// rewritten (I-22). The first is still in `notRegistered` in `suites.ts` until wave 6.
+check("no insert under the write trees names a catalog table or column the phase retires",
+      runsCheck("skill-row-shape.ts"));
+check("a released plugin_version is written once, and no statement updates it",
+      runsCheck("plugin-version-immutable.ts"));
+// Wave 4's pair, registered by the integration step after wave 4 — the wave that creates them.
+// I-24 split a failure mode into an identity and a sighting; I-25 made a scored run terminal and
+// moved per-dimension results into their own table.
+check("a failure mode is an identity and a discovery of it is a sighting: identified by (plugin_id, stable_key), carrying its own prevalence, owner and evidence, and always resolving to a mode",
+      runsCheck("failure-mode-identity.ts"));
+check("a scored run is terminal, and every result row names who produced it",
+      runsCheck("scored-run-terminal.ts"));
+// Wave 5's check, registered by the integration step after wave 5 — the wave that writes it. I-26
+// gave an assessment its typed subject and put the idempotency ledger back on the column the
+// migration left it, which is what made this check runnable at all.
+check("an assessment names what it judged by kind and by exactly one child key, and the ledger keys on the principal's id",
+      runsCheck("typed-subject.ts"));
+// Wave 6's pair, registered by the integration step after wave 6 — the wave that writes the second
+// of them. I-20's `catalog-eval-columns.ts` is the phase's OWN acceptance check: it could not pass
+// before wave 6, which is why it sat in `suites.ts`'s not-registered list from wave 1 until now,
+// and the entry is struck in the same pass. I-27's `eval-family-readers.ts` is the last reader
+// sweep — it reads the same statements against the target and then PLANS them against a throwaway
+// database migrated from this tree, counting the ones it cannot read rather than passing them.
+check("no statement under the write trees names a catalog table or column the phase-3 migration retires",
+      runsCheck("catalog-eval-columns.ts"));
+check("every evaluation reader names a table and column the phase-3 migration leaves standing, and one it cannot read is counted rather than passed",
+      runsCheck("eval-family-readers.ts"));
 
 check("the resolvers are applied wherever a stored name is read", runsCheck("alias-applied.ts"));
 

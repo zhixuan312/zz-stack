@@ -3,8 +3,8 @@
  * one `subject_version_id` (from `plugin_locate`/`plugin_register`) to a resolved window of real
  * runs and writes exactly one immutable `zz.eval_observation_snapshot` row — never updated, so
  * DISCOVER (a later task) and EVALUATE can bind a stable evidence reference without racing this
- * call, and the same release observed a second time (a different window, a different deployed
- * environment) produces a second snapshot on the same subject rather than overwriting the first.
+ * call, and the same release observed a second time (a different window, or one that resolved no
+ * window at all) produces a second snapshot on the same subject rather than overwriting the first.
  *
  * FIXED (was DELIBERATE, migration 001 — fix dispatch on I-29's own follow-on): the row used to
  * store no facts, only the digest over them (`evidence_digest`) — so a deterministic/outcome
@@ -55,18 +55,20 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /** The subject a `subject_version_id` names, or null for one nothing minted — checked BEFORE
  *  `withIdempotency` so a refused call writes no ledger row (the same order `plugin_locate`
- *  uses). A malformed uuid is refused the same way a well-formed but unknown one is: `::uuid`
- *  on garbage throws Postgres error 22P02, which is not this contract's refusal text. */
+ *  uses). A subject version IS a `plugin_version` row (FR-24), so the release's own row carries
+ *  both the plugin it belongs to and the version it names. A malformed uuid is refused the same
+ *  way a well-formed but unknown one is: `::uuid` on garbage throws Postgres error 22P02, which
+ *  is not this contract's refusal text. */
 async function resolveSubject(
   pool: pg.Pool, subjectVersionId: string,
 ): Promise<{ plugin: string; declaredVersion: string } | null> {
   if (!UUID_RE.test(subjectVersionId)) return null;
-  const row = (await pool.query<{ plugin: string; declared_version: string }>(`
-    select p.name as plugin, sv.declared_version
-      from zz.eval_subject_version sv
-      join zz.plugin p on p.id = sv.plugin_id
-     where sv.id = $1::uuid`, [subjectVersionId])).rows[0];
-  return row ? { plugin: row.plugin, declaredVersion: row.declared_version } : null;
+  const row = (await pool.query<{ plugin: string; version: string }>(`
+    select p.name as plugin, pv.version
+      from zz.plugin_version pv
+      join zz.plugin p on p.id = pv.plugin_id
+     where pv.id = $1::uuid`, [subjectVersionId])).rows[0];
+  return row ? { plugin: row.plugin, declaredVersion: row.version } : null;
 }
 
 type EvidenceWindowInput = { from: string; to: string } | { last_runs: number };
@@ -137,7 +139,11 @@ interface Observation {
   traces: Awaited<ReturnType<typeof pluginTraces>>;
   facts: Record<string, ObservedFact>;
   coverageSurface: { observed: number; total: number; source: string };
-  runtimeIdentity: { service_versions: Record<string, string> };
+  /** The one runtime fact the snapshot row keeps: the platform version this observation ran on
+   *  (`platform_version`). The `runtime_identity` jsonb it used to be stored in, and the
+   *  `environment_digest` over it, are gone — nothing ever read the digest, and the version is
+   *  the whole of what the identity carried that a reader can act on. */
+  platformVersion: string;
 }
 
 /** Everything OBSERVE computes for one subject over one resolved window — called once for a
@@ -222,8 +228,26 @@ async function computeObservation(
   return {
     traces, facts,
     coverageSurface: { ...called, source: surface.source },
-    runtimeIdentity: { service_versions: { "zz-core": PLATFORM_VERSION } },
+    platformVersion: PLATFORM_VERSION,
   };
+}
+
+/** The window a snapshot row stores: `window_from`/`window_to` when the window really resolved,
+ *  and NULL on both when it did not. An inverted sentinel (`{from: "infinity", to: "-infinity"}`,
+ *  what `resolveWindow` answers when no run matches) is not a window — `window_from <= window_to`
+ *  is a real check on the row, and a snapshot that observed nothing says so rather than pinning a
+ *  window the platform invented. */
+function storedWindow(window: EvidenceWindow): { from: string | null; to: string | null } {
+  return window.from <= window.to ? { from: window.from, to: window.to } : { from: null, to: null };
+}
+
+/** The inverse, for a replay: the window a row's own two columns describe, in the shape
+ *  `computeObservation` reads. A row with no window recomputes over the same empty range the
+ *  fresh call used, so a replay's facts are the ones this snapshot actually held. */
+function windowOf(row: { window_from: string | null; window_to: string | null }): EvidenceWindow {
+  return row.window_from !== null && row.window_to !== null
+    ? { from: row.window_from, to: row.window_to }
+    : { from: "infinity", to: "-infinity" };
 }
 
 /** The runs and refused calls an observation snapshot's own window holds, recomputed from the
@@ -232,14 +256,17 @@ export async function snapshotSubjectRefs(pool: pg.Pool, snapshotId: string): Pr
   run_refs: { run_id: string; team: string | null; initiative: string | null }[];
   run_refs_truncated: boolean; refusal_refs: string[];
 } | null> {
-  const row = (await pool.query<{ plugin: string; version: string; window: EvidenceWindow | null }>(`
-    select pl.name as plugin, sv.declared_version as version, os.production_window->'resolved' as window
+  const row = (await pool.query<{
+    plugin: string; version: string; window_from: string | null; window_to: string | null;
+  }>(`
+    select pl.name as plugin, pv.version, os.window_from::text as window_from, os.window_to::text as window_to
       from zz.eval_observation_snapshot os
-      join zz.eval_subject_version sv on sv.id = os.subject_version_id
-      join zz.plugin pl on pl.id = sv.plugin_id
+      join zz.plugin_version pv on pv.id = os.plugin_version_id
+      join zz.plugin pl on pl.id = pv.plugin_id
      where os.id = $1::uuid`, [snapshotId])).rows[0];
-  if (!row?.window) return null;
-  const refs = await subjectRefsOf(pool, row.plugin, row.version, servesOwnDoor(row.plugin), row.window);
+  if (!row || row.window_from === null || row.window_to === null) return null;
+  const refs = await subjectRefsOf(pool, row.plugin, row.version, servesOwnDoor(row.plugin),
+    { from: row.window_from, to: row.window_to });
   return { ...refs, run_refs: refs.run_refs.map(({ run_id, team, initiative }) => ({ run_id, team, initiative })) };
 }
 
@@ -269,7 +296,7 @@ function respond(
     total_run_count: observation.traces.runs,
     coverage: { surface: observation.coverageSurface },
     facts: observation.facts,
-    environment_digest: sha256(canonicalJson(observation.runtimeIdentity)),
+    platform_version: observation.platformVersion,
     evidence_digest: evidenceDigest,
     // Extra context beyond the contract's own fields — the traces this snapshot's facts were
     // rolled up from. Every stage visit is summarised rather than listed: at 95 runs the list
@@ -315,9 +342,9 @@ export function registerObserveTools(server: McpServer): void {
         "never 0. RETURNS an immutable observation_snapshot_id with no protocol required. A " +
         "mutator: it writes exactly one zz.eval_observation_snapshot row through the FR-59 " +
         "idempotency ledger, so a retried call with the same idempotency_key replays rather " +
-        "than minting a second row (the same subject observed under a different window or a " +
-        "different deployed environment DOES mint a second snapshot — that is a different " +
-        "observation, not a retry). REFUSES a subject_version_id nothing minted.",
+        "than minting a second row (the same subject observed under a different window DOES " +
+        "mint a second snapshot — that is a different observation, not a retry). REFUSES a " +
+        "subject_version_id nothing minted.",
       inputSchema: {
         subject_version_id: z.string(),
         evidence_window: z.union([
@@ -361,23 +388,32 @@ export function registerObserveTools(server: McpServer): void {
       }
 
       const principal = parseCaller(requestHeaders()).email;
+      // The row names who observed it: `recorded_by` is a principal, and an address no principal
+      // carries is refused rather than written as an attribution nobody has.
+      const observer = (await pool.query<{ id: string }>(
+        "select id::text as id from zz.principal where lower(email) = lower($1) limit 1",
+        [principal])).rows[0];
+      if (!observer) {
+        throw new Refusal(`ERROR: no zz.principal carries "${principal}", so this observation has nobody to name`);
+      }
+      const windowColumns = storedWindow(window);
       const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
         principal, "plugin_profile", idempotency_key, { subject_version_id, evidence_window },
         async (client): Promise<MutatorOutcome<{ id: string }>> => {
           const row = (await client.query<{ id: string }>(`
             insert into zz.eval_observation_snapshot
-              (subject_version_id, production_window, coverage, usable_run_count, total_run_count,
-               runtime_identity, environment_digest, evidence_digest, facts, created_at)
-            values ($1::uuid, $2::jsonb, $3::jsonb, $4, $5, $6::jsonb, $7, $8, $9::jsonb, now())
+              (plugin_version_id, window_from, window_to, surface_observed, surface_total,
+               surface_source, usable_run_count, total_run_count, platform_version, evidence_digest,
+               facts, recorded_by, created_at)
+            values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::uuid, now())
             returning id::text as id`,
-            [subject_version_id,
-             JSON.stringify({ requested: evidence_window, resolved: window }),
-             JSON.stringify({ surface: observation.coverageSurface }),
+            [subject_version_id, windowColumns.from, windowColumns.to,
+             observation.coverageSurface.observed, observation.coverageSurface.total,
+             observation.coverageSurface.source,
              observation.traces.usable_runs, observation.traces.runs,
-             JSON.stringify(observation.runtimeIdentity),
-             sha256(canonicalJson(observation.runtimeIdentity)),
+             observation.platformVersion,
              sha256(canonicalJson(observation.facts)),
-             JSON.stringify(observation.facts)])).rows[0];
+             JSON.stringify(observation.facts), observer.id])).rows[0];
           return { result: { id: row.id }, result_table: "zz.eval_observation_snapshot", result_id: row.id };
         },
       );
@@ -393,19 +429,20 @@ export function registerObserveTools(server: McpServer): void {
 
       // Replay: recompute over the ROW'S OWN stored window, not necessarily this call's — a
       // `last_runs: n` request resolves against whatever runs exist at call time, so a replay
-      // years later must recompute against what was actually observed then, read back from
-      // `production_window.resolved`, never re-resolved.
+      // years later must recompute against what was actually observed then, read back from the
+      // row's own `window_from`/`window_to`, never re-resolved.
       const stored = (await pool.query<{
-        id: string; production_window: { resolved: EvidenceWindow }; evidence_digest: string;
+        id: string; window_from: string | null; window_to: string | null; evidence_digest: string;
       }>(`
-        select id::text as id, production_window, evidence_digest
+        select id::text as id, window_from::text as window_from, window_to::text as window_to,
+               evidence_digest
           from zz.eval_observation_snapshot where id = $1::uuid`,
         [outcome.result_id])).rows[0];
       if (!stored) {
         throw new Refusal("ERROR: idempotency ledger points at an observation snapshot this call cannot read back");
       }
-      const storedWindow = stored.production_window.resolved;
-      const recomputed = await computeObservation(pool, plugin, declaredVersion, storedWindow);
+      const storedColumns = windowOf(stored);
+      const recomputed = await computeObservation(pool, plugin, declaredVersion, storedColumns);
       const freshDigest = sha256(canonicalJson(recomputed.facts));
       logActivity(await userRoot(), null,
         { user: principal, action: "plugin_profile", plugin, version: declaredVersion,
@@ -413,7 +450,7 @@ export function registerObserveTools(server: McpServer): void {
           evidence_digest_drifted: freshDigest !== stored.evidence_digest });
       const recorded = await recordStage(initiative, "zz-plugin-observe",
         { subject_version_id, observation_snapshot_id: stored.id });
-      return json({ ...respond(stored.id, plugin, declaredVersion, storedWindow, recomputed,
+      return json({ ...respond(stored.id, plugin, declaredVersion, storedColumns, recomputed,
         { stored_evidence_digest: stored.evidence_digest, drifted: freshDigest !== stored.evidence_digest }), ...recorded });
     },
   );

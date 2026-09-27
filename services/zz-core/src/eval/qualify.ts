@@ -8,10 +8,11 @@
  * protocol's policy and the bound measure, gathering evidence, applying the ladder, and writing
  * the row through the FR-59 idempotency ledger, the same shape every mutator on this door uses.
  *
- * `subject_scope` is not a caller-supplied input: it is derived from the protocol's own plugin,
- * `{ plugin_id }`, the same way `protocol_affirm` derives a document path from an `initiative`
- * it is handed rather than asked to guess — see this file's own tool description for the same
- * disclosure made to a caller.
+ * A qualification is about a MEASURE (Task I-23's reshape): the row names `measure_id` and who
+ * qualified it (`qualified_by`), and the evaluator version and the protocol version are both
+ * reached through that measure — `subject_scope` said only what the measure's own protocol
+ * already says, and `evaluator_qualify` refuses a measure key two dimensions share, so the
+ * measure a row names is the one the evaluator was qualified for.
  *
  * DELIBERATE: the caller names the measure by `measure_key`, never an `evaluator_version_id`.
  * The key is what the define stage wrote into `protocol_body`; the evaluator version is minted
@@ -53,19 +54,18 @@ interface ProtocolContext {
 export async function resolveProtocol(p: pg.Pool, protocolVersionId: string): Promise<ProtocolContext | null> {
   if (!UUID_RE.test(protocolVersionId)) return null;
   const row = (await p.query<{ plugin_id: string; qualification_policy: unknown; version: number; affirmed: boolean }>(`
-    select pr.plugin_id::text as plugin_id, pv.qualification_policy as qualification_policy,
-           pv.version, pv.approved_document_path is not null as affirmed
+    select pv.plugin_id::text as plugin_id, pv.qualification_policy as qualification_policy,
+           pv.version, pv.approved_doc_id is not null as affirmed
       from zz.eval_protocol_version pv
-      join zz.eval_protocol pr on pr.id = pv.protocol_id
      where pv.id = $1::uuid`, [protocolVersionId])).rows[0];
   if (!row) return null;
   const parsed = QualificationPolicy.safeParse(row.qualification_policy);
   return { pluginId: row.plugin_id, policy: parsed.success ? parsed.data : null, version: row.version, affirmed: row.affirmed };
 }
 
-/** FR-6's gate, read where it matters: `protocol_record` writes every version with
- *  `approved_document_path` null, and only `protocol_affirm` sets it, once a person approved the
- *  `protocol.md` quoting its digest. Nothing is qualified or scored against a
+/** FR-6's gate, read where it matters: `protocol_record` writes every version with `approved_doc_id`
+ *  null, and only `protocol_affirm` fills the three affirmation fields, once, once a person
+ *  approved the `protocol.md` quoting its digest. Nothing is qualified or scored against a
  *  version that never got there. No exemption for a bootstrap protocol: it is
  *  recorded through `protocol_record` like any other body and affirmed the same way —
  *  `scoring.establishment.bootstrap` only caps what its score may claim. */
@@ -76,11 +76,14 @@ export function unaffirmedRefusal(protocolVersionId: string, protocol: ProtocolC
     "nothing is qualified or scored against a protocol nobody agreed";
 }
 
+/** The evaluator version's stable key — its identity, and now its own column: `zz.eval_evaluator`
+ *  was a header carrying the key and a `kind` nothing read, and the phase-3 migration folded it
+ *  onto the version. */
 async function resolveEvaluator(p: pg.Pool, evaluatorVersionId: string): Promise<string | null> {
   if (!UUID_RE.test(evaluatorVersionId)) return null;
   const row = (await p.query<{ stable_key: string }>(`
-    select e.stable_key as stable_key
-      from zz.eval_evaluator_version v join zz.eval_evaluator e on e.id = v.evaluator_id
+    select v.stable_key as stable_key
+      from zz.eval_evaluator_version v
      where v.id = $1::uuid`, [evaluatorVersionId])).rows[0];
   return row ? row.stable_key : null;
 }
@@ -90,7 +93,11 @@ async function resolveEvaluator(p: pg.Pool, evaluatorVersionId: string): Promise
  *  but migration 001 carries no such constraint and a version recorded before that refusal may
  *  still share one across two dimensions — refused here naming both rather than resolved to
  *  whichever row came first. Exported for `finding_record` (plugin-record.ts), which cites a
- *  measure by the same key: one resolver, so the two can never read a key differently. */
+ *  measure by the same key: one resolver, so the two can never read a key differently.
+ *
+ *  Read off the measure's own `protocol_version_id` (the phase-3 shape): a measure names its
+ *  protocol version itself now, and the join to its dimension is kept only to name the dimension
+ *  in the duplicate-key refusal. */
 export async function measureByKey(
   p: pg.Pool, protocolVersionId: string, measureKey: string,
 ): Promise<{ id: string; evaluator_type: string; evaluator_version_id: string | null } | { error: string }> {
@@ -98,7 +105,7 @@ export async function measureByKey(
     select m.id::text as id, m.key, d.key as dimension, m.evaluator_type,
            m.evaluator_version_id::text as evaluator_version_id
       from zz.eval_measure m join zz.eval_dimension d on d.id = m.dimension_id
-     where d.protocol_version_id = $1::uuid
+     where m.protocol_version_id = $1::uuid
      order by d.key, m.key`, [protocolVersionId])).rows;
   const named = rows.filter((r) => r.key === measureKey);
   if (!named.length) {
@@ -169,11 +176,13 @@ interface Writer {
 }
 
 /** One qualification run, decided and not yet written: the ladder's state, the evidence behind
- *  it, and every evaluator answer asked on the way, in ask order. */
+ *  it, and every evaluator answer asked on the way, in ask order. `measureId` is the subject of
+ *  the row and `qualifiedBy` the principal it names — a qualification is about a measure, and who
+ *  qualified it is a person, not a scope. */
 interface GatheredQualification {
-  readonly protocolVersionId: string;
+  readonly measureId: string;
   readonly evaluatorVersionId: string;
-  readonly pluginId: string;
+  readonly qualifiedBy: string;
   readonly state: string;
   readonly reason: string | null;
   readonly evidence: LadderEvidence;
@@ -187,8 +196,8 @@ interface GatheredQualification {
  *  `recordQualification` writes the answers and the row through `evaluator_qualify`'s ledger
  *  transaction client. */
 async function gatherQualification(
-  p: pg.Pool, protocolVersionId: string, evaluatorVersionId: string, measureId: string,
-  protocol: ProtocolContext, stableKey: string, principal: string,
+  p: pg.Pool, evaluatorVersionId: string, measureId: string,
+  qualifiedBy: string, protocol: ProtocolContext, stableKey: string, principal: string,
 ): Promise<GatheredQualification> {
   const anchors = await measureAnchors(p, measureId);
   const { thresholds } = resolveThresholds(protocol.policy?.thresholds);
@@ -205,11 +214,11 @@ async function gatherQualification(
     },
   });
   const mappings = parseLabelMappings(protocol.policy?.labelMappings ?? []);
-  const labels = await labelEvidence(p, measureId, evaluatorVersionId, mappingFor(mappings, stableKey));
+  const labels = await labelEvidence(p, measureId, mappingFor(mappings, stableKey));
 
   const evidence: LadderEvidence = { ...counts, labels };
   const { state, reason } = qualificationState(evidence, thresholds);
-  return { protocolVersionId, evaluatorVersionId, pluginId: protocol.pluginId, state, reason, evidence, results, asked };
+  return { measureId, evaluatorVersionId, qualifiedBy, state, reason, evidence, results, asked };
 }
 
 /** The write half: every asked answer's `zz.assessment` row, then the one
@@ -219,11 +228,11 @@ async function recordQualification(writer: Writer, g: GatheredQualification): Pr
   for (const answer of g.asked) await insertEvaluatorAnswer(writer, answer);
   const row = (await writer.query<{ id: string }>(`
     insert into zz.eval_evaluator_qualification
-      (evaluator_version_id, protocol_version_id, subject_scope, state, evidence, qualified_at)
-    values ($1::uuid, $2::uuid, $3::jsonb, $4, $5::jsonb, now())
+      (measure_id, state, evidence, qualified_by, qualified_at)
+    values ($1::uuid, $2, $3::jsonb, $4::uuid, now())
     returning id::text as id`,
-    [g.evaluatorVersionId, g.protocolVersionId, JSON.stringify({ plugin_id: g.pluginId }),
-     g.state, JSON.stringify({ ...g.evidence, reason: g.reason, results: g.results })])).rows[0];
+    [g.measureId, g.state,
+     JSON.stringify({ ...g.evidence, reason: g.reason, results: g.results }), g.qualifiedBy])).rows[0];
   if (!row) throw new Error("insert into zz.eval_evaluator_qualification produced no row");
 
   return respond(g.evidence, g.results, g.state, g.reason, row.id);
@@ -249,7 +258,8 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
         "{passed, total}, planted_faults: {killed, total}, controls: {failed_as_expected, total}, " +
         "stability: {agreeing, total}, labels: {n, tpr, tnr} | null, reason, results: [{ id, role, " +
         "expected, got }] } }, writing exactly one " +
-        "zz.eval_evaluator_qualification row scoped to { plugin_id } (derived from the protocol). " +
+        "zz.eval_evaluator_qualification row naming that measure and who qualified it — the " +
+        "evaluator version and the protocol version are both read through the measure. " +
         "reason names every threshold that stopped the climb, as '<key> <rate> < <bar> (passed/total)'. " +
         "REFUSES an unknown protocol_version_id; one protocol_affirm has not bound (not yet approved); " +
         "a measure_key this protocol version does not " +
@@ -287,6 +297,12 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
       if (!stableKey) return text(`ERROR: measure "${measure_key}" names evaluator version ${evaluator_version_id}, which is not registered`);
 
       const principal = parseCaller(requestHeaders()).email;
+      // The row names who qualified it: `qualified_by` is a principal, and an address no
+      // principal carries is refused rather than written as an attribution nobody has.
+      const who = (await p.query<{ id: string }>(
+        "select id::text as id from zz.principal where lower(email) = lower($1) limit 1",
+        [principal])).rows[0];
+      if (!who) return text(`ERROR: no zz.principal carries "${principal}", so this qualification has nobody to name`);
 
       // Every model call happens before the transaction: a retry is ruled out first (so it never
       // re-asks), then the ladder asks on the pool, then the transaction only writes.
@@ -297,7 +313,7 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
         outcome = prior;
       } else {
         const gathered = await gatherQualification(
-          p, protocol_version_id, evaluator_version_id, measure.id, protocol, stableKey, principal);
+          p, evaluator_version_id, measure.id, who.id, protocol, stableKey, principal);
         outcome = await withIdempotency(
           principal, "evaluator_qualify", idempotency_key, args,
           async (client): Promise<MutatorOutcome<QualifyResult>> => {

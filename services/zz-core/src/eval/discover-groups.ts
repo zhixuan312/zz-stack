@@ -1,6 +1,6 @@
 /**
- * The deterministic half of DISCOVER (Task I-9, FR-11): grouping real failures into candidate
- * failure modes before any model is asked anything. Kept out of discover.ts to stay under this
+ * The deterministic half of DISCOVER (Task I-9, FR-11): grouping real failures by the failure
+ * mode each is evidence of, before any model is asked anything. Kept out of discover.ts to stay under this
  * repository's 700-line ceiling — discover.ts is the tool, the evaluator and the model calls;
  * this is the SQL and the grouping arithmetic behind it.
  *
@@ -39,7 +39,7 @@ export interface RefusalGroup {
   readonly owner: string;
   readonly count: number;
   /** Up to 5 real `zz.event.id` values behind this group, oldest-called-first — the evidence a
-   *  candidate's `evidence_refs` points back at. */
+   *  sighting's `evidence_refs` points back at. */
   readonly sample_event_ids: string[];
   /** Up to 3 distinct RAW (un-normalised) refusal texts behind this group — what a
    *  generative-critic call reads when `normalized_text` itself is empty. */
@@ -59,7 +59,7 @@ export interface ReturnGroup {
 }
 
 /** The refusal-evidence groups for one plugin version's window, deterministic and ungraded —
- *  ordered most-frequent-first so a caller that caps how many groups it turns into candidates
+ *  ordered most-frequent-first so a caller that caps how many groups it turns into sightings
  *  keeps the ones with the most evidence behind them. */
 export async function refusalGroups(
   pool: pg.Pool, plugin: string, version: string, servesOwnDoor: boolean, window: EvidenceWindow,
@@ -109,7 +109,7 @@ export function refusalRule(normalized: string): string {
   return rule;
 }
 
-/** The refusal with its files folded out and its grammar left alone — what a candidate's
+/** The refusal with its files folded out and its grammar left alone — what a sighting's
  *  description says and the owner-kind evaluator reads. `refusalRule` is only the merge key. */
 function foldFiles(normalized: string): string {
   const folded = normalized.split(/(\s+)/).map((tok) => {
@@ -188,10 +188,13 @@ export function returnGroups(returns: Traces["returns"]): ReturnGroup[] {
     .sort((a, b) => b.count - a.count);
 }
 
-/** A candidate's identity across snapshots: the same refusal rule on the same tool, or the same
- *  return between the same stages, is the same failure mode whichever window found it. Without
- *  one, every re-observation re-surfaced failure modes a protocol had already folded in, and
- *  `new_recurring_failure` demanded a new protocol version for nothing new. */
+/** A failure mode's IDENTITY across snapshots: `(plugin_id, stable_key)` — the same refusal rule
+ *  on the same tool, or the same return between the same stages, is the same failure mode
+ *  whichever window found it. So a later window's run resolves to the identity a protocol already
+ *  folded in and writes only a new sighting of it (Task I-24), and `new_recurring_failure` is
+ *  asked about an identity no version has read rather than about every re-observation. Without
+ *  one, every re-observation minted a second failure mode a protocol had already folded in, and
+ *  that trigger demanded a new protocol version for nothing new. */
 export function refusalKey(g: Pick<RefusalGroup, "tool" | "normalized_text">): string {
   // `refusalRule`, the key `foldByRule` merges on — never the text a folded group happens to
   // carry, which is whichever of its singular and plural wordings came first.

@@ -7,9 +7,10 @@
  * measure this release, and rolling a good deployment back over that is the worse trade.
  *
  * register-plugins is the exception, and its failure is returned so step 5 counts it as a
- * verification failure. zz.plugin_version is an evaluation's subject and zz.plugin.release_owners
- * is what lets IMPROVE release at all: 0.76.2 failed this step with a warning, left every plugin
- * with release_owners [] and the newest plugin version at 0.75.0, and reported itself released.
+ * verification failure. zz.plugin_version is an evaluation's subject and a plugin's
+ * `zz.plugin_release_owner` rows are what let IMPROVE release at all: 0.76.2 failed this step with
+ * a warning, left every plugin with no release owner and the newest plugin version at 0.75.0, and
+ * reported itself released.
  */
 import { HOST, REMOTE, asExecError, log, run, ssh } from "../deployment.ts";
 
@@ -81,7 +82,7 @@ export function writeRegistries(ownerTeam: string): string[] {
           `--write\`, commit it, then re-run register-plugins. Nothing about the deployment is ` +
           `wrong; what is wrong is which version its work will be attributed to.\x1b[0m`);
     } else {
-      log(`  plugin registry updated from plugins.lock.json — owner and release_owners: ${ownerTeam}`);
+      log(`  plugin registry updated from plugins.lock.json — owner_team_id and plugin_release_owner: ${ownerTeam}`);
       // And only now can zz-core record its own surface. recordOwnSurface attaches the tools it
       // registered to the zz.plugin_version row for the version it is running, and refuses to invent
       // that row. The deploy above restarts zz-core before this step creates the row, so at boot the
@@ -104,8 +105,8 @@ export function writeRegistries(ownerTeam: string): string[] {
     // A failure, not a warning: see the module note.
     // Its own words, not execFileSync's message, which opens with the whole command line.
     const x = asExecError(e);
-    failures.push(`register-plugins failed, so no plugin version row and no release_owners exist ` +
-                  `for this release: ${(x.stderr || x.stdout || x.message).trim().slice(-300)}`);
+    failures.push(`register-plugins failed, so no plugin version row and no plugin_release_owner row ` +
+                  `exist for this release: ${(x.stderr || x.stdout || x.message).trim().slice(-300)}`);
   }
   return failures;
 }

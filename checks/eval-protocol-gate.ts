@@ -29,17 +29,41 @@ type Row = Record<string, unknown>;
 let measures: Row[] = [];
 let protocol: Row = { plugin_id: "p1", qualification_policy: null, version: 3, affirmed: false };
 let latest: Row = {
-  id: PV, version: 2, purpose: "p", observable_surfaces: [], approved_document_path: null,
+  id: PV, version: 2, purpose: "p", observable_surfaces: [], affirmed: false,
   content_digest: "digest-v2", any_affirmed: false,
 };
 let connected = 0;
 
 function answer(sql: string): Row[] {
-  if (/from zz\.eval_measure m join zz\.eval_dimension d on d\.id = m\.dimension_id where d\.protocol_version_id = \$1::uuid order by d\.key, m\.key/.test(sql)) return measures;
-  if (/pv\.approved_document_path is not null as affirmed/.test(sql)) return [protocol];
+  // A measure names its own protocol version since the phase-3 reshape (`eval_measure.
+  // protocol_version_id`), and the join to its dimension is kept only to name the dimension.
+  if (/from zz\.eval_measure m join zz\.eval_dimension d on d\.id = m\.dimension_id where m\.protocol_version_id = \$1::uuid order by d\.key, m\.key/.test(sql)) return measures;
+  // The affirmation is a document id on the version (`approved_doc_id`) — `approved_document_path`
+  // is retired by the same migration. `\b` because the newest-version read below aliases the same
+  // table `epv`, and a pattern that matched that one would answer the wrong question with the
+  // right shape.
+  if (/\bpv\.approved_doc_id is not null as affirmed/.test(sql)) return [protocol];
   if (/from zz\.eval_run where id = \$1::uuid/.test(sql)) return [{ id: RUN, protocol_version_id: PV }];
-  if (/from zz\.eval_observation_snapshot where id = \$1::uuid/.test(sql)) return [{ id: SNAP, subject_version_id: SV, coverage: {} }];
-  if (/from zz\.eval_subject_version sv join zz\.plugin pl on pl\.id = sv\.plugin_id where sv\.id/.test(sql)) return [{ plugin_id: "p1", plugin: "acme-not-in-catalog" }];
+  // The observation snapshot read, in the shape this phase gives it: the release it observed is
+  // `plugin_version_id` (`subject_version_id` is retired), and the surface it covered is three
+  // columns rather than the `coverage` jsonb. BOTH names are carried while the phase lands, the
+  // way the subject-resolution stub below carries both of its spellings: the statement that reads
+  // this row is Task I-25's (`evaluate.ts`), this file's own protocol reads are Task I-23's, and a
+  // row naming only one of the two would answer one wave and fail the other for a reason that is
+  // not about what the check is proving. What it proves is the subject comparison: the row must
+  // name the subject the call passed, or the assertion below fails on a mismatch instead.
+  if (/from zz\.eval_observation_snapshot where id = \$1::uuid/.test(sql)) return [{
+    id: SNAP, plugin_version_id: SV, subject_version_id: SV,
+    usable_run_count: 0, total_run_count: 0, surface_observed: 0, surface_total: 0, facts: null,
+  }];
+  // The subject-resolution statement, in the shape this phase gives it: a subject version IS a
+  // `plugin_version` row (FR-24), so the plugin's name is reached through that row's own
+  // `plugin_id`. Both spellings are accepted while the phase is landing — this check is
+  // re-pointed by Task I-22 and `protocol.ts`'s own copy of the statement is Task I-23's, so a
+  // pattern that knew only one of them would be matching nothing for one of the two waves. The
+  // alternative that matters is the new one: the moment neither text is in the statement, the
+  // stub stops answering and every assertion below fails, which is what makes it test something.
+  if (/from zz\.(?:eval_subject_version sv|plugin_version pv) join zz\.plugin pl on pl\.id = (?:sv|pv)\.plugin_id where (?:sv|pv)\.id/.test(sql)) return [{ plugin_id: "p1", plugin: "acme-not-in-catalog" }];
   if (/as any_affirmed/.test(sql)) return [latest];
   if (/select count\(\*\)::text as n/.test(sql)) return [{ n: "0" }];
   return [];
@@ -112,7 +136,7 @@ assert.equal(connected, 0, "evaluation_start refuses before its ledger transacti
 
 // ---- protocol_read: an unaffirmed newest version is never reuse.
 const read = async () => JSON.parse(await call("protocol_read", { subject_version_id: SV }));
-latest = { ...latest, approved_document_path: null, any_affirmed: false };
+latest = { ...latest, affirmed: false, any_affirmed: false };
 let got = await read();
 assert.equal(got.protocol_action, "create", "no version was ever affirmed: the lineage's create is still open");
 assert.deepEqual(got.awaiting_affirmation, { version: 2, content_digest: "digest-v2" });
@@ -122,7 +146,7 @@ latest = { ...latest, any_affirmed: true };
 got = await read();
 assert.equal(got.protocol_action, "revise", "an earlier version was affirmed: this one is a revision in flight");
 assert.ok(got.awaiting_affirmation, "still awaiting affirmation");
-latest = { ...latest, approved_document_path: "init/protocol.md" };
+latest = { ...latest, affirmed: true };
 got = await read();
 assert.equal(got.protocol_action, "reuse", "an affirmed newest version with no trigger is reuse");
 assert.equal(got.awaiting_affirmation, undefined);

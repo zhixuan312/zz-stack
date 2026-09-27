@@ -53,7 +53,8 @@ const wrong = interpret(question, reply([0.05, 0.02, 0.77, 0.02, 0.02, 0.02]));
 is(wrong.status === "invalid_response", `a distribution summing to 0.9 is ${wrong.status}, not refused`);
 
 // A failure mode keeps its identity across snapshots: the same rule found in another window, in
-// another order, is the same key, so DISCOVER records it as merged rather than new.
+// another order, is the same key, so DISCOVER resolves the same `(plugin_id, stable_key)`
+// identity and writes a new sighting of it (Task I-24).
 const again = foldByRule([...groups].reverse()).find((g: { tool: string }) => g.tool === REVISE);
 is(revise && again && refusalKey(revise) === refusalKey(again),
    `the same refusal rule found in another order has another key: ${revise && refusalKey(revise)} vs ${again && refusalKey(again)}`);

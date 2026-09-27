@@ -1,7 +1,9 @@
 /**
  * `release_prepare` (Task I-22, FR-45 to FR-48, AC-45.1 to AC-48.1): the one boundary a built and
  * gated candidate crosses before a real owned system is ever touched (FR-46). It resolves this
- * candidate's required owners LIVE off `subject.ts`'s own `zz.plugin.release_owners` column —
+ * candidate's required owners LIVE off the relation that holds them — `plugin_release_owner`,
+ * read the same way `subject.ts`'s own response reads it (FR-23: the jsonb list `plugin` used
+ * to carry is gone) —
  * never off the `touched_owners` `candidate_record` recorded, which is why the plan's own FR-47 says `release_prepare` "records the resolved list so a
  * future path-level resolver can replace this implementation without changing the gate
  * contract" — records the promotion package as a `zz.release_attempt` row (`prepared`), and
@@ -55,6 +57,10 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
+import {
+  evaluateGuardrails, guardrailsOfMeasures, reduceMeasureAnswers, type MeasureAnswer,
+} from "./evaluate-measures.js";
+import { loadDimensions, STORED_ANSWERS_SQL } from "./evaluate-run.js";
 import { writeImprovementDoc, type BaseScore } from "./improvement-doc.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { improvementRunOf, releasableCandidateOf } from "./initiative-run.js";
@@ -93,31 +99,67 @@ interface SubjectRow {
   readonly origin: string; readonly release_owners: string[];
 }
 
-/** The base subject's own plugin — origin/release_owners live on `zz.plugin`, the SAME columns
- *  `subject.ts`'s `subjectResponse` reads, never a second, ad hoc resolution of ownership. */
+/** The base subject's own plugin — origin, the version and the release owners live on
+ *  `zz.plugin`/`plugin_version`/`plugin_release_owner`, exactly the relations `subject.ts`'s
+ *  `subjectResponse` reads, never a second, ad hoc resolution of ownership. */
 async function loadSubject(p: pg.Pool, subjectVersionId: string): Promise<SubjectRow | null> {
   const row = (await p.query<SubjectRow>(`
-    select pl.id::text as plugin_id, pl.name as plugin, sv.declared_version, pl.origin, pl.release_owners
-      from zz.eval_subject_version sv join zz.plugin pl on pl.id = sv.plugin_id
-     where sv.id = $1::uuid`, [subjectVersionId])).rows[0];
+    select pl.id::text as plugin_id, pl.name as plugin, pv.version as declared_version, pl.origin,
+           coalesce(owners.slugs, '{}'::text[]) as release_owners
+      from zz.plugin_version pv
+      join zz.plugin pl on pl.id = pv.plugin_id
+      left join lateral (
+        select array_agg(t.slug order by t.slug) as slugs
+          from zz.plugin_release_owner r
+          join zz.team t on t.id = r.team_id
+         where r.plugin_id = pl.id) owners on true
+     where pv.id = $1::uuid`, [subjectVersionId])).rows[0];
   return row ?? null;
 }
 
 /** The base's own score in the evaluation the improvement run was opened from, and the protocol
  *  version it was scored under — the baseline improvement.md quotes and release_verify's own
- *  comparison starts from. */
-async function loadBaseScore(p: pg.Pool, evalRunId: string): Promise<(BaseScore & { protocol_version_id: string }) | null> {
+ *  comparison starts from.
+ *
+ *  The per-guardrail list is NOT a column of `zz.eval_run` any more: `002_catalog_evaluation.sql`
+ *  drops the `guardrails` jsonb, because a guardrail is a MEASURE's own bar now
+ *  (`eval_measure.guardrail_threshold`, written by `protocol_record` from the
+ *  `improvement.criticalGuardrails` entry that named the measure). A statement selecting that
+ *  column therefore fails to PREPARE on any migrated database, which is why the list is derived
+ *  here the way `evaluation_score` derives it (`evaluate.ts`): the run's own measures through
+ *  `guardrailsOfMeasures`, evaluated by `evaluateGuardrails` against the value each of those
+ *  measures reduced to over the run's stored answers. That is exactly what the dropped column
+ *  held — `001_init.sql:967` documents it as `evaluateGuardrails()`'s own
+ *  `[{key, threshold, value, status}]` output — and a scored run is terminal, so re-deriving it
+ *  from the run's immutable rows reproduces the figures that were scored. */
+async function loadBaseScore(
+  p: pg.Pool, evalRunId: string,
+): Promise<(BaseScore & { protocol_version_id: string }) | null> {
   const row = (await p.query<{
-    id: string; overall: string | null; score_status: string | null; guardrails: BaseScore["guardrails"] | null;
-    protocol_version_id: string;
+    id: string; overall: string | null; score_status: string | null; protocol_version_id: string;
   }>(`
-    select id::text as id, overall_score::text as overall, score_status, guardrails,
+    select id::text as id, overall_score::text as overall, score_status,
            protocol_version_id::text as protocol_version_id
       from zz.eval_run where id = $1::uuid`, [evalRunId])).rows[0];
-  return row ? {
+  if (!row) return null;
+
+  // The run's measures and what each reduced to — the same pair `evaluation_score` scores with,
+  // read back off a run that is already scored rather than parsed out of a policy object.
+  const measures = (await loadDimensions(p, row.protocol_version_id)).flatMap((d) => d.measures);
+  const answers = new Map<string, MeasureAnswer[]>();
+  for (const a of (await p.query<{ measure_id: string; answer: MeasureAnswer }>(
+    `${STORED_ANSWERS_SQL} where a.eval_run_id = $1::uuid`, [evalRunId])).rows) {
+    const list = answers.get(a.measure_id);
+    if (list) list.push(a.answer); else answers.set(a.measure_id, [a.answer]);
+  }
+  const valueByMeasureKey = new Map(measures.map((m) => [m.key, reduceMeasureAnswers(answers.get(m.id) ?? [])]));
+  const guardrails = evaluateGuardrails(guardrailsOfMeasures(measures), valueByMeasureKey)
+    .map((g) => ({ key: g.key, threshold: g.threshold, value: g.value, status: g.status }));
+
+  return {
     eval_run_id: row.id, overall_score: row.overall === null ? null : Number(row.overall),
-    score_status: row.score_status, guardrails: row.guardrails ?? [], protocol_version_id: row.protocol_version_id,
-  } : null;
+    score_status: row.score_status, guardrails, protocol_version_id: row.protocol_version_id,
+  };
 }
 
 /** `candidate_id` and `patch_digest` are returned because `release_apply` (and `zz-tool
@@ -307,9 +349,8 @@ export function registerReleaseTools(server: McpServer): void {
         "currently released subject has moved since this candidate's own base — rebase, " +
         "rebuild and re-approve before trying again), an unknown candidate_id, a " +
         "candidate with no prepared release_attempt, an improvement.md citing an attempt that is " +
-        "not this candidate's prepared one, a plugin with no registered version, a current " +
-        "version that is not newer than the base but was never captured (call plugin_locate for " +
-        "it first), and a deployment with no " +
+        "not this candidate's prepared one, a plugin with no registered version, and a " +
+        "deployment with no " +
         "platform database. A mutator: writes through the FR-59 idempotency ledger.",
       inputSchema: {
         candidate_id: z.string(),

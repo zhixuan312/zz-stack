@@ -23,6 +23,13 @@
  * document's body to quote the `content_digest` `protocol_record` returned, verbatim — the one
  * fact that ties a page of prose to the exact immutable row it was written to describe.
  *
+ * The affirmation names the document, not its path: `approved_doc_id` is a row of `zz.doc` (the
+ * phase-3 shape `eval_protocol_version` takes), and the three affirmation fields fill together,
+ * once — a version's payload and its affirmation are both written once and there is no path that
+ * moves either again (FR-6's `recorded -> affirmed`). The same fire-and-forget index is why the
+ * document row is required rather than assumed: a file whose row has not been indexed yet is
+ * refused with that cause named, never written as a claim with nothing behind it.
+ *
  * `writeBranchFacts` (Task I-27, FR-52, FR-58) is this file's third export: the one writer of
  * an initiative's durable branch facts (`protocol_action`, `improvement_mode`, `release_mode`)
  * every flow's `when` reads (`documentApplies`, packages/contracts/src/flow-when.js). Placed
@@ -62,15 +69,16 @@ import { Refusal } from "../refusal.js";
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so no protocol can be recorded or read");
 
-/** `subject_version_id` → the plugin it names, or null for one nothing minted. `plugin_locate`/
- *  `plugin_register` (subject.ts) are the only writers of this table, so a miss here means the
- *  caller has not IDENTIFY'd the subject yet — the same ordering DISCOVER's `resolveSnapshot`
- *  enforces one stage later. */
+/** `subject_version_id` → the plugin it names, or null for one nothing minted. A subject version
+ *  IS a `plugin_version` row (FR-24), so the release's own row carries the plugin it belongs to;
+ *  `plugin_locate`/`plugin_register` (subject.ts) are the only writers of that table, so a miss
+ *  here means the caller has not IDENTIFY'd the subject yet — the same ordering DISCOVER's
+ *  `resolveSnapshot` enforces one stage later. */
 async function pluginOf(p: pg.Pool, subjectVersionId: string): Promise<{ pluginId: string; plugin: string } | null> {
   const row = (await p.query<{ plugin_id: string; plugin: string }>(`
-    select sv.plugin_id::text as plugin_id, pl.name as plugin
-      from zz.eval_subject_version sv join zz.plugin pl on pl.id = sv.plugin_id
-     where sv.id = $1::uuid`, [subjectVersionId])).rows[0];
+    select pv.plugin_id::text as plugin_id, pl.name as plugin
+      from zz.plugin_version pv join zz.plugin pl on pl.id = pv.plugin_id
+     where pv.id = $1::uuid`, [subjectVersionId])).rows[0];
   return row ? { pluginId: row.plugin_id, plugin: row.plugin } : null;
 }
 
@@ -235,7 +243,7 @@ export function registerProtocolTools(server: McpServer): void {
       if (!latest) {
         response = { protocol_version_id: null, protocol_action: "create", triggers: ["none"],
           note: "No protocol exists for this plugin yet. Record one with protocol_record." };
-      } else if (latest.approved_document_path === null) {
+      } else if (!latest.affirmed) {
         // FR-6: recorded is not agreed. A newest version protocol_affirm never bound is not
         // reusable — nothing may score against it — so the stage that recorded it is still open:
         // `create`/`revise` as the lineage began, which keeps protocol.md applying on this
@@ -266,16 +274,30 @@ export function registerProtocolTools(server: McpServer): void {
       }
       // What DISCOVER left for this stage to fold in or leave uncited, read here rather than
       // carried from DISCOVER's own reply: a DEFINE opened in a new conversation has no other
-      // door to them, and re-running failure_discover would mint a duplicate set.
-      response.open_candidates = (await p.query<{ id: string; description: string; prevalence: unknown; owner_kind: string; owner_ref: string | null }>(`
-        select c.id::text as id, c.description, c.prevalence, c.owner_kind,
-               (select r->>'owner_ref' from jsonb_array_elements(c.evidence_refs) r
-                 where r->>'kind' = 'ownership' limit 1) as owner_ref
-          from zz.eval_failure_mode_candidate c
-          join zz.eval_observation_snapshot os on os.id = c.observation_snapshot_id
-          join zz.eval_subject_version sv on sv.id = os.subject_version_id
-         where sv.plugin_id = $1::uuid and c.status = 'candidate'
-         order by c.created_at`, [subject.pluginId])).rows;
+      // door to them, and re-running failure_discover would mint a duplicate set. A failure mode
+      // is an identity now and a discovery of it is a sighting (Task I-24), so what is unfolded
+      // is a sighting whose identity no protocol version of this plugin has folded in yet — the
+      // relation `eval_protocol_failure_mode` is what folding writes, and `failure_mode_id` is
+      // the id a `failureTaxonomy` entry actually folds in.
+      response.open_candidates = (await p.query<{
+        id: string; description: string; failure_mode_id: string; stable_key: string;
+        prevalence_numerator: number; prevalence_denominator: number;
+        owner_kind: string; owner_ref: string | null;
+      }>(`
+        select s.id::text as id, s.description, fm.id::text as failure_mode_id, fm.stable_key,
+               s.prevalence_numerator, s.prevalence_denominator, s.owner_kind, s.owner_ref
+          from zz.eval_failure_mode_sighting s
+          join zz.eval_failure_mode fm on fm.id = s.failure_mode_id
+         where fm.plugin_id = $1::uuid
+           and not exists (select 1 from zz.eval_protocol_failure_mode pfm
+                             join zz.eval_protocol_version pv on pv.id = pfm.protocol_version_id
+                            where pfm.failure_mode_id = fm.id and pv.plugin_id = $1::uuid)
+         order by s.created_at`, [subject.pluginId])).rows.map((c) => ({
+          id: c.id, failure_mode_id: c.failure_mode_id, stable_key: c.stable_key,
+          description: c.description,
+          prevalence: { numerator: c.prevalence_numerator, denominator: c.prevalence_denominator },
+          owner_kind: c.owner_kind, owner_ref: c.owner_ref,
+        }));
       if (!initiative) return json({ ...response, facts_recorded: false });
       const written = await writeBranchFacts(initiative, { protocol_action: response.protocol_action as string });
       // create/revise: once protocol.md is approved this initiative owes the bind and the
@@ -294,13 +316,19 @@ export function registerProtocolTools(server: McpServer): void {
       description:
         "WHEN a protocol needs to be created or revised, after protocol_read said so: validates " +
         "protocol_body against EvaluationProtocol and writes it as a new, immutable " +
-        "zz.eval_protocol_version (with its dimensions and measures), folding in DISCOVER " +
-        "lineage for any failureTaxonomy entry naming a candidateId/mergedCandidateIds. " +
-        "RETURNS { protocol_version_id, content_digest }. REFUSES an invalid body with the zod " +
+        "zz.eval_protocol_version (with its dimensions and measures), under the plugin and the " +
+        "protocol_key the body names — the header table that used to carry them is gone — and " +
+        "folds DISCOVER lineage in: every failureTaxonomy entry naming a candidateId/" +
+        "mergedCandidateIds writes one eval_protocol_failure_mode row, and a bare string entry " +
+        "folds in the failure mode with that stable_key. " +
+        "RETURNS { protocol_version_id, content_digest, unfolded_taxonomy_keys } — the last " +
+        "naming any failureTaxonomy entry that named no failure mode of this plugin, so a name " +
+        "nothing folded in is visible rather than silently dropped. REFUSES an invalid body with the zod " +
         "issues verbatim; a version number that is not this protocol's next one — there is no " +
         "edit, only a new version; a measure key repeated anywhere in the body (keys are unique " +
         "protocol-wide); a bounded_semantic/generative_critic measure with no usable " +
-        "evaluator; and a failureTaxonomy candidateId naming no candidate from this plugin's " +
+        "evaluator; and a failureTaxonomy entry naming no failure mode or sighting from this " +
+        "plugin's " +
         "own evidence. A mutator: writes through the FR-59 idempotency ledger.",
       inputSchema: {
         subject_version_id: z.string(),
@@ -318,11 +346,17 @@ export function registerProtocolTools(server: McpServer): void {
       if (!subject) return text("ERROR: unknown subject_version_id — call plugin_locate or plugin_register first");
 
       const principal = parseCaller(requestHeaders()).email;
+      // The version names who recorded it — `recorded_by` is a principal, and a row that named an
+      // address no principal carries would be a claim with nothing behind it.
+      const recorder = (await p.query<{ id: string }>(
+        "select id::text as id from zz.principal where lower(email) = lower($1) limit 1",
+        [principal])).rows[0];
+      if (!recorder) return text(`ERROR: no zz.principal carries "${principal}", so this recording has nobody to name`);
       const outcome: IdempotencyOutcome<{ protocol_version_id: string; content_digest: string }> =
         await withIdempotency(
           principal, "protocol_record", idempotency_key, { subject_version_id, protocol_body },
           async (client): Promise<MutatorOutcome<{ protocol_version_id: string; content_digest: string }>> => {
-            const result = await recordProtocolVersion(client, subject.pluginId, parsed.data);
+            const result = await recordProtocolVersion(client, subject.pluginId, parsed.data, recorder.id);
             if (typeof result === "string") throw new Refusal(result);
             return { result, result_table: "zz.eval_protocol_version", result_id: result.protocol_version_id };
           },
@@ -330,6 +364,8 @@ export function registerProtocolTools(server: McpServer): void {
 
       let response: { protocol_version_id: string; content_digest: string };
       if (outcome.replayed) {
+        // A replay answers the two ids and nothing else: the fold this call's own first pass
+        // wrote is a relation row already, so there is nothing left to report about it.
         const row = (await p.query<{ content_digest: string }>(
           "select content_digest from zz.eval_protocol_version where id = $1::uuid", [outcome.result_id])).rows[0];
         response = { protocol_version_id: outcome.result_id, content_digest: row?.content_digest ?? "" };
@@ -355,7 +391,9 @@ export function registerProtocolTools(server: McpServer): void {
         "since a bare protocol_version_id names no path on its own — and RETURNS " +
         "{ approved_document_path, approved_by, qualify_owed } once bound — qualify_owed is every " +
         "model-backed measure key evaluator_qualify must now be called for, and is recorded on " +
-        "the initiative so initiative_status routes to it before EVALUATE. REFUSES ERROR: protocol.md at " +
+        "the initiative so initiative_status routes to it before EVALUATE. Binding fills the three " +
+        "affirmation fields (`approved_doc_id`, `affirmed_by`, `affirmed_at`) together, once: the " +
+        "version is recorded again, never edited after that. REFUSES ERROR: protocol.md at " +
         "this version is not approved — when the document does not exist, is not " +
         "status: approved, or does not quote this version's content_digest anywhere in its " +
         "body: a document approved for a DIFFERENT version of this protocol is not approved " +
@@ -370,8 +408,9 @@ export function registerProtocolTools(server: McpServer): void {
     async ({ protocol_version_id, initiative, idempotency_key }) => {
       const p = db();
       if (!p) return noDb();
-      const row = (await p.query<{ content_digest: string }>(
-        "select content_digest from zz.eval_protocol_version where id = $1::uuid", [protocol_version_id])).rows[0];
+      const row = (await p.query<{ content_digest: string; affirmed: boolean }>(
+        "select content_digest, approved_doc_id is not null as affirmed from zz.eval_protocol_version where id = $1::uuid",
+        [protocol_version_id])).rows[0];
       if (!row) return text(`ERROR: unknown protocol_version_id ${protocol_version_id}`);
 
       // `initiative` is one path segment, never a nested path — `safePath` alone only keeps the
@@ -389,14 +428,47 @@ export function registerProtocolTools(server: McpServer): void {
       const env = parseEnvelope(raw);
       if (env.status !== "approved") return text(NOT_APPROVED);
       if (!documentBody(raw).includes(row.content_digest)) return text(NOT_APPROVED);
-
+      // The affirmation names the document, not its path: `approved_doc_id` is a row in `zz.doc`
+      // and the migration derived it from exactly this pair. A file the search index has not
+      // caught up with yet is refused here rather than written as a claim with nothing behind it.
+      if (row.affirmed) {
+        return text(`ERROR: protocol version ${protocol_version_id} is already affirmed — a ` +
+          "protocol version's payload and its affirmation are written once, and there is no path " +
+          "that moves either again. Record the next version instead.");
+      }
       const principal = parseCaller(requestHeaders()).email;
+      const team = await teamFor(principal);
+      const docRow = (await p.query<{ id: string }>(`
+        select d.id::text as id
+          from zz.doc d
+         where d.initiative = $1 and d.path = 'protocol.md'
+           and ($2::text is null or d.team_slug = $2)
+         order by d.updated_at desc limit 1`, [initiative, team])).rows[0];
+      if (!docRow) {
+        return text(`ERROR: no approved ${path} is recorded for ${team ?? "this caller"}'s team — ` +
+          "the document's own row has not reached the platform's index yet. Call document_approve " +
+          "and then this again.");
+      }
+      const who = (await p.query<{ id: string }>(
+        "select id::text as id from zz.principal where lower(email) = lower($1) limit 1",
+        [principal])).rows[0];
+      if (!who) return text(`ERROR: no zz.principal carries "${principal}", so this affirmation has nobody to name`);
+
       const outcome: IdempotencyOutcome<null> = await withIdempotency(
         principal, "protocol_affirm", idempotency_key, { protocol_version_id, initiative },
         async (client): Promise<MutatorOutcome<null>> => {
-          await client.query(
-            "update zz.eval_protocol_version set approved_document_path = $1 where id = $2::uuid",
-            [path, protocol_version_id]);
+          // Guarded, not unconditional: the three affirmation fields fill once, together, and a
+          // concurrent call that got there first leaves this one with no row to move.
+          const moved = await client.query(
+            `update zz.eval_protocol_version
+                set approved_doc_id = $3::uuid, affirmed_by = $4::uuid, affirmed_at = now()
+              where id = $1::uuid and approved_doc_id is null and affirmed_by is null and affirmed_at is null
+                and content_digest = $2`,
+            [protocol_version_id, row.content_digest, docRow.id, who.id]);
+          if (moved.rowCount !== 1) {
+            throw new Refusal(`ERROR: protocol version ${protocol_version_id} was affirmed by ` +
+              "another call before this one reached it — nothing was written again.");
+          }
           return { result: null, result_table: "zz.eval_protocol_version", result_id: protocol_version_id };
         },
       );
@@ -405,8 +477,8 @@ export function registerProtocolTools(server: McpServer): void {
       });
       // What evaluator_qualify now owes: every model-backed measure this version names.
       const owed = (await p.query<{ key: string }>(`
-        select distinct m.key from zz.eval_measure m join zz.eval_dimension d on d.id = m.dimension_id
-         where d.protocol_version_id = $1::uuid and m.evaluator_type in ('bounded_semantic', 'generative_critic')
+        select distinct m.key from zz.eval_measure m
+         where m.protocol_version_id = $1::uuid and m.evaluator_type in ('bounded_semantic', 'generative_critic')
          order by m.key`, [protocol_version_id])).rows.map((r) => r.key);
       const recorded = await recordAffirmed(initiative, protocol_version_id, path, owed, row.content_digest);
       return json({ approved_document_path: path, approved_by: env.approved_by ?? null,

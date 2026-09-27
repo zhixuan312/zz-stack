@@ -52,18 +52,31 @@ export function diffSnapshots(
       diffs.push(`${table}: missing from the ${!b ? "before" : "after"} snapshot`);
       continue;
     }
-    // A declared drop is the one shape where absence is the expectation: present before, gone
-    // after, nothing to hash. Either half alone is a disagreement — a table still there after
-    // the migration that drops it, or one the before side never had.
-    if (exp.dropped || !b.present || !a.present) {
-      const ok = exp.dropped && b.present && !a.present;
+    // A declared drop or creation is the one shape where absence on one side is the expectation:
+    // present before and gone after for a drop, absent before and present after for a creation.
+    // Either half alone is a disagreement — a table still there after the migration that drops it,
+    // or one the before side never had; and a table declared created that was already there is the
+    // same shape in the other direction.
+    //
+    // `added` is Phase 3's: it is the first phase to CREATE tables rather than reshape them, and
+    // before it every table this branch could meet was either declared dropped or a defect. Without
+    // the field honoured here, `scripts/rehearse/expect.ts` could declare a table created and the
+    // rehearsal still reported "no expectation declares the table dropped" — five times, for
+    // `plugin_release_owner`, `eval_failure_mode`, `eval_failure_mode_sighting`,
+    // `eval_protocol_failure_mode` and `eval_run_dimension`.
+    if (exp.dropped || exp.added || !b.present || !a.present) {
+      const ok = exp.dropped ? (b.present && !a.present)
+        : exp.added ? (!b.present && a.present)
+        : false;
       if (exp.dropped && !b.present) diffs.push(`${table}: declared dropped, but absent from the before snapshot too`);
       else if (exp.dropped && a.present) diffs.push(`${table}: declared dropped, but still present after (${a.count} row(s))`);
-      else if (!exp.dropped) diffs.push(`${where}: present ${b.present ? "before" : "not before"}, ${a.present ? "after" : "not after"} — no expectation declares the table dropped`);
+      else if (exp.added && b.present) diffs.push(`${table}: declared created, but present before the migration too (${b.count} row(s))`);
+      else if (exp.added && !a.present) diffs.push(`${table}: declared created, but absent from the after snapshot — the migration did not create it`);
+      else if (!exp.dropped && !exp.added) diffs.push(`${where}: present ${b.present ? "before" : "not before"}, ${a.present ? "after" : "not after"} — no expectation declares the table dropped or created`);
       lines.push({
         table, was: exp.was, dropped: exp.dropped,
         before: b.present ? b.count : 0, after: a.present ? a.count : 0,
-        expectedCount: "dropped", countOk: ok, hashChecked: false, hashOk: ok,
+        expectedCount: exp.added ? "created" : "dropped", countOk: ok, hashChecked: false, hashOk: ok,
       });
       continue;
     }

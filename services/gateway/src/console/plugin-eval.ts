@@ -32,11 +32,10 @@ interface MeasureScoreRow {
   value: number | null; excluded: boolean; excluded_reason: string | null; guardrail: boolean;
 }
 interface DimensionScoreRow {
-  key: string; canonical_kind: string; score: number | null; applicable: boolean;
+  key: string; canonical_kind: string; score: number | null; coverage: number | null; applicable: boolean;
   not_applicable_reason: string | null; weight: number; required: boolean;
   measures_scored: number; measures_total: number; measures: MeasureScoreRow[];
 }
-interface GuardrailRow { key: string; threshold: number; value: number | null; status: string }
 
 export function mountPluginEval(app: Express): void {
   app.get("/api/console/plugins/:plugin/eval", teamless("the plugin's evaluation", async (req, res) => {
@@ -44,10 +43,20 @@ export function mountPluginEval(app: Express): void {
     const db = platformDb();
 
     const pluginRow = (await db.query<{
-      id: string; origin: string; owner_team: string | null; evolvable: boolean; release_owners: string[];
+      id: string; origin: string; owner_team_id: string | null; owner_team: string | null; release_owners: string[];
     }>(`
-      select id::text as id, origin, owner_team, evolvable, release_owners
-        from zz.plugin where name = $1`, [plugin])).rows[0];
+      select p.id::text as id, p.origin, p.owner_team_id::text as owner_team_id, t.slug as owner_team,
+             coalesce(owners.slugs, '{}'::text[]) as release_owners
+        from zz.plugin p
+        left join zz.team t on t.id = p.owner_team_id
+        -- Release authority is the relation 'plugin_release_owner' (FR-23): one row per owner
+        -- team, joined to the team that names it. 'plugin.evolvable' is gone with the flag.
+        left join lateral (
+          select array_agg(t2.slug order by t2.slug) as slugs
+            from zz.plugin_release_owner r
+            join zz.team t2 on t2.id = r.team_id
+           where r.plugin_id = p.id) owners on true
+       where p.name = $1`, [plugin])).rows[0];
 
     if (!pluginRow) {
       // Not a refusal: a name nothing has registered is a legitimate answer, the same "no such
@@ -56,22 +65,24 @@ export function mountPluginEval(app: Express): void {
       return;
     }
 
-    // The newest immutable subject identity (FR-1). One plugin can carry many — a released
-    // version, a draft one plugin_profile digested since — and the dashboard reads the plugin's
-    // CURRENT story, so the newest by capture time, never an average or a list.
+    // The plugin's newest release identity (FR-1/FR-24). One plugin can carry many released
+    // versions — the one shipping now, an earlier one still worth reading — and the dashboard
+    // reads the plugin's CURRENT story, so the newest by `released_at`, never an average or a
+    // list. A subject version IS a `plugin_version` row, which is where the version, the digest
+    // and the moment it was registered all live.
     const subject = (await db.query<{
       id: string; declared_version: string; content_digest: string; captured_at: string;
     }>(`
-      select id::text as id, declared_version, content_digest,
-             to_char(captured_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as captured_at
-        from zz.eval_subject_version
-       where plugin_id = $1::uuid
-       order by captured_at desc limit 1`, [pluginRow.id])).rows[0];
+      select pv.id::text as id, pv.version as declared_version, pv.digest as content_digest,
+             to_char(pv.released_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as captured_at
+        from zz.plugin_version pv
+       where pv.plugin_id = $1::uuid
+       order by pv.released_at desc, pv.version desc limit 1`, [pluginRow.id])).rows[0];
 
     const ownershipMode = pluginRow.origin === "third_party" ? "evaluation_only" : "owned";
     const base = {
       plugin, found: true, origin: pluginRow.origin, ownerTeam: pluginRow.owner_team,
-      evolvable: pluginRow.evolvable, releaseOwners: pluginRow.release_owners ?? [],
+      releaseOwners: pluginRow.release_owners ?? [],
       ownershipMode,
     };
 
@@ -88,28 +99,35 @@ export function mountPluginEval(app: Express): void {
       contentDigest: subject.content_digest, capturedAt: subject.captured_at,
     };
 
-    // The newest COMPLETED EVALUATE run against this subject (FR-21–FR-23) — a pending,
-    // running, failed or cancelled run has no scores to draw, and showing it would blank a page
-    // that has a perfectly good completed run behind it. `dimension_scores` and
-    // `guardrails` are already the rich per-measure shape `evaluation_score` computed and stored
-    // (evaluate.ts) — reading them back is a select, not a re-join of eval_dimension/eval_measure.
+    // The newest SCORED EVALUATE run against this subject (FR-21–FR-23) — an open run has
+    // published no result, and showing it would blank a page that has a perfectly good scored run
+    // behind it. The run names the observation snapshot it was bound to rather than a second
+    // evidence table, so the subject release it evaluated is that snapshot's own
+    // `plugin_version_id`; `scored_at is not null` is what makes a run one with a published
+    // result. The per-dimension results are rows in `zz.eval_run_dimension` now, joined below.
+    //
+    // The protocol's key is a column of the version: `zz.eval_protocol` carried a plugin and
+    // a key and no other fact, so the phase-3 migration folded both onto `eval_protocol_version`.
     const run = (await db.query<{
-      id: string; run_status: string; score_status: string | null; overall_score: string | null;
-      score_interval: unknown; dimension_scores: DimensionScoreRow[] | null;
-      guardrail_status: string | null; guardrails: GuardrailRow[] | null; coverage: unknown;
-      evidence_snapshot_id: string; protocol_version_id: string; protocol_key: string; protocol_version: number;
-      created_at: string;
+      id: string; score_status: string | null; overall_score: string | null;
+      score_lower: string | null; score_upper: string | null; measure_coverage: string | null;
+      establishment_blocked_by: string[] | null; guardrail_status: string | null; scorer_version: string | null;
+      scored_at: string | null; observation_snapshot_id: string; protocol_version_id: string;
+      protocol_key: string; protocol_version: number; created_at: string;
     }>(`
-      select er.id::text as id, er.run_status, er.score_status, er.overall_score::text as overall_score,
-             er.score_interval, er.dimension_scores, er.guardrail_status, er.guardrails, er.coverage,
-             er.evidence_snapshot_id::text as evidence_snapshot_id,
+      select er.id::text as id, er.score_status, er.overall_score::text as overall_score,
+             er.score_lower::text as score_lower, er.score_upper::text as score_upper,
+             er.measure_coverage::text as measure_coverage, er.establishment_blocked_by,
+             er.guardrail_status, er.scorer_version,
+             to_char(er.scored_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as scored_at,
+             er.observation_snapshot_id::text as observation_snapshot_id,
              er.protocol_version_id::text as protocol_version_id,
-             pr.protocol_key as protocol_key, pv.version as protocol_version,
+             pv.protocol_key as protocol_key, pv.version as protocol_version,
              to_char(er.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
         from zz.eval_run er
         join zz.eval_protocol_version pv on pv.id = er.protocol_version_id
-        join zz.eval_protocol pr on pr.id = pv.protocol_id
-       where er.subject_version_id = $1::uuid and er.run_status = 'completed'
+        join zz.eval_observation_snapshot os on os.id = er.observation_snapshot_id
+       where os.plugin_version_id = $1::uuid and er.scored_at is not null
        order by er.created_at desc limit 1`, [subject.id])).rows[0];
 
     if (!run) {
@@ -118,30 +136,39 @@ export function mountPluginEval(app: Express): void {
       return;
     }
 
-    const [observation, trust, findingRows, improvementRuns] = await Promise.all([
-      // Usage: real production evidence this run's evidence snapshot was built from (FR-9,
-      // FR-10) — every rate the page shows carries this denominator.
+    const [observation, dimensions, trust, findingRows, improvementRuns] = await Promise.all([
+      // Usage: real production evidence this run's observation snapshot was built from (FR-9,
+      // FR-10) — every rate the page shows carries this denominator. The surface is three columns
+      // of the observation snapshot now (`surface_observed`/`surface_total`/`surface_source`):
+      // the `coverage` jsonb it used to be stored in is gone, and so is the evidence table that
+      // used to sit between a run and its snapshot.
       db.query<{
-        usable_run_count: number; total_run_count: number; coverage: { surface?: { observed?: number; total?: number } } | null;
+        usable_run_count: number; total_run_count: number;
+        surface_observed: number | null; surface_total: number | null;
       }>(`
-        select os.usable_run_count, os.total_run_count, os.coverage
-          from zz.eval_evidence_snapshot es
-          join zz.eval_observation_snapshot os on os.id = es.observation_snapshot_id
-         where es.id = $1::uuid`, [run.evidence_snapshot_id]),
+        select os.usable_run_count, os.total_run_count, os.surface_observed, os.surface_total
+          from zz.eval_observation_snapshot os
+         where os.id = $1::uuid`, [run.observation_snapshot_id]),
+      // The run's published per-dimension results: one row per dimension of the protocol, with
+      // the dimension's own key, weight and applicability from `zz.eval_dimension`, and each
+      // measure's reduced value rebuilt from the assessments the run holds — the same reduction
+      // `evaluation_score` performed (the mean of the measure's non-excluded answers).
+      loadDimensions(db, run.id, run.protocol_version_id),
       // Automation & Trust: every bounded_semantic/generative_critic evaluator this protocol
       // version names, with its newest qualification state — mirrors findings-doc.ts's own
       // loadEvaluatorTrust exactly, so the dashboard and findings.md never disagree.
+      //
+      // The evaluator's stable key is on its own version now (`zz.eval_evaluator` was a header
+      // carrying the key and a kind nothing read), and a qualification is about a MEASURE: the
+      // row it reads is the one qualified for this measure.
       db.query<{ stable_key: string; state: string | null; qualified_at: string | null }>(`
-        select distinct on (ee.stable_key) ee.stable_key as stable_key,
+        select distinct on (ev.stable_key) ev.stable_key as stable_key,
                q.state as state, to_char(q.qualified_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as qualified_at
           from zz.eval_measure m
-          join zz.eval_dimension d on d.id = m.dimension_id
           join zz.eval_evaluator_version ev on ev.id = m.evaluator_version_id
-          join zz.eval_evaluator ee on ee.id = ev.evaluator_id
-          left join zz.eval_evaluator_qualification q
-            on q.evaluator_version_id = ev.id and q.protocol_version_id = $1::uuid
-         where d.protocol_version_id = $1::uuid and m.evaluator_version_id is not null
-         order by ee.stable_key, q.qualified_at desc nulls last`, [run.protocol_version_id]),
+          left join zz.eval_evaluator_qualification q on q.measure_id = m.id
+         where m.protocol_version_id = $1::uuid and m.evaluator_version_id is not null
+         order by ev.stable_key, q.qualified_at desc nulls last`, [run.protocol_version_id]),
       // Learning: this run's own findings, ownership-classified (FR-12).
       db.query<{
         id: string; kind: string; pattern: string; owner_kind: string | null; owner_ref: string | null;
@@ -167,24 +194,79 @@ export function mountPluginEval(app: Express): void {
     res.json({
       ...base, subjectVersion,
       run: {
-        id: run.id, runStatus: run.run_status, scoreStatus: run.score_status,
+        id: run.id, scoreStatus: run.score_status,
         overallScore: run.overall_score === null ? null : Number(run.overall_score),
-        scoreInterval: run.score_interval,
-        guardrailStatus: run.guardrail_status, guardrails: run.guardrails ?? [],
+        scoreInterval: {
+          lower: run.score_lower === null ? null : Number(run.score_lower),
+          upper: run.score_upper === null ? null : Number(run.score_upper),
+        },
+        measureCoverage: run.measure_coverage === null ? null : Number(run.measure_coverage),
+        establishmentBlockedBy: run.establishment_blocked_by ?? [],
+        guardrailStatus: run.guardrail_status, scorerVersion: run.scorer_version,
         protocol: { key: run.protocol_key, version: run.protocol_version },
-        createdAt: run.created_at,
-        dimensions: (run.dimension_scores ?? []).map(dimensionOut),
+        createdAt: run.created_at, scoredAt: run.scored_at,
+        dimensions: dimensions.map(dimensionOut),
         coverage: {
           usableRunCount: observation.rows[0]?.usable_run_count ?? null,
           totalRunCount: observation.rows[0]?.total_run_count ?? null,
-          surfaceObserved: observation.rows[0]?.coverage?.surface?.observed ?? null,
-          surfaceTotal: observation.rows[0]?.coverage?.surface?.total ?? null,
+          surfaceObserved: observation.rows[0]?.surface_observed ?? null,
+          surfaceTotal: observation.rows[0]?.surface_total ?? null,
         },
       },
       evaluatorTrust: trust.rows.map((t) => ({ stableKey: t.stable_key, state: t.state, qualifiedAt: t.qualified_at })),
       findings, candidates,
     });
   }));
+}
+
+/** The run's published per-dimension results, rebuilt from the rows that hold them.
+ *
+ *  `evaluation_score` writes one `zz.eval_run_dimension` row per dimension of the protocol — the
+ *  dimension's own score and coverage, and nothing else, because everything else about a
+ *  dimension is a fact about the protocol version rather than about this run. So the page's
+ *  richer shape is a read: the dimension's key, kind, weight and applicability from
+ *  `zz.eval_dimension`, and each of its measures' reduced value from the assessments the run
+ *  holds. The measure value is the same plain mean over the measure's non-excluded answers the
+ *  reducer computes, so the number on the page is the number that was scored. */
+async function loadDimensions(
+  db: ReturnType<typeof platformDb>, evalRunId: string, protocolVersionId: string,
+): Promise<DimensionScoreRow[]> {
+  const dims = (await db.query<{
+    id: string; key: string; canonical_kind: string; score: number | null; coverage: number | null;
+    applicable: boolean; not_applicable_reason: string | null; weight: number; required: boolean;
+  }>(`
+    select d.id::text as id, d.key, d.canonical_kind, rd.score::float8 as score, rd.coverage::float8 as coverage,
+           d.applicable, d.not_applicable_reason, d.weight::float8 as weight, d.required
+      from zz.eval_run_dimension rd
+      join zz.eval_dimension d on d.id = rd.dimension_id
+     where rd.eval_run_id = $1::uuid order by d.key`, [evalRunId])).rows;
+  if (!dims.length) return [];
+  const measures = (await db.query<MeasureScoreRow & { dimension_id: string }>(`
+    select m.dimension_id::text as dimension_id, m.key, m.evaluator_type, m.weight::float8 as weight,
+           m.required, m.guardrail_threshold is not null as guardrail,
+           (select avg(a.value)::float8 from zz.eval_assessment a
+             where a.eval_run_id = $1::uuid and a.measure_id = m.id and a.value is not null) as value,
+           (select min(a.excluded_reason) from zz.eval_assessment a
+             where a.eval_run_id = $1::uuid and a.measure_id = m.id and a.value is null) as excluded_reason
+      from zz.eval_measure m
+     where m.protocol_version_id = $2::uuid order by m.key`, [evalRunId, protocolVersionId])).rows;
+  return dims.map((d) => {
+    const own = measures.filter((m) => m.dimension_id === d.id).map((m) => ({
+      key: m.key, evaluator_type: m.evaluator_type, weight: m.weight, required: m.required,
+      value: m.value, excluded: m.value === null, guardrail: m.guardrail,
+      // A dimension that does not apply was never assessed; its measures carry its reason rather
+      // than an absence that reads as missing evidence.
+      excluded_reason: d.applicable ? m.excluded_reason
+        : `not applicable: ${d.not_applicable_reason ?? "the protocol says so"}`,
+    }));
+    return {
+      key: d.key, canonical_kind: d.canonical_kind, score: d.score, coverage: d.coverage,
+      applicable: d.applicable, not_applicable_reason: d.not_applicable_reason,
+      weight: d.weight, required: d.required,
+      measures_scored: own.filter((m) => !m.excluded).length, measures_total: own.length,
+      measures: own,
+    };
+  });
 }
 
 /** `eval_run.dimension_scores` is stored exactly as `evaluation_score` (evaluate.ts) wrote it —
@@ -237,9 +319,9 @@ async function loadCandidates(db: ReturnType<typeof platformDb>, improvementRunI
       rolled_back: boolean;
     }>(`
       select ra.candidate_id::text as candidate_id, ra.status, ra.reason, ra.release_ref,
-             sv.declared_version as released_declared_version, ra.verification, ra.rolled_back
+             pv.version as released_declared_version, ra.verification, ra.rolled_back
         from zz.release_attempt ra
-        left join zz.eval_subject_version sv on sv.id = ra.released_subject_version_id
+        left join zz.plugin_version pv on pv.id = ra.released_subject_version_id
        where ra.candidate_id in (select id from zz.candidate where improvement_run_id = any($1::uuid[]))
        order by ra.created_at desc`, [improvementRunIds]),
   ]);

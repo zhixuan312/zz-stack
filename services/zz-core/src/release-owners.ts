@@ -11,7 +11,7 @@
  * act on today (their active team, or a token's bound one). A person who owns the plugin through
  * their second team is still an owner; nobody becomes one by acting for a team they are not in.
  * Owner teams are `zz.release_attempt.required_owners`, which `release_prepare` resolved live
- * from `zz.plugin.release_owners`.
+ * from the plugin's own release owners — `zz.plugin_release_owner`, one row per owner team.
  */
 import type pg from "pg";
 

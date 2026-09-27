@@ -145,9 +145,14 @@ function computeLabelStats(rows: readonly LabelRow[], mapping: LabelMapping): La
 /** The live half: correlates a `zz.eval_finding` decision with the evaluator answer recorded
  *  against the SAME measure, through `zz.eval_assessment` (which `evaluation_assess` — not this
  *  task — is what writes). Real SQL, exercised the day that writer exists; today it returns no
- *  rows on every deployment, and `computeLabelStats` above answers `null` on an empty set. */
+ *  rows on every deployment, and `computeLabelStats` above answers `null` on an empty set.
+ *
+ *  The correlation is by measure alone (Task I-23's reshape): a qualification is about a measure
+ *  and an assessment names the measure it was taken for, so `evaluator_version_id` — the column
+ *  that used to be on both sides of this join — is reached through it, and two measures deferring
+ *  to one evaluator version is exactly the case this must not merge. */
 export async function labelEvidence(
-  pool: pg.Pool, measureId: string, evaluatorVersionId: string, mapping: LabelMapping | null,
+  pool: pg.Pool, measureId: string, mapping: LabelMapping | null,
 ): Promise<LadderLabels | null> {
   if (!mapping) return null;
   const { rows } = await pool.query<LabelRow>(`
@@ -155,8 +160,7 @@ export async function labelEvidence(
       from zz.eval_finding f
       join zz.eval_assessment ea on ea.measure_id = f.measure_id
       join zz.assessment a on a.id = ea.assessment_id
-     where f.measure_id = $1::uuid and ea.evaluator_version_id = $2::uuid
-       and f.decision in ('applied', 'rejected')`,
-    [measureId, evaluatorVersionId]);
+     where f.measure_id = $1::uuid and f.decision in ('applied', 'rejected')`,
+    [measureId]);
   return computeLabelStats(rows, mapping);
 }

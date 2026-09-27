@@ -1,19 +1,38 @@
 /**
- * `protocol_record`'s own writer (FR-4, FR-6, Task I-10): validates an `EvaluationProtocol` body,
- * writes it as an immutable `zz.eval_protocol_version` with its dimensions and measures, and
- * folds DISCOVER's accepted/merged failure-mode lineage in. `protocol.ts` calls
- * `recordProtocolVersion` once the body has already passed `EvaluationProtocol.safeParse` — this
- * file's job starts after that, and never re-validates the zod shape.
+ * `protocol_record`'s own writer (FR-4, FR-6, Task I-10; folded and reshaped by Task I-23):
+ * validates an `EvaluationProtocol` body, writes it as an immutable `zz.eval_protocol_version`
+ * with its dimensions and measures, and folds DISCOVER's failure-mode lineage in as
+ * `eval_protocol_failure_mode` rows. `protocol.ts` calls `recordProtocolVersion` once the body has
+ * already passed `EvaluationProtocol.safeParse` — this file's job starts after that, and never
+ * re-validates the zod shape.
  *
- * No update path exists: `zz.eval_protocol_version` is `unique(protocol_id, version)` and this
+ * No update path exists: `zz.eval_protocol_version` is `unique (plugin_id, version)` and this
  * file only ever inserts. A body whose `version` does not name the next number after this
  * plugin's newest is refused before anything is written — see `nextVersionRefusal`.
  *
- * Body field → migration 001 column, positionally, never renamed: `pluginPurpose` → `purpose`,
- * `observableSurfaces` → `observable_surfaces`, `failureTaxonomy` → `failure_taxonomy`, `suites`
- * → `suites`, `qualification` → `qualification_policy`, `scoring` →
- * `scoring_policy`, `improvement` → `improvement_policy`. `packages/contracts/src/eval-protocol.ts`
- * states the same mapping; nothing here restates the field names a third time.
+ * The two header tables are gone and their facts live on the version: `zz.eval_protocol` carried
+ * a plugin and a key and nothing else, so `plugin_id` + `protocol_key` are written onto the
+ * version (`unique (plugin_id, version)` is then the identity), and whose version it is is the
+ * caller's own principal id (`recorded_by`). `zz.eval_evaluator` went the same way —
+ * `evaluators.ts` writes `stable_key` onto the version it registers.
+ *
+ * Body field → column, positionally, never renamed: `pluginPurpose` → `purpose`,
+ * `observableSurfaces` → `observable_surfaces` (a text array now, not jsonb), `version`,
+ * `qualification` → `qualification_policy`, `scoring` → `scoring_policy`, `improvement` →
+ * `improvement_policy`. Three of the body's own fields have no column in the target shape and
+ * are not stored: `suites` (dropped — a measure's own `evaluator_type` is how it is evaluated),
+ * and `improvement.evolvable` and `improvement.criticalGuardrails` (dropped from the policy: who
+ * may release a candidate is the plugin's own `plugin_release_owner` rows, and a guardrail is a
+ * measure's `guardrail_threshold`). `packages/contracts/src/eval-protocol.ts` states the body's
+ * own names; nothing here restates them a third time.
+ *
+ * Three measure facts that used to live inside `definition` jsonb are columns now —
+ * `fact_key` (`definition.factPath`), `subject_kind` (`definition.subjectKind`) and
+ * `guardrail_threshold` (the threshold of the `improvement.criticalGuardrails` entry naming this
+ * measure) — so a deterministic measure's fact and a guardrail's bar are readable without
+ * parsing a jsonb bag. Each is written only where its own biconditional allows it: a
+ * `fact_key` on anything but a `deterministic`/`outcome` measure would violate
+ * `eval_measure_fact_key_check`, and a guardrail threshold is only ever the one its key names.
  */
 import { createHash } from "node:crypto";
 
@@ -163,79 +182,132 @@ function nextVersionRefusal(bodyVersion: number, currentMax: number | null): str
 
 /** A `failureTaxonomy` entry naming DISCOVER lineage — the object half of `FailureMode`
  *  (`packages/contracts/src/eval-protocol.ts`), narrowed to the two fields this file's own
- *  writing convention reads off it. A bare string entry, or an object naming neither field,
- *  carries no lineage and is written into `failure_taxonomy` unchanged with nothing else done.
+ *  writing convention reads off it. A bare string entry names a failure mode's `stable_key`; an
+ *  object naming neither field carries no lineage. A taxonomy entry is a NAME for a failure mode,
+ *  not evidence of one: only what resolves to this plugin's own evidence is folded in, and what
+ *  does not resolve is reported back by name rather than invented (never refused — the reference
+ *  protocol in `catalog/zz/zz-plugin-eval/protocols/zz-core.json` lists names of its own that no
+ *  DISCOVER run has ever minted a stable key for).
  *
- *  DELIBERATE, and this task's own convention rather than one the plan states: `failureTaxonomy`
- *  is typed `FailureMode = string | { key: string } & Record<string, unknown>` precisely because
- *  spec v8 leaves a taxonomy entry's shape open. `candidateId` accepts the one DISCOVER candidate
- *  this entry was written from; `mergedCandidateIds` names others folded into the same entry. */
+ *  DELIBERATE, and this task's own convention rather than one the plan states: `candidateId`
+ *  accepts the one DISCOVER sighting this entry was written from; `mergedCandidateIds` names
+ *  others folded into the same entry. Both name sightings now — a failure mode is an identity
+ *  and a discovery of it is a sighting (Task I-24) — and each folds its own `failure_mode_id`
+ *  in, so two sightings of one identity are one relation row. */
 interface TaxonomyLineage { key?: unknown; candidateId?: unknown; mergedCandidateIds?: unknown }
 
-/** Every candidate `failureTaxonomy` accepts or merges, validated against this protocol's own
- *  plugin before any row is touched — a candidate from another plugin's evidence is refused
- *  rather than silently attached to a taxonomy it says nothing about. */
-async function lineageRefusal(
+/** What a body's `failureTaxonomy` resolves to: the failure-mode identities to fold into this
+ *  version, and the entries' own names that named no failure mode of this plugin at all. */
+interface ResolvedLineage { readonly failureModeIds: string[]; readonly unfoldedKeys: string[] }
+
+/** Every candidate `failureTaxonomy` accepts or merges, resolved against this protocol's own
+ *  plugin before any row is touched — a sighting from another plugin's evidence is refused
+ *  rather than silently attached to a taxonomy it says nothing about. A bare string is a
+ *  `stable_key` and is folded in when this plugin has a failure mode under it. */
+async function resolveLineage(
   client: pg.PoolClient, pluginId: string, body: EvaluationProtocol,
-): Promise<string | null> {
-  const ids: string[] = [];
+): Promise<ResolvedLineage | string> {
+  const sightingIds = new Set<string>();
+  const stableKeys = new Set<string>();
   for (const entry of body.failureTaxonomy) {
-    if (typeof entry === "string") continue;
+    if (typeof entry === "string") { stableKeys.add(entry); continue; }
     const t = entry as TaxonomyLineage;
-    if (typeof t.candidateId === "string") ids.push(t.candidateId);
+    if (typeof t.candidateId === "string") sightingIds.add(t.candidateId);
     if (Array.isArray(t.mergedCandidateIds)) {
-      for (const m of t.mergedCandidateIds) if (typeof m === "string") ids.push(m);
+      for (const m of t.mergedCandidateIds) if (typeof m === "string") sightingIds.add(m);
     }
   }
-  if (!ids.length) return null;
-  const { rows } = await client.query<{ id: string }>(`
-    select c.id::text as id
-      from zz.eval_failure_mode_candidate c
-      join zz.eval_observation_snapshot os on os.id = c.observation_snapshot_id
-      join zz.eval_subject_version sv on sv.id = os.subject_version_id
-     where sv.plugin_id = $1::uuid and c.id = any($2::uuid[])`, [pluginId, ids]);
-  const found = new Set(rows.map((r) => r.id));
-  const missing = ids.filter((id) => !found.has(id));
-  if (!missing.length) return null;
-  return `REFUSED: failureTaxonomy names candidateId(s) ${missing.join(", ")}, which name no ` +
-    "zz.eval_failure_mode_candidate row from THIS plugin's own observation snapshots — lineage " +
-    "can only point at evidence DISCOVER mined for the plugin this protocol version is about.";
-}
 
-/** Applies the lineage `lineageRefusal` already validated: an accepted candidate's status moves
- *  to `accepted`; every candidate it names in `mergedCandidateIds` moves to `merged`, pointed at
- *  the accepted one. Each keeps its own `stable_key` — the failure mode's identity across windows,
- *  which the next DISCOVER matches on. Overwritten with the taxonomy entry's key, every accepted
- *  failure mode came back as new in the next window and demanded another protocol version. Run inside the
- *  same transaction as the version/dimension/measure inserts below — lineage and the version it
- *  belongs to land together or not at all. */
-async function applyLineage(client: pg.PoolClient, body: EvaluationProtocol): Promise<void> {
-  for (const entry of body.failureTaxonomy) {
-    if (typeof entry === "string") continue;
-    const t = entry as TaxonomyLineage;
-    if (typeof t.candidateId === "string") {
-      await client.query(
-        "update zz.eval_failure_mode_candidate set status = 'accepted' where id = $1::uuid", [t.candidateId]);
+  const failureModeIds = new Set<string>();
+  if (sightingIds.size) {
+    const { rows } = await client.query<{ id: string; failure_mode_id: string }>(`
+      select s.id::text as id, s.failure_mode_id::text as failure_mode_id
+        from zz.eval_failure_mode_sighting s
+        join zz.eval_failure_mode fm on fm.id = s.failure_mode_id
+       where fm.plugin_id = $1::uuid and s.id = any($2::uuid[])`,
+      [pluginId, [...sightingIds]]);
+    const known = new Map(rows.map((r) => [r.id, r.failure_mode_id]));
+    const missing = [...sightingIds].filter((id) => !known.has(id));
+    if (missing.length) {
+      return `REFUSED: failureTaxonomy names candidateId(s) ${missing.join(", ")}, which name no ` +
+        "zz.eval_failure_mode_sighting from THIS plugin's own observation snapshots — lineage " +
+        "can only point at evidence DISCOVER mined for the plugin this protocol version is about.";
     }
-    if (Array.isArray(t.mergedCandidateIds) && typeof t.candidateId === "string") {
-      const merged = t.mergedCandidateIds.filter((m): m is string => typeof m === "string");
-      if (merged.length) {
-        await client.query(
-          `update zz.eval_failure_mode_candidate set status = 'merged', merged_into_id = $2::uuid
-            where id = any($1::uuid[])`, [merged, t.candidateId]);
-      }
+    for (const id of known.values()) failureModeIds.add(id);
+  }
+
+  const unfolded = new Set(stableKeys);
+  if (stableKeys.size) {
+    const { rows } = await client.query<{ id: string; stable_key: string }>(`
+      select fm.id::text as id, fm.stable_key
+        from zz.eval_failure_mode fm
+       where fm.plugin_id = $1::uuid and fm.stable_key = any($2::text[])`,
+      [pluginId, [...stableKeys]]);
+    for (const r of rows) {
+      failureModeIds.add(r.id);
+      unfolded.delete(r.stable_key);
     }
   }
+  return { failureModeIds: [...failureModeIds], unfoldedKeys: [...unfolded] };
 }
 
-interface RecordedVersion { protocol_version_id: string; content_digest: string }
+/** Applies the lineage `resolveLineage` already validated: one `eval_protocol_failure_mode` row
+ *  per failure-mode identity this version folds in — the relation that replaced the
+ *  `failure_taxonomy` jsonb array, and the fact `protocol-triggers.ts` reads to know which
+ *  sightings no protocol version has read yet. Run inside the same transaction as the
+ *  version/dimension/measure inserts below — lineage and the version it belongs to land together
+ *  or not at all. */
+async function applyLineage(
+  client: pg.PoolClient, protocolVersionId: string, failureModeIds: readonly string[],
+): Promise<void> {
+  if (!failureModeIds.length) return;
+  await client.query(
+    `insert into zz.eval_protocol_failure_mode (protocol_version_id, failure_mode_id)
+     select $1::uuid, f.id from unnest($2::uuid[]) as f(id)
+     on conflict (protocol_version_id, failure_mode_id) do nothing`,
+    [protocolVersionId, failureModeIds]);
+}
+
+/** `improvement_policy`, with the two facts the target shape moved elsewhere removed: `evolvable`
+ *  (who may release a candidate is the plugin's `plugin_release_owner` rows) and
+ *  `criticalGuardrails` (a guardrail is a measure's own `guardrail_threshold`). Everything else
+ *  the body declared is stored as written. */
+function improvementPolicyOf(improvement: Record<string, unknown>): Record<string, unknown> {
+  const policy: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(improvement)) {
+    if (key === "evolvable" || key === "criticalGuardrails") continue;
+    policy[key] = value;
+  }
+  return policy;
+}
+
+/** Each measure's guardrail bar, keyed by the measure key its `improvement.criticalGuardrails`
+ *  entry names. `criticalGuardrailRefusal` has already refused a key that resolves to no measure
+ *  or to more than one, so every entry here names exactly one measure. */
+function guardrailsByMeasureKey(body: EvaluationProtocol): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const g of body.improvement.criticalGuardrails) {
+    if (typeof g.threshold === "number") out.set(g.key, g.threshold);
+  }
+  return out;
+}
+
+interface RecordedVersion {
+  protocol_version_id: string;
+  content_digest: string;
+  /** `failureTaxonomy` entries that named no failure mode of this plugin: a name no DISCOVER run
+   *  has minted a stable key for. Reported, never refused — the relation is what a protocol's
+   *  lineage IS now, so a name that folded nothing is worth seeing. */
+  unfolded_taxonomy_keys: string[];
+}
 
 /** Everything `protocol_record` needs beyond the validated body: which plugin (from the caller's
- *  `subject_version_id`, resolved by `protocol.ts`) and the transaction client `withIdempotency`
- *  handed in — every write below lands in that one transaction, alongside the idempotency
- *  ledger's own insert, or none of it does. */
+ *  `subject_version_id`, resolved by `protocol.ts`), the principal id whose name the version
+ *  carries as `recorded_by`, and the transaction client `withIdempotency` handed in — every write
+ *  below lands in that one transaction, alongside the idempotency ledger's own insert, or none
+ *  of it does. */
 export async function recordProtocolVersion(
-  client: pg.PoolClient, pluginId: string, body: EvaluationProtocol,
+  client: pg.PoolClient, pluginId: string, body: EvaluationProtocol, recordedBy: string,
 ): Promise<RecordedVersion | string> {
   // Checked first, purely in memory, before any evaluator is registered or written: a protocol
   // whose factPath/criticalGuardrails content is wrong should not leave a half-registered
@@ -254,40 +326,29 @@ export async function recordProtocolVersion(
   const evaluators = await resolveMeasureEvaluators(body);
   if (typeof evaluators === "string") return `REFUSED: ${evaluators}`;
 
-  const protocolId = (await client.query<{ id: string }>(`
-    insert into zz.eval_protocol (plugin_id, protocol_key) values ($1::uuid, $2)
-    on conflict (plugin_id, protocol_key) do update set protocol_key = excluded.protocol_key
-    returning id::text as id`, [pluginId, body.protocolKey])).rows[0].id;
-
   const maxRow = (await client.query<{ max: number | null }>(
-    `select max(version) as max from zz.eval_protocol_version where protocol_id = $1::uuid`,
-    [protocolId])).rows[0];
+    `select max(version) as max from zz.eval_protocol_version where plugin_id = $1::uuid`,
+    [pluginId])).rows[0];
   const versionRefusal = nextVersionRefusal(body.version, maxRow?.max ?? null);
   if (versionRefusal) return versionRefusal;
 
-  const lineageBad = await lineageRefusal(client, pluginId, body);
-  if (lineageBad) return lineageBad;
+  const lineage = await resolveLineage(client, pluginId, body);
+  if (typeof lineage === "string") return lineage;
 
+  const guards = guardrailsByMeasureKey(body);
   const digest = sha256Digest(canonicalJson(body));
 
   let versionRow: { id: string };
   try {
     versionRow = (await client.query<{ id: string }>(`
       insert into zz.eval_protocol_version
-        (protocol_id, version, subject_compatibility, purpose, observable_surfaces,
-         failure_taxonomy, suites, qualification_policy, scoring_policy,
-         improvement_policy, content_digest, approved_document_path, created_at)
-      values ($1::uuid, $2, $3::jsonb, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb,
-              $10::jsonb, $11, null, now())
+        (plugin_id, protocol_key, version, purpose, observable_surfaces, qualification_policy,
+         scoring_policy, improvement_policy, content_digest, recorded_by, created_at)
+      values ($1::uuid, $2, $3, $4, $5::text[], $6::jsonb, $7::jsonb, $8::jsonb, $9, $10::uuid, now())
       returning id::text as id`,
-      [protocolId, body.version,
-       // `subject_compatibility`: the one subject version this recording actually happened
-       // against, recorded rather than guessed at — protocol_read's own triggers (not this
-       // column) are what decide whether a LATER subject version still fits it.
-       JSON.stringify({ plugin_id: pluginId }),
-       body.pluginPurpose, JSON.stringify(body.observableSurfaces), JSON.stringify(body.failureTaxonomy),
-       JSON.stringify(body.suites), JSON.stringify(body.qualification),
-       JSON.stringify(body.scoring), JSON.stringify(body.improvement), digest])).rows[0];
+      [pluginId, body.protocolKey, body.version, body.pluginPurpose, body.observableSurfaces,
+       JSON.stringify(body.qualification), JSON.stringify(body.scoring),
+       JSON.stringify(improvementPolicyOf(body.improvement)), digest, recordedBy])).rows[0];
   } catch (err) {
     if ((err as { code?: string }).code === UNIQUE_VIOLATION) {
       return `REFUSED: version ${body.version} of this protocol was just recorded by another ` +
@@ -300,28 +361,41 @@ export async function recordProtocolVersion(
   for (const dim of body.dimensions) {
     const dimRow = (await client.query<{ id: string }>(`
       insert into zz.eval_dimension
-        (protocol_version_id, key, name, canonical_kind, weight, required, applicable, not_applicable_reason)
-      values ($1::uuid, $2, $3, $4, $5, $6, $7,
+        (protocol_version_id, key, canonical_kind, weight, required, applicable, not_applicable_reason)
+      values ($1::uuid, $2, $3, $4, $5, $6,
               -- 001's CHECK pairs applicable/not_applicable_reason strictly: null on one side,
               -- a real string on the other. The zod schema above only requires a reason when
               -- NOT applicable; a stray one on an applicable dimension is dropped here rather
               -- than sent through to a CHECK violation the caller cannot read a message from.
-              case when $7 then null else $8 end)
+              case when $6 then null else $7 end)
       returning id::text as id`,
-      [protocolVersionId, dim.key, dim.name, dim.canonicalKind, dim.weight, dim.required,
+      [protocolVersionId, dim.key, dim.canonicalKind, dim.weight, dim.required,
        dim.applicable, dim.notApplicableReason])).rows[0];
     for (const measure of dim.measures) {
       const evaluatorVersionId = evaluators.get(`${dim.key}.${measure.key}`) ?? null;
+      // `fact_key` only where the biconditional allows one: a `deterministic`/`outcome` measure
+      // reads a fact, a model-backed or `human` one must leave the column null, and a
+      // `definition.factPath` on the wrong side of that line is a row the CHECK refuses.
+      const readsAFact = measure.evaluatorType === "deterministic" || measure.evaluatorType === "outcome";
+      const factPath = measure.definition.factPath;
+      const subjectKind = measure.definition.subjectKind;
       await client.query(`
         insert into zz.eval_measure
-          (dimension_id, key, evaluator_type, weight, suite, required, definition, evaluator_version_id)
-        values ($1::uuid, $2, $3, $4, $5, $6, $7::jsonb, $8::uuid)`,
-        [dimRow.id, measure.key, measure.evaluatorType, measure.weight, measure.suite,
-         measure.required, JSON.stringify(measure.definition), evaluatorVersionId]);
+          (dimension_id, protocol_version_id, key, evaluator_type, weight, required, definition,
+           evaluator_version_id, fact_key, subject_kind, guardrail_threshold)
+        values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7::jsonb, $8::uuid, $9, $10, $11)`,
+        [dimRow.id, protocolVersionId, measure.key, measure.evaluatorType, measure.weight,
+         measure.required, JSON.stringify(measure.definition), evaluatorVersionId,
+         readsAFact && typeof factPath === "string" && factPath.trim() ? factPath : null,
+         typeof subjectKind === "string" && subjectKind.trim() ? subjectKind : null,
+         guards.get(measure.key) ?? null]);
     }
   }
 
-  await applyLineage(client, body);
+  await applyLineage(client, protocolVersionId, lineage.failureModeIds);
 
-  return { protocol_version_id: protocolVersionId, content_digest: digest };
+  return {
+    protocol_version_id: protocolVersionId, content_digest: digest,
+    unfolded_taxonomy_keys: lineage.unfoldedKeys,
+  };
 }

@@ -45,6 +45,9 @@ const CAND = "c0000000-0000-4000-8000-000000000001";
 const BASE = "b0000000-0000-4000-8000-000000000001";
 const A_OLD = "a0000000-0000-4000-8000-000000000001";
 const A_NEW = "a0000000-0000-4000-8000-000000000002";
+/** The row of a head version that is not the candidate's base: `zz.plugin_version` is unique on
+ *  (plugin_id, version), so a different version is a different row. */
+const HEAD_OTHER = "b0000000-0000-4000-8000-000000000002";
 const OWNER = "owner@example.test", STRANGER = "stranger@example.test";
 const DIGEST = "d".repeat(64);
 const REF = "0123456789abcdef0123456789abcdef01234567";
@@ -52,7 +55,7 @@ const REF = "0123456789abcdef0123456789abcdef01234567";
 interface Scenario {
   candidate?: Rows; subject?: Rows; teams?: Record<string, string[]>; applying?: Rows;
   prepared?: Rows; retracted?: string[]; versions?: string[];
-  captured?: Record<string, string>; casRows?: Rows; casError?: { code: string };
+  casRows?: Rows; casError?: { code: string };
 }
 
 function applyClient(sc: Scenario) {
@@ -60,22 +63,31 @@ function applyClient(sc: Scenario) {
     { id: A_NEW, required_owners: ["xuan"], approved_patch_digest: DIGEST, base_subject_version_id: BASE },
     { id: A_OLD, required_owners: ["xuan"], approved_patch_digest: DIGEST, base_subject_version_id: BASE },
   ];
+  const subject = sc.subject ?? [{ plugin_id: "p1", plugin: "demo", release_owners: ["xuan"], declared_version: "1.1.0" }];
   const updates: { text: string; values: unknown[] }[] = [];
   const row = { status: "prepared", reason: null as unknown };
   const client = stub([
     [/from zz\.candidate where id/, () => sc.candidate ?? [{ id: CAND, status: "valid", base_subject_version_id: BASE, patch_digest: DIGEST, patchset: { diff: "x" } }]],
-    [/pl\.release_owners/, () => sc.subject ?? [{ plugin_id: "p1", plugin: "demo", release_owners: ["xuan"], declared_version: "1.1.0" }]],
+    // The base subject's own row: `plugin_version` joined to the release owners the relation
+    // `plugin_release_owner` carries (FR-23/FR-24), which is what makes this statement the one
+    // this stub answers rather than either of the plugin_version reads below.
+    [/from zz\.plugin_release_owner r/, () => subject],
     [/from zz\.membership/, (v) => (sc.teams ?? { [OWNER]: ["xuan"] })[String(v[0])]?.map((slug) => ({ slug })) ?? []],
     [/pg_advisory_xact_lock/, () => []],
     [/where plugin_id = \$1::uuid and status = 'applying'/, () => sc.applying ?? []],
     [/status = 'prepared' and \(\$2::uuid is null/, (v) => prepared.filter((a) => v[1] === null || a.id === v[1])],
     [/status = 'rolled_back'/, () => (sc.retracted ?? []).map((declared_version) => ({ declared_version }))],
     [/select name from zz\.plugin where id/, () => [{ name: "demo" }]],
-    [/from zz\.plugin_version pv/, () => (sc.versions ?? ["1.1.0"]).map((version) => ({ version }))],
-    [/from zz\.eval_subject_version\s+where plugin_id/, (v) => {
-      const id = (sc.captured ?? { "1.1.0": BASE })[String(v[1])];
-      return id ? [{ id }] : [];
-    }],
+    // `currentVersionOf`'s version list — the head of zz.plugin_version, whatever registered it.
+    [/select pv\.version from zz\.plugin_version pv where/, () => (sc.versions ?? ["1.1.0"]).map((version) => ({ version }))],
+    // The head version's own row: the released subject itself (FR-24), read by its own id rather
+    // than from a second capture beside it. Every registered version HAS one, so this always
+    // answers — the version the candidate's base is at answers with that base's row, which is
+    // what makes `base_is_current` true, and a head at any other version answers a row of its own
+    // that nothing compares (a head that is not the base's version is stale_baseline before its
+    // id is read).
+    [/select pv\.id::text as id from zz\.plugin_version pv\s+where/, (v) =>
+      [{ id: String(v[1]) === subject[0]?.declared_version ? BASE : HEAD_OTHER }]],
     [/update zz\.release_attempt set status = 'applying'/, (v, text) => {
       updates.push({ text, values: v });
       if (sc.casError) throw Object.assign(new Error("duplicate"), sc.casError);
@@ -90,9 +102,9 @@ function applyClient(sc: Scenario) {
       return [{ id: v[0] }];
     }],
     [/select status, reason, candidate_id/, () => [{ ...row, candidate_id: CAND, base_subject_version_id: BASE }]],
-    [/select pl\.name as plugin, sv\.declared_version/, () => [{ plugin: "demo", declared_version: "1.1.0" }]],
+    [/select pl\.name as plugin, pv\.version as declared_version/, () => [{ plugin: "demo", declared_version: "1.1.0" }]],
     [/select release_ref from zz\.release_attempt/, () => []],
-    [/release_identity->>'resolved_commit'/, () => [{ commit: null }]],
+    [/select resolved_commit as commit from zz\.plugin_version/, () => [{ commit: null }]],
   ]);
   return { client, updates };
 }
@@ -120,26 +132,31 @@ await assert.rejects(run({ prepared: [] }, OWNER, noDoc).done, /no prepared rele
 await assert.rejects(run({ prepared: [{ id: A_NEW, required_owners: ["xuan"], approved_patch_digest: DIGEST, base_subject_version_id: BASE }] }).done,
   /improvement\.md cites release_attempt a0000000-0000-4000-8000-000000000001, which is not a prepared attempt/);
 await assert.rejects(run({ versions: [] }).done, /no registered release/);
-await assert.rejects(run({ versions: ["1.1.0"], captured: {} }).done, /1\.1\.0 is registered but was never captured/);
 
 // Bound to the attempt the approved document cites (the OLDER one), not the newest prepared.
 {
   const r = run({});
   const out = await r.done;
-  assert.equal(out.result.status, "applying");
+  assert.equal(out.result.status, "applying", `planApply refused the approved release: ${String(out.result.reason)}`);
   assert.equal(out.result_id, A_OLD, "planApply applied the newest prepared attempt, not the cited one");
   assert.equal(r.updates.at(-1)?.values[0], A_OLD);
 }
-// A version registered at deploy but never captured is still the head: newer than the base, so
-// stale_baseline — never read past as if the base were current.
+// A head version NEWER than the base is stale_baseline — never read past as if the base were
+// current. It makes no difference that nothing has located that head: the head is read from
+// `zz.plugin_version` alone, and every version registered there is a released subject (FR-24).
+// This case replaces one that asserted `1.1.0 is registered but was never captured — call
+// plugin_locate for it`: the branch behind it asked `zz.plugin_version` for the same version it
+// had just read, so it could never fire, and its advice no longer remedies anything. The head
+// reader's by-name evidence is now the planApply case above (`no registered release`) and the
+// release_record one below (`prior_not_current`).
 {
-  const r = run({ versions: ["1.1.0", "1.2.0"], captured: { "1.1.0": BASE } });
+  const r = run({ versions: ["1.1.0", "1.2.0"] });
   const out = await r.done;
   assert.equal(out.result.reason, "stale_baseline");
   assert.equal(r.updates.at(-1)?.values[1], "stale_baseline");
 }
-// Semver, not text or capture order: 1.10.0 is above 1.9.0.
-assert.equal((await run({ versions: ["1.9.0", "1.10.0"], subject: [{ plugin_id: "p1", plugin: "demo", release_owners: ["xuan"], declared_version: "1.9.0" }], captured: { "1.9.0": BASE } }).done).result.reason, "stale_baseline");
+// Semver, not text order or the order the version rows were registered in: 1.10.0 is above 1.9.0.
+assert.equal((await run({ versions: ["1.9.0", "1.10.0"], subject: [{ plugin_id: "p1", plugin: "demo", release_owners: ["xuan"], declared_version: "1.9.0" }] }).done).result.reason, "stale_baseline");
 // A retracted head leaves the prior version current.
 assert.equal((await run({ versions: ["1.1.0", "1.2.0"], retracted: ["1.2.0"] }).done).result.status, "applying");
 // Not approved: approval_required, non-terminal (status is not moved).
@@ -185,9 +202,13 @@ function recordClient(attempt: Record<string, unknown> | null, o: { versions?: s
     [/update zz\.candidate/, () => []],
     [/status = 'rolled_back'/, () => [{ declared_version: "1.2.0" }]],
     [/select name from zz\.plugin where id/, () => [{ name: "demo" }]],
-    [/from zz\.plugin_version pv/, () => (o.versions ?? ["1.1.0", "1.2.0"]).map((version) => ({ version }))],
-    [/from zz\.eval_subject_version\s+where plugin_id/, () => [{ id: BASE }]],
-    [/select plugin_id::text as plugin_id, declared_version/, (v) => (subjects[String(v[0])] ? [subjects[String(v[0])]] : [])],
+    [/select pv\.version from zz\.plugin_version pv where/, () => (o.versions ?? ["1.1.0", "1.2.0"]).map((version) => ({ version }))],
+    // The released subject row of the head version — the same `plugin_version` row, by its id.
+    [/select pv\.id::text as id from zz\.plugin_version pv\s+where/, () => [{ id: BASE }]],
+    // A subject version IS a plugin_version row (FR-24): its plugin and its version are that
+    // row's own columns, so this is one read of one table rather than a join to a second one.
+    // The version keeps the name every subject-shaped reader uses for it — `declared_version`.
+    [/select plugin_id::text as plugin_id, version as declared_version from zz\.plugin_version where id/, (v) => (subjects[String(v[0])] ? [subjects[String(v[0])]] : [])],
   ]);
 }
 const attemptRow = (over: Record<string, unknown> = {}) => ({
@@ -209,6 +230,11 @@ await assert.rejects(rec(attemptRow({ status: "released" }), { status: "rolled_b
 await assert.rejects(rec(attemptRow({ status: "released", verdict: "rolled_back" }), { status: "rolled_back", reason: "r" }, OWNER, { cas: false }), /left 'released'/);
 // Retracting 1.2.0 still leaves a newer 1.3.0 standing over the prior version.
 await assert.rejects(rec(attemptRow({ status: "released", verdict: "rolled_back" }), { status: "rolled_back", reason: "r" }, OWNER, { versions: ["1.1.0", "1.2.0", "1.3.0"] }), /prior_not_current/);
+// ...and a plugin the head reader cannot resolve a head for is not confirmed to have restored
+// anything: the refusal names it rather than claiming a restore that did not happen. This is the
+// head reader's other caller, and the reachable half of what the removed planApply branch
+// ("registered but was never captured") tried to cover.
+await assert.rejects(rec(attemptRow({ status: "released", verdict: "rolled_back" }), { status: "rolled_back", reason: "r" }, OWNER, { versions: [] }), /prior_not_current[\s\S]*current version is unresolvable/);
 assert.equal((await rec(attemptRow({ status: "released", verdict: "rolled_back" }), { status: "rolled_back", reason: "r" })).result.status, "rolled_back");
 await assert.rejects(rec(attemptRow({ status: "failed" }), {}), /not_applying/);
 await assert.rejects(rec(attemptRow(), { release_ref: REF }), /requires both release_ref and released_subject_version_id/);

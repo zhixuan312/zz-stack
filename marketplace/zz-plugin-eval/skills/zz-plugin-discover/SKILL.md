@@ -39,22 +39,25 @@ recorded alongside the candidate it produced.
 
 For a plugin that serves its own door — `zz-core`, `zz-access`, `zz-plugin-eval` — its refusals
 come from its own tools, so an evaluator answer of `platform` is recorded as `owner_kind: plugin`
-with `folded_from: platform` on the candidate's `ownership` evidence ref. Every `plugin`-owned
-candidate's ref carries `owner_ref`: the plugin's own name.
+with `folded_from: platform` on the sighting's `ownership` evidence ref. Every `plugin`-owned
+sighting's ref carries `owner_ref`: the plugin's own name — and `owner_ref` is the sighting's own
+column too, not only something a reader digs out of the ref.
 
-RETURNS `candidates: [{ id, stable_key, status, merged_into, description, prevalence:
-{numerator, denominator}, owner_kind, confidence, evidence_refs }]` — every one persisted as a
-`zz.eval_failure_mode_candidate` row before any protocol exists. `stable_key` is the failure
-mode's identity across windows (the tool and the refusal rule, or the two stages of a return).
-A candidate whose key this plugin already has — folded into a protocol, or found by an earlier
-DISCOVER and still open — is `status: 'merged'`, `merged_into` that one: the same failure mode
-seen again, which asks for no new protocol version. The rest are `status: 'candidate'`. A
-mutator: writes through the FR-59 idempotency ledger, so a retried call with the same
-`idempotency_key` replays the exact same candidate set rather than re-asking any model.
+RETURNS `candidates: [{ id, failure_mode_id, stable_key, description, prevalence:
+{numerator, denominator}, owner_kind, owner_ref, confidence, evidence_refs }]` — each one a
+`zz.eval_failure_mode_sighting` under the `zz.eval_failure_mode` identity its `stable_key` names.
+One identity per `(plugin, stable_key)`, carrying the mode's current state; one immutable
+sighting per discovery of it, so a mode found again is re-sighted on its existing identity
+rather than minted as a second mode. `id` is the sighting's own id, and that is what a
+`failureTaxonomy` entry's `candidateId` names. Folding a mode into a protocol is
+`protocol_record`'s own `eval_protocol_failure_mode` write, never DISCOVER's. A mutator: writes
+through the FR-59 idempotency ledger, so a retried call with the same `idempotency_key` replays
+the exact same candidate set rather than re-asking any model.
 
-**Never drops a candidate for a model outage.** A group the classifier cannot reach is stored
-with `owner_kind: unknown` and the outage reason folded into its own `evidence_refs` — DISCOVER
-reports what it found even when the model that would explain it is unavailable.
+**Never drops a sighting for a model outage.** A group the classifier cannot reach is stored
+with `owner_kind: unknown` and the outage reason recorded in the sighting's own
+`ownership_reason` as well as its `evidence_refs` — DISCOVER reports what it found even when the
+model that would explain it is unavailable.
 
 ## Read prevalence before you read the description
 
@@ -65,12 +68,12 @@ each candidate you carry forward.
 
 ## What happens to a candidate next
 
-Nothing here decides. A candidate sits at `status: 'candidate'` until DEFINE/QUALIFY's own
-`protocol_record` folds one in — naming it in a `failureTaxonomy` entry's `candidateId` accepts
+Nothing here decides. A sighting stays unfolded until DEFINE/QUALIFY's own `protocol_record`
+folds its identity in — naming the sighting in a `failureTaxonomy` entry's `candidateId` accepts
 it, `mergedCandidateIds` folds others into the same entry — which is a decision the NEXT stage
-makes, not this one. `protocol_read`'s own `new_recurring_failure` trigger is exactly "a
-candidate still sits at `status: candidate`" for this plugin, so leaving one uncited is itself a
-choice with a consequence: the next `protocol_read` opens a revision over it.
+makes, not this one. `protocol_read`'s own `new_recurring_failure` trigger is exactly "a sighting
+whose identity no protocol version has folded in" for this plugin, so leaving one uncited is
+itself a choice with a consequence: the next `protocol_read` opens a revision over it.
 
 ## Pitfalls
 
@@ -91,8 +94,8 @@ refusals or stage returns it has; run this before deciding there is nothing to m
 ## Skill contract
 
 **Outcome:** every distinct refusal/stage-return pattern this snapshot's evidence actually
-contains, grouped, ownership-classified and prevalence-counted, as `zz.eval_failure_mode_candidate`
-rows DEFINE/QUALIFY can accept, merge or leave uncited.
+contains, grouped, ownership-classified and prevalence-counted, as `zz.eval_failure_mode_sighting`
+rows under their identities, which DEFINE/QUALIFY can accept, merge or leave uncited.
 
 **Required evidence:** `failure_discover`'s own response — `candidates`, each with its
 `prevalence` and `owner_kind`. A candidate you narrate without its own prevalence fraction is a

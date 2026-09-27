@@ -98,9 +98,11 @@ assert.equal(await subjectVersionFor(["plugin:nobody"], knowledge), "unresolved"
 assert.equal(await subjectVersionFor([], knowledge), null);
 
 // plugin_profile's runtime identity names zz-core at PLATFORM_VERSION. serviceVersion(import.meta.url)
-// only works from a module at the root of src/ — from dist/eval/ it answers "0.0.0".
+// only works from a module at the root of src/ — from dist/eval/ it answers "0.0.0". The
+// `runtime_identity` jsonb is gone with the phase-3 reshape (`eval_observation_snapshot` keeps
+// `platform_version` alone), so the pin is the fact the column is written from.
 const observe = readFileSync("services/zz-core/src/eval/observe.ts", "utf8");
-assert.match(observe, /"zz-core": PLATFORM_VERSION/, "observe.ts does not report zz-core at PLATFORM_VERSION");
+assert.match(observe, /platformVersion: PLATFORM_VERSION/, "observe.ts does not report the platform at PLATFORM_VERSION");
 for (const dir of ["services/zz-core/src", "services/gateway/src"]) {
   for (const f of readdirSync(dir, { recursive: true, encoding: "utf8" })) {
     if (!f.endsWith(".ts") || !f.includes("/")) continue;

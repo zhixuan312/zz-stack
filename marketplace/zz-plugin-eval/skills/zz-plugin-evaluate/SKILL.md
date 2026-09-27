@@ -8,7 +8,7 @@ when_to_use: "The fifth stage of zz-plugin-eval, once a protocol version is affi
 # zz-plugin-evaluate
 
 ```
-evaluation_start(subject_version_id, protocol_version_id, observation_snapshot_id, idempotency_key)
+evaluation_start(subject_version_id, protocol_version_id, observation_snapshot_id, idempotency_key, initiative)
 evaluation_assess(eval_run_id, subject_refs[], idempotency_key)
 evaluation_score(eval_run_id, idempotency_key, initiative)
 ```

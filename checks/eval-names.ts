@@ -10,8 +10,9 @@ const fail = [];
 // `observe.ts` holds `plugin_profile` for the same reason (Task I-7): it too became a mutator,
 // writing `zz.eval_observation_snapshot` through the FR-59 ledger, and moved out on its own.
 // `discover.ts` holds `failure_discover` (Task I-9) — a mutator writing
-// `zz.eval_failure_mode_candidate` through the FR-59 ledger, the same reason `subject.ts` and
-// `observe.ts` above are their own registration modules rather than living inside plugin-eval.ts.
+// `zz.eval_failure_mode` plus `zz.eval_failure_mode_sighting` (Task I-24) through the FR-59
+// ledger, the same reason `subject.ts` and `observe.ts` above are their own registration modules
+// rather than living inside plugin-eval.ts.
 // `protocol.ts` (Task I-10) holds `protocol_read`/`protocol_record`/`protocol_affirm` for the
 // same reason: each is a mutator (or, for `protocol_read`, reads live state no other module
 // computes) writing `zz.eval_protocol_version` through the same ledger.

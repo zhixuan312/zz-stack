@@ -1,24 +1,34 @@
 /**
- * Subject identity (FR-1): the one immutable `subject_version` every later stage binds to.
+ * Subject identity (FR-1, FR-24): the one immutable `subject_version` every later stage binds to.
  *
- * `plugin_locate` is IDENTIFY for a catalog plugin. It resolves a catalog plugin's released
- * version, computes its whole-plugin content digest from the sorted digests of its own
- * components (skills, declared servers, the flow manifest itself — never the environment it
- * happens to run in), and upserts the immutable row `zz.eval_subject_version` is keyed on:
- * `(plugin_id, declared_version, content_digest)`. Calling it twice for a release whose content
- * has not moved returns the same `subject_version_id` — idempotent by construction, through the
- * unique constraint, and again through the FR-59 ledger this module is the first caller of.
+ * A subject version IS a `zz.plugin_version` row. The evaluation family used to keep a second row
+ * per released thing — `zz.eval_subject_version`, carrying the same `plugin_id` and the same
+ * declared version beside a digest `plugin_locate` recomputed on every call — and the two could
+ * disagree: a component digest source that moved under a release made the same (plugin, version)
+ * answer with two different ids depending on which tool had minted the row first. `plugin_version`
+ * is that release's one identity now: its `digest` is written once, at insert, by whichever path
+ * registered the version (`register-plugins.ts` at a release, `plugin_register` at a capture), and
+ * no path rewrites it, so `subject_version_id` is a `plugin_version.id` and a released version is
+ * a stable thing to evaluate.
+ *
+ * `plugin_locate` is IDENTIFY for a plugin the catalog has released. It resolves the version that
+ * plugin is at now (`currentVersionOf`, ../release-head.ts) — or the exact version the caller
+ * names, which a rollback's retracted row still resolves — and returns that row's own facts. It
+ * writes nothing to the release identity: the row is immutable history, so two calls for one
+ * release content answer with the same `subject_version_id` by construction rather than by an
+ * upsert. It still runs through the FR-59 ledger, so a retried call replays the same id and records
+ * the same IDENTIFY step.
  *
  * `plugin_register` is IDENTIFY for everything else (FR-2): a plugin the catalog has never
- * released, captured once from its own source directory rather than recomputed on every call —
- * there is no release to anchor a recompute to, so the row `plugin_register` writes is what
- * `plugin_locate` reads back for it afterwards, unchanged, rather than a second derivation that
- * could disagree with the first. Its source readers, and the confinement that bounds what a
- * caller's locator may reach, are subject-source.ts's.
+ * released, captured once from its own source — a directory under the catalog root, a public https
+ * git repository or a registry package — and written into that same row shape, with the four
+ * source columns (`component_manifest`, `source_locator`, `tree_digest`, `resolved_commit`) a
+ * catalog release leaves null. Its source readers, and the confinement that bounds what a caller's
+ * locator may reach, are subject-source.ts's.
  *
- * DELIBERATE: both are mutators, unlike everything in plugin-eval.ts. They are the only places a
- * new subject version comes from, so the identity every later stage joins against exists before
- * anything asks for it a second time.
+ * A registered version never changes content: the same content is a no-op, different content is
+ * refused by name, and the changed source lands as a new version instead — the digest every
+ * earlier evaluation of that version was judged against must not move under it.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type PluginComponent, pluginContentDigest, sha256 } from "@zz/catalog";
@@ -40,153 +50,129 @@ import { Refusal } from "../refusal.js";
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so no subject can be recorded");
 
-/** Everything IDENTIFY needs about one released (plugin, version), resolved once before any
- *  write. Returns null for a plugin/version this platform never released — the caller turns
- *  that into the contract's exact refusal text; this function does no I/O beyond reading. */
-async function resolveSubject(pool: pg.Pool, plugin: string, version: string | undefined): Promise<{
-  pluginId: string; origin: string; declaredVersion: string; releasedDigest: string;
-  components: PluginComponent[]; contentDigest: string;
-  sourceLocator: Record<string, unknown>; releaseIdentity: Record<string, unknown>;
-} | null> {
+/** ISO 8601 through `to_char`, never `::text`: the session's DateStyle decides what text a
+ *  timestamptz renders as, and this value travels to a caller. */
+const ISO = (column: string) =>
+  `to_char(${column} at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"')`;
+
+/** One released (plugin, version): the `plugin_version` row every later stage reads, with the
+ *  ownership the plugin's own row and `plugin_release_owner` carry.
+ *
+ *  A `type`, not an `interface`, for the reason every row type in this door is one: an interface
+ *  has no implicit index signature and so does not satisfy `pg.QueryResultRow`. */
+type SubjectVersionRow = {
+  subject_version_id: string; plugin_id: string; plugin: string; declared_version: string;
+  digest: string; released_at: string;
+  component_manifest: PluginComponent[] | null; source_locator: Record<string, unknown> | null;
+  tree_digest: string | null; resolved_commit: string | null;
+  origin: string; owner_team_id: string | null; owner_team: string | null; release_owners: string[];
+};
+
+/** The columns and joins both readers of a subject version share: the row by its own id
+ *  (`subjectResponse`) and the row by plugin name and version (`resolveSubjectVersion`), so the
+ *  two cannot disagree about what a subject version's facts are. */
+const SUBJECT_SELECT = `
+    select pv.id::text as subject_version_id, pv.plugin_id::text as plugin_id, p.name as plugin,
+           pv.version as declared_version, pv.digest, ${ISO("pv.released_at")} as released_at,
+           pv.component_manifest, pv.source_locator, pv.tree_digest, pv.resolved_commit,
+           p.origin, p.owner_team_id::text as owner_team_id, t.slug as owner_team,
+           owners.slugs as release_owners
+      from zz.plugin_version pv
+      join zz.plugin p on p.id = pv.plugin_id
+      left join zz.team t on t.id = p.owner_team_id
+      -- 'release_owners' was a jsonb list nobody could join; it is a relation now, and a reader
+      -- that wants the slugs aggregates the teams the relation names.
+      left join lateral (
+        select coalesce(array_agg(t2.slug order by t2.slug), '{}'::text[]) as slugs
+          from zz.plugin_release_owner r
+          join zz.team t2 on t2.id = r.team_id
+         where r.plugin_id = p.id) owners on true`;
+
+/** Everything IDENTIFY needs about one released (plugin, version), resolved once before any write.
+ *  Returns null for a plugin or a version this platform never released — the caller turns that
+ *  into the contract's exact refusal text; this function does no I/O beyond reading. */
+async function resolveSubjectVersion(
+  runner: Pick<pg.Pool, "query">, plugin: string, version: string | undefined,
+): Promise<SubjectVersionRow | null> {
+  const pluginId = (await runner.query<{ id: string }>(
+    "select id::text as id from zz.plugin where name = $1", [plugin])).rows[0]?.id;
+  if (!pluginId) return null;
   // The current release is `currentVersionOf`'s (../release-head.ts), the same reader
   // release_apply's baseline uses: for a catalog plugin, the version the running deployment
   // declares; for any other, the newest by semver with every version a rollback retracted left
   // out. A retracted row stays in zz.plugin_version, and naming its exact version still resolves
-  // it.
-  const pluginId = (await pool.query<{ id: string }>(
-    "select id::text as id from zz.plugin where name = $1", [plugin])).rows[0]?.id;
-  if (!pluginId) return null;
-  const target = version ?? await currentVersionOf(pool, pluginId);
+  // it — verifying and explaining a rolled-back release needs it.
+  const target = version ?? await currentVersionOf(runner, pluginId);
   if (target === null) return null;
-  const head = (await pool.query<{
-    plugin_id: string; plugin_version_id: string; origin: string; declared_version: string; digest: string;
-  }>(`
-    select p.id::text as plugin_id, pv.id::text as plugin_version_id, p.origin,
-           pv.version as declared_version, pv.digest
-      from zz.plugin p join zz.plugin_version pv on pv.plugin_id = p.id
-     where p.id = $1::uuid and pv.version = $2`,
-    [pluginId, target])).rows[0];
-  if (!head) return null;
-
-  // A third party has no release to recompute against — plugin_register captured its
-  // component set once, from the source directory it was given, and that capture is this
-  // subject's whole identity. Recomputing here the way the catalog path does below would read
-  // zz.plugin_version_skill (empty: a third party's skills never go through register-skills)
-  // and the catalog manifest (absent by definition), landing on a digest that can never agree
-  // with the one plugin_register wrote — the same plugin/version would then answer with two
-  // different subject_version_id values depending on which tool minted the row first.
-  if (head.origin === "third_party") {
-    const captured = (await pool.query<{
-      component_manifest: PluginComponent[]; content_digest: string;
-      source_locator: Record<string, unknown>; release_identity: Record<string, unknown>;
-    }>(`
-      select component_manifest, content_digest, source_locator, release_identity
-        from zz.eval_subject_version
-       where plugin_id = $1::uuid and declared_version = $2
-       order by captured_at desc limit 1`, [head.plugin_id, head.declared_version])).rows[0];
-    // Registered but never captured should not happen — plugin_register writes zz.plugin_version
-    // and zz.eval_subject_version in the same transaction — but a partial state is reported as
-    // "never released" rather than crashing on a read that found nothing to return.
-    if (!captured) return null;
-    return {
-      pluginId: head.plugin_id, origin: head.origin, declaredVersion: head.declared_version,
-      releasedDigest: head.digest, components: captured.component_manifest,
-      contentDigest: captured.content_digest, sourceLocator: captured.source_locator,
-      releaseIdentity: captured.release_identity,
-    };
-  }
-
-  const skills = (await pool.query<{ name: string; version: string; content_hash: string }>(`
-    select s.name, sv.version, sv.content_hash
-      from zz.plugin_version pv
-      join zz.plugin p on p.id = pv.plugin_id
-      join zz.plugin_version_skill pvs on pvs.plugin_version_id = pv.id
-      join zz.skill_version sv on sv.id = pvs.skill_version_id
-      join zz.skill s on s.id = sv.skill_id
-     where p.name = $1 and pv.version = $2
-     order by s.name`, [plugin, head.declared_version])).rows;
-
-  const entry = entryOf(plugin);
-  const components: PluginComponent[] = [
-    ...skills.map((s): PluginComponent => ({
-      kind: "skill", name: s.name,
-      // A skill version's own content hash, never blank in practice (register-skills.ts always
-      // writes one) — falling back to a hash of its identity rather than throwing, so a stray
-      // pre-migration row cannot take IDENTIFY down for the whole plugin.
-      digest: s.content_hash || sha256(`${s.name}@${s.version}`),
-    })),
-    // A plugin's own server is code in the platform build it shipped with, so its identity is
-    // that build: hashed from name and path alone it was a constant, and a door that changed with
-    // every release read as unchanged. A server the plugin only calls (sdlc's baseline door) is
-    // not its content, and stays keyed by address.
-    ...serversOf(entry).map((sv): PluginComponent => ({
-      kind: "server", name: sv.name,
-      digest: sha256(sv.name === plugin ? `${sv.name}:${sv.path}@${head.declared_version}` : `${sv.name}:${sv.path}`),
-    })),
-  ];
-  if (entry) {
-    // The flow AS RELEASED: the digest register-plugins recorded for this version from the
-    // marketplace lock, never a hash of the manifest on disk today. Hashed from today's
-    // manifest, a past version's identity moved whenever the catalog did, and the same release
-    // located twice answered with two subject_version_ids.
-    components.push({ kind: "flow", name: entry.flow, digest: head.digest });
-  }
-
-  return {
-    pluginId: head.plugin_id, origin: head.origin, declaredVersion: head.declared_version,
-    releasedDigest: head.digest, components, contentDigest: pluginContentDigest(components),
-    sourceLocator: entry
-      ? { kind: "catalog", owner: entry.owner, flow: entry.flow }
-      : { kind: "unrecorded" },
-    // FR-1's "immutable source/release identity" — what release.ts's own digest (written once,
-    // at release, by register-plugins.ts) and this call's origin were at the moment this subject
-    // version was captured. Not the content digest above: that is recomputed here and can differ
-    // from the release-time one if a component's digest source changes under it, which is exactly
-    // what a second locate is supposed to catch.
-    releaseIdentity: { plugin_version_id: head.plugin_version_id, released_digest: head.digest, origin: head.origin },
-  };
+  const row = (await runner.query<SubjectVersionRow>(
+    `${SUBJECT_SELECT} where p.name = $1 and pv.version = $2`, [plugin, target])).rows[0];
+  return row ?? null;
 }
 
-/** The `plugin_locate` response, read back from the row rather than re-derived — a replayed
- *  idempotent call and a freshly inserted one return through this one path, so the two can never
- *  disagree about the shape. */
+/** The `plugin_locate` response: the row's own facts, read back rather than re-derived — a
+ *  replayed idempotent call and a freshly resolved one return through this one path, so the two
+ *  can never disagree about the shape. The one field that is not the row's is the component
+ *  manifest: `plugin_version.component_manifest` is null for a catalog release, and the contract
+ *  this tool answers to promises a digest per component, so the manifest comes from the one
+ *  derivation `candidate_record` maps a patch onto (`componentManifestOf`) rather than from a
+ *  second, response-only one that could answer differently. */
 async function subjectResponse(
   runner: Pick<pg.Pool, "query">, subjectVersionId: string,
 ): Promise<Record<string, unknown>> {
-  const row = (await runner.query<{
-    id: string; plugin: string; declared_version: string; content_digest: string;
-    component_manifest: PluginComponent[]; release_identity: Record<string, unknown>;
-    origin: string; owner_team: string | null; evolvable: boolean; release_owners: string[];
-  }>(`
-    select sv.id::text as id, p.name as plugin, sv.declared_version, sv.content_digest,
-           sv.component_manifest, sv.release_identity,
-           p.origin, p.owner_team, p.evolvable, p.release_owners
-      from zz.eval_subject_version sv
-      join zz.plugin p on p.id = sv.plugin_id
-     where sv.id = $1::uuid`, [subjectVersionId])).rows[0];
+  const row = (await runner.query<SubjectVersionRow>(
+    `${SUBJECT_SELECT} where pv.id = $1::uuid`, [subjectVersionId])).rows[0];
+  if (!row) throw new Refusal(`ERROR: no plugin_version ${subjectVersionId} — the release this subject named is gone`);
 
   // The newest protocol version this plugin has, if any — affirmed or not. DELIBERATE: no
   // compatibility check against `subject_compatibility` or the triggers, and no affirmation
   // check: deciding which protocol applies is protocol_read's one job, and doing it here too would
   // give two answers to that question from two different tools.
+  //
+  // The header `eval_protocol` folded into the version row (FR-27), so the plugin a protocol
+  // belongs to is `eval_protocol_version.plugin_id` and the lookup is one table. This statement
+  // is the fold's, reached here because this file owns the reads it issues.
   const protocol = (await runner.query<{ id: string }>(`
     select epv.id::text as id
       from zz.eval_protocol_version epv
-      join zz.eval_protocol ep on ep.id = epv.protocol_id
-      join zz.plugin p on p.id = ep.plugin_id
-     where p.name = $1
-     order by epv.version desc limit 1`, [row.plugin])).rows[0];
+     where epv.plugin_id = $1::uuid
+     order by epv.version desc limit 1`, [row.plugin_id])).rows[0];
+
+  // A catalog release is registered by `register-plugins.ts`, which has no capture to record: its
+  // four source columns are null and the source it came from is this repository's own catalog. A
+  // reader that has to know which kind of source a subject is (the candidate build's own
+  // `sourceKind`) reads this, so the derivation is made once, here, rather than inferred from a
+  // null at every call site.
+  const sourceLocator = row.source_locator
+    ?? (row.origin === "platform" ? { kind: "catalog" } : null);
 
   return {
-    subject_version_id: row.id,
+    subject_version_id: row.subject_version_id,
     plugin: row.plugin,
     declared_version: row.declared_version,
-    content_digest: row.content_digest,
-    component_manifest: row.component_manifest,
-    release_identity: row.release_identity,
+    content_digest: row.digest,
+    // The capture's own column for a third-party subject, and the derived manifest — digests
+    // included — for a catalog release, whose own column is null. Never null: the contract this
+    // tool publishes says "per-component manifest ... each a sha256 of the component's content",
+    // and a caller reading a null there cannot tell the release ships nothing from the release
+    // having been registered rather than captured.
+    component_manifest: await componentManifestOf(runner, {
+      id: row.subject_version_id, plugin: row.plugin,
+      declared_version: row.declared_version, release_digest: row.digest,
+      component_manifest: row.component_manifest,
+    }),
+    source_locator: sourceLocator,
+    tree_digest: row.tree_digest,
+    resolved_commit: row.resolved_commit,
+    released_at: row.released_at,
+    // FR-1's "immutable source/release identity", assembled from the row's own columns: what the
+    // release digest was, where the release came from, and — for a third-party capture — the
+    // commit or files it was captured at.
+    release_identity: {
+      plugin_version_id: row.subject_version_id, released_digest: row.digest, origin: row.origin,
+      tree_digest: row.tree_digest, resolved_commit: row.resolved_commit,
+    },
     origin: row.origin,
     owner_team: row.owner_team,
-    evolvable: row.evolvable,
     release_owners: row.release_owners,
     // Ownership's own release track, not the per-initiative branch fact of the same name
     // FR-52/FR-58 has `release_prepare`/`proposal_prepare` write into `_facts.json` (Task I-27).
@@ -206,6 +192,76 @@ async function subjectResponse(
   };
 }
 
+/** The component manifest one subject version carries: what a patch's own files are mapped onto
+ *  (`candidate_record`'s `touched_components`) and what `plugin_locate` answers with.
+ *
+ *  A third-party capture carries its own — `plugin_register` recorded `component_manifest` when it
+ *  read the source, digests included — and that is what this answers with. A catalog release has no
+ *  capture to carry: its four source columns are null because `register-plugins.ts` registers a
+ *  version rather than reading a source, and that is not its manifest ceasing to exist. It is
+ *  DERIVED from what the release actually ships — the skills `plugin_version_skill` binds to this
+ *  exact version, the servers the catalog entry declares (`serversOf`, the baseline door included)
+ *  and the flow itself, in the order and with the kinds IDENTIFY derived them before a subject
+ *  version folded onto `plugin_version`.
+ *
+ *  Read, never guessed. `touchedComponents` matches a patch's file against THIS list, so a manifest
+ *  inferred from the patch's own paths would answer `in_manifest` with the inference — and every
+ *  digest below is a fact of the release, never a value minted to fill the shape: a skill version's
+ *  own `content_hash`, the release digest `register-plugins.ts` wrote once at insert, and, for a
+ *  server, the same construction the capture makes (`sha256(name:path)`, versioned when the door is
+ *  the plugin's own — see the comment on it below). A shape without them was the hole
+ *  `plugin_locate`'s response contract named: it promises "a per-component manifest
+ *  (skill/server/flow/config digests, each a sha256 of the component's content)", and the column a
+ *  catalog release answers from is null. */
+export async function componentManifestOf(
+  runner: Pick<pg.Pool, "query">,
+  subject: {
+    readonly id: string; readonly plugin: string;
+    /** The release's own declared version and whole-plugin digest, as the `plugin_version` row
+     *  carries them. Two facts of a catalog release that its components alone do not give: a
+     *  server's identity is the build it shipped with, and the flow component's digest IS the
+     *  release digest. */
+    readonly declared_version: string; readonly release_digest: string;
+    /** The `plugin_version.component_manifest` column, as any caller reads it: the release's own
+     *  components for a capture, and null for a catalog release, which the derivation below
+     *  answers for instead. */
+    readonly component_manifest: readonly PluginComponent[] | null;
+  },
+): Promise<readonly PluginComponent[]> {
+  if (subject.component_manifest) return subject.component_manifest;
+  const entry = entryOf(subject.plugin);
+  const skills = (await runner.query<{ name: string; version: string; content_hash: string }>(`
+    select s.name, sv.version, sv.content_hash
+      from zz.plugin_version_skill pvs
+      join zz.skill_version sv on sv.id = pvs.skill_version_id
+      join zz.skill s on s.id = pvs.skill_id
+     where pvs.plugin_version_id = $1::uuid
+     order by s.name`, [subject.id])).rows;
+  const components: PluginComponent[] = [
+    ...skills.map((s): PluginComponent => ({
+      kind: "skill", name: s.name,
+      // A skill version's own content hash, never blank in practice (register-skills.ts always
+      // writes one) — falling back to a hash of its identity rather than throwing, so a stray
+      // pre-migration row cannot take IDENTIFY down for the whole plugin.
+      digest: s.content_hash || sha256(`${s.name}@${s.version}`),
+    })),
+    // A plugin's own server is code in the platform build it shipped with, so its identity is
+    // that build: hashed from name and path alone it was a constant, and a door that changed with
+    // every release read as unchanged. A server the plugin only calls (sdlc's baseline door) is
+    // not its content, and stays keyed by address.
+    ...serversOf(entry).map((sv): PluginComponent => ({
+      kind: "server", name: sv.name,
+      digest: sha256(sv.name === subject.plugin
+        ? `${sv.name}:${sv.path}@${subject.declared_version}` : `${sv.name}:${sv.path}`),
+    })),
+  ];
+  // The flow's own name, as the catalog package carries it — not the plugin name, which drops the
+  // `-flow` suffix a package directory is named with — and the digest register-plugins recorded
+  // for this version from the marketplace lock, never a hash of the manifest on disk today: hashed
+  // from today's manifest, a past version's identity moved whenever the catalog did.
+  if (entry) components.push({ kind: "flow", name: entry.flow, digest: subject.release_digest });
+  return components;
+}
 
 export function registerSubjectTools(server: McpServer): void {
   server.registerTool(
@@ -213,15 +269,20 @@ export function registerSubjectTools(server: McpServer): void {
     {
       description:
         "WHEN an evaluation begins, before any other tool on this door: IDENTIFY the plugin it is " +
-        "about. It RETURNS FR-1's immutable subject_version — declared version, whole-plugin " +
-        "content digest, per-component manifest (skill/server/flow/config digests, never the " +
-        "environment), ownership and its release mode, and the plugin's newest protocol version " +
-        "if one exists (no compatibility check — protocol_read decides that) — with the SAME subject_version_id for the same release content, whichever " +
-        "call minted the row. Every later tool takes the subject_version_id this returns, so an " +
-        "evaluation cannot drift onto a different version of its own subject halfway through. A " +
-        "mutator: it upserts zz.eval_subject_version through the FR-59 idempotency ledger, so a " +
-        "retried call with the same idempotency_key replays rather than minting a second row. " +
-        "REFUSES a plugin this platform has never released.",
+        "about. It RETURNS FR-1's immutable subject_version — the declared version, its release " +
+        "digest (the whole plugin's identity, written once when the version was registered and " +
+        "never rewritten), the per-component manifest (the capture's own for a third-party " +
+        "subject, derived from what a catalog release ships — a digest per component — for one " +
+        "nobody captured), the row's other source columns (source locator, tree digest and " +
+        "resolved commit: set for a third-party capture, null for a catalog release), " +
+        "ownership and its release mode, and the plugin's newest protocol version if one exists " +
+        "(no compatibility check — protocol_read decides that) — with the SAME subject_version_id " +
+        "for the same release content, whichever call resolved it. Every later tool takes the " +
+        "subject_version_id this returns, so an evaluation cannot drift onto a different version " +
+        "of its own subject halfway through. It writes nothing: a subject version IS a " +
+        "zz.plugin_version row, and that row is immutable history. A caller that retries with the " +
+        "same idempotency_key replays the same answer through the FR-59 ledger. REFUSES a plugin " +
+        "this platform has never released, and a version it has no row for.",
       inputSchema: {
         plugin: z.string(),
         version: z.string().optional().describe("Omit for the currently released version."),
@@ -235,7 +296,7 @@ export function registerSubjectTools(server: McpServer): void {
       const pool = db();
       if (!pool) return noDb();
 
-      const resolved = await resolveSubject(pool, plugin, version);
+      const resolved = await resolveSubjectVersion(pool, plugin, version);
       if (!resolved) {
         return text(`ERROR: no plugin named ${plugin} is registered — plugin_register adds one that is not in the catalog`);
       }
@@ -243,31 +304,18 @@ export function registerSubjectTools(server: McpServer): void {
       const principal = parseCaller(requestHeaders()).email;
       const outcome: IdempotencyOutcome<string> = await withIdempotency(
         principal, "plugin_locate", idempotency_key, { plugin, version },
-        async (client): Promise<MutatorOutcome<string>> => {
-          const row = (await client.query<{ id: string }>(`
-            insert into zz.eval_subject_version
-              (plugin_id, declared_version, content_digest, component_manifest, source_locator,
-               release_identity, captured_at)
-            values ($1::uuid, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, now())
-            on conflict (plugin_id, declared_version, content_digest)
-              -- A no-op write of the row onto itself: the conflict key already fixes every other
-              -- column's value, so this exists only so the RETURNING clause below gives back the
-              -- existing id rather than nothing, the same trick protocol-record.ts's upsert of
-              -- zz.eval_protocol uses (Task I-10), and the removed ruler_record used to on zz.rubric.
-              do update set component_manifest = excluded.component_manifest
-            returning id::text as id`,
-            [resolved.pluginId, resolved.declaredVersion, resolved.contentDigest,
-             JSON.stringify(resolved.components), JSON.stringify(resolved.sourceLocator),
-             JSON.stringify(resolved.releaseIdentity)])).rows[0];
-          // `result` carries the id on the fresh path — the only thing `subjectResponse` needs —
-          // so both arms below read the id off a field `IdempotencyOutcome` actually has.
-          return { result: row.id, result_table: "zz.eval_subject_version", result_id: row.id };
-        },
+        // The ledger is the only row this call writes, and it anchors on the release's own
+        // `plugin_version` id — the identity itself is immutable history no path updates
+        // (AC-6.2), so a replay and a fresh resolve answer with the same row and cannot disagree.
+        async (): Promise<MutatorOutcome<string>> => ({
+          result: resolved.subject_version_id,
+          result_table: "zz.plugin_version", result_id: resolved.subject_version_id,
+        }),
       );
       const subjectVersionId = outcome.replayed ? outcome.result_id : outcome.result;
 
       logActivity(await userRoot(), null,
-        { user: principal, action: "plugin_locate", plugin, version: resolved.declaredVersion,
+        { user: principal, action: "plugin_locate", plugin, version: resolved.declared_version,
           subject_version_id: subjectVersionId, replayed: outcome.replayed });
 
       const recorded = await recordStage(initiative, "zz-plugin-identify", { subject_version_id: subjectVersionId });
@@ -288,15 +336,16 @@ export function registerSubjectTools(server: McpServer): void {
         "npm pack and read from its extracted tarball, with the tarball's own integrity " +
         "recorded — and RETURNS the same subject_version_id shape plugin_locate comes back with, so plugin_locate, " +
         "plugin_profile and plugin_conform all then work for this plugin with no catalog entry. " +
-        "The row it captures is that subject's whole identity: unlike plugin_locate, a later " +
-        "call for the same plugin/version reads this capture back rather than recomputing it, " +
+        "The captured row IS that subject's whole identity: unlike plugin_locate, a later call " +
+        "for the same plugin/version reads this capture back rather than recomputing it, " +
         "because a third party has no release moment to recompute against. A mutator, through " +
         "the same FR-59 idempotency ledger plugin_locate uses. REFUSES a name the catalog " +
         "already owns — that plugin is registered by release, never by this tool — REFUSES a " +
         "payload naming origin, owner_team, evolvable or release_owners, since the platform " +
         "derives every authority field itself and never takes one as input, REFUSES a " +
         "source_locator it cannot read or may not reach, and REFUSES re-registering a version " +
-        "whose content changed — a changed source is a new version.",
+        "whose content changed — a changed source is a new version, and its digest is never " +
+        "rewritten onto an existing one.",
       inputSchema: {
         name: z.string(),
         version: z.string(),
@@ -346,6 +395,8 @@ export function registerSubjectTools(server: McpServer): void {
         return text(`ERROR: source ${source_locator} could not be read: ${resolved.error}`);
       }
       const contentDigest = pluginContentDigest(resolved.components);
+      const treeDigest = resolved.identityExtra.tree_digest;
+      const resolvedCommit = (resolved.identityExtra.resolved_commit as string | undefined) ?? null;
 
       const principal = parseCaller(requestHeaders()).email;
       const outcome: IdempotencyOutcome<string> = await withIdempotency(
@@ -356,18 +407,33 @@ export function registerSubjectTools(server: McpServer): void {
             insert into zz.plugin (name, origin) values ($1, 'third_party')
             on conflict (name) do update set origin = excluded.origin
             returning id::text as id`, [name])).rows[0];
-          // A declared version is immutable once captured: re-registering it from a source whose
-          // content moved would rewrite the digest every earlier evaluation of that version was
-          // judged against, and a subject's identity is exactly what must not move under it. The
-          // same content is a no-op; different content is a new version, and the caller says so.
-          // `for update` so two concurrent registrations of one version cannot both see nothing.
+          // The digest is written once, here, and never again: a declared version is immutable
+          // once captured, and re-registering it from a source whose content moved would rewrite
+          // the digest every earlier evaluation of that version was judged against. `do nothing`
+          // is what keeps that promise at the database; the read below is the refusal that tells
+          // the caller why. `for update` so two concurrent registrations of one version cannot
+          // both see nothing.
+          //
+          // `source_locator` is the capture's own provenance: where it came from, and — for a
+          // package — the integrity of the tarball that came from there. `plugin_version` has no
+          // column for a package capture's `tarball_integrity`, and the candidate build
+          // (`packages/tools/src/candidate/third-party.ts`) refuses a package subject whose
+          // identity does not carry it, so it travels with the locator it belongs to.
+          const sourceLocator = {
+            kind: source_kind, locator: source_locator,
+            ...(resolved.identityExtra.tarball_integrity
+              ? { tarball_integrity: resolved.identityExtra.tarball_integrity } : {}),
+          };
           await client.query(`
-            insert into zz.plugin_version (plugin_id, version, digest)
-            values ($1::uuid, $2, $3)
+            insert into zz.plugin_version
+              (plugin_id, version, digest, component_manifest, source_locator, tree_digest, resolved_commit)
+            values ($1::uuid, $2, $3, $4::jsonb, $5::jsonb, $6, $7)
             on conflict (plugin_id, version) do nothing`,
-            [pluginRow.id, version, contentDigest]);
-          const held = (await client.query<{ digest: string }>(`
-            select digest from zz.plugin_version where plugin_id = $1::uuid and version = $2 for update`,
+            [pluginRow.id, version, contentDigest, JSON.stringify(resolved.components),
+             JSON.stringify(sourceLocator), treeDigest, resolvedCommit]);
+          const held = (await client.query<{ id: string; digest: string; tree_digest: string | null }>(`
+            select id::text as id, digest, tree_digest from zz.plugin_version
+             where plugin_id = $1::uuid and version = $2 for update`,
             [pluginRow.id, version])).rows[0];
           if (held.digest !== contentDigest) {
             throw new Refusal(
@@ -375,26 +441,15 @@ export function registerSubjectTools(server: McpServer): void {
               `this source digests to ${contentDigest}. A registered version never changes content — ` +
               "register the changed source under a new version.");
           }
-          const row = (await client.query<{ id: string; tree_digest: string | null }>(`
-            insert into zz.eval_subject_version
-              (plugin_id, declared_version, content_digest, component_manifest, source_locator,
-               release_identity, captured_at)
-            values ($1::uuid, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, now())
-            on conflict (plugin_id, declared_version, content_digest)
-              do update set component_manifest = excluded.component_manifest
-            returning id::text as id, release_identity->>'tree_digest' as tree_digest`,
-            [pluginRow.id, version, contentDigest, JSON.stringify(resolved.components),
-             JSON.stringify({ kind: source_kind, locator: source_locator }),
-             JSON.stringify({ origin: "third_party", ...resolved.identityExtra })])).rows[0];
           // The content digest covers only skills and the manifest; `tree_digest` is every file.
           // Same skills with changed hooks, commands or server code is still changed content.
-          if (row.tree_digest !== resolved.identityExtra.tree_digest) {
+          if (held.tree_digest !== treeDigest) {
             throw new Refusal(
-              `ERROR: ${name}@${version} is already registered with tree digest ${row.tree_digest ?? "(none)"}, and ` +
-              `this source's files digest to ${resolved.identityExtra.tree_digest}. A registered version ` +
+              `ERROR: ${name}@${version} is already registered with tree digest ${held.tree_digest ?? "(none)"}, and ` +
+              `this source's files digest to ${treeDigest}. A registered version ` +
               "never changes content — register the changed source under a new version.");
           }
-          return { result: row.id, result_table: "zz.eval_subject_version", result_id: row.id };
+          return { result: held.id, result_table: "zz.plugin_version", result_id: held.id };
         },
       );
       const subjectVersionId = outcome.replayed ? outcome.result_id : outcome.result;

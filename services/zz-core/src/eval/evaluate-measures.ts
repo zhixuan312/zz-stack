@@ -32,10 +32,10 @@
  * (`usable_run_coverage`, `tool_coverage`, already rates in `[0,1]`) need not declare one.
  * A model-backed measure's `definition.qualification` is `{ anchors: [{id, role, text,
  * expected}] }`, which QUALIFY (`qualify.ts`) reads to qualify its evaluator; EVALUATE reads only
- * an optional `definition.qualification.positive` — see `valueFromAnswer`. `improvement.criticalGuardrails` (protocol-
- * level, `@zz/contracts`'s `Guardrail`) is now the ONLY guardrail mechanism — see
- * `evaluateGuardrails` below; a measure's own `definition` no longer carries `guardrail`/
- * `guardrailThreshold`.
+ * an optional `definition.qualification.positive` — see `valueFromAnswer`. A guardrail is a
+ * measure's own bar — `eval_measure.guardrail_threshold`, written by `protocol_record` from the
+ * `improvement.criticalGuardrails` entry that named this measure by key — and `guardrailsOfMeasures`
+ * below is what reads the list off the run's own measures; see `evaluateGuardrails`.
  */
 import type pg from "pg";
 
@@ -63,6 +63,16 @@ export interface MeasureRow {
   readonly required: boolean;
   readonly definition: Record<string, unknown>;
   readonly evaluator_version_id: string | null;
+  /** The kind a model-backed measure judges, as its own column (`eval_measure.subject_kind`,
+  *  written by `protocol_record` from the same `definition.subjectKind` it used to live in) —
+  *  what `subjectKindOf` reads first. Optional because a `MeasureRow` is also built by hand in a
+  *  check, and a row that names no column falls back to the definition. */
+  readonly subject_kind?: string | null;
+  /** The bar this measure's already-reduced `[0,1]` value must meet to pass, when the protocol
+   *  names one — `eval_measure.guardrail_threshold`, the column that replaced the
+   *  `improvement.criticalGuardrails` entry naming this measure by key. `null` for every measure
+   *  that is not a guardrail. */
+  readonly guardrail_threshold?: number | null;
   /** The bound evaluator's question, when one is bound — what `subjectKindOf` derives a kind
    *  from when the measure declares none. */
   readonly question?: string | null;
@@ -409,11 +419,16 @@ export function refKindOf(ref: string): SubjectKind | null {
   return null;
 }
 
-/** The kind a model-backed measure judges: `definition.subjectKind` when the protocol declares
- *  it, else read off the opening of its evaluator's question ("Read this run", "Read this bug
- *  report", ...). Null when neither says, and such a measure is asked of every ref, as before. */
+/** The kind a model-backed measure judges: `eval_measure.subject_kind` when the row carries the
+ *  column, else `definition.subjectKind` when the protocol declared it there, else read off the
+ *  opening of its evaluator's question ("Read this run", "Read this bug report", ...). Null when
+ *  none of the three says, and such a measure is asked of every ref, as before.
+ *
+ *  The definition fallback is kept deliberately: `protocol_record` writes both from the same
+ *  figure, and a `MeasureRow` built by hand (a check's own literal) carries the definition and no
+ *  column. */
 export function subjectKindOf(measure: MeasureRow): SubjectKind | null {
-  const declared = measure.definition.subjectKind;
+  const declared = measure.subject_kind ?? measure.definition.subjectKind;
   if (typeof declared === "string" && (SUBJECT_KINDS as readonly string[]).includes(declared)) {
     return declared as SubjectKind;
   }
@@ -526,18 +541,16 @@ export function readingsOf(
 }
 
 // -------------------------------------------------------------------------------------------
-// Guardrails (Task I-29's own fix dispatch, FR-6, FR-20, FR-23): `improvement.criticalGuardrails`
-// is now the ONLY guardrail mechanism — evaluation_score reads it through the two functions
-// below (and release_verify reads the result it stores), rather than each scanning a
-// per-measure `definition.guardrail` flag of its own (the duplicate this fix removes).
+// Guardrails (FR-6, FR-20, FR-23): a guardrail is a MEASURE'S OWN BAR. `improvement_policy` lost
+// `criticalGuardrails` (the payload no longer carries them), and the same figure is now
+// `eval_measure.guardrail_threshold`, written per measure key by `protocol_record` from the
+// `improvement.criticalGuardrails` entry that named it. `evaluation_score` reads the list off the
+// run's own measures through `guardrailsOfMeasures` and evaluates it with `evaluateGuardrails`,
+// rather than parsing a policy object.
 
-/** One `Guardrail` (`@zz/contracts`) as this file evaluates it: a measure key and the threshold
- *  its NORMALISED value (the same [0,1] `reduceMeasureAnswers` already produced — never the raw
- *  fact) must meet or exceed to pass. `@zz/contracts`'s own zod schema already requires both
- *  fields on every entry it lets `protocol_record` write; `parseCriticalGuardrails` stays
- *  defensive of a bare string or a missing threshold anyway, because it also reads
- *  `improvement_policy` straight back off the database, which is one write path removed from
- *  that schema's own validation. */
+/** One guardrail as this file evaluates it: a measure key and the threshold its NORMALISED value
+ *  (the same [0,1] `reduceMeasureAnswers` already produced — never the raw fact) must meet or
+ *  exceed to pass. */
 export interface CriticalGuardrail { readonly key: string; readonly threshold: number }
 
 interface GuardrailResult extends CriticalGuardrail {
@@ -547,6 +560,20 @@ interface GuardrailResult extends CriticalGuardrail {
 
 const DEFAULT_GUARDRAIL_THRESHOLD = 0.5;
 
+/** The run's own measures that carry a bar. A measure is a guardrail exactly when its own
+ *  `guardrail_threshold` column is set, so the list is read off the run's measures rather than
+ *  parsed out of a policy object — the fact moved to where it is measured against. */
+export function guardrailsOfMeasures(measures: readonly MeasureRow[]): CriticalGuardrail[] {
+  return measures
+    .filter((m) => typeof m.guardrail_threshold === "number")
+    .map((m) => ({ key: m.key, threshold: m.guardrail_threshold as number }));
+}
+
+/** A `{key, threshold}` list read off whatever shape it arrives in — a bare string names a key
+ *  with no threshold, and a missing threshold defaults rather than dropping the guardrail. Kept
+ *  because the list still arrives as parsed data from more than one place (a protocol body's own
+ *  payload, a check's own literal), and this is the one place that decides what a malformed entry
+ *  means. */
 export function parseCriticalGuardrails(raw: unknown): CriticalGuardrail[] {
   if (!Array.isArray(raw)) return [];
   const out: CriticalGuardrail[] = [];

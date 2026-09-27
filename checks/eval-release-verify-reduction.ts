@@ -41,9 +41,11 @@ assert.equal(verifyDecision({ ...base, released: { overall: 0.7, guardrail_statu
 // The released evaluation is read under the base's own protocol version and over at least the
 // minimum of real runs, and a pending answer hands back every argument the next calls need.
 const src = readFileSync("services/zz-core/src/eval/release-verify.ts", "utf8");
-assert.match(src, /er\.subject_version_id = \$1::uuid and er\.protocol_version_id = \$2::uuid\s+and er\.run_status = 'completed' and os\.total_run_count >= \$3/,
-  "release_verify reads an evaluation of another protocol version, or of too few runs");
-assert.match(src, /score_status in \('established', 'provisional'\) and overall_score is not null/,
+assert.match(src, /join zz\.eval_observation_snapshot os on os\.id = er\.observation_snapshot_id/,
+  "release_verify reads the released evaluation through a table this phase removed");
+assert.match(src, /os\.plugin_version_id = \$1::uuid and er\.protocol_version_id = \$2::uuid\s+and er\.scored_at is not null and os\.total_run_count >= \$3/,
+  "release_verify reads an evaluation of another protocol version, of another release, or of too few runs");
+assert.match(src, /er\.score_status in \('established', 'provisional'\) and er\.overall_score is not null/,
   "release_verify compares against a base score that was never established or provisional");
 assert.match(src, /evaluation_required: \{\s*subject_version_id: releasedId, protocol_version_id: protocolVersionId,\s*evidence_window: \{ last_runs: runs \}/,
   "a pending answer does not carry the arguments plugin_profile and evaluation_start need");

@@ -363,7 +363,9 @@ async function persistAssessment(a: Assessment, call: AssessmentCall): Promise<v
 }
 
 /** `zz.eval_evaluator_version` as `recordEvaluatorAssessment` needs to read it: the exact row
- *  a `bounded_semantic`/`generative_critic` measure resolved to, with its stable identity. */
+ *  a `bounded_semantic`/`generative_critic` measure resolved to, with its stable identity. The
+ *  stable key lives on this row now — `zz.eval_evaluator` was a header carrying nothing but the
+ *  key and a `kind` nothing read, and the phase-3 migration folded it onto the version. */
 interface EvaluatorVersionRow {
   id: string;
   version: number;
@@ -395,9 +397,8 @@ async function resolveEvaluatorVersion(evaluatorVersionId: string): Promise<Eval
     throw new Refusal(`ERROR: "${evaluatorVersionId}" is not a registered evaluator version`);
   }
   const { rows } = await p.query<EvaluatorVersionRow>(`
-    select v.id, v.version, v.question, v.answer_schema, e.stable_key
+    select v.id, v.version, v.question, v.answer_schema, v.stable_key
       from zz.eval_evaluator_version v
-      join zz.eval_evaluator e on e.id = v.evaluator_id
      where v.id = $1::uuid`, [evaluatorVersionId]);
   const row = rows[0];
   if (!row) throw new Refusal(`ERROR: "${evaluatorVersionId}" is not a registered evaluator version`);

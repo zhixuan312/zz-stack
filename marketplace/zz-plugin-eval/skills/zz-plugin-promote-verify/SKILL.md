@@ -83,8 +83,7 @@ approved `improvement.md` citing this attempt and quoting this exact digest, sig
 owner-team member — NOT terminal, try again once it is approved); `digest_mismatch` (the approved digest does not match the candidate's own recorded
 one); **`stale_baseline`** (the plugin's currently released subject has moved since this
 candidate's own base — rebase, rebuild and re-approve before trying again; a changed patch
-needs the whole cycle again too). It also refuses when the current version is not
-newer than the base but was never captured — call `plugin_locate` for it first. Nothing here applies a patch or runs a gate —
+needs the whole cycle again too). Nothing here applies a patch or runs a gate —
 zz-core has no checkout of the plugin's own repository. That is the CLI, next:
 
 ```

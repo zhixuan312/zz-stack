@@ -16,12 +16,13 @@
  * an ordinary platform release outside it (`register-plugins`, from `plugins.lock.json`) alike —
  * read by `currentVersionOf` (`../release-head.ts`), the reader `plugin_locate`'s head calls too: a
  * catalog plugin's version as the running deployment declares it, any other plugin's newest by
- * semver with retracted versions left out. DELIBERATE: never joined to `zz.eval_subject_version` to find
- * the head — a version registered at deploy that `plugin_locate` never captured was invisible to
- * that join, so a candidate based on 1.1.0 read 1.1.0 as current and shipped over 1.2.0. The
- * capture is looked up only AFTER the head is settled: a head newer than the base is
- * stale_baseline whether or not it was ever captured; a head that is not newer but has no capture
- * is refused explicitly (`plugin_locate` it first), never guessed.
+ * semver with retracted versions left out. DELIBERATE: never joined to a second subject table to
+ * find the head — the release IS the `plugin_version` row now (FR-24), and the head is settled
+ * from that table alone, so a version registered at deploy that nothing has located yet is still
+ * read as current rather than as absent. The head version's own row is read after that, and it is
+ * the row the head just named: a head newer than the base is stale_baseline, and one that is not
+ * newer is the base exactly when its row is the base's, so there is no state left in which a head
+ * has no subject to compare against.
  *
  * Which attempt applies: the one the approved `<initiative>/improvement.md` cites — never "the
  * newest prepared", which anybody calling `release_prepare` again could move out from under the
@@ -108,30 +109,45 @@ async function loadPreparedAttempt(
 
 interface ReleasedHead {
   readonly version: string;
-  /** The newest capture of that version, or null when `plugin_locate` never captured it. */
-  readonly subject_id: string | null;
+  /** That version's own `plugin_version` row — the released subject itself (FR-24). Never null:
+   *  a head with a version has the row it names, and no caller has a "registered but not
+   *  captured" state to refuse on, because the subject IS the release row. */
+  readonly subject_id: string;
 }
 
-/** See the module note: the head of `zz.plugin_version` alone, by `currentVersionOf`, and only
- *  then its capture. Null when the plugin has no registered version at all. Also
+/** See the module note: the head of `zz.plugin_version` alone, by `currentVersionOf`, and then
+ *  that version's own row — the subject IS the release row now (FR-24: `eval_subject_version`
+ *  folded onto `plugin_version`, and `plugin_locate` writes nothing), so this is one table read
+ *  twice rather than a capture beside a release. Null when the plugin has no registered version
+ *  at all. Also
  *  what `release_record(rolled_back)` asks, inside its own transaction, to confirm the prior
  *  version is current once the rolled-back one is retracted. Sequential queries: `runner` may be
  *  one PoolClient, which runs one query at a time. */
 export async function currentReleasedHead(runner: Queryable, pluginId: string): Promise<ReleasedHead | null> {
   const version = await currentVersionOf(runner, pluginId);
   if (version === null) return null;
-  const captured = (await runner.query<{ id: string }>(`
-    select id::text as id from zz.eval_subject_version
-     where plugin_id = $1::uuid and declared_version = $2
-     order by captured_at desc limit 1`, [pluginId, version])).rows[0];
-  return { version, subject_id: captured?.id ?? null };
+  // Kept as its own statement rather than a column on the head above: it is the read
+  // `checks/eval-release-refusals.ts` matches by its exact text, and a pattern that no longer
+  // matches tests nothing. The miss is an internal inconsistency and not a refusal anybody can
+  // act on — `currentVersionOf` named this version out of this same table one statement earlier,
+  // and `(plugin_id, version)` is unique with no path deleting a version row.
+  const row = (await runner.query<{ id: string }>(`
+    select pv.id::text as id from zz.plugin_version pv
+     where pv.plugin_id = $1::uuid and pv.version = $2`, [pluginId, version])).rows[0];
+  if (!row) {
+    throw new Error(
+      `zz.plugin_version named ${version} as the current release of ${pluginId} and has no row ` +
+      "for it one statement later");
+  }
+  return { version, subject_id: row.id };
 }
 
 /** The commit the base subject was released from — where the CLI's worktree starts, never the
  *  checkout's own HEAD. This system's own release of it records the commit as `release_ref`; a
- *  third-party git source records the commit it captured as `release_identity.resolved_commit`.
- *  A catalog release outside this system records neither, so null: the CLI then refuses unless
- *  its operator names the commit (`--base-ref`). */
+ *  third-party git source records the commit it captured in `plugin_version.resolved_commit`
+ *  (the column `release_identity->>'resolved_commit'` became). A catalog release outside this
+ *  system records neither, so null: the CLI then refuses unless its operator names the commit
+ *  (`--base-ref`). */
 async function baseRefFor(runner: Queryable, baseSubjectId: string): Promise<string | null> {
   const released = (await runner.query<{ release_ref: string | null }>(`
     select release_ref from zz.release_attempt
@@ -139,7 +155,7 @@ async function baseRefFor(runner: Queryable, baseSubjectId: string): Promise<str
      order by created_at desc limit 1`, [baseSubjectId])).rows[0];
   if (released?.release_ref) return released.release_ref;
   const identity = (await runner.query<{ commit: string | null }>(
-    "select release_identity->>'resolved_commit' as commit from zz.eval_subject_version where id = $1::uuid",
+    "select resolved_commit as commit from zz.plugin_version where id = $1::uuid",
     [baseSubjectId])).rows[0];
   return identity?.commit ?? null;
 }
@@ -215,9 +231,9 @@ async function describeApplyOutcome(runner: Queryable, attemptId: string): Promi
 
   const candidate = await loadCandidateForApply(runner, attempt.candidate_id);
   const subject = (await runner.query<{ plugin: string; declared_version: string }>(`
-    select pl.name as plugin, sv.declared_version
-      from zz.eval_subject_version sv join zz.plugin pl on pl.id = sv.plugin_id
-     where sv.id = $1::uuid`, [attempt.base_subject_version_id])).rows[0];
+    select pl.name as plugin, pv.version as declared_version
+      from zz.plugin_version pv join zz.plugin pl on pl.id = pv.plugin_id
+     where pv.id = $1::uuid`, [attempt.base_subject_version_id])).rows[0];
 
   return {
     status: "applying", reason: null, release_attempt_id: attemptId,
@@ -264,9 +280,18 @@ export async function planApply(
   const subject = (await client.query<{
     plugin_id: string; plugin: string; release_owners: string[]; declared_version: string;
   }>(`
-    select sv.plugin_id::text as plugin_id, pl.name as plugin, pl.release_owners, sv.declared_version
-      from zz.eval_subject_version sv join zz.plugin pl on pl.id = sv.plugin_id
-     where sv.id = $1::uuid`, [candidate.base_subject_version_id])).rows[0];
+    select pv.plugin_id::text as plugin_id, pl.name as plugin, pv.version as declared_version,
+           coalesce(owners.slugs, '{}'::text[]) as release_owners
+      from zz.plugin_version pv
+      join zz.plugin pl on pl.id = pv.plugin_id
+      -- Release authority is the relation 'plugin_release_owner' (FR-23), not a jsonb list on
+      -- the plugin: the slugs are the teams it names.
+      left join lateral (
+        select array_agg(t.slug order by t.slug) as slugs
+          from zz.plugin_release_owner r
+          join zz.team t on t.id = r.team_id
+         where r.plugin_id = pl.id) owners on true
+     where pv.id = $1::uuid`, [candidate.base_subject_version_id])).rows[0];
   if (!subject) {
     throw new Refusal(
       `ERROR: candidate ${candidateId}'s base_subject_version_id ${candidate.base_subject_version_id} ` +
@@ -278,7 +303,7 @@ export async function planApply(
   if (subject.release_owners.length === 0) {
     throw new Refusal(
       `ERROR: no_release_owners — candidate ${candidateId}'s own base subject records no ` +
-      "release_owners, so it cannot be promoted. It may still receive an owner-facing proposal " +
+      "release owners, so it cannot be promoted. It may still receive an owner-facing proposal " +
       "— call proposal_prepare instead, naming this candidate's own improvement_run_id.");
   }
   const callerTeams = await memberTeams(client, principal);
@@ -323,14 +348,11 @@ export async function planApply(
       `ERROR: ${subject.plugin} has no registered release in zz.plugin_version, so there is no ` +
       "currently released subject to compare this candidate's base against");
   }
-  // A head newer than the base is stale whether or not it was captured; one that is not newer
-  // must be captured, or there is nothing to compare the base against (module note).
+  // A head newer than the base is stale_baseline: the released version moved out from under this
+  // candidate. A head that is not newer is the base exactly when the base's own row is the head
+  // row, which is what makes the comparison below a read of one table rather than of a second
+  // capture that could be missing (FR-24, module note).
   const headIsNewer = compareSemver(head.version, subject.declared_version) > 0;
-  if (!headIsNewer && !head.subject_id) {
-    throw new Refusal(
-      `ERROR: ${subject.plugin} ${head.version} is registered but was never captured — call ` +
-      `plugin_locate for ${subject.plugin} ${head.version} before releasing a candidate against it`);
-  }
 
   const decision = releaseDecision({
     base_is_current: !headIsNewer && head.subject_id === attempt.base_subject_version_id,

@@ -138,12 +138,22 @@ async function readChecks(client: pg.Client, oid: string): Promise<string[]> {
 }
 
 async function readIndexes(client: pg.Client, oid: string): Promise<string[]> {
+  // `and c.conrelid = i.indrelid` is load-bearing, and its absence was latent from Phase 0 until
+  // Phase 3's migration added the first foreign key that references a NON-primary unique index on
+  // another table. `conindid` is the index a constraint is built on — but for a FOREIGN KEY it is
+  // the index on the table being REFERENCED, so `eval_protocol_version_approved_doc_id_fkey` and
+  // `eval_assessment_doc_id_fkey` (both added by `002_catalog_evaluation.sql`, both referencing
+  // `zz.doc(id)`) each had `conindid = doc_id_unique`'s index. Unscoped, the predicate then read
+  // `doc_id_unique` — a plain unique index, not a constraint — as constraint-backed and dropped it
+  // from `indexes`, so `checks/schema-inventory.ts` reported a target index the migrated catalog
+  // plainly had. The database was right in every arrangement; the reader was wrong.
   const { rows } = await client.query<DefRow & { relname: string }>(`
     select pg_get_indexdef(i.indexrelid) as def, ic.relname
     from pg_index i
     join pg_class ic on ic.oid = i.indexrelid
     where i.indrelid = $1
-      and not exists (select 1 from pg_constraint c where c.conindid = i.indexrelid)
+      and not exists (select 1 from pg_constraint c
+                       where c.conindid = i.indexrelid and c.conrelid = i.indrelid)
     order by ic.relname
   `, [oid]);
   return rows.map((r) => r.def);

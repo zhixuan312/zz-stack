@@ -39,6 +39,15 @@ import { safeName, safePath, userRoot } from "../paths.js";
 import { persistDocument } from "../persist.js";
 import { teamFor } from "../platform-db.js";
 import { envelopeFor, normalizeSections } from "../write-guards.js";
+import { evaluateGuardrails } from "./evaluate-measures.js";
+
+/** One critical-guardrail reading, AS `evaluateGuardrails` produces it. The type is derived from
+ *  the derivation rather than restated: a guardrail's bar is a MEASURE's own
+ *  (`eval_measure.guardrail_threshold`), so the list is `guardrailsOfMeasures` evaluated against
+ *  what each of those measures reduced to, and a second hand-written shape here is how this
+ *  document and the score it quotes would come to describe two different things. Not exported:
+ *  every caller names it through `BaseScore`. */
+type GuardrailReading = ReturnType<typeof evaluateGuardrails>[number];
 
 /** What the base subject scored in the evaluation this improvement was proposed from — the
  *  number `release_verify` compares the released subject against. */
@@ -46,7 +55,7 @@ export interface BaseScore {
   readonly eval_run_id: string;
   readonly overall_score: number | null;
   readonly score_status: string | null;
-  readonly guardrails: readonly { key: string; threshold: number; value: number | null; status: string }[];
+  readonly guardrails: readonly GuardrailReading[];
 }
 
 interface ImprovementDocInput {

@@ -261,7 +261,18 @@ check("the committed judged dataset is exactly what its generator produces, byte
  * COUPLED: `working-checks-registered.ts` parses this map, so a name here exempts a file from
  * both rules.
  */
-const notRegistered = new Map<string, string>([]);
+const notRegistered = new Map<string, string>([
+  // Empty as of wave 6. The mechanism stays because `working-checks-registered.ts` parses this
+  // map — a name here exempts a file from both rules — and the next phase needs somewhere to put
+  // its own.
+  //
+  // Phase 3 held one entry, `catalog-eval-columns.ts` (I-20), from wave 1 until wave 6: it forbids
+  // the very names I-21 to I-26 were still removing, and after wave 4 it still reported 15
+  // statements, every one in I-27's files. Wave 6 re-pointed those four readers, the check now
+  // reads 25,326 statements across 425 files clean, and the entry was struck in the same pass that
+  // registered it — re-read rather than trusted, since the wave-1 version of this comment named
+  // four hits that waves 2 and 3 had already fixed.
+]);
 
 check("every check in checks/ is registered here, or named here with a reason", () => {
   // DELIBERATE: a cross-validator, not a loop. Registering the directory with a `for` would be

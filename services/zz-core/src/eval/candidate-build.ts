@@ -57,14 +57,24 @@ export function registerCandidateBuildTools(server: McpServer): void {
         build_requested_at: Date | null; build_recorded_at: Date | null;
       }>(`
         select c.id::text as candidate_id, c.status, c.patch_digest, c.patchset as candidate_patchset,
-               pl.name as subject_plugin, sv.source_locator as subject_source_locator,
-               sv.declared_version as subject_declared_version,
-               sv.release_identity->>'released_digest' as subject_release_digest,
-               sv.content_digest as subject_content_digest, sv.release_identity as subject_release_identity,
+               pl.name as subject_plugin,
+               coalesce(pv.source_locator, case when pl.origin = 'platform' then '{"kind":"catalog"}'::jsonb end)
+                 as subject_source_locator,
+               pv.version as subject_declared_version,
+               pv.digest as subject_release_digest,
+               pv.digest as subject_content_digest,
+               -- The bag 'packages/tools/src/candidate/third-party.ts' reads, assembled from the
+               -- release's own source columns (FR-24). 'tarball_integrity' has no column of its
+               -- own and rides in 'source_locator', which is where the capture's provenance lives.
+               jsonb_strip_nulls(jsonb_build_object(
+                 'tree_digest', pv.tree_digest,
+                 'resolved_commit', pv.resolved_commit,
+                 'tarball_integrity', pv.source_locator->>'tarball_integrity'))
+                 as subject_release_identity,
                c.build_requested_at, c.build_recorded_at
           from zz.candidate c
-          join zz.eval_subject_version sv on sv.id = c.base_subject_version_id
-          left join zz.plugin pl on pl.id = sv.plugin_id
+          join zz.plugin_version pv on pv.id = c.base_subject_version_id
+          left join zz.plugin pl on pl.id = pv.plugin_id
          where c.id = $1::uuid`, [candidate_id])).rows[0];
       if (!row) return text(`ERROR: unknown candidate_id ${candidate_id}`);
       const awaiting = row.status === "awaiting_build" && row.build_requested_at;

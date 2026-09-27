@@ -1,11 +1,24 @@
 /**
  * DISCOVER (FR-11, Task I-9): mining real, recorded failures into candidate failure modes
  * before any protocol exists. `failure_discover(observation_snapshot_id)` reads one immutable
- * `zz.eval_observation_snapshot` (OBSERVE, Task I-7) and writes durable
- * `zz.eval_failure_mode_candidate` rows — never a judgement about whether a candidate is real,
- * only a recorded proposal `status = 'candidate'` starts at. Only `protocol_record`, later, may
- * move one to `accepted`/`merged` (see the plan's own boundary: final deliverable content is not
- * in this plan).
+ * `zz.eval_observation_snapshot` (OBSERVE, Task I-7) and writes, for every group it finds
+ * (Task I-24):
+ *
+ *   - one `zz.eval_failure_mode` — the failure mode's IDENTITY, `(plugin_id, stable_key)`, which
+ *     is current state: a later run that finds the same rule on the same tool resolves to that
+ *     row rather than minting a second mode. Its description is the FIRST sighting's, which is
+ *     what Task I-20's migration kept when it split the old candidate rows this way.
+ *   - one `zz.eval_failure_mode_sighting` — the FINDING of it in this one snapshot: immutable
+ *     history, carrying its own prevalence, its owner kind and ref, and the evidence behind them.
+ *     `discovery_key` is the stable key it was discovered under.
+ *
+ * Neither write is a judgement about whether the mode is real. What DISCOVER produces is raw
+ * material for DEFINE/QUALIFY: `protocol_record` (Task I-23) is what folds one in, writing the
+ * `eval_protocol_failure_mode` row, and `protocol_read`'s `open_candidates` is a sighting of a
+ * mode no version of this plugin's protocol has folded in yet. The response still names its array
+ * `candidates`, because that is what these sightings are to the stage that reads them — the
+ * proposals a `failureTaxonomy` entry may accept, merge or leave uncited (see the plan's own
+ * boundary: final deliverable content is not in this plan).
  *
  * Two passes over the evidence, both in `discover-groups.ts`:
  *   - deterministic grouping first, over refusal text/owner/failing tool and over stage-return
@@ -14,14 +27,16 @@
  *     `discover.owner_kind` (a `choice` over `EVAL_STATE_ENUMS.ownerKind`), through
  *     `askEvaluatorQuestion` directly — this file already holds the `evaluator_version_id` it
  *     needs. Every model is asked before the ledger transaction opens (`planCandidates`) and
- *     each answer is recorded inside it (`insertPlanned`), with the candidate it classified.
+ *     each answer is recorded inside it (`insertPlanned`), with the sighting it classified.
  *
  * A refusal group with no recorded text at all is the one shape the deterministic pass cannot
  * describe — for that, and only that, ONE generative-critic call proposes the description,
  * through `judge.ts`'s `ask()` (the platform's one existing way to reach a larger model outside
  * the typed service),
- * recorded in `zz.model_call` under its own `purpose` and, on the candidate itself, under
- * `evidence_refs.description_source`.
+ * recorded in `zz.model_call` under its own `purpose` and, on the sighting itself, under
+ * `evidence_refs.description_source`. The sighting's own `description_model_call_id` column stays
+ * null: `ask()` records the call and hands back only the answer, not its id, so a writer that
+ * filled the column would be guessing which of the rows under this purpose was its own.
  *
  * Where this platform registers its own built-in evaluators (this task's own choice, recorded
  * here because nothing else asked the question yet): inline, at the top of this handler, one
@@ -32,22 +47,22 @@
  * upsert-and-read-back and never mints a second version of the same question.
  *
  * Errors: a model outage (typed-judgement transport failure, or the reading judge unreachable)
- * never drops a candidate — it is stored with `owner_kind = 'unknown'` and the failure's own
- * reason, folded into `evidence_refs` (migration 001 gives this table no separate reason column,
- * and the contract's own response shape has none either). After the FIRST such outage from
- * either model in one run, every remaining group of that kind is answered `unknown` WITHOUT a
- * second evaluator call — so only the group that hit the outage carries a
- * real `zz.assessment` row for `discover.owner_kind`; every later group in the same run carries
- * none, and its only record of the classification is the `not asked: …` reason inside its own
- * `evidence_refs.ownership`. DELIBERATE, and a real narrowing of "each ownership classification
+ * never drops a sighting — it is stored with `owner_kind = 'unknown'` and the failure's own
+ * reason, in the sighting's `ownership_reason` and its `evidence_refs`. After the FIRST such
+ * outage from either model in one run, every remaining group of that kind is answered `unknown`
+ * WITHOUT a second evaluator call — so only the group that hit the outage carries a
+ * real `zz.assessment` row for `discover.owner_kind`, and its sighting carries that row's id in
+ * `assessment_id`; every later group in the same run carries neither, and its only record of the
+ * classification is the `not asked: …` reason inside its own `evidence_refs.ownership`.
+ * DELIBERATE, and a real narrowing of "each ownership classification
  * is one registered bounded-semantic evaluator answer recorded through
  * `recordEvaluatorAssessment`" for exactly this one case: `judge.ts`'s `ask()` and
  * `typed-service.ts`'s `ask()` each carry up to a ~100s budget per call, and something between
  * this tool and its caller closes the request at about two minutes — asking N more times against
  * an endpoint already known to be down would spend that budget once per remaining group and
- * return nothing at all, which is the one way this function actually could drop a candidate.
- * Every candidate is still persisted with an owner_kind and a reason either way; what a known-bad
- * endpoint costs is the recorded evaluator row for groups after the first, not the candidate.
+ * return nothing at all, which is the one way this function actually could drop a failure mode.
+ * Every sighting is still persisted with an owner_kind and a reason either way; what a known-bad
+ * endpoint costs is the recorded evaluator row for groups after the first, not the sighting.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { EVAL_STATE_ENUMS, parseCaller } from "@zz/contracts";
@@ -78,15 +93,6 @@ import { db } from "../platform-db.js";
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so no failure discovery can be recorded");
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** `zz.eval_failure_mode_candidate.status` this tool ever writes — every row DISCOVER mints
- *  starts here, and only `protocol_record` (a later task) may move one on. Checked against the
- *  contract's own vocabulary at import rather than assumed, the same guard
- *  `semantic.ts`'s `FAMILY_INSTRUCTIONS` loop applies to its own vocabulary. */
-const CANDIDATE_STATUS = "candidate";
-if (!(EVAL_STATE_ENUMS.failureCandidateStatus as readonly string[]).includes(CANDIDATE_STATUS)) {
-  throw new Error(`"${CANDIDATE_STATUS}" is not in EVAL_STATE_ENUMS.failureCandidateStatus`);
-}
 
 /** What each `owner_kind` option means, read to the evaluator as its `choice` criteria —
  *  `EVAL_STATE_ENUMS.ownerKind` is the vocabulary, this is the prose, and the loop below is the
@@ -120,23 +126,36 @@ const OWNER_KIND_EVALUATOR: EvaluatorDefinition = {
   model_policy: {},
 };
 
-/** One candidate as `failure_discover`'s response carries it — the plan header's own shape. */
-interface CandidateOut {
+/** One sighting as `failure_discover`'s response carries it: the finding of one failure mode in
+ *  the snapshot this call mined, and the identity it belongs to. Two sightings that carry the same
+ *  `failure_mode_id` are two windows' evidence of one failure mode, which is the whole reason the
+ *  identity and the sighting are two rows (Task I-24). */
+interface SightingOut {
+  /** The sighting — the id a `failureTaxonomy` entry names as its `candidateId`, and what
+   *  `protocol_record` resolves to the identity it folds in. */
   id: string;
-  stable_key: string | null;
-  /** `candidate`, or `merged` when this plugin already has the same failure mode (`merged_into`). */
-  status: string;
-  merged_into: string | null;
+  /** The failure mode's identity: `(plugin_id, stable_key)`, current state. */
+  failure_mode_id: string;
+  stable_key: string;
   description: string;
   prevalence: { numerator: number; denominator: number };
   owner_kind: string;
+  /** The plugin's own name where `owner_kind` is `plugin`, null where nothing here knows which
+   *  part of the platform, dependency, environment or input it was. */
+  owner_ref: string | null;
   confidence: number | null;
   evidence_refs: unknown;
 }
-interface FailureDiscoverResult { candidates: CandidateOut[] }
+/** `candidates` is this door's own field name for these rows, kept because that is what they are
+ *  to the stage that reads them — a `failureTaxonomy` entry may accept, merge or leave each one
+ *  uncited. Each element is a sighting, not the mode. */
+interface FailureDiscoverResult { candidates: SightingOut[] }
 
 interface Snapshot {
   observation_snapshot_id: string;
+  /** The failure-mode identity's own `plugin_id`: a stable key identifies a mode only within one
+   *  plugin, which is why `(plugin_id, stable_key)` is the identity and not the key alone. */
+  plugin_id: string;
   plugin: string;
   declared_version: string;
   window: EvidenceWindow;
@@ -145,22 +164,33 @@ interface Snapshot {
 /** The subject `observation_snapshot_id` names, or null for one nothing minted — checked BEFORE
  *  `withIdempotency`, the same order `plugin_profile` (observe.ts) already established, so a
  *  refused call writes no ledger row. A malformed uuid refuses the same way an unknown one does,
- *  rather than reaching Postgres and surfacing `::uuid`'s own error text. */
+ *  rather than reaching Postgres and surfacing `::uuid`'s own error text.
+ *
+ *  The plugin is reached the way every other reader of this table reaches it now (Task I-20): the
+ *  snapshot names a `plugin_version_id` itself, so `zz.eval_subject_version` — whose single fact
+ *  was that pair — is gone. A snapshot whose window never resolved stores NULL on both window
+ *  columns, and DISCOVER reads that as the same empty range a fresh OBSERVE used
+ *  (`observe.ts`'s `windowOf`): the two grouping passes then find nothing in it, which is the
+ *  honest result for a window that observed nothing. */
 async function resolveSnapshot(pool: pg.Pool, id: string): Promise<Snapshot | null> {
   if (!UUID_RE.test(id)) return null;
   const row = (await pool.query<{
-    plugin: string; declared_version: string; production_window: { resolved: EvidenceWindow };
+    plugin_id: string; plugin: string; declared_version: string;
+    window_from: string | null; window_to: string | null;
   }>(`
-    select p.name as plugin, sv.declared_version as declared_version,
-           os.production_window as production_window
+    select pv.plugin_id::text as plugin_id, p.name as plugin, pv.version as declared_version,
+           os.window_from::text as window_from, os.window_to::text as window_to
       from zz.eval_observation_snapshot os
-      join zz.eval_subject_version sv on sv.id = os.subject_version_id
-      join zz.plugin p on p.id = sv.plugin_id
+      join zz.plugin_version pv on pv.id = os.plugin_version_id
+      join zz.plugin p on p.id = pv.plugin_id
      where os.id = $1::uuid`, [id])).rows[0];
   if (!row) return null;
   return {
-    observation_snapshot_id: id, plugin: row.plugin, declared_version: row.declared_version,
-    window: row.production_window.resolved,
+    observation_snapshot_id: id, plugin_id: row.plugin_id, plugin: row.plugin,
+    declared_version: row.declared_version,
+    window: row.window_from !== null && row.window_to !== null
+      ? { from: row.window_from, to: row.window_to }
+      : { from: "infinity", to: "-infinity" },
   };
 }
 
@@ -287,49 +317,85 @@ async function criticDescribe(
   }
 }
 
-async function insertCandidate(
-  client: pg.PoolClient, observationSnapshotId: string, stableKey: string, description: string,
-  prevalence: { numerator: number; denominator: number }, classification: Classification,
-  evidenceRefs: unknown[],
-): Promise<CandidateOut> {
-  if (classification.pending) await insertEvaluatorAnswer(client, classification.pending);
-  // The same failure mode this plugin already has — folded into a protocol (accepted, or merged
-  // into an accepted entry) or still waiting for one (candidate) — is recorded as merged into it
-  // rather than as new. A merged row points at the entry it was folded into.
-  const known = (await client.query<{ id: string }>(`
-    select e.id::text as id
-      from zz.eval_failure_mode_candidate c
-      join zz.eval_failure_mode_candidate e on e.id = coalesce(c.merged_into_id, c.id)
-      join zz.eval_observation_snapshot os on os.id = c.observation_snapshot_id
-      join zz.eval_subject_version sv on sv.id = os.subject_version_id
-     where c.stable_key = $2 and c.status in ('accepted', 'merged', 'candidate')
-       and sv.plugin_id = (select s2.plugin_id from zz.eval_observation_snapshot o2
-                             join zz.eval_subject_version s2 on s2.id = o2.subject_version_id
-                            where o2.id = $1::uuid)
-     -- Ordered by the entry a row points at, not by the row: the newest accepted entry is the
-     -- current protocol version's. Ordered by the row, a later re-sighting merged into an old
-     -- entry handed that old entry on to every sighting after it.
-     order by (e.status = 'accepted') desc, e.created_at desc
-     limit 1`, [observationSnapshotId, stableKey])).rows[0];
+/** The failure-mode identity under `(plugin_id, stable_key)`, created when this plugin has none
+ *  under that key yet, and the id every sighting of it carries in `failure_mode_id`.
+ *
+ *  `on conflict do nothing` and then a read-back, rather than `do update`: the identity's
+ *  description is its FIRST sighting's, which is what Task I-20's migration kept when it split the
+ *  candidate rows this way (`(array_agg(c.description order by c.created_at))[1]`), and a
+ *  `do update` would rewrite it with whatever wording this run's own prevalence figures happened
+ *  to produce. The read-back is also what makes a concurrent run that inserted the same key in
+ *  another transaction a wait rather than a unique violation inside this ledger transaction.
+ *
+ *  A read-back that finds nothing is an error rather than a null: `(plugin_id, stable_key)` is
+ *  unique, so a `do nothing` insert that returned no row and a select that returns no row
+ *  contradict each other, and writing the sighting without an identity to resolve to is exactly
+ *  the defect the split exists to prevent. */
+async function resolveFailureMode(
+  client: pg.PoolClient, pluginId: string, stableKey: string, description: string,
+): Promise<string> {
+  const inserted = (await client.query<{ id: string }>(`
+    insert into zz.eval_failure_mode (plugin_id, stable_key, description, created_at)
+    values ($1::uuid, $2, $3, now())
+    on conflict (plugin_id, stable_key) do nothing
+    returning id::text as id`, [pluginId, stableKey, description])).rows[0];
+  if (inserted) return inserted.id;
+  const existing = (await client.query<{ id: string }>(`
+    select id::text as id from zz.eval_failure_mode
+     where plugin_id = $1::uuid and stable_key = $2`, [pluginId, stableKey])).rows[0];
+  if (!existing) {
+    throw new Error(`zz.eval_failure_mode (${pluginId}, ${stableKey}) neither inserted nor found`);
+  }
+  return existing.id;
+}
+
+/** One group's finding of one failure mode in one snapshot: the identity resolved, then the
+ *  sighting itself. Both writes land in the ledger's transaction, so a rollback takes the
+ *  evaluator answer with them and a replay writes neither.
+ *
+ *  The ownership is written three ways on purpose, and they are one fact: `owner_kind` and
+ *  `owner_ref` are what a reader joins on, `ownership_reason` is what the evaluator answered (or
+ *  the outage that stopped it), and the `ownership` entry inside `evidence_refs` is the provenance
+ *  trail Task I-20's migration derives the first two from — so a sighting DISCOVER writes now
+ *  reads exactly like one the migration carried over. The prevalence is two columns rather than a
+ *  jsonb object, so `prevalence_numerator <= prevalence_denominator` is a constraint the database
+ *  holds rather than a shape a reader hopes for. */
+async function insertSighting(
+  client: pg.PoolClient, snapshot: Snapshot, planned: PlannedCandidate, discoveredBy: string,
+): Promise<SightingOut> {
+  // The evaluator answer is recorded first, and its `zz.assessment` id goes on the sighting: a
+  // reader that wants to know what the ownership classification answered has the row, not just
+  // this file's summary of it. `classification.pending` is null for a group no model was asked
+  // (an outage earlier in the run), and the column stays null with it.
+  const assessment = planned.classification.pending
+    ? await insertEvaluatorAnswer(client, planned.classification.pending)
+    : null;
+  const modeId = await resolveFailureMode(
+    client, snapshot.plugin_id, planned.stableKey, planned.description);
   const row = (await client.query<{
-    id: string; description: string; prevalence: { numerator: number; denominator: number };
-    owner_kind: string; confidence: string | null; evidence_refs: unknown; stable_key: string | null;
-    status: string; merged_into: string | null;
+    id: string; failure_mode_id: string; description: string;
+    prevalence_numerator: number; prevalence_denominator: number; owner_kind: string;
+    owner_ref: string | null; confidence: string | null; evidence_refs: unknown;
   }>(`
-    insert into zz.eval_failure_mode_candidate
-      (observation_snapshot_id, stable_key, description, prevalence, owner_kind, confidence,
-       evidence_refs, status, merged_into_id, created_at)
-    values ($1::uuid, $2, $3, $4::jsonb, $5, $6, $7::jsonb, $8, $9::uuid, now())
-    returning id::text as id, description, prevalence, owner_kind, confidence, evidence_refs, stable_key,
-              status, merged_into_id::text as merged_into`,
-    [observationSnapshotId, stableKey, description, JSON.stringify(prevalence), classification.owner_kind,
-     classification.confidence, JSON.stringify(evidenceRefs), known ? "merged" : CANDIDATE_STATUS,
-     known?.id ?? null])).rows[0];
-  if (!row) throw new Error("insert into zz.eval_failure_mode_candidate produced no row");
+    insert into zz.eval_failure_mode_sighting
+      (failure_mode_id, observation_snapshot_id, description, prevalence_numerator,
+       prevalence_denominator, owner_kind, owner_ref, ownership_reason, confidence,
+       assessment_id, evidence_refs, discovered_by, discovery_key, created_at)
+    values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::uuid, $13, now())
+    returning id::text as id, failure_mode_id::text as failure_mode_id, description,
+              prevalence_numerator, prevalence_denominator, owner_kind, owner_ref, confidence,
+              evidence_refs`,
+    [modeId, snapshot.observation_snapshot_id, planned.description,
+     planned.prevalence.numerator, planned.prevalence.denominator,
+     planned.classification.owner_kind, planned.ownerRef, planned.ownershipReason,
+     planned.classification.confidence, assessment?.assessment_id ?? null,
+     JSON.stringify(planned.evidenceRefs), discoveredBy, planned.stableKey])).rows[0];
+  if (!row) throw new Error("insert into zz.eval_failure_mode_sighting produced no row");
   return {
-    id: row.id, stable_key: row.stable_key, status: row.status, merged_into: row.merged_into,
+    id: row.id, failure_mode_id: row.failure_mode_id, stable_key: planned.stableKey,
     description: row.description,
-    prevalence: row.prevalence, owner_kind: row.owner_kind,
+    prevalence: { numerator: row.prevalence_numerator, denominator: row.prevalence_denominator },
+    owner_kind: row.owner_kind, owner_ref: row.owner_ref,
     confidence: row.confidence === null ? null : Number(row.confidence),
     evidence_refs: row.evidence_refs,
   };
@@ -342,13 +408,19 @@ function ownerRef(ownerKind: string, plugin: string): string | null {
   return ownerKind === "plugin" ? plugin : null;
 }
 
-/** One candidate row, fully decided and not yet written. */
+/** One group's sighting, fully decided and not yet written: the identity it will belong to is not
+ *  known until the write, because a run that finds a mode this plugin already has resolves to that
+ *  mode's own row rather than minting a second. */
 interface PlannedCandidate {
   readonly stableKey: string;
   readonly description: string;
   readonly prevalence: { numerator: number; denominator: number };
   readonly classification: Classification;
   readonly evidenceRefs: unknown[];
+  /** The sighting's own ownership columns, the queryable half of the `ownership` evidence ref
+   *  below — `owner_ref` is the plugin's name where `owner_kind` is `plugin`. */
+  readonly ownerRef: string | null;
+  readonly ownershipReason: string | null;
 }
 
 /** The whole discovery run for one snapshot, up to but not including any write: deterministic
@@ -395,18 +467,19 @@ async function planCandidates(
     // not owned by `plugin`. The evaluator's own answer stays on the ref as `folded_from`.
     const folded = serves && asked.owner_kind === "platform";
     const classification: Classification = folded ? { ...asked, owner_kind: "plugin" } : asked;
+    const ownership = { kind: "ownership", evaluator: "discover.owner_kind", reason: classification.note,
+      owner_ref: ownerRef(classification.owner_kind, snapshot.plugin),
+      ...(folded ? { folded_from: "platform" } : {}) };
     const evidenceRefs: unknown[] = [
       ...g.sample_event_ids.map((event_id) => ({ kind: "event", event_id })),
       built.source,
-      { kind: "ownership", evaluator: "discover.owner_kind", reason: classification.note,
-        owner_ref: ownerRef(classification.owner_kind, snapshot.plugin),
-        ...(folded ? { folded_from: "platform" } : {}) },
+      ownership,
       { kind: "discovery_run", principal, idempotency_key: idempotencyKey },
     ];
     planned.push({
       stableKey: refusalKey(g),
       description: built.description, prevalence: { numerator: g.count, denominator: totalCalls },
-      classification, evidenceRefs,
+      classification, evidenceRefs, ownerRef: ownership.owner_ref, ownershipReason: classification.note,
     });
   }
 
@@ -416,29 +489,29 @@ async function planCandidates(
       `${g.sample_initiatives.length} initiative(s).`;
     const classification = await classifyOwnerKind(
       evaluatorVersionId, returnSubject(g), pluginContext(snapshot), principal, outage);
+    const ownership = { kind: "ownership", evaluator: "discover.owner_kind", reason: classification.note,
+      owner_ref: ownerRef(classification.owner_kind, snapshot.plugin) };
     const evidenceRefs: unknown[] = [
       ...g.sample_initiatives.map((initiative) => ({ kind: "initiative", initiative })),
       { kind: "description_source", method: "deterministic" },
-      { kind: "ownership", evaluator: "discover.owner_kind", reason: classification.note,
-        owner_ref: ownerRef(classification.owner_kind, snapshot.plugin) },
+      ownership,
       { kind: "discovery_run", principal, idempotency_key: idempotencyKey },
     ];
-    planned.push({ stableKey: returnKey(g), description, prevalence: { numerator: g.count, denominator: totalWrites }, classification, evidenceRefs });
+    planned.push({ stableKey: returnKey(g), description, prevalence: { numerator: g.count, denominator: totalWrites },
+                   classification, evidenceRefs, ownerRef: ownership.owner_ref, ownershipReason: classification.note });
   }
 
   return planned;
 }
 
-/** Every planned row, and each one's own evaluator answer, in the ledger's transaction — so a
- *  rollback takes the `zz.assessment` rows with the candidates, and a replay writes neither. */
+/** Every planned sighting — its identity resolved and created where this plugin has none — in the
+ *  ledger's transaction, so a rollback takes the `zz.assessment` rows and any identity this run
+ *  minted with the sightings, and a replay writes none of the three. */
 async function insertPlanned(
-  client: pg.PoolClient, observationSnapshotId: string, planned: readonly PlannedCandidate[],
+  client: pg.PoolClient, snapshot: Snapshot, planned: readonly PlannedCandidate[], discoveredBy: string,
 ): Promise<FailureDiscoverResult> {
-  const candidates: CandidateOut[] = [];
-  for (const c of planned) {
-    candidates.push(await insertCandidate(
-      client, observationSnapshotId, c.stableKey, c.description, c.prevalence, c.classification, c.evidenceRefs));
-  }
+  const candidates: SightingOut[] = [];
+  for (const c of planned) candidates.push(await insertSighting(client, snapshot, c, discoveredBy));
   return { candidates };
 }
 
@@ -446,35 +519,41 @@ async function insertPlanned(
  *  discovery run wrote. `observation_snapshot_id` alone is not enough — 001 gives this
  *  table no column naming which call wrote a row, and nothing in this contract forbids running
  *  DISCOVER again over the same snapshot under a genuinely different `idempotency_key` (a
- *  second, later opinion), which would leave two calls' candidates sharing one
+ *  second, later opinion), which would leave two calls' sightings sharing one
  *  `observation_snapshot_id`. `idempotency_key` alone is not enough either: the ledger's own
  *  primary key is `(principal, tool, idempotency_key)`, so two different principals reusing the
- *  same key string against the same snapshot are two different requests, not one. So every row
+ *  same key string against the same snapshot are two different requests, not one. So every sighting
  *  this file inserts carries both its `principal` and its `idempotency_key` inside
  *  `evidence_refs` (the `discovery_run` entry), and a replay filters on both — the same pair
- *  `withIdempotency`'s own ledger already used to decide this was a replay in the first place. */
+ *  `withIdempotency`'s own ledger already used to decide this was a replay in the first place.
+ *  `discovered_by` names the principal too, but not which call, and a replay is a claim about
+ *  which call. */
 async function readBackCandidates(
   pool: pg.Pool, observationSnapshotId: string, principal: string, idempotencyKey: string,
 ): Promise<FailureDiscoverResult> {
   const { rows } = await pool.query<{
-    id: string; description: string; prevalence: { numerator: number; denominator: number };
-    owner_kind: string; confidence: string | null; evidence_refs: unknown; stable_key: string | null;
-    status: string; merged_into: string | null;
+    id: string; failure_mode_id: string; stable_key: string; description: string;
+    prevalence_numerator: number; prevalence_denominator: number;
+    owner_kind: string; owner_ref: string | null; confidence: string | null; evidence_refs: unknown;
   }>(`
-    select id::text as id, description, prevalence, owner_kind, confidence, evidence_refs, stable_key,
-           status, merged_into_id::text as merged_into
-      from zz.eval_failure_mode_candidate c
-     where c.observation_snapshot_id = $1::uuid
+    select s.id::text as id, s.failure_mode_id::text as failure_mode_id, fm.stable_key, s.description,
+           s.prevalence_numerator, s.prevalence_denominator,
+           s.owner_kind, s.owner_ref, s.confidence, s.evidence_refs
+      from zz.eval_failure_mode_sighting s
+      join zz.eval_failure_mode fm on fm.id = s.failure_mode_id
+     where s.observation_snapshot_id = $1::uuid
        and exists (
-         select 1 from jsonb_array_elements(c.evidence_refs) el
+         select 1 from jsonb_array_elements(s.evidence_refs) el
           where el->>'kind' = 'discovery_run' and el->>'principal' = $2 and el->>'idempotency_key' = $3
        )
-     order by created_at`, [observationSnapshotId, principal, idempotencyKey]);
+     order by s.created_at`, [observationSnapshotId, principal, idempotencyKey]);
   return {
     candidates: rows.map((r) => ({
-      id: r.id, stable_key: r.stable_key, status: r.status, merged_into: r.merged_into,
-      description: r.description, prevalence: r.prevalence,
-      owner_kind: r.owner_kind, confidence: r.confidence === null ? null : Number(r.confidence),
+      id: r.id, failure_mode_id: r.failure_mode_id, stable_key: r.stable_key,
+      description: r.description,
+      prevalence: { numerator: r.prevalence_numerator, denominator: r.prevalence_denominator },
+      owner_kind: r.owner_kind, owner_ref: r.owner_ref,
+      confidence: r.confidence === null ? null : Number(r.confidence),
       evidence_refs: r.evidence_refs,
     })),
   };
@@ -492,16 +571,19 @@ export function registerFailureDiscoverTools(server: McpServer): void {
         "plugin | dependency | platform | environment | user_input | unknown), and — only for " +
         "a refusal group with no recorded text at all — proposes a description with one " +
         "generative-critic call, recorded with its provenance. RETURNS candidates: [{ id, " +
-        "stable_key, status, merged_into, description, prevalence: {numerator, denominator}, owner_kind, " +
-        "confidence, evidence_refs }], every one persisted as zz.eval_failure_mode_candidate " +
-        "rows with status='candidate' — or 'merged', merged_into the one this plugin already has, " +
-        "when its stable_key (the tool and refusal rule, or the two stages of a return) is a failure " +
-        "mode a protocol already folded in or a DISCOVER already found. A mutator: writes through " +
-        "the FR-59 idempotency ledger, so a retried call with the same idempotency_key replays " +
-        "the exact same candidate set rather than re-asking any model. REFUSES an " +
-        "observation_snapshot_id nothing minted; never drops a candidate for a model outage — " +
-        "that group is stored with owner_kind='unknown' and the reason folded into its own " +
-        "evidence_refs instead.",
+        "failure_mode_id, stable_key, description, prevalence: {numerator, denominator}, owner_kind, " +
+        "owner_ref, confidence, evidence_refs }], each one a zz.eval_failure_mode_sighting — the " +
+        "finding of one failure mode in this snapshot — under the zz.eval_failure_mode identity " +
+        "its stable_key (the tool and refusal rule, or the two stages of a return) names: one " +
+        "identity per (plugin, stable_key), current state, plus one immutable sighting per " +
+        "discovery of it, so a second run that finds the same group re-sights that identity " +
+        "rather than minting a second failure mode. Folding an identity into a protocol is " +
+        "protocol_record's write of a zz.eval_protocol_failure_mode row, never this tool's. A " +
+        "mutator: writes through the FR-59 idempotency ledger, so a retried call with the same " +
+        "idempotency_key replays the exact same sighting set rather than re-asking any model. " +
+        "REFUSES an observation_snapshot_id nothing minted; never drops a failure mode for a " +
+        "model outage — that group is stored with owner_kind='unknown' and the reason in its own " +
+        "ownership_reason and evidence_refs instead.",
       inputSchema: {
         observation_snapshot_id: z.string(),
         idempotency_key: z.string().min(1),
@@ -525,6 +607,16 @@ export function registerFailureDiscoverTools(server: McpServer): void {
       const evaluator = await registerEvaluator(OWNER_KIND_EVALUATOR);
 
       const principal = parseCaller(requestHeaders()).email;
+      // The sighting names who found it: `discovered_by` is a principal, and an address no
+      // principal carries is refused rather than written as an attribution nobody has — the same
+      // refusal `plugin_profile` (observe.ts) makes for its own `recorded_by`. Resolved before the
+      // ledger, like every other refusal here, so a refused call writes no idempotency row.
+      const discoverer = (await pool.query<{ id: string }>(
+        "select id::text as id from zz.principal where lower(email) = lower($1) limit 1",
+        [principal])).rows[0];
+      if (!discoverer) {
+        throw new Refusal(`ERROR: no zz.principal carries "${principal}", so this discovery has nobody to name`);
+      }
       const prior = await decideBeforeWork(
         principal, "failure_discover", idempotency_key, { observation_snapshot_id });
       const planned = prior.replayed ? [] : await planCandidates(
@@ -532,12 +624,12 @@ export function registerFailureDiscoverTools(server: McpServer): void {
       const outcome: IdempotencyOutcome<FailureDiscoverResult> = prior.replayed ? prior : await withIdempotency(
         principal, "failure_discover", idempotency_key, { observation_snapshot_id },
         async (client): Promise<MutatorOutcome<FailureDiscoverResult>> => {
-          const result = await insertPlanned(client, observation_snapshot_id, planned);
-          // Anchored at the snapshot, not at a candidate row: a window with zero refusals and
-          // zero returns is a legitimate discovery run that writes no candidate at all, and
+          const result = await insertPlanned(client, snapshot, planned, discoverer.id);
+          // Anchored at the snapshot, not at a sighting row: a window with zero refusals and
+          // zero returns is a legitimate discovery run that writes no sighting at all, and
           // `zz.eval_idempotency.result_id` is `uuid not null` with nothing to point at then.
           // `readBackCandidates` below narrows this snapshot's rows down to this exact call's
-          // own by the `idempotency_key` every row also carries in its `evidence_refs`.
+          // own by the `idempotency_key` every sighting also carries in its `evidence_refs`.
           return { result, result_table: "zz.eval_observation_snapshot", result_id: observation_snapshot_id };
         },
       );
@@ -547,7 +639,7 @@ export function registerFailureDiscoverTools(server: McpServer): void {
         : outcome.result;
       logActivity(await userRoot(), null, {
         user: principal, action: "failure_discover", plugin: snapshot.plugin,
-        observation_snapshot_id, candidate_count: result.candidates.length, replayed: outcome.replayed,
+        observation_snapshot_id, sighting_count: result.candidates.length, replayed: outcome.replayed,
       });
       const recorded = await recordStage(initiative, "zz-plugin-discover", { observation_snapshot_id });
       return json({ ...result, ...recorded });

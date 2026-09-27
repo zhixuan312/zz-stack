@@ -15,12 +15,15 @@ plugin_locate(plugin, version?, idempotency_key, initiative)
 
 is IDENTIFY for a catalog plugin — `sdlc`, `zz-core`, `zz-access`, `zz-plugin-eval` itself.
 It RETURNS FR-1's immutable `subject_version`: `subject_version_id`, declared version,
-whole-plugin content digest, per-component manifest (skill/server/flow/config digests, each a
-sha256 of the component's content, never the environment), ownership and its release mode, and `latest_protocol_version_id` — the plugin's
+whole-plugin content digest, per-component manifest (skill/server/flow/config digests — a skill's
+of its content, a server's of its address and versioned when the door is the plugin's own, a
+flow's of the release itself — never the environment), ownership and its release mode, and `latest_protocol_version_id` — the plugin's
 newest protocol version if one exists, affirmed or not and with no compatibility check: whether it
-still applies is DEFINE/QUALIFY's `protocol_read`, never this. It is a mutator — it upserts `zz.eval_subject_version` through the FR-59 idempotency
-ledger, so a retried call with the same `idempotency_key` replays the same row rather than
-minting a second one. Omit `version` for the newest released one. REFUSES a plugin this
+still applies is DEFINE/QUALIFY's `protocol_read`, never this. It is a mutator only in the
+ledger's sense: the release identity is immutable and this writes nothing to it, so two calls for
+one release content answer the same `subject_version_id` by construction — what it does write is
+the FR-59 idempotency ledger, so a retried call with the same `idempotency_key` replays rather
+than minting a second record. Omit `version` for the newest released one. REFUSES a plugin this
 platform has never released. Pass `initiative`: it records `subject_version_id` as this stage's
 record, which `initiative_status` hands every later stage under `records["zz-plugin-identify"]`
 — the way a stage started in a new conversation finds the subject.

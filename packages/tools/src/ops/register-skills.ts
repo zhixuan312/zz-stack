@@ -5,14 +5,19 @@
  *   zz-tool register-skills --psql '<command>' --dry-run
  *   zz-tool register-skills --psql '<command>' --check
  *
- * The files stay the source of truth for what a skill says; this copies name, kind, version and
+ * The files stay the source of truth for what a skill says; this copies name, version and
  * content hash into zz.skill and zz.skill_version so a skill can be joined against events. No
  * skill text is copied — the hash proves which bytes a score belongs to.
  *
- * A skill's kind decides what an improvement means:
- *   flow_step    ours, a step of a flow's method; we edit the text and cut a version.
- *   plugin_skill standalone capability, not a step of any flow's method. Which plugin ships it
- *                is zz.plugin_version_skill, written per release by register-plugins.
+ * `flow` is the whole of a skill's catalog shape. A skill under a flow's directory names that
+ * flow and is a step of its method; one under `skills/` names none and is standalone capability.
+ * `kind` was that same fact written down a second time, and the migration dropped it, so it is
+ * derived here as `flow is null` rather than read. Which plugin ships a skill is
+ * zz.plugin_version_skill, written per release by register-plugins.
+ *
+ * DELIBERATE: nothing here records a skill's assets. `zz.skill_asset` was a second copy of a file
+ * tree that already lives on disk and is what ships, so the migration dropped it (0 rows) rather
+ * than leaving two answers to "what does this version contain".
  */
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -27,17 +32,14 @@ import { DEFAULT_PSQL, psqlRows, psqlText } from "../lib/psql.js";
 const SKILL_KINDS = ["flow_step", "plugin_skill"] as const;
 type SkillKind = (typeof SKILL_KINDS)[number];
 
-/** What a skill version can carry besides its own words.
- *  script     — makes a guarantee the prose can only request.
- *  reference  — a server's real quirks, quoted from refusals we actually met.
- *  tool_index — a compact index for a server that advertises hundreds of tools and hundreds of KB of schema. */
-const ASSET_KINDS = ["script", "reference", "tool_index"] as const;
-type AssetKind = (typeof ASSET_KINDS)[number];
+/** What a skill is, from the one column that says it: a skill that names a flow is a step of that
+ *  flow's method, and one that names none is standalone capability. */
+const kindOf = (flow: string | null): SkillKind => (flow ? "flow_step" : "plugin_skill");
 
 const lit = (s: string): string => `'${String(s ?? "").replace(/'/g, "''")}'`;
 
 interface Found { name: string; kind: SkillKind; flow: string | null;
-                  version: string; hash: string; bodyHash: string; dir: string }
+                  version: string; hash: string; bodyHash: string }
 
 /** sha256 of the skill below its frontmatter.
  *
@@ -103,9 +105,9 @@ function findSkills(root: string): Found[] {
       if (!name) continue;
       out.push({
         name,
-        // No third kind. A skill under a flow's directory is a step of that flow's method;
-        // anything else is standalone capability.
-        kind: flow ? "flow_step" : "plugin_skill",
+        // No third kind, and no column either: a skill under a flow's directory is a step of that
+        // flow's method, and anything else is standalone capability. `flow` alone carries it.
+        kind: kindOf(flow),
         flow,
         version: field(text, "version") || "unknown",
         // sha256 of the file, so a score can prove which bytes it belongs to — the same kind of
@@ -113,7 +115,6 @@ function findSkills(root: string): Found[] {
         // change to the prose is exactly the change worth detecting.
         hash: createHash("sha256").update(text).digest("hex"),
         bodyHash: bodyHashOf(text),
-        dir,
       });
     }
   };
@@ -123,21 +124,6 @@ function findSkills(root: string): Found[] {
   // score, while the console lists it straight from the catalog and looks complete.
   for (const flowDir of flowSkillDirs(root)) walk(flowDir.dir, flowDir.flow);
   walk(join(root, "skills"), null);
-  return out;
-}
-
-/** What sits beside a skill that is not its words. */
-function assetsFor(dir: string): { kind: AssetKind; path: string }[] {
-  const out: { kind: AssetKind; path: string }[] = [];
-  for (const sub of ["assets", "scripts", "reference"]) {
-    const d = join(dir, sub);
-    if (!existsSync(d)) continue;
-    for (const f of readdirSync(d)) {
-      const kind: AssetKind = /tool[-_]?index/i.test(f) ? "tool_index"
-        : /\.(mjs|js|ts|sh|py)$/.test(f) ? "script" : "reference";
-      out.push({ kind, path: join(sub, f) });
-    }
-  }
   return out;
 }
 
@@ -186,14 +172,12 @@ function main(argv: string[]): number {
     console.error(`  WARNING: ${m.name} ${m.version} changed without a version bump; its registered hash is kept`);
   }
 
-  let assets = 0;
   for (const s of found) {
     if (args.flags.has("dry-run")) continue;
     psqlText(psql, `
-      insert into zz.skill (name, kind, flow)
-      values (${lit(s.name)}, ${lit(s.kind)}, ${s.flow ? lit(s.flow) : "null"})
-      on conflict (name) do update set kind = excluded.kind, flow = excluded.flow,
-                                       retired = false`);
+      insert into zz.skill (name, flow)
+      values (${lit(s.name)}, ${s.flow ? lit(s.flow) : "null"})
+      on conflict (name) do update set flow = excluded.flow, retired = false`);
     // `released_at` named, not left to its default. The column decides which version wrote a
     // document older than the run link — the console reads it as a window — so it records the
     // first time this row is written and never again. A registered version is never rewritten:
@@ -203,23 +187,12 @@ function main(argv: string[]): number {
       select id, ${lit(s.version)}, ${lit(s.hash)}, ${lit(s.bodyHash)}, now()
         from zz.skill where name = ${lit(s.name)}
       on conflict (skill_id, version) do nothing`);
-    for (const a of assetsFor(s.dir)) {
-      psqlText(psql, `
-        insert into zz.skill_asset (skill_version_id, kind, path)
-        select sv.id, ${lit(a.kind)}, ${lit(a.path)}
-          from zz.skill_version sv join zz.skill sk on sk.id = sv.skill_id
-         where sk.name = ${lit(s.name)} and sv.version = ${lit(s.version)}
-        on conflict (skill_version_id, path) do update set kind = excluded.kind`);
-      assets++;
-    }
   }
 
   const by = (k: SkillKind): number => found.filter((f) => f.kind === k).length;
   console.log(`\n  ${found.length} skill(s) registered${args.flags.has("dry-run") ? " (dry run)" : ""}`);
-  console.log(`    flow_step   ${by("flow_step")}`);
-
-  console.log(`    plugin_skill ${by("plugin_skill")}`);
-  console.log(`    assets      ${assets}\n`);
+  console.log(`    flow_step    ${by("flow_step")}`);
+  console.log(`    plugin_skill ${by("plugin_skill")}\n`);
   for (const s of found.sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name))) {
     console.log(`    ${s.kind.padEnd(12)} ${s.name.padEnd(20)} ${s.version}${s.flow ? `  (${s.flow})` : ""}`);
   }
@@ -237,20 +210,23 @@ function main(argv: string[]): number {
   if (!args.flags.has("dry-run")) {
     psqlText(psql, `update zz.skill set retired = true where name not in (${names}) and not retired`);
   }
-  const stale = psqlRows<{ name: string; kind: string; owner: string | null; runs: number }>(
+  // Ordered by name: `ordinal` was the order this list used and the migration dropped it, so the
+  // one ordering left is the one the name carries.
+  const stale = psqlRows<{ name: string; flow: string | null; runs: number }>(
     psql,
-    `select s.name, s.kind, coalesce(s.flow, s.kind) as owner,
+    `select s.name, s.flow,
             (select count(*) from zz.skill_run r
                join zz.skill_version sv on sv.id = r.skill_version_id
               where sv.skill_id = s.id) as runs
        from zz.skill s
-      where s.name not in (${names})`,
+      where s.name not in (${names})
+      order by s.name`,
   );
   if (stale.length) {
     console.log(`  ${stale.length} retired — in the registry, no longer in the catalog:\n`);
     for (const s of stale) {
       const held = Number(s.runs) > 0 ? `${s.runs} run(s) reference its versions` : "";
-      console.log(`    ${s.kind.padEnd(12)} ${s.name.padEnd(20)} ${(s.owner ?? "").padEnd(10)}${held && `  — ${held}`}`);
+      console.log(`    ${kindOf(s.flow).padEnd(12)} ${s.name.padEnd(20)} ${(s.flow ?? "").padEnd(10)}${held && `  — ${held}`}`);
     }
     console.log("\n  Kept on purpose: runs and plugin releases reference their versions.\n");
   }

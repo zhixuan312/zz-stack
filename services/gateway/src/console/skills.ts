@@ -38,6 +38,11 @@ export function mountSkills(app: Express): void {
         // `retired` travels with the row. This view is every skill the platform has run, so a
         // skill removed from the catalog still belongs here — it owns those runs — but it must
         // not read as current.
+        //
+        // `kind` is derived, not read: `zz.skill.flow` is the whole of a skill's catalog shape
+        // (a skill that names a flow is a step of that flow's method, one that names none is
+        // standalone capability) and the column it duplicates was dropped. The field name the
+        // response carries is unchanged, so the view reads as it did.
         /* A duration is the span between a run's first and last call, so a run that made one
          * call has none: `zz.skill_run.started_at, ended_at` are `min(e.ts), max(e.ts)` over the
          * run's events, and a one-event run is stamped `ended_at = started_at` by construction.
@@ -54,7 +59,9 @@ export function mountSkills(app: Express): void {
          * t.slug)` is not a fact about the skill but a list of the other teams on the
          * deployment. The gate check for a `teamless` body looks for a filter on team_slug, so
          * an aggregated team column passes it. */
-        `select s.name, sv.version, s.kind, s.flow, s.retired,
+        `select s.name, sv.version,
+                case when s.flow is null then 'plugin_skill' else 'flow_step' end as kind,
+                s.flow, s.retired,
                 count(*)                                            as runs,
                 count(*) filter (where r.ended_at > r.started_at)   as timed_runs,
                 coalesce(sum(r.calls),0)                            as calls,

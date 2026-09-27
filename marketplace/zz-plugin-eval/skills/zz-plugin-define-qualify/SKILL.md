@@ -12,9 +12,10 @@ protocol_read(subject_version_id, initiative?)                create, reuse or r
 ```
 
 `subject_version_id` is `initiative_status`'s `records["zz-plugin-identify"]` in a new
-conversation. `protocol_read` also returns `open_candidates` — every DISCOVER candidate of this
-plugin still at `status: candidate`, with its `id`, `description`, `prevalence` and `owner_kind` —
-which is where the ids you fold into `failureTaxonomy` below come from.
+conversation. `protocol_read` also returns `open_candidates` — every DISCOVER sighting of this
+plugin whose identity no protocol version has folded in, with its `id`, `stable_key`,
+`description`, `prevalence` and `owner_kind` — which is where the ids you fold into
+`failureTaxonomy` below come from.
 
 `protocol_read` decides nothing for you: `create` means this plugin has no protocol yet;
 `reuse` means the newest version is affirmed and still compatible and there is nothing to write;
@@ -160,15 +161,19 @@ then decide where the line should have been.
 
 ## Folding DISCOVER's candidates in
 
-`failure_discover` (the previous stage) wrote `zz.eval_failure_mode_candidate` rows, `status:
-'candidate'`. `protocol_record` is the only thing that ever moves one on, through
-`failureTaxonomy`: an entry that is an object (not a bare string) may carry `candidateId` — the
-one candidate this entry was written from, moved to `accepted` — and `mergedCandidateIds`, other
-candidates folded into the same entry, moved to `merged` and pointed at the accepted one. A
-`candidateId`/`mergedCandidateIds` naming a candidate from a DIFFERENT plugin's evidence is
-refused. `protocol_read`'s `new_recurring_failure` trigger is exactly "a candidate still sits at
-`status: candidate`" — so folding one in, or explicitly leaving it uncited, is what clears that
-trigger for the next `protocol_read`.
+`failure_discover` (the previous stage) wrote `zz.eval_failure_mode_sighting` rows, each under
+the `zz.eval_failure_mode` identity its `stable_key` names. `protocol_record` is the only thing
+that folds a failure mode in, through `failureTaxonomy`, by writing one
+`eval_protocol_failure_mode` row per identity — a bare string entry folds in the mode with that
+`stable_key`; an entry that is an object may carry `candidateId`, the one sighting this entry
+was written from, and `mergedCandidateIds`, other sightings folded into the same entry. Each id
+names a sighting and resolves to the identity that sighting belongs to, so two sightings of one
+mode are one relation row, not two. A `candidateId`/`mergedCandidateIds` naming a sighting from
+a DIFFERENT plugin's evidence is refused, and `protocol_record` returns
+`unfolded_taxonomy_keys` naming any entry that folded nothing in. `protocol_read`'s
+`new_recurring_failure` trigger is exactly "a sighting whose identity no version has folded in" —
+so folding one in, or explicitly leaving it uncited, is what clears that trigger for the next
+`protocol_read`.
 
 ## Recording it, then writing it
 

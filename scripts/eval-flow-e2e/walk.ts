@@ -137,7 +137,7 @@ export async function evaluate(w: Walk): Promise<{ evalRun: string; score: Reply
   const protocol = str(read, "protocol_version_id", "protocol_read");
   const started = await c.call("eval", "evaluation_start", {
     subject_version_id: subject, protocol_version_id: protocol, observation_snapshot_id: snapshot,
-    idempotency_key: c.key("start"),
+    idempotency_key: c.key("start"), initiative: w.initiative,
   }, { note: (r) => `eval_run ${String(r.eval_run_id)}` });
   const evalRun = str(started, "eval_run_id", "evaluation_start");
   // The documents the tools under evaluation produced: the approved documents of the closed

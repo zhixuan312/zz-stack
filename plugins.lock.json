@@ -43,17 +43,17 @@
   },
   "zz-plugin-eval": {
     "version": "0.83.2",
-    "digest": "e4eb5b00",
+    "digest": "c496b7fa",
     "skills": {
-      "zz-plugin-define-qualify": "64dbcf4c0623",
-      "zz-plugin-discover": "4cf7dac6a58d",
+      "zz-plugin-define-qualify": "79bbf17eac62",
+      "zz-plugin-discover": "29d81ee2bcb7",
       "zz-plugin-eval": "ff799fe40724",
-      "zz-plugin-evaluate": "2a8d3866fa48",
+      "zz-plugin-evaluate": "b6930a3bc028",
       "zz-plugin-explain": "31e3572df5b6",
-      "zz-plugin-identify": "048a5cc37a08",
+      "zz-plugin-identify": "fb3b5479a3d5",
       "zz-plugin-improve": "b07afbe310ae",
       "zz-plugin-observe": "552b8d705468",
-      "zz-plugin-promote-verify": "5b280a81685d"
+      "zz-plugin-promote-verify": "b425ccbcb372"
     }
   }
 }

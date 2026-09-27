@@ -87,13 +87,26 @@ async function loadImprovementRun(p: pg.Pool, id: string): Promise<ImprovementRu
   return row ?? null;
 }
 
+/** The subject release a run was taken against, read the way `plugin_locate` reads it back: the
+ *  run reaches it through the observation snapshot it is bound to (FR-27), and `plugin_version`
+ *  is the one release identity — the second row per released thing this phase folds onto it is
+ *  gone with the table that held it. `release_owners` is the RELATION (`plugin_release_owner`)
+ *  aggregated to team slugs, which is what replaced the jsonb list nobody could join. A catalog
+ *  release carries no `source_locator` and "no source" is exactly what that null means here. */
 export async function loadSubjectForEvalRun(p: pg.Pool, evalRunId: string): Promise<ProposalSubjectRow | null> {
   return (await p.query<ProposalSubjectRow>(`
-    select pl.name as plugin, sv.declared_version, pl.origin, pl.owner_team, pl.release_owners,
-           sv.source_locator
+    select pl.name as plugin, pv.version as declared_version, pl.origin, t.slug as owner_team,
+           owners.slugs as release_owners, pv.source_locator
       from zz.eval_run er
-      join zz.eval_subject_version sv on sv.id = er.subject_version_id
-      join zz.plugin pl on pl.id = sv.plugin_id
+      join zz.eval_observation_snapshot os on os.id = er.observation_snapshot_id
+      join zz.plugin_version pv on pv.id = os.plugin_version_id
+      join zz.plugin pl on pl.id = pv.plugin_id
+      left join zz.team t on t.id = pl.owner_team_id
+      left join lateral (
+        select coalesce(array_agg(t2.slug order by t2.slug), '{}'::text[]) as slugs
+          from zz.plugin_release_owner r
+          join zz.team t2 on t2.id = r.team_id
+         where r.plugin_id = pl.id) owners on true
      where er.id = $1::uuid`, [evalRunId])).rows[0] ?? null;
 }
 

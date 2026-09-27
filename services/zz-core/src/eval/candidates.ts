@@ -7,7 +7,9 @@
  *
  * `complexity.ts` (Task I-18) is this file's only computation of a candidate's numbers —
  * `complexityDelta`, the patch's own file list and its mapping onto the base subject's
- * `component_manifest` — never re-derived here. `proposer-bundle.ts` (Task I-18) is the other
+ * `component_manifest` — never re-derived here. Which manifest that is, is `subject.ts`'s
+ * `componentManifestOf`: a third-party capture's own, or a catalog release's derived from what it
+ * ships. `proposer-bundle.ts` (Task I-18) is the other
  * half: `improvement_start`'s own response carries it, because the run that consumes the
  * evidence and the run that opens it are the same call.
  *
@@ -22,6 +24,7 @@
  * not_applicable so the initiative can close on `findings.md` alone.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { type PluginComponent } from "@zz/catalog";
 import { parseCaller } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
@@ -30,12 +33,13 @@ import { z } from "zod";
 import { validateCandidate } from "./candidate-validate.js";
 import {
   complexityDelta, componentCounts, hypothesisDigest, parseUnifiedDiff, patchDigest, touchedComponents,
-  type ComplexityInput, type ManifestComponent, type PatchFile, type PatchStats, type TouchedComponent,
+  type ComplexityInput, type PatchFile, type PatchStats, type TouchedComponent,
 } from "./complexity.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { improvementRunOf } from "./initiative-run.js";
 import { loadSubjectForEvalRun } from "./proposal-doc.js";
 import { loadProposerBundle, REJECTED_CANDIDATE_STATUSES, type ProposerBundle } from "./proposer-bundle.js";
+import { componentManifestOf } from "./subject.js";
 import { writeBranchFacts } from "./protocol.js";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
@@ -114,9 +118,16 @@ export function registerCandidateTools(server: McpServer): void {
       const p = db();
       if (!p) return noDb();
 
-      const run = (await p.query<{ id: string; subject_version_id: string }>(
-        "select id::text as id, subject_version_id::text as subject_version_id " +
-        "from zz.eval_run where id = $1::uuid", [eval_run_id])).rows[0];
+      // The run's own release, resolved the way this file already resolves it for the plugin
+      // match below (FR-29): `eval_run.subject_version_id` is gone with the run's own reshape,
+      // and the observation snapshot's `plugin_version_id` IS the release the run was bound to.
+      // This value is the `base_subject_version_id` every later `candidate_record` names, so it
+      // has to be that release rather than a second reading of the column the migration retired.
+      const run = (await p.query<{ id: string; subject_version_id: string }>(`
+        select er.id::text as id, os.plugin_version_id::text as subject_version_id
+          from zz.eval_run er
+          join zz.eval_observation_snapshot os on os.id = er.observation_snapshot_id
+         where er.id = $1::uuid`, [eval_run_id])).rows[0];
       if (!run) return text(`ERROR: no eval_run ${eval_run_id}`);
 
       if (skip) {
@@ -259,7 +270,8 @@ export function registerCandidateTools(server: McpServer): void {
         "expected_effect and patchset.diff, computing patch_digest (sha256 of the diff), complexity_delta " +
         "(complexityDelta over the diff's own added/removed lines and added/removed files), " +
         "touched_components (the patch's files mapped onto base_subject_version_id's own " +
-        "component_manifest) and touched_owners (the base subject's plugin's own " +
+        "component manifest — the capture's for a third-party subject, derived from what the " +
+        "release ships for a catalog one) and touched_owners (the base subject's plugin's own " +
         "release_owners, FR-47 — every touched component inherits plugin-level ownership in " +
         "this initiative). RETURNS { candidate_id, patch_digest, complexity_delta, " +
         "touched_components, touched_owners, status: 'recorded' }. REFUSES an " +
@@ -291,21 +303,29 @@ export function registerCandidateTools(server: McpServer): void {
       if (!run) return text(`ERROR: no improvement_run ${improvement_run_id}`);
 
       if (!UUID_RE.test(base_subject_version_id)) return text("ERROR: unknown base_subject_version_id");
-      const subject = (await p.query<{ id: string; plugin_id: string; component_manifest: ManifestComponent[] }>(
-        "select id::text as id, plugin_id::text as plugin_id, component_manifest " +
-        "from zz.eval_subject_version where id = $1::uuid", [base_subject_version_id])).rows[0];
-      if (!subject) return text(`ERROR: no eval_subject_version ${base_subject_version_id}`);
+      const subject = (await p.query<{
+        id: string; plugin_id: string; plugin: string; component_manifest: PluginComponent[] | null;
+        declared_version: string; digest: string;
+      }>(
+        "select pv.id::text as id, pv.plugin_id::text as plugin_id, pl.name as plugin, " +
+        "pv.component_manifest, pv.version as declared_version, pv.digest " +
+        "from zz.plugin_version pv join zz.plugin pl on pl.id = pv.plugin_id where pv.id = $1::uuid",
+        [base_subject_version_id])).rows[0];
+      if (!subject) return text(`ERROR: no plugin_version ${base_subject_version_id}`);
 
       // FR-36's own ledger integrity, never checked before this task: a candidate that builds on
       // a DIFFERENT plugin than the one its own improvement_run's eval_run scored would inherit
-      // that plugin's release_owners and component_manifest while claiming to descend from a run
+      // that plugin's release owners and component manifest while claiming to descend from a run
       // that never evaluated it — the same "identity must not drift" rule evaluation_start's own
-      // observation-snapshot check already applies one join over.
+      // observation-snapshot check already applies one join over. The run names its release
+      // through its observation snapshot (FR-29): `eval_run.subject_version_id` is gone, and the
+      // snapshot's `plugin_version_id` IS the release both halves were bound to.
       const runPlugin = (await p.query<{ plugin_id: string; plugin_name: string }>(`
-        select sv.plugin_id::text as plugin_id, pl.name as plugin_name
+        select pv.plugin_id::text as plugin_id, pl.name as plugin_name
           from zz.eval_run er
-          join zz.eval_subject_version sv on sv.id = er.subject_version_id
-          join zz.plugin pl on pl.id = sv.plugin_id
+          join zz.eval_observation_snapshot os on os.id = er.observation_snapshot_id
+          join zz.plugin_version pv on pv.id = os.plugin_version_id
+          join zz.plugin pl on pl.id = pv.plugin_id
          where er.id = $1::uuid`, [run.eval_run_id])).rows[0];
       if (runPlugin && runPlugin.plugin_id !== subject.plugin_id) {
         const subjectPlugin = (await p.query<{ name: string }>(
@@ -325,10 +345,25 @@ export function registerCandidateTools(server: McpServer): void {
       };
       const complexity_delta = complexityDelta(complexityInput);
       const digest = patchDigest(patchset.diff);
-      const touched_components: TouchedComponent[] = touchedComponents(files, subject.component_manifest ?? []);
+      // The base subject's own manifest: the capture's for a third-party subject, derived from
+      // what the release ships for a catalog one (`subject.ts`'s `componentManifestOf`). Reading
+      // the column alone would leave every catalog candidate's files unmapped — the column is
+      // null for a release nobody captured — and `in_manifest` false for a file the release does
+      // ship is a claim about the patch rather than a fact about the base.
+      const touched_components: TouchedComponent[] = touchedComponents(files, await componentManifestOf(
+        p, {
+          id: subject.id, plugin: subject.plugin,
+          declared_version: subject.declared_version, release_digest: subject.digest,
+          component_manifest: subject.component_manifest,
+        }));
 
-      const ownerRow = (await p.query<{ release_owners: string[] }>(
-        "select release_owners from zz.plugin where id = $1::uuid", [subject.plugin_id])).rows[0];
+      // Who may release this plugin is a relation now (FR-23), not a jsonb list on the plugin row:
+      // `plugin_release_owner` names one team per row and the slugs come from `zz.team`.
+      const ownerRow = (await p.query<{ release_owners: string[] }>(`
+        select coalesce(array_agg(t.slug order by t.slug), '{}'::text[]) as release_owners
+          from zz.plugin_release_owner r
+          join zz.team t on t.id = r.team_id
+         where r.plugin_id = $1::uuid`, [subject.plugin_id])).rows[0];
       const touched_owners = ownerRow?.release_owners ?? [];
 
       // FR-38's repeat-rejection regularization: a hypothesis already tried and rejected for
@@ -340,8 +375,8 @@ export function registerCandidateTools(server: McpServer): void {
       const priorRejections = (await p.query<{ id: string; hypothesis: string }>(`
         select c.id::text as id, c.hypothesis
           from zz.candidate c
-          join zz.eval_subject_version sv on sv.id = c.base_subject_version_id
-         where sv.plugin_id = $1::uuid and c.status = any($2::text[])`,
+          join zz.plugin_version pv on pv.id = c.base_subject_version_id
+         where pv.plugin_id = $1::uuid and c.status = any($2::text[])`,
         [subject.plugin_id, [...REJECTED_CANDIDATE_STATUSES]])).rows;
       const repeat = priorRejections.find((r) => hypothesisDigest(r.hypothesis) === wantDigest);
       if (repeat) return text(`ERROR: hypothesis already rejected as candidate ${repeat.id}`);

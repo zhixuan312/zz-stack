@@ -19,20 +19,8 @@ export const CATALOG: Record<string, TableTarget> = {
         null,
       ],
       [
-        "kind",
-        "text",
-        false,
-        null,
-      ],
-      [
         "flow",
         "text",
-        true,
-        null,
-      ],
-      [
-        "ordinal",
-        "integer",
         true,
         null,
       ],
@@ -52,9 +40,9 @@ export const CATALOG: Record<string, TableTarget> = {
       ],
     ],
     foreignKeys: [],
-    checks: [
-      "CHECK ((((kind = 'flow_step'::text) AND (flow IS NOT NULL)) OR ((kind = 'plugin_skill'::text) AND (flow IS NULL))))",
-    ],
+    // `kind` was `flow is null` spelled twice; `flow` is the fact and the constraint that held
+    // the two spellings together went with the column.
+    checks: [],
     indexes: [],
     comment: null,
     columnComments: {
@@ -106,6 +94,10 @@ export const CATALOG: Record<string, TableTarget> = {
     uniques: [
       [
         "skill_id",
+        "id",
+      ],
+      [
+        "skill_id",
         "version",
       ],
     ],
@@ -122,80 +114,16 @@ export const CATALOG: Record<string, TableTarget> = {
         deferrable: false,
       },
     ],
-    checks: [],
+    // `not valid` on purpose: 198 legacy values keep whatever format they were written in, and a
+    // subject digest depends on them, so the rule binds every later insert and no existing row.
+    checks: [
+      "CHECK ((content_hash ~ '^[0-9a-f]{64}$'::text)) NOT VALID",
+    ],
     indexes: [],
     comment: null,
     columnComments: {
       body_hash: "sha256 of the SKILL.md below its frontmatter. Equal hashes mean the skill itself did not change.",
     },
-  },
-  skill_asset: {
-    columns: [
-      [
-        "id",
-        "uuid",
-        false,
-        "gen_random_uuid()",
-      ],
-      [
-        "skill_version_id",
-        "uuid",
-        false,
-        null,
-      ],
-      [
-        "kind",
-        "text",
-        false,
-        null,
-      ],
-      [
-        "path",
-        "text",
-        false,
-        null,
-      ],
-      [
-        "content_hash",
-        "text",
-        false,
-        "''::text",
-      ],
-      [
-        "description",
-        "text",
-        false,
-        "''::text",
-      ],
-    ],
-    primaryKey: [
-      "id",
-    ],
-    uniques: [
-      [
-        "skill_version_id",
-        "path",
-      ],
-    ],
-    foreignKeys: [
-      {
-        columns: [
-          "skill_version_id",
-        ],
-        refTable: "skill_version",
-        refColumns: [
-          "id",
-        ],
-        onDelete: "NO ACTION",
-        deferrable: false,
-      },
-    ],
-    checks: [
-      "CHECK ((kind = ANY (ARRAY['script'::text, 'reference'::text, 'tool_index'::text])))",
-    ],
-    indexes: [],
-    comment: null,
-    columnComments: {},
   },
   plugin: {
     columns: [
@@ -218,22 +146,10 @@ export const CATALOG: Record<string, TableTarget> = {
         null,
       ],
       [
-        "owner_team",
-        "text",
+        "owner_team_id",
+        "uuid",
         true,
         null,
-      ],
-      [
-        "evolvable",
-        "boolean",
-        false,
-        "false",
-      ],
-      [
-        "release_owners",
-        "jsonb",
-        false,
-        "'[]'::jsonb",
       ],
     ],
     primaryKey: [
@@ -244,10 +160,74 @@ export const CATALOG: Record<string, TableTarget> = {
         "name",
       ],
     ],
-    foreignKeys: [],
+    foreignKeys: [
+      {
+        columns: [
+          "owner_team_id",
+        ],
+        refTable: "team",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
+    ],
+    // `evolvable` and the `release_owners` jsonb are gone: whether a plugin may be improved is
+    // not a separate flag on it, and who may release it is a relation (`plugin_release_owner`),
+    // not a list nobody can join.
     checks: [
       "CHECK ((origin = ANY (ARRAY['platform'::text, 'third_party'::text])))",
     ],
+    indexes: [],
+    comment: null,
+    columnComments: {},
+  },
+  plugin_release_owner: {
+    columns: [
+      [
+        "plugin_id",
+        "uuid",
+        false,
+        null,
+      ],
+      [
+        "team_id",
+        "uuid",
+        false,
+        null,
+      ],
+    ],
+    primaryKey: [
+      "plugin_id",
+      "team_id",
+    ],
+    uniques: [],
+    foreignKeys: [
+      {
+        columns: [
+          "plugin_id",
+        ],
+        refTable: "plugin",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "CASCADE",
+        deferrable: false,
+      },
+      {
+        columns: [
+          "team_id",
+        ],
+        refTable: "team",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
+    ],
+    checks: [],
     indexes: [],
     comment: null,
     columnComments: {},
@@ -279,8 +259,32 @@ export const CATALOG: Record<string, TableTarget> = {
         null,
       ],
       [
-        "rubric_id",
-        "uuid",
+        "released_at",
+        "timestamp with time zone",
+        false,
+        "now()",
+      ],
+      [
+        "component_manifest",
+        "jsonb",
+        true,
+        null,
+      ],
+      [
+        "source_locator",
+        "jsonb",
+        true,
+        null,
+      ],
+      [
+        "tree_digest",
+        "text",
+        true,
+        null,
+      ],
+      [
+        "resolved_commit",
+        "text",
         true,
         null,
       ],
@@ -306,18 +310,11 @@ export const CATALOG: Record<string, TableTarget> = {
         onDelete: "NO ACTION",
         deferrable: false,
       },
-      {
-        columns: [
-          "rubric_id",
-        ],
-        refTable: "rubric",
-        refColumns: [
-          "id",
-        ],
-        onDelete: "NO ACTION",
-        deferrable: false,
-      },
     ],
+    // `rubric_id` is gone with the rubric family, and `digest` is the release identity: written
+    // once at insert and never rewritten, so a released version is a stable thing to evaluate.
+    // The four source columns — `component_manifest`, `source_locator`, `tree_digest`,
+    // `resolved_commit` — are null for a catalog release and set for a third-party capture.
     checks: [],
     indexes: [],
     comment: null,
@@ -337,10 +334,16 @@ export const CATALOG: Record<string, TableTarget> = {
         false,
         null,
       ],
+      [
+        "skill_id",
+        "uuid",
+        false,
+        null,
+      ],
     ],
     primaryKey: [
       "plugin_version_id",
-      "skill_version_id",
+      "skill_id",
     ],
     uniques: [],
     foreignKeys: [
@@ -357,16 +360,21 @@ export const CATALOG: Record<string, TableTarget> = {
       },
       {
         columns: [
+          "skill_id",
           "skill_version_id",
         ],
         refTable: "skill_version",
         refColumns: [
+          "skill_id",
           "id",
         ],
         onDelete: "NO ACTION",
         deferrable: false,
       },
     ],
+    // One version per skill per plugin version: the key names the skill, so a plugin version
+    // cannot bind two versions of one skill — and the composite foreign key is what makes
+    // `skill_id` truthful rather than a second copy of the version's own skill.
     checks: [],
     indexes: [],
     comment: null,
@@ -411,7 +419,9 @@ export const CATALOG: Record<string, TableTarget> = {
         deferrable: false,
       },
     ],
-    checks: [],
+    checks: [
+      "CHECK ((door = ANY (ARRAY['core'::text, 'eval'::text, 'manage'::text])))",
+    ],
     indexes: [],
     comment: null,
     columnComments: {},

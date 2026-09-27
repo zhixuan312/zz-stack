@@ -45,6 +45,7 @@ import { buildAndSmoke } from "./release/build.ts";
 import { ATTEST, fitForPurpose } from "./release/fit-for-purpose.ts";
 import { DASH_IMAGE, DASH_REMOTE, DASH_SRC, HOST, IMAGE, REMOTE, asExecError, catalogOwnerTeam, die, envToken, log, probeToken, publicUrl, root, run, ssh, step, warn } from "./deployment.ts";
 import { chainCheck } from "./release/chain-live.ts";
+import { purgeProbes } from "./release/probe-purge.ts";
 import { args, dryRun, preflightMode, rollbackMode, version } from "./release/config.ts";
 import { consoleImage, resolveDashboard } from "./release/dashboard.ts";
 import { preflight } from "./release/preflight.ts";
@@ -379,6 +380,20 @@ const registryFailures = writeRegistries(ownerTeam);
 
 /* 5 · verify the live deployment */
 step(5, "verify");
+
+/* SWEEP STALE PROBES BEFORE VERIFYING, not only after the chain check.
+ *
+ * The store's own doctor probe refuses a deployment holding `chain-check-*` initiatives, and until
+ * now the only sweep ran at the END of a release — after verification. So a sweep that failed once
+ * left litter that failed every LATER release's verification, with no way back but a manual purge.
+ * 0.86.1 met exactly that: four initiatives from earlier runs, left by a purge that died on the
+ * column 0.86.0 renamed, blocking the release that fixed the purge.
+ *
+ * Removing probe litter is always safe — `chain-check-*` is never anybody's initiative, and the
+ * store's own probe says so — so it is done first. The end-of-release sweep in chainCheck() stays,
+ * for this run's own probes. */
+purgeProbes();
+
 execSync("sleep 12");
 const verdict = verifyLive();
 // A registry the release could not write is a failed verification (registries.ts).

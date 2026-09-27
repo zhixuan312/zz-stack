@@ -174,12 +174,26 @@ export const DOCUMENTS: Record<string, TableTarget> = {
       "CREATE INDEX doc_tags ON zz.doc USING gin (tags)",
       "CREATE INDEX doc_tsv ON zz.doc USING gin (body_tsv)",
     ],
-    comment: null,
+    comment: "class=state_machine; authority=this; question=what is this document's identity and its gate status, as distinct from the revisions it has had?; transitions=draft->approved,approved->draft",
     // The signature field's comment went with the column it annotated. `doc.approved_by` was text
     // holding a person's email; the approval is `doc_revision.approved_by`, a `uuid` key into
     // `zz.principal`, written with the seal that covers the bytes it signed.
     columnComments: {
-      created_at: "When this document first existed. Never moves. `updated_at` is the last write; this is the\n   first, and it is what scopes a measurement to one initiative's lifetime.",
+      path: "class=state_machine; authority=this; question=where does this document live inside its initiative's folder?",
+      type: "class=state_machine; authority=this; question=which role does this document play, an agreement, a plan, a source, or another type its flow declares?",
+      status: "class=state_machine; authority=this; question=is this document a draft, or approved at its current revision?",
+      updated_at: "class=state_machine; authority=this; question=when was this document last written?",
+      body_tsv: "class=projection; authority=zz.doc.body; question=what is this document's body as the search vector a full-text query matches?; rebuilt_from=body",
+      body: "class=projection; authority=zz.doc_revision.body; question=what does this document's current revision say?; rebuilt_from=doc_revision[current_revision]",
+      title: "class=projection; authority=zz.doc_revision.title; question=what is this document's current revision titled?; rebuilt_from=doc_revision[current_revision]",
+      tags: "class=projection; authority=zz.doc_revision.tags; question=which tags does this document's current revision carry?; rebuilt_from=doc_revision[current_revision]",
+      content_hash: "class=projection; authority=zz.doc_revision.content_hash; question=what is the hash of this document's current revision bytes?; rebuilt_from=doc_revision[current_revision]",
+      created_at: "class=state_machine; authority=this; question=when did this document first exist, never moved by a later write as updated_at is, and the instant that scopes a measurement to one initiative's lifetime?",
+      id: "class=state_machine; authority=this; question=what is this document's own identity?",
+      initiative_id: "class=relation; authority=this; question=which initiative does this document belong to?",
+      analyzer_version: "class=projection; authority=zz.doc.body; question=which analyzer generation produced this document's search vector, so a vector from another generation can be rederived?; rebuilt_from=body",
+      current_revision: "class=state_machine; authority=this; question=which revision of this document is the current one?",
+      approved_revision: "class=state_machine; authority=this; question=which revision of this document was approved last, if any has been?",
     },
   },
   doc_revision: {
@@ -312,9 +326,23 @@ export const DOCUMENTS: Record<string, TableTarget> = {
       "CHECK (((content_state <> 'missing_legacy'::text) OR ((approved_by IS NULL) AND (approved_at IS NULL))))",
     ],
     indexes: [],
-    comment: null,
+    comment: "class=state_machine; authority=this; question=which revision of this document is this, and does it still retain the exact bytes that were written?; transitions=written->approved",
     columnComments: {
-      presented_at: "class=current_state; authority=this; question=When were these exact bytes put in front of a person? It is what `document_approve` is refused by, and a column rather than an event row so no sweep can take it.",},
+      doc_id: "class=relation; authority=this; question=which document does this revision belong to?",
+      revision: "class=state_machine; authority=this; question=which revision number of that document is this?",
+      content_state: "class=state_machine; authority=this; question=does this revision still retain the exact bytes that were written, or is it a revision known to have existed whose bytes were overwritten before any approval snapshot?",
+      title: "class=state_machine; authority=this; question=what was this revision titled?",
+      body: "class=state_machine; authority=this; question=what did this revision say?",
+      tags: "class=state_machine; authority=this; question=which tags did this revision carry?",
+      content_hash: "class=state_machine; authority=this; question=what is the hash of this revision's bytes?",
+      written_by: "class=state_machine; authority=this; question=which principal wrote this revision?",
+      written_at: "class=state_machine; authority=this; question=when was this revision written?",
+      revision_note: "class=state_machine; authority=this; question=what one line did the writer record about why this revision changed?",
+      approved_by: "class=state_machine; authority=this; question=which principal approved these exact bytes, if they have been approved?",
+      approved_at: "class=state_machine; authority=this; question=when were these exact bytes approved, if they have been?",
+      fields: "class=state_machine; authority=this; question=which envelope fields does this revision carry that have no column of their own?",
+      presented_at: "class=state_machine; authority=this; question=when were these exact bytes put in front of a person, the fact document_approve is refused by and a column rather than a sweepable event row so an approval gate cannot fail open?",
+    },
   },
   doc_link: {
     columns: [
@@ -397,7 +425,13 @@ export const DOCUMENTS: Record<string, TableTarget> = {
     indexes: [
       "CREATE UNIQUE INDEX doc_link_unique ON zz.doc_link USING btree (from_doc_id, from_revision, to_doc_id, to_revision, kind) NULLS NOT DISTINCT",
     ],
-    comment: null,
-    columnComments: {},
+    comment: "class=relation; authority=this; question=which exact revision cites which other exact revision, or which source revision supports which document identity across its later revisions?",
+    columnComments: {
+      from_doc_id: "class=relation; authority=this; question=which document does the citing or supporting revision belong to?",
+      from_revision: "class=relation; authority=this; question=which exact revision of that document does the citing or supporting?",
+      to_doc_id: "class=relation; authority=this; question=which document is cited, or supported?",
+      to_revision: "class=relation; authority=this; question=which exact revision is cited, null when only the target document's identity is supported?",
+      kind: "class=relation; authority=this; question=is this a citation of one exact revision by another, or a source revision's support for a document identity?",
+    },
   },
 };

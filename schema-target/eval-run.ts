@@ -176,8 +176,25 @@ export const EVAL_RUN: Record<string, TableTarget> = {
     indexes: [
       "CREATE INDEX eval_run_protocol_version_id_created_at_idx ON zz.eval_run USING btree (protocol_version_id, created_at DESC)",
     ],
-    comment: null,
-    columnComments: {},
+    comment: "class=state_machine; authority=this; question=which evaluation bound one protocol version to one observation snapshot, and what score, status, guardrail verdict and uncertainty did it publish?; transitions=created->scored",
+    columnComments: {
+      id: "class=state_machine; authority=this; question=what is this evaluation run's stable identity, the handle its assessments, findings, improvements and release verdicts hang off?",
+      protocol_version_id: "class=relation; authority=this; question=which protocol version, with its dimensions and measures, did this run score against?",
+      score_status: "class=state_machine; authority=this; question=is this run's published score established, provisional or not_established, and null only while the run has not been scored?",
+      overall_score: "class=state_machine; authority=this; question=what score between 0 and 10 did this run publish?",
+      guardrail_status: "class=state_machine; authority=this; question=did this run's critical guardrails pass or fail, or come back not_established?",
+      created_at: "class=state_machine; authority=this; question=when was this run started?",
+      team_id: "class=relation; authority=this; question=which team ran this evaluation, whose artifact store its document subjects were resolved against and which the named initiative must belong to?",
+      initiative_id: "class=relation; authority=this; question=which initiative ran this evaluation, when it was started from one?",
+      observation_snapshot_id: "class=relation; authority=this; question=which observation snapshot of real production use was this run scored against?",
+      score_lower: "class=state_machine; authority=this; question=what is the lower bound of this run's published uncertainty interval?",
+      score_upper: "class=state_machine; authority=this; question=what is the upper bound of this run's published uncertainty interval?",
+      measure_coverage: "class=state_machine; authority=this; question=what share of the protocol's declared measure weight this run actually scored?",
+      establishment_blocked_by: "class=state_machine; authority=this; question=which reasons stopped this run's score from being established, each named by the policy that failed?",
+      scorer_version: "class=state_machine; authority=this; question=which platform version's scoring code produced this published result, so a recompute under newer code cannot silently move the comparison a rollback turns on?",
+      started_by: "class=state_machine; authority=this; question=which principal started this run?",
+      scored_at: "class=state_machine; authority=this; question=when was this run's result published, the terminal marker that closes it against every later re-scoring?",
+    },
   },
   eval_run_dimension: {
     columns: [
@@ -254,8 +271,14 @@ export const EVAL_RUN: Record<string, TableTarget> = {
       "CHECK (((score >= (0)::numeric) AND (score <= (10)::numeric)))",
     ],
     indexes: [],
-    comment: null,
-    columnComments: {},
+    comment: "class=immutable_history; authority=this; question=what score and coverage did one scored run publish for one dimension of its protocol?",
+    columnComments: {
+      eval_run_id: "class=relation; authority=this; question=which scored run published this per-dimension result?",
+      protocol_version_id: "class=relation; authority=this; question=which protocol version do both the run and the dimension this row joins belong to, the shared key that keeps them from disagreeing?",
+      dimension_id: "class=relation; authority=this; question=which declared dimension of that protocol version does this score belong to?",
+      score: "class=immutable_history; authority=this; question=what score between 0 and 10 did the run publish for this dimension, null when the dimension did not apply?",
+      coverage: "class=immutable_history; authority=this; question=what share of this dimension's declared measure weight was scored, null when it was not measured?",
+    },
   },
   eval_assessment: {
     columns: [
@@ -523,8 +546,27 @@ export const EVAL_RUN: Record<string, TableTarget> = {
     indexes: [
       "CREATE INDEX eval_assessment_eval_run_id_idx ON zz.eval_assessment USING btree (eval_run_id)",
     ],
-    comment: null,
-    columnComments: {},
+    comment: "class=immutable_history; authority=this; question=in one evaluation, what did one measure answer about one subject, or why was it excluded from the score?",
+    columnComments: {
+      id: "class=immutable_history; authority=this; question=what is this assessment row's own identity, the id a finding cites as its reading?",
+      eval_run_id: "class=relation; authority=this; question=which evaluation's score reduced this answer?",
+      measure_id: "class=relation; authority=this; question=which measure of the run's protocol version was answered here?",
+      assessment_id: "class=relation; authority=this; question=which stored model answer in zz.assessment backed this measurement, null where the measure called no model?",
+      qualification_id: "class=relation; authority=this; question=which evaluator qualification was in force when this answer was taken or skipped?",
+      created_at: "class=immutable_history; authority=this; question=when was this answer recorded?",
+      subject_kind: "class=immutable_history; authority=this; question=what kind of subject this answer is about — run_level, meaning the parent run's own observation snapshot and no child key at all, or run named by run_id, document by doc_id and doc_revision, knowledge by knowledge_node_id, bug by bug_id, or event by event_id?",
+      run_id: "class=relation; authority=this; question=which skill run was judged, when the subject kind is run?",
+      doc_id: "class=relation; authority=this; question=which document was judged, when the subject kind is document?",
+      doc_revision: "class=immutable_history; authority=this; question=which revision of that document pins the exact bytes judged, left null only on a legacy document subject whose revision cannot be reconstructed?",
+      knowledge_node_id: "class=relation; authority=this; question=which knowledge node was judged, when the subject kind is knowledge?",
+      bug_id: "class=relation; authority=this; question=which bug report was judged, when the subject kind is bug?",
+      event_id: "class=relation; authority=this; question=which recorded event was judged, when the subject kind is event?",
+      value: "class=immutable_history; authority=this; question=what value the measure returned for this subject, null exactly when the answer was excluded?",
+      raw_value: "class=immutable_history; authority=this; question=what the measure's own unreduced reading was, kept so a reader can see past the reduced value?",
+      numerator: "class=immutable_history; authority=this; question=what numerator the measure counted, when its answer was a rate rather than a single reading?",
+      denominator: "class=immutable_history; authority=this; question=what denominator that rate was counted over?",
+      excluded_reason: "class=immutable_history; authority=this; question=why this measure was excluded from the score rather than answering, set exactly when value is null?",
+    },
   },
   eval_idempotency: {
     columns: [
@@ -594,7 +636,15 @@ export const EVAL_RUN: Record<string, TableTarget> = {
     // to the address it was made from.
     checks: [],
     indexes: [],
-    comment: null,
-    columnComments: {},
+    comment: "class=ephemeral; authority=this; question=has this caller already made this call with this key, and which row did the first one produce?; retention=declared 30 days: past that age an entry is replay-dead, and no production path deletes one yet",
+    columnComments: {
+      tool: "class=ephemeral; authority=this; question=which mutating tool call is this retry ledger entry for?",
+      idempotency_key: "class=ephemeral; authority=this; question=what key did the caller give this attempt, unique within the tool for that principal?",
+      request_digest: "class=ephemeral; authority=this; question=what digest of the canonical arguments this call was made with, so a same-key call with different arguments is refused?",
+      result_table: "class=ephemeral; authority=this; question=which table the first write landed in, naming a parent table where the call produced no single result row?",
+      result_id: "class=ephemeral; authority=this; question=which row the first write produced, a polymorphic pointer with no foreign key because it may name any result table?",
+      created_at: "class=ephemeral; authority=this; question=when the first write was recorded, the instant the 30-day sweep measures from?",
+      principal_id: "class=relation; authority=this; question=which principal made the call, the first component of the key rather than an address that can change?",
+    },
   },
 };

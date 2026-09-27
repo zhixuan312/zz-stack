@@ -192,8 +192,13 @@ export const DELIVERY: Record<string, TableTarget> = {
     ],
     checks: [],
     indexes: [],
-    comment: "An initiative's durable branch facts, written once by the stage that decides each and never revised. `<initiative>/_facts.json` was the other half of this record and is retired with the store, so the row is now the authority. A stage's own record of what it minted is `initiative_record`, which is latest-wins and is a different shape.",
-    columnComments: {},
+    comment: "class=current_state; authority=this; question=which branch facts has this initiative decided, each written once by the stage that decided it and never revised, now that the `_facts.json` copy is retired and the row is the authority?",
+    columnComments: {
+      fact: "class=current_state; authority=this; question=which named branch fact of this initiative's flow does this row record?",
+      value: "class=current_state; authority=this; question=what did the deciding stage record this branch fact to be?",
+      set_at: "class=current_state; authority=this; question=when was this branch fact decided?",
+      initiative_id: "class=relation; authority=this; question=which initiative does this branch fact belong to?",
+    },
   },
   bug: {
     columns: [
@@ -382,8 +387,24 @@ export const DELIVERY: Record<string, TableTarget> = {
     indexes: [
       "CREATE INDEX bug_open ON zz.bug USING btree (status, reported_at DESC)",
     ],
-    comment: "Bugs reported by the people using this platform. Written by bug_report on /core, read by bug_list, closed by bug_resolve. Not knowledge (a report needs no evidence) and not an event (an event has no author).",
-    columnComments: {},
+    comment: "class=current_state; authority=this; question=what did a person report as wrong with the platform, and how was it closed, in the one channel from a user that needs no evidence as knowledge does and has an author as telemetry does not?",
+    columnComments: {
+      id: "class=current_state; authority=this; question=what identifies this report?",
+      reported_at: "class=current_state; authority=this; question=when was this report filed?",
+      title: "class=current_state; authority=this; question=what one line names what was reported?",
+      detail: "class=current_state; authority=this; question=what happened, in the reporter's own words?",
+      surface: "class=current_state; authority=this; question=which door or tool did the reporter see this on?",
+      platform_version: "class=current_state; authority=this; question=which platform release was running when this was reported?",
+      impact: "class=current_state; authority=this; question=what did this cost the reporter, from blocked work to a cosmetic defect?",
+      status: "class=current_state; authority=this; question=where does this report stand: open, fixed, not a bug or a duplicate?",
+      resolution: "class=current_state; authority=this; question=what was decided about this report?",
+      resolved_at: "class=current_state; authority=this; question=when was this report closed?",
+      team_id: "class=relation; authority=this; question=which team did the reporter belong to when they filed it?",
+      initiative_id: "class=relation; authority=this; question=which initiative was the reporter working on when they filed it?",
+      duplicate_of: "class=current_state; authority=this; question=which earlier report does this one duplicate?",
+      reported_by: "class=current_state; authority=this; question=which principal filed this report?",
+      resolved_by: "class=current_state; authority=this; question=which principal closed this report?",
+    },
   },
   // What each `produces: "record"` stage of an initiative minted: the ids a later stage needs
   // and, being in no document, could otherwise only find in the conversation that ran it.
@@ -453,7 +474,13 @@ export const DELIVERY: Record<string, TableTarget> = {
     ],
     checks: [],
     indexes: [],
-    comment: null,
-    columnComments: {},
+    comment: "class=current_state; authority=this; question=which ids did each stage of this initiative mint, latest-wins so a stage that runs again supersedes what it recorded before?",
+    columnComments: {
+      initiative_id: "class=relation; authority=this; question=which initiative does this stage record belong to?",
+      stage: "class=current_state; authority=this; question=which stage of the flow minted these ids?",
+      id_name: "class=current_state; authority=this; question=which of the ids the stage minted is this, under the name the stage itself gives it?",
+      value: "class=current_state; authority=this; question=what is the id this stage recorded under that name?",
+      set_at: "class=current_state; authority=this; question=when did this stage last record this id?",
+    },
   },
 };

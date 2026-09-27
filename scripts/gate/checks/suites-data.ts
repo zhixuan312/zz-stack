@@ -163,3 +163,9 @@ check("the store is retired: its layer, its paths, and its backup", runsCheck("s
 // code, so naming the directory in the title makes the check flag its own registration.
 check("nothing reaches the store's root or its version directory for a live purpose",
       runsCheck("no-store-namers.ts"));
+
+// Phase 6's last: the comments describe the final shape, so this runs after the drop. The
+// inventory check compares comments entry for entry against the target; this asserts the property
+// no per-table comparison can state — that nothing across the whole schema is missing one.
+check("every table and column carries its structured comment",
+      runsCheck("comment-completeness.ts"));

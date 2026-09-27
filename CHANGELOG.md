@@ -33,6 +33,54 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.84.0] — 2026-09-27
+
+Phase 3 of the schema first-principles review (initiative
+`2026-09-21-schema-first-principles-review`): the catalog and evaluation families are folded onto
+the relations the spec fixed — a release is one immutable identity, a dimension score is a row
+rather than an element of a JSON array, an assessment names what it judged by kind, a failure mode
+is an identity with its own sightings, and a scored run is terminal.
+
+### Changed
+
+- **`plugin_version` is the one release identity.** It absorbs `eval_subject_version`, carries its
+  own `released_at`, and its content digest is never rewritten — a release of changed content is a
+  new version, not an update of the old one.
+- **A protocol carries its own plugin and key.** `eval_protocol` and `eval_evaluator` were headers
+  with no fact of their own; each folds into its version table, and `eval_evidence_snapshot` folds
+  into `eval_run`.
+- **Per-dimension results are rows.** `eval_run_dimension` replaces the `eval_run.dimension_scores`
+  jsonb array, so a published score is a keyed row rather than a document that has to be parsed.
+- **An assessment names what it judged by kind.** `subject_ref` is gone: a row carries
+  `subject_kind` and exactly the one child key that kind names — `run_id`, `doc_id`,
+  `knowledge_node_id`, `bug_id` or `event_id` — or none at all for a `run_level` assessment.
+- **A failure mode is an identity and finding one is a sighting.** `eval_failure_mode` is keyed by
+  `(plugin_id, stable_key)`; each discovery is a `eval_failure_mode_sighting` carrying its own
+  prevalence, owner and evidence, and a protocol's lineage is a relation rather than a jsonb array.
+- **The legacy ordinal round family is archived and dropped** — nine tables and the eleven
+  `eval_finding` rows that carried an `eval_id`. They are written to the deployment's backup store
+  before anything is dropped.
+
+### Breaking
+
+- **`round_scores` no longer reads anything.** The ordinal rounds it served are archived and gone,
+  so the tool keeps its name and answers every call with a by-name refusal that says where the
+  history went and points at `evaluation_score`.
+- **A released `plugin_version` is never updated.** A version is retired only by a recorded
+  rollback, which retracts it from what `plugin_locate` and `release_apply` read as current.
+- **An assessment's `subject_ref` is replaced by `subject_kind` plus one typed child key.** A
+  caller that passed a bare ref must now say which kind it judged.
+
+### Upgrade notes
+
+- **A migration applies on the gateway's next start**: `002_catalog_evaluation.sql`. It is
+  destructive by design, and it is the one migration so far whose disposition includes an archive
+  step: the legacy evaluation family and the eleven `eval_finding` rows carrying an `eval_id` are
+  dumped to the deployment backup store **first**, and dropped only after that dump lands. Restart
+  the gateway once and read its log; nothing needs to be run by hand.
+- The tool surface is unchanged in shape — `plugins.lock.json` and the catalog shelf are rebuilt
+  with this release, so a client that installs plugins re-pulls on its next update.
+
 ## [0.83.2] — 2026-09-27
 
 Two bugs found while running an initiative through the flow, both of them things a reader of the

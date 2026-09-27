@@ -33,6 +33,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.86.1] — 2026-09-27
+
+### Fixed
+- **`node scripts/ops/purge-probes.ts` could not run against a live deployment — it failed with
+  `column "path" does not exist`.** It counted and deleted the probe knowledge nodes by
+  `zz.knowledge_node.path`, which 0.86.0 replaced with `node_ordinal` and `slug`, so the purge that
+  0.86.0's own release tail tells the operator to run failed on the first statement that touched a
+  node. It now matches the `slug`, which is the address derived from the node file's own name —
+  exactly what the path was standing in for, so nothing about which nodes are probes changed.
+- 0.86.0's release reported this as "chain-check left its initiative behind: the probe purge did not
+  run" and printed the command anyway. It printed a command that could not work, which is the part
+  worth fixing beyond the one column.
+
+No upgrade notes: nothing an operator has to do. The probe rows 0.86.0's chain check left behind are
+removed by running the purge from this version, which the release does as its last step.
+
 ## [0.86.0] — 2026-09-27
 
 Phase 5 of the schema first-principles review (initiative

@@ -33,6 +33,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.87.1] — 2026-09-28
+
+### Fixed
+
+- **`zz.doc_link` cascades from `zz.doc`, as `zz.doc_revision` already did.** The two are both
+  children of a document and were given different keys, so deleting a document died on the link's
+  foreign key with the delete half-done. `009_doc_link_cascade.sql` re-adds all three of the
+  table's keys with `ON DELETE CASCADE`; the purge below stopped working around it.
+- **The probe purge reads a document's initiative from the row it is filed under.** It counted and
+  deleted on `zz.doc.initiative`, which went with the file store, so it died mid-purge and left
+  four `chain-check-*` initiatives behind — the litter that then failed every later release's
+  verification. That is the failure 0.86.1 met through the rename before it.
+- **`knowledge_supersede` looks on the shelf a node was written to.** It joined `zz.team.slug` on
+  the caller's own word — `team` — so a team-scoped node that existed read as `no node 0001`.
+- **A revision carries the whole envelope forward.** `document_revise` rebuilt the previous
+  envelope from a list of seven keys, dropping `closed_by` on any revision of a closed document
+  and dropping `stakeholder` and every field a flow declares. The previous envelope is the loaded
+  document's payload now, with the rows' columns assigned over it.
+- **An approval names a principal, and says so before it is written.** `document_approve` with an
+  `on_behalf_of` no principal carries wrote an approval with no attribution, which read back as an
+  approved document with nobody's name on it; it refuses with the address to use instead.
+- **`release.ts --data-step=<command>`** runs a release's one-shot data step locally between the
+  deploy and the probes. 0.81.0 rolled back because verification ran before its carry.
+- **The chain check reads the ledger as a row, not as a file.** `<team>/_ledger.md` went with the
+  store; `initiative_close` records the outcome on the initiative's own anchor row and
+  `initiative_status` reads it off there.
+
+### Upgrade notes
+
+- No env key changed and no client re-pull is needed. `009_doc_link_cascade.sql` applies on deploy
+  and moves no data.
+
 ## [0.87.0] — 2026-09-28
 
 Phase 6 of the schema first-principles review (initiative

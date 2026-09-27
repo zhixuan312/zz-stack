@@ -379,6 +379,9 @@ export const DOCUMENTS: Record<string, TableTarget> = {
     ],
     primaryKey: null,
     uniques: [],
+    // A document's links go with the document, as its revisions do: both are children of `zz.doc`,
+    // and a link naming a revision the cascade has just removed would point at nothing.
+    // 009_doc_link_cascade.sql is the migration that makes the live catalog agree with this.
     foreignKeys: [
       {
         columns: [
@@ -390,7 +393,7 @@ export const DOCUMENTS: Record<string, TableTarget> = {
           "doc_id",
           "revision",
         ],
-        onDelete: "NO ACTION",
+        onDelete: "CASCADE",
         deferrable: false,
       },
       {
@@ -401,7 +404,7 @@ export const DOCUMENTS: Record<string, TableTarget> = {
         refColumns: [
           "id",
         ],
-        onDelete: "NO ACTION",
+        onDelete: "CASCADE",
         deferrable: false,
       },
       {
@@ -414,7 +417,7 @@ export const DOCUMENTS: Record<string, TableTarget> = {
           "doc_id",
           "revision",
         ],
-        onDelete: "NO ACTION",
+        onDelete: "CASCADE",
         deferrable: false,
       },
     ],

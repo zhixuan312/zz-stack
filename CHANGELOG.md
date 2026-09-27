@@ -33,6 +33,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.86.2] — 2026-09-27
+
+### Fixed
+- **A release now sweeps stale probe initiatives *before* it verifies, not only after its own chain
+  check.** The store's own doctor probe refuses a deployment holding `chain-check-*` initiatives,
+  and the only sweep ran at the end of a release — after verification. So a sweep that failed once
+  left litter that failed every later release, with no way back but a manual purge. Removing probe
+  litter is always safe (`chain-check-*` is never anybody's initiative, which is what that same
+  probe says), so it now happens first.
+
+### Upgrade notes
+- **0.86.1 was deployed and rolled back**, so its version number is not reused. It fixed the purge
+  and was in fact correct, but it could not pass verification: four `chain-check-*` initiatives from
+  earlier runs — left by the very purge it fixed — were already in the store, and verification runs
+  before the sweep. This release adds the missing half. Nothing an operator has to do; the litter it
+  removes is test traffic, and removing it is what unblocks the deployment.
+
 ## [0.86.1] — 2026-09-27
 
 ### Fixed

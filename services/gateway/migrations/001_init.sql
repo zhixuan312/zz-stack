@@ -98,6 +98,7 @@
 -- absorbs: 002_remove_replay.sql
 -- absorbs: 002_a_finding_can_be_corrected.sql
 -- absorbs: 002_initiative_anchor.sql
+-- absorbs: 002_identity_access.sql
 --
 -- requires-extension: citext
 -- requires-extension: pg_textsearch
@@ -450,7 +451,8 @@ CREATE TABLE zz.console_session (
     revoked_at timestamp with time zone,
     last_seen_at timestamp with time zone,
     user_agent text,
-    ip text
+    ip text,
+    team_id uuid
 );
 
 
@@ -1367,15 +1369,15 @@ CREATE TABLE zz.knowledge_node_artifact (
 --
 
 CREATE TABLE zz.mcp_oauth_authz (
-    id text NOT NULL,
     client_id text NOT NULL,
-    principal_id uuid,
+    principal_id uuid NOT NULL,
     redirect_uri text NOT NULL,
     code_challenge text NOT NULL,
-    state text DEFAULT ''::text NOT NULL,
     resource text DEFAULT ''::text NOT NULL,
-    used boolean DEFAULT false NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    code_hash text NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    used_at timestamp with time zone
 );
 
 
@@ -1387,7 +1389,8 @@ CREATE TABLE zz.mcp_oauth_client (
     client_id text NOT NULL,
     redirect_uris jsonb NOT NULL,
     name text DEFAULT ''::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    revoked_at timestamp with time zone
 );
 
 
@@ -1468,7 +1471,9 @@ CREATE TABLE zz.passkey_challenge (
     principal_id uuid,
     redirect_to text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT passkey_challenge_kind_check CHECK ((kind = ANY (ARRAY['register'::text, 'login'::text])))
+    expires_at timestamp with time zone NOT NULL,
+    CONSTRAINT passkey_challenge_kind_check CHECK ((kind = ANY (ARRAY['register'::text, 'login'::text]))),
+    CONSTRAINT passkey_challenge_kind_principal_check CHECK (((kind = 'register'::text) = (principal_id IS NOT NULL)))
 );
 
 
@@ -1479,10 +1484,8 @@ CREATE TABLE zz.passkey_challenge (
 CREATE TABLE zz.passkey_enrolment (
     token_hash text NOT NULL,
     principal_id uuid NOT NULL,
-    issued_by uuid,
     expires_at timestamp with time zone NOT NULL,
-    used_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    used_at timestamp with time zone
 );
 
 
@@ -1499,7 +1502,8 @@ CREATE TABLE zz.pat (
     expires_at timestamp with time zone,
     revoked_at timestamp with time zone,
     last_used_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    oauth_client_id text
 );
 
 
@@ -1563,7 +1567,6 @@ CREATE TABLE zz.principal (
     role text DEFAULT 'member'::text NOT NULL,
     status text DEFAULT 'active'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     active_team_id uuid,
     CONSTRAINT principal_role_check CHECK ((role = ANY (ARRAY['superadmin'::text, 'member'::text]))),
     CONSTRAINT principal_status_check CHECK ((status = ANY (ARRAY['active'::text, 'deactivated'::text])))
@@ -1921,6 +1924,7 @@ CREATE TABLE zz.team (
     status text DEFAULT 'active'::text NOT NULL,
     created_by uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT team_slug_check CHECK ((slug ~ '^[a-z0-9][a-z0-9_-]{1,63}$'::text)),
     CONSTRAINT team_status_check CHECK ((status = ANY (ARRAY['active'::text, 'archived'::text])))
 );
 
@@ -2453,7 +2457,7 @@ ALTER TABLE ONLY zz.knowledge_node
 --
 
 ALTER TABLE ONLY zz.mcp_oauth_authz
-    ADD CONSTRAINT mcp_oauth_authz_pkey PRIMARY KEY (id);
+    ADD CONSTRAINT mcp_oauth_authz_pkey PRIMARY KEY (code_hash);
 
 
 --
@@ -2997,10 +3001,17 @@ CREATE INDEX knowledge_node_tsv ON zz.knowledge_node USING gin (body_tsv);
 
 
 --
--- Name: mcp_oauth_authz_age; Type: INDEX; Schema: zz; Owner: -
+-- Name: mcp_oauth_authz_expiry; Type: INDEX; Schema: zz; Owner: -
 --
 
-CREATE INDEX mcp_oauth_authz_age ON zz.mcp_oauth_authz USING btree (created_at);
+CREATE INDEX mcp_oauth_authz_expiry ON zz.mcp_oauth_authz USING btree (expires_at);
+
+
+--
+-- Name: membership_principal; Type: INDEX; Schema: zz; Owner: -
+--
+
+CREATE INDEX membership_principal ON zz.membership USING btree (principal_id);
 
 
 --
@@ -3025,10 +3036,10 @@ CREATE INDEX model_call_purpose_ts ON zz.model_call USING btree (purpose, ts);
 
 
 --
--- Name: passkey_challenge_age; Type: INDEX; Schema: zz; Owner: -
+-- Name: passkey_challenge_expiry; Type: INDEX; Schema: zz; Owner: -
 --
 
-CREATE INDEX passkey_challenge_age ON zz.passkey_challenge USING btree (created_at);
+CREATE INDEX passkey_challenge_expiry ON zz.passkey_challenge USING btree (expires_at);
 
 
 --
@@ -3050,6 +3061,20 @@ CREATE INDEX passkey_enrolment_principal ON zz.passkey_enrolment USING btree (pr
 --
 
 CREATE INDEX passkey_principal ON zz.passkey USING btree (principal_id);
+
+
+--
+-- Name: pat_live_label; Type: INDEX; Schema: zz; Owner: -
+--
+
+CREATE UNIQUE INDEX pat_live_label ON zz.pat USING btree (principal_id, label) WHERE ((revoked_at IS NULL) AND (label <> ''::text));
+
+
+--
+-- Name: pat_principal; Type: INDEX; Schema: zz; Owner: -
+--
+
+CREATE INDEX pat_principal ON zz.pat USING btree (principal_id);
 
 
 --
@@ -3220,6 +3245,14 @@ ALTER TABLE ONLY zz.candidate
 
 ALTER TABLE ONLY zz.console_session
     ADD CONSTRAINT console_session_principal_id_fkey FOREIGN KEY (principal_id) REFERENCES zz.principal(id) ON DELETE CASCADE;
+
+
+--
+-- Name: console_session console_session_team_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.console_session
+    ADD CONSTRAINT console_session_team_id_fkey FOREIGN KEY (team_id) REFERENCES zz.team(id) ON DELETE SET NULL;
 
 
 --
@@ -3627,6 +3660,14 @@ ALTER TABLE ONLY zz.initiative
 --
 
 ALTER TABLE ONLY zz.mcp_oauth_authz
+    ADD CONSTRAINT mcp_oauth_authz_client_id_fkey FOREIGN KEY (client_id) REFERENCES zz.mcp_oauth_client(client_id) ON DELETE CASCADE;
+
+
+--
+-- Name: mcp_oauth_authz mcp_oauth_authz_principal_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.mcp_oauth_authz
     ADD CONSTRAINT mcp_oauth_authz_principal_id_fkey FOREIGN KEY (principal_id) REFERENCES zz.principal(id) ON DELETE CASCADE;
 
 
@@ -3671,14 +3712,6 @@ ALTER TABLE ONLY zz.passkey_challenge
 
 
 --
--- Name: passkey_enrolment passkey_enrolment_issued_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.passkey_enrolment
-    ADD CONSTRAINT passkey_enrolment_issued_by_fkey FOREIGN KEY (issued_by) REFERENCES zz.principal(id) ON DELETE SET NULL;
-
-
---
 -- Name: passkey_enrolment passkey_enrolment_principal_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -3692,6 +3725,14 @@ ALTER TABLE ONLY zz.passkey_enrolment
 
 ALTER TABLE ONLY zz.passkey
     ADD CONSTRAINT passkey_principal_id_fkey FOREIGN KEY (principal_id) REFERENCES zz.principal(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pat pat_oauth_client_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.pat
+    ADD CONSTRAINT pat_oauth_client_id_fkey FOREIGN KEY (oauth_client_id) REFERENCES zz.mcp_oauth_client(client_id);
 
 
 --
@@ -3748,6 +3789,14 @@ ALTER TABLE ONLY zz.plugin_version_skill
 
 ALTER TABLE ONLY zz.plugin_version_skill
     ADD CONSTRAINT plugin_version_skill_skill_version_id_fkey FOREIGN KEY (skill_version_id) REFERENCES zz.skill_version(id);
+
+
+--
+-- Name: principal principal_active_membership_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.principal
+    ADD CONSTRAINT principal_active_membership_fkey FOREIGN KEY (active_team_id, id) REFERENCES zz.membership(team_id, principal_id) ON DELETE SET NULL (active_team_id);
 
 
 --

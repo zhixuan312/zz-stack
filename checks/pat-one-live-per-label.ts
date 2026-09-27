@@ -1,7 +1,7 @@
 /**
  * One live token per purpose, on every writer of a platform access token.
  *
- * `002_identity_access.sql` adds a partial unique index — `(principal_id, label)` where
+ * `001_init.sql` declares a partial unique index — `(principal_id, label)` where
  * `revoked_at is null and label <> ''`. It is the database saying a label names one purpose, and
  * a purpose has one current credential. A writer that inserts without first revoking the live
  * token of the same purpose therefore does not fail where anyone is looking: the insert raises a

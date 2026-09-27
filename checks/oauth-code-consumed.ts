@@ -2,7 +2,7 @@
 /**
  * An authorization code is stored as its hash, and spent exactly once.
  *
- * `002_identity_access.sql` replaces `mcp_oauth_authz.id` (the raw code) with a `code_hash`
+ * `001_init.sql` replaces `mcp_oauth_authz.id` (the raw code) with a `code_hash`
  * primary key, because a code is a bearer credential for ten minutes: a reader of the table —
  * a backup, a slow-query log, anybody with a psql prompt — could otherwise replay a grant as
  * the person it was issued for. The hash is the same proof and none of the exposure.
@@ -178,7 +178,7 @@ for (const s of inserts) {
   }
   for (const gone of ["id", "state", "used"]) {
     if (names.includes(gone)) {
-      fail.push(`FAIL: ${REL} — the insert still names \`${gone}\`, which 002_identity_access.sql dropped`);
+      fail.push(`FAIL: ${REL} — the insert still names \`${gone}\`, which 001_init.sql dropped`);
     }
   }
   const values = /values\s*\(([\s\S]*)\)\s*$/i.exec(s.sql.replace(/\s+/g, " ").trim());

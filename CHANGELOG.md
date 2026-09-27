@@ -33,6 +33,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.83.1] — 2026-09-27
+
+0.83.0 was deployed to production and **left live and untagged**: its verification disagreed with
+`doctor` on one probe, and `002_delivery_telemetry.sql` is not reversible, so there was nothing to
+roll back to. This release deletes the one row that disagreement was about. Nothing else about
+0.83.0 changes, and its migration is already applied.
+
+### Fixed
+- **A run the timer invented is gone.** `zz.skill_run` held one — of 765 — stamped `sdlc-deck 1.0`,
+  released 1h14m *after* the run began. It is a `zz.run` the derivation 0.83.0 removed produced:
+  `reconcileRuns()` grouped events on a timer and stamped the run from whatever the registry held
+  when it fired, and this run's only evidence — a `tool_call core:skill_view` at 2026-09-10
+  09:15:25 — names no skill version at all. The door's writer requires all four parts of a run's
+  identity to resolve, so it would not create this row. It is deleted rather than repaired,
+  because no version of that skill existed when the call was made; its event keeps its own row.
+
+### Upgrade notes
+- **Migration `003_a_run_the_timer_invented.sql` runs on the gateway's next start.** It removes a
+  run whose evidence names no skill version, or whose stamped version was released after the run
+  began. On this deployment that is exactly one row, and on a database built from `001_init.sql`
+  it is a no-op.
+- **0.83.0's migration is already applied and nothing reverts it.** An image from 0.82.0 cannot
+  run against this schema, as 0.83.0's own entry says. Fix forward.
+
 ## [0.83.0] — 2026-09-27
 
 Phase 2 of the schema first-principles review (initiative

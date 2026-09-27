@@ -33,6 +33,94 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.82.0] — 2026-09-27
+
+Phase 1 of the schema first-principles review (initiative
+`2026-09-21-schema-first-principles-review`): the ten identity and access tables match the
+target the spec declares, and the two credential mechanisms that were still keeping a secret
+where a reader could find it stop doing that.
+
+### Added
+- **`client_list` and `client_revoke` on `/manage/mcp`** (superadmin). An MCP client registers
+  itself at `/oauth/register` and every registration is open to anyone, so "what is this, and
+  why does it have access" had no answer on the platform. `client_list` gives the id, the name
+  it registered with, its redirect URIs and when it registered — revoked clients included,
+  because an access review asks when access was cut off as well as whether it was.
+  `client_revoke` cuts off the client **and every token it obtained**, in one transaction;
+  "revoked" that left the tokens running would not answer the question.
+- **`checks/pat-one-live-per-label.ts`** — holds every writer of a platform token, the psql
+  statements in `deploy/` included, to revoking the live token of that principal and label
+  before inserting. No compiler reaches those two scripts.
+- **`checks/oauth-code-consumed.ts`** — reads the authorization-code path for the hash binding
+  and for the one statement that spends a code, so the property is a check rather than a
+  comment.
+
+### Changed
+- **One live token per purpose.** `zz.pat` carries a unique index on `(principal_id, label)`
+  among live tokens, and every mint path — `pat_issue`, the console's credential route, the
+  OAuth token endpoint, `issue-first-pat.sh` — revokes the live token of that principal and
+  label before inserting. An empty label is exempt: it is the label of every token minted
+  before labels existed.
+- **A platform token names the OAuth client that obtained it** (`pat.oauth_client_id`), so the
+  provenance survives the client's revocation instead of going with it.
+- **An authorization code is stored as its hash and spent exactly once**, by one statement that
+  also holds the client to being unrevoked. `mcp_oauth_authz.id`, `state` and `used` are gone;
+  `used_at` and `expires_at` replace them, and the code's ten-minute life is stated where it is
+  created rather than swept afterwards.
+- **The console's team is the session's own** (`console_session.team_id`). Switching team in
+  the console moves that browser and nothing else; `team_switch` on `/manage/mcp` moves the
+  principal, which is what every agent token and every other client reads. A session whose team
+  is deleted keeps running, in the principal's.
+- **A principal's active team must be a membership of theirs** — a composite foreign key makes
+  it a fact the database knows, and deleting a membership no longer leaves somebody acting for
+  a team they left.
+- **Every ephemeral grant is bounded by its own deadline.** `passkey_challenge.expires_at` and
+  `mcp_oauth_authz.expires_at` are the columns the sweep and the consumption read, and the
+  indexes follow them; the sweep now covers both tables.
+- **`team.slug` has a shape** — `^[a-z0-9][a-z0-9_-]{1,63}$`, enforced by a check constraint
+  rather than left to whichever caller mints one next. An existing slug that does not match
+  fails the migration rather than being silently rewritten.
+
+### Fixed
+- **A revoked OAuth client could still redeem an authorization code it had obtained**, and two
+  concurrent exchanges of the same code could both succeed. The exchange read the row, checked
+  it, and deleted it — the check and the spend were two steps with a window between them. It is
+  now one statement.
+- **`issue-first-pat.sh` mints one bootstrap token rather than adding to a pile.** Running it
+  again revokes the token the previous run wrote — one label names one purpose — in the same
+  transaction as the insert, and the notice says how many it revoked. Revoked, never deleted:
+  a revoked token's `last_used_at` is how anyone finds out whether production was still using
+  it.
+
+### Removed
+- **`zz-tool migrate-initiative-files`**, `packages/tools/src/migrate/`, and `002_initiative_anchor.sql`
+  (folded into `001_init.sql`). The carry ran on this deployment before 0.81.1 shipped — 47
+  initiatives closed, 48 given their opener — so the tool has nothing left to do, and a one-shot
+  backfill left in the tree is a backfill somebody runs a second time.
+
+### Upgrade notes
+- **Migration `002_identity_access.sql` runs on the gateway's next start.** It is not
+  reversible by rolling the image back: an older image writes columns this release drops, so a
+  rollback breaks sign-in, deactivation and OAuth. Fix forward.
+- **The migration changes data on purpose, and only what the old shape could not hold.** On this
+  deployment it: revokes **one token** — the older of two live tokens under the bootstrap label,
+  last used 2026-09-10; the newer one, in use, is left alone; gives **4 of 9** console sessions
+  the team their principal already acts for; and discards **one** in-flight OAuth authorization
+  code and every passkey challenge (both are ephemeral by contract, so a ceremony in progress at
+  the moment of the upgrade is restarted, not aged). It clears no active team and rewrites no
+  slug.
+- **Anything still holding the revoked bootstrap token stops working.** The one printed by
+  `issue-first-pat.sh` is the only live token under that label from now on.
+- Re-pull clients: the `zz-access` skill `zz-admin` changed at 2.9 — it covers the two client
+  tools and what "revoked" means for an application.
+
+### zz-stack-dashboard 0.21.1
+
+- **The Teams panel says what switching moves.** The aside reads "which one this browser acts
+  for" and the page's note says your agents keep acting for the team `team_switch` set. No
+  behaviour changed; 0.21.0's wording claimed the switch moved the person, which stopped being
+  true when the console's team became the session's own.
+
 ## [0.81.1] — 2026-09-27
 
 0.81.0 again, released after the step it depended on had run. **0.81.0 was deployed, failed

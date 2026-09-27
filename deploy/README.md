@@ -63,13 +63,15 @@ docker compose up -d --remove-orphans
 Then mint the one token that opens the platform:
 
 ```bash
-./issue-first-pat.sh --email you@example.com
+./issue-first-pat.sh you@example.com
 ```
 
 **Why a script mints the first token.** Every other way to get one needs one already —
 `pat_issue` resolves the caller before it will mint anything. A fresh install can therefore authenticate nobody, which is a closed loop with no
 door into it. `issue-first-pat.sh` is that door, and it is deliberately the operator's: it
-runs on the host, against the database, by someone who already has root.
+runs on the host, against the database, by someone who already has root. It mints **one**
+bootstrap token — run it again and the one the previous run wrote is revoked and replaced, and
+the notice says how many it revoked.
 
 ### The keys
 

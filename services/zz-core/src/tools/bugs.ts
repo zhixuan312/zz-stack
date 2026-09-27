@@ -247,7 +247,8 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
         duplicate_of: z.string().uuid().optional().describe(
           "The report this one duplicates, for a `duplicate` resolution. Required for it and " +
           "refused without it: a duplicate that names no target is a close nobody can follow, " +
-          "and the two are one fact the schema itself keeps in step."),
+          "and the two are one fact the schema itself keeps in step. The target is a report in " +
+          "your own team that is not this one — a duplicate is read by the team that filed it."),
       },
     },
     async ({ id, status, resolution, duplicate_of }) => {
@@ -272,11 +273,24 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
       const resolver = await principalId(db, who);
       if (!resolver) return noPrincipal(who);
       if (duplicate_of) {
-        const { rows: target } = await db.query<{ id: string }>(
-          "select id::text as id from zz.bug where id = $1::uuid", [duplicate_of]);
+        const { rows: target } = await db.query<{ id: string; team_id: string | null; is_self: boolean }>(
+          "select id::text as id, team_id::text as team_id, (id = $2::uuid) as is_self " +
+          "from zz.bug where id = $1::uuid", [duplicate_of, id]);
         if (!target.length) {
           return text(`ERROR: no bug with id ${duplicate_of} — ` +
             "`duplicate_of` names the report this one duplicates, and nothing carries that id.");
+        }
+        if (target[0].is_self) {
+          return text(`ERROR: bug ${id} cannot duplicate itself — ` +
+            "`duplicate_of` names the OTHER report this one duplicates, and a close saying " +
+            "\"same as this one\" records nothing a reader can follow. Nothing was written.");
+        }
+        const { rows: mine } = await db.query<{ team_id: string | null }>(
+          "select team_id::text as team_id from zz.bug where id = $1::uuid", [id]);
+        if (mine.length && mine[0].team_id !== target[0].team_id) {
+          return text(`ERROR: bug ${id} cannot duplicate bug ${duplicate_of} — a duplicate is read ` +
+            "by the team that filed the report, and `bug_list` answers for one team, so the report " +
+            "it points at has to be one of yours. Nothing was written.");
         }
       }
       // Only from open, so two operators closing the same report do not overwrite each other's

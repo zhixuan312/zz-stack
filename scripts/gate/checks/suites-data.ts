@@ -75,6 +75,12 @@ check("the artifact and search tables are gone, knowledge_node is the spec's sha
 // of `team_id`, `node_ordinal`, `slug` and `superseded_by_id` has a writer.
 check("knowledge_node's writers and readers answer from the ids, and the evidence relation is written and read",
       runsCheck("knowledge-node-ids.ts"));
+// `han-retrieval.ts` is I-36's: the Han clause is still a substring match, and the Han half of
+// `body_tsv` is read rather than left write-only. Its `run:` half is the EXPLAIN that shows
+// the trigram index serving the predicate, which `text-search-config-agreement.ts` proves by
+// running the scoring assembly rather than by a textual proxy.
+check("Chinese retrieval still matches as a substring, and the Han half its index needs is read rather than left write-only",
+      runsCheck("han-retrieval.ts"));
 
 check("the resolvers are applied wherever a stored name is read", runsCheck("alias-applied.ts"));
 

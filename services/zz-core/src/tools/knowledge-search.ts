@@ -37,7 +37,61 @@ interface SearchRow extends KbRow {
  *  kind of empty an empty answer is; this one produces its inputs. */
 import { recallOutcomeFrom, type RecallSignals } from "./knowledge-search-verdict.js";
 /** The query-to-WHERE-clause half, split out by subject — see that file's header. */
-import { HAN_SCALAR_RE, HAN_SQL_CLASS, LATIN_SQL_CLASS, QUERY_CONFIG, buildSearchPredicate } from "./search-predicate.js";
+import { HAN_SCALAR_RE, HAN_SQL_CLASS, LATIN_SQL_CLASS, QUERY_CONFIG, SIMPLE_QUERY_CONFIG, buildSearchPredicate,
+         type SearchPredicate } from "./search-predicate.js";
+
+
+/** Matched terms are marked in markdown rather than ts_headline's default <b>: the rest of this
+ *  corpus is markdown, and a model reading HTML tags in a snippet treats them as content.
+ *
+ *  COUPLED: `QUERY_CONFIG`, so the document is parsed the way the row's Latin half was stored.
+ *  The Han lane does not come through here — see `scoringOf` for why it cannot. */
+function headlineOf(rankExpr: string): string {
+  return `ts_headline(${QUERY_CONFIG}, body, ${rankExpr},
+                 'MaxFragments=2, MaxWords=28, MinWords=12, FragmentDelimiter=" … ",
+                  StartSel=**, StopSel=**')`;
+}
+
+/** The `rank` and `snippet` columns one attempt selects by, and the parameters they must bind —
+ *  the attempt's own, plus one for a Han lane's lexemes when that is the lane that scores it.
+ *
+ *  `rankExpr` is the ASCII lane's `websearch_to_tsquery` call, and an attempt that has one is
+ *  scored exactly as it was before this lane existed.
+ *
+ *  A Han clause has none, and cannot have one: PostgreSQL's parser decides an unspaced Han run's
+ *  token boundary before any dictionary runs, so a Han clause handed to the ASCII lane's
+ *  `websearch_to_tsquery` call is one token that matches nothing the analyzer stored. Such a
+ *  clause is MATCHED as a literal `body` substring — which is what the `gin (body gin_trgm_ops)`
+ *  index serves — and scored here through the half of `body_tsv` the analyzer wrote it into: every
+ *  Han unigram this attempt analysed, ANDed, through `SIMPLE_QUERY_CONFIG`, whose identity
+ *  dictionary leaves a stored unigram equal to the term the query sends. Without it a Han-only
+ *  query ties at zero, which is what every Han-only match did before this lane existed.
+ *
+ *  DELIBERATE: the rank does not span both halves. An attempt that has an ASCII clause keeps the
+ *  rank it has always had, and a Han clause beside it adds nothing to it — this lane reaches
+ *  exactly the queries that had no rank to lose.
+ *
+ *  DELIBERATE: no `ts_headline` for the Han lane. It parses the document with the configuration's
+ *  own parser, which reads an unspaced Han run as one opaque token, so it can mark nothing a
+ *  unigram query asks for and would hand back the whole run as its one "fragment". The first 400
+ *  characters are a worse excerpt than a marked one and a better one than that.
+ *
+ *  Exported, and pure, so a gate check can run it without a database: a rank column is not a
+ *  WHERE clause, so `buildSearchPredicate` cannot show this half of the config agreement. */
+export function scoringOf(attempt: SearchPredicate): { sql: string; args: unknown[] } {
+  const args: unknown[] = [...attempt.args];
+  if (attempt.rankExpr) {
+    return { args, sql: `ts_rank_cd(body_tsv, ${attempt.rankExpr}) as rank, ${headlineOf(attempt.rankExpr)} as snippet` };
+  }
+  if (attempt.hanTerms.length) {
+    // The lexeme string is bound, numbered past the attempt's own parameters, so the statement's
+    // numbering is still 1..n with none skipped — PostgreSQL refuses to parse one that skips.
+    args.push(attempt.hanTerms.join(" & "));
+    const query = `to_tsquery(${SIMPLE_QUERY_CONFIG}, $${args.length})`;
+    return { args, sql: `ts_rank_cd(body_tsv, ${query}) as rank, left(body, 400) as snippet` };
+  }
+  return { args, sql: "0::float4 as rank, left(body, 400) as snippet" };
+}
 
 
 
@@ -173,22 +227,13 @@ export function registerKnowledgeSearch(server: McpServer): void {
       // COUPLED: scripts/gate/checks/documents-schema.ts reads this exact character class.
       const tokens = (query ?? "").toLowerCase().split(/[^a-z0-9\p{Script=Han}]+/u).filter(Boolean);
 
-      // Matched terms are marked in markdown rather than ts_headline's default <b>: the rest of
-      // this corpus is markdown, and a model reading HTML tags in a snippet treats them as content.
-      const headlineOf = (rankExpr: string) => `ts_headline(${QUERY_CONFIG}, body, ${rankExpr},
-                 'MaxFragments=2, MaxWords=28, MinWords=12, FragmentDelimiter=" … ",
-                  StartSel=**, StopSel=**')`;
-      // `rankExpr` is null for a query with no ASCII clause to rank by — a Han-only match has no
-      // `body_tsv` signal to score, so every matching row ties on rank and the tiebreak
-      // (`updated_at desc`) orders them, the same as a query-less search.
-      const rank = primary.rankExpr ? `ts_rank_cd(body_tsv, ${primary.rankExpr})` : "0::float4";
-      const head = primary.rankExpr ? headlineOf(primary.rankExpr) : "left(body, 400)";
       const CANDIDATE_CAP = 200;
-      const sql = `select ${COLS}, ${rank} as rank, ${head} as snippet
+      const exact = scoringOf(primary);
+      const sql = `select ${COLS}, ${exact.sql}
                    from ${SOURCE} where ${primary.sql}
                    order by ${query ? "rank desc, updated_at desc" : "updated_at desc"}
                    limit ${CANDIDATE_CAP}`;
-      let lexical = (await p.query(sql, primary.args)).rows as SearchRow[];
+      let lexical = (await p.query(sql, exact.args)).rows as SearchRow[];
 
       /* Nothing came back, so ask the same question with OR before answering "nothing is known".
        * `websearch_to_tsquery` joins unquoted terms with AND, so a long question requires one
@@ -210,13 +255,12 @@ export function registerKnowledgeSearch(server: McpServer): void {
           includeSuperseded: withHistory ? undefined : false, broadened: true,
         });
         if (wide.broadened) {
-          const wRank = wide.rankExpr ? `ts_rank_cd(body_tsv, ${wide.rankExpr})` : "0::float4";
-          const wHead = wide.rankExpr ? headlineOf(wide.rankExpr) : "left(body, 400)";
+          const broad = scoringOf(wide);
           lexical = (await p.query(
-            `select ${COLS}, ${wRank} as rank, ${wHead} as snippet
+            `select ${COLS}, ${broad.sql}
                from ${SOURCE} where ${wide.sql}
               order by rank desc, updated_at desc
-              limit ${CANDIDATE_CAP}`, wide.args)).rows as SearchRow[];
+              limit ${CANDIDATE_CAP}`, broad.args)).rows as SearchRow[];
           broadened = lexical.length > 0;
         }
       }

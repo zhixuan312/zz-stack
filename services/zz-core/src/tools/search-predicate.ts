@@ -35,9 +35,21 @@ export const LATIN_SQL_CLASS = "[A-Za-z]";
 
 /** The text-search configuration every query below is parsed with, quoted for SQL. COUPLED: read
  *  from `@zz/indexing` because the write path stores a row's Latin terms through this same name,
- *  and a stemmed query does not match an unstemmed stored word. Nothing here needs the Han
- *  configuration: a Han clause is matched as a `body` substring, never through the vector. */
+ *  and a stemmed query does not match an unstemmed stored word. */
 export const QUERY_CONFIG = sqlLiteral(TEXT_SEARCH_CONFIG.latin);
+
+/** The configuration the OTHER half of `body_tsv` is read through, quoted for SQL — read from
+ *  `TEXT_SEARCH_CONFIG.han` and never spelled, for the same reason as `QUERY_CONFIG`, and named
+ *  for the dictionary rather than for the half it serves because that is what the Han lane needs
+ *  of it: an identity configuration, so the unigram the query sends is the lexeme the row holds.
+ *  A Han clause is still MATCHED as a `body` substring and never through the vector; this is what
+ *  scores the rows it matched, and it is read by `knowledge-search.ts`, which owns the ranking
+ *  columns.
+ *
+ *  DELIBERATE: the two halves cannot share one configuration. Stored through `english`, the
+ *  analyzer's Han unigrams would be rewritten on their way in — `simple` is the only name that
+ *  leaves an opaque term alone, and the ranking bigrams `analyze` emits depend on that. */
+export const SIMPLE_QUERY_CONFIG = sqlLiteral(TEXT_SEARCH_CONFIG.han);
 
 /** Embeds `text` as a single-quoted SQL literal: every embedded quote is doubled. DELIBERATE: a
  *  Han clause's own text is inlined here rather than bound as `$N`, so the predicate a caller
@@ -70,15 +82,23 @@ interface SearchPredicateArgs {
   readonly includeSuperseded?: boolean;
 }
 
-interface SearchPredicate {
+export interface SearchPredicate {
   /** The full WHERE-clause body (already `and`-joined), ready to splice after `where `. */
   readonly sql: string;
-  /** Bound parameters `sql`'s `$1`, `$2`, … refer to. */
+  /** Bound parameters `sql`'s `$1`, `$2`, … refer to. Does not include whatever the caller's own
+   *  scoring columns bind — `hanTerms` is handed over rather than bound here, because the ranking
+   *  columns are `knowledge-search.ts`'s and a parameter this statement never references is one
+   *  PostgreSQL refuses to parse. */
   readonly args: unknown[];
   /** A ready `to_tsquery`/`websearch_to_tsquery` call for `ts_rank_cd`/`ts_headline` to rank and
-   *  excerpt the ASCII portion by, or `null` when the query had no ASCII clause. A Han-only
-   *  query's matching rows all come back, tied on rank. */
+   *  excerpt the ASCII portion by, or `null` when the query had no ASCII clause. */
   readonly rankExpr: string | null;
+  /** Every Han unigram the positive — never an excluded — Han-bearing clause analysed into, in
+   *  first-seen order and de-duplicated. The caller ranks a Han clause's matches by these,
+   *  through `SIMPLE_QUERY_CONFIG`: they are the lexemes the write path stored, and PostgreSQL's
+   *  parser cannot produce them from an unspaced run, so `websearch_to_tsquery` finds nothing in
+   *  that half of `body_tsv`. Empty when the query carried no Han clause. */
+  readonly hanTerms: readonly string[];
   /** Every `zz-lexical-v2` base term (Han unigrams, whole Latin words) the query analysed into,
    *  across every positive and excluded clause, for a caller building tag or neighbour-expansion
    *  candidates from the same query. */
@@ -127,6 +147,18 @@ export function buildSearchPredicate(a: SearchPredicateArgs): SearchPredicate {
   // does not build.
   const termsOf = (t: string): string[] => analyze(t).base.map((b) => (b.field === "han" ? b.term : b.term.toLowerCase()));
 
+  // The Han half of one analysed clause, for the caller's rank. Taken from the positive clauses
+  // only: an excluded clause narrows an answer and never earns a row a better rank.
+  const hanTerms: string[] = [];
+  const hanSeen = new Set<string>();
+  const collectHan = (analysed: readonly string[]): void => {
+    for (const term of analysed) {
+      if (!HAN_SCALAR_RE.test(term) || hanSeen.has(term)) continue;
+      hanSeen.add(term);
+      hanTerms.push(term);
+    }
+  };
+
   if (a.query) {
     let ast: QueryAst;
     try {
@@ -151,7 +183,8 @@ export function buildSearchPredicate(a: SearchPredicateArgs): SearchPredicate {
         continue;
       }
       if (clause.kind === "phrase" || clause.kind === "term") {
-        terms.push(...termsOf(clause.text));
+        const analysed = termsOf(clause.text);
+        terms.push(...analysed);
         const han = HAN_SCALAR_RE.test(clause.text);
         // Only an unquoted term is ever eligible; a quoted phrase stays mandatory whether or not
         // broadening was asked for.
@@ -160,6 +193,7 @@ export function buildSearchPredicate(a: SearchPredicateArgs): SearchPredicate {
         // effect. Building the ASCII fragment and discarding it binds a `$N` the SQL never
         // references, and PostgreSQL refuses to parse a statement whose numbering skips one.
         if (han) {
+          collectHan(analysed);
           const frag = `body ilike ${sqlLiteral(likePattern(clause.text))}`;
           if (mayRelax) eligible.push(frag); else mandatory.push(frag);
         } else if (mayRelax) {
@@ -174,8 +208,11 @@ export function buildSearchPredicate(a: SearchPredicateArgs): SearchPredicate {
       // Alternation survives broadening as one mandatory unit, ORing its own operands — a Han
       // operand by substring, an ASCII one by the same tsvector match.
       const parts = (clause.alternatives ?? []).map((alt) => {
-        terms.push(...termsOf(alt.text));
-        return HAN_SCALAR_RE.test(alt.text)
+        const analysed = termsOf(alt.text);
+        terms.push(...analysed);
+        const han = HAN_SCALAR_RE.test(alt.text);
+        if (han) collectHan(analysed);
+        return han
           ? `body ilike ${sqlLiteral(likePattern(alt.text))}`
           : `body_tsv @@ websearch_to_tsquery(${QUERY_CONFIG}, ${put(alt.text)})`;
       });
@@ -197,5 +234,5 @@ export function buildSearchPredicate(a: SearchPredicateArgs): SearchPredicate {
 
   cond.push(...mandatory);
 
-  return { sql: cond.join(" and "), args, rankExpr, terms, excluded, broadened, unsafe };
+  return { sql: cond.join(" and "), args, rankExpr, hanTerms, terms, excluded, broadened, unsafe };
 }

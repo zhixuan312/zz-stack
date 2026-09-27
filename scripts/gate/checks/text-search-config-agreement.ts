@@ -9,6 +9,13 @@ import { check } from "../run.ts";
 // both the write and the read path read them from there. These checks assert that, not the SQL
 // text two files happen to spell the same way today.
 //
+// The read path reads both halves: the Latin lane parses through `QUERY_CONFIG` and is probed
+// through the predicate builder, and the Han lane's rank is scored through `SIMPLE_QUERY_CONFIG`
+// and is probed through the handler's own scoring assembly. One check per half, because each half
+// has a different way of going wrong: a stemmed query against an unstemmed word finds nothing at
+// all, and a Han clause ranked through the Latin configuration finds every row it matched and
+// ranks none of them.
+//
 // A stemmed query does not match an unstemmed stored word, even when they are the same word:
 // `to_tsvector('simple','This migration replaces the old schema') @@
 // websearch_to_tsquery('english','migration')` is false. Every English word whose stem differs
@@ -117,6 +124,81 @@ check("the read path queries with the configuration the write path stored a lati
   } catch (err) {
     const e = err as { stderr?: Buffer | string; message?: string };
     return `the read-path probe could not run, so this agreement is unchecked: ${String(e.stderr ?? e.message ?? err)}`;
+  }
+  const bad = JSON.parse(out.trim()) as string[];
+  if (bad.length) return bad.join("; ");
+});
+
+check("the read path scores a Han clause through the configuration the write path stored the Han half through, and binds every parameter the statement it builds names", () => {
+  // The other half of the same decision, and the one the predicate above cannot show: a Han clause
+  // is MATCHED as a literal `body` substring — which the trigram index serves — but it is RANKED
+  // through the half of `body_tsv` the analyzer wrote its unigrams into. Scored through the Latin
+  // configuration instead, it would rank nothing: `english` rewrites an opaque term on its way in,
+  // so `ts_rank_cd` would return zero for every row the clause matched, with no error and nothing
+  // in the row to see.
+  //
+  // Runs the handler's own scoring assembly rather than the predicate builder, because the rank
+  // column is the handler's — `buildSearchPredicate` turns a query into a WHERE clause and has no
+  // rank in it. That split is why this half needs a check of its own rather than one more case in
+  // the probe above, and it is also where the second assertion comes from: the Han lane appends a
+  // parameter to the predicate's, so the assembled statement has one more `$N` than the predicate
+  // had and `query-arity.ts` counts neither — it reads whole statements and skips every assembled
+  // one. A statement whose numbering skips is one PostgreSQL refuses to parse, so the lane would
+  // answer nothing at all rather than answering wrong.
+  const probe = `
+    import { buildSearchPredicate } from ${JSON.stringify(join(root, "services/zz-core/dist/tools/search-predicate.js"))};
+    import { scoringOf } from ${JSON.stringify(join(root, "services/zz-core/dist/tools/knowledge-search.js"))};
+    const want = ${JSON.stringify(TEXT_SEARCH_CONFIG.han)};
+    const bad = [];
+    // A term, a longer unspaced run, an alternation with an ASCII operand, and each of them again
+    // as the broadening retry. Only the Han-only ones are ranked here: an attempt carrying an
+    // ASCII clause keeps the rank it has always had.
+    const queries = ["\\u8fc1\\u79fb", "\\u8fc1\\u79fb\\u4f1a\\u7834\\u574f\\u65e7\\u7684\\u6a21\\u5f0f",
+                     "\\u8fc1\\u79fb OR migration", "\\u8fc1\\u79fb -\\u6d4b\\u8bd5", "\\u8fc1\\u79fb migration"];
+    for (const query of queries) {
+      for (const broadened of [false, true]) {
+        const attempt = buildSearchPredicate({ query, broadened });
+        const scoring = scoringOf(attempt);
+        const where = attempt.sql + (broadened ? " (broadened)" : "");
+        // The statement as the handler assembles it, the predicate and the scoring columns
+        // together — the one shape whose numbering PostgreSQL has to accept.
+        const composed = "select id, " + scoring.sql + " from t where " + attempt.sql;
+        const refs = [...new Set([...composed.matchAll(/\\$(\\d+)/g)].map((m) => Number(m[1])))].sort((a, b) => a - b);
+        if (refs.length !== scoring.args.length || refs.some((n, i) => n !== i + 1)) {
+          bad.push(where + ": binds " + scoring.args.length + " parameter(s) but the composed statement names $" +
+                   (refs.join(", $") || "none") + " - PostgreSQL cannot parse a statement whose numbering skips one");
+        }
+        if (!attempt.hanTerms.length) { bad.push(where + " analysed into no Han terms at all"); continue; }
+        // Every configuration the scoring names, whichever lane built it: the Han half's call for
+        // the Han lane, the ASCII lane's websearch_to_tsquery call for the other.
+        const configs = [...scoring.sql.matchAll(/tsquery\\(\\s*'([a-z_]+)'/g)].map((m) => m[1]);
+        if (attempt.rankExpr) {
+          // The control. An attempt carrying an ASCII clause keeps the rank it has always had, so
+          // the Han half's configuration must not appear here — without this, a lane that was
+          // never exercised would pass the assertion below by having nothing to fail it.
+          if (configs.includes(want)) bad.push(where + " carries an ASCII clause and still ranked through the Han half");
+          continue;
+        }
+        if (!configs.length) {
+          bad.push(where + " built no rank for its Han terms, so every row it matches ties at zero");
+          continue;
+        }
+        for (const got of configs) {
+          if (got !== want) {
+            bad.push(where + " ranks through '" + got + "' while the write path stored the Han half "
+                     + "through '" + want + "'");
+          }
+        }
+      }
+    }
+    console.log(JSON.stringify(bad));
+  `;
+  let out: string;
+  try {
+    out = execFileSync(process.execPath, ["--input-type=module", "-e", probe], { encoding: "utf8", cwd: root });
+  } catch (err) {
+    const e = err as { stderr?: Buffer | string; message?: string };
+    return `the Han read-path probe could not run, so this agreement is unchecked: ${String(e.stderr ?? e.message ?? err)}`;
   }
   const bad = JSON.parse(out.trim()) as string[];
   if (bad.length) return bad.join("; ");

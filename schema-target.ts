@@ -16,6 +16,7 @@ import type { SchemaTarget } from "./scripts/schema/types.ts";
 import { IDENTITY } from "./schema-target/identity.ts";
 import { SIGN_IN } from "./schema-target/sign-in.ts";
 import { DELIVERY } from "./schema-target/delivery.ts";
+import { DOCUMENTS } from "./schema-target/documents.ts";
 import { KNOWLEDGE } from "./schema-target/knowledge.ts";
 import { TELEMETRY } from "./schema-target/telemetry.ts";
 import { CATALOG } from "./schema-target/catalog.ts";
@@ -27,6 +28,6 @@ import { IMPROVE } from "./schema-target/improve.ts";
 import { CONTROL } from "./schema-target/control.ts";
 
 export const SCHEMA_TARGET: SchemaTarget = {
-  phase: 5,
-  tables: { ...IDENTITY, ...SIGN_IN, ...DELIVERY, ...KNOWLEDGE, ...TELEMETRY, ...CATALOG, ...EVAL_LEGACY, ...EVAL_PROTOCOL, ...EVAL_OBSERVE, ...EVAL_RUN, ...IMPROVE, ...CONTROL },
+  phase: 6,
+  tables: { ...IDENTITY, ...SIGN_IN, ...DELIVERY, ...DOCUMENTS, ...KNOWLEDGE, ...TELEMETRY, ...CATALOG, ...EVAL_LEGACY, ...EVAL_PROTOCOL, ...EVAL_OBSERVE, ...EVAL_RUN, ...IMPROVE, ...CONTROL },
 };

@@ -167,8 +167,73 @@ export function declaredTableNames(pendingMigrations: readonly string[]): string
  * and an initiative that exist. Those joins ran against the 2026-09-27 backup and every one
  * returned zero violating rows, which is what made the fold safe to take.
  *
- * The map is EMPTY now, and that is the correct state for a checkout whose migrations are all
- * folded: there is no pending file left to declare an expectation for. It refills on the next
- * phase's first migration.
+ * The map is no longer empty: the phase-6 store migration is pending, and it declares the two
+ * tables it creates, the one it reshapes and the three joins that say what it did to the data — the
+ * answer being "nothing", which is the claim `doc`'s entry has to make precisely.
  */
-export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {};
+export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
+  "002_database_store.sql": {
+    tables: {
+      // Both are created here and hold no row when this file is done: the carry that fills them from
+      // the teams' stores is a later migration's, and `added` is the only expectation that says so —
+      // a count would be a claim about rows this file may not write.
+      doc_revision: { added: true },
+      doc_link: { added: true },
+      // `doc` is NOT declared added, dropped or moved: every row it has survives untouched, and what
+      // changes is its shape. `current_revision` and `approved_revision` are the migration's own
+      // columns — they are null on every existing row — so they are the two a digest leaves out.
+      //
+      // DELIBERATE, and the one weakness in this file: `doc`'s content is NOT hashed, because this
+      // migration changes the key the digest is ORDERED by. `scripts/rehearse/snapshot.ts:95` orders
+      // each side by the LIVE primary key — on the before side `(team_slug, initiative, path)`, on
+      // the after side `(id)` — so the same rows concatenate in a different order and the two MD5s
+      // differ for that reason alone. `contentHash: "unchanged"` cannot pass here on a correct
+      // migration, and the two digests were measured to be the ordering's doing and nothing else:
+      // over the 2026-09-27 backup's 1,472 rows, `doc`'s 24 pre-existing columns hash to
+      // `aa097b3e651e65e06558cdbe5f39bf05` on BOTH sides when ordered by `(team_slug, initiative,
+      // path)`, and to `0d3faec954e940e200d902374fc5d635` on BOTH sides when ordered by `id` — no
+      // column of any row differs, only the order the two sides read them in.
+      //
+      // The one-line change that would let this be declared rather than described is in
+      // `snapshot.ts:95`: order by the declared `hashColumns` when a migration declares them (they
+      // exist on both sides by definition, and a list carrying the row's own id is a total order),
+      // falling back to the live key otherwise. Measured: with both sides ordered by the 24 declared
+      // columns the digest is `aa097b3e651e…` on each, so the declaration below becomes
+      // `hashColumns: [<the 24>]` with `contentHash` unchanged. It is named here rather than applied
+      // because `snapshot.ts` belongs to no phase-6 task.
+      doc: { contentHash: "skip" },
+    },
+    joins: [
+      // The tightened key points where the store's own slug pair points. This file tightens
+      // `doc.initiative_id` to `not null` and changes its delete action; the column's VALUE is the
+      // carry's business, and this is the join that says the two addresses agree rather than that the
+      // constraint is satisfied — a foreign key cannot be violated, and a row keyed to the wrong
+      // initiative of the same team violates nothing.
+      {
+        name: "doc.initiative_id is the initiative its (team_slug, initiative) names",
+        violatingCount: `select count(*)::int as n from zz.doc d
+          left join zz.team t on t.slug = d.team_slug
+          left join zz.initiative i on i.team_id = t.id and i.slug = d.initiative
+          where d.initiative_id is distinct from i.id`,
+      },
+      // The two revision keys name a revision that exists. Vacuously true here — this file writes no
+      // row, so both columns are null on all of them — and it is declared anyway, because it is the
+      // claim the carry that fills them has to keep and the rehearsal is where a later migration
+      // meets it. A current revision with no row is a document whose content has no authority.
+      {
+        name: "every doc.current_revision names a revision of that document",
+        violatingCount: `select count(*)::int as n from zz.doc d
+          where d.current_revision is not null
+            and not exists (select 1 from zz.doc_revision r
+                             where r.doc_id = d.id and r.revision = d.current_revision)`,
+      },
+      {
+        name: "every doc.approved_revision names a revision of that document",
+        violatingCount: `select count(*)::int as n from zz.doc d
+          where d.approved_revision is not null
+            and not exists (select 1 from zz.doc_revision r
+                             where r.doc_id = d.id and r.revision = d.approved_revision)`,
+      },
+    ],
+  },
+};

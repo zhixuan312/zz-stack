@@ -113,3 +113,10 @@ check("the chain check runs where a deployment exists, and not in this gate",
 
 check("every completion the judge asks for is recorded, and an unreported figure stays null",
       runsCheck("judge-usage.ts"));
+
+// Phase 6's first: the document store's shape. It asserts the TARGET — `doc_revision` and
+// `doc_link` in the spec's shape and `doc` carrying its new keys, with the current-revision key
+// deferrable BY COLUMN NAME — because the target is what the migration is written to match.
+// Registered after the wave that writes it, as every check is.
+check("the document store is declared: two new tables, and doc's new identity keys",
+      runsCheck("store-shape.ts"));

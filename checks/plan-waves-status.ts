@@ -10,7 +10,13 @@
  *      `owns_overlap` against a task id, derives no waves, and says so in `next_move.why`;
  *   3. the same plan still in draft reports the violation and adds no note — the note is about
  *      a gate already recorded, not about a draft being worked on;
- *   4. an initiative with no plan.md yet carries no `plan` field at all.
+ *   4. an initiative with no plan.md yet carries no `plan` field at all;
+ *   5. a plan whose only phase carries `### As built` answers `current_phase: null` and offers the
+ *      review round — nothing is left to execute;
+ *   6. a plan with a phase still to build answers `current_phase` for it and routes to
+ *      `sdlc-execute`, never to a review round: the round would sweep a change that is a fraction
+ *      written. This is the defect 0.83.2 fixes — an approved plan was read as a built plan, so a
+ *      seven-phase plan answered with a review round from its third phase onward.
  *
  * Run: node checks/plan-waves-status.ts   (also run by scripts/gate.ts)
  */
@@ -36,6 +42,11 @@ const task = (n: number, deps: string, owns: string) =>
   `### Task I-${n}: T${n} (← AC-1.${n})\n**Output:** o${n}\n**Dependencies:** ${deps}\n**Owns:** ${owns}\n\n`;
 const planBody = (...tasks: string[]) => "# Plan\n\n## Phase 0 — Skeleton\n\n" + tasks.join("") +
   "## Integration hotspots\n\n- `CHANGELOG.md`\n\n## Full-suite gate\n\n`npm run gate`\n";
+/** The same plan with its phase's `### As built`, which is what `current_phase` reads to decide
+ *  whether a phase is still to build. */
+const planBodyBuilt = (...tasks: string[]) => "# Plan\n\n## Phase 0 — Skeleton\n\n" + tasks.join("") +
+  "### As built\n\nPhase 0 is built.\n\n## Integration hotspots\n\n- `CHANGELOG.md`\n\n" +
+  "## Full-suite gate\n\n`npm run gate`\n";
 
 const DISJOINT = planBody(task(1, "none", "`packages/a/**`"), task(2, "none", "`packages/b/x.ts`"),
                           task(3, "Task I-1", "`packages/a/extra.ts`"));
@@ -43,12 +54,23 @@ const OVERLAP = planBody(task(1, "none", "`packages/a/**`"), task(2, "none", "`p
 const spec = doc({ title: "Spec", status: "approved", approved_by: "ada@zz.test" }, "# Spec");
 
 const root = mkdtempSync(join(tmpdir(), "zz-plan-waves-"));
-const stateOf = (name: string, planText: string | null, status: string) => {
+/** A recorded audit round: a source naming its stage and supporting the document it audited, which
+ *  is all `auditMove` needs to stop owing that stage. */
+const auditRound = (stage: string, supports: string) =>
+  doc({ type: "source", title: `${stage} round 1`, contributed_by: "ada@zz.test", supports,
+        stage, audits_version: "1" },
+      "# Round 1\n\n```json\n{\"round\":1,\"findings\":[],\"resolved\":[]}\n```\n");
+const stateOf = (name: string, planText: string | null, status: string, audited = false) => {
   mkdirSync(join(root, name), { recursive: true });
   recordOpen(root, name, "sdlc-flow", "ada@zz.test");
   writeFileSync(join(root, name, "spec.md"), spec);
   if (planText !== null) {
     writeFileSync(join(root, name, "plan.md"), doc({ title: "Plan", status, flow: "sdlc-flow" }, planText));
+  }
+  if (audited) {
+    mkdirSync(join(root, name, "sources"), { recursive: true });
+    writeFileSync(join(root, name, "sources", "2026-09-26-audit-spec.md"), auditRound("sdlc-spec-audit", "spec.md"));
+    writeFileSync(join(root, name, "sources", "2026-09-26-audit-plan.md"), auditRound("sdlc-plan-audit", "plan.md"));
   }
   const chain = chainFor(root, `${name}/x.md`);
   is(chain.name === "sdlc-flow", `${name}: the fixture did not resolve to sdlc-flow — every assertion below would pass on nothing`);
@@ -86,6 +108,26 @@ try {
   // 4. No plan yet: no field.
   const none = stateOf("2026-09-26-unplanned", null, "draft");
   is(!("plan" in none) || none.plan === undefined, `an initiative with no plan.md answered plan ${JSON.stringify(none.plan)}`);
+
+  // 5. Every written phase is built: with both audits recorded, the review round is what is owed.
+  //    A phase is built when it carries its `### As built`, which is what `current_phase` reads.
+  const built = stateOf("2026-09-26-built", planBodyBuilt(task(1, "none", "`packages/a/**`")), "approved", true);
+  is(built.plan?.current_phase === null,
+     `a plan whose phase carries ### As built answered current_phase ${built.plan?.current_phase}, not null`);
+  is(built.next_move?.action === "add_source" && built.next_move?.document === "review.md",
+     `a plan with every phase built was not offered the review round: ${JSON.stringify(built.next_move)}`);
+
+  // 6. A phase still to build: `sdlc-execute` for it, and no round offered.
+  const executing = stateOf("2026-09-26-executing", planBody(task(1, "none", "`packages/a/**`")), "approved", true);
+  is(executing.plan?.current_phase === 0,
+     `a plan whose phase carries no ### As built answered current_phase ${executing.plan?.current_phase}, not 0`);
+  is(executing.next_move?.action === "run_stage" && executing.next_move?.stage === "sdlc-execute",
+     `a plan with phase 0 still to build answered ${executing.next_move?.action}/${executing.next_move?.stage}, ` +
+     "not run_stage/sdlc-execute");
+  is(executing.next_move?.why.includes("phase 0 still to build"),
+     `the execute move did not name the phase: ${executing.next_move?.why}`);
+  is(executing.next_move?.document !== "review.md",
+     "a plan with a phase still to build was offered the review round");
 } finally {
   rmSync(root, { recursive: true, force: true });
 }

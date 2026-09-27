@@ -22,6 +22,7 @@ import { reviewMove } from "../review-rounds.js";
 import { factsFor, openRecord, recordsFor } from "../initiative-record.js";
 import { chainFor } from "../chain.js";
 import { planStructure, planStructureNote, type PlanStructure } from "../plan-structure.js";
+import { isHandover, owedActs } from "../stage-records.js";
 import { safeName, userRoot } from "../paths.js";
 import { Refusal } from "../refusal.js";
 import { logActivity } from "../persist.js";
@@ -105,50 +106,6 @@ function sourceReport(dir: string, statusOf: (docName: string) => string | null)
     }
   }
   return { sourceFiles, needsRefinement };
-}
-
-/** What a stage's record says it still owes, first first, each as the sentence `next_move.why`
- *  carries. Empty for a record that owes nothing or has discharged it.
- *
- *  COUPLED: the record shape eval/stage-record.ts writes — `owes`, one key per act once it
- *  lands, `qualify_owed` and `qualified.<measure>`. Read here rather than imported: the
- *  evaluation modules are reached from the evaluation side only (checks/eval-tools-moved.ts). */
-function owedActs(
-  record: Readonly<Record<string, string>> | undefined, initiative: string,
-  /** The document the stage produced, as it stands now. */
-  produced: string,
-): string[] {
-  if (!record?.owes) return [];
-  // Bound to a version the document no longer quotes: it was revised to a newer protocol version,
-  // and that version is neither bound nor qualified, whatever this record says of the old one.
-  const stale = !!record.affirmed_digest && !produced.includes(record.affirmed_digest);
-  if (stale) {
-    return [`protocol.md now quotes a protocol version this initiative has not bound — call ` +
-      `protocol_affirm with that version (initiative: "${initiative}"), then evaluator_qualify for ` +
-      "each model-backed measure it names, before EVALUATE scores"];
-  }
-  const owed = (record.qualify_owed ?? "").split(",").filter(Boolean)
-    .filter((k) => !record[`qualified.${k}`]);
-  // Not protocol_read's: on a revise it answers the version being replaced, and binding that one
-  // would affirm the old protocol under the new document.
-  const version = record.protocol_version_id ?? "<the protocol_version_id protocol_record returned, the version protocol.md quotes>";
-  const why: Record<string, string> = {
-    protocol_affirm: `protocol.md is approved but not bound to the protocol — call protocol_affirm("${version}", ` +
-      `initiative: "${initiative}"). Nothing qualifies or scores against an unaffirmed version`,
-    evaluator_qualify: `the affirmed protocol's model-backed evaluators are not all qualified — call ` +
-      `evaluator_qualify("${version}", measure_key, initiative: "${initiative}") for ` +
-      `${owed.length ? owed.join(", ") : "each model-backed measure"} before EVALUATE scores`,
-  };
-  return record.owes.split(",").filter((act) => act && !record[act]).map((act) => why[act] ?? `call ${act}`);
-}
-
-/** The platform's own closing step, told apart from the flow's own documents.
- *
- * `deriveChain` appends it with `role: "handover"`; a flow that declares its own is matched
- * by name. One branch below must skip it and another must find it, and both go through this
- * one test. */
-function isHandover(d: { name: string; role?: string }): boolean {
-  return d.role === "handover" || d.name === "handover.md";
 }
 
 /** What state an initiative is in, and what the next move is — the one computation both
@@ -290,6 +247,15 @@ export function initiativeState(
 
   // the next move, in the flow's own declared order
   let next: { action: string; document?: string; stage?: string; waiting_on: string; why: string };
+  // The current plan's structure: waves an executor may run in parallel, or why it cannot. Read
+  // here because `current_phase` below decides which move the chain answers.
+  const plan: PlanStructure | undefined = planStructure(dir, docs);
+  // A plan that still declares a phase to build is mid-execution. `sdlc-execute` writes no
+  // document and records nothing the platform can see, so nothing else in this function catches
+  // it — and the review round would sweep a change that is a fraction built. `current_phase` is
+  // that fact: the first phase with tasks and no `### As built`, null once every written phase is
+  // built (`plan-structure.ts`).
+  const executingPhase = plan?.current_phase ?? null;
   if (outcome) {
     // The platform appends the handover to every flow, whatever the flow declares, so what
     // gets captured does not depend on the flow author. It is not verified mid-flow: execute
@@ -389,10 +355,11 @@ export function initiativeState(
       .find((st) => st.produces === "record" ? !records[st.name] : owing(st).length > 0);
     // A document that `verifies` others owes its review rounds before it is written or awaited:
     // once its requirement is met and until it is approved, `reviewMove` routes the sweep, and
-    // its null — the rounds settled — hands over to the ordinary write/await answer below.
+    // its null — the rounds settled — hands over to the ordinary write/await answer below. It is
+    // not asked while a phase is still to build: a round offered there reviews an unfinished change.
     const verifying = flowDocs.find((d) => docs.find((x) => x.name === d.name)?.verifies?.length &&
       d.status !== "approved" && (!d.requires || requirementMet(d.requires)));
-    const owedReview = verifying
+    const owedReview = verifying && executingPhase === null
       ? reviewMove(root, name, docs.find((x) => x.name === verifying.name)?.stage ?? "", verifying.name)
       : null;
     const awaitApproval = (d: DocState) => ({
@@ -419,6 +386,20 @@ export function initiativeState(
       // NOT A TOOL: `add_source` and `decide` are members of `next_move.action`'s own
       // vocabulary, not tool names. The `why` beside each names the call to make.
       next = owedAudit;
+    } else if (executingPhase !== null) {
+      // NOT A TOOL: `run_stage` is `next_move.action`'s own vocabulary, like `resolve_branch`.
+      //
+      // This is the branch 0.83.2 adds. Without it the plan being approved was read as the plan
+      // being built, so a seven-phase plan answered with a review round from its third phase on —
+      // a full-scope sweep of a change that is a fraction written.
+      const waves = (plan?.waves ?? []).map((w) => w.join(" + ")).join("; ");
+      next = {
+        action: "run_stage", stage: "sdlc-execute", waiting_on: "agent",
+        why: `${plan?.document} declares phase ${executingPhase} still to build — run sdlc-execute ` +
+             `for it${waves ? ` (its waves: ${waves})` : ""}, and the phase is built when it carries ` +
+             `its \`### As built\`; ${verifying?.name ?? "the verifying document"} owes its review ` +
+             "round once every phase is built",
+      };
     } else if (owedReview) {
       // NOT A TOOL: `fix` and `run_experiment` join `add_source` and `decide` in the same
       // vocabulary; review-rounds.ts says what each asks for.
@@ -475,8 +456,6 @@ export function initiativeState(
                  "is outstanding, not this call" };
     }
   }
-  // The current plan's structure: waves an executor may run in parallel, or why it cannot.
-  const plan: PlanStructure | undefined = planStructure(dir, docs);
   if (next.action !== "closed") {
     next.why += planStructureNote(plan, states.find((d) => d.name === plan?.document)?.status ?? null);
   }

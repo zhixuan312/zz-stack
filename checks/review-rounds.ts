@@ -56,8 +56,13 @@ interface Fixture { name: string; chain: Resolved }
 
 const SPEC = "# Spec\n\n## Stakeholders & Work\n\n- [ ] **AC-1.1** An intake email becomes a case. (FR-1)\n" +
              "- [ ] **AC-2.1** A case can be closed. (FR-2)\n";
+// The phase carries its `### As built` deliberately: this check is about the rounds a SETTLED AND
+// BUILT plan owes, and `initiative_status` reads a phase with no `### As built` as still being
+// executed — it routes to `sdlc-execute` and offers no round at all (the defect 0.83.2 fixes, proven
+// by checks/plan-waves-status.ts cases 5 and 6).
 const PLAN = "# Plan\n\n## Phase 1 — cases\n\n### Task I-1: Intake (← AC-1.1)\n\n**Technical acceptance " +
-             "criteria** (← AC-1.1): the intake check passes on a sample email.\n\n## Full-suite gate\n\nnpm run gate\n";
+             "criteria** (← AC-1.1): the intake check passes on a sample email.\n\n" +
+             "### As built\n\nPhase 1 is built.\n\n## Full-suite gate\n\nnpm run gate\n";
 
 let n = 0;
 /** A fresh sdlc-flow initiative whose spec, plan and both audits are settled. */

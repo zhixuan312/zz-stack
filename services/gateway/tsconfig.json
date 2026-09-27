@@ -20,6 +20,9 @@
     },
     {
       "path": "../../packages/mcp-client"
+    },
+    {
+      "path": "../../packages/indexing"
     }
   ]
 }

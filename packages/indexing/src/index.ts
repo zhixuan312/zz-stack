@@ -1,6 +1,6 @@
 /**
- * The knowledge index: the row a document gets in `zz.doc`, the claims derived from it, and
- * the walks that rebuild both for one team or for every team.
+ * The knowledge index: the row a document gets in `zz.doc`, and the walks that rebuild it for
+ * one team or for every team.
  *
  * A package rather than a module inside zz-core, because @zz/contracts, the scripts and the
  * checks import it too.
@@ -72,7 +72,7 @@ export {
 // like `lanesFor`: it plans a native retrieval call rather than running one.
 export { planSearch } from "./search-plan.js";
 
-import { decisionRows, indexable, isoDate } from "./rules.js";
+import { indexable, isoDate } from "./rules.js";
 
 /** Where every team's store is mounted. */
 export const ARTIFACTS_DIR = "/artifacts";
@@ -211,24 +211,19 @@ export async function indexDoc(root: string, relPath: string, content: string, s
     // pass call — one mapping from title/tags/body to a weighted term list, never two that
     // could disagree. `body`/`title`/`list(env.tags)` are the values already in `values`.
     const docVector = buildRowVector({ title, tags: list(env.tags), body });
-    // The decision rows are part of what this function writes, so they belong in the hash:
-    // without them the skip is blind to a change in `decisionRows`. A row is skipped
-    // correctly only when re-deriving everything would produce what is already stored.
-    const role = (env.type ?? "").trim();
-    const claims = /^(selection|agreement|plan)$/.test(role) && !snapshotOf
-      ? decisionRows(body) : [];
+    // The row is what gets hashed: a skip is correct exactly when re-deriving this row would
+    // produce what is already stored. The claims a document makes are not part of the row —
+    // they are recomputed from its body by whoever reads them — so nothing derived from them
+    // belongs in the hash.
     const hash = createHash("sha256")
-      .update(JSON.stringify([values, role, claims])).digest("hex").slice(0, 32);
+      .update(JSON.stringify(values)).digest("hex").slice(0, 32);
     if (skipIfHash) {
       const cur = await p.query<{ content_hash: string }>(
         "select content_hash from zz.doc where team_slug=$1 and initiative=$2 and path=$3",
         [teamSlug, parts[0], parts.slice(1).join("/")]);
       if (cur.rows[0]?.content_hash === hash) return false;
     }
-    // `returning id`, because the decision rows written below carry `zz.decision.doc_id`, the
-    // foreign key an acceptance criterion joins back to its spec on. A backfill cannot hold
-    // it: this function deletes and re-inserts a document's claims on every reindex.
-    const inserted = await p.query<{ id: string }>(
+    await p.query(
       `insert into zz.doc (team_slug, initiative, initiative_id, path, flow, type, status, outcome, approved_by, approved_at, closed_by, updated_at, body, title, tags, evidence, superseded_by, content_hash, supports, analyzer_version, body_tsv)
        -- When the document changed, not when the indexer last ran: a reindex touches every file
        -- it re-derives and must not restamp the corpus. The envelope's updated_at is stamped by
@@ -260,8 +255,7 @@ export async function indexDoc(root: string, relPath: string, content: string, s
          body=excluded.body, title=excluded.title, tags=excluded.tags,
          evidence=excluded.evidence, superseded_by=excluded.superseded_by,
          content_hash=excluded.content_hash, supports=excluded.supports,
-         analyzer_version=excluded.analyzer_version, body_tsv=excluded.body_tsv
-       returning id`,
+         analyzer_version=excluded.analyzer_version, body_tsv=excluded.body_tsv`,
       // $17 — the file's own mtime, with the envelope's date as the fallback and now()
       // behind that. Parsed here rather than in SQL so an unparseable value degrades to
       // index time instead of failing the whole document's row. A rebuild must not move
@@ -283,28 +277,6 @@ export async function indexDoc(root: string, relPath: string, content: string, s
        // them (`docVector`/`bodyTsvParams` above).
        ...bodyTsvParams(docVector), docVector.analyzer],
     );
-    const docId = inserted.rows[0]?.id ?? null;
-      // The claims this document makes, replaced wholesale rather than merged: a revision
-      // that drops a criterion must drop its row too.
-      //
-      // DELIBERATE: the delete runs for every document and the insert only for ones that
-      // make claims. Guarding both together leaves the rows of a document that has stopped
-      // producing claims — a `_versions/` snapshot — in place forever.
-      //
-      // Snapshots make no claims of their own: a frozen copy's claims are the live
-      // document's, so indexing both would count every prediction twice.
-    const initiative = parts[0];
-    const docPath = parts.slice(1).join("/");
-    await p.query(
-      "delete from zz.decision where team_slug=$1 and initiative=$2 and path=$3",
-      [teamSlug, initiative, docPath]);
-    for (const c of claims) {
-      await p.query(
-        `insert into zz.decision (team_slug, initiative, path, role, key, verdict, qualifier, detail, checker, updated_at, doc_id)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9, now(), $10)`,
-        [teamSlug, initiative, docPath, role, c.key, c.verdict,
-         c.qualifier, c.detail, c.checker, docId]);
-    }
     return true;
   } catch (err) {
     console.error("doc index failed:", err);
@@ -350,7 +322,6 @@ export async function reindexTeam(teamSlug: string, force = false): Promise<{ sc
   if (!existsSync(join(ARTIFACTS_DIR, "teams"))) return { scanned: 0, indexed: 0, removed: 0 };
   if (!existsSync(root)) {
     const r = await p.query("delete from zz.doc where team_slug=$1", [teamSlug]);
-    await p.query("delete from zz.decision where team_slug=$1", [teamSlug]);
     // And the knowledge shelf: a team's nodes live in their own table, so cleaning zz.doc
     // alone leaves a retired team's journal answering knowledge_search.
     const n = await p.query("delete from zz.knowledge_node where team_slug=$1", [teamSlug]);
@@ -380,12 +351,7 @@ export async function reindexTeam(teamSlug: string, force = false): Promise<{ sc
       [teamSlug, g.path]);
   }
   for (const g of gone) {
-    // Both tables: a document's row lives in zz.doc and its claims live in zz.decision, keyed
-    // the same way. indexDoc deletes the claims of a document it is about to re-index, which
-    // never runs for a document that no longer exists.
     await p.query("delete from zz.doc where team_slug=$1 and initiative=$2 and path=$3",
-      [teamSlug, g.initiative, g.path]);
-    await p.query("delete from zz.decision where team_slug=$1 and initiative=$2 and path=$3",
       [teamSlug, g.initiative, g.path]);
   }
   return { scanned, indexed, removed: gone.length + nodesGone.length };

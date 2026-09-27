@@ -64,7 +64,7 @@ export async function connectIsolated(
 // The file-backed compatibility-id map: the durable record of "this owner+artifact already has
 // id N", read before a rebuild starts and written back after. Plain JSON, one file per deployment,
 // never regenerated from scratch while any existing entry could still be looked up — a reallocated
-// id breaks every external reference to that row (zz.decision.doc_id, a bookmark, a link in prose).
+// id breaks every external reference to that row (a bookmark, a link in prose).
 
 interface CompatibilityMap {
   readonly version: 1;

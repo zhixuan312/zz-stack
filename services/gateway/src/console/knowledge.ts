@@ -58,32 +58,39 @@ export function mountKnowledge(app: Express): void {
    * `_knowledge/log.md`, which the store writes. Not `tool_call` rows: those carry no actor
    * by design and include `knowledge_search` reads, which are not journal entries.
    *
-   * The nodes are joined back in by (team, subject), so a row carries the node's title as it
-   * stands now rather than as it was typed. A left join, because a node deleted from the shelf
-   * still has a log entry that happened.
+   * The actor is an id on the row, so the address comes from `zz.principal`: the event records who
+   * did it, not how they spelled themselves. Null where the door resolved no principal — an entry
+   * is still evidence of an act even when nobody can be named for it.
+   *
+   * The nodes are joined back in by (team, subject): a node's shelf is the team's slug, so the
+   * join runs through the team the event names rather than through a slug the event no longer
+   * carries. A left join, because a node deleted from the shelf still has a log entry that
+   * happened.
    */
   app.get("/api/console/knowledge/log", handler("the knowledge log", async (_req, res, scope) => {
     const db = platformDb();
     const { rows } = scope.kind === "platform"
       ? await db.query(
       `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts,
-              e.actor, t.slug as team, e.kind, e.subject as node,
+              p.email as actor, t.slug as team, e.kind, e.subject as node,
               e.detail->>'title' as recorded_title, e.detail->>'supersededBy' as superseded_by,
               d.title as node_title, d.lifecycle as node_status
          from zz.event e
          left join zz.team t on t.id = e.team_id
-         left join zz.knowledge_node d on d.team_slug = e.team_slug
+         left join zz.principal p on p.id = e.actor_id
+         left join zz.knowledge_node d on d.team_slug = t.slug
                            and d.path like '%' || e.subject || '-%'
         where e.kind in ('knowledge.add','knowledge.supersede')
         order by e.ts desc limit 500`)
       : await db.query(
       `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts,
-              e.actor, t.slug as team, e.kind, e.subject as node,
+              p.email as actor, t.slug as team, e.kind, e.subject as node,
               e.detail->>'title' as recorded_title, e.detail->>'supersededBy' as superseded_by,
               d.title as node_title, d.lifecycle as node_status
          from zz.event e
          join zz.team t on t.id = e.team_id
-         left join zz.knowledge_node d on d.team_slug = e.team_slug
+         left join zz.principal p on p.id = e.actor_id
+         left join zz.knowledge_node d on d.team_slug = t.slug
                            and d.path like '%' || e.subject || '-%'
         where e.kind in ('knowledge.add','knowledge.supersede')
           and t.slug = $1

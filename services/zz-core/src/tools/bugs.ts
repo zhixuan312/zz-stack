@@ -19,6 +19,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
+import type pg from "pg";
 import { z } from "zod";
 
 import { logActivity } from "../persist.js";
@@ -29,6 +30,41 @@ import { db as db_, teamFor } from "../platform-db.js";
 const json = (v: unknown): ReturnType<typeof text> => text(JSON.stringify(v, null, 2));
 const noDb = (): ReturnType<typeof text> =>
   text("ERROR: no platform database — bug reports are stored in it, so there is nowhere to put this one");
+
+/** A row's query surface, so these resolvers take the pool or a client already held. */
+type Db = Pick<pg.Pool, "query">;
+
+/** The principal id an address names, or null.
+ *
+ * `zz.bug.reported_by` and `resolved_by` are principal uuids — the migration resolved every
+ * historical address to one — so an address is resolved here, once, and a caller nothing carries
+ * is refused by address rather than handed to Postgres to fail on a type. */
+async function principalId(db: Db, email: string): Promise<string | null> {
+  const { rows } = await db.query<{ id: string }>(
+    "select id::text as id from zz.principal where lower(email) = lower($1)", [email]);
+  return rows[0]?.id ?? null;
+}
+
+/** The refusal for an address no principal carries — reported_by is NOT NULL, so there is
+ *  nowhere honest to put this report. */
+const noPrincipal = (who: string): ReturnType<typeof text> => text(
+  `ERROR: no principal for ${who} — a report is attributed to the person who filed it, and ` +
+  "`zz.bug.reported_by` is a principal id. Nothing on this platform carries that address, so " +
+  "nothing was written.");
+
+/** The id of the initiative a team holds under `initiative`, or null.
+ *
+ * Resolved THROUGH the team, never by the slug alone: two teams' initiatives may share a slug, and
+ * pairing one team's id with another team's initiative is exactly what
+ * `bug_team_id_initiative_id_fkey` refuses. Doing the same lookup here refuses it by name, before
+ * the database has to. */
+async function initiativeIdIn(db: Db, team: string | null, initiative: string): Promise<string | null> {
+  if (!team) return null;
+  const { rows } = await db.query<{ id: string }>(
+    `select i.id::text as id from zz.initiative i join zz.team t on t.id = i.team_id
+      where t.slug = $1 and i.slug = $2`, [team, initiative]);
+  return rows[0]?.id ?? null;
+}
 
 /** The impact vocabulary, closed and enforced by the schema's own CHECK constraint. `z.enum`
  *  rather than `z.string`, so a caller is refused at the door with the list rather than by Postgres with a
@@ -57,7 +93,7 @@ export function registerBugTools(server: McpServer, platformVersion: string): vo
           "What it COST them, not how hard it looks to fix — a reporter knows the first and " +
           "cannot know the second. `blocks_work` means they stopped. Defaults to wrong_result."),
         surface: z.string().optional().describe("The door or tool it happened on, if they know — e.g. `/core/mcp` or `document_approve`."),
-        initiative: z.string().optional().describe("What they were working on when it happened."),
+        initiative: z.string().optional().describe("What they were working on when it happened — the initiative's own name, resolved in your team."),
       },
     },
     async ({ title, detail, impact, surface, initiative }) => {
@@ -65,16 +101,31 @@ export function registerBugTools(server: McpServer, platformVersion: string): vo
       if (!p) return noDb();
       const who = parseCaller(requestHeaders()).email;
       const team = await teamFor(who);
+      const reporter = await principalId(p, who);
+      if (!reporter) return noPrincipal(who);
+      // The initiative is optional; a name that resolves to nothing is refused rather than
+      // dropped, because the report is the only place the interruption is written down and a
+      // silently unattached one loses the initiative it interrupted.
+      const named = initiative?.trim() || null;
+      const initiativeId = named ? await initiativeIdIn(p, team, named) : null;
+      if (named && !initiativeId) {
+        return text(
+          `ERROR: no initiative named "${named}" that you can report against — initiatives are ` +
+          `resolved through the team that owns them, and ${team ? `yours is ${team}` : "you belong to none"}. ` +
+          "Nothing was written. Leave `initiative` out to file the report with nothing " +
+          "against it, which is what a report that interrupted no initiative is.");
+      }
       const { rows } = await p.query<{ id: string }>(
-        `insert into zz.bug (reported_by, team_slug, title, detail, impact, surface, initiative,
+        `insert into zz.bug (reported_by, team_id, initiative_id, title, detail, impact, surface,
                              platform_version)
-         values ($1, $2, $3, $4, coalesce($5, 'wrong_result'), $6, $7, $8)
+         values ($1::uuid, (select id from zz.team where slug = $2), $3::uuid, $4, $5,
+                 coalesce($6, 'wrong_result'), $7, $8)
          returning id::text as id`,
-        [who, team, title.trim(), detail.trim(), impact ?? null,
-         surface?.trim() || null, initiative?.trim() || null, platformVersion]);
+        [reporter, team, initiativeId, title.trim(), detail.trim(), impact ?? null,
+         surface?.trim() || null, platformVersion]);
       // Recorded, because this changes something. Filed against the initiative they name when they
       // name one, so the report shows up beside the work it interrupted.
-      logActivity(await userRoot(), initiative?.trim() ? `${initiative.trim()}/_open.json` : null,
+      logActivity(await userRoot(), named ? `${named}/_open.json` : null,
         { user: who, action: "bug_report", bug: rows[0].id, title: title.trim() });
       return json({
         id: rows[0].id,
@@ -128,22 +179,38 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
       const db = db_();
       if (!db) return noDb();
       const args: unknown[] = [status ?? "open"];
-      const where = ["status = $1"];
+      const where = ["b.status = $1"];
       const put = (v: unknown): string => { args.push(v); return `$${args.length}`; };
-      if (impact) where.push(`impact = ${put(impact)}`);
-      if (reported_by) where.push(`lower(reported_by) = ${put(reported_by.toLowerCase())}`);
+      if (impact) where.push(`b.impact = ${put(impact)}`);
+      // Through the principal, because the column is an id now and nobody searches for one. COUPLED:
+      // the same join below hands the address back, so what is filtered on and what is shown are
+      // one thing.
+      if (reported_by) where.push(`lower(rp.email) = ${put(reported_by.toLowerCase())}`);
       // Both halves: somebody searching for "approve" means the thing they were doing, and
       // which field that word landed in is an accident of how the reporter wrote it.
       if (query?.trim()) {
         const q = put(`%${query.trim()}%`);
-        where.push(`(title ilike ${q} or detail ilike ${q})`);
+        where.push(`(b.title ilike ${q} or b.detail ilike ${q})`);
       }
+      // The ids are selected, and the slugs joined back beside them: the id is what every other
+      // reader of this row joins on, and the slug is what a person reading the answer recognises.
+      // A bug with no team or no initiative has none — left joins, so the row is still returned.
       const { rows } = await db.query(
-        `select id::text as id, reported_by, team_slug, title, detail, impact, surface,
-                initiative, platform_version, status, resolution, resolved_by,
-                to_char(reported_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as reported_at
-           from zz.bug where ${where.join(" and ")}
-          order by reported_at desc limit ${limit ?? 25}`, args);
+        `select b.id::text as id,
+                b.reported_by::text as reported_by_id, rp.email as reported_by,
+                b.resolved_by::text as resolved_by_id, rs.email as resolved_by,
+                b.team_id::text as team_id, t.slug as team_slug,
+                b.initiative_id::text as initiative_id, i.slug as initiative,
+                b.duplicate_of::text as duplicate_of,
+                b.title, b.detail, b.impact, b.surface, b.platform_version, b.status, b.resolution,
+                to_char(b.reported_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as reported_at
+           from zz.bug b
+           left join zz.principal rp on rp.id = b.reported_by
+           left join zz.principal rs on rs.id = b.resolved_by
+           left join zz.team t on t.id = b.team_id
+           left join zz.initiative i on i.id = b.initiative_id
+          where ${where.join(" and ")}
+          order by b.reported_at desc limit ${limit ?? 25}`, args);
       // Counted separately from what is shown: a list capped at 25 that says nothing about the cap
       // reads as the whole answer.
       const { rows: tally } = await db.query<{ status: string; n: string }>(
@@ -161,8 +228,9 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
     {
       description:
         "Close a report with what was decided. `fixed` when it is; `not_a_bug` when the " +
-        "behaviour is intended; `duplicate` when it is already filed — name the other id in the " +
-        "resolution. REQUIRES a resolution in every case, including the two that are not fixes: " +
+        "behaviour is intended; `duplicate` when it is already filed — pass the id of the report " +
+        "it duplicates as `duplicate_of`, which is required for that status and refused for every " +
+        "other. REQUIRES a resolution in every case, including the two that are not fixes: " +
         "a report somebody took the trouble to make deserves a sentence, and a status with no " +
         "reason is a tracker nobody learns anything from. RETURNS the id, the status it now " +
         "carries and the resolution as stored, so the close can be read back rather than " +
@@ -176,21 +244,52 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
         status: z.enum(["fixed", "not_a_bug", "duplicate"]),
         resolution: z.string().min(1).describe(
           "What was decided and why, in a sentence the reporter would recognise as an answer."),
+        duplicate_of: z.string().uuid().optional().describe(
+          "The report this one duplicates, for a `duplicate` resolution. Required for it and " +
+          "refused without it: a duplicate that names no target is a close nobody can follow, " +
+          "and the two are one fact the schema itself keeps in step."),
       },
     },
-    async ({ id, status, resolution }) => {
+    async ({ id, status, resolution, duplicate_of }) => {
       const db = db_();
       if (!db) return noDb();
+      // Both directions refused before the database sees the statement: `status = 'duplicate'` and
+      // a target are one fact, and the CHECK constraint is the backstop for a writer that is not
+      // this one rather than the door a caller reaches.
+      if (status === "duplicate" && !duplicate_of) {
+        return text(
+          `ERROR: a \`duplicate\` resolution has to name the report it duplicates — pass the other ` +
+          "id as `duplicate_of`. A duplicate pointing at nothing records no finding: the next " +
+          "reader cannot tell it from a report somebody closed with no reason. Nothing was written.");
+      }
+      if (status !== "duplicate" && duplicate_of) {
+        return text(
+          `ERROR: \`duplicate_of\` is only for a \`duplicate\` resolution, and this one is ` +
+          `\`${status}\`. Nothing was written. To record that this report duplicates another, ` +
+          "close it as `duplicate`; to close it as this status, leave the target out.");
+      }
       const who = parseCaller(requestHeaders()).email;
+      const resolver = await principalId(db, who);
+      if (!resolver) return noPrincipal(who);
+      if (duplicate_of) {
+        const { rows: target } = await db.query<{ id: string }>(
+          "select id::text as id from zz.bug where id = $1::uuid", [duplicate_of]);
+        if (!target.length) {
+          return text(`ERROR: no bug with id ${duplicate_of} — ` +
+            "`duplicate_of` names the report this one duplicates, and nothing carries that id.");
+        }
+      }
       // Only from open, so two operators closing the same report do not overwrite each other's
       // reasoning — the second is told what the first decided instead of silently replacing it.
       const { rows } = await db.query<{ id: string }>(
-        `update zz.bug set status = $2, resolution = $3, resolved_by = $4, resolved_at = now()
+        `update zz.bug set status = $2, resolution = $3, resolved_by = $4::uuid,
+                           duplicate_of = $5::uuid, resolved_at = now()
           where id = $1::uuid and status = 'open' returning id::text as id`,
-        [id, status, resolution.trim(), who]);
+        [id, status, resolution.trim(), resolver, duplicate_of ?? null]);
       if (!rows.length) {
         const { rows: had } = await db.query<{ status: string; resolution: string | null; resolved_by: string | null }>(
-          "select status, resolution, resolved_by from zz.bug where id = $1::uuid", [id]);
+          `select b.status, b.resolution, p.email as resolved_by from zz.bug b
+             left join zz.principal p on p.id = b.resolved_by where b.id = $1::uuid`, [id]);
         if (!had.length) return text(`ERROR: no bug with id ${id}`);
         return text(
           `ERROR: that report was already closed as \`${had[0].status}\` by ${had[0].resolved_by} — ` +
@@ -198,7 +297,10 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
           "report naming this id, rather than overwriting somebody's reasoning.");
       }
       platformEvent({ actor: who, kind: "bug.resolve", subject: id, team: null, detail: { status } });
-      return text(JSON.stringify({ id: rows[0].id, status, resolved_by: who, resolution: resolution.trim() }, null, 2));
+      return text(JSON.stringify({
+        id: rows[0].id, status, resolved_by: who, resolution: resolution.trim(),
+        duplicate_of: duplicate_of ?? null,
+      }, null, 2));
     },
   );
 
@@ -241,9 +343,12 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
       const who = parseCaller(requestHeaders()).email;
       // Returning the row, not just the id: this is the last moment its content exists, and an
       // operator who removed the wrong one needs to read what it said in order to re-file it.
+      // `using` rather than a second read, so the reporter's address comes back from the row being
+      // removed and not from one a concurrent close could have changed.
       const { rows } = await db.query<{ id: string; title: string; reported_by: string; status: string }>(
-        `delete from zz.bug where id = $1::uuid
-          returning id::text as id, title, reported_by, status`, [id]);
+        `delete from zz.bug b using zz.principal p
+          where b.reported_by = p.id and b.id = $1::uuid
+          returning b.id::text as id, b.title, p.email as reported_by, b.status`, [id]);
       if (!rows.length) return text(`ERROR: no bug with id ${id}`);
       platformEvent({ actor: who, kind: "bug.delete", subject: id, team: null, detail: { title: rows[0].title } });
       return text(JSON.stringify({ deleted: rows[0], deleted_by: who }, null, 2));

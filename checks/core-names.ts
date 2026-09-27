@@ -51,7 +51,7 @@ for (const [old, neu] of RENAMES) {
 
 // 2. The callers, which is the half that fails silently
 //
-// A skill telling a model to call `document_write` when the door says `write_file` gets
+// A skill telling a model to call `write_file` when the door says `document_write` gets
 // "unknown tool" mid-stage and the model improvises around a step the flow declared mandatory.
 // Nothing is red and nothing is logged as a defect.
 //

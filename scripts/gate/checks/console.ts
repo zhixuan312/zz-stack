@@ -182,9 +182,6 @@ check("every console write route records the door it came through", () => {
         new RegExp(`\\b(${WRITE_CALLS.join("|")})\\(`).test(body),
       markerCalls: WRITE_CALLS,
     })),
-    // discussion.ts writes `zz.discussion_message` directly — no `core.call` and no shared
-    // WRITE_CALLS function — so naming the table is what identifies the write.
-    { path: "services/gateway/src/discussion.ts", isWrite: (body: string) => /discussion_message/.test(body), markerCalls: [] },
     // console-ask.ts calls `core.call("knowledge_search", …)`, a read, and otherwise only
     // `generate()`. DELIBERATE: `isWrite` is a negative lookahead rather than a constant false,
     // so a `core.call` to anything other than knowledge_search added here flips it to true and
@@ -286,15 +283,16 @@ check("the console's team switch moves its session, not the principal", () => {
 });
 
 check("a claim that states no verdict says so, rather than stating an empty one", () => {
-  // zz.decision's text columns are `not null default \'\'`, so the database
-  // cannot tell "this row states no verdict" from "this row\'s verdict is the empty string".
-  // Returned raw, every row arrives carrying `verdict: ""`.
+  // `decisionRows` gives every claim a string for every field and only two of its readers ever
+  // produce a verdict, so "" is the ordinary spelling of "this row states no verdict" — for a
+  // claim that has none and for one whose verdict is genuinely empty alike. Returned raw, every
+  // row arrives carrying `verdict: ""`.
   //
   // COUPLED: the same rule this console holds for numbers — an unmeasured average is reported
   // as null, never as a confident zero (console/skills.ts, checks/console-nulls.ts).
   //
-  // This names one endpoint and three fields rather than deriving every `not null default \'\'`
-  // column the console projects. The broader rule is not written.
+  // This names one endpoint and three fields rather than deriving every blank column the
+  // console projects. The broader rule is not written.
   const f = "services/gateway/src/console/initiatives.ts";
   const src = readFileSync(join(root, f), "utf8");
   const bad: string[] = [];
@@ -306,15 +304,17 @@ check("a claim that states no verdict says so, rather than stating an empty one"
                "states none is indistinguishable from one whose value is the empty string");
     }
   }
-  // Every reader of the ledger, counted rather than named: the initiative view and the
-  // document view both select these columns, and a third added later is covered without anyone
-  // remembering this check exists.
-  const readers = (src.match(/from zz\.decision\b/g) ?? []).length;
+  // Every reader of the ledger, counted rather than named: the initiative view and the document
+  // view both derive their claims from the bodies they read, and a third added later is covered
+  // without anyone remembering this check exists. `claimsOf(` occurs once as its own definition
+  // and once per reader.
+  const readers = (withoutComments(src).match(/\bclaimsOf\(/g) ?? []).length - 1;
   const mapped = (src.match(/\.map\(claimRow\)/g) ?? []).length;
-  if (!readers) {
-    bad.push(`${f} no longer queries zz.decision — this check is reading the wrong file`);
+  if (readers < 1) {
+    bad.push(`${f} no longer derives the claims from the document bodies — this check is ` +
+             "reading the wrong file");
   } else if (mapped !== readers) {
-    bad.push(`${f} queries zz.decision ${readers} time(s) and maps ${mapped} of them through ` +
+    bad.push(`${f} derives claims ${readers} time(s) and maps ${mapped} of them through ` +
              "claimRow — a reader that returns the rows raw states an empty verdict as a value");
   }
   // And the counts, which make a blank column legible as a fact about the documents.
@@ -323,7 +323,7 @@ check("a claim that states no verdict says so, rather than stating an empty one"
   // cover for another saying nothing.
   const counted = (src.match(/decisionCounts:/g) ?? []).length;
   if (counted !== readers) {
-    bad.push(`${f} queries zz.decision ${readers} time(s) and reports decisionCounts on ` +
+    bad.push(`${f} derives claims ${readers} time(s) and reports decisionCounts on ` +
              `${counted} of them — a reader that returns no counts cannot tell a column of ` +
              "nulls from a derivation that has stopped running");
   }

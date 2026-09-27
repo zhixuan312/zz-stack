@@ -20,6 +20,13 @@
  * tool wrapper turns into a plain refusal, and `record()` writes the attempt either way, so a
  * reply the adapter would not read is visible in `zz.model_call` rather than inside a mark.
  *
+ * The row that record writes is the call's own: one row per call, carrying what it asked for,
+ * what it cost, whether it succeeded and — when it did not — what it failed with. `record`
+ * returns that row's id, `ask` hands it to its caller, and the caller is what pairs the call with
+ * what it was asked for: a failure reaches `semantic.ts` as a `TypedCallRefusal` carrying the same
+ * id, so an `unavailable` reading names the call that could not answer just as an answered one
+ * names the call that did.
+ *
  * `unsupported` is the ordinary outcome here, not a failure. The kernel turns a number into a
  * level only when a qualified mapping says where the lines are, and this platform has qualified
  * none — the 1-based rebase below and the 0.5 threshold cut next door are this flow's own
@@ -34,6 +41,7 @@
  * false`, and every caller reports the judgement as absent, with the reason, and carries on.
  */
 import { jevAdapter, type JevAnswerOptions, type JevParseResult } from "@zz/contracts";
+import type pg from "pg";
 
 import { Refusal } from "./refusal.js";
 import { db } from "./platform-db.js";
@@ -134,6 +142,45 @@ function retryAfterMs(header: string | null): number | null {
  *  nothing may be scored from. */
 const usable = (a: JevParseResult): boolean => a.status === "answered" || a.status === "unsupported";
 
+/** The model this file asks for, as the row records it — what was requested, not what the
+ *  supplier says it ran. The resolved identity is the adapter's and lands on the answer. */
+const requestedModel = (): string => `typesafe/${MODEL()}`;
+
+/** Where a `zz.model_call` row is written: the deployment's pool, or a handle the caller hands
+ *  over — `checks/judge-usage.ts` passes a fake so it can read the row this module wrote without
+ *  a database. */
+export type ModelCallRunner = Pick<pg.Pool, "query">;
+
+/** What one answered call hands back: the answers, and the call that produced them.
+ *
+ *  `model_call_id` is null exactly when no row could be written — this deployment has no
+ *  database, or the insert itself failed — because bookkeeping never costs an answer. A caller
+ *  that records the pairing (`semantic.ts` writes it as `assessment.model_call_id`) reads that
+ *  null and writes no pairing, rather than one naming a row that was never inserted. */
+export interface TypedCall {
+  model_call_id: number | null;
+  /** What this file asked for, in the words the row carries. */
+  model: string;
+  answers: Record<string, JevParseResult>;
+}
+
+/** A call that was made and produced no usable answer, carrying the id of the `zz.model_call`
+ *  row that says so — and null when that row could not be written either.
+ *
+ *  A subclass rather than a flag, so every existing caller that catches `Refusal` (registerTool's
+ *  wrapper included) goes on reading it as one; and a carrier rather than a second return, so
+ *  `semantic.ts` records an `unavailable` reading that names the call it could not get an answer
+ *  from — a record claiming an attribution it does not have is worse than no record. */
+export class TypedCallRefusal extends Refusal {
+  readonly model_call_id: number | null;
+  readonly model: string;
+  constructor(message: string, model_call_id: number | null, model: string) {
+    super(message);
+    this.model_call_id = model_call_id;
+    this.model = model;
+  }
+}
+
 /**
  * Ask one subject a set of questions.
  *
@@ -141,10 +188,13 @@ const usable = (a: JevParseResult): boolean => a.status === "answered" || a.stat
  * whose answers do not match the questions asked, or an answer the adapter will not validate.
  * The caller decides whether that is fatal; `configured()` is checked first, so the ordinary
  * "no key" case never reaches here.
+ *
+ * Every refusal below is a `TypedCallRefusal` carrying the id of the row the call wrote, because
+ * a call that was made was paid for whether or not it answered.
  */
 export async function ask(
-  state: string, questions: Record<string, Question>,
-): Promise<Record<string, JevParseResult>> {
+  state: string, questions: Record<string, Question>, runner?: ModelCallRunner,
+): Promise<TypedCall> {
   if (!configured()) throw new Refusal(`ERROR: ${NOT_CONFIGURED}`);
   const asked: Record<string, JevAnswerOptions> = {};
   for (const [key, q] of Object.entries(questions)) asked[key] = answerOptions(key, q);
@@ -191,9 +241,10 @@ export async function ask(
           await new Promise((r) => setTimeout(r, wait));
           continue;
         }
-        await record(attempt, Date.now() - started, false, null, lastWhy);
-        throw new Refusal(
-          `ERROR: the typed-judgement service ${lastWhy}. Nothing was scored from it.`);
+        const id = await record(runner, attempt, Date.now() - started, false, lastWhy);
+        throw new TypedCallRefusal(
+          `ERROR: the typed-judgement service ${lastWhy}. Nothing was scored from it.`,
+          id, requestedModel());
       }
       // The body is read, not cast. Every guard over it is the adapter's: the identity the
       // supplier claims, which primitive each answer carries, and whether each figure is on the
@@ -208,10 +259,10 @@ export async function ask(
           ? `answered with a body that could not be read — ${batch.failure_reason}`
           : `answered ${total - batch.missing.length} of ${total} questions — ` +
             `missing ${batch.missing.join(", ")}`;
-        await record(attempt, Date.now() - started, false, null, lastWhy);
-        throw new Refusal(
+        const id = await record(runner, attempt, Date.now() - started, false, lastWhy);
+        throw new TypedCallRefusal(
           `ERROR: the typed-judgement service ${lastWhy}. A partial set would leave a round one ` +
-          "mark short and looking complete.");
+          "mark short and looking complete.", id, requestedModel());
       }
       // An answer the adapter refused is a judgement nobody made, and the whole set goes with
       // it: a round one mark short that looks complete is worse than one that says so.
@@ -219,13 +270,15 @@ export async function ask(
       if (broken.length) {
         lastWhy = `answered ${broken.length} of ${total} questions unreadably — ` +
           broken.map(([name, a]) => `${name}: ${a.failure_reason ?? a.status}`).join("; ");
-        await record(attempt, Date.now() - started, false, null, lastWhy);
-        throw new Refusal(
+        const id = await record(runner, attempt, Date.now() - started, false, lastWhy);
+        throw new TypedCallRefusal(
           `ERROR: the typed-judgement service ${lastWhy}. Nothing was scored from it, because a ` +
-          "figure that cannot be validated is indistinguishable in the record from one that was.");
+          "figure that cannot be validated is indistinguishable in the record from one that was.",
+          id, requestedModel());
       }
-      await record(attempt, Date.now() - started, true, meanConfidence(batch.answers), null, batch.usage);
-      return batch.answers;
+      const model_call_id = await record(
+        runner, attempt, Date.now() - started, true, null, batch.usage);
+      return { model_call_id, model: requestedModel(), answers: batch.answers };
     } catch (err) {
       clearTimeout(timer);
       if (err instanceof Refusal) throw err;
@@ -240,11 +293,11 @@ export async function ask(
         await new Promise((r) => setTimeout(r, wait));
         continue;
       }
-      await record(attempt, Date.now() - started, false, null, lastWhy);
-      throw new Refusal(
+      const id = await record(runner, attempt, Date.now() - started, false, lastWhy);
+      throw new TypedCallRefusal(
         `ERROR: the typed-judgement service ${lastWhy}, after ${attempt} attempt` +
         `${attempt === 1 ? "" : "s"} in ${Math.round((Date.now() - began) / 1000)}s. ` +
-        "Nothing was scored from it.");
+        "Nothing was scored from it.", id, requestedModel());
     } finally {
       clearTimeout(timer);
     }
@@ -253,45 +306,34 @@ export async function ask(
 
 interface TypedUsage { input_tokens: number | null; output_tokens: number | null }
 
-/** How sure the service was, averaged across the answers in one call. A run of low-confidence
- *  calls is a ruler that has stopped discriminating, and it reads as a trend.
+/** One row per call, in the table the reading judge already writes to, and the id it landed under.
  *
- *  `noul` carries no confidence of its own — for a yes/no the probability is the shape of the
- *  distribution — so its distance from the 0.5 cut, doubled, stands in for one on the same
- *  scale the other primitives report.
+ *  The model column carries what was asked for, not what the supplier says it ran; the resolved
+ *  identity lives on each answer's record.
  *
- *  The numbers are the adapter's readings, so nothing here averages a confidence nobody
- *  reported. */
-function meanConfidence(answers: Record<string, JevParseResult>): number | null {
-  const vals = Object.values(answers).map((a) =>
-    a.readings.probability !== null
-      ? Math.abs(a.readings.probability - 0.5) * 2
-      : a.readings.confidence);
-  const real = vals.filter((v): v is number => typeof v === "number" && Number.isFinite(v));
-  return real.length ? Math.round((real.reduce((x, y) => x + y, 0) / real.length) * 100) / 100 : null;
-}
-
-/** One row per call, in the table the reading judge already writes to.
- *
- *  The model column carries what was asked for, not what the supplier says it ran; the
- *  resolved identity lives on each answer's record.
+ *  `error` is where a call that did not answer says why: the column's name since
+ *  `002_delivery_telemetry.sql`, which also dropped the judge's `confidence` mark — what a typed
+ *  call spends is what this row records now, and the answer's own shape carries what it was worth.
  *
  *  Never throws: this is bookkeeping beside an answer already in hand, and a database hiccup
- *  must not turn a successful judgement into a lost one. */
+ *  must not turn a successful judgement into a lost one. It answers with null instead, and the
+ *  caller writes no pairing rather than one naming a row that was never inserted. */
 async function record(
-  attempts: number, durationMs: number, ok: boolean,
-  confidence: number | null, note: string | null, usage?: TypedUsage,
-): Promise<void> {
+  runner: ModelCallRunner | undefined, attempts: number, durationMs: number, ok: boolean,
+  error: string | null, usage?: TypedUsage,
+): Promise<number | null> {
   try {
-    const p = db();
-    if (!p) return;
-    await p.query(`
+    const p = runner ?? db();
+    if (!p) return null;
+    const { rows } = await p.query<{ id: string }>(`
       insert into zz.model_call
-        (plugin, purpose, model, input_tokens, output_tokens, duration_ms, ok, attempts,
-         confidence, note)
-      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [null, "typed-judge", `typesafe/${MODEL()}`, usage?.input_tokens ?? null,
-       usage?.output_tokens ?? null, durationMs, ok, attempts, confidence,
-       note ? note.slice(0, 500) : null]);
-  } catch { /* bookkeeping never costs an answer */ }
+        (purpose, model, input_tokens, output_tokens, duration_ms, ok, attempts, error)
+      values ($1, $2, $3, $4, $5, $6, $7, $8)
+      returning id`,
+      ["typed-judge", requestedModel(), usage?.input_tokens ?? null,
+       usage?.output_tokens ?? null, durationMs, ok, attempts,
+       error ? error.slice(0, 500) : null]);
+    const id = rows[0]?.id;
+    return id === undefined ? null : Number(id);
+  } catch { return null; }
 }

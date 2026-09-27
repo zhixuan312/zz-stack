@@ -316,7 +316,7 @@ one-off cleanup:
 
 - a file under `teams/<slug>/` passing `indexable()` has a `zz.doc` row
 - a `zz.doc` row has a file — including when the whole team's directory is gone
-- `zz.decision` is cleaned with `zz.doc`, never separately
+- a document's claims are computed from its body on read, so there is no derived row to keep in step
 
 Audit it by diffing the three sets per team.
 

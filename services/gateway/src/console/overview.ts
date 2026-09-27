@@ -49,9 +49,10 @@ export function mountOverview(app: Express): void {
    * is 0 by construction — the team branch reaches zz.event through `team_id`, so an event with
    * no team cannot be in the set being counted.
    *
-   * Events are joined through team_id, never the denormalised `team_slug` beside it: the copy
-   * is written only by acts that belong to a team, so filtering on it silently changes what
-   * "the team's events" means.
+   * Events are joined through team_id. `zz.event` no longer carries a denormalised team slug
+   * beside it: the copy was written only by acts that belong to a team, so filtering on it
+   * silently changed what "the team's events" meant, and the column is gone rather than
+   * corrected.
    */
   app.get("/api/console/overview", handler("the overview", async (req, res, scope) => {
     // One cutoff for all five statements — see periodCutoff for why it is not five
@@ -299,11 +300,16 @@ export function mountOverview(app: Express): void {
     // `failed=1` rather than a tri-state string: the only question asked of this log is
     // "show me what broke".
     const failedOnly = req.query.failed === "1";
-    // Through team_id, not the team_slug column beside it. zz.event carries both, and the
-    // denormalised copy is written only by acts that belong to a team — reading it makes every
-    // person-level act (a token issued, a package downloaded) look like a row whose team went
-    // missing rather than one that never had a team. The join says the true thing: `team` is
-    // null because there is no team, and the console renders that as "—".
+    // Every attribution on the row is an id, and each is resolved to the thing it names — the
+    // team, the actor, the initiative and the skill — out of `zz.event`, which carries `team_id`,
+    // `actor_id`, `initiative_id` and `skill_version_id` and no denormalised copy of any of them.
+    //
+    // Read as left joins, because each id may legitimately be absent and a missing one is a fact
+    // rather than a defect: a person-level act (a token issued, a package downloaded) belongs to
+    // no team, a door that resolved no principal names no actor, an event outside any initiative
+    // names none, and an event whose skill version could not be resolved names no step. The
+    // console renders each null as "—" rather than dropping the row, which is why none of these
+    // joins may become an inner one.
     //
     // DELIBERATE: there is no `($2::text is null or t.slug = $2)` guard. That treated an absent
     // `?team=` as "match every team's events". A team scope always names its own slug; only a
@@ -315,23 +321,33 @@ export function mountOverview(app: Express): void {
     // branches share.
     const { rows } = scope.kind === "platform"
       ? await db.query(
-      `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts, e.actor, t.slug as team, e.kind,
+      `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts,
+              p.email as actor, t.slug as team, e.kind,
               -- The resolved name, so a renamed tool is one name in the feed.
               coalesce(e.tool_key, e.subject) as subject,
-              e.initiative, e.step, e.ok, e.refusal
+              i.slug as initiative, sk.name as step, e.ok, e.refusal
          from zz.event e
          left join zz.team t on t.id = e.team_id
+         left join zz.principal p on p.id = e.actor_id
+         left join zz.initiative i on i.id = e.initiative_id
+         left join zz.skill_version sv on sv.id = e.skill_version_id
+         left join zz.skill sk on sk.id = sv.skill_id
         where ($1::text is null or e.kind = $1)
           and ($2::boolean is false or e.ok = false)
         order by e.ts desc limit $3`,
       [kind, failedOnly, limit])
       : await db.query(
-      `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts, e.actor, t.slug as team, e.kind,
+      `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts,
+              p.email as actor, t.slug as team, e.kind,
               -- The resolved name, so a renamed tool is one name in the feed.
               coalesce(e.tool_key, e.subject) as subject,
-              e.initiative, e.step, e.ok, e.refusal
+              i.slug as initiative, sk.name as step, e.ok, e.refusal
          from zz.event e
          left join zz.team t on t.id = e.team_id
+         left join zz.principal p on p.id = e.actor_id
+         left join zz.initiative i on i.id = e.initiative_id
+         left join zz.skill_version sv on sv.id = e.skill_version_id
+         left join zz.skill sk on sk.id = sv.skill_id
         where ($1::text is null or e.kind = $1)
           and ($2::boolean is false or e.ok = false)
           and t.slug = $4

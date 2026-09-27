@@ -12,16 +12,23 @@
  */
 import type pg from "pg";
 
-import { SCHEMA_TARGET } from "../../schema-target.ts";
-import { foldedTableExpectation } from "./expect.ts";
+import { declaredTableNames, foldedTableExpectation } from "./expect.ts";
 
 interface TableSnapshot {
   count: number;
   /** `null` when the table's expectation skips the content hash. */
   hash: string | null;
+  /** `false` when `zz.<table>` is not there at all — a table the migration drops, read on the
+   *  after side. A relation that cannot be read has no count and no hash, and `0` would be a
+   *  claim about rows instead. */
+  present: boolean;
 }
 
 export type Snapshot = Record<string, TableSnapshot>;
+
+/** Which side of the migration is being read. The before side reads a renamed table under the
+ *  name it had then; the after side reads every table under the target's own name. */
+type SnapshotSide = "before" | "after";
 
 /**
  * The live database's own primary key for `table`, in key order — read from `pg_index`, not from
@@ -69,33 +76,53 @@ function hashExpression(hashColumns: string[] | null): string {
   return `jsonb_build_object(${hashColumns.map((c) => `${sqlLiteral(c)}, t."${c}"`).join(", ")})::text`;
 }
 
+/** Whether `zz.<relation>` exists at all, so a table the migration drops is read as absent
+ *  rather than throwing out of the whole rehearsal. */
+async function relationExists(client: pg.Client, relation: string): Promise<boolean> {
+  const { rows } = await client.query<{ present: boolean }>(
+    "select to_regclass($1) is not null as present", [`zz.${relation}`],
+  );
+  return rows[0].present;
+}
+
 async function snapshotTable(
   client: pg.Client,
-  table: string,
+  relation: string,
   hashColumns: string[] | null,
   skipHash: boolean,
 ): Promise<TableSnapshot> {
-  const orderBy = (await livePrimaryKey(client, table) ?? await liveColumns(client, table))
+  if (!(await relationExists(client, relation))) return { count: 0, hash: null, present: false };
+  const orderBy = (await livePrimaryKey(client, relation) ?? await liveColumns(client, relation))
     .map((c) => `t."${c}"`).join(", ");
   const row = hashExpression(hashColumns);
   const count = (await client.query<{ count: number }>(`
-    select count(*)::int as count from "zz"."${table}" t
+    select count(*)::int as count from "zz"."${relation}" t
   `)).rows[0].count;
-  if (skipHash) return { count, hash: null };
+  if (skipHash) return { count, hash: null, present: true };
   const { rows } = await client.query<{ hash: string | null }>(`
     select md5(coalesce(string_agg(md5(${row}), '' order by ${orderBy}), '')) as hash
-    from "zz"."${table}" t
+    from "zz"."${relation}" t
   `);
-  return { count, hash: rows[0].hash ?? "" };
+  return { count, hash: rows[0].hash ?? "", present: true };
 }
 
-/** One snapshot per design table `SCHEMA_TARGET` names, read off `client` as it stands right now,
- *  hashed the way `pendingMigrations`' expectations ask for. */
-export async function captureSnapshot(client: pg.Client, pendingMigrations: readonly string[]): Promise<Snapshot> {
+/**
+ * One snapshot per table `SCHEMA_TARGET` names — plus every table a pending migration declares,
+ * since a dropped table is not in the target any more and is exactly what the before side must
+ * still read. Hashed the way `pendingMigrations`' expectations ask for, and read on the side
+ * `side` names: the before side uses `was` to find a renamed table's old relation, and the after
+ * side reads it under the target's name.
+ */
+export async function captureSnapshot(
+  client: pg.Client,
+  pendingMigrations: readonly string[],
+  side: SnapshotSide,
+): Promise<Snapshot> {
   const snapshot: Snapshot = {};
-  for (const name of Object.keys(SCHEMA_TARGET.tables)) {
+  for (const name of declaredTableNames(pendingMigrations)) {
     const exp = foldedTableExpectation(name, pendingMigrations);
-    snapshot[name] = await snapshotTable(client, name, exp.hashColumns, exp.contentHash === "skip");
+    const relation = side === "before" ? exp.was ?? name : name;
+    snapshot[name] = await snapshotTable(client, relation, exp.hashColumns, exp.contentHash === "skip");
   }
   return snapshot;
 }

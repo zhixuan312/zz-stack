@@ -86,8 +86,11 @@ export const COV_SECURITY: readonly MutationSpec[] = [
     target: "a psql variable is bound, never interpolated",
     assertion: "an operator's own flag reaches the server as a literal, not as SQL",
     subject: "packages/tools/src/testing/tool-report.ts",
-    find: "  const where = [\"ts > now() - (:'since')::interval\"];",
-    replace: '  const where = ["ts > now() - (:since)::interval"];',
+    // COUPLED: the `e.` qualifier. The statement gained its table alias when the report started
+    // joining, and the anchor moved with it — a `find` that no longer matches is a plant that never
+    // lands, which reads as a check surviving a defect it never received.
+    find: "  const where = [\"e.ts > now() - (:'since')::interval\"];",
+    replace: '  const where = ["e.ts > now() - (:since)::interval"];',
     planted: "the operator's --since flag is substituted into the statement as raw SQL instead " +
       "of arriving as a string literal, because psql interpolates a bare :name while lexing — " +
       "an apostrophe alone is then enough to change what the query means",
@@ -257,19 +260,6 @@ export const COV_SECURITY: readonly MutationSpec[] = [
   // scripts/gate/checks/data-sql.ts
   {
     check: "scripts/gate/checks/data-sql.ts",
-    target: "a team whose store is gone loses its index rows",
-    assertion: "a vanished team's decisions go with its documents",
-    subject: "packages/indexing/src/index.ts",
-    find: '    await p.query("delete from zz.decision where team_slug=$1", [teamSlug]);',
-    replace: "    // the claims go with the documents when the per-document reap runs",
-    planted: "a team whose store was removed keeps every claim derived from its documents for " +
-      "good — indexDoc is what clears them and it never runs for a document that is gone, so " +
-      "the rows stay joined to a path nothing will ever produce again. The two tables are " +
-      "keyed the same way and only one is being cleaned, which is the bug this function " +
-      "already fixed once for a single document",
-  },
-  {
-    check: "scripts/gate/checks/data-sql.ts",
     target: "a database read is not silently cut off at one megabyte",
     assertion: "every psql invocation bounds its own output",
     subject: "packages/tools/src/lib/psql.ts",
@@ -282,24 +272,14 @@ export const COV_SECURITY: readonly MutationSpec[] = [
   },
   {
     check: "scripts/gate/checks/data-sql.ts",
-    target: "a document's two derived tables are cleaned together",
-    assertion: "the per-document reap removes the claims as well as the document",
-    subject: "packages/indexing/src/index.ts",
-    find: '    await p.query("delete from zz.decision where team_slug=$1 and initiative=$2' +
-      ' and path=$3",\n      [teamSlug, g.initiative, g.path]);',
-    replace: "    // indexDoc clears a document's claims before re-deriving them",
-    planted: "a deleted or renamed document leaves its derived claims behind permanently — the " +
-      "reap knows about zz.doc and not about the second table keyed the same way, so the " +
-      "predictions stay, joined to a path that will never be produced again",
-  },
-  {
-    check: "scripts/gate/checks/data-sql.ts",
     target: "the platform database is reached one way",
     assertion: "no caller writes the transport's own result envelope by hand",
     subject: "packages/tools/src/ops/watch-results.ts",
-    find: '    "select team_slug, initiative, path, status, outcome, updated_at from zz.doc", {});',
+    // COUPLED: the selected columns. `outcome` came out of this statement when the lifecycle facts
+    // moved onto `zz.initiative`, so the anchor follows the statement that is actually there.
+    find: '    "select team_slug, initiative, path, status, updated_at from zz.doc", {});',
     replace: "    \"select coalesce(json_agg(row_to_json(t)), '[]') from (\" +\n" +
-      '    "  select team_slug, initiative, path, status, outcome, updated_at' +
+      '    "  select team_slug, initiative, path, status, updated_at' +
       ' from zz.doc) t", {});',
     planted: "a caller writes psqlRows' own json_agg envelope by hand, so the rows come back " +
       "wrapped twice and the tool reads nothing — composing that wrapper is the transport's " +
@@ -377,8 +357,8 @@ export const COV_SECURITY: readonly MutationSpec[] = [
     target: "a field that has held an empty string is written as absent, not as two spellings of nothing",
     assertion: "the writer refuses an empty initiative, not only a null one",
     subject: "services/gateway/src/events.ts",
-    find: "       e.initiative || null, e.flow ?? null, e.step || null, e.stepVersion ?? null,",
-    replace: "       e.initiative ?? null, e.flow ?? null, e.step || null, e.stepVersion ?? null,",
+    find: "    e.initiative || null,",
+    replace: "    e.initiative ?? null,",
     planted: "the one place every event row is written goes back to `??` on the field that has " +
       "actually held an empty string — `??` coalesces null and undefined and not \"\", so the " +
       "column holds two spellings of nothing where its index holds one, which is what made " +

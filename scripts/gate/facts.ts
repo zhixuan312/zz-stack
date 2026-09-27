@@ -91,6 +91,22 @@ export function schemaColumns() {
     for (const stmt of sql.matchAll(/alter table\s+(?:only\s+)?([a-z_.]+)([\s\S]*?);/gi)) {
       const cols = tables.get(bare(stmt[1]));
       if (!cols) continue;
+      // A rename is the same question this loop already answers for adds and drops — what is
+      // there now — asked under a new name. Miss it and the replay answers with the name a
+      // migration retired, which is a hole in both directions: a query against the retired name
+      // reads as live, and one against the new name reads as gone. Both halves are consumed
+      // beyond this file: the dropped-table check's live set, and the `_at` and `_by` column
+      // checks, which skip every column of a table whose rename went unseen.
+      const tableRename = /^\s*rename\s+to\s+([a-z_.]+)/i.exec(stmt[2]);
+      if (tableRename) {
+        tables.delete(bare(stmt[1]));
+        tables.set(bare(tableRename[1]), cols);
+        continue;
+      }
+      for (const r of stmt[2].matchAll(/rename column\s+([a-z_]+)\s+to\s+([a-z_]+)/gi)) {
+        cols.delete(r[1]);
+        cols.add(r[2]);
+      }
       for (const a of stmt[2].matchAll(/add column (?:if not exists )?([a-z_]+)/gi)) cols.add(a[1]);
       for (const d of stmt[2].matchAll(/drop column (?:if exists )?([a-z_]+)/gi)) cols.delete(d[1]);
     }

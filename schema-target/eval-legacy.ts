@@ -433,7 +433,7 @@ export const EVAL_LEGACY: Record<string, TableTarget> = {
         columns: [
           "run_id",
         ],
-        refTable: "run",
+        refTable: "skill_run",
         refColumns: [
           "id",
         ],

@@ -28,6 +28,6 @@ import { ARTIFACT } from "./schema-target/artifact.ts";
 import { SEARCH } from "./schema-target/search.ts";
 
 export const SCHEMA_TARGET: SchemaTarget = {
-  phase: 1,
+  phase: 2,
   tables: { ...IDENTITY, ...SIGN_IN, ...DELIVERY, ...KNOWLEDGE, ...TELEMETRY, ...CATALOG, ...EVAL_LEGACY, ...EVAL_PROTOCOL, ...EVAL_OBSERVE, ...EVAL_RUN, ...IMPROVE, ...CONTROL, ...ARTIFACT, ...SEARCH },
 };

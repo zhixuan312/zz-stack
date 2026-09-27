@@ -126,18 +126,29 @@ export function mountCatalog(app: Express): void {
       // Every skill the store has seen, whatever kind it is. `zz` ships common skills
       // (zz-platform), which are skills of a plugin here too, so a filter on
       // `kind = 'flow_step'` would show them as never run.
+      //
+      // A call's step is the skill of the version the event names, reached through
+      // `zz.skill_version`. An event naming no skill version is a step no reader can name, so it
+      // is counted under no skill rather than folded onto one; `logged` on /skills reports the
+      // same population.
       db.query(`select s.name,
                        (select count(*) from zz.skill_version v where v.skill_id = s.id) as versions,
                        (select count(*) from zz.event e
-                         where e.kind = 'tool_call' and e.step = s.name)                  as calls,
+                         where e.kind = 'tool_call'
+                           and e.skill_version_id in (select v.id from zz.skill_version v
+                                                       where v.skill_id = s.id))                  as calls,
                        (select count(*) from zz.event e
-                         where e.kind = 'tool_call' and e.step = s.name and e.ok = false) as failed,
+                         where e.kind = 'tool_call' and e.ok = false
+                           and e.skill_version_id in (select v.id from zz.skill_version v
+                                                       where v.skill_id = s.id))                  as failed,
                        -- When it last ran. The list sorts on it, so a plugin nobody has touched in a month
                        -- sinks below one in use rather than sitting wherever the catalog walk put it. No eval
                        -- count: an evaluation's subject is a plugin version, and the plugin's own count is on
                        -- the release row below.
                        (select to_char(max(e.ts) at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') from zz.event e
-                         where e.kind = 'tool_call' and e.step = s.name)                  as last_run
+                         where e.kind = 'tool_call'
+                           and e.skill_version_id in (select v.id from zz.skill_version v
+                                                       where v.skill_id = s.id))                  as last_run
                   from zz.skill s`),
       // What was released, and how many completed evaluation runs scored each released version.
       // An evaluation's subject names the release it digested in `release_identity`.

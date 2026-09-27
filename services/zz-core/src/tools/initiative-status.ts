@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { documentApplies, OUTCOME_STOPPED, parseCaller, parseEnvelope, type Applicability,
          type FlowDoc } from "@zz/contracts";
+import { decisionRows, type DecisionRow } from "@zz/indexing";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
@@ -648,23 +649,31 @@ export function registerInitiativeStatusTools(server: McpServer): void {
     },
     async ({ initiative }) => {
       const p = db();
-      if (!p) return text("ERROR: no platform database — reconciliation reads zz.decision");
+      if (!p) return text("ERROR: no platform database — reconciliation reads the indexed document bodies");
 
       const who = parseCaller(requestHeaders());
       const team = await teamFor(who.email);
       if (!team) return text("ERROR: no team — reconciliation is scoped to the team that made the predictions");
       const bad = safeName(initiative, "initiative");
       if (bad) return text(bad);
-      // What was claimed. Rows are derived at index time from text the flow already wrote, so
-      // this reads the flow's own words rather than a second record of them.
-      const { rows: claims } = await p.query<{
-        initiative: string; path: string; role: string; key: string;
-        verdict: string; qualifier: string; detail: string; checker: string;
-      }>(
-        `select initiative, path, role, key, verdict, qualifier, detail, checker
-           from zz.decision d where d.team_slug = $1 and d.initiative = $2
-          order by initiative, path, key`,
+      // What was claimed, computed from the documents' own bodies: a stage states them in the
+      // text it writes for a reader, and `decisionRows` parses that text back out.
+      const { rows: docs } = await p.query<{ path: string; type: string | null; body: string | null }>(
+        `select path, type, body from zz.doc
+          where team_slug = $1 and initiative = $2 and path not like '_versions/%'
+          order by path`,
         [team, initiative]);
+      const claims: (DecisionRow & { path: string })[] = [];
+      for (const d of docs) {
+        // A snapshot is skipped — its claims are the live document's, so reading both would
+        // count every prediction twice — as is a type that states no claims; a body this cannot
+        // read is one document with no claims, never an empty answer for the whole initiative.
+        const role = (d.type ?? "").trim();
+        if (!/^(selection|agreement|plan)$/.test(role) || typeof d.body !== "string") continue;
+        for (const c of decisionRows(d.body).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))) {
+          claims.push({ path: d.path, ...c });
+        }
+      }
       if (!claims.length) {
         return text(`No claims recorded for ${initiative}. A stage records them by writing its fit ledger or its acceptance criteria; nothing to reconcile until one has.`);
       }
@@ -672,7 +681,7 @@ export function registerInitiativeStatusTools(server: McpServer): void {
       // Claims only: nothing records which plugin a claim is about, so nothing joins these to
       // `zz.event`.
       const out = claims.map((c) => ({
-        initiative: c.initiative,
+        initiative,
         key: c.key,
         predicted: { verdict: c.verdict, qualifier: c.qualifier || null, by: c.detail || null,
                      verified_by: c.checker || null },

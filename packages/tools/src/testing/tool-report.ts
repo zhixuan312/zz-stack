@@ -46,19 +46,20 @@ interface CallRow {
    * itself; whether the call worked and, when it did not, the platform's own sentence
    * saying which rule was broken. These are columns because somebody groups by them.
    *
-   * `initiative` and `team_slug` are the join keys to zz.doc and zz.decision — without them a
-   * refusal cannot be connected to the document it was made for or the claim it was testing.
+   * `initiative` and `team_slug` are the join keys to `zz.doc` — without them a refusal cannot be
+   * connected to the document it was made for. Neither is a text column on the row any more: the
+   * event carries `initiative_id` and `team_id`, and the statement resolves both to the slug, so a
+   * row that names no team or no initiative comes back null rather than dropped. `step` is the
+   * skill's name, resolved the same way through the version the event names: an event whose skill
+   * version could not be resolved is a step this cannot name, and says so with a null.
    *
-   * `flow` is the flow the call's initiative was opened with, or null when the call named no
-   * initiative. `plugin` below is resolved from the door the call arrived on. */
+   * `plugin` below is resolved from the door the call arrived on. */
   team_slug: string | null;
   initiative: string | null;
-  flow: string | null;
   step: string | null;
-  step_version: string | null;
   /** Which plugin owns the skill `step` names, and its released version — resolved at write
-   * time through zz.plugin_version_skill, never from `flow` (a team's last install, not a
-   * skill's owner) and never guessed at: an unresolvable step leaves both null. */
+   * time through zz.plugin_version_skill, never from the initiative's flow (a team's last
+   * install, not a skill's owner) and never guessed at: an unresolvable step leaves both null. */
   plugin: string | null;
   plugin_version: string | null;
   /** `<surface>:<tool>`, alias-resolved as of write time — a snapshot, not a live answer. A row
@@ -120,23 +121,34 @@ interface CallRow {
  * stdin it does.
  */
 function rows(psql: string, since: string, surface: string | null, actor: string | null): CallRow[] {
-  const where = ["ts > now() - (:'since')::interval"];
+  const where = ["e.ts > now() - (:'since')::interval"];
   // A column, not a substring of one. `_` is a LIKE wildcard, so `--surface my_door` matched
   // against a split-out substring would count calls belonging to `myXdoor`.
-  if (surface) where.push("split_part(subject, ':', 1) = :'surface'");
+  if (surface) where.push("split_part(e.subject, ':', 1) = :'surface'");
   // One run, one conversation, keyed on the caller hash. Without it the report mixes the run being
   // measured with whatever else touched the deployment while it ran, including the operator
   // setting the run up.
-  if (actor) where.push("detail->>'caller' = :'actor'");
+  if (actor) where.push("e.detail->>'caller' = :'actor'");
   const sql =
-    // The kind is in the statement, not assembled into it. team_slug is null on the kinds written
-    // by acts that belong to a person rather than a team — a self-issued PAT, a package download —
-    // so a reader of that column has to say which kinds it means.
-    "select ts, subject, team_slug, initiative, flow, step, step_version, plugin, plugin_version," +
-    " tool_key," +
-    " ok, refusal, refusal_owner, duration_ms, request_bytes, response_bytes, batched, detail" +
-    " from zz.event where kind = 'tool_call'" +
-    ` and ${where.join(" and ")} order by id`;
+    // The kind is in the statement, not assembled into it.
+    //
+    // Every attribution the row carries is an id, and each is joined out to the thing it names:
+    // `team_slug` from `zz.team` through `team_id`, `initiative` from `zz.initiative` through
+    // `initiative_id`, `step` from `zz.skill` through the version the event names. Left joins, so
+    // a row that names none of them survives as that row: a self-issued PAT belongs to no team,
+    // and an event outside any initiative names none. The columns are qualified `e.` throughout,
+    // because the joins put four other tables' names in scope.
+    "select e.ts, e.subject, t.slug as team_slug, i.slug as initiative, sk.name as step," +
+    " e.plugin, e.plugin_version, e.tool_key," +
+    " e.ok, e.refusal, e.refusal_owner, e.duration_ms, e.request_bytes, e.response_bytes," +
+    " e.batched, e.detail" +
+    " from zz.event e" +
+    " left join zz.team t on t.id = e.team_id" +
+    " left join zz.initiative i on i.id = e.initiative_id" +
+    " left join zz.skill_version sv on sv.id = e.skill_version_id" +
+    " left join zz.skill sk on sk.id = sv.skill_id" +
+    " where e.kind = 'tool_call'" +
+    ` and ${where.join(" and ")} order by e.id`;
 
   const vars: Record<string, string> = { since };
   if (surface) vars.surface = surface;

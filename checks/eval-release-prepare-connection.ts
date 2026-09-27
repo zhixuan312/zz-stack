@@ -5,7 +5,9 @@
 // concurrent prepares starved the four-connection pool. Driven here against a stubbed pg.Pool
 // that counts connections: a prepare holds exactly one, takes the transaction-level advisory lock
 // and writes the fact mirror on it, never queries the pool while holding it, and concurrent
-// prepares on one initiative never hold two between them. A conflicting fact rolls everything back.
+// prepares on one initiative never hold two between them. The mirror row is keyed by the
+// initiative's own id, resolved once per call — asserted here, because a slug written into a uuid
+// column is a row the console cannot join. A conflicting fact rolls everything back.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,15 +19,22 @@ import pg from "pg";
 process.env.TEAM_DB_URL = "postgresql://stub@127.0.0.1:1/stub";
 
 type Result = { rows: Record<string, unknown>[]; rowCount: number };
-const statements: { on: "pool" | number; sql: string }[] = [];
+const statements: { on: "pool" | number; sql: string; values: unknown[] }[] = [];
 let outstanding = 0;
 let maxOutstanding = 0;
 let connects = 0;
 let poolQueriesWhileHeld = 0;
 
+/** The initiative row the mirror's id resolution reads back. The fact row is keyed on it, so the
+ *  check can assert the id the resolver handed over is the one the insert was written with. */
+const INITIATIVE_ID = "b0000000-0000-4000-8000-000000000001";
+
 function answer(sql: string): Result {
   if (/from zz\.eval_idempotency/.test(sql)) return { rows: [], rowCount: 0 };
   if (/insert into zz\.release_attempt/.test(sql)) return { rows: [{ id: "a0000000-0000-4000-8000-000000000001" }], rowCount: 1 };
+  // `initiativeIdFor` (initiative-record.ts): the mirror is keyed by the initiative's own id, so
+  // this lookup stands between the store's initiative name and the fact row.
+  if (/from zz\.initiative i/.test(sql)) return { rows: [{ id: INITIATIVE_ID }], rowCount: 1 };
   return { rows: [], rowCount: 0 };
 }
 const tick = () => new Promise((r) => setTimeout(r, 2));
@@ -36,9 +45,9 @@ pg.Pool.prototype.connect = (async function connect() {
   maxOutstanding = Math.max(maxOutstanding, outstanding);
   let released = false;
   return {
-    async query(text: string) {
+    async query(text: string, values?: unknown[]) {
       const sql = text.replace(/\s+/g, " ").trim();
-      statements.push({ on: id, sql });
+      statements.push({ on: id, sql, values: values ?? [] });
       await tick();
       return answer(sql);
     },
@@ -51,7 +60,7 @@ pg.Pool.prototype.connect = (async function connect() {
 }) as unknown as typeof pg.Pool.prototype.connect;
 pg.Pool.prototype.query = (async function query(text: string) {
   if (outstanding) poolQueriesWhileHeld += 1;
-  statements.push({ on: "pool", sql: text.replace(/\s+/g, " ").trim() });
+  statements.push({ on: "pool", sql: text.replace(/\s+/g, " ").trim(), values: [] });
   return answer(text);
 }) as unknown as typeof pg.Pool.prototype.query;
 
@@ -85,6 +94,14 @@ try {
   assert.ok(at(/insert into zz\.initiative_fact/) > at(/pg_advisory_xact_lock/), "the mirror is written under the lock");
   assert.ok(at(/insert into zz\.eval_idempotency/) < at(/^COMMIT$/));
   assert.ok(!sqls.some((s) => /pg_advisory_lock\(|pg_advisory_unlock/.test(s)), "no session-level advisory lock");
+  // The mirror is keyed by the initiative's own id: the row is written with the id the resolver
+  // read back, and the columns are the id, the fact and its value — no team or initiative slug.
+  const mirror = statements.find((s) => /insert into zz\.initiative_fact/.test(s.sql));
+  assert.ok(mirror, "the fact is mirrored");
+  assert.match(mirror.sql, /insert into zz\.initiative_fact \(initiative_id, fact, value\)/,
+    `the mirror writes by id: ${mirror.sql}`);
+  assert.deepEqual(mirror.values, [INITIATIVE_ID, "release_mode", "promotable"],
+    "the mirrored row carries the resolved id, the fact and its value");
   assert.equal(one.outcome.replayed, false);
   assert.deepEqual(one.facts, { release_mode: "promotable" });
   assert.deepEqual(facts("init-a"), { release_mode: "promotable" });

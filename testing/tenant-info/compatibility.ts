@@ -42,7 +42,9 @@ const DECLARED_READERS = [
   "services/gateway/src/console/overview.ts",
   "services/gateway/src/console/overview-metrics.ts",
   "services/gateway/src/runs.ts",
-  "services/gateway/src/discussion.ts",
+  // `services/gateway/src/discussion.ts` stood here until the schema first-principles delivery's
+  // delivery-and-telemetry phase deleted it with `zz.discussion_message`. A reader that is gone
+  // reads nothing, so declaring it makes the case above throw rather than verify.
   "services/zz-core/src/eval/plugin-judge.ts",
 ] as const;
 

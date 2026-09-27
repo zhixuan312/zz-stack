@@ -49,8 +49,10 @@ interface PluginTraces {
   sufficient: boolean;
   /** The runs themselves, newest first, capped at `RUN_REFS_CAP` — each one a `run_id` that
    *  `evaluation_assess` resolves as a run-kind subject_ref (only runs with events are listed, the
-   *  same condition the resolver checks), with the team it acted for: an initiative slug is only
-   *  unique within a team, so neither is given without the other. */
+   *  same condition the resolver checks), with the team it acted for. The run carries that team
+   *  itself, so it is read from the run and not reached through the initiative: an initiative slug
+   *  is only unique within a team, so the slug below is read beside the team and never without
+   *  it. */
   run_refs: { run_id: string; team: string | null; initiative: string | null; started_at: string }[];
   run_refs_truncated: boolean;
   /** A door's refused calls, newest first, as `event:<id>` subject_refs: a call made outside any
@@ -129,14 +131,14 @@ interface PluginTraces {
  *  query these fragments join. */
 const EVAL_FLOW = "zz-plugin-eval";
 const EVAL_SESSION = (session: string): string => `
-  exists (select 1 from zz.run sr
+  exists (select 1 from zz.skill_run sr
             join zz.skill_version ssv on ssv.id = sr.skill_version_id
             join zz.skill ss on ss.id = ssv.skill_id
-           where sr.caller_session = ${session} and ss.flow = '${EVAL_FLOW}')`;
+           where sr.session = ${session} and ss.flow = '${EVAL_FLOW}')`;
 const EVAL_INITIATIVES = `
   select ei.id from zz.initiative ei
    where ei.flow = '${EVAL_FLOW}'
-      or exists (select 1 from zz.run er
+      or exists (select 1 from zz.skill_run er
                    join zz.skill_version esv on esv.id = er.skill_version_id
                    join zz.skill es on es.id = esv.skill_id
                   where er.initiative_id = ei.id and es.flow = '${EVAL_FLOW}')`;
@@ -145,23 +147,23 @@ const NOT_EVALUATION_RUN = `
      not exists (select 1 from zz.skill_version esv join zz.skill es on es.id = esv.skill_id
                   where esv.id = r.skill_version_id and es.flow = '${EVAL_FLOW}')
      and (r.initiative_id is null or r.initiative_id not in (${EVAL_INITIATIVES}))
-     and not (r.initiative_id is null and ${EVAL_SESSION("r.caller_session")})))`;
+     and not (r.initiative_id is null and ${EVAL_SESSION("r.session")})))`;
 const NOT_EVALUATION_EVENT = `
   ($1 = '${EVAL_FLOW}' or (
-     not exists (select 1 from zz.skill es where es.name = e.step and es.flow = '${EVAL_FLOW}')
-     and not exists (select 1 from zz.initiative ii join zz.team it on it.id = ii.team_id
-                      where it.slug = e.team_slug and ii.slug = e.initiative
-                        and ii.id in (${EVAL_INITIATIVES}))
-     and not (coalesce(e.initiative, '') = '' and ${EVAL_SESSION("e.detail->>'run'")})))`;
+     not exists (select 1 from zz.skill_version esv join zz.skill es on es.id = esv.skill_id
+                  where esv.id = e.skill_version_id and es.flow = '${EVAL_FLOW}')
+     and (e.initiative_id is null or e.initiative_id not in (${EVAL_INITIATIVES}))
+     and not (e.initiative_id is null and ${EVAL_SESSION("e.session")})))`;
 
 /** The runs belonging to one plugin version, through its recorded skill membership, bounded to
  *  the caller's window.
  *
- * DELIBERATE: through zz.plugin_version_skill and not through zz.event.step_version, which is
- * stamped only when a skill is served whole through skill_read. The membership is written at
- * release, which is the only moment anybody knows what a plugin version contained. */
+ * DELIBERATE: through zz.plugin_version_skill and not through the skill version the event names,
+ * which records which skill a caller was following rather than which skills a release shipped. The
+ * membership is written at release, which is the only moment anybody knows what a plugin version
+ * contained. */
 const RUNS_BY_SKILL = `
-  from zz.run r
+  from zz.skill_run r
   join zz.plugin_version_skill pvs on pvs.skill_version_id = r.skill_version_id
   join zz.plugin_version pv on pv.id = pvs.plugin_version_id
   join zz.plugin p on p.id = pv.plugin_id
@@ -183,7 +185,7 @@ const RUNS_BY_SKILL = `
  * The manifest decides which shape a plugin is: one that declares `servers` owns a door; one that
  * declares none rides the baseline and is a flow. */
 const RUNS_ON_DOOR = `
-  from zz.run r
+  from zz.skill_run r
  where exists (select 1 from zz.event e
                 where e.run_id = r.id and e.plugin = $1 and e.plugin_version = $2
                   and e.ts between $3 and $4)
@@ -213,11 +215,11 @@ export function toolCallEvents(servesOwnDoor: boolean): string {
  *  "unbounded" special case. */
 export function unboundedRunsClause(servesOwnDoor: boolean): string {
   return servesOwnDoor
-    ? `from zz.run r
+    ? `from zz.skill_run r
         where exists (select 1 from zz.event e
                        where e.run_id = r.id and e.plugin = $1 and e.plugin_version = $2)
           and ${NOT_EVALUATION_RUN}`
-    : `from zz.run r
+    : `from zz.skill_run r
         join zz.plugin_version_skill pvs on pvs.skill_version_id = r.skill_version_id
         join zz.plugin_version pv on pv.id = pvs.plugin_version_id
         join zz.plugin p on p.id = pv.plugin_id
@@ -241,7 +243,7 @@ export async function versionsWithUse(
         group by e.plugin_version order by max(e.ts) desc limit 5`
     : `select pv.version, count(distinct r.id)::text as uses,
               to_char(max(r.started_at), 'YYYY-MM-DD HH24:MI') as last
-         from zz.run r
+         from zz.skill_run r
          join zz.plugin_version_skill pvs on pvs.skill_version_id = r.skill_version_id
          join zz.plugin_version pv on pv.id = pvs.plugin_version_id
          join zz.plugin p on p.id = pv.plugin_id
@@ -261,10 +263,7 @@ export async function subjectRefsOf(
   const params = [plugin, version, window.from, window.to];
   const runRefs = (await pool.query<{ run_id: string; team: string | null; initiative: string | null; started_at: string }>(`
     select r.id::text as run_id, r.started_at::text as started_at,
-           coalesce((select t.slug from zz.initiative i join zz.team t on t.id = i.team_id
-                      where i.id = r.initiative_id),
-                    (select e.team_slug from zz.event e
-                      where e.run_id = r.id and e.kind = 'tool_call' and e.team_slug is not null limit 1)) as team,
+           (select t.slug from zz.team t where t.id = r.team_id) as team,
            (select i.slug from zz.initiative i where i.id = r.initiative_id) as initiative
       ${RUNS_OF}
        and exists (select 1 from zz.event e where e.run_id = r.id)
@@ -311,21 +310,32 @@ export async function pluginTraces(
     Number((await pool.query<{ n: string }>(sql, params)).rows[0]?.n ?? 0);
 
   const runs = await n(`select count(*)::text as n ${RUNS_OF}`);
+  // A run is usable when it can be placed on a stage, and the step is nameable only through the
+  // skill version the event names: the retired `step` text is gone, and an event whose version
+  // could not be resolved at the door is a step no reader can name. Those events are counted in
+  // the coverage gap below rather than dropped from the denominator.
   const usable = await n(`
     select count(*)::text as n ${RUNS_OF}
       and r.initiative_id is not null
       and exists (select 1 from zz.event e
-                   where e.run_id = r.id and e.step is not null and e.step <> '')`);
+                   where e.run_id = r.id and e.skill_version_id is not null)`);
 
   const refs = await subjectRefsOf(pool, plugin, version, servesOwnDoor, window);
 
   // Coverage over the events these runs own. `resolvable` is the count that can be placed on a
   // stage at all; the gap between it and `events` is what every other figure here is missing.
+  //
+  // Read through the ids the row carries rather than the text it used to: `with_step` is an event
+  // naming a skill version, `with_initiative` an event naming an initiative, and `resolvable` the
+  // narrower question of whether that version's skill is in the registry at all. The two text
+  // columns are gone, so an event whose name resolved nothing is a null id and counts in neither.
   const cov = (await pool.query<{ events: string; with_step: string; with_initiative: string; resolvable: string }>(`
     select count(*)::text                                                            as events,
-           count(*) filter (where e.step is not null and e.step <> '')::text          as with_step,
-           count(*) filter (where e.initiative is not null and e.initiative <> '')::text as with_initiative,
-           count(*) filter (where exists (select 1 from zz.skill s where s.name = e.step))::text as resolvable
+           count(*) filter (where e.skill_version_id is not null)::text              as with_step,
+           count(*) filter (where e.initiative_id is not null)::text                 as with_initiative,
+           count(*) filter (where exists (select 1 from zz.skill_version esv
+                                            join zz.skill s on s.id = esv.skill_id
+                                           where esv.id = e.skill_version_id))::text as resolvable
       from zz.event e
      where e.run_id in (select r.id ${RUNS_OF})`, params)).rows[0];
 
@@ -338,22 +348,34 @@ export async function pluginTraces(
   // The islands form below groups consecutive runs of the same step separately: the difference
   // between "how many events have I seen in this initiative" and "how many of this step" only
   // stays constant while the step does not change, so it numbers each visit.
+  //
+  // Grouped on the ids the event carries and named afterwards, so the step is `zz.skill.name` and
+  // the initiative is the initiative row's own `slug` — the two text columns are gone. The shape
+  // test below is kept, read against the initiative's slug: it is the shape `initiative_open`
+  // composes from its own clock and a safe name, so what it holds to is that a stage path is over
+  // the initiatives the platform itself opened rather than over rows written by a fixture.
+  //
+  // DELIBERATE: the window partitions on the step's NAME, not on the skill version the event
+  // names. The retired `step` text was a name, so a skill re-released mid-initiative was one step
+  // then and would be two now — the visit that spans a re-release would split in two, and the
+  // stage path would gain a row that no reader ever observed. Measured on the deployment before
+  // the migration: partitioning on the version splits two of the 80 visits the old query returns,
+  // on `2026-09-26-eval-zz-core` and `2026-09-26-eval-zz-core-2`; partitioning on the name returns
+  // those 80 rows unchanged. The version is how the name is reached, not what the step is.
   const pathRows = (await pool.query<{ initiative: string; step: string; first_ts: string; last_ts: string }>(`
-    select initiative, step, min(ts)::text as first_ts, max(ts)::text as last_ts
-      from (select e.initiative, e.step, e.ts,
-                   row_number() over (partition by e.initiative order by e.ts)
-                 - row_number() over (partition by e.initiative, e.step order by e.ts) as visit
+    select i.slug as initiative, x.step, min(x.ts)::text as first_ts, max(x.ts)::text as last_ts
+      from (select e.initiative_id, s.name as step, e.ts,
+                   row_number() over (partition by e.initiative_id order by e.ts)
+                 - row_number() over (partition by e.initiative_id, s.name order by e.ts) as visit
               from zz.event e
+              join zz.skill_version sv on sv.id = e.skill_version_id
+              join zz.skill s on s.id = sv.skill_id
              where e.run_id in (select r.id ${RUNS_OF})
-               and e.initiative is not null and e.initiative <> ''
-               -- And it is an initiative name. The column holds whatever a call passed, recorded before
-               -- the platform answered, so a failed call can leave a document path or a sentence in it.
-               -- The shape is the platform's own: initiative_open composes the date and slug from its own
-               -- clock and safeName refuses a separator.
-               and e.initiative ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9][a-z0-9-]*$'
-               and e.step is not null and e.step <> '') x
-     group by initiative, step, visit
-     order by initiative, min(ts)`, params)).rows;
+               and e.initiative_id is not null) x
+      join zz.initiative i on i.id = x.initiative_id
+     where i.slug ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9][a-z0-9-]*$'
+     group by i.slug, x.step, x.visit
+     order by i.slug, min(x.ts)`, params)).rows;
 
   const stage_paths: PluginTraces["stage_paths"] = [];
   const helper = new Set(helpers);
@@ -383,10 +405,14 @@ export async function pluginTraces(
   const writeRows = placed.length ? (await pool.query<{ initiative: string; ts: string; back_to_step: string; from_step: string | null }>(`
     with pos(doc, stage, p) as (select * from unnest($5::text[], $6::text[], $7::int[])),
     w as (
-      select e.ts, e.team_slug,
+      select e.ts, t.slug as team_slug,
              split_part(e.detail->'ids'->>'path', '/', 1) as initiative,
              split_part(e.detail->'ids'->>'path', '/', 2) as doc
         from zz.event e
+        -- The event's own team, joined rather than read off the row. An inner join is safe here
+        -- because every event this statement admits names a run, and zz.event holds a run only
+        -- where its team resolved: a row dropped by this join is a row that could not exist.
+        join zz.team t on t.id = e.team_id
        where e.run_id in (select r.id ${RUNS_OF})
          and e.kind = 'tool_call' and e.ok is true
          and split_part(coalesce(e.tool_key, e.subject), ':', 2) in ('document_write', 'document_revise', 'document_patch')
@@ -490,23 +516,27 @@ export async function pluginTraces(
     ? (await pool.query<{ documents: string; revised: string; revised_with_evidence: string;
                           patched: string; patched_with_evidence: string }>(`
         with touched as (
-          select distinct e.initiative from zz.event e
+          select distinct ii.slug from zz.event e
+            join zz.initiative ii on ii.id = e.initiative_id
            where e.plugin = $1 and e.kind = 'tool_call'
              and e.ts between $2 and $3
-             and e.initiative is not null and e.initiative <> ''
              and ${NOT_EVALUATION_EVENT}
         ),
         live as (select * from zz.doc d
                   where d.path not like '\\_versions/%'
-                    and d.initiative in (select initiative from touched)),
+                    and d.initiative in (select slug from touched)),
         rev as (select l.evidence,
                        exists (select 1 from zz.doc v
                                 where v.team_slug = l.team_slug and v.initiative = l.initiative
                                   and v.path like '\\_versions/%' || replace(l.path, '.md', '') || '.v%') as revised,
+                       -- The same initiative, in the same team, named by an event rather than
+                       -- spelled by one: both ids have to resolve to the document's pair.
                        exists (select 1 from zz.event e
+                                join zz.initiative ei on ei.id = e.initiative_id
+                                join zz.team et on et.id = ei.team_id
                                 where e.kind = 'tool_call' and e.ok is not false
                                   and split_part(coalesce(e.tool_key, e.subject), ':', 2) = 'document_patch'
-                                  and e.initiative = l.initiative and e.team_slug = l.team_slug) as patched
+                                  and ei.slug = l.initiative and et.slug = l.team_slug) as patched
                   from live l)
         select count(*)::text as documents,
                count(*) filter (where revised)::text as revised,

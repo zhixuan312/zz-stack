@@ -30,6 +30,15 @@ import pg from "pg";
 const PROBE = "chain-check-";
 const LIKE = `%${PROBE}%`;
 
+/** The probe initiatives themselves, named by id: the one relation every other count and delete
+ *  below is measured against.
+ *
+ *  `zz.initiative.slug` is the only text column left that carries this pattern. `002_delivery_
+ *  telemetry.sql` dropped `zz.event.initiative` and `zz.assessment.initiative` and gave both
+ *  tables an `initiative_id` reference instead, so a purge still matching them on the slug would
+ *  match nothing and report a clean store. */
+const PROBES = `select i.id from zz.initiative i where i.slug like '${LIKE}'`;
+
 const APPLY = process.argv.includes("--apply");
 const ARTIFACTS = process.env.ZZ_ARTIFACTS ?? "/artifacts";
 
@@ -43,14 +52,13 @@ async function census() {
   return Object.fromEntries(await Promise.all([
     one("doc", `select count(*) n from zz.doc where initiative like '${LIKE}'`),
     one("initiative", `select count(*) n from zz.initiative where slug like '${LIKE}'`),
-    one("event", `select count(*) n from zz.event where initiative like '${LIKE}'`),
-    one("run", `select count(*) n from zz.run r join zz.initiative i on i.id = r.initiative_id
-                where i.slug like '${LIKE}'`),
+    one("event", `select count(*) n from zz.event where initiative_id in (${PROBES})`),
+    one("run", `select count(*) n from zz.skill_run r where r.initiative_id in (${PROBES})`),
     // From zz.knowledge_node, which is where a node lives. Counting zz.doc
     // reads 0 whatever the store holds, so the DELETE below deletes nothing and a purge that removed
     // the files leaves their index rows behind.
     one("node", `select count(*) n from zz.knowledge_node where path ilike '${LIKE}'`),
-    one("assessment", `select count(*) n from zz.assessment where initiative like '${LIKE}'`),
+    one("assessment", `select count(*) n from zz.assessment where initiative_id in (${PROBES})`),
     one("REAL initiative", `select count(*) n from zz.initiative where slug not like '${LIKE}'`),
     // Initiative documents only — nodes are their own table. Counting both makes deleting probe
     // nodes look like real documents going missing, and fires the survivor assertion on a purge that
@@ -133,23 +141,30 @@ if (!APPLY) {
   process.exit(0);
 }
 
-// Order matters, and the foreign keys set it. `zz.doc.initiative_id` references `zz.initiative` with
-// NO ACTION, so the documents go first or the initiative delete is refused. `zz.run.initiative_id` is
-// ON DELETE CASCADE, so probe runs go with their initiatives whether or not this script mentions
-// them — the schema's decision, named here so nobody is surprised by the count.
+// Order matters, and the delete actions set it: every row naming a probe initiative goes before
+// the initiative itself. `zz.doc.initiative_id`, `zz.event.initiative_id` and
+// `zz.assessment.initiative_id` are all ON DELETE SET NULL, so deleting the initiative first
+// would not be refused — it would take the reference away, leave the rows behind, and put them
+// out of reach of this script and of any second run of it. The documents are also the source of
+// truth for the store (`zz.doc` is an index projected from the files), so they go first for that
+// reason too.
 //
-// The events go too. They have no foreign key, so leaving them orphans rows pointing at initiatives
-// that no longer exist — rows that would go on poisoning the measurements this purge exists to
-// clean, while referring to nothing a reader could open.
+// `zz.skill_run.initiative_id` is the one that is ON DELETE CASCADE, so probe runs go with their
+// initiatives whether or not this script mentions them — the schema's decision, named here so
+// nobody is surprised by the count.
+//
+// The events go too, and they are not merely untidy: each one now carries `initiative_id`, so
+// leaving them would be rows referring to an initiative that no longer exists — poisoning the
+// measurements this purge exists to clean, while pointing at nothing a reader could open.
 await db.query("begin");
 try {
   const d = await db.query(`delete from zz.doc where initiative like '${LIKE}'`);
-  const e = await db.query(`delete from zz.event where initiative like '${LIKE}'`);
-  const i = await db.query(`delete from zz.initiative where slug like '${LIKE}'`);
-  const k = await db.query(`delete from zz.knowledge_node where path ilike '${LIKE}'`);
-  console.log(`  knowledge nodes: ${k.rowCount}`);
+  const e = await db.query(`delete from zz.event where initiative_id in (${PROBES})`);
   // The chain check asks `assess` and records two audit rounds, and every answer is a row here.
-  const a = await db.query(`delete from zz.assessment where initiative like '${LIKE}'`);
+  const a = await db.query(`delete from zz.assessment where initiative_id in (${PROBES})`);
+  const k = await db.query(`delete from zz.knowledge_node where path ilike '${LIKE}'`);
+  const i = await db.query(`delete from zz.initiative where slug like '${LIKE}'`);
+  console.log(`  knowledge nodes: ${k.rowCount}`);
   console.log(`  assessments: ${a.rowCount}`);
   await db.query("commit");
   console.log(`deleted: ${d.rowCount} doc, ${e.rowCount} event, ${i.rowCount} initiative (+ runs, by cascade)`);
@@ -176,7 +191,7 @@ console.log("after:", after);
 // The assertion is about the survivors, not about the victims. "I deleted 463 rows" is satisfied by
 // deleting the wrong 463; "every real initiative is still here" is not.
 const bad: string[] = [];
-for (const k of ["doc", "initiative", "event", "run", "node"]) {
+for (const k of ["doc", "initiative", "event", "run", "node", "assessment"]) {
   if (after[k] !== 0) bad.push(`${after[k]} ${k} rows still match ${PROBE}`);
 }
 for (const k of ["REAL initiative", "REAL doc", "REAL node"]) {

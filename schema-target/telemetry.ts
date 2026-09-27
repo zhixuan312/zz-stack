@@ -19,18 +19,6 @@ export const TELEMETRY: Record<string, TableTarget> = {
         "now()",
       ],
       [
-        "actor",
-        "text",
-        false,
-        null,
-      ],
-      [
-        "team_slug",
-        "text",
-        true,
-        null,
-      ],
-      [
         "kind",
         "text",
         false,
@@ -47,30 +35,6 @@ export const TELEMETRY: Record<string, TableTarget> = {
         "jsonb",
         false,
         "'{}'::jsonb",
-      ],
-      [
-        "initiative",
-        "text",
-        true,
-        null,
-      ],
-      [
-        "flow",
-        "text",
-        true,
-        null,
-      ],
-      [
-        "step",
-        "text",
-        true,
-        null,
-      ],
-      [
-        "step_version",
-        "text",
-        true,
-        null,
       ],
       [
         "ok",
@@ -144,6 +108,30 @@ export const TELEMETRY: Record<string, TableTarget> = {
         true,
         null,
       ],
+      [
+        "actor_id",
+        "uuid",
+        true,
+        null,
+      ],
+      [
+        "initiative_id",
+        "uuid",
+        true,
+        null,
+      ],
+      [
+        "session",
+        "text",
+        false,
+        "''::text",
+      ],
+      [
+        "skill_version_id",
+        "uuid",
+        true,
+        null,
+      ],
     ],
     primaryKey: [
       "id",
@@ -152,13 +140,46 @@ export const TELEMETRY: Record<string, TableTarget> = {
     foreignKeys: [
       {
         columns: [
-          "run_id",
+          "actor_id",
         ],
-        refTable: "run",
+        refTable: "principal",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
+      {
+        columns: [
+          "initiative_id",
+        ],
+        refTable: "initiative",
         refColumns: [
           "id",
         ],
         onDelete: "SET NULL",
+        deferrable: false,
+      },
+      {
+        columns: [
+          "run_id",
+        ],
+        refTable: "skill_run",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "SET NULL",
+        deferrable: false,
+      },
+      {
+        columns: [
+          "skill_version_id",
+        ],
+        refTable: "skill_version",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "NO ACTION",
         deferrable: false,
       },
       {
@@ -172,29 +193,60 @@ export const TELEMETRY: Record<string, TableTarget> = {
         onDelete: "NO ACTION",
         deferrable: false,
       },
+      {
+        columns: [
+          "team_id",
+          "initiative_id",
+        ],
+        refTable: "initiative",
+        refColumns: [
+          "team_id",
+          "id",
+        ],
+        onDelete: "SET NULL",
+        onDeleteColumns: [
+          "initiative_id",
+        ],
+        deferrable: false,
+      },
+      {
+        columns: [
+          "team_id",
+          "run_id",
+        ],
+        refTable: "skill_run",
+        refColumns: [
+          "team_id",
+          "id",
+        ],
+        onDelete: "SET NULL",
+        onDeleteColumns: [
+          "run_id",
+        ],
+        deferrable: false,
+      },
     ],
-    checks: [],
+    checks: [
+      "CHECK (((initiative_id IS NULL) OR (team_id IS NOT NULL)))",
+      "CHECK ((kind ~ '^[a-z_]+(\\.[a-z_]+)?$'::text))",
+      "CHECK (((refusal_owner IS NULL) OR ((refusal_owner = ANY (ARRAY['guardrail'::text, 'ours'::text, 'theirs'::text, 'other'::text])) AND (ok = false))))",
+      "CHECK (((run_id IS NULL) OR (team_id IS NOT NULL)))",
+      "CHECK (((kind <> 'tool_call'::text) OR ((ok IS NOT NULL) AND (tool_key IS NOT NULL))))",
+    ],
     indexes: [
-      "CREATE INDEX event_initiative ON zz.event USING btree (team_slug, initiative) WHERE (initiative IS NOT NULL)",
       "CREATE INDEX event_kind_ts ON zz.event USING btree (kind, ts)",
       "CREATE INDEX event_refusal_owner_idx ON zz.event USING btree (refusal_owner) WHERE (ok = false)",
       "CREATE INDEX event_run ON zz.event USING btree (run_id) WHERE (run_id IS NOT NULL)",
-      "CREATE INDEX event_step ON zz.event USING btree (step, step_version) WHERE (step IS NOT NULL)",
-      "CREATE INDEX event_team_ts ON zz.event USING btree (team_slug, ts)",
     ],
     comment: null,
     columnComments: {
-      initiative: "Join key to zz.doc and zz.decision. Carried forward per caller from the last call that named\n   one, because most calls do not take it as an argument.",
-      flow: "The flow the call's initiative runs, as declared at initiative_open; empty for a call made outside any initiative. Not attribution: use plugin / plugin_version for which plugin owns this call.",
-      step: "The skill this call was following, or NULL when none was. Never the empty string: `??` does not coalesce it, so an empty step reaches this column verbatim and is unjoinable to zz.skill while still looking like a value. Producers say unknown by omitting the field.",
-      step_version: "The version declared by the skill that was served WHOLE, or NULL. A supporting file beside a skill carries no version, and that is recorded as NULL rather than as an empty string, for the same reason as step.",
       ok: "Whether the call worked, in the platform's own terms — never a transport status. An MCP\n   tool that refuses answers HTTP 200 with ERROR: in its text.",
       plugin: "Which plugin owns the skill the caller had loaded, resolved through zz.plugin_version_skill from currentStep() — never from flow_install and never from the x-zz-client header. Null when no skill was loaded, or the step names none that a plugin has released.",
       plugin_version: "The released version of `plugin` that shipped the skill version the caller was on. Null exactly when plugin is null.",
       tool_key: "The alias-resolved `<surface>:<tool>` name (Task I-2's resolver), so a row written after this column existed already reads as one series across a rename with no further lookup.",
     },
   },
-  run: {
+  skill_run: {
     columns: [
       [
         "id",
@@ -211,20 +263,14 @@ export const TELEMETRY: Record<string, TableTarget> = {
       [
         "skill_version_id",
         "uuid",
-        true,
+        false,
         null,
       ],
       [
-        "caller_session",
+        "session",
         "text",
         false,
         "''::text",
-      ],
-      [
-        "turns",
-        "integer",
-        false,
-        "0",
       ],
       [
         "calls",
@@ -253,7 +299,13 @@ export const TELEMETRY: Record<string, TableTarget> = {
       [
         "ended_at",
         "timestamp with time zone",
-        true,
+        false,
+        null,
+      ],
+      [
+        "team_id",
+        "uuid",
+        false,
         null,
       ],
     ],
@@ -264,7 +316,11 @@ export const TELEMETRY: Record<string, TableTarget> = {
       [
         "initiative_id",
         "skill_version_id",
-        "caller_session",
+        "session",
+      ],
+      [
+        "team_id",
+        "id",
       ],
     ],
     foreignKeys: [
@@ -290,11 +346,38 @@ export const TELEMETRY: Record<string, TableTarget> = {
         onDelete: "NO ACTION",
         deferrable: false,
       },
+      {
+        columns: [
+          "team_id",
+        ],
+        refTable: "team",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
+      {
+        columns: [
+          "team_id",
+          "initiative_id",
+        ],
+        refTable: "initiative",
+        refColumns: [
+          "team_id",
+          "id",
+        ],
+        onDelete: "CASCADE",
+        deferrable: false,
+      },
     ],
-    checks: [],
+    checks: [
+      "CHECK ((ended_at >= started_at))",
+      "CHECK (((0 <= refusals) AND (refusals <= calls)))",
+    ],
     indexes: [
-      "CREATE UNIQUE INDEX run_no_initiative ON zz.run USING btree (skill_version_id, caller_session) WHERE (initiative_id IS NULL)",
-      "CREATE INDEX run_skill_version ON zz.run USING btree (skill_version_id, started_at DESC)",
+      "CREATE INDEX run_skill_version ON zz.skill_run USING btree (skill_version_id, started_at DESC)",
+      "CREATE UNIQUE INDEX skill_run_identity ON zz.skill_run USING btree (team_id, initiative_id, skill_version_id, session) NULLS NOT DISTINCT",
     ],
     comment: null,
     columnComments: {
@@ -314,18 +397,6 @@ export const TELEMETRY: Record<string, TableTarget> = {
         "timestamp with time zone",
         false,
         "now()",
-      ],
-      [
-        "event_id",
-        "bigint",
-        true,
-        null,
-      ],
-      [
-        "plugin",
-        "text",
-        true,
-        null,
       ],
       [
         "purpose",
@@ -376,13 +447,7 @@ export const TELEMETRY: Record<string, TableTarget> = {
         "1",
       ],
       [
-        "confidence",
-        "numeric",
-        true,
-        null,
-      ],
-      [
-        "note",
+        "error",
         "text",
         true,
         null,
@@ -392,23 +457,12 @@ export const TELEMETRY: Record<string, TableTarget> = {
       "id",
     ],
     uniques: [],
-    foreignKeys: [
-      {
-        columns: [
-          "event_id",
-        ],
-        refTable: "event",
-        refColumns: [
-          "id",
-        ],
-        onDelete: "SET NULL",
-        deferrable: false,
-      },
+    foreignKeys: [],
+    checks: [
+      "CHECK (((error IS NULL) OR (NOT ok)))",
     ],
-    checks: [],
     indexes: [
       "CREATE INDEX model_call_failed_ts ON zz.model_call USING btree (ts DESC) WHERE (NOT ok)",
-      "CREATE INDEX model_call_plugin_ts ON zz.model_call USING btree (plugin, ts)",
       "CREATE INDEX model_call_purpose_ts ON zz.model_call USING btree (purpose, ts)",
     ],
     comment: null,
@@ -453,12 +507,6 @@ export const TELEMETRY: Record<string, TableTarget> = {
         null,
       ],
       [
-        "requested_model",
-        "text",
-        true,
-        null,
-      ],
-      [
         "resolved_model",
         "text",
         true,
@@ -477,21 +525,9 @@ export const TELEMETRY: Record<string, TableTarget> = {
         null,
       ],
       [
-        "initiative",
-        "text",
-        true,
-        null,
-      ],
-      [
         "about",
         "text",
         true,
-        null,
-      ],
-      [
-        "asked_by",
-        "text",
-        false,
         null,
       ],
       [
@@ -518,12 +554,47 @@ export const TELEMETRY: Record<string, TableTarget> = {
         false,
         "'noul'::text",
       ],
+      [
+        "team_id",
+        "uuid",
+        false,
+        null,
+      ],
+      [
+        "initiative_id",
+        "uuid",
+        true,
+        null,
+      ],
+      [
+        "model_call_id",
+        "bigint",
+        true,
+        null,
+      ],
+      [
+        "asked_by",
+        "uuid",
+        false,
+        null,
+      ],
     ],
     primaryKey: [
       "id",
     ],
     uniques: [],
     foreignKeys: [
+      {
+        columns: [
+          "asked_by",
+        ],
+        refTable: "principal",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
       {
         columns: [
           "evaluator_version_id",
@@ -535,6 +606,44 @@ export const TELEMETRY: Record<string, TableTarget> = {
         onDelete: "NO ACTION",
         deferrable: false,
       },
+      {
+        columns: [
+          "model_call_id",
+        ],
+        refTable: "model_call",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
+      {
+        columns: [
+          "team_id",
+        ],
+        refTable: "team",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
+      {
+        columns: [
+          "team_id",
+          "initiative_id",
+        ],
+        refTable: "initiative",
+        refColumns: [
+          "team_id",
+          "id",
+        ],
+        onDelete: "SET NULL",
+        onDeleteColumns: [
+          "initiative_id",
+        ],
+        deferrable: false,
+      },
     ],
     checks: [
       "CHECK ((answer_kind = ANY (ARRAY['noul'::text, 'choice'::text, 'score'::text])))",
@@ -542,10 +651,9 @@ export const TELEMETRY: Record<string, TableTarget> = {
       "CHECK (((family IS NULL) OR ((reading IS NOT NULL) AND (answer_kind = 'noul'::text))))",
       "CHECK (((family IS NOT NULL) <> (evaluator_version_id IS NOT NULL)))",
       "CHECK ((reading = ANY (ARRAY['yes'::text, 'no'::text, 'unclear'::text, 'unavailable'::text])))",
+      "CHECK (((reading = 'unavailable'::text) = (reason IS NOT NULL)))",
     ],
-    indexes: [
-      "CREATE INDEX assessment_initiative_idx ON zz.assessment USING btree (initiative, asked_at)",
-    ],
+    indexes: [],
     comment: "Every semantic-assessment question the platform asked the typed service, with its provenance. A reading of unavailable carries its reason.",
     columnComments: {
       evaluator_version_id: "Set instead of family for a plugin-eval question. Exactly one of the two is non-null.",

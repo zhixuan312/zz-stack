@@ -29,8 +29,10 @@ import { db } from "./platform-db.js";
  * DELIBERATE: searches are logged only here, never in `journalLog` — a read line per search
  * would bury the entries that record decisions in the file a person reads top to bottom.
  *
- * COUPLED: team_id and team_slug both. Console views join through `team_id`, and the id is
- * resolved inside the INSERT so it cannot drift from the slug beside it.
+ * COUPLED: the actor and the team are written as ids resolved in the statement that writes the row
+ * — `zz.event` carries no slug and no address. A journal entry by somebody this platform does not
+ * know, or under a team slug nothing matches, is written with that column null rather than refused:
+ * a record of a search is worth more than a refusal to make one.
  *
  * The actor is folded in the statement. tool-report and watch-results both group on this
  * column, and one person spelled two ways breaks both.
@@ -51,8 +53,9 @@ export function platformEvent(e: {
   const p = db();
   if (!p) return;
   void p.query(
-    `insert into zz.event (actor, team_slug, team_id, kind, subject, detail)
-     values (lower($1), $2, (select id from zz.team where slug = $2), $3, $4, $5)`,
+    `insert into zz.event (actor_id, team_id, kind, subject, detail)
+     values ((select id from zz.principal where email = lower($1)),
+             (select id from zz.team where slug = $2), $3, $4, $5)`,
     [e.actor, e.team, e.kind, e.subject, JSON.stringify(e.detail)],
   // Logged: a row dropped here leaves no trace anywhere, so a database refusing every
   // insert would look identical to one recording them all.

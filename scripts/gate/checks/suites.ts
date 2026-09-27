@@ -261,12 +261,7 @@ check("the committed judged dataset is exactly what its generator produces, byte
  * COUPLED: `working-checks-registered.ts` parses this map, so a name here exempts a file from
  * both rules.
  */
-const notRegistered = new Map<string, string>([
-  // Empty: every check in `checks/` is registered. `pat-one-live-per-label.ts` was named here
-  // for one wave, while `services/gateway/src/mcp-oauth.ts` was the last insert path that did
-  // not revoke — I-11 landed that fix, and the registration above replaced the exemption in the
-  // same commit, because a name here and a registration there is a red gate.
-]);
+const notRegistered = new Map<string, string>([]);
 
 check("every check in checks/ is registered here, or named here with a reason", () => {
   // DELIBERATE: a cross-validator, not a loop. Registering the directory with a `for` would be

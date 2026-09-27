@@ -25,7 +25,7 @@ if (/\bmb:\s*\+/.test(src)) {
 }
 
 // The helper exists and distinguishes null from zero. Testing `> 0` would be wrong here: unlike
-// the neighbouring `turns` field, a real 0 is meaningful — measured, and empty.
+// the old model-turn count, a real 0 is meaningful — measured, and empty.
 const helper = /const num\s*=\s*\([^)]*\)[^=]*=>\s*\(([^;]+)\);/.exec(src);
 if (!helper) {
   fail.push(`${f} has no num() helper to report an unmeasured aggregate as null`);
@@ -33,15 +33,16 @@ if (!helper) {
   fail.push("num() does not test for null — a helper keyed on `> 0` would erase a measured zero");
 }
 
-// Control: nothing may report `turns`, in any form. `zz.run.turns` is written by no
-// statement and no `kind='turn'` event is emitted, so a reader of it can only ever report zero.
+// Control: nothing may report `turns`, in any form. `zz.skill_run` has no such column and no
+// statement writes one — `model_call` records each turn as its own row — so a reader of it can
+// only ever report zero.
 if (/\bturns\b/.test(src)) {
-  fail.push("skills.ts reads `turns` again — zz.run.turns is written by nothing and no turn " +
+  fail.push("skills.ts reads `turns` again — zz.skill_run carries no such column and no turn " +
             "event is emitted, so any figure built on it is a zero wearing the clothes of a " +
             "measurement. Delete the reader; do not coerce it.");
 }
 
-// The same property, on the overview. The status row reads `zz.run.bytes_total`, which is
+// The same property, on the overview. The status row reads `zz.skill_run.bytes_total`, which is
 // nullable for the reason above: a run nobody measured is not a run that moved nothing.
 // `Number(v ?? 0)` one layer up reintroduces the conflation.
 const o = "services/gateway/src/console/overview-metrics.ts";

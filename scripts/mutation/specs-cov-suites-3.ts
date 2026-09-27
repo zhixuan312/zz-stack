@@ -126,9 +126,14 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
     target: "a query binds as many parameters as its statement names",
     assertion: "a statement that stops naming a placeholder its caller still binds is caught",
     subject: "services/zz-core/src/tools/bugs.ts",
-    find: "`update zz.bug set status = $2, resolution = $3, resolved_by = $4, resolved_at = now()",
-    replace: "`update zz.bug set status = $2, resolution = $3, resolved_by = current_user, resolved_at = now()",
-    planted: "bug_resolve's statement stops naming `$4` while its caller still passes four " +
+    // The last placeholder the caller binds, replaced by a literal — the same shape this plant
+    // has always had. Phase 2 gave `bug_resolve` a fifth bind (`duplicate_of`), so the last one
+    // moved from `$4` to `$5`; a plant still naming `$4` matches nothing, and `plant()` writes
+    // the file back only when a substitution happened, so it would have applied nothing and
+    // reported nothing while this check stayed green for the wrong reason.
+    find: "duplicate_of = $5::uuid",
+    replace: "duplicate_of = null",
+    planted: "bug_resolve's statement stops naming `$5` while its caller still passes five " +
       "values, so postgres rejects the bind and closing a bug report throws for every " +
       "operator — the exact shape that shipped green through tsc, the gate and the dry run once " +
       "already, because nothing offline reads SQL inside a template literal",

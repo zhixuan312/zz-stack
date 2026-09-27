@@ -39,7 +39,7 @@ export function mountSkills(app: Express): void {
         // skill removed from the catalog still belongs here — it owns those runs — but it must
         // not read as current.
         /* A duration is the span between a run's first and last call, so a run that made one
-         * call has none: `zz.run.started_at, ended_at` are `min(e.ts), max(e.ts)` over the
+         * call has none: `zz.skill_run.started_at, ended_at` are `min(e.ts), max(e.ts)` over the
          * run's events, and a one-event run is stamped `ended_at = started_at` by construction.
          *
          * So every duration below is taken `filter (where ended_at > started_at)`, and
@@ -72,7 +72,7 @@ export function mountSkills(app: Express): void {
                       filter (where r.ended_at > r.started_at)::numeric,1) as dur_total,
                 round(avg(r.bytes_total)/1024.0,1)                  as kb_avg,
                 round((sum(r.bytes_total)/1048576.0)::numeric,1)    as mb_total
-           from zz.run r
+           from zz.skill_run r
            join zz.skill_version sv on sv.id = r.skill_version_id
            join zz.skill s on s.id = sv.skill_id
           where ($1::timestamptz is null or r.started_at >= $1)
@@ -80,10 +80,18 @@ export function mountSkills(app: Express): void {
       db.query(
         // The same window as the runs above, or `logged` would report all-time call counts
         // beside a windowed run count on one row.
-        `select step, count(*) as calls, count(*) filter (where ok = false) as failed,
-                count(distinct coalesce(tool_key, subject)) as tools
-           from zz.event where kind = 'tool_call' and step is not null and step <> ''
-             and ($1::timestamptz is null or ts >= $1)
+        //
+        // A call's step is the skill of the version the event names, resolved through
+        // `zz.skill_version` — the retired `step` text is gone. An event naming no skill version
+        // is a step this cannot name, and it is left out of every group rather than folded onto
+        // one; that gap is on the run side too, where `runs` counts what `logged` cannot reach.
+        `select s.name as step, count(*) as calls, count(*) filter (where e.ok = false) as failed,
+                count(distinct coalesce(e.tool_key, e.subject)) as tools
+           from zz.event e
+           join zz.skill_version v on v.id = e.skill_version_id
+           join zz.skill s on s.id = v.skill_id
+          where e.kind = 'tool_call'
+            and ($1::timestamptz is null or e.ts >= $1)
           group by 1`, [since]),
     ]);
     const evBy = new Map(stepEvents.rows.map((e) => [e.step as string, e]));
@@ -123,15 +131,25 @@ export function mountSkills(app: Express): void {
       db.query(
         // The door comes from `subject`, which is `<door>:<tool>` on every tool_call and is
         // always present.
-        `select split_part(coalesce(tool_key, subject),':',1) as surface, count(*) as calls,
-                count(*) filter (where ok = false) as failed,
-                count(distinct coalesce(tool_key, subject)) as tools
-           from zz.event where kind = 'tool_call' and step = $1
+        //
+        // The step is the skill's name, resolved through the version the event names — the
+        // retired `step` text is gone. An event naming no skill version belongs to no skill here,
+        // for the same reason it belongs to no group in the query above.
+        `select split_part(coalesce(e.tool_key, e.subject),':',1) as surface, count(*) as calls,
+                count(*) filter (where e.ok = false) as failed,
+                count(distinct coalesce(e.tool_key, e.subject)) as tools
+           from zz.event e
+           join zz.skill_version v on v.id = e.skill_version_id
+           join zz.skill s on s.id = v.skill_id
+          where e.kind = 'tool_call' and s.name = $1
           group by 1 order by count(*) desc`, [name]),
       db.query(
-        `select coalesce(tool_key, subject) as tool, count(*) as calls,
-                count(*) filter (where ok = false) as failed
-           from zz.event where kind = 'tool_call' and step = $1
+        `select coalesce(e.tool_key, e.subject) as tool, count(*) as calls,
+                count(*) filter (where e.ok = false) as failed
+           from zz.event e
+           join zz.skill_version v on v.id = e.skill_version_id
+           join zz.skill s on s.id = v.skill_id
+          where e.kind = 'tool_call' and s.name = $1
           group by 1 order by count(*) desc limit 8`, [name]),
     ]);
     res.json({
@@ -147,24 +165,25 @@ export function mountSkills(app: Express): void {
    */
   /** Runs, as recorded.
    *
-   * No outcome breakdown: `zz.run` has no outcome column and nothing writes one, so a
+   * No outcome breakdown: `zz.skill_run` has no outcome column and nothing writes one, so a
    * breakdown would be one bar reading "(not recorded)" forever. */
   app.get("/api/console/runs", teamless("runs", async (req, res) => {
-    // No team dimension: `zz.run` carries no team column, and this reports platform-wide
-    // volume totals, the same census category as /overview.
+    // No team dimension: this reports platform-wide volume totals, the same census category as
+    // /overview. `zz.skill_run` carries its own `team_id` and this route reads none of it — the
+    // totals are over every team, which is what makes them the platform's.
     //
     // COUPLED: windowed with /skills. These four totals sit directly above the per-skill table
     // on one page, so two spans on one page would read as two figures for one thing.
     const db = platformDb();
     const since = periodCutoff(req);
     const [totals] = await Promise.all([
-      // COUPLED: no model-turn column and no caveat built on one — nothing writes zz.run's
+      // COUPLED: no model-turn column and no caveat built on one — nothing writes the run's
       // model-turn count and nothing emits the matching event, so a banner watching it could
       // never clear. checks/console-nulls.ts refuses a reader here again.
       db.query(`select count(*) as runs, coalesce(sum(calls),0) as calls,
                        coalesce(sum(refusals),0) as refusals,
                        round((sum(bytes_total)/1048576.0)::numeric,1) as mb
-                  from zz.run
+                  from zz.skill_run
                  where ($1::timestamptz is null or started_at >= $1)`, [since]),
     ]);
     const t = totals.rows[0];

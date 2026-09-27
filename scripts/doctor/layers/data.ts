@@ -87,29 +87,36 @@ probe("the skill registry is not behind the catalog", () => {
       `registry update has not run for what is on disk`;
 });
 
-// Every run names a version, or the evaluation track is reading noise.
+// Every run names a version that had been released when the run started, or the evaluation track is
+// reading noise.
 //
-// zz.run is derived from zz.event by reconcileRuns() on a timer, keyed on the version. A null
-// skill_version_id cannot match that insert's conflict target, because Postgres treats NULLs as
-// distinct, so `do update` never fires and each pass of the timer appends another copy — and a table
-// full of rows that look like runs reads, in every query, as a healthy table.
+// A run is stamped at the door, which resolves the skill version by `released_at <= now`. The
+// column is NOT NULL and carries a foreign key, so a run naming no version at all — the old
+// diagnosis here — is now refused by the schema and cannot be the finding. What the schema cannot
+// express is the ordering: a run whose version was released *after* the run began attributes the
+// work to text that did not exist yet, and every per-version figure taken off that row is about the
+// wrong bytes. That is the bound `runs.ts`'s version resolution exists to hold.
 //
 // Nothing offline can see it: the gate is static and cannot reach a database, and tsc cannot see
 // inside a template literal.
 //
-// Read-only, like everything in this file. A null row is reported, never deleted: a doctor that
-// fixed what it found would be one nobody could safely run while something was broken.
-probe("every run names the skill version it ran", () => {
-  const total = Number((psql("select count(*) from zz.run").trim() || "0"));
-  const orphan = psql("select count(*) from zz.run where skill_version_id is null").trim();
-  if (orphan === "") throw new Error("could not count zz.run on the host");
-  const n = Number(orphan);
+// Read-only, like everything in this file. A row like this is reported, never rewritten: a doctor
+// that fixed what it found would be one nobody could safely run while something was broken.
+probe("every run names a skill version that was released when it started", () => {
+  const total = Number((psql("select count(*) from zz.skill_run").trim() || "0"));
+  const early = psql(
+    "select count(*) from zz.skill_run r join zz.skill_version v on v.id = r.skill_version_id " +
+    "where v.released_at > r.started_at").trim();
+  if (early === "") throw new Error("could not count zz.skill_run on the host");
+  const n = Number(early);
   if (!n) return null;
   const pct = total ? Math.round((n / total) * 1000) / 10 : 0;
-  return `${n} of ${total} zz.run rows (${pct}%) name no skill version. reconcileRuns() cannot ` +
-         `dedupe them — a NULL never matches its conflict target — so the timer appends another ` +
-         `copy every pass. Delete them once (they are derived, and re-derive from zz.event), ` +
-         `and check that the version is resolved by released_at rather than by step_version`;
+  return `${n} of ${total} zz.skill_run rows (${pct}%) name a skill version released after the run ` +
+         `started. The run is stamped at the door, which picks the newest version released at or ` +
+         `before that moment, so these came from a registration that dated a release backwards or ` +
+         `from a repair pass that re-pointed a run — and each one charges the work to bytes that did ` +
+         `not exist when it ran. Check zz.skill_version.released_at for the versions named here ` +
+         `before trusting any per-version figure.`;
 });
 
 // R13 · A probe deletes what it creates, and the store is where you find out it did not.
@@ -180,26 +187,29 @@ probe("no document carries a status its flow does not gate", () => {
          `team reindexed.`;
 }, { predeploy: true });
 
-probe("no event names an initiative that does not exist in that event's own team", () => {
-  // DELIBERATE: not count-bounded, unlike the probe below. The history behind this one was cleaned
-  // rather than left to age out, so zero is reachable and anything above it is new.
-  //
-  // COUPLED: the team is part of the question. `zz.initiative` is unique on `(team_id, slug)`, not
-  // on slug, so "the slug exists" is not "the slug exists here" — one slug can live in two teams,
-  // and a team-blind version of this query calls both attributions valid while calling neither
-  // wrong.
-  const bad = psql(
-    "select count(*) from zz.event e where e.initiative is not null" +
-    " and not exists (select 1 from zz.initiative i join zz.team t on t.id = i.team_id" +
-    "                  where i.slug = e.initiative and t.slug is not distinct from e.team_slug)").trim();
-  const n = Number(bad);
-  if (Number.isNaN(n)) throw new Error("could not count cross-team attributions on the host");
-  if (!n) return null;
-  return `${n} event row(s) name an initiative that does not exist in the team the row is ` +
-         `filed under. A slug means something different, or nothing, in the next team, so ` +
-         `these rows attribute work to an initiative that never saw it — and every per-team ` +
-         `report reads them. The trace carries the initiative forward on the caller; it must ` +
-         `withhold it when the team changes.`;
+// The team an event is filed under and the initiative it names must be the same team's, and after
+// the delivery-telemetry phase that is the schema's job rather than a query's: `zz.event` carries
+// `team_id` and `initiative_id`, and the composite foreign key `(team_id, initiative_id)` can only
+// reference an initiative of that team. The old probe here counted rows violating that pair, and
+// there is no longer a row to count — a cross-team attribution is refused at insert.
+//
+// So this asks the live question instead: is the guarantee actually installed on this deployment?
+// That is a fact about a host, which is what this layer is for — the gate reads the schema target,
+// not the database a release is running against, so a deployment whose migration did not land looks
+// identical to a healthy one from off the host.
+//
+// Not count-bounded, and it does not need to be: the answer is a constraint's presence, which is
+// one fact and not a backlog to age out.
+probe("the deployment holds a team and an initiative to the same team", () => {
+  const present = psql(
+    "select count(*) from pg_constraint where conname = 'event_team_id_initiative_id_fkey'").trim();
+  if (present === "") throw new Error("could not read pg_constraint on the host");
+  if (Number(present)) return null;
+  return `zz.event carries no (team_id, initiative_id) foreign key on this deployment, so an ` +
+         `event can name an initiative belonging to another team and every per-team report reads ` +
+         `it as that team's work. It is created by the delivery-telemetry migration ` +
+         `(services/gateway/migrations/), which has not run here — deploy it before trusting any ` +
+         `attribution in this store.`;
 });
 
 // R11 · Attribution is looked up, and the gate can only see that it is. The gate asserts telemetry

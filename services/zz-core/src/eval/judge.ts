@@ -39,8 +39,12 @@ const count = (v: unknown): number | null =>
  * `purpose` names what `zz.model_call.purpose` records for this call. `discover.ts`'s
  * generative-critic step (Task I-9) passes `"failure-discover"`; historic rows from the removed
  * round loop carry `"plugin-judge"`, so a new caller passes its own label rather than borrowing
- * one and making two callers' spend indistinguishable. */
-export async function ask(p: pg.Pool, plugin: string | null,
+ * one and making two callers' spend indistinguishable.
+ *
+ * `_plugin` is kept to hold the positional argument `discover.ts` passes. It is named and not
+ * written: `002_delivery_telemetry.sql` drops `zz.model_call.plugin`, because a row that already
+ * says what purpose it served does not need a second copy of it. */
+export async function ask(p: pg.Pool, _plugin: string | null,
                    system: string, user: string, purpose: string): Promise<Record<string, unknown> | null> {
   if (!LLM_BASE || !LLM_KEY) throw new Error("no LLM endpoint configured for the judge");
   let body: string;
@@ -58,9 +62,9 @@ export async function ask(p: pg.Pool, plugin: string | null,
   const record = async (ok: boolean, u: Usage | undefined) => {
     await p.query(`
       insert into zz.model_call
-        (plugin, purpose, model, input_tokens, output_tokens, cache_read_tokens, duration_ms, ok)
-      values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [plugin, purpose, JUDGE_MODEL,
+        (purpose, model, input_tokens, output_tokens, cache_read_tokens, duration_ms, ok)
+      values ($1, $2, $3, $4, $5, $6, $7)`,
+      [purpose, JUDGE_MODEL,
        count(u?.prompt_tokens), count(u?.completion_tokens),
        count(u?.prompt_tokens_details?.cached_tokens),
        Date.now() - started, ok]);

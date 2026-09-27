@@ -19,12 +19,18 @@ const LOCK = "plugins.lock.json";
 const INITIATIVES = "services/gateway/src/console/initiatives.ts";
 
 /** zz-plugin-eval's `purpose`, verbatim, so the blanking below replaces the whole sentence
- *  rather than half of it and leaves a manifest that still parses. */
+ *  rather than half of it and leaves a manifest that still parses.
+ *
+ *  COUPLED: the plugin's own prose. `plant()` finds this string in `flow.json` and a `purpose`
+ *  that was rewritten since makes the plant land nowhere, so a change to that sentence is a change
+ *  to this constant in the same commit. */
 const EVAL_PURPOSE =
   "To answer whether a plugin is worth having, from evidence the platform already holds — " +
-  "what its real runs did, and what a recorded ablation says installing it is worth — " +
-  "against a ruler somebody agreed before the scoring started. It measures and never " +
-  "changes what it measures.";
+  "what its real runs did — against a protocol somebody agreed before the scoring started, " +
+  "and to turn a plugin-owned defect into a built and gated candidate patch, released only " +
+  "once its owners approve and rolled back if real use measures it worse. Measurement never " +
+  "bends toward the change somebody already wanted; promotion never happens without the " +
+  "required owners' say-so.";
 
 export const COV_CATALOG: readonly MutationSpec[] = [
   // catalog-stages.ts
@@ -189,8 +195,11 @@ export const COV_CATALOG: readonly MutationSpec[] = [
     check: "scripts/gate/checks/catalog-manifest.ts",
     target: "a plugin's recorded membership is the one it ships",
     subject: LOCK,
-    find: `      "zz-platform": "dac29055d623"`,
-    replace: `      "zz-platfrom": "dac29055d623"`,
+    // Anchored on the key alone, never on the digest beside it: the digest is rewritten by every
+    // release that touches the plugin, so an anchor carrying it goes stale on its own and the plant
+    // silently stops landing.
+    find: `      "zz-platform": "`,
+    replace: `      "zz-platfrom": "`,
     planted: "the lock's record of which skills were in this plugin version is wrong in both " +
       "directions at once — it names a skill the plugin does not ship and omits one it does. " +
       "A membership that is wrong is worse than one that is missing: the profile resolves " +

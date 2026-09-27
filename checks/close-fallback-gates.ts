@@ -152,8 +152,10 @@ function open(flow: string, facts: Record<string, string> | null) {
   let finished: unknown = null;
   try { finished = i.close("findings.md", FINISHED); } catch (err) { finished = err; }
   const said = finished instanceof Error ? finished.message : String(finished);
+  // The repair names the mirror row by the initiative's own id — the only key `zz.initiative_fact`
+  // has left — so the instruction is a lookup by id rather than by a team and a slug.
   is(/_facts\.json is not a JSON object/.test(said) && /initiative_close\(.*"abandoned"\)/.test(said) &&
-     /zz\.initiative_fact/.test(said),
+     /zz\.initiative_fact/.test(said) && /initiative_id/.test(said),
      `a finished close over a damaged _facts.json did not refuse naming the abandon and the repair: ${said}`);
   let stopped: unknown = null;
   try { stopped = i.close("findings.md", STOPPED); } catch (err) { stopped = err; }

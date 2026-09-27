@@ -135,12 +135,14 @@ export const PLATFORM_SPECS: readonly MutationSpec[] = [
   },
   {
     check: "scripts/gate/checks/knowledge.ts",
-    target: "_knowledge is never recorded as an initiative",
+    target: "_knowledge can never reach zz.initiative",
     subject: "services/gateway/src/runs.ts",
-    find: "     where e.initiative is not null and e.initiative not in ('', '_knowledge')",
-    replace: "     where e.initiative is not null and e.initiative <> ''",
-    planted: "the reserved knowledge directory stops being excluded from the initiative " +
-      "insert, so every deployment grows a _knowledge initiative with runs filed against it",
+    find: "    update zz.skill_run r",
+    replace: "    insert into zz.initiative (slug) values ('_knowledge');\n" +
+      "    update zz.skill_run r",
+    planted: "reconcileRuns grows back an insert into zz.initiative — the writer " +
+      "initiative_open is meant to be alone at — so the reserved name has a second author " +
+      "again, which is the shape the old derivation had when arbitrary event text could mint it",
   },
   {
     check: "scripts/gate/checks/security-identity.ts",

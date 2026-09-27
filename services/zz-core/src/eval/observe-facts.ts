@@ -185,9 +185,17 @@ export async function outcomeAndApprovalFacts(
   }>(`
     -- The initiatives this subject's own calls touched: a door's calls, or the calls inside a
     -- flow's runs — the same population every other fact here is drawn from (toolCallEvents).
+    --
+    -- The slugs are resolved from the event's own ids, not read off it: zz.event carries
+    -- initiative_id since 002 and no longer carries team_slug or initiative. The inner join
+    -- is the whole of the old "is not null and <> ''" guard — an event whose initiative does not
+    -- resolve touches no initiative, and the two readers below (live, closes) join on the pair,
+    -- so the counts this produces are the ones it produced before.
     with touched as (
-      select distinct e.team_slug, e.initiative ${toolCallEvents(servesOwnDoor)}
-         and e.initiative is not null and e.initiative <> ''
+      select distinct et.slug as team_slug, ii.slug as initiative
+        from (select e.initiative_id ${toolCallEvents(servesOwnDoor)}) t
+        join zz.initiative ii on ii.id = t.initiative_id
+        join zz.team et on et.id = ii.team_id
     ),
     live as (select d.* from zz.doc d
                join touched t on t.team_slug = d.team_slug and t.initiative = d.initiative

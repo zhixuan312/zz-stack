@@ -158,9 +158,9 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
     target: "the core door speaks noun-first, and no caller still says the old name",
     assertion: "no caller still names a tool by its pre-rename name",
     subject: "catalog/sdlc/sdlc-flow/skills/sdlc-review/SKILL.md",
-    find: "`document_write` before you return",
+    find: '`document_write(path: "<initiative>/review.md", content)`',
     // SEAMED: a pre-rename tool name in backticks, which `core-names.ts` reports anywhere.
-    replace: "`write" + "_file` before you return",
+    replace: '`write' + '_file(path: "<initiative>/review.md", content)`',
     // REDACTED: the payload is a pre-rename tool or skill name, and this repository sweeps
     // every tracked file for those, including `testing/mutation-report.json`, which `plant()`
     // writes the reconstructed string into. Seaming the source keeps the name out of this file

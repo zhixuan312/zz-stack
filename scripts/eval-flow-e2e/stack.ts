@@ -215,8 +215,8 @@ async function waitForAsync(what: string, attempt: () => Promise<boolean>, limit
   }
 }
 
-/** A gateway restart runs `reconcileRuns` at boot — what turns the event log into `zz.run` rows
- *  — instead of waiting out its five-minute timer. */
+/** A gateway restart runs `reconcileRuns` at boot — what repairs `zz.skill_run` rows against the
+ *  event log — instead of waiting out its five-minute timer. */
 export async function restartGateway(stack: Stack): Promise<void> {
   sh("docker", ["restart", `${stack.prefix}-gw`]);
   await waitForAsync("the gateway after its restart", () => coreAnswers(stack));

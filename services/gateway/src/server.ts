@@ -18,7 +18,6 @@ import { mountConsoleWrite } from "./console-write.js";
 import { mountConsole } from "./console.js";
 import { issueMyAccessTokenFor, myAccessTokensFor, revokeMyAccessTokenFor } from "./credentials.js";
 import { initPlatformDb, platformDbReady } from "./db.js";
-import { mountDiscussion } from "./discussion.js";
 import { strandedEvents } from "./events.js";
 import { identityMiddleware } from "./identity.js";
 import { mountMcpOauth } from "./mcp-oauth.js";
@@ -243,7 +242,6 @@ mountPasskey(app);
 mountConsole(app);
 mountConsoleWrite(app);
 mountConsoleAsk(app);
-mountDiscussion(app);
 // DELIBERATE: the `my_*` functions are handed over as a dependency object rather than
 // imported by settings.ts. They live in credentials.ts so /manage/mcp's tools and
 // settings.ts's browser routes call the same function, and a value import there would make

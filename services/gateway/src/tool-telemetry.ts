@@ -419,15 +419,14 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
         const owedBy = stageOwing(flow?.flow, String(call.params?.name ?? ""),
                                   given as Record<string, unknown>);
         const stepName = owedBy ?? step?.step;
-        // DELIBERATE: the version and the hash follow the NAME, or are not written at all.
-        // When the manifest overrides the traced step it knows which stage owes the document
-        // and not which version of that stage's skill this caller has, so absent is the honest
-        // answer.
+        // DELIBERATE: the hash follows the NAME, or is not written at all. When the manifest
+        // overrides the traced step it knows which stage owes the document and not which text of
+        // that stage's skill this caller has, so absent is the honest answer.
         //
-        // `step` and `step_version` together name one version of one skill, so a name carrying
-        // another skill's bytes names a version that never existed.
+        // The name is what the door resolves the skill version from, so a name carrying another
+        // skill's bytes would be filed under a version of that other skill — a name and a version
+        // that never belonged together.
         const owedElsewhere = !!owedBy && owedBy !== step?.step;
-        const stepVersion = owedElsewhere ? undefined : step?.step_version;
         const stepSha = owedElsewhere ? undefined : step?.step_sha;
         // DELIBERATE: from the door, never from the skill the caller last read. A door is a
         // plugin's declared server, so the plugin is fixed by where the call arrived; the skill
@@ -461,12 +460,16 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
           // true. The initiative is carried forward the same way the step is, rather than read
           // off the arguments, so a refusal can still be joined to the document it was made for.
           initiative: step?.initiative,
-          flow: flow?.flow,
           step: stepName,
-          stepVersion,
-          // Which plugin, and which release of it. Not `flow` (the initiative's flow, not a
-          // skill's owner) and not `x-zz-client` in `detail` below (which program made the call,
-          // not which plugin's skill it was following).
+          // The conversation this call belongs to, which the door resolves a version against and
+          // writes as the run's session. A column, not a bag key: with the team, the initiative and
+          // the skill version it is the run's whole identity, and `zz.skill_run` is
+          // `nulls not distinct` on exactly that tuple.
+          run: step?.run,
+          // Which plugin, and which release of it. Not the initiative's flow (which plugin owns the
+          // skill is a different question from which flow the work follows) and not `x-zz-client`
+          // in `detail` below (which program made the call, not which plugin's skill it was
+          // following).
           plugin: plugin ?? undefined,
           // The door's own account of its version, from the `initialize` handshake it already
           // sends. Absent until that door has been handshaken in this process: a version nobody
@@ -496,7 +499,6 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
             // DELIBERATE: not a second capture path. A tool becomes measurable by sending the
             // header it already sends, never by reporting itself.
             ...(req.headers["x-zz-client"] ? { client: String(req.headers["x-zz-client"]) } : {}),
-            run: step?.run,
             // The hash of the skill text actually served. Not a column: the gate refuses a
             // changed skill that kept its version, so authoring drift is caught in the repo
             // and what is left here is the narrower case of a host running text the repo does

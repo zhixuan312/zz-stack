@@ -228,7 +228,7 @@ function main(argv: string[]): number {
   // What the catalog does not carry — retired, not deleted.
   //
   // This registrar only inserts and updates, so a skill that was renamed or absorbed stays in
-  // zz.skill. It has to: its versions are referenced by zz.run and zz.plugin_version_skill, and
+  // zz.skill. It has to: its versions are referenced by zz.skill_run and zz.plugin_version_skill, and
   // deleting the row would lose which version those runs and plugin releases were. They are
   // reported so nobody mistakes one for a failed registration, and never offered for removal.
   const names = found.map((f) => lit(f.name)).join(", ");
@@ -240,7 +240,7 @@ function main(argv: string[]): number {
   const stale = psqlRows<{ name: string; kind: string; owner: string | null; runs: number }>(
     psql,
     `select s.name, s.kind, coalesce(s.flow, s.kind) as owner,
-            (select count(*) from zz.run r
+            (select count(*) from zz.skill_run r
                join zz.skill_version sv on sv.id = r.skill_version_id
               where sv.skill_id = s.id) as runs
        from zz.skill s

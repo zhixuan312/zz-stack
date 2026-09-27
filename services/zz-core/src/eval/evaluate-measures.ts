@@ -281,7 +281,13 @@ async function modelBackedAnswer(
     excluded_reason: raw === null ? "the evaluator returned no comparable answer" : null,
     evaluator_version_id: measure.evaluator_version_id, assessment_id: null,
     qualification_id: qual.id, qualification_state: qual.state,
+    // `model_call_id` is the call this value came from — the `zz.model_call` row the same call
+    // wrote, and the one the assessment's own column names. Carried in the answer's detail bag,
+    // because `zz.eval_assessment.answer` is where a measure's provenance already lives and the
+    // table carries no column of its own for it: a value nobody can trace back to a call is a
+    // number with no evidence behind it.
     detail: { answer_kind: result.answer_kind, reading: result.reading, probability: result.probability,
+              model_call_id: result.model_call_id,
               distribution: result.distribution, raw_value: raw,
               ...(parts.length > 1 ? { parts: parts.length, part_values: partValues } : {}) },
     pending: asked,

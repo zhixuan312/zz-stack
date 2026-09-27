@@ -15,9 +15,9 @@ import { schemaColumns } from "../facts.ts";
 
 /** The indexer, which lives in packages/indexing rather than services/zz-core.
  *
- *  Guarded rather than read bare: both checks below already say "reindexTeam is gone — this
- *  check reads nothing" when the function is absent, and a bare readFileSync would replace that
- *  sentence with an ENOENT stack trace. */
+ *  Guarded rather than read bare: the check below already says "reindexTeam is gone — this check
+ *  reads nothing" when the function is absent, and a bare readFileSync would replace that sentence
+ *  with an ENOENT stack trace. */
 const indexerSource = () => {
   const f = join(root, "packages/indexing/src/index.ts");
   return existsSync(f) ? readFileSync(f, "utf8") : "";
@@ -30,8 +30,8 @@ check("a team whose store is gone loses its index rows", () => {
   // Conflating them leaves a retired team's rows behind, and reindexAllTeams walking teams/
   // alone can never visit the one team that needs cleaning.
   //
-  // DELIBERATE: the trailing `"` in the two delete patterns below is load-bearing. Unanchored,
-  // `delete from zz.<table> where team_slug=$1` also matches the per-document cleanup at the
+  // DELIBERATE: the trailing `"` in the delete pattern below is load-bearing. Unanchored,
+  // `delete from zz.doc where team_slug=$1` also matches the per-document cleanup at the
   // foot of the same function (`... and initiative=$2 and path=$3`). The closing quote plus the
   // argument list is what tells the two apart.
   const src = indexerSource();
@@ -47,11 +47,6 @@ check("a team whose store is gone loses its index rows", () => {
     }
     if (!/delete from zz\.doc where team_slug=\$1", \[teamSlug\]/.test(fn)) {
       bad.push("reindexTeam never deletes a vanished team's zz.doc rows");
-    }
-    if (!/delete from zz\.decision where team_slug=\$1", \[teamSlug\]/.test(fn)) {
-      bad.push("reindexTeam deletes a vanished team's documents but not its decisions — the " +
-               "two are keyed the same way and only one being cleaned is the bug this file " +
-               "already fixed once for a single document");
     }
   }
   if (!all) bad.push("reindexAllTeams is gone — this check reads nothing");
@@ -80,24 +75,6 @@ check("a database read is not silently cut off at one megabyte", () => {
     }
   }
   return bad.length ? bad.join("; ") : null;
-});
-
-check("a document's two derived tables are cleaned together", () => {
-  // zz.doc holds the document; zz.decision holds the claims derived from it, keyed the same
-  // way. A deleted or renamed document must lose both — indexDoc clears claims, and it never
-  // runs for a file that is gone.
-  //
-  // DELIBERATE: this reads the cleanup loop itself rather than counting statement kinds.
-  // zz.decision is deleted from twice and zz.doc once, so a count passes with the cleanup gone.
-  const src = indexerSource();
-  const from = src.indexOf("const gone = rows.rows.filter");
-  if (from === -1) return "cannot find the reindex cleanup loop — this check needs rewriting";
-  const loop = src.slice(from, src.indexOf("return { scanned", from));
-  const missing = ["delete from zz.doc", "delete from zz.decision"]
-    .filter((stmt) => !loop.includes(stmt));
-  return missing.length === 0 ? null
-    : `the reindex cleanup drops a document without ${missing.join(" or ")} — its claims stay ` +
-      "behind, joined to a path nothing will ever produce again";
 });
 
 check("the platform database is reached one way", () => {
@@ -145,7 +122,13 @@ check("the platform database is reached one way", () => {
   try {
     // The stub echoes the statement back, so psqlRows dies on it, and the sentence it dies
     // with carries the statement that was sent.
-    execFileSync("node", ["--input-type=module", "-e", probe], { encoding: "utf8" });
+    //
+    // DELIBERATE: stdio spelled out. `execFileSync` relays the child's stderr to this process
+    // unless stdio is given, and this child is *meant* to die — the log line psqlRows writes
+    // before it throws would print under a passing gate run and read as a failure. Piped, it is
+    // captured below and nowhere else.
+    execFileSync("node", ["--input-type=module", "-e", probe],
+                 { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   } catch (err) {
     const e = err && typeof err === "object" ? err as Record<string, unknown> : {};
     sent = String(e.stdout ?? "") + String(e.stderr ?? "");
@@ -313,19 +296,18 @@ check("a service reaches its database through one accessor", () => {
 check("a run is attributed to a version by time, not by a column nothing stamps", () => {
   // A run is keyed on time, not on `step_version`. That column is written only when a skill is
   // served whole through skill_read; an installed skill read off disk stamps nothing, so the
-  // join it feeds resolves almost never.
+  // join it feeds resolves almost never. It is not even in the schema now, and the resolution is
+  // one function — runs.ts' `versionAtEvent` — which the door calls on the statement that writes
+  // the row.
   //
-  // A LEFT join over a dead column compounds it: an unresolvable event still produces a row
-  // carrying skill_version_id NULL, and a NULL cannot match the insert's conflict target,
-  // because Postgres treats NULLs as distinct — so `do update` never fires and the timer
-  // appends a duplicate every pass.
+  // A version resolved from an event must be bound by `released_at <=`: without the bound the
+  // join resolves every version ever released and files the call under the newest, and resolved
+  // by anything but time it resolves nothing for an installed skill, which stamps no version of
+  // its own. Either way every call leaves the per-version report it exists for.
   //
-  // Both halves are required: binding by a dead column loses every row, and an inner join over
-  // a dead column writes nothing at all.
-  //
-  // Only event-resolved joins are held to it. A join on `sv.id = run.skill_version_id` reads a
-  // version the insert already decided; what must be time-bound is the step where an event
-  // becomes a version, recognisable by resolving against the event row itself.
+  // Only time-resolved joins are held to it. A join on `sv.id = run.skill_version_id` reads a
+  // version the insert already decided; what must be time-bound is the step where an instant
+  // becomes a version, recognisable by its shape — the latest version released at or before it.
   const rel = "services/gateway/src/runs.ts";
   const f = join(root, rel);
   if (!existsSync(f)) return `${rel} is gone -- this check reads nothing`;
@@ -337,21 +319,37 @@ check("a run is attributed to a version by time, not by a column nothing stamps"
              "not moved in a month; resolve the version from the event's timestamp against " +
              "zz.skill_version.released_at instead");
   }
-  // Every place a version is resolved from an event -- recognised by the skill being matched
-  // on the event's own step -- must carry released_at. Counted, so that deleting the
-  // derivation to satisfy the rule above cannot pass as a green tick.
-  const resolutions = [...code.matchAll(/zz\.skill_version[\s\S]{0,200}/g)]
+  // Recognised by the shape of the resolution rather than by the event column it reads: the
+  // column that named the skill is gone, and what has to hold is that the answer is the latest
+  // version released at or before the instant asked about. Counted, so that deleting the
+  // resolution to satisfy the rule above cannot pass as a green tick.
+  const resolutions = [...code.matchAll(/zz\.skill_version[\s\S]{0,240}/g)]
     .map((m) => m[0])
-    .filter((w) => /\be\.(?:step|ts)\b/.test(w));
+    .filter((w) => /order by\s+v\.released_at desc limit 1/.test(w));
   if (!resolutions.length) {
-    return `${rel} resolves a skill version from an event nowhere -- either the run derivation ` +
-           "is gone or this extraction is broken, and both need a person rather than a tick";
+    return `${rel} resolves a skill version by time nowhere -- either the resolution is gone or ` +
+           "this extraction is broken, and both need a person rather than a tick";
   }
   for (const w of resolutions) {
-    if (!/released_at/.test(w)) {
-      bad.push(`${rel} resolves a version from an event without released_at: ` +
-               `${w.replace(/\s+/g, " ").slice(0, 90)}`);
+    if (!/released_at\s*<=/.test(w)) {
+      bad.push(`${rel} resolves a version without bounding it to the versions released at or ` +
+               `before the event: ${w.replace(/\s+/g, " ").slice(0, 90)}`);
     }
+  }
+  // The door resolves the version on the row it writes, through that same function: a second
+  // copy of the join spelled in events.ts is one the per-version report has to keep in step by
+  // hand, which is the drift this whole check exists to catch.
+  const doorRel = "services/gateway/src/events.ts";
+  const door = join(root, doorRel);
+  if (!existsSync(door)) return `${doorRel} is gone -- this check reads nothing`;
+  const doorCode = withoutComments(readFileSync(door, "utf8"));
+  if (!/\bversionAtEvent\(/.test(doorCode)) {
+    bad.push(`${doorRel} does not resolve a skill version through versionAtEvent, so the row ` +
+             "that stamps a version and the row a per-version report reads can disagree");
+  }
+  if (/zz\.skill_version/.test(doorCode)) {
+    bad.push(`${doorRel} spells a version resolution of its own — runs.ts' versionAtEvent is the ` +
+             "one place that join is written");
   }
   return bad.length ? firstOf(bad) : null;
 });
@@ -359,20 +357,69 @@ check("a run is attributed to a version by time, not by a column nothing stamps"
 check("the run reconcile rewrites only the runs that changed", () => {
   // `reconcileRuns` runs every five minutes over every run, and an unconditional `do update`
   // rewrote each row on every pass whether or not anything moved — 805,942 updates on 723 rows
-  // in production, all of them dead tuples. Each upsert skips a row its update would leave as
-  // it is, compared against the values the update writes.
+  // in production, all of them dead tuples. Every write skips a row it would leave as it is,
+  // compared against the values it would write: the door's upsert against `excluded`, the repair
+  // against the aggregate it recomputed. One comparison, in both, because "nothing moved" has to
+  // mean the same thing at the door and on the timer.
+  //
+  // One conflict target, too. The run's identity is the tuple `skill_run_identity` declares, and
+  // it is `nulls not distinct`, so a run with no initiative is a row on that index rather than a
+  // case needing a second, partial-target statement to keep in step.
   const rel = "services/gateway/src/runs.ts";
   const f = join(root, rel);
   if (!existsSync(f)) return `${rel} is gone -- this check reads nothing`;
   const code = withoutComments(readFileSync(f, "utf8"));
-  const updates = [...code.matchAll(/do update\s+set([\s\S]*?)`\)/g)].map((m) => m[1]!);
-  if (updates.length !== 2) return `${rel} has ${updates.length} run upserts; this check expects the two reconcileRuns writes`;
-  const bad = updates.filter((u) => !/\n\s*where \$\{CHANGED\}$/.test(u));
-  if (bad.length) return `${rel}: ${bad.length} run upsert(s) rewrite the row on every pass — end the do update with \`where \${CHANGED}\``;
-  const changed = /const CHANGED = `([\s\S]*?)`;/.exec(code)?.[1] ?? "";
-  for (const col of ["calls", "refusals", "bytes_total", "started_at", "ended_at"]) {
-    if (!changed.includes(`zz.run.${col}`)) return `${rel}: CHANGED does not compare ${col}, so a change to it alone is never written`;
+  const targets = [...code.matchAll(/on conflict \(([^)]*)\)/g)].map((m) => m[1]!);
+  const identity = "team_id, initiative_id, skill_version_id, session";
+  if (targets.length !== 1 || targets[0]!.replace(/\s+/g, " ").trim() !== identity) {
+    return `${rel} spells ${targets.length} conflict target(s); the run is keyed on one — ` +
+           `(${identity}) — and a second target is a second idea of what a run is`;
   }
-  if (!/is distinct from/.test(changed)) return `${rel}: CHANGED must compare with is distinct from, or a null total never counts as a change`;
+  const updates = [...code.matchAll(/do update\s+set([\s\S]*?)`/g)].map((m) => m[1]!);
+  if (updates.length !== 1) {
+    return `${rel} has ${updates.length} do update clauses; this check expects the one run upsert`;
+  }
+  if (!/\n\s*where \$\{CHANGED\(/.test(updates[0]!)) {
+    return `${rel}: the run upsert rewrites the row on every pass — end the do update with ` +
+           "`where ${CHANGED(` and the values it would write";
+  }
+  if (!/\$\{CHANGED\("r", "c"\)\}/.test(code)) {
+    return `${rel}: the repair rewrites every run its aggregate finds, moved or not — it must ` +
+           "skip them with the same comparison the upsert uses";
+  }
+  // And the door must compose its run from that one upsert, or the guard and the conflict target
+  // are this file's idea of a run alone while the row actually written on every call is another.
+  const doorRel = "services/gateway/src/events.ts";
+  const door = join(root, doorRel);
+  if (!existsSync(door)) return `${doorRel} is gone -- this check reads nothing`;
+  if (!/\$\{RUN_CONFLICT\}/.test(withoutComments(readFileSync(door, "utf8")))) {
+    return `${doorRel} does not compose its run from ${rel}'s RUN_CONFLICT, so the guard and ` +
+           "the conflict target the door writes under are copies nothing keeps in step";
+  }
+  if (/update zz\.event\b/.test(code)) {
+    return `${rel}: the timer writes zz.event again — the door stamps the identity on the row it ` +
+           "writes, and the timer's only job is to recount what is already attributed";
+  }
+  const changed = /const CHANGED = \(stored: string, incoming: string\): string =>\s*`([\s\S]*?)`;/
+    .exec(code)?.[1] ?? "";
+  if (!changed) {
+    return `${rel}: CHANGED is not a function of the stored row and the incoming one, so the two ` +
+           "writers can come to mean different things by \"nothing moved\"";
+  }
+  if (!/is distinct from/.test(changed)) {
+    return `${rel}: CHANGED must compare with is distinct from, or a null total never counts as a change`;
+  }
+  // The stored side has to name each column, and the incoming side has to fold started_at down
+  // and ended_at up: without the least/greatest a late event makes the two sides disagree, and
+  // the write is skipped as though nothing had moved.
+  const [stored, incoming] = changed.split(/is distinct from/);
+  for (const col of ["calls", "refusals", "bytes_total", "started_at", "ended_at"]) {
+    if (!(stored ?? "").includes(`\${stored}.${col}`)) {
+      return `${rel}: CHANGED's stored side does not name ${col}, so a change to it alone is never written`;
+    }
+  }
+  if (!/\bleast\(/.test(incoming ?? "") || !/\bgreatest\(/.test(incoming ?? "")) {
+    return `${rel}: CHANGED's incoming side does not fold started_at down and ended_at up`;
+  }
   return null;
 });

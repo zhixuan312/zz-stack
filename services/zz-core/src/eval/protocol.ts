@@ -53,7 +53,7 @@ import { latestProtocolVersion, triggersFor } from "./protocol-triggers.js";
 import { recordProtocolVersion } from "./protocol-record.js";
 import { recordAffirmed, recordDefineOwes } from "./stage-record.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
-import { factsFor, lockInitiativeFacts, withInitiativeFactsLock, writeFacts } from "../initiative-record.js";
+import { factsFor, initiativeIdFor, lockInitiativeFacts, mirrorFacts, withInitiativeFactsLock, writeFacts } from "../initiative-record.js";
 import { logActivity } from "../persist.js";
 import { safeName, safePath, userRoot } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
@@ -98,24 +98,27 @@ interface FactsTransaction {
 /** Mirror every fact the file holds into `zz.initiative_fact`, on every call — not only the
  *  ones this call set. A mirror that ran only for fresh facts would never repair one an earlier
  *  call wrote to the file and then failed to mirror (a caller with no team at the time), and the
- *  console would read that initiative's branch as undetermined forever. `on conflict do nothing`
- *  makes the repeat free and is the second half of append-only: even a caller racing this exact
- *  insert cannot make the row disagree with the file, because the refuse-on-change check already
- *  refused a disagreeing value before either write ran.
+ *  console would read that initiative's branch as undetermined forever. The row is written by the
+ *  initiative's own id — `zz.initiative_fact`'s whole key — and `mirrorFacts`'s
+ *  `on conflict do nothing` makes the repeat free and is the second half of append-only: even a
+ *  caller racing this exact insert cannot make the row disagree with the file, because the
+ *  refuse-on-change check already refused a disagreeing value before either write ran.
+ *
+ *  The id is resolved ONCE per call, before the rows are written, through the same team and store
+ *  name every other reader of this initiative uses (`initiativeIdFor`) — the table is keyed on it,
+ *  so a slug written into a slug column is a mirror the console cannot join.
  *
  *  No team to mirror under is not an error — `userRoot()` resolves a team-less shelf for a
  *  caller `teamFor` cannot place, and the file write is what stands for such a caller; the
- *  console has nothing to draw for them either way. */
+ *  console has nothing to draw for them either way. Nor is an initiative whose anchor row is
+ *  missing: the file is authoritative and holds the fact, and only the console's copy of it has
+ *  nowhere to go. */
 async function mirrorBranchFacts(tx: FactsTransaction, initiative: string, facts: Record<string, string>): Promise<void> {
   const entries = Object.entries(facts);
   if (!tx.team || !tx.client || !entries.length) return;
-  for (const [fact, value] of entries) {
-    await tx.client.query(
-      `insert into zz.initiative_fact (team, initiative, fact, value)
-       values ($1, $2, $3, $4)
-       on conflict (team, initiative, fact) do nothing`,
-      [tx.team, initiative, fact, value]);
-  }
+  const initiativeId = await initiativeIdFor(tx.client, tx.team, initiative);
+  if (!initiativeId) return;
+  await mirrorFacts(tx.client, initiativeId, Object.fromEntries(entries));
 }
 
 /** The read, the refuse-on-change decision, the file write and the mirror, under both halves of

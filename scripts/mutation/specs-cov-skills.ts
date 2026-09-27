@@ -69,10 +69,14 @@ export const COV_SKILLS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/skill-prose.ts",
     target: "every stage that writes a document names document_present, or says why not",
     assertion: "a declared stage names neither document_present nor a departure from it",
-    subject: `${EVAL}/zz-plugin-explain/SKILL.md`,
-    find: "put in front of the person with `document_present`, and approved by them with",
-    replace: "put in front of the person by pasting the text you just wrote, and approved by them with",
-    planted: "the stage that writes findings.md stops naming document_present, so the person " +
+    subject: `${EVAL}/zz-plugin-define-qualify/SKILL.md`,
+    // MOVED from zz-plugin-explain/SKILL.md, which is no longer plantable for this rule: that file
+    // names `document_present` twice and states the departure in so many words, so no single edit
+    // leaves it naming neither. DEFINE names it once, in the sentence that sends the person the
+    // stored bytes — the sentence worth being able to delete.
+    find: "`document_present` it and put what comes back in front of the person.",
+    replace: "paste the text you just wrote and put what comes back in front of the person.",
+    planted: "the stage that writes protocol.md stops naming document_present, so the person " +
       "approves an account of the document rather than the stored bytes — and the record " +
       "cannot show that anyone read what they signed",
   },
@@ -362,8 +366,11 @@ export const COV_SKILLS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/skill-shape.ts",
     target: "a heading is not printed twice on one line",
     subject: `${SDLC}/sdlc-review/SKILL.md`,
-    find: "\n## Execution\n",
-    replace: "\n## Execution## Execution\n",
+    // COUPLED: the heading it doubles. `## Execution` was this file's section title when the plant
+    // was written and the review skill no longer carries one — a `find` that matches nothing is a
+    // plant that never lands. `## Skill contract` is the heading every skill in this flow ends on.
+    find: "\n## Skill contract\n",
+    replace: "\n## Skill contract## Skill contract\n",
     planted: "a paste lands inside the heading line rather than beside it, so the review skill " +
       "stutters its own section title — and a skill is served to an agent verbatim, so the " +
       "agent reads the stutter too",

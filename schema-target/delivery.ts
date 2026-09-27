@@ -147,24 +147,6 @@ export const DELIVERY: Record<string, TableTarget> = {
   initiative_fact: {
     columns: [
       [
-        "id",
-        "bigint",
-        false,
-        null,
-      ],
-      [
-        "team",
-        "text",
-        false,
-        null,
-      ],
-      [
-        "initiative",
-        "text",
-        false,
-        null,
-      ],
-      [
         "fact",
         "text",
         false,
@@ -182,22 +164,33 @@ export const DELIVERY: Record<string, TableTarget> = {
         false,
         "now()",
       ],
-    ],
-    primaryKey: [
-      "id",
-    ],
-    uniques: [
       [
-        "team",
-        "initiative",
-        "fact",
+        "initiative_id",
+        "uuid",
+        false,
+        null,
       ],
     ],
-    foreignKeys: [],
-    checks: [],
-    indexes: [
-      "CREATE INDEX initiative_fact_lookup_idx ON zz.initiative_fact USING btree (team, initiative)",
+    primaryKey: [
+      "initiative_id",
+      "fact",
     ],
+    uniques: [],
+    foreignKeys: [
+      {
+        columns: [
+          "initiative_id",
+        ],
+        refTable: "initiative",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "CASCADE",
+        deferrable: false,
+      },
+    ],
+    checks: [],
+    indexes: [],
     comment: "Mirror of <initiative>/_facts.json for the console. The file is authoritative; a row here is never updated once written for a given (team, initiative, fact).",
     columnComments: {},
   },
@@ -370,7 +363,7 @@ export const DELIVERY: Record<string, TableTarget> = {
         columns: [
           "produced_by_run_id",
         ],
-        refTable: "run",
+        refTable: "skill_run",
         refColumns: [
           "id",
         ],
@@ -384,6 +377,7 @@ export const DELIVERY: Record<string, TableTarget> = {
     ],
     indexes: [
       "CREATE INDEX doc_evidence ON zz.doc USING gin (evidence)",
+      "CREATE UNIQUE INDEX doc_id_unique ON zz.doc USING btree (id)",
       "CREATE INDEX doc_supports ON zz.doc USING btree (team_slug, initiative, supports) WHERE (supports IS NOT NULL)",
       "CREATE INDEX doc_tags ON zz.doc USING gin (tags)",
       "CREATE INDEX doc_team_type ON zz.doc USING btree (team_slug, type, status)",
@@ -394,186 +388,6 @@ export const DELIVERY: Record<string, TableTarget> = {
       approved_by: "The one signature field. A person, never a team slug, \"the user\" or \"the agent\" — and\n   stamped by approve() / close() from the session, never typed by a model.",
       created_at: "When this document first existed. Never moves. `updated_at` is the last write; this is the\n   first, and it is what scopes a measurement to one initiative's lifetime.",
     },
-  },
-  decision: {
-    columns: [
-      [
-        "team_slug",
-        "text",
-        false,
-        null,
-      ],
-      [
-        "initiative",
-        "text",
-        false,
-        null,
-      ],
-      [
-        "path",
-        "text",
-        false,
-        null,
-      ],
-      [
-        "role",
-        "text",
-        false,
-        null,
-      ],
-      [
-        "key",
-        "text",
-        false,
-        null,
-      ],
-      [
-        "verdict",
-        "text",
-        false,
-        "''::text",
-      ],
-      [
-        "qualifier",
-        "text",
-        false,
-        "''::text",
-      ],
-      [
-        "detail",
-        "text",
-        false,
-        "''::text",
-      ],
-      [
-        "checker",
-        "text",
-        false,
-        "''::text",
-      ],
-      [
-        "updated_at",
-        "timestamp with time zone",
-        false,
-        "now()",
-      ],
-      [
-        "doc_id",
-        "uuid",
-        true,
-        null,
-      ],
-    ],
-    primaryKey: [
-      "team_slug",
-      "initiative",
-      "path",
-      "key",
-    ],
-    uniques: [],
-    foreignKeys: [
-      {
-        columns: [
-          "doc_id",
-        ],
-        refTable: "doc",
-        refColumns: [
-          "id",
-        ],
-        onDelete: "CASCADE",
-        deferrable: false,
-      },
-    ],
-    checks: [
-      "CHECK ((verdict = ANY (ARRAY[''::text, 'native'::text, 'achievable'::text, 'workaround'::text, 'not_possible'::text])))",
-    ],
-    indexes: [
-      "CREATE INDEX decision_team_initiative ON zz.decision USING btree (team_slug, initiative)",
-    ],
-    comment: null,
-    columnComments: {},
-  },
-  discussion_message: {
-    columns: [
-      [
-        "id",
-        "uuid",
-        false,
-        "gen_random_uuid()",
-      ],
-      [
-        "team_slug",
-        "text",
-        false,
-        null,
-      ],
-      [
-        "initiative",
-        "text",
-        false,
-        null,
-      ],
-      [
-        "doc_path",
-        "text",
-        false,
-        null,
-      ],
-      [
-        "seq",
-        "integer",
-        false,
-        null,
-      ],
-      [
-        "principal_id",
-        "uuid",
-        false,
-        null,
-      ],
-      [
-        "body",
-        "text",
-        false,
-        null,
-      ],
-      [
-        "created_at",
-        "timestamp with time zone",
-        false,
-        "now()",
-      ],
-    ],
-    primaryKey: [
-      "id",
-    ],
-    uniques: [
-      [
-        "team_slug",
-        "initiative",
-        "doc_path",
-        "seq",
-      ],
-    ],
-    foreignKeys: [
-      {
-        columns: [
-          "principal_id",
-        ],
-        refTable: "principal",
-        refColumns: [
-          "id",
-        ],
-        onDelete: "NO ACTION",
-        deferrable: false,
-      },
-    ],
-    checks: [],
-    indexes: [
-      "CREATE INDEX discussion_thread ON zz.discussion_message USING btree (team_slug, initiative, doc_path, seq)",
-    ],
-    comment: null,
-    columnComments: {},
   },
   bug: {
     columns: [
@@ -590,18 +404,6 @@ export const DELIVERY: Record<string, TableTarget> = {
         "now()",
       ],
       [
-        "reported_by",
-        "text",
-        false,
-        null,
-      ],
-      [
-        "team_slug",
-        "text",
-        true,
-        null,
-      ],
-      [
         "title",
         "text",
         false,
@@ -615,12 +417,6 @@ export const DELIVERY: Record<string, TableTarget> = {
       ],
       [
         "surface",
-        "text",
-        true,
-        null,
-      ],
-      [
-        "initiative",
         "text",
         true,
         null,
@@ -650,14 +446,38 @@ export const DELIVERY: Record<string, TableTarget> = {
         null,
       ],
       [
-        "resolved_by",
-        "text",
+        "resolved_at",
+        "timestamp with time zone",
         true,
         null,
       ],
       [
-        "resolved_at",
-        "timestamp with time zone",
+        "team_id",
+        "uuid",
+        true,
+        null,
+      ],
+      [
+        "initiative_id",
+        "uuid",
+        true,
+        null,
+      ],
+      [
+        "duplicate_of",
+        "uuid",
+        true,
+        null,
+      ],
+      [
+        "reported_by",
+        "uuid",
+        false,
+        null,
+      ],
+      [
+        "resolved_by",
+        "uuid",
         true,
         null,
       ],
@@ -666,15 +486,87 @@ export const DELIVERY: Record<string, TableTarget> = {
       "id",
     ],
     uniques: [],
-    foreignKeys: [],
+    foreignKeys: [
+      {
+        columns: [
+          "duplicate_of",
+        ],
+        refTable: "bug",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
+      {
+        columns: [
+          "initiative_id",
+        ],
+        refTable: "initiative",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "SET NULL",
+        deferrable: false,
+      },
+      {
+        columns: [
+          "reported_by",
+        ],
+        refTable: "principal",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
+      {
+        columns: [
+          "resolved_by",
+        ],
+        refTable: "principal",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
+      {
+        columns: [
+          "team_id",
+        ],
+        refTable: "team",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
+      {
+        columns: [
+          "team_id",
+          "initiative_id",
+        ],
+        refTable: "initiative",
+        refColumns: [
+          "team_id",
+          "id",
+        ],
+        onDelete: "SET NULL",
+        onDeleteColumns: [
+          "initiative_id",
+        ],
+        deferrable: false,
+      },
+    ],
     checks: [
+      "CHECK (((status = 'duplicate'::text) = (duplicate_of IS NOT NULL)))",
       "CHECK ((impact = ANY (ARRAY['blocks_work'::text, 'wrong_result'::text, 'confusing'::text, 'cosmetic'::text])))",
-      "CHECK ((((status = 'open'::text) AND (resolution IS NULL) AND (resolved_by IS NULL) AND (resolved_at IS NULL)) OR ((status <> 'open'::text) AND (resolution IS NOT NULL) AND (resolved_by IS NOT NULL) AND (resolved_at IS NOT NULL))))",
+      "CHECK (((initiative_id IS NULL) OR (team_id IS NOT NULL)))",
       "CHECK ((status = ANY (ARRAY['open'::text, 'fixed'::text, 'not_a_bug'::text, 'duplicate'::text])))",
     ],
     indexes: [
       "CREATE INDEX bug_open ON zz.bug USING btree (status, reported_at DESC)",
-      "CREATE INDEX bug_team ON zz.bug USING btree (team_slug, reported_at DESC)",
     ],
     comment: "Bugs reported by the people using this platform. Written by bug_report on /core, read by bug_list, closed by bug_resolve. Not knowledge (a report needs no evidence) and not an event (an event has no author).",
     columnComments: {},

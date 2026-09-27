@@ -17,8 +17,11 @@ if (pluginFromFlow) fail.push("plugin is derived from flowFor() — the initiati
 if (/plugin\s*:[^,\n]*x-zz-client/.test(tel) || /plugin\s*:[^,\n]*detail\.client/.test(tel)) {
   fail.push("plugin is populated from x-zz-client — that is the client program, not the plugin");
 }
-// Control: `flow` itself must still be written; a check that removed it would be too broad.
-if (!/\bflow\s*:/.test(tel)) fail.push("flow stopped being recorded; it remains valid team context");
+// Control: a field of the same block must still be written, so the assertions above cannot be
+// satisfied by emptying the telemetry's identity block. `flow` stood here until the schema
+// first-principles delivery retired it with `zz.event`'s other slug columns; `subject` is a column
+// the writer still stamps.
+if (!/\bsubject\s*:/.test(tel)) fail.push("subject stopped being recorded");
 // A null plugin must be reachable rather than defaulted.
 if (/plugin\s*:\s*[^,\n]*\?\?\s*["'`]/.test(tel)) {
   fail.push("plugin falls back to a string default; an unresolved plugin must be null");

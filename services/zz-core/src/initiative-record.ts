@@ -17,6 +17,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFile
 import { join } from "node:path";
 
 import { documentApplies, OUTCOME_STOPPED } from "@zz/contracts";
+import type pg from "pg";
 
 import { Refusal } from "./refusal.js";
 import { isoToday } from "./write-guards.js";
@@ -115,10 +116,12 @@ export function factsFor(root: string, initiative: string): Record<string, strin
     `repaired. Two ways out. To stop the work: initiative_close("${initiative}", ` +
     `"${OUTCOME_STOPPED}") — an abandon does not read this file. To continue it: an operator ` +
     `rewrites ${initiative}/${FACTS_FILE} in the team's store on the platform host as a JSON ` +
-    "object of fact → value, from the platform database's mirror of it " +
-    `(select fact, value from zz.initiative_fact where team = '<team>' and initiative = ` +
-    `'${initiative}'), or deletes it when the mirror holds no row — each stage that decides a ` +
-    "fact records it again when it next runs.");
+    "object of fact → value, from the platform database's mirror of it — the rows carrying this " +
+    "initiative's own id, which is the whole of the mirror's key: " +
+    "(select f.fact, f.value from zz.initiative_fact f where f.initiative_id = " +
+    "(select i.id from zz.initiative i join zz.team t on t.id = i.team_id " +
+    `where i.slug = '${initiative}' and t.slug = '<team>')) — or deletes it when the mirror ` +
+    "holds no row — each stage that decides a fact records it again when it next runs.");
 }
 
 /** `factsFor`'s read without the throw: the facts, or null when the file is damaged.
@@ -219,6 +222,44 @@ export function writeFacts(root: string, initiative: string, facts: Record<strin
   const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(facts, null, 2)}\n`);
   renameSync(tmp, file);
+}
+
+/** The query surface the two fact-row functions below take: the pool, or a client already inside
+ *  the transaction that holds the facts lock. Structurally `FactsTransaction`'s own client
+ *  (eval/protocol.ts), so the mirror goes through the one connection its caller already holds. */
+type FactsClient = Pick<pg.PoolClient, "query">;
+
+/** The id of the initiative a team's store holds under `initiative` — the folder name, which is
+ *  `zz.initiative.slug` — or null when nothing carries it.
+ *
+ *  The mirror in `zz.initiative_fact` is keyed on that id and on nothing else, so this is the one
+ *  lookup between a store's paths and that table: a folder whose anchor row is missing (one opened
+ *  before the anchor existed, or on a deployment with no database) has no id and nothing to
+ *  mirror under. Resolved through the team as well as the slug, because two teams' initiatives
+ *  share a slug, and an id from the wrong team's row would be a fact filed against another team's
+ *  work. */
+export async function initiativeIdFor(
+  client: FactsClient, team: string, initiative: string,
+): Promise<string | null> {
+  const { rows } = await client.query<{ id: string }>(
+    `select i.id::text as id from zz.initiative i join zz.team t on t.id = i.team_id
+      where t.slug = $1 and i.slug = $2`, [team, initiative]);
+  return rows[0]?.id ?? null;
+}
+
+/** Mirror facts into `zz.initiative_fact`, keyed by the initiative's own id.
+ *
+ * DELIBERATE: `on conflict do nothing`, not an update. The file is authoritative and the mirror
+ * is append-only: the refuse-on-change rule (`writeBranchFacts`) already refused a disagreeing
+ * value before either was written, so the only row this can meet is one already saying this. */
+export async function mirrorFacts(
+  client: FactsClient, initiativeId: string, facts: Record<string, string>,
+): Promise<void> {
+  for (const [fact, value] of Object.entries(facts)) {
+    await client.query(
+      `insert into zz.initiative_fact (initiative_id, fact, value) values ($1::uuid, $2, $3)
+       on conflict (initiative_id, fact) do nothing`, [initiativeId, fact, value]);
+  }
 }
 
 /** Is the flow's DECLARED closing document (`chain.closingDoc`) ruled out for this initiative

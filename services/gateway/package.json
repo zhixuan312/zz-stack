@@ -11,6 +11,7 @@
     "@simplewebauthn/server": "^14.0.1",
     "@zz/catalog": "*",
     "@zz/contracts": "*",
+    "@zz/indexing": "*",
     "@zz/mcp-client": "*",
     "@zz/mcp-http": "*",
     "express": "^4.21.0",

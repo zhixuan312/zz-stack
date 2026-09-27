@@ -6,8 +6,48 @@
  */
 import type { Express } from "express";
 
+import { decisionRows } from "@zz/indexing";
+
 import { platformDb } from "../db.js";
 import { flowShape, handler, stageOf, type DocRow, type StageDoc } from "./shared.js";
+
+/** The three document types that state claims. The type is the document's own, and it is what
+ *  the role on every claim is stamped from — the reader that already knows the type does not
+ *  have to be told it twice. */
+const CLAIM_ROLES = /^(selection|agreement|plan)$/;
+
+/** One row of the claim ledger, before the fields that cannot state absence state it. */
+interface ClaimRow {
+  path: string; role: string; key: string;
+  verdict: string; qualifier: string; detail: string; checker: string;
+}
+
+/** Every claim a set of documents makes, computed from the bodies they hold.
+ *
+ * The claims are not stored: a stage states them in the text it writes for a reader, and
+ * `decisionRows` parses that text back out on every read, so nothing can drift from the body
+ * the console shows beside it. A snapshot is skipped — its claims are the live document's, so
+ * reading both would count every prediction twice — and so is a document whose type is not one
+ * of the three stages that state claims.
+ *
+ * COUPLED: the initiative view and the document view both compute their ledger through here,
+ * and `knowledge_reconcile` in zz-core reads the same bodies the same way. */
+function claimsOf(docs: { path: string; type: string | null; body: string | null }[]): ClaimRow[] {
+  const out: ClaimRow[] = [];
+  for (const d of docs) {
+    if (d.path.startsWith("_versions/")) continue;
+    const role = (d.type ?? "").trim();
+    if (!CLAIM_ROLES.test(role)) continue;
+    // A body this cannot read is one document with no claims, never an empty panel for the
+    // whole initiative.
+    if (typeof d.body !== "string") continue;
+    // Keyed the way the ledger was keyed: by path, then by key within the document.
+    for (const c of decisionRows(d.body).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))) {
+      out.push({ path: d.path, role, ...c });
+    }
+  }
+  return out;
+}
 
 export function mountInitiatives(app: Express): void {
   /** Every initiative on the platform, with where it got to.
@@ -52,11 +92,23 @@ export function mountInitiatives(app: Express): void {
     type FactRow = { team: string; initiative: string; fact: string; value: string };
     const { rows: factRows } = scope.kind !== "platform"
       ? await db.query<FactRow>(
-      `select team, initiative, fact, value from zz.initiative_fact where team = $1`, [scope.slug])
+      `select t.slug as team, i.slug as initiative, f.fact, f.value
+         from zz.initiative_fact f
+         join zz.initiative i on i.id = f.initiative_id
+         join zz.team t on t.id = i.team_id
+        where t.slug = $1`, [scope.slug])
       : want !== null
       ? await db.query<FactRow>(
-      `select team, initiative, fact, value from zz.initiative_fact where team = $1`, [want])
-      : await db.query<FactRow>(`select team, initiative, fact, value from zz.initiative_fact`);
+      `select t.slug as team, i.slug as initiative, f.fact, f.value
+         from zz.initiative_fact f
+         join zz.initiative i on i.id = f.initiative_id
+         join zz.team t on t.id = i.team_id
+        where t.slug = $1`, [want])
+      : await db.query<FactRow>(
+      `select t.slug as team, i.slug as initiative, f.fact, f.value
+         from zz.initiative_fact f
+         join zz.initiative i on i.id = f.initiative_id
+         join zz.team t on t.id = i.team_id`);
     const factsByInit = new Map<string, Record<string, string>>();
     for (const r of factRows) {
       const key = `${r.team}/${r.initiative}`;
@@ -144,22 +196,19 @@ export function mountInitiatives(app: Express): void {
 
   /** One row of the claim ledger, with the fields that cannot state absence stating it.
    *
-   * zz.decision's text columns are `not null default ''`, so the database has
-   * one spelling for "this row states no verdict" and for "the verdict is the empty string".
-   * Only two of the four readers that write these rows produce a verdict at all, so the empty
-   * value is the ordinary case and must not read as a value.
+   * `decisionRows` gives every claim a string for every field and only two of its readers ever
+   * produce a verdict, so "" is the ordinary spelling of "this row states no verdict" for both
+   * a claim that has none and one whose verdict is genuinely empty. The empty value must not
+   * read as a value.
    *
    * COUPLED: the initiative view and the document view both return these rows through here. */
-  const claimRow = (d: unknown) => {
-    const row = d as { verdict: string; qualifier: string; checker: string };
-    return { ...row, verdict: row.verdict || null, qualifier: row.qualifier || null,
-             checker: row.checker || null };
-  };
+  const claimRow = (row: ClaimRow) => ({ ...row, verdict: row.verdict || null,
+                                         qualifier: row.qualifier || null, checker: row.checker || null });
 
   /** One initiative: every document, and the acceptance-criterion ledger.
    *
-   * The ledger is `zz.decision` — one row per claim a stage document made, derived from what
-   * the stage already wrote.
+   * The ledger is computed from the documents' own bodies — every numbered claim a selection, an
+   * agreement or a plan states, parsed back out of the text the stage wrote for a reader.
    *
    * Not every row carries a verdict. A plan's task has none (its `qualifier` holds the criteria
    * it discharges) and a spec's acceptance criterion has none either, because stating a
@@ -175,7 +224,7 @@ export function mountInitiatives(app: Express): void {
       res.status(404).json({ error: `no initiative ${team}/${slug}` });
       return;
     }
-    const [docs, decisions, facts, anchor] = await Promise.all([
+    const [docs, claimDocs, facts, anchor] = await Promise.all([
       // `flow`/`outcome` stay in this select as this document's own metadata — what the
       // dashboard renders per row. Neither drives `stageOf` below any more; the anchor query
       // does.
@@ -184,14 +233,20 @@ export function mountInitiatives(app: Express): void {
                 to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
                 length(coalesce(body,'')) as bytes
            from zz.doc where team_slug = $1 and initiative = $2 order by path`, [team, slug]),
-      db.query(
-        `select path, role, key, verdict, qualifier, detail, checker
-           from zz.decision where team_slug = $1 and initiative = $2
-          order by path, key`, [team, slug]),
+      // The bodies the claims are recomputed from, in their own statement: the select above
+      // reads `length(body)` and must not detoast every document to answer it.
+      db.query<{ path: string; type: string | null; body: string | null }>(
+        `select path, type, body from zz.doc
+          where team_slug = $1 and initiative = $2 and path not like '_versions/%'
+          order by path`, [team, slug]),
       // FR-58 (Task I-27): this initiative's own mirror of `_facts.json` (001),
       // read for `stageOf` below the same way the list route reads it for every initiative.
       db.query<{ fact: string; value: string }>(
-        `select fact, value from zz.initiative_fact where team = $1 and initiative = $2`, [team, slug]),
+        `select f.fact, f.value
+           from zz.initiative_fact f
+           join zz.initiative i on i.id = f.initiative_id
+           join zz.team t on t.id = i.team_id
+          where t.slug = $1 and i.slug = $2`, [team, slug]),
       // The initiative's own lifecycle — `flow`, whether it is closed, and its outcome — read
       // from `zz.initiative`, the one authority for a state no document may answer any more.
       db.query<{ flow: string | null; closed: boolean; outcome: string | null }>(
@@ -200,6 +255,7 @@ export function mountInitiatives(app: Express): void {
           where t.slug = $1 and i.slug = $2`, [team, slug]),
     ]);
     if (!docs.rows.length) { res.status(404).json({ error: `no initiative ${team}/${slug}` }); return; }
+    const decisions = claimsOf(claimDocs.rows);
     const factMap = Object.fromEntries(facts.rows.map((f) => [f.fact, f.value]));
     // No `zz.initiative` row yet is the same reconcile lag the list route allows for: read as
     // open, no declared flow.
@@ -221,15 +277,15 @@ export function mountInitiatives(app: Express): void {
           requiredForClose: rule?.requiredForClose ?? false,
         };
       }),
-      decisions: decisions.rows.map(claimRow),
+      decisions: decisions.map(claimRow),
       // What the ledger actually holds, so a column of blanks reads as a fact about the
       // documents rather than a fault in the derivation. The panel prints it as its aside —
       // without that, "these rows carry no verdict" and "the derivation stopped" look alike.
       decisionCounts: {
-        rows: decisions.rows.length,
-        withVerdict: decisions.rows.filter((d) => (d as { verdict: string }).verdict).length,
-        withQualifier: decisions.rows.filter((d) => (d as { qualifier: string }).qualifier).length,
-        withChecker: decisions.rows.filter((d) => (d as { checker: string }).checker).length,
+        rows: decisions.length,
+        withVerdict: decisions.filter((d) => d.verdict).length,
+        withQualifier: decisions.filter((d) => d.qualifier).length,
+        withChecker: decisions.filter((d) => d.checker).length,
       },
       ...stageOf(docs.rows, lifecycle.flow, { closed: lifecycle.closed, outcome: lifecycle.outcome }, factMap),
     });
@@ -256,7 +312,7 @@ export function mountInitiatives(app: Express): void {
     // `spec.v2.md` and so on. Derived from the name rather than stored, because that is the
     // convention the store is written with and a second copy of it could drift.
     const base = path.replace(/^_versions\//, "").replace(/\.v\d+\.md$/, ".md");
-    const [doc, decisions, versions, sources] = await Promise.all([
+    const [doc, versions, sources] = await Promise.all([
       db.query(
         `select team_slug as team, initiative, path, flow, type, status, outcome,
                 approved_by, approved_at, closed_by, title, tags, evidence,
@@ -265,11 +321,6 @@ export function mountInitiatives(app: Express): void {
                 length(coalesce(body,'')) as bytes
            from zz.doc where team_slug = $1 and initiative = $2 and path = $3`,
         [team, initiative, path]),
-      db.query(
-        `select key, role, verdict, qualifier, detail, checker
-           from zz.decision
-          where team_slug = $1 and initiative = $2 and path = $3
-          order by key`, [team, initiative, path]),
       // Every version of this document, oldest first — the frozen snapshots plus the live one.
       db.query(
         `select path, body, status, approved_by,
@@ -298,20 +349,23 @@ export function mountInitiatives(app: Express): void {
     // Without it the status bar guesses from `status` alone and prints "draft" on a document
     // nothing will ever approve.
     const rule = flowShape(doc.rows[0].flow).get(base);
+    // The claims this one document makes, computed from the body the response already carries.
+    // A snapshot keeps none: its claims are the live document's.
+    const decisions = claimsOf([doc.rows[0]]);
     res.json({
       ...doc.rows[0], bytes: +doc.rows[0].bytes,
       gated: rule ? rule.gate : null,
       closing: rule?.closing ?? false,
       requiredForClose: rule?.requiredForClose ?? false,
-      decisions: decisions.rows.map(claimRow),
+      decisions: decisions.map(claimRow),
       // What the ledger actually holds, so a column of blanks reads as a fact about the
       // documents rather than a fault in the derivation. The panel prints it as its aside —
       // without that, "these rows carry no verdict" and "the derivation stopped" look alike.
       decisionCounts: {
-        rows: decisions.rows.length,
-        withVerdict: decisions.rows.filter((d) => (d as { verdict: string }).verdict).length,
-        withQualifier: decisions.rows.filter((d) => (d as { qualifier: string }).qualifier).length,
-        withChecker: decisions.rows.filter((d) => (d as { checker: string }).checker).length,
+        rows: decisions.length,
+        withVerdict: decisions.filter((d) => d.verdict).length,
+        withQualifier: decisions.filter((d) => d.qualifier).length,
+        withChecker: decisions.filter((d) => d.checker).length,
       },
       versions: versions.rows.map((v) => ({ ...v, bytes: +v.bytes, version: +v.version })),
       sources: sources.rows.map((x) => ({ ...x, bytes: +x.bytes })),

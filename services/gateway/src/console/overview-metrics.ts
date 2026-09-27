@@ -179,9 +179,13 @@ function progressOf(
  * Read all four, for a platform scope or one team.
  *
  * Two complete statements per query, never one assembled from `scope`: `check:sql` can only
- * prepare a literal it can read whole. The team branch reaches events through `team_id` and runs
- * through `run.initiative_id → initiative.team_id`, because `zz.run` carries no team column of its
- * own and the denormalised `event.team_slug` is written only by acts that belong to a team.
+ * prepare a literal it can read whole. Both branches reach events through `team_id`, and runs
+ * through `zz.skill_run.team_id` — the run carries its own team, so the team branch narrows the
+ * same population the platform branch counts rather than arriving at it through the initiative.
+ *
+ * A run's initiative, when it has one, is always an initiative of the run's own team: the
+ * composite foreign key `(team_id, initiative_id)` says so. What the team branch gains is the run
+ * with no initiative at all, which a join through `initiative_id` could not see.
  *
  * `prevSince` is null for an all-time window, and a tile with nothing to compare against draws no
  * delta rather than an arrow meaning nothing.
@@ -223,7 +227,7 @@ export async function readMetrics(
       db.query<{ bytes: string | null; skill: string; is_prev: boolean }>(
         `select r.bytes_total as bytes, s.name as skill,
                 ($2::timestamptz is not null and r.started_at >= $2 and r.started_at < $1) as is_prev
-           from zz.run r
+           from zz.skill_run r
            join zz.skill_version sv on sv.id = r.skill_version_id
            join zz.skill s on s.id = sv.skill_id
           where ($1::timestamptz is null or r.started_at >= coalesce($2::timestamptz, $1))
@@ -264,7 +268,7 @@ export async function readMetrics(
                  or i.opened_at >= $1
                  or exists (select 1 from zz.event e
                              where e.kind = 'tool_call'
-                               and e.initiative = i.slug and e.team_id = i.team_id and e.ts >= $1))`,
+                               and e.initiative_id = i.id and e.ts >= $1))`,
         [since]),
       // A second statement, not another `filter` on the one above: that query returns a
       // single row of counts and cannot also group.
@@ -302,14 +306,14 @@ export async function readMetrics(
       db.query<{ bytes: string | null; skill: string; is_prev: boolean }>(
         `select r.bytes_total as bytes, s.name as skill,
                 ($2::timestamptz is not null and r.started_at >= $2 and r.started_at < $1) as is_prev
-           from zz.run r
+           from zz.skill_run r
            join zz.skill_version sv on sv.id = r.skill_version_id
            join zz.skill s on s.id = sv.skill_id
-           -- DELIBERATE: an inner join. A teamless run belongs to no team, so this scope cannot see it,
-           -- while the platform branch above counts it: "the median context of my team's work" and
-           -- "the median context of all work" are different questions.
-           join zz.initiative i on i.id = r.initiative_id
-           join zz.team t on t.id = i.team_id
+           -- The run's own team, joined directly: team_id is not null on every run, so this
+           -- excludes nothing and there is no teamless run to reason about. What it does change
+           -- is the run with no initiative, which a join through initiative_id dropped and
+           -- this one counts — the run happened, and it is this team's work.
+           join zz.team t on t.id = r.team_id
           where t.slug = $3
             and ($1::timestamptz is null or r.started_at >= coalesce($2::timestamptz, $1))
           order by r.started_at desc limit 400`,
@@ -345,7 +349,7 @@ export async function readMetrics(
                  or i.opened_at >= $1
                  or exists (select 1 from zz.event e
                              where e.kind = 'tool_call'
-                               and e.initiative = i.slug and e.team_id = i.team_id and e.ts >= $1))`,
+                               and e.initiative_id = i.id and e.ts >= $1))`,
         [since, scope.slug]),
       db.query<{ door: string; n: string }>(
         `select coalesce(nullif(split_part(coalesce(e.tool_key, e.subject),':',1),''),'(unnamed)') as door, count(*) as n

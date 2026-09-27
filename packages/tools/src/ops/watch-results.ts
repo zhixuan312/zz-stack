@@ -55,12 +55,14 @@ function main(): number {
   // This window and the one before it, so "worse" is measured against this platform's own
   // recent normal rather than against a number somebody guessed once.
   const evNow = psqlRows<EventRow>(psql,
-    "select ts, team_slug, subject, detail, duration_ms" +
-    "  from zz.event where kind = 'tool_call' and ts > now() - (:'w')::interval", { w: window });
+    "select e.ts, t.slug as team_slug, e.subject, e.detail, e.duration_ms" +
+    "  from zz.event e left join zz.team t on t.id = e.team_id" +
+    " where e.kind = 'tool_call' and e.ts > now() - (:'w')::interval", { w: window });
   const evPrev = psqlRows<EventRow>(psql,
-    "select ts, team_slug, subject, detail, duration_ms" +
-    "  from zz.event where kind = 'tool_call'" +
-    "   and ts <= now() - (:'w')::interval and ts > now() - 2 * (:'w')::interval", { w: window });
+    "select e.ts, t.slug as team_slug, e.subject, e.detail, e.duration_ms" +
+    "  from zz.event e left join zz.team t on t.id = e.team_id" +
+    " where e.kind = 'tool_call'" +
+    "   and e.ts <= now() - (:'w')::interval and e.ts > now() - 2 * (:'w')::interval", { w: window });
   const docs = psqlRows<DocRow>(psql,
     "select team_slug, initiative, path, status, updated_at from zz.doc", {});
   // Which initiatives are closed — zz.initiative's own closed_at, never a document's outcome.

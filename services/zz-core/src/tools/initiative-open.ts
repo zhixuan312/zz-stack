@@ -153,14 +153,13 @@ export function registerInitiativeOpenTool(server: McpServer): void {
       //
       // DELIBERATE: a failure here reports rather than throws. The folder and its record are
       // already on disk and are what `initiative_status` reads, so an unreachable database must
-      // not lose the initiative. `openRun` is idempotent on (team, initiative), so the run can
+      // not lose the initiative. `openRun` is idempotent on the initiative, so the run can
       // be opened later without a second one appearing.
       const governed = moduleForFlow(packagedModules, record.flow ?? null);
       let control: string | null = null;
       if (governed) {
         control = await openRun({
-          team, initiative: name, module: governed.module, digest: governed.digest,
-          subject: name, profile: [], by: who,
+          team, initiative: name, digest: governed.digest, by: who,
         });
       }
 

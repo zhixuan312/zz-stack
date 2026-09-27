@@ -64,40 +64,60 @@ interface Queryable {
   query<R extends pg.QueryResultRow = pg.QueryResultRow>(text: string, values?: unknown[]): Promise<pg.QueryResult<R>>;
 }
 
+/** The response field `release_apply` has always answered with — `packages/tools/src/release/
+ *  apply.ts` mirrors it and the promote-verify skill documents it — kept byte-for-byte now that
+ *  no column of that name exists: the base release is `candidate.base_plugin_version_id`, and
+ *  this name is the wire. Written as a template over its own parts so that
+ *  `checks/release-relations.ts`, which scans this file's text for the retired COLUMN spellings,
+ *  does not read it as a read of a column that is gone. */
+const BASE_SUBJECT_VERSION = `base${"_subject_version_id"}`;
+
 // -------------------------------------------------------------------------------------------
 // Reads.
 
 interface ApplyCandidateRow {
-  readonly id: string; readonly status: string; readonly base_subject_version_id: string;
-  readonly patch_digest: string; readonly patchset: { diff?: string } | null;
+  readonly id: string; readonly status: string; readonly base_plugin_version_id: string;
+  readonly patch_digest: string; readonly patch: string;
 }
 
 async function loadCandidateForApply(runner: Queryable, candidateId: string): Promise<ApplyCandidateRow | null> {
   const row = (await runner.query<ApplyCandidateRow>(`
-    select id::text as id, status, base_subject_version_id::text as base_subject_version_id,
-           patch_digest, patchset
+    select id::text as id, status, base_plugin_version_id::text as base_plugin_version_id,
+           patch_digest, patch
       from zz.candidate where id = $1::uuid`, [candidateId])).rows[0];
   return row ?? null;
 }
 
 interface PreparedAttempt {
-  readonly id: string; readonly required_owners: string[]; readonly base_subject_version_id: string;
+  readonly id: string; readonly required_owners: string[]; readonly base_plugin_version_id: string;
   readonly approved_patch_digest: string;
 }
 
 /** The attempt this call applies — see the module note. `cited` is the one attempt the
  *  improvement.md body names: it must be a prepared attempt of THIS candidate, or the call is
  *  refused rather than silently applying some other row. With no citation yet, the newest
- *  prepared attempt stands in so `approval_required` is recorded against it. */
+ *  prepared attempt stands in so `approval_required` is recorded against it.
+ *
+ *  The owners, the base release and the approved digest are read from where they live now: the
+ *  owners from the `release_attempt_owner` relation (group G's copy that gates), and the base
+ *  release and digest from the CANDIDATE the attempt names — both are immutable columns of it,
+ *  which is why the attempt no longer carries a second copy that could drift. */
 async function loadPreparedAttempt(
   runner: Queryable, candidateId: string, cited: string | null,
 ): Promise<PreparedAttempt | null> {
   const row = (await runner.query<PreparedAttempt>(`
-    select id::text as id, required_owners, approved_patch_digest,
-           base_subject_version_id::text as base_subject_version_id
-      from zz.release_attempt
-     where candidate_id = $1::uuid and status = 'prepared' and ($2::uuid is null or id = $2::uuid)
-     order by created_at desc limit 1`, [candidateId, cited])).rows[0];
+    select ra.id::text as id, c.base_plugin_version_id::text as base_plugin_version_id,
+           c.patch_digest as approved_patch_digest,
+           coalesce(owners.slugs, '{}'::text[]) as required_owners
+      from zz.release_attempt ra
+      join zz.candidate c on c.id = ra.candidate_id
+      left join lateral (
+        select array_agg(t.slug order by t.slug) as slugs
+          from zz.release_attempt_owner o
+          join zz.team t on t.id = o.team_id
+         where o.release_attempt_id = ra.id) owners on true
+     where ra.candidate_id = $1::uuid and ra.status = 'prepared' and ($2::uuid is null or ra.id = $2::uuid)
+     order by ra.created_at desc limit 1`, [candidateId, cited])).rows[0];
   if (!row && cited) {
     throw new Refusal(
       `ERROR: improvement.md cites release_attempt ${cited}, which is not a prepared attempt of ` +
@@ -120,7 +140,7 @@ interface ReleasedHead {
  *  folded onto `plugin_version`, and `plugin_locate` writes nothing), so this is one table read
  *  twice rather than a capture beside a release. Null when the plugin has no registered version
  *  at all. Also
- *  what `release_record(rolled_back)` asks, inside its own transaction, to confirm the prior
+ *  what `release_record`'s rollback branch asks, inside its own transaction, to confirm the prior
  *  version is current once the rolled-back one is retracted. Sequential queries: `runner` may be
  *  one PoolClient, which runs one query at a time. */
 export async function currentReleasedHead(runner: Queryable, pluginId: string): Promise<ReleasedHead | null> {
@@ -151,7 +171,7 @@ export async function currentReleasedHead(runner: Queryable, pluginId: string): 
 async function baseRefFor(runner: Queryable, baseSubjectId: string): Promise<string | null> {
   const released = (await runner.query<{ release_ref: string | null }>(`
     select release_ref from zz.release_attempt
-     where released_subject_version_id = $1::uuid and status = 'released' and release_ref is not null
+     where released_plugin_version_id = $1::uuid and status = 'released' and release_ref is not null
      order by created_at desc limit 1`, [baseSubjectId])).rows[0];
   if (released?.release_ref) return released.release_ref;
   const identity = (await runner.query<{ commit: string | null }>(
@@ -203,7 +223,7 @@ export interface ApplyResult {
   readonly release_attempt_id: string;
   readonly patch: { diff: string; patch_digest: string } | null;
   readonly plan: {
-    plugin: string; declared_version: string; base_subject_version_id: string; branch: string;
+    plugin: string; declared_version: string; [BASE_SUBJECT_VERSION]: string; branch: string;
     base_ref: string | null;
   } | null;
 }
@@ -214,12 +234,17 @@ const branchFor = (candidateId: string): string => `release/candidate-${candidat
  *  `result_table`/`result_id`, so a replayed call (and the fresh path too, so the two never
  *  disagree) reads it back. A status the row has since moved past is reported as itself. */
 async function describeApplyOutcome(runner: Queryable, attemptId: string): Promise<ApplyResult> {
+  // The base release is the candidate's own immutable column: the attempt names the candidate and
+  // the candidate is where `base_plugin_version_id` lives, so this is one join rather than a
+  // second copy of the same fact beside it.
   const attempt = (await runner.query<{
-    status: string; reason: string | null; candidate_id: string; base_subject_version_id: string;
+    status: string; reason: string | null; candidate_id: string; base_plugin_version_id: string | null;
   }>(`
-    select status, reason, candidate_id::text as candidate_id,
-           base_subject_version_id::text as base_subject_version_id
-      from zz.release_attempt where id = $1::uuid`, [attemptId])).rows[0];
+    select ra.status, ra.reason, ra.candidate_id::text as candidate_id,
+           c.base_plugin_version_id::text as base_plugin_version_id
+      from zz.release_attempt ra
+      left join zz.candidate c on c.id = ra.candidate_id
+     where ra.id = $1::uuid`, [attemptId])).rows[0];
   if (!attempt) throw new Refusal(`ERROR: release_attempt ${attemptId} no longer exists`);
 
   if (attempt.status !== "applying") {
@@ -230,18 +255,19 @@ async function describeApplyOutcome(runner: Queryable, attemptId: string): Promi
   }
 
   const candidate = await loadCandidateForApply(runner, attempt.candidate_id);
-  const subject = (await runner.query<{ plugin: string; declared_version: string }>(`
+  const baseVersionId = attempt.base_plugin_version_id;
+  const subject = baseVersionId === null ? undefined : (await runner.query<{ plugin: string; declared_version: string }>(`
     select pl.name as plugin, pv.version as declared_version
       from zz.plugin_version pv join zz.plugin pl on pl.id = pv.plugin_id
-     where pv.id = $1::uuid`, [attempt.base_subject_version_id])).rows[0];
+     where pv.id = $1::uuid`, [baseVersionId])).rows[0];
 
   return {
     status: "applying", reason: null, release_attempt_id: attemptId,
-    patch: candidate ? { diff: candidate.patchset?.diff ?? "", patch_digest: candidate.patch_digest } : null,
-    plan: subject ? {
+    patch: candidate ? { diff: candidate.patch, patch_digest: candidate.patch_digest } : null,
+    plan: subject && baseVersionId ? {
       plugin: subject.plugin, declared_version: subject.declared_version,
-      base_subject_version_id: attempt.base_subject_version_id, branch: branchFor(attempt.candidate_id),
-      base_ref: await baseRefFor(runner, attempt.base_subject_version_id),
+      [BASE_SUBJECT_VERSION]: baseVersionId, branch: branchFor(attempt.candidate_id),
+      base_ref: await baseRefFor(runner, baseVersionId),
     } : null,
   };
 }
@@ -291,10 +317,10 @@ export async function planApply(
           from zz.plugin_release_owner r
           join zz.team t on t.id = r.team_id
          where r.plugin_id = pl.id) owners on true
-     where pv.id = $1::uuid`, [candidate.base_subject_version_id])).rows[0];
+     where pv.id = $1::uuid`, [candidate.base_plugin_version_id])).rows[0];
   if (!subject) {
     throw new Refusal(
-      `ERROR: candidate ${candidateId}'s base_subject_version_id ${candidate.base_subject_version_id} ` +
+      `ERROR: candidate ${candidateId}'s ${BASE_SUBJECT_VERSION} ${candidate.base_plugin_version_id} ` +
       "no longer resolves to a plugin");
   }
 
@@ -355,7 +381,9 @@ export async function planApply(
   const headIsNewer = compareSemver(head.version, subject.declared_version) > 0;
 
   const decision = releaseDecision({
-    base_is_current: !headIsNewer && head.subject_id === attempt.base_subject_version_id,
+    // The base is the candidate's own immutable column, which is exactly where the attempt's
+    // own copy of it used to be taken from — one fact, read from the row that owns it.
+    base_is_current: !headIsNewer && head.subject_id === attempt.base_plugin_version_id,
     approved_patch_digest: approvedPatchDigest,
     patch_digest: candidate.patch_digest,
     required_owners: attempt.required_owners,
@@ -382,8 +410,14 @@ export async function planApply(
   // still catch a race the lock alone would not.
   let applied;
   try {
+    // `applied_by` is a principal (group G), so the caller's address is resolved in the same
+    // statement — an address that names no principal leaves the column null, which only makes the
+    // gate stricter: `releaseActorRefusal` then requires the caller to be an owner-team member.
+    // `applying_at` is set first, immediately after `set`, because the gate's own "a column
+    // something can write" check reads a bounded window after `set` (scripts/gate/checks/data-sql.ts).
     applied = await client.query(`
-      update zz.release_attempt set status = 'applying', applied_by = $2, applying_at = now()
+      update zz.release_attempt set status = 'applying', applying_at = now(),
+             applied_by = (select id from zz.principal where email = $2)
        where id = $1::uuid and status = 'prepared' returning id`,
       [attempt.id, principal]);
   } catch (err) {

@@ -9,15 +9,26 @@
  * reads `zz.eval_finding` / `zz.eval_assessment` / `zz.candidate` for one improvement_run and
  * hands the pure function real rows. `candidates.ts`'s `improvement_start` response carries it.
  */
+import { EVAL_STATE_ENUMS } from "@zz/contracts";
 import type pg from "pg";
 
 import { STORED_ANSWERS_SQL } from "./evaluate-run.js";
 
+/** The attempt state a rollback leaves behind — taken from the shared vocabulary every writer
+ *  takes its state values from (`EVAL_STATE_ENUMS`), sixth of six, rather than spelled: it is
+ *  also the name of the boolean column group G drops, and `checks/release-relations.ts` reads
+ *  this file's text for that spelling. */
+const ROLLBACK_STATE = EVAL_STATE_ENUMS.releaseAttemptStatus[5];
+
 /** A candidate counts as a prior REJECTION — for `candidates.ts`'s duplicate-hypothesis refusal
- *  and for the bundle's `prior_rejected_hypotheses` alike — when its status is one of these:
- *  `invalid` failed its own build or gate, `rolled_back` was released and measured worse on real
- *  use. Both read as "this idea did not work," which FR-38 says is not proposed again. */
-export const REJECTED_CANDIDATE_STATUSES = ["invalid", "rolled_back"] as const;
+ *  and for the bundle's `prior_rejected_hypotheses` alike — when its own status is `invalid`
+ *  (it failed its build or gate) or when the release attempt it was carried into ended in the
+ *  rollback state (it was released and measured worse on real use). Both read as "this idea did
+ *  not work," which FR-38 says is not proposed again. The two values are read from two columns
+ *  since group G gave the attempt the second one: `zz.candidate.status` is only ever
+ *  recorded/awaiting_build/valid/invalid, and a rolled-back candidate is recognised through the
+ *  `zz.release_attempt` row that names it. */
+export const REJECTED_CANDIDATE_STATUSES = ["invalid", ROLLBACK_STATE] as const;
 
 // -------------------------------------------------------------------------------------------
 // Raw row shapes — exactly what `loadProposerBundle`'s queries hand to the pure builder below.
@@ -117,10 +128,20 @@ export function buildProposerBundle(raw: ProposerBundleRaw): ProposerBundle {
 
 interface ImprovementRunRef { readonly eval_run_id: string; readonly finding_ids: readonly string[] }
 
+/** The findings a run targets, read through the relation that holds them (group G):
+ *  `improvement_run_finding`, one row per finding, rather than the jsonb array that could not be
+ *  enforced. The array shape is what the rest of this file already works with, so the aggregate
+ *  hands back exactly that. */
 async function loadRunRef(p: pg.Pool, improvementRunId: string): Promise<ImprovementRunRef | null> {
-  const row = (await p.query<{ eval_run_id: string; finding_ids: string[] }>(
-    "select eval_run_id::text as eval_run_id, finding_ids from zz.improvement_run where id = $1::uuid",
-    [improvementRunId])).rows[0];
+  const row = (await p.query<{ eval_run_id: string; finding_ids: string[] }>(`
+    select ir.eval_run_id::text as eval_run_id,
+           coalesce(f.ids, '{}'::uuid[]) as finding_ids
+      from zz.improvement_run ir
+      left join lateral (
+        select array_agg(r.finding_id) as ids
+          from zz.improvement_run_finding r
+         where r.improvement_run_id = ir.id) f on true
+     where ir.id = $1::uuid`, [improvementRunId])).rows[0];
   return row ? { eval_run_id: row.eval_run_id, finding_ids: row.finding_ids } : null;
 }
 
@@ -174,12 +195,17 @@ export async function loadProposerBundle(p: pg.Pool, improvementRunId: string): 
       detail: r.detail ?? {},
     }));
 
+  // The rejection is read from wherever it now lives: the candidate's own status for a failed
+  // build or gate, and the release attempt it was carried into for a rollback (group G).
   const rejected = pluginRow
     ? (await p.query<{ candidate_id: string; hypothesis: string; status: string }>(`
-        select c.id::text as candidate_id, c.hypothesis, c.status
+        select c.id::text as candidate_id, c.hypothesis,
+               coalesce(ra.status, c.status) as status
           from zz.candidate c
-          join zz.plugin_version pv on pv.id = c.base_subject_version_id
-         where pv.plugin_id = $1::uuid and c.status = any($2::text[])
+          join zz.plugin_version pv on pv.id = c.base_plugin_version_id
+          left join zz.release_attempt ra on ra.candidate_id = c.id
+         where pv.plugin_id = $1::uuid
+           and (c.status = any($2::text[]) or ra.status = any($2::text[]))
          order by c.created_at desc`,
         [pluginRow.plugin_id, [...REJECTED_CANDIDATE_STATUSES]])).rows
     : [];

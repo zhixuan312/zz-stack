@@ -13,9 +13,15 @@ export const IMPROVE: Record<string, TableTarget> = {
         "gen_random_uuid()",
       ],
       [
-        "eval_id",
+        "eval_run_id",
         "uuid",
-        true,
+        false,
+        null,
+      ],
+      [
+        "kind",
+        "text",
+        false,
         null,
       ],
       [
@@ -25,63 +31,9 @@ export const IMPROVE: Record<string, TableTarget> = {
         null,
       ],
       [
-        "docs_affected",
-        "integer",
-        false,
-        "0",
-      ],
-      [
-        "scope",
-        "text",
-        true,
-        null,
-      ],
-      [
-        "proposed_change",
-        "text",
-        false,
-        "''::text",
-      ],
-      [
-        "decision",
-        "text",
-        false,
-        "'deferred'::text",
-      ],
-      [
-        "resulted_in_skill_version_id",
-        "uuid",
-        true,
-        null,
-      ],
-      [
-        "created_at",
-        "timestamp with time zone",
-        false,
-        "now()",
-      ],
-      [
-        "decided_by",
-        "text",
-        true,
-        null,
-      ],
-      [
-        "decided_at",
-        "timestamp with time zone",
-        true,
-        null,
-      ],
-      [
-        "decision_note",
-        "text",
-        false,
-        "''::text",
-      ],
-      [
         "owner_kind",
         "text",
-        true,
+        false,
         null,
       ],
       [
@@ -109,16 +61,28 @@ export const IMPROVE: Record<string, TableTarget> = {
         null,
       ],
       [
-        "eval_run_id",
+        "decision",
+        "text",
+        true,
+        null,
+      ],
+      [
+        "decided_by",
         "uuid",
         true,
         null,
       ],
       [
-        "kind",
-        "text",
+        "decided_at",
+        "timestamp with time zone",
         true,
         null,
+      ],
+      [
+        "decision_note",
+        "text",
+        false,
+        "''::text",
       ],
       [
         "superseded_by",
@@ -126,18 +90,53 @@ export const IMPROVE: Record<string, TableTarget> = {
         true,
         null,
       ],
+      [
+        "created_at",
+        "timestamp with time zone",
+        false,
+        "now()",
+      ],
     ],
     primaryKey: [
       "id",
     ],
-    uniques: [],
+    uniques: [
+      [
+        "eval_run_id",
+        "id",
+      ],
+    ],
     foreignKeys: [
+      {
+        columns: [
+          "decided_by",
+        ],
+        refTable: "principal",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
       {
         columns: [
           "eval_run_id",
         ],
         refTable: "eval_run",
         refColumns: [
+          "id",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
+      {
+        columns: [
+          "eval_run_id",
+          "superseded_by",
+        ],
+        refTable: "eval_finding",
+        refColumns: [
+          "eval_run_id",
           "id",
         ],
         onDelete: "NO ACTION",
@@ -154,43 +153,24 @@ export const IMPROVE: Record<string, TableTarget> = {
         onDelete: "NO ACTION",
         deferrable: false,
       },
-      {
-        columns: [
-          "resulted_in_skill_version_id",
-        ],
-        refTable: "skill_version",
-        refColumns: [
-          "id",
-        ],
-        onDelete: "SET NULL",
-        deferrable: false,
-      },
-      {
-        columns: [
-          "superseded_by",
-        ],
-        refTable: "eval_finding",
-        refColumns: [
-          "id",
-        ],
-        onDelete: "NO ACTION",
-        deferrable: false,
-      },
     ],
     checks: [
       "CHECK ((decision = ANY (ARRAY['applied'::text, 'rejected'::text, 'deferred'::text])))",
       "CHECK ((kind = ANY (ARRAY['strength'::text, 'defect'::text, 'unknown'::text])))",
+      "CHECK (((kind = 'strength'::text) = (decision IS NULL)))",
       "CHECK ((owner_kind = ANY (ARRAY['plugin'::text, 'dependency'::text, 'platform'::text, 'environment'::text, 'user_input'::text, 'unknown'::text])))",
-      "CHECK (((eval_id IS NOT NULL) <> (eval_run_id IS NOT NULL)))",
+      "CHECK (((owner_kind <> 'plugin'::text) OR (owner_ref IS NULL)))",
       "CHECK (((eval_run_id IS NULL) OR (kind IS NOT NULL)))",
-      "CHECK ((scope = ANY (ARRAY['generic'::text, 'specific'::text])))",
+      "CHECK (((superseded_by IS NULL) OR (decision = 'rejected'::text)))",
     ],
-    indexes: [],
+    indexes: [
+      "CREATE INDEX eval_finding_eval_run_id_idx ON zz.eval_finding USING btree (eval_run_id)",
+    ],
     comment: null,
     columnComments: {
       decision_note: "Why it was applied or rejected. Empty while deferred -- the open state needs no reason, and the two closed ones do.",
-      eval_run_id: "Set instead of eval_id for an EVALUATE-produced finding (finding_record). Exactly one of the two is non-null.",
-      kind: "strength | defect | unknown — required when eval_run_id is set; null on every legacy round finding, which carries scope instead.",
+      eval_run_id: "The run that concluded this finding (finding_record). Every finding names one, and the legacy round column it shared this table with went with the round tables.",
+      kind: "strength | defect | unknown. A strength is terminal at insert — it is what is working, not open work, so its decision is null.",
       superseded_by: "The finding that corrected this one, when finding_record(supersedes) replaced it. Null for a current finding. A superseded finding is also decision=rejected, so it stays closed for every reader.",
     },
   },
@@ -205,12 +185,6 @@ export const IMPROVE: Record<string, TableTarget> = {
       [
         "eval_run_id",
         "uuid",
-        false,
-        null,
-      ],
-      [
-        "finding_ids",
-        "jsonb",
         false,
         null,
       ],
@@ -239,6 +213,57 @@ export const IMPROVE: Record<string, TableTarget> = {
       },
     ],
     checks: [],
+    indexes: [
+      "CREATE INDEX improvement_run_eval_run_id_created_at_idx ON zz.improvement_run USING btree (eval_run_id, created_at DESC)",
+    ],
+    comment: null,
+    columnComments: {},
+  },
+  improvement_run_finding: {
+    columns: [
+      [
+        "improvement_run_id",
+        "uuid",
+        false,
+        null,
+      ],
+      [
+        "finding_id",
+        "uuid",
+        false,
+        null,
+      ],
+    ],
+    primaryKey: [
+      "improvement_run_id",
+      "finding_id",
+    ],
+    uniques: [],
+    foreignKeys: [
+      {
+        columns: [
+          "finding_id",
+        ],
+        refTable: "eval_finding",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
+      {
+        columns: [
+          "improvement_run_id",
+        ],
+        refTable: "improvement_run",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "CASCADE",
+        deferrable: false,
+      },
+    ],
+    checks: [],
     indexes: [],
     comment: null,
     columnComments: {},
@@ -258,7 +283,7 @@ export const IMPROVE: Record<string, TableTarget> = {
         null,
       ],
       [
-        "base_subject_version_id",
+        "base_plugin_version_id",
         "uuid",
         false,
         null,
@@ -276,8 +301,8 @@ export const IMPROVE: Record<string, TableTarget> = {
         null,
       ],
       [
-        "patchset",
-        "jsonb",
+        "patch",
+        "text",
         false,
         null,
       ],
@@ -300,15 +325,15 @@ export const IMPROVE: Record<string, TableTarget> = {
         null,
       ],
       [
-        "touched_owners",
-        "jsonb",
+        "proposed_by",
+        "uuid",
         false,
         null,
       ],
       [
-        "proposer_identity",
-        "jsonb",
-        false,
+        "proposer_client",
+        "text",
+        true,
         null,
       ],
       [
@@ -355,7 +380,7 @@ export const IMPROVE: Record<string, TableTarget> = {
     foreignKeys: [
       {
         columns: [
-          "base_subject_version_id",
+          "base_plugin_version_id",
         ],
         refTable: "plugin_version",
         refColumns: [
@@ -375,14 +400,25 @@ export const IMPROVE: Record<string, TableTarget> = {
         onDelete: "NO ACTION",
         deferrable: false,
       },
+      {
+        columns: [
+          "proposed_by",
+        ],
+        refTable: "principal",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
     ],
     checks: [
-      "CHECK ((status = ANY (ARRAY['recorded'::text, 'awaiting_build'::text, 'valid'::text, 'invalid'::text, 'released'::text, 'rolled_back'::text])))",
+      "CHECK ((status = ANY (ARRAY['recorded'::text, 'awaiting_build'::text, 'valid'::text, 'invalid'::text])))",
     ],
     indexes: [],
     comment: null,
     columnComments: {
-      status: "rolled_back: release_record set the same candidate's own release_attempt to rolled_back after packages/tools/src/release/rollback.ts restored the prior released version — set alongside it, in the same recordRelease transaction, never on its own.",
+      status: "recorded -> awaiting_build -> valid or invalid. The attempt states, released and rolled_back, live on release_attempt; a reader joins that row rather than reading a copy here.",
       build_result: "What npm run candidate-build recorded through candidate_build_record: {ok, stage, log_tail, commands, patch_digest}. Kept once candidate_validate consumes it, so improvement.md and the console can say how the released patch was built and gated.",
     },
   },
@@ -401,26 +437,8 @@ export const IMPROVE: Record<string, TableTarget> = {
         null,
       ],
       [
-        "base_subject_version_id",
+        "plugin_id",
         "uuid",
-        false,
-        null,
-      ],
-      [
-        "approved_patch_digest",
-        "text",
-        false,
-        null,
-      ],
-      [
-        "required_owners",
-        "jsonb",
-        false,
-        null,
-      ],
-      [
-        "approval_refs",
-        "jsonb",
         false,
         null,
       ],
@@ -431,7 +449,7 @@ export const IMPROVE: Record<string, TableTarget> = {
         null,
       ],
       [
-        "released_subject_version_id",
+        "released_plugin_version_id",
         "uuid",
         true,
         null,
@@ -443,21 +461,21 @@ export const IMPROVE: Record<string, TableTarget> = {
         null,
       ],
       [
-        "verification",
-        "jsonb",
+        "verdict",
+        "text",
         true,
         null,
       ],
       [
-        "rolled_back",
-        "boolean",
-        false,
-        "false",
+        "verified_at",
+        "timestamp with time zone",
+        true,
+        null,
       ],
       [
-        "created_at",
-        "timestamp with time zone",
-        false,
+        "verification",
+        "jsonb",
+        true,
         null,
       ],
       [
@@ -467,14 +485,8 @@ export const IMPROVE: Record<string, TableTarget> = {
         null,
       ],
       [
-        "plugin_id",
-        "uuid",
-        false,
-        null,
-      ],
-      [
         "applied_by",
-        "text",
+        "uuid",
         true,
         null,
       ],
@@ -482,6 +494,12 @@ export const IMPROVE: Record<string, TableTarget> = {
         "applying_at",
         "timestamp with time zone",
         true,
+        null,
+      ],
+      [
+        "created_at",
+        "timestamp with time zone",
+        false,
         null,
       ],
     ],
@@ -492,9 +510,9 @@ export const IMPROVE: Record<string, TableTarget> = {
     foreignKeys: [
       {
         columns: [
-          "base_subject_version_id",
+          "applied_by",
         ],
-        refTable: "plugin_version",
+        refTable: "principal",
         refColumns: [
           "id",
         ],
@@ -525,7 +543,7 @@ export const IMPROVE: Record<string, TableTarget> = {
       },
       {
         columns: [
-          "released_subject_version_id",
+          "released_plugin_version_id",
         ],
         refTable: "plugin_version",
         refColumns: [
@@ -536,7 +554,10 @@ export const IMPROVE: Record<string, TableTarget> = {
       },
     ],
     checks: [
+      "CHECK (((release_ref IS NULL) OR (release_ref ~ '^[0-9a-f]{40}$'::text)))",
+      "CHECK (((status = ANY (ARRAY['released'::text, 'rolled_back'::text])) = (released_plugin_version_id IS NOT NULL)))",
       "CHECK ((status = ANY (ARRAY['prepared'::text, 'applying'::text, 'released'::text, 'refused'::text, 'failed'::text, 'rolled_back'::text])))",
+      "CHECK ((verdict = ANY (ARRAY['established'::text, 'rolled_back'::text, 'not_established'::text])))",
     ],
     indexes: [
       "CREATE UNIQUE INDEX release_attempt_applying_plugin_idx ON zz.release_attempt USING btree (plugin_id) WHERE (status = 'applying'::text)",
@@ -544,11 +565,60 @@ export const IMPROVE: Record<string, TableTarget> = {
     ],
     comment: null,
     columnComments: {
-      verification: "release_verify's decision, once it has one: {verdict (established | rolled_back | not_established), reason, evidence: {post_release_runs, released_eval_run_id, released_overall, base_eval_run_id, base_overall, delta, regression_band, guardrail_status}, rollback_plan}. Null until the released subject has enough real runs and an evaluation to judge.",
+      verification: "The evidence the verdict rests on: {post_release_runs, released_eval_run_id, released_overall, base_eval_run_id, base_overall, delta, regression_band, guardrail_status}. Null until the released subject has enough real runs and an evaluation to judge. The verdict itself is the verdict column, and when it landed is verified_at.",
       reason: "Why this attempt ended as it did: releaseDecision's own reason on a refusal, the failing command's output tail (release_record) on a failure, the operator's reason on a rollback, or the accepted override (--reconcile --accept-tag-without-candidate-commit) on a reconciled release. Null for prepared/applying, and for a release proved without an override.",
       plugin_id: "The plugin this attempt releases — the base subject's own plugin, written by release_prepare. Keys release_attempt_applying_plugin_idx: at most one applying attempt per plugin.",
-      applied_by: "The principal whose release_apply moved this attempt to applying. release_record and release_verify accept that principal or a member of a required owner team, nobody else.",
       applying_at: "When release_apply moved this attempt to applying. An attempt still applying long after the CLI's own gate and release timeouts is stale: release_apply names it for reconciliation.",
+      applied_by: "The principal whose release_apply moved this attempt to applying. release_record and release_verify accept that principal or a member of a required owner team, nobody else.",
     },
+  },
+  release_attempt_owner: {
+    columns: [
+      [
+        "release_attempt_id",
+        "uuid",
+        false,
+        null,
+      ],
+      [
+        "team_id",
+        "uuid",
+        false,
+        null,
+      ],
+    ],
+    primaryKey: [
+      "release_attempt_id",
+      "team_id",
+    ],
+    uniques: [],
+    foreignKeys: [
+      {
+        columns: [
+          "release_attempt_id",
+        ],
+        refTable: "release_attempt",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "CASCADE",
+        deferrable: false,
+      },
+      {
+        columns: [
+          "team_id",
+        ],
+        refTable: "team",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
+    ],
+    checks: [],
+    indexes: [],
+    comment: null,
+    columnComments: {},
   },
 };

@@ -63,7 +63,7 @@ interface ImprovementDocInput {
   readonly release_attempt_id: string;
   readonly plugin: string;
   readonly declared_version: string;
-  readonly base_subject_version_id: string;
+  readonly base_plugin_version_id: string;
   readonly patch_digest: string;
   readonly hypothesis: string;
   readonly complexity_delta: number;
@@ -89,7 +89,7 @@ function renderBody(initiative: string, data: ImprovementDocInput): string {
     "",
     "## Base subject",
     `- Plugin: ${data.plugin} ${data.declared_version}`,
-    `- base_subject_version_id: \`${data.base_subject_version_id}\``,
+    `- base_plugin_version_id: \`${data.base_plugin_version_id}\``,
     "",
     "## Patch",
     `- Patch digest: \`${data.patch_digest}\``,
@@ -112,7 +112,7 @@ function renderBody(initiative: string, data: ImprovementDocInput): string {
     "## Release plan",
     `Once every required owner above approves this document at the patch digest quoted above ` +
     `(\`${data.patch_digest}\`), \`release_apply\` compares the currently released subject with ` +
-    `\`${data.base_subject_version_id}\`; if they differ it refuses \`stale_baseline\` and this ` +
+    `\`${data.base_plugin_version_id}\`; if they differ it refuses \`stale_baseline\` and this ` +
     "candidate must be rebased, rebuilt and re-approved. Otherwise it applies exactly this patch " +
     "digest, runs the repository/release gates, and records the new subject version.",
     "",

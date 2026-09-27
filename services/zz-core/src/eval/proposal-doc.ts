@@ -15,8 +15,8 @@
  * ever — make that an explicit guard"): this file imports nothing that can touch a real
  * checkout — no `node:child_process`, no `release-apply.js`, no `release-verify.js`. Its only
  * two side effects are a database READ and a document WRITE into this platform's own governed
- * store; whatever a candidate's own `patchset.diff` contains is rendered as inert fenced
- * markdown, never applied, never `git apply`-ed, never passed to anything that executes it.
+ * store; whatever a candidate's own patch contains is rendered as inert fenced markdown, never
+ * applied, never `git apply`-ed, never passed to anything that executes it.
  * `release.ts`'s own `proposal_prepare` tool refuses outright before this module is ever reached
  * when the subject actually carries `release_owners` — see that file's own module note — so this
  * module never even has to decide "should I apply this"; there is no path into it for an owned
@@ -71,7 +71,7 @@ interface FindingRow {
 interface CandidateRow {
   readonly id: string; readonly status: string; readonly hypothesis: string;
   readonly complexity_delta: number; readonly patch_digest: string; readonly diff: string;
-  readonly touched_components: unknown; readonly touched_owners: readonly string[];
+  readonly touched_components: unknown;
   readonly build_result: { ok?: boolean; stage?: string; commands?: string[] } | null;
 }
 
@@ -119,7 +119,7 @@ async function loadFindings(p: pg.Pool, evalRunId: string): Promise<FindingRow[]
 async function loadCandidates(p: pg.Pool, improvementRunId: string): Promise<CandidateRow[]> {
   return (await p.query<CandidateRow>(`
     select id::text as id, status, hypothesis, complexity_delta, patch_digest,
-           coalesce(patchset->>'diff', '') as diff, touched_components, touched_owners, build_result
+           patch as diff, touched_components, build_result
       from zz.candidate where improvement_run_id = $1::uuid order by created_at`,
     [improvementRunId])).rows;
 }
@@ -162,7 +162,6 @@ function renderCandidate(c: CandidateRow): string {
     `- Complexity delta: ${c.complexity_delta}`,
     `- Patch digest: \`${c.patch_digest}\``,
     `- Touched components: ${JSON.stringify(c.touched_components ?? [])}`,
-    `- Touched owners (recorded at candidate_record time): ${c.touched_owners.length ? c.touched_owners.join(", ") : "none"}`,
     `- Build (npm run candidate-build): ${renderBuild(c.build_result)}`,
     "- Patch (inert — never applied by this platform):",
     `${fence}diff`,

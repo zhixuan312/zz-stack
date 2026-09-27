@@ -56,7 +56,7 @@ export function registerCandidateBuildTools(server: McpServer): void {
         subject_content_digest: string | null; subject_release_identity: Record<string, unknown> | null;
         build_requested_at: Date | null; build_recorded_at: Date | null;
       }>(`
-        select c.id::text as candidate_id, c.status, c.patch_digest, c.patchset as candidate_patchset,
+        select c.id::text as candidate_id, c.status, c.patch_digest, jsonb_build_object('diff', c.patch) as candidate_patchset,
                pl.name as subject_plugin,
                coalesce(pv.source_locator, case when pl.origin = 'platform' then '{"kind":"catalog"}'::jsonb end)
                  as subject_source_locator,
@@ -73,7 +73,7 @@ export function registerCandidateBuildTools(server: McpServer): void {
                  as subject_release_identity,
                c.build_requested_at, c.build_recorded_at
           from zz.candidate c
-          join zz.plugin_version pv on pv.id = c.base_subject_version_id
+          join zz.plugin_version pv on pv.id = c.base_plugin_version_id
           left join zz.plugin pl on pl.id = pv.plugin_id
          where c.id = $1::uuid`, [candidate_id])).rows[0];
       if (!row) return text(`ERROR: unknown candidate_id ${candidate_id}`);

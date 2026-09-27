@@ -28,9 +28,14 @@ assert.match(src, /supersedes: z\.string\(\)\.optional\(\)/, "finding_record tak
 assert.match(src, /set superseded_by = \$2::uuid, decision = 'rejected'[\s\S]*?where id = \$1::uuid and decision = 'deferred' and superseded_by is null/,
   "the old finding is closed as rejected-and-superseded, only if still open");
 assert.match(src, /old\.eval_run_id !== eval_run_id/, "a correction stays in its own eval_run");
-// The column: 001_init.sql is a pg_dump of the schema, so it spells the column and its foreign key apart.
-const schema = readFileSync("services/gateway/migrations/001_init.sql", "utf8");
-assert.match(schema, /CREATE TABLE zz\.eval_finding \([^;]*\n    superseded_by uuid,?\n/, "eval_finding has superseded_by");
-assert.match(schema, /ALTER TABLE ONLY zz\.eval_finding\n    ADD CONSTRAINT eval_finding_superseded_by_fkey FOREIGN KEY \(superseded_by\) REFERENCES zz\.eval_finding\(id\);/,
-  "superseded_by points at another finding");
+// The column, and the key that makes it a finding of the SAME run: group G identifies a finding
+// inside its eval_run, so the self-reference is composite and the file that carries it is this
+// phase's migration — `001_init.sql` is history and still spells the single-column key this one
+// retires. The pin moves with the key rather than asserting a constraint the live schema no
+// longer has.
+const schema = readFileSync("services/gateway/migrations/002_improve_control.sql", "utf8");
+assert.match(schema, /alter table zz\.eval_finding\s*\n\s*add constraint eval_finding_eval_run_id_id_key unique \(eval_run_id, id\);/,
+  "a finding is identified inside its run");
+assert.match(schema, /add constraint eval_finding_eval_run_id_superseded_by_fkey\s+foreign key \(eval_run_id, superseded_by\) references zz\.eval_finding\(eval_run_id, id\);/,
+  "superseded_by points at another finding of that same run");
 console.log("ok eval-finding-supersede");

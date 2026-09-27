@@ -71,7 +71,10 @@ export interface DimensionScoreRow {
 export interface FindingRow {
   id: string; kind: "strength" | "defect" | "unknown"; pattern: string;
   owner_kind: string | null; owner_ref: string | null;
-  evidence_refs: unknown[]; decision: string; decision_note: string | null;
+  evidence_refs: unknown[];
+  /** Null exactly when the kind is `strength` — a strength is terminal at insert, so it carries no
+   *  decision, and the render below leaves it out rather than printing one. */
+  decision: string | null; decision_note: string | null;
   /** The finding that corrected this one — a superseded finding is not rendered, its correction
    *  is, naming it. */
   superseded_by: string | null;

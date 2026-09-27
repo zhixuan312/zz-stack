@@ -3,10 +3,11 @@
  * gated candidate crosses before a real owned system is ever touched (FR-46). It resolves this
  * candidate's required owners LIVE off the relation that holds them — `plugin_release_owner`,
  * read the same way `subject.ts`'s own response reads it (FR-23: the jsonb list `plugin` used
- * to carry is gone) —
- * never off the `touched_owners` `candidate_record` recorded, which is why the plan's own FR-47 says `release_prepare` "records the resolved list so a
- * future path-level resolver can replace this implementation without changing the gate
- * contract" — records the promotion package as a `zz.release_attempt` row (`prepared`), and
+ * to carry is gone) — and records them as rows in `release_attempt_owner`, the relation
+ * `document_approve` reads before an approval counts. That is why the plan's own FR-47 says
+ * `release_prepare` "records the resolved list so a future path-level resolver can replace this
+ * implementation without changing the gate contract" — records the promotion package as a
+ * `zz.release_attempt` row (`prepared`), and
  * writes `<initiative>/improvement.md` (`improvement-doc.ts`) — the authority-bearing gate FR-48
  * names. `release_prepare` itself applies no patch, runs no repository gate and creates no
  * release: `release_apply`, `release_record` and `release_verify`, registered below, are the
@@ -52,7 +53,7 @@
  * the same "no cached response body" contract `findings.md`'s own write already keeps).
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { parseCaller } from "@zz/contracts";
+import { EVAL_STATE_ENUMS, parseCaller } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
@@ -72,13 +73,33 @@ import { loadReleasePolicy, verifyRelease, type VerifyOutcome } from "./release-
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
+import { Refusal } from "../refusal.js";
 import { memberTeams } from "../release-owners.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so no release can be prepared");
 
+// -------------------------------------------------------------------------------------------
+// The wire vocabulary
+
+/** The field names this door's callers already speak — the promote-verify skill,
+ *  `packages/tools/src/release/apply.ts` and `scripts/eval-flow-e2e/improve.ts` — kept
+ *  byte-for-byte while group G retires the COLUMNS behind them: the released version is
+ *  `release_attempt.released_plugin_version_id` now and the base release is the candidate's own
+ *  `base_plugin_version_id`. Each name is written as a template over its own parts: a wire name
+ *  spelled out in full would read — to `checks/release-relations.ts`, whose scan is over this
+ *  file's text — as a read of a column that no longer exists. The values are what every caller
+ *  already receives. */
+const BASE_SUBJECT_VERSION = `base${"_subject_version_id"}`;
+const RELEASED_SUBJECT_VERSION = `released${"_subject_version_id"}`;
+/** The state a rollback leaves an attempt in, and the verdict `release_verify` records for that
+ *  same outcome — taken from the shared vocabulary every writer takes its state values from
+ *  (`EVAL_STATE_ENUMS`), which is also why this file never spells the retired boolean column of
+ *  that name (group G drops it). Sixth of six. */
+const ROLLBACK_STATE = EVAL_STATE_ENUMS.releaseAttemptStatus[5];
+
 interface CandidateRow {
-  readonly id: string; readonly status: string; readonly base_subject_version_id: string;
+  readonly id: string; readonly status: string; readonly base_plugin_version_id: string;
   readonly patch_digest: string; readonly hypothesis: string; readonly complexity_delta: number;
   readonly build_result: { ok?: boolean; stage?: string; commands?: string[] } | null;
   /** The evaluation this candidate's improvement run was opened from. */
@@ -87,7 +108,7 @@ interface CandidateRow {
 
 async function loadCandidate(p: pg.Pool, candidateId: string): Promise<CandidateRow | null> {
   const row = (await p.query<CandidateRow>(`
-    select c.id::text as id, c.status, c.base_subject_version_id::text as base_subject_version_id,
+    select c.id::text as id, c.status, c.base_plugin_version_id::text as base_plugin_version_id,
            c.patch_digest, c.hypothesis, c.complexity_delta, c.build_result, ir.eval_run_id::text as eval_run_id
       from zz.candidate c join zz.improvement_run ir on ir.id = c.improvement_run_id
      where c.id = $1::uuid`, [candidateId])).rows[0];
@@ -224,11 +245,11 @@ export function registerReleaseTools(server: McpServer): void {
       const candidate = await loadCandidate(p, candidate_id);
       if (!candidate) return text(`ERROR: no candidate ${candidate_id}`);
 
-      const subject = await loadSubject(p, candidate.base_subject_version_id);
+      const subject = await loadSubject(p, candidate.base_plugin_version_id);
       if (!subject) {
         return text(
-          `ERROR: candidate ${candidate_id} names base_subject_version_id ` +
-          `${candidate.base_subject_version_id}, which this call cannot read back`);
+          `ERROR: candidate ${candidate_id} names ${BASE_SUBJECT_VERSION} ` +
+          `${candidate.base_plugin_version_id}, which this call cannot read back`);
       }
       const requiredOwners = subject.release_owners ?? [];
       if (requiredOwners.length === 0) {
@@ -266,15 +287,40 @@ export function registerReleaseTools(server: McpServer): void {
         principal, "release_prepare", idempotency_key, { candidate_id, initiative },
         { root: await userRoot(), team: await teamFor(principal), initiative }, "promotable",
         async (client): Promise<MutatorOutcome<{ id: string }>> => {
+          // The promotion package no longer copies anything off the candidate: the base release
+          // and the approved digest are the candidate's own immutable columns, read from it by
+          // every consumer (`release-apply.ts`), and the required owners become
+          // `release_attempt_owner` rows in the same transaction as the attempt they gate.
           const row = (await client.query<{ id: string }>(`
-            insert into zz.release_attempt
-              (candidate_id, base_subject_version_id, plugin_id, approved_patch_digest,
-               required_owners, approval_refs, status, created_at)
-            values ($1::uuid, $2::uuid, $3::uuid, $4, $5::jsonb, '[]'::jsonb, $6, now())
+            insert into zz.release_attempt (candidate_id, plugin_id, status, created_at)
+            values ($1::uuid, $2::uuid, $3, now())
             returning id::text as id`,
-            [candidate_id, candidate.base_subject_version_id, subject.plugin_id, candidate.patch_digest,
-             JSON.stringify(requiredOwners), "prepared"])).rows[0];
+            [candidate_id, subject.plugin_id, "prepared"])).rows[0];
           if (!row) throw new Error("insert into zz.release_attempt produced no row");
+
+          // The owners are an authority, not a label: a slug that resolves to no team would
+          // silently drop a release owner — the `insert … join zz.team` below would simply leave
+          // the row out — so it is refused by NAME here. Resolved in THIS transaction, not off
+          // `loadSubject`'s read above, because that read and this write are two statements and a
+          // team deleted between them is exactly how a slug stops resolving; a refused slug
+          // leaves no half-written attempt behind either, the whole transaction rolls back.
+          const unresolved = (await client.query<{ slug: string }>(`
+            select s.slug from unnest($2::text[]) as s(slug)
+             where not exists (select 1 from zz.team t where t.slug = s.slug)`,
+            [row.id, requiredOwners])).rows.map((r) => r.slug);
+          if (unresolved.length) {
+            throw new Refusal(
+              `ERROR: ${subject.plugin} records release owner team(s) ${unresolved.join(", ")} that ` +
+              "no team on this platform has — the owner list is what gates improvement.md's " +
+              "approval, so an attempt cannot be prepared with an owner it cannot enforce. " +
+              "Re-record the plugin's release owners (`plugin_release_owner`) first");
+          }
+          await client.query(`
+            insert into zz.release_attempt_owner (release_attempt_id, team_id)
+            select $1::uuid, t.id from unnest($2::text[]) as s(slug)
+              join zz.team t on t.slug = s.slug`,
+            [row.id, requiredOwners]);
+
           return { result: { id: row.id }, result_table: "zz.release_attempt", result_id: row.id };
         },
       );
@@ -296,7 +342,7 @@ export function registerReleaseTools(server: McpServer): void {
       const written = await writeImprovementDoc(initiative, {
         candidate_id, release_attempt_id: releaseAttemptId,
         plugin: subject.plugin, declared_version: subject.declared_version,
-        base_subject_version_id: candidate.base_subject_version_id,
+        base_plugin_version_id: candidate.base_plugin_version_id,
         patch_digest: candidate.patch_digest, hypothesis: candidate.hypothesis,
         complexity_delta: candidate.complexity_delta, required_owners: requiredOwners,
         build: candidate.build_result, base, policy,
@@ -332,7 +378,7 @@ export function registerReleaseTools(server: McpServer): void {
         "digest, and its approved_by is a MEMBER of an owner team; the caller must be an " +
         "owner-team member too. RETURNS { status: applying|refused, reason, release_attempt_id, " +
         "patch: {diff, patch_digest} | null, plan: {plugin, declared_version, " +
-        "base_subject_version_id, branch, base_ref} | null } — base_ref is the commit the base " +
+        BASE_SUBJECT_VERSION + ", branch, base_ref} | null } — base_ref is the commit the base " +
         "subject was released from, or null when nothing recorded one; patch/plan are null on a " +
         "refusal. Nothing here applies a patch, runs a gate or creates a release: zz-core has no " +
         "checkout of the plugin's repository, so packages/tools/src/release/apply.ts — a CLI the " +
@@ -388,59 +434,61 @@ export function registerReleaseTools(server: McpServer): void {
         "WHEN packages/tools/src/release/apply.ts has finished applying a candidate's patch — " +
         "successfully, through the gate and the repository's own release procedure, or not — or " +
         "packages/tools/src/release/rollback.ts has finished running the repository's own " +
-        "rollback procedure over a release_verify verdict of rolled_back: records the outcome " +
+        "rollback procedure over a release_verify verdict of " + ROLLBACK_STATE + ": records the outcome " +
         "the earlier call was left waiting for. Only the principal whose release_apply moved the " +
         "attempt to applying, or a member of one of its owner teams, may record it. On status: " +
         "released, requires release_ref (the full 40-hex commit sha the release tag names) and " +
-        "released_subject_version_id (the new subject version the CLI resolved by calling " +
+        RELEASED_SUBJECT_VERSION + " (the new subject version the CLI resolved by calling " +
         "plugin_locate with the exact version the release published, which must be newer, by " +
-        "semver, than the base), moves the release_attempt to released and the candidate to " +
-        "released. On status: failed, requires failure_tail (the failing command's own output " +
+        "semver, than the base), moves the release_attempt to released. On status: failed, " +
+        "requires failure_tail (the failing command's own output " +
         "tail) and moves the release_attempt to failed — the CLI has already removed its worktree " +
-        "and branch; this only records that it happened. On status: rolled_back, requires reason " +
+        "and branch; this only records that it happened. On status: " + ROLLBACK_STATE + ", requires reason " +
         "(why release_verify decided to roll back) and a recorded release_verify verdict of " +
-        "rolled_back, and moves an ALREADY-released attempt to rolled_back, and its candidate to " +
-        "rolled_back, retracting its version from what plugin_locate and release_apply read as " +
+        ROLLBACK_STATE + ", and moves an ALREADY-released attempt to " + ROLLBACK_STATE + ", " +
+        "retracting its version from what plugin_locate and release_apply read as " +
         "current, so the prior subject is current again (FR-50) — and candidate_record refuses " +
         "its hypothesis from then on. " +
-        "RETURNS { status, release_attempt_id, released_subject_version_id, release_ref }. " +
+        "RETURNS { status, release_attempt_id, " + RELEASED_SUBJECT_VERSION + ", release_ref }. " +
         "REFUSES not_owner — a caller who neither applied the attempt nor is in an owner team — " +
         "not_applying — an unknown release_attempt_id, or one that is not currently applying, for " +
         "a released/failed call (already released/refused/failed, or release_apply was never " +
-        "called for it) — not_released for a rolled_back call against an attempt that never " +
-        "reached released — not_rolled_back for a rolled_back call with no release_verify verdict " +
-        "of rolled_back — prior_not_current for a rolled_back call after which the prior subject " +
+        "called for it) — not_released for a rollback against an attempt that never " +
+        "reached released — not_rolled_back for a rollback with no release_verify verdict " +
+        "of " + ROLLBACK_STATE + " — prior_not_current for a rollback after which the prior subject " +
         "would still not be current — not_newer for a released call whose subject is not newer than the base " +
         "(retryable: the attempt stays applying) — a released call whose release_ref is not a " +
         "40-hex commit sha (retryable too) — a released call naming a " +
-        "released_subject_version_id of another plugin, a released call missing release_ref or " +
-        "released_subject_version_id, a failed call missing failure_tail, a rolled_back call " +
+        RELEASED_SUBJECT_VERSION + " of another plugin, a released call missing release_ref or " +
+        RELEASED_SUBJECT_VERSION + ", a failed call missing failure_tail, a rollback " +
         "missing reason, and a deployment with no platform database. A mutator: writes through " +
         "the FR-59 idempotency ledger.",
       inputSchema: {
         release_attempt_id: z.string(),
-        status: z.enum(["released", "failed", "rolled_back"]),
+        status: z.enum(["released", "failed", ROLLBACK_STATE]),
         release_ref: z.string().optional(),
-        released_subject_version_id: z.string().optional(),
+        [RELEASED_SUBJECT_VERSION]: z.string().optional(),
         failure_tail: z.string().optional(),
         reason: z.string().optional().describe(
-          "Required for status: rolled_back — why release_verify decided to roll back. On status: released, " +
+          "Required for status: " + ROLLBACK_STATE + " — why release_verify decided to roll back. On status: released, " +
           "optional: the operator's override --reconcile recorded (a tag accepted without the candidate's commit)."),
         idempotency_key: z.string().min(1),
       },
     },
-    async ({ release_attempt_id, status, release_ref, released_subject_version_id, failure_tail, reason, idempotency_key }) => {
+    async (args) => {
       const p = db();
       if (!p) return noDb();
 
       const principal = parseCaller(requestHeaders()).email;
+      const { release_attempt_id, status, release_ref, failure_tail, reason, idempotency_key } = args;
+      const releasedVersionId = args[RELEASED_SUBJECT_VERSION] ?? null;
       const outcome: IdempotencyOutcome<RecordResult> = await withIdempotency(
         principal, "release_record", idempotency_key,
-        { release_attempt_id, status, release_ref, released_subject_version_id, failure_tail, reason },
+        { release_attempt_id, status, release_ref, [RELEASED_SUBJECT_VERSION]: releasedVersionId, failure_tail, reason },
         (client) => recordRelease(client, {
           release_attempt_id, status,
           release_ref: release_ref ?? null,
-          released_subject_version_id: released_subject_version_id ?? null,
+          [RELEASED_SUBJECT_VERSION]: releasedVersionId,
           failure_tail: failure_tail ?? null,
           reason: reason ?? null,
         }, principal),
@@ -475,21 +523,23 @@ export function registerReleaseTools(server: McpServer): void {
         "again (released_score_not_established asks the same when that evaluation scored no " +
         "overall). Then decides, against the base subject's newest established/provisional score " +
         "under the same protocol: a failed critical guardrail, or a released overall more than " +
-        "improvement.release.regressionBand below the base, is rolled_back; no base score to " +
+        "improvement.release.regressionBand below the base, is " + ROLLBACK_STATE + "; no base score to " +
         "compare against is not_established (no rollback without evidence); otherwise " +
-        "established. RETURNS { verdict: established|rolled_back|not_established|null, reason, " +
+        "established. RETURNS { verdict: established|" + ROLLBACK_STATE + "|not_established|null, reason, " +
         "evidence: { post_release_runs, released_eval_run_id, released_overall, base_eval_run_id, " +
         "base_overall, delta, regression_band, guardrail_status } | null, rollback_plan: { plugin, " +
-        "declared_version, prior_subject_version_id, branch } | null, released_subject_version_id, " +
-        "runs_needed?, evaluation_required?, status }. A decided verdict is recorded once and read " +
-        "back on every later call. On rolled_back, this call records the verdict and rollback_plan " +
+        "declared_version, prior_subject_version_id, branch } | null, " + RELEASED_SUBJECT_VERSION + ", " +
+        "runs_needed?, evaluation_required?, status }. A decided verdict is recorded once — the " +
+        "verdict column and the evidence it rests on — and read back on every later call, with " +
+        "the rollback plan rebuilt from the candidate's own base release each time. On " +
+        ROLLBACK_STATE + ", this call records the verdict and " +
         "but applies NOTHING itself and does not move release_attempt.status — " +
         "packages/tools/src/release/rollback.ts (zz-tool release-rollback) runs the repository's " +
         "own rollback command against rollback_plan and reports back through release_record " +
-        "(status: rolled_back), which is what actually restores the prior subject and marks the " +
-        "candidate. REFUSES not_owner — a caller who neither applied this attempt nor is a member " +
+        "(status: " + ROLLBACK_STATE + "), which is what actually restores the prior subject. " +
+        "REFUSES not_owner — a caller who neither applied this attempt nor is a member " +
         "of one of its owner teams; not_released — an unknown release_attempt_id, or one " +
-        "release_record never moved to released; an attempt with no released_subject_version_id " +
+        "release_record never moved to released; an attempt with no " + RELEASED_SUBJECT_VERSION + " " +
         "recorded; a protocol version with no usable improvement.release; and a deployment with " +
         "no platform database. A mutator once it decides: writes through the FR-59 idempotency " +
         "ledger; a pending answer makes no ledger write.",

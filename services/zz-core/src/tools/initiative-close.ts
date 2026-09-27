@@ -323,14 +323,21 @@ export function registerInitiativeCloseTool(server: McpServer): void {
               return docs.length > 0 && docs.every((d) => documentApplies(d, facts) === "not_applicable");
             })
             .map((st) => st.id);
+          // The run is replayed against the module registered now, and the digest it recorded is
+          // COMPARED with that module's: a run whose rules have moved since it was judged cannot
+          // be answered for, and `claimFor` refuses it by naming the difference rather than
+          // replaying today's body over yesterday's facts. That refusal arrives here in the same
+          // list as an unmet rule, because a run that cannot be replayed does not satisfy the
+          // procedure either — the sentence below is worded to be true of both.
           const claimed = closingStep
             ? await claimFor(team, initiative, governed.module, closingStep.id, CLOSE_ACTION, ruledOutSteps)
             : null;
           if (claimed && !claimed.grant.granted && !claimed.standing.clear) {
             return text(
               `ERROR: ${initiative} cannot claim ${CLOSE_ACTION} — ${claimed.grant.refusal}\n\n` +
-              `The flow ${chain.name} declares a procedure and this run has not satisfied it. ` +
-              `Still outstanding: ${claimed.standing.unmet.join("; ")}.\n` +
+              `The flow ${chain.name} declares a procedure and the run held for this initiative ` +
+              `does not satisfy it. What is unmet, or why the run cannot be replayed at all: ` +
+              `${claimed.standing.unmet.join("; ")}.\n` +
               `Record what is missing, or close as abandoned — stopping needs no grant, and a ` +
               `close that reports the work unfinished is always available.`);
           }

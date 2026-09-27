@@ -38,9 +38,11 @@ import { z } from "zod";
  *
  *  The two states a round's findings carried are named because this is the last place on the
  *  platform that knows what a round's finding WAS — the values outlived the reader that computed
- *  over them (`headroom` counted the `generic` ones as the changes somebody could still make), and
- *  `zz.eval_finding.scope` survives the migration as an allowed state of a table whose legacy rows
- *  are all gone. A caller asking this tool for history is the reader who needs that. */
+ *  over them (`headroom` counted the `generic` ones as the changes somebody could still make).
+ *  They outlived the column as well: `eval_finding`'s legacy lifecycle, the `scope` among it, is
+ *  dropped by the improve tables' own migration (Task I-31), so the states now live only in the
+ *  archive this refusal points at. A caller asking this tool for history is the reader who needs
+ *  that. */
 const archived = (evalId: string): string =>
   `ERROR: ${evalId} is not an evaluation this schema can read back. A historic ordinal round ` +
   "lived in the legacy evaluation family, and this platform's phase-3 migration archived that " +
@@ -50,7 +52,8 @@ const archived = (evalId: string): string =>
   "itself, its rubric and dimensions, the marks its judge gave each one, the blind control it was " +
   "run against, and its findings — each finding carrying a scope of 'generic' (a change to the " +
   "plugin as a whole) or 'specific' (a change to one named document), which is the one fact about " +
-  "a round nothing else on this platform records. Nothing mints a new round either: a plugin is " +
+  "a round nothing else on this platform records: the column that held it went with the legacy " +
+  "lifecycle, so the archive is where it survives. Nothing mints a new round either: a plugin is " +
   "scored through evaluation_start, evaluation_assess and evaluation_score, and a run scored that " +
   "way is read back through evaluation_score.";
 

@@ -22,10 +22,17 @@
  * what one eval_run means. Candidate/release data has no existing reader to mirror; those
  * queries are new here.
  */
+import { EVAL_STATE_ENUMS } from "@zz/contracts";
 import type { Express } from "express";
 
 import { platformDb } from "../db.js";
 import { teamless } from "./shared.js";
+
+/** The attempt state a rollback leaves behind — taken from the shared vocabulary every writer
+ *  takes its state values from (`EVAL_STATE_ENUMS`), sixth of six, rather than spelled: the
+ *  boolean column of that name is gone, and `checks/release-relations.ts` reads this file's text
+ *  for the retired COLUMN spelling. */
+const ROLLBACK_STATE = EVAL_STATE_ENUMS.releaseAttemptStatus[5];
 
 interface MeasureScoreRow {
   key: string; evaluator_type: string; weight: number; required: boolean;
@@ -305,23 +312,33 @@ async function loadCandidates(db: ReturnType<typeof platformDb>, improvementRunI
   const [candidateRows, releaseRows] = await Promise.all([
     db.query<{
       id: string; hypothesis: string; status: string; complexity_delta: number;
-      touched_components: unknown; touched_owners: string[]; base_subject_version_id: string;
+      touched_components: unknown; base_plugin_version_id: string; release_owners: string[];
       build_result: { ok?: boolean; stage?: string } | null; created_at: string;
     }>(`
-      select id::text as id, hypothesis, status, complexity_delta, touched_components,
-             touched_owners, base_subject_version_id::text as base_subject_version_id, build_result,
-             to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
-        from zz.candidate where improvement_run_id = any($1::uuid[]) order by created_at`,
+      select c.id::text as id, c.hypothesis, c.status, c.complexity_delta, c.touched_components,
+             c.base_plugin_version_id::text as base_plugin_version_id, c.build_result,
+             -- Who may release this candidate's plugin: the plugin_release_owner relation,
+             -- which is where candidate_record derived the owner list it used to record on the
+             -- candidate itself (that copy is gone — see release_attempt_owner).
+             coalesce(owners.slugs, '{}'::text[]) as release_owners,
+             to_char(c.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+        from zz.candidate c
+        join zz.plugin_version pv on pv.id = c.base_plugin_version_id
+        left join lateral (
+          select array_agg(t.slug order by t.slug) as slugs
+            from zz.plugin_release_owner r
+            join zz.team t on t.id = r.team_id
+           where r.plugin_id = pv.plugin_id) owners on true
+       where c.improvement_run_id = any($1::uuid[]) order by c.created_at`,
       [improvementRunIds]),
     db.query<{
       candidate_id: string; status: string; reason: string | null; release_ref: string | null;
-      released_declared_version: string | null; verification: { verdict?: string; reason?: string | null } | null;
-      rolled_back: boolean;
+      released_declared_version: string | null; verification: unknown; verdict: string | null;
     }>(`
       select ra.candidate_id::text as candidate_id, ra.status, ra.reason, ra.release_ref,
-             pv.version as released_declared_version, ra.verification, ra.rolled_back
+             pv.version as released_declared_version, ra.verification, ra.verdict
         from zz.release_attempt ra
-        left join zz.plugin_version pv on pv.id = ra.released_subject_version_id
+        left join zz.plugin_version pv on pv.id = ra.released_plugin_version_id
        where ra.candidate_id in (select id from zz.candidate where improvement_run_id = any($1::uuid[]))
        order by ra.created_at desc`, [improvementRunIds]),
   ]);
@@ -336,13 +353,17 @@ async function loadCandidates(db: ReturnType<typeof platformDb>, improvementRunI
     return {
       id: c.id, hypothesis: c.hypothesis, status: c.status,
       complexityDelta: c.complexity_delta, touchedComponents: c.touched_components,
-      touchedOwners: c.touched_owners ?? [], createdAt: c.created_at,
+      touchedOwners: c.release_owners ?? [], createdAt: c.created_at,
       build: c.build_result ? { ok: c.build_result.ok === true, stage: c.build_result.stage ?? null } : null,
       release: release ? {
         status: release.status, reason: release.reason,
         releasedDeclaredVersion: release.released_declared_version, releaseRef: release.release_ref,
-        verdict: release.verification?.verdict ?? null, verificationReason: release.verification?.reason ?? null,
-        rolledBack: release.rolled_back,
+        // The verdict is its own column now and `verification` keeps only the evidence it rests
+        // on, so the verdict's own prose reason is no longer a fact this row carries; the page
+        // shows the attempt's recorded reason (a refusal's reason, the operator's rollback reason,
+        // an accepted override) beside the verdict instead of inventing one.
+        verdict: release.verdict, verificationReason: release.reason,
+        rolledBack: release.status === ROLLBACK_STATE,
       } : null,
     };
   });

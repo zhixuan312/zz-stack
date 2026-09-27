@@ -10,8 +10,8 @@
  * active team a person belongs to — never `teamFor`, which answers the ONE team a person's tools
  * act on today (their active team, or a token's bound one). A person who owns the plugin through
  * their second team is still an owner; nobody becomes one by acting for a team they are not in.
- * Owner teams are `zz.release_attempt.required_owners`, which `release_prepare` resolved live
- * from the plugin's own release owners — `zz.plugin_release_owner`, one row per owner team.
+ * Owner teams are the `zz.release_attempt_owner` relation, whose rows `release_prepare` resolved
+ * live from the plugin's own release owners — `zz.plugin_release_owner`, one row per owner team.
  */
 import type pg from "pg";
 
@@ -62,8 +62,14 @@ export async function improvementApprovalRefusal(
   if (!attemptId) return null;
   const p = runner;
   if (!p) return "ERROR: this deployment has no platform database, so improvement.md's owner teams cannot be checked";
-  const row = (await p.query<{ required_owners: string[] }>(
-    "select required_owners from zz.release_attempt where id = $1::uuid", [attemptId])).rows[0];
+  // The gate reads the relation `release_attempt_owner` (group G), which is what `release_prepare`
+  // wrote inside the same transaction as the attempt: an attempt nothing prepared has no rows and
+  // therefore no owner — refused by the same message an ownerless attempt gets.
+  const row = (await p.query<{ required_owners: string[] }>(`
+    select coalesce(array_agg(t.slug order by t.slug), '{}'::text[]) as required_owners
+      from zz.release_attempt_owner o
+      join zz.team t on t.id = o.team_id
+     where o.release_attempt_id = $1::uuid`, [attemptId])).rows[0];
   const owners = row?.required_owners ?? [];
   if (!owners.length) return `ERROR: release_attempt ${attemptId} records no owner teams, so nobody can approve its improvement.md`;
   if (!(await ownerMember(p, signer, owners))) {

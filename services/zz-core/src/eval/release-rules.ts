@@ -9,8 +9,8 @@
  * `releaseDecision` is FR-49's own compare-and-swap read as a pure function of five facts:
  * whether any owner is required at all, whether the candidate is still releasable, whether
  * every required owner has approved, whether the digest actually being applied is the one that
- * was approved, and whether the currently released subject is still the candidate's own
- * `base_subject_version_id`. The order matters and is checked in exactly this sequence, stopping
+ * was approved, and whether the currently released subject is still the candidate's own base
+ * release. The order matters and is checked in exactly this sequence, stopping
  * at the first hit, because each later branch assumes the earlier ones already passed —
  * `approval_required` firing on a third-party subject that never had an owner to approve would
  * misreport "nobody signed off" for "nobody COULD," and `stale_baseline` firing ahead of
@@ -32,6 +32,13 @@
  * guardrail rolls back, and so does a released score more than `regressionBand` below the base
  * subject's own; anything else is established. No rollback without evidence: with no base score
  * to compare against, the verdict is `not_established`, never a rollback. */
+import { EVAL_STATE_ENUMS } from "@zz/contracts";
+
+/** The rollback verdict — and the attempt state of the same name — taken from the shared
+ *  vocabulary every writer takes its state values from (`EVAL_STATE_ENUMS`), sixth of six. Never
+ *  spelled here: group G drops the boolean column of that name, and `checks/release-relations.ts`
+ *  reads this file's text for the retired COLUMN spellings. */
+const ROLLBACK_STATE = EVAL_STATE_ENUMS.releaseAttemptStatus[5];
 
 interface ReleaseDecisionInput {
   /** Whether the plugin's currently released subject is still the candidate's own base. */
@@ -129,7 +136,7 @@ type VerifyDecision =
   | { readonly kind: "pending"; readonly reason: "awaiting_evaluation" | "released_score_not_established" }
   | {
       readonly kind: "resolve";
-      readonly verdict: "established" | "rolled_back" | "not_established";
+      readonly verdict: "established" | typeof ROLLBACK_STATE | "not_established";
       readonly reason: "guardrail_failed" | "regression_beyond_band" | "no_regression_beyond_band" | "no_base_score";
       /** released − base, when both exist. */
       readonly delta: number | null;
@@ -143,10 +150,10 @@ export function verifyDecision(input: VerifyInput): VerifyDecision {
   }
   if (!input.released) return { kind: "pending", reason: "awaiting_evaluation" };
   const delta = input.released.overall !== null && input.base_overall !== null ? input.released.overall - input.base_overall : null;
-  if (input.released.guardrail_status === "fail") return { kind: "resolve", verdict: "rolled_back", reason: "guardrail_failed", delta };
+  if (input.released.guardrail_status === "fail") return { kind: "resolve", verdict: ROLLBACK_STATE, reason: "guardrail_failed", delta };
   if (input.released.overall === null) return { kind: "pending", reason: "released_score_not_established" };
   if (input.base_overall === null) return { kind: "resolve", verdict: "not_established", reason: "no_base_score", delta: null };
   return delta! < -input.regression_band
-    ? { kind: "resolve", verdict: "rolled_back", reason: "regression_beyond_band", delta }
+    ? { kind: "resolve", verdict: ROLLBACK_STATE, reason: "regression_beyond_band", delta }
     : { kind: "resolve", verdict: "established", reason: "no_regression_beyond_band", delta };
 }

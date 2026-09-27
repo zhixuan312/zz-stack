@@ -13,20 +13,8 @@ export const CONTROL: Record<string, TableTarget> = {
         "gen_random_uuid()",
       ],
       [
-        "team_slug",
-        "text",
-        false,
-        null,
-      ],
-      [
-        "initiative",
-        "text",
-        false,
-        null,
-      ],
-      [
-        "module_id",
-        "text",
+        "initiative_id",
+        "uuid",
         false,
         null,
       ],
@@ -37,18 +25,6 @@ export const CONTROL: Record<string, TableTarget> = {
         null,
       ],
       [
-        "subject",
-        "text",
-        false,
-        null,
-      ],
-      [
-        "profile",
-        "jsonb",
-        false,
-        "'[]'::jsonb",
-      ],
-      [
         "started_at",
         "timestamp with time zone",
         false,
@@ -56,7 +32,7 @@ export const CONTROL: Record<string, TableTarget> = {
       ],
       [
         "started_by",
-        "text",
+        "uuid",
         true,
         null,
       ],
@@ -66,11 +42,33 @@ export const CONTROL: Record<string, TableTarget> = {
     ],
     uniques: [
       [
-        "team_slug",
-        "initiative",
+        "initiative_id",
       ],
     ],
-    foreignKeys: [],
+    foreignKeys: [
+      {
+        columns: [
+          "initiative_id",
+        ],
+        refTable: "initiative",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "CASCADE",
+        deferrable: false,
+      },
+      {
+        columns: [
+          "started_by",
+        ],
+        refTable: "principal",
+        refColumns: [
+          "id",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
+    ],
     checks: [],
     indexes: [],
     comment: null,
@@ -115,12 +113,6 @@ export const CONTROL: Record<string, TableTarget> = {
         null,
       ],
       [
-        "note",
-        "text",
-        false,
-        "''::text",
-      ],
-      [
         "recorded_at",
         "timestamp with time zone",
         false,
@@ -142,7 +134,12 @@ export const CONTROL: Record<string, TableTarget> = {
     primaryKey: [
       "seq",
     ],
-    uniques: [],
+    uniques: [
+      [
+        "run_id",
+        "entry_id",
+      ],
+    ],
     foreignKeys: [
       {
         columns: [
@@ -155,8 +152,23 @@ export const CONTROL: Record<string, TableTarget> = {
         onDelete: "CASCADE",
         deferrable: false,
       },
+      {
+        columns: [
+          "run_id",
+          "supersedes",
+        ],
+        refTable: "control_evidence",
+        refColumns: [
+          "run_id",
+          "entry_id",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
     ],
-    checks: [],
+    checks: [
+      "CHECK ((kind = ANY (ARRAY['document'::text, 'approval'::text, 'audit'::text])))",
+    ],
     indexes: [
       "CREATE INDEX control_evidence_run_seq ON zz.control_evidence USING btree (run_id, seq)",
       "CREATE INDEX control_evidence_supersedes ON zz.control_evidence USING btree (run_id, supersedes) WHERE (supersedes IS NOT NULL)",
@@ -212,7 +224,13 @@ export const CONTROL: Record<string, TableTarget> = {
     primaryKey: [
       "seq",
     ],
-    uniques: [],
+    uniques: [
+      [
+        "run_id",
+        "step_id",
+        "kind",
+      ],
+    ],
     foreignKeys: [
       {
         columns: [
@@ -226,7 +244,10 @@ export const CONTROL: Record<string, TableTarget> = {
         deferrable: false,
       },
     ],
-    checks: [],
+    checks: [
+      "CHECK ((btrim(ground) <> ''::text))",
+      "CHECK ((kind = ANY (ARRAY['document'::text, 'approval'::text, 'audit'::text])))",
+    ],
     indexes: [
       "CREATE INDEX control_waiver_run ON zz.control_waiver USING btree (run_id)",
     ],

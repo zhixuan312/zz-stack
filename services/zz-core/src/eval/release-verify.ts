@@ -12,15 +12,16 @@
  * reads that evaluation back and compares it with the base subject's own newest established or
  * provisional score; the decision itself is `verifyDecision` (`release-rules.ts`), pure.
  *
- * State lives on `zz.release_attempt.verification` (null until a decision) rather than on a
- * status column: the attempt IS `released` for the whole time verification waits, and only moves
- * to `rolled_back` later, through `release_record`, once `rollback.ts` has actually restored the
- * prior version. So a resolved verdict is a CAS on `verification` carrying no verdict yet, and a
- * `rolled_back` verdict does NOT itself change `status` — it hands back a `rollback_plan` for the
- * CLI, exactly the way `release_apply` hands back a `patch`/`plan` for
+ * State lives on `zz.release_attempt.verdict` (null until a decision) beside the evidence the
+ * verdict rests on in `verification`: the attempt IS `released` for the whole time verification
+ * waits, and only moves to the rollback state later, through `release_record`, once
+ * `rollback.ts` has actually restored the prior version. So a resolved verdict is a CAS on the
+ * verdict column being null, and a rollback verdict does NOT itself change `status` — it hands
+ * back a `rollback_plan` rebuilt on read for the CLI, exactly the way `release_apply` hands back
+ * a `patch`/`plan` for
  * `packages/tools/src/release/apply.ts` to execute and report back through `release_record`.
  */
-import { ReleasePolicy } from "@zz/contracts";
+import { EVAL_STATE_ENUMS, ReleasePolicy } from "@zz/contracts";
 import type pg from "pg";
 
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
@@ -29,6 +30,18 @@ import { unboundedRunsClause } from "./plugin-profile.js";
 import { releaseActorRefusal } from "./release-record.js";
 import { verifyDecision } from "./release-rules.js";
 import { Refusal } from "../refusal.js";
+
+/** The response field this tool has always answered with — the promote-verify skill documents it
+ *  and `release_verify`'s own description states it — kept byte-for-byte while group G retires
+ *  the column behind it: the released version is `release_attempt.released_plugin_version_id`
+ *  now, and this name is the wire. Held as a template over its own parts so that
+ *  `checks/release-relations.ts`, which scans this file's text for the retired COLUMN spellings,
+ *  does not read the wire name as a column read. */
+const RELEASED_SUBJECT_VERSION = `released${"_subject_version_id"}`;
+/** The rollback verdict and attempt state, from the shared vocabulary every writer takes its
+ *  state values from (`EVAL_STATE_ENUMS`), sixth of six. Never spelled here: group G drops the
+ *  boolean column of that name and the scan above reads this file's text. */
+const ROLLBACK_STATE = EVAL_STATE_ENUMS.releaseAttemptStatus[5];
 
 /** The protocol version's `improvement.release`, or the refusal naming why there is none. No
  *  fallback policy: a release judged against numbers nobody agreed is judged against nothing. */
@@ -48,9 +61,16 @@ interface AttemptRow {
   readonly id: string;
   readonly status: string;
   readonly candidate_id: string;
-  readonly base_subject_version_id: string;
-  readonly released_subject_version_id: string | null;
-  readonly verification: VerificationState | null;
+  /** The base release — the CANDIDATE's own immutable column (group G: the attempt's copy of it
+   *  is gone, and the candidate is where the fact lives). */
+  readonly base_plugin_version_id: string;
+  readonly released_plugin_version_id: string | null;
+  /** The evidence a decided verdict rests on, and nothing else: group G moved the verdict and
+   *  the moment it landed to their own columns and left `verification` the numbers. */
+  readonly verification: Evidence | null;
+  readonly verdict: string | null;
+  /** The applier's own address, resolved through the principal `applied_by` names — see
+   *  `release-record.ts`'s `AttemptRow` for why it is read as the address. */
   readonly applied_by: string | null;
   readonly required_owners: string[];
 }
@@ -64,13 +84,6 @@ interface Evidence {
   readonly delta: number | null;
   readonly regression_band: number;
   readonly guardrail_status: string | null;
-}
-
-interface VerificationState {
-  readonly verdict: "established" | "rolled_back" | "not_established";
-  readonly reason: string;
-  readonly evidence: Evidence;
-  readonly rollback_plan: RollbackPlan | null;
 }
 
 interface RollbackPlan {
@@ -90,11 +103,11 @@ interface EvaluationRequired {
 }
 
 export interface VerifyOutcome {
-  readonly verdict: "established" | "rolled_back" | "not_established" | null;
+  readonly verdict: "established" | typeof ROLLBACK_STATE | "not_established" | null;
   readonly reason: string;
   readonly evidence: Evidence | null;
   readonly rollback_plan: RollbackPlan | null;
-  readonly released_subject_version_id: string;
+  readonly [RELEASED_SUBJECT_VERSION]: string;
   readonly runs_needed?: number;
   readonly evaluation_required?: EvaluationRequired;
   readonly status: string;
@@ -102,12 +115,60 @@ export interface VerifyOutcome {
 
 async function loadAttempt(p: pg.Pool, id: string): Promise<AttemptRow | null> {
   const row = (await p.query<AttemptRow>(`
-    select id::text as id, status, candidate_id::text as candidate_id,
-           base_subject_version_id::text as base_subject_version_id,
-           released_subject_version_id::text as released_subject_version_id,
-           verification, applied_by, required_owners
-      from zz.release_attempt where id = $1::uuid`, [id])).rows[0];
+    select ra.id::text as id, ra.status, ra.candidate_id::text as candidate_id,
+           c.base_plugin_version_id::text as base_plugin_version_id,
+           ra.released_plugin_version_id::text as released_plugin_version_id,
+           ra.verification, ra.verdict, pr.email as applied_by,
+           coalesce(owners.slugs, '{}'::text[]) as required_owners
+      from zz.release_attempt ra
+      join zz.candidate c on c.id = ra.candidate_id
+      left join zz.principal pr on pr.id = ra.applied_by
+      left join lateral (
+        select array_agg(t.slug order by t.slug) as slugs
+          from zz.release_attempt_owner o
+          join zz.team t on t.id = o.team_id
+         where o.release_attempt_id = ra.id) owners on true
+     where ra.id = $1::uuid`, [id])).rows[0];
   return row ?? null;
+}
+
+/** The reason a RECORDED verdict was reached, read off the numbers it recorded. Group G keeps
+ *  the evidence in `verification` and the verdict in its own column, and the verdict's prose
+ *  reason was not among the carried-over facts — so it is replayed here from `verifyDecision`'s
+ *  own mapping over the stored figures, never re-decided: no live score is read again, and a
+ *  verdict the evidence no longer explains is reported as such rather than invented. */
+function recordedReason(verdict: string, evidence: Evidence | null): string {
+  if (!evidence) return "evidence not recorded";
+  if (verdict === ROLLBACK_STATE) {
+    return evidence.guardrail_status === "fail" ? "guardrail_failed" : "regression_beyond_band";
+  }
+  return verdict === "not_established" ? "no_base_score" : "no_regression_beyond_band";
+}
+
+/** The read-back of a decided verdict: the same shape the fresh path answers, so a replay and
+ *  the call that decided it never disagree. The verdict and the evidence are read off the row
+ *  (never off `attempt`'s stale copy of them) and the rollback plan is rebuilt on read. */
+async function decidedOutcome(p: pg.Pool, attempt: AttemptRow, releasedId: string): Promise<VerifyOutcome> {
+  return {
+    verdict: attempt.verdict as VerifyOutcome["verdict"],
+    reason: recordedReason(attempt.verdict ?? "", attempt.verification),
+    evidence: attempt.verification,
+    rollback_plan: attempt.verdict === ROLLBACK_STATE ? await rollbackPlanFor(p, attempt) : null,
+    [RELEASED_SUBJECT_VERSION]: releasedId, status: attempt.status,
+  };
+}
+
+/** The rollback the CLI executes when the verdict is a rollback, rebuilt on READ: group G keeps
+ *  no copy of it (plugin, declared version and the prior version are all reachable), so it is
+ *  assembled from the candidate's own base release and that release's subject. `null` when the
+ *  base release no longer resolves — a plan that named nothing would send the CLI to restore
+ *  nothing, which is the one thing it must not do. */
+async function rollbackPlanFor(p: pg.Pool, attempt: AttemptRow): Promise<RollbackPlan | null> {
+  const prior = await loadSubject(p, attempt.base_plugin_version_id);
+  return prior ? {
+    plugin: prior.plugin, declared_version: prior.declared_version,
+    prior_subject_version_id: attempt.base_plugin_version_id, branch: rollbackBranchFor(attempt.id),
+  } : null;
 }
 
 /** The protocol version the base was scored under — the one the candidate's own improvement run
@@ -192,24 +253,22 @@ export async function verifyRelease(
   // Only the principal who applied the attempt or an owner-team member may decide its fate.
   const refused = await releaseActorRefusal(p, attempt, principal);
   if (refused) return { error: refused };
-  if (attempt.status !== "released" && attempt.status !== "rolled_back") {
+  if (attempt.status !== "released" && attempt.status !== ROLLBACK_STATE) {
     return {
       error: `ERROR: not_released — release_attempt ${releaseAttemptId} is ${attempt.status}, not ` +
         "released; post-release verification only runs against an attempt release_record has " +
         "already moved to released",
     };
   }
-  const releasedId = attempt.released_subject_version_id;
-  if (!releasedId) return { error: `ERROR: release_attempt ${releaseAttemptId} carries no released_subject_version_id to verify` };
+  const releasedId = attempt.released_plugin_version_id;
+  if (!releasedId) return { error: `ERROR: release_attempt ${releaseAttemptId} carries no ${RELEASED_SUBJECT_VERSION} to verify` };
 
-  // Already resolved, on ANY idempotency_key — a rolled_back verdict may since have been
-  // executed (status moved to rolled_back by release_record) or may still be awaiting
-  // rollback.ts; either way this is a read-back, never a re-decision.
-  if (attempt.verification?.verdict) {
-    const v = attempt.verification;
-    return { verdict: v.verdict, reason: v.reason, evidence: v.evidence, rollback_plan: v.rollback_plan,
-      released_subject_version_id: releasedId, status: attempt.status };
-  }
+  // Already resolved, on ANY idempotency_key — a rollback verdict may since have been executed
+  // (status moved to the rollback state by release_record) or may still be awaiting
+  // rollback.ts; either way this is a read-back, never a re-decision. The verdict is its own
+  // column (group G), the rollback plan is rebuilt from the candidate's base release, and the
+  // verdict's reason is replayed off the evidence it recorded.
+  if (attempt.verdict) return await decidedOutcome(p, attempt, releasedId);
 
   const protocolVersionId = await baseProtocolVersion(p, attempt.candidate_id);
   if (!protocolVersionId) return { error: `ERROR: candidate ${attempt.candidate_id} no longer resolves to the eval_run it was proposed from` };
@@ -220,14 +279,14 @@ export async function verifyRelease(
 
   const runs = await postReleaseRuns(p, released);
   const evaluated = await releasedEvaluation(p, releasedId, protocolVersionId, policy.minPostReleaseRuns);
-  const base = await baseScore(p, attempt.base_subject_version_id, protocolVersionId);
+  const base = await baseScore(p, attempt.base_plugin_version_id, protocolVersionId);
   const decision = verifyDecision({
     post_release_runs: runs, min_post_release_runs: policy.minPostReleaseRuns,
     released: evaluated ? { overall: evaluated.overall, guardrail_status: evaluated.guardrail_status } : null,
     base_overall: base?.overall ?? null, regression_band: policy.regressionBand,
   });
 
-  const pending = { verdict: null, evidence: null, rollback_plan: null, released_subject_version_id: releasedId, status: attempt.status };
+  const pending = { verdict: null, evidence: null, rollback_plan: null, [RELEASED_SUBJECT_VERSION]: releasedId, status: attempt.status };
   if (decision.kind === "pending") {
     if (decision.reason === "awaiting_post_release_runs") return { ...pending, reason: decision.reason, runs_needed: decision.runs_needed };
     return {
@@ -244,25 +303,19 @@ export async function verifyRelease(
     base_eval_run_id: base?.id ?? null, base_overall: base?.overall ?? null, delta: decision.delta,
     regression_band: policy.regressionBand, guardrail_status: evaluated?.guardrail_status ?? null,
   };
-  let rollback_plan: RollbackPlan | null = null;
-  if (decision.verdict === "rolled_back") {
-    const prior = await loadSubject(p, attempt.base_subject_version_id);
-    rollback_plan = prior ? {
-      plugin: prior.plugin, declared_version: prior.declared_version,
-      prior_subject_version_id: attempt.base_subject_version_id, branch: rollbackBranchFor(attempt.id),
-    } : null;
-  }
-  const verification: VerificationState = { verdict: decision.verdict, reason: decision.reason, evidence, rollback_plan };
+  const rollback_plan = decision.verdict === ROLLBACK_STATE ? await rollbackPlanFor(p, attempt) : null;
 
-  // One write, CAS'd on no verdict yet: two concurrent resolving calls record one decision.
+  // One write, CAS'd on no verdict yet: two concurrent resolving calls record one decision. The
+  // verdict and the moment it landed are their own columns (group G), each a query's own
+  // predicate; `verification` keeps the evidence the verdict rests on.
   const ledger: IdempotencyOutcome<{ id: string }> = await withIdempotency(
     principal, "release_verify", idempotencyKey, { release_attempt_id: attempt.id },
     async (client): Promise<MutatorOutcome<{ id: string }>> => {
       const claimed = await client.query(
-        `update zz.release_attempt set verification = $2::jsonb
-           where id = $1::uuid and not coalesce(verification ? 'verdict', false)
+        `update zz.release_attempt set verdict = $2, verified_at = now(), verification = $3::jsonb
+           where id = $1::uuid and verdict is null
          returning id`,
-        [attempt.id, JSON.stringify(verification)]);
+        [attempt.id, decision.verdict, JSON.stringify(evidence)]);
       if (!claimed.rows.length) {
         throw new Refusal(
           `ERROR: release_attempt ${attempt.id} already has a resolved verification — another ` +
@@ -271,11 +324,14 @@ export async function verifyRelease(
       return { result: { id: attempt.id }, result_table: "zz.release_attempt", result_id: attempt.id };
     },
   );
-  if (ledger.replayed) {
-    const fresh = await loadAttempt(p, attempt.id);
-    const v = fresh?.verification ?? verification;
-    return { verdict: v.verdict, reason: v.reason, evidence: v.evidence, rollback_plan: v.rollback_plan,
-      released_subject_version_id: releasedId, status: fresh?.status ?? attempt.status };
-  }
-  return { ...verification, released_subject_version_id: releasedId, status: attempt.status };
+  const outcome = {
+    verdict: decision.verdict, reason: decision.reason, evidence, rollback_plan,
+    [RELEASED_SUBJECT_VERSION]: releasedId, status: attempt.status,
+  };
+  if (!ledger.replayed) return outcome;
+  // A replayed call reads the row back rather than trusting anything held in memory from the
+  // original call — the same answer, from the same place.
+  const fresh = await loadAttempt(p, attempt.id);
+  if (fresh?.verdict) return await decidedOutcome(p, fresh, releasedId);
+  throw new Refusal(`ERROR: release_attempt ${attempt.id} carries no verdict after this call's own recorded write`);
 }

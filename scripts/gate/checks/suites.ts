@@ -262,7 +262,11 @@ check("the committed judged dataset is exactly what its generator produces, byte
  * both rules.
  */
 const notRegistered = new Map<string, string>([
-  // Empty as of wave 6. The mechanism stays because `working-checks-registered.ts` parses this
+  // Empty again as of wave 3. Phase 4 held three entries here from wave 2 until wave 2
+  // landed — I-29, I-30 and I-31's checks — and struck them in the same pass that
+  // registered them, the two-step Phase 1 used for the pat-label check, Phase 2 for
+  // `dropped-columns.ts` and Phase 3 for `catalog-eval-columns.ts`.
+  // The mechanism stays when the list is empty again: `working-checks-registered.ts` parses this
   // map — a name here exempts a file from both rules — and the next phase needs somewhere to put
   // its own.
   //

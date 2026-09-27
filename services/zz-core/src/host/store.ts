@@ -16,22 +16,31 @@
  * saying an audit exists when no audit happened. So the kernel reports the
  * requirement unmet and this file reports, beside that, that somebody signed for the gap and on
  * what ground. A reader can always tell a step that was done from a step that was excused.
+ *
+ * One fact, one id, inside one run. `(run_id, entry_id)` is unique and `supersedes` resolves to an
+ * entry of the same run: the kernel tells a fact that still stands from one that does not by the
+ * id it carries, so an id standing for two different facts makes a withdrawal reach the wrong one
+ * — and a withdrawal naming no entry of its run is not a fact about anything. The writer mints the
+ * ids (`evidenceEntryId`, observe.ts) and this file is what holds them.
  */
-import { createHost, type ActionGrant, type ControlVerdict, type EvidenceEntry,
+import { createHost, moduleDigest, type ActionGrant, type ControlVerdict, type EvidenceEntry,
          type Host, type ReviewedModule } from "@zz/contracts";
 
 import { db as db_ } from "../platform-db.js";
 
-/** A run as the platform holds it: the durable identity, and what the run was judged against
- *  at the time rather than what the allowlist says today. */
+/** A run as the platform holds it: the durable identity, what the run was judged against at the
+ *  time rather than what the allowlist says today, and the initiative it governs.
+ *
+ *  The row holds none of what the kernel is told. `module_id` equalled the initiative's own flow
+ *  by construction, `subject` was always the initiative's slug and `profile` was always empty, so
+ *  all three are read here — the slug from the initiative this run is joined to, the profile as
+ *  the empty list it always was — and handed to `runStart`, rather than kept a second time where
+ *  they could disagree with the row they describe. */
 interface StoredRun {
   readonly id: string;
-  readonly team_slug: string;
+  /** The initiative's slug. The key is the id; this is what the kernel calls the run's subject. */
   readonly initiative: string;
-  readonly module_id: string;
   readonly module_digest: string;
-  readonly subject: string;
-  readonly profile: readonly string[];
 }
 
 /** One requirement a person accepted the absence of, and the ground they gave. `ground` is
@@ -59,22 +68,33 @@ interface StandingVerdict {
 /** Open a run for an initiative, or return the one already open.
  *
  *  Idempotent by constraint, not by a read-then-write that two requests can interleave. The
- *  unique key is (team, initiative), because an initiative is one run of the flow governing it
- *  and two runs would mean two answers to "may this close". */
+ *  unique key is the initiative, because an initiative is one run of the flow governing it and
+ *  two runs would mean two answers to "may this close".
+ *
+ *  The initiative is resolved from its address in the statement that inserts, so a run cannot be
+ *  opened against an initiative that does not exist: the select finds no row and nothing is
+ *  inserted, which is the null this returns. `started_by` resolves the same way and is null where
+ *  the address names no principal — an address that resolves to nobody is not a person, and the
+ *  address stays recorded per fact in `control_evidence.recorded_by`.
+ *
+ *  The digest is written on the first open and never updated: it is the rules the run was judged
+ *  against, and a re-open after the module moved is the run that can no longer be replayed, not a
+ *  run silently judged against the newer body. */
 export async function openRun(r: {
-  team: string; initiative: string; module: ReviewedModule; digest: string;
-  subject: string; profile: readonly string[]; by: string | null;
+  team: string; initiative: string; digest: string; by: string | null;
 }): Promise<string | null> {
   const db = db_();
   if (!db) return null;
   const { rows } = await db.query(
-    `insert into zz.control_run
-       (team_slug, initiative, module_id, module_digest, subject, profile, started_by)
-     values ($1,$2,$3,$4,$5,$6::jsonb,$7)
-     on conflict (team_slug, initiative) do update set team_slug = excluded.team_slug
+    `insert into zz.control_run (initiative_id, module_digest, started_by)
+     select i.id, $3,
+            (select p.id from zz.principal p where p.email = $4 and p.status = 'active')
+       from zz.initiative i
+       join zz.team t on t.id = i.team_id
+      where t.slug = $1 and i.slug = $2
+     on conflict (initiative_id) do update set initiative_id = excluded.initiative_id
      returning id`,
-    [r.team, r.initiative, r.module.id, r.digest, r.subject,
-     JSON.stringify(r.profile), r.by],
+    [r.team, r.initiative, r.digest, r.by],
   );
   return rows[0]?.id ?? null;
 }
@@ -84,13 +104,16 @@ export async function runFor(team: string, initiative: string): Promise<StoredRu
   const db = db_();
   if (!db) return null;
   const { rows } = await db.query(
-    `select id, team_slug, initiative, module_id, module_digest, subject, profile
-       from zz.control_run where team_slug = $1 and initiative = $2`,
+    `select r.id, i.slug as initiative, r.module_digest
+       from zz.control_run r
+       join zz.initiative i on i.id = r.initiative_id
+       join zz.team t on t.id = i.team_id
+      where t.slug = $1 and i.slug = $2`,
     [team, initiative],
   );
   const row = rows[0];
   if (!row) return null;
-  return { ...row, profile: Array.isArray(row.profile) ? row.profile : [] } as StoredRun;
+  return row as StoredRun;
 }
 
 /** Append one piece of evidence. Append-only: nothing here edits or deletes a recorded fact,
@@ -104,14 +127,36 @@ export async function recordEvidence(
     // `recorded_at` is written rather than defaulted: the column carries `default now()`, so
     // leaving it out would still populate it, and a reader of this statement could not tell
     // whether the platform or the database decides the value.
+    //
+    // `note` is not written: the column held one sentence per fact kind, read by nothing, and
+    // the id now says what the sentence did.
     `insert into zz.control_evidence
-       (run_id, entry_id, step_id, kind, about, note, supersedes, recorded_at, recorded_by)
-     values ($1,$2,$3,$4,$5,$6,$7, now(), $8)`,
-    [runId, entry.id, stepId, entry.kind, entry.about, entry.note ?? "",
+       (run_id, entry_id, step_id, kind, about, supersedes, recorded_at, recorded_by)
+     values ($1,$2,$3,$4,$5,$6, now(), $7)`,
+    [runId, entry.id, stepId, entry.kind, entry.about,
      // Null rather than the empty string, because `met()` asks whether an id is in the set of
-     // withdrawn ids and an empty string is an id nothing has.
+     // withdrawn ids and an empty string is an id nothing has — and because the row's own
+     // foreign key would refuse it, no entry of any run carrying it.
      entry.supersedes || null, by],
   );
+}
+
+/** Every entry id a run already holds.
+ *
+ *  One query, because the writer asks it before every fact it records and asks two things of the
+ *  answer: whether this fact is already in the log, and whether the approval a revision withdraws
+ *  is. Both are the reason the ids are minted from the fact rather than from the order the rows
+ *  arrive — an id the run already carries is the same fact arriving twice, and writing it would
+ *  be refused by the unique key rather than answered.
+ *
+ *  The writer must not lean on that key: it is the backstop for a bug, and a writer that reached
+ *  it would turn an already-recorded fact into a failed tool call for whoever asked. */
+export async function recordedIds(runId: string): Promise<Set<string>> {
+  const db = db_();
+  if (!db) return new Set();
+  const { rows } = await db.query(
+    `select entry_id from zz.control_evidence where run_id = $1`, [runId]);
+  return new Set(rows.map((r: { entry_id: string }) => String(r.entry_id)));
 }
 
 async function waiversFor(runId: string): Promise<StoredWaiver[]> {
@@ -140,8 +185,21 @@ function rehydrate(
 ): { host: Host; kernelRunId: string; unreplayable: string[] } {
   const host = createHost();
   host.register(module);
-  const kernelRunId = host.runStart(module.id, { subject: run.subject, profile: [...run.profile] });
+  // The slug is the kernel's subject, and it comes from the initiative this run is joined to:
+  // the row holds the initiative by id, so the name cannot drift from the work it governs.
+  const kernelRunId = host.runStart(module.id, { subject: run.initiative, profile: [] });
   const unreplayable: string[] = [];
+  // `module_digest` is this run's own snapshot of the rules it was judged against, and it is
+  // COMPARED rather than carried as history: replaying a run against a module whose body has moved
+  // judges it against rules nobody applied to it, and the difference has to surface rather than
+  // be adopted silently. A run holding no digest recorded nothing to compare against — the gate's
+  // own in-memory probe is the only run in that position — and is replayed as the others are.
+  const registered = moduleDigest(module);
+  if (run.module_digest && run.module_digest !== registered) {
+    unreplayable.push(
+      `this run was judged against a ${module.id} that has since changed ` +
+      `(${run.module_digest.slice(0, 12)} recorded, ${registered.slice(0, 12)} registered now)`);
+  }
   for (const e of evidence) {
     try {
       host.evidenceRecord(kernelRunId, e.step_id,
@@ -157,14 +215,17 @@ async function evidenceFor(runId: string): Promise<(EvidenceEntry & { step_id: s
   const db = db_();
   if (!db) return [];
   const { rows } = await db.query(
-    `select entry_id as id, step_id, kind, about, note, supersedes from zz.control_evidence
+    `select entry_id as id, step_id, kind, about, supersedes from zz.control_evidence
       where run_id = $1 order by seq`, [runId]);
   // `supersedes` rides back with the rest: a rehydration that dropped it would rebuild a run
   // whose withdrawals never happened, every verdict computed from the full history instead of
   // from what still stands.
+  //
+  // `note` is not read, and the kernel is handed the empty string: the column is gone, and the
+  // field is one the kernel's own type requires rather than one it reads.
   return rows.map((r: Record<string, string | null>) =>
     ({ id: String(r.id), stepId: String(r.step_id), step_id: String(r.step_id),
-       kind: String(r.kind), about: String(r.about), note: String(r.note ?? ""),
+       kind: String(r.kind), about: String(r.about), note: "",
        supersedes: r.supersedes ?? undefined }));
 }
 
@@ -287,9 +348,10 @@ export async function claimFor(
 
 /** `claimFor` once the run's facts are loaded: replay them, then claim.
  *
- *  A run whose history no longer replays in full is refused, naming each entry that did not
- *  replay. Judging the entries that did would answer for a shorter run than the one recorded,
- *  and a withdrawal among the dropped entries would leave standing what it withdrew.
+ *  A run whose history no longer replays is refused, naming each fact that did not: an entry the
+ *  module no longer accepts, or a module whose body has moved since the run recorded its digest.
+ *  Judging the entries that did replay would answer for a shorter run than the one recorded, and a
+ *  withdrawal among the dropped entries would leave standing what it withdrew.
  *
  *  Exported for scripts/gate/checks/host-chain.ts. */
 export function judgeClaim(
@@ -299,14 +361,12 @@ export function judgeClaim(
 ): { grant: ActionGrant; standing: StandingVerdict } {
   const { host, kernelRunId, unreplayable } = rehydrate(run, module, evidence);
   if (unreplayable.length) {
-    const unmet = unreplayable.map((u) => `recorded entry ${u}`);
     return {
       grant: { action, granted: false, refusal:
-        `this run's history cannot be replayed in full against ${module.id} as registered now, ` +
-        `and a verdict on the shorter history would judge a run that never happened — ` +
-        `${unmet.length} recorded ${unmet.length === 1 ? "entry does" : "entries do"} not replay: ` +
-        unmet.join("; ") },
-      standing: { satisfied: false, unmet, dischargedBy: [], clear: false },
+        `this run's history cannot be replayed against ${module.id} as registered now, and a ` +
+        `verdict on a run that cannot be rebuilt would judge a run that never happened — ` +
+        unreplayable.join("; ") },
+      standing: { satisfied: false, unmet: unreplayable, dischargedBy: [], clear: false },
     };
   }
   const grant = host.actionClaim(kernelRunId, stepId, action);

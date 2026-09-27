@@ -119,6 +119,18 @@ const RETIRED: Record<string, string[]> = {
   plugin: ["evolvable", "owner_team", "release_owners"],
   plugin_version: ["rubric_id"],
   skill: ["kind", "ordinal"],
+  // Phase 4's migration (`002_improve_control.sql`), read off the target against the folded
+  // baseline the same way: `improve-control-shape.ts` asserts the target, and this is what asks
+  // whether a STATEMENT still names one. It is the general net, for files no task owns —
+  // `eval/candidate-build.ts` read two of these in no Phase 4 task's Owns, and stayed
+  // invisible until `checks/eval-family-readers.ts` planned its statement against the database.
+  eval_finding: ["docs_affected", "eval_id", "proposed_change", "scope", "resulted_in_skill_version_id"],
+  improvement_run: ["finding_ids"],
+  candidate: ["base_subject_version_id", "patchset", "proposer_identity", "touched_owners"],
+  release_attempt: ["approval_refs", "approved_patch_digest", "base_subject_version_id",
+                    "released_subject_version_id", "required_owners", "rolled_back"],
+  control_run: ["initiative", "module_id", "profile", "subject", "team_slug"],
+  control_evidence: ["note"],
 };
 
 /** The name a table goes by before the migration. A statement binding it is naming a table this

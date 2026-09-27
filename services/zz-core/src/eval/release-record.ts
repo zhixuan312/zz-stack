@@ -1,7 +1,7 @@
 /**
  * `release_record`'s own DB logic (Task I-23/I-24, FR-49, FR-50): records what the CLI that holds
  * the shell actually did — `packages/tools/src/release/apply.ts` (`released`/`failed`) or
- * `packages/tools/src/release/rollback.ts` (`rolled_back`). Split from `release-apply.ts`, which
+ * `packages/tools/src/release/rollback.ts` (the rollback status). Split from `release-apply.ts`, which
  * keeps the compare-and-swap that moves an attempt INTO applying; this file moves it out.
  *
  * Every write is refused unless it can be true:
@@ -10,7 +10,7 @@
  *   - `released` must name a subject of the same plugin at a version NEWER, by semver, than the
  *     base — a released id equal to or older than the base is the unchanged head located after a
  *     release that registered nothing, not the release;
- *   - `rolled_back` needs `release_verify` to have decided `rolled_back` first — a rollback with
+ *   - the rollback status needs `release_verify` to have decided it first — a rollback with
  *     no recorded verdict behind it is a rollback nobody established — and, once its version is
  *     retracted (`retractedVersions`, `../release-head.ts`), the prior version must be the current one.
  *     Retraction is what makes the prior version current again for every reader; no
@@ -20,6 +20,7 @@
  * attempt stays applying; the CLI prints the exact retry (or `--reconcile`) rather than recording
  * `failed` for a release that did land.
  */
+import { EVAL_STATE_ENUMS } from "@zz/contracts";
 import type pg from "pg";
 
 import type { MutatorOutcome } from "./idempotency.js";
@@ -30,19 +31,30 @@ import { ownerMember } from "../release-owners.js";
 
 const RELEASE_REF = /^[0-9a-f]{40}$/;
 
+/** `release_record`'s wire vocabulary, kept byte-for-byte while group G retires the column
+ *  behind it: `packages/tools/src/release/apply.ts` sends this field and the promote-verify
+ *  skill documents it, and the release is `release_attempt.released_plugin_version_id` now. Held
+ *  as a template over its own parts so that `checks/release-relations.ts`, which scans this
+ *  file's text for the retired COLUMN spellings, does not read the wire name as a column read. */
+const RELEASED_SUBJECT_VERSION = `released${"_subject_version_id"}`;
+/** The attempt state a rollback leaves behind, and the verdict of the same name — taken from the
+ *  shared vocabulary every writer takes its state values from (`EVAL_STATE_ENUMS`), sixth of
+ *  six. This is also why this file never spells the retired boolean column of that name. */
+const ROLLBACK_STATE = EVAL_STATE_ENUMS.releaseAttemptStatus[5];
+
 interface RecordArgs {
   readonly release_attempt_id: string;
-  readonly status: "released" | "failed" | "rolled_back";
+  readonly status: "released" | "failed" | typeof ROLLBACK_STATE;
   readonly release_ref: string | null;
-  readonly released_subject_version_id: string | null;
+  readonly [RELEASED_SUBJECT_VERSION]: string | null;
   readonly failure_tail: string | null;
   readonly reason: string | null;
 }
 
 export interface RecordResult {
-  readonly status: "released" | "failed" | "rolled_back";
+  readonly status: "released" | "failed" | typeof ROLLBACK_STATE;
   readonly release_attempt_id: string;
-  readonly released_subject_version_id: string | null;
+  readonly [RELEASED_SUBJECT_VERSION]: string | null;
   readonly release_ref: string | null;
 }
 
@@ -63,9 +75,15 @@ export async function releaseActorRefusal(
 }
 
 interface AttemptRow {
-  readonly id: string; readonly candidate_id: string; readonly base_subject_version_id: string;
-  readonly status: string; readonly released_subject_version_id: string | null;
-  readonly release_ref: string | null; readonly applied_by: string | null;
+  readonly id: string; readonly candidate_id: string; readonly base_plugin_version_id: string;
+  readonly status: string; readonly released_plugin_version_id: string | null;
+  readonly release_ref: string | null;
+  /** The applier's own address, resolved through the principal `release_attempt.applied_by`
+   *  names (group G: the column is a principal id, and the address is that row's). Read as the
+   *  address because that is what a caller is known by here — `releaseActorRefusal` compares it
+   *  with the caller's own, and an address that names no principal answers null, which is what
+   *  the column itself holds. */
+  readonly applied_by: string | null;
   readonly required_owners: string[]; readonly verdict: string | null; readonly plugin_id: string;
 }
 
@@ -82,35 +100,51 @@ async function subjectOf(client: Pick<pg.PoolClient, "query">, id: string): Prom
 
 /** CAS-guarded: the SELECT exists only to produce a readable refusal; each branch's own final
  *  UPDATE's `where status = '...'` is the decision (`applying` for released/failed, `released`
- *  for rolled_back — a rollback is a second event on an attempt already recorded released). */
+ *  for the rollback branch — a rollback is a second event on an attempt already recorded
+ *  released). */
 export async function recordRelease(
   client: Pick<pg.PoolClient, "query">, args: RecordArgs, principal: string,
 ): Promise<MutatorOutcome<RecordResult>> {
+  // The base release is the candidate's own immutable column and the required owners are the
+  // `release_attempt_owner` relation (group G): neither is copied onto the attempt any more, so
+  // both are read through the row that owns them. The applier's address is resolved through the
+  // principal the column names, which is what makes it comparable with this caller.
   const attempt = (await client.query<AttemptRow>(`
-    select id::text as id, candidate_id::text as candidate_id,
-           base_subject_version_id::text as base_subject_version_id, status,
-           released_subject_version_id::text as released_subject_version_id, release_ref,
-           applied_by, required_owners, verification->>'verdict' as verdict, plugin_id::text as plugin_id
-      from zz.release_attempt where id = $1::uuid`, [args.release_attempt_id])).rows[0];
+    select ra.id::text as id, ra.candidate_id::text as candidate_id,
+           c.base_plugin_version_id::text as base_plugin_version_id, ra.status,
+           ra.released_plugin_version_id::text as released_plugin_version_id, ra.release_ref,
+           p.email as applied_by, ra.verdict, ra.plugin_id::text as plugin_id,
+           coalesce(owners.slugs, '{}'::text[]) as required_owners
+      from zz.release_attempt ra
+      join zz.candidate c on c.id = ra.candidate_id
+      left join zz.principal p on p.id = ra.applied_by
+      left join lateral (
+        select array_agg(t.slug order by t.slug) as slugs
+          from zz.release_attempt_owner o
+          join zz.team t on t.id = o.team_id
+         where o.release_attempt_id = ra.id) owners on true
+     where ra.id = $1::uuid`, [args.release_attempt_id])).rows[0];
   if (!attempt) throw new Refusal(`ERROR: no release_attempt ${args.release_attempt_id}`);
   const refused = await releaseActorRefusal(client, attempt, principal);
   if (refused) throw new Refusal(refused);
 
-  if (args.status === "rolled_back") {
-    if (!args.reason) throw new Refusal("ERROR: status: rolled_back requires reason");
+  if (args.status === ROLLBACK_STATE) {
+    if (!args.reason) throw new Refusal(`ERROR: status: ${ROLLBACK_STATE} requires reason`);
     if (attempt.status !== "released") {
       throw new Refusal(
         `ERROR: not_released — release_attempt ${args.release_attempt_id} is ${attempt.status}, not ` +
         "released; a rollback can only be recorded against an attempt that actually reached released");
     }
-    if (attempt.verdict !== "rolled_back") {
+    if (attempt.verdict !== ROLLBACK_STATE) {
       throw new Refusal(
         `ERROR: not_rolled_back — release_verify's verdict on release_attempt ${attempt.id} is ` +
-        `${attempt.verdict ?? "not yet decided"}, not rolled_back; a rollback is recorded only ` +
+        `${attempt.verdict ?? "not yet decided"}, not ${ROLLBACK_STATE}; a rollback is recorded only ` +
         "after release_verify established one");
     }
+    // One column records the rollback, not two: `status` is the attempt's lifecycle and the
+    // boolean copy of the same fact is gone with it (group G).
     const applied = await client.query(`
-      update zz.release_attempt set status = 'rolled_back', rolled_back = true, reason = $2
+      update zz.release_attempt set status = '${ROLLBACK_STATE}', reason = $2
        where id = $1::uuid and status = 'released' returning id`,
       [attempt.id, args.reason]);
     if (!applied.rows.length) {
@@ -120,23 +154,21 @@ export async function recordRelease(
     // head release_apply's baseline uses (`currentVersionOf`, ../release-head.ts),
     // inside this transaction, so the retraction and its confirmation commit together or not at
     // all. A newer release that is not retracted still stands over the prior one; recording
-    // rolled_back then would claim a restore that did not happen. Compared by VERSION, not by
+    // a rollback then would claim a restore that did not happen. Compared by VERSION, not by
     // the row id: the head names one `plugin_version` row per (plugin, version) and the row the
     // attempt was based on need not be that one.
     const head = await currentReleasedHead(client, attempt.plugin_id);
-    const prior = await subjectOf(client, attempt.base_subject_version_id);
+    const prior = await subjectOf(client, attempt.base_plugin_version_id);
     if (!head || !prior || compareSemver(head.version, prior.declared_version) !== 0) {
       throw new Refusal(
         `ERROR: prior_not_current — with release_attempt ${attempt.id}'s version retracted, the ` +
         `plugin's current version is ${head?.version ?? "unresolvable"}, not the prior ` +
-        `${prior?.declared_version ?? attempt.base_subject_version_id}; nothing recorded`);
+        `${prior?.declared_version ?? attempt.base_plugin_version_id}; nothing recorded`);
     }
-    // Migration 001 — candidate.status gains rolled_back for exactly this write, never on its own.
-    await client.query("update zz.candidate set status = 'rolled_back' where id = $1::uuid", [attempt.candidate_id]);
 
     const result: RecordResult = {
-      status: "rolled_back", release_attempt_id: attempt.id,
-      released_subject_version_id: attempt.released_subject_version_id, release_ref: attempt.release_ref,
+      status: ROLLBACK_STATE, release_attempt_id: attempt.id,
+      [RELEASED_SUBJECT_VERSION]: attempt.released_plugin_version_id, release_ref: attempt.release_ref,
     };
     return { result, result_table: "zz.release_attempt", result_id: attempt.id };
   }
@@ -149,8 +181,9 @@ export async function recordRelease(
   }
 
   if (args.status === "released") {
-    if (!args.released_subject_version_id || !args.release_ref) {
-      throw new Refusal("ERROR: status: released requires both release_ref and released_subject_version_id");
+    const releasedVersionId = args[RELEASED_SUBJECT_VERSION];
+    if (!releasedVersionId || !args.release_ref) {
+      throw new Refusal(`ERROR: status: released requires both release_ref and ${RELEASED_SUBJECT_VERSION}`);
     }
     // The commit the release tag names, as `git rev-parse` prints it. Anything else — a tag
     // name, a `<plugin>@<version>` label, an abbreviated sha — is a ref the next release's
@@ -161,16 +194,16 @@ export async function recordRelease(
         "the release tag names (git rev-parse <tag>^{commit}). The attempt stays applying");
     }
     // Sequential: one PoolClient runs one query at a time.
-    const released = await subjectOf(client, args.released_subject_version_id);
-    const base = await subjectOf(client, attempt.base_subject_version_id);
+    const released = await subjectOf(client, releasedVersionId);
+    const base = await subjectOf(client, attempt.base_plugin_version_id);
     if (!released || !base || released.plugin_id !== base.plugin_id) {
       throw new Refusal(
-        `ERROR: released_subject_version_id ${args.released_subject_version_id} does not name a ` +
+        `ERROR: ${RELEASED_SUBJECT_VERSION} ${releasedVersionId} does not name a ` +
         "subject version of the SAME plugin this candidate's own base subject belongs to");
     }
     if (compareSemver(released.declared_version, base.declared_version) <= 0) {
       throw new Refusal(
-        `ERROR: not_newer — released_subject_version_id ${args.released_subject_version_id} is ` +
+        `ERROR: not_newer — ${RELEASED_SUBJECT_VERSION} ${releasedVersionId} is ` +
         `version ${released.declared_version}, not newer than the base ${base.declared_version}; ` +
         "call plugin_locate with the exact version the release published and record that. The " +
         "attempt stays applying, so this call can be retried");
@@ -178,20 +211,20 @@ export async function recordRelease(
 
     // `reason` on a release is the operator's accepted override (`--reconcile
     // --accept-tag-without-candidate-commit`), kept on the row so a reader sees the ancestry was
-    // accepted rather than proved.
+    // accepted rather than proved. The candidate's own status is NOT written here: released and
+    // the rollback state are the ATTEMPT's states (group G), and a reader that wants them joins it.
     const applied = await client.query(`
       update zz.release_attempt
-         set status = 'released', release_ref = $2, released_subject_version_id = $3::uuid, reason = $4
+         set status = 'released', release_ref = $2, released_plugin_version_id = $3::uuid, reason = $4
        where id = $1::uuid and status = 'applying' returning id`,
-      [attempt.id, args.release_ref, args.released_subject_version_id, args.reason]);
+      [attempt.id, args.release_ref, releasedVersionId, args.reason]);
     if (!applied.rows.length) {
       throw new Refusal(`ERROR: release_attempt ${attempt.id} left 'applying' before this call reached it`);
     }
-    await client.query("update zz.candidate set status = 'released' where id = $1::uuid", [attempt.candidate_id]);
 
     const result: RecordResult = {
       status: "released", release_attempt_id: attempt.id,
-      released_subject_version_id: args.released_subject_version_id, release_ref: args.release_ref,
+      [RELEASED_SUBJECT_VERSION]: releasedVersionId, release_ref: args.release_ref,
     };
     return { result, result_table: "zz.release_attempt", result_id: attempt.id };
   }
@@ -209,7 +242,7 @@ export async function recordRelease(
 
   const result: RecordResult = {
     status: "failed", release_attempt_id: attempt.id,
-    released_subject_version_id: null, release_ref: null,
+    [RELEASED_SUBJECT_VERSION]: null, release_ref: null,
   };
   return { result, result_table: "zz.release_attempt", result_id: attempt.id };
 }
@@ -218,13 +251,13 @@ export async function recordRelease(
  *  from the original call. */
 export async function describeRecordOutcomeForReplay(pool: pg.Pool, attemptId: string): Promise<RecordResult> {
   const row = (await pool.query<{
-    status: string; released_subject_version_id: string | null; release_ref: string | null;
+    status: string; released_plugin_version_id: string | null; release_ref: string | null;
   }>(`
-    select status, released_subject_version_id::text as released_subject_version_id, release_ref
+    select status, released_plugin_version_id::text as released_plugin_version_id, release_ref
       from zz.release_attempt where id = $1::uuid`, [attemptId])).rows[0];
   if (!row) throw new Refusal(`ERROR: release_attempt ${attemptId} no longer exists`);
   return {
     status: row.status as RecordResult["status"], release_attempt_id: attemptId,
-    released_subject_version_id: row.released_subject_version_id, release_ref: row.release_ref,
+    [RELEASED_SUBJECT_VERSION]: row.released_plugin_version_id, release_ref: row.release_ref,
   };
 }

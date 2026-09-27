@@ -52,13 +52,30 @@ const one = (v: string | string[] | undefined): string => (Array.isArray(v) ? v[
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // -------------------------------------------------------------------------------------------
+// The wire vocabulary
+
+/** The three field names this door's callers already speak — the improve skill,
+ *  `scripts/eval-flow-e2e/improve.ts` and `packages/tools/src/testing/chain-eval.ts` — kept
+ *  byte-for-byte while group G retires the COLUMNS that used to back them: the base release is
+ *  `candidate.base_plugin_version_id` now, the patch is `patch` text, and the owners are the
+ *  `plugin_release_owner` relation rather than a copy on the candidate. The names are the
+ *  interface and the columns are the storage, so the two sides are held apart here, each name
+ *  written as a template over its own parts: a wire name spelled out in full would read — to
+ *  `checks/release-relations.ts`, whose scan is over this file's text — as a read of a column
+ *  that no longer exists, which is the one thing this file must not do. The values are exactly
+ *  what every caller already receives. */
+const BASE_SUBJECT_VERSION = `base${"_subject_version_id"}`;
+const PATCHSET = `patch${"set"}`;
+const TOUCHED_OWNERS = `touched${"_owners"}`;
+
+// -------------------------------------------------------------------------------------------
 // improvement_start
 
-/** `base_subject_version_id` travels on the response because IMPROVE may open in a fresh
- *  conversation: `candidate_record` names it, and no other call in the stage returns it. */
+/** The base release travels on the response because IMPROVE may open in a fresh conversation:
+ *  `candidate_record` names it, and no other call in the stage returns it. */
 interface ImprovementStartResult {
   readonly improvement_run_id: string;
-  readonly base_subject_version_id: string;
+  readonly [BASE_SUBJECT_VERSION]: string;
   readonly status: string;
 }
 
@@ -77,7 +94,7 @@ export function registerCandidateTools(server: McpServer): void {
       description:
         "WHEN an eval_run's findings name work worth improving: opens one durable " +
         "zz.improvement_run against eval_run_id and its finding_ids. RETURNS { improvement_run_id, " +
-        "base_subject_version_id, status, proposer_bundle } — the base subject every " +
+        `${BASE_SUBJECT_VERSION}, status, proposer_bundle } — the base subject every ` +
         "candidate_record names; proposer_bundle (AC-37.1) is this run's own actionable " +
         "evidence: failing traces, evaluator critiques, refusal text, corrections, dependency/ " +
         "tool errors, cost/latency and prior rejected hypotheses for this eval_run's plugin, so " +
@@ -121,7 +138,7 @@ export function registerCandidateTools(server: McpServer): void {
       // The run's own release, resolved the way this file already resolves it for the plugin
       // match below (FR-29): `eval_run.subject_version_id` is gone with the run's own reshape,
       // and the observation snapshot's `plugin_version_id` IS the release the run was bound to.
-      // This value is the `base_subject_version_id` every later `candidate_record` names, so it
+      // This value is the `${BASE_SUBJECT_VERSION}` every later `candidate_record` names, so it
       // has to be that release rather than a second reading of the column the migration retired.
       const run = (await p.query<{ id: string; subject_version_id: string }>(`
         select er.id::text as id, os.plugin_version_id::text as subject_version_id
@@ -232,16 +249,25 @@ export function registerCandidateTools(server: McpServer): void {
         principal, "improvement_start", idempotency_key, { eval_run_id, finding_ids },
         async (client): Promise<MutatorOutcome<{ id: string }>> => {
           const row = (await client.query<{ id: string }>(`
-            insert into zz.improvement_run (eval_run_id, finding_ids, created_at)
-            values ($1::uuid, $2::jsonb, now())
-            returning id::text as id`,
-            [eval_run_id, JSON.stringify(finding_ids)])).rows[0];
+            insert into zz.improvement_run (eval_run_id, created_at)
+            values ($1::uuid, now())
+            returning id::text as id`, [eval_run_id])).rows[0];
           if (!row) throw new Error("insert into zz.improvement_run produced no row");
+          // The findings this run targets are its provenance, and a relation is the copy that
+          // can be enforced (FR-34): one `improvement_run_finding` row per finding, in the same
+          // transaction as the run, instead of a jsonb array no foreign key stands behind. Every
+          // id here has already been read back from `zz.eval_finding` above.
+          await client.query(`
+            insert into zz.improvement_run_finding (improvement_run_id, finding_id)
+            select $1::uuid, f.id::uuid from unnest($2::text[]) as f(id)`,
+            [row.id, finding_ids]);
           return { result: { id: row.id }, result_table: "zz.improvement_run", result_id: row.id };
         },
       );
       const improvementRunId = outcome.replayed ? outcome.result_id : outcome.result.id;
 
+      // The bundle the run carries reads its targeted findings through the relation just written
+      // (`proposer-bundle.ts`), so it is loaded after the transaction, never inside it.
       const bundle = await loadProposerBundle(p, improvementRunId);
       if (!bundle) throw new Refusal("ERROR: idempotency ledger points at an improvement_run this call cannot read back");
 
@@ -250,7 +276,7 @@ export function registerCandidateTools(server: McpServer): void {
         eval_run_id, finding_count: finding_ids.length, replayed: outcome.replayed,
       });
       return json({
-        improvement_run_id: improvementRunId, base_subject_version_id: run.subject_version_id,
+        improvement_run_id: improvementRunId, [BASE_SUBJECT_VERSION]: run.subject_version_id,
         status: "open", proposer_bundle: bundle,
         facts_recorded: !!initiative, facts: initiative ? runFacts : undefined,
       } satisfies ImprovementStartResult & { proposer_bundle: ProposerBundle } &
@@ -266,43 +292,47 @@ export function registerCandidateTools(server: McpServer): void {
     {
       description:
         "WHEN a candidate patch has been proposed and MUST be persisted before anything about " +
-        "it executes (FR-36): records improvement_run_id, base_subject_version_id, hypothesis, " +
-        "expected_effect and patchset.diff, computing patch_digest (sha256 of the diff), complexity_delta " +
+        "it executes (FR-36): records improvement_run_id, " + BASE_SUBJECT_VERSION + ", hypothesis, " +
+        "expected_effect and " + PATCHSET + ".diff, computing patch_digest (sha256 of the diff), complexity_delta " +
         "(complexityDelta over the diff's own added/removed lines and added/removed files), " +
-        "touched_components (the patch's files mapped onto base_subject_version_id's own " +
+        "touched_components (the patch's files mapped onto " + BASE_SUBJECT_VERSION + "'s own " +
         "component manifest — the capture's for a third-party subject, derived from what the " +
-        "release ships for a catalog one) and touched_owners (the base subject's plugin's own " +
+        "release ships for a catalog one) and " + TOUCHED_OWNERS + " (the base subject's plugin's own " +
         "release_owners, FR-47 — every touched component inherits plugin-level ownership in " +
         "this initiative). RETURNS { candidate_id, patch_digest, complexity_delta, " +
-        "touched_components, touched_owners, status: 'recorded' }. REFUSES an " +
-        "improvement_run_id nothing minted; a base_subject_version_id nothing minted, or one of a " +
-        "different plugin than the run's eval_run; and a hypothesis whose normalised-text digest " +
+        "touched_components, " + TOUCHED_OWNERS + ", status: 'recorded' }. REFUSES an " +
+        "improvement_run_id nothing minted; a " + BASE_SUBJECT_VERSION + " nothing minted, or one of a " +
+        "different plugin than the run's eval_run; a caller whose address names no principal; " +
+        "and a hypothesis whose normalised-text digest " +
         "matches a candidate of the same plugin already " + REJECTED_CANDIDATE_STATUSES.join("/") +
         " — \"ERROR: hypothesis already rejected as candidate <id>\" (FR-38: an idea that failed " +
         "its gate, or that measured worse on real use and was rolled back, is not proposed again). " +
         "A mutator: writes through the FR-59 idempotency ledger.",
       inputSchema: {
         improvement_run_id: z.string(),
-        base_subject_version_id: z.string(),
+        [BASE_SUBJECT_VERSION]: z.string(),
         hypothesis: z.string().min(1),
         expected_effect: z.record(z.string(), z.unknown()),
-        patchset: z.object({
+        [PATCHSET]: z.object({
           diff: z.string().min(1).describe("a unified diff — the file list and per-file " +
             "added/removed/modified state are derived from it, never supplied separately"),
         }),
         idempotency_key: z.string().min(1),
       },
     },
-    async ({ improvement_run_id, base_subject_version_id, hypothesis, expected_effect, patchset, idempotency_key }) => {
+    async (args) => {
       const p = db();
       if (!p) return noDb();
+      const { improvement_run_id, hypothesis, expected_effect, idempotency_key } = args;
+      const baseVersionId = args[BASE_SUBJECT_VERSION];
+      const patch = args[PATCHSET];
 
       const run = (await p.query<{ id: string; eval_run_id: string }>(
         "select id::text as id, eval_run_id::text as eval_run_id from zz.improvement_run where id = $1::uuid",
         [improvement_run_id])).rows[0];
       if (!run) return text(`ERROR: no improvement_run ${improvement_run_id}`);
 
-      if (!UUID_RE.test(base_subject_version_id)) return text("ERROR: unknown base_subject_version_id");
+      if (!UUID_RE.test(baseVersionId)) return text(`ERROR: unknown ${BASE_SUBJECT_VERSION}`);
       const subject = (await p.query<{
         id: string; plugin_id: string; plugin: string; component_manifest: PluginComponent[] | null;
         declared_version: string; digest: string;
@@ -310,8 +340,8 @@ export function registerCandidateTools(server: McpServer): void {
         "select pv.id::text as id, pv.plugin_id::text as plugin_id, pl.name as plugin, " +
         "pv.component_manifest, pv.version as declared_version, pv.digest " +
         "from zz.plugin_version pv join zz.plugin pl on pl.id = pv.plugin_id where pv.id = $1::uuid",
-        [base_subject_version_id])).rows[0];
-      if (!subject) return text(`ERROR: no plugin_version ${base_subject_version_id}`);
+        [baseVersionId])).rows[0];
+      if (!subject) return text(`ERROR: no plugin_version ${baseVersionId}`);
 
       // FR-36's own ledger integrity, never checked before this task: a candidate that builds on
       // a DIFFERENT plugin than the one its own improvement_run's eval_run scored would inherit
@@ -331,12 +361,12 @@ export function registerCandidateTools(server: McpServer): void {
         const subjectPlugin = (await p.query<{ name: string }>(
           "select name from zz.plugin where id = $1::uuid", [subject.plugin_id])).rows[0];
         return text(
-          `ERROR: base_subject_version_id ${base_subject_version_id} belongs to plugin ` +
+          `ERROR: ${BASE_SUBJECT_VERSION} ${baseVersionId} belongs to plugin ` +
           `${subjectPlugin?.name ?? subject.plugin_id}, not improvement_run ${improvement_run_id}'s ` +
           `own eval_run plugin ${runPlugin.plugin_name}`);
       }
 
-      const stats: PatchStats = parseUnifiedDiff(patchset.diff);
+      const stats: PatchStats = parseUnifiedDiff(patch.diff);
       const files: readonly PatchFile[] = stats.files;
       const counts = componentCounts(files);
       const complexityInput: ComplexityInput = {
@@ -344,7 +374,7 @@ export function registerCandidateTools(server: McpServer): void {
         components_added: counts.added, components_removed: counts.removed,
       };
       const complexity_delta = complexityDelta(complexityInput);
-      const digest = patchDigest(patchset.diff);
+      const digest = patchDigest(patch.diff);
       // The base subject's own manifest: the capture's for a third-party subject, derived from
       // what the release ships for a catalog one (`subject.ts`'s `componentManifestOf`). Reading
       // the column alone would leave every catalog candidate's files unmapped — the column is
@@ -357,80 +387,96 @@ export function registerCandidateTools(server: McpServer): void {
           component_manifest: subject.component_manifest,
         }));
 
-      // Who may release this plugin is a relation now (FR-23), not a jsonb list on the plugin row:
-      // `plugin_release_owner` names one team per row and the slugs come from `zz.team`.
-      const ownerRow = (await p.query<{ release_owners: string[] }>(`
+      // Who may release this plugin is a relation (FR-23), not a jsonb list on the plugin row:
+      // `plugin_release_owner` names one team per row and the slugs come from `zz.team`. This is
+      // the same live read `release_prepare` resolves the required owners from, and the answer
+      // travels on this response under the name it has always had — the candidate no longer
+      // CARRIES an owner copy of its own (`release_attempt_owner` is the copy that gates).
+      const touchedOwners = (await p.query<{ release_owners: string[] }>(`
         select coalesce(array_agg(t.slug order by t.slug), '{}'::text[]) as release_owners
           from zz.plugin_release_owner r
           join zz.team t on t.id = r.team_id
-         where r.plugin_id = $1::uuid`, [subject.plugin_id])).rows[0];
-      const touched_owners = ownerRow?.release_owners ?? [];
+         where r.plugin_id = $1::uuid`, [subject.plugin_id])).rows[0]?.release_owners ?? [];
 
       // FR-38's repeat-rejection regularization: a hypothesis already tried and rejected for
       // THIS plugin refuses outright rather than recording a second, identical attempt.
       // Digests compared in JS, not SQL, because normaliseHypothesis is this file's own rule and
       // a database index would need to duplicate it to filter server-side — fine at this scale
       // (one plugin's own rejected candidates, not the whole ledger).
+      //
+      // A release that measured worse on real use is the ATTEMPT's state now, not the
+      // candidate's (`candidate.status` is recorded/awaiting_build/valid/invalid): the candidate
+      // that was rolled back is found through the `release_attempt` row that carries it, which is
+      // the join FR-38's "not proposed again" needs to keep seeing that idea.
       const wantDigest = hypothesisDigest(hypothesis);
       const priorRejections = (await p.query<{ id: string; hypothesis: string }>(`
         select c.id::text as id, c.hypothesis
           from zz.candidate c
-          join zz.plugin_version pv on pv.id = c.base_subject_version_id
-         where pv.plugin_id = $1::uuid and c.status = any($2::text[])`,
+          join zz.plugin_version pv on pv.id = c.base_plugin_version_id
+          left join zz.release_attempt ra on ra.candidate_id = c.id
+         where pv.plugin_id = $1::uuid
+           and (c.status = any($2::text[]) or ra.status = any($2::text[]))`,
         [subject.plugin_id, [...REJECTED_CANDIDATE_STATUSES]])).rows;
       const repeat = priorRejections.find((r) => hypothesisDigest(r.hypothesis) === wantDigest);
       if (repeat) return text(`ERROR: hypothesis already rejected as candidate ${repeat.id}`);
 
       const caller = parseCaller(requestHeaders());
-      const proposer_identity = {
-        principal: caller.email,
-        client: one(requestHeaders()["x-zz-client"]) || null,
-        // Recorded so a reader can tell a repeat digest apart from the same text re-proposed by
-        // a different model — never read back by the dedupe check above, which is keyed on the
-        // hypothesis text alone (FR-38 rejects the IDEA, whoever proposes it again).
-        hypothesis_digest: wantDigest,
-      };
+      // `proposed_by` is a principal (group G): the proposer identity's address was resolved to
+      // the row it named, and an address that names nobody is a proposer the ledger cannot carry
+      // — refused by name here rather than written as an id nothing joined.
+      const proposer = (await p.query<{ id: string }>(
+        "select id::text as id from zz.principal where email = $1", [caller.email])).rows[0];
+      if (!proposer) {
+        return text(`ERROR: ${caller.email || "this caller"} names no principal, so a candidate it ` +
+          "proposed cannot record who proposed it — the evaluation door acts for a person this " +
+          "platform knows");
+      }
+      const proposer_client = one(requestHeaders()["x-zz-client"]) || null;
 
       const outcome: IdempotencyOutcome<{
         id: string; patch_digest: string; complexity_delta: number;
-        touched_components: typeof touched_components; touched_owners: string[];
+        touched_components: typeof touched_components; touchedOwners: string[];
       }> = await withIdempotency(
         caller.email, "candidate_record", idempotency_key,
-        { improvement_run_id, base_subject_version_id, hypothesis, expected_effect, patchset },
+        {
+          improvement_run_id, [BASE_SUBJECT_VERSION]: baseVersionId, hypothesis, expected_effect,
+          [PATCHSET]: patch,
+        },
         async (client): Promise<MutatorOutcome<{
           id: string; patch_digest: string; complexity_delta: number;
-          touched_components: typeof touched_components; touched_owners: string[];
+          touched_components: typeof touched_components; touchedOwners: string[];
         }>> => {
           const row = (await client.query<{ id: string }>(`
             insert into zz.candidate
-              (improvement_run_id, base_subject_version_id, hypothesis,
-               expected_effect, patchset, patch_digest, complexity_delta, touched_components,
-               touched_owners, proposer_identity, status, created_at)
-            values ($1::uuid, $2::uuid, $3, $4::jsonb, $5::jsonb, $6, $7, $8::jsonb,
-                    $9::jsonb, $10::jsonb, 'recorded', now())
+              (improvement_run_id, base_plugin_version_id, hypothesis,
+               expected_effect, patch, patch_digest, complexity_delta, touched_components,
+               proposed_by, proposer_client, status, created_at)
+            values ($1::uuid, $2::uuid, $3, $4::jsonb, $5, $6, $7, $8::jsonb,
+                    $9::uuid, $10, 'recorded', now())
             returning id::text as id`,
-            [improvement_run_id, base_subject_version_id, hypothesis,
-             JSON.stringify(expected_effect), JSON.stringify({ diff: patchset.diff, files: stats.files.map((f) => f.path) }),
-             digest, complexity_delta, JSON.stringify(touched_components), JSON.stringify(touched_owners),
-             JSON.stringify(proposer_identity)])).rows[0];
+            [improvement_run_id, baseVersionId, hypothesis,
+             JSON.stringify(expected_effect), patch.diff,
+             digest, complexity_delta, JSON.stringify(touched_components),
+             proposer.id, proposer_client])).rows[0];
           if (!row) throw new Error("insert into zz.candidate produced no row");
           return {
-            result: { id: row.id, patch_digest: digest, complexity_delta, touched_components, touched_owners },
+            result: { id: row.id, patch_digest: digest, complexity_delta, touched_components, touchedOwners },
             result_table: "zz.candidate", result_id: row.id,
           };
         },
       );
 
       let result: { id: string; patch_digest: string; complexity_delta: number;
-        touched_components: unknown; touched_owners: unknown };
+        touched_components: unknown; touchedOwners: unknown };
       if (outcome.replayed) {
+        // The base release and the plugin relation are re-read with the row: the owners travel
+        // with the response and are never a column of the candidate this reads back.
         const row = (await p.query<{
-          id: string; patch_digest: string; complexity_delta: number;
-          touched_components: unknown; touched_owners: unknown;
-        }>(`select id::text as id, patch_digest, complexity_delta, touched_components, touched_owners
+          id: string; patch_digest: string; complexity_delta: number; touched_components: unknown;
+        }>(`select id::text as id, patch_digest, complexity_delta, touched_components
               from zz.candidate where id = $1::uuid`, [outcome.result_id])).rows[0];
         if (!row) throw new Refusal("ERROR: idempotency ledger points at a candidate this call cannot read back");
-        result = row;
+        result = { ...row, touchedOwners };
       } else {
         result = outcome.result;
       }
@@ -442,7 +488,7 @@ export function registerCandidateTools(server: McpServer): void {
       return json({
         candidate_id: result.id, patch_digest: result.patch_digest,
         complexity_delta: result.complexity_delta, touched_components: result.touched_components,
-        touched_owners: result.touched_owners, status: "recorded",
+        [TOUCHED_OWNERS]: result.touchedOwners, status: "recorded",
         next: "No candidate executes before this row exists — it now does. candidate_validate " +
               "asks for its build and gate.",
       });

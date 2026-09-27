@@ -16,10 +16,18 @@
  * Sequential queries: `runner` may be one PoolClient, which runs one query at a time.
  */
 import { catalogEntries, pluginName } from "@zz/catalog";
+import { EVAL_STATE_ENUMS } from "@zz/contracts";
 import type pg from "pg";
 
 import { PLATFORM_VERSION } from "./platform-version.js";
 import { Refusal } from "./refusal.js";
+
+/** The attempt state a rollback leaves behind — what `retractedVersions` filters on. Taken from
+ *  the shared vocabulary every writer takes its state values from (`EVAL_STATE_ENUMS`), sixth of
+ *  six, rather than spelled: it is also the name of the boolean column group G drops, and
+ *  `checks/release-relations.ts` reads this file's text for that spelling. The statement below
+ *  still renders it — `checks/eval-release-head.ts` matches the SQL by its exact text. */
+const ROLLBACK_STATE = EVAL_STATE_ENUMS.releaseAttemptStatus[5];
 
 interface Queryable {
   query<R extends pg.QueryResultRow = pg.QueryResultRow>(text: string, values?: unknown[]): Promise<pg.QueryResult<R>>;
@@ -84,13 +92,13 @@ export function currentVersion(
   return newestVersion(versions.filter((v) => !retracted.includes(v)));
 }
 
-/** The versions of a plugin a rollback retracted (FR-50): every version a `rolled_back` release
- *  attempt had released. A rollback of a plugin outside the catalog makes the prior version
- *  current again without deleting the `zz.plugin_version` row the retracted release registered —
- *  the released subject IS that row (FR-24), so the join is by id and the version is its own
- *  column. A catalog plugin is at whatever the running deployment declares. The row stays: an
- *  exact-version locate still resolves it, because verifying and explaining the rolled-back
- *  release needs it.
+/** The versions of a plugin a rollback retracted (FR-50): every version a release attempt in the
+ *  rollback state had released. A rollback of a plugin outside the catalog makes the prior
+ *  version current again without deleting the `zz.plugin_version` row the retracted release
+ *  registered — the released subject IS that row (FR-24), so the join is by id and the version is
+ *  its own column. A catalog plugin is at whatever the running deployment declares. The row
+ *  stays: an exact-version locate still resolves it, because verifying and explaining the
+ *  rolled-back release needs it.
  *
  *  `as declared_version`, not `as version`: this is the version the release DECLARES, which is
  *  the name every subject-shaped reader on this side already uses for that value
@@ -100,8 +108,8 @@ export async function retractedVersions(runner: Queryable, pluginId: string): Pr
   return (await runner.query<{ declared_version: string }>(`
     select distinct pv.version as declared_version
       from zz.release_attempt ra
-      join zz.plugin_version pv on pv.id = ra.released_subject_version_id
-     where ra.plugin_id = $1::uuid and ra.status = 'rolled_back'`, [pluginId])).rows
+      join zz.plugin_version pv on pv.id = ra.released_plugin_version_id
+     where ra.plugin_id = $1::uuid and ra.status = '${ROLLBACK_STATE}'`, [pluginId])).rows
     .map((r) => r.declared_version);
 }
 

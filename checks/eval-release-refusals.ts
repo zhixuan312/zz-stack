@@ -60,14 +60,14 @@ interface Scenario {
 
 function applyClient(sc: Scenario) {
   const prepared = sc.prepared ?? [
-    { id: A_NEW, required_owners: ["xuan"], approved_patch_digest: DIGEST, base_subject_version_id: BASE },
-    { id: A_OLD, required_owners: ["xuan"], approved_patch_digest: DIGEST, base_subject_version_id: BASE },
+    { id: A_NEW, required_owners: ["xuan"], approved_patch_digest: DIGEST, base_plugin_version_id: BASE },
+    { id: A_OLD, required_owners: ["xuan"], approved_patch_digest: DIGEST, base_plugin_version_id: BASE },
   ];
   const subject = sc.subject ?? [{ plugin_id: "p1", plugin: "demo", release_owners: ["xuan"], declared_version: "1.1.0" }];
   const updates: { text: string; values: unknown[] }[] = [];
   const row = { status: "prepared", reason: null as unknown };
   const client = stub([
-    [/from zz\.candidate where id/, () => sc.candidate ?? [{ id: CAND, status: "valid", base_subject_version_id: BASE, patch_digest: DIGEST, patchset: { diff: "x" } }]],
+    [/from zz\.candidate where id/, () => sc.candidate ?? [{ id: CAND, status: "valid", base_plugin_version_id: BASE, patch_digest: DIGEST, patch: "x" }]],
     // The base subject's own row: `plugin_version` joined to the release owners the relation
     // `plugin_release_owner` carries (FR-23/FR-24), which is what makes this statement the one
     // this stub answers rather than either of the plugin_version reads below.
@@ -101,7 +101,7 @@ function applyClient(sc: Scenario) {
       if (/status = 'refused'/.test(text)) row.status = "refused";
       return [{ id: v[0] }];
     }],
-    [/select status, reason, candidate_id/, () => [{ ...row, candidate_id: CAND, base_subject_version_id: BASE }]],
+    [/select ra\.status, ra\.reason, ra\.candidate_id/, () => [{ ...row, candidate_id: CAND, base_plugin_version_id: BASE }]],
     [/select pl\.name as plugin, pv\.version as declared_version/, () => [{ plugin: "demo", declared_version: "1.1.0" }]],
     [/select release_ref from zz\.release_attempt/, () => []],
     [/select resolved_commit as commit from zz\.plugin_version/, () => [{ commit: null }]],
@@ -129,7 +129,7 @@ await assert.rejects(run({ applying: [{ id: "held", candidate_id: CAND, applying
   /release_in_progress[\s\S]*--reconcile held[\s\S]*--release-tag/);
 await assert.rejects(run({ prepared: [] }, OWNER, noDoc).done, /no prepared release_attempt/);
 // The cited attempt must be this candidate's prepared one — never silently another row.
-await assert.rejects(run({ prepared: [{ id: A_NEW, required_owners: ["xuan"], approved_patch_digest: DIGEST, base_subject_version_id: BASE }] }).done,
+await assert.rejects(run({ prepared: [{ id: A_NEW, required_owners: ["xuan"], approved_patch_digest: DIGEST, base_plugin_version_id: BASE }] }).done,
   /improvement\.md cites release_attempt a0000000-0000-4000-8000-000000000001, which is not a prepared attempt/);
 await assert.rejects(run({ versions: [] }).done, /no registered release/);
 
@@ -175,7 +175,7 @@ assert.equal((await run({ versions: ["1.1.0", "1.2.0"], retracted: ["1.2.0"] }).
   assert.equal(out.result_id, A_NEW);
 }
 assert.equal((await run({}, OWNER, approvedDoc(A_OLD, STRANGER)).done).result.reason, "approval_required", "a non-member approver signs for nobody");
-assert.equal((await run({ candidate: [{ id: CAND, status: "released", base_subject_version_id: BASE, patch_digest: DIGEST, patchset: { diff: "x" } }] }).done).result.reason,
+assert.equal((await run({ candidate: [{ id: CAND, status: "released", base_plugin_version_id: BASE, patch_digest: DIGEST, patch: "x" }] }).done).result.reason,
   "not_eligible", "a candidate no longer valid (already released) is not releasable");
 {
   const c = applyClient({});
@@ -196,10 +196,9 @@ function recordClient(attempt: Record<string, unknown> | null, o: { versions?: s
     [OTHER_PLUGIN]: { plugin_id: "p2", declared_version: "9.0.0" },
   };
   return stub([
-    [/verification->>'verdict' as verdict/, () => (attempt ? [attempt] : [])],
+    [/p\.email as applied_by/, () => (attempt ? [attempt] : [])],
     [/from zz\.membership/, (v) => (String(v[0]) === OWNER ? [{ slug: "xuan" }] : [])],
     [/update zz\.release_attempt/, (v) => (o.cas === false ? [] : [{ id: v[0] }])],
-    [/update zz\.candidate/, () => []],
     [/status = 'rolled_back'/, () => [{ declared_version: "1.2.0" }]],
     [/select name from zz\.plugin where id/, () => [{ name: "demo" }]],
     [/select pv\.version from zz\.plugin_version pv where/, () => (o.versions ?? ["1.1.0", "1.2.0"]).map((version) => ({ version }))],
@@ -212,8 +211,8 @@ function recordClient(attempt: Record<string, unknown> | null, o: { versions?: s
   ]);
 }
 const attemptRow = (over: Record<string, unknown> = {}) => ({
-  id: A_OLD, candidate_id: CAND, base_subject_version_id: BASE, status: "applying",
-  released_subject_version_id: null, release_ref: null, applied_by: OWNER, required_owners: ["xuan"],
+  id: A_OLD, candidate_id: CAND, base_plugin_version_id: BASE, status: "applying",
+  released_plugin_version_id: null, release_ref: null, applied_by: OWNER, required_owners: ["xuan"],
   verdict: null, plugin_id: "p1", ...over,
 });
 const rec = (attempt: Record<string, unknown> | null, args: Record<string, unknown>, principal = OWNER, o = {}) =>
@@ -262,7 +261,7 @@ assert.match(await releaseActorRefusal(members, { ...attempt, applied_by: null, 
 
 const cites = `release_attempt_id: \`${A_OLD}\` — initiative \`i\`.`;
 const approvals = (owners: string[]) => stub([
-  [/select required_owners from zz\.release_attempt/, () => (owners.length ? [{ required_owners: owners }] : [])],
+  [/as required_owners\s+from zz\.release_attempt_owner o/, () => (owners.length ? [{ required_owners: owners }] : [])],
   [/from zz\.membership/, (v) => (String(v[0]) === OWNER ? [{ slug: "xuan" }] : [])],
 ]);
 assert.equal(await improvementApprovalRefusal("no citation here", STRANGER, null, approvals(["xuan"])), null, "nothing to protect");

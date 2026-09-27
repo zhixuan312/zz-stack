@@ -48,6 +48,23 @@ check("no statement under the write trees names a catalog table or column the ph
       runsCheck("catalog-eval-columns.ts"));
 check("every evaluation reader names a table and column the phase-3 migration leaves standing, and one it cannot read is counted rather than passed",
       runsCheck("eval-family-readers.ts"));
+// Phase 4's checks, registered by the integration step after the wave that writes each — the same
+// two-step Phase 1 used for the pat-label check, Phase 2 for `dropped-columns.ts` and Phase 3 for the
+// five above. `improve-control-shape.ts` is I-28's, the wave-1 migration's own acceptance check: it
+// reads the target's declared `uniques` and `foreignKeys` for the keys group G names, rather than
+// matching a migration's text, because this check is frozen before that migration is written.
+check("the improve and control tables hold group G's shape, and the keys it names are the target's own",
+      runsCheck("improve-control-shape.ts"));
+// Wave 2's three, registered by the integration step after wave 2 — the wave that writes them.
+// I-29 versions the ids `control_evidence` is keyed by, which is what makes a second approval
+// after a revision a fact of its own; I-30 moves the improve/promote ledgers' relations out of
+// jsonb and into tables; I-31 leaves `eval_finding` one lifecycle, a strength terminal at insert.
+check("a fact of a governed run is identified inside its run, and a revision withdraws exactly the approval it replaced",
+      runsCheck("control-evidence-identity.ts"));
+check("the improve and promote ledgers' relations are tables, and no file names a column the reshape retires",
+      runsCheck("release-relations.ts"));
+check("eval_finding holds one lifecycle, and a strength carries no decision",
+      runsCheck("finding-one-lifecycle.ts"));
 
 check("the resolvers are applied wherever a stored name is read", runsCheck("alias-applied.ts"));
 

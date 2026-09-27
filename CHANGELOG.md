@@ -33,6 +33,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.83.2] — 2026-09-27
+
+Two bugs found while running an initiative through the flow, both of them things a reader of the
+platform's own guidance would have hit.
+
+### Fixed
+- **`initiative_status` no longer offers the review round for a plan that is only partly built.**
+  `next_move` offered sdlc-review's round 1 as soon as the plan was APPROVED, because building
+  records nothing the platform can see. A seven-phase plan therefore answered "sdlc-review owes
+  round 1" from its third phase onward, and a reader who trusted `next_move` dispatched a full-scope
+  sweep of a change that was a fraction written. The phase the plan still has to build is now read
+  from the plan itself — the first phase with tasks and no `### As built` — and the move is
+  `run_stage` for `sdlc-execute`, naming that phase and its waves. An owed audit still comes first.
+- **`ops/call` can read a tool's arguments from a file.** `document_revise` takes a whole document
+  body in one call and is the only route that may change an approved gated document, so revising one
+  sentence of a large plan meant sending the whole body as a shell argument. `call <door> <tool>
+  @<args file>` now reads the argument object from a file, as `curl -d @file` does.
+
+### Notes for whoever operates this
+- **Both repositories now run their gate on every push to master.** Nothing ran the gate except a
+  release, which is why the three defects 0.83.1 found were found at the worst moment. Two
+  consequences worth knowing: `zz-stack`'s job builds `deploy/postgres/Dockerfile` itself rather
+  than pulling `ghcr.io/zhixuan312/zz-postgres` (a private package a workflow's token cannot read),
+  and the console's job installs `requirements.txt`, which now declares Pillow — the console's gate
+  had only ever passed on a machine where Pillow happened to be installed.
+- No schema change and no migration: nothing to apply, and nothing in this release changes what a
+  document, a run or an assessment holds.
+
 ## [0.83.1] — 2026-09-27
 
 0.83.0 was deployed to production and **left live and untagged**: its verification disagreed with

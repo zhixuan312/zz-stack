@@ -20,8 +20,12 @@
 -- null, and no version of that skill existed when the call was made. It is deleted, which is what
 -- `002_delivery_telemetry.sql:68` already does to a run it cannot make true — a run resolving no
 -- team cannot satisfy `team_id not null`, and this one cannot satisfy the identity its own writer
--- requires. Its events keep their own rows: no event is touched, and what the call did is still on
--- the record.
+-- requires.
+--
+-- The events keep their rows and lose their `run_id`: both of `zz.event`'s foreign keys to
+-- `skill_run` are `on delete set null`, so the call stays on the record while the attribution to
+-- a run that no longer exists goes — which is what that action is for. Nothing here writes to
+-- `zz.event`.
 --
 -- On a database built from `001_init.sql` there are no runs to consider and this is a no-op.
 

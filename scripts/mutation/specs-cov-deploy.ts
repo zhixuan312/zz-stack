@@ -142,16 +142,6 @@ export const COV_DEPLOY: readonly MutationSpec[] = [
       "dies in the build step with `failed to compute cache key` — after the gate, after the " +
       "changelog, after the version bump",
   },
-  {
-    check: "scripts/gate/checks/deploy-compose.ts",
-    target: "the postgres image compose runs is the one the lock file pins",
-    subject: "deploy/postgres/versions.lock.json",
-    find: '"pg_textsearch_tag": "v1.4.0"',
-    replace: '"pg_textsearch_tag": "v1.5.0"',
-    planted: "the lock pins a search-extension release the compose image does not carry, so " +
-      "the release rehearses its migrations and its queries on one database image while the " +
-      "Dockerfile is validated against another",
-  },
 
   /* The release script, the doctor, and the documents a release writes */
   {

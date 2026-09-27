@@ -56,8 +56,8 @@ Full scale is 780,000 records across the seven declared corpora and 520 exactly-
 `scale 1` is the only scale that produces full-scale evidence; a reduced run is refused by the
 report validator, not silently scaled up.
 
-Then **census what is actually on disk** — walk the generated tree, do not copy
-`testing/tenant-info/manifest.json`, which is the public *definition* and not a count of files:
+Then **census what is actually on disk** — walk the generated tree, do not copy the corpus
+manifest, which was the public *definition* and not a count of files:
 
 ```json
 // $ZZ_TENANT_INFO_WORKSPACE/benchmark-inputs/acceptance/corpus-census.json
@@ -162,8 +162,8 @@ rates must be present as finite numbers or as `null` beside a reason. `quality_l
 and `latency_limit` must be 15: those are the agreement's, not the run's, and a report scored at
 another limit is refused rather than compared.
 
-The dataset must be the one H1 approved. The command hashes `testing/tenant-info/queries.jsonl`
-and `qrels.jsonl` itself and compares them to `artifacts/tenant-info-v4/qrels-approval.json`; a
+The dataset must be the one H1 approved. The command hashed the committed query file
+and its qrels itself and compared them to `artifacts/tenant-info-v4/qrels-approval.json`; a
 mismatch voids the approval rather than inheriting it, and needs a new signature against a new
 dataset version.
 

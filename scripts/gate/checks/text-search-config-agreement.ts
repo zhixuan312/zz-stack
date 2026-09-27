@@ -14,40 +14,13 @@ import { check } from "../run.ts";
 // websearch_to_tsquery('english','migration')` is false. Every English word whose stem differs
 // from its surface form stops being findable, with no error and nothing in the row to see.
 
-// The four files that write or read `zz.doc`/`zz.knowledge_node`'s `body_tsv`. This list is the
-// scope of the agreement, and it is narrow on purpose — see EXCLUDED below for the sites that
-// name a configuration and are not part of it.
+// The three files that write or read `zz.doc`/`zz.knowledge_node`'s `body_tsv`. This list is the
+// scope of the agreement, and it is narrow on purpose — the read path is probed separately below.
 const WRITE_FILES = [
   "packages/indexing/src/index.ts",
   "packages/indexing/src/rederivation.ts",
-  "packages/indexing/src/tenant-rebuild.ts",
   "services/zz-core/src/tools/knowledge-search.ts",
 ];
-
-// DELIBERATE: the sites outside this agreement, pinned so the exclusion cannot quietly widen.
-// `tenant-projections.ts` builds a GIN index over the native projections' `raw_body` — a
-// different column in a different lane, written and read with the same configuration, so
-// nothing there disagrees with anything. COUPLED: if that expression were ever repointed at
-// `body_tsv` it would join this agreement, and the assertion below is what would notice.
-const EXCLUDED: ReadonlyArray<readonly [string, string]> = [
-  ["packages/indexing/src/tenant-projections.ts", "using gin (to_tsvector('english', raw_body))"],
-];
-
-check("the native-projection index is still the only text-search configuration outside the agreement", () => {
-  for (const [rel, expected] of EXCLUDED) {
-    const src = readFileSync(join(root, rel), "utf8");
-    const named = [...src.matchAll(/\b(?:to_tsvector|to_tsquery|plainto_tsquery|phraseto_tsquery|websearch_to_tsquery|ts_headline|ts_rank|ts_rank_cd)\([^)]*'[a-z_]+'/g)];
-    if (named.length !== 1) {
-      return `${rel} now names a text-search configuration ${named.length} time(s), not the one `
-           + `native-projection index this exclusion covers — a new site is either part of the `
-           + `body_tsv agreement or a new exclusion somebody has to justify`;
-    }
-    if (!src.includes(expected)) {
-      return `${rel}'s excluded site is no longer \`${expected}\` — if it now reads body_tsv it `
-           + `must take its configuration from TEXT_SEARCH_CONFIG like every other reader of that column`;
-    }
-  }
-});
 
 check("no file names a text-search configuration except the one constant that defines them", () => {
   // A quoted literal as the first argument of any text-search call is a second place a
@@ -66,9 +39,9 @@ check("no file names a text-search configuration except the one constant that de
 
 check("the analyzer's opaque terms and its stemmable words are stored through different configurations", () => {
   if (TEXT_SEARCH_CONFIG.han !== "simple") {
-    return `the Han half is stored through ${TEXT_SEARCH_CONFIG.han}, but testing/tenant-info/`
-         + `analyzer-opacity.golden.json proves opacity for 'simple' and for nothing else — `
-         + `a ranking bigram rewritten on its way in is unfindable and leaves no trace`;
+    return `the Han half is stored through ${TEXT_SEARCH_CONFIG.han}, but a ranking bigram is `
+         + `written as an opaque term and only 'simple' leaves it alone — a ranking bigram `
+         + `rewritten on its way in is unfindable and leaves no trace`;
   }
   const v = buildRowVector({
     title: "迁移说明 migration notes",

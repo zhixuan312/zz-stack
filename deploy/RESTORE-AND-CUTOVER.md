@@ -168,7 +168,7 @@ platform that refuses every write.**
 
 ### Why it exists
 
-`services/zz-core/src/tenant-info/record.ts:271` refuses `STORE_UNAVAILABLE` when `.zz/`,
+The record store refused `STORE_UNAVAILABLE` when `.zz/`,
 `.zz/blobs` or `.zz/commits` is missing, in its own words: *"a missing mount is refused, never
 read as an empty tenant."* That refusal is correct and is not to be weakened — the alternative
 is a failed volume mount being read as a tenant with no documents, and the next thing that
@@ -176,8 +176,8 @@ happens to an empty tenant is that something helpfully reconstructs them.
 
 Nothing in the platform ever creates that layout. I-20's adoption path turns a document with no
 commit into one that has a commit, but it runs *inside* the kernel, behind that same refusal —
-which `a_store_with_no_record_layout_is_refused_not_initialised` in
-`testing/tenant-info/migration-adoption.ts` pins deliberately. The live owner stores have no
+which an adoption case of the layer it belonged to pinned deliberately, before both were
+removed. The live owner stores have no
 `.zz/`. So the real order on cutover day is:
 
 1. **initialise `.zz/{blobs,commits}` on each owner store** ← this step
@@ -288,8 +288,8 @@ export ZZ_TENANT_INFO_ISOLATED_DB_URL="postgres://zz:<password>@127.0.0.1:55432/
 - The isolated copy produced by this document, and nothing else.
 - **Never** the live cluster.
 - **Never** a value inferred, copied or derived from `TEAM_DB_URL` or `PLATFORM_DB_URL`. The
-  suites refuse it outright if it equals either — see `isolatedDatabaseRefusal` in
-  `testing/tenant-info/deployment-cutover.ts`.
+  suites refuse it outright if it equals either — the cutover suite this document describes
+  carried that refusal.
 - **Never** a database this repository's tooling provisioned on its own. No suite here creates
   a database; an operator does, on purpose, by running step 3.
 
@@ -315,7 +315,7 @@ it.
 | `rebuild` | `real_rebuild_against_isolated_copy` | **Yes**, once the schema is applied. Same: URL only, own temporary store, own fixtures. |
 | `isolation` | `real_pg17_statistical_isolation` | **No.** Needs step 3's image *and* verified `pg_textsearch` BM25 index and score-expression DDL, which this checkout does not carry. Stays `not_run` with that reason even when the variable is set. |
 | `isolation` | `real_pg17_bm25_score_expression` | **No.** Same gap. |
-| `migration` | `projection_parity_against_the_isolated_database` | **No.** These two are a hardcoded `NOT_RUN` map in `testing/tenant-info/migration.ts` and read no environment variable at all. They have no implementation behind them yet. |
+| `migration` | `projection_parity_against_the_isolated_database` | **No.** These two were a hardcoded `NOT_RUN` map in the layer's migration suite and read no environment variable at all. They have no implementation behind them yet. |
 | `migration` | `copied_multi_owner_store_projection_replay` | **No.** Same — unimplemented, not unconfigured. |
 
 So: **2 of 6.** The image pins are resolved, so the two `rebuild` cases are reachable once the schema

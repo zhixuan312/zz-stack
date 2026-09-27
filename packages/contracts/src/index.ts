@@ -42,34 +42,6 @@ export {
   ReleasePolicy, Guardrail, FailureMode,
 } from "./eval-protocol.js";
 
-// Types and the zod schemas that validate untrusted input against them. `semanticFields` and
-// `mutationErrorCodes` are declared once in tenant-information.ts; nothing downstream restates
-// SemanticPayload's field set or the error-code list.
-export {
-  ArtifactClassSchema, type ArtifactClass,
-  KnowledgeTypeSchema, type KnowledgeType,
-  KnowledgeStatusSchema, type KnowledgeStatus,
-  GateStatusSchema, type GateStatus,
-  EdgeKindSchema, type EdgeKind,
-  ArtifactRefSchema, type ArtifactRef,
-  semanticFields,
-  SemanticPayloadSchema, type SemanticPayload,
-  SourceCitationSchema, type SourceCitation,
-  ContentRevisionSchema, type ContentRevision,
-  ArtifactEventKindSchema, type ArtifactEventKind,
-  ArtifactEventSchema, type ArtifactEvent,
-  SourceCaptureSchema, type SourceCapture,
-  MutationOpSchema, type MutationOp,
-  mutationErrorCodes,
-  MutationRequestSchema, type MutationRequest,
-  MutationResultSchema, type MutationResult,
-  MutationErrorSchema, type MutationError,
-  MutationIndeterminateSchema, type MutationIndeterminate,
-  MutationOutcomeSchema, type MutationOutcome,
-  SearchResultSchema, type SearchResult,
-  SearchResponseSchema, type SearchResponse,
-} from "./tenant-information.js";
-
 // DELIBERATE: the one wildcard in this file. `control-loop.js` is an aggregator, and a module
 // added to it must reach every consumer without an edit here — this file is near the 700-line
 // ceiling the gate enforces.

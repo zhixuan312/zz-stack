@@ -173,7 +173,7 @@ check("one image, one recipe", () => {
   if (!named.size) return "nothing in this repo names a Dockerfile — this check reads nothing";
 
   // One recipe per image, and this repository ships two images: the application, and a PostgreSQL
-  // image pinned to an exact base digest and an exact pg_textsearch source, built in isolation to
+  // image pinned to an exact base digest and an exact search-extension source, built in isolation to
   // prove a dependency before anything is deployed on it. They are different things, on different
   // schedules, for different readers — so the rule is per class: each class has one recipe, a
   // Dockerfile belongs to a class, and a class nothing builds from is still the other half of the

@@ -9,11 +9,11 @@
  * the answer comes back in. `trial` below is that path, run once per question.
  *
  * The corpus is declared in this package, because `@zz/contracts` sits underneath the services and
- * cannot import `services/zz-core/src/tenant-info/search.ts`. So nothing here is evidence about the
- * live `knowledge_search` handler and its lanes, BM25 scoring or RRF fusion; `serializeResults` and
- * its response budget; the query grammar, its phrases, exclusions or cursors; whether `pg_textsearch`
- * and `pg_trgm` exist on any cluster; the real supersession operation; or team scoping and the
- * `no_team` exit. What it is evidence about is the traversal rules.
+ * cannot import the live search tool. So nothing here is evidence about the live `knowledge_search`
+ * handler and its lanes, BM25 scoring or RRF fusion; `serializeResults` and its response budget;
+ * the query grammar, its phrases, exclusions or cursors; which text-search extensions exist on any
+ * cluster; the real supersession operation; or team scoping and the `no_team` exit. What it is
+ * evidence about is the traversal rules.
  *
  * The answer's language comes from the question. `askerLanguage` takes the question and nothing else,
  * so no implementation can inherit a language from the material that matched; the corpus is arranged

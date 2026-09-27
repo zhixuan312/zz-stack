@@ -79,25 +79,19 @@ const EXEMPT = new Set([
 // write down why, where a central allowlist would be a list nobody prunes and nobody reads.
 const MARKER = /NOT A TOOL:/;
 
-// Two files cannot carry the marker, named here rather than folded into EXEMPT because EXEMPT
-// means "this file's subject is the rename" and neither file's subject is.
+// One file cannot carry the marker, named here rather than folded into EXEMPT because EXEMPT
+// means "this file's subject is the rename" and this file's subject is not.
 //
-// `checks/tenant-lifecycle-matrix.ts` is a plan-authored check whose bytes are frozen before
-// execution and hash-verified before and after every task, so nobody — including this
-// repository's own conventions — may edit it afterwards. It writes `operation:'approve'`, the
-// kernel's mutation verb, which `alias.ts` also knows as the renamed MCP tool
-// `document_approve`.
-//
-// `scripts/gate/checks/commit-result-reconciliation.ts` is frozen the same way. It imports
-// `reconcile` from `@zz/contracts` — a pure function that settles what a mutation kernel's
-// reply means about the operation that produced it — and reaches no door. The renamed MCP tool
-// `knowledge_reconcile` is a different thing sharing an English verb, and the source module it
-// imports from carries the `NOT A TOOL:` marker in full.
+// `scripts/gate/checks/commit-result-reconciliation.ts` is frozen — its bytes are hash-verified
+// before and after every task — so nobody, including this repository's own conventions, may edit
+// it. It imports `reconcile` from `@zz/contracts` — a pure function that settles what a mutation
+// kernel's reply means about the operation that produced it — and reaches no door. The renamed
+// MCP tool `knowledge_reconcile` is a different thing sharing an English verb, and the source
+// module it imports from carries the `NOT A TOOL:` marker in full.
 //
 // Named paths rather than a pattern: a third frozen check needing this should have to write
 // down why.
 const FROZEN_WITHOUT_MARKERS = new Set([
-  "checks/tenant-lifecycle-matrix.ts",
   "scripts/gate/checks/commit-result-reconciliation.ts",
 ]);
 

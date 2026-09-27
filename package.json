@@ -16,7 +16,6 @@
     "gate": "node scripts/gate.ts",
     "eval-flow-e2e": "node scripts/eval-flow-e2e.ts",
     "doctor": "node scripts/doctor.ts",
-    "tenant-info": "node scripts/tenant-info/cli.ts",
     "set-version": "node scripts/set-version.ts",
     "release": "node scripts/release.ts",
     "rollback": "node scripts/release.ts --rollback",

@@ -128,7 +128,7 @@ export function registerArtifactTools(server: McpServer): void {
     "document_read",
     {
       description:
-        "Read a file from your team's artifact store. Paths are relative to it — " +
+        "Read a file from your team's store. Paths are relative to it — " +
         "`<initiative>/spec.md`. Pass an ARRAY of paths to read several in one call; they " +
         "come back in the order you asked, and a path that cannot be read names its own " +
         "failure without costing you the others. `version: N` reads the copy filed when " +
@@ -236,7 +236,7 @@ export function registerArtifactTools(server: McpServer): void {
     "document_present",
     {
       description:
-        "Fetch a document from your team's artifact store to put in front of the person. " +
+        "Fetch a document from your team's store to put in front of the person. " +
         "Returns the document's body as markdown, with its path, version, status, approval " +
         "and the list of versions filed for it stated separately — the document itself, " +
         "never a summary or a judgement of it. Pass an ARRAY of paths to put several in " +

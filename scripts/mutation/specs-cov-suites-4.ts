@@ -14,7 +14,6 @@ import type { MutationSpec } from "./plant.ts";
 // Which module registers the target, which is what `check_sha256` is computed over.
 const SUITES_DATA = "scripts/gate/checks/suites-data.ts";
 const SUITES_SURFACE = "scripts/gate/checks/suites-surface.ts";
-const SUITES_TENANT = "scripts/gate/checks/suites-tenant.ts";
 const SUITES = "scripts/gate/checks/suites.ts";
 const SUITES_TOOLING = "scripts/gate/checks/suites-tooling.ts";
 
@@ -51,20 +50,6 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
     planted: "a shipped skill script imports a converted sibling by a .js path that does not " +
       "exist in the source tree. NodeNext still resolves it for the compiler, so the rename " +
       "reads as complete while one specifier has quietly gone back to naming build output",
-  },
-  {
-    check: SUITES_TOOLING,
-    target: "checks/ carries zero strict errors, and none of them was reached by widening to any",
-    assertion: "zero errors under checks/ was not bought by widening a type to any",
-    subject: "checks/backup-covers-the-undisposable.ts",
-    find: "const bad=structuredClone(good); bad.components[0].sha256='not-a-hash';",
-    // SEAMED: the payload is a widening assertion, and the strict sweep reads every tracked
-    // file — including this one. `plant()` joins it back together before it is written.
-    replace: "const bad=structuredClone(good) as an" + "y; bad.components[0].sha256='not-a-hash';",
-    planted: "a check widens its own fixture past the compiler, so the subtree still reports " +
-      "zero strict errors and that number now means nothing: the fixture this check feeds the " +
-      "validator is no longer held to the shape it claims to be, and a validator driven by an " +
-      "unchecked fixture proves whatever the fixture happens to contain",
   },
   {
     check: SUITES_TOOLING,
@@ -190,100 +175,5 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
     planted: "the door's own header states how many tools it serves. The number is right the " +
       "day it is typed and silently wrong the next time anybody registers or moves one — the " +
       "same defect this file already shipped four times, each found by a person, late",
-  },
-  {
-    check: SUITES_TENANT,
-    target: "a baseline receipt carries every required field with its measurement evidence, and never a credential",
-    assertion: "every count in a receipt carries the query it was measured with",
-    subject: "scripts/tenant-info/baseline.ts",
-    find: "    || !isNonEmptyString(c.query))) {",
-    replace: "    || c.query === undefined)) {",
-    planted: "a baseline receipt is accepted with counts whose query is blank. The number is " +
-      "still in the record and nothing says how it was obtained, so nobody can re-derive it " +
-      "or tell a measured zero from a query that quietly returned nothing",
-  },
-  {
-    check: SUITES_TENANT,
-    target: "a backup manifest is refused when it is missing any of the five undisposable component kinds, when the canonical record is not included, or when a component's hash is malformed",
-    assertion: "a manifest that declares the canonical record absent is refused",
-    subject: "testing/tenant-info/deployment.ts",
-    find: "if (report.artifacts_include_canonical_record !== true) {",
-    replace: "if (report.artifacts_include_canonical_record === undefined) {",
-    planted: "a backup manifest that explicitly says the canonical .zz record is NOT in the " +
-      "artifacts archive now passes. Only an omitted field is refused, so the one declaration " +
-      "somebody has to make by hand is the one that no longer has to be true",
-  },
-  {
-    check: SUITES_TENANT,
-    target: "a semantic payload's canonical hash is stable under tag order/dupes, CRLF and sorted content_fields, and changes on every single-field edit the spec names",
-    assertion: "an edit to any semantic field changes the payload's canonical hash",
-    subject: "services/zz-core/src/tenant-info/policies.ts",
-    find: 'if (field === "description") { out.description = crlfToLf(String(payload.description ?? "")); continue; }',
-    replace: 'if (field === "description") { continue; }',
-    planted: "description drops out of the canonical payload, so editing it produces the same " +
-      "content hash as before. The kernel reads that as a no-op: the new description is never " +
-      "committed, no revision is cut and no event is written, and the edit simply vanishes. " +
-      "Every other check driving the mutation kernel's identity goes red with this one, " +
-      "because the hash IS the kernel's notion of what changed",
-  },
-  {
-    check: SUITES_TENANT,
-    target: "the actual migrations directory names the migration slug exactly once, every numeric prefix is unique, and a duplicate or missing slug is refused",
-    assertion: "two migrations sharing one numeric prefix are refused",
-    subject: "scripts/tenant-info/inventory.ts",
-    find: "if (names.length > 1) problems.push(",
-    replace: "if (names.length > 2) problems.push(",
-    planted: "a numeric prefix reused by exactly two migrations is accepted. Two files then " +
-      "claim the same position in the apply order, and which one the runner treats as that " +
-      "step depends on directory order rather than on anything anybody decided",
-  },
-  {
-    check: SUITES_TENANT,
-    target: "a migration needing an extension declares it, and the runner still defers rather than taking the database down",
-    assertion: "a migration that creates an extension declares that requirement",
-    // 001_init.sql carries the directive in its header: pg_dump does not emit extensions, so
-    // they are written back there along with the two lines the runner reads to decide whether
-    // to defer.
-    subject: "services/gateway/migrations/001_init.sql",
-    find: "-- requires-extension: pg_trgm",
-    replace: "-- note: this migration also needs pg_trgm",
-    planted: "the migration's second extension requirement stops being machine-readable, so " +
-      "the runner no longer defers on a cluster without pg_trgm. It attempts the file, throws, " +
-      "rolls back and un-sets the pool — and the gateway starts anyway, serving with no " +
-      "database while reporting itself healthy",
-  },
-  {
-    check: SUITES_TENANT,
-    target: "grammar recognition precedes identifier normalization so a quoted phrase, an OR alternative and a leading exclusion survive intact, an unterminated natural-mode quote refuses by position while websearch tolerates it, and the actual serialized response stays within 24000 UTF-8 bytes with disclosed truncation",
-    assertion: "the serialized response stays inside the agreed byte budget",
-    subject: "services/zz-core/src/tenant-info/retrieval.ts",
-    find: "const RESPONSE_BYTE_BUDGET = 24000;",
-    replace: "const RESPONSE_BYTE_BUDGET = 240000;",
-    planted: "the search response budget is raised tenfold, so a wide result set serializes " +
-      "far past what the agreed limit allows and comes back claiming to be complete. Nothing " +
-      "is truncated, nothing is disclosed, and the caller that has to hold the payload is the " +
-      "one that finds out",
-  },
-  {
-    check: SUITES_TENANT,
-    target: "every one of the eighteen release targets is evaluated in its own direction, and a missing observation is blocked rather than zero",
-    assertion: "a latency target is evaluated as an upper bound, not a lower one",
-    subject: "scripts/tenant-info/benchmark.ts",
-    find: '{ key: "latency_p95_ms", direction: "at_most", target: 750, unit: "ms", measured_by: REFERENCE_RUN },',
-    replace: '{ key: "latency_p95_ms", direction: "at_least", target: 750, unit: "ms", measured_by: REFERENCE_RUN },',
-    planted: "the p95 latency target is read backwards: a run is judged to PASS the faster it " +
-      "fails, so an observation of a million milliseconds satisfies the agreement and a " +
-      "genuinely fast one does not. A release report would report the worst result as green",
-  },
-  {
-    check: SUITES,
-    target: "the committed judged dataset is exactly what its generator produces, byte for byte",
-    assertion: "the committed qrels are byte-identical to what the generator emits",
-    subject: "scripts/tenant-info/judged-dataset.ts",
-    find: 'reviewer: "generator:tenant-info-i4"',
-    replace: 'reviewer: "generator:tenant-info-i5"',
-    planted: "the generator no longer reproduces the committed qrels.jsonl. Those bytes are " +
-      "signed by hash, and a signature over bytes nobody can regenerate is a rubber stamp — " +
-      "the dataset every recall figure is measured against stops being re-derivable",
   },
 ];

@@ -11,19 +11,9 @@ const walk = (dir: string, out: string[] = []): string[] => {
   return out;
 };
 const fail: string[] = [];
-// One file is data about a plan rather than code that dereferences a path: the edit-surface
-// ledger carries a row per deliverable the approved specification declares, most of them
-// future tasks' outputs that do not exist yet. A ledger row is not an import, a spawn or a
-// read, and its paths being absent is the normal state of a plan partway through.
-//
-// DELIBERATE: the exemption is carved here rather than inside the scanned file. An exemption
-// that assembles its strings at runtime blinds this check for every later reader, and any
-// real import can climb through the same idiom.
-const LEDGER = "scripts/tenant-info/ledger.ts";
 
 const files = [...walk("scripts"), ...walk("checks")].filter((f) => f.endsWith(".ts"));
 for (const f of files) {
-  if (f === LEDGER) continue;
   const src = readFileSync(f, "utf8");
   src.split("\n").forEach((line, i) => {
     if (/^\s*\*/.test(line) || /^\s*\/\//.test(line)) return;      // prose

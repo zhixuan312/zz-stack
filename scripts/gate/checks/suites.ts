@@ -13,8 +13,7 @@ import { dirname, join } from "node:path";
 import { asRecord, codeOnly, envNamesIn, isGateLaunchSource, readJson, root, trackedFiles, unbuilt, withoutComments }
   from "../read.ts";
 import { check } from "../run.ts";
-import { execFields, suiteSources } from "../suite-runner.ts";
-import { generateJudgedDataset, judgedDatasetToJsonl } from "../../tenant-info/judged-dataset.ts";
+import { execFields, runsCheck, suiteSources } from "../suite-runner.ts";
 
 
 /** Run one of the offline check tools that live beside the code they are about. */
@@ -228,22 +227,18 @@ check("every check this gate registers is a file git will carry", () => {
 
 
 
-check("the committed judged dataset is exactly what its generator produces, byte for byte", () => {
-  // H1 signs testing/tenant-info/queries.jsonl and qrels.jsonl by hash, so those hashes have
-  // to be re-derivable rather than merely committed. `generateJudgedDataset` is the only
-  // producer and this check is its only tracked caller.
-  const problems: string[] = [];
-  const { queries, qrels } = generateJudgedDataset();
-  const expected: [string, string][] = [
-    [join(root, "testing/tenant-info/queries.jsonl"), judgedDatasetToJsonl(queries)],
-    [join(root, "testing/tenant-info/qrels.jsonl"), judgedDatasetToJsonl(qrels)],
-  ];
-  for (const [path, generated] of expected) {
-    const committed = readFileSync(path, "utf8");
-    if (committed !== generated) problems.push(`${path.slice(root.length + 1)} no longer matches its generator`);
-  }
-  return problems.length ? problems.join("; ") : null;
-});
+check("the PostgreSQL 17 lock, Dockerfile and config agree on the pinned major/patch, base digest, search-extension release and actual preload membership",
+      runsCheck("postgres-image-pinned.ts"));
+check("bounded overlapping passages cover every UTF-8 byte with no truncation at any size, identifier analysis keeps exact spellings alongside derived lowercase parts, and a derivation fingerprint changes independently on every one of its named fields",
+      runsCheck("tenant-complete-text.ts"));
+check("the text analyzer handles empty text, CRLF, a forced long-token split with no whitespace to prefer, a full 1-MiB mixed-language body and a phrase at a passage boundary, and the 8-MiB kernel gate refuses new input while preserving legacy larger content",
+      runsCheck("tenant-passage-analysis.ts"));
+check("gate-launch classification reads the syntax — a spawner named in a comment, a string or a regex literal is not a launch, and an aliased or namespaced one still is",
+      runsCheck("tenant-checks-registered.ts"));
+check("a migration needing an extension declares it, and the runner still defers rather than taking the database down",
+      runsCheck("migration-extension-declared.ts"));
+check("the layer's tables, its files and its extension are gone from the tree",
+      runsCheck("artifact-layer-deleted.ts"));
 
 // The two checks written as bash. The check at the bottom of this file counts `.sh` as well
 // as `.ts`, because the rule that hunts for unregistered checks reads the extension.
@@ -265,7 +260,7 @@ const notRegistered = new Map<string, string>([
   // Wave 3 held one entry here — `release-closes-findings.ts`, red on the registration
   // rules from its activation until I-32 landed, as every check is between the two.
   // Wave 2's one was named here in the pass that activated it, and struck when it landed.
-  // Phase 5's next two are not named here yet: a name in this map must have a file, and each
+  // Phase 5's last is not named here yet: a name in this map must have a file, and it
   // of theirs sits at no path until its own wave activates it. The integration step names it in
   // the same pass that puts the file there — as Phase 3's and Phase 4's waves did — and strikes
   // the entry when the wave lands.

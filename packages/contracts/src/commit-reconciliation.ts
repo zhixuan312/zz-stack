@@ -3,11 +3,16 @@
  * mutation kernel can reply with, computed from the reply rather than asserted by the branch that
  * produced it.
  *
- * The three replies are the whole vocabulary. `MutationOutcomeSchema` in `tenant-information.ts`
- * is a discriminated union on `committed` with exactly three arms, and this module adds no fourth.
- * A committed write whose read model has not caught up is not a fourth kind of answer:
- * `projection: "pending"` and `history_export: "pending"` become follow-up work attached to an
- * `applied` reconciliation.
+ * The three replies are the whole vocabulary. They are a discriminated union on `committed` with
+ * exactly three arms, and this module adds no fourth. A committed write whose read model has not
+ * caught up is not a fourth kind of answer: `projection: "pending"` and `history_export: "pending"`
+ * become follow-up work attached to an `applied` reconciliation.
+ *
+ * DELIBERATE: the committed and indeterminate arms are written out inside {@link CommitOutcome}
+ * rather than named. Nothing else in the tree reads a kernel reply any more, so a named
+ * declaration would be a public name with no public; what this module promises is what a reply
+ * *means*, and the reply's shape is the reading's own business. The refusal arm keeps its own
+ * name because it is the one arm this module narrows.
  *
  * The canonical no-op — `committed: true, changed: false` with a null `transaction_id` and a null
  * `commit_sequence` — is durable and reconciles to `applied`. Its nulls travel as nulls: nothing
@@ -26,25 +31,49 @@
  * detector fire.
  */
 
-import type { MutationError, MutationIndeterminate, MutationResult } from "./tenant-information.js";
-
 // ---------------------------------------------------------------------------------------
 // What arrives
 
 /**
  * The refusal arm as it arrives at this boundary.
  *
- * `committed` and `message` come from {@link MutationError}. `code` is widened to `string`:
- * `MutationErrorSchema` rejects an unrecognised code at the parse boundary, and downstream of that
- * the kernel may be a version ahead. A code this build has never heard of is a definite refusal —
- * the caller's write did not happen — and reconciles to `failed`, not to an indeterminate.
+ * `code` is widened to `string`: downstream of a parse boundary the kernel may be a version
+ * ahead. A code this build has never heard of is a definite refusal — the caller's write did not
+ * happen — and reconciles to `failed`, not to an indeterminate.
  */
-export interface CommitRefusal extends Omit<MutationError, "code"> {
+export interface CommitRefusal {
+  readonly committed: false;
   readonly code: string;
+  readonly message: string;
 }
 
-/** A reply from the mutation kernel: committed, refused, or of unknown commit status. */
-export type CommitOutcome = MutationResult | CommitRefusal | MutationIndeterminate;
+/** A reply from the mutation kernel: committed, refused, or of unknown commit status.
+ *
+ * The committed arm's references are the kernel's own report, never a value this module invents:
+ * `transaction_id` and `commit_sequence` are null for the canonical no-op. The indeterminate arm
+ * carries the key the request was already sent under, because that is what its fate must be
+ * established against. */
+export type CommitOutcome =
+  | {
+      readonly committed: true;
+      readonly changed: boolean;
+      readonly transaction_id: string | null;
+      readonly artifact_id: string;
+      readonly revision: number | null;
+      readonly content_hash: string;
+      readonly etag: string;
+      readonly commit_sequence: number | null;
+      readonly projection: "current" | "pending";
+      readonly history_export: "current" | "pending";
+    }
+  | CommitRefusal
+  | {
+      readonly committed: "unknown";
+      readonly code: string;
+      readonly transaction_id: string;
+      readonly idempotency_key: string;
+      readonly message: string;
+    };
 
 /**
  * The caller's own side of the same operation — what the kernel's reply cannot carry: the
@@ -152,9 +181,10 @@ export interface Reconciliation extends ReconciliationPlan {
 // Deciding
 
 /**
- * The refusal code that means the caller's `expected_etag` no longer matches — the one
- * `mutationErrorCodes` declares for it, and no synonym. A code this build does not recognise still
- * reconciles to a definite refusal, with no step telling the caller what to re-read.
+ * The refusal code that means the caller's `expected_etag` no longer matches — the one the
+ * contract's own error vocabulary declares for it, and no synonym. A code this build does not
+ * recognise still reconciles to a definite refusal, with no step telling the caller what to
+ * re-read.
  */
 const STALE_ETAG_CODE = "REVISION_CONFLICT";
 
@@ -327,13 +357,13 @@ export interface ReconcileProbeRow {
   readonly fires: string;
 }
 
-const NO_OP: MutationResult = {
+const NO_OP: Extract<CommitOutcome, { committed: true }> = {
   committed: true, changed: false, transaction_id: null, artifact_id: "a1",
   revision: null, content_hash: "h1", etag: "e1", commit_sequence: null,
   projection: "current", history_export: "current",
 };
 
-const LAGGING: MutationResult = {
+const LAGGING: Extract<CommitOutcome, { committed: true }> = {
   committed: true, changed: true, transaction_id: "t1", artifact_id: "a1",
   revision: 2, content_hash: "h2", etag: "e2", commit_sequence: 9,
   projection: "pending", history_export: "pending",
@@ -341,7 +371,7 @@ const LAGGING: MutationResult = {
 
 const REFUSED: CommitRefusal = { committed: false, code: STALE_ETAG_CODE, message: "x" };
 
-const UNKNOWN: MutationIndeterminate = {
+const UNKNOWN: Extract<CommitOutcome, { committed: "unknown" }> = {
   committed: "unknown", code: "COMMIT_STATUS_UNKNOWN", transaction_id: "t2",
   idempotency_key: "k2", message: "x",
 };

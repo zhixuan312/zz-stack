@@ -21,14 +21,14 @@ check("rederivation covers old rows and refuses to mix analyzer generations", ()
   if (!p.resumable) return "the rebuild declares no watermark, so an interrupted run cannot resume";
 
   // One construction, two callers — never two implementations of the same weighting. Checked
-  // two ways, because neither alone is enough: the rebuild module must literally import the
+  // two ways, because neither alone is enough: the rederivation module must literally import the
   // write path's builder, and the two must agree on a row.
   //
   // DELIBERATE: this does not demand `rebuildRowVector === buildRowVector`. Identity forces an
   // alias export and makes the agreement test below dead code.
-  const rebuildSrc = withoutComments(readFileSync(join(root, "packages/indexing/src/tenant-rebuild.ts"), "utf8"));
+  const rebuildSrc = withoutComments(readFileSync(join(root, "packages/indexing/src/rederivation.ts"), "utf8"));
   if (!/import\s*\{[^}]*\bbuildRowVector\b/.test(rebuildSrc)) {
-    return "tenant-rebuild.ts does not import buildRowVector — a second implementation of the same "
+    return "rederivation.ts does not import buildRowVector — a second implementation of the same "
          + "weighting is how the write path and the backfill drifted apart in the first place";
   }
   const row = { title: "迁移说明", tags: ["迁移"], body: "这个迁移会破坏旧的模式" };

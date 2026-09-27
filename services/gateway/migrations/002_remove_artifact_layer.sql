@@ -7,10 +7,10 @@
 -- `zz.schema_migration`; there is no `begin`/`commit` here and every name is schema-qualified.
 --
 -- WHY THE LAYER GOES. Every one of the thirteen tables is a projection of `.zz/commits/*.json` —
--- a file record that exists on no live store. Nothing in production reaches them: `applyCommit`
--- and `projectSearchAndPassages` are called only from tests and benchmarks, and `persist.ts`'s own
--- comment says its kernel adapters "are not wired into document_write/document_patch/
--- document_approve/source_add". They hold **zero rows in production**, so there is no data
+-- a file record that exists on no live store. Nothing in production reaches them: the projection
+-- writer and the search-and-passages reader were called only from tests and benchmarks, and the
+-- persistence layer's own comment said its kernel adapters "are not wired into document_write/
+-- document_patch/document_approve/source_add". They hold **zero rows in production**, so there is no data
 -- disposition and nothing to archive. The guard below is what makes that a precondition rather
 -- than an assumption: a single row anywhere refuses the migration instead of deleting it. The
 -- design they implement (D1–D16 of the 2026-09-19 initiative) is not withdrawn — it stays
@@ -72,10 +72,22 @@ begin
   end if;
 end $$;
 
-drop table zz.artifact_edge, zz.artifact_identifier, zz.artifact_passage, zz.artifact_revision,
-           zz.artifact_event, zz.artifact, zz.artifact_projection_commit,
-           zz.artifact_projection_watermark, zz.doc_artifact, zz.knowledge_node_artifact,
-           zz.search_current, zz.search_evidence, zz.search_history;
+-- One statement per table rather than one comma list: a reader replaying these files to
+-- reconstruct what a deployment holds must be able to see each drop on its own, and a
+-- comma list reads as a single act.
+drop table zz.artifact_edge;
+drop table zz.artifact_identifier;
+drop table zz.artifact_passage;
+drop table zz.artifact_revision;
+drop table zz.artifact_event;
+drop table zz.artifact;
+drop table zz.artifact_projection_commit;
+drop table zz.artifact_projection_watermark;
+drop table zz.doc_artifact;
+drop table zz.knowledge_node_artifact;
+drop table zz.search_current;
+drop table zz.search_evidence;
+drop table zz.search_history;
 
 -- ---------------------------------------------------------------------------------------------
 -- (b) `knowledge_node`: the shelf, the file's address, its successor and its citations.

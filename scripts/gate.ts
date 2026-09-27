@@ -54,9 +54,6 @@ import "./gate/checks/han-analysis.ts";
 import "./gate/checks/query-grammar.ts";
 import "./gate/checks/legacy-han-retrieval.ts";
 import "./gate/checks/snippet-byte-ranges.ts";
-import "./gate/checks/analyzer-opacity-fixture.ts";
-import "./gate/checks/native-lane-applicability.ts";
-import "./gate/checks/scope-filters-survive-lanes.ts";
 import "./gate/checks/text-search-config-agreement.ts";
 import "./gate/checks/skills-provider-neutral.ts";
 import "./gate/checks/generic-host-genericity.ts";
@@ -81,7 +78,6 @@ import "./gate/checks/close-truthfulness.ts";
 import "./gate/checks/stopped-close-exemption.ts";
 import "./gate/checks/negative-control-probes.ts";
 import "./gate/checks/search-predicate-parameters.ts";
-import "./gate/checks/benchmark-report-slices.ts";
 import "./gate/checks/search-read-synthesis.ts";
 import "./gate/checks/activation-runbook.ts";
 import "./gate/checks/trial-analyzer-agreement.ts";
@@ -93,7 +89,6 @@ import "./gate/checks/rederivation-generation.ts";
 import "./gate/checks/data-sql.ts";
 import "./gate/checks/data-telemetry.ts";
 import "./gate/checks/data-telemetry-reports.ts";
-import "./gate/checks/judged-corpus-census.ts";
 
 import "./gate/checks/security-identity.ts";
 import "./gate/checks/security-secrets.ts";
@@ -111,7 +106,6 @@ import "./gate/checks/suites.ts";
 import "./gate/checks/suites-tooling.ts";
 import "./gate/checks/suites-data.ts";
 import "./gate/checks/suites-surface.ts";
-import "./gate/checks/suites-tenant.ts";
 
 import { report } from "./gate/run.ts";
 

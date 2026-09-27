@@ -11,29 +11,6 @@ import type { MutationSpec } from "./plant.ts";
 
 export const RETRIEVAL_SPECS: readonly MutationSpec[] = [
   {
-    check: "scripts/gate/checks/judged-corpus-census.ts",
-    target: "the judge's mark scale is declared once, and the rescale reads it",
-    assertion: "the rescale reads the declared scale's lower bound",
-    subject: "services/zz-core/src/eval/judge-score.ts",
-    find: "    ? null : Math.round(((qualMean - MARK_SCALE.min) / SPAN) * 1000) / 100;",
-    replace: "    ? null : Math.round(((qualMean - 1) / SPAN) * 1000) / 100;",
-    planted: "the arithmetic that turns a mark into a score goes back to a literal lower bound " +
-      "while the marks it rescales were given on the declared scale — so a round on any other " +
-      "scale is normalised against a range it was never given on, silently, with every number " +
-      "downstream still looking ordinary. SPAN stays used, so the tree compiles and only the " +
-      "property breaks",
-  },
-  {
-    check: "scripts/gate/checks/analyzer-opacity-fixture.ts",
-    target: "the analyzer-opacity fixture records a real run of the CURRENT analyzer",
-    subject: "testing/tenant-info/analyzer-opacity.golden.json",
-    find: '"analyzer_digest"',
-    replace: '"analyzer_digest_was"',
-    all: true,
-    planted: "the fixture no longer carries the analyzer digest it was generated from, so a " +
-      "hand-written file is indistinguishable from a recorded run",
-  },
-  {
     check: "scripts/gate/checks/han-analysis.ts",
     target: "an unspaced Han run is analysed into the terms a reader would search for",
     subject: "packages/indexing/src/tenant-analysis.ts",
@@ -54,15 +31,6 @@ export const RETRIEVAL_SPECS: readonly MutationSpec[] = [
       "documents their own title on a faithful copy of this deployment",
   },
   {
-    check: "scripts/gate/checks/native-lane-applicability.ts",
-    target: "native lanes keep their own applicability and grow no tag lane",
-    subject: "packages/indexing/src/tenant-projections.ts",
-    find: "  const hasAnalyzableTerm = leaves.some((c) => analyze(c.text).base.length > 0);",
-    replace: "  const hasAnalyzableTerm = leaves.some((c) => analyze(c.text).base.length > 99);",
-    planted: "prose stops counting as analyzable, so an unspaced Han query never reaches the " +
-      "ranking lane that can match inside it",
-  },
-  {
     check: "scripts/gate/checks/query-grammar.ts",
     target: "query grammar survives a Chinese query with a phrase and an exclusion",
     subject: "packages/indexing/src/query-grammar.ts",
@@ -79,37 +47,6 @@ export const RETRIEVAL_SPECS: readonly MutationSpec[] = [
     replace: "  return { corpora: [...REDERIVABLE_CORPORA], skipUnchangedContentHash: true, resumable: true };",
     planted: "the rebuild skips every row whose content hash is unchanged — but the analyzer " +
       "changed and the hash did not, so the old corpus is never rederived",
-  },
-  {
-    check: "scripts/gate/checks/scope-filters-survive-lanes.ts",
-    target: "an unmappable scope restriction is refused rather than silently dropped",
-    subject: "packages/indexing/src/search-plan.ts",
-    find: "  const unmapped = unmappedScopeFilter(filters);",
-    replace: "  const unmapped = unmappedScopeFilter({});",
-    planted: "the unmappable-filter test is run against an empty filter set instead of the " +
-      "caller's, so a restriction no native table carries is silently dropped rather than refused",
-  },
-  {
-    // The second check in this file. Rows are per registered check, not per file: its sibling
-    // above only exercises an unmappable filter, which returns before a stage is planned, so a
-    // mutation aimed at this one cannot be satisfied by tripping that one.
-    check: "scripts/gate/checks/scope-filters-survive-lanes.ts",
-    target: "a tag restriction reaches every lane, rescue and page",
-    subject: "packages/indexing/src/search-plan.ts",
-    find: "  const appliedFilters = { tag: filters.tag !== undefined } as const;",
-    replace: "  const appliedFilters = { tag: false } as const;",
-    planted: "every planned stage reports that it applied no tag restriction, so a caller's " +
-      "narrowing is carried nowhere and nothing downstream can tell that it was dropped",
-  },
-  {
-    check: "scripts/gate/checks/text-search-config-agreement.ts",
-    target: "the native-projection index is still the only text-search configuration outside the agreement",
-    subject: "packages/indexing/src/tenant-projections.ts",
-    find: "using gin (to_tsvector('english', raw_body))",
-    replace: "using gin (to_tsvector('english', body))",
-    planted: "the one site excluded from the body_tsv agreement stops being the raw-prose " +
-      "index it was excused for and points at the column the agreement governs, which is the " +
-      "move that would silently put a second configuration in charge of body_tsv",
   },
   {
     check: "scripts/gate/checks/text-search-config-agreement.ts",
@@ -164,15 +101,6 @@ export const RETRIEVAL_SPECS: readonly MutationSpec[] = [
       "newly written document is indexed by something other than the analyzer",
   },
   {
-    check: "scripts/gate/checks/judged-corpus-census.ts",
-    target: "the judged corpus still has the census every retrieval target is measured against",
-    subject: "testing/tenant-info/queries.jsonl",
-    find: '{"id":"Q0001",',
-    replace: '{"id":"Q0002",',
-    planted: "two judged queries share one id, so the census counts six hundred rows and " +
-      "fewer than six hundred distinct cases",
-  },
-  {
     check: "scripts/gate/checks/legacy-han-retrieval.ts",
     target: "the legacy handler builds a predicate that can match a term inside an unspaced Han run",
     subject: "services/zz-core/src/tools/search-predicate.ts",
@@ -184,16 +112,5 @@ export const RETRIEVAL_SPECS: readonly MutationSpec[] = [
     replace: "  const cond = [`true = any(",
     planted: "the scope predicate loses the column it restricts on, so the statement no longer " +
       "narrows a knowledge query to the caller's own shelves",
-  },
-  {
-    check: "scripts/gate/checks/benchmark-report-slices.ts",
-    target: "a benchmark report proves each language slice separately or leaves its target blocked",
-    subject: "scripts/tenant-info/benchmark.ts",
-    find: "  return { passed: failed.length === 0 && blocked.length === 0, failed, blocked, outcomes };",
-    replace: "  return { passed: failed.length === 0, failed, blocked, outcomes };",
-    planted: "a target nobody measured stops holding the verdict back, so a run with no " +
-      "observations at all evaluates to a pass — absence read as zero",
-    caveat: "only the FIRST assertion of this check is reachable in a gate run — see the " +
-      "unreachable-region finding recorded against it",
   },
 ];

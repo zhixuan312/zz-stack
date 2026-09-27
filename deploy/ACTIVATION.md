@@ -295,7 +295,7 @@ database and its artifact volume, all three together. It is clean until the end 
 
 **Three things a rollback may not buy its way out of.**
 
-1. **The record layout refusal stays.** `services/zz-core/src/tenant-info/record.ts` refuses
+1. **The record layout refusal stays.** The record store refused
    `STORE_UNAVAILABLE` when a store's `.zz/` layout is incomplete, and that refusal is not to be
    relaxed to make a rollback smoother. The alternative is a failed mount being read as a tenant
    with no documents, and the next thing that happens to an empty tenant is that something

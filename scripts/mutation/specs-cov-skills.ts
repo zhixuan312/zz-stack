@@ -280,8 +280,8 @@ export const COV_SKILLS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/skill-tools.ts",
     target: "no tool description teaches a path form the platform refuses",
     subject: ARTIFACTS,
-    find: "\"Read a file from your team's artifact store. Paths are relative to it — \"",
-    replace: "\"Read a file from your .zz artifact store. Paths are relative to it — \"",
+    find: "\"`<initiative>/spec.md`. Pass an ARRAY of paths to read several in one call; they \"",
+    replace: "\"`.zz/<initiative>/spec.md`. Pass an ARRAY of paths to read several in one call; they \"",
     planted: "document_read's own description invites the `.zz/` prefix that safePath refuses, " +
       "in the one sentence a model reads before deciding how to call it — so the tool teaches " +
       "the shape its own guard rejects",

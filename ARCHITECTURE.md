@@ -155,23 +155,18 @@ The common shape: **the entry file states the order or the door, the modules hol
 `gate.ts`, `release.ts` and `doctor.ts` are all three that, and a reader who knows one
 knows the others.
 
-### The four things that ask whether this is working, and what each one can see
+### The three things that ask whether this is working, and what each one can see
 
 | | asks | reads | when |
 |---|---|---|---|
 | `npm run gate` | is this checkout correct | the repository, offline | before anything |
 | `release.ts --preflight` | is this release worth starting | the checkout and the host, read-only | before a release |
 | `npm run doctor` | where does the deployment stop matching this checkout | both sides, layer by layer | any time, outage included |
-| `tenant-info verify --finalize` | is a whole delivery's evidence complete | every receipt, hashed, outside the checkout | once, at the end of a delivery |
 
-**The fourth one runs outside the gate, and the gate never reads what it writes.** It spawns
-the gate as one of its inputs, so registering it as a check would make the gate invoke itself;
-more importantly, a gate that came to depend on its own final acceptance report would be a
-gate that passes because it passed. The split is a file boundary: `assessAcceptance` in
-`scripts/tenant-info/verify.ts` is a pure function of observations, which the gate does drive
-over synthetic inputs, and everything that reads a real file or spawns a real command is in
-`scripts/tenant-info/acceptance.ts`, which the gate never calls. `services/zz-core/src/tenant-info/README.md`
-describes what it decides and how to read its report.
+**A gate that came to depend on its own acceptance report would be a gate that passes because
+it passed**, which is why no delivery-level acceptance runner is registered as a check. The
+gate drives the pure half of every such assessment over synthetic inputs and never reads what
+an operator's own final report says.
 
 The doctor's layers are the release's step-5 verification — the release selects `host`,
 `doors`, `contract`, `data` and owns no probe of its own, and the gate refuses it if it grows

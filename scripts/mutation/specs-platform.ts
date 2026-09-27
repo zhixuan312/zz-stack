@@ -50,15 +50,6 @@ export const PLATFORM_SPECS: readonly MutationSpec[] = [
       "simply omits ?team= is served every team's knowledge",
   },
   {
-    check: "scripts/gate/checks/data-sql.ts",
-    target: "a SELECT DISTINCT is ordered only by columns it selects",
-    subject: "services/zz-core/src/tenant-info/corpus-registry.ts",
-    find: "    select distinct corpus_key, owner_id, artifact_id, 'current'::text as scope from zz.search_current",
-    replace: "    select distinct corpus_key, owner_id, artifact_id, 'current'::text as scope from zz.search_current order by updated_at",
-    planted: "a SELECT DISTINCT is ordered by a column it does not select, which Postgres " +
-      "rejects at parse time — every caller of the route above it gets a 500",
-  },
-  {
     check: "scripts/gate/checks/data-telemetry.ts",
     target: "a tool that changes something records that it did",
     subject: "services/zz-core/src/tools/artifacts.ts",

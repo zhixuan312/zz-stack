@@ -14,13 +14,12 @@
  *   node scripts/rederive-analyzer-generation.ts            # plan only, writes nothing
  *   node scripts/rederive-analyzer-generation.ts --write     # actually rederive
  */
+import pg from "pg";
+
 import {
   planRebuild, queryGeneration, rederiveAll, ANALYZER_NAME,
   type CorpusRebuildRecord,
 } from "@zz/indexing";
-import {
-  connectIsolated,
-} from "../packages/indexing/dist/tenant-projections.js";
 
 const WRITE = process.argv.includes("--write");
 const PREVIOUS_ANALYZER = process.env.REDERIVE_PREVIOUS_ANALYZER || "zz-lexical-v1";
@@ -38,7 +37,10 @@ console.log(`plan: corpora=[${plan.corpora.join(", ")}] skipUnchangedContentHash
 const oneSided = queryGeneration({ indexGeneration: PREVIOUS_ANALYZER, queryGeneration: ANALYZER_NAME });
 console.log(`a query issued for ${ANALYZER_NAME} against an index still at ${PREVIOUS_ANALYZER} reads: ${oneSided.status}`);
 
-const client = await connectIsolated(url);
+// One dedicated connection, not a pool: the walk reads a corpus in keyset order and the two
+// statements it issues per row must land on the same session.
+const client = new pg.Client({ connectionString: url });
+await client.connect();
 try {
   if (!WRITE) {
     for (const corpus of plan.corpora) {
@@ -59,5 +61,5 @@ try {
     console.log("\nwritten.");
   }
 } finally {
-  await client.close();
+  await client.end();
 }

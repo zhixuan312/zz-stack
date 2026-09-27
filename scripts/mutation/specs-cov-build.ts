@@ -148,21 +148,6 @@ export const COV_BUILD: readonly MutationSpec[] = [
   /* hygiene.ts */
   {
     check: "scripts/gate/checks/hygiene.ts",
-    target: "an async guard in a ?? chain is awaited",
-    subject: "services/zz-core/src/tenant-info/record.ts",
-    // A cheap synchronous pre-check in front, the async guard in the middle, and a second
-    // synchronous guard after it that a promise's non-nullishness makes unreachable. The outer
-    // `await` keeps it compiling: everything resolves, everything returns, one guard never runs.
-    find: "  const refusal = await preflightRefusal(io, root, request.manifest, request.blobs, zzDir, blobsDir, commitsDir);",
-    replace: '  const refusal = await ((request.blobs.length > 512 ? refuse("INVALID_INPUT", "more than 512 blobs in one transaction") : null)\n' +
-      "    ?? preflightRefusal(io, root, request.manifest, request.blobs, zzDir, blobsDir, commitsDir)\n" +
-      '    ?? (request.manifest.file_changes.length === 0 ? refuse("INVALID_INPUT", "a commit that changes no file") : null));',
-    planted: "an async guard sits mid-chain in a `??` list, and a promise is never null — so the " +
-      "guard below it is deployed, exercised and absent, and a commit that changes no file is " +
-      "written instead of refused",
-  },
-  {
-    check: "scripts/gate/checks/hygiene.ts",
     target: "the MCP protocol is written once",
     subject: "scripts/deployment.ts",
     find: "                   params: { protocolVersion: mcpProtocol(), capabilities: {},",
@@ -286,34 +271,6 @@ export const COV_BUILD: readonly MutationSpec[] = [
     planted: "a comment line is left duplicated under itself — the debris an edit that rewrites a " +
       "paragraph and keeps the original leaves, which reads as deliberate emphasis until " +
       "somebody compares the two",
-  },
-  {
-    check: "scripts/gate/checks/hygiene.ts",
-    target: "no source file is larger than one subject usually is",
-    subject: "scripts/tenant-info/benchmark-report.ts",
-    // Measured the way the check measures it: the ceiling is `split("\n").length`, not `wc -l`,
-    // and the two differ by one on a file ending in a newline. Comment lines, because code
-    // would risk the build for no extra evidence.
-    find: "/**\n * The benchmark report: how one is assembled from what is actually observable, written into a\n",
-    replace: "/**\n * The benchmark report: how one is assembled from what is actually observable, written into a\n" +
-      " *\n" +
-      " * WHAT A READER HAS TO HOLD IN THEIR HEAD TO CHANGE THIS FILE, written down here rather\n" +
-      " * than reconstructed from the call sites every time somebody comes back to it:\n" +
-      " *   - the workspace a report is written into, and who is responsible for clearing it\n" +
-      " *   - which evidence is raw and which is derived, and why only the raw half is kept\n" +
-      " *   - the structural validation, which runs before anybody evaluates a number in it\n" +
-      " *   - the one caller that reads a report back, and what it does with a missing field\n" +
-      " *   - the thresholds the agreement fixes, and where each one is restated\n" +
-      " *   - the bindings hashed off disk, and which of them a reader re-checks\n" +
-      " *   - the input files an operator drops in, and what each absence becomes\n" +
-      " *   - the two profiles, and what the baseline profile is allowed to leave unsupported\n" +
-      " *   - the per-corpus distribution contract, and why it is never an overall average\n" +
-      " *   - the language slices, and why a zero denominator is refused\n" +
-      " *   - the qrels hashes, and who has to have approved them\n" +
-      " *   - the evaluation block, and why it is re-derived rather than trusted\n" +
-      " *\n",
-    planted: "a source file grows past the 700-line ceiling, which is where a file usually " +
-      "turns out to be holding a second subject",
   },
 
   /* image.ts */

@@ -19,7 +19,6 @@ import type { MutationSpec } from "./plant.ts";
 const SUITES = "scripts/gate/checks/suites.ts";
 const SUITES_DATA = "scripts/gate/checks/suites-data.ts";
 const SUITES_SURFACE = "scripts/gate/checks/suites-surface.ts";
-const SUITES_TENANT = "scripts/gate/checks/suites-tenant.ts";
 const SUITES_TOOLING = "scripts/gate/checks/suites-tooling.ts";
 
 export const COV_SUITES_3: readonly MutationSpec[] = [
@@ -245,113 +244,6 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "frontmatter skill_read resolves by, so the rename is a directory that moved and a name " +
       "that did not — every caller asking for zz-platform gets a skill that says it is " +
       "something else",
-  },
-  {
-    check: SUITES_TENANT,
-    target: "tenant-info's workspace and suite guards refuse what they say they refuse, and " +
-      "its CLI carries no import-time side effects",
-    assertion: "a workspace that reaches the checkout through a symlink is still refused",
-    subject: "scripts/tenant-info/workspace.ts",
-    find: "  if (isInside(real, repoRoot)) {",
-    replace: "  if (isInside(raw, repoRoot)) {",
-    planted: "the workspace guard tests the path as typed instead of the path it resolves to, " +
-      "so a symlink pointing into this checkout walks straight past it — and tenant-info " +
-      "writes its suite output on top of the repository holding 38 initiatives and 527 live " +
-      "documents, which is the one thing the required workspace exists to make impossible",
-  },
-  {
-    check: SUITES_TENANT,
-    target: "the PostgreSQL 17 lock, Dockerfile and config agree on the pinned major/patch, " +
-      "base digest, pg_textsearch release and actual preload membership",
-    assertion: "the lock's pinned patch is the patch the Dockerfile actually builds",
-    subject: "deploy/postgres/versions.lock.json",
-    find: '  "postgres_version": "17.11",',
-    replace: '  "postgres_version": "17.12",',
-    planted: "the lock claims a PostgreSQL patch the Dockerfile does not build, so the file " +
-      "that is supposed to say which bytes run says one thing and the image says another — " +
-      "the drift these two files are cross-checked against each other to make impossible",
-  },
-  {
-    check: SUITES_TENANT,
-    target: "a mutation request hashes canonically regardless of key order, changes with its " +
-      "payload or expected_etag, and a commit outcome classifies to true/false/unknown " +
-      "exactly as the spec's publication/durability table says",
-    assertion: "published-but-not-durable classifies as unknown, never as committed",
-    subject: "services/zz-core/src/tenant-info/mutations.ts",
-    find: '  if (signal.publication === "published" && signal.durable) return true;',
-    replace: '  if (signal.publication === "published") return true;',
-    planted: "a commit that was published but is not yet durable is reported as committed " +
-      "instead of unknown, so a caller stops retrying and the record stops being re-checked " +
-      "for a write that may not have survived — the one cell of the publication/durability " +
-      "table where guessing loses data",
-  },
-  {
-    check: SUITES_TENANT,
-    target: "an OKF round trip through the real YAML parser keeps unknown keys, never turns " +
-      "verified_against into a fabricated verification event, and OKF conformance and " +
-      "native-profile validation report separate verdicts",
-    assertion: "verified_against is never turned into a verification event",
-    subject: "services/zz-core/src/tenant-info/export.ts",
-    find: "  return { ...normalized, zz_profile: profile, body: bodyText };",
-    replace: '  if (typeof normalized.verified_against === "string" && normalized.verified === undefined) {\n' +
-      "    normalized.verified = [{ subject_version: normalized.verified_against }];\n  }\n" +
-      "  return { ...normalized, zz_profile: profile, body: bodyText };",
-    planted: "a version string a foreign tool wrote is read back as a verification this " +
-      "platform performed, so importing somebody else's knowledge manufactures evidence that " +
-      "a claim was checked — nobody checked it, and the record now says otherwise",
-  },
-  {
-    check: SUITES_TENANT,
-    target: "the text analyzer handles empty text, CRLF, a forced long-token split with no " +
-      "whitespace to prefer, a full 1-MiB mixed-language body and a phrase at a passage " +
-      "boundary, and the 8-MiB kernel gate refuses new input while preserving legacy larger " +
-      "content",
-    assertion: "passages overlap, so a phrase at a boundary is still found whole",
-    subject: "packages/indexing/src/tenant-analysis.ts",
-    find: "export const PASSAGE_OVERLAP_SCALARS = 512;",
-    replace: "export const PASSAGE_OVERLAP_SCALARS = 0;",
-    planted: "passages stop overlapping, so any phrase that straddles a passage boundary is " +
-      "split across two and appears whole in neither — it is indexed and unfindable, and " +
-      "which phrases those are depends on nothing but how long the document happens to be",
-  },
-  {
-    check: SUITES_TENANT,
-    target: "lane budgets are fixed functions of the limit that refuse a non-integer or " +
-      "out-of-range value, RRF sums each lane's max-over-corpora contribution in a fixed lane " +
-      "order regardless of input order, and result-key identity is owner-qualified with " +
-      "history alone carrying revision/hash",
-    assertion: "a non-integer or NaN limit is refused rather than budgeted",
-    subject: "services/zz-core/src/tenant-info/retrieval.ts",
-    find: "  if (!Number.isInteger(L) || L < 1 || L > 50) {",
-    replace: "  if (L < 1 || L > 50) {",
-    planted: "a fractional or NaN limit is accepted, so every lane budget is computed from it " +
-      "— a NaN limit passes both bounds and hands each lane a NaN budget, which retrieves " +
-      "nothing and reports no error at all",
-  },
-  {
-    check: SUITES_TENANT,
-    target: "new artifact text over 8 MiB is refused through the real adapter with " +
-      "PAYLOAD_TOO_LARGE, the stored content is untouched, and an under-limit write still commits",
-    assertion: "a new write is measured against the limit, not exempted as legacy",
-    subject: "services/zz-core/src/tenant-info/policies.ts",
-    find: '    assertWithinInputLimit(Buffer.byteLength(canonicalJson(canonical), "utf8"));',
-    replace: '    assertWithinInputLimit(Buffer.byteLength(canonicalJson(canonical), "utf8"), { imported: true });',
-    planted: "every new write claims the migration's legacy exemption, so the 8-MiB kernel " +
-      "gate refuses nothing and PAYLOAD_TOO_LARGE is never emitted — the limit is still " +
-      "written down, still exported and still tested in isolation, and no write passes through it",
-  },
-  {
-    check: SUITES_TENANT,
-    target: "the acceptance decision needs all thirteen criteria, the spec's own method for " +
-      "each, a matching binding, verified evidence and a gate that actually executed — and a " +
-      "wholly failed report is still structurally valid",
-    assertion: "a criterion must be proved by the method the approved spec names for it",
-    subject: "scripts/tenant-info/verify.ts",
-    find: "    if (record.method !== method) {",
-    replace: "    if (record.method !== method && record.method === undefined) {",
-    planted: "a criterion may claim any method it likes as long as it claims one, so a " +
-      "decision the spec says a person has to make is accepted as proved by a command — the " +
-      "acceptance report then reads as ready with a human judgement nobody made",
   },
   {
     /* The one row whose subject is a file under `checks/`, and not an exception to the rule

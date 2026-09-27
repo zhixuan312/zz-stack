@@ -60,7 +60,7 @@ function splitDocumentRef(ref: string): { initiative: string; docPath: string } 
 /** One `subject_ref`, resolved to the text a model-backed measure is actually asked to judge, or
  *  the named refusal `evaluation_assess` returns instead of scoring nothing. `team` is the
  *  caller's own team (`teamFor(principal)`, the same resolution `findings-doc.ts` uses) — a
- *  document ref is read from THAT team's artifact store, never a caller-supplied team, so a
+ *  document ref is read from THAT team's own store, never a caller-supplied team, so a
  *  measure can never be pointed at another team's documents through subject_ref alone. */
 export async function resolveSubjectRef(
   p: pg.Pool, team: string | null, subjectRef: string,
@@ -116,7 +116,7 @@ export async function resolveSubjectRef(
     if (!team) {
       return {
         error: `ERROR: subject_ref "${subjectRef}" names a document and this caller resolves to ` +
-          "no team — a document ref can only be read from the caller's own artifact store",
+          "no team — a document ref can only be read from the caller's own store",
       };
     }
     const body = bodyOf(team, doc.initiative, doc.docPath);

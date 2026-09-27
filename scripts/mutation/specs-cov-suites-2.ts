@@ -26,7 +26,6 @@ import type { MutationSpec } from "./plant.ts";
 // drifts when the module its own check lives in moves.
 const SUITES_DATA = "scripts/gate/checks/suites-data.ts";
 const SUITES_SURFACE = "scripts/gate/checks/suites-surface.ts";
-const SUITES_TENANT = "scripts/gate/checks/suites-tenant.ts";
 const SUITES = "scripts/gate/checks/suites.ts";
 const SUITES_TOOLING = "scripts/gate/checks/suites-tooling.ts";
 
@@ -223,76 +222,6 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
   },
 
   // The tenant-info suites: the heavy end-to-end reads
-  {
-    check: SUITES_TENANT,
-    target: "the judged dataset holds its exact category/language/split counts, no family leaks across dev and held-out, and every qrel resolves to an existing query and an authorized fixture ref",
-    assertion: "a query family never appears in both dev and held-out",
-    subject: "scripts/tenant-info/benchmark.ts",
-    find: "    if (splits.size > 1) {",
-    replace: "    if (splits.size > 2) {",
-    planted: "the judged dataset's validator stops reporting a family that appears in both dev " +
-      "and held-out, so the held-out split can be seeded with near-duplicates of what was " +
-      "tuned on — every retrieval number measured against it is inflated and nothing says so",
-  },
-  {
-    check: SUITES_TENANT,
-    target: "a commit manifest hashes over its own canonical fields, never over bytes containing that hash, and a commit's basename refuses a non-positive sequence",
-    assertion: "the manifest hash excludes the manifest_hash field itself",
-    subject: "services/zz-core/src/tenant-info/record.ts",
-    find: "    if (key !== \"manifest_hash\") rest[key] = manifest[key];",
-    replace: "    rest[key] = manifest[key];",
-    planted: "a commit manifest is now hashed over bytes that include its own manifest_hash, so a " +
-      "commit read back off disk hashes differently from the one that was written — every " +
-      "durability check on a round-tripped commit reports tampering that never happened, and " +
-      "real tampering is indistinguishable from it",
-  },
-  {
-    check: SUITES_TENANT,
-    target: "the adapter fixture's patch/approve enter the one mutation kernel — a missing etag, a stale retry and a stale approval are each refused, an idempotent replay returns the original transaction, and the materialized read reflects exactly the committed edit",
-    assertion: "an edit naming an existing artifact with no expected_etag is refused",
-    subject: "services/zz-core/src/tenant-info/mutations.ts",
-    find: "    if (request.artifact_id !== undefined && request.expected_etag === undefined && !adopting) {",
-    replace: "    if (request.artifact_id !== undefined && request.expected_etag === \"\" && !adopting) {",
-    planted: "a missing etag is now compared against the empty string instead of against absence, " +
-      "so the kernel stops requiring an expected_etag on an edit to an existing artifact — a " +
-      "writer who never read the document overwrites whatever somebody else committed in " +
-      "between. Creates and the legacy adoption path are untouched, so the single-writer " +
-      "guarantee is gone while every other refusal still works",
-  },
-  {
-    check: SUITES_TENANT,
-    target: "bounded overlapping passages cover every UTF-8 byte with no truncation at any size, identifier analysis keeps exact spellings alongside derived lowercase parts, and a derivation fingerprint changes independently on every one of its named fields",
-    assertion: "the derivation fingerprint moves when the analyzer version moves",
-    subject: "packages/indexing/src/tenant-analysis.ts",
-    find: "    analyzer: v.analyzer, passage: v.passage, projection: v.projection,",
-    replace: "    passage: v.passage, projection: v.projection,",
-    planted: "the derivation fingerprint stops taking in the analyzer version, so shipping a new " +
-      "analyzer leaves every fingerprint unchanged — the rebuild decision sees no reason to " +
-      "reindex and the whole corpus keeps serving terms the old analyzer produced",
-  },
-  {
-    check: SUITES_TENANT,
-    target: "corpus resolution defaults to current, admits an explicit scope union, drops shared corpora when sharing is disallowed, and refuses an empty scope, an unknown scope or a caller-supplied owner/index override",
-    assertion: "a published-shared corpus is dropped when the caller is not allowed shared access",
-    subject: "services/zz-core/src/tenant-info/retrieval.ts",
-    find: "    if (entry.audience === \"published\" && context.shared_allowed) { out.push(entry); continue; }",
-    replace: "    if (entry.audience === \"published\") { out.push(entry); continue; }",
-    planted: "shared corpora are admitted to every search whether or not the caller is allowed " +
-      "shared access, so a tenant configured with sharing switched off silently reads the " +
-      "platform's published corpus anyway — the setting still exists and no longer does anything",
-  },
-  {
-    check: SUITES_TENANT,
-    target: "the acceptance profile blocks a suite on a case that never ran and on a receipt it cannot read case by case, leaves the integration profile unchanged, and keeps a block distinct from a failure",
-    assertion: "the acceptance-only block never reaches the integration profile",
-    subject: "scripts/tenant-info/verify.ts",
-    find: "  return profile === \"acceptance\" ? blockedAtAcceptance(result) : result;",
-    replace: "  return profile === \"integration\" ? blockedAtAcceptance(result) : result;",
-    planted: "the two profiles are swapped: ordinary integration runs now block on any case that " +
-      "could not run, so an unreachable live database drags down every offline case a checkout " +
-      "can prove — while acceptance, the profile that exists to refuse unrun evidence, waves " +
-      "it through and a criterion collects a green tick for a case that never executed",
-  },
 
   // The deck, which is two HTML files and a shell check
   {

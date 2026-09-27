@@ -27,8 +27,8 @@ export { decisionRows, indexable, isoDate, type DecisionRow } from "./rules.js";
 // `zz-lexical-v2`, the versioned analyzer. `buildRowVector` is also imported below, not only
 // re-exported, because `indexDoc` calls it directly to build the `body_tsv` vector for both
 // `zz.doc` and `zz.knowledge_node`. `passagesOf`/`identifierTokens` are not called from
-// `indexDoc`/`reindexTeam`: those write their two tables at a fixed 200,000-character cutoff,
-// and passages feed `zz.artifact_passage`/`zz.artifact_identifier`.
+// `indexDoc`/`reindexTeam`: both write at a fixed 200,000-character cutoff, and the two
+// exist for callers that need passages or identifier spellings of their own.
 export {
   ANALYZER_NAME, CURRENT_ANALYZER_VERSION, MAX_INPUT_BYTES, InputTooLargeError,
   assertWithinInputLimit, PASSAGE_MAX_SCALARS, PASSAGE_OVERLAP_SCALARS,
@@ -47,10 +47,9 @@ export {
 } from "./tenant-analysis.js";
 import { bodyTsvParams, bodyTsvSql, buildRowVector } from "./tenant-analysis.js";
 // The generation-aware rederivation pass over existing `zz.doc`/`zz.knowledge_node` rows.
-// `rederivation.js` imports only `tenant-rebuild.js` and `tenant-analysis.js`, never this
-// file, so re-exporting both here creates no import cycle.
-export { planRebuild, queryGeneration, rederiveCorpus, rederiveAll, type RebuildPlan, type GenerationQuery, type GenerationStatusResult, type CorpusRebuildRecord, type RederivationClient } from "./rederivation.js";
-export { rebuildRowVector, type RebuildRowInput } from "./tenant-rebuild.js";
+// `rederivation.js` imports only `tenant-analysis.js`, never this file, so re-exporting it here
+// creates no import cycle — and `rebuildRowVector` lives there, beside this pass's only caller.
+export { planRebuild, queryGeneration, rederiveCorpus, rederiveAll, rebuildRowVector, type RebuildRowInput, type RebuildPlan, type GenerationQuery, type GenerationStatusResult, type CorpusRebuildRecord, type RederivationClient } from "./rederivation.js";
 // The query-grammar lexer: quotes, exclusions and explicit `OR`, read on the raw text before
 // `identifierTokens`/`analyze` above ever see it.
 export {
@@ -60,17 +59,6 @@ export {
 // A citation for a hit: original-byte snippet extraction, widened to a character boundary and
 // never an analyzer term.
 export { snippetFor, type Snippet } from "./snippet.js";
-// Which native lanes (exact, BM25, fuzzy-identifier, typed-provenance) a query actually
-// reaches — pure routing over `parseQuery`/`analyze` above, no database involved. The
-// DB-bound pieces of `tenant-projections.js` (`applyCommit`, `ensureCorpus`,
-// `connectIsolated`) are reached by deep import instead. No `"tag"` lane exists here.
-export {
-  lanesFor,
-  type LaneName, type LaneApplicability, type LaneDescriptor,
-} from "./tenant-projections.js";
-// The scope-restriction plan built on top of `lanesFor` above. Pure and synchronous exactly
-// like `lanesFor`: it plans a native retrieval call rather than running one.
-export { planSearch } from "./search-plan.js";
 
 import { indexable, isoDate } from "./rules.js";
 

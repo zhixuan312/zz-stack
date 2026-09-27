@@ -107,7 +107,7 @@ const EXTERNALLY_DRIVEN: GuardProbe & { readonly driven_by: string } = {
  * nothing carried forward that a later run has since answered.
  *
  * Called by every run, not only a `--guards` one: a top-up rebuilds the report object from
- * scratch, so a block it did not carry forward would vanish from the artifact.
+ * scratch, so a block it did not carry forward would vanish from the report.
  */
 export function guardsBlock(existing: unknown, fresh: readonly GuardProbe[] | null): unknown {
   const prior = existing && typeof existing === "object" ? existing as Record<string, unknown> : {};

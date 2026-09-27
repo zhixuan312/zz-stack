@@ -339,7 +339,7 @@ function main(): void {
   // only its own rows would drop every other check's row.
   let carried: { check: string }[] = [];
   // Carried forward by every run, not only a top-up. A full run rebuilds the report object from
-  // scratch, so guard receipts it did not read would vanish from the artifact without anything
+  // scratch, so guard receipts it did not read would vanish from the report without anything
   // saying they had.
   let priorGuards: unknown = existsSync(out)
     ? (JSON.parse(readFileSync(out, "utf8")) as { guards?: unknown }).guards ?? null

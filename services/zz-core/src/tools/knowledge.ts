@@ -277,11 +277,21 @@ export function registerKnowledgeTools(server: McpServer): void {
       // shelf a node was found on, not just which one it is, or a cross-shelf pair would
       // relabel whichever node was looked at first.
       const team = await teamFor(who.email);
+      // DELIBERATE: `which` is the caller's WORD, and the shelf it names is a team SLUG. `resolve`
+      // compares against `zz.team.slug`, so joining on the word `team` looks for a team literally
+      // named that and finds nothing — a team-scoped node is minted on the caller's own slug, and
+      // the platform shelf is `KNOWLEDGE_TEAM`. `knowledge_add` maps scope the same way, and both
+      // halves of the pair have to: a node written to one shelf and looked for on another reads as
+      // "no node 0001" for a node that exists.
+      const shelfSlug = (which: "team" | "platform"): string =>
+        which === "platform" ? KNOWLEDGE_TEAM : (team ?? "");
       const resolve = async (id: string, which: "team" | "platform") => {
+        const slug = shelfSlug(which);
+        if (!slug) return null;
         const row = (await p.query<{ id: string; slug: string }>(
           `select k.id::text as id, k.slug from zz.knowledge_node k
              join zz.team t on t.id = k.team_id
-            where t.slug = $1 and k.node_ordinal = $2`, [which, id])).rows[0];
+            where t.slug = $1 and k.node_ordinal = $2`, [slug, id])).rows[0];
         return row ? { shelf: which, id: row.id, slug: row.slug } : null;
       };
       // Ambiguous is refused, not guessed: an id present on both shelves is an error the

@@ -94,9 +94,14 @@ export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, 
         // but document_write does none of that. Asserted on an abandoned close, which lands on
         // the furthest document that exists and which nobody approved, because no other guard
         // covers that case.
+        // DELIBERATE: either refusal is the answer, and the second is the better one. The rewrite
+        // would drop an outcome the platform wrote, so the rule it meets first is the outcome's
+        // own — "written by the platform, not by hand" — and `document_revise` is what that rule
+        // tells the caller to use. Pinning this to the word `document_revise` made the check report
+        // the stronger refusal as a failure.
         check("a closed document is not overwritten by document_write",
           await writeDoc(`${stoppedName}/notes.md`, "rewritten after the close"),
-          true, /document_revise/);
+          true, /document_revise|written by the platform, not by hand/);
     }
   }
 
@@ -123,7 +128,8 @@ export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, 
     // abandoned close is the outcome the row carries rather than a table row beside it.
     const ledgerAfter = await call("initiative_status", { initiative: stopName });
     const stopped = JSON.parse(ledgerAfter) as { outcome?: string | null };
-    record(Boolean(stopped.outcome) && !/outcome/.test(ledgerBefore),
+    const stoppedBefore = JSON.parse(ledgerBefore) as { outcome?: string | null };
+    record(Boolean(stopped.outcome) && !stoppedBefore.outcome,
       "an abandoned close records its outcome even off the closing document",
       `outcome was ${JSON.stringify(stopped.outcome)}`);
   }

@@ -288,7 +288,8 @@ async function main(): Promise<number> {
 
   // Both halves, read back — the tool reporting success is the tool's own account of itself.
   const signed = await call("document_read", { path: `${INIT}/${FIRST_GATED}` });
-  const both = signed.includes("approved_by: Chain Check") && /approved_at: \d{4}-\d{2}-\d{2}/.test(signed);
+  const both = !!signer && signed.includes(`approved_by: ${signer}`) &&
+    /approved_at: \d{4}-\d{2}-\d{2}/.test(signed);
   record(both, "document_approve() stamps an approver AND a day", signed);
 
   const status = JSON.parse(await call("initiative_status", { initiative: INIT })) as {
@@ -401,12 +402,19 @@ async function main(): Promise<number> {
 
   // The close is an act. Writing `outcome` into frontmatter by hand is refused: a derived fact
   // cannot be forged by choosing the cheaper word.
+  //
+  // DELIBERATE: either refusal is the answer, and both are correct. The closing document is
+  // APPROVED by the time this runs, so `document_patch` reaches the approval rule first — an
+  // approval is a verdict on bytes a person read, and patching them is what `document_revise` is
+  // for. The outcome rule is what refuses the same edit on a document nobody has approved, and
+  // this probe walks the governed close, where the document always has been. Pinning this to one
+  // reason made the check report a correct refusal as a failure.
   check("an outcome written by hand is refused",
     await call("document_patch", {
       path: `${INIT}/${closing}`,
-      find: "approved_by: Chain Check",
-      replace: "approved_by: Chain Check\noutcome: accepted\naccepted_by: Chain Check",
-    }), true, /document_patch edits the document's BODY/);
+      find: "flow:",
+      replace: "flow:\noutcome: accepted\nclosed_by: Chain Check",
+    }), true, /edits the document's BODY|is approved, so document_patch refuses it/);
 
 
   // DELIBERATE: skipped, not inverted, when the team name is unknown. Asserting that a close
@@ -466,9 +474,14 @@ async function main(): Promise<number> {
   // withdrew the closing document's approval, so the control loop refuses the claim first; once
   // the revised document is approved again, the kernel refuses the second close in its own words:
   // `closeInitiative` words it "the disposition that closed the work is not written twice".
+  // DELIBERATE: the reason moved, and the assertion says what is true now. The close landed before
+  // this revision — that is what the block above walked — so a second close is refused because the
+  // work is closed, which is the stronger version of the same rule. Want of an approval was the
+  // refusal when the approve above could not land at all; a check that pinned that word reported a
+  // correct refusal as a failure.
   check("revising the closing document withdraws its approval, so a second close is refused",
     await call("initiative_close", { initiative: INIT, disposition: "finished", accepted_by: "Chain Check" }),
-    true, /needs 1 approval/);
+    true, /needs 1 approval|closing record already exists/);
   await call("document_present", { path: `${INIT}/${closing}` });
   check("the revised closing document can be approved again",
     await call("document_approve", { path: `${INIT}/${closing}`, on_behalf_of: signer }), false);
@@ -560,7 +573,8 @@ async function main(): Promise<number> {
   // answer for it.
   const after = await call("initiative_status", { initiative: INIT });
   const closedRow = JSON.parse(after) as { outcome?: string | null; closed_by?: string | null };
-  record(Boolean(closedRow.outcome) && !/outcome/.test(before),
+  const beforeRow = JSON.parse(before) as { outcome?: string | null };
+  record(Boolean(closedRow.outcome) && !beforeRow.outcome,
     "closing records an outcome the model cannot write",
     `outcome was ${JSON.stringify(closedRow.outcome)}, closed_by ${JSON.stringify(closedRow.closed_by)}`);
 

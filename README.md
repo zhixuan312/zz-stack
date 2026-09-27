@@ -237,6 +237,15 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             `fields` is null; it reads each revision's bytes the way the carry does, verifies them
             against the row's `content_hash`, reports by name any revision it cannot read, and
             exits non-zero if a payload it wrote disagrees with the envelope it came from) and
+            retire-file-store.ts (the one irreversible act: archives a team's file store whole —
+            every document, the frozen copy filed beside each approval, the journal shelf, the
+            ledger, the activity log and the `.git` history — into
+            `zz-store-archive-<stamp>.tar.gz` under a destination the operator names, reads the
+            archive back and re-hashes every file in it against the manifest it carries BEFORE
+            removing anything, refuses a destination name `deploy/backup.sh`'s nightly prune would
+            delete and a second archive of the same store, and reports what is left rather than
+            reporting success when a removal only half happened —
+            `node scripts/retire-file-store.ts --store <dir> --dest <dir>`) and
             build-image.sh (the runtime image, from the lockfile).
             The
             day-2 ops tools are npm scripts over packages/tools/src/ops/:

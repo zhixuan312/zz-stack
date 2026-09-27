@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 # ZZ Stack backup — everything no restart brings back:
 #
-#   the `zz` schema   identity truth — principals, teams, PATs, events
-#   <p>_zz-artifacts  every team's documents and knowledge
+#   the `zz` schema   identity truth — principals, teams, PATs, events, and every team's
+#                     documents, revisions, citations and knowledge
 #   <p>_cred-data     the gateway's own data: events it could not write to the database
 #   deploy/.env       this deployment's configuration and the database password
+#
+# The team file store is NOT backed up here any more. It was the `<p>_zz-artifacts` volume, and
+# its every fact is inside the `pg_dump` now (Task I-41): backing the volume up as well would back
+# up a second copy of what the dump already carries, and that copy is the one that goes stale the
+# moment a tool writes a document. The store itself is retired once, by
+# `scripts/retire-file-store.ts`, into an archive named `zz-store-archive-<stamp>.tar.gz` — see the
+# prune's exemption at the end of this script, which is what keeps that archive alive.
 #
 #   ./deploy/backup.sh            # write one dated set into $BACKUP_DIR
 #   ./deploy/backup.sh --verify   # also prove the dump restores into a
@@ -31,9 +38,15 @@ PROJECT="${COMPOSE_PROJECT_NAME:-$(env_get COMPOSE_PROJECT_NAME)}"
 PROJECT="${PROJECT:-$(basename "$HERE")}"
 PG_USER="${PG_USER:-$(env_get POSTGRES_USER)}"; PG_USER="${PG_USER:-zz}"
 PG_DB="${PG_DB:-$(env_get POSTGRES_DB)}"; PG_DB="${PG_DB:-zz}"
-ARTIFACT_VOLUME="${ARTIFACT_VOLUME:-${PROJECT}_zz-artifacts}"
 CRED_VOLUME="${CRED_VOLUME:-${PROJECT}_cred-data}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+
+# The one name in $BACKUP_DIR the prune below must never take. `scripts/retire-file-store.ts` writes
+# the store's retirement archive under this prefix, and that archive is the only remaining copy of
+# the store's text: it is not in FILES, so the prune — which walks FILES — leaves it alone, and the
+# exemption is stated here as well as being true by construction, because an exemption nothing
+# declares is an archive nobody is watching.
+STORE_ARCHIVE_GLOB="zz-store-archive-*.tar.gz"
 
 # Every container is addressed as a SERVICE from here, so compose resolves the project.
 cd "$HERE"
@@ -42,13 +55,13 @@ mkdir -p "$BACKUP_DIR"
 umask 077
 
 db_file="$BACKUP_DIR/zz-db-$STAMP.sql.gz"
-art_file="$BACKUP_DIR/zz-artifacts-$STAMP.tar.gz"
 cred_file="$BACKUP_DIR/zz-credentials-$STAMP.tar.gz"
 conf_file="$BACKUP_DIR/zz-config-$STAMP.tar.gz"
 
 # Every file this run writes, named once: the cleanup and the prune both walk this list, so a
-# backup added above is covered by both by having been added.
-FILES=("$db_file" "$art_file" "$cred_file" "$conf_file")
+# backup added above is covered by both by having been added. The store's retirement archive is
+# deliberately NOT here — being absent is what spares it — and the prune's own check below says so.
+FILES=("$db_file" "$cred_file" "$conf_file")
 
 # A failed run must not leave a file that reads as a backup. `cmd > "$db_file"` creates the
 # file before cmd runs, so a failure leaves today's date sorting newest in $BACKUP_DIR — the
@@ -112,18 +125,10 @@ require_volume() {
   docker volume ls --format '    {{.Name}}' || true
   echo "  The compose project resolved to '$PROJECT'. It is read from COMPOSE_PROJECT_NAME"
   echo "  in this shell, then from $HERE/.env — the file COMPOSE reads and a cron shell does"
-  echo "  not — and finally from this directory's name. Set it there, or set ARTIFACT_VOLUME"
-  echo "  and CRED_VOLUME by hand."
+  echo "  not — and finally from this directory's name. Set it there, or set CRED_VOLUME by hand."
   exit 1
 }
-require_volume "$ARTIFACT_VOLUME"
 require_volume "$CRED_VOLUME"
-
-art_before=$(count_volume "$ARTIFACT_VOLUME")
-
-echo "[$(date -u +%FT%TZ)] backing up artifacts volume -> $art_file"
-docker run --rm -v "$ARTIFACT_VOLUME":/data:ro -v "$BACKUP_DIR":/backup alpine \
-  tar czf "/backup/$(basename "$art_file")" -C /data .
 
 cred_before=$(count_volume "$CRED_VOLUME")
 
@@ -131,13 +136,12 @@ echo "[$(date -u +%FT%TZ)] backing up credential volume -> $cred_file"
 docker run --rm -v "$CRED_VOLUME":/data:ro -v "$BACKUP_DIR":/backup alpine \
   tar czf "/backup/$(basename "$cred_file")" -C /data .
 
-# The umask above governs this shell only. Both archives are created inside a container with
-# a umask of its own, so their mode is set explicitly.
-chmod 600 "$art_file" "$cred_file"
+# The umask above governs this shell only. The archive is created inside a container with a umask
+# of its own, so its mode is set explicitly.
+chmod 600 "$cred_file"
 
 # A backup that was never read is a guess.
 db_size=$(stat -c %s "$db_file")
-art_size=$(stat -c %s "$art_file")
 cred_size=$(stat -c %s "$cred_file")
 [ "$db_size" -gt 10000 ] || { echo "FAIL: database dump is only ${db_size}B"; exit 1; }
 
@@ -167,8 +171,14 @@ check_archive() {  # volume, file, count-before-the-tar — the order both calle
     echo "  $(basename "$2"): $entries entries read back, and the volume went $3 -> $after while it was archived"
   fi
 }
-check_archive "$ARTIFACT_VOLUME" "$art_file" "$art_before"
 check_archive "$CRED_VOLUME" "$cred_file" "$cred_before"
+
+# The store's retirement archive, spared and said so. This reports each one rather than pruning it:
+# the archive predates the store's removal, it is never rewritten, and KEEP_DAYS=14 is a retention
+# for a nightly set rather than for the last copy of the store's text.
+for kept in $(find "$BACKUP_DIR" -maxdepth 1 -name "$STORE_ARCHIVE_GLOB" 2>/dev/null); do
+  echo "  spared $(basename "$kept") — the store's retirement archive outlives KEEP_DAYS=${KEEP_DAYS}d"
+done
 
 # One decompression, one pass, no early exit. `zcat | grep -q` per table exits at the first
 # match, zcat takes SIGPIPE, and `set -o pipefail` reports a table that is present as missing.
@@ -200,7 +210,9 @@ for kept in "${FILES[@]}"; do
   find "$BACKUP_DIR" -name "$(basename "${kept/$STAMP/*}")" -mtime "+$KEEP_DAYS" -delete
 done
 conf_size=$(stat -c %s "$conf_file")
-echo "[$(date -u +%FT%TZ)] done. db=$((db_size/1024))KB artifacts=$((art_size/1024))KB credentials=$((cred_size/1024))KB config=$((conf_size/1024))KB, keeping ${KEEP_DAYS}d"
+echo "[$(date -u +%FT%TZ)] done. db=$((db_size/1024))KB credentials=$((cred_size/1024))KB config=$((conf_size/1024))KB, keeping ${KEEP_DAYS}d"
 echo "NOTE: $BACKUP_DIR is on the same host as the data it protects — copy it off-host to survive disk loss."
+echo "NOTE: a $STORE_ARCHIVE_GLOB in $BACKUP_DIR is the store's retirement archive: unlike the"
+echo "  nightly set it is not pruned, so it is the copy most worth carrying off this host."
 echo "NOTE: zz-config-*.tar.gz holds deploy/.env, which carries the database password. Same treatment."
 echo "NOTE: ./deploy/backup-manifest.sh turns one dated set into the manifest a restore rehearsal validates before it touches a byte."

@@ -33,6 +33,50 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.85.0] — 2026-09-27
+
+Phase 4 of the schema first-principles review (initiative
+`2026-09-21-schema-first-principles-review`): the improve, promote and control loop is folded onto
+the relations the spec fixed — an improvement run's targets and a release's owners are relations
+rather than JSON arrays, `eval_finding` holds one lifecycle, and a governed run is keyed by the
+initiative it governs. It also carries a correctness fix that was found and proved before any of it
+was written.
+
+### Added
+
+- **A release that lands closes the findings its candidate was built to fix.** `release_record`
+  decides every finding its improvement run targeted, as `applied`, with a note naming the version
+  that shipped — the record the finding-to-release provenance never had. A failed record and a
+  rollback close nothing, and a finding another release already closed is left alone.
+
+### Changed
+
+- **A governed run's facts are identified inside their run.** `control_evidence` previously keyed a
+  document's write and its approval by the same repeating id, and because the kernel's set of
+  withdrawn facts is order-independent, one revision withdrew every approval of that document — past
+  and future. Twelve real re-approvals never counted, and a replay refused to close an initiative
+  that had closed. Ids now name the version they are about.
+- **A run is keyed by the initiative it governs**, not by a team slug and an initiative slug, so a
+  deleted initiative takes its run with it instead of leaving a row nothing can resolve.
+- **The improve and promote ledgers' relations are tables.** An improvement run's targeted findings
+  and a release attempt's required owners were JSON arrays with no foreign key behind them; they are
+  now rows, which is what lets the owner check gate an approval.
+- **`eval_finding` holds one lifecycle.** The legacy ruler lifecycle's columns are gone, leaving the
+  lifecycle a run's findings actually have. A strength is terminal when it is recorded and carries no
+  decision.
+- **A release's verdict is a column**, not a field inside a JSON document, so the retry gate is
+  `verdict is null` rather than a probe into jsonb.
+
+### Upgrade notes
+
+- **A migration applies on the gateway's next start**: `002_improve_control.sql`. It is destructive
+  in one place and it is the disposition the specification names: **control runs whose initiative
+  does not exist, and their evidence rows, are deleted** — chain-check probe litter that no
+  initiative ever owned. The migration reports both counts in the gateway's log before it proceeds.
+  Nothing else is deleted, and every other table is carried unchanged.
+- The tool surface only grows: `release_record` and `release_verify` answer with the fields they
+  always did plus what a release decided. Nothing a client sends or reads today has to change.
+
 ## [0.84.0] — 2026-09-27
 
 Phase 3 of the schema first-principles review (initiative

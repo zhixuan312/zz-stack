@@ -9,8 +9,13 @@
 # The gate needs Docker: `checks/schema-inventory.ts` starts a throwaway PostgreSQL from the image
 # `deploy/docker-compose.yml` names and migrates it with the real runner, because a static reading
 # of the SQL cannot see nullability, foreign-key actions or defaults as PostgreSQL resolves them.
-# That image is `ghcr.io/zhixuan312/zz-postgres`, built in this repository's namespace with the
-# `pg_textsearch` extension, so the login below is what lets the runner pull it.
+#
+# That image is BUILT here from `deploy/postgres/Dockerfile` rather than pulled from ghcr, and the
+# tag is written to match what the compose file names so `docker run` finds it locally. Pulling it
+# needs a package this repository's GITHUB_TOKEN has no access to — the first run of this workflow
+# died on `docker pull` with "Error response from daemon: denied" — and the image is pinned by
+# digest and by the extension commit in `deploy/postgres/versions.lock.json`, so building it needs
+# no secret at all and proves the Dockerfile still builds.
 name: gate
 
 on:
@@ -37,14 +42,8 @@ jobs:
         with:
           node-version: 24
 
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull the pinned PostgreSQL the inventory check migrates
-        run: docker pull ghcr.io/zhixuan312/zz-postgres:17.11-pgts1.4.0
+      - name: Build the pinned PostgreSQL the inventory check migrates
+        run: docker build -t ghcr.io/zhixuan312/zz-postgres:17.11-pgts1.4.0 deploy/postgres
 
       - run: npm ci
 

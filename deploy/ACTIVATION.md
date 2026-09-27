@@ -146,6 +146,14 @@ is simply older.
 `zz.artifact` holding 0 rows is consistent with the `store_version` row above: a deployment
 whose stores have never been adopted.
 
+> **Read as of 2026-09-21, and the layer it names is gone.** `zz.artifact` and the other twelve
+> tables of the artifact/search layer were removed in 0.86.0, so that line records a table that
+> no longer exists and can no longer be queried. The measurement was correct when it was taken,
+> and the precondition it supports is now superseded rather than blocked: the store moves into
+> `doc` and `doc_revision` (phase 6 of the schema first-principles review) instead of being
+> adopted into artifact projections, which is why `deploy/activation-runbook.json` records its
+> `store_version` precondition as no longer applicable.
+
 ---
 
 ## 4. The steps

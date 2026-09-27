@@ -222,11 +222,7 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             TEAM_DB_URL/PLATFORM_DB_URL is already set — rehearse/ holds the expectations,
             the restore, the snapshot and join checks, and the artifacts unpack) and
             build-image.sh (the runtime image, from the lockfile).
-            tenant-info/ is `npm run tenant-info` — cli.ts's six verbs (baseline,
-            fixtures, verify, benchmark, migrate, export), each requiring a workspace
-            outside this checkout and none of them running anything at import time,
-            with verify.ts resolving the ten named suites a `verify --suite` or
-            `--finalize` run dispatches. The
+            The
             day-2 ops tools are npm scripts over packages/tools/src/ops/:
             register-skills (what we offer, from
             the catalog into zz.skill — a file cannot be joined against five

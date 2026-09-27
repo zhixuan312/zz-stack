@@ -167,6 +167,15 @@ if (!APPLY) {
 // measurements this purge exists to clean, while pointing at nothing a reader could open.
 await db.query("begin");
 try {
+  // The documents' children go first, explicitly, because `zz.doc_link`'s key to `zz.doc` does not
+  // cascade while `zz.doc_revision`'s does — so a plain delete of the document dies on
+  // `doc_link_to_doc_id_fkey` with the probe rows half-removed. That asymmetry is a defect in the
+  // schema rather than a rule (`doc_link` is a child of `doc` exactly as `doc_revision` is), and it
+  // is recorded as one; this sweep deletes what it deletes regardless of which way the next
+  // migration settles it.
+  const l = await db.query(
+    `delete from zz.doc_link k using zz.doc d, zz.initiative i
+      where k.to_doc_id = d.id and i.id = d.initiative_id and i.slug like '${LIKE}'`);
   const d = await db.query(
     `delete from zz.doc d using zz.initiative i
       where i.id = d.initiative_id and i.slug like '${LIKE}'`);
@@ -177,6 +186,7 @@ try {
   const i = await db.query(`delete from zz.initiative where slug like '${LIKE}'`);
   console.log(`  knowledge nodes: ${k.rowCount}`);
   console.log(`  assessments: ${a.rowCount}`);
+  console.log(`  doc links: ${l.rowCount}`);
   await db.query("commit");
   console.log(`deleted: ${d.rowCount} doc, ${e.rowCount} event, ${i.rowCount} initiative (+ runs, by cascade)`);
 } catch (err) {

@@ -96,12 +96,12 @@ export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, 
     }
   }
 
-  // An initiative abandoned part-way reaches the ledger, on a governed flow.
+  // An initiative abandoned part-way records its outcome, on a governed flow.
   //
   // Abandoning is the close that does not land on the closing document, so `initiative_close`
-  // records it on the furthest document that exists. `ledgerOnClose` must still append: the
-  // ledger is what the team's counts are totalled from, and the abandoned close is the outcome
-  // those counts most need.
+  // records it on the furthest document that exists. The initiative's own row must still carry
+  // it: the row is what the team's counts are totalled from, and the abandoned close is the
+  // outcome those counts most need.
   //
   // It cannot be asserted from the freeform walk beside it: a freeform chain has no closing
   // document, so only a flow that names one reaches this branch.
@@ -110,16 +110,18 @@ export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, 
   check("a governed initiative opens for the abandon walk", stopOpen, false);
   const stopName = (JSON.parse(stopOpen) as { initiative?: string }).initiative;
   if (stopName) {
-    const ledgerBefore = await call("document_read", { path: "_ledger.md" });
+    const ledgerBefore = await call("initiative_status", { initiative: stopName });
     check("a governed initiative that stopped short takes its first document",
       await writeDoc(`${stopName}/${OPENS_ON}`, OPENS_ON), false);
     check("a governed initiative closes as abandoned before its closing document exists",
       await call("initiative_close", { initiative: stopName, disposition: "abandoned" }), false);
-    const ledgerAfter = await call("document_read", { path: "_ledger.md" });
-    const stopRow = `| ${stopName} |`;
-    record(ledgerAfter.includes(stopRow) && !ledgerBefore.includes(stopRow),
-      "an abandoned close appends a ledger row even off the closing document",
-      ledgerAfter.slice(-200));
+    // Read off the initiative's own row: `<team>/_ledger.md` went with the store, and the
+    // abandoned close is the outcome the row carries rather than a table row beside it.
+    const ledgerAfter = await call("initiative_status", { initiative: stopName });
+    const stopped = JSON.parse(ledgerAfter) as { outcome?: string | null };
+    record(Boolean(stopped.outcome) && !/outcome/.test(ledgerBefore),
+      "an abandoned close records its outcome even off the closing document",
+      `outcome was ${JSON.stringify(stopped.outcome)}`);
   }
 
 }

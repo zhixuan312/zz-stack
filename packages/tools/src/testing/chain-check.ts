@@ -383,7 +383,12 @@ async function main(): Promise<number> {
   const closing = nxtAfter.next_move?.action === "close" ? nxtAfter.next_move.document! : docs[docs.length - 1];
   console.log(`  (the flow closes on ${closing})`);
 
-  const before = await call("document_read", { path: "_ledger.md" });
+  // DELIBERATE: the ledger is read as a ROW, not as a file. `<team>/_ledger.md` went with the
+  // store — `initiative_close` records the outcome on the initiative's own anchor row and
+  // `initiative_status` reads it off there (`own?.outcome`). Reading the markdown file was this
+  // probe's last tie to the store, and on the image that retired it the read refused, so every
+  // check after this one reported the same missing document.
+  const before = await call("initiative_status", { initiative: INIT });
 
   // The close is an act. Writing `outcome` into frontmatter by hand is refused: a derived fact
   // cannot be forged by choosing the cheaper word.
@@ -540,12 +545,15 @@ async function main(): Promise<number> {
   // The plugin-eval surface, in chain-eval.ts.
   await walkEvalDoor({ callEval, eitherOr, PLUGIN });
 
-  // Matched as a cell, not as a substring: this probe also opens `<INIT>-freeform`, whose name
-  // contains INIT. The ledger is a markdown table, and a row names its initiative between pipes.
-  const after = await call("document_read", { path: "_ledger.md" });
-  const row = `| ${INIT} |`;
-  record(after.includes(row) && !before.includes(row),
-    "closing appends a ledger row the model cannot write", after.slice(-160));
+  // The claim is the same one the ledger row carried — a close records an outcome no writer can
+  // reach from outside — and it is now read off the initiative's own row. The status call is
+  // scoped to INIT rather than to a prefix, so the `<INIT>-freeform` probe beside this one cannot
+  // answer for it.
+  const after = await call("initiative_status", { initiative: INIT });
+  const closedRow = JSON.parse(after) as { outcome?: string | null; closed_by?: string | null };
+  record(Boolean(closedRow.outcome) && !/outcome/.test(before),
+    "closing records an outcome the model cannot write",
+    `outcome was ${JSON.stringify(closedRow.outcome)}, closed_by ${JSON.stringify(closedRow.closed_by)}`);
 
   const bad = RESULTS.filter((r) => !r.ok);
   console.log(`\n${RESULTS.length - bad.length}/${RESULTS.length} platform checks passed`);

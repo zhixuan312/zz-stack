@@ -33,7 +33,7 @@ import { improvementApprovalRefusal } from "../release-owners.js";
 import { acceptanceApprovalRefusal } from "../review-acceptance.js";
 import { specApprovalRefusal } from "../spec-gate.js";
 import { citationsOf, dayOf, documentAt, documentPaths, loadDocument, recordAct,
-         revisionsOf, saveDocument } from "../versions.js";
+         principalId, revisionsOf, saveDocument } from "../versions.js";
 import { isoToday, normalizeSections } from "../write-guards.js";
 
 import { registerInitiativeCloseTool } from "./initiative-close.js";
@@ -138,6 +138,20 @@ export function registerInitiativeActTools(server: McpServer): void {
           "their review, not the present — the present is what the record keeps.");
       }
       const signer = (on_behalf_of ?? "").trim() || who.email;
+      // DELIBERATE: the signer is resolved HERE rather than at the row. `zz.doc_revision.approved_by`
+      // is a principal id and `doc_revision_approval_paired` holds it null exactly when
+      // `approved_at` is, so a signer no principal carries would write an approval with no
+      // attribution — and the row is where the envelope's own `approved_by` is rendered back from,
+      // so the document would read as approved with nobody's name on it, and the next gate would
+      // refuse it with a message about the document rather than about the name. Refusing here names
+      // the thing to fix: add them as a person, or approve on behalf of someone the platform knows.
+      if (!(await principalId(p, signer))) {
+        return text(
+          `ERROR: \`${signer}\` is not a person this platform knows, so the approval would carry no ` +
+          `attribution — and a gated document approved with nobody's name on it is refused by the ` +
+          `next gate it meets. Pass \`on_behalf_of\` an address or a name a principal carries, or ` +
+          `add them first (\`person_add\`).\n`);
+      }
       let doc = loaded.text;
       // COUPLED: release_apply (eval/release-apply.ts) counts this approval only for owner teams the
       // signer is a member of. Checked here too, so a name nobody can vouch for is never stamped

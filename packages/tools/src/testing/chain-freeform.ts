@@ -28,9 +28,13 @@ interface FreeformDeps {
    *  read from that flow's own manifest by chain-check, never named here. */
   FLOW: string;
   OPENS_ON: string;
+  /** The address this run authenticates as. A seal names a principal id, not a name in words, so
+   *  an approval has to be somebody the platform knows — handed in rather than spelled here,
+   *  because chain-check reads it from `session_whoami` once for the whole walk. */
+  signer: string;
 }
 
-export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, OPENS_ON }: FreeformDeps): Promise<void> {
+export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, OPENS_ON, signer }: FreeformDeps): Promise<void> {
     // Freeform is accepted: a missing flow is a choice the platform supports, and a door that
     // refused it would make every freeform initiative unreachable.
     const freeSlug = `${SLUG}-freeform`;
@@ -47,7 +51,7 @@ export async function walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, 
         await writeDoc(`${freeName}/notes.md`, "hand-assembled"), false);
       await call("document_present", { path: `${freeName}/notes.md` });
       check("a freeform initiative still records a gate",
-        await call("document_approve", { path: `${freeName}/notes.md`, on_behalf_of: "Chain Check" }),
+        await call("document_approve", { path: `${freeName}/notes.md`, on_behalf_of: signer }),
         false);
       // And an approved freeform document is not patched afterwards. `document_approve` accepts
       // any document in a freeform folder — a gate is a person saying yes, not a manifest — so

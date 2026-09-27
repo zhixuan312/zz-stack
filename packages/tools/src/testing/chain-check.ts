@@ -142,6 +142,20 @@ const writeDoc = (path: string, body: string): Promise<string> =>
   call("document_write", { path, content: doc(body, path.split("/").pop() ?? "") });
 
 async function main(): Promise<number> {
+  // Identity first, before anything is written or approved: the team is read from the platform
+  // rather than an environment variable, and the address is what a seal names. A seal is a
+  // PRINCIPAL id, not a name in words — approving on behalf of somebody the platform does not
+  // know writes an approval with no attribution, and the next gate refuses the document. Read
+  // here because the approvals begin before the documents do.
+  let team = "";
+  let signer = "";
+  try {
+    const me = JSON.parse(await call("session_whoami", {})) as { team?: string; email?: string };
+    team = (me.team ?? "").trim();
+    signer = (me.email ?? "").trim();
+  } catch {
+    // No identity to read: the team-name check below asserts nothing about a team.
+  }
   // Opening is its own act, and every write below depends on it: `document_write` and
   // `source_add` both refuse a path whose initiative was never opened. The name comes back from
   // the platform, which prepends today's date to the slug.
@@ -178,7 +192,7 @@ async function main(): Promise<number> {
     record(govNext.next_move?.action === "write_document",
       "a flow-driven initiative is told its first document",
       `governed next_move was ${JSON.stringify(govNext.next_move)}, expected write_document`);
-    await walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, OPENS_ON });
+    await walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, OPENS_ON, signer });
 
   }
   console.log(`walking ${INIT}/ through ${GW}`);
@@ -257,17 +271,17 @@ async function main(): Promise<number> {
   // to record.
   if (FIRST_GATED !== OPENS_ON) {
     check("document_approve() refuses a document its flow does not gate",
-      await call("document_approve", { path: `${INIT}/${OPENS_ON}`, on_behalf_of: "Chain Check" }),
+      await call("document_approve", { path: `${INIT}/${OPENS_ON}`, on_behalf_of: signer }),
       true, /carries no gate/);
   }
 
   // An approval signs bytes somebody was shown: refused until the current content was presented.
   check("document_approve() refuses a document not presented since its last change",
-    await call("document_approve", { path: `${INIT}/${FIRST_GATED}`, on_behalf_of: "Chain Check" }),
+    await call("document_approve", { path: `${INIT}/${FIRST_GATED}`, on_behalf_of: signer }),
     true, /present it first/);
   await call("document_present", { path: `${INIT}/${FIRST_GATED}` });
   check("document_approve() records a verdict on a document that exists",
-    await call("document_approve", { path: `${INIT}/${FIRST_GATED}`, on_behalf_of: "Chain Check" }), false);
+    await call("document_approve", { path: `${INIT}/${FIRST_GATED}`, on_behalf_of: signer }), false);
   check("document_approve() refuses a document that does not",
     await call("document_approve", { path: `${INIT}/nothing-here.md` }), true,
     /does not exist|not a document this flow declares/);
@@ -293,12 +307,7 @@ async function main(): Promise<number> {
     .filter((d) => d.status === "approved").map((d) => d.name));
   // The team, from the platform rather than an environment variable — the team-rejection check
   // below is only meaningful if it passes the real team name.
-  let team = "";
-  try {
-    team = ((JSON.parse(await call("session_whoami", {})) as { team?: string }).team ?? "").trim();
-  } catch {
-    // No identity to read: the team-name check below asserts nothing about a team.
-  }
+  // `team` and `signer` were read from `session_whoami` at the top of this walk.
 
   // Order is enforced: a document cannot be written before what it requires.
   if (docs.length > 2) {
@@ -326,7 +335,7 @@ async function main(): Promise<number> {
         }), false);
       }
       await call("document_present", { path: `${INIT}/${name}` });
-      check(`approve ${name}`, await call("document_approve", { path: `${INIT}/${name}`, on_behalf_of: "Chain Check" }), false);
+      check(`approve ${name}`, await call("document_approve", { path: `${INIT}/${name}`, on_behalf_of: signer }), false);
     }
   }
 
@@ -462,7 +471,7 @@ async function main(): Promise<number> {
     true, /needs 1 approval/);
   await call("document_present", { path: `${INIT}/${closing}` });
   check("the revised closing document can be approved again",
-    await call("document_approve", { path: `${INIT}/${closing}`, on_behalf_of: "Chain Check" }), false);
+    await call("document_approve", { path: `${INIT}/${closing}`, on_behalf_of: signer }), false);
   check("re-approving the closing document does not let the initiative close twice",
     await call("initiative_close", { initiative: INIT, disposition: "finished", accepted_by: "Chain Check" }),
     true, /not written twice/);

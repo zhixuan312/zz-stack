@@ -359,7 +359,7 @@ async function initiativeIdIn(
  *  person whose decision this is, when that is not the caller" — and an approver who writes a
  *  colleague's name rather than their address would otherwise seal nothing. Email first, because it
  *  is the identifier the platform stores; the display name is the fallback for exactly that case. */
-async function principalId(
+export async function principalId(
   p: Pick<pg.Pool, "query">, email: string,
 ): Promise<string | null> {
   const { rows } = await p.query<{ id: string }>(

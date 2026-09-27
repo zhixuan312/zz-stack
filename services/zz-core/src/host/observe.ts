@@ -18,11 +18,9 @@
  * recorded, and the loop says the step's requirement is unmet — a missing fact reads as missing
  * rather than as satisfied.
  */
-import { existsSync, readFileSync } from "node:fs";
-
 import { parseEnvelope } from "@zz/contracts";
 
-import { safePath } from "../paths.js";
+import { loadDocument } from "../versions.js";
 import type { Chain } from "../write-guards.js";
 
 import { stepForDocument, stepForSource, type DeclaredStage } from "./enrolment.js";
@@ -81,11 +79,17 @@ export function evidenceEntryId(fact: EvidenceFact): string {
  * run's entries, say — would disagree with that writer the first time a document was written
  * twice without a revision between the two. One means the first version, which is what a document
  * nobody has revised carries: the field is written on revision and not before.
+ *
+ * It is read from the document's ROW, which is where a document lives now (`versions.ts`) — the
+ * store this used to be a file in is retired. A `readFileSync` of the old path answered 1 for
+ * every document that existed, so an approval of a revised document was recorded against its
+ * first version and a re-approval after a revision was a fact the run already held and never
+ * recorded at all.
  */
-async function documentVersion(relPath: string): Promise<number> {
-  const target = await safePath(relPath);
-  if (!existsSync(target)) return 1;
-  const declared = parseInt(parseEnvelope(readFileSync(target, "utf8")).version ?? "", 10);
+async function documentVersion(team: string, relPath: string): Promise<number> {
+  const loaded = await loadDocument(team, relPath);
+  if (!loaded.ok) return 1;
+  const declared = parseInt(parseEnvelope(loaded.text).version ?? "", 10);
   return Number.isFinite(declared) && declared > 0 ? declared : 1;
 }
 
@@ -199,7 +203,7 @@ async function note(
   const supported = aboutDocument
     ? (aboutDocument.includes("/") ? aboutDocument : `${initiative}/${aboutDocument}`)
     : relPath;
-  const version = revision ? revision.version : await documentVersion(supported);
+  const version = revision ? revision.version : await documentVersion(team, supported);
   const documentEntry = evidenceEntryId({ kind: "document", path: supported, version });
   const id = revision ? documentEntry
     : fact === "document" ? evidenceEntryId({ kind: "document", path: relPath, version })

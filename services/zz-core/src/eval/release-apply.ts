@@ -29,8 +29,9 @@
  * owners' approval. Only when the document cites no attempt yet does the newest prepared one
  * stand in, so its `approval_required` can still be recorded.
  *
- * Approval binding: read `<initiative>/improvement.md` off disk and require `status: approved`,
- * the body citing THIS attempt's `release_attempt_id` (and no other), and quoting the attempt's
+ * Approval binding: read `<initiative>/improvement.md` — the document's own rows, composed back
+ * into its text — and require `status: approved`, the body citing THIS attempt's
+ * `release_attempt_id` (and no other), and quoting the attempt's
  * OWN `approved_patch_digest` (what `release_prepare` wrote into the document), never this call's
  * own digest argument — a caller who passes the wrong digest must be told `digest_mismatch`, not
  * a confusing "not approved". The approver counts for exactly the owner teams they are a MEMBER
@@ -46,15 +47,16 @@
  * `release_apply` takes an `initiative` argument the spec's frozen interface table did not name:
  * `improvement.md`'s approval has to be read from somewhere, and a bare candidate_id names no path.
  */
-import { existsSync, readFileSync } from "node:fs";
-
-import { documentBody, parseEnvelope } from "@zz/contracts";
+import { documentBody, parseCaller, parseEnvelope } from "@zz/contracts";
+import { requestHeaders } from "@zz/mcp-http";
 import type pg from "pg";
 
 import type { MutatorOutcome } from "./idempotency.js";
 import { compareSemver, currentVersionOf } from "../release-head.js";
 import { applyingRefusal, approvedOwners, releaseDecision, STALE_APPLYING_MS } from "./release-rules.js";
-import { safeName, safePath } from "../paths.js";
+import { safeName } from "../paths.js";
+import { teamFor } from "../platform-db.js";
+import { loadDocument } from "../versions.js";
 import { Refusal } from "../refusal.js";
 import { citedReleaseAttempt, memberTeams } from "../release-owners.js";
 
@@ -182,7 +184,12 @@ async function baseRefFor(runner: Queryable, baseSubjectId: string): Promise<str
 
 /** What `planApply` reads of `<initiative>/improvement.md`: its gate status, its signer and its
  *  body. A parameter of `planApply` so a check can hand it a document without a request context
- *  (`safePath` resolves the caller's team store from the request). */
+ *  (`readImprovementDoc` below resolves the caller's team from the request).
+ *
+ *  It is READ from the document's rows, never from a path: the store a document used to be a
+ *  file in is retired (`versions.ts`), and a `readFileSync` of the old path answered `null` for
+ *  every document that existed — which read as `approval_required` on a document its owners had
+ *  approved. */
 interface ImprovementDoc {
   readonly status: string | undefined;
   readonly approved_by: string;
@@ -193,11 +200,16 @@ type ReadImprovementDoc = (initiative: string) => Promise<ImprovementDoc | null>
 async function readImprovementDoc(initiative: string): Promise<ImprovementDoc | null> {
   const badInitiative = safeName(initiative, "initiative");
   if (badInitiative) throw new Refusal(badInitiative);
-  const target = await safePath(`${initiative}/improvement.md`);
-  if (!existsSync(target)) return null;
-  const raw = readFileSync(target, "utf8");
-  const env = parseEnvelope(raw);
-  return { status: env.status, approved_by: (env.approved_by ?? "").trim(), body: documentBody(raw) };
+  // A document is filed under a TEAM, so the team is resolved first and off the caller — the
+  // same resolution `improvement-doc.ts` files this very document with, and the same one
+  // `initiative-run.ts` reads it back with. A team-blind read of a path answers with whichever
+  // team happens to hold that name, and an initiative's slug is unique only within one team.
+  const team = await teamFor(parseCaller(requestHeaders()).email);
+  if (!team) return null;
+  const loaded = await loadDocument(team, `${initiative}/improvement.md`);
+  if (!loaded.ok) return null;
+  const env = parseEnvelope(loaded.text);
+  return { status: env.status, approved_by: (env.approved_by ?? "").trim(), body: documentBody(loaded.text) };
 }
 
 /** The owner teams the document approves for this attempt — see the module note and

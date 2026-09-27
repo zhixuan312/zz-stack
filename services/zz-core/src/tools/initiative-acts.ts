@@ -16,7 +16,7 @@
  * `doc` to draft, clears the stale approval and leaves the approved revision untouched.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { documentBody, parseCaller } from "@zz/contracts";
+import { documentBody, parseCaller, parseEnvelope } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
@@ -309,10 +309,28 @@ export function registerInitiativeActTools(server: McpServer): void {
       //
       // Nothing here is a quiet overwrite: the approved revision stays filed, the revision
       // bumps, a revision_note is recorded, and a gated document goes back to a person.
-      // The previous revision's envelope, rebuilt from the rows — the fields a revision carries
-      // forward are the ones the record kept, and nothing is read off a file to find them.
-      const prevEnv: Record<string, string> = {};
+      // The previous revision's envelope — ALL of it, read from the rows, never a hand-kept list of
+      // the keys somebody remembered. A list here silently drops every key it does not name: it
+      // dropped `closed_by` on any revision of a closed document, so the revised text carried an
+      // outcome with nobody's name on it and the next guard refused it as written by hand; and it
+      // dropped `stakeholder` and every field a FLOW declares, the same unbounded set
+      // `doc_revision.fields` exists to hold. The payload rule is "every key a column cannot hold",
+      // and a fixed list is the one shape that cannot express it.
+      const prevEnv: Record<string, string> = { ...parseEnvelope(loaded.text) };
+      // The columns win over the payload, as they do everywhere else, and they are the rows rather
+      // than a copy of them.
+      delete prevEnv.approved_by;
+      delete prevEnv.approved_at;
+      delete prevEnv.status;
+      delete prevEnv.title;
+      delete prevEnv.tags;
+      delete prevEnv.revision_note;
+      delete prevEnv.version;
+      delete prevEnv.updated_at;
+      delete prevEnv.sources;
       if (loaded.doc.status) prevEnv.status = loaded.doc.status;
+      // The anchor row's outcome wins where it holds one — it is authoritative after a close, and
+      // the payload's copy is the fallback for a close recorded before the row carried one.
       if (loaded.doc.outcome) prevEnv.outcome = loaded.doc.outcome;
       if (loaded.rev.title) prevEnv.title = loaded.rev.title;
       if (loaded.rev.tags?.length) prevEnv.tags = loaded.rev.tags.join(", ");

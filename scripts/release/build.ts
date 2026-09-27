@@ -225,15 +225,22 @@ export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution
    * by hand.
    *
    * COUPLED: backup.sh and install-backup-cron.sh ship too, because deploy/README.md's Day-2
-   * section tells an operator to run both from the directory this bundle unpacks to. */
+   * section tells an operator to run both from the directory this bundle unpacks to — and
+   * backup-manifest.sh ships with them, because backup.sh's own closing NOTE tells the operator
+   * to run `./deploy/backup-manifest.sh` over the set it just wrote. A script that names a
+   * sibling the bundle does not carry is the same gap this comment records for the first two,
+   * found by reading the output of a backup taken on the host rather than by the gate: the gate
+   * derives its list from deploy/README.md's commands, and this one is named by a shipped
+   * script instead. */
   run("bash", ["-c",
-    `mkdir -p dist/release && cd deploy && tar czf ../${bundle} docker-compose.yml .env.example issue-first-pat.sh issue-enrolment.sh zz-tool backup.sh install-backup-cron.sh`],
+    `mkdir -p dist/release && cd deploy && tar czf ../${bundle} docker-compose.yml .env.example issue-first-pat.sh issue-enrolment.sh zz-tool backup.sh backup-manifest.sh install-backup-cron.sh`],
     { cwd: root });
   // What the installer's first three commands need, checked in the artifact rather than assumed
   // from the command that made it.
   const packed = run("bash", ["-c", `tar tzf ${bundle}`], { cwd: root }).split("\n");
   for (const need of ["docker-compose.yml", ".env.example",
-                      "issue-first-pat.sh", "zz-tool", "backup.sh", "install-backup-cron.sh"]) {
+                      "issue-first-pat.sh", "zz-tool", "backup.sh", "backup-manifest.sh",
+                      "install-backup-cron.sh"]) {
     if (!packed.some((f) => f === need || f === `./${need}`)) {
       die(`the deploy bundle is missing ${need} — the install instructions would fail on it`);
     }

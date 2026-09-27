@@ -120,3 +120,10 @@ check("every completion the judge asks for is recorded, and an unreported figure
 // Registered after the wave that writes it, as every check is.
 check("the document store is declared: two new tables, and doc's new identity keys",
       runsCheck("store-shape.ts"));
+
+// Phase 6's second: the store carry. It asserts the executable evidence — that the carry exists,
+// reads all three of the store's records (the working tree, `_versions/` and the git history every
+// write was committed to), names what a failed commit left in `git_failed`, and is wired into the
+// rehearsal as this migration's `withArtifacts` step. The measurement itself is the rehearsal's.
+check("every team's store becomes rows, verified file for row",
+      runsCheck("store-migration-lossless.ts"));

@@ -221,6 +221,16 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             content-hash table, ending REHEARSAL OK; refuses outright if
             TEAM_DB_URL/PLATFORM_DB_URL is already set — rehearse/ holds the expectations,
             the restore, the snapshot and join checks, and the artifacts unpack) and
+            store-migration.ts (the carry: reads every team's file store — its working tree, its
+            `<initiative>/_versions/` snapshots and the `.git` history every write was committed
+            to — and writes `doc_revision` rows for every revision those three records hold,
+            verifying each retained revision by content hash against the bytes it came from.
+            Revisions the store genuinely never kept are `missing_legacy` and carry no content:
+            a write whose commit failed left a `git_failed` entry, and a revision predating the
+            repository left nothing. `store-migration/` holds the shape it reads, the rows it
+            writes, the links, the two legacy evaluation pins and the report; the rehearsal runs
+            it as this migration's `withArtifacts` step, and the release runs it against
+            production before the verification that depends on it) and
             build-image.sh (the runtime image, from the lockfile).
             The
             day-2 ops tools are npm scripts over packages/tools/src/ops/:

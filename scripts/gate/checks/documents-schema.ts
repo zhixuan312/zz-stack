@@ -29,9 +29,11 @@ check("every state the schema allows can actually be reached", () => {
   // appear in something that writes.
   const sql = sourceFiles(["services/gateway/migrations"], [".sql"])
     .map((f) => readFileSync(join(root, f), "utf8")).join("\n");
-  // Both service trees and the packages, recursively: a state can be set from anywhere that
-  // talks to the database.
-  const src = sourceFiles(["services", "packages"], [".ts"])
+  // Both service trees, the packages and `scripts/`, recursively: a state can be set from anywhere
+  // that talks to the database, and `scripts/` is one of those places — the store carry writes
+  // `doc_revision.content_state` and `doc_link.kind` there, and a scan that stopped at `services`
+  // reported both states unreachable while the file that writes them sat in plain sight.
+  const src = sourceFiles(["services", "packages", "scripts"], [".ts"])
     .map((f) => readFileSync(join(root, f), "utf8")).join("\n");
   const unreachable = [];
   // Replayed, not read flat. An inline `check (kind in (...))` gets the name

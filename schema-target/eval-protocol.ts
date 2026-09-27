@@ -96,6 +96,12 @@ export const EVAL_PROTOCOL: Record<string, TableTarget> = {
         false,
         null,
       ],
+      [
+        "approved_doc_revision",
+        "integer",
+        true,
+        null,
+      ],
     ],
     primaryKey: [
       "id",
@@ -130,6 +136,22 @@ export const EVAL_PROTOCOL: Record<string, TableTarget> = {
         deferrable: false,
       },
       {
+        // The composite key is what makes the pin mean something: a version that names document X
+        // and revision N is held to a revision OF X, which the single-column key cannot say.
+        // MATCH SIMPLE, so a version that pins nothing at all is admitted.
+        columns: [
+          "approved_doc_id",
+          "approved_doc_revision",
+        ],
+        refTable: "doc_revision",
+        refColumns: [
+          "doc_id",
+          "revision",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
+      {
         columns: [
           "plugin_id",
         ],
@@ -154,9 +176,13 @@ export const EVAL_PROTOCOL: Record<string, TableTarget> = {
     ],
     // The payload is immutable and the lifecycle is `recorded -> affirmed`: the affirmation
     // fields fill once and the three move together, which is the whole of this constraint.
-    // `approved_doc_revision` and its composite key land in phase 6, with `doc_revision`.
+    // `approved_doc_revision` and its composite key landed in phase 6, with `doc_revision`.
+    // The second check is NOT VALID on purpose: 16 affirmed versions predate the column, and
+    // AC-6.7 leaves a legacy row unpinned rather than guessing a revision from a timestamp.
+    // `NOT VALID` enforces it on every later insert and update while leaving those rows alone.
     checks: [
       "CHECK ((((approved_doc_id IS NULL) = (affirmed_by IS NULL)) AND ((approved_doc_id IS NULL) = (affirmed_at IS NULL))))",
+      "CHECK (((affirmed_at IS NULL) OR (approved_doc_revision IS NOT NULL))) NOT VALID",
     ],
     indexes: [],
     comment: null,

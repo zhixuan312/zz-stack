@@ -12,6 +12,9 @@
 import type pg from "pg";
 
 import { SCHEMA_TARGET } from "../../schema-target.ts";
+import { carryStore, verifyStore } from "../store-migration.ts";
+import { formatReport } from "../store-migration/report.ts";
+import type { Queryable } from "../store-migration/model.ts";
 
 /**
  * `"unchanged"` (the default): row count must be identical before and after.
@@ -169,7 +172,11 @@ export function declaredTableNames(pendingMigrations: readonly string[]): string
  *
  * The map is no longer empty: the phase-6 store migration is pending, and it declares the two
  * tables it creates, the one it reshapes and the three joins that say what it did to the data — the
- * answer being "nothing", which is the claim `doc`'s entry has to make precisely.
+ * answer being "nothing", which is the claim `doc`'s entry has to make precisely. Beside it the
+ * phase's second migration carries the legacy evaluation pins, and it is the first entry since
+ * Phase 0 to declare a `withArtifacts` step: the carry that writes `doc_revision` from every team's
+ * store reads the file store rather than the database, so `scripts/rehearse.ts` unpacks `--artifacts`
+ * and the step runs there.
  */
 export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
   "002_database_store.sql": {
@@ -235,5 +242,38 @@ export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
                              where r.doc_id = d.id and r.revision = d.approved_revision)`,
       },
     ],
+  },
+  "003_store_data.sql": {
+    tables: {
+      // `eval_protocol_version` gains one column and no row moves: it is the pin the carry resolves
+      // from a frozen approval record, and this file adds the column, the composite key and the
+      // tightened CHECK it lands in. `hashColumns` is therefore every column the table has on BOTH
+      // sides — the fifteen below — and not the whole row: a digest carrying `approved_doc_revision`
+      // would differ for that column's presence alone rather than proving the rest of the row
+      // survived, which is what this file is being rehearsed for.
+      //
+      // `eval_assessment` is deliberately NOT declared. This file adds a CHECK and a composite key
+      // to it and no column at all, and neither is part of a row's content, so its whole-row digest
+      // is expected unchanged — the default, and the stronger claim of the two.
+      eval_protocol_version: {
+        hashColumns: [
+          "id", "version", "purpose", "qualification_policy", "scoring_policy",
+          "improvement_policy", "content_digest", "created_at", "plugin_id", "protocol_key",
+          "observable_surfaces", "approved_doc_id", "affirmed_by", "affirmed_at", "recorded_by",
+        ],
+      },
+    },
+    // The store's own half, and the only hook a pending migration has for it. The carry reads every
+    // team's working tree, its `_versions/` snapshots and its git history and writes `doc_revision`,
+    // `doc_link` and the two legacy pins; then it proves what it wrote, file for row, by content
+    // hash. The report it prints is the plan's `run:` evidence — documents read, revisions retained,
+    // revisions marked `missing_legacy`, both pin counts, refusals — and what it returns is one line
+    // per disagreement, so a carry that lost a byte fails the rehearsal rather than passing quietly.
+    withArtifacts: async (artifactsDir, client) => {
+      const db: Queryable = client;
+      const report = await carryStore(db, artifactsDir);
+      for (const line of formatReport(report)) console.log(`  ${line}`);
+      return (await verifyStore(db, artifactsDir)).map((p) => `003_store_data.sql: ${p}`);
+    },
   },
 };

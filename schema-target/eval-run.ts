@@ -419,6 +419,22 @@ export const EVAL_RUN: Record<string, TableTarget> = {
         deferrable: false,
       },
       {
+        // The composite key is what makes a document subject's pin mean something: a row naming
+        // document X and revision N is held to a revision OF X. MATCH SIMPLE, so a `run_level`
+        // row — which names no child subject at all — is admitted.
+        columns: [
+          "doc_id",
+          "doc_revision",
+        ],
+        refTable: "doc_revision",
+        refColumns: [
+          "doc_id",
+          "revision",
+        ],
+        onDelete: "NO ACTION",
+        deferrable: false,
+      },
+      {
         columns: [
           "eval_run_id",
         ],
@@ -490,8 +506,17 @@ export const EVAL_RUN: Record<string, TableTarget> = {
     // `run_level` is about the parent run's own observation snapshot and names no child subject,
     // and each other kind names exactly one. `evaluator_version_id` is reachable through the
     // measure, `evidence_ref` named the run's own snapshot, and `answer` jsonb became the four
-    // columns a reducer reads. `doc_revision` is pinned in phase 6, with `doc_revision` itself.
+    // columns a reducer reads. `doc_revision` was pinned in phase 6, with `doc_revision` itself,
+    // the first column is NOT VALID because 64 legacy document subjects predate it, and AC-6.7
+    // leaves an unpinnable legacy row null rather than choosing the revision nearest its timestamp.
+    // It is enforced on every insert and update after the migration, which is where it matters.
     checks: [
+      // NOT VALID on purpose: 64 legacy document subjects predate the column, and AC-6.7 leaves
+      // an unpinnable legacy row null rather than choosing the revision nearest its timestamp.
+      // It is enforced on every later insert and update, which is where it matters. It sorts
+      // FIRST because `compare.ts` orders this array by constraint name, and the check's own
+      // generated name sorts before `subject_kind`'s — the catalog is the authority on the order.
+      "CHECK (((subject_kind <> 'document'::text) OR (doc_revision IS NOT NULL))) NOT VALID",
       "CHECK ((((subject_kind = 'run_level'::text) AND (run_id IS NULL) AND (doc_id IS NULL) AND (knowledge_node_id IS NULL) AND (bug_id IS NULL) AND (event_id IS NULL)) OR ((subject_kind = 'run'::text) AND (run_id IS NOT NULL) AND (doc_id IS NULL) AND (knowledge_node_id IS NULL) AND (bug_id IS NULL) AND (event_id IS NULL)) OR ((subject_kind = 'document'::text) AND (run_id IS NULL) AND (doc_id IS NOT NULL) AND (knowledge_node_id IS NULL) AND (bug_id IS NULL) AND (event_id IS NULL)) OR ((subject_kind = 'knowledge'::text) AND (run_id IS NULL) AND (doc_id IS NULL) AND (knowledge_node_id IS NOT NULL) AND (bug_id IS NULL) AND (event_id IS NULL)) OR ((subject_kind = 'bug'::text) AND (run_id IS NULL) AND (doc_id IS NULL) AND (knowledge_node_id IS NULL) AND (bug_id IS NOT NULL) AND (event_id IS NULL)) OR ((subject_kind = 'event'::text) AND (run_id IS NULL) AND (doc_id IS NULL) AND (knowledge_node_id IS NULL) AND (bug_id IS NULL) AND (event_id IS NOT NULL))))",
       "CHECK (((value IS NULL) = (excluded_reason IS NOT NULL)))",
     ],

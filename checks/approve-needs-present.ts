@@ -20,7 +20,9 @@ import { pathToFileURL } from "node:url";
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { shownSinceLastChange } = await load("services/zz-core/dist/attest.js");
-const { presentDocument } = await load("services/zz-core/dist/versions.js");
+// I-43 split the revision store: `presentDocument` is the file half and lives in its own module
+// now, so this load follows it rather than the module it used to share.
+const { presentDocument } = await load("services/zz-core/dist/document-versions.js");
 
 const fail: string[] = [];
 const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };

@@ -1,0 +1,57 @@
+-- 004_envelope_fields.sql — the envelope's open payload: the fields a document carries that no
+-- column of its own can hold.
+--
+-- DELIBERATE: this file adds a column and writes NO row. `fields` is null on every revision the
+-- carry wrote, and what fills it is `scripts/envelope-backfill.ts` — a script rather than a
+-- migration, because the bytes it reads are the teams' file stores and no migration may reach
+-- them. The backfill runs against the live deployment BEFORE Task I-41 retires that store, and it
+-- is the store's last reader: after I-41 the payload is the only home these fields have left.
+--
+-- DELIBERATE: nullable, and null means "this revision carries no field outside the columns" rather
+-- than "the payload was not captured". A document with nothing extra is the common case — of the
+-- 2,146 documents the 2026-09-27 backup carries, most declare only the fields the schema already
+-- has a column for — and an empty object there would be a second empty state for the same fact.
+--
+-- DELIBERATE: jsonb, not text. The payload is an open map of envelope keys to their string values,
+-- read back by `document_read` and by the evaluation stages beside the columns; a text column
+-- would put a second parser between the two. Key order is PostgreSQL's, not the document's — jsonb
+-- does not retain it — and nothing downstream reads the envelope's order: `parseEnvelope` reads by
+-- key, and `renderEnvelope` renders the schema's columns first and appends whatever is left.
+--
+-- DELIBERATE: this file adds no CHECK, and the two rules the column is governed by are not
+-- constraints for a reason. "A key a column already carries is never written into the payload" is
+-- a rule about the WRITER (`envelopePayload` in `services/zz-core/src/versions.ts`, which computes
+-- the residual against the columns' own keys), and "the columns win over the payload on read" is a
+-- rule about the READER (`documentText`, which filters the payload's keys through the same list
+-- before composing). Neither is expressible as a CHECK over one column's value, and expressing
+-- either as one would make the payload's legality a property of the bytes rather than of the rule
+-- that keeps it from becoming a second home for a fact that has one.
+--
+-- DELIBERATE: `doc` gains nothing. `doc.body`, `.title`, `.tags` and `.content_hash` are a declared
+-- projection of `doc_revision[current_revision]` and are read on every search; a payload on the
+-- identity row would be a second copy of a fact whose authority is the revision. A reader that
+-- needs an envelope field goes to the revision, which is where `document_read` and the evaluation
+-- stages already look.
+--
+-- COUPLED: `schema-target/documents.ts` declares this column, last in `doc_revision`'s ordinal
+-- order because an `ADD COLUMN` appends, and `checks/schema-inventory.ts` is what proves the two
+-- agree. `checks/envelope-fields.ts` is this task's own acceptance check: it reads the target for
+-- the declaration, this file for the `ADD COLUMN`, the writer for the residual rule and the
+-- columns-win statement, and `scripts/envelope-backfill.ts` for the store-reading fill.
+--
+-- COUPLED: this file declares no `-- requires-extension:` line and needs none. `jsonb` is a core
+-- type of the PostgreSQL image this platform runs, and the column carries no index, so nothing
+-- here needs an extension the image might not ship.
+
+--
+-- Name: doc_revision fields; Type: COLUMN; Schema: zz; Owner: -
+--
+-- Nullable on every row, and null on every row this file meets: the carry that wrote them
+-- (Task I-38) had no column to put a residual in, and the backfill is what fills them from the
+-- store. A revision whose `content_state` is `missing_legacy` keeps null forever — there are no
+-- bytes, so there is no envelope to take a field from, and an invented payload would be the same
+-- defect as an invented body.
+--
+
+ALTER TABLE ONLY zz.doc_revision
+    ADD COLUMN fields jsonb;

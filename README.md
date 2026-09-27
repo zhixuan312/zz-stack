@@ -231,6 +231,12 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             writes, the links, the two legacy evaluation pins and the report; the rehearsal runs
             it as this migration's `withArtifacts` step, and the release runs it against
             production before the verification that depends on it) and
+            envelope-backfill.ts (the envelope's open payload, read off every team's file store
+            once and written to `doc_revision.fields` — `node scripts/envelope-backfill.ts
+            --store <dir> --database-url <url>`, idempotent because it fills only rows whose
+            `fields` is null; it reads each revision's bytes the way the carry does, verifies them
+            against the row's `content_hash`, reports by name any revision it cannot read, and
+            exits non-zero if a payload it wrote disagrees with the envelope it came from) and
             build-image.sh (the runtime image, from the lockfile).
             The
             day-2 ops tools are npm scripts over packages/tools/src/ops/:

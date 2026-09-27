@@ -37,7 +37,8 @@ import { unopenedRefusal } from "../initiative-record.js";
 import { PLAIN_TOKEN, platformPath, safeName, safePath, tagRefusal, titleSlug, userRoot, writeGuard } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
 import { citationsOf, dayOf, documentAt, documentPaths, loadDocument, recordAct, revisionsOf,
-         saveDocument, presentDocument } from "../versions.js";
+         saveDocument } from "../versions.js";
+import { presentDocument } from "../document-versions.js";
 import { asksPart, PART_LIMIT, partHeader, presentPart, slicePart } from "../document-parts.js";
 
 import { envelopeFor, isoToday, normalizeSections } from "../write-guards.js";

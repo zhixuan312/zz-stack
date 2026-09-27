@@ -10,6 +10,13 @@
  * `doc_revision[current_revision]`, kept on the row because search and the console read them on
  * every call. `body_tsv` and `analyzer_version` are the search projection of `body`.
  *
+ * `doc_revision.fields` is the envelope's OPEN payload: the fields a document carries that have no
+ * column of their own — `stakeholder`, and every field a flow declares (sdlc's `blocks`,
+ * zz-plugin-eval's `eval_run_id`), which is unbounded by construction. It is not a second home for
+ * a fact that has one: the writer computes the residual against the columns' own keys, so a keyed
+ * field never enters it, and the reader prefers the columns over it, so a stale key cannot answer
+ * in a column's place.
+ *
  * `doc` still carries the columns the file store addressed a document by; Task I-41 drops them once
  * every reader has stopped naming them.
  */
@@ -320,6 +327,21 @@ export const DOCUMENTS: Record<string, TableTarget> = {
       [
         "approved_at",
         "timestamp with time zone",
+        true,
+        null,
+      ],
+      // The envelope's open payload: `stakeholder`, and every field a FLOW declares — an unbounded
+      // set by construction, which is why it is a map rather than more columns. Last in ordinal
+      // order because `004_envelope_fields.sql` adds it, and an `ADD COLUMN` appends.
+      //
+      // Null means the revision carries no field outside the columns, which is the common case. The
+      // writer computes the residual against the columns' own keys and the reader prefers the
+      // columns over it, so a column's fact is never answered from here; both rules live in
+      // `services/zz-core/src/versions.ts`, and `checks/envelope-fields.ts` is what holds the two
+      // halves together.
+      [
+        "fields",
+        "jsonb",
         true,
         null,
       ],

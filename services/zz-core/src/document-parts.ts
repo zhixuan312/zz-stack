@@ -20,7 +20,7 @@ import { join } from "node:path";
 import { documentBody, parseEnvelope } from "@zz/contracts";
 
 import { logActivity } from "./persist.js";
-import { documentVersions, versionRefusal } from "./versions.js";
+import { documentVersions, versionRefusal } from "./document-versions.js";
 
 /** The size above which a present comes back in parts unasked. Characters, not tokens: a client's
  *  cap is in tokens, and 60k characters stays under the common 25k-token result cap even for
@@ -151,9 +151,9 @@ function partsCover(root: string, relPath: string, total: number): "shown" | "co
 
 /** One part of a document presented, and the record of it.
  *
- * The same resolution as versions.ts presentDocument — `version: N` reads the frozen copy and
- * records against that copy's path — and the same body: frontmatter excluded, trimmed, so the
- * offsets a part states are offsets into what the person is shown. */
+ * The same resolution as document-versions.ts presentDocument — `version: N` reads the frozen
+ * copy and records against that copy's path — and the same body: frontmatter excluded, trimmed,
+ * so the offsets a part states are offsets into what the person is shown. */
 export function presentPart(
   root: string, relPath: string, version: number | undefined, user: string, ask: PartAsk,
 ): string {

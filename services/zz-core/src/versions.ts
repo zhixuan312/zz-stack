@@ -1,31 +1,30 @@
 /**
- * A document's history, and the store it is written into.
- *
- * Two halves, one subject. The DATABASE half is what the tools answer from: `doc` is a
- * document's identity and its status, `doc_revision` is which revisions exist and the content
- * each one retained, and `doc_link` records what a revision cited. Every write path the tools
- * have goes through `saveDocument` below, so a tool never composes an insert of its own and
+ * A document's history, in the database the tools answer from: `doc` is a document's identity and
+ * its status, `doc_revision` is which revisions exist and the content each one retained, and
+ * `doc_link` records what a revision cited. Every write path the tools have goes through
+ * `saveDocument` below, so a tool never composes an insert of its own and
  * `doc.title`/`.body`/`.tags`/`.content_hash` — a declared projection of the current revision —
- * cannot be left disagreeing with the revision they project.
+ * cannot be left disagreeing with the revision they project. The other half of a document's
+ * history, the `_versions/` copies on disk, is `document-versions.ts`.
  *
  * DELIBERATE: `doc_revision.body` is the BODY. The schema gives a revision `title`, `body` and
  * `tags` as separate columns, so an envelope living inside `body` would put `title` and `tags`
  * in two homes at once; the carry writes `documentBody(bytes)` and so does every writer here. A
- * read therefore COMPOSES the envelope from the columns — which means a frontmatter field the
- * schema has no column for cannot be answered by a read. The ones that matter today are
- * `stakeholder` (360 of 2146 documents carry one), a flow's own fields such as sdlc's `blocks`
- * and zz-plugin-eval's `eval_run_id` (read off `document_read`'s text by
- * `scripts/eval-flow-e2e/improve.ts:18-24`), and a source's `stage`/`audits_version`
- * (`audit-rounds.ts` reads them to decide whether a document owes another round) — plus
- * `contributed_by`, `added_at` and `date`. `source_list` answers its contributor and date from
- * `written_by`/`written_at`, which are a different fact: who wrote the row, not who contributed
- * the material.
+ * read therefore COMPOSES the envelope: the columns, plus the revision's own open payload.
+ *
+ * DELIBERATE, and this is the whole of `doc_revision.fields`: `envelopePayload` below is
+ * `parseEnvelope(text)` minus `ENVELOPE_COLUMN_KEYS`, so a key a column already carries never
+ * enters the payload, and `documentText` filters through the same list before composing so the
+ * columns win over the payload on read. A key neither rule can name — `stakeholder`, a flow's own
+ * fields such as sdlc's `blocks` and zz-plugin-eval's `eval_run_id`, a source's
+ * `stage`/`audits_version` — is what the payload is for. `doc`'s projection deliberately does not
+ * carry it: a reader that needs an envelope field goes to the revision. The full disposition, and
+ * which keys a flow declares, are in `schema-target/documents.ts` and `004_envelope_fields.sql`.
  *
  * NOT lost, and not this module's to carry: `outcome`, `closed_by`, `accepted_by` and
  * `no_signoff_reason` are the initiative's own columns (`zz.initiative`, and FR-10 puts them
  * there), and `evidence`/`supports`/`superseded_by` are what the `doc_link` rows record. A
- * revision's envelope is composed from these columns plus the document's, which is why a
- * field with neither is the only kind this read cannot answer.
+ * revision's envelope is composed from these columns plus the document's.
  *
  * DELIBERATE, and this is I-39's whole residue in `checks/store-unreached.ts`: three call sites
  * in this module and two in `document-parts.ts` still reach the store layer (`persistDocument`
@@ -39,19 +38,18 @@
  * `checks/approve-needs-present.ts:39-44`, which assert the journal rows this module writes.
  * Task I-41 retires the layer, and these calls go with it.
  *
- * The FILE half is `documentVersions`, `versionRefusal` and `presentDocument`: the copies filed
- * under `_versions/`, and the document stated to a person alongside them. Everything there takes
- * `root` explicitly and touches no request, so the check that guards it drives the real functions
- * over a fixture directory. The store on disk is still what the rest of the platform reads — the
- * review and audit rounds, the guards and the activity journal — so `saveDocument` mirrors the
- * bytes it just wrote into the store as well, through the one writer the platform has.
+ * The FILE half moved to `document-versions.ts` when the envelope's payload took this file past
+ * the repository's 700-line ceiling, and this file's subject is now the rows alone. The store on
+ * disk is still what the rest of the platform reads — the review and audit rounds, the guards and
+ * the activity journal — so `saveDocument` mirrors the bytes it just wrote into the store as well,
+ * through the one writer the platform has.
  *
  * COUPLED: writing a snapshot is `persist.ts`'s — snapshotOnApproval copies the approved content
- * to `<initiative>/_versions/<doc>.v<N>.md` the moment status flips. Reading one is this
- * module's.
+ * to `<initiative>/_versions/<doc>.v<N>.md` the moment status flips. Reading one is
+ * `document-versions.ts`'s.
  */
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { closeSync, mkdirSync, openSync } from "node:fs";
+import { resolve } from "node:path";
 import { createHash } from "node:crypto";
 
 import type pg from "pg";
@@ -64,125 +62,6 @@ import { safePath, userRoot } from "./paths.js";
 import { logActivity, persistDocument } from "./persist.js";
 import { stampEnvelope } from "./write-guards.js";
 import { db as platformDb } from "./platform-db.js";
-
-/** One frozen copy of a document — `<initiative>/_versions/<doc>.v<N>.md`, the name
- * `persist.ts` snapshotOnApproval writes — with the approval that copy carries. */
-type DocumentVersion = {
-  version: number;
-  rel: string;
-  status: string;
-  approved_by: string;
-  approved_at: string;
-};
-
-/** The history, listed. `_versions/` is readable and `writeGuard` refuses every write to it,
- * which is what makes an approval mean the bytes it signed.
- *
- * The approval facts come off each snapshot's own envelope, never off the live document: a
- * snapshot carries who signed that version and when, and reading them from the current file
- * would make a version list that is the same row repeated.
- *
- * Pure and `root`-relative — no `safePath`, no `userRoot`, no request — so the check that
- * guards it drives it over a fixture directory. Nothing here refuses; what a missing version
- * means is the caller's decision. */
-export function documentVersions(root: string, relPath: string): DocumentVersion[] {
-  const parts = relPath.replace(/^\/+/, "").split("/");
-  if (parts.length !== 2) return [];
-  const dir = join(root, parts[0], "_versions");
-  if (!existsSync(dir) || !statSync(dir).isDirectory()) return [];
-  // Anchored on the whole stem: `spec.md` and `spec-review.md` share a prefix, so a
-  // `startsWith` would file one document's approvals under its neighbour's history.
-  const stem = parts[1].replace(/\.md$/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const shape = new RegExp(`^${stem}\\.v(\\d+)\\.md$`);
-  const rows: DocumentVersion[] = [];
-  for (const f of readdirSync(dir)) {
-    const m = shape.exec(f);
-    if (!m) continue;
-    const env = parseEnvelope(readFileSync(join(dir, f), "utf8"));
-    rows.push({
-      version: Number(m[1]),
-      rel: `${parts[0]}/_versions/${f}`,
-      status: env.status ?? "",
-      approved_by: env.approved_by ?? "",
-      approved_at: env.approved_at ?? "",
-    });
-  }
-  // Numerically, not by filename: readdirSync sorts v10 before v2 and a history out of order
-  // reads as a history with gaps.
-  return rows.sort((a, b) => a.version - b.version);
-}
-
-/** A `version` that does not exist is refused, and the refusal names the ones that do: "no
- * such version" alone sends a caller guessing at numbers against a directory they cannot list.
- * Returns null when the version is there. */
-export function versionRefusal(root: string, relPath: string, version: number): string | null {
-  const rows = documentVersions(root, relPath);
-  if (rows.some((v) => v.version === version)) return null;
-  return rows.length
-    ? `ERROR: \`${relPath}\` has no version ${version}. Filed: ` +
-      `${rows.map((v) => `v${v.version}`).join(", ")} — ask for one of those, or omit ` +
-      "`version` for the current document."
-    : `ERROR: \`${relPath}\` has no version ${version} — no version of it is filed at all. ` +
-      "A copy lands in `_versions/` each time an approval does, so a document that has never " +
-      "been approved has none. Omit `version` for the current document.";
-}
-
-/** The version list stated beside the document: what each version was approved as, and when. */
-function versionHistory(rows: DocumentVersion[]): string {
-  if (!rows.length) return "Versions filed: none — no approval has landed on this document yet.";
-  const each = rows.map((v) =>
-    `v${v.version} ${v.status || "filed"}` +
-    (v.approved_by ? ` by ${v.approved_by}` : "") +
-    (v.approved_at ? ` on ${v.approved_at}` : ""));
-  return `Versions filed: ${each.join("; ")}. Read one with \`version: N\`.`;
-}
-
-/** One document presented, and one `shown` row for it.
- *
- * The per-document half of `document_present`, lifted out of the registration so that "one row
- * per document" is a property a check can run. A present over an array calls this once per
- * path; a single row covering a batch would let `attest.ts` shownSinceLastChange answer
- * "fetched" for a document whose neighbour was the one opened.
- *
- * The row names the bytes that were returned: fetching v1 records a `shown` on
- * `<initiative>/_versions/<doc>.v1.md`, not on the current path. shownSinceLastChange matches
- * on path and ignores version, so recording a historical fetch against the live path would
- * make "someone opened v1" read as attestation of the v3 nobody looked at.
- *
- * On success only: a refusal fetched nothing. logActivity swallows its own errors, so an
- * unwritable activity.jsonl costs the row and never the fetch. */
-export function presentDocument(
-  root: string, relPath: string, version: number | undefined, user: string,
-): string {
-  const rows = documentVersions(root, relPath);
-  let readRel = relPath;
-  if (version !== undefined) {
-    // A missing version is a refusal, never a fallback: `rows.find(...)?.rel ?? relPath` would
-    // present the current document while the caller asked for version N, and record `shown`
-    // against the live path.
-    const hit = rows.find((v) => v.version === version);
-    if (!hit) {
-      return versionRefusal(root, relPath, version)
-        ?? `ERROR: \`${relPath}\` has no version ${version}.`;
-    }
-    readRel = hit.rel;
-  }
-  const content = readFileSync(join(root, readRel), "utf8");
-  const env = parseEnvelope(content);
-  // Only what the document carries: a source has no version and no status, and stating
-  // "version: none" for one asserts a lifecycle nothing governs.
-  const facts = [`This is ${readRel}`];
-  if (env.version) facts.push(`version ${env.version}`);
-  if (env.status) facts.push(`status ${env.status}`);
-  const signed = env.approved_by
-    ? ` Approved by ${env.approved_by}${env.approved_at ? ` on ${env.approved_at}` : ""}.`
-    : "";
-  // The journal append, not a `zz.event` row: `attest.ts` still reads `activity.jsonl`, and
-  // this row is the evidence an approval refuses without. See this file's header — I-41 removes
-  // it with the layer, and the checks named there move with it.
-  logActivity(root, readRel, { user, action: "shown", path: readRel, version: env.version ?? "" });
-  return `${facts.join(", ")}.${signed}\n${versionHistory(rows)}\n\n${documentBody(content).trim()}\n`;
-}
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════
  * The revision store: `doc`, `doc_revision` and `doc_link`.
@@ -220,6 +99,10 @@ interface RevisionRecord {
   tags: string[] | null;
   content_hash: string | null;
   revision_note: string | null;
+  /** The envelope's open payload — `stakeholder` and every field a flow declares — and null when
+   *  this revision carries none. `pg` hands a `jsonb` column back as the parsed value, so this is
+   *  the map itself rather than text. See this module's header for the two rules around it. */
+  fields: Record<string, string> | null;
   written_by: string | null;
   written_at: string | null;
   approved_by: string | null;
@@ -284,7 +167,7 @@ const NO_DB = "ERROR: no platform database — the store is the database now, so
 /** Every revision of a document, oldest first, each with the addresses its id columns name. */
 export async function revisionsOf(p: Pick<pg.Pool, "query">, docId: string): Promise<RevisionRecord[]> {
   const { rows } = await p.query<RevisionRecord>(
-    `select r.revision, r.content_state, r.title, r.body, r.tags, r.content_hash,
+    `select r.revision, r.content_state, r.title, r.body, r.tags, r.content_hash, r.fields,
             r.revision_note, w.email as written_by, r.written_at::text as written_at,
             a.email as approved_by, r.approved_at::text as approved_at
        from zz.doc_revision r
@@ -324,8 +207,37 @@ function splitStorePath(relPath: string): { initiative: string; name: string } {
   return { initiative: parts[0] ?? "", name: parts.slice(1).join("/") };
 }
 
+/** The envelope keys `doc` and `doc_revision` already carry, which is the list both halves of the
+ *  payload rule are computed against — `envelopePayload` subtracts them, `documentText` filters
+ *  through them. It is the reader's own keyed set below, which is what makes the two agree by
+ *  construction rather than by a comment: `flow`/`type` are `doc`'s, `title`/`tags`/`version`/
+ *  `updated_at`/`status`/`approved_by`/`approved_at`/`revision_note` are the revision's columns
+ *  rendered back, and `sources` is joined from the `cites` links.
+ *
+ *  `content_hash`, `doc_id`, `content_state` and `written_by` are columns too and are deliberately
+ *  absent: an envelope carries no such key, so listing them would subtract nothing. */
+const ENVELOPE_COLUMN_KEYS: readonly string[] = [
+  "flow", "type", "status", "title", "tags", "version",
+  "updated_at", "approved_by", "approved_at", "revision_note", "sources",
+];
+
+/** The residual: what `parseEnvelope` found that no column of `doc_revision` or `doc` can hold,
+ *  or null when the document carries nothing extra. Never a list of FIELDS — the keys a flow
+ *  declares are unbounded, which is why the column is a map.
+ *
+ *  Null rather than `{}` for the empty case: null says "this revision carries no field outside the
+ *  columns", and an empty object would be a second spelling of it, which is how a backfill stops
+ *  being able to tell "nothing to carry" from "the carry has not run". */
+export function envelopePayload(env: Record<string, string>): Record<string, string> | null {
+  const payload: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (!ENVELOPE_COLUMN_KEYS.includes(key)) payload[key] = value;
+  }
+  return Object.keys(payload).length ? payload : null;
+}
+
 /** The document's text: the body the revision retained, with its envelope composed from the
- *  columns.
+ *  columns and the revision's own payload.
  *
  * COUPLED: `doc_revision` gives a revision a `title`, a `body` and a `tags` as separate columns
  * (the spec's Data model item 14), and `body` is the BODY — the carry writes `documentBody(bytes)`
@@ -333,12 +245,18 @@ function splitStorePath(relPath: string): { initiative: string; name: string } {
  * inside `body` would put `title` and `tags` in two homes at once, which is the one thing the
  * schema's first goal forbids.
  *
- * What that costs is named in this module's header: a frontmatter field with no column cannot be
- * reconstructed. The columns below are the ones the schema fixes, and `sources` is joined from
- * the `cites` links rather than from the envelope that used to carry it. */
+ * THE COLUMNS WIN OVER THE PAYLOAD. The payload is read first and its keys are filtered through
+ * `ENVELOPE_COLUMN_KEYS` before anything else is assigned, and the columns are assigned after it —
+ * so a payload key that names a column is never read, and a column that carries a value answers
+ * over one that does not. Doing it in this order is what makes the guarantee hold for a row the
+ * writer never touched: the backfill, a legacy `missing_legacy` neighbour or a hand-edited row
+ * cannot put a keyed field into the payload's place. */
 function documentText(doc: DocIdentity, rev: RevisionRecord, cites: string[] = []): string {
   const carried = rev.body ?? "";
   const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(rev.fields ?? {})) {
+    if (!ENVELOPE_COLUMN_KEYS.includes(key)) env[key] = value;
+  }
   if (doc.flow) env.flow = doc.flow;
   if (doc.type) env.type = doc.type;
   if (rev.title) env.title = rev.title;
@@ -512,6 +430,11 @@ export async function saveDocument(
   const body = documentBody(text).slice(0, 200_000);
   const hash = hashBytes(text);
   const status = env.status ?? "";
+  // THE RESIDUAL, computed here and nowhere else. This is the one write path every tool goes
+  // through, so a document written from here on needs no backfill: the payload is stored with the
+  // revision it belongs to, from the same parsed envelope the row's projection is read off. See
+  // `envelopePayload` for why it is null rather than `{}` when the document carries nothing extra.
+  const fields = envelopePayload(env);
 
   const client = await p.connect();
   const bail = async (refusal: string): Promise<{ refusal: string }> => {
@@ -542,13 +465,13 @@ export async function saveDocument(
          body, title, tags, hash, approved]);
       id = ins.rows[0]?.id ?? "";
       if (!id) return await bail(`ERROR: ${w.relPath} could not be written — no row came back`);
-      await insertRevision(client, id, 1, w, title, body, tags, hash, writer, sealer);
+      await insertRevision(client, id, 1, w, title, body, tags, hash, fields, writer, sealer);
     } else if (w.mode === "append") {
       revision = (existing.current_revision ?? 0) + 1;
       // A document revised after an approval is draft again while its last approved revision
       // stays recorded: `approved_revision` moves only when THIS revision is the sealed one.
       const sealed = status === "approved" && sealer ? revision : existing.approved_revision;
-      await insertRevision(client, id, revision, w, title, body, tags, hash, writer, sealer);
+      await insertRevision(client, id, revision, w, title, body, tags, hash, fields, writer, sealer);
       await client.query(
         `update zz.doc set current_revision = $2, status = $3, approved_revision = $4,
                             flow = $5, type = $6, updated_at = now(),
@@ -572,13 +495,20 @@ export async function saveDocument(
       await client.query(
         // COUPLED: `coalesce`, so a rewrite that carries no seal cannot clear one. A revision
         // the platform has sealed is not unsealed by a later write to the bytes beside it.
+        //
+        // DELIBERATE: `fields` is ASSIGNED, not coalesced, like the body beside it. A rewrite is
+        // this revision's new content, and every rewrite reads the document it replaces (whose
+        // text carries the payload back out) — so a field the rewrite dropped is a field the
+        // document no longer carries, and coalescing would leave it answering from a payload
+        // nothing in the bytes backs.
         `update zz.doc_revision set title = $3, body = $4, tags = $5::text[], content_hash = $6,
                                     revision_note = $7, written_by = $8::uuid, written_at = now(),
                                     approved_by = coalesce($9::uuid, approved_by),
-                                    approved_at = coalesce($10::timestamptz, approved_at)
+                                    approved_at = coalesce($10::timestamptz, approved_at),
+                                    fields = $11::jsonb
           where doc_id = $1::uuid and revision = $2`,
         [id, revision, title, body, tags, hash, w.note ?? null, writer,
-         sealer, w.seal?.at ?? null]);
+         sealer, w.seal?.at ?? null, fields]);
       await client.query(
         // COUPLED: `coalesce` here too. The last approved revision stays recorded when this
         // write is not the one sealing it — the state the spec fixes for a document revised
@@ -614,20 +544,24 @@ export async function saveDocument(
 }
 
 /** One revision row. `content_state` is always `retained` here: a write that has the bytes is
- *  the one case where they are, and `missing_legacy` is a fact only a legacy store can state. */
+ *  the one case where they are, and `missing_legacy` is a fact only a legacy store can state.
+ *
+ *  `fields` is the residual `saveDocument` computed from the same envelope the row's projection
+ *  came off — the envelope's open payload, or null when the document carries nothing the columns
+ *  do not. `pg` serialises the map to `jsonb` and writes SQL NULL for null. */
 async function insertRevision(
   p: Pick<pg.Pool, "query">, docId: string, revision: number, w: DocumentWrite,
   title: string, body: string, tags: string[], hash: string,
-  writer: string | null, sealer: string | null,
+  fields: Record<string, string> | null, writer: string | null, sealer: string | null,
 ): Promise<void> {
   await p.query(
     `insert into zz.doc_revision
        (doc_id, revision, content_state, title, body, tags, content_hash, revision_note,
-        written_by, written_at, approved_by, approved_at)
+        written_by, written_at, approved_by, approved_at, fields)
      values ($1::uuid, $2, 'retained', $3, $4, $5::text[], $6, $7, $8::uuid, now(),
-             $9::uuid, $10::timestamptz)`,
+             $9::uuid, $10::timestamptz, $11::jsonb)`,
     [docId, revision, title, body, tags, hash, w.note ?? null, writer,
-     sealer, w.seal?.at ?? null]);
+     sealer, w.seal?.at ?? null, fields]);
 }
 
 /** The document with the platform's own fields stamped onto it, or the bytes unchanged when the

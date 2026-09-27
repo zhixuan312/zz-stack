@@ -24,7 +24,7 @@ import { pathToFileURL } from "node:url";
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { registerArtifactTools } = await load("services/zz-core/dist/tools/artifacts.js");
 const { documentVersions, versionRefusal, presentDocument } =
-  await load("services/zz-core/dist/versions.js");
+  await load("services/zz-core/dist/document-versions.js");
 const { writeGuard } = await load("services/zz-core/dist/paths.js");
 const { shownSinceLastChange } = await load("services/zz-core/dist/attest.js");
 

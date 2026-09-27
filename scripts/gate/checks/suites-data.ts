@@ -144,3 +144,10 @@ check("the document tools read and write the database, not the file store",
 // exemptions are asserted to still exist so it cannot pass on a tree where they were renamed away.
 check("every remaining store reader and writer reads and writes the database",
       runsCheck("store-unreached.ts"));
+
+// Phase 6's fifth: the envelope's open payload. It asserts the target's declaration, the
+// migration's `ADD COLUMN`, the writer's residual rule and the columns-win statement, and the
+// backfill's store-reading fill — the two halves of the rule that keep `doc_revision.fields` from
+// becoming a second home for a fact that has a column.
+check("a document's envelope has a home: the revision's open payload, and the columns win over it",
+      runsCheck("envelope-fields.ts"));

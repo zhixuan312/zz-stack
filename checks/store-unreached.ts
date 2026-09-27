@@ -20,7 +20,12 @@ const INDEXER = "packages/indexing/src/index.ts";
 // `checks/approve-needs-present.ts` — so the swap is not free: removing the bridge does not move a
 // reader, it makes those readers answer nothing. **Task I-41 REMOVES THIS EXEMPTION** when it
 // retires the store, and this check's claim becomes the whole tree again.
-const BRIDGE = ["services/zz-core/src/versions.ts", "services/zz-core/src/document-parts.ts"];
+const BRIDGE = ["services/zz-core/src/versions.ts", "services/zz-core/src/document-parts.ts",
+                // The third entry arrived with I-43's split: `presentDocument` appends the `shown`
+                // journal row through `logActivity`, and moving it into its own module moved which
+                // file the check sees. It was invisible until this was committed — the check reads
+                // `git ls-files`, so an untracked file is not in it.
+                "services/zz-core/src/document-versions.ts"];
 
 // A call, not a declaration or an import: `export function logActivity(` is the layer defining it.
 const callers: string[] = [];

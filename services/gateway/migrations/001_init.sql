@@ -103,200 +103,46 @@
 -- absorbs: 003_a_run_the_timer_invented.sql
 -- absorbs: 002_catalog_evaluation.sql
 -- absorbs: 002_improve_control.sql
+-- absorbs: 002_remove_artifact_layer.sql
 --
 -- requires-extension: citext
--- requires-extension: pg_textsearch
 -- requires-extension: pg_trgm
 
 create extension if not exists citext with schema zz;
-create extension if not exists pg_textsearch with schema zz;
 create extension if not exists pg_trgm with schema zz;
 
+
 --
--- Name: artifact; Type: TABLE; Schema: zz; Owner: -
+-- Name: citext; Type: EXTENSION; Schema: -; Owner: -
 --
 
-CREATE TABLE zz.artifact (
-    owner_id uuid NOT NULL,
-    artifact_id uuid NOT NULL,
-    artifact_class text NOT NULL,
-    current_path text NOT NULL,
-    current_revision integer,
-    content_hash text NOT NULL,
-    head_event_sequence integer NOT NULL,
-    created_at timestamp with time zone,
-    audience text,
-    profile text,
-    CONSTRAINT artifact_artifact_class_check CHECK ((artifact_class = ANY (ARRAY['source'::text, 'work_document'::text, 'knowledge_concept'::text]))),
-    CONSTRAINT artifact_current_revision_check CHECK (((current_revision IS NULL) OR (current_revision > 0))),
-    CONSTRAINT artifact_head_event_sequence_check CHECK ((head_event_sequence > 0))
-);
+CREATE EXTENSION IF NOT EXISTS citext WITH SCHEMA zz;
 
 
 --
--- Name: artifact_edge; Type: TABLE; Schema: zz; Owner: -
+-- Name: EXTENSION citext; Type: COMMENT; Schema: -; Owner: -
 --
 
-CREATE TABLE zz.artifact_edge (
-    source_owner_id uuid NOT NULL,
-    source_artifact_id uuid NOT NULL,
-    source_revision integer,
-    kind text NOT NULL,
-    target_owner_id uuid NOT NULL,
-    target_artifact_id uuid NOT NULL,
-    target_revision integer,
-    target_hash text NOT NULL,
-    citation_id text,
-    asserted_event_id uuid NOT NULL,
-    retracted_event_id uuid,
-    CONSTRAINT artifact_edge_kind_check CHECK ((kind = ANY (ARRAY['derived_from'::text, 'cites'::text, 'revision_of'::text, 'supersedes'::text]))),
-    CONSTRAINT artifact_edge_source_revision_check CHECK (((source_revision IS NULL) OR (source_revision > 0))),
-    CONSTRAINT artifact_edge_target_revision_check CHECK (((target_revision IS NULL) OR (target_revision > 0)))
-);
+COMMENT ON EXTENSION citext IS 'data type for case-insensitive character strings';
 
 
 --
--- Name: artifact_event; Type: TABLE; Schema: zz; Owner: -
+-- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
 --
 
-CREATE TABLE zz.artifact_event (
-    event_id uuid NOT NULL,
-    transaction_id text NOT NULL,
-    owner_id uuid NOT NULL,
-    artifact_id uuid NOT NULL,
-    sequence integer NOT NULL,
-    at timestamp with time zone NOT NULL,
-    actor text NOT NULL,
-    kind text NOT NULL,
-    revision integer,
-    content_hash text NOT NULL,
-    cause_refs jsonb DEFAULT '[]'::jsonb NOT NULL,
-    data jsonb DEFAULT '{}'::jsonb NOT NULL,
-    CONSTRAINT artifact_event_kind_check CHECK ((kind = ANY (ARRAY['created'::text, 'revised'::text, 'approved'::text, 'verified'::text, 'status_changed'::text, 'moved'::text, 'input_attached'::text, 'input_dispositioned'::text, 'provenance_corrected'::text, 'superseded'::text, 'published'::text, 'unpublished'::text, 'legacy_imported'::text]))),
-    CONSTRAINT artifact_event_revision_check CHECK (((revision IS NULL) OR (revision > 0))),
-    CONSTRAINT artifact_event_sequence_check CHECK ((sequence > 0))
-);
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA zz;
 
 
 --
--- Name: artifact_identifier; Type: TABLE; Schema: zz; Owner: -
+-- Name: EXTENSION pg_trgm; Type: COMMENT; Schema: -; Owner: -
 --
 
-CREATE TABLE zz.artifact_identifier (
-    id bigint NOT NULL,
-    owner_id uuid NOT NULL,
-    artifact_id uuid NOT NULL,
-    revision integer NOT NULL,
-    scope text NOT NULL,
-    corpus_key text NOT NULL,
-    passage_id bigint NOT NULL,
-    identifier_text text NOT NULL,
-    normalized_text text NOT NULL,
-    CONSTRAINT artifact_identifier_revision_check CHECK ((revision > 0)),
-    CONSTRAINT artifact_identifier_scope_check CHECK ((scope = ANY (ARRAY['current'::text, 'evidence'::text, 'history'::text])))
-);
+COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
 
 
---
--- Name: artifact_identifier_id_seq; Type: SEQUENCE; Schema: zz; Owner: -
---
+SET default_tablespace = '';
 
-ALTER TABLE zz.artifact_identifier ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME zz.artifact_identifier_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
-);
-
-
---
--- Name: artifact_passage; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.artifact_passage (
-    id bigint NOT NULL,
-    owner_id uuid NOT NULL,
-    artifact_id uuid NOT NULL,
-    revision integer NOT NULL,
-    scope text NOT NULL,
-    corpus_key text NOT NULL,
-    ordinal integer NOT NULL,
-    byte_start integer NOT NULL,
-    byte_end integer NOT NULL,
-    raw_text text NOT NULL,
-    analyzed_text text NOT NULL,
-    analyzer_version text NOT NULL,
-    CONSTRAINT artifact_passage_byte_start_check CHECK ((byte_start >= 0)),
-    CONSTRAINT artifact_passage_check CHECK ((byte_end >= byte_start)),
-    CONSTRAINT artifact_passage_ordinal_check CHECK ((ordinal >= 0)),
-    CONSTRAINT artifact_passage_revision_check CHECK ((revision > 0)),
-    CONSTRAINT artifact_passage_scope_check CHECK ((scope = ANY (ARRAY['current'::text, 'evidence'::text, 'history'::text])))
-);
-
-
---
--- Name: artifact_passage_id_seq; Type: SEQUENCE; Schema: zz; Owner: -
---
-
-ALTER TABLE zz.artifact_passage ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME zz.artifact_passage_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
-);
-
-
---
--- Name: artifact_projection_commit; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.artifact_projection_commit (
-    owner_id uuid NOT NULL,
-    transaction_id text NOT NULL,
-    sequence integer NOT NULL,
-    applied_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT artifact_projection_commit_sequence_check CHECK ((sequence > 0))
-);
-
-
---
--- Name: artifact_projection_watermark; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.artifact_projection_watermark (
-    owner_id uuid NOT NULL,
-    head_sequence integer DEFAULT 0 NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT artifact_projection_watermark_head_sequence_check CHECK ((head_sequence >= 0))
-);
-
-
---
--- Name: artifact_revision; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.artifact_revision (
-    owner_id uuid NOT NULL,
-    artifact_id uuid NOT NULL,
-    revision integer NOT NULL,
-    content_hash text NOT NULL,
-    payload jsonb NOT NULL,
-    cause_refs jsonb DEFAULT '[]'::jsonb NOT NULL,
-    sources jsonb DEFAULT '[]'::jsonb NOT NULL,
-    generated_by text,
-    generated_at timestamp with time zone,
-    origin_profile text NOT NULL,
-    legacy_unresolved_sources jsonb DEFAULT '[]'::jsonb NOT NULL,
-    previous_revision integer,
-    CONSTRAINT artifact_revision_origin_profile_check CHECK ((origin_profile = ANY (ARRAY['native'::text, 'legacy_import'::text]))),
-    CONSTRAINT artifact_revision_previous_revision_check CHECK (((previous_revision IS NULL) OR (previous_revision > 0))),
-    CONSTRAINT artifact_revision_revision_check CHECK ((revision > 0))
-);
-
+SET default_table_access_method = heap;
 
 --
 -- Name: assessment; Type: TABLE; Schema: zz; Owner: -
@@ -599,22 +445,6 @@ COMMENT ON COLUMN zz.doc.approved_by IS 'The one signature field. A person, neve
 
 COMMENT ON COLUMN zz.doc.created_at IS 'When this document first existed. Never moves. `updated_at` is the last write; this is the
    first, and it is what scopes a measurement to one initiative''s lifetime.';
-
-
---
--- Name: doc_artifact; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.doc_artifact (
-    team_slug text NOT NULL,
-    initiative text NOT NULL,
-    path text NOT NULL,
-    owner_id uuid NOT NULL,
-    artifact_id uuid NOT NULL,
-    current_revision integer NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT doc_artifact_current_revision_check CHECK ((current_revision > 0))
-);
 
 
 --
@@ -1169,39 +999,33 @@ COMMENT ON TABLE zz.initiative_fact IS 'Mirror of <initiative>/_facts.json for t
 
 CREATE TABLE zz.knowledge_node (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    team_slug text NOT NULL,
-    path text NOT NULL,
     kind text NOT NULL,
     lifecycle text DEFAULT 'adopted'::text NOT NULL,
-    superseded_by text,
     title text DEFAULT ''::text NOT NULL,
     body text DEFAULT ''::text NOT NULL,
     body_tsv tsvector,
     tags text[] DEFAULT '{}'::text[] NOT NULL,
-    evidence text[] DEFAULT '{}'::text[] NOT NULL,
     content_hash text DEFAULT ''::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     analyzer_version text,
+    team_id uuid NOT NULL,
+    node_ordinal text NOT NULL,
+    slug text NOT NULL,
+    superseded_by_id uuid,
     CONSTRAINT knowledge_node_kind_check CHECK ((kind = ANY (ARRAY['decision'::text, 'design'::text, 'process'::text, 'knowledge'::text, 'behavior'::text, 'style'::text]))),
-    CONSTRAINT knowledge_node_lifecycle_check CHECK ((lifecycle = ANY (ARRAY['adopted'::text, 'superseded'::text])))
+    CONSTRAINT knowledge_node_lifecycle_check CHECK ((lifecycle = ANY (ARRAY['adopted'::text, 'superseded'::text]))),
+    CONSTRAINT knowledge_node_lifecycle_superseded_check CHECK (((lifecycle = 'superseded'::text) = (superseded_by_id IS NOT NULL)))
 );
 
 
 --
--- Name: knowledge_node_artifact; Type: TABLE; Schema: zz; Owner: -
+-- Name: knowledge_node_evidence; Type: TABLE; Schema: zz; Owner: -
 --
 
-CREATE TABLE zz.knowledge_node_artifact (
-    team_slug text NOT NULL,
-    path text NOT NULL,
-    owner_id uuid NOT NULL,
-    artifact_id uuid NOT NULL,
-    current_revision integer NOT NULL,
-    origin_profile text NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT knowledge_node_artifact_current_revision_check CHECK ((current_revision > 0)),
-    CONSTRAINT knowledge_node_artifact_origin_profile_check CHECK ((origin_profile = ANY (ARRAY['native'::text, 'legacy_import'::text])))
+CREATE TABLE zz.knowledge_node_evidence (
+    node_id uuid NOT NULL,
+    initiative_id uuid NOT NULL
 );
 
 
@@ -1496,152 +1320,6 @@ CREATE TABLE zz.release_attempt_owner (
 );
 
 
---
--- Name: search_current; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.search_current (
-    corpus_key text NOT NULL,
-    owner_id uuid NOT NULL,
-    artifact_id uuid NOT NULL,
-    revision integer NOT NULL,
-    content_hash text NOT NULL,
-    title text DEFAULT ''::text NOT NULL,
-    type text DEFAULT ''::text NOT NULL,
-    tags text[] DEFAULT '{}'::text[] NOT NULL,
-    path text DEFAULT ''::text NOT NULL,
-    gate_status text,
-    knowledge_status text,
-    raw_body text DEFAULT ''::text NOT NULL,
-    analyzer_version text,
-    projection_hash text NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT search_current_revision_check CHECK ((revision > 0))
-)
-PARTITION BY LIST (corpus_key);
-
-
---
--- Name: search_current_default; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.search_current_default (
-    corpus_key text NOT NULL,
-    owner_id uuid NOT NULL,
-    artifact_id uuid NOT NULL,
-    revision integer NOT NULL,
-    content_hash text NOT NULL,
-    title text DEFAULT ''::text NOT NULL,
-    type text DEFAULT ''::text NOT NULL,
-    tags text[] DEFAULT '{}'::text[] NOT NULL,
-    path text DEFAULT ''::text NOT NULL,
-    gate_status text,
-    knowledge_status text,
-    raw_body text DEFAULT ''::text NOT NULL,
-    analyzer_version text,
-    projection_hash text NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT search_current_revision_check CHECK ((revision > 0))
-);
-
-
---
--- Name: search_evidence; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.search_evidence (
-    corpus_key text NOT NULL,
-    owner_id uuid NOT NULL,
-    artifact_id uuid NOT NULL,
-    revision integer NOT NULL,
-    content_hash text NOT NULL,
-    title text DEFAULT ''::text NOT NULL,
-    type text DEFAULT ''::text NOT NULL,
-    tags text[] DEFAULT '{}'::text[] NOT NULL,
-    path text DEFAULT ''::text NOT NULL,
-    gate_status text,
-    knowledge_status text,
-    raw_body text DEFAULT ''::text NOT NULL,
-    analyzer_version text,
-    projection_hash text NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT search_evidence_revision_check CHECK ((revision > 0))
-)
-PARTITION BY LIST (corpus_key);
-
-
---
--- Name: search_evidence_default; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.search_evidence_default (
-    corpus_key text NOT NULL,
-    owner_id uuid NOT NULL,
-    artifact_id uuid NOT NULL,
-    revision integer NOT NULL,
-    content_hash text NOT NULL,
-    title text DEFAULT ''::text NOT NULL,
-    type text DEFAULT ''::text NOT NULL,
-    tags text[] DEFAULT '{}'::text[] NOT NULL,
-    path text DEFAULT ''::text NOT NULL,
-    gate_status text,
-    knowledge_status text,
-    raw_body text DEFAULT ''::text NOT NULL,
-    analyzer_version text,
-    projection_hash text NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT search_evidence_revision_check CHECK ((revision > 0))
-);
-
-
---
--- Name: search_history; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.search_history (
-    corpus_key text NOT NULL,
-    owner_id uuid NOT NULL,
-    artifact_id uuid NOT NULL,
-    revision integer NOT NULL,
-    content_hash text NOT NULL,
-    title text DEFAULT ''::text NOT NULL,
-    type text DEFAULT ''::text NOT NULL,
-    tags text[] DEFAULT '{}'::text[] NOT NULL,
-    path text DEFAULT ''::text NOT NULL,
-    gate_status text,
-    knowledge_status text,
-    raw_body text DEFAULT ''::text NOT NULL,
-    analyzer_version text,
-    projection_hash text NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT search_history_revision_check CHECK ((revision > 0))
-)
-PARTITION BY LIST (corpus_key);
-
-
---
--- Name: search_history_default; Type: TABLE; Schema: zz; Owner: -
---
-
-CREATE TABLE zz.search_history_default (
-    corpus_key text NOT NULL,
-    owner_id uuid NOT NULL,
-    artifact_id uuid NOT NULL,
-    revision integer NOT NULL,
-    content_hash text NOT NULL,
-    title text DEFAULT ''::text NOT NULL,
-    type text DEFAULT ''::text NOT NULL,
-    tags text[] DEFAULT '{}'::text[] NOT NULL,
-    path text DEFAULT ''::text NOT NULL,
-    gate_status text,
-    knowledge_status text,
-    raw_body text DEFAULT ''::text NOT NULL,
-    analyzer_version text,
-    projection_hash text NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT search_history_revision_check CHECK ((revision > 0))
-);
-
 
 --
 -- Name: skill; Type: TABLE; Schema: zz; Owner: -
@@ -1727,27 +1405,6 @@ CREATE TABLE zz.team (
 
 
 --
--- Name: search_current_default; Type: TABLE ATTACH; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.search_current ATTACH PARTITION zz.search_current_default DEFAULT;
-
-
---
--- Name: search_evidence_default; Type: TABLE ATTACH; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.search_evidence ATTACH PARTITION zz.search_evidence_default DEFAULT;
-
-
---
--- Name: search_history_default; Type: TABLE ATTACH; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.search_history ATTACH PARTITION zz.search_history_default DEFAULT;
-
-
---
 -- Name: control_evidence seq; Type: DEFAULT; Schema: zz; Owner: -
 --
 
@@ -1759,86 +1416,6 @@ ALTER TABLE ONLY zz.control_evidence ALTER COLUMN seq SET DEFAULT nextval('zz.co
 --
 
 ALTER TABLE ONLY zz.control_waiver ALTER COLUMN seq SET DEFAULT nextval('zz.control_waiver_seq_seq'::regclass);
-
-
---
--- Name: artifact_edge artifact_edge_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.artifact_edge
-    ADD CONSTRAINT artifact_edge_pkey PRIMARY KEY (source_owner_id, source_artifact_id, kind, target_owner_id, target_artifact_id, asserted_event_id);
-
-
---
--- Name: artifact_event artifact_event_owner_id_artifact_id_sequence_key; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.artifact_event
-    ADD CONSTRAINT artifact_event_owner_id_artifact_id_sequence_key UNIQUE (owner_id, artifact_id, sequence);
-
-
---
--- Name: artifact_event artifact_event_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.artifact_event
-    ADD CONSTRAINT artifact_event_pkey PRIMARY KEY (event_id);
-
-
---
--- Name: artifact_identifier artifact_identifier_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.artifact_identifier
-    ADD CONSTRAINT artifact_identifier_pkey PRIMARY KEY (id);
-
-
---
--- Name: artifact_passage artifact_passage_owner_id_artifact_id_revision_scope_corpus_key; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.artifact_passage
-    ADD CONSTRAINT artifact_passage_owner_id_artifact_id_revision_scope_corpus_key UNIQUE (owner_id, artifact_id, revision, scope, corpus_key, ordinal);
-
-
---
--- Name: artifact_passage artifact_passage_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.artifact_passage
-    ADD CONSTRAINT artifact_passage_pkey PRIMARY KEY (id);
-
-
---
--- Name: artifact artifact_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.artifact
-    ADD CONSTRAINT artifact_pkey PRIMARY KEY (owner_id, artifact_id);
-
-
---
--- Name: artifact_projection_commit artifact_projection_commit_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.artifact_projection_commit
-    ADD CONSTRAINT artifact_projection_commit_pkey PRIMARY KEY (owner_id, transaction_id);
-
-
---
--- Name: artifact_projection_watermark artifact_projection_watermark_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.artifact_projection_watermark
-    ADD CONSTRAINT artifact_projection_watermark_pkey PRIMARY KEY (owner_id);
-
-
---
--- Name: artifact_revision artifact_revision_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.artifact_revision
-    ADD CONSTRAINT artifact_revision_pkey PRIMARY KEY (owner_id, artifact_id, revision);
 
 
 --
@@ -1935,22 +1512,6 @@ ALTER TABLE ONLY zz.control_waiver
 
 ALTER TABLE ONLY zz.control_waiver
     ADD CONSTRAINT control_waiver_run_id_step_id_kind_key UNIQUE (run_id, step_id, kind);
-
-
---
--- Name: doc_artifact doc_artifact_owner_id_artifact_id_key; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.doc_artifact
-    ADD CONSTRAINT doc_artifact_owner_id_artifact_id_key UNIQUE (owner_id, artifact_id);
-
-
---
--- Name: doc_artifact doc_artifact_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.doc_artifact
-    ADD CONSTRAINT doc_artifact_pkey PRIMARY KEY (team_slug, initiative, path);
 
 
 --
@@ -2210,19 +1771,11 @@ ALTER TABLE ONLY zz.initiative
 
 
 --
--- Name: knowledge_node_artifact knowledge_node_artifact_owner_id_artifact_id_key; Type: CONSTRAINT; Schema: zz; Owner: -
+-- Name: knowledge_node_evidence knowledge_node_evidence_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
-ALTER TABLE ONLY zz.knowledge_node_artifact
-    ADD CONSTRAINT knowledge_node_artifact_owner_id_artifact_id_key UNIQUE (owner_id, artifact_id);
-
-
---
--- Name: knowledge_node_artifact knowledge_node_artifact_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.knowledge_node_artifact
-    ADD CONSTRAINT knowledge_node_artifact_pkey PRIMARY KEY (team_slug, path);
+ALTER TABLE ONLY zz.knowledge_node_evidence
+    ADD CONSTRAINT knowledge_node_evidence_pkey PRIMARY KEY (node_id, initiative_id);
 
 
 --
@@ -2234,11 +1787,19 @@ ALTER TABLE ONLY zz.knowledge_node
 
 
 --
--- Name: knowledge_node knowledge_node_team_slug_path_key; Type: CONSTRAINT; Schema: zz; Owner: -
+-- Name: knowledge_node knowledge_node_team_id_id_key; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.knowledge_node
-    ADD CONSTRAINT knowledge_node_team_slug_path_key UNIQUE (team_slug, path);
+    ADD CONSTRAINT knowledge_node_team_id_id_key UNIQUE (team_id, id);
+
+
+--
+-- Name: knowledge_node knowledge_node_team_id_node_ordinal_key; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.knowledge_node
+    ADD CONSTRAINT knowledge_node_team_id_node_ordinal_key UNIQUE (team_id, node_ordinal);
 
 
 --
@@ -2417,53 +1978,6 @@ ALTER TABLE ONLY zz.skill_run
     ADD CONSTRAINT run_pkey PRIMARY KEY (id);
 
 
---
--- Name: search_current search_current_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.search_current
-    ADD CONSTRAINT search_current_pkey PRIMARY KEY (corpus_key, owner_id, artifact_id);
-
-
---
--- Name: search_current_default search_current_default_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.search_current_default
-    ADD CONSTRAINT search_current_default_pkey PRIMARY KEY (corpus_key, owner_id, artifact_id);
-
-
---
--- Name: search_evidence search_evidence_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.search_evidence
-    ADD CONSTRAINT search_evidence_pkey PRIMARY KEY (corpus_key, owner_id, artifact_id);
-
-
---
--- Name: search_evidence_default search_evidence_default_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.search_evidence_default
-    ADD CONSTRAINT search_evidence_default_pkey PRIMARY KEY (corpus_key, owner_id, artifact_id);
-
-
---
--- Name: search_history search_history_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.search_history
-    ADD CONSTRAINT search_history_pkey PRIMARY KEY (corpus_key, owner_id, artifact_id, revision);
-
-
---
--- Name: search_history_default search_history_default_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.search_history_default
-    ADD CONSTRAINT search_history_default_pkey PRIMARY KEY (corpus_key, owner_id, artifact_id, revision);
-
 
 --
 -- Name: skill skill_name_key; Type: CONSTRAINT; Schema: zz; Owner: -
@@ -2538,55 +2052,6 @@ ALTER TABLE ONLY zz.team
 
 
 --
--- Name: artifact_by_class; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX artifact_by_class ON zz.artifact USING btree (owner_id, artifact_class);
-
-
---
--- Name: artifact_edge_target; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX artifact_edge_target ON zz.artifact_edge USING btree (target_owner_id, target_artifact_id);
-
-
---
--- Name: artifact_event_transaction; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX artifact_event_transaction ON zz.artifact_event USING btree (transaction_id);
-
-
---
--- Name: artifact_identifier_normalized; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX artifact_identifier_normalized ON zz.artifact_identifier USING btree (normalized_text);
-
-
---
--- Name: artifact_identifier_owner; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX artifact_identifier_owner ON zz.artifact_identifier USING btree (owner_id, artifact_id, revision, scope);
-
-
---
--- Name: artifact_identifier_trgm; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX artifact_identifier_trgm ON zz.artifact_identifier USING gist (normalized_text zz.gist_trgm_ops);
-
-
---
--- Name: artifact_passage_owner; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX artifact_passage_owner ON zz.artifact_passage USING btree (owner_id, artifact_id, revision, scope);
-
-
---
 -- Name: bug_open; Type: INDEX; Schema: zz; Owner: -
 --
 
@@ -2626,6 +2091,13 @@ CREATE INDEX control_evidence_supersedes ON zz.control_evidence USING btree (run
 --
 
 CREATE INDEX control_waiver_run ON zz.control_waiver USING btree (run_id);
+
+
+--
+-- Name: doc_body_trgm; Type: INDEX; Schema: zz; Owner: -
+--
+
+CREATE INDEX doc_body_trgm ON zz.doc USING gin (body zz.gin_trgm_ops);
 
 
 --
@@ -2727,6 +2199,13 @@ CREATE INDEX improvement_run_eval_run_id_created_at_idx ON zz.improvement_run US
 
 
 --
+-- Name: knowledge_node_body_trgm; Type: INDEX; Schema: zz; Owner: -
+--
+
+CREATE INDEX knowledge_node_body_trgm ON zz.knowledge_node USING gin (body zz.gin_trgm_ops);
+
+
+--
 -- Name: knowledge_node_tags; Type: INDEX; Schema: zz; Owner: -
 --
 
@@ -2737,7 +2216,7 @@ CREATE INDEX knowledge_node_tags ON zz.knowledge_node USING gin (tags);
 -- Name: knowledge_node_team; Type: INDEX; Schema: zz; Owner: -
 --
 
-CREATE INDEX knowledge_node_team ON zz.knowledge_node USING btree (team_slug, lifecycle);
+CREATE INDEX knowledge_node_team ON zz.knowledge_node USING btree (team_id, lifecycle);
 
 
 --
@@ -2839,113 +2318,10 @@ CREATE INDEX run_skill_version ON zz.skill_run USING btree (skill_version_id, st
 
 
 --
--- Name: search_current_default_tags; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX search_current_default_tags ON zz.search_current_default USING gin (tags);
-
-
---
--- Name: search_current_default_tsv; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX search_current_default_tsv ON zz.search_current_default USING gin (to_tsvector('english'::regconfig, raw_body));
-
-
---
--- Name: search_evidence_default_tags; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX search_evidence_default_tags ON zz.search_evidence_default USING gin (tags);
-
-
---
--- Name: search_evidence_default_tsv; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX search_evidence_default_tsv ON zz.search_evidence_default USING gin (to_tsvector('english'::regconfig, raw_body));
-
-
---
--- Name: search_history_default_tags; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX search_history_default_tags ON zz.search_history_default USING gin (tags);
-
-
---
--- Name: search_history_default_tsv; Type: INDEX; Schema: zz; Owner: -
---
-
-CREATE INDEX search_history_default_tsv ON zz.search_history_default USING gin (to_tsvector('english'::regconfig, raw_body));
-
-
---
 -- Name: skill_run_identity; Type: INDEX; Schema: zz; Owner: -
 --
 
 CREATE UNIQUE INDEX skill_run_identity ON zz.skill_run USING btree (team_id, initiative_id, skill_version_id, session) NULLS NOT DISTINCT;
-
-
---
--- Name: search_current_default_pkey; Type: INDEX ATTACH; Schema: zz; Owner: -
---
-
-ALTER INDEX zz.search_current_pkey ATTACH PARTITION zz.search_current_default_pkey;
-
-
---
--- Name: search_evidence_default_pkey; Type: INDEX ATTACH; Schema: zz; Owner: -
---
-
-ALTER INDEX zz.search_evidence_pkey ATTACH PARTITION zz.search_evidence_default_pkey;
-
-
---
--- Name: search_history_default_pkey; Type: INDEX ATTACH; Schema: zz; Owner: -
---
-
-ALTER INDEX zz.search_history_pkey ATTACH PARTITION zz.search_history_default_pkey;
-
-
---
--- Name: artifact_edge artifact_edge_asserted_event_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.artifact_edge
-    ADD CONSTRAINT artifact_edge_asserted_event_id_fkey FOREIGN KEY (asserted_event_id) REFERENCES zz.artifact_event(event_id);
-
-
---
--- Name: artifact_edge artifact_edge_retracted_event_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.artifact_edge
-    ADD CONSTRAINT artifact_edge_retracted_event_id_fkey FOREIGN KEY (retracted_event_id) REFERENCES zz.artifact_event(event_id);
-
-
---
--- Name: artifact_event artifact_event_owner_id_artifact_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.artifact_event
-    ADD CONSTRAINT artifact_event_owner_id_artifact_id_fkey FOREIGN KEY (owner_id, artifact_id) REFERENCES zz.artifact(owner_id, artifact_id);
-
-
---
--- Name: artifact_identifier artifact_identifier_passage_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.artifact_identifier
-    ADD CONSTRAINT artifact_identifier_passage_id_fkey FOREIGN KEY (passage_id) REFERENCES zz.artifact_passage(id) ON DELETE CASCADE;
-
-
---
--- Name: artifact_revision artifact_revision_owner_id_artifact_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.artifact_revision
-    ADD CONSTRAINT artifact_revision_owner_id_artifact_id_fkey FOREIGN KEY (owner_id, artifact_id) REFERENCES zz.artifact(owner_id, artifact_id);
 
 
 --
@@ -3562,6 +2938,38 @@ ALTER TABLE ONLY zz.initiative
 
 ALTER TABLE ONLY zz.initiative
     ADD CONSTRAINT initiative_team_id_fkey FOREIGN KEY (team_id) REFERENCES zz.team(id);
+
+
+--
+-- Name: knowledge_node_evidence knowledge_node_evidence_initiative_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.knowledge_node_evidence
+    ADD CONSTRAINT knowledge_node_evidence_initiative_id_fkey FOREIGN KEY (initiative_id) REFERENCES zz.initiative(id);
+
+
+--
+-- Name: knowledge_node_evidence knowledge_node_evidence_node_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.knowledge_node_evidence
+    ADD CONSTRAINT knowledge_node_evidence_node_id_fkey FOREIGN KEY (node_id) REFERENCES zz.knowledge_node(id) ON DELETE CASCADE;
+
+
+--
+-- Name: knowledge_node knowledge_node_superseded_by_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.knowledge_node
+    ADD CONSTRAINT knowledge_node_superseded_by_id_fkey FOREIGN KEY (team_id, superseded_by_id) REFERENCES zz.knowledge_node(team_id, id);
+
+
+--
+-- Name: knowledge_node knowledge_node_team_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.knowledge_node
+    ADD CONSTRAINT knowledge_node_team_id_fkey FOREIGN KEY (team_id) REFERENCES zz.team(id);
 
 
 --

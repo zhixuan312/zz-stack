@@ -158,74 +158,17 @@ export function declaredTableNames(pendingMigrations: readonly string[]): string
  * turned into tables, and the six joins that said its probe litter left and everything else
  * stayed integral. Those steps ran against the 2026-09-27 backup and are in git history with the
  * migration.
+ *
+ * COUPLED: `002_remove_artifact_layer.sql` folded back here once release 0.86.2 was verified in
+ * production, and what it declared went with it — the thirteen tables and three partitions it
+ * dropped, the reshape of `knowledge_node` under its own `id`, the new `knowledge_node_evidence`,
+ * and the three joins that said every node's address split into a numeric ordinal and a non-empty
+ * slug, every lifecycle agreed with the successor it resolved to, and every citation named a node
+ * and an initiative that exist. Those joins ran against the 2026-09-27 backup and every one
+ * returned zero violating rows, which is what made the fold safe to take.
+ *
+ * The map is EMPTY now, and that is the correct state for a checkout whose migrations are all
+ * folded: there is no pending file left to declare an expectation for. It refills on the next
+ * phase's first migration.
  */
-export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
-  "002_remove_artifact_layer.sql": {
-    tables: {
-      // The thirteen projections of a `.zz/commits` record no live store carries, plus the three
-      // `search_*_default` partitions their parents take with them. Declared `dropped` rather than
-      // hashed: a table the migration removes is present before and absent after, and content that
-      // is gone on one side has nothing to compare against. The migration refuses to start if any
-      // of them holds a row, so the presence half of this expectation is the proof there was no
-      // data disposition to make.
-      artifact: { dropped: true },
-      artifact_revision: { dropped: true },
-      artifact_event: { dropped: true },
-      artifact_edge: { dropped: true },
-      artifact_passage: { dropped: true },
-      artifact_identifier: { dropped: true },
-      artifact_projection_commit: { dropped: true },
-      artifact_projection_watermark: { dropped: true },
-      doc_artifact: { dropped: true },
-      knowledge_node_artifact: { dropped: true },
-      search_current: { dropped: true },
-      search_evidence: { dropped: true },
-      search_history: { dropped: true },
-
-      // Reshaped, not rebuilt: every row survives under its own `id` and keeps its kind, lifecycle,
-      // title, body, lexemes, tags, hash and both timestamps. The four columns the migration owns —
-      // `team_id`, `node_ordinal`, `slug` and `superseded_by_id` — are left out of the digest, along
-      // with the four it drops, so the hash says "the rest of the row is untouched" rather than
-      // differing for the reason the migration exists. The count stays `unchanged` and is what says
-      // the rows were carried.
-      knowledge_node: {
-        hashColumns: ["id", "kind", "lifecycle", "title", "body", "body_tsv", "tags",
-                      "content_hash", "created_at", "updated_at", "analyzer_version"],
-      },
-
-      // Created by this migration, so there is no before side to compare a count or a hash with,
-      // and the count it holds is a property of the arrays it was expanded from.
-      knowledge_node_evidence: { added: true },
-    },
-    joins: [
-      {
-        // The address became two columns, and a split that produced an empty ordinal or an empty
-        // slug would be a node nobody can address again. The migration refuses a path it cannot
-        // split, so this asserts the refuse did not become a truncate.
-        name: "every node's file address split into a numeric ordinal and a non-empty slug",
-        violatingCount:
-          "select count(*)::int as n from zz.knowledge_node where node_ordinal !~ '^[0-9]+$' or slug = ''",
-      },
-      {
-        // The lifecycle check is on the RESOLVED key, which is the spec's wording: a node that says
-        // it was superseded must name the row that superseded it. The migration's second pass is the
-        // only writer of that key, so a row where the two disagree is a successor that did not
-        // resolve or one that resolved to the wrong shelf.
-        name: "a node's lifecycle agrees with the successor it resolved to",
-        violatingCount:
-          "select count(*)::int as n from zz.knowledge_node "
-          + "where (lifecycle = 'superseded') <> (superseded_by_id is not null)",
-      },
-      {
-        // The citations moved out of a slug array into rows. A slug is team-scoped and an id is not,
-        // so this is the join that says the preference rule picked a real initiative every time
-        // rather than writing a citation that names nothing.
-        name: "every citation names a node and an initiative that exist",
-        violatingCount:
-          "select count(*)::int as n from zz.knowledge_node_evidence e "
-          + "where not exists (select 1 from zz.knowledge_node k where k.id = e.node_id) "
-          + "or not exists (select 1 from zz.initiative i where i.id = e.initiative_id)",
-      },
-    ],
-  },
-};
+export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {};

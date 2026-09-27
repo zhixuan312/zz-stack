@@ -6,16 +6,21 @@
 # failed one doctor probe and could not be rolled back, and the console's gate failed inside a
 # release while passing on every manual run.
 #
-# The gate needs Docker: `checks/schema-inventory.ts` starts a throwaway PostgreSQL from the image
-# `deploy/docker-compose.yml` names and migrates it with the real runner, because a static reading
-# of the SQL cannot see nullability, foreign-key actions or defaults as PostgreSQL resolves them.
+# FOUR things this workflow got wrong before it worked, each found by reading a failing run rather
+# than by announcing a fix:
 #
-# That image is BUILT here from `deploy/postgres/Dockerfile` rather than pulled from ghcr, and the
-# tag is written to match what the compose file names so `docker run` finds it locally. Pulling it
-# needs a package this repository's GITHUB_TOKEN has no access to — the first run of this workflow
-# died on `docker pull` with "Error response from daemon: denied" — and the image is pinned by
-# digest and by the extension commit in `deploy/postgres/versions.lock.json`, so building it needs
-# no secret at all and proves the Dockerfile still builds.
+#  1. `docker pull ghcr.io/zhixuan312/zz-postgres` is denied — the package is private and a package
+#     grants GITHUB_TOKEN access only to repositories explicitly linked to it.
+#  2. `docker build deploy/postgres` fails: line 43 of the Dockerfile copies
+#     `deploy/postgres/postgresql.conf`, a path relative to the REPO ROOT, so the context is the
+#     root and the Dockerfile is the argument.
+#  3. **The console must be checked out as a SIBLING.** `checks/gateways-routes-have-callers.ts`
+#     reads the console's API calls to prove every route this gateway serves has a caller, and it
+#     REFUSES to pass when the console is absent: "not evidence that they have none". So both
+#     repositories are checked out under `pair/`, and every step runs from `pair/zz-stack`, which
+#     makes `../zz-stack-dashboard` resolve exactly as it does in a developer's checkout.
+#  4. Two overlapping runs fail each other: `checks/candidate-build-live.ts` asserts the
+#     machine-global candidate build root is as it found it. Hence `concurrency` below.
 name: gate
 
 on:
@@ -23,10 +28,7 @@ on:
     branches: [master]
   workflow_dispatch:
 
-# One run per branch, queued rather than cancelled: a push must never go untested, and
-# `checks/candidate-build-live.ts` asserts the machine-global candidate build root is exactly as it
-# found it — so two runs on one machine each see the other's directory and both fail. The platform's
-# own rule is already that gates run serially.
+# One run per branch, queued rather than cancelled: a push must never go untested.
 concurrency:
   group: gate-${{ github.ref }}
   cancel-in-progress: false
@@ -35,18 +37,29 @@ jobs:
   gate:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # Every step runs as if from a developer's checkout, one directory below the console's.
+    defaults:
+      run:
+        working-directory: pair/zz-stack
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: pair/zz-stack
+
+      # Both repositories are public, so the default token reads the console without a secret.
+      - uses: actions/checkout@v4
+        with:
+          repository: zhixuan312/zz-stack-dashboard
+          path: pair/zz-stack-dashboard
 
       - uses: actions/setup-node@v4
         with:
           node-version: 24
 
-      # `-f … .` and not `docker build deploy/postgres`: line 43 of the Dockerfile copies
-      # `deploy/postgres/postgresql.conf`, a path relative to the REPO ROOT, so the context is the
-      # root and the Dockerfile is the argument. Building with the directory as the context fails
-      # with `failed to compute cache key: "/deploy/postgres/postgresql.conf": not found` — which is
-      # what the first three runs of this workflow did before anybody read them.
+      # Built, not pulled: the image is pinned by digest and by the extension commit in
+      # `deploy/postgres/versions.lock.json`, so building it needs no secret at all and proves the
+      # Dockerfile still builds. The tag is written to match what `deploy/docker-compose.yml` names,
+      # so the inventory check's `docker run` finds it locally.
       - name: Build the pinned PostgreSQL the inventory check migrates
         run: docker build -f deploy/postgres/Dockerfile -t ghcr.io/zhixuan312/zz-postgres:17.11-pgts1.4.0 .
 

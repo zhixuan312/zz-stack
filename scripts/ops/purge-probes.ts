@@ -57,7 +57,7 @@ async function census() {
     // From zz.knowledge_node, which is where a node lives. Counting zz.doc
     // reads 0 whatever the store holds, so the DELETE below deletes nothing and a purge that removed
     // the files leaves their index rows behind.
-    one("node", `select count(*) n from zz.knowledge_node where path ilike '${LIKE}'`),
+    one("node", `select count(*) n from zz.knowledge_node where slug ilike '${LIKE}'`),
     one("assessment", `select count(*) n from zz.assessment where initiative_id in (${PROBES})`),
     one("REAL initiative", `select count(*) n from zz.initiative where slug not like '${LIKE}'`),
     // Initiative documents only — nodes are their own table. Counting both makes deleting probe
@@ -65,7 +65,7 @@ async function census() {
     // did the right thing.
     one("REAL doc", `select count(*) n from zz.doc
                      where initiative not like '${LIKE}' and path not like 'nodes/%'`),
-    one("REAL node", `select count(*) n from zz.knowledge_node where path not ilike '${LIKE}'`),
+    one("REAL node", `select count(*) n from zz.knowledge_node where slug not ilike '${LIKE}'`),
   ]));
 }
 
@@ -87,10 +87,12 @@ function probeDirs(): string[] {
  * initiative purge: chain-check calls `knowledge_add`, and a node lands in `<team>/_knowledge/nodes/`
  * keyed by nothing that purge can see.
  *
- * Matched on the path, never the title. A real node called "A check not wired into the gate is not
- * enforced — unless it cannot be" mentions the chain check in its title and is somebody's actual
- * finding. The probes are two generated stems, `chain-check-subject-probe.md` and
- * `chain-check-subject-probe-superseding.md`. */
+ * Matched on the `slug`, never the title. A real node called "A check not wired into the gate is
+ * not enforced — unless it cannot be" mentions the chain check in its title and is somebody's
+ * actual finding. The slug is derived from the file's own name (`nodes/<ordinal>-<slug>.md`), so
+ * matching it matches the file: the probes are `chain-check-subject-probe` and
+ * `chain-check-subject-probe-superseding`. The `path` column this used to match was replaced by
+ * `node_ordinal` and `slug` when `knowledge_node` was put onto ids. */
 function probeNodes(): string[] {
   const teams = join(ARTIFACTS, "teams");
   if (!existsSync(teams)) return [];
@@ -162,7 +164,7 @@ try {
   const e = await db.query(`delete from zz.event where initiative_id in (${PROBES})`);
   // The chain check asks `assess` and records two audit rounds, and every answer is a row here.
   const a = await db.query(`delete from zz.assessment where initiative_id in (${PROBES})`);
-  const k = await db.query(`delete from zz.knowledge_node where path ilike '${LIKE}'`);
+  const k = await db.query(`delete from zz.knowledge_node where slug ilike '${LIKE}'`);
   const i = await db.query(`delete from zz.initiative where slug like '${LIKE}'`);
   console.log(`  knowledge nodes: ${k.rowCount}`);
   console.log(`  assessments: ${a.rowCount}`);

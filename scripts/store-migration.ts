@@ -29,7 +29,9 @@
  * and a source's single `supports` value names the document it bears on and becomes a `supports`
  * link pinned to the source's revision at one end and left null at the other, because a source
  * bears on the document identity across its later revisions rather than on one historical target
- * revision.
+ * revision. Both are read from the document's own bytes — the envelope's `evidence` with `sources`
+ * as the fallback, and its `supports` — because `007_drop_legacy_store.sql` dropped the two columns
+ * `indexDoc` had projected them into, and the store is the original of both.
  *
  * The two legacy pins of AC-6.7 are resolved here, because the evidence they need exists only in
  * the store:
@@ -69,6 +71,7 @@ import { join } from "node:path";
 
 import { documentBody, parseEnvelope } from "@zz/contracts";
 
+import { citationsAt, envelopeList, type Citations } from "./store-migration/citations.ts";
 import { writeLinks, type Link } from "./store-migration/links.ts";
 import { hashBytes, type DocRow, type Placed, type Queryable, type Revision } from "./store-migration/model.ts";
 import { pinLegacy } from "./store-migration/pins.ts";
@@ -103,12 +106,6 @@ function envelopeVersion(env: Record<string, string>): number {
 function revisionTitle(env: Record<string, string>, docPath: string): string {
   return (env.title ?? "").replace(/^["']|["']$/g, "").trim()
     || docPath.replace(/\.md$/, "");
-}
-
-/** `indexDoc`'s own list reader: one frontmatter line, comma-separated, quotes stripped. */
-function envelopeList(value: string | undefined): string[] {
-  return (value ?? "").replace(/^\[|\]$/g, "").split(",")
-    .map((t) => t.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
 }
 
 /** A frontmatter date, as `timestamptz`. Anything that is not a date is no stamp at all. */
@@ -281,6 +278,21 @@ function revisionsFor(teamDir: string, initiative: string, docPath: string):
   return { current: currentVersion, revisions: rows };
 }
 
+/* -------------------------------------------------------------------- the rows, and their file */
+
+/**
+ * Every document, addressed the way the store is.
+ *
+ * `doc` no longer carries `team_slug` or `initiative` — `007_drop_legacy_store.sql` dropped them —
+ * so the address a store path is built from is reached through `initiative_id`: the initiative's
+ * own `slug`, and the team's through its `team_id`. The carry and the verification read this one
+ * query, so neither can disagree with the other about which document a path names.
+ */
+const DOC_ROWS = `select d.id::text as id, t.slug as team_slug, i.slug as initiative, d.path, d.status
+                    from zz.doc d
+                    join zz.initiative i on i.id = d.initiative_id
+                    join zz.team t on t.id = i.team_id`;
+
 /* --------------------------------------------------------------------------------- the carry */
 
 function isSnapshotPath(docPath: string): boolean {
@@ -332,13 +344,15 @@ export async function carryStore(db: Queryable, storeRoot: string): Promise<Stor
   const principals = (await db.query<{ id: string; email: string }>(
     "select id, email from zz.principal")).rows;
   const principalByEmail = new Map(principals.map((p) => [p.email, p.id]));
-  const docs = (await db.query<DocRow>(
-    "select id, team_slug, initiative, path, status, evidence, supports from zz.doc")).rows;
+  const docs = (await db.query<DocRow>(DOC_ROWS)).rows;
   const byTeam = new Map<string, DocRow[]>();
   for (const d of docs) byTeam.set(d.team_slug, [...byTeam.get(d.team_slug) ?? [], d]);
 
   // Each document placed, by row id, so the links and the pins can name exact revisions.
   const placed = new Map<string, Placed>();
+  // Each document's citations, by row id, read from its own file below and null where the store
+  // holds no such file — which is a refusal, named there, and never an empty list of citations.
+  const citations = new Map<string, Citations | null>();
 
   for (const team of readdirSync(teamsDir, { withFileTypes: true })
     .filter((e) => e.isDirectory()).map((e) => e.name).sort()) {
@@ -353,13 +367,25 @@ export async function carryStore(db: Queryable, storeRoot: string): Promise<Stor
     }
     report.teams.push(team);
 
-    for (const doc of byTeam.get(team) ?? []) {
-      if (isSnapshotPath(doc.path)) continue; // a revision of its parent, not a document of its own
-      const relPath = `${doc.initiative}/${doc.path}`;
-      if (!existsSync(join(teamDir, relPath))) {
-        report.refusals.push(`${team}/${relPath}: no such file in the store`);
+    const teamDocs = byTeam.get(team) ?? [];
+    // Every one of the team's documents is read once here, at its own store path, for the citations
+    // its `doc_link` rows are built from — and this is also where a file the store does not hold is
+    // named: a `_versions/` row is not read by the loop below at all, so its absence has no other
+    // reader to report it. One read, one existence check, one refusal per document.
+    for (const doc of teamDocs) {
+      const read = citationsAt(teamDir, doc);
+      if ("refused" in read) {
+        report.refusals.push(`${team}/${doc.initiative}/${doc.path}: ${read.refused}`);
+        citations.set(doc.id, null);
         continue;
       }
+      citations.set(doc.id, read.cites);
+    }
+
+    for (const doc of teamDocs) {
+      if (isSnapshotPath(doc.path)) continue; // a revision of its parent, not a document of its own
+      const relPath = `${doc.initiative}/${doc.path}`;
+      if (citations.get(doc.id) === null) continue; // named above; there is nothing to read either
       let derived: { current: number; revisions: Revision[] };
       try {
         derived = revisionsFor(teamDir, doc.initiative, doc.path);
@@ -433,6 +459,11 @@ export async function carryStore(db: Queryable, storeRoot: string): Promise<Stor
   const links: Link[] = [];
   for (const doc of docs) {
     const teamDocs = byTeam.get(doc.team_slug) ?? [];
+    // A `_versions/` row's citations are its own file's, and a frozen copy is a file of its own
+    // beside its parent rather than the parent's current revision. `citationsAt` reads the row's
+    // own path, which is that file for both kinds of row.
+    const cites = citations.get(doc.id);
+    if (!cites) continue; // no file: refused above, and there are no citations to write for it
     let fromId = doc.id;
     let fromRevision = placed.get(doc.id)?.current;
     if (isSnapshotPath(doc.path)) {
@@ -446,7 +477,7 @@ export async function carryStore(db: Queryable, storeRoot: string): Promise<Stor
     }
     if (fromRevision === undefined) continue;
     const where = `${doc.team_slug}/${doc.initiative}/${doc.path}`;
-    for (const citedPath of doc.evidence ?? []) {
+    for (const citedPath of cites.evidence) {
       const target = resolvePath(teamDocs, doc.initiative, citedPath);
       const held = target ? index.get(target.id) : undefined;
       links.push({ where, fromId, fromRevision, cited: citedPath, kind: "cites",
@@ -455,7 +486,7 @@ export async function carryStore(db: Queryable, storeRoot: string): Promise<Stor
     // A source names the documents it bears on, and the real store's `supports` holds more than one
     // — the flow writes `spec.md, plan.md` into the single frontmatter field — so it is read with
     // the same list reader `indexDoc` uses and becomes one link per named document.
-    for (const supported of envelopeList(doc.supports ?? "")) {
+    for (const supported of envelopeList(cites.supports ?? "")) {
       const target = resolvePath(teamDocs, doc.initiative, supported);
       const held = target ? index.get(target.id) : undefined;
       links.push({ where, fromId, fromRevision, cited: supported, kind: "supports",
@@ -499,8 +530,7 @@ export async function verifyStore(db: Queryable, storeRoot: string): Promise<str
   if (!existsSync(teamsDir)) return [`no store at ${teamsDir} — nothing was carried`];
 
   const known = new Set((await db.query<{ slug: string }>("select slug from zz.team")).rows.map((t) => t.slug));
-  const docs = (await db.query<DocRow>(
-    "select id, team_slug, initiative, path, status, evidence, supports from zz.doc")).rows;
+  const docs = (await db.query<DocRow>(DOC_ROWS)).rows;
 
   for (const team of readdirSync(teamsDir).sort()) {
     if (!known.has(team)) continue;

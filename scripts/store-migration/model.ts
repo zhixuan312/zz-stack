@@ -20,16 +20,24 @@ export interface Queryable {
     Promise<{ rows: T[] }>;
 }
 
-/** One row of `zz.doc`, as this carry addresses it: the identity of a document, and the two
- *  columns that carry its citations for as long as Task I-41 leaves them standing. */
+/** One row of `zz.doc`, as this carry addresses it: the identity of a document, and the store
+ *  path it is read from.
+ *
+ *  The team and initiative slugs are NOT columns of `doc` any more —
+ *  `007_drop_legacy_store.sql` dropped them with the rest of the file store's index — and the row
+ *  reaches them through `initiative_id`: the initiative's own `slug`, and the team's through it.
+ *  Both selects in `store-migration.ts` take them from that join, so the row and the file it is
+ *  carried from are addressed by one pair rather than two spellings of it.
+ *
+ *  The citations are not here either, and they were a projection of the document's own bytes from
+ *  the start: `indexDoc` wrote `list(env.evidence || env.sources)` and `env.supports` into the two
+ *  dropped columns, and the carry reads them back off the file — see `citationsAt`. */
 export interface DocRow {
   id: string;
   team_slug: string;
   initiative: string;
   path: string;
   status: string;
-  evidence: string[] | null;
-  supports: string | null;
 }
 
 type RevisionState = "retained" | "missing_legacy";

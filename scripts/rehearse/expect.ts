@@ -177,6 +177,11 @@ export function declaredTableNames(pendingMigrations: readonly string[]): string
  * Phase 0 to declare a `withArtifacts` step: the carry that writes `doc_revision` from every team's
  * store reads the file store rather than the database, so `scripts/rehearse.ts` unpacks `--artifacts`
  * and the step runs there.
+ *
+ * COUPLED: the phase's third entry is `005_initiative_record.sql`'s, for the one table the release
+ * CREATES rather than reshapes. It was missing through waves 1-8 and the phase-end rehearsal is what
+ * found it: every other pending migration adds columns or drops them, which the default expectation
+ * already covers, and a created table is the one shape only a declaration can satisfy.
  */
 export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
   "002_database_store.sql": {
@@ -216,13 +221,13 @@ export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
       // carry's business, and this is the join that says the two addresses agree rather than that the
       // constraint is satisfied — a foreign key cannot be violated, and a row keyed to the wrong
       // initiative of the same team violates nothing.
-      {
-        name: "doc.initiative_id is the initiative its (team_slug, initiative) names",
-        violatingCount: `select count(*)::int as n from zz.doc d
-          left join zz.team t on t.slug = d.team_slug
-          left join zz.initiative i on i.team_id = t.id and i.slug = d.initiative
-          where d.initiative_id is distinct from i.id`,
-      },
+      // REMOVED, and why: this asserted that the `initiative_id` the migration RESOLVED from
+      // `doc`'s `(team_slug, initiative)` named the initiative those columns meant to. Its subject
+      // is gone — `007_drop_legacy_store.sql` drops both — so the resolution it checked has already
+      // happened and cannot be re-read from the row. What remains is the foreign key, which
+      // enforces that the id names a real initiative; it cannot say the RIGHT one, and no join can
+      // any more. Recorded rather than deleted silently, because a join that stopped being run is
+      // indistinguishable from one that passes.
       // The two revision keys name a revision that exists. Vacuously true here — this file writes no
       // row, so both columns are null on all of them — and it is declared anyway, because it is the
       // claim the carry that fills them has to keep and the rehearsal is where a later migration
@@ -274,6 +279,23 @@ export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
       const report = await carryStore(db, artifactsDir);
       for (const line of formatReport(report)) console.log(`  ${line}`);
       return (await verifyStore(db, artifactsDir)).map((p) => `003_store_data.sql: ${p}`);
+    },
+  },
+  "005_initiative_record.sql": {
+    tables: {
+      // `initiative_record` is CREATED here, and that is measured rather than assumed: the before
+      // snapshot reads `zz.initiative_record` as absent — no earlier migration names the table and
+      // the folded `001_init.sql` carries none — so the one shape the rehearsal can be handed is
+      // absent-before/present-after, which is what `added` is for. Without this entry the run
+      // reports "no expectation declares the table dropped or created" and the phase's own gate
+      // cannot go green.
+      //
+      // The after side holds zero rows, and that is the data's business rather than this file's:
+      // phase 6 fills the table through the live path (`writeStageRecord` in
+      // `services/zz-core/src/initiative-record.ts`), not through a carry, so the count declares
+      // nothing. What the `_records.json` files it replaces hold is verified where it is — the
+      // carry's `records` count, against the rows each id already has.
+      initiative_record: { added: true },
     },
   },
 };

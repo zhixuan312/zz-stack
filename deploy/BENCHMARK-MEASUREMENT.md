@@ -4,6 +4,13 @@ How an operator turns each blocked target in `benchmark.json` into an observatio
 on what hardware, against which corpus, and where to put the result so the `benchmark` verb
 reads it.
 
+> **The tooling this document dispatches was removed in 0.86.0.** Every `npm run tenant-info`
+> command below belonged to the artifact/search layer, which that release deletes along with its
+> `testing/tenant-info/` corpora. The **method** is kept because it is what makes the findings in
+> `benchmark.json` readable, and the findings stand on their own; the commands are records of how
+> those measurements were to be taken, not steps anyone can run today. Nothing here has been
+> executed against this deployment.
+
 This exists because **no target in this repository's benchmark report has ever been measured**.
 The report is honest about that — every `observed` field is `null` beside the reason — and the
 command exits nonzero on it. This document is the only path from that state to a release

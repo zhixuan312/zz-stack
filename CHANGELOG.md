@@ -33,6 +33,49 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.86.0] — 2026-09-27
+
+Phase 5 of the schema first-principles review (initiative
+`2026-09-21-schema-first-principles-review`): the artifact and search layer is gone, and
+`knowledge_node` answers from ids. This is the first phase of the review that removes tables.
+
+### Removed
+- **The artifact/search layer — thirteen tables and their three partitions.** They were
+  projections of a `.zz/commits` file record that no live store ever carried, so a query against
+  them was a query against a projection of nothing. The phase's migration counts all thirteen and
+  **refuses rather than disposes** if any of them holds a row.
+- **The `tenant-info` CLI and the whole `testing/tenant-info/` corpus** — both `.jsonl` files, the
+  golden fixture, and the checks that read them. `npm run tenant-info` is gone. The analyzer those
+  checks exercised stays, with its own checks.
+- **The `pg_textsearch` extension inside the database.** The image still compiles it and the
+  cluster still preloads it; what this release drops is the extension in a migrated database.
+  `pg_trgm` stays — the trigram index needs it.
+
+### Changed
+- **`knowledge_node` is keyed by ids.** `team_slug`, `path`, `superseded_by` and the `evidence`
+  array are gone. A node now carries `team_id`, a `node_ordinal` and a `slug` split from its own
+  file name, a `superseded_by_id` foreign key, and its citations as rows in the new
+  `knowledge_node_evidence`. A node file whose name does not split into an ordinal and a slug is
+  refused rather than guessed.
+- **Chinese retrieval still works, and is now ranked.** The Han half of `body_tsv` was written by
+  the analyzer and read by nothing; it is now read, so a Han-only search is ranked by cover
+  density over its own unigrams through the `simple` configuration rather than scoring a bare
+  zero. Substring matching is unchanged, and a document still cites in slugs.
+- A `doc` and a `knowledge_node` each carry a trigram index on their body, so a Chinese substring
+  search is served by an index rather than a sequential scan.
+
+### Upgrade notes
+- **A migration applies on the gateway's next start, to a live database.** It drops thirteen
+  tables and reshapes `knowledge_node`. Back up first with `deploy/backup.sh`.
+- **It refuses rather than deletes.** If any of the thirteen holds a row, the migration raises an
+  exception and the gateway does not start. That is deliberate: a row anywhere is something worth
+  looking at, not a disposal to be scripted.
+- **Knowledge is carried from the node files.** The reshaped `knowledge_node` is populated from
+  the store's `_knowledge/nodes/*.md`, and `knowledge_reindex` repairs whatever the reshape could
+  not resolve at insert time. Run it once after upgrading.
+- No env key changed. Clients re-pull with the usual two commands to pick up the new plugin
+  versions; no skill text changed in this release.
+
 ## [0.85.0] — 2026-09-27
 
 Phase 4 of the schema first-principles review (initiative

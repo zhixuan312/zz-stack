@@ -81,6 +81,13 @@ Each refusal is a real finding about the backup. None of them is a problem with 
 
 ---
 
+> **Two of the suites this document dispatches were removed in 0.86.0.** The `tenant-info` CLI
+> and its corpora went with the artifact/search layer, so `npm run tenant-info -- verify --suite
+> rebuild` and `--suite deployment` below no longer exist. The image this section builds is
+> unaffected: `deploy/postgres/` still compiles `pg_textsearch`, and what 0.86.0 drops is the
+> extension inside a *migrated database* — `002_remove_artifact_layer.sql` ends with a conditional
+> `drop extension`. Only the dispatch of those two suites is stale.
+
 ## 3. Stand up the isolated PostgreSQL 17 database
 
 > **The pins are resolved.** `deploy/postgres/versions.lock.json` carries eight of its nine

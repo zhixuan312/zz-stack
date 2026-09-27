@@ -36,6 +36,8 @@ import { documentBody } from "@zz/contracts";
 import { decisionRows } from "@zz/indexing";
 
 import { names, reviewMove, reviewRounds, stakeholderSources, unbackloggedFindings } from "./review-rounds.js";
+import { db, teamFor } from "./platform-db.js";
+import { loadDocument } from "./versions.js";
 import { assessFamily, type Assessment } from "./semantic.js";
 import type { Chain } from "./write-guards.js";
 
@@ -65,17 +67,42 @@ function taskCriterion(body: string, id: string): string | null {
   return /\*\*Technical acceptance criteri(?:a|on)\*\*[^:]*:\s*(.*)/.exec(section)?.[1]?.trim() ?? null;
 }
 
-/** Every criterion the verified documents declare, in their order, first declaration winning. */
+/** Every criterion one document's body declares, its order preserved, first declaration winning. */
+function criteriaIn(doc: string, body: string, out: Map<string, Criterion>): void {
+  for (const row of decisionRows(body)) {
+    if (out.has(row.key) || !/^(AC-\d|I-\d+$)/.test(row.key)) continue;
+    const text = row.key.startsWith("I-") ? (taskCriterion(body, row.key) ?? row.detail) : row.detail;
+    out.set(row.key, { id: row.key, text, from: doc });
+  }
+}
+
+/** Every criterion the verified documents declare, read from the store on disk. The fixture path:
+ *  the check that guards this module drives it over a directory it built. */
 export function declaredCriteria(dir: string, verifies: string[]): Criterion[] {
   const out = new Map<string, Criterion>();
   for (const doc of verifies) {
     if (!existsSync(join(dir, doc))) continue;
-    const body = documentBody(readFileSync(join(dir, doc), "utf8"));
-    for (const row of decisionRows(body)) {
-      if (out.has(row.key) || !/^(AC-\d|I-\d+$)/.test(row.key)) continue;
-      const text = row.key.startsWith("I-") ? (taskCriterion(body, row.key) ?? row.detail) : row.detail;
-      out.set(row.key, { id: row.key, text, from: doc });
-    }
+    criteriaIn(doc, documentBody(readFileSync(join(dir, doc), "utf8")), out);
+  }
+  return [...out.values()];
+}
+
+/** The same criteria, read from the rows: the body of the revision `doc.current_revision` names.
+ *  This is the read an approval is actually held to, so a document revised since its criteria
+ *  were last read is judged on what it now says.
+ *
+ * DELIBERATE: a deployment with no database falls back to the store on disk, because a store
+ * with no rows still has the documents in it. */
+async function declaredCriteriaOf(
+  dir: string, team: string | null, initiative: string, verifies: string[],
+): Promise<Criterion[]> {
+  const p = db();
+  if (!p || !team) return declaredCriteria(dir, verifies);
+  const out = new Map<string, Criterion>();
+  for (const doc of verifies) {
+    const loaded = await loadDocument(team, `${initiative}/${doc}`);
+    if (!loaded.ok) continue;
+    criteriaIn(doc, documentBody(loaded.text), out);
   }
   return [...out.values()];
 }
@@ -125,7 +152,9 @@ export async function assessAcceptance(root: string, initiative: string, doc: { 
                                        body: string, by: string): Promise<string> {
   const table = acceptanceTable(body);
   if (!table) return "";
-  const criteria = new Map(declaredCriteria(join(root, initiative), doc.verifies).map((c) => [c.id, c]));
+  const criteria = new Map((await declaredCriteriaOf(join(root, initiative), await teamFor(by),
+                                                      initiative, doc.verifies))
+    .map((c) => [c.id, c]));
   const cache = readAcceptanceCache(root, initiative, doc.name);
   const due = table.filter((r) => r.status === "established" && criteria.has(r.id) && QUOTED.test(r.evidence))
     .map((r) => ({ row: r, text: criteria.get(r.id)?.text ?? "", digest: rowDigest(criteria.get(r.id)?.text ?? "", r.evidence) }))
@@ -163,7 +192,7 @@ export async function acceptanceApprovalRefusal(root: string, chain: Chain, relP
   const body = documentBody(content);
   const lead = `ERROR: ${relPath} is not approved — `;
   const backlog = unbackloggedFindings(root, initiative, doc.stage, doc.name, body);
-  const criteria = declaredCriteria(dir, doc.verifies);
+  const criteria = await declaredCriteriaOf(dir, await teamFor(by), initiative, doc.verifies);
   const bad: string[] = [];
   // The sweep has to have run and be settled: round 1 at least, or a stakeholder's explicit
   // waiver, and then nothing blocking.

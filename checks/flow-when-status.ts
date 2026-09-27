@@ -87,10 +87,10 @@ is(protocolA?.applies === "not_applicable",
 is(st.next_move?.action === "write_document" && st.next_move?.document === "findings.md",
    `with protocol.md ruled out, the next move is ${JSON.stringify(st.next_move)} — findings.md ` +
    "should be next, discharged of a dependency the branch ruled out");
-const refusedProtocolA = documentGuards(CHAIN, root, `${A}/protocol.md`, doc({ title: "P" }, "# P"), null, "fixture");
+const refusedProtocolA = await documentGuards(CHAIN, root, `${A}/protocol.md`, doc({ title: "P" }, "# P"), null, "fixture");
 is(typeof refusedProtocolA === "string" && /does not apply on this branch/.test(refusedProtocolA),
    `writing a not_applicable document was not refused: ${JSON.stringify(refusedProtocolA)}`);
-const okFindingsA = documentGuards(CHAIN, root, `${A}/findings.md`, approved("F"), null, "fixture");
+const okFindingsA = await documentGuards(CHAIN, root, `${A}/findings.md`, approved("F"), null, "fixture");
 is(okFindingsA === null,
    `findings.md, whose dependency the branch ruled out, was refused: ${JSON.stringify(okFindingsA)}`);
 writeFileSync(join(root, A, "findings.md"), approved("F"));
@@ -100,7 +100,7 @@ st = initiativeState(root, A, CHAIN, CHAIN.documents);
 is(st.next_move?.action === "close",
    `with findings.md approved and improvement.md ruled out (proposal_only), the next move is ` +
    `${JSON.stringify(st.next_move)} — it should be ready to close without improvement.md`);
-const closeA = documentGuards(CHAIN, root, `${A}/findings.md`,
+const closeA = await documentGuards(CHAIN, root, `${A}/findings.md`,
   doc({ title: "F", status: "approved", approved_by: "ada@zz.test", approved_at: "2026-09-25",
         outcome: "delivered", closed_by: "ada@zz.test", no_signoff_reason: "nobody signed" }, "# F"),
   null, "fixture");
@@ -113,7 +113,7 @@ facts(B, { protocol_action: "create", release_mode: "proposal_only" });
 st = initiativeState(root, B, CHAIN, CHAIN.documents);
 is(st.next_move?.action === "write_document" && st.next_move?.document === "protocol.md",
    `under protocol_action=create the next move is ${JSON.stringify(st.next_move)}, not protocol.md`);
-const okProtocolB = documentGuards(CHAIN, root, `${B}/protocol.md`, approved("P"), null, "fixture");
+const okProtocolB = await documentGuards(CHAIN, root, `${B}/protocol.md`, approved("P"), null, "fixture");
 is(okProtocolB === null, `writing protocol.md when it applies was refused: ${JSON.stringify(okProtocolB)}`);
 
 // 3. promotable: improvement.md is required before close
@@ -124,7 +124,7 @@ st = initiativeState(root, C, CHAIN, CHAIN.documents);
 is(st.next_move?.action === "write_document" && st.next_move?.document === "improvement.md",
    `under release_mode=promotable, with findings.md approved, the next move is ` +
    `${JSON.stringify(st.next_move)}, not improvement.md`);
-const closeBeforeImprovement = documentGuards(CHAIN, root, `${C}/findings.md`,
+const closeBeforeImprovement = await documentGuards(CHAIN, root, `${C}/findings.md`,
   doc({ title: "F", status: "approved", approved_by: "ada@zz.test", approved_at: "2026-09-25",
         outcome: "delivered", closed_by: "ada@zz.test", no_signoff_reason: "x" }, "# F"),
   null, "fixture");
@@ -145,7 +145,7 @@ is(protocolE?.applies === "undetermined",
    `protocol.md with no _facts.json reports applies=${JSON.stringify(protocolE?.applies)}`);
 is(st.next_move?.action === "resolve_branch" && st.next_move?.document === "protocol.md",
    `with no _facts.json at all the next move is ${JSON.stringify(st.next_move)}, not resolve_branch`);
-const refusedProtocolE = documentGuards(CHAIN, root, `${E}/protocol.md`, doc({ title: "P" }, "# P"), null, "fixture");
+const refusedProtocolE = await documentGuards(CHAIN, root, `${E}/protocol.md`, doc({ title: "P" }, "# P"), null, "fixture");
 is(typeof refusedProtocolE === "string" && /not writable yet/.test(refusedProtocolE),
    `writing an undetermined document was not refused as not writable yet: ${JSON.stringify(refusedProtocolE)}`);
 
@@ -155,14 +155,14 @@ const D = init("2026-09-25-partial-facts");
 facts(D, { protocol_action: "create" });
 writeFileSync(join(root, D, "protocol.md"), approved("P"));
 writeFileSync(join(root, D, "findings.md"), approved("F"));
-const finishedAttempt = documentGuards(CHAIN, root, `${D}/findings.md`,
+const finishedAttempt = await documentGuards(CHAIN, root, `${D}/findings.md`,
   doc({ title: "F", status: "approved", approved_by: "ada@zz.test", approved_at: "2026-09-25",
         outcome: "delivered", closed_by: "ada@zz.test", no_signoff_reason: "x" }, "# F"),
   null, "fixture");
 is(typeof finishedAttempt === "string" && /branch_undetermined/.test(finishedAttempt),
    `a finished close with improvement.md's branch undetermined was not refused as ` +
    `branch_undetermined: ${JSON.stringify(finishedAttempt)}`);
-const abandonedAttempt = documentGuards(CHAIN, root, `${D}/findings.md`,
+const abandonedAttempt = await documentGuards(CHAIN, root, `${D}/findings.md`,
   doc({ title: "F", status: "approved", approved_by: "ada@zz.test", approved_at: "2026-09-25",
         outcome: "abandoned", closed_by: "ada@zz.test" }, "# F"),
   null, "fixture");

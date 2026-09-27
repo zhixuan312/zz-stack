@@ -41,8 +41,7 @@ import { loadSubjectForEvalRun } from "./proposal-doc.js";
 import { loadProposerBundle, REJECTED_CANDIDATE_STATUSES, type ProposerBundle } from "./proposer-bundle.js";
 import { componentManifestOf } from "./subject.js";
 import { writeBranchFacts } from "./protocol.js";
-import { logActivity } from "../persist.js";
-import { userRoot } from "../paths.js";
+import { platformEvent } from "../indexing.js";
 import { db } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
 
@@ -198,8 +197,8 @@ export function registerCandidateTools(server: McpServer): void {
             return { result: { id: row.id }, result_table: "zz.eval_run", result_id: row.id };
           },
         );
-        logActivity(await userRoot(), null, {
-          user: principal, action: "improvement_start", eval_run_id, skip: true, replayed: outcome.replayed,
+        platformEvent({
+          actor: principal, kind: "improvement_start", initiative, eval_run_id, skip: true, replayed: outcome.replayed,
         });
         return json({
           improvement_run_id: null, status: "skipped",
@@ -280,8 +279,8 @@ export function registerCandidateTools(server: McpServer): void {
       const bundle = await loadProposerBundle(p, improvementRunId);
       if (!bundle) throw new Refusal("ERROR: idempotency ledger points at an improvement_run this call cannot read back");
 
-      logActivity(await userRoot(), null, {
-        user: principal, action: "improvement_start", improvement_run_id: improvementRunId,
+      platformEvent({
+        actor: principal, kind: "improvement_start", initiative, improvement_run_id: improvementRunId,
         eval_run_id, finding_count: targeted.length, replayed: outcome.replayed,
       });
       return json({
@@ -490,8 +489,8 @@ export function registerCandidateTools(server: McpServer): void {
         result = outcome.result;
       }
 
-      logActivity(await userRoot(), null, {
-        user: caller.email, action: "candidate_record", candidate_id: result.id,
+      platformEvent({
+        actor: caller.email, kind: "candidate_record", candidate_id: result.id,
         improvement_run_id, complexity_delta: result.complexity_delta, replayed: outcome.replayed,
       });
       return json({
@@ -536,7 +535,7 @@ export function registerCandidateTools(server: McpServer): void {
       if ("error" in outcome) return text(outcome.error);
       if ("build_required" in outcome) return json(outcome);
 
-      logActivity(await userRoot(), null, { user: principal, action: "candidate_validate", candidate_id, status: outcome.status });
+      platformEvent({ actor: principal, kind: "candidate_validate", candidate_id, status: outcome.status });
       return json(outcome);
     },
   );
@@ -594,8 +593,8 @@ export function registerCandidateTools(server: McpServer): void {
           return { result: { id: row.id }, result_table: "zz.improvement_run", result_id: row.id };
         },
       );
-      logActivity(await userRoot(), null, {
-        user: principal, action: "improvement_stop", improvement_run_id: resolved, replayed: outcome.replayed,
+      platformEvent({
+        actor: principal, kind: "improvement_stop", initiative, improvement_run_id: resolved, replayed: outcome.replayed,
       });
       return json({ improvement_run_id: resolved, facts: written });
     },

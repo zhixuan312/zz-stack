@@ -8,15 +8,80 @@
  *
  * Every one of them returns a sentence, never a boolean, so a refused caller is told which
  * rule they broke.
+ *
+ * COUPLED: every fact these checks judge is read from `zz.doc`/`zz.doc_revision` — the rows a
+ * document IS — and never from a file. The write they are guarding lands in those same rows, so
+ * a guard reading a file would be asking a different store than the one being written: the
+ * closing document would read as absent the moment the document tools stopped writing files, and
+ * every `initiative_close` would be refused. That is why this module is `async`: reading a
+ * database is not synchronous, and one `await` at each call site is the whole cost.
+ *
+ * DELIBERATE: the store is read only where the deployment HAS no database. `TEAM_DB_URL` unset
+ * is an ordinary configuration here — `platform-db.ts` says so — so a guard that abstained for
+ * want of rows would admit
+ * every write on such a deployment, which is the one direction a guard must never fail in.
+ * `documents()` below is the single seam: one `Map` of the facts these checks judge, built from
+ * the rows when there is a database and from the initiative's own documents when there is not.
+ * No check reads either source itself.
+ *
+ * COUPLED: `root` is still a parameter, because that seam needs it — and because
+ * `factsForWrite` reads the branch's `_facts.json` off the initiative folder, which is
+ * `initiative-record.ts`'s to move and not this module's.
  */
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { admitEntry, documentApplies, OUTCOME_STOPPED, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
 
-import { frontmatterStatus } from "./chain.js";
 import { closingDocRuledOut, factsForWrite } from "./initiative-record.js";
+import { docRows } from "./indexing.js";
+import { db } from "./platform-db.js";
 import { attributionCheck, type Chain, outcomeCheck, sectionCheck, statusCheck } from "./write-guards.js";
+
+/** The document facts a guard judges. Deliberately small: a check asks whether a document is
+ *  held, what its status is, and who signed or closed it — never for its title, its tags or its
+ *  revision, and a wider type would invite a check to start reading one. */
+interface HeldDoc {
+  status: string;
+  approved_by: string | null;
+  /** `ownershipCheck` compares every PLATFORM_OWNED field against the document as it stands, so
+   *  these three are here for that comparison and for nothing else. */
+  approved_at: string | null;
+  outcome: string | null;
+  closed_by: string | null;
+}
+/** Every document one initiative holds, keyed by the name inside it — the one seam between
+ *  these checks and whichever store the deployment keeps.
+ *
+ *  With a database: the rows. Without one: the initiative's own documents, read the way the
+ *  guards read them before there were rows. Both answer the same question, so every check below
+ *  is written once. */
+async function documents(root: string, team: string | null, initiative: string): Promise<Map<string, HeldDoc>> {
+  const out = new Map<string, HeldDoc>();
+  const p = db();
+  if (p) {
+    for (const d of await docRows(p, team, initiative)) {
+      out.set(d.path, { status: d.status, approved_by: d.approved_by, approved_at: d.approved_at,
+                        outcome: d.outcome, closed_by: d.closed_by });
+    }
+    return out;
+  }
+  const dir = join(root, initiative);
+  if (!existsSync(dir)) return out;
+  for (const name of readdirSync(dir)) {
+    // The same narrowing the store's own listings apply: a document is a `.md` that is not a
+    // mechanical record, and `_facts.json`, `_versions/`, `activity.jsonl` and the like are not
+    // documents of this initiative.
+    if (!name.endsWith(".md") || name.startsWith("_")) continue;
+    try {
+      const env = parseEnvelope(readFileSync(join(dir, name), "utf8"));
+      out.set(name, { status: env.status ?? "", approved_by: env.approved_by ?? null,
+                      approved_at: env.approved_at ?? null, outcome: env.outcome ?? null,
+                      closed_by: env.closed_by ?? null });
+    } catch { /* unreadable: the document is not held, which is the stricter reading */ }
+  }
+  return out;
+}
 
 /** Why a stop discharges a close-time requirement, written once because two rules claim it.
  *
@@ -30,13 +95,29 @@ import { attributionCheck, type Chain, outcomeCheck, sectionCheck, statusCheck }
  * word costs an outcome the ledger then carries in public. */
 const STOPPED_GROUND =
   `the work stopped rather than finished, and closing it as ${OUTCOME_STOPPED} records that in the team's ledger`;
-/** Closing an initiative (writing `outcome:` into the manifest's closing
- * document) requires every document the manifest marks `requiredForClose`. */
-function closeCheck(chain: Chain, root: string, relPath: string, content: string): string | null {
+/** The document a path names, and the two halves of that path, or an absent document.
+ *
+ * `team` is the caller's own. A caller resolving to no team reads the slug across every team,
+ * which is the same widening `protocol_affirm` already takes — an initiative slug is
+ * team-scoped, so "no team" is only ever a caller whose team the database could not answer. */
+async function held(root: string, team: string | null, relPath: string):
+  Promise<{ doc: HeldDoc | null; initiative: string; name: string }> {
+  const parts = relPath.replace(/^\/+/, "").split("/");
+  if (parts.length !== 2) return { doc: null, initiative: parts[0] ?? "", name: parts[1] ?? "" };
+  return {
+    doc: (await documents(root, team, parts[0])).get(parts[1]) ?? null,
+    initiative: parts[0], name: parts[1],
+  };
+}
+/** Closing an initiative (writing `outcome:` into the manifest's closing document) requires
+ * every document the manifest marks `requiredForClose`. */
+async function closeCheck(chain: Chain, root: string, team: string | null, relPath: string,
+                          content: string): Promise<string | null> {
   const parts = relPath.replace(/^\/+/, "").split("/");
   if (parts.length !== 2) return null;
   const env = parseEnvelope(content);
   if (!env.outcome) return null;
+  const rows = await documents(root, team, parts[0]);
   // FR-58 (Task I-28): `chain.closingDoc` is a static, per-flow answer — a `when`-conditional
   // closing document (`improvement.md`, promotable only) is `not_applicable` on every other
   // branch, and the branch still has to close somewhere. `closingDocRuledOut` is the same
@@ -49,7 +130,7 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
   // abandon is the one act that must still work on an initiative whose branch cannot be read.
   const facts = factsForWrite(root, parts[0], stop) ?? {};
   const ruledOut = closingDocRuledOut(chain.documents.find((d) => d.name === chain.closingDoc), facts);
-  const missing = stop && !!chain.closingDoc && !existsSync(join(root, parts[0], chain.closingDoc));
+  const missing = stop && !!chain.closingDoc && !rows.has(chain.closingDoc);
   const isClosingWrite = parts[1] === chain.closingDoc
     ? !ruledOut
     : (ruledOut || missing) && chain.docs.has(parts[1]) && parts[1] !== "handover.md";
@@ -61,7 +142,7 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
   // `outcome: accepted` is a claim about what a person said, so the close has to name who.
   // The close is an act, and its fields are stamped by that act, never typed here.
   // `initiative_close()` takes what the caller knows — finished or abandoned, and who
-  // accepted it if anyone did — and the platform derives the outcome from that. There is no
+  // accepted it if anyone — and the platform derives the outcome from that. There is no
   // branch in which one field is required because another holds a particular value: a fact
   // you derive cannot be forged by choosing the cheaper word.
   if (!env.closed_by) {
@@ -80,9 +161,10 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
   // DELIBERATE: three calls and not one. On both flows this platform runs, the closing
   // document is also `requiredForClose` — review.md on sdlc-flow, findings.md on
   // zz-plugin-eval — so a single requirement list would name that document twice, once at
-  // `ratified` from the text being written and once at `recorded` from the copy on disk.
-  // `admitEntry` takes the strongest holding of a kind, so the disk copy would answer for the
-  // text, and a closing document approved yesterday would close on an unapproved draft today.
+  // `ratified` from the text being written and once at `recorded` from the stored revision.
+  // `admitEntry` takes the strongest holding of a kind, so the stored revision would answer
+  // for the text, and a closing document approved yesterday would close on an unapproved
+  // draft today.
   // (`stop` is computed once, above, before the branch-aware `isClosingWrite` check.)
   const self = chain.documents.find((d) => d.name === parts[1]);
   // FR-58 (Task I-26): a document whose branch has not resolved yet — a named fact `when`
@@ -96,10 +178,10 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
     const undetermined = chain.documents.find(
       (d) => d.when && documentApplies(d, facts) === "undetermined");
     if (undetermined) {
-      const missing = Object.keys(undetermined.when!).filter((f) => !facts[f]);
+      const absent = Object.keys(undetermined.when!).filter((f) => !facts[f]);
       return (
         `ERROR: branch_undetermined — ${undetermined.name} declares \`when\` over ` +
-        `${missing.join(", ")}, and _facts.json does not record ${missing.length === 1 ? "it" : "them"} ` +
+        `${absent.join(", ")}, and _facts.json does not record ${absent.length === 1 ? "it" : "them"} ` +
         `yet, so the platform cannot say whether ${undetermined.name} is required before ` +
         `${parts[0]} closes. Run the stage that decides the branch first. If the ` +
         `work stopped rather than finished, initiative_close(initiative, "${OUTCOME_STOPPED}") ` +
@@ -107,7 +189,7 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
       );
     }
   }
-  // Judged from `content` — the text being written — and never from the copy on disk, which
+  // Judged from `content` — the text being written — and never from the stored revision, which
   // this write supersedes. No waiver on the flow's DECLARED closing document: a stop does not
   // discharge the gate of the document the flow says closes it.
   //
@@ -142,13 +224,13 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
   // a loophole.
   const written = chain.documents
     .filter((d) => d.gate && d.name !== parts[1])
-    .map((d) => ({ name: d.name, file: join(root, parts[0], d.name) }))
-    .filter((d) => existsSync(d.file));
+    .map((d) => ({ name: d.name, held: rows.get(d.name) ?? null }))
+    .filter((d) => d.held !== null);
   const gates = admitEntry(
     written.map((d) => ({ kind: d.name, standard: "ratified" })),
     written.map((d) => ({
       kind: d.name,
-      standard: frontmatterStatus(d.file) === "approved" ? "ratified" : "recorded",
+      standard: d.held!.status === "approved" ? "ratified" : "recorded",
     })),
     stop ? written.map((d) => ({ kind: d.name, ground: STOPPED_GROUND })) : [],
   );
@@ -185,7 +267,7 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
   const needed = admitEntry(
     requiredClose.map((need) => ({ kind: need, standard: "recorded" })),
     requiredClose
-      .filter((need) => existsSync(join(root, parts[0], need)))
+      .filter((need) => rows.has(need))
       .map((need) => ({ kind: need, standard: "recorded" })),
     stop ? requiredClose.map((need) => ({ kind: need, ground: STOPPED_GROUND })) : [],
   );
@@ -208,27 +290,26 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
  *
  * Gated documents only, and only while approved. A flow may mark an ungated document
  * `approved` as a working state, and editing that is ordinary work, as is editing a draft. */
-function approvedDocumentGuard(chain: Chain, root: string, relPath: string,
-                               via: string | null): string | null {
+async function approvedDocumentGuard(chain: Chain, root: string, team: string | null, relPath: string,
+                                     via: string | null): Promise<string | null> {
   if (via) return null;                       // document_approve(), initiative_close() and document_revise own their writes
-  const parts = relPath.replace(/^\/+/, "").split("/");
-  if (parts.length !== 2) return null;
-  const f = join(root, parts[0], parts[1]);
-  if (!existsSync(f) || frontmatterStatus(f) !== "approved") return null;
-  // A signature on disk, not a line in a manifest. Testing the manifest's `gate` instead
-  // would abstain for every document of a freeform initiative, where `document_approve`
+  const { doc } = await held(root, team, relPath);
+  if (!doc || doc.status !== "approved") return null;
+  // A signature in the revision table, not a line in a manifest. Testing the manifest's `gate`
+  // instead would abstain for every document of a freeform initiative, where `document_approve`
   // accepts any document in the folder — so a freeform approved document could be patched
   // with the approver's name left standing on bytes they never read.
   //
   // For a governed chain the two tests agree: stampEnvelope writes a status only where a gate
   // is declared, and document_approve refuses a declared document that carries none.
-  if (!parseEnvelope(readFileSync(f, "utf8")).approved_by) return null;
+  if (!doc.approved_by) return null;
+  const parts = relPath.replace(/^\/+/, "").split("/");
   const gated = chain.documents.some((d) => d.name === parts[1] && d.gate);
   return (
     `ERROR: ${relPath} is approved${gated ? " and carries a gate" : ""}, so it changes through ` +
     `document_revise(path: "${relPath}", content: …) — not document_write or document_patch. ` +
     "That call bumps the version, returns the document to draft, clears the approval and " +
-    "keeps the approved copy in _versions/. Writing over it here would leave the approver's " +
+    "keeps the approved revision. Writing over it here would leave the approver's " +
     "name standing on bytes they never read. If somebody's words are what changed it, pass " +
     "them as `source_content` in the same call and the record explains itself."
   );
@@ -243,21 +324,18 @@ function approvedDocumentGuard(chain: Chain, root: string, relPath: string,
  * `document_revise` freezes the signed text, bumps the version, carries the outcome forward
  * and requires a source or `source_content`; `document_write` does none of that. A closed
  * record may be corrected, and a correction says what caused it. */
-function closedDocumentGuard(root: string, relPath: string, via: string | null): string | null {
+async function closedDocumentGuard(root: string, team: string | null, relPath: string,
+                                   via: string | null): Promise<string | null> {
   if (via) return null;                       // initiative_close and document_revise own their writes
-  const parts = relPath.replace(/^\/+/, "").split("/");
-  if (parts.length !== 2) return null;
-  const f = join(root, parts[0], parts[1]);
-  if (!existsSync(f)) return null;
-  const outcome = parseEnvelope(readFileSync(f, "utf8")).outcome;
-  if (!outcome) return null;
+  const { doc } = await held(root, team, relPath);
+  if (!doc?.outcome) return null;
   return (
-    `ERROR: ${relPath} is the document this initiative CLOSED on (outcome: ${outcome}), so it ` +
+    `ERROR: ${relPath} is the document this initiative CLOSED on (outcome: ${doc.outcome}), so it ` +
     `changes through document_revise(path: "${relPath}", content: …) — not document_write or ` +
     "document_patch. The close itself is untouched either way: the platform carries the " +
     "outcome forward and the ledger row stands. What document_revise adds is the part that " +
     "matters here — it " +
-    "freezes the text somebody signed in _versions/, bumps the version, and requires you to " +
+    "freezes the signed revision, bumps the version, and requires you to " +
     "say what caused the change, as `sources` or `source_content`. A closed record may be " +
     "corrected; it may not be quietly overwritten."
   );
@@ -266,16 +344,11 @@ function closedDocumentGuard(root: string, relPath: string, via: string | null):
  *
  * handover.md requires review.md, and an initiative abandoned at the plan stage has no
  * review.md and never will — initiative_close records the outcome on the furthest document
- * the work reached. An outcome anywhere in the folder is the proof: it is written by
+ * the work reached. An outcome anywhere in the initiative is the proof: it is written by
  * initiative_close and by nothing else, and a close asserts exactly what the prerequisite
- * exists to establish. The narrower rule still applies to every open initiative.
- *
- * It reads the folder, so it is called only where the prerequisite is absent. An initiative
- * whose folder does not exist raises rather than being reported closed. */
-function closedOnSomeDocument(root: string, initiative: string): boolean {
-  return readdirSync(join(root, initiative))
-    .some((f: string) => f.endsWith(".md") &&
-                 !!parseEnvelope(readFileSync(join(root, initiative, f), "utf8")).outcome);
+ * exists to establish. The narrower rule still applies to every open initiative. */
+async function closedOnSomeDocument(root: string, team: string | null, initiative: string): Promise<boolean> {
+  return [...(await documents(root, team, initiative)).values()].some((d) => !!d.outcome);
 }
 /** May this document be written at all, given the branch the initiative is on (FR-58, Task
  *  I-26) — distinct from `gateCheck` below, which asks whether an EARLIER document's gate has
@@ -318,9 +391,11 @@ function applicabilityCheck(chain: Chain, root: string, relPath: string, stop: b
  * what is held reaches the standard demanded, or discharged on a named ground — and the
  * stage controller applies that same rule to a step's entry evidence.
  *
- * What stays here is what the kernel must not know: that a prerequisite is a file, that
- * `gate: true` is what ratifies one, and what to tell an agent that has been refused. */
-function gateCheck(chain: Chain, root: string, relPath: string, stop: boolean): string | null {
+ * What stays here is what the kernel must not know: that a prerequisite is a document the
+ * store holds a revision of, that `gate: true` is what ratifies one, and what to tell an agent
+ * that has been refused. */
+async function gateCheck(chain: Chain, root: string, team: string | null, relPath: string,
+                         stop: boolean): Promise<string | null> {
   const clean = relPath.replace(/^\/+/, "");
   const parts = clean.split("/");
   if (parts.length !== 2) return null;
@@ -344,22 +419,22 @@ function gateCheck(chain: Chain, root: string, relPath: string, stop: boolean): 
   // settled first, and what settles a document is approval when it is gated and existence
   // when it is not. The kernel states it as `EvidenceStandard`: a gated prerequisite is
   // required `ratified`, an ungated one `recorded`.
-  const depGate = chain.documents.find((d) => d.name === dep)?.gate === true;
-  const depFile = join(root, parts[0], dep);
-  const exists = existsSync(depFile);
-  const status = exists ? frontmatterStatus(depFile) : null;
+  const depGate = depDoc?.gate === true;
+  const depRow = (await documents(root, team, parts[0])).get(dep) ?? null;
+  const exists = depRow !== null;
+  const status = depRow?.status ?? null;
   const admission = admitEntry(
     [{ kind: dep, standard: depGate ? "ratified" : "recorded" }],
-    // A document that exists is recorded; one carrying a recorded approval is ratified. What
-    // is held is stated as it stands and never trimmed to what is demanded — an ungated
-    // prerequisite that somehow carries `status: approved` is reported as ratified.
+    // A document the store holds a revision of is recorded; one carrying a recorded approval is
+    // ratified. What is held is stated as it stands and never trimmed to what is demanded — an
+    // ungated prerequisite that somehow carries `status: approved` is reported as ratified.
     exists ? [{ kind: dep, standard: status === "approved" ? "ratified" : "recorded" }] : [],
     // The ground, and only where the document is absent. A close settles a prerequisite
     // nobody will now write; it says nothing about one written and left in draft, and
     // discharging that too would let a closed initiative write over a gate a person was
     // still owed a say in.
     [
-      ...(!exists && closedOnSomeDocument(root, parts[0])
+      ...(!exists && await closedOnSomeDocument(root, team, parts[0])
         ? [{ kind: dep, ground: `this initiative is closed, and the close settled ${dep} by landing its outcome elsewhere` }]
         : []),
       // FR-58 (Task I-26): a dependency the branch has ruled out is never going to exist, on
@@ -398,18 +473,22 @@ function gateCheck(chain: Chain, root: string, relPath: string, stop: boolean): 
  * this function with `via` unset and are refused the moment they introduce or change one.
  *
  * Change is the test, not presence: re-sending an unchanged approval line while patching a
- * typo is not an attempt to forge one, and comparing against disk is what tells those
- * apart. */
-function ownershipCheck(root: string, relPath: string, content: string,
-                        via: string | null): string | null {
+ * typo is not an attempt to forge one, and comparing against the stored revision is what tells
+ * those apart. */
+async function ownershipCheck(root: string, team: string | null, relPath: string, content: string,
+                              via: string | null): Promise<string | null> {
   if (via) return null;
-  const parts = relPath.replace(/^\/+/, "").split("/");
-  if (parts.length !== 2) return null;
-  let prev: Record<string, string> = {};
-  try {
-    const f = join(root, parts[0], parts[1]);
-    if (existsSync(f)) prev = parseEnvelope(readFileSync(f, "utf8"));
-  } catch { /* unreadable: treat as new, which is the stricter reading */ }
+  const { doc } = await held(root, team, relPath);
+  // The fields PLATFORM_OWNED names, as the row the store holds carries them. A field the row
+  // does not carry is absent, which is the stricter reading and the one a new document gets.
+  const prev: Record<string, string> = {};
+  if (doc) {
+    const carried: [string, string | null][] = [
+      ["status", doc.status], ["approved_by", doc.approved_by], ["approved_at", doc.approved_at],
+      ["outcome", doc.outcome], ["closed_by", doc.closed_by],
+    ];
+    for (const [field, value] of carried) if (value) prev[field] = value;
+  }
   const next = parseEnvelope(content);
   for (const field of PLATFORM_OWNED) {
     const a = (prev[field] ?? "").trim();
@@ -435,7 +514,7 @@ function ownershipCheck(root: string, relPath: string, content: string,
 }
 /** Everything that must be true before a mutation is allowed, in one place.
  *
- * The symmetric half of persistDocument. Every write path runs every check: three of them are
+ * The symmetric half of the write. Every write path runs every check: three of them are
  * inert for a revision — it forces `status: draft` and clears the approval and the outcome,
  * so statusCheck, attributionCheck and closeCheck have nothing to fire on — and running them
  * anyway costs nothing and removes the judgement call.
@@ -445,19 +524,28 @@ function ownershipCheck(root: string, relPath: string, content: string,
  *
  * `initiativeNameTaken` is not here: it is about creating a name, not about the content of a
  * write, and only `initiative_open` creates. */
-export function documentGuards(chain: Chain, root: string, relPath: string, content: string,
-                        team: string | null, via: string | null = null): string | null {
+export async function documentGuards(chain: Chain, root: string, relPath: string, content: string,
+                               team: string | null, via: string | null = null): Promise<string | null> {
   // COUPLED: the one question closeCheck asks too — a write recording an abandon is judged
   // over a damaged `_facts.json` instead of refused by it.
   const stop = parseEnvelope(content).outcome === OUTCOME_STOPPED;
-  return ownershipCheck(root, relPath, content, via)
-    ?? closedDocumentGuard(root, relPath, via)
-    ?? approvedDocumentGuard(chain, root, relPath, via)
-    ?? applicabilityCheck(chain, root, relPath, stop)
-    ?? gateCheck(chain, root, relPath, stop)
-    ?? closeCheck(chain, root, relPath, content)
-    ?? statusCheck(chain, relPath, content)
-    ?? outcomeCheck(chain, relPath, content)
-    ?? attributionCheck(chain, relPath, content, team)
-    ?? sectionCheck(chain, relPath, content);
+  // Run in order, stopping at the first refusal: each check is cheaper than the ones below it,
+  // and short-circuiting is what keeps a refused write from reading rows it will not judge.
+  const checks: (() => Promise<string | null>)[] = [
+    () => ownershipCheck(root, team, relPath, content, via),
+    () => closedDocumentGuard(root, team, relPath, via),
+    () => approvedDocumentGuard(chain, root, team, relPath, via),
+    async () => applicabilityCheck(chain, root, relPath, stop),
+    () => gateCheck(chain, root, team, relPath, stop),
+    () => closeCheck(chain, root, team, relPath, content),
+    async () => statusCheck(chain, relPath, content),
+    async () => outcomeCheck(chain, relPath, content),
+    async () => attributionCheck(chain, relPath, content, team),
+    async () => sectionCheck(chain, relPath, content),
+  ];
+  for (const check of checks) {
+    const refused = await check();
+    if (refused) return refused;
+  }
+  return null;
 }

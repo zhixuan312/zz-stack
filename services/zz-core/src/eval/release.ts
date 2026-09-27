@@ -70,7 +70,7 @@ import { describeApplyOutcomeForReplay, planApply, type ApplyResult } from "./re
 import { prepareWithBranchFact } from "./release-prepare.js";
 import { describeRecordOutcomeForReplay, recordRelease, type RecordResult } from "./release-record.js";
 import { loadReleasePolicy, verifyRelease, type VerifyOutcome } from "./release-verify.js";
-import { logActivity } from "../persist.js";
+import { platformEvent } from "../indexing.js";
 import { userRoot } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
@@ -352,8 +352,8 @@ export function registerReleaseTools(server: McpServer): void {
         build: candidate.build_result, base, policy,
       });
 
-      logActivity(await userRoot(), null, {
-        user: principal, action: "release_prepare", candidate_id,
+      platformEvent({
+        actor: principal, kind: "release_prepare", initiative, candidate_id,
         release_attempt_id: releaseAttemptId, replayed: outcome.replayed,
         document_refused: typeof written === "string",
       });
@@ -422,8 +422,8 @@ export function registerReleaseTools(server: McpServer): void {
         ? await describeApplyOutcomeForReplay(p, outcome.result_id)
         : outcome.result;
 
-      logActivity(await userRoot(), null, {
-        user: principal, action: "release_apply", candidate_id,
+      platformEvent({
+        actor: principal, kind: "release_apply", initiative, candidate_id,
         release_attempt_id: result.release_attempt_id, status: result.status,
         reason: result.reason, replayed: outcome.replayed,
       });
@@ -506,8 +506,8 @@ export function registerReleaseTools(server: McpServer): void {
         ? await describeRecordOutcomeForReplay(p, outcome.result_id)
         : outcome.result;
 
-      logActivity(await userRoot(), null, {
-        user: principal, action: "release_record", release_attempt_id: result.release_attempt_id,
+      platformEvent({
+        actor: principal, kind: "release_record", release_attempt_id: result.release_attempt_id,
         status: result.status, replayed: outcome.replayed,
       });
       return json(result);
@@ -565,8 +565,8 @@ export function registerReleaseTools(server: McpServer): void {
       const result: VerifyOutcome | { error: string } = await verifyRelease(p, release_attempt_id, idempotency_key, principal);
       if ("error" in result) return text(result.error);
 
-      logActivity(await userRoot(), null, {
-        user: principal, action: "release_verify", release_attempt_id,
+      platformEvent({
+        actor: principal, kind: "release_verify", release_attempt_id,
         verdict: result.verdict, reason: result.reason, status: result.status,
       });
       return json(result);
@@ -666,8 +666,8 @@ export function registerReleaseTools(server: McpServer): void {
       );
       const written = await writeProposalDoc(p, initiative, improvement_run_id);
 
-      logActivity(await userRoot(), null, {
-        user: principal, action: "proposal_prepare", improvement_run_id,
+      platformEvent({
+        actor: principal, kind: "proposal_prepare", initiative, improvement_run_id,
         document_refused: typeof written === "string", replayed: outcome.replayed,
       });
       return json(typeof written === "string"

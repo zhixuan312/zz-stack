@@ -117,6 +117,60 @@ export async function defineQualify(w: Walk): Promise<{ protocol: string; qualif
   ].join("\n") });
   await c.call("core", "document_present", { path });
   await c.call("core", "document_approve", { path });
+  // The revision step, and the reason this walk exists in this phase: an approval seals the
+  // revision it names, `document_revise` files a NEW one beside it and moves `current_revision`
+  // to it, and the approved revision stays on the record untouched. Nothing else in the tree
+  // exercises that, and the deferred current-revision key, the two-table split and the
+  // one-time seal are all only true together.
+  const revised = await c.call("core", "document_revise", {
+    path,
+    content: [
+      "## The plugin under evaluation",
+      `${w.plugin} ${String(located.declared_version)}, content digest ${String(located.content_digest)}; ` +
+        `protocol version 1, content_digest ${digest}.`,
+      "", "## What good means here",
+      ...dims.map((d) => `- **${d.key}** (weight ${d.weight}): ${d.measures.map((m) => m.key).join(", ")}.`),
+      "", "## The evidence each dimension reads",
+      ...dims.flatMap((d) => d.measures.map((m) => `- ${m.key}: ${MODEL_BACKED.has(m.evaluatorType)
+        ? "a qualified typed evaluator reading the artifact's text" : "a fact OBSERVE computed"}.`)),
+      "", "## Revision note",
+      "The qualification thresholds this protocol is held to were read again before anything was",
+      "scored, and nothing in it moved.",
+      "",
+    ].join("\n"),
+    source_content: "The operator read the protocol back before approving it and changed nothing.",
+    source_title: "Protocol re-read before affirmation",
+    note: "re-read before qualification",
+  }, { note: (r) => `revised: ${String(r.text ?? "").split("\n")[0]?.slice(0, 80)}` });
+  if (!/v\d+ -> v\d+/.test(String(revised.text ?? ""))) {
+    throw new Error(`document_revise did not file a revision: ${String(revised.text ?? "").slice(0, 300)}`);
+  }
+  // Both revisions read back, each as itself: the revision just filed is the current one and is
+  // DRAFT again — a revision returns the gate to a person — and the one the first approval
+  // sealed is still there beside it, approved and untouched. An implementation that overwrote
+  // the approved bytes, or that lost them when `current_revision` moved, fails here.
+  const current = await c.call("core", "document_read", { path });
+  const first = await c.call("core", "document_read", { path, version: 1 });
+  const currentText = String(current.text ?? "");
+  const firstText = String(first.text ?? "");
+  if (!/version: 2/.test(currentText) || !/status: draft/.test(currentText)) {
+    throw new Error(`the revision just filed did not read back as v2 draft: ${currentText.slice(0, 300)}`);
+  }
+  if (!/version: 1/.test(firstText) || !/status: approved/.test(firstText) || /revision_note/.test(firstText)) {
+    throw new Error(`v1 did not read back as the revision the first approval sealed: ${firstText.slice(0, 300)}`);
+  }
+  await c.call("core", "document_present", { path });
+  await c.call("core", "document_approve", { path });
+  // And the seal landed on the revision the approval named: v2 is approved, and v1 is still
+  // filed beside it rather than replaced by it.
+  const sealed = String((await c.call("core", "document_read", { path })).text ?? "");
+  if (!/version: 2/.test(sealed) || !/status: approved/.test(sealed)) {
+    throw new Error(`the second approval did not seal v2: ${sealed.slice(0, 300)}`);
+  }
+  const kept = String((await c.call("core", "document_read", { path, version: 1 })).text ?? "");
+  if (!/version: 1/.test(kept)) {
+    throw new Error(`v1 is no longer filed after the second approval: ${kept.slice(0, 240)}`);
+  }
   await c.call("eval", "protocol_affirm", { protocol_version_id: protocol, initiative: w.initiative, idempotency_key: c.key("affirm") });
   const qualified: Record<string, string> = {};
   for (const m of dims.flatMap((d) => d.measures).filter((m) => MODEL_BACKED.has(m.evaluatorType))) {

@@ -42,8 +42,7 @@ import { currentVersionOf } from "../release-head.js";
 import { resolveSource } from "./subject-source.js";
 import { recordStage } from "./stage-record.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
-import { logActivity } from "../persist.js";
-import { userRoot } from "../paths.js";
+import { platformEvent } from "../indexing.js";
 import { db } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
 
@@ -314,8 +313,7 @@ export function registerSubjectTools(server: McpServer): void {
       );
       const subjectVersionId = outcome.replayed ? outcome.result_id : outcome.result;
 
-      logActivity(await userRoot(), null,
-        { user: principal, action: "plugin_locate", plugin, version: resolved.declared_version,
+      platformEvent({ actor: principal, kind: "plugin_locate", initiative, plugin, version: resolved.declared_version,
           subject_version_id: subjectVersionId, replayed: outcome.replayed });
 
       const recorded = await recordStage(initiative, "zz-plugin-identify", { subject_version_id: subjectVersionId });
@@ -454,8 +452,7 @@ export function registerSubjectTools(server: McpServer): void {
       );
       const subjectVersionId = outcome.replayed ? outcome.result_id : outcome.result;
 
-      logActivity(await userRoot(), null,
-        { user: principal, action: "plugin_register", plugin: name, version,
+      platformEvent({ actor: principal, kind: "plugin_register", initiative, plugin: name, version,
           subject_version_id: subjectVersionId, replayed: outcome.replayed });
 
       const recorded = await recordStage(initiative, "zz-plugin-identify", { subject_version_id: subjectVersionId });

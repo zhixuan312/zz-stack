@@ -127,3 +127,20 @@ check("the document store is declared: two new tables, and doc's new identity ke
 // rehearsal as this migration's `withArtifacts` step. The measurement itself is the rehearsal's.
 check("every team's store becomes rows, verified file for row",
       runsCheck("store-migration-lossless.ts"));
+
+// Phase 6's third: the document tools are off the store's write path. It asserts a NEGATIVE about
+// the files that task owns — that none of them CALLS `commitStore` or `indexDoc`, matched on call
+// sites rather than on declarations, so a check cannot be satisfied by deleting a module the task
+// does not own — plus that the two document tools read the revision table and that the store layer
+// itself is still on disk, because this task removes callers and Task I-41 removes the layer.
+check("the document tools read and write the database, not the file store",
+      runsCheck("no-file-store.ts"));
+
+// Phase 6's fourth: every remaining store reader and writer is off it. It asserts a negative
+// about the whole tree — that no tracked file under `services/` or `packages/` outside the store
+// layer itself CALLS `commitStore`, `indexDoc`, `persistDocument` or `logActivity` — with its two
+// exemptions named and their reasons given, and it asserts the two AC-6.7 pins are written where
+// the writers live. A negative is easy to satisfy by renaming, so it matches call SITES, and its
+// exemptions are asserted to still exist so it cannot pass on a tree where they were renamed away.
+check("every remaining store reader and writer reads and writes the database",
+      runsCheck("store-unreached.ts"));

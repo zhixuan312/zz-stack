@@ -4,7 +4,7 @@
  * (`release.ts`) the SAME way `document_write` writes any document into the initiative store, and
  * the same way `findings-doc.ts`'s `writeFindingsDoc` already does it for `findings.md`:
  * `chainFor` resolves the flow, `envelopeFor` builds the frontmatter, `normalizeSections` renames
- * a near-miss heading, `documentGuards` decides whether the write may land, `persistDocument`
+ * a near-miss heading, `documentGuards` decides whether the write may land, `saveDocument`
  * lands it. Nothing here invents a second write path.
  *
  * Unlike `writeFindingsDoc`, this module takes no database handle — `release_prepare` has
@@ -36,7 +36,9 @@ import { chainFor } from "../chain.js";
 import { documentGuards } from "../guards.js";
 import { unopenedRefusal } from "../initiative-record.js";
 import { safeName, safePath, userRoot } from "../paths.js";
-import { persistDocument } from "../persist.js";
+import { sealOf } from "../indexing.js";
+import { saveDocument } from "../versions.js";
+import { stampEnvelope } from "../write-guards.js";
 import { teamFor } from "../platform-db.js";
 import { envelopeFor, normalizeSections } from "../write-guards.js";
 import { evaluateGuardrails } from "./evaluate-measures.js";
@@ -157,8 +159,23 @@ export async function writeImprovementDoc(
   });
   const fixed = normalizeSections(chain, path, content);
   const team = await teamFor(parseCaller(requestHeaders()).email);
-  const gate = documentGuards(chain, root, path, fixed.content, team);
+  const gate = await documentGuards(chain, root, path, fixed.content, team);
   if (gate) return gate;
-  const written = persistDocument(chain, root, path, target, fixed.content, "write");
-  return { path, chars: written.length };
+  // The ONE insert path: I-39's `saveDocument`, which stamps, files the row and its revision,
+  // and mirrors the bytes into the store. Not a second one here — two writers for one row shape
+  // drift, and these two already had.
+  //
+  // `chars` is the stamped document's length, so the count this returns is the bytes that were
+  // filed rather than the bytes that were passed in.
+  // A row is filed under a team, so a caller who resolves to none has no document to file. The
+  // guard's own answer above already ran over the store; this is the one case it cannot see.
+  if (!team) return "ERROR: this caller resolves to no team, so the document has no shelf to be filed on";
+  const stamped = stampEnvelope(chain, path, fixed.content);
+  const actor = parseCaller(requestHeaders()).email;
+  const saved = await saveDocument({
+    team, relPath: path, initiative: path.split("/")[0], text: stamped, by: actor,
+    flow: chain.name ?? undefined, act: "write", mode: "rewrite", seal: sealOf(stamped),
+  });
+  if ("refusal" in saved) return saved.refusal;
+  return { path, chars: stamped.length };
 }

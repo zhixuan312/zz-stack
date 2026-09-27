@@ -41,8 +41,7 @@ import {
 import { OWN_TOOLS } from "../door.js";
 import { withIdempotency, canonicalJson, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { recordStage } from "./stage-record.js";
-import { logActivity } from "../persist.js";
-import { userRoot } from "../paths.js";
+import { platformEvent } from "../indexing.js";
 import { PLATFORM_VERSION } from "../platform-version.js";
 import { Refusal } from "../refusal.js";
 import { db } from "../platform-db.js";
@@ -419,8 +418,7 @@ export function registerObserveTools(server: McpServer): void {
       );
 
       if (!outcome.replayed) {
-        logActivity(await userRoot(), null,
-          { user: principal, action: "plugin_profile", plugin, version: declaredVersion,
+        platformEvent({ actor: principal, kind: "plugin_profile", initiative, plugin, version: declaredVersion,
             observation_snapshot_id: outcome.result.id, replayed: false });
         const recorded = await recordStage(initiative, "zz-plugin-observe",
           { subject_version_id, observation_snapshot_id: outcome.result.id });
@@ -444,8 +442,7 @@ export function registerObserveTools(server: McpServer): void {
       const storedColumns = windowOf(stored);
       const recomputed = await computeObservation(pool, plugin, declaredVersion, storedColumns);
       const freshDigest = sha256(canonicalJson(recomputed.facts));
-      logActivity(await userRoot(), null,
-        { user: principal, action: "plugin_profile", plugin, version: declaredVersion,
+      platformEvent({ actor: principal, kind: "plugin_profile", initiative, plugin, version: declaredVersion,
           observation_snapshot_id: stored.id, replayed: true,
           evidence_digest_drifted: freshDigest !== stored.evidence_digest });
       const recorded = await recordStage(initiative, "zz-plugin-observe",

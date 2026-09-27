@@ -9,21 +9,21 @@
  * beside it, and supersession refuses a pair that spans both shelves: the two are different
  * kinds of claim and one cannot retire the other.
  */
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { catalogEntries } from "@zz/catalog";
 import { parseCaller } from "@zz/contracts";
-import { ARTIFACTS_DIR, indexDoc } from "@zz/indexing";
+import { ARTIFACTS_DIR } from "@zz/indexing";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { tableRow } from "../document-rules.js";
 import { journalLog, platformEvent } from "../indexing.js";
 import { KNOWLEDGE_TEAM, PLAIN_TOKEN, knowledgeRoot, sanitize, tagRefusal, titleSlug, userRoot, yamlValue } from "../paths.js";
-import { commitStore, logActivity, setEnvelopeField } from "../persist.js";
-import { subjectVersionFor, teamFor, teamsFor } from "../platform-db.js";
+import { setEnvelopeField } from "../persist.js";
+import { db, subjectVersionFor, teamFor, teamsFor } from "../platform-db.js";
+import { writeStoreFile } from "../versions.js";
 import { isoToday } from "../write-guards.js";
 
 /** Every node id this shelf's journal has ever issued, deleted ones included.
@@ -42,6 +42,20 @@ function journalIds(kdir: string): number[] {
 }
 
 import { registerKnowledgeSearch } from "./knowledge-search.js";
+
+/** The highest ordinal a shelf's rows say it has issued, or 0 — the high-water mark an id is
+ *  allocated above. Read from the rows because they outlive the files: a node whose file was
+ *  deleted still holds its number, and reissuing it would make one id name two nodes. */
+async function issuedOrdinals(shelf: string | null): Promise<number> {
+  const p = db();
+  if (!p || !shelf) return 0;
+  const { rows } = await p.query<{ n: number | null }>(
+    `select max(k.node_ordinal::int) as n from zz.knowledge_node k
+       join zz.team t on t.id = k.team_id
+      where t.slug = $1`, [shelf]);
+  const n = rows[0]?.n ?? 0;
+  return Number.isFinite(n) ? Number(n) : 0;
+}
 
 /** A journal tag that names a registry entry, checked so the query stays answerable.
  *
@@ -204,10 +218,15 @@ export function registerKnowledgeTools(server: McpServer): void {
 
       const kdir = join(root, "_knowledge");
       const ndir = join(kdir, "nodes");
-      mkdirSync(ndir, { recursive: true });
       const slug = titleSlug(title, type);
       const date = isoToday();
+      // The shelf this node lands on — the platform's or the caller's own — and the highest
+      // ordinal its rows say it has issued.
+      const issued = await issuedOrdinals(scope === "platform" ? KNOWLEDGE_TEAM : team);
 
+      // Resolved from the registry when the node is about a plugin and the caller did not
+      // say: a claim with no version behind it cannot be retired when the plugin moves.
+      const version = await subjectVersionFor(tags);
       // Allocate the id and claim it in one step, retrying if someone got there first: the
       // store is team-shared and reachable from every client at once, so two calls reading the
       // same maximum is ordinary. `wx` fails if the file exists, which makes the filesystem the
@@ -219,39 +238,27 @@ export function registerKnowledgeTools(server: McpServer): void {
         const ids = readdirSync(ndir).map((f) => parseInt(f, 10)).filter((n) => !isNaN(n));
         // Every id ever issued on this shelf, not only the ones whose file is still here: an
         // id names one node forever, so deleting the newest must not make its number available
-        // again. `log.md` is the append-only record of every mint and covers deletions; the
-        // directory covers a shelf whose log was never written.
-        const highest = Math.max(0, ...ids, ...journalIds(kdir));
+        // again. The ROWS are what holds that now — a node whose file is gone still has its
+        // ordinal — and `log.md` and the directory cover a shelf the rows do not describe yet.
+        const highest = Math.max(0, ...ids, ...journalIds(kdir), issued);
         id = String(highest + 1).padStart(4, "0");
         file = `${id}-${slug}.md`;
-        try {
-          writeFileSync(join(ndir, file), "", { flag: "wx" });
-          break;
-        } catch {
-          id = "";   // taken between the read and the write — recompute
-        }
+        const doc = [
+          "---", `id: "${id}"`, `title: ${yamlValue(title)}`, `type: ${type}`,
+          "status: adopted", `date: ${date}`, `author: ${who.email}`,
+          `evidence: [${evidence.join(", ")}]`,
+          `tags: [${(tags ?? []).join(", ")}]`,
+          `verified_against: ${yamlValue(verified_against ?? version ?? "")}`,
+          "supersededBy: null", "---", "", body, "",
+        ].filter((l) => l !== null).join("\n");
+        // Through the store's one writer, which claims the name, commits it and has the
+        // indexer derive the node's row. A name taken between the read and the write answers
+        // false and the loop recomputes.
+        if (await writeStoreFile(`_knowledge/nodes/${file}`, doc, `journal ${id}`, true)) break;
+        id = "";
       }
       if (!id) return text("ERROR: could not allocate a journal node id after 50 attempts");
-      const doc = [
-        "---", `id: "${id}"`, `title: ${yamlValue(title)}`, `type: ${type}`,
-        "status: adopted", `date: ${date}`, `author: ${who.email}`,
-        `evidence: [${evidence.join(", ")}]`,
-        `tags: [${(tags ?? []).join(", ")}]`,
-        // Resolved from the registry when the node is about a plugin and the caller did not
-        // say: a claim with no version behind it cannot be retired when the plugin moves.
-        `verified_against: ${yamlValue(verified_against ?? (await subjectVersionFor(tags)) ?? "")}`,
-        "supersededBy: null", "---", "", body, "",
-      ].filter((l) => l !== null).join("\n");
-      writeFileSync(join(ndir, file), doc);   // fills the placeholder claimed above
-      const index = join(kdir, "index.md");
-      if (!existsSync(index)) writeFileSync(index, "| id | date | type | status | title |\n|---|---|---|---|---|\n");
-      // Escaped through tableRow: a title carrying `|` would re-column the row, and one
-      // carrying a newline would append a second, fabricated node to the index.
-      appendFileSync(index, tableRow(id, date, type, "adopted", title));
       journalLog(root, "create", id, title);
-      logActivity(root, null, { user: who.email, action: "knowledge_add", node: id });
-      void indexDoc(root, `_knowledge/nodes/${file}`, doc);
-      commitStore(root, who.email, "journal", id);
       const shelfName = scope === "platform" ? KNOWLEDGE_TEAM : team;
       platformEvent({
         actor: who.email, kind: "knowledge.add", subject: id, team: shelfName,
@@ -341,23 +348,16 @@ export function registerKnowledgeTools(server: McpServer): void {
       }
       const root = oldNode.root;
       const oldFile = oldNode.file;
-      const path = join(root, "_knowledge", "nodes", oldFile);
+      const nodeRel = `_knowledge/nodes/${oldFile}`;
+      const path = join(root, nodeRel);
       let doc = readFileSync(path, "utf8");
       doc = setEnvelopeField(doc, "status", "superseded");
       doc = setEnvelopeField(doc, "supersededBy", `"${new_id}"`);
-      writeFileSync(path, doc);
-      // Re-index the node, or the change stays invisible to every search: knowledge_search
-      // reads zz.doc, which otherwise keeps `status: adopted` and `superseded_by: null` until
-      // the next boot or an explicit reindex.
-      void indexDoc(root, `_knowledge/nodes/${oldFile}`, doc);
-      const index = join(root, "_knowledge", "index.md");
-      if (existsSync(index)) {
-        writeFileSync(index, readFileSync(index, "utf8").replace(
-          new RegExp(`^(\\| ${old_id} \\|[^|]*\\|[^|]*\\|) adopted (\\|)`, "m"), "$1 superseded $2"));
-      }
+      // Through the store's one writer, which re-indexes as it writes: knowledge_search reads
+      // the node's row, which otherwise keeps `lifecycle: adopted` and `superseded_by_id: null`
+      // until the next reindex.
+      await writeStoreFile(nodeRel, doc, `journal supersede ${old_id} -> ${new_id}`);
       journalLog(root, "supersede", old_id, `superseded by ${new_id}`);
-      commitStore(root, who.email, "journal supersede", `${old_id} -> ${new_id}`);
-      logActivity(root, null, { user: who.email, action: "knowledge_supersede", node: old_id });
       // The shelf is read from the root the old node was found on, not from the caller's team:
       // `findId` searches both, so a platform node superseded by somebody with a team of their
       // own still belongs to the platform shelf.

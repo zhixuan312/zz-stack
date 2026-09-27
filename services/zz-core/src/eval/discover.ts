@@ -85,8 +85,7 @@ import {
 import { recordStage } from "./stage-record.js";
 import { askEvaluatorQuestion, insertEvaluatorAnswer, type AskedEvaluatorAnswer } from "../semantic.js";
 import { NOT_CONFIGURED } from "../typed-service.js";
-import { logActivity } from "../persist.js";
-import { userRoot } from "../paths.js";
+import { platformEvent } from "../indexing.js";
 import { Refusal } from "../refusal.js";
 import { db } from "../platform-db.js";
 
@@ -637,8 +636,8 @@ export function registerFailureDiscoverTools(server: McpServer): void {
       const result = outcome.replayed
         ? await readBackCandidates(pool, observation_snapshot_id, principal, idempotency_key)
         : outcome.result;
-      logActivity(await userRoot(), null, {
-        user: principal, action: "failure_discover", plugin: snapshot.plugin,
+      platformEvent({
+        actor: principal, kind: "failure_discover", initiative, plugin: snapshot.plugin,
         observation_snapshot_id, sighting_count: result.candidates.length, replayed: outcome.replayed,
       });
       const recorded = await recordStage(initiative, "zz-plugin-discover", { observation_snapshot_id });

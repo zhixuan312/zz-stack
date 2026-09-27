@@ -47,22 +47,22 @@
  * result is merely slow to find, but a stale console stepper is a wrong answer about whether an
  * initiative may close.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { documentBody, EvaluationProtocol, parseEnvelope, parseCaller } from "@zz/contracts";
+import { EvaluationProtocol, parseCaller } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
 import { latestProtocolVersion, triggersFor } from "./protocol-triggers.js";
-import { recordProtocolVersion } from "./protocol-record.js";
+import { affirmProtocolVersion, recordProtocolVersion } from "./protocol-record.js";
 import { recordAffirmed, recordDefineOwes } from "./stage-record.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { factsFor, initiativeIdFor, lockInitiativeFacts, mirrorFacts, withInitiativeFactsLock, writeFacts } from "../initiative-record.js";
-import { logActivity } from "../persist.js";
-import { safeName, safePath, userRoot } from "../paths.js";
+import { platformEvent } from "../indexing.js";
+import { safeName, userRoot } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
 
@@ -373,8 +373,8 @@ export function registerProtocolTools(server: McpServer): void {
         response = outcome.result;
       }
 
-      logActivity(await userRoot(), null, {
-        user: principal, action: "protocol_record", plugin: subject.plugin,
+      platformEvent({
+        actor: principal, kind: "protocol_record", plugin: subject.plugin,
         protocol_version_id: response.protocol_version_id, replayed: outcome.replayed,
       });
       return json(response);
@@ -418,29 +418,25 @@ export function registerProtocolTools(server: McpServer): void {
       const badInitiative = safeName(initiative, "initiative");
       if (badInitiative) return text(badInitiative);
       const path = `${initiative}/protocol.md`;
-      const target = await safePath(path);
       const NOT_APPROVED =
         "ERROR: protocol.md at this version is not approved. Write it, put it to a person, and " +
         "call document_approve the moment they agree — then quote this version's content_digest " +
         `(${row.content_digest}) somewhere in the document's body before calling this again.`;
-      if (!existsSync(target)) return text(NOT_APPROVED);
-      const raw = readFileSync(target, "utf8");
-      const env = parseEnvelope(raw);
-      if (env.status !== "approved") return text(NOT_APPROVED);
-      if (!documentBody(raw).includes(row.content_digest)) return text(NOT_APPROVED);
-      // The affirmation names the document, not its path: `approved_doc_id` is a row in `zz.doc`
-      // and the migration derived it from exactly this pair. A file the search index has not
-      // caught up with yet is refused here rather than written as a claim with nothing behind it.
-      if (row.affirmed) {
-        return text(`ERROR: protocol version ${protocol_version_id} is already affirmed — a ` +
-          "protocol version's payload and its affirmation are written once, and there is no path " +
-          "that moves either again. Record the next version instead.");
-      }
       const principal = parseCaller(requestHeaders()).email;
       const team = await teamFor(principal);
-      const docRow = (await p.query<{ id: string }>(`
-        select d.id::text as id
+      // The document is read from the rows a document IS — `zz.doc` and the revision it points
+      // at — never from a file. The affirmation names the document, not its path: `approved_doc_id`
+      // is a row in `zz.doc` and the migration derived it from exactly this pair, and the digest
+      // the version quotes is a claim about these bytes. A file the store has not caught up with
+      // is refused here rather than affirmed as a claim with nothing behind it.
+      const docRow = (await p.query<{
+        id: string; current_revision: number | null; status: string;
+        approved_by: string | null; body: string;
+      }>(`
+        select d.id::text as id, d.current_revision, d.status, d.approved_by,
+               coalesce(r.body, d.body) as body
           from zz.doc d
+          left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
          where d.initiative = $1 and d.path = 'protocol.md'
            and ($2::text is null or d.team_slug = $2)
          order by d.updated_at desc limit 1`, [initiative, team])).rows[0];
@@ -448,6 +444,23 @@ export function registerProtocolTools(server: McpServer): void {
         return text(`ERROR: no approved ${path} is recorded for ${team ?? "this caller"}'s team — ` +
           "the document's own row has not reached the platform's index yet. Call document_approve " +
           "and then this again.");
+      }
+      if (docRow.status !== "approved") return text(NOT_APPROVED);
+      if (!docRow.body.includes(row.content_digest)) return text(NOT_APPROVED);
+      // AC-6.7: the affirmation pins the revision it read, so a row whose exact revision cannot
+      // be resolved is refused BY NAME. Writing a null would read back as "no revision known",
+      // while the truth is "this call did not record one" — and the version's own key would hold
+      // the unpinned row as though it named a revision.
+      if (docRow.current_revision === null) {
+        return text(
+          `ERROR: ${path} is approved, and its exact revision cannot be resolved — the document's ` +
+          "row carries no current revision, so this affirmation would pin nothing and read back " +
+          "as a revision nobody recorded. Nothing was written.");
+      }
+      if (row.affirmed) {
+        return text(`ERROR: protocol version ${protocol_version_id} is already affirmed — a ` +
+          "protocol version's payload and its affirmation are written once, and there is no path " +
+          "that moves either again. Record the next version instead.");
       }
       const who = (await p.query<{ id: string }>(
         "select id::text as id from zz.principal where lower(email) = lower($1) limit 1",
@@ -457,23 +470,26 @@ export function registerProtocolTools(server: McpServer): void {
       const outcome: IdempotencyOutcome<null> = await withIdempotency(
         principal, "protocol_affirm", idempotency_key, { protocol_version_id, initiative },
         async (client): Promise<MutatorOutcome<null>> => {
-          // Guarded, not unconditional: the three affirmation fields fill once, together, and a
+          // Guarded, not unconditional: the affirmation fields fill once, together, and a
           // concurrent call that got there first leaves this one with no row to move.
-          const moved = await client.query(
-            `update zz.eval_protocol_version
-                set approved_doc_id = $3::uuid, affirmed_by = $4::uuid, affirmed_at = now()
-              where id = $1::uuid and approved_doc_id is null and affirmed_by is null and affirmed_at is null
-                and content_digest = $2`,
-            [protocol_version_id, row.content_digest, docRow.id, who.id]);
-          if (moved.rowCount !== 1) {
+          //
+          // COUPLED: `affirmProtocolVersion` writes `approved_doc_revision` beside the document
+          // id — the pin AC-6.7 asks for, and the other half of the version's composite key. It
+          // lives with `recordProtocolVersion` so both writes that name a document are in one
+          // file.
+          const moved = await affirmProtocolVersion(client, {
+            protocolVersionId: protocol_version_id, contentDigest: row.content_digest,
+            docId: docRow.id, docRevision: docRow.current_revision, affirmedBy: who.id,
+          });
+          if (moved !== 1) {
             throw new Refusal(`ERROR: protocol version ${protocol_version_id} was affirmed by ` +
               "another call before this one reached it — nothing was written again.");
           }
           return { result: null, result_table: "zz.eval_protocol_version", result_id: protocol_version_id };
         },
       );
-      logActivity(await userRoot(), null, {
-        user: principal, action: "protocol_affirm", protocol_version_id, path, replayed: outcome.replayed,
+      platformEvent({
+        actor: principal, kind: "protocol_affirm", initiative, protocol_version_id, path, replayed: outcome.replayed,
       });
       // What evaluator_qualify now owes: every model-backed measure this version names.
       const owed = (await p.query<{ key: string }>(`
@@ -481,7 +497,7 @@ export function registerProtocolTools(server: McpServer): void {
          where m.protocol_version_id = $1::uuid and m.evaluator_type in ('bounded_semantic', 'generative_critic')
          order by m.key`, [protocol_version_id])).rows.map((r) => r.key);
       const recorded = await recordAffirmed(initiative, protocol_version_id, path, owed, row.content_digest);
-      return json({ approved_document_path: path, approved_by: env.approved_by ?? null,
+      return json({ approved_document_path: path, approved_by: docRow.approved_by ?? null,
                     qualify_owed: owed, ...recorded });
     },
   );

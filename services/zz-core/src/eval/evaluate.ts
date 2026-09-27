@@ -36,8 +36,7 @@ import { decideBeforeWork, withIdempotency, type IdempotencyOutcome, type Mutato
 import { snapshotSubjectRefs } from "./observe.js";
 import { recordStage } from "./stage-record.js";
 import { scoreRun } from "./score.js";
-import { logActivity } from "../persist.js";
-import { userRoot } from "../paths.js";
+import { platformEvent } from "../indexing.js";
 import { PLATFORM_VERSION } from "../platform-version.js";
 import { db } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
@@ -340,8 +339,8 @@ export function registerEvaluationTools(server: McpServer): void {
       const started = await startEvaluation(p, principal,
         { subject_version_id, protocol_version_id, observation_snapshot_id, idempotency_key, initiative });
       if ("error" in started) return text(started.error);
-      logActivity(await userRoot(), null, {
-        user: principal, action: "evaluation_start", eval_run_id: started.eval_run_id, replayed: started.replayed });
+      platformEvent({
+        actor: principal, kind: "evaluation_start", initiative, eval_run_id: started.eval_run_id, replayed: started.replayed });
       return json({ ...started, ...(await snapshotSubjectRefs(p, started.observation_snapshot_id)) });
     },
   );
@@ -384,8 +383,7 @@ export function registerEvaluationTools(server: McpServer): void {
       const principal = parseCaller(requestHeaders()).email;
       const assessed = await assessEvaluation(p, principal, { eval_run_id, subject_refs, idempotency_key });
       if ("error" in assessed) return text(assessed.error);
-      logActivity(await userRoot(), null,
-        { user: principal, action: "evaluation_assess", eval_run_id, replayed: assessed.replayed });
+      platformEvent({ actor: principal, kind: "evaluation_assess", eval_run_id, replayed: assessed.replayed });
       return json({ eval_run_id, ...assessed });
     },
   );
@@ -427,8 +425,8 @@ export function registerEvaluationTools(server: McpServer): void {
       const principal = parseCaller(requestHeaders()).email;
       const scored = await scoreEvaluation(p, principal, { eval_run_id, idempotency_key, initiative });
       if ("error" in scored) return text(scored.error);
-      logActivity(await userRoot(), null, {
-        user: principal, action: "evaluation_score", eval_run_id,
+      platformEvent({
+        actor: principal, kind: "evaluation_score", initiative, eval_run_id,
         score_status: scored.score_status, overall_score: scored.overall_score, replayed: scored.replayed,
       });
       return json(scored);

@@ -7,17 +7,21 @@
  * clock, and every write path refuses them typed by a caller. `document_approve`,
  * `document_revise` and `initiative_close` are the exceptions, and there is no fourth.
  *
+ * Both acts here read and write `doc` and `doc_revision`: a document's identity and its status
+ * are the `doc` row's, and the bytes an act signs are the current `doc_revision`. Nothing is
+ * read from a file — the row that retained the revision is the authority the act answers from.
+ *
  * `document_revise` exists because an approved document cannot be written over: the
- * approver's name would stand on bytes they never read. It bumps the version, returns the
- * document to draft, clears the stale approval and keeps the approved copy in `_versions/`.
+ * approver's name would stand on bytes they never read. It files a new `doc_revision`, returns
+ * `doc` to draft, clears the stale approval and leaves the approved revision untouched.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { documentBody, parseCaller, parseEnvelope } from "@zz/contracts";
-import { indexDoc } from "@zz/indexing";
+import { documentBody, parseCaller } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
+import type pg from "pg";
 import { z } from "zod";
 
 import { shownSinceLastChange } from "../attest.js";
@@ -27,16 +31,27 @@ import { documentGuards } from "../guards.js";
 import { noteDocument, noteRevision } from "../host/observe.js";
 import { sourceDocument } from "../indexing.js";
 import { DOC_REF, safePath, tagRefusal, titleSlug, userRoot, writeGuard } from "../paths.js";
-import { logActivity, persistDocument, putEnvelopeField } from "../persist.js";
-import { teamFor } from "../platform-db.js";
+import { putEnvelopeField } from "../persist.js";
+import { db, teamFor } from "../platform-db.js";
 import { improvementApprovalRefusal } from "../release-owners.js";
 import { acceptanceApprovalRefusal } from "../review-acceptance.js";
 import { specApprovalRefusal } from "../spec-gate.js";
+import { citationsOf, dayOf, documentAt, documentPaths, loadDocument, recordAct,
+         revisionsOf, saveDocument } from "../versions.js";
 import { isoToday, normalizeSections } from "../write-guards.js";
 
 import { registerInitiativeCloseTool } from "./initiative-close.js";
 import { registerInitiativeOpenTool } from "./initiative-open.js";
 import { nextMoveLine } from "./initiative-status.js";
+
+/** A deployment with no database has no store left: the columns are where a document lives, and
+ *  there is no file to fall back to. */
+const NO_DB = "ERROR: no platform database — the store is the database now, so there is " +
+  "nowhere to read or write this document.";
+
+/** A person the platform cannot place in a team has no store to act on. */
+const NO_TEAM = "ERROR: you are not in a team — a team's documents live in the database under " +
+  "its own membership, and nothing resolves you to one.";
 
 export function registerInitiativeActTools(server: McpServer): void {
   // Opening is registered from here, in its own file because a tool whose refusals are the point
@@ -72,16 +87,24 @@ export function registerInitiativeActTools(server: McpServer): void {
     async ({ path: relPath, on_behalf_of }) => {
       const who = parseCaller(requestHeaders());
       const root = await userRoot();
+      const p = db();
+      if (!p) return text(NO_DB);
       const team = await teamFor(who.email);
+      if (!team) return text(NO_TEAM);
       const parts = relPath.replace(/^\/+/, "").split("/");
       if (parts.length !== 2) return text("ERROR: path must be '<initiative>/<document>.md'");
       const blocked = writeGuard(relPath);
       if (blocked) return text(blocked);
-      const target = await safePath(relPath);
-      if (!existsSync(target)) {
-        return text(`ERROR: ${relPath} does not exist — approve records a verdict on a document that is already written`);
+      await safePath(relPath);
+      // The document is read from the row that retained it: its identity and status from
+      // `doc`, its body from the current revision.
+      const loaded = await loadDocument(team, relPath);
+      if (!loaded.ok) {
+        return text(loaded.why === "missing"
+          ? `ERROR: ${relPath} does not exist — approve records a verdict on a document that is already written`
+          : loaded.refusal);
       }
-      const chain = chainFor(root, relPath);
+      const chain = chainFor(root, relPath, loaded.text);
       // DELIBERATE: only a flow can say a document is not its business. A freeform initiative
       // resolves to EMPTY_CHAIN, so whatever is in its folder is approvable; a flow that declared its
       // documents refuses one it never named.
@@ -119,7 +142,7 @@ export function registerInitiativeActTools(server: McpServer): void {
           "their review, not the present — the present is what the record keeps.");
       }
       const signer = (on_behalf_of ?? "").trim() || who.email;
-      let doc = readFileSync(target, "utf8");
+      let doc = loaded.text;
       // COUPLED: release_apply (eval/release-apply.ts) counts this approval only for owner teams the
       // signer is a member of. Checked here too, so a name nobody can vouch for is never stamped
       // onto the document that authorizes a release — least of all by somebody else, on_behalf_of.
@@ -136,15 +159,24 @@ export function registerInitiativeActTools(server: McpServer): void {
       // criterion placed in a phase, every statement backed by a spike — spec-gate.ts's rules.
       const foundation = await specApprovalRefusal(root, chain, relPath, doc, who.email);
       if (foundation.refusal) return text(foundation.refusal);
-      const already = parseEnvelope(doc).status === "approved";
+      const already = loaded.doc.status === "approved";
       doc = putEnvelopeField(doc, "status", "approved");
       doc = putEnvelopeField(doc, "approved_by", signer);
       doc = putEnvelopeField(doc, "approved_at", isoToday());
       const fixed = normalizeSections(chain, relPath, doc);
-      const bad = documentGuards(chain, root, relPath, fixed.content, team, "document_approve");
+      const bad = await documentGuards(chain, root, relPath, fixed.content, team, "document_approve");
       if (bad) return text(bad);
-      persistDocument(chain, root, relPath, target, fixed.content, "document_approve");
-      logActivity(root, relPath, { user: who.email, action: "document_approve", path: relPath, signer, fetched });
+      // The seal, the status and the revision move together, in one statement's worth of write:
+      // `doc_current_revision_required` holds that `status: approved` is true exactly when
+      // `approved_revision` is the current revision, so a writer that set one without the other
+      // would leave a document nobody can read.
+      const sealed = await saveDocument({
+        team, relPath, initiative: parts[0], text: fixed.content, by: who.email,
+        flow: chain.name ?? undefined, type: chain.roles[parts[1]],
+        mode: "rewrite", act: "document_approve", seal: { by: signer, at: isoToday() },
+      });
+      if ("refusal" in sealed) return text(sealed.refusal);
+      recordAct(root, relPath, { user: who.email, action: "document_approve", path: relPath, signer, fetched });
       // An approval is a separate fact from the document: a gated step requires `1x document` and
       // `1x approval`, so recording only one leaves the step a requirement short or credits a
       // document nobody wrote.
@@ -156,13 +188,13 @@ export function registerInitiativeActTools(server: McpServer): void {
         (acceptance.note ? `${acceptance.note}\n` : "") +
         (foundation.note ? `${foundation.note}\n` : "") +
         (fixed.renamed.length ? `Renamed to the heading this flow declares: ${fixed.renamed.join(", ")}.\n` : "") +
-        // True only of the flip. A snapshot is written when a document goes draft -> approved and on no
-        // other write (persist.ts), so re-approving an approved document freezes nothing and the copy in
-        // `_versions/` still carries the previous signer's verdict.
+        // True only of the flip. The seal lands on the revision the approval names, and a
+        // revision already approved is updated in place rather than filed a second time.
         (already
-          ? "No new frozen copy was taken: the document was already approved, so the copy in " +
-            "_versions/ is the one filed at the first approval."
-          : "The approved copy is frozen in _versions/.") +
+          ? "No new revision was filed: the document was already approved, so the record now " +
+            "carries this verdict on the same revision."
+          : `The approved revision is v${"revision" in sealed ? sealed.revision : ""}, and the ` +
+            "seal is on it.") +
         // What the flow expects next, computed the way initiative_status computes it: an approval
         // is where an owed audit round or a close is most often forgotten.
         nextMoveLine(root, parts[0]),
@@ -228,14 +260,24 @@ export function registerInitiativeActTools(server: McpServer): void {
       }
       const who = parseCaller(requestHeaders());
       const root = await userRoot();
+      const p = db();
+      if (!p) return text(NO_DB);
       const team = await teamFor(who.email);
+      if (!team) return text(NO_TEAM);
       const parts = relPath.replace(/^\/+/, "").split("/");
       if (parts.length !== 2) return text("ERROR: path must be '<initiative>/<document>.md'");
       const blocked = writeGuard(relPath);
       if (blocked) return text(blocked);
-      const target = await safePath(relPath);
-      if (!existsSync(target)) return text(`ERROR: ${relPath} does not exist — document_write creates a document; document_revise changes one`);
-      const chain = chainFor(root, relPath);
+      await safePath(relPath);
+      // The document being revised, read from the rows: its status and identity from `doc`, the
+      // envelope's facts and the body from the revision those name.
+      const loaded = await loadDocument(team, relPath);
+      if (!loaded.ok) {
+        return text(loaded.why === "missing"
+          ? `ERROR: ${relPath} does not exist — document_write creates a document; document_revise changes one`
+          : loaded.refusal);
+      }
+      const chain = chainFor(root, relPath, loaded.text);
       // A document the flow does not declare is exempt from its rules, not refused by them — the same
       // condition `write-guards.ts` uses to stand aside. `document_revise` is the only call that
       // records why a document changed, so refusing it here would leave exactly the documents a flow
@@ -244,30 +286,38 @@ export function registerInitiativeActTools(server: McpServer): void {
       // `document_approve` still refuses an undeclared document, and that stays right: there
       // is no gate on it, so there is no verdict to record. A revision is not a gate.
 
-      const prevEnv = parseEnvelope(readFileSync(target, "utf8"));
       // A closed record may be corrected; what closed it may not be. An initiative closes once, on one
       // verdict, and correcting what a report says is a different act from changing what it concluded.
       //
       // COUPLED: `outcome` is carried forward below. initiative_close() reads it off the document to
       // refuse a second close, and ledgerOnClose reads it off disk before appending a row.
       //
-      // Nothing here is a quiet overwrite: the approved copy is frozen in `_versions/`, the version
+      // Nothing here is a quiet overwrite: the approved revision stays filed, the revision
       // bumps, a revision_note is recorded, and a gated document goes back to a person.
+      // The previous revision's envelope, rebuilt from the rows — the fields a revision carries
+      // forward are the ones the record kept, and nothing is read off a file to find them.
+      const prevEnv: Record<string, string> = {};
+      if (loaded.doc.status) prevEnv.status = loaded.doc.status;
+      if (loaded.doc.outcome) prevEnv.outcome = loaded.doc.outcome;
+      if (loaded.rev.title) prevEnv.title = loaded.rev.title;
+      if (loaded.rev.tags?.length) prevEnv.tags = loaded.rev.tags.join(", ");
+      if (loaded.rev.approved_by) prevEnv.approved_by = loaded.rev.approved_by;
+      if (loaded.rev.approved_at) prevEnv.approved_at = dayOf(loaded.rev.approved_at);
+      if (loaded.rev.revision_note) prevEnv.revision_note = loaded.rev.revision_note;
+      // COUPLED: `outcome` is carried, not merely left alone.
       const closedOutcome = prevEnv.outcome;
-      const prevVersion = parseInt(prevEnv.version || "1", 10) || 1;
+      const prevVersion = loaded.doc.current_revision ?? 1;
       const nextVersion = prevVersion + 1;
-      const wasApproved = prevEnv.status === "approved";
-      // Does the frozen copy exist? A snapshot is taken only on the draft -> approved flip
-      // (persist.ts), so a document revised twice while closed has none for the second revision, and
-      // the messages below must not name a file nothing wrote.
-      const frozenRel = `${parts[0]}/_versions/${parts[1].replace(/\.md$/, "")}.v${prevVersion}.md`;
-      const frozenExists = existsSync(join(root, frozenRel));
-
+      const wasApproved = loaded.doc.status === "approved";
+      // The superseded revision, named the way the rows name it: the approved bytes are the
+      // revision the seal is on, and nothing overwrites one.
+      const priorApproval = loaded.history.find((r) => r.approved_by) ?? null;
       // The body, and only the body. `stakeholder`, `tags` and `title` are named arguments, so the
       // model never composes envelope YAML.
       const body = content;
       const linked = new Set<string>(
-        (prevEnv.sources || "").split(",").map((x) => x.trim()).filter(Boolean));
+        (await citationsOf(p, loaded.doc.id, prevVersion))
+          .map((x) => x.startsWith(`${parts[0]}/`) ? x.slice(parts[0].length + 1) : x));
       // A source ref is a path inside the initiative, so it has no room for a separator:
       // the list is written comma-joined and read comma-split.
       for (const src of sources ?? []) {
@@ -285,13 +335,23 @@ export function registerInitiativeActTools(server: McpServer): void {
       // claim to make.
       const dir = join(root, parts[0]);
       const sourceDir = join(dir, "sources");
-      const owed = (existsSync(sourceDir) ? readdirSync(sourceDir) : [])
-        .filter((f) => f.endsWith(".md"))
-        .filter((f) => statSync(join(sourceDir, f)).mtimeMs > statSync(target).mtimeMs)
-        .filter((f) => (parseEnvelope(readFileSync(join(sourceDir, f), "utf8")).supports || "")
-          .split(",").map((x) => x.trim()).includes(parts[1]))
-        .map((f) => `sources/${f}`)
-        .filter((ref) => !linked.has(ref));
+      // A source added after the revision being replaced, whose `cites` links name this document,
+      // is by its own record what this revision answers. Compared on the rows, which is where
+      // "added after" is a fact: the file's mtime is when the mirror wrote it, not when the
+      // source landed.
+      const owed: string[] = [];
+      for (const rel of existsSync(sourceDir) ? await documentPaths(team, `${parts[0]}/sources`) : []) {
+        if (!rel.endsWith(".md")) continue;
+        const at = await documentAt(p, team, rel);
+        if (!at) continue;
+        const rev = (await revisionsOf(p, at.id)).find((r) => r.revision === at.current_revision);
+        const supports = (await citationsOf(p, at.id, rev?.revision ?? 0)).map((x) => x.split("/").pop());
+        const ref = rel.slice(parts[0].length + 1);
+        if (supports.includes(parts[1]) && (rev?.written_at ?? "") > (loaded.doc.updated_at ?? "")
+            && !linked.has(ref)) {
+          owed.push(ref);
+        }
+      }
       if (owed.length) {
         // The `sources` to send is the whole list — what this call already cited plus what it
         // still owes. Suggesting only the missing one read as a replacement: a caller who cited
@@ -321,7 +381,7 @@ export function registerInitiativeActTools(server: McpServer): void {
         const day = isoToday();
         let rel = `${parts[0]}/sources/${day}-${slug}.md`;
         let n = 2;
-        while (existsSync(join(root, rel))) rel = `${parts[0]}/sources/${day}-${slug}-${n++}.md`;
+        while (await documentAt(p, team, rel)) rel = `${parts[0]}/sources/${day}-${slug}-${n++}.md`;
         pendingSource = {
           rel,
           doc: sourceDocument({ title, by: who.email, day, supports: parts[1],
@@ -335,7 +395,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       // log is read by people who were not in this call. Links inherited from the previous version
       // explain that version, not this one.
       const explained = causes.length > 0;
-      const env: Record<string, string> = { ...prevEnv };
+      const env: Record<string, string> = { ...prevEnv, version: String(prevVersion) };
       if (stakeholder?.trim()) env.stakeholder = oneLine(stakeholder);
       if (title?.trim()) env.title = oneLine(title);
       const revTags = (tags ?? []).map((t) => t.trim()).filter(Boolean);
@@ -390,29 +450,39 @@ export function registerInitiativeActTools(server: McpServer): void {
       const fixed = normalizeSections(chain, relPath, doc);
       // `via`: document_revise is an act whose job is to move the governance fields, so it passes the
       // guard that refuses a model writing them by hand.
-      const bad = documentGuards(chain, root, relPath, fixed.content, team, "document_revise");
+      const bad = await documentGuards(chain, root, relPath, fixed.content, team, "document_revise");
       if (bad) return text(bad);
 
-      // The revision is allowed, so the source that explains it is written now — before
-      // persistDocument, so both land in one commit.
+      // The revision is allowed, so the source that explains it is written now — before the
+      // revision itself, so the link it records has a row to point at.
       if (pendingSource) {
-        const srcTarget = await safePath(pendingSource.rel);
-        mkdirSync(resolve(srcTarget, ".."), { recursive: true });
-        writeFileSync(srcTarget, pendingSource.doc);
-        void indexDoc(root, pendingSource.rel, pendingSource.doc);
-        logActivity(root, pendingSource.rel,
+        const src = await saveDocument({
+          team, relPath: pendingSource.rel, initiative: parts[0], text: pendingSource.doc,
+          by: who.email, flow: "", type: "source", mode: "create", act: "source",
+        });
+        if ("refusal" in src) return text(src.refusal);
+        recordAct(root, pendingSource.rel,
           { user: who.email, action: "source_add", path: pendingSource.rel, supports: parts[1] });
       }
-      // Through persistDocument, like the other two paths, so a revision is stamped, snapshotted and
-      // checked by the one shared writer. snapshotOnApproval and ledgerOnClose are inert here.
-      persistDocument(chain, root, relPath, target, fixed.content, "revise");
+      // The revision is filed through the one insert path, so its rows and the bytes mirrored
+      // into the store land together. `seal` is set only where the initiative is closed: the
+      // revision of a closed record inherits the verdict the close rested on.
+      const written = await saveDocument({
+        team, relPath, initiative: parts[0], text: fixed.content, by: who.email,
+        flow: chain.name ?? undefined, type: role,
+        mode: "append", act: "revise", note: note ?? null,
+        seal: priorApproval?.approved_by && closedOutcome && gatedHere
+          ? { by: priorApproval.approved_by, at: dayOf(priorApproval.approved_at) } : null,
+        cites: await linkedRevisions(p, team, parts[0], [...linked]),
+      });
+      if ("refusal" in written) return text(written.refusal);
       // The two fields below are a pair, and the pair carries three states: a flag alone collapses
       // "no cause existed" and "the cause was not captured", and only the second can be fixed.
       //
       // DELIBERATE: this comment sits above the call, not inside it. The gate check holding both names
       // to this payload reads a window around `action: "document_revise"`, so a comment inside the
       // object naming them would satisfy it after the fields were deleted.
-      logActivity(root, relPath, {
+      recordAct(root, relPath, {
         user: who.email, action: "document_revise", path: relPath,
         version: nextVersion, sources: [...linked].join(","), explained,
       });
@@ -429,15 +499,15 @@ export function registerInitiativeActTools(server: McpServer): void {
         (closedOutcome
           ? `This initiative is CLOSED as \`${closedOutcome}\`, and the close is untouched: the ` +
             `ledger row stands and no second one can be written. ` +
-            (frozenExists
-              ? `The text a person signed is frozen as ${frozenRel}. `
-              : `No frozen copy of v${prevVersion} exists — a snapshot is taken when a document is ` +
-                `approved, and this one was already approved when it was last revised, so the ` +
-                `superseded text is in the store's git history rather than in _versions/. `) +
+            (priorApproval
+              ? `The revision the person signed — v${priorApproval.revision}, approved by ` +
+                `${priorApproval.approved_by} — is filed and untouched. `
+              : `No approved revision of v${prevVersion} is filed. `) +
             `What changed here is what the report SAYS, not what it concluded — if the verdict ` +
             `itself was wrong, that is a journal node, not a revision.\n`
           : wasApproved
-          ? `The v${prevVersion} approval is preserved in ${frozenRel} and no longer applies.\n`
+          ? `The v${prevVersion} approval is filed as its own revision and no longer applies to ` +
+            "the current text.\n"
           : "") +
         (capturedSource ? `The input behind it is stored as ${parts[0]}/${capturedSource}.\n` : "") +
         (linked.size ? `Linked sources: ${[...linked].join(", ")}\n` : "") +
@@ -452,4 +522,19 @@ export function registerInitiativeActTools(server: McpServer): void {
       );
     },
   );
+}
+
+/** The revisions a revision cites: one `cites` link per source path, at the revision that source
+ *  is currently at. A path that names no document is skipped — a revision may cite material the
+ *  store does not hold, and a link to a row nobody has is a foreign key Postgres would refuse. */
+async function linkedRevisions(
+  p: Pick<pg.Pool, "query">, team: string, initiative: string, refs: string[],
+): Promise<{ path: string; revision: number }[]> {
+  const out: { path: string; revision: number }[] = [];
+  for (const ref of refs) {
+    const path = `${initiative}/${ref}`;
+    const at = await documentAt(p, team, path);
+    if (at && at.current_revision !== null) out.push({ path, revision: at.current_revision });
+  }
+  return out;
 }

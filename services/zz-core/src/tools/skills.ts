@@ -18,7 +18,7 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { safeName, safeRelPath, userRoot } from "../paths.js";
-import { logActivity } from "../persist.js";
+import { platformEvent } from "../indexing.js";
 import { teamsFor } from "../platform-db.js";
 import { allSkillRoots } from "../skill-roots.js";
 import { isoToday } from "../write-guards.js";
@@ -306,8 +306,7 @@ export function registerSkillTools(server: McpServer): void {
         const dir = join(root, name);
         const path = join(dir, "SKILL.md");
         if (existsSync(path)) {
-          logActivity(await userRoot(), null,
-            { user: parseCaller(requestHeaders()).email, action: "skill_read", skill: name });
+          platformEvent({ actor: parseCaller(requestHeaders()).email, kind: "skill_read", skill: name });
           if (file === undefined) return text(readFileSync(path, "utf8") + await teamOverlay(name));
           // Resolved inside the skill already found, never searched for on its own. Two
           // packages may ship a skill of one name — the roots are ordered so the first wins —

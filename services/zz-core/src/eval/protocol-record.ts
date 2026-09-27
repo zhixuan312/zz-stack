@@ -399,3 +399,33 @@ export async function recordProtocolVersion(
     unfolded_taxonomy_keys: lineage.unfoldedKeys,
   };
 }
+
+/** The one write that binds a version to the document that affirmed it (Task I-40, AC-6.7).
+ *
+ *  The affirmation names a DOCUMENT and, beside it, the exact revision it read — not a revision
+ *  chosen by proximity in time. `approved_doc_revision` is the pin `eval_protocol_version`'s own
+ *  composite key is `(approved_doc_id, approved_doc_revision)` against, so a version stays joined
+ *  to the bytes it was affirmed over after `document_revise` moves the document on. A version
+ *  affirmed against a timestamp-nearest guess would name a revision nobody read, and the key
+ *  would hold it as exact.
+ *
+ *  Guarded, not unconditional: the affirmation fields fill once, together, and a concurrent call
+ *  that got there first leaves this one with no row to move — `rowCount` is 0 and the caller
+ *  refuses, where an unconditional update would silently rewrite who affirmed what.
+ *
+ *  Runs inside the caller's own transaction — the one `withIdempotency` opened — so the
+ *  affirmation and its ledger row land together or not at all. */
+export async function affirmProtocolVersion(
+  client: pg.PoolClient,
+  o: { protocolVersionId: string; contentDigest: string; docId: string;
+       docRevision: number | null; affirmedBy: string },
+): Promise<number> {
+  const moved = await client.query(
+    `update zz.eval_protocol_version
+        set approved_doc_id = $3::uuid, approved_doc_revision = $4::int,
+            affirmed_at = now(), affirmed_by = $5::uuid
+      where id = $1::uuid and approved_doc_id is null and affirmed_by is null and affirmed_at is null
+        and content_digest = $2`,
+    [o.protocolVersionId, o.contentDigest, o.docId, o.docRevision, o.affirmedBy]);
+  return moved.rowCount ?? 0;
+}

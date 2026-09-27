@@ -22,8 +22,6 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
-import { logActivity } from "../persist.js";
-import { userRoot } from "../paths.js";
 import { platformEvent } from "../indexing.js";
 import { db as db_, teamFor } from "../platform-db.js";
 
@@ -125,8 +123,8 @@ export function registerBugTools(server: McpServer, platformVersion: string): vo
          surface?.trim() || null, platformVersion]);
       // Recorded, because this changes something. Filed against the initiative they name when they
       // name one, so the report shows up beside the work it interrupted.
-      logActivity(await userRoot(), named ? `${named}/_open.json` : null,
-        { user: who, action: "bug_report", bug: rows[0].id, title: title.trim() });
+      platformEvent({ actor: who, kind: "bug_report", initiative: named,
+        bug: rows[0].id, title: title.trim() });
       return json({
         id: rows[0].id,
         reported_by: who,

@@ -52,8 +52,7 @@ import { z } from "zod";
 import { writeFindingsDoc } from "./findings-doc.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { measureByKey } from "./qualify.js";
-import { logActivity } from "../persist.js";
-import { userRoot } from "../paths.js";
+import { platformEvent } from "../indexing.js";
 import { db } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
 
@@ -298,8 +297,8 @@ export function registerPluginRecordTools(server: McpServer): void {
       let doc: { path: string; chars: number } | string | undefined;
       if (initiative) doc = await writeFindingsDoc(p, initiative, eval_run_id);
 
-      logActivity(await userRoot(), null, {
-        user: principal, action: "finding_record", eval_run_id, finding_id: result.id, replayed: outcome.replayed,
+      platformEvent({
+        actor: principal, kind: "finding_record", initiative, eval_run_id, finding_id: result.id, replayed: outcome.replayed,
       });
       return json({
         eval_run_id, finding: result, ...(supersedes !== undefined ? { superseded: supersedes } : {}),
@@ -397,8 +396,7 @@ export function registerPluginRecordTools(server: McpServer): void {
         result = outcome.result;
       }
 
-      logActivity(await userRoot(), null,
-        { user: who, action: "finding_decide", decided: result.done.length, refused: result.refused.length, replayed: outcome.replayed });
+      platformEvent({ actor: who, kind: "finding_decide", decided: result.done.length, refused: result.refused.length, replayed: outcome.replayed });
       return json({
         decided: result.done.length, findings: result.done,
         refused: result.refused.length ? result.refused : undefined,

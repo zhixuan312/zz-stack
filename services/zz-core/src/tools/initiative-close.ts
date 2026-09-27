@@ -13,14 +13,17 @@ import { documentApplies, OUTCOME_STOPPED, closeInitiative, parseCaller, parseEn
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { closingDocRuledOut, factsFor, factsForWrite, OPEN_RECORD } from "../initiative-record.js";
+import { closingDocRuledOut, factsFor, factsForWrite } from "../initiative-record.js";
 import { chainFor, frontmatterStatus } from "../chain.js";
 import { oneLine } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
 import { moduleForFlow } from "../host/index.js";
 import { claimFor } from "../host/store.js";
 import { safeName, safePath, userRoot, writeGuard } from "../paths.js";
-import { logActivity, persistDocument, putEnvelopeField } from "../persist.js";
+import { platformEvent, sealOf } from "../indexing.js";
+import { saveDocument } from "../versions.js";
+import { stampEnvelope } from "../write-guards.js";
+import { putEnvelopeField } from "../persist.js";
 import { db, teamFor } from "../platform-db.js";
 import { packagedModules } from "../reviewed-modules.js";
 
@@ -230,8 +233,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
               `ERROR: ${initiative} was closed by someone else just now — call initiative_status ` +
               "to see how.");
           }
-          logActivity(root, `${initiative}/${OPEN_RECORD}`,
-            { user: who.email, action: "initiative_close", initiative, outcome: OUTCOME_STOPPED });
+          platformEvent({ actor: who.email, kind: "initiative_close", initiative, outcome: OUTCOME_STOPPED });
           return text(
             `${initiative} abandoned — it holds no document, so the outcome is recorded on its ` +
             "own anchor row and no ledger row is appended. A team's counts are built from work " +
@@ -378,7 +380,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       doc = putEnvelopeField(doc, "closed_by", who.email);
       if (signedBy) doc = putEnvelopeField(doc, "accepted_by", signedBy);
       if (!signedBy && reason) doc = putEnvelopeField(doc, "no_signoff_reason", reason);
-      const bad = documentGuards(chain, root, relPath, doc, team, "initiative_close");
+      const bad = await documentGuards(chain, root, relPath, doc, team, "initiative_close");
       if (bad) return text(bad);
       // The anchor row, before the document: `accepted_by`/`no_signoff_reason` satisfy the same
       // two CHECKs the migration declares (an `accepted` outcome always names an accepted_by;
@@ -407,9 +409,21 @@ export function registerInitiativeCloseTool(server: McpServer): void {
           `ERROR: ${initiative} was closed on its own anchor row by a concurrent call — the ` +
           "document was not written. Call initiative_status to see how it closed.");
       }
-      persistDocument(chain, root, relPath, target, doc, `close ${outcome}`);
-      logActivity(root, relPath,
-        { user: who.email, action: "initiative_close", initiative, outcome, accepted_by: signedBy || null });
+      // The ONE insert path: I-39's `saveDocument`, which stamps, files the row and its revision,
+      // and mirrors the bytes into the store. Not a second one here.
+      //
+      // `sealOf` because the closing document is usually APPROVED — a close writes `outcome` onto
+      // the revision a person signed, and a rewrite of a sealed revision without its seal is
+      // refused by `zz.doc_revision`'s own check.
+      const stamped = stampEnvelope(chain, relPath, doc);
+      const closed = await saveDocument({
+        team, relPath, initiative, text: stamped, by: who.email,
+        flow: chain.name ?? undefined, act: `close ${outcome}`, mode: "rewrite",
+        seal: sealOf(stamped),
+      });
+      if ("refusal" in closed) return text(closed.refusal);
+      platformEvent({ actor: who.email, kind: "initiative_close", initiative, outcome,
+                      accepted_by: signedBy || null });
       return text(
         `${initiative} closed as ${outcome}, recorded by ${who.email}.\n` +
         (signedBy ? `Accepted by ${signedBy}${!acceptor ? " — closing it is saying so" : ""}.\n`

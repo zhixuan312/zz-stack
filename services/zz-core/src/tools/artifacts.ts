@@ -2,20 +2,27 @@
  * The store: reading, writing and showing a document, and the sources attached to one.
  *
  * Every write goes through the same two steps — `documentGuards` decides whether it may land,
- * `persistDocument` lands it — and no tool here decides either for itself, so a rule added to
- * the guards holds on every path.
+ * `saveDocument` lands it — and no tool here decides either for itself, so a rule added to
+ * the guards holds on every path. A document is read back from the row that retained it: `doc`
+ * carries its identity and its status, `doc_revision` the bytes it has had, and a path that
+ * does not exist is refused rather than answered from a file.
+ *
+ * `document_present` is the one reader left on the store on disk, and deliberately: what it
+ * adds over a plain read is the `shown` entry `attest.ts` counts, and `attest.ts` reads the
+ * activity journal. It is stated from the mirrored bytes while the platform's other readers
+ * still open the store; Task I-41 moves it with them.
  *
  * `document_present` returns the document rather than a rendering of it, and appends a
  * `shown` entry naming the path and version for each document it fetched. That is what makes
  * "was this fetched before its gate was approved" answerable per document.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { join, resolve, sep } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { join, sep } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { parseCaller, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
-import { indexDoc, walk } from "@zz/indexing";
+import { parseCaller } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
+import type pg from "pg";
 import { z } from "zod";
 
 import { chainFor } from "../chain.js";
@@ -28,13 +35,23 @@ import { noteDocument, noteSource } from "../host/observe.js";
 import { sourceDocument } from "../indexing.js";
 import { unopenedRefusal } from "../initiative-record.js";
 import { PLAIN_TOKEN, platformPath, safeName, safePath, tagRefusal, titleSlug, userRoot, writeGuard } from "../paths.js";
-import { commitStore, logActivity, persistDocument } from "../persist.js";
-import { teamFor } from "../platform-db.js";
-import { documentVersions, presentDocument, versionRefusal } from "../versions.js";
+import { db, teamFor } from "../platform-db.js";
+import { citationsOf, dayOf, documentAt, documentPaths, loadDocument, recordAct, revisionsOf,
+         saveDocument, presentDocument } from "../versions.js";
 import { asksPart, PART_LIMIT, partHeader, presentPart, slicePart } from "../document-parts.js";
 
 import { envelopeFor, isoToday, normalizeSections } from "../write-guards.js";
 import { nextMoveLine } from "./initiative-status.js";
+
+/** A deployment with no database has no store left: the columns are where a document lives, and
+ *  there is no file to fall back to. Said once, in the refusals that would otherwise reach a
+ *  pool that is not there. */
+const NO_DB = "ERROR: no platform database — the store is the database now, so there is " +
+  "nowhere to read or write this document.";
+
+/** A person the platform cannot place in a team has no store to act on. */
+const NO_TEAM = "ERROR: you are not in a team — a team's documents live in the database under " +
+  "its own membership, and nothing resolves you to one.";
 
 /** The part of a long document to return. COUPLED: document-parts.ts slicePart reads these. */
 const PART_INPUT = {
@@ -75,12 +92,16 @@ export function registerArtifactTools(server: McpServer): void {
       const refused = frontmatterRefusal(content, "document_write") ?? fieldRefusal(fields)
         ?? tagRefusal(tags);
       if (refused) return text(refused);
+      const p = db();
+      if (!p) return text(NO_DB);
       const root = await userRoot();
-      const team = await teamFor(parseCaller(requestHeaders()).email);
+      const who = parseCaller(requestHeaders()).email;
+      const team = await teamFor(who);
+      if (!team) return text(NO_TEAM);
       // DELIBERATE: the path is resolved before the guards run, as approve, close,
       // document_patch and document_revise all do. A bad path answered from behind the guards
       // is answered with a complaint about the document's sections instead.
-      const target = await safePath(path);
+      await safePath(path);
       // This write does not create an initiative — `initiative_open` does, and the name shape,
       // the taken check and the flow declaration are asked there, once. What is left here is
       // an existence test.
@@ -92,35 +113,49 @@ export function registerArtifactTools(server: McpServer): void {
       const chain = chainFor(root, path, content);
       // The document already there is read before it is overwritten: the overwrite half of
       // "create or overwrite" has to preserve the fields the platform wrote on the previous
-      // copy — see envelopeFor's `carry`.
-      //
-      // COUPLED: the carried set is PLATFORM_OWNED plus `version`, read from @zz/contracts, so
-      // a field added to the platform's set is carried without editing this line.
-      const onDisk = existsSync(target) && statSync(target).isFile()
-        ? parseEnvelope(readFileSync(target, "utf8")) : {};
+      // copy — see envelopeFor's `carry`. Read from the rows, which are the authority: a
+      // document whose file is gone still carries its own verdicts.
+      const prev = await documentAt(p, team, path);
       const carry: Record<string, string> = {};
-      for (const k of [...PLATFORM_OWNED, "version"]) {
-        if (onDisk[k]) carry[k] = onDisk[k];
+      if (prev) {
+        const rev = prev.current_revision === null
+          ? null : (await revisionsOf(p, prev.id)).find((r) => r.revision === prev.current_revision);
+        if (prev.status) carry.status = prev.status;
+        if (rev?.approved_by) carry.approved_by = rev.approved_by;
+        if (rev?.approved_at) carry.approved_at = dayOf(rev.approved_at);
+        if (prev.current_revision !== null) carry.version = String(prev.current_revision);
+      }
+      // An approved document is not overwritten by a write: the bytes a person signed would be
+      // replaced under their name. Asked of the row, which is where the verdict lives — the
+      // guard asks the file, and a store that has not been mirrored yet answers nothing.
+      if (prev?.status === "approved") {
+        return text(
+          `ERROR: ${path} is approved, so document_write does not overwrite it. An approval is a ` +
+          "verdict on bytes a person read: change it with document_revise, which files a new " +
+          "revision, names what caused the change and puts the gate back in front of them.");
       }
       content = envelopeFor(chain, path, content, { stakeholder, tags, title, fields, carry });
       const fixed = normalizeSections(chain, path, content);
-      const gate = documentGuards(chain, root, path, fixed.content, team);
+      const gate = await documentGuards(chain, root, path, fixed.content, team);
       if (gate) return text(gate);
-      const written = persistDocument(chain, root, path, target, fixed.content, "write");
-      logActivity(root, path,
-        { user: parseCaller(requestHeaders()).email, action: "document_write", path, chars: written.length });
+      const written = await saveDocument({
+        team, relPath: path, initiative: path.split("/")[0], text: fixed.content, by: who,
+        flow: chain.name ?? undefined, type: chain.roles[path.split("/")[1] ?? ""],
+        mode: prev ? "rewrite" : "create", act: "write",
+      });
+      if ("refusal" in written) return text(written.refusal);
+      recordAct(root, path, { user: who, action: "document_write", path, chars: fixed.content.length });
       // The control loop is told after the write succeeded, never before. `noteDocument`
       // cannot refuse anything — `documentGuards` above has already decided — it only records
       // the fact the close is later derived from.
       //
       // DELIBERATE: awaited, not fired and forgotten. A write that returned before its
       // evidence landed would let a caller write a document and be told the step is unmet.
-      await noteDocument(chain, path, "document",
-                         parseCaller(requestHeaders()).email, team);
-      const assessed = await acceptanceLine(root, chain, path, written);
-      return text(`written: ${path} (${written.length} chars)`
-        + (fixed.renamed.length ? `\nRenamed to the heading this flow declares: ${fixed.renamed.join(", ")}.` : "")
-        + assessed + nextMoveLine(root, path.split("/")[0]));
+      await noteDocument(chain, path, "document", who, team);
+      const assessed = await acceptanceLine(root, chain, path, fixed.content);
+      return text(`written: ${path} (${fixed.content.length} chars)` +
+        (fixed.renamed.length ? `\nRenamed to the heading this flow declares: ${fixed.renamed.join(", ")}.` : "") +
+        assessed + nextMoveLine(root, path.split("/")[0]));
     },
   );
 
@@ -155,14 +190,14 @@ export function registerArtifactTools(server: McpServer): void {
     },
     async ({ path, version, scope, section, offset, limit }) => {
       // Refused before the loop, not once per entry. The shared journal holds no gated
-      // documents, so it files no approvals and has no `_versions/`; answering per entry
+      // documents, so it files no approvals and has no version history; answering per entry
       // would read as a missing file rather than as a request that does not apply.
       if (version !== undefined && scope === "platform") {
         return text("ERROR: `version` reads a copy filed at an approval, and the platform " +
                     "journal keeps none — its nodes are superseded, not versioned. Drop one " +
                     "of the two.");
       }
-      const root = await userRoot();
+      const team = await teamFor(parseCaller(requestHeaders()).email);
       const single = !Array.isArray(path);
       const rows: { rel: string; body: string }[] = [];
       // One bad entry does not cost the others: nothing returns from inside this loop, and
@@ -170,31 +205,48 @@ export function registerArtifactTools(server: McpServer): void {
       for (const rel of (single ? [path as string] : path as string[])) {
         try {
           let readRel = rel;
-          if (version !== undefined) {
-            const refused = versionRefusal(root, rel, version);
-            if (refused) { rows.push({ rel, body: refused }); continue; }
-            readRel = documentVersions(root, rel).find((v) => v.version === version)?.rel ?? rel;
+          // The shared journal is the one shelf a `doc` row does not address: a node lives in
+          // `zz.knowledge_node`, under the platform team, and the document tools are not its
+          // readers. It is read where it is written.
+          if (scope === "platform") {
+            const target = platformPath(readRel);
+            if (!existsSync(target)) {
+              rows.push({ rel, body: `ERROR: ${rel} does not exist on the platform shelf` });
+              continue;
+            }
+            const bytes = readFileSync(target, "utf8");
+            rows.push({ rel: readRel, body: bytes });
+            continue;
           }
-          // The search spans two shelves, so the read reaches both: a node knowledge_search
-          // returns with `shelf: "platform"` is otherwise visible and unopenable.
-          const target = scope === "platform" ? platformPath(readRel) : await safePath(readRel);
-          if (!existsSync(target)) {
+          if (!team) { rows.push({ rel, body: NO_TEAM }); continue; }
+          // Resolved before the read: a path that walks out of the store is refused by name
+          // rather than looked up as a row.
+          await safePath(rel);
+          const loaded = await loadDocument(team, rel, version);
+          if (!loaded.ok) {
+            if (loaded.why === "no_database") { rows.push({ rel, body: loaded.refusal }); continue; }
+            if (loaded.why !== "missing") { rows.push({ rel, body: loaded.refusal }); continue; }
             // Names the other shelf, once, when the path looks like a journal node — a caller
             // has no other way to learn a second shelf exists.
             // And says what to call next: a refusal that only names the missing file left one
             // caller presenting another initiative's document instead (eval 2026-09-26, run fc6b98bd).
             const initiative = rel.split("/")[0];
-            const hint = scope !== "platform" && rel.startsWith("_knowledge/")
+            const hint = rel.startsWith("_knowledge/")
               ? " — if knowledge_search returned it with `shelf: \"platform\"`, read it with scope: \"platform\""
-              : scope === "platform" || !initiative || initiative === rel
+              : !initiative || initiative === rel
                 ? ""
-                : existsSync(join(root, initiative))
-                  ? ` — document_list(prefix: "${initiative}") lists what that initiative holds`
-                  : ` — there is no initiative "${initiative}" in your team's store; initiative_status() lists the open ones`;
-            rows.push({ rel, body: `ERROR: ${rel} does not exist${hint}` });
+                : ` — document_list(prefix: "${initiative}") lists what that initiative holds`;
+            const known = !initiative || initiative === rel
+              ? true
+              : (await documentPaths(team, initiative)).length > 0;
+            rows.push({ rel, body: `ERROR: ${rel} does not exist` +
+              (hint || (known
+                ? ""
+                : ` — there is no initiative "${initiative}" in your team's store; initiative_status() lists the open ones`)) });
             continue;
           }
-          const bytes = readFileSync(target, "utf8");
+          const bytes = loaded.text;
+          readRel = rel;
           // DELIBERATE: parts only when asked. Unasked, the answer is the bytes and nothing else —
           // console-write.ts parses the envelope off that string and hands the whole of it to a
           // model to revise, so a part there would truncate the document it writes back.
@@ -317,11 +369,26 @@ export function registerArtifactTools(server: McpServer): void {
     async ({ path, find, replace }) => {
       const blocked = writeGuard(path);
       if (blocked) return text(blocked);
+      const p = db();
+      if (!p) return text(NO_DB);
       const root = await userRoot();
-      const team = await teamFor(parseCaller(requestHeaders()).email);
-      const target = await safePath(path);
-      if (!existsSync(target)) return text(`ERROR: ${path} does not exist`);
-      const body = readFileSync(target, "utf8");
+      const who = parseCaller(requestHeaders()).email;
+      const team = await teamFor(who);
+      if (!team) return text(NO_TEAM);
+      await safePath(path);
+      // The body is the current revision's, read from the row that retained it — the same
+      // bytes every other reader is answered with.
+      const loaded = await loadDocument(team, path);
+      if (!loaded.ok) {
+        return text(loaded.why === "missing" ? `ERROR: ${path} does not exist` : loaded.refusal);
+      }
+      if (loaded.doc.status === "approved") {
+        return text(
+          `ERROR: ${path} is approved, so document_patch refuses it. An approval is a verdict ` +
+          "on bytes a person read: change it with document_revise, which files a new revision, " +
+          "names what caused the change and puts the gate back in front of them.");
+      }
+      const body = loaded.text;
       const n = body.split(find).length - 1;
       if (n !== 1) return text(`ERROR: \`find\` occurs ${n} times, need exactly 1`);
       // DELIBERATE: a function replacement, not a string one. `replace` is the model's own
@@ -337,11 +404,15 @@ export function registerArtifactTools(server: McpServer): void {
       // Against the resulting document, not the replacement fragment: a fragment is a few
       // lines with no frontmatter, and the guards have to see the whole thing.
       const fixed = normalizeSections(chain, path, result);
-      const bad = documentGuards(chain, root, path, fixed.content, team);
+      const bad = await documentGuards(chain, root, path, fixed.content, team);
       if (bad) return text(bad);
-      persistDocument(chain, root, path, target, fixed.content, "patch");
-      logActivity(root, path,
-        { user: parseCaller(requestHeaders()).email, action: "document_patch", path });
+      const written = await saveDocument({
+        team, relPath: path, initiative: path.split("/")[0], text: fixed.content, by: who,
+        flow: chain.name ?? undefined, type: chain.roles[path.split("/")[1] ?? ""],
+        mode: "rewrite", act: "patch",
+      });
+      if ("refusal" in written) return text(written.refusal);
+      recordAct(root, path, { user: who, action: "document_patch", path });
       const assessed = await acceptanceLine(root, chain, path, fixed.content);
       return text(`patched: ${path}`
         + (fixed.renamed.length ? `\nRenamed to the heading this flow declares: ${fixed.renamed.join(", ")}.` : "")
@@ -358,11 +429,10 @@ export function registerArtifactTools(server: McpServer): void {
       inputSchema: { prefix: z.string().optional() },
     },
     async ({ prefix }) => {
-      const root = await userRoot();
-      const base = prefix ? await safePath(prefix) : root;
-      if (!existsSync(base) || !statSync(base).isDirectory()) return text(JSON.stringify([]));
-      const files = [...walk(base)].map((p) => p.slice(root.length + 1)).sort();
-      return text(JSON.stringify(files));
+      const team = await teamFor(parseCaller(requestHeaders()).email);
+      if (!team) return text(JSON.stringify([]));
+      const base = prefix?.replace(/\/+$/, "");
+      return text(JSON.stringify(await documentPaths(team, base || undefined)));
     },
   );
 
@@ -425,8 +495,14 @@ export function registerArtifactTools(server: McpServer): void {
       // with material in it and no record of anyone opening it.
       const unopened = unopenedRefusal(root, rel);
       if (unopened) return text(unopened);
-      const target = await safePath(rel);
-      if (existsSync(target)) return text(`ERROR: ${rel} already exists — sources are immutable; add a new file`);
+      await safePath(rel);
+      const p = db();
+      if (!p) return text(NO_DB);
+      const team = await teamFor(who.email);
+      if (!team) return text(NO_TEAM);
+      if (await documentAt(p, team, rel)) {
+        return text(`ERROR: ${rel} already exists — sources are immutable; add a new file`);
+      }
       // An audit round is a source that names the stage producing it and supports the document
       // that stage audits. Anything else is material, however it is titled: a stakeholder's
       // answers support spec.md too, and counting them as a round would let a spec pass its
@@ -441,25 +517,32 @@ export function registerArtifactTools(server: McpServer): void {
         if (refused) return text(refused);
       }
       const round = auditRoundOf(governing, stage, list) ?? review;
-      const auditsVersion = round && !review
-        ? parseEnvelope(existsSync(join(root, initiative, round.document))
-            ? readFileSync(join(root, initiative, round.document), "utf8") : "").version || "1"
-        : undefined;
+      const cited = round ? await documentAt(p, team, `${initiative}/${round.document}`) : null;
+      const auditsVersion = round && !review && cited?.current_revision != null
+        ? String(cited.current_revision) : undefined;
       const doc = sourceDocument(
         { title, by: who.email, day: date, supports: list.join(", "), content,
           stage: round ? round.stage : undefined, audits_version: auditsVersion });
-      mkdirSync(resolve(target, ".."), { recursive: true });
-      writeFileSync(target, doc);
-      logActivity(root, rel, { user: who.email, action: "source_add", path: rel, supports: list.join(",") });
-      commitStore(root, who.email, "source", rel);
-      void indexDoc(root, rel, doc);
+      const wrote = await saveDocument({
+        team, relPath: rel, initiative, text: doc, by: who.email, flow: "",
+        // The stage is kept on the row's `type`: a source has no flow role, and the round it
+        // was recorded as is the one fact about it the store states beside its title. A source
+        // that is not a round of any stage is typed `source`.
+        type: round ? round.stage : "source",
+        cites: await citedRevisions(p, team, initiative, list),
+        mode: "create", act: "source",
+      });
+      if ("refusal" in wrote) return text(wrote.refusal);
+      recordAct(root, rel, { user: who.email, action: "source_add", path: rel, supports: list.join(",") });
       // which of the named documents were already approved when this landed? An audit round
       // lands on an approved document by design — the next move says what follows from it.
-      const stale = round ? [] : list.filter((d) => {
-        const env = parseEnvelope(existsSync(join(root, initiative, d))
-          ? readFileSync(join(root, initiative, d), "utf8") : "");
-        return env.status === "approved";
-      });
+      const stale: string[] = [];
+      if (!round) {
+        for (const d of list) {
+          const at = await documentAt(p, team, `${initiative}/${d}`);
+          if (at?.status === "approved") stale.push(d);
+        }
+      }
       // An audit evidences itself with a source, which is why this call is here and not in a
       // tool named for auditing: `sdlc-spec-audit` and `sdlc-plan-audit` are declared as
       // producing a source that supports the document they audited, and no document of their
@@ -512,19 +595,46 @@ export function registerArtifactTools(server: McpServer): void {
     async ({ initiative }) => {
       const bad = safeName(initiative, "initiative");
       if (bad) return text(bad);
-      const root = await userRoot();
-      const dir = join(root, initiative, "sources");
-      if (!existsSync(dir)) return text(JSON.stringify({ initiative, sources: [] }));
-      const rows = readdirSync(dir).filter((f) => f.endsWith(".md")).map((f) => {
-        const env = parseEnvelope(readFileSync(join(dir, f), "utf8"));
-        // COUPLED: `contributed_by` is the field source_add and document_revise write.
-        return { path: `${initiative}/sources/${f}`, title: env.title || f,
-                 supports: env.supports || "", stage: env.stage || "",
-                 contributed_by: env.contributed_by || "", added_at: env.added_at || "" };
-      });
+      const p = db();
+      const team = await teamFor(parseCaller(requestHeaders()).email);
+      if (!p || !team) return text(JSON.stringify({ initiative, sources: [] }));
+      const rows = [];
+      for (const rel of await documentPaths(team, `${initiative}/sources`)) {
+        if (!rel.endsWith(".md")) continue;
+        const doc = await documentAt(p, team, rel);
+        if (!doc) continue;
+        const revs = await revisionsOf(p, doc.id);
+        const rev = revs.find((r) => r.revision === doc.current_revision) ?? revs[0];
+        // COUPLED: `contributed_by` is the address `written_by` holds, and `stage` the round
+        // the source was recorded as — kept on the row's `type`, a source having no flow role.
+        rows.push({
+          path: rel,
+          title: rev?.title || rel.split("/").pop() || rel,
+          supports: (await citationsOf(p, doc.id, rev?.revision ?? 0))
+            .map((x) => x.split("/").pop() ?? x).join(", "),
+          stage: doc.type === "source" ? "" : doc.type,
+          contributed_by: rev?.written_by ?? "",
+          added_at: rev?.written_at ? dayOf(rev.written_at) : "",
+        });
+      }
       return text(JSON.stringify({ initiative, sources: rows }, null, 2));
     },
   );
+}
+
+/** The current revision of each document a source names in `supports`, as `cites` links. A name
+ *  that resolves to no document is skipped: a source may cite material outside this store, and
+ *  a link to a row nobody has is a foreign key Postgres would refuse. */
+async function citedRevisions(
+  p: Pick<pg.Pool, "query">, team: string, initiative: string, names: string[],
+): Promise<{ path: string; revision: number }[]> {
+  const out: { path: string; revision: number }[] = [];
+  for (const d of names) {
+    const path = `${initiative}/${d}`;
+    const at = await documentAt(p, team, path);
+    if (at && at.current_revision !== null) out.push({ path, revision: at.current_revision });
+  }
+  return out;
 }
 
 /** After a verifying document is written or patched: ask `evidence_relation` of the acceptance

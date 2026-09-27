@@ -216,7 +216,10 @@ export function platformPath(path: string): string {
  *   _ledger.md          appended by ledgerOnClose when an initiative closes — the outcome,
  *                       the elapsed hours, the write counts. A model that could rewrite it
  *                       would write its own record.
- *   _knowledge/log.md   appended by journalLog on every journal action. */
+ *   _knowledge/log.md   the journal's human-readable log, which the store held as a file.
+ *                       `journalLog` writes the entry as a `zz.event` row now; the name stays
+ *                       reserved because a store written before that still carries the file, and
+ *                       a model must never be able to rewrite the record of what it did. */
 const SYSTEM_FILES = /(^|\/)(_?activity\.jsonl|_ledger\.md|_knowledge\/log\.md)$/;
 
 /** Guards every mutation of the artifact store passes, whichever tool asks.

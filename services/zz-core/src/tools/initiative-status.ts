@@ -25,7 +25,7 @@ import { planStructure, planStructureNote, type PlanStructure } from "../plan-st
 import { isHandover, owedActs } from "../stage-records.js";
 import { safeName, userRoot } from "../paths.js";
 import { Refusal } from "../refusal.js";
-import { logActivity } from "../persist.js";
+import { platformEvent } from "../indexing.js";
 import { db, teamFor } from "../platform-db.js";
 import { type Chain } from "../write-guards.js";
 
@@ -609,7 +609,7 @@ export function registerInitiativeStatusTools(server: McpServer): void {
         if (cov) docIndex = { total: Number(cov.total), tagged: Number(cov.tagged) };
       }
       const answer = docIndex ? { ...base, doc_index: docIndex } : base;
-      logActivity(root, null, { user: who.email, action: "initiative_status", initiative: initiative ?? "*" });
+      platformEvent({ actor: who.email, kind: "initiative_status", initiative: initiative ?? "*" });
       return text(JSON.stringify(answer, null, 2));
     },
   );

@@ -174,6 +174,9 @@ export function presentPart(
   if (env.status) facts.push(`status ${env.status}`);
   const signed = env.approved_by
     ? ` Approved by ${env.approved_by}${env.approved_at ? ` on ${env.approved_at}` : ""}.` : "";
+  // The two journal appends below are the same deliberate bridge `versions.ts` keeps and
+  // explains at its header: `attest.ts` reads `activity.jsonl`, and `checks/document-parts.ts`
+  // asserts these exact rows. Task I-41 retires them with the layer the two modules still call.
   logActivity(root, readRel, { user, action: "shown_part", path: readRel, version: env.version ?? "",
                                start: part.start, end: part.end, total: part.total });
   const covered = partsCover(root, readRel, part.total);

@@ -35,8 +35,7 @@ import {
   decideBeforeWork, withIdempotency, type IdempotencyOutcome, type MutatorOutcome,
 } from "./idempotency.js";
 import { askEvaluatorQuestion, insertEvaluatorAnswer, type AskedEvaluatorAnswer } from "../semantic.js";
-import { logActivity } from "../persist.js";
-import { userRoot } from "../paths.js";
+import { platformEvent } from "../indexing.js";
 import { db } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
 
@@ -333,8 +332,8 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
         result = outcome.result;
       }
 
-      logActivity(await userRoot(), null, {
-        user: principal, action: "evaluator_qualify", protocol_version_id, measure_key, evaluator_version_id,
+      platformEvent({
+        actor: principal, kind: "evaluator_qualify", initiative, protocol_version_id, measure_key, evaluator_version_id,
         state: result.state, replayed: outcome.replayed,
       });
       const recorded = await recordQualified(initiative, protocol_version_id, measure_key, result.state);

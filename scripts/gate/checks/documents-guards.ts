@@ -46,17 +46,26 @@ check("every tool that writes a file also indexes it", () => {
 });
 
 check("every document write runs the guards", () => {
-  // persistDocument is everything that happens once a mutation is allowed; documentGuards is
-  // everything that must be true before one is. The pairing is the check: a tool that persists
-  // a document must have asked first. It does not verify which guards ran, only that the two
-  // halves stay together.
-  const src = zzCoreSource();
-  const persists = [...src.matchAll(/persistDocument\(/g)].length - 1;   // less its definition
-  const guards = [...src.matchAll(/documentGuards\(/g)].length - 1;
-  if (persists < 1 || guards < 1) return "persistDocument or documentGuards has no call sites";
-  return persists === guards ? null
-    : `${persists} call sites persist a document and ${guards} run documentGuards — a write ` +
-      "path that persists without asking is how document_revise came to check nothing";
+  // documentGuards is everything that must be true before a document is written; `saveDocument`
+  // is the one insert path the write itself goes through. The pairing is the check: a tool that
+  // writes a DOCUMENT must have asked first. It does not verify which guards ran, only that the
+  // two halves stay together.
+  //
+  // Pairing by COUNT was the old rule, and it stopped meaning anything when the write path moved:
+  // `persistDocument` is now the store mirror *inside* `saveDocument`, and `saveDocument` is also
+  // what a SOURCE write goes through — a source has its own rules and does not pass the document
+  // gates. A count could not tell those apart; it compared a mirror against the guards, and a
+  // source write against a document's. Pairing per TOOL is what the rule was always about, and it
+  // is what the sibling check above already does.
+  const bad: string[] = [];
+  for (const { name, body } of zzCoreTools()) {
+    if (!/^document_/.test(name)) continue;
+    if (!/saveDocument\(/.test(body)) continue;
+    if (!/documentGuards\(/.test(body)) {
+      bad.push(`${name}: writes a document through saveDocument without asking documentGuards first`);
+    }
+  }
+  return bad.length ? bad.join("; ") : null;
 });
 
 check("no asymmetric fork in the document guards", () => {

@@ -128,6 +128,13 @@ interface SubjectColumns {
   readonly subject_kind: "run_level" | SubjectKind;
   readonly run_id: string | null;
   readonly doc_id: string | null;
+  /** AC-6.7's pin, and the only one of these that is not a foreign key. A `document` subject
+   *  records the EXACT revision it judged alongside the document identity, so the row stays
+   *  joined to those bytes after a later revision — `zz.eval_assessment`'s composite key is
+   *  `(doc_id, doc_revision)`, and the table's own check refuses a document subject without one.
+   *  Every other kind leaves it absent: a run, a bug, a call and a knowledge node are judged as
+   *  they stand, and there is no revision of them to pin. */
+  readonly doc_revision?: number | null;
   readonly knowledge_node_id: string | null;
   readonly bug_id: string | null;
   readonly event_id: string | null;
@@ -177,13 +184,24 @@ async function subjectColumnsOf(
     // an initiative slug carries no separator, so the first `/` is the split.
     const cut = ref.indexOf("/");
     if (cut < 0) return { error: `ERROR: subject_ref "${ref}" names no document — a document ref is <initiative>/<path>` };
-    const row = (await p.query<{ id: string }>(`
-      select d.id::text as id
+    const row = (await p.query<{ id: string; current_revision: number | null }>(`
+      select d.id::text as id, d.current_revision
         from zz.doc d
        where d.team_slug = $1 and d.initiative = $2 and d.path = $3`,
       [team, ref.slice(0, cut), ref.slice(cut + 1)])).rows[0];
     if (!row) return { error: `ERROR: subject_ref "${ref}" names no document in team "${team}"'s index — nothing to record` };
-    return { subject_kind: "document", ...NO_CHILD, doc_id: row.id };
+    // AC-6.7: the pin is exact or the row is refused. A null here reads back as "no revision
+    // known", and the truth would be "this run did not record one" — the two are different
+    // facts, and only the first is what a reader without the row would assume. The check on
+    // `zz.eval_assessment` refuses it anyway; refusing here says which ref and why.
+    if (row.current_revision === null) {
+      return {
+        error: `ERROR: subject_ref "${ref}" names a document whose exact revision the platform ` +
+          "cannot resolve — the row carries no current revision, so this assessment would pin " +
+          "nothing and read back as a revision nobody recorded. Nothing was recorded.",
+      };
+    }
+    return { subject_kind: "document", ...NO_CHILD, doc_id: row.id, doc_revision: row.current_revision };
   }
   // A knowledge node is addressed by the two halves its file's name carries: `node_ordinal` and
   // `slug`, which is what the reshape left where one address column used to be. The ref arrives
@@ -429,12 +447,13 @@ export async function assessEvaluation(
           await client.query(`
             insert into zz.eval_assessment
               (eval_run_id, measure_id, assessment_id, qualification_id, subject_kind,
-               run_id, doc_id, knowledge_node_id, bug_id, event_id,
+               run_id, doc_id, doc_revision, knowledge_node_id, bug_id, event_id,
                value, raw_value, numerator, denominator, excluded_reason, created_at)
-            values ($1::uuid, $2::uuid, $3, $4::uuid, $5, $6::uuid, $7::uuid, $8::uuid, $9::uuid,
-                    $10::bigint, $11, $12::jsonb, $13, $14, $15, now())`,
+            values ($1::uuid, $2::uuid, $3, $4::uuid, $5, $6::uuid, $7::uuid, $8::int, $9::uuid,
+                    $10::uuid, $11::bigint, $12, $13::jsonb, $14, $15, $16, now())`,
             [eval_run_id, measure.id, answer.assessment_id, answer.qualification_id, columns.subject_kind,
-             columns.run_id, columns.doc_id, columns.knowledge_node_id, columns.bug_id, columns.event_id,
+             columns.run_id, columns.doc_id, columns.doc_revision ?? null, columns.knowledge_node_id,
+             columns.bug_id, columns.event_id,
              value, jsonbOf(answer.detail.raw_value), intOf(answer.detail.numerator), intOf(answer.detail.denominator),
              excludedReason]);
         }

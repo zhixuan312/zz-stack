@@ -65,8 +65,11 @@ function open(flow: string, facts: Record<string, string> | null) {
   const chain: Chain = chainFor(root, `${name}/x.md`);
   const write = (doc: string, fields: Record<string, string>) =>
     writeFileSync(join(root, name, doc), body(chain, doc, { title: doc, flow, ...fields }));
-  const close = (doc: string, fields: Record<string, string>): string | null =>
-    documentGuards(chain, root, `${name}/${doc}`, body(chain, doc, { title: doc, flow, ...fields }), null, "fixture");
+  // `async` because the guard reads the rows now: a database read cannot be synchronous, and the
+  // close is the load-bearing case — it asks whether each required document exists, which is a
+  // question only the rows can answer once documents stop being files.
+  const close = async (doc: string, fields: Record<string, string>): Promise<string | null> =>
+    await documentGuards(chain, root, `${name}/${doc}`, body(chain, doc, { title: doc, flow, ...fields }), null, "fixture");
   return { name, chain, write, close };
 }
 
@@ -76,7 +79,7 @@ function open(flow: string, facts: Record<string, string> | null) {
   is(i.chain.closingDoc === "improvement.md",
      `zz-plugin-eval's declared closing document is ${i.chain.closingDoc}, not improvement.md — this check's premise moved`);
   i.write("findings.md", {});
-  const got = i.close("findings.md", FINISHED);
+  const got = await i.close("findings.md", FINISHED);
   is(got === null, `skip: a finished close on findings.md was refused: ${JSON.stringify(got)}`);
 }
 
@@ -84,11 +87,11 @@ function open(flow: string, facts: Record<string, string> | null) {
 {
   const i = open("zz-plugin-eval", { protocol_action: "reuse", improvement_mode: "proposal", release_mode: "proposal_only" });
   i.write("findings.md", {});
-  const early = i.close("findings.md", FINISHED);
+  const early = await i.close("findings.md", FINISHED);
   is(typeof early === "string" && /proposal\.md does not exist/.test(early),
      `proposal_only: a finished close on findings.md without proposal.md was not refused for it: ${JSON.stringify(early)}`);
   i.write("proposal.md", {});
-  const got = i.close("proposal.md", FINISHED);
+  const got = await i.close("proposal.md", FINISHED);
   is(got === null, `proposal_only: a finished close on proposal.md was refused: ${JSON.stringify(got)}`);
 }
 
@@ -97,10 +100,10 @@ function open(flow: string, facts: Record<string, string> | null) {
   const i = open("zz-plugin-eval", { protocol_action: "reuse", improvement_mode: "release", release_mode: "promotable" });
   i.write("findings.md", {});
   i.write("improvement.md", {});
-  const draft = i.close("improvement.md", FINISHED);
+  const draft = await i.close("improvement.md", FINISHED);
   is(typeof draft === "string" && /cannot be closed while its own approval is unrecorded/.test(draft),
      `promotable: a finished close on a draft improvement.md was not refused for its own gate: ${JSON.stringify(draft)}`);
-  const got = i.close("improvement.md", { ...APPROVED, ...FINISHED });
+  const got = await i.close("improvement.md", { ...APPROVED, ...FINISHED });
   is(got === null, `promotable: a finished close on an approved improvement.md was refused: ${JSON.stringify(got)}`);
 }
 
@@ -111,9 +114,9 @@ function open(flow: string, facts: Record<string, string> | null) {
      `sdlc-flow's declared closing document is ${i.chain.closingDoc}, not review.md — this check's premise moved`);
   i.write("explore.md", {});
   i.write("spec.md", { status: "draft" });
-  const got = i.close("spec.md", { status: "draft", ...STOPPED });
+  const got = await i.close("spec.md", { status: "draft", ...STOPPED });
   is(got === null, `sdlc: abandoning on a draft spec.md (no review.md) was refused: ${JSON.stringify(got)}`);
-  const finished = i.close("spec.md", { status: "draft", ...FINISHED });
+  const finished = await i.close("spec.md", { status: "draft", ...FINISHED });
   is(finished === null || !/own approval is unrecorded/.test(finished),
      `sdlc: a finished outcome on spec.md was judged as a close on it: ${JSON.stringify(finished)}`);
 
@@ -121,7 +124,7 @@ function open(flow: string, facts: Record<string, string> | null) {
   j.write("explore.md", {});
   j.write("spec.md", APPROVED);
   j.write("plan.md", { status: "draft" });
-  const plan = j.close("plan.md", { status: "draft", ...STOPPED });
+  const plan = await j.close("plan.md", { status: "draft", ...STOPPED });
   is(plan === null, `sdlc: abandoning on a draft plan.md was refused: ${JSON.stringify(plan)}`);
 }
 
@@ -150,7 +153,7 @@ function open(flow: string, facts: Record<string, string> | null) {
   i.write("findings.md", {});
   writeFileSync(join(root, i.name, "_facts.json"), "[\"not an object\"]");
   let finished: unknown = null;
-  try { finished = i.close("findings.md", FINISHED); } catch (err) { finished = err; }
+  try { finished = await i.close("findings.md", FINISHED); } catch (err) { finished = err; }
   const said = finished instanceof Error ? finished.message : String(finished);
   // The repair names the mirror row by the initiative's own id — the only key `zz.initiative_fact`
   // has left — so the instruction is a lookup by id rather than by a team and a slug.
@@ -158,7 +161,7 @@ function open(flow: string, facts: Record<string, string> | null) {
      /zz\.initiative_fact/.test(said) && /initiative_id/.test(said),
      `a finished close over a damaged _facts.json did not refuse naming the abandon and the repair: ${said}`);
   let stopped: unknown = null;
-  try { stopped = i.close("findings.md", STOPPED); } catch (err) { stopped = err; }
+  try { stopped = await i.close("findings.md", STOPPED); } catch (err) { stopped = err; }
   is(stopped === null, `an abandon over a damaged _facts.json was refused: ${String(stopped)}`);
 }
 

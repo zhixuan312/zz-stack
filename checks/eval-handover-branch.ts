@@ -62,7 +62,7 @@ try {
 
     const closeFields = closing === "improvement.md" ? { ...APPROVED, ...CLOSED } : CLOSED;
     writeFileSync(join(root, name, closing), body(closing, closeFields));
-    const refused = documentGuards(chain, root, `${name}/handover.md`, body("handover.md", { status: "draft" }), null, "fixture");
+    const refused = await documentGuards(chain, root, `${name}/handover.md`, body("handover.md", { status: "draft" }), null, "fixture");
     is(refused === null, `${label}: closed on ${closing}, and handover.md is still refused: ${refused}`);
   }
 } finally {

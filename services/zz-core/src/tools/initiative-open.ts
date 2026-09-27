@@ -32,7 +32,7 @@ import { slugify, slugRefusal } from "../document-rules.js";
 import { initiativeNameFor, OPEN_RECORD, recordOpen, takenRefusal } from "../initiative-record.js";
 import { userRoot } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
-import { logActivity } from "../persist.js";
+import { platformEvent } from "../indexing.js";
 
 import { packagedModules } from "../reviewed-modules.js";
 
@@ -131,18 +131,19 @@ export function registerInitiativeOpenTool(server: McpServer): void {
       }
 
       const record = recordOpen(root, name, flow ?? null, who);
-      // Into the initiative's own log, which is why this runs after recordOpen: the folder has
-      // to exist for logActivity to place the line there rather than in the team-wide
-      // `_activity.jsonl`, which is where `relPath: null` puts it.
+      // Into the initiative's own journal, which is why this runs after recordOpen: the row
+      // carries `initiative_id`, and the initiative anchor row was written above.
       //
-      // DELIBERATE: the log is not where the declaration lives. logActivity swallows every
-      // failure by design, so a line that fails to append is invisible, and chainFor returns
-      // EMPTY_CHAIN for a record saying freeform — a lost line would turn an initiative
+      // DELIBERATE: the journal is not where the declaration lives. `platformEvent` swallows every
+      // failure by design, so a row that fails to insert is invisible, and chainFor returns
+      // EMPTY_CHAIN for a record saying freeform — a lost row would turn an initiative
       // somebody governed into one governed by nothing, permanently. The event is recorded here
       // because it is an event; the declaration is a file because it has to be readable back
       // with certainty.
-      logActivity(root, `${name}/${OPEN_RECORD}`,
-        { user: who, action: "initiative_open", initiative: name, flow: record.flow ?? "" });
+      // `subject` names the declaration itself, which is the row the older file-writing form
+      // logged against — `OPEN_RECORD` is exported for exactly this and is read nowhere else.
+      platformEvent({ actor: who, kind: "initiative_open", subject: `${name}/${OPEN_RECORD}`,
+                      initiative: name, flow: record.flow ?? "" });
 
       // The control loop is told the run exists.
       //

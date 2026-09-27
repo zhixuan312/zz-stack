@@ -33,6 +33,58 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.87.0] — 2026-09-28
+
+Phase 6 of the schema first-principles review (initiative
+`2026-09-21-schema-first-principles-review`): **the database is now the only store.** The team file
+store, its `_versions/` snapshots and the team git repository are retired; a platform tool reaches a
+document through a row and nowhere else.
+
+### Added
+- **`doc_revision` and `doc_link`.** A document's identity and status are `doc`; every version of it
+  is a `doc_revision` row with immutable content, and the one permitted update is the one-time
+  approval seal that bound that revision. `doc_link` holds the citations: `cites` pins both ends to
+  exact revisions, and `supports` pins the source revision to the target document identity with
+  `to_revision` null by design.
+- **`doc_revision.fields`, an open payload** for the envelope fields that have no column of their
+  own — `stakeholder`, and every field a flow declares (sdlc's `blocks`, zz-plugin-eval's
+  `eval_run_id`). The columns win over it on read, so a key it carries cannot answer in a column's
+  place.
+- **`initiative_record`**, holding the ids an initiative's stages minted, latest per key.
+- **`doc_revision.presented_at`**, the instant a revision's bytes were put in front of a person. It
+  is what `document_approve` is refused by, and it is a column rather than an event row so that no
+  retention sweep can take it: an approval gate whose evidence is sweepable fails OPEN.
+
+### Changed
+- **Every platform tool answers from the database.** `document_write`, `document_read`,
+  `document_patch`, `document_list`, `source_add`, `source_list`, `document_approve`,
+  `document_revise`, `knowledge_add` and `knowledge_supersede` read and write rows, and the console
+  and the gateway's readers with them.
+- **Knowledge search keeps working on `doc` and `knowledge_node`**, with a trigram index so Chinese
+  substring matching uses an index rather than a scan.
+- The activity journal is a `zz.event` row, and a team cannot change what a platform skill says.
+
+### Removed
+- **The team file store, `_versions/`, `_per-initiative` JSON state files and the team git
+  repository.** `commitStore`, `indexDoc` and the store layer are gone with them; `doc`'s eleven
+  duplicated columns (`team_slug`, `initiative`, `flow`, `outcome`, `closed_by`, `approved_by`,
+  `approved_at`, `evidence`, `supports`, `superseded_by`, `produced_by_run_id`) are dropped.
+- **A team's change to a platform skill** — the `overlays/<skill>/SKILL.md` overlay and the team-local
+  skills root. Both were files in the store this release retires, and neither had ever been used.
+
+### Upgrade notes
+- **A migration applies on the gateway's next start, to a live database.** It carries every team's
+  documents into `doc_revision`, drops `doc`'s eleven duplicated columns, and retires the store.
+  **Back up first with `deploy/backup.sh`** — and note what changes about it below.
+- **`deploy/backup.sh` stops copying the artifacts volume.** That volume *is* the team store, and the
+  store is inside the `pg_dump` now. The credentials and configuration tarballs stay, and
+  `deploy/backup-manifest.sh` now requires three files rather than four — a set still holding
+  `zz-artifacts-*.tar.gz` is an older set whose database is missing every document written after it.
+- **The store is archived once and then removed**, by `scripts/retire-file-store.ts`, into the backup
+  destination with an explicit exemption from the nightly prune. It is the last copy of the store's
+  text, so it is worth copying off-host.
+- No env key changed. Clients re-pull with the usual two commands to pick up the new plugin versions.
+
 ## [0.86.2] — 2026-09-27
 
 ### Fixed

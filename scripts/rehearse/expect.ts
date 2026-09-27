@@ -203,4 +203,22 @@ export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
       },
     ],
   },
+  // The run the timer invented, deleted. `skill_run` is named here so this migration's count wins
+  // over `"002_delivery_telemetry.sql"`'s `"unchanged"` — the fold takes the last migration to name
+  // a table — and the two together move it by exactly one row: the run whose evidence names no
+  // skill version, which is the same row as the one whose stamped version postdates it. Everything
+  // else in the backup is untouched, and the join below is what says the deletion was complete
+  // rather than merely that it ran.
+  "003_a_run_the_timer_invented.sql": {
+    tables: {
+      skill_run: { count: { delta: -1 }, contentHash: "skip", was: "run" },
+    },
+    joins: [
+      {
+        name: "every run's evidence names a skill version released no later than the run",
+        violatingCount:
+          "select count(*)::int as n from zz.skill_run r where not exists (select 1 from zz.event e where e.run_id = r.id and e.skill_version_id is not null) or exists (select 1 from zz.skill_version v where v.id = r.skill_version_id and v.released_at > r.started_at)",
+      },
+    ],
+  },
 };

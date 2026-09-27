@@ -8,8 +8,9 @@
  * first and the migration is written to match it — never regenerated from a migrated catalog,
  * because a target derived from what it checks proves nothing. To see how PostgreSQL renders a
  * type, check or index, `node scripts/schema-target-extract.ts <table>…` prints the entries of a
- * database built from this checkout's migrations. `schema_migration` and the `search_*_default`
- * partitions are not design tables and are not listed.
+ * database built from this checkout's migrations. `schema_migration` is not a design table and is
+ * not listed, and neither is a partition: `catalog.ts` reads relations that are not partitions of
+ * another, so the `search_*_default` partitions Phase 5 removed were never declared here.
  */
 import type { SchemaTarget } from "./scripts/schema/types.ts";
 import { IDENTITY } from "./schema-target/identity.ts";
@@ -24,10 +25,8 @@ import { EVAL_OBSERVE } from "./schema-target/eval-observe.ts";
 import { EVAL_RUN } from "./schema-target/eval-run.ts";
 import { IMPROVE } from "./schema-target/improve.ts";
 import { CONTROL } from "./schema-target/control.ts";
-import { ARTIFACT } from "./schema-target/artifact.ts";
-import { SEARCH } from "./schema-target/search.ts";
 
 export const SCHEMA_TARGET: SchemaTarget = {
-  phase: 4,
-  tables: { ...IDENTITY, ...SIGN_IN, ...DELIVERY, ...KNOWLEDGE, ...TELEMETRY, ...CATALOG, ...EVAL_LEGACY, ...EVAL_PROTOCOL, ...EVAL_OBSERVE, ...EVAL_RUN, ...IMPROVE, ...CONTROL, ...ARTIFACT, ...SEARCH },
+  phase: 5,
+  tables: { ...IDENTITY, ...SIGN_IN, ...DELIVERY, ...KNOWLEDGE, ...TELEMETRY, ...CATALOG, ...EVAL_LEGACY, ...EVAL_PROTOCOL, ...EVAL_OBSERVE, ...EVAL_RUN, ...IMPROVE, ...CONTROL },
 };

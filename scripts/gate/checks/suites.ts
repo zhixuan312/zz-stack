@@ -264,6 +264,10 @@ check("the committed judged dataset is exactly what its generator produces, byte
 const notRegistered = new Map<string, string>([
   // Wave 3 held one entry here — `release-closes-findings.ts`, red on the registration
   // rules from its activation until I-32 landed, as every check is between the two.
+  // Phase 5's next three are not named here yet: a name in this map must have a file, and each
+  // of theirs sits at no path until its own wave activates it. The integration step names it in
+  // the same pass that puts the file there — as Phase 3's and Phase 4's waves did — and strikes
+  // the entry when the wave lands.
   // Empty again after wave 3. Phase 4 held three entries here from wave 2 until wave 2
   // landed — I-29, I-30 and I-31's checks — and struck them in the same pass that
   // registered them, the two-step Phase 1 used for the pat-label check, Phase 2 for

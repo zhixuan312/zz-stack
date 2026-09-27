@@ -65,6 +65,12 @@ check("the improve and promote ledgers' relations are tables, and no file names 
       runsCheck("release-relations.ts"));
 check("eval_finding holds one lifecycle, and a strength carries no decision",
       runsCheck("finding-one-lifecycle.ts"));
+// Phase 5's four, registered by the integration step after the wave that writes each.
+// `artifact-layer-removed.ts` is I-33's: the target declares none of the artifact/search
+// tables, `knowledge_node` is the spec's fifteen columns, and the two trigram indexes are
+// declared on it and on `doc`.
+check("the artifact and search tables are gone, knowledge_node is the spec's shape, and Chinese retrieval has its index",
+      runsCheck("artifact-layer-removed.ts"));
 
 check("the resolvers are applied wherever a stored name is read", runsCheck("alias-applied.ts"));
 

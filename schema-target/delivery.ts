@@ -376,6 +376,7 @@ export const DELIVERY: Record<string, TableTarget> = {
       "CHECK ((status = ANY (ARRAY[''::text, 'draft'::text, 'approved'::text, 'adopted'::text, 'superseded'::text])))",
     ],
     indexes: [
+      "CREATE INDEX doc_body_trgm ON zz.doc USING gin (body zz.gin_trgm_ops)",
       "CREATE INDEX doc_evidence ON zz.doc USING gin (evidence)",
       "CREATE UNIQUE INDEX doc_id_unique ON zz.doc USING btree (id)",
       "CREATE INDEX doc_supports ON zz.doc USING btree (team_slug, initiative, supports) WHERE (supports IS NOT NULL)",

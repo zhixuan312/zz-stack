@@ -141,6 +141,16 @@ docker exec -i zz-rehearsal-db psql -U zz -d zz_rehearsal \
 `001_init.sql` is every migration its `-- absorbs:` lines name, squashed into one file. Apply every
 other file in `services/gateway/migrations/` after it, in filename order.
 
+**The line above is for a DATABASE THAT HAS NO LEDGER, and a restored dump has one.** The gateway's
+runner records each file it applies in `zz.schema_migration` by name and skips what that table
+already lists, so piping a restore's own ledger back through the platform leaves `001_init.sql`
+unapplied wherever the dump already carries its row — which every production dump does. The schema
+still ends up where it should: `001_init.sql` is every migration its `-- absorbs:` lines name, so a
+deployment that ran them has the schema this head reaches, and the ledger's own rows are the record
+of that. What the paragraph above is for is the case the commands beside it describe — a new cluster
+with no ledger, where `001_init.sql` is what builds the whole schema in one file. Read the ledger
+back and compare it against the `-- absorbs:` list before deciding which case you are in.
+
 Just after its header come `create extension if not exists` lines for `citext`, `pg_trgm` and the
 rest. Applied through `psql` as above those run unconditionally — the `requires-extension:`
 directives in its header are read by the gateway's own migration runner

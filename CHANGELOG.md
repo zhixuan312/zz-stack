@@ -76,8 +76,13 @@ document through a row and nowhere else.
 - **`doc_revision` and `doc_link`.** A document's identity and status are `doc`; every version of it
   is a `doc_revision` row with immutable content, and the one permitted update is the one-time
   approval seal that bound that revision. `doc_link` holds the citations: `cites` pins both ends to
-  exact revisions, and `supports` pins the source revision to the target document identity with
-  `to_revision` null by design.
+  exact revisions. The table declares a second grain — `supports`, which pins a source revision to
+  the target document's identity with `to_revision` null, and whose shape the table's own CHECK
+  enforces — and **nothing writes or reads it yet**: `saveDocument` writes `cites`, `citationsOf`
+  reads `cites`, and a source's `supports` list stays where it has always been, in the revision's
+  own envelope. It is declared because the two facts are different ones and the schema is where that
+  is decided; it is unused because no reader needs it, and a grain with no reader is not a grain
+  anything can check.
 - **`doc_revision.fields`, an open payload** for the envelope fields that have no column of their
   own — `stakeholder`, and every field a flow declares (sdlc's `blocks`, zz-plugin-eval's
   `eval_run_id`). The columns win over it on read, so a key it carries cannot answer in a column's

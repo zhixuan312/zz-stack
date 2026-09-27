@@ -171,8 +171,11 @@ export function registerKnowledgeSearch(server: McpServer): void {
        * of its documents, and `zz.doc.outcome` is the initiative's outcome stamped on the one
        * document that closed it, never a property of that document alone. Reading `zz.doc`
        * returned it on that one row and `null` on every sibling; the anchor answers it for all
-       * of them alike. Joined by (team slug, initiative slug), not `zz.doc.initiative_id` — that
-       * column is filled by a lazy reconcile pass and can lag a document's own write.
+       * of them alike. Joined through zz.doc.initiative_id, which is NOT NULL and set by every
+       * insert path from the same team and slug — the key the document is filed under, rather than
+       * two slugs read back and matched again. The note that stood here said the opposite, and
+       * described a column a lazy reconcile pass filled: that pass, and the column it wrote, went
+       * with the file store.
        *
        * The node arm is its own literal, and the union's column names come from the document
        * arm, which is why it aliases none of them. Every column it renames for the node is
@@ -202,9 +205,18 @@ export function registerKnowledgeSearch(server: McpServer): void {
       const SOURCE = `(
         select i.slug as initiative, d.path, coalesce(i.flow,'') as flow, d.type, d.status,
                i.outcome, a.email as approved_by, r.approved_at, d.updated_at, d.title, d.tags,
-               -- The envelope key the current revision carries, read back as the array the union's
-               -- other arm produces. A document's citations are the cites links beside it.
-               string_to_array(coalesce(r.fields->>'evidence',''), ', ') as evidence,
+               -- The initiative slugs this revision's citations point at, as the array the union's
+               -- other arm produces. DELIBERATE: read from the cites links, not from
+               -- r.fields->>'evidence' — that key belonged to the retired doc.evidence column and
+               -- no writer sets it, so the neighbour lane's document arm never fired and no returned
+               -- row ever carried a citation. The comment above always said a document's citations
+               -- are the links beside it; this is what reads them.
+               coalesce((select array_agg(distinct ti.slug order by ti.slug)
+                           from zz.doc_link l
+                           join zz.doc td on td.id = l.to_doc_id
+                           join zz.initiative ti on ti.id = td.initiative_id
+                          where l.from_doc_id = d.id and l.from_revision = r.revision
+                            and l.kind = 'cites'), '{}'::text[]) as evidence,
                -- A document has no successor pointer: a later revision of it is a doc_revision
                -- row, and a document replaced by another one is status: superseded. The node
                -- arm is the one that still names one.

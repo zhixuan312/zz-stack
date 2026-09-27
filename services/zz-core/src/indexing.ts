@@ -223,7 +223,16 @@ export function sourceDocument(
           audits_version?: string },
 ): string {
   const env: Record<string, string> = {
-    type: "source", title: opts.title, contributed_by: opts.by, date: opts.day,
+    // DELIBERATE: the stage is written TWICE, because two readers ask a different question of it
+    // and each reads the place the other does not. `audit-rounds.ts` and `review-rounds.ts` read
+    // the payload key — `d.fields?.stage` — which is what `doc_revision.fields` was built for.
+    // `source_list` reads the document's TYPE, which is the one fact about a source the `doc` row
+    // states beside its title.
+    //
+    // Writing the literal `"source"` here made the second one false: `saveDocument` resolves
+    // `env.type ?? w.type`, so this value took the caller's stage and `source_list` returned an
+    // empty stage for every source there has ever been.
+    type: opts.stage || "source", title: opts.title, contributed_by: opts.by, date: opts.day,
     added_at: new Date().toISOString(), supports: opts.supports };
   if (opts.stage) env.stage = opts.stage;
   if (opts.audits_version) env.audits_version = opts.audits_version;

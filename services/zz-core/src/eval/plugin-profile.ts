@@ -525,10 +525,16 @@ export async function pluginTraces(
         -- A revised document is one with a second revision beside it: a revision was filed and
         -- the current-revision pointer moved off the first. The frozen file an approval used to
         -- write is a doc_revision row now, so the row's own count is the platform's record of
-        -- a version change. Its evidence is the envelope key the revision carries — a
-        -- comma-joined list, read back as the array the counts below ask for.
+        -- a version change. Its evidence is what the revision's own cites links name —
+        -- DELIBERATE: not r.fields->>'evidence', which belonged to the retired doc.evidence column
+        -- and which no writer sets, so both counts read 0 for every plugin — including the ones
+        -- the measure exists to size.
         live as (select d.id,
-                        r.fields->>'evidence' as evidence_text,
+                        coalesce((select array_agg(distinct td.path order by td.path)
+                                    from zz.doc_link l
+                                    join zz.doc td on td.id = l.to_doc_id
+                                   where l.from_doc_id = d.id and l.from_revision = r.revision
+                                     and l.kind = 'cites'), '{}'::text[]) as evidence_list,
                         exists (select 1 from zz.doc_revision r2
                                  where r2.doc_id = d.id and r2.revision > 1) as revised,
                         i.id as initiative_id
@@ -536,7 +542,7 @@ export async function pluginTraces(
                    join zz.initiative i on i.id = d.initiative_id
                    left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
                   where i.id in (select initiative_id from touched)),
-        rev as (select string_to_array(coalesce(l.evidence_text, ''), ', ') as evidence,
+        rev as (select l.evidence_list as evidence,
                        l.revised,
                        -- The same initiative, named by an event rather than spelled by one: the
                        -- document's own initiative id is what the call has to match.

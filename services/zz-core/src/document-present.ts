@@ -76,19 +76,33 @@ async function presentPart(
                        start: part.start, end: part.end, total: part.total });
   // A part of the WHOLE body, when it is the whole body, is a present and not a partial one — the
   // record follows the bytes a reader has actually seen rather than the shape of the call.
+  //
+  // DELIBERATE, and the same rule `presentDocument` states 35 lines below: the present is recorded
+  // on the revision `version` NAMED, and `presented_at` is a column on the row the document points
+  // at — so it is recorded only when that revision is the current one. Without this guard,
+  // `document_present(path, version: 1, section: "<the whole body>")` wrote `presented_at` on the
+  // CURRENT revision, `shownSinceLastChange` answered true, and `document_approve` stamped an
+  // approval on bytes nobody had been shown. Reading history is a read, not a present, whether it
+  // arrives whole or in parts — and the coverage spans below are attributed to the live path, so an
+  // older revision's spans must not count towards it either.
+  const current = loaded.rev.revision === loaded.doc.current_revision;
   let covered: "shown" | "covered" | "partial" = "partial";
-  if (part.start === 0 && part.end === part.total) {
+  if (current && part.start === 0 && part.end === part.total) {
     await recordPresented(p, team, relPath);
     covered = "shown";
-  } else if (await partsCover(p, team, relPath, part.total, { start: part.start, end: part.end }) === "covered") {
+  } else if (current
+             && await partsCover(p, team, relPath, part.total, { start: part.start, end: part.end }) === "covered") {
     await recordPresented(p, team, relPath);
     recordAct(relPath, { user, action: "shown", path: relPath, version: shownVersion, via: "parts" });
     covered = "shown";
   }
-  const standing = covered !== "partial"
-    ? "Every character of the current body has now been presented, in parts — it counts as presented."
-    : "Presented in part. It does NOT yet count as presented: present the remaining characters " +
-      "(every part since the last change counts) before the document is approved.";
+  const standing = !current
+    ? `This is version ${shownVersion}, not the current one. Presenting history does not vouch for ` +
+      "the current revision: approval is refused until that revision's own bytes have been presented."
+    : covered !== "partial"
+      ? "Every character of the current body has now been presented, in parts — it counts as presented."
+      : "Presented in part. It does NOT yet count as presented: present the remaining characters " +
+        "(every part since the last change counts) before the document is approved.";
   return `${facts.join(", ")}.${signed}\n${partHeader(relPath, part, "the body, frontmatter excluded", body)}\n` +
          `${standing}\n\n${part.text}\n`;
 }

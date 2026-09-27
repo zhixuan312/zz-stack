@@ -43,18 +43,28 @@ lines.push("## Ends", "", "the last line");
 const body = lines.join("\n");
 const content = `---\ntitle: Review\nversion: 1\nstatus: draft\n---\n\n${body}\n`;
 
-/** The fixture: one document, one revision, and the rows the presenter and the reader write. */
+/** The fixture: one document, and the rows the presenter and the reader write. `twoRevisions` gives
+ *  it a second revision, which is what makes the history guard in step 3b reachable — with one
+ *  revision `revision === current_revision` is true for every ask. */
+let twoRevisions = false;
 const doc = { written_at: "2026-09-26T00:00:00.000Z", presented_at: null as string | null };
 const events: { kind: string; subject: string; detail: Record<string, unknown> }[] = [];
 
 pg.Pool.prototype.query = (async function query(text: string, values: unknown[] = []) {
   const sql = String(text).replace(/\s+/g, " ").trim();
   const one = (rows: Record<string, unknown>[]) => ({ rows, rowCount: rows.length });
-  // `revisionsOf` — the bytes
+  // `revisionsOf` — the bytes. DELIBERATE: two revisions once `twoRevisions` is set, so that
+  // `loadDocument(team, rel, 1)` answers v1 while the document points at v2. A fixture with one
+  // revision makes `revision === current_revision` true for every ask, and the guard keeping
+  // presented history from vouching for the present is unreachable in it — which is why step 3b
+  // could not catch the defect it exists for until this arm carried a second row.
   if (/from zz\.doc_revision r\b/.test(sql) && /where r\.doc_id = \$1::uuid/.test(sql)) {
-    return one([{ revision: 1, content_state: "retained", title: "Review", body: content, tags: [],
-                  content_hash: "h", revision_note: null, fields: null, written_by: "u@zz.test",
-                  written_at: doc.written_at, approved_by: null, approved_at: null }]);
+    const first = { revision: 1, content_state: "retained", title: "Review", body: content, tags: [],
+                    content_hash: "h", revision_note: null, fields: null, written_by: "u@zz.test",
+                    written_at: doc.written_at, approved_by: null, approved_at: null };
+    return one(twoRevisions
+      ? [first, { ...first, revision: 2, body: `${content}\n\nrewritten`, content_hash: "h2" }]
+      : [first]);
   }
   // `citationsOf`
   if (/from zz\.doc_link l\b/.test(sql)) return one([]);
@@ -75,7 +85,8 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
   if (/from zz\.doc d\b/.test(sql) && /d\.path = \$3/.test(sql)) {
     if (values[0] !== TEAM || values[1] !== INIT || values[2] !== "review.md") return one([]);
     return one([{ id: "d1", initiative: INIT, path: "review.md", flow: "", type: "", status: "draft",
-                  outcome: null, current_revision: 1, approved_revision: null, updated_at: doc.written_at }]);
+                  outcome: null, current_revision: twoRevisions ? 2 : 1, approved_revision: null,
+                  updated_at: doc.written_at }]);
   }
   // The part spans, and the `shown` projection
   if (/select e\.kind, \(e\.detail->>'start'\)::int as start/.test(sql)) {
@@ -157,8 +168,6 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
     last = await present(db()!, TEAM, REL, undefined, "u@zz.test", { offset: next });
     next = Number(/Next: offset (\d+)/.exec(last)?.[1]);
   }
-  console.error("DEBUG events:", JSON.stringify(events.map(e=>[e.kind, e.detail.start, e.detail.end, e.detail.total])));
-  console.error("DEBUG tail:", JSON.stringify(last.slice(0,300)));
   is(last.includes("it counts as presented"), "the last part does not say the document now counts as presented");
   is(await shownSinceLastChange(db()!, TEAM, REL) === true,
      "every part presented, and the approval rule still reads it as unpresented");
@@ -174,6 +183,30 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
   await present(db()!, TEAM, REL, undefined, "u@zz.test", { section: "Section 1" });
   is(await shownSinceLastChange(db()!, TEAM, REL) === false,
      "one section after a rewrite counts as presenting the whole document");
+
+  // 3b. Presenting an OLDER revision does not vouch for the current one. `presented_at` is a
+  // column on the revision row the document points at — `recordPresented` writes it
+  // `where r.revision = d.current_revision` — so a part cut from v1 that covers v1's whole body
+  // must not mark v2 as shown, or `document_approve` stamps an approval on bytes nobody read.
+  // `presentDocument` guards this; `presentPart` did not, and the two take the same argument.
+  //
+  // DELIBERATE: `{ offset: 0, limit: <the whole body> }` and not `{}`. An empty ask on a short body
+  // routes to `presentDocument`, which already carries the guard, and `{ offset: 0 }` on this 130k
+  // body yields a PARTIAL. This ask reaches `presentPart` AND its slice covers the body — the pair
+  // the defect needed.
+  //
+  // DELIBERATE: asserted on the ROW, not on the rule beside it. `shownSinceLastChange` reads the
+  // `zz.event` rows and this branch writes none, so it answers the same either way — and the
+  // sentence cannot distinguish either, because `current` is computed whether or not the guard
+  // uses it. What the defect did was write `presented_at` on the CURRENT revision, and that is what
+  // this reads: `recordPresented` is the statement whose WHERE clause names `d.current_revision`.
+  twoRevisions = true;
+  doc.presented_at = null;
+  const old = await present(db()!, TEAM, REL, 1, "u@zz.test", { offset: 0, limit: 999999 });
+  is(old.includes("version 1"), "presenting version 1 answered without saying which version it served");
+  is(doc.presented_at === null,
+     "presenting an older revision whole wrote `presented_at` on the CURRENT revision — an " +
+     "approval could then land on bytes nobody was shown");
 }
 
 // 4. The real schemas take the part arguments

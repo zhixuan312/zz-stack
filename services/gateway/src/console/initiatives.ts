@@ -408,7 +408,14 @@ export function mountInitiatives(app: Express): void {
            join zz.initiative i on i.id = s.initiative_id
            join zz.team t on t.id = i.team_id
            left join zz.doc_revision sr on sr.doc_id = s.id and sr.revision = s.current_revision
-          where t.slug = $1 and i.slug = $2 and sr.fields->>'supports' = $3
+          -- DELIBERATE: matched as one entry of the comma-joined list, not against the whole
+          -- field. source_add writes supports as list.join(", "), and sourceDocument's own comment
+          -- says the field stays comma-joined because that is how its readers split it. Comparing
+          -- the whole field to one path found only a source supporting exactly this document, so a
+          -- round attached to two ('intent.md, spec.md') matched neither, and the panel was empty
+          -- for exactly the material that bears on the document being read.
+          where t.slug = $1 and i.slug = $2
+            and $3 = any(string_to_array(coalesce(sr.fields->>'supports',''), ', '))
           order by s.updated_at, s.path`, [team, initiative, base]),
     ]);
     if (!doc.rows.length) {

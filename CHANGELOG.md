@@ -33,6 +33,105 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.83.0] — 2026-09-27
+
+Phase 2 of the schema first-principles review (initiative
+`2026-09-21-schema-first-principles-review`): telemetry and delivery rows name what they are
+about by id rather than by a slug that has to be joined and can drift, the run table becomes
+`skill_run` and is written when the call happens instead of being derived by a timer, and the
+two tables that stored what a document's own text already said are gone.
+
+### Added
+- **`zz.event` says who and what an event was about, in columns** — `actor_id`, `initiative_id`,
+  `session`, `skill_version_id` and `run_id`, with the composite foreign keys that make the
+  event's team and its run's team the same fact the database knows. `actor`, `team_slug`,
+  `initiative`, `flow`, `step` and `step_version` are gone: a step is
+  `skill_version_id → zz.skill_version → zz.skill`, and a flow is `initiative_id → zz.initiative.flow`.
+- **`zz.skill_run` is written at the door.** `logEvent` creates or finds the run in the same
+  transaction as the event it attributes, so an event's `run_id` is set before the timer's next
+  tick; `reconcileRuns()` keeps the counter repair and loses the identity. This deliberately
+  reverses the argument `services/gateway/src/runs.ts` used to carry — that a run row is
+  *derived, not written at the door* — and pays for it with a second write in the hot path,
+  which the repair timer is what covers.
+- **`skill_run_identity`**, a unique index on `(team_id, initiative_id, skill_version_id, session)`
+  declared `NULLS NOT DISTINCT`, so a conversation with no initiative is a row the identity
+  covers rather than a special case the writer has to branch on. It subsumes and replaces
+  `run_no_initiative`.
+- **`bug.duplicate_of`**, and `bug_resolve` takes `duplicate_of`, required when the resolution is
+  `duplicate` and refused otherwise. The key is `(team_id, duplicate_of)` → `zz.bug (team_id, id)`,
+  the same shape `event.run_id` gets, so a duplicate pointing at itself or at another team's bug is
+  refused by the database — and by `bug_resolve` before it.
+- **`checks/dropped-columns.ts`** — reads the trees that write to a database and holds every
+  statement to naming no table or column the migration retires. It is the instrument that would
+  have caught the stale `zz.event.team_slug` read this phase found by hand.
+
+### Changed
+- **A bug, a fact and an assessment name their team and their initiative by id**, with composite
+  foreign keys: a bug cannot pair one team's id with another team's initiative, and neither can
+  an event. The slugs a caller passes are resolved once and refused by name where nothing matches.
+- **`zz.initiative_fact` is keyed by `(initiative_id, fact)`.** It loses its own `id` and the two
+  text columns that named the initiative.
+- **An assessment names the model call that produced it** (`assessment.model_call_id`), written in
+  the same transaction by the same path that writes the call. `requested_model` is gone: the model
+  is reached through the call, which is the row that knows it.
+- **A typed call's failure message is `model_call.error`** rather than `note`, and the CHECK that
+  a successful call carries none is the column's own.
+- **The console's document view and `knowledge_reconcile` compute a document's claims from its
+  body.** `decisionRows()` reads the text; the rows that mirrored it are gone.
+- **An assessment's team is the team its asker acts for**, resolved by the platform's one rule
+  (`actingTeam`) rather than from the stored `principal.active_team_id` — a person onboarded and
+  never switched holds null there while their work acts for the team their membership gives them.
+- **`checks/judge-usage.ts` now holds the typed service too.** It drives `typed-service.ask`
+  through an injected runner and asserts the whole pairing: one `zz.model_call` row per call
+  (never one per attempt, so a retrying call is covered), the failure's message in `error`, and
+  the id `ask` returns being the row's own. Every insert it reads is also held to naming no
+  column the migration retires.
+- **The rehearsal compares a renamed table as one table.** `TableExpectation.was` names the
+  pre-migration name, so the phase's central claim — every run kept — has a line in the report
+  instead of reading as one table removed and another added.
+
+### Fixed
+- **An evaluator question asked with no initiative could not be recorded at all.** `zz.assessment`
+  requires a team, and the row was taking it from `principal.active_team_id`, which only
+  `team_switch` ever writes — so the eval-flow walk's DISCOVER stage wrote nothing and reported
+  Postgres's own not-null sentence instead of a refusal of the platform's own. The team is now
+  resolved where the call is made and carried into the insert, which keeps the insert from
+  reaching for a second pool connection inside a mutator's transaction.
+
+### Removed
+- **`zz.decision` and `zz.discussion_message`**, with the code that wrote them, and the console's
+  Discussion tab and revise-from-thread with them. `zz-stack-dashboard` releases alongside this.
+- `run.turns`, `event.duration_ms`'s bag duplicate, `model_call.event_id`, `model_call.plugin`,
+  `model_call.confidence`, `assessment.requested_model` and the `initiative`/`asked_by` text columns.
+
+### Upgrade notes
+- **Migration `002_delivery_telemetry.sql` runs on the gateway's next start.** It is not
+  reversible by rolling the image back: an image from 0.82.0 writes columns this migration
+  dropped, so a rollback breaks the event log, bug reporting and assessment. Fix forward.
+- **The migration changes data on purpose, and reports what it took.** A run that resolves no
+  team cannot satisfy `team_id not null` and is deleted (its events keep their own rows); a fact
+  whose slugs resolve to no initiative is dropped; a successful `model_call` that carried a note
+  loses it. On this deployment the rehearsal reports **nothing deleted**: 743 runs in and 743 out
+  of the migration, 23 initiative facts in and 23 out, 1,249 rows of `zz.decision` removed with
+  the table, and `discussion_message` already empty. `skill_run` is compared against `run` as one
+  table, so "every run kept" is a line in the report rather than a claim about it.
+- **Every assessment written before this release keeps `model_call_id` null.** Item 22 lists the
+  column bare, and no existing row can be given one without inventing an attribution from
+  timestamp proximity. From this release on the call's id is carried in the same transaction.
+- **Anything reading `zz.run`, `zz.decision` or `zz.discussion_message` directly must move to
+  `zz.skill_run` and to the document body.** The console and the tools do; a private query does not.
+
+## zz-stack-dashboard 0.22.0
+
+- **The Discussion tab is gone** — the tab, the message list, the composer and revise-from-thread
+  with it. It was the console's half of `zz.discussion_message` and `zz.decision`, which 0.83.0's
+  migration drops: what a document says is in the document, and the rows that mirrored it are what
+  the two tables stored. A document page is one view with no tabs (`DocumentShell` loses
+  `tabs`/`activeTab`/`onTabChange`), and the thread's client — `DocumentThread`, its hook, its
+  shapes and its fetchers — is deleted rather than left unreferenced.
+- No other screen changed. Approve, versions, the document's own read/source toggle and the
+  freshness note are as they were.
+
 ## [0.82.0] — 2026-09-27
 
 Phase 1 of the schema first-principles review (initiative

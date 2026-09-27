@@ -411,10 +411,17 @@ alter table zz.bug
   add constraint bug_initiative_id_fkey foreign key (initiative_id) references zz.initiative(id)
   on delete set null;
 
+-- `unique (team_id, id)` is what the duplicate's composite key below points at, the same shape and
+-- for the same reason as `skill_run_team_id_id_key`.
+alter table zz.bug add constraint bug_team_id_id_key unique (team_id, id);
+
 -- A duplicate points at the report it duplicates; cascading would delete a report because the one
--- it duplicates went away, and nulling it would break the check below.
+-- it duplicates went away, and nulling it would break the check below. `team_id` is in the key
+-- because a duplicate is only ever read by the team that filed it — `bug_list` answers for one team
+-- — so a target on another team is an id nothing on the reader's side carries.
 alter table zz.bug
-  add constraint bug_duplicate_of_fkey foreign key (duplicate_of) references zz.bug(id);
+  add constraint bug_duplicate_of_fkey foreign key (team_id, duplicate_of)
+  references zz.bug(team_id, id);
 
 alter table zz.bug
   add constraint bug_reported_by_fkey foreign key (reported_by) references zz.principal(id);
@@ -429,6 +436,11 @@ alter table zz.bug
 
 alter table zz.bug
   add constraint bug_duplicate_of_check check ((status = 'duplicate') = (duplicate_of is not null));
+
+-- A report cannot duplicate itself: the foreign key above is satisfied by the row's own id, and a
+-- close saying "same as this one" records nothing a reader can follow.
+alter table zz.bug
+  add constraint bug_not_self_duplicate_check check (duplicate_of is null or duplicate_of <> id);
 
 alter table zz.bug
   add constraint bug_initiative_id_team_id_check check (initiative_id is null or team_id is not null);

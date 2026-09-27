@@ -485,14 +485,21 @@ export const DELIVERY: Record<string, TableTarget> = {
     primaryKey: [
       "id",
     ],
-    uniques: [],
+    uniques: [
+      [
+        "team_id",
+        "id",
+      ],
+    ],
     foreignKeys: [
       {
         columns: [
+          "team_id",
           "duplicate_of",
         ],
         refTable: "bug",
         refColumns: [
+          "team_id",
           "id",
         ],
         onDelete: "NO ACTION",
@@ -563,6 +570,7 @@ export const DELIVERY: Record<string, TableTarget> = {
       "CHECK (((status = 'duplicate'::text) = (duplicate_of IS NOT NULL)))",
       "CHECK ((impact = ANY (ARRAY['blocks_work'::text, 'wrong_result'::text, 'confusing'::text, 'cosmetic'::text])))",
       "CHECK (((initiative_id IS NULL) OR (team_id IS NOT NULL)))",
+      "CHECK (((duplicate_of IS NULL) OR (duplicate_of <> id)))",
       "CHECK ((status = ANY (ARRAY['open'::text, 'fixed'::text, 'not_a_bug'::text, 'duplicate'::text])))",
     ],
     indexes: [

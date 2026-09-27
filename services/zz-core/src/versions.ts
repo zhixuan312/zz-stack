@@ -352,14 +352,24 @@ async function initiativeIdIn(
   return rows[0]?.id ?? null;
 }
 
-/** The principal id an address names, or null. `written_by` and `approved_by` are principal
- *  ids, so an address is resolved here rather than handed to Postgres to fail on a type. */
+/** The principal a seal names, by email or by the name a person carries.
+ *
+ *  `written_by` and `approved_by` are principal ids, so a name is resolved here rather than handed
+ *  to Postgres to fail on a type. `document_approve`'s `on_behalf_of` is a person in words — "the
+ *  person whose decision this is, when that is not the caller" — and an approver who writes a
+ *  colleague's name rather than their address would otherwise seal nothing. Email first, because it
+ *  is the identifier the platform stores; the display name is the fallback for exactly that case. */
 async function principalId(
   p: Pick<pg.Pool, "query">, email: string,
 ): Promise<string | null> {
   const { rows } = await p.query<{ id: string }>(
-    "select id::text as id from zz.principal where lower(email) = lower($1)", [email]);
-  return rows[0]?.id ?? null;
+    "select id::text as id from zz.principal where lower(email) = lower($1) order by id limit 1",
+    [email]);
+  if (rows[0]?.id) return rows[0].id;
+  const named = await p.query<{ id: string }>(
+    "select id::text as id from zz.principal where lower(display_name) = lower($1) order by id limit 1",
+    [email]);
+  return named.rows[0]?.id ?? null;
 }
 
 /** The sha256 of the exact bytes a revision was written from — the same claim the carry makes
@@ -397,7 +407,20 @@ export async function saveDocument(
       "cannot be filed under it. `initiative_open` opens one." };
   }
   const writer = await principalId(p, w.by);
-  const sealer = w.seal ? await principalId(p, w.seal.by) : null;
+  // DELIBERATE: resolved as a PAIR with `approved_at` below, never on its own. `zz.doc_revision`'s
+  // `doc_revision_approval_paired` holds that `approved_by` is null exactly when `approved_at` is,
+  // and a seal whose person resolves to no principal is a real case — `document_approve`'s
+  // `on_behalf_of` names a person in words, and a name no principal carries is still an approval
+  // the document's own envelope records. Writing `approved_at` beside a null `approved_by` would be
+  // a half-stamped row the constraint refuses, which is how this was found: the approval was
+  // rejected outright and every check after it failed on a document that never left draft.
+  const sealAt = w.seal ? (w.seal.at && w.seal.at.length > 0 ? w.seal.at : null) : null;
+  const sealBy = w.seal ? await principalId(p, w.seal.by) : null;
+  // The pair, decided once: a seal lands only when BOTH halves resolved. A name no principal
+  // carries, or a seal with no day, leaves the row's approved columns null together — the approval
+  // is still recorded, by the document's own envelope and by `approved_revision`, and the row is
+  // never half-stamped.
+  const seal = sealBy && sealAt ? { by: sealBy, at: sealAt } : null;
   // The document as the platform stamps it. `status`, `version`, `updated_at` and the flow's
   // own `flow`/`type` are the platform's to write — a tool never composes them, and they are
   // what every reader of the store has always seen. The rows hold these bytes.
@@ -442,7 +465,12 @@ export async function saveDocument(
     // The status and the revision agree by construction: `status: approved` is written only
     // with the revision that carries the seal, and `doc_current_revision_required` is what
     // holds the two together.
-    const approved = status === "approved" && sealer ? (existing?.current_revision ?? 1) : null;
+    // DELIBERATE: the condition is the APPROVAL, not the resolved principal. `zz.doc`'s
+    // `doc_current_revision_required` holds that `status: approved` is true exactly when
+    // `approved_revision` is the current revision, so gating this on a principal that resolved
+    // would leave an approval on behalf of a name nobody carries with no revision sealed — the
+    // constraint's other half, and the same defect from the other side.
+    const approved = status === "approved" ? (existing?.current_revision ?? 1) : null;
     if (!existing || w.mode === "create") {
       if (existing) return await bail(`ERROR: ${w.relPath} already exists`);
       // DELIBERATE: no `on conflict`. `doc`'s key is its id, and the three columns the store
@@ -459,13 +487,13 @@ export async function saveDocument(
          vector.analyzer, ...tsv, approved]);
       id = ins.rows[0]?.id ?? "";
       if (!id) return await bail(`ERROR: ${w.relPath} could not be written — no row came back`);
-      await insertRevision(client, id, 1, w, title, body, tags, hash, fields, writer, sealer);
+      await insertRevision(client, id, 1, w, title, body, tags, hash, fields, writer, seal?.by ?? null, seal?.at ?? null);
     } else if (w.mode === "append") {
       revision = (existing.current_revision ?? 0) + 1;
       // A document revised after an approval is draft again while its last approved revision
       // stays recorded: `approved_revision` moves only when THIS revision is the sealed one.
-      const sealed = status === "approved" && sealer ? revision : existing.approved_revision;
-      await insertRevision(client, id, revision, w, title, body, tags, hash, fields, writer, sealer);
+      const sealed = status === "approved" ? revision : existing.approved_revision;
+      await insertRevision(client, id, revision, w, title, body, tags, hash, fields, writer, seal?.by ?? null, seal?.at ?? null);
       await client.query(
         `update zz.doc set current_revision = $2, status = $3, approved_revision = $4,
                             type = $5, updated_at = now(), body = $6, title = $7,
@@ -504,7 +532,7 @@ export async function saveDocument(
                                     fields = $11::jsonb
           where doc_id = $1::uuid and revision = $2`,
         [id, revision, title, body, tags, hash, w.note ?? null, writer,
-         sealer, w.seal?.at ?? null, fields]);
+         seal?.by ?? null, seal?.at ?? null, fields]);
       await client.query(
         // COUPLED: `coalesce` here too. The last approved revision stays recorded when this
         // write is not the one sealing it — the state the spec fixes for a document revised
@@ -550,7 +578,8 @@ export async function saveDocument(
 async function insertRevision(
   p: Pick<pg.Pool, "query">, docId: string, revision: number, w: DocumentWrite,
   title: string, body: string, tags: string[], hash: string,
-  fields: Record<string, string> | null, writer: string | null, sealer: string | null,
+  fields: Record<string, string> | null, writer: string | null,
+  sealBy: string | null, sealAt: string | null,
 ): Promise<void> {
   await p.query(
     `insert into zz.doc_revision
@@ -559,7 +588,7 @@ async function insertRevision(
      values ($1::uuid, $2, 'retained', $3, $4, $5::text[], $6, $7, $8::uuid, now(),
              $9::uuid, $10::timestamptz, $11::jsonb)`,
     [docId, revision, title, body, tags, hash, w.note ?? null, writer,
-     sealer, w.seal?.at ?? null, fields]);
+     sealBy, sealAt, fields]);
 }
 
 /** The platform's record of one act, as a `zz.event` row.

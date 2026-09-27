@@ -50,9 +50,10 @@ else's hostname, which is a certificate that resolves and a platform that does n
 
 ## Installing a release
 
-The release bundle carries the compose file, `.env.example`, `zz-tool`, `backup.sh` and
-`install-backup-cron.sh`. The compose file names the exact images of that release, so the
-bundle is self-describing: reading it tells you which version you are about to run.
+The release bundle carries the compose file, `.env.example`, `zz-tool`, `issue-first-pat.sh`,
+`issue-enrolment.sh`, `backup.sh`, `backup-manifest.sh` and `install-backup-cron.sh` — every
+script below an operator runs by hand. The compose file names the exact images of that release,
+so the bundle is self-describing: reading it tells you which version you are about to run.
 
 ```bash
 tar xzf zz-stack-deploy-<version>.tgz
@@ -266,6 +267,11 @@ It checks the dump actually contains the identity tables, reads every archive ba
 it against the volume it came from, and prunes past `$KEEP_DAYS` (14). A run that fails deletes
 what it had written, so a partial set never sits in the directory looking like the newest
 backup. `--verify` also restores into a throwaway database and counts principals.
+
+`deploy/backup-manifest.sh <set>` turns one dated set into the manifest a restore rehearsal
+validates before it touches a byte — the file list, its sizes and its digests, so a set that
+lost a file or gained a truncated one is refused rather than restored. `backup.sh` names it in
+its own closing note, which is why it ships in the bundle beside it.
 
 `deploy/install-backup-cron.sh` installs a nightly run and a weekly verify. It replaces its own
 tagged lines and touches nothing else, so re-running it is how you pick up a change — including

@@ -4,7 +4,7 @@
 // the residual is computed against the COLUMNS' keys, and the columns win on read. A check that
 // only saw the column declared could not tell this apart from a blob that duplicates the schema.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -17,11 +17,16 @@ assert.equal(f?.[1], "jsonb", "and is an open payload, not a text column");
 assert.equal(f?.[2], true, "and is nullable: a revision with no extra field carries none");
 
 // 2. the migration adds it, and one migration owns it
-const dir = "services/gateway/migrations";
-const named = readdirSync(dir).filter((n: string) => /envelope_fields\.sql$/.test(n));
-assert.equal(named.length, 1, "exactly one envelope-fields migration");
-assert.ok(/add column\s+fields\s+jsonb/i.test(readFileSync(join(dir, named[0]), "utf8")),
-  "and it adds the column");
+// DELIBERATE: the folded file, and the property rather than the statement. 004_envelope_fields.sql
+  // was folded into 001 once its release was verified, and a re-dump emits the column in the
+  // table's own CREATE rather than as an `add column` — so asking for the ALTER asks a question the
+  // fold made meaningless. The claim is that `zz.doc_revision` has the column.
+  const dir = "services/gateway/migrations";
+  const one = readFileSync(join(dir, "001_init.sql"), "utf8");
+  const rev = one.slice(one.indexOf("CREATE TABLE zz.doc_revision ("), one.indexOf(");", one.indexOf("CREATE TABLE zz.doc_revision (")));
+  assert.ok(/^\s*fields\s+jsonb,\s*$/m.test(rev), "zz.doc_revision declares fields jsonb");
+  assert.ok(/-- absorbs: 004_envelope_fields\.sql/.test(one),
+    "and the folded file names the envelope-fields migration it absorbed");
 
 // 3. the writer computes the residual against the columns, and the reader prefers them.
 const v = readFileSync("services/zz-core/src/versions.ts", "utf8");

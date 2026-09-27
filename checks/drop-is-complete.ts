@@ -16,12 +16,19 @@ for (const c of RETIRED) assert.ok(!doc.includes(c), `the target no longer decla
 
 // And the migration drops every one of them, not a subset: a target that stopped declaring a
 // column a live catalog still has is a red inventory, and the migration is what moves the catalog.
-const dir = "services/gateway/migrations";
-const named = readdirSync(dir).filter((n: string) => /drop_legacy_store\.sql$/.test(n));
-assert.equal(named.length, 1, "exactly one drop migration");
-const sql = readFileSync(join(dir, named[0]), "utf8");
-const missing = RETIRED.filter((c) => !new RegExp(`drop\\s+column\\s+(?:if\\s+exists\\s+)?${c}\\b`, "i").test(sql));
-assert.deepEqual(missing, [], "the migration drops every retired column, in one file");
+// DELIBERATE: the folded file, and the drop's EFFECT rather than its statement. 007_drop_legacy_
+  // store.sql was folded into 001 once its release was verified, and a re-dump of a dropped column
+  // emits nothing at all — there is no `drop column` left to find. What the drop produced is a
+  // `zz.doc` with none of the eleven, and that is what this reads.
+  const dir = "services/gateway/migrations";
+  const sql = readFileSync(join(dir, "001_init.sql"), "utf8");
+  const start = sql.indexOf("CREATE TABLE zz.doc (");
+  assert.notEqual(start, -1, "zz.doc is declared in the folded file");
+  const docBlock = sql.slice(start, sql.indexOf(");", start));
+  const still = RETIRED.filter((c) => new RegExp(`^\\s*${c}\\s`, "m").test(docBlock));
+  assert.deepEqual(still, [], "zz.doc declares none of the retired columns");
+  assert.ok(/-- absorbs: 007_drop_legacy_store\.sql/.test(sql),
+    "and the folded file names the drop migration it absorbed");
 
 // The other half of the phase's claim: the layer is gone and backup.sh writes three.
 assert.ok(!readdirSync("services/zz-core/src").includes("persist.ts"), "the store layer is deleted");

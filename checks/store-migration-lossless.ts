@@ -24,12 +24,18 @@ const expect = readFileSync("scripts/rehearse/expect.ts", "utf8");
 assert.ok(/withArtifacts/.test(expect), "the rehearsal's expectations declare store steps");
 assert.ok(/store-migration/.test(expect), "and this migration's step is declared there");
 
-// The migration file carries only what must land with the data, so a fresh database still migrates.
-const sql = "services/gateway/migrations";
-const named = (await import("node:fs")).readdirSync(sql).filter((f: string) => /store_data\.sql$/.test(f));
-assert.equal(named.length, 1, "exactly one store-data migration");
-const body = readFileSync(`${sql}/${named[0]}`, "utf8");
-assert.ok(!/\.md|readFileSync|artifacts/i.test(body), "and it reads no filesystem: the carry is the script's");
-assert.ok(/NOT VALID/i.test(body), "while carrying the legacy-tolerant checks the constraint order names");
+// DELIBERATE: read from the folded file, and the claim is about the SCHEMA rather than about a
+  // filename. 003_store_data.sql was folded into 001_init.sql once the release that shipped it was
+  // verified; the header's absorbs list is what says the file it came from is covered, and asking
+  // the migrations directory for one file of that name asks a question the fold made meaningless.
+  const body = readFileSync("services/gateway/migrations/001_init.sql", "utf8");
+  assert.ok(/-- absorbs: 003_store_data\.sql/.test(body),
+    "the folded file names the store-data migration it absorbed");
+  // The file carries the constraint order and the legacy-tolerant checks; the CARRY is the
+  // script's, and nothing in a migration reads a filesystem.
+  assert.ok(/NOT VALID/i.test(body),
+    "while carrying the legacy-tolerant checks the constraint order names");
+assert.ok(/store-migration/.test(readFileSync("scripts/rehearse/expect.ts", "utf8")),
+  "and the carry is declared as a rehearsal step, which is where the data work lives");
 
 console.log("ok store-migration-lossless");

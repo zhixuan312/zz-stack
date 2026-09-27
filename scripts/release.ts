@@ -237,10 +237,18 @@ if (dashVersion) {
     try {
       run("pnpm", ["run", script], { cwd: DASH_SRC });
       log(`  console ${script}: passed`);
-    } catch {
-      die(`the console's \`npm run ${script}\` failed. Its suite is the only thing standing\n` +
+    } catch (err) {
+      // The suite's own output is the only thing that says WHY it failed, and `run` captures it
+      // rather than letting it reach the terminal — so until this line existed the failure
+      // printed one sentence and nothing else. 0.83.1 is where that cost something real: its
+      // console gate failed inside the release and passes on every manual run, and with the
+      // output discarded there was no way to tell a broken build from a killed one.
+      const e = asExecError(err);
+      const tail = (e.stderr || e.stdout || e.message).split("\n").filter(Boolean).slice(-25).join("\n");
+      die(`the console's \`pnpm run ${script}\` failed. Its suite is the only thing standing\n` +
           `        between a console change and every person who opens the platform — fix it\n` +
-          `        rather than releasing past it.`);
+          `        rather than releasing past it.\n\n` +
+          tail.replace(/^/gm, "        "));
     }
   }
 }

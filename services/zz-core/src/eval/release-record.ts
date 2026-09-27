@@ -19,11 +19,22 @@
  * `released` stays retryable: a refused record throws, so the ledger keeps nothing and the
  * attempt stays applying; the CLI prints the exact retry (or `--reconcile`) rather than recording
  * `failed` for a release that did land.
+ *
+ * A release that LANDS closes the findings it was built to fix (AC-7.2, Task I-32). The candidate
+ * carries the improvement run it was proposed against, the run's targeted findings are its
+ * `improvement_run_finding` rows, and each of them becomes `applied` with a `decision_note` naming
+ * the version that shipped — so what used to be prose inside twenty-one notes is a relation a
+ * later phase joins. The write goes through `decideFinding` (`./plugin-record.ts`), the ONE
+ * deciding write on `zz.eval_finding`; a second private writer here is exactly what left the
+ * finding-to-release provenance unrecorded. `failed` and the rollback close nothing: a finding
+ * stays deferred until something shipped, and one an earlier release already closed — including
+ * this release's own, when the rollback lands on it — is left alone rather than re-decided.
  */
 import { EVAL_STATE_ENUMS } from "@zz/contracts";
 import type pg from "pg";
 
 import type { MutatorOutcome } from "./idempotency.js";
+import { decideFinding, type DecidedFinding, type DecisionOutcome } from "./plugin-record.js";
 import { currentReleasedHead } from "./release-apply.js";
 import { compareSemver } from "../release-head.js";
 import { Refusal } from "../refusal.js";
@@ -56,6 +67,15 @@ export interface RecordResult {
   readonly release_attempt_id: string;
   readonly [RELEASED_SUBJECT_VERSION]: string | null;
   readonly release_ref: string | null;
+  /** One entry per finding this release recorded as `applied` — the decisions the release itself
+   *  made, read back from `zz.eval_finding`. Empty on a `failed` record and on a rollback, which
+   *  close nothing: a finding stays deferred until something shipped. */
+  readonly findings_decided: readonly DecidedFinding[];
+  /** The targeted findings this record left exactly as it found them, each entry a sentence saying
+   *  why — already decided, or a strength (terminal at insert, with no decision to record). They
+   *  are reported rather than thrown: the release is recorded either way, and a finding closed by
+   *  another release stays closed. */
+  readonly findings_left_alone: readonly string[];
 }
 
 /** `release_record` and `release_verify` act only for the principal whose `release_apply` moved
@@ -85,6 +105,11 @@ interface AttemptRow {
    *  the column itself holds. */
   readonly applied_by: string | null;
   readonly required_owners: string[]; readonly verdict: string | null; readonly plugin_id: string;
+  /** The findings the candidate's improvement run was opened against — the rows of
+   *  `improvement_run_finding` for the run, read in the same statement as the attempt so the
+   *  release needs no second round trip to learn what it delivered. Absent (or empty) for a
+   *  candidate whose run targeted none. */
+  readonly findings: readonly string[] | null;
 }
 
 /** The plugin a subject version belongs to, and the version it names — the release's own row
@@ -96,6 +121,39 @@ async function subjectOf(client: Pick<pg.PoolClient, "query">, id: string): Prom
     "select plugin_id::text as plugin_id, version as declared_version from zz.plugin_version where id = $1::uuid",
     [id])).rows[0];
   return row ?? null;
+}
+
+/** The version a release shipped, as a note names it: `<plugin>@<version>`, the label the release
+ *  tag and the catalog both use. The plugin's name is one read of its own row; a name the FK
+ *  guarantees cannot go missing, but the note falls back to the version alone rather than writing
+ *  a uuid into a sentence a person reads. */
+async function releasedLabel(
+  client: Pick<pg.PoolClient, "query">, pluginId: string, declaredVersion: string,
+): Promise<string> {
+  const named = (await client.query<{ name: string }>(
+    "select name from zz.plugin where id = $1::uuid", [pluginId])).rows[0];
+  return named ? `${named.name}@${declaredVersion}` : declaredVersion;
+}
+
+/** Closes the findings the released candidate was built to fix, through the ONE deciding write on
+ *  `zz.eval_finding` (`decideFinding`, `./plugin-record.ts`) — the same function `finding_decide`
+ *  calls, which is the point: one writer, so the finding-to-release provenance is a column rather
+ *  than a sentence in a note.
+ *
+ *  A refusal closes nothing and does not fail the release — the row is already released, and a
+ *  finding another release closed, or a strength, is one this call must leave alone. The refusals
+ *  come back as sentences for the caller to report. */
+async function decideTargetedFindings(
+  client: Pick<pg.PoolClient, "query">, findingIds: readonly string[], note: string, principal: string,
+): Promise<{ decided: DecidedFinding[]; left_alone: string[] }> {
+  const decided: DecidedFinding[] = [];
+  const left_alone: string[] = [];
+  for (const findingId of findingIds) {
+    const outcome: DecisionOutcome = await decideFinding(client, findingId, "applied", note, principal);
+    if ("decided" in outcome) decided.push(outcome.decided);
+    else left_alone.push(outcome.refused);
+  }
+  return { decided, left_alone };
 }
 
 /** CAS-guarded: the SELECT exists only to produce a readable refusal; each branch's own final
@@ -114,7 +172,8 @@ export async function recordRelease(
            c.base_plugin_version_id::text as base_plugin_version_id, ra.status,
            ra.released_plugin_version_id::text as released_plugin_version_id, ra.release_ref,
            p.email as applied_by, ra.verdict, ra.plugin_id::text as plugin_id,
-           coalesce(owners.slugs, '{}'::text[]) as required_owners
+           coalesce(owners.slugs, '{}'::text[]) as required_owners,
+           coalesce(targeted.findings, '{}'::text[]) as findings
       from zz.release_attempt ra
       join zz.candidate c on c.id = ra.candidate_id
       left join zz.principal p on p.id = ra.applied_by
@@ -123,6 +182,10 @@ export async function recordRelease(
           from zz.release_attempt_owner o
           join zz.team t on t.id = o.team_id
          where o.release_attempt_id = ra.id) owners on true
+      left join lateral (
+        select array_agg(f.finding_id::text order by f.finding_id) as findings
+          from zz.improvement_run_finding f
+         where f.improvement_run_id = c.improvement_run_id) targeted on true
      where ra.id = $1::uuid`, [args.release_attempt_id])).rows[0];
   if (!attempt) throw new Refusal(`ERROR: no release_attempt ${args.release_attempt_id}`);
   const refused = await releaseActorRefusal(client, attempt, principal);
@@ -169,6 +232,10 @@ export async function recordRelease(
     const result: RecordResult = {
       status: ROLLBACK_STATE, release_attempt_id: attempt.id,
       [RELEASED_SUBJECT_VERSION]: attempt.released_plugin_version_id, release_ref: attempt.release_ref,
+      // A rollback closes nothing. Whatever the release decided when it landed is what the
+      // findings carry; re-deciding them here would reopen work the release did deliver, and the
+      // note already names the version that shipped it.
+      findings_decided: [], findings_left_alone: [],
     };
     return { result, result_table: "zz.release_attempt", result_id: attempt.id };
   }
@@ -222,9 +289,18 @@ export async function recordRelease(
       throw new Refusal(`ERROR: release_attempt ${attempt.id} left 'applying' before this call reached it`);
     }
 
+    // The release landed, so the findings it was built to fix are applied — and the note is the
+    // only place a reader learns WHICH release applied them, so it names the version. Same
+    // transaction as the update above: a decision that could not land leaves the release
+    // unrecorded rather than recorded-and-silent.
+    const note = `Applied by release ${await releasedLabel(client, released.plugin_id, released.declared_version)} ` +
+      `(release_attempt ${attempt.id})`;
+    const findings = await decideTargetedFindings(client, attempt.findings ?? [], note, principal);
+
     const result: RecordResult = {
       status: "released", release_attempt_id: attempt.id,
       [RELEASED_SUBJECT_VERSION]: releasedVersionId, release_ref: args.release_ref,
+      findings_decided: findings.decided, findings_left_alone: findings.left_alone,
     };
     return { result, result_table: "zz.release_attempt", result_id: attempt.id };
   }
@@ -243,8 +319,49 @@ export async function recordRelease(
   const result: RecordResult = {
     status: "failed", release_attempt_id: attempt.id,
     [RELEASED_SUBJECT_VERSION]: null, release_ref: null,
+    // Nothing shipped, so nothing is applied: a finding stays deferred until a release lands.
+    findings_decided: [], findings_left_alone: [],
   };
   return { result, result_table: "zz.release_attempt", result_id: attempt.id };
+}
+
+/** What a replayed record says about the findings: the durable rows, read back, because the ledger
+ *  replays the RECORD and a response restating decisions the rows no longer hold would be a second
+ *  memory of them. Only a `released` attempt carries any — a failed call and a rollback decided
+ *  none, which is why they answer empty here rather than reporting decisions that belong to the
+ *  release the rollback undid. */
+async function findingsForReplay(
+  pool: pg.Pool, attemptId: string, status: string,
+): Promise<{ findings_decided: DecidedFinding[]; findings_left_alone: string[] }> {
+  if (status !== "released") return { findings_decided: [], findings_left_alone: [] };
+  const rows = (await pool.query<{
+    id: string; pattern: string; decision: string | null;
+    at: string | null; by: string | null; note: string | null;
+  }>(`
+    select f.id::text as id, f.pattern, f.decision, f.decided_at::text as at,
+           p.email as by, f.decision_note as note
+      from zz.release_attempt ra
+      join zz.candidate c on c.id = ra.candidate_id
+      join zz.improvement_run_finding r on r.improvement_run_id = c.improvement_run_id
+      join zz.eval_finding f on f.id = r.finding_id
+      left join zz.principal p on p.id = f.decided_by
+     where ra.id = $1::uuid
+     order by f.id`, [attemptId])).rows;
+  const decided: DecidedFinding[] = [];
+  const left_alone: string[] = [];
+  for (const row of rows) {
+    if (row.decision === "applied" || row.decision === "rejected") {
+      decided.push({
+        id: row.id, pattern: row.pattern, decision: row.decision,
+        at: row.at ?? "", decided_by: row.by ?? "", note: row.note ?? "",
+      });
+    } else {
+      left_alone.push(
+        `${row.id} is ${row.decision ?? "a strength"} — this release recorded no decision on it, ` +
+        "so it is exactly as the call that released left it");
+    }
+  }
+  return { findings_decided: decided, findings_left_alone: left_alone };
 }
 
 /** `release_record`'s replay path — read the row back rather than trust anything held in memory
@@ -259,5 +376,6 @@ export async function describeRecordOutcomeForReplay(pool: pg.Pool, attemptId: s
   return {
     status: row.status as RecordResult["status"], release_attempt_id: attemptId,
     [RELEASED_SUBJECT_VERSION]: row.released_plugin_version_id, release_ref: row.release_ref,
+    ...(await findingsForReplay(pool, attemptId, row.status)),
   };
 }

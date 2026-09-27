@@ -408,18 +408,30 @@ export async function planApply(
   // prepared -> applying. The CAS makes THIS row move at most once; 001's two indexes
   // keep one live attempt per candidate and one applying attempt per plugin — both
   // still catch a race the lock alone would not.
+  //
+  // `applied_by` is a principal and the column is a uuid (group G re-typed it), so the caller's
+  // address is resolved to the row it names BEFORE the CAS — and an address that names no
+  // principal is refused by name, the way `control_run.started_by`'s own writer refuses one
+  // (`host/store.ts`): every later reader of this attempt — `release_record`, `release_verify` —
+  // asks who applied it, and a release nobody is recorded against is an unattributable record of
+  // an act on a real repository. Reading the column back as an address (`release-record.ts`) is
+  // this same principal through `zz.principal`; writing it an address is what the uuid type
+  // refuses with a raw `22P02`.
+  const applier = (await client.query<{ id: string }>(
+    "select id::text as id from zz.principal where email = $1", [principal])).rows[0];
+  if (!applier) {
+    throw new Refusal(
+      `ERROR: ${principal || "this caller"} names no principal, so the release it applies cannot ` +
+      "record who applied it — release_apply acts for a person this platform knows");
+  }
   let applied;
   try {
-    // `applied_by` is a principal (group G), so the caller's address is resolved in the same
-    // statement — an address that names no principal leaves the column null, which only makes the
-    // gate stricter: `releaseActorRefusal` then requires the caller to be an owner-team member.
     // `applying_at` is set first, immediately after `set`, because the gate's own "a column
     // something can write" check reads a bounded window after `set` (scripts/gate/checks/data-sql.ts).
     applied = await client.query(`
-      update zz.release_attempt set status = 'applying', applying_at = now(),
-             applied_by = (select id from zz.principal where email = $2)
+      update zz.release_attempt set status = 'applying', applying_at = now(), applied_by = $2::uuid
        where id = $1::uuid and status = 'prepared' returning id`,
-      [attempt.id, principal]);
+      [attempt.id, applier.id]);
   } catch (err) {
     if ((err as { code?: string }).code === "23505") {
       throw new Refusal(

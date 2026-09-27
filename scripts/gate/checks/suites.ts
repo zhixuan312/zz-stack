@@ -262,7 +262,9 @@ check("the committed judged dataset is exactly what its generator produces, byte
  * both rules.
  */
 const notRegistered = new Map<string, string>([
-  // Empty again as of wave 3. Phase 4 held three entries here from wave 2 until wave 2
+  // Wave 3 held one entry here — `release-closes-findings.ts`, red on the registration
+  // rules from its activation until I-32 landed, as every check is between the two.
+  // Empty again after wave 3. Phase 4 held three entries here from wave 2 until wave 2
   // landed — I-29, I-30 and I-31's checks — and struck them in the same pass that
   // registered them, the two-step Phase 1 used for the pat-label check, Phase 2 for
   // `dropped-columns.ts` and Phase 3 for `catalog-eval-columns.ts`.

@@ -198,6 +198,8 @@ check("evaluation_score's interval resamples the subjects and recomputes the run
 check("a call its schema refuses names the arguments the tool does not take, and the ones it does", runsCheck("door-unknown-arguments.ts"));
 check("evaluation_assess asks a model-backed measure only about refs of its own kind, never asks an unqualified evaluator, reads a deterministic fact once per run, and evaluation_score returns every reading with its assessment_id", runsCheck("eval-assess-routing.ts"));
 check("a finding is corrected by recording its replacement with supersedes: the old one closes in the same write, a correction stays in its own eval_run, and findings.md renders only current findings, naming what each correction replaced", runsCheck("eval-finding-supersede.ts"));
+check("a release that lands closes the findings its candidate's improvement run targeted — through the one deciding write, with a note naming the released version — while a failed record and a rollback close nothing and an already-decided finding is left alone",
+      runsCheck("release-closes-findings.ts"));
 check("the release reads the catalog owner team off the host's deploy/.env, hands it to register-plugins as owner and release_owners, and a register-plugins failure is a verification failure", runsCheck("release-plugin-owners.ts"));
 check("a registered skill's content_hash is the sha256 of its SKILL.md", runsCheck("skill-digest-sha256.ts"));
 check("DISCOVER folds one refusal rule into one candidate whatever files it named, and a two-decimal-rounded distribution is answered", runsCheck("eval-discover-rules.ts"));

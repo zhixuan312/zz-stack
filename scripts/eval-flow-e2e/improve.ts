@@ -99,6 +99,11 @@ export async function promoteVerify(w: Walk, stack: Stack, tag: string): Promise
     "--base-ref", tagCommit(stack, baseTag), "--base-tag", baseTag, "--gateway", stack.url]);
   c.note("zz-tool release-apply", `exit ${applied.code}: ${applied.out.trim().split("\n").slice(-2).join(" | ").slice(0, 200)}`);
   if (applied.code !== 0) throw new Error(`zz-tool release-apply exited ${applied.code}:\n${applied.out.slice(-3000)}`);
+  // The release that landed decides its targeted findings; the note above prints only the last
+  // two lines, so assert it on the whole output rather than trusting the transcript.
+  if (!/"findings_decided": \[\s*\{/.test(applied.out)) {
+    throw new Error(`a release that landed decided no finding:\n${applied.out.slice(-2000)}`);
+  }
 
   // Released, not yet used: release_verify waits for real use rather than deciding on none.
   const waiting = await c.call("eval", "release_verify", { release_attempt_id: attemptId, idempotency_key: c.key("verify") },
@@ -151,6 +156,11 @@ export async function promoteVerify(w: Walk, stack: Stack, tag: string): Promise
     "--rollback-cmd", cmds.rollback, "--gateway", stack.url]);
   decided.c.note("zz-tool release-rollback", `exit ${rolled.code}: ${rolled.out.trim().split("\n").slice(-2).join(" | ").slice(0, 200)}`);
   if (rolled.code !== 0) throw new Error(`zz-tool release-rollback exited ${rolled.code}:\n${rolled.out.slice(-3000)}`);
+  // A rollback closes nothing: the release's own decision stands, and a finding it decided is
+  // left alone rather than re-decided.
+  if (!/"findings_decided": \[\]/.test(rolled.out)) {
+    throw new Error(`a rollback decided a finding:\n${rolled.out.slice(-2000)}`);
+  }
   const closed = await decided.c.call("core", "initiative_close", { initiative: w.initiative, disposition: "finished",
     no_signoff_reason: "the release was rolled back on its own verification; the evaluation itself is finished" },
     { note: (r) => String(r.text ?? JSON.stringify(r)).slice(0, 160) });

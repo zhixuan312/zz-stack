@@ -73,6 +73,9 @@ function applyClient(sc: Scenario) {
     // this stub answers rather than either of the plugin_version reads below.
     [/from zz\.plugin_release_owner r/, () => subject],
     [/from zz\.membership/, (v) => (sc.teams ?? { [OWNER]: ["xuan"] })[String(v[0])]?.map((slug) => ({ slug })) ?? []],
+    // The applier, resolved before the CAS: `release_attempt.applied_by` is a principal id, so
+    // planApply looks the caller's address up rather than binding the address itself.
+    [/select id::text as id from zz\.principal where email/, () => [{ id: "c0000000-0000-4000-8000-0000000000aa" }]],
     [/pg_advisory_xact_lock/, () => []],
     [/where plugin_id = \$1::uuid and status = 'applying'/, () => sc.applying ?? []],
     [/status = 'prepared' and \(\$2::uuid is null/, (v) => prepared.filter((a) => v[1] === null || a.id === v[1])],

@@ -304,10 +304,14 @@ export function registerReleaseTools(server: McpServer): void {
           // `loadSubject`'s read above, because that read and this write are two statements and a
           // team deleted between them is exactly how a slug stops resolving; a refused slug
           // leaves no half-written attempt behind either, the whole transaction rolls back.
+          //
+          // One parameter, not two: PostgreSQL cannot infer a type for a placeholder the statement
+          // never references, and refuses the statement outright ("could not determine data type
+          // of parameter $1") — so the attempt id is bound only by the two statements that use it.
           const unresolved = (await client.query<{ slug: string }>(`
-            select s.slug from unnest($2::text[]) as s(slug)
+            select s.slug from unnest($1::text[]) as s(slug)
              where not exists (select 1 from zz.team t where t.slug = s.slug)`,
-            [row.id, requiredOwners])).rows.map((r) => r.slug);
+            [requiredOwners])).rows.map((r) => r.slug);
           if (unresolved.length) {
             throw new Refusal(
               `ERROR: ${subject.plugin} records release owner team(s) ${unresolved.join(", ")} that ` +
@@ -449,7 +453,12 @@ export function registerReleaseTools(server: McpServer): void {
         "retracting its version from what plugin_locate and release_apply read as " +
         "current, so the prior subject is current again (FR-50) — and candidate_record refuses " +
         "its hypothesis from then on. " +
-        "RETURNS { status, release_attempt_id, " + RELEASED_SUBJECT_VERSION + ", release_ref }. " +
+        "RETURNS { status, release_attempt_id, " + RELEASED_SUBJECT_VERSION + ", release_ref, " +
+        "findings_decided, findings_left_alone }. " +
+        "A release that lands closes the findings its candidate's own improvement run " +
+        "targeted — each applied, decided_by this call's actor, its note naming the version " +
+        "that shipped — while a failed record and a rollback close nothing, and a finding " +
+        "another release already closed is left alone. " +
         "REFUSES not_owner — a caller who neither applied the attempt nor is in an owner team — " +
         "not_applying — an unknown release_attempt_id, or one that is not currently applying, for " +
         "a released/failed call (already released/refused/failed, or release_apply was never " +

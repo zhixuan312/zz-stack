@@ -210,9 +210,18 @@ export function registerCandidateTools(server: McpServer): void {
         return text("ERROR: finding_ids is required unless skip: true — nothing named to improve");
       }
 
-      const findings = await loadFindingsForCheck(p, finding_ids);
+      // The findings this run targets are a SET, and the relation that now holds them is keyed on
+      // (improvement_run_id, finding_id): a caller who names one finding twice is a slip the old
+      // jsonb array absorbed and the new primary key refuses with a raw `23505`, raised inside the
+      // ledger's transaction where it reads as an internal failure. De-duplicated — the same thing
+      // I-28's own backfill does to the values it carries over (`group by ir.id, f.id`) — and the
+      // set, not the raw array, is what the insert, the ledger payload, the count and the bundle
+      // all see.
+      const targeted = [...new Set(finding_ids)];
+
+      const findings = await loadFindingsForCheck(p, targeted);
       const byId = new Map(findings.map((f) => [f.id, f]));
-      const missing = finding_ids.filter((id) => !byId.has(id));
+      const missing = targeted.filter((id) => !byId.has(id));
       if (missing.length) {
         return text(`ERROR: finding id(s) not found: ${missing.join(", ")}`);
       }
@@ -246,7 +255,7 @@ export function registerCandidateTools(server: McpServer): void {
 
       const principal = parseCaller(requestHeaders()).email;
       const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
-        principal, "improvement_start", idempotency_key, { eval_run_id, finding_ids },
+        principal, "improvement_start", idempotency_key, { eval_run_id, finding_ids: targeted },
         async (client): Promise<MutatorOutcome<{ id: string }>> => {
           const row = (await client.query<{ id: string }>(`
             insert into zz.improvement_run (eval_run_id, created_at)
@@ -256,11 +265,11 @@ export function registerCandidateTools(server: McpServer): void {
           // The findings this run targets are its provenance, and a relation is the copy that
           // can be enforced (FR-34): one `improvement_run_finding` row per finding, in the same
           // transaction as the run, instead of a jsonb array no foreign key stands behind. Every
-          // id here has already been read back from `zz.eval_finding` above.
+          // id here has already been read back from `zz.eval_finding` above, once each.
           await client.query(`
             insert into zz.improvement_run_finding (improvement_run_id, finding_id)
             select $1::uuid, f.id::uuid from unnest($2::text[]) as f(id)`,
-            [row.id, finding_ids]);
+            [row.id, targeted]);
           return { result: { id: row.id }, result_table: "zz.improvement_run", result_id: row.id };
         },
       );
@@ -273,7 +282,7 @@ export function registerCandidateTools(server: McpServer): void {
 
       logActivity(await userRoot(), null, {
         user: principal, action: "improvement_start", improvement_run_id: improvementRunId,
-        eval_run_id, finding_count: finding_ids.length, replayed: outcome.replayed,
+        eval_run_id, finding_count: targeted.length, replayed: outcome.replayed,
       });
       return json({
         improvement_run_id: improvementRunId, [BASE_SUBJECT_VERSION]: run.subject_version_id,

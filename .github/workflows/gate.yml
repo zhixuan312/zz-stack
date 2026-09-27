@@ -42,8 +42,13 @@ jobs:
         with:
           node-version: 24
 
+      # `-f … .` and not `docker build deploy/postgres`: line 43 of the Dockerfile copies
+      # `deploy/postgres/postgresql.conf`, a path relative to the REPO ROOT, so the context is the
+      # root and the Dockerfile is the argument. Building with the directory as the context fails
+      # with `failed to compute cache key: "/deploy/postgres/postgresql.conf": not found` — which is
+      # what the first three runs of this workflow did before anybody read them.
       - name: Build the pinned PostgreSQL the inventory check migrates
-        run: docker build -t ghcr.io/zhixuan312/zz-postgres:17.11-pgts1.4.0 deploy/postgres
+        run: docker build -f deploy/postgres/Dockerfile -t ghcr.io/zhixuan312/zz-postgres:17.11-pgts1.4.0 .
 
       - run: npm ci
 

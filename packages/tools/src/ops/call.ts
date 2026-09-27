@@ -5,6 +5,7 @@
  *   ZZ_URL=… ZZ_TOKEN=… npm run call -- /core/mcp initiative_status
  *   ZZ_URL=… ZZ_TOKEN=… npm run call -- /eval/mcp plugin_locate
  *   ZZ_URL=… ZZ_TOKEN=… npm run call -- /core/mcp --list
+ *   ZZ_URL=… ZZ_TOKEN=… npm run call -- /core/mcp document_revise @/tmp/args.json
  *
  * Every other tool here answers one question and is shaped around it, so none can call an
  * arbitrary tool. The gap is felt at two moments: setting a deployment up (`team_create`,
@@ -21,6 +22,8 @@
  * whether the call completed, not whether the platform agreed; `--strict` makes a refusal a
  * failure too.
  */
+import { readFileSync } from "node:fs";
+
 import { DOORS_PRINTED, isDoor } from "@zz/contracts";
 import { Mcp, McpError } from "@zz/mcp-client";
 
@@ -33,7 +36,7 @@ async function main(argv: string[]): Promise<number> {
   const listing = args.flags.has("list");
 
   if (!door || (!tool && !listing)) {
-    die("usage: call <door> <tool> ['<json args>']   |   call <door> --list\n" +
+    die("usage: call <door> <tool> ['<json args>'|@<args file>]   |   call <door> --list\n" +
         `       doors: ${DOORS_PRINTED.join("  ")}`);
   }
   // From @zz/contracts, where the gateway's door set is stated once and the gate holds it against
@@ -46,7 +49,20 @@ async function main(argv: string[]): Promise<number> {
 
   // Parsed before the network call. A mistyped argument object should cost nothing, and the
   // connection below can take thirty seconds to fail.
-  const raw = args.positional[2];
+  //
+  // `@path` reads the arguments from a file, the way `curl -d @file` does, because argv is the
+  // only place a tool's arguments can go and a document body does not fit there: `document_revise`
+  // takes the whole body in one call, and the plan this platform's own flow grows one phase at a
+  // time is 139 KB — quoting that into a shell argument is where revising a large gated document
+  // stops being possible from a tool. A file also survives what a shell does to a heredoc.
+  const rawArg = args.positional[2];
+  const raw = rawArg?.startsWith("@")
+    ? ((): string => {
+        const path = rawArg.slice(1);
+        try { return readFileSync(path, "utf8"); }
+        catch (err) { die(`cannot read the arguments file ${path}: ${String((err as Error).message)}`); }
+      })()
+    : rawArg;
   let toolArgs: unknown = {};
   if (raw !== undefined) {
     try {

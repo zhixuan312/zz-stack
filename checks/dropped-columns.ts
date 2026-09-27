@@ -119,9 +119,10 @@ const RETIRED: Record<string, string[]> = {
   plugin: ["evolvable", "owner_team", "release_owners"],
   plugin_version: ["rubric_id"],
   skill: ["kind", "ordinal"],
-  // Phase 4's migration (`002_improve_control.sql`), read off the target against the folded
-  // baseline the same way: `improve-control-shape.ts` asserts the target, and this is what asks
-  // whether a STATEMENT still names one. It is the general net, for files no task owns —
+  // Phase 4's migration, read off the target against the folded baseline the same way. It folded
+  // back into `001_init.sql` once release 0.85.0 was verified in production, and this is the set it
+  // retired: `improve-control-shape.ts` asserts the target, and this is what asks whether a
+  // STATEMENT still names one. It is the general net, for files no task owns —
   // `eval/candidate-build.ts` read two of these in no Phase 4 task's Owns, and stayed
   // invisible until `checks/eval-family-readers.ts` planned its statement against the database.
   eval_finding: ["docs_affected", "eval_id", "proposed_change", "scope", "resulted_in_skill_version_id"],

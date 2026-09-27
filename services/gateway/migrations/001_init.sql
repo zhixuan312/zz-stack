@@ -102,6 +102,7 @@
 -- absorbs: 002_delivery_telemetry.sql
 -- absorbs: 003_a_run_the_timer_invented.sql
 -- absorbs: 002_catalog_evaluation.sql
+-- absorbs: 002_improve_control.sql
 --
 -- requires-extension: citext
 -- requires-extension: pg_textsearch
@@ -413,22 +414,22 @@ COMMENT ON TABLE zz.bug IS 'Bugs reported by the people using this platform. Wri
 CREATE TABLE zz.candidate (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     improvement_run_id uuid NOT NULL,
-    base_subject_version_id uuid NOT NULL,
+    base_plugin_version_id uuid NOT NULL,
     hypothesis text NOT NULL,
     expected_effect jsonb NOT NULL,
-    patchset jsonb NOT NULL,
     patch_digest text NOT NULL,
     complexity_delta integer NOT NULL,
     touched_components jsonb NOT NULL,
-    touched_owners jsonb NOT NULL,
-    proposer_identity jsonb NOT NULL,
     status text NOT NULL,
     created_at timestamp with time zone NOT NULL,
     build_requested_at timestamp with time zone,
     build_requested_by text,
     build_result jsonb,
     build_recorded_at timestamp with time zone,
-    CONSTRAINT candidate_status_check CHECK ((status = ANY (ARRAY['recorded'::text, 'awaiting_build'::text, 'valid'::text, 'invalid'::text, 'released'::text, 'rolled_back'::text])))
+    patch text NOT NULL,
+    proposed_by uuid NOT NULL,
+    proposer_client text,
+    CONSTRAINT candidate_status_check CHECK ((status = ANY (ARRAY['recorded'::text, 'awaiting_build'::text, 'valid'::text, 'invalid'::text])))
 );
 
 
@@ -436,7 +437,7 @@ CREATE TABLE zz.candidate (
 -- Name: COLUMN candidate.status; Type: COMMENT; Schema: zz; Owner: -
 --
 
-COMMENT ON COLUMN zz.candidate.status IS 'rolled_back: release_record set the same candidate''s own release_attempt to rolled_back after packages/tools/src/release/rollback.ts restored the prior released version — set alongside it, in the same recordRelease transaction, never on its own.';
+COMMENT ON COLUMN zz.candidate.status IS 'recorded -> awaiting_build -> valid or invalid. The attempt states, released and rolled_back, live on release_attempt; a reader joins that row rather than reading a copy here.';
 
 
 --
@@ -475,10 +476,10 @@ CREATE TABLE zz.control_evidence (
     step_id text NOT NULL,
     kind text NOT NULL,
     about text NOT NULL,
-    note text DEFAULT ''::text NOT NULL,
     recorded_at timestamp with time zone DEFAULT now() NOT NULL,
     recorded_by text,
-    supersedes text
+    supersedes text,
+    CONSTRAINT control_evidence_kind_check CHECK ((kind = ANY (ARRAY['document'::text, 'approval'::text, 'audit'::text])))
 );
 
 
@@ -507,14 +508,10 @@ ALTER SEQUENCE zz.control_evidence_seq_seq OWNED BY zz.control_evidence.seq;
 
 CREATE TABLE zz.control_run (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    team_slug text NOT NULL,
-    initiative text NOT NULL,
-    module_id text NOT NULL,
     module_digest text NOT NULL,
-    subject text NOT NULL,
-    profile jsonb DEFAULT '[]'::jsonb NOT NULL,
     started_at timestamp with time zone DEFAULT now() NOT NULL,
-    started_by text
+    initiative_id uuid NOT NULL,
+    started_by uuid
 );
 
 
@@ -529,7 +526,9 @@ CREATE TABLE zz.control_waiver (
     kind text NOT NULL,
     ground text NOT NULL,
     recorded_at timestamp with time zone DEFAULT now() NOT NULL,
-    recorded_by text
+    recorded_by text,
+    CONSTRAINT control_waiver_ground_check CHECK ((btrim(ground) <> ''::text)),
+    CONSTRAINT control_waiver_kind_check CHECK ((kind = ANY (ARRAY['document'::text, 'approval'::text, 'audit'::text])))
 );
 
 
@@ -740,31 +739,27 @@ CREATE TABLE zz.eval_failure_mode_sighting (
 
 CREATE TABLE zz.eval_finding (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    eval_id uuid,
     pattern text NOT NULL,
-    docs_affected integer DEFAULT 0 NOT NULL,
-    scope text,
-    proposed_change text DEFAULT ''::text NOT NULL,
-    decision text DEFAULT 'deferred'::text NOT NULL,
-    resulted_in_skill_version_id uuid,
+    decision text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    decided_by text,
     decided_at timestamp with time zone,
     decision_note text DEFAULT ''::text NOT NULL,
-    owner_kind text,
+    owner_kind text NOT NULL,
     owner_ref text,
     measure_id uuid,
     evidence_refs jsonb DEFAULT '[]'::jsonb NOT NULL,
     expected_effect jsonb,
-    eval_run_id uuid,
-    kind text,
+    eval_run_id uuid NOT NULL,
+    kind text NOT NULL,
     superseded_by uuid,
+    decided_by uuid,
     CONSTRAINT eval_finding_decision_check CHECK ((decision = ANY (ARRAY['applied'::text, 'rejected'::text, 'deferred'::text]))),
     CONSTRAINT eval_finding_kind_check CHECK ((kind = ANY (ARRAY['strength'::text, 'defect'::text, 'unknown'::text]))),
+    CONSTRAINT eval_finding_kind_decision_check CHECK (((kind = 'strength'::text) = (decision IS NULL))),
     CONSTRAINT eval_finding_owner_kind_check CHECK ((owner_kind = ANY (ARRAY['plugin'::text, 'dependency'::text, 'platform'::text, 'environment'::text, 'user_input'::text, 'unknown'::text]))),
-    CONSTRAINT eval_finding_round_xor_run_check CHECK (((eval_id IS NOT NULL) <> (eval_run_id IS NOT NULL))),
+    CONSTRAINT eval_finding_owner_ref_check CHECK (((owner_kind <> 'plugin'::text) OR (owner_ref IS NULL))),
     CONSTRAINT eval_finding_run_requires_kind_check CHECK (((eval_run_id IS NULL) OR (kind IS NOT NULL))),
-    CONSTRAINT eval_finding_scope_check CHECK ((scope = ANY (ARRAY['generic'::text, 'specific'::text])))
+    CONSTRAINT eval_finding_superseded_check CHECK (((superseded_by IS NULL) OR (decision = 'rejected'::text)))
 );
 
 
@@ -779,14 +774,14 @@ COMMENT ON COLUMN zz.eval_finding.decision_note IS 'Why it was applied or reject
 -- Name: COLUMN eval_finding.eval_run_id; Type: COMMENT; Schema: zz; Owner: -
 --
 
-COMMENT ON COLUMN zz.eval_finding.eval_run_id IS 'Set instead of eval_id for an EVALUATE-produced finding (finding_record). Exactly one of the two is non-null.';
+COMMENT ON COLUMN zz.eval_finding.eval_run_id IS 'The run that concluded this finding (finding_record). Every finding names one, and the legacy round column it shared this table with went with the round tables.';
 
 
 --
 -- Name: COLUMN eval_finding.kind; Type: COMMENT; Schema: zz; Owner: -
 --
 
-COMMENT ON COLUMN zz.eval_finding.kind IS 'strength | defect | unknown — required when eval_run_id is set; null on every legacy round finding, which carries scope instead.';
+COMMENT ON COLUMN zz.eval_finding.kind IS 'strength | defect | unknown. A strength is terminal at insert — it is what is working, not open work, so its decision is null.';
 
 
 --
@@ -1027,8 +1022,17 @@ ALTER TABLE zz.event ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 CREATE TABLE zz.improvement_run (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     eval_run_id uuid NOT NULL,
-    finding_ids jsonb NOT NULL,
     created_at timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: improvement_run_finding; Type: TABLE; Schema: zz; Owner: -
+--
+
+CREATE TABLE zz.improvement_run_finding (
+    improvement_run_id uuid NOT NULL,
+    finding_id uuid NOT NULL
 );
 
 
@@ -1429,21 +1433,21 @@ CREATE TABLE zz.principal (
 CREATE TABLE zz.release_attempt (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     candidate_id uuid NOT NULL,
-    base_subject_version_id uuid NOT NULL,
-    approved_patch_digest text NOT NULL,
-    required_owners jsonb NOT NULL,
-    approval_refs jsonb NOT NULL,
     status text NOT NULL,
-    released_subject_version_id uuid,
+    released_plugin_version_id uuid,
     release_ref text,
     verification jsonb,
-    rolled_back boolean DEFAULT false NOT NULL,
     created_at timestamp with time zone NOT NULL,
     reason text,
     plugin_id uuid NOT NULL,
-    applied_by text,
     applying_at timestamp with time zone,
-    CONSTRAINT release_attempt_status_check CHECK ((status = ANY (ARRAY['prepared'::text, 'applying'::text, 'released'::text, 'refused'::text, 'failed'::text, 'rolled_back'::text])))
+    verdict text,
+    verified_at timestamp with time zone,
+    applied_by uuid,
+    CONSTRAINT release_attempt_release_ref_check CHECK (((release_ref IS NULL) OR (release_ref ~ '^[0-9a-f]{40}$'::text))),
+    CONSTRAINT release_attempt_released_check CHECK (((status = ANY (ARRAY['released'::text, 'rolled_back'::text])) = (released_plugin_version_id IS NOT NULL))),
+    CONSTRAINT release_attempt_status_check CHECK ((status = ANY (ARRAY['prepared'::text, 'applying'::text, 'released'::text, 'refused'::text, 'failed'::text, 'rolled_back'::text]))),
+    CONSTRAINT release_attempt_verdict_check CHECK ((verdict = ANY (ARRAY['established'::text, 'rolled_back'::text, 'not_established'::text])))
 );
 
 
@@ -1451,7 +1455,7 @@ CREATE TABLE zz.release_attempt (
 -- Name: COLUMN release_attempt.verification; Type: COMMENT; Schema: zz; Owner: -
 --
 
-COMMENT ON COLUMN zz.release_attempt.verification IS 'release_verify''s decision, once it has one: {verdict (established | rolled_back | not_established), reason, evidence: {post_release_runs, released_eval_run_id, released_overall, base_eval_run_id, base_overall, delta, regression_band, guardrail_status}, rollback_plan}. Null until the released subject has enough real runs and an evaluation to judge.';
+COMMENT ON COLUMN zz.release_attempt.verification IS 'The evidence the verdict rests on: {post_release_runs, released_eval_run_id, released_overall, base_eval_run_id, base_overall, delta, regression_band, guardrail_status}. Null until the released subject has enough real runs and an evaluation to judge. The verdict itself is the verdict column, and when it landed is verified_at.';
 
 
 --
@@ -1469,6 +1473,13 @@ COMMENT ON COLUMN zz.release_attempt.plugin_id IS 'The plugin this attempt relea
 
 
 --
+-- Name: COLUMN release_attempt.applying_at; Type: COMMENT; Schema: zz; Owner: -
+--
+
+COMMENT ON COLUMN zz.release_attempt.applying_at IS 'When release_apply moved this attempt to applying. An attempt still applying long after the CLI''s own gate and release timeouts is stale: release_apply names it for reconciliation.';
+
+
+--
 -- Name: COLUMN release_attempt.applied_by; Type: COMMENT; Schema: zz; Owner: -
 --
 
@@ -1476,10 +1487,13 @@ COMMENT ON COLUMN zz.release_attempt.applied_by IS 'The principal whose release_
 
 
 --
--- Name: COLUMN release_attempt.applying_at; Type: COMMENT; Schema: zz; Owner: -
+-- Name: release_attempt_owner; Type: TABLE; Schema: zz; Owner: -
 --
 
-COMMENT ON COLUMN zz.release_attempt.applying_at IS 'When release_apply moved this attempt to applying. An attempt still applying long after the CLI''s own gate and release timeouts is stale: release_apply names it for reconciliation.';
+CREATE TABLE zz.release_attempt_owner (
+    release_attempt_id uuid NOT NULL,
+    team_id uuid NOT NULL
+);
 
 
 --
@@ -1884,6 +1898,22 @@ ALTER TABLE ONLY zz.control_evidence
 
 
 --
+-- Name: control_evidence control_evidence_run_id_entry_id_key; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.control_evidence
+    ADD CONSTRAINT control_evidence_run_id_entry_id_key UNIQUE (run_id, entry_id);
+
+
+--
+-- Name: control_run control_run_initiative_id_key; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.control_run
+    ADD CONSTRAINT control_run_initiative_id_key UNIQUE (initiative_id);
+
+
+--
 -- Name: control_run control_run_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -1892,19 +1922,19 @@ ALTER TABLE ONLY zz.control_run
 
 
 --
--- Name: control_run control_run_team_slug_initiative_key; Type: CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.control_run
-    ADD CONSTRAINT control_run_team_slug_initiative_key UNIQUE (team_slug, initiative);
-
-
---
 -- Name: control_waiver control_waiver_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.control_waiver
     ADD CONSTRAINT control_waiver_pkey PRIMARY KEY (seq);
+
+
+--
+-- Name: control_waiver control_waiver_run_id_step_id_kind_key; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.control_waiver
+    ADD CONSTRAINT control_waiver_run_id_step_id_kind_key UNIQUE (run_id, step_id, kind);
 
 
 --
@@ -2028,6 +2058,14 @@ ALTER TABLE ONLY zz.eval_failure_mode_sighting
 
 
 --
+-- Name: eval_finding eval_finding_eval_run_id_id_key; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_finding
+    ADD CONSTRAINT eval_finding_eval_run_id_id_key UNIQUE (eval_run_id, id);
+
+
+--
 -- Name: eval_finding eval_finding_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -2121,6 +2159,14 @@ ALTER TABLE ONLY zz.eval_run
 
 ALTER TABLE ONLY zz.event
     ADD CONSTRAINT event_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: improvement_run_finding improvement_run_finding_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.improvement_run_finding
+    ADD CONSTRAINT improvement_run_finding_pkey PRIMARY KEY (improvement_run_id, finding_id);
 
 
 --
@@ -2337,6 +2383,14 @@ ALTER TABLE ONLY zz.principal
 
 ALTER TABLE ONLY zz.principal
     ADD CONSTRAINT principal_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: release_attempt_owner release_attempt_owner_pkey; Type: CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.release_attempt_owner
+    ADD CONSTRAINT release_attempt_owner_pkey PRIMARY KEY (release_attempt_id, team_id);
 
 
 --
@@ -2631,6 +2685,13 @@ CREATE INDEX eval_evaluator_qualification_measure_id_qualified_at_idx ON zz.eval
 
 
 --
+-- Name: eval_finding_eval_run_id_idx; Type: INDEX; Schema: zz; Owner: -
+--
+
+CREATE INDEX eval_finding_eval_run_id_idx ON zz.eval_finding USING btree (eval_run_id);
+
+
+--
 -- Name: eval_run_protocol_version_id_created_at_idx; Type: INDEX; Schema: zz; Owner: -
 --
 
@@ -2656,6 +2717,13 @@ CREATE INDEX event_refusal_owner_idx ON zz.event USING btree (refusal_owner) WHE
 --
 
 CREATE INDEX event_run ON zz.event USING btree (run_id) WHERE (run_id IS NOT NULL);
+
+
+--
+-- Name: improvement_run_eval_run_id_created_at_idx; Type: INDEX; Schema: zz; Owner: -
+--
+
+CREATE INDEX improvement_run_eval_run_id_created_at_idx ON zz.improvement_run USING btree (eval_run_id, created_at DESC);
 
 
 --
@@ -2969,11 +3037,11 @@ ALTER TABLE ONLY zz.bug
 
 
 --
--- Name: candidate candidate_base_subject_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+-- Name: candidate candidate_base_plugin_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.candidate
-    ADD CONSTRAINT candidate_base_subject_version_id_fkey FOREIGN KEY (base_subject_version_id) REFERENCES zz.plugin_version(id);
+    ADD CONSTRAINT candidate_base_plugin_version_id_fkey FOREIGN KEY (base_plugin_version_id) REFERENCES zz.plugin_version(id);
 
 
 --
@@ -2982,6 +3050,14 @@ ALTER TABLE ONLY zz.candidate
 
 ALTER TABLE ONLY zz.candidate
     ADD CONSTRAINT candidate_improvement_run_id_fkey FOREIGN KEY (improvement_run_id) REFERENCES zz.improvement_run(id);
+
+
+--
+-- Name: candidate candidate_proposed_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.candidate
+    ADD CONSTRAINT candidate_proposed_by_fkey FOREIGN KEY (proposed_by) REFERENCES zz.principal(id);
 
 
 --
@@ -3006,6 +3082,30 @@ ALTER TABLE ONLY zz.console_session
 
 ALTER TABLE ONLY zz.control_evidence
     ADD CONSTRAINT control_evidence_run_id_fkey FOREIGN KEY (run_id) REFERENCES zz.control_run(id) ON DELETE CASCADE;
+
+
+--
+-- Name: control_evidence control_evidence_run_id_supersedes_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.control_evidence
+    ADD CONSTRAINT control_evidence_run_id_supersedes_fkey FOREIGN KEY (run_id, supersedes) REFERENCES zz.control_evidence(run_id, entry_id);
+
+
+--
+-- Name: control_run control_run_initiative_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.control_run
+    ADD CONSTRAINT control_run_initiative_id_fkey FOREIGN KEY (initiative_id) REFERENCES zz.initiative(id) ON DELETE CASCADE;
+
+
+--
+-- Name: control_run control_run_started_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.control_run
+    ADD CONSTRAINT control_run_started_by_fkey FOREIGN KEY (started_by) REFERENCES zz.principal(id);
 
 
 --
@@ -3177,6 +3277,14 @@ ALTER TABLE ONLY zz.eval_failure_mode_sighting
 
 
 --
+-- Name: eval_finding eval_finding_decided_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_finding
+    ADD CONSTRAINT eval_finding_decided_by_fkey FOREIGN KEY (decided_by) REFERENCES zz.principal(id);
+
+
+--
 -- Name: eval_finding eval_finding_eval_run_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -3185,27 +3293,19 @@ ALTER TABLE ONLY zz.eval_finding
 
 
 --
+-- Name: eval_finding eval_finding_eval_run_id_superseded_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.eval_finding
+    ADD CONSTRAINT eval_finding_eval_run_id_superseded_by_fkey FOREIGN KEY (eval_run_id, superseded_by) REFERENCES zz.eval_finding(eval_run_id, id);
+
+
+--
 -- Name: eval_finding eval_finding_measure_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.eval_finding
     ADD CONSTRAINT eval_finding_measure_id_fkey FOREIGN KEY (measure_id) REFERENCES zz.eval_measure(id);
-
-
---
--- Name: eval_finding eval_finding_resulted_in_skill_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_finding
-    ADD CONSTRAINT eval_finding_resulted_in_skill_version_id_fkey FOREIGN KEY (resulted_in_skill_version_id) REFERENCES zz.skill_version(id) ON DELETE SET NULL;
-
-
---
--- Name: eval_finding eval_finding_superseded_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
---
-
-ALTER TABLE ONLY zz.eval_finding
-    ADD CONSTRAINT eval_finding_superseded_by_fkey FOREIGN KEY (superseded_by) REFERENCES zz.eval_finding(id);
 
 
 --
@@ -3417,6 +3517,22 @@ ALTER TABLE ONLY zz.improvement_run
 
 
 --
+-- Name: improvement_run_finding improvement_run_finding_finding_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.improvement_run_finding
+    ADD CONSTRAINT improvement_run_finding_finding_id_fkey FOREIGN KEY (finding_id) REFERENCES zz.eval_finding(id);
+
+
+--
+-- Name: improvement_run_finding improvement_run_finding_improvement_run_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.improvement_run_finding
+    ADD CONSTRAINT improvement_run_finding_improvement_run_id_fkey FOREIGN KEY (improvement_run_id) REFERENCES zz.improvement_run(id) ON DELETE CASCADE;
+
+
+--
 -- Name: initiative initiative_closed_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -3609,11 +3725,11 @@ ALTER TABLE ONLY zz.principal
 
 
 --
--- Name: release_attempt release_attempt_base_subject_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+-- Name: release_attempt release_attempt_applied_by_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.release_attempt
-    ADD CONSTRAINT release_attempt_base_subject_version_id_fkey FOREIGN KEY (base_subject_version_id) REFERENCES zz.plugin_version(id);
+    ADD CONSTRAINT release_attempt_applied_by_fkey FOREIGN KEY (applied_by) REFERENCES zz.principal(id);
 
 
 --
@@ -3625,6 +3741,22 @@ ALTER TABLE ONLY zz.release_attempt
 
 
 --
+-- Name: release_attempt_owner release_attempt_owner_release_attempt_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.release_attempt_owner
+    ADD CONSTRAINT release_attempt_owner_release_attempt_id_fkey FOREIGN KEY (release_attempt_id) REFERENCES zz.release_attempt(id) ON DELETE CASCADE;
+
+
+--
+-- Name: release_attempt_owner release_attempt_owner_team_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+--
+
+ALTER TABLE ONLY zz.release_attempt_owner
+    ADD CONSTRAINT release_attempt_owner_team_id_fkey FOREIGN KEY (team_id) REFERENCES zz.team(id);
+
+
+--
 -- Name: release_attempt release_attempt_plugin_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
@@ -3633,11 +3765,11 @@ ALTER TABLE ONLY zz.release_attempt
 
 
 --
--- Name: release_attempt release_attempt_released_subject_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
+-- Name: release_attempt release_attempt_released_plugin_version_id_fkey; Type: FK CONSTRAINT; Schema: zz; Owner: -
 --
 
 ALTER TABLE ONLY zz.release_attempt
-    ADD CONSTRAINT release_attempt_released_subject_version_id_fkey FOREIGN KEY (released_subject_version_id) REFERENCES zz.plugin_version(id);
+    ADD CONSTRAINT release_attempt_released_plugin_version_id_fkey FOREIGN KEY (released_plugin_version_id) REFERENCES zz.plugin_version(id);
 
 
 --

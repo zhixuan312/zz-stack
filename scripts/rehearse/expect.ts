@@ -55,9 +55,8 @@ interface TableExpectation {
    *
    * DELIBERATE: `scripts/rehearse/diff.ts` honours this field — a table declared created that was
    * present before the migration, or absent after it, is reported as a disagreement. Phase 3 was
-   * the first to create tables rather than reshape them, and so the first to declare one;
-   * phase 4's `002_improve_control.sql` declares two, because it creates the relation tables
-   * `improvement_run_finding` and `release_attempt_owner`.
+   * the first to create tables rather than reshape them, and so the first to declare one; no
+   * pending migration declares one today.
    */
   added?: boolean;
 }
@@ -152,120 +151,11 @@ export function declaredTableNames(pendingMigrations: readonly string[]): string
  * said its deletions and its bindings were exactly the rows it named, and the artifact step that
  * proved the legacy family was archived before it was dropped. Those steps ran against the
  * 0.83.2 backup and are in git history with the migration.
+ *
+ * COUPLED: `002_improve_control.sql` folded back here once release 0.85.0 was verified in
+ * production, and what it declared went with it — the tables it reshaped, the two relations it
+ * turned into tables, and the six joins that said its probe litter left and everything else
+ * stayed integral. Those steps ran against the 2026-09-27 backup and are in git history with the
+ * migration.
  */
-export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
-  /**
-   * `002_improve_control.sql` — group G, and the chain-check probe litter.
-   *
-   * Two of the tables it touches change their row count by an amount only the data knows: every
-   * `control_run` whose initiative does not exist is probe litter and leaves with its evidence and
-   * waivers, and the number of those is a fact about the day's production, not about this
-   * migration. They declare `count: "any"` and skip the hash for the same reason a deleted row
-   * makes a whole-table digest meaningless; the joins below are what say the removal was exactly
-   * the litter and that what survived is integral. Every other table it touches keeps its count,
-   * and the hash over the columns it does not own is taken on both sides.
-   *
-   * `eval_finding` deliberately declares no `count`: `002_catalog_evaluation.sql` already declares
-   * the eleven rows it deletes, and the fold lets the LAST declaration win — so a count here would
-   * override that one and then disagree with the database whenever both migrations are pending,
-   * which is every rehearsal until this phase is folded back.
-   *
-   * `improvement_run_finding` and `release_attempt_owner` are created by this migration.
-   */
-  "002_improve_control.sql": {
-    tables: {
-      // `eval_id`, `scope`, `docs_affected`, `proposed_change` and `resulted_in_skill_version_id`
-      // go, and three of the surviving columns are rewritten: `decided_by` becomes a principal id,
-      // `owner_ref` is nulled where the owner is the plugin itself, and a strength's `decision` is
-      // nulled. No hash, for the same reason as `control_evidence` below: the eleven legacy rows
-      // are deleted before this migration runs, so a digest over the surviving rows is taken over
-      // a different set of rows on each side and differs by the deletion alone. The two joins that
-      // name this table are what carry its integrity.
-      eval_finding: { contentHash: "skip" },
-      // `finding_ids` becomes rows in `improvement_run_finding`; the run's own facts must hold.
-      improvement_run: { hashColumns: ["id", "eval_run_id", "created_at"] },
-      improvement_run_finding: { added: true },
-      // `base_subject_version_id` is renamed, `patchset`, `touched_owners` and `proposer_identity`
-      // go, and `patch`, `proposed_by` and `proposer_client` are derived from them. The columns
-      // both sides carry must hold — and the renamed one is left out, because it does not exist
-      // under one name on both sides.
-      candidate: {
-        hashColumns: [
-          "id", "improvement_run_id", "hypothesis", "expected_effect", "patch_digest",
-          "complexity_delta", "touched_components", "status", "created_at", "build_requested_at",
-          "build_requested_by", "build_result", "build_recorded_at",
-        ],
-      },
-      // The released subject version is renamed and the verdict moves out of `verification`, so
-      // neither is hashed; the attempt's own lifecycle facts must hold.
-      release_attempt: {
-        hashColumns: [
-          "id", "candidate_id", "status", "release_ref", "created_at", "reason", "plugin_id",
-          "applying_at",
-        ],
-      },
-      release_attempt_owner: { added: true },
-      // Every run whose initiative does not exist is deleted, with its evidence — see the entry's
-      // own doc. Nothing else about either table is comparable across the removal.
-      control_run: { count: "any", contentHash: "skip" },
-      control_evidence: { count: "any", contentHash: "skip" },
-      // No column moves and no row is touched: the whole row must hash identically, which is what
-      // says the sweep took only the runs it named and left every waiver where it was.
-      control_waiver: {},
-    },
-    joins: [
-      {
-        // The litter is gone: no surviving run names an initiative that does not exist. This is
-        // the spec's criterion read back as a count rather than as a list of names.
-        name: "every control run names an initiative that exists",
-        violatingCount:
-          "select count(*)::int as n from zz.control_run r where not exists (select 1 from zz.initiative i where i.id = r.initiative_id)",
-      },
-      {
-        // `entry_id` is the kernel's matching key, and it identified 217 rows across 93 groups
-        // before this migration re-identified them.
-        name: "every fact of a run is identified once inside it",
-        violatingCount:
-          "select count(*)::int as n from (select run_id, entry_id from zz.control_evidence group by 1, 2 having count(*) > 1) d",
-      },
-      {
-        // A withdrawal resolves inside its own run and to an entry that precedes it, which is what
-        // makes the kernel's order-independent withdrawn set correct.
-        name: "every withdrawal names an earlier entry of its own run",
-        violatingCount: `
-          select count(*)::int as n
-            from zz.control_evidence e
-           where e.supersedes is not null
-             and not exists (select 1 from zz.control_evidence o
-                              where o.run_id = e.run_id and o.entry_id = e.supersedes and o.seq < e.seq)`,
-      },
-      {
-        // An approval names the document entry current at its own seq, so a revision withdraws the
-        // approval it replaced rather than every approval of that path.
-        name: "every approval names the document entry current at its own seq",
-        violatingCount: `
-          select count(*)::int as n
-            from zz.control_evidence e
-           where e.kind = 'approval'
-             and not exists (select 1 from zz.control_evidence d
-                              where d.run_id = e.run_id and d.kind = 'document'
-                                and d.entry_id = e.about and d.seq <= e.seq)`,
-      },
-      {
-        // The plugin is reachable through the run, so a plugin-owned finding keeps no copy of it.
-        name: "no plugin-owned finding carries an owner reference",
-        violatingCount:
-          "select count(*)::int as n from zz.eval_finding where owner_kind = 'plugin' and owner_ref is not null",
-      },
-      {
-        // A strength is what is working, not open work: it carries no decision, and everything
-        // else carries one — `deferred` included, which is what the column means while open.
-        name: "a strength carries no decision and every other finding carries one",
-        violatingCount: `
-          select count(*)::int as n from zz.eval_finding
-           where (kind = 'strength' and decision is not null)
-              or (kind is distinct from 'strength' and decision is null)`,
-      },
-    ],
-  }
-};
+export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {};

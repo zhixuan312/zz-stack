@@ -262,8 +262,6 @@ const notRegistered = new Map<string, string>([
   // wrongly assumed I-41 itself could satisfy — the drop is I-45's and the reader move is
   // I-44's — and `no-store-namers.ts` is I-44's own tree-wide negative, red until it has moved
   // them. Both are struck in the pass that registers them, as every entry here has been.
-  ["store-retired.ts", "until I-45 drops the eleven and I-44 moves their readers"],
-  ["no-store-namers.ts", "until I-44 lands — the tree still names the store's root"],
   // Wave 3 held one entry here — `release-closes-findings.ts`, red on the registration
   // rules from its activation until I-32 landed, as every check is between the two.
   // Wave 2's one was named here in the pass that activated it, and struck when it landed.

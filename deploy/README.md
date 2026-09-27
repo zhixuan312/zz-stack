@@ -250,28 +250,42 @@ GUI clients (TablePlus/DBeaver/DataGrip): use their built-in SSH-tunnel tab — 
 
 ## Backups
 
-`deploy/backup.sh` writes **four** things into `$BACKUP_DIR` (default `/root/zz-backups`),
+`deploy/backup.sh` writes **three** files into `$BACKUP_DIR` (default `/root/zz-backups`),
 because losing any one of them loses something no restart brings back:
 
 | | |
 |---|---|
-| the `zz` schema | identity truth — principals, teams, PATs, events |
-| the artifacts volume | every team's documents and knowledge |
+| the `zz` schema | identity truth — principals, teams, PATs, events — **and every team's documents, revisions, citations and knowledge** |
 | the gateway's data volume | events the gateway could not write to the database |
 | `deploy/.env` | this deployment's configuration and the database password |
+
+**It used to write four, and the fourth was the artifacts volume.** That volume was every team's
+document store, and it is gone: a document, its revisions and its citations are `zz.doc`,
+`zz.doc_revision` and `zz.doc_link` rows, so the dump above carries them and a second copy of
+them — one that went stale the moment a tool wrote a document — is not a backup. A pre-0.81.0 set
+still holds `zz-artifacts-<stamp>.tar.gz`; it restores into a database that is missing every
+document written after it was taken, so read it, and do not treat it as the current shape.
+
+The store's own text survives once more in a **retirement archive**, `zz-store-archive-<stamp>.tar.gz`,
+written by `scripts/retire-file-store.ts` into the same directory when the store was removed. It is
+the last copy of the store's files as files, it is not part of a nightly set, and the prune below
+is given an explicit exemption for it — a nightly retention of fourteen days is a retention for a
+nightly set, not for the last copy of anything.
 
 `deploy/.env` is the one nobody can reconstruct: it is gitignored and exists on this host only,
 and without it a restored dump cannot be opened.
 
 It checks the dump actually contains the identity tables, reads every archive back and matches
-it against the volume it came from, and prunes past `$KEEP_DAYS` (14). A run that fails deletes
-what it had written, so a partial set never sits in the directory looking like the newest
-backup. `--verify` also restores into a throwaway database and counts principals.
+it against the volume it came from, and prunes past `$KEEP_DAYS` (14) — everything it writes, and
+nothing else. A run that fails deletes what it had written, so a partial set never sits in the
+directory looking like the newest backup. `--verify` also restores into a throwaway database and
+counts principals.
 
 `deploy/backup-manifest.sh <set>` turns one dated set into the manifest a restore rehearsal
-validates before it touches a byte — the file list, its sizes and its digests, so a set that
-lost a file or gained a truncated one is refused rather than restored. `backup.sh` names it in
-its own closing note, which is why it ships in the bundle beside it.
+validates before it touches a byte — the three components, their locators and their digests, so a
+set that lost a file or gained a truncated one is refused rather than restored. It requires all
+three and describes no fourth. `backup.sh` names it in its own closing note, which is why it ships
+in the bundle beside it.
 
 `deploy/install-backup-cron.sh` installs a nightly run and a weekly verify. It replaces its own
 tagged lines and touches nothing else, so re-running it is how you pick up a change — including

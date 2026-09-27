@@ -151,3 +151,15 @@ check("every remaining store reader and writer reads and writes the database",
 // becoming a second home for a fact that has a column.
 check("a document's envelope has a home: the revision's open payload, and the columns win over it",
       runsCheck("envelope-fields.ts"));
+
+// Phase 6's sixth: the drop and the target agree with each other. `schema-inventory` compares a
+// live catalog against the target, so a migration without its target entry and a target without
+// its migration are each red on their own — neither file states the property that they match, and
+// this does. It also asserts the layer is gone and that the backup stopped copying the store.
+check("doc's retired columns are dropped, and the target says so",
+      runsCheck("drop-is-complete.ts"));
+check("the store is retired: its layer, its paths, and its backup", runsCheck("store-retired.ts"));
+// The title must not carry the path it forbids: these checks read string literals as well as
+// code, so naming the directory in the title makes the check flag its own registration.
+check("nothing reaches the store's root or its version directory for a live purpose",
+      runsCheck("no-store-namers.ts"));

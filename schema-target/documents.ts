@@ -17,8 +17,13 @@
  * field never enters it, and the reader prefers the columns over it, so a stale key cannot answer
  * in a column's place.
  *
- * `doc` still carries the columns the file store addressed a document by; Task I-41 drops them once
- * every reader has stopped naming them.
+ * `doc` is the document's identity and its status. The three the file store's own index carried —
+ * `team_slug`, `initiative` and `flow` — and the eight a close or an approval used to be stamped
+ * onto — `outcome`, `closed_by`, `approved_by`, `approved_at`, `evidence`, `supports`,
+ * `superseded_by` and `produced_by_run_id` — are DROPPED (Task I-45). The initiative is reached
+ * through `initiative_id`; the outcome and the closer are keys of the current revision's `fields`;
+ * the approval is a column of `doc_revision`; the citations are `doc_link` rows; and the run a
+ * document was written under is the `zz.event` row that recorded the write, never a column.
  */
 import type { TableTarget } from "../scripts/schema/types.ts";
 
@@ -26,28 +31,10 @@ export const DOCUMENTS: Record<string, TableTarget> = {
   doc: {
     columns: [
       [
-        "team_slug",
-        "text",
-        false,
-        null,
-      ],
-      [
-        "initiative",
-        "text",
-        false,
-        null,
-      ],
-      [
         "path",
         "text",
         false,
         null,
-      ],
-      [
-        "flow",
-        "text",
-        false,
-        "''::text",
       ],
       [
         "type",
@@ -60,24 +47,6 @@ export const DOCUMENTS: Record<string, TableTarget> = {
         "text",
         false,
         "''::text",
-      ],
-      [
-        "outcome",
-        "text",
-        true,
-        null,
-      ],
-      [
-        "approved_by",
-        "text",
-        true,
-        null,
-      ],
-      [
-        "approved_at",
-        "timestamp with time zone",
-        true,
-        null,
       ],
       [
         "updated_at",
@@ -110,18 +79,6 @@ export const DOCUMENTS: Record<string, TableTarget> = {
         "'{}'::text[]",
       ],
       [
-        "evidence",
-        "text[]",
-        false,
-        "'{}'::text[]",
-      ],
-      [
-        "superseded_by",
-        "text",
-        true,
-        null,
-      ],
-      [
         "content_hash",
         "text",
         false,
@@ -134,12 +91,6 @@ export const DOCUMENTS: Record<string, TableTarget> = {
         "now()",
       ],
       [
-        "closed_by",
-        "text",
-        true,
-        null,
-      ],
-      [
         "id",
         "uuid",
         false,
@@ -149,18 +100,6 @@ export const DOCUMENTS: Record<string, TableTarget> = {
         "initiative_id",
         "uuid",
         false,
-        null,
-      ],
-      [
-        "produced_by_run_id",
-        "uuid",
-        true,
-        null,
-      ],
-      [
-        "supports",
-        "text",
-        true,
         null,
       ],
       [
@@ -224,35 +163,22 @@ export const DOCUMENTS: Record<string, TableTarget> = {
         onDelete: "CASCADE",
         deferrable: false,
       },
-      {
-        columns: [
-          "produced_by_run_id",
-        ],
-        refTable: "skill_run",
-        refColumns: [
-          "id",
-        ],
-        onDelete: "SET NULL",
-        deferrable: false,
-      },
     ],
     checks: [
       "CHECK ((((approved_revision IS NULL) OR (approved_revision <= current_revision)) AND ((status = 'approved'::text) = ((approved_revision IS NOT NULL) AND (approved_revision = current_revision))))) NOT VALID",
-      "CHECK (((outcome IS NULL) OR (outcome = ANY (ARRAY['delivered'::text, 'accepted'::text, 'abandoned'::text]))))",
       "CHECK ((status = ANY (ARRAY[''::text, 'draft'::text, 'approved'::text, 'adopted'::text, 'superseded'::text])))",
     ],
     indexes: [
       "CREATE INDEX doc_body_trgm ON zz.doc USING gin (body zz.gin_trgm_ops)",
-      "CREATE INDEX doc_evidence ON zz.doc USING gin (evidence)",
       "CREATE UNIQUE INDEX doc_id_unique ON zz.doc USING btree (id)",
-      "CREATE INDEX doc_supports ON zz.doc USING btree (team_slug, initiative, supports) WHERE (supports IS NOT NULL)",
       "CREATE INDEX doc_tags ON zz.doc USING gin (tags)",
-      "CREATE INDEX doc_team_type ON zz.doc USING btree (team_slug, type, status)",
       "CREATE INDEX doc_tsv ON zz.doc USING gin (body_tsv)",
     ],
     comment: null,
+    // The signature field's comment went with the column it annotated. `doc.approved_by` was text
+    // holding a person's email; the approval is `doc_revision.approved_by`, a `uuid` key into
+    // `zz.principal`, written with the seal that covers the bytes it signed.
     columnComments: {
-      approved_by: "The one signature field. A person, never a team slug, \"the user\" or \"the agent\" — and\n   stamped by approve() / close() from the session, never typed by a model.",
       created_at: "When this document first existed. Never moves. `updated_at` is the last write; this is the\n   first, and it is what scopes a measurement to one initiative's lifetime.",
     },
   },

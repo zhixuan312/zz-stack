@@ -63,16 +63,19 @@ key as its own kind of blocker, because deleting a precondition must never look 
 
 ## 2. The eight preconditions, and what would unblock each
 
-Every one is blocked. The reasons differ, and the difference is the useful part: three of them
-need a decision, three need a build or a run, and two need work nobody has started.
+Every one is blocked, and one of them — `store_version` — asks for something that no longer exists
+anywhere in this platform, so it is superseded rather than outstanding: no run satisfies it, and
+striking it is a decision somebody has to make. The reasons differ, and the difference is the
+useful part: three of them need a decision, three need a build or a run, one needs work nobody has
+started, and one is superseded.
 
 | Precondition | Why it is blocked | What would unblock it |
 |---|---|---|
 | `operator` | No assignment exists. The operational work item the specification requires to be assigned before cutover has not been assigned to anybody. | An assignment naming the person, made by whoever may make it, recorded outside this file. |
 | `runbook` | Written, not approved. | Review and approval by the same authority, bound to a digest of this document and the JSON rather than to their filenames. |
 | `app_version` | No activation candidate application build has been produced or recorded, so there is nothing to pin. | Building the candidate and recording its digest beside the migration head it expects. |
-| `store_version` | The live owner stores carry no `.zz/` record layout, and nothing in the platform ever creates one. | Running `deploy/init-record-layout.sh` per owner store on the **new** volume — step 7. |
-| `database_version` | Production is at 71 migrations, head `071_a_source_has_no_content_revision.sql`. Migration 072 is staged and unapplied. | Applying 072 to the candidate database — step 6 — and recording the head. |
+| `store_version` | **Superseded, not merely blocked — and it is the one entry here an operator has to strike rather than satisfy.** The live owner stores carry no `.zz/` record layout, and nothing in the platform ever creates one: the layer that refused `STORE_UNAVAILABLE` on an incomplete layout went with the artifact/search layer in 0.86.0, and `.zz/{blobs,commits}` exists nowhere in this platform. `deploy/activation-runbook.json` records the same reading against the same `state: blocked`, because the verdict is derived from the eight states and a precondition is not marked met by a prose note. | Nothing satisfies it. The store is not adopted into artifact projections: its every fact is a `zz.doc` / `zz.doc_revision` / `zz.doc_link` row, which is what phase 6 moved it into, and no owner store is mounted by any service in `deploy/docker-compose.yml`. Striking the entry is a decision for whoever holds `switch_authorization`. |
+| `database_version` | The reading below is the 2026-09-21 one and it has moved: production applied `002_remove_artifact_layer.sql` on 2026-09-27 10:59 UTC, and the head it is at now is not `071`. | Applying every pending file in `services/gateway/migrations/` to the candidate database — step 6 — and recording the head it actually lands on, read back from `zz.schema_migration` rather than from this table. |
 | `restore_evidence` | `RESTORE-AND-CUTOVER.md` is a procedure, not a result. No observation record from a run of it exists in this checkout. | An operator executing it end to end on a throwaway host, and the acknowledged-write replay coming back whole. |
 | `parity_evidence` | Nothing has compared what the old deployment holds against what the new one would serve. | The conversion and rebuild that make the corpus searchable, and implementing the two parity cases that have no code behind them. |
 | `switch_authorization` | No authorisation exists. | The authorising party recording the decision against a digest of this runbook and the evidence the other seven cite. |
@@ -158,8 +161,16 @@ whose stores have never been adopted.
 
 ## 4. The steps
 
-Twelve, each with what it does, how it is checked, and where it is abandoned. Steps 1 and 7 are
-the only ones rehearsed; the rest need a deployment.
+Twelve, each with what it does, how it is checked, and where it is abandoned. Steps 1 and 7 were
+the only ones ever rehearsed; the rest need a deployment, and step 7 has since been retired.
+
+> **This section is the current reading, and its machine twin lags it.** `deploy/activation-runbook.json`
+> still carries the pre-retirement wording for steps 2, 4, 5 and 7, for `rollback.returns_to` and for
+> the per-store commit watermark in `suspension.what_it_does` — every one of them names the
+> artifacts volume or the `.zz/` record layout this platform no longer has (phase 6, Tasks I-41 and
+> I-45). The prose below says what the platform is; the JSON has not been re-recorded yet, and it is
+> the JSON a program reads. The divergence is reported rather than papered over, and re-recording
+> the JSON is an operator's edit to a file this task does not own.
 
 **Step 1 — re-derive the preconditions and stop if any is blocked.**
 Run `node scripts/activation-rehearsal.ts` and read the blocker list.
@@ -170,8 +181,12 @@ activation declining to start — the outcome it is supposed to have while anyth
 **Step 2 — take a complete backup set and build its manifest.**
 `deploy/backup.sh` on the production host, one complete stamped set copied off-host,
 `deploy/backup-manifest.sh` to build the manifest.
-*Verify:* a manifest listing all five components with their hashes, and no refusal. Each refusal
-is a real finding about the backup, not a problem with the script.
+*Verify:* a manifest listing all three components with their hashes, and no refusal. The set is the
+`zz` schema, the gateway's data volume and `deploy/.env` — `backup.sh` wrote four until the
+artifacts volume was retired, and a set that still holds `zz-artifacts-<stamp>.tar.gz` is an OLDER
+set: its database is missing every document written after it was taken, so read it and do not treat
+it as the current shape. Each refusal is a real finding about the backup, not a problem with the
+script.
 *Abort:* stop. Production is untouched and still serving.
 
 **Step 3 — suspend.**
@@ -182,20 +197,22 @@ begin.
 *Abort:* lift maintenance and resume admissions.
 
 **Step 4 — freeze the old unit and record it as one matched thing.**
-Old application image digest, database identity and artifact volume, recorded together; the old
-volume made read-only; the volume resolved from the Compose project rather than from a name
-somebody typed.
-*Verify:* all three parts recorded, outbound integrations disabled, and the old volume genuinely
+Old application image digest and database identity, recorded together; the old database made
+read-only; the unit resolved from the Compose project rather than from a name somebody typed.
+There is no artifact volume to record: the deployment has none (phase 6, Task I-41/I-45), because
+a document, its revisions and its citations are rows in the database this step already freezes.
+*Verify:* both parts recorded, outbound integrations disabled, and the old database genuinely
 read-only rather than intended to be.
 *Abort:* restore write access and lift maintenance. Nothing new exists yet.
 
-**Step 5 — restore into a NEW database and a NEW volume.**
-Logical restore into a newly created cluster; the artifacts archive onto a separate new volume.
-Never mount an older major version's data directory into the new one, and never restore onto the
-old volume.
+**Step 5 — restore into a NEW database.**
+Logical restore into a newly created cluster. Never mount an older major version's data directory
+into the new one, and never restore onto the old cluster. There is no separate artifacts restore
+any more: the dump carries every team's documents, revisions, citations and knowledge, which is
+what made a second archive of them redundant rather than a backup.
 *Verify:* no errors. Any error is fatal here — a partial restore that looks finished is the
 failure this whole procedure exists to find.
-*Abort:* discard both. The old unit is byte-identical to what step 4 froze.
+*Abort:* discard it. The old unit is byte-identical to what step 4 froze.
 
 **Step 6 — apply migrations to the candidate head.**
 Up to and including `072_write_path_records_its_analyzer.sql`, which adds a nullable
@@ -205,14 +222,17 @@ Nullable is the honest state: no row written before this migration carries a val
 says "unknown" rather than naming an analyzer that did not build the vector.
 *Abort:* discard the new database and restore it again from step 5.
 
-**Step 7 — initialise the record layout on each owner store, on the NEW volume only.**
-`deploy/init-record-layout.sh`, once per owner store root, each path visible in the invocation.
-List the stores first and read the list before acting on it. The script takes exactly one
-existing directory, never searches, and has no recursive mode and no default.
-*Verify:* every store carries all three of `.zz/`, `.zz/blobs` and `.zz/commits`; a second run
-reports `already complete`; the non-`.zz` content hashes the same before and after.
-*Abort:* nothing to undo. This step only ever touches the new volume, and abandoning the
-activation discards that volume whole.
+**Step 7 — retired.**
+This step initialised the `.zz/{blobs,commits}` record layout on each owner store root on the new
+artifact volume. The layer it initialised the layout FOR went with the artifact/search layer in
+0.86.0, the layout exists nowhere in the platform, and no service in `deploy/docker-compose.yml`
+mounts an owner store — so there is no store to initialise and no volume to initialise it on.
+`deploy/init-record-layout.sh` remains in the tree as the script that did it; nothing in this
+procedure calls it. What survives is the rule its refusal enforced, which is not about the layout:
+**a volume that failed to mount must never be read as a tenant with no documents.**
+*Verify:* nothing. There is nothing here to verify, and that is the finding rather than an
+omission — the step is kept as a numbered position so the steps after it do not renumber silently.
+*Abort:* not applicable.
 
 **Step 8 — rederive the analyzer generation over the real rows.**
 So every row carries the generation this build derives under. The pass rewrites a row whose
@@ -272,8 +292,9 @@ live platform, and it is the reason steps 2 and 9 are not optional.
   the switch is under way.
 - Waits for work already in flight to finish, and records the count still outstanding when the
   wait ends.
-- Records a boundary — a per-store commit watermark and a database write boundary — so that what
-  happened before the freeze and what happened after it can be told apart later.
+- Records a boundary — a database write boundary — so that what happened before the freeze and what
+  happened after it can be told apart later. It used to record a per-store commit watermark beside
+  it, for the team file stores; those are gone, and the database boundary is now the whole of it.
 
 **What it cannot do, and must never be written up as doing.**
 
@@ -298,16 +319,21 @@ NOT A TOOL: nothing in this procedure calls that tool, and a reader who greps fo
 
 ## 6. Rollback, and the invariants it may not trade away
 
-Rollback returns to the matched old unit recorded at step 4 — old application image, its
-database and its artifact volume, all three together. It is clean until the end of step 10.
+Rollback returns to the matched old unit recorded at step 4 — the old application image and its
+database, together. There is no artifact volume to return beside them: the deployment has none,
+and every team's documents, revisions, citations and knowledge are rows in the database this step
+already restores. It is clean until the end of step 10.
 
 **Three things a rollback may not buy its way out of.**
 
-1. **The record layout refusal stays.** The record store refused
-   `STORE_UNAVAILABLE` when a store's `.zz/` layout is incomplete, and that refusal is not to be
-   relaxed to make a rollback smoother. The alternative is a failed mount being read as a tenant
-   with no documents, and the next thing that happens to an empty tenant is that something
-   helpfully reconstructs them.
+1. **The rule behind the record layout refusal stays, and its enforcing module is gone.** The
+   record store refused `STORE_UNAVAILABLE` when a store's `.zz/` layout was incomplete, and
+   0.86.0 removed it with the artifact/search layer. The rule it enforced is the one that
+   outlives it and is not to be relaxed to make a rollback smoother: a failed mount must never be
+   read as a tenant with no documents, because the next thing that happens to an empty tenant is
+   that something helpfully reconstructs them. In a store that is rows rather than files, that
+   rule is carried by `doc`'s non-null `initiative_id` and by the revision rows — a tenant with no
+   rows is a tenant the migration reported, never one the platform inferred.
 2. **A rolled-back method may not weaken current identity or storage safeguards.** A returned-to
    version is allowed to lack a new capability. It is not allowed to admit a caller the current
    version refuses, or to store something the current version protects.
@@ -354,6 +380,9 @@ report, that a structurally valid one is not a passing one.
   refuses every write while looking initialised to anybody who lists it; and the store's
   documents hash identically before and after all three runs, so the step creates two empty
   directories and rewrites no document byte.
+  **The script still does all of that; the layer that needed the layout does not exist any more.**
+  Step 7 is retired from the procedure (section 4), and what this bullet establishes is a fact
+  about `deploy/init-record-layout.sh` rather than about any deployment this platform now has.
 
 **Not established, and worth stating in the same breath.**
 
@@ -362,7 +391,8 @@ report, that a structurally valid one is not a passing one.
 - It did not rehearse steps 2–6 or 8–12. Those need a deployment, and rehearsing them needs the
   throwaway host `RESTORE-AND-CUTOVER.md` describes rather than this checkout.
 - It did not produce restore evidence or parity evidence. Exercising step 7 on a copied store
-  says nothing about whether a restored deployment serves what the old one held.
+  says nothing about whether a restored deployment serves what the old one held — and that step is
+  retired besides, so even its own subject is gone.
 - **It did not establish native readiness.** A migration staged in the working tree and a
   procedure describing how to apply it are not the same claim as a platform ready to apply it.
   The new framework may be built and exercised on copied fixtures while the operational migration
@@ -385,5 +415,6 @@ that could edit a precondition could mark its own gate met.
 | `deploy/ACTIVATION.md` | this document — the procedure and its reasoning |
 | `deploy/activation-runbook.json` | the same procedure, for a program: preconditions, steps, suspension, rollback, rehearsal |
 | `scripts/activation-rehearsal.ts` | derives the gate, and rehearses step 1 and step 7 on copied fixtures |
-| `deploy/RESTORE-AND-CUTOVER.md` | the rehearsal procedure, unchanged, which never switches production |
-| `deploy/init-record-layout.sh` | step 7's script, unchanged |
+| `deploy/RESTORE-AND-CUTOVER.md` | the rehearsal procedure, which never switches production. Step 5a and the artifacts restore it used to describe were retired with the `.zz/` record layout and the artifacts volume |
+| `deploy/init-record-layout.sh` | step 7's script, kept although step 7 is retired — see section 4 |
+| `deploy/backup.sh` | the three-component set an activation starts from — schema, gateway data, `.env`. It wrote four until the artifacts volume was retired |

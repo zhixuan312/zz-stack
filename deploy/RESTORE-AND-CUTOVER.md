@@ -1,12 +1,10 @@
 # Restore and cutover rehearsal
 
-How an operator stands up an isolated PostgreSQL 17 copy of this platform, restores a
-protected backup into it, rehearses the eight-step cutover, and exports
-`ZZ_TENANT_INFO_ISOLATED_DB_URL` so the verification suites that need a real database can run.
+How an operator stands up an isolated PostgreSQL 17 copy of this platform and restores a protected
+backup into it, so a cutover can be rehearsed against real data before it is performed.
 
-This is a **rehearsal** procedure. It never switches production. The real switch needs final
-acceptance readiness and a separate operator release decision (spec, H3), and nothing in this
-document grants it.
+This is a **rehearsal** procedure. It never switches production. `deploy/ACTIVATION.md` is the
+switch, and it says in its own preamble that nothing authorises executing it.
 
 ---
 
@@ -19,8 +17,8 @@ document grants it.
 | A developer laptop | **No.** At least one laptop in this project runs a local container pointed at the *production* database; a `docker compose` invocation there can reach it. |
 
 The rehearsal host must have **no network route to the production database** and must run with
-outbound integrations disabled. Step 4 of the spec's procedure requires it, and it is also the
-only thing that makes a mistake in this document survivable.
+outbound integrations disabled. It is also the only thing that makes a mistake in this document
+survivable.
 
 Everything below assumes you are on the rehearsal host.
 
@@ -28,30 +26,48 @@ Everything below assumes you are on the rehearsal host.
 
 ## 1. Get a complete backup set off-host
 
-`deploy/backup.sh` writes four files per run into `$BACKUP_DIR` (default `/root/zz-backups`)
+`deploy/backup.sh` writes **three** files per run into `$BACKUP_DIR` (default `/root/zz-backups`)
 on the production host:
 
 ```
-zz-db-<stamp>.sql.gz            the zz schema — principals, teams, PATs, events and every other table
-zz-artifacts-<stamp>.tar.gz     every team's documents and knowledge, plus the canonical .zz record once one exists (step 5a)
+zz-db-<stamp>.sql.gz            the `zz` schema — principals, teams, PATs, events, AND every team's
+                                documents, revisions, citations and knowledge
 zz-credentials-<stamp>.tar.gz   the gateway's own data: events it could not write to the database
 zz-config-<stamp>.tar.gz        deploy/.env, Caddyfile and docker-compose.yml
 ```
 
-Copy one complete set — all four files, same stamp — to the rehearsal host:
+Copy one complete set — all three files, same stamp — to the rehearsal host:
 
 ```bash
-STAMP=20260920T031700Z            # pick a set that exists
+STAMP=20260927T085353Z            # pick a set that exists
 mkdir -p ~/rehearsal/backup
 scp root@<production-host>:/root/zz-backups/zz-*-$STAMP.* ~/rehearsal/backup/
 ```
 
-Copy, never move. The original set stays where it is; the spec's step 1 is explicit that the
-source deployment is preserved unchanged.
+Copy, never move. The original set stays where it is.
 
 > `zz-credentials-*.tar.gz` holds API keys in plaintext and `zz-config-*.tar.gz` holds the
 > database password. Both are mode 600 on the source. Keep them that way, and do not put
 > either on shared storage.
+
+### A set with a fourth file is an OLDER set
+
+Until the artifacts volume was retired, `backup.sh` wrote a fourth member,
+`zz-artifacts-<stamp>.tar.gz` — every team's file store. It is gone, and so is the volume: a
+document, its revisions and its citations are `zz.doc`, `zz.doc_revision` and `zz.doc_link` rows,
+which is what the `pg_dump` carries. **The store's every fact is in the dump, and the archive is a
+second copy of it that went stale the moment a tool wrote a document.**
+
+So a set holding `zz-artifacts-*.tar.gz` still restores — do not throw it away — but what it
+restores is a database as of the day it was taken, and the archive beside it is a snapshot of the
+store from the same day. Restoring only the database half is the correct thing to do with it.
+Never restore the archive *over* the database: the dump already holds those documents.
+
+There is one more archive that may be in that directory and is **not part of any nightly set**:
+`zz-store-archive-<stamp>.tar.gz`, written once by `scripts/retire-file-store.ts` when the store
+was removed. It is the last copy of the store's files AS FILES, `deploy/backup.sh` is given an
+explicit exemption from pruning it, and it is the copy most worth carrying off the host. A
+rehearsal does not need it.
 
 ---
 
@@ -60,51 +76,21 @@ source deployment is preserved unchanged.
 ```bash
 cd <checkout>/zz-stack
 ./deploy/backup-manifest.sh ~/rehearsal/backup $STAMP
-export ZZ_TENANT_INFO_BACKUP_MANIFEST=~/rehearsal/backup/zz-backup-manifest-$STAMP.json
 ```
 
-This produces the fifth component — `zz-git-<stamp>.tar.gz`, a `git bundle --all` per team
-store, extracted from the artifacts archive — and writes the manifest that lists all five with
-their SHA-256 hashes.
+It writes `zz-backup-manifest-<stamp>.json` beside the set, listing the three components `backup.sh`
+writes — the database, the credentials volume and the configuration files — each with a locator and
+the SHA-256 of the actual file.
 
-It refuses, rather than writing a manifest, if:
-
-- any of the four files is missing (an incomplete set is not a backup),
-- a store's history does not bundle (the archive caught a repository mid-write), or
-- the artifacts archive carries a `.zz/` layout that is missing `blobs/` or `commits/` — the
-  half-initialised state, which restores a deployment that refuses every write (step 5a).
-
-An archive in which *no* store carries a `.zz/` layout is **not** a refusal: that is the
-expected state of every backup taken before cutover, and the script says so. See step 5a.
+It refuses, rather than writing a manifest, if any of the three is missing. An incomplete set is not
+a backup, and a manifest over two of them would describe a restore that leaves something behind,
+which is the whole thing the rehearsal exists to refuse.
 
 Each refusal is a real finding about the backup. None of them is a problem with the script.
 
 ---
 
-> **Two of the suites this document dispatches were removed in 0.86.0.** The `tenant-info` CLI
-> and its corpora went with the artifact/search layer, so `npm run tenant-info -- verify --suite
-> rebuild` and `--suite deployment` below no longer exist. The image this section builds is
-> unaffected: `deploy/postgres/` still compiles `pg_textsearch`, and what 0.86.0 drops is the
-> extension inside a *migrated database* — `002_remove_artifact_layer.sql` ends with a conditional
-> `drop extension`. Only the dispatch of those two suites is stale.
-
 ## 3. Stand up the isolated PostgreSQL 17 database
-
-> **The pins are resolved.** `deploy/postgres/versions.lock.json` carries eight of its nine
-> `*_verified` flags `true` — the PostgreSQL
-> version, the base image digest, the architecture, the `pg_textsearch` repository, commit and
-> source digest, the built image digest, and the text-configuration fingerprint.
->
-> The ninth, `okf_reference_digest_verified`, is `false` and its own `unverified_fields` entry
-> argues it should be struck from the specification rather than filled: the specification asks
-> for a vendored OKF reference digest, and **this repository vendors no OKF reference to
-> digest**. It carries its own implementation and that implementation's tests, and nothing else
-> named OKF exists in the tree. An unresolvable field is a finding about the specification, not
-> a gap in this build, so it does not block the image.
->
-> Read the lock file rather than this paragraph if the two ever disagree. The restore in
-> step 4 depends on none of it and can proceed on a stock PostgreSQL 17 image; only the
-> `pg_textsearch` half ever did.
 
 ```bash
 cd <checkout>/zz-stack/deploy/postgres
@@ -121,27 +107,27 @@ docker run -d --name zz-rehearsal-db --network zz-rehearsal \
 `-p 127.0.0.1:55432` binds to loopback only. A rehearsal database that anything else on the
 network can reach is not isolated.
 
+`deploy/postgres/versions.lock.json` carries the pins for this image; read the lock file rather
+than any prose about it if the two ever disagree.
+
 ---
 
 ## 4. Restore
 
 ```bash
 cd ~/rehearsal/backup
-zcat zz-db-$STAMP.sql.gz | docker exec -i zz-rehearsal-db psql -U zz -d zz_rehearsal
+gzip -dc zz-db-$STAMP.sql.gz | docker exec -i zz-rehearsal-db psql -U zz -d zz_rehearsal
 ```
 
-**Logical restore into a new cluster — never mount a PostgreSQL 16 data directory into
-PostgreSQL 17.** The dump is `pg_dump --clean --if-exists`, so it restores over an empty
-database. Treat any error as fatal: step 1 of the procedure says so, and a partial restore
-that looks finished is the failure this whole rehearsal exists to find.
+**Logical restore into a new cluster — never mount an older major version's data directory into a
+newer one.** The dump is `pg_dump --clean --if-exists`, so it restores over an empty database.
+Treat any error as fatal: a partial restore that looks finished is the failure this whole rehearsal
+exists to find.
 
-Restore the artifacts onto a **separate new volume**, never the old one:
-
-```bash
-docker volume create zz-rehearsal-artifacts
-docker run --rm -v zz-rehearsal-artifacts:/data -v ~/rehearsal/backup:/backup:ro alpine \
-  tar xzf /backup/zz-artifacts-$STAMP.tar.gz -C /data
-```
+**There is no second restore.** This step used to extract the artifacts archive onto a separate new
+volume beside the database. The deployment has no artifact volume any more — no service in
+`deploy/docker-compose.yml` mounts one — and the documents the archive held are rows in the database
+this step just restored.
 
 ---
 
@@ -152,205 +138,75 @@ docker exec -i zz-rehearsal-db psql -U zz -d zz_rehearsal \
   < <checkout>/zz-stack/services/gateway/migrations/001_init.sql
 ```
 
-`001_init.sql` is every migration its `-- absorbs:` lines name, squashed into one file, including
-the artifacts, revisions, events and scoped-search tables this rehearsal needs. Apply every other
-file in `services/gateway/migrations/` after it, in filename order.
+`001_init.sql` is every migration its `-- absorbs:` lines name, squashed into one file. Apply every
+other file in `services/gateway/migrations/` after it, in filename order.
 
-Just after its header come three `create extension if not exists citext / pg_textsearch /
-pg_trgm` lines. Applied through `psql` as above those run unconditionally — the `requires-extension:` directives in its
-header are read by the gateway's own migration runner (`services/gateway/src/db.ts`), which
-defers the file on a cluster that cannot supply them; piping it straight into `psql` bypasses
-that and fails outright.
+Just after its header come `create extension if not exists` lines for `citext`, `pg_trgm` and the
+rest. Applied through `psql` as above those run unconditionally — the `requires-extension:`
+directives in its header are read by the gateway's own migration runner
+(`services/gateway/src/db.ts`), which defers the file on a cluster that cannot supply them; piping
+it straight into `psql` bypasses that and fails outright.
 
-**So the schema applies in full on the step 3 image, and not at all on a stock PostgreSQL 17
-one.** There is no partial path: `create extension` is the second statement in the file, so a
-stock image gets none of the tables. This is the ordering that decides what step 7 can unblock.
+**Read the applied head back and compare it against the highest-numbered file in
+`services/gateway/migrations/`.** A rehearsal that stops short of the tree's head has rehearsed a
+schema nobody is going to deploy.
 
 ---
 
-## 5a. Initialise the `.zz/` record layout on the new artifact volume
+## 5a. The `.zz/` record layout — RETIRED
 
-**This step has no owner elsewhere in the delivery, and without it the cutover produces a
-platform that refuses every write.**
+This step initialised `.zz/{blobs,commits}` on each owner store root on the new artifact volume, so
+that the record store would stop refusing `STORE_UNAVAILABLE` and the first write to each document
+could adopt it.
 
-### Why it exists
+**It is retired, and there is nothing left for it to do.** The refusal, the module that enforced it
+in `zz-core`'s `tenant-info`, and the whole artifact/search layer went in 0.86.0;
+`.zz/{blobs,commits}` exists nowhere in this platform; and no service in `deploy/docker-compose.yml`
+mounts an owner store, because there is no owner store — phase 6 moved every team's documents into
+`zz.doc`, `zz.doc_revision` and `zz.doc_link`.
 
-The record store refused `STORE_UNAVAILABLE` when `.zz/`,
-`.zz/blobs` or `.zz/commits` is missing, in its own words: *"a missing mount is refused, never
-read as an empty tenant."* That refusal is correct and is not to be weakened — the alternative
-is a failed volume mount being read as a tenant with no documents, and the next thing that
-happens to an empty tenant is that something helpfully reconstructs them.
+`deploy/init-record-layout.sh` is kept in the tree as the script that did it. Nothing in this
+procedure calls it, and no deployment target needs it.
 
-Nothing in the platform ever creates that layout. I-20's adoption path turns a document with no
-commit into one that has a commit, but it runs *inside* the kernel, behind that same refusal —
-which an adoption case of the layer it belonged to pinned deliberately, before both were
-removed. The live owner stores have no
-`.zz/`. So the real order on cutover day is:
+**The rule it enforced outlives it, and is the part worth keeping.** A failed mount must never be
+read as a tenant with no documents, because the next thing that happens to an empty tenant is that
+something helpfully reconstructs them. In a store that is rows rather than files, that rule is
+carried by `doc`'s non-null `initiative_id` and by the revision rows: a tenant with no rows is a
+tenant the migration reported, never one the platform inferred.
 
-1. **initialise `.zz/{blobs,commits}` on each owner store** ← this step
-2. the registered tools route through the kernel
-3. the first write to each document adopts it (I-20)
+---
 
-Measured, against the real kernel on a store seeded the way a live store was seeded:
-
-```
-BEFORE init  — captureSource: false STORE_UNAVAILABLE
-BEFORE init  — revise      : false STORE_UNAVAILABLE
-AFTER  init  — captureSource: true
-AFTER  init  — revise      : true (adopted and committed)
-```
-
-### Where it goes, and why here
-
-**On the new artifact volume, after step 4's restore of it and before step 6's checks.** Not on
-the live volume, at any point.
-
-- **Not before the drain.** Initialising the live stores while the platform is serving is a
-  write into a tenant's real store directory that buys nothing: the old code never reads
-  `.zz/`. It is all risk and no benefit.
-- **Not after step 7.** Step 6 keeps writes frozen *while checking* query and restore
-  behaviour, and step 7 resumes writes. A layout created after either would mean the first
-  write of the new deployment — the one step 8 records — hits `STORE_UNAVAILABLE`.
-- **Here**, the old volume is never written to at all. The contract's "old volumes remain
-  isolated/read-only" holds literally rather than by convention.
-
-### The commands
-
-`deploy/init-record-layout.sh` takes **exactly one directory, which must already exist**, and
-acts on that alone. It never searches, has no recursive mode and no default: the set of things
-it can touch is the set of paths you typed.
+## 6. The isolated database, and who reads it
 
 ```bash
-# List the owner stores on the NEW volume first, and read the list before acting on it.
-docker run --rm -v zz-rehearsal-artifacts:/data:ro alpine ls -1 /data
-
-# Then one invocation per store, with the path visible in each.
-for store in team-alpha team-beta; do
-  docker run --rm -v zz-rehearsal-artifacts:/data \
-    -v "$PWD/deploy/init-record-layout.sh":/init.sh:ro \
-    alpine sh /init.sh "/data/$store"
-done
+export ZZ_REHEARSAL_DB_URL="postgres://zz:<password>@127.0.0.1:55432/zz_rehearsal"
 ```
 
-It is **idempotent**: a second run on a complete layout reports `already complete` and does
-nothing.
-
-It **repairs a partial layout rather than refusing it**, which is the state an interrupted
-attempt leaves behind:
-
-```
-REPAIRING: /data/team-alpha has a PARTIAL .zz/ layout (2 of 3 directories present).
-  A partial layout refuses every write exactly as a missing one does, while looking
-  initialised to anybody who lists the directory. Completing it.
-```
-
-That state is worth naming: `preflightRefusal` requires all three directories, so a store with
-`.zz/` and `.zz/blobs` but no `.zz/commits` refuses every write exactly as a store with nothing
-does — while looking initialised to anybody who lists it.
-
-The script creates **two empty directories and no record**. It writes, moves and rewrites no
-document byte.
-
-### Rollback if the cutover is abandoned
-
-Nothing to undo. This step only ever touched the new volume, so abandoning the cutover is
-step 8's ordinary "before any new write, rollback can return to the matched old app/DB/volume
-snapshot" — the old volume is byte-identical to what it was, and the new one is discarded.
-
-Were a layout ever created on a store that then went back to the old path, it would be two
-empty directories that the old code never opens. Harmless. The procedure above avoids even
-that, which is why it is worth following rather than improvising.
-
-### What this means for the backup
-
-**A backup taken before this step is still a complete restore target.** `.zz/blobs` and
-`.zz/commits` are derived, not data: restore the pre-layout set, re-run this script, and you
-are in the identical state. Nothing is lost by having backed a store up before it had a layout.
-
-`deploy/backup-manifest.sh` knows the difference, and says which one it is reading:
-
-```
-zz-artifacts-<stamp>.tar.gz: no store carries a .zz/ layout — this set PREDATES the record layout.
-  That is the expected state before cutover, and the set is still a complete restore
-  target. Restoring it gives stores that refuse writes with STORE_UNAVAILABLE until
-  deploy/init-record-layout.sh has run on each one (RESTORE-AND-CUTOVER.md step 5a).
-```
-
-What it *does* refuse is an archive carrying a `.zz/` with no `blobs/` or no `commits/` — a
-backup of the half-initialised state, which would restore a deployment that looks initialised
-and cannot be written to.
-
----
-
----
-
-## 6. Export the URL
-
-```bash
-export ZZ_TENANT_INFO_ISOLATED_DB_URL="postgres://zz:<password>@127.0.0.1:55432/zz_rehearsal"
-```
-
-**What this variable may name, and what it may never name.**
+What this may name, and what it may never name:
 
 - The isolated copy produced by this document, and nothing else.
 - **Never** the live cluster.
-- **Never** a value inferred, copied or derived from `TEAM_DB_URL` or `PLATFORM_DB_URL`. The
-  suites refuse it outright if it equals either — the cutover suite this document describes
-  carried that refusal.
-- **Never** a database this repository's tooling provisioned on its own. No suite here creates
-  a database; an operator does, on purpose, by running step 3.
+- **Never** a value inferred, copied or derived from `TEAM_DB_URL` or `PLATFORM_DB_URL`.
 
-Every case that reads this variable applies real DDL and writes real rows.
-
----
-
-## 7. What setting it actually unblocks
-
-Six cases across three suites are commonly described as waiting on this variable. That is true
-of two of them. The other four need something else as well, and this document cannot supply
-it.
-
-> **Read this before the table.** Every row below assumes the schema applied, and step 5
-> shows that needs the step 3 image, whose pins are resolved (see section 3).
-> The variable is necessary for the two marked Yes and
-> sufficient for neither pair marked No, for the reasons in their own rows — a missing verified
-> BM25 DDL for the isolation pair, and no implementation at all for the migration pair.
-
-| Suite | Case | Does step 6 unblock it? |
-|---|---|---|
-| `rebuild` | `atomic_apply_against_isolated_database` | **Yes**, once the schema is applied. It needs nothing but the URL — it creates its own store root with `mkdtemp` and its own rows. |
-| `rebuild` | `real_rebuild_against_isolated_copy` | **Yes**, once the schema is applied. Same: URL only, own temporary store, own fixtures. |
-| `isolation` | `real_pg17_statistical_isolation` | **No.** Needs step 3's image *and* verified `pg_textsearch` BM25 index and score-expression DDL, which this checkout does not carry. Stays `not_run` with that reason even when the variable is set. |
-| `isolation` | `real_pg17_bm25_score_expression` | **No.** Same gap. |
-| `migration` | `projection_parity_against_the_isolated_database` | **No.** These two were a hardcoded `NOT_RUN` map in the layer's migration suite and read no environment variable at all. They have no implementation behind them yet. |
-| `migration` | `copied_multi_owner_store_projection_replay` | **No.** Same — unimplemented, not unconfigured. |
-
-So: **2 of 6.** The image pins are resolved, so the two `rebuild` cases are reachable once the schema
-is applied. The isolation pair is additionally blocked on the extension's verified BM25 DDL;
-the migration pair is blocked on
-code nobody has written. Neither of those is an environment problem and neither is closed by
-running this document.
-
-Run what step 6 does unblock:
-
-```bash
-export ZZ_TENANT_INFO_WORKSPACE=~/rehearsal/workspace   # must be outside the checkout
-mkdir -p "$ZZ_TENANT_INFO_WORKSPACE"
-npm run tenant-info -- verify --suite rebuild --profile integration --cases projection-schema
-```
+This used to be `ZZ_TENANT_INFO_ISOLATED_DB_URL`, and it used to unblock a set of verification
+suites. **The `tenant-info` CLI and its corpora went with the artifact/search layer in 0.86.0**, so
+nothing in this checkout consumes the URL any more. It is what an operator points a `psql` or a GUI
+client at to read the restored copy; the rehearsal that runs automatically is
+`node scripts/rehearse.ts --dump <zz-db-*.sql.gz>` (`--artifacts <archive>` as well, for a set old
+enough to carry one), which starts its own container and refuses to be handed a URL.
 
 ---
 
-## 8. The cutover rehearsal
+## 7. The cutover rehearsal
 
-The eight steps are the spec's, and they are executed by an operator, not by a suite. What the
-suite does is judge the record you make while executing them, and then check the one fact a
-record cannot be trusted for.
+The steps are `deploy/ACTIVATION.md`'s twelve, and they are executed by an operator, not by a suite.
+What an operator does here is judge the record they made while executing them, and then check the
+one fact a record cannot be trusted for: that the writes accepted after the resume are really there.
 
 Write your observations to a JSON file as you go:
 
 ```bash
-export ZZ_TENANT_INFO_CUTOVER_OBSERVATIONS=~/rehearsal/cutover-observations.json
+export ZZ_CUTOVER_OBSERVATIONS=~/rehearsal/cutover-observations.json
 ```
 
 ```json
@@ -362,82 +218,67 @@ export ZZ_TENANT_INFO_CUTOVER_OBSERVATIONS=~/rehearsal/cutover-observations.json
       { "kind": "legacy_client", "maintenance": true, "in_flight": 0 }
     ],
     "active_writers": 0,
-    "file_commit_watermark": "<40-hex git commit of the last write to each store>",
     "platform_snapshot_boundary": "<pg_current_wal_lsn() at the freeze>"
   },
   "matched_unit": {
     "old_unit": {
       "app_image_digest": "sha256:...",
       "database_identity": "zz-rehearsal-source",
-      "artifact_volume": "<resolved from the Compose project>",
       "read_only": true
     },
     "new_unit": {
       "app_image_digest": "sha256:...",
       "database_identity": "zz-rehearsal-db",
-      "artifact_volume": "zz-rehearsal-artifacts",
       "postgres_major": 17,
       "data_directory_reused": false
     },
-    "volumes_resolved_from_compose_project": true,
     "outbound_integrations_disabled": true
   },
   "forward_recovery": {
     "strategy": "forward_recovery",
     "target_postgres_major": 17,
     "resume_boundary_at": "<ISO timestamp when you resumed writes>",
-    "post_resume_write_ref": "<transaction_id of the first accepted write after resume>",
+    "post_resume_write_ref": "<zz.event.id of the first accepted write after resume>",
     "recovered_write_refs": ["<...>"],
-    "new_file_commits": ["<...>"],
-    "recovered_file_commits": ["<...>"],
     "platform_db_changes_preserved": true
   }
 }
 ```
 
-Filling the three fields that matter:
+> **Two fields are gone from this record.** `drain.file_commit_watermark` was the last commit of each
+> team's store repository, and `forward_recovery.new_file_commits` / `recovered_file_commits` were
+> the commits a recovery replayed. There are no store repositories: the documents are rows, and
+> `platform_snapshot_boundary` plus `platform_db_changes_preserved` are the whole of that claim now.
+> A record that still carries them is recording something this platform does not have.
+
+Filling the two fields that matter:
 
 ```bash
-# the freeze boundary (step 3)
+# the freeze boundary
 docker exec zz-rehearsal-db psql -U zz -d zz_rehearsal -tAc 'select pg_current_wal_lsn()'
 
-# the first accepted write after you resume (step 8) — inject it deliberately,
-# then record the transaction it stamped
+# the first accepted write after you resume — inject it deliberately, then read it back
 docker exec zz-rehearsal-db psql -U zz -d zz_rehearsal -tAc \
-  "select transaction_id from zz.artifact_event order by at desc limit 1"
+  'select id from zz.event order by id desc limit 1'
 
-# after forward recovery, every transaction that came back
+# after forward recovery, every write that came back
 docker exec zz-rehearsal-db psql -U zz -d zz_rehearsal -tAc \
-  "select distinct transaction_id from zz.artifact_event where at > '<resume_boundary_at>'"
+  "select id from zz.event where id > <boundary id> order by id"
 ```
 
-The `post_resume_write_ref` is a **`zz.artifact_event.transaction_id`**, because that is the
-identity one accepted mutation actually has in this schema. `zz.artifact_revision` is keyed
-`(owner_id, artifact_id, revision)` and carries no timestamp of its own.
-
-Then run both live cases:
-
-```bash
-npm run tenant-info -- verify --suite deployment --profile integration --cases restore,cutover
-```
-
-`restore` re-hashes every file the manifest names and then interrogates the restored database:
-security-table row counts, membership foreign keys as data rather than as catalog metadata, a
-usable PAT token hash, and collation-dependent uniqueness on `zz.principal.email` (citext) and
-`zz.team.slug`. `cutover` judges your three observation blocks and then reads the post-resume
-transaction back out of the database itself — because "it survived" is the claim the whole
-rehearsal turns on, and it is not one to take on trust.
+`post_resume_write_ref` is a **`zz.event.id`**. That is the identity one accepted write actually has
+in this schema — every door call, every document write and every close records one — and it is what
+"it survived" can be checked against rather than taken on trust. The `zz.artifact_event` table this
+document used to read it from went with the artifact/search layer in 0.86.0.
 
 ---
 
-## 9. Tear down
+## 8. Tear down
 
 ```bash
 docker rm -f zz-rehearsal-db
-docker volume rm zz-rehearsal-artifacts
 docker network rm zz-rehearsal
 ```
 
-Keep the backup set and the manifest. Delete neither the original history nor any credential
-archive: the spec is explicit that backups and per-team Git survive the rehearsal, and the
-source deployment is still the only place some of this exists.
+Keep the backup set and the manifest. Do not delete the original set: the source deployment is still
+the only place some of this exists.

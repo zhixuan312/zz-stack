@@ -66,10 +66,14 @@ services:
       # default: only register-plugins refuses on an unset value, so an install that never
       # registers a plugin is unaffected.
       - ZZ_CATALOG_OWNER_TEAM=${ZZ_CATALOG_OWNER_TEAM:-}
-    volumes:
-      # /catalog and /skills ship inside the image — see the root Dockerfile.
-      # docker-compose.build.yml mounts the working tree back over them for development.
-      - zz-artifacts:/artifacts            # team/per-user .zz stores
+    # DELIBERATE: no volumes. This service used to mount `zz-artifacts:/artifacts` for the
+    # team/per-user `.zz` stores it wrote documents into. The store is gone (Task I-41): a
+    # document, its revisions and its citations are rows in the database this service is already
+    # given, so the mount was a second home for facts the `pg_dump` carries — and the copy that
+    # went stale the moment a tool wrote a document. /catalog and /skills ship inside the image;
+    # see the root Dockerfile and docker-compose.build.yml, which mounts the working tree back
+    # over them for development. Nothing zz-core writes lives outside the database, so it is
+    # given no volume at all rather than one left mounted for nobody.
     # DELIBERATE: INTERNAL_BIND, never the gateway's bind. zz-core has no authentication of its
     # own and trusts the identity headers it is sent, so published beyond loopback it would
     # answer anyone as anyone. The gateway is the authenticated door; /core/mcp reaches this.
@@ -118,8 +122,13 @@ services:
       # TRUSTED_PEERS on zz-core above.
       - TRUSTED_FORWARD_HOST=${TRUSTED_FORWARD_HOST:-}
     volumes:
+      # The gateway's own durable data: `/data/events-unwritten.jsonl`, the events it could not
+      # write to the database. DELIBERATE: `zz-artifacts` is NOT mounted here any more. The console
+      # read documents and knowledge off that volume; both are `zz.doc` / `zz.doc_revision` /
+      # `zz.knowledge_node` rows in the database this service is already given, so the read-only
+      # mount was a second answer to a question the gateway can ask directly. See deploy/backup.sh,
+      # which stopped backing the volume up with it.
       - cred-data:/data
-      - zz-artifacts:/artifacts:ro    # the console reads documents and knowledge from it
     # The only service that may be published beyond loopback: it authenticates every request
     # itself, and Caddy proxies the public host to it.
     ports: ["${GATEWAY_BIND:-127.0.0.1}:${CRED_PROXY_PORT:-8764}:8000"]
@@ -164,4 +173,3 @@ services:
 volumes:
   cred-data:
   postgres-data-17:
-  zz-artifacts:

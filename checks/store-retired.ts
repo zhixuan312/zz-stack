@@ -16,10 +16,26 @@ const files = execFileSync("git", ["ls-files", "services", "packages", "scripts"
 // The layer is gone, and so is the writer of team git — the same file, which is why they go together.
 assert.ok(!existsSync("services/zz-core/src/persist.ts"), "the store layer is removed");
 
-// Nothing names the store's layout any more.
+// Nothing names the store's layout any more — asserted about CODE, not about prose.
+//
+// DELIBERATE: comments and block comments are stripped before the match. A comment that records
+// what the store was is the opposite of a file that reaches it: `services/zz-core/src/tools/
+// initiative-acts.ts` says the signed text "stays retrievable in `_versions/`", `store-migration.ts`
+// documents the layout it reads out of a RETIREMENT ARCHIVE, and `scripts/rehearse/expect.ts`
+// describes the carry. All of them are history, and deleting the history to make a grep quiet is
+// the one repair this project forbids. The predicate is the one `checks/no-store-namers.ts` already
+// uses for the same claim over the same file set; the two exist because this check is the one the
+// gate registers at this wave, and that one is I-44's own.
+//
+// `scripts/store-migration.ts` is the file that genuinely still touches a store, and it is not a
+// counterexample: it is the CARRY (Task I-38), it reads an archive handed to it by
+// `scripts/rehearse.ts` rather than any live volume, and it is what fills `doc_revision` from the
+// store the deployment no longer mounts. It names `_versions/` in prose only, which is why this
+// assertion passes over it.
+const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 const namers = files.filter((f) => f.endsWith(".ts") && !f.includes("/dist/") &&
-  /\bARTIFACTS_DIR\b|_versions\//.test(readFileSync(f, "utf8")) && !/checks\/store-retired\.ts$/.test(f));
-assert.deepEqual(namers, [], "no file still names the store's root or its version directory");
+  /\bARTIFACTS_DIR\b|_versions\//.test(code(readFileSync(f, "utf8"))));
+assert.deepEqual(namers, [], "no file reaches the store's root or its version directory");
 
 // The backup writes three tarballs and the store's is not among them.
 const backup = readFileSync("deploy/backup.sh", "utf8");

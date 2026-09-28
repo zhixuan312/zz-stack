@@ -121,7 +121,15 @@ export const BWRAP_NAMESPACES = ["--unshare-all", "--share-net", "--die-with-par
  *  `--die-with-parent` so a CLI killed mid-build takes the build with it. */
 export function bwrapArgs(spec: SandboxSpec, cwd: string): string[] {
   assertNoWideningAllow(spec);
-  const args = [...BWRAP_NAMESPACES, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"];
+  const args = [...BWRAP_NAMESPACES, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
+    // A writable /tmp, placed first so the binds below — including a spec that denies or re-allows
+    // a path there — still land on top of it. The root above is read-only and bwrap creates the
+    // mount point of every `--bind` it is given, so a path under a read-only /tmp refuses before the
+    // command starts: "Can't mkdir /tmp/…: Read-only file system". Seatbelt makes no mounts at all,
+    // so macOS — where this was developed — never hit it, and the build's home and tree are both
+    // under /tmp. The writable paths are bound back on top below, so what our code put there stays
+    // visible.
+    "--tmpfs", "/tmp"];
   for (const d of spec.denyRead) args.push(...(d.dir ? ["--tmpfs", d.path] : ["--ro-bind", "/dev/null", d.path]));
   for (const p of spec.allowRead) args.push("--ro-bind", p, p);
   for (const p of spec.writable) args.push("--bind", p, p);

@@ -41,6 +41,16 @@ const HOST_SIGNS: readonly RegExp[] = [
   /\bspawn (node|npm|git|docker) ENOENT\b/,
   /\b(ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET)\b.*registry|registry.*\b(ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET)\b/,
   /npm (ERR!|error) code (ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT)\b/,
+  // A sandbox that will not start is the host's, and it is the one a candidate must never be
+  // blamed for: `detectSandbox` probes the same namespaces a build gets, a host can pass that
+  // probe and still refuse a bind at the build's own paths, and an `invalid` candidate is barred
+  // from ever being proposed again. The sign is bwrap's OWN diagnostics (`bwrap: Can't bind
+  // mount…`, `bwrap: setting up uid map: Permission denied`) or the CLI's refusal — never the
+  // wrapper's `bwrap failed: exited N`, which carries the inner command's status and so is
+  // exactly the sentence a broken patch produces too.
+  /\bbwrap: /,
+  /\bsandbox-exec: /,
+  /no working sandbox/,
 ];
 
 /** The first host sign in `output`, or null when the failure is the patch's to own. */

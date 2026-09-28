@@ -119,6 +119,15 @@ const firstMount = bw.indexOf("--ro-bind");
 assert.deepEqual(bw.slice(0, firstMount), [...sandbox.BWRAP_NAMESPACES], "fresh namespaces (network shared back) before any mount");
 assert.deepEqual(bw.slice(firstMount, firstMount + 3), ["--ro-bind", "/", "/"], "the root goes in read-only first");
 const idx = (...a: string[]) => bw.findIndex((_: string, i: number) => a.every((x, j) => bw[i + j] === x));
+// /tmp is writable, and mounted before any bind that lands on it. bwrap creates the mount point of
+// every `--bind` it is given, so a path under a read-only /tmp refuses before the command starts —
+// "Can't mkdir /tmp/…: Read-only file system" — and the build's home and tree are both under /tmp.
+// Seatbelt makes no mounts, so this is a Linux-only failure a macOS checkout cannot see.
+assert.ok(idx("--tmpfs", "/tmp") > 0, "/tmp is writable inside the sandbox");
+assert.ok(idx("--tmpfs", "/tmp") < idx("--bind", "/private/tmp/clone", "/private/tmp/clone"),
+  "and mounted before the writable paths bound on top of it");
+assert.ok(idx("--tmpfs", "/tmp") < idx("--tmpfs", "/Users/op"),
+  "and before a denied path under it, so a cover still lands on top");
 assert.ok(idx("--tmpfs", "/Users/op") > 0, "a denied directory is covered by an empty tmpfs");
 assert.ok(idx("--ro-bind", "/dev/null", "/etc/zz-token") > 0, "a denied file is covered by /dev/null");
 assert.ok(idx("--tmpfs", "/Users/op") < idx("--ro-bind", "/Users/op/.local/share/npm", "/Users/op/.local/share/npm"),

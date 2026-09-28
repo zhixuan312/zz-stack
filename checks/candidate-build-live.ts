@@ -37,11 +37,17 @@ assert.deepEqual(host.preflightCommands(["npm", "run", "build"], ["npm", "run", 
 assert.deepEqual(host.preflightCommands(["node", "b.mjs"], ["make", "gate"]),
   [["npm", "--version"], ["git", "--version"], ["node", "--version"], ["make", "--version"]]);
 for (const out of ["unknown shorthand flag: 'f' in -f", "Cannot connect to the Docker daemon at unix:///x",
-  "Error: spawn docker ENOENT", "npm error code ENOTFOUND\nnpm error request to https://registry.npmjs.org/x failed"]) {
+  "Error: spawn docker ENOENT", "npm error code ENOTFOUND\nnpm error request to https://registry.npmjs.org/x failed",
+  "bwrap: setting up uid map: Permission denied",
+  "Error: bwrap failed: exited 1 — bwrap: Can't bind mount /home/runner/.npm on /home/runner/.npm: No such file or directory",
+  "candidate-build: no working sandbox (sandbox-exec on macOS, bwrap on Linux) — a candidate's build is its own code and never runs unsandboxed — nothing recorded"]) {
   assert.ok(host.hostFailure(out), `host: ${out}`);
 }
 for (const out of ["error TS2322: Type 'x' is not assignable", "GATE FAILED — 1 of 418 checks", "sh: frob: command not found",
-  "npm error `npm ci` can only install packages when your package.json and package-lock.json are in sync"]) {
+  "npm error `npm ci` can only install packages when your package.json and package-lock.json are in sync",
+  // The wrapper's line alone: `bwrap failed: exited 1` is the inner command's status, so a patch
+  // that fails its own build inside a working sandbox prints exactly this and must keep it.
+  "Error: bwrap failed: exited 1"]) {
   assert.equal(host.hostFailure(out), null, `the patch's own: ${out}`);
 }
 if (!detectSandbox()) {

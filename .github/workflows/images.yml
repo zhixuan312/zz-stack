@@ -50,7 +50,11 @@ concurrency:
 
 jobs:
   images:
-    runs-on: ubuntu-latest
+    # 22.04, not `ubuntu-latest`: the walk builds its candidate inside bwrap, which needs
+    # unprivileged user namespaces, and Ubuntu 24.04 restricts them with an AppArmor rule. On 24.04
+    # bwrap starts for a trivial command and fails for the build's own spec, which is the worst of
+    # both — the gate's sandbox checks take their "available" path and fail.
+    runs-on: ubuntu-22.04
     timeout-minutes: 90
     # Every step runs as if from a developer's checkout, one directory below the console's: the
     # release resolves the console at `../zz-stack-dashboard`.
@@ -105,14 +109,18 @@ jobs:
 
       # The walk records a candidate and then builds it, and a candidate's build is its own code:
       # `npm run candidate-build` exits 2 rather than run it unsandboxed. bubblewrap is that sandbox
-      # on Linux, and Ubuntu 24.04 restricts unprivileged user namespaces with an AppArmor rule
-      # bwrap needs, so the restriction is lifted for this job. Without both lines the walk gets
-      # seven stages in — through IMPROVE's `improvement_start` and `candidate_record` — and stops
-      # at `candidate_validate`.
-      - name: Give the walk a sandbox it can build in
+      # on Linux. Proved here, by the code's own detector, rather than discovered inside the gate:
+      # a host where bwrap exists but cannot start takes the sandbox checks' "available" path and
+      # fails them, where a host with no bwrap at all passes them (they say so and skip the live
+      # half), and a half-configured host is the only one that fails.
+      - name: Install and prove the sandbox the walk builds in
         run: |
-          sudo apt-get install -y -qq bubblewrap
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap
+          node -e "import('./packages/tools/dist/candidate/sandbox.js').then((m) => {
+            const t = m.detectSandbox();
+            if (t !== 'bwrap') { console.error('no working sandbox on this host: ' + t); process.exit(1); }
+            console.log('sandbox: ' + t);
+          })"
 
       # The whole release, minus the host: the gate, both images, the platform started from them,
       # sql-check, the tool-chain walk, the deploy bundle. A failure here is a failure the release

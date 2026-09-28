@@ -49,7 +49,9 @@ declare module "express-serve-static-core" {
 
 /** The browser session cookie's name.
  *
- * COUPLED: signin.ts sets and clears it; the session adapter below reads it. */
+ * COUPLED: `passkey.ts` sets it and clears it (the browser door, and the only one); the session
+ * adapter below reads it. Both sides state the coupling: that file's own header names
+ * `resolveSession` as the adapter half. */
 export const CONSOLE_COOKIE = "zz_console";
 
 /** Read one cookie without a parser dependency.

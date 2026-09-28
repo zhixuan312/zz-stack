@@ -7,6 +7,7 @@
 // the built-in overlap, and the identifier/fingerprint properties the frozen check samples one
 // case of each.
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   passagesOf, identifierTokens, derivationFingerprint,
   PASSAGE_MAX_SCALARS, MAX_INPUT_BYTES, assertWithinInputLimit, InputTooLargeError,
@@ -143,6 +144,17 @@ assert.deepEqual(passagesOf(''), []);
   // Legacy content already larger than the limit is preserved and indexed by import, never
   // refused and never truncated to fit.
   assert.doesNotThrow(() => assertWithinInputLimit(overLimit, { imported: true }));
+
+  // And something CALLS it, which the behaviour above cannot show. `buildRowVector` is the one
+  // function every analyzed byte goes through — a document write, a journal node, a team reindex
+  // and the rederivation pass — so the bound has to be called there, and the state this asserts
+  // against is the one the store retirement left: the guard on the books with the tenant-info
+  // harness that called it deleted, and nothing refusing anything.
+  const builder = readFileSync('packages/indexing/src/tenant-analysis.ts', 'utf8')
+    .slice(readFileSync('packages/indexing/src/tenant-analysis.ts', 'utf8')
+      .indexOf('export function buildRowVector'));
+  assert.ok(/assertWithinInputLimit\(/.test(builder.slice(0, builder.indexOf('fieldTerms'))),
+    'buildRowVector does not enforce the input limit — the gate is exported and nothing calls it');
 }
 
 console.log('tenant-passage-analysis: ok');

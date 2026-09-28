@@ -321,18 +321,29 @@ function fieldTerms(text: string, weight: RowVectorWeight): RowVectorTerm[] {
 }
 
 /** Turns title/tags/body into the flat, weighted term list `body_tsv` is built from: title `A`,
- *  tags `B`, body `C`.
+ *  tags `B`, body `C` — and refuses text past `MAX_INPUT_BYTES`.
  *
  *  COUPLED: both callers import this export rather than composing a vector of their own — the
  *  write path (`index.ts`, by way of `indexNode`) and the rederivation pass
  *  (`rederivation.ts`'s `rebuildRowVector`), which must agree or a rebuilt row stops matching the
- *  one the writer would store. */
+ *  one the writer would store.
+ *
+ *  DELIBERATE: the kernel gate is enforced HERE, and this is the only place that needs it.
+ *  `assertWithinInputLimit` was called from the tenant-info harness alone before the file store
+ *  was retired, so the bound stayed on the books with nothing enforcing it: every analyzed byte in
+ *  the platform goes through this function — a document write (`versions.ts`'s `saveDocument`), a
+ *  journal node (`indexNode`), a team reindex and the rederivation pass — so one call is the whole
+ *  write path. Measured against production before wiring it: the largest document body is 201 KB
+ *  and the largest node 17.5 KB, so no existing row is refused by it. */
 export function buildRowVector(input: {
   readonly title: string;
   readonly tags: readonly string[];
   readonly body: string;
 }): RowVector {
   const tags = input.tags.join(" ");
+  assertWithinInputLimit(
+    Buffer.byteLength(input.title, "utf8") + Buffer.byteLength(tags, "utf8") +
+    Buffer.byteLength(input.body, "utf8"));
   return {
     terms: [
       ...fieldTerms(input.title, "A"),

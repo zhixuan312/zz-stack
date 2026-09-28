@@ -23,9 +23,10 @@
  *
  * COUPLED: `checks/eval-names.ts` reads this description for when/returns/refuses, and
  * `packages/tools/src/testing/chain-eval.ts` probes this tool with an id nothing minted and
- * accepts either the phrase below or a database refusal. `judge-score.ts` (the two axes' own
- * weights and bands) is reached by no caller today for the same reason; its mark-scale check
- * still reads it, and a later phase that scores a round again is where it gets called from.
+ * accepts either the phrase below or a database refusal. The two axes that scored a round —
+ * `effectiveness` and `headroom`, with their bands — left with the round loop: nothing called
+ * them and no check read them, and the note that said otherwise named a phase already decided
+ * against.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { text } from "@zz/mcp-http";

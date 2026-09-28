@@ -5,7 +5,7 @@
  * principal lacks release authority may still proceed through evaluation, diagnosis and
  * isolated proposal generation... It produces an owner-facing proposal with patch/evidence
  * where possible and stops before promotion." Written the SAME way `document_write` writes any
- * document into the initiative store — `chainFor` resolves the flow, `envelopeFor` builds the
+ * document into the initiative's documents — `chainFor` resolves the flow, `envelopeFor` builds the
  * frontmatter, `normalizeSections` renames a near-miss heading, `documentGuards` decides whether
  * the write may land, `saveDocument` lands it — exactly the path `findings-doc.ts`'s own
  * `writeFindingsDoc` and `improvement-doc.ts`'s own `writeImprovementDoc` already take. Nothing

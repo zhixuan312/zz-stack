@@ -1,7 +1,7 @@
 /**
  * `findings.md` (Task I-13, AC-22.1): a measurement output, generated from what `evaluation_score`
  * stored and what `finding_record` has recorded against one `eval_run_id`, and written the SAME
- * way `document_write` writes any document into the initiative store — `chainFor` resolves the
+ * way `document_write` writes any document into the initiative's documents — `chainFor` resolves the
  * flow, `envelopeFor` builds the frontmatter, `normalizeSections` renames a near-miss heading,
  * `documentGuards` decides whether the write may land, `saveDocument` lands it. Nothing here
  * invents a second write path: `artifacts.ts`'s `document_write` is the only place this platform

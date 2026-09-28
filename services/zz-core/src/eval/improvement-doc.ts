@@ -1,7 +1,7 @@
 /**
  * `improvement.md` (Task I-22, FR-48, AC-48.1): the authority-bearing gate a releasable owned
  * candidate crosses before its patch is ever applied. Written by `release_prepare`
- * (`release.ts`) the SAME way `document_write` writes any document into the initiative store, and
+ * (`release.ts`) the SAME way `document_write` writes any document into the initiative's documents, and
  * the same way `findings-doc.ts`'s `writeFindingsDoc` already does it for `findings.md`:
  * `chainFor` resolves the flow, `envelopeFor` builds the frontmatter, `normalizeSections` renames
  * a near-miss heading, `documentGuards` decides whether the write may land, `saveDocument`
@@ -10,8 +10,8 @@
  * Unlike `writeFindingsDoc`, this module takes no database handle — `release_prepare` has
  * already loaded everything the body needs (the candidate and its build, its base subject and
  * that subject's own score, its resolved owners, the protocol's release policy) before calling
- * this, so the document write is pure rendering plus the platform's own file-store side
- * effects, nothing else.
+ * this, so the document write is pure rendering plus the platform's own side effects (the guard,
+ * the envelope and the rows), nothing else.
  *
  * The body MUST quote `patch_digest` verbatim and cite `release_attempt_id` exactly once (the
  * closing line `renderBody` writes) — `release_apply` (`release-apply.ts`) counts an approval only

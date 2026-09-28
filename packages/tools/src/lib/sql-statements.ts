@@ -56,7 +56,7 @@ export function literalEnd(src: string, i: number): number {
 
 /** The end of the regex literal that opens at `i`, or the end of its line for a `/` that turned
  *  out to be division after all. */
-export function regexEnd(src: string, i: number): number {
+function regexEnd(src: string, i: number): number {
   let j = i + 1;
   let inClass = false;
   while (j < src.length) {
@@ -75,7 +75,7 @@ export function regexEnd(src: string, i: number): number {
  *  after an operator, a delimiter or a keyword, never after a name or a closing bracket. Without
  *  this, a check's own `/update zz.eval_run/` regex reads as code, the quotes inside it start a
  *  literal that never closes, and every statement after it is read from the wrong place. */
-export function opensRegex(src: string, i: number): boolean {
+function opensRegex(src: string, i: number): boolean {
   let k = i - 1;
   while (k >= 0 && /\s/.test(src[k])) k--;
   if (k < 0) return true;
@@ -124,9 +124,15 @@ export function regions(src: string): Region[] {
 
 export interface Statement { path: string; line: number; sql: string }
 
-/** One statement per string or template literal, adjacent literals a `+` joins read as one. */
-export function statementsOf(path: string, src: string): Statement[] {
+/** One statement per string or template literal, adjacent literals a `+` joins read as one.
+ *
+ *  `unquoted` drops each literal's own delimiters as it joins them, so the text handed back is the
+ *  SQL itself: a statement assembled from four literals arrives as one readable statement rather
+ *  than as five quoted fragments. A caller that reads the text as SQL wants that; one that reports
+ *  the source it came from does not. */
+export function statementsOf(path: string, src: string, unquoted = false): Statement[] {
   const lines = (at: number): number => src.slice(0, at).split("\n").length;
+  const body = (r: Region): string => unquoted ? src.slice(r.start + 1, r.end - 1) : src.slice(r.start, r.end);
   if (path.endsWith(".sh")) {
     return src.split("\n").flatMap((text, i) => {
       const sql = text.replace(/(^|\s)#.*$/, "");
@@ -143,7 +149,7 @@ export function statementsOf(path: string, src: string): Statement[] {
       const next = rs[i + 1];
       const plus = next?.kind === "code" && src.slice(next.start, next.end).trim() === "+";
       if (start < 0) { start = r.start; text = ""; }
-      text += src.slice(r.start, r.end);
+      text += body(r);
       if (plus) continue;
       out.push({ path, line: lines(start), sql: text });
       start = -1;
@@ -155,7 +161,7 @@ export function statementsOf(path: string, src: string): Statement[] {
 /** Where a declaration of `name` ends: its balanced block, or the statement before the `;` for a
  *  declaration whose value is a single literal. Braces are counted in code only, and only once the
  *  parameter list has closed, so a destructured parameter does not end the body early. */
-export function declarationEnd(src: string, rs: Region[], from: number): number {
+function declarationEnd(src: string, rs: Region[], from: number): number {
   let depth = 0;
   let paren = 0;
   let opened = false;
@@ -174,7 +180,7 @@ export function declarationEnd(src: string, rs: Region[], from: number): number 
 }
 
 /** Every string or template literal a file's declaration of `name` returns, unquoted. */
-export function literalsOf(src: string, rs: Region[], name: string): string[] {
+function literalsOf(src: string, rs: Region[], name: string): string[] {
   const decl = new RegExp(`\\b(?:function|const|let|var)\\s+${name}\\b`).exec(src);
   if (!decl) return [];
   const insideCode = rs.some((r) => r.kind === "code" && r.start <= decl.index && decl.index < r.end);
@@ -184,7 +190,7 @@ export function literalsOf(src: string, rs: Region[], name: string): string[] {
            .map((r) => src.slice(r.start + 1, r.end - 1));
 }
 
-export const FOLD_DEPTH = 3;
+const FOLD_DEPTH = 3;
 
 /** A callee's home, resolved by the caller: a check that folds an interpolated `select…()` has its
  *  own idea of where that function is declared (this file, then the module it was imported from),
@@ -226,16 +232,21 @@ const STOP = new Set([
 
 interface Binding { table: string; alias: string | null }
 
+/** The verbs that open a statement. A caller that reads one statement's own text can be strict
+ *  (`select|insert|update|delete|with`); one that reads a fragment inside a larger expression has to
+ *  accept `from`, `join` and `exists` too, or it reports those as prose. */
+const OPENING_VERBS = /^(select|insert|update|delete|with|from|join|exists)\b/i;
+
 /** Whether the text opens a statement at all, once leading whitespace, an opening bracket and a
  *  `${…}` interpolation are stripped. A literal that is only a fragment is not a statement. */
-export function opensStatement(sql: string): boolean {
+export function opensStatement(sql: string, verbs: RegExp = OPENING_VERBS): boolean {
   let t = sql;
   for (;;) {
     const before = t;
     t = t.replace(/^\s+/, "").replace(/^[`"'(?]/, "").replace(/^\$\{[^}]*\}/, "");
     if (t === before) break;
   }
-  return /^(select|insert|update|delete|with|from|join|exists)\b/i.test(t);
+  return verbs.test(t);
 }
 
 /** Every table a statement reads or writes, and the alias it binds it to. */

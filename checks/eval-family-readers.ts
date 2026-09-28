@@ -64,13 +64,32 @@
  *
  *   A mutation spec quotes a statement in order to plant a defect in it.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 /** The trees that write to a database — the same four `checks/catalog-eval-columns.ts` scans. */
 const ROOTS = ["services", "packages", "scripts", "deploy"];
-const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
+// The statement reader, once — `packages/tools/src/lib/sql-statements.ts`. This check carried its own
+// copy of it, byte for byte with four others.
+const { sourceFiles, regions, statementsOf, opensStatement, foldInterpolations, bindings,
+        cteNames, bareMention } =
+  await import(pathToFileURL(join(process.cwd(), "packages/tools/dist/lib/sql-statements.js")).href);
+
+/** Which files this check reads — its own policy, which is why the reader takes it as a predicate. */
+const KEEP = (p: string): boolean => /\.(ts|sh)$/.test(p) && !isMutationSpec(p) && !isAppliedMigration(p);
+
+/** Where an interpolated callee is declared: this file, or the module it was imported from. */
+type Region = { kind: "code" | "literal" | "comment"; start: number; end: number };
+type Statement = { path: string; line: number; sql: string };
+const HOME = (callee: string, fromPath: string, fromSrc: string): { src: string; rs: Region[] } | null => {
+  const spec = importsOf(fromSrc).get(callee);
+  if (!spec || !spec.startsWith(".")) return null;
+  const target = join(dirname(fromPath), spec.replace(/\.js$/, ".ts"));
+  if (!existsSync(target)) return null;
+  const home = readFileSync(target, "utf8");
+  return { src: home, rs: regions(home) };
+};
 /** The tree the evaluation family's own readers live in — the half of the live pass that is
  *  EXECUTED. Every module that reads `zz.eval_*`, `zz.plugin_version`, `zz.plugin_release_owner`,
  *  `zz.candidate`, `zz.improvement_run` or `zz.release_attempt` is a file under it, and a
@@ -93,180 +112,10 @@ const FAMILY = new Set([
   "plugin_version_skill", "candidate", "improvement_run", "release_attempt",
 ]);
 
-interface Source { path: string; src: string }
-
-function sources(dir: string, out: Source[] = []): Source[] {
-  for (const name of readdirSync(dir)) {
-    if (SKIP_DIRS.has(name)) continue;
-    const p = join(dir, name);
-    if (statSync(p).isDirectory()) { sources(p, out); continue; }
-    if (!/\.(ts|sh)$/.test(name) || isMutationSpec(p) || isAppliedMigration(p)) continue;
-    out.push({ path: p, src: readFileSync(p, "utf8") });
-  }
-  return out;
-}
-
-// -------------------------------------------------------------------------------------------
-// The scanner — the shape `checks/catalog-eval-columns.ts:110-260` reads statements with.
-
-function literalEnd(src: string, i: number): number {
-  const q = src[i];
-  let j = i + 1;
-  while (j < src.length) {
-    if (src[j] === "\\") { j += 2; continue; }
-    if (src[j] === q) return j + 1;
-    j++;
-  }
-  return src.length;
-}
-
-function regexEnd(src: string, i: number): number {
-  let j = i + 1;
-  let inClass = false;
-  while (j < src.length) {
-    const c = src[j];
-    if (c === "\\") { j += 2; continue; }
-    if (c === "[") inClass = true;
-    else if (c === "]") inClass = false;
-    else if (c === "/" && !inClass) return j + 1;
-    else if (c === "\n") return j;
-    j++;
-  }
-  return src.length;
-}
-
-function opensRegex(src: string, i: number): boolean {
-  let k = i - 1;
-  while (k >= 0 && /\s/.test(src[k])) k--;
-  if (k < 0) return true;
-  if ("(,=:[!&|?{};+-*%~^<>".includes(src[k])) return true;
-  const word = /([A-Za-z_$][\w$]*)$/.exec(src.slice(0, k + 1))?.[1];
-  return word !== undefined &&
-    /^(return|typeof|case|in|of|do|else|yield|await|delete|void|instanceof|new)$/.test(word);
-}
-
-interface Region { kind: "code" | "literal" | "comment"; start: number; end: number }
-
-function regions(src: string): Region[] {
-  const out: Region[] = [];
-  const push = (kind: Region["kind"], start: number, end: number): void => {
-    const last = out[out.length - 1];
-    if (last && last.kind === kind && last.end === start) last.end = end;
-    else out.push({ kind, start, end });
-  };
-  let i = 0;
-  while (i < src.length) {
-    const c = src[i];
-    if (c === "/" && src[i + 1] === "/") {
-      const nl = src.indexOf("\n", i);
-      const end = nl < 0 ? src.length : nl;
-      push("comment", i, end); i = end;
-    } else if (c === "/" && src[i + 1] === "*") {
-      const nl = src.indexOf("*/", i + 2);
-      const end = nl < 0 ? src.length : nl + 2;
-      push("comment", i, end); i = end;
-    } else if (c === "/" && opensRegex(src, i)) {
-      const end = regexEnd(src, i);
-      push("code", i, end); i = end;
-    } else if (c === '"' || c === "'" || c === "`") {
-      const end = literalEnd(src, i);
-      push("literal", i, end); i = end;
-    } else {
-      let end = i + 1;
-      while (end < src.length && !"\"'`/".includes(src[end])) end++;
-      push("code", i, end); i = end;
-    }
-  }
-  return out;
-}
-
-interface Statement { path: string; line: number; sql: string }
-
-/** One statement per string or template literal, adjacent literals a `+` joins read as one.
- *
- *  `unquoted` drops each literal's own delimiters as it joins them, so the text handed back is
- *  the SQL itself: a statement assembled from four literals arrives as one readable statement
- *  rather than as five quoted fragments, which is what the database has to be given. */
-function statementsOf(path: string, src: string, unquoted = false): Statement[] {
-  const lines = (at: number): number => src.slice(0, at).split("\n").length;
-  const body = (r: Region): string => unquoted ? src.slice(r.start + 1, r.end - 1) : src.slice(r.start, r.end);
-  if (path.endsWith(".sh")) {
-    return src.split("\n").flatMap((text, i) => {
-      const sql = text.replace(/(^|\s)#.*$/, "");
-      return sql.trim().length > 0 ? [{ path, line: i + 1, sql }] : [];
-    });
-  }
-  const out: Statement[] = [];
-  const rs = regions(src);
-  let start = -1;
-  let text = "";
-  for (let i = 0; i < rs.length; i++) {
-    const r = rs[i];
-    if (r.kind === "literal") {
-      const next = rs[i + 1];
-      const plus = next?.kind === "code" && src.slice(next.start, next.end).trim() === "+";
-      if (start < 0) { start = r.start; text = ""; }
-      text += body(r);
-      if (plus) continue;
-      out.push({ path, line: lines(start), sql: text });
-      start = -1;
-    }
-  }
-  return out;
-}
 
 const withoutSqlComments = (sql: string): string => sql.replace(/--[^\n]*/g, "");
 
-const VERBS = /^(select|insert|update|delete|with)\b/i;
-const ANY_VERB = /^(select|insert|update|delete|with|from|join|exists)\b/i;
-
-function opensStatement(sql: string, verbs: RegExp): boolean {
-  let t = sql;
-  for (;;) {
-    const before = t;
-    t = t.replace(/^\s+/, "").replace(/^[`"'(?]/, "").replace(/^\$\{[^}]*\}/, "");
-    if (t === before) break;
-  }
-  return verbs.test(t);
-}
-
-const STOP = new Set([
-  "where", "group", "order", "limit", "offset", "having", "union", "join", "left", "right",
-  "inner", "outer", "full", "cross", "on", "using", "set", "values", "returning", "and", "or",
-  "as", "select", "from", "natural", "window", "fetch", "for", "lateral", "only", "with",
-  "distinct", "filter", "when",
-]);
-
 const canonical = (table: string): string => table.replace(/^zz\./i, "").toLowerCase();
-
-interface Binding { table: string; alias: string | null }
-
-function bindings(sql: string): Binding[] {
-  const out: Binding[] = [];
-  const alias = (name: string | undefined): string | null => {
-    const n = (name ?? "").toLowerCase();
-    return n.length === 0 || STOP.has(n) ? null : n;
-  };
-  const patterns = [
-    /\binsert\s+into\s+((?:zz\.)?[a-z_]\w*)(?:\s+(?:as\s+)?([a-z_]\w*))?/gi,
-    /\bupdate\s+((?:zz\.)?[a-z_]\w*)(?:\s+(?:as\s+)?([a-z_]\w*))?\s+set\b/gi,
-    /\b(?:from|join)\s+((?:zz\.)?[a-z_]\w*)(?:\s+(?:as\s+)?([a-z_]\w*))?/gi,
-  ];
-  for (const re of patterns) {
-    for (const m of sql.matchAll(re)) out.push({ table: m[1], alias: alias(m[2]) });
-  }
-  return out;
-}
-
-function cteNames(sql: string): Set<string> {
-  const out = new Set<string>();
-  for (const m of sql.matchAll(/(?:\bwith\b|,)\s*([a-z_]\w*)\s*(?:\([^)]*\)\s*)?as\s*\(/gi)) {
-    out.add(m[1].toLowerCase());
-  }
-  return out;
-}
-
-const FOLD_DEPTH = 3;
 
 function importsOf(src: string): Map<string, string> {
   const out = new Map<string, string>();
@@ -279,100 +128,6 @@ function importsOf(src: string): Map<string, string> {
   return out;
 }
 
-function declarationEnd(src: string, rs: Region[], from: number): number {
-  let depth = 0;
-  let paren = 0;
-  let opened = false;
-  for (const r of rs) {
-    if (r.end <= from || r.kind !== "code") continue;
-    for (let k = Math.max(r.start, from); k < r.end; k++) {
-      const c = src[k];
-      if (c === "(") paren++;
-      else if (c === ")") paren--;
-      else if (c === "{" && paren === 0) { depth++; opened = true; }
-      else if (c === "}") { depth--; if (opened && depth <= 0) return k + 1; }
-      else if (c === ";" && !opened && depth === 0) return k + 1;
-    }
-  }
-  return src.length;
-}
-
-function literalsOf(src: string, rs: Region[], name: string): string[] {
-  const decl = new RegExp(`\\b(?:function|const|let|var)\\s+${name}\\b`).exec(src);
-  if (!decl) return [];
-  const insideCode = rs.some((r) => r.kind === "code" && r.start <= decl.index && decl.index < r.end);
-  if (!insideCode) return [];
-  const end = declarationEnd(src, rs, decl.index + decl[0].length);
-  return rs.filter((r) => r.kind === "literal" && r.start > decl.index && r.start < end)
-           .map((r) => src.slice(r.start + 1, r.end - 1));
-}
-
-/** The statement with every `${…}` it interpolates replaced by what that name returns — a call
- *  (`${clause(x)}`) or a bare const holding a fragment (`${STORED_ANSWERS_SQL}`). A name whose
- *  declaration is not itself literal text has nothing to substitute and is left alone, so a
- *  value known only at runtime is never guessed at. */
-function foldInterpolations(sql: string, src: string, rs: Region[], path: string,
-                            depth = FOLD_DEPTH, seen = new Set<string>()): string {
-  if (depth <= 0) return sql;
-  return sql.replace(/\$\{(\w+)(?:\([^)]*\))?\}/g, (whole, callee: string) => {
-    if (seen.has(callee)) return whole;
-    let texts = literalsOf(src, rs, callee);
-    let home = src;
-    let homeRs = rs;
-    if (!texts.length) {
-      const spec = importsOf(src).get(callee);
-      if (!spec || !spec.startsWith(".")) return whole;
-      const target = join(dirname(path), spec.replace(/\.js$/, ".ts"));
-      if (!existsSync(target)) return whole;
-      home = readFileSync(target, "utf8");
-      homeRs = regions(home);
-      texts = literalsOf(home, homeRs, callee);
-    }
-    if (!texts.length) return whole;
-    const next = new Set(seen).add(callee);
-    return " " + texts.map((t) => foldInterpolations(t, home, homeRs, path, depth - 1, next)).join(" ");
-  });
-}
-
-/** Whether the statement names `column` bare — not after a `.` that qualifies it, not inside a
- *  quoted literal, and not as the output alias of the expression before it. */
-function bareMention(sql: string, column: string): boolean {
-  const re = new RegExp(`(?<![.\\w'":])${column}\\b`, "gi");
-  for (const m of sql.matchAll(re)) {
-    if (/\bas\s+$/i.test(sql.slice(0, m.index))) continue;
-    return true;
-  }
-  return false;
-}
-
-// The names the phase-3 migration retires, declared here rather than read from a file.
-
-/** Every table the phase dropped whole, and every column it dropped from a table that survives —
- * keyed by the table's name with `zz.` stripped, because that is the name a statement binds.
- *
- * READ OFF A FILE THAT IS GONE, SO FROZEN. This was taken from `002_catalog_evaluation.sql`'s own
- * `drop table`, `drop column` and `rename column` statements while that file was pending, and the
- * file folded back into `001_init.sql` once release 0.84.0 was verified in production.
- * `001_init.sql` drops nothing — it declares the shape the phase left — so a reader that went on
- * parsing it would find an empty list and report every statement clean without reading one.
- *
- * SCOPED TO THIS CHECK, NOT THE RECORD OF WHAT PHASES RETIRE. What is here is what the statements
- * this check scans can name: the evaluation family, the catalog names they bind, and the telemetry
- * and artifact tables those columns also live on. `checks/dropped-columns.ts` keeps the wider
- * record, phase by phase, and it is the file a later phase extends; the two overlap for phase 3's
- * columns by construction — both say what one migration retired — and the overlap is left standing
- * rather than reconciled, so neither file is the place the other's list has to be read from.
- *
- * IF A LATER PHASE RETIRES NAMES UNDER THE TREES THIS CHECK READS, THIS LIST MUST BE EXTENDED WITH
- * THEM. Nothing derives it any more, so a phase that does not extend it leaves this check scanning
- * a smaller past than the schema has, and reporting it green.
- *
- * A name the phase dropped and then put back is NOT retired: `observable_surfaces` was dropped
- * only so it could be re-added as a `text[]` under a scratch name and renamed into place, and the
- * readers of it are correct — which is why `observable_surfaces` is absent here and its scratch
- * name `observable_surfaces_text` is not. `SCHEMA_TARGET` is still the shape the phase LEAVES, and
- * `checks/schema-inventory.ts` is what holds `001_init.sql` to it.
- */
 const RETIRED_TABLES = new Set<string>([
   "eval", "eval_evaluator", "eval_evidence_snapshot", "eval_failure_mode_candidate",
   "eval_protocol", "eval_score", "eval_subject", "eval_subject_version", "rubric",
@@ -450,6 +205,11 @@ const CARRIED_BEFORE = new Map<string, string[]>([
 // The two halves.
 
 const root = process.cwd();
+/** This check's own verb sets: `VERBS` for a statement read on its own, `ANY_VERB` for a fragment
+ *  inside a larger expression, where `from`, `join` and `exists` open one just as surely. */
+const VERBS = /^(select|insert|update|delete|with)\b/i;
+const ANY_VERB = /^(select|insert|update|delete|with|from|join|exists)\b/i;
+
 const fail: string[] = [];
 
 // The retired-name record is declared data now, so nothing in the tree proves it is still there —
@@ -509,11 +269,11 @@ const withoutParameters = (sql: string): string => sql.trim().replace(/\$\d+/g, 
 interface Planned { path: string; line: number }
 
 function statementsUnder(): Statement[] {
-  return ROOTS.flatMap((r) => sources(r)).flatMap(({ path, src }) => {
+  return ROOTS.flatMap((r) => sourceFiles(r, KEEP)).flatMap(({ path, src }) => {
     const rs = regions(src);
-    return statementsOf(path, src, true).map((s) => ({
+    return statementsOf(path, src, true).map((s: Statement) => ({
       ...s,
-      sql: withoutSqlComments(foldInterpolations(s.sql, src, rs, s.path)),
+      sql: withoutSqlComments(foldInterpolations(s.sql, src, rs, s.path, HOME)),
     }));
   });
 }
@@ -525,7 +285,8 @@ function familyStatements(all: Statement[]): { statically: { s: Statement; bound
   const statically: { s: Statement; bound: string[] }[] = [];
   const unreadable: Statement[] = [];
   for (const s of all) {
-    const bound = [...new Set(bindings(s.sql).map((b) => canonical(b.table)))];
+    const rows: { table: string; alias: string | null }[] = bindings(s.sql);
+    const bound = [...new Set(rows.map((b) => canonical(b.table)))];
     const mentionsFamily = bound.some((t) => FAMILY.has(t))
       || [...s.sql.matchAll(/\bzz\.([a-z_]\w*)\b/gi)].some((m) => FAMILY.has(m[1].toLowerCase()));
     if (!mentionsFamily) continue;
@@ -558,7 +319,7 @@ async function main(): Promise<void> {
   // The reader tree, every literal, prose included. A tool description or a failure message that
   // tells its reader about a table this phase drops is wrong in the message too — and for
   // `round_scores`, which issues no statement at all, this is the only way it can be reached.
-  for (const { path, src } of sources(READERS)) {
+  for (const { path, src } of sourceFiles(READERS, KEEP)) {
     for (const r of regions(src)) {
       if (r.kind !== "literal") continue;
       const line = src.slice(0, r.start).split("\n").length;

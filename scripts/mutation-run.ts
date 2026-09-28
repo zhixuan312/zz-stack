@@ -3,9 +3,14 @@
  * mutation-run.ts — plant a defect in what each gate check examines, and record whether the
  * check noticed.
  *
- *   node scripts/mutation-run.ts                       # every declared check
+ *   node scripts/mutation-run.ts --workers 8             # every declared check, fastest
+ *   node scripts/mutation-run.ts                       # every declared check, one worker
  *   node scripts/mutation-run.ts --only scripts/gate/checks/hygiene.ts
  *   node scripts/mutation-run.ts --work /tmp/zz-mut --keep
+ *
+ * `--workers N` is the fast path and the default is ONE, so the plain form is ~368 gate runs one
+ * after another. Each worker is this same runner in a checkout of its own (`mutation/parallel.ts`),
+ * which is why N of them are safe where two gates in one tree are not.
  *
  * It writes `testing/mutation-report.json`: per row, whether the defect landed and whether the
  * check went red. Run on demand, when a check's strength is in question; the gate does not read

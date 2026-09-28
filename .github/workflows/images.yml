@@ -76,6 +76,13 @@ jobs:
 
       - run: npm ci
 
+      # The release's first act is the gate, and the gate's checks import the workspace packages'
+      # built output — `@zz/indexing/dist/index.js` and its siblings — which a fresh checkout does
+      # not have. The same `tsc -b` gate.yml runs before its own gate, and it was the one step this
+      # workflow was missing: the first verify run died at "1 · gate" with ERR_MODULE_NOT_FOUND.
+      - name: Build the workspace the gate reads
+        run: npx tsc -b
+
       # The whole release, minus the host: the gate, both images, the platform started from them,
       # sql-check, the tool-chain walk, the deploy bundle. A failure here is a failure the release
       # would have hit, found before anything is pushed.

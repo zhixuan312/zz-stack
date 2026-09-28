@@ -232,9 +232,13 @@ export const Envelope = z.object({
    *  DELIBERATE: no code reads it. It is for a person reading the document's own history in
    *  the team's store. */
   revision_note: z.string().optional(),
-  /** The initiatives a journal node was learned from, written by knowledge_add.
-   *  COUPLED: indexDoc puts it in zz.doc.evidence and knowledge_search expands the graph along
-   *  it, so a flow claiming this name would land in the knowledge graph's edges. */
+  /** What a claim rests on, as the document itself declares it.
+   *
+   *  DELIBERATE: the NAME is shared with `knowledge_add`'s `evidence` argument, which is a
+   *  different fact — the initiative folders a journal node was learned from, recorded as
+   *  `zz.knowledge_node_evidence` rows, which is the graph `knowledge_search` expands along and
+   *  the one that refuses a node with no evidence at all. A DOCUMENT's `evidence` is a key of its
+   *  revision's payload and rides in no column, so a flow claiming this name lands there. */
   evidence: z.string().optional(),
   /** The journal node that replaced this one, written by knowledge_supersede.
    *  DELIBERATE: camelCase where every other field is snake_case. It is the name already on

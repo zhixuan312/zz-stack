@@ -128,7 +128,8 @@ export function registerKnowledgeSearch(server: McpServer): void {
 
       /* The pool is candidate-bounded, not corpus-bounded: the row count a query materialises
        * grows with how many documents could plausibly matter, not with the knowledge base.
-       * Ordered by ts_rank_cd — cover density — over the A/B/C weighting indexDoc applies. */
+       * Ordered by ts_rank_cd — cover density — over the A/B/C weighting `buildRowVector`
+       * (packages/indexing) applies when it builds the vector this ranks. */
       // Used by the tag and neighbour lanes below, which each build their own `cond`/`args`
       // around it. The query lane does not: `buildSearchPredicate` carries team scope and every
       // one of these filters itself.

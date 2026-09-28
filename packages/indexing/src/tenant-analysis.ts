@@ -323,8 +323,10 @@ function fieldTerms(text: string, weight: RowVectorWeight): RowVectorTerm[] {
 /** Turns title/tags/body into the flat, weighted term list `body_tsv` is built from: title `A`,
  *  tags `B`, body `C`.
  *
- *  COUPLED: the write path (`indexDoc` in `index.ts`) and the rederivation pass
- *  (`rebuildRowVector` in `tenant-rebuild.ts`) both import this export. */
+ *  COUPLED: both callers import this export rather than composing a vector of their own — the
+ *  write path (`index.ts`, by way of `indexNode`) and the rederivation pass
+ *  (`rederivation.ts`'s `rebuildRowVector`), which must agree or a rebuilt row stops matching the
+ *  one the writer would store. */
 export function buildRowVector(input: {
   readonly title: string;
   readonly tags: readonly string[];

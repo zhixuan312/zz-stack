@@ -12,11 +12,12 @@
  * `protocol_affirm` binds a person's approval of `protocol.md` to the exact version they read.
  *
  * `protocol_affirm`'s binding mechanism, decided by this task (the plan states only the tool's
- * shape, not how a document's approval reaches this door): `protocol.md` lives in the artifact
- * store the same way `rulers.md` did — `<initiative>/protocol.md` under the caller's own team,
- * read straight off disk the way `subject-ref.ts`'s `bodyOf` reads a judged document, because
- * `document_approve` writes synchronously and the search index (`zz.doc`) is updated through a
- * fire-and-forget `indexDoc` call that can still be stale in the same turn. Binding an
+ * shape, not how a document's approval reaches this door): `protocol.md` is a governed document
+ * like any other — `<initiative>/protocol.md` under the caller's own team, read from
+ * `zz.doc`/`zz.doc_revision` the way `subject-ref.ts` reads a judged document, so the bytes this
+ * binds are the ones the current revision holds. (It was read off disk while the store was files,
+ * and the contrast that paragraph drew — a row lagging a fire-and-forget index — is gone with the
+ * index: the row IS the record now.) Binding an
  * `initiative` was not in the plan's own signature — added here because there is no other way to
  * locate a team-scoped document from a bare `protocol_version_id`, stated in this file's own
  * tool description. "At the same digest" (the contract's own words) is checked by requiring the
@@ -26,8 +27,8 @@
  * The affirmation names the document, not its path: `approved_doc_id` is a row of `zz.doc` (the
  * phase-3 shape `eval_protocol_version` takes), and the three affirmation fields fill together,
  * once — a version's payload and its affirmation are both written once and there is no path that
- * moves either again (FR-6's `recorded -> affirmed`). The same fire-and-forget index is why the
- * document row is required rather than assumed: a file whose row has not been indexed yet is
+ * moves either again (FR-6's `recorded -> affirmed`). The document row itself is required rather
+ * than assumed: a protocol.md that no row carries is
  * refused with that cause named, never written as a claim with nothing behind it.
  *
  * `writeBranchFacts` (Task I-27, FR-52, FR-58) is this file's third export: the one writer of
@@ -42,10 +43,9 @@
  * the rows' name and mechanical write (`factsFor`/`writeFacts`); this function owns the
  * one rule that write must obey — a fact already set refuses a different value, forever — and
  * mirrors every set fact into `zz.initiative_fact` (001) so the console, which
- * reads `zz.doc` alone, can compute the same `documentApplies` answer. The mirror is written
- * the moment the file is, not fire-and-forget like `indexDoc`'s search vector: a stale search
- * result is merely slow to find, but a stale console stepper is a wrong answer about whether an
- * initiative may close.
+ * reads the rows alone, can compute the same `documentApplies` answer. The mirror is written in
+ * the same call as the fact, never left to a later pass: a stale console stepper is a wrong
+ * answer about whether an initiative may close.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { EvaluationProtocol, parseCaller } from "@zz/contracts";

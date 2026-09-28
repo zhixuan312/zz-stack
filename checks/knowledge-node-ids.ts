@@ -29,13 +29,15 @@ for (const f of files) {
 }
 assert.deepEqual(hits, [], "no statement names a column this phase retires");
 
-// Each replacement has a writer, or the reshape is a rename that wrote nothing.
+// Each replacement has a writer, or the reshape is a rename that wrote nothing. The writer is
+// `packages/indexing/src/index.ts` — `indexNode`/`supersedeNode`, the one pair that writes a
+// knowledge node now that `indexDoc` is gone with the file store.
 const indexer = readFileSync("packages/indexing/src/index.ts", "utf8");
 for (const [what, re] of [["team_id", /team_id/], ["node_ordinal", /node_ordinal|nodeOrdinal/],
                           ["slug", /slug/], ["superseded_by_id", /superseded_by_id|supersededById/]] as const) {
-  assert.ok(re.test(indexer), `indexDoc writes ${what}`);
+  assert.ok(re.test(indexer), `the node writer names ${what}`);
 }
-assert.ok(/knowledge_node_evidence/.test(indexer), "indexDoc writes the evidence relation");
+assert.ok(/knowledge_node_evidence/.test(indexer), "the node writer writes the evidence relation");
 assert.ok(/knowledge_node_evidence/.test(readFileSync("services/zz-core/src/tools/knowledge-search.ts", "utf8")),
   "the neighbour lane reads it");
 

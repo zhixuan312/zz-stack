@@ -430,3 +430,16 @@ const ENV_READ = /process\.env\.([A-Z][A-Z_0-9]*)|envRequired\(\s*"([A-Z][A-Z_0-
 export function envNamesIn(text: string): string[] {
   return [...text.matchAll(ENV_READ)].map((m) => m[1] ?? m[2]);
 }
+
+/** A caught value is never typed as an Error — narrow the shape actually being read rather than
+ *  assume it. `unknown?.message` narrows to `{}`, which has no properties at all.
+ *
+ *  One implementation for the gate, the checks and the doctor: fourteen copies of this function
+ *  lived across those trees, byte for byte, until they were all pointed here. */
+export function errMessage(err: unknown): string {
+  if (err && typeof err === "object" && "message" in err) {
+    const m = (err as Record<string, unknown>).message;
+    if (m !== undefined && m !== null) return String(m);
+  }
+  return String(err);
+}

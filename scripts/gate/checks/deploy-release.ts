@@ -11,16 +11,8 @@ import { join } from "node:path";
 import { between, doctorSource, firstOf, functionBody, releaseSource, root, withoutComments } from "../read.ts";
 import { check } from "../run.ts";
 import { ourDocs } from "../facts.ts";
+import { errMessage } from "../read.ts";
 
-/** A caught value is never typed as an Error — narrow the shape actually being read rather
- *  than assume it. `unknown?.message` narrows to `{}`, which has no properties at all. */
-function errMessage(err: unknown): string {
-  if (err && typeof err === "object" && "message" in err) {
-    const m = (err as Record<string, unknown>).message;
-    if (m !== undefined && m !== null) return String(m);
-  }
-  return String(err);
-}
 
 /* The doctor and the release read one list of probes: verify.ts selects layers and defines no
  * probe of its own. A probe defined only in the release path runs during a release and at no

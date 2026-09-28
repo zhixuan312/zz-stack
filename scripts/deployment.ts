@@ -153,19 +153,6 @@ export const initFrame = (who: string): string =>
  *  its message, and a failure message is what somebody pastes into an issue. */
 export const redact = (m: unknown): string => String(m).replace(/zzp_[A-Za-z0-9]+/g, "zzp_<redacted>");
 
-/** A caught value is never typed as an Error — narrow the shape being read rather than
- *  assume it. `unknown?.message` narrows to `{}`, which has no properties at all.
- *
- *  COUPLED: every file under checks/ carries its own copy, because a check runs standalone
- *  with no import from the tree it checks. This is the one copy for scripts/. */
-export function errMessage(err: unknown): string {
-  if (err && typeof err === "object" && "message" in err) {
-    const m = (err as Record<string, unknown>).message;
-    if (m !== undefined && m !== null) return String(m);
-  }
-  return String(err);
-}
-
 /** A thrown value from execFileSync, narrowed to the fields callers here read. Node raises a
  *  bare Error decorated with the child's captured output and exports no type for that shape. */
 interface ExecError {

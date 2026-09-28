@@ -18,7 +18,8 @@
  * the doctor's own bug. Anything else thrown is `unknown` too, tagged as the environment. Only
  * a probe that returns a description of a disagreement is `wrong`.
  */
-import { errMessage, log, redact } from "../deployment.ts";
+import { log, redact } from "../deployment.ts";
+import { errMessage } from "../gate/read.ts";
 
 /** A probe either agrees (returns `null`) or names how the two sides disagree. `ctx` is
  *  whatever `diagnose()` was called with — no probe reads it today, but the signature is the

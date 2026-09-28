@@ -32,7 +32,8 @@ import "./doctor/layers/doors.ts";
 import "./doctor/layers/contract.ts";
 import "./doctor/layers/data.ts";
 
-import { HOST, errMessage } from "./deployment.ts";
+import { HOST } from "./deployment.ts";
+import { errMessage } from "./gate/read.ts";
 import { diagnose, findings, layerNames, report } from "./doctor/run.ts";
 import { since } from "./doctor/since.ts";
 

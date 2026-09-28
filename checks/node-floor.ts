@@ -9,13 +9,11 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 import { root } from "../scripts/gate/read.ts";
+import { errMessage } from "../scripts/gate/read.ts";
 
 const WHY = "this repository runs its scripts and checks as native TypeScript, and a Node " +
   "below the floor cannot strip that syntax at all.";
 
-function errMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
 
 let pkg: { engines?: { node?: string } };
 try {

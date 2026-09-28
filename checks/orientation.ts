@@ -24,15 +24,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-/** A caught value is never typed as an Error — narrow the shape actually being read rather
- *  than assume it. `unknown?.message` narrows to `{}`, which has no properties at all. */
-function errMessage(err: unknown): string {
-  if (err && typeof err === "object" && "message" in err) {
-    const m = (err as Record<string, unknown>).message;
-    if (m !== undefined && m !== null) return String(m);
-  }
-  return String(err);
-}
+import { errMessage } from "../scripts/gate/read.ts";
+
 
 /** The SDK types a tool result's `content` as `unknown` — narrow to the one field this check
  *  reads, the first block's `text`, rather than assume the shape. */

@@ -16,15 +16,8 @@ import { join } from "node:path";
 
 import { ENVELOPE_BLOCK, parseEnvelope } from "@zz/contracts";
 
-/** A caught value is never typed as an Error — narrow the shape actually being read rather
- *  than assume it. `unknown?.message` narrows to `{}`, which has no properties at all. */
-function errMessage(err: unknown): string {
-  if (err && typeof err === "object" && "message" in err) {
-    const m = (err as Record<string, unknown>).message;
-    if (m !== undefined && m !== null) return String(m);
-  }
-  return String(err);
-}
+import { errMessage } from "../gate/read.ts";
+
 
 const root = process.argv[2];
 // Every file in zz-core/src, not one path: a probe keyed to the file stampEnvelope lives in

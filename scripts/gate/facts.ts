@@ -15,18 +15,10 @@ import { join } from "node:path";
 
 import { manifestPaths } from "../manifests.ts";
 import { contractsSource, gatewaySource, root, sourceFiles, trackedFiles, zzCoreTools } from "./read.ts";
+import { errMessage } from "./read.ts";
 
 export const MANIFESTS = manifestPaths(root);
 
-/** A caught value is never typed as an Error — narrow the shape actually being read.
- *  `unknown?.message` narrows to `{}`, which has no properties at all. */
-function errMessage(err: unknown): string {
-  if (err && typeof err === "object" && "message" in err) {
-    const m = (err as Record<string, unknown>).message;
-    if (m !== undefined && m !== null) return String(m);
-  }
-  return String(err);
-}
 
 /**
  * The fields the platform stamps, from the contract that names them.

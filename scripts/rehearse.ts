@@ -4,12 +4,7 @@
  * throwaway container, let the real migration runner do exactly what it would do against
  * production, and prove nothing moved that `scripts/rehearse/expect.ts` did not sign off on.
  *
- *   node scripts/rehearse.ts --dump <zz-db-*.sql.gz> [--artifacts <zz-artifacts-*.tar.gz>]
- *
- * `--artifacts` is for a dump taken BEFORE the store was retired (0.87.0): it unpacks that
- * set's `zz-artifacts-*.tar.gz` so a migration that reads a team's file store can be rehearsed
- * against the store it read. No migration needs one today, and a current backup set has no
- * such member — `deploy/backup.sh` writes three tarballs and the store's is not among them.
+ *   node scripts/rehearse.ts --dump <zz-db-*.sql.gz>
  *
  * Report, in order: the restore, the migrations the real runner applied (`initPlatformDb` prints
  * these itself as it runs), the inventory result (`compareWithTarget` against `SCHEMA_TARGET`),
@@ -28,9 +23,7 @@ import { root } from "./deployment.ts";
 import { compareWithTarget } from "./schema/compare.ts";
 import { withThrowawayDb } from "./schema/throwaway.ts";
 import { SCHEMA_TARGET } from "../schema-target.ts";
-import { removeArtifacts, unpackArtifacts } from "./rehearse/artifacts.ts";
 import { diffSnapshots, formatTableReport } from "./rehearse/diff.ts";
-import { MIGRATION_EXPECTATIONS } from "./rehearse/expect.ts";
 import { ALWAYS_LABEL, checkJoins } from "./rehearse/joins.ts";
 import { restoreDump } from "./rehearse/restore.ts";
 import { captureSnapshot, type Snapshot } from "./rehearse/snapshot.ts";
@@ -93,108 +86,86 @@ async function main(): Promise<void> {
 
   const argv = process.argv.slice(2);
   const dumpPath = resolveFlag(argv, "--dump");
-  const artifactsPath = resolveFlag(argv, "--artifacts");
   if (!dumpPath) {
-    console.error("rehearsal REFUSED — usage: node scripts/rehearse.ts --dump <zz-db-*.sql.gz> [--artifacts <zz-artifacts-*.tar.gz>]");
+    console.error("rehearsal REFUSED — usage: node scripts/rehearse.ts --dump <zz-db-*.sql.gz>");
     process.exit(2);
   }
   refuseIfUnreadable(dumpPath, "--dump");
-  if (artifactsPath) refuseIfUnreadable(artifactsPath, "--artifacts");
 
   const startedAt = Date.now();
-  let artifactsDir: string | undefined;
   let before: Snapshot | undefined;
   let pendingMigrations: string[] = [];
 
-  try {
-    if (artifactsPath) {
-      artifactsDir = unpackArtifacts(artifactsPath);
-      console.log(`artifacts: unpacked ${artifactsPath} -> ${artifactsDir}`);
-    }
+  const diffs = await withThrowawayDb(
+    async (client) => {
+      const allDiffs: string[] = [];
 
-    const diffs = await withThrowawayDb(
-      async (client) => {
-        const allDiffs: string[] = [];
+      console.log("");
+      console.log("inventory:");
+      const inventoryDiffs = await compareWithTarget(client);
+      if (inventoryDiffs.length === 0) {
+        console.log(`  schema inventory: ${Object.keys(SCHEMA_TARGET.tables).length} tables match phase ${SCHEMA_TARGET.phase}`);
+      } else {
+        for (const line of inventoryDiffs) console.log(`  ${line}`);
+      }
+      allDiffs.push(...inventoryDiffs);
 
-        console.log("");
-        console.log("inventory:");
-        const inventoryDiffs = await compareWithTarget(client);
-        if (inventoryDiffs.length === 0) {
-          console.log(`  schema inventory: ${Object.keys(SCHEMA_TARGET.tables).length} tables match phase ${SCHEMA_TARGET.phase}`);
-        } else {
-          for (const line of inventoryDiffs) console.log(`  ${line}`);
+      console.log("");
+      console.log("row counts and content hashes (before -> after):");
+      const after = await captureSnapshot(client, pendingMigrations, "after");
+      const { lines, diffs: snapshotDiffs } = diffSnapshots(before ?? {}, after, pendingMigrations);
+      for (const line of formatTableReport(lines)) console.log(line);
+      allDiffs.push(...snapshotDiffs);
+
+      console.log("");
+      console.log("key joins:");
+      const { lines: joinLines, diffs: joinDiffs } = await checkJoins(client, pendingMigrations);
+      if (joinLines.length === 0) {
+        console.log("  none declared — which is itself a disagreement, since the always-run set is never empty");
+      } else {
+        // The always-run invariants first: they hold of any correct store, and a reader looking
+        // for "is this deployment sound" should not have to find them among a migration's own.
+        const order = [...joinLines].sort((a, b) =>
+          (b.migration === ALWAYS_LABEL ? 1 : 0) - (a.migration === ALWAYS_LABEL ? 1 : 0));
+        for (const j of order) {
+          console.log(`  ${j.name} (${j.migration === ALWAYS_LABEL ? "every rehearsal" : `from ${j.migration}`}): ${j.violating} violating row(s)`);
         }
-        allDiffs.push(...inventoryDiffs);
+      }
+      allDiffs.push(...joinDiffs);
 
-        console.log("");
-        console.log("row counts and content hashes (before -> after):");
-        const after = await captureSnapshot(client, pendingMigrations, "after");
-        const { lines, diffs: snapshotDiffs } = diffSnapshots(before ?? {}, after, pendingMigrations);
-        for (const line of formatTableReport(lines)) console.log(line);
-        allDiffs.push(...snapshotDiffs);
+      return allDiffs;
+    },
+    async (url) => {
+      console.log(`restore: ${dumpPath} -> throwaway container`);
+      await restoreDump(url, dumpPath);
+      console.log("restore: done");
 
-        console.log("");
-        console.log("key joins:");
-        const { lines: joinLines, diffs: joinDiffs } = await checkJoins(client, pendingMigrations);
-        if (joinLines.length === 0) {
-          console.log("  none declared — which is itself a disagreement, since the always-run set is never empty");
-        } else {
-          // The always-run invariants first: they hold of any correct store, and a reader looking
-          // for "is this deployment sound" should not have to find them among a migration's own.
-          const order = [...joinLines].sort((a, b) =>
-            (b.migration === ALWAYS_LABEL ? 1 : 0) - (a.migration === ALWAYS_LABEL ? 1 : 0));
-          for (const j of order) {
-            console.log(`  ${j.name} (${j.migration === ALWAYS_LABEL ? "every rehearsal" : `from ${j.migration}`}): ${j.violating} violating row(s)`);
-          }
-        }
-        allDiffs.push(...joinDiffs);
+      const client = new pg.Client({ connectionString: url });
+      await client.connect();
+      try {
+        await client.query("set search_path = ''");
+        const beforeNames = await schemaMigrationNames(client);
+        // The pending set comes first: the before snapshot is hashed the way these migrations'
+        // expectations ask for, and it must be read identically to the after one.
+        pendingMigrations = pendingMigrationFiles(beforeNames);
+        before = await captureSnapshot(client, pendingMigrations, "before");
+        console.log(`migrations: ${pendingMigrations.length === 0 ? "none pending" : `${pendingMigrations.length} pending — ${pendingMigrations.join(", ")}`}`);
+      } finally {
+        await client.end();
+      }
+    },
+  );
 
-        for (const migration of pendingMigrations) {
-          const step = MIGRATION_EXPECTATIONS[migration]?.withArtifacts;
-          if (!step) continue;
-          if (!artifactsDir) {
-            allDiffs.push(`${migration}: declares withArtifacts but --artifacts was not given`);
-            continue;
-          }
-          allDiffs.push(...await step(artifactsDir, client));
-        }
-
-        return allDiffs;
-      },
-      async (url) => {
-        console.log(`restore: ${dumpPath} -> throwaway container`);
-        await restoreDump(url, dumpPath);
-        console.log("restore: done");
-
-        const client = new pg.Client({ connectionString: url });
-        await client.connect();
-        try {
-          await client.query("set search_path = ''");
-          const beforeNames = await schemaMigrationNames(client);
-          // The pending set comes first: the before snapshot is hashed the way these migrations'
-          // expectations ask for, and it must be read identically to the after one.
-          pendingMigrations = pendingMigrationFiles(beforeNames);
-          before = await captureSnapshot(client, pendingMigrations, "before");
-          console.log(`migrations: ${pendingMigrations.length === 0 ? "none pending" : `${pendingMigrations.length} pending — ${pendingMigrations.join(", ")}`}`);
-        } finally {
-          await client.end();
-        }
-      },
-    );
-
-    const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
-    console.log("");
-    if (diffs.length === 0) {
-      console.log(`REHEARSAL OK (${elapsed}s)`);
-      process.exitCode = 0;
-    } else {
-      console.error("REHEARSAL DISAGREES:");
-      for (const line of diffs) console.error(`  ${line}`);
-      console.error(`(${elapsed}s)`);
-      process.exitCode = 1;
-    }
-  } finally {
-    if (artifactsDir) removeArtifacts(artifactsDir);
+  const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+  console.log("");
+  if (diffs.length === 0) {
+    console.log(`REHEARSAL OK (${elapsed}s)`);
+    process.exitCode = 0;
+  } else {
+    console.error("REHEARSAL DISAGREES:");
+    for (const line of diffs) console.error(`  ${line}`);
+    console.error(`(${elapsed}s)`);
+    process.exitCode = 1;
   }
 }
 

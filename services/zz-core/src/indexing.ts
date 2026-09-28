@@ -134,9 +134,9 @@ export interface KbRow {
  *
  *  DELIBERATE: `path` is the document's path INSIDE its initiative — `notes.md`, or
  *  `sources/x.md` — never `<initiative>/notes.md`. `initiative` is its own column, and every
- *  reader that joins the two does it as `${initiative}/${path}` (`scripts/store-migration.ts`,
- *  `knowledge-search.ts`, a document subject's ref in `evaluate-run.ts`). A row written with the
- *  whole path in one column is one no reader can join back to a file. */
+ *  reader that joins the two does it as `${initiative}/${path}` (`knowledge-search.ts`, a document
+ *  subject's ref in `evaluate-run.ts`). A row written with the whole path in one column is one no
+ *  reader can join back to a file. */
 export interface DocRow {
   id: string; path: string; initiative: string; flow: string; type: string; status: string;
   outcome: string | null; approved_by: string | null; approved_at: string | null;

@@ -30,7 +30,16 @@ import { Mcp, McpError } from "@zz/mcp-client";
 import { die, envRequired, optional, parseArgs, platformToken } from "../lib/cli.js";
 
 async function main(argv: string[]): Promise<number> {
-  const args = parseArgs(argv, ["list", "strict", "json"]);
+  // The flags this tool has, and no others. parseArgs stores every `--x` it is given and rejects
+  // none, so a flag left out of this list would be accepted and then ignored — the caller would be
+  // told nothing while their argument quietly went nowhere.
+  const args = parseArgs(argv, ["list", "strict"]);
+  for (const name of args.flags.keys()) {
+    if (name !== "list" && name !== "strict") {
+      die(`call has no --${name} — the flags are --list (print the door's tools) and ` +
+          `--strict (a refusal that exits non-zero)`);
+    }
+  }
   const door = args.positional[0];
   const tool = args.positional[1];
   const listing = args.flags.has("list");

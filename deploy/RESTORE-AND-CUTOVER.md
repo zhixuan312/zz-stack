@@ -64,8 +64,8 @@ store from the same day. Restoring only the database half is the correct thing t
 Never restore the archive *over* the database: the dump already holds those documents.
 
 There is one more archive that may be in that directory and is **not part of any nightly set**:
-`zz-store-archive-<stamp>.tar.gz`, written once by `scripts/retire-file-store.ts` when the store
-was removed. It is the last copy of the store's files AS FILES, `deploy/backup.sh` is given an
+`zz-store-archive-<stamp>.tar.gz`, written once when the store was removed. It is the last copy of
+the store's files AS FILES, `deploy/backup.sh` is given an
 explicit exemption from pruning it, and it is the copy most worth carrying off the host. A
 rehearsal does not need it.
 
@@ -202,8 +202,8 @@ This used to be `ZZ_TENANT_INFO_ISOLATED_DB_URL`, and it used to unblock a set o
 suites. **The `tenant-info` CLI and its corpora went with the artifact/search layer in 0.86.0**, so
 nothing in this checkout consumes the URL any more. It is what an operator points a `psql` or a GUI
 client at to read the restored copy; the rehearsal that runs automatically is
-`node scripts/rehearse.ts --dump <zz-db-*.sql.gz>` (`--artifacts <archive>` as well, for a set old
-enough to carry one), which starts its own container and refuses to be handed a URL.
+`node scripts/rehearse.ts --dump <zz-db-*.sql.gz>`, which starts its own container and refuses to
+be handed a URL.
 
 ---
 

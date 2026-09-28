@@ -562,7 +562,7 @@ export async function recordEvaluatorAssessment(opts: {
 //
 // Their two callers (`review-rounds.ts`'s `assessReviewRound`, `audit-rounds.ts`'s `assessRound`)
 // already read the rows back through `assessmentsFor`, so nothing calls these any more: converting
-// them would have been writing code with no caller. `scripts/store-migration/records.ts` verifies
-// that every file's `question_digest` has a matching row, which is what makes the claim checkable
-// rather than asserted.
+// them would have been writing code with no caller. The carry that read those files is gone with
+// the store it read, and the claim it used to check — every file's `question_digest` has a
+// matching row — is now the only record there is: the rows are what an assessment IS.
 

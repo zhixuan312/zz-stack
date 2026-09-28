@@ -223,10 +223,9 @@ const ENVELOPE_COLUMN_KEYS: readonly string[] = [
  *  or null when the document carries nothing extra. Never a list of FIELDS — the keys a flow
  *  declares are unbounded, which is why the column is a map.
  *
- *  Null rather than `{}` for the empty case: null says "this revision carries no field outside the
- *  columns", and an empty object would be a second spelling of it, which is how a backfill stops
- *  being able to tell "nothing to carry" from "the carry has not run". */
-export function envelopePayload(env: Record<string, string>): Record<string, string> | null {
+ *  Null rather than `{}` for the empty case: null says "this revision carries no field outside
+ *  the columns", and an empty object would be a second spelling of the same fact. */
+function envelopePayload(env: Record<string, string>): Record<string, string> | null {
   const payload: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
     if (!ENVELOPE_COLUMN_KEYS.includes(key)) payload[key] = value;

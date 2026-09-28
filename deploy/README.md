@@ -267,7 +267,7 @@ still holds `zz-artifacts-<stamp>.tar.gz`; it restores into a database that is m
 document written after it was taken, so read it, and do not treat it as the current shape.
 
 The store's own text survives once more in a **retirement archive**, `zz-store-archive-<stamp>.tar.gz`,
-written by `scripts/retire-file-store.ts` into the same directory when the store was removed. It is
+written once when the store was removed, into the same directory. It is
 the last copy of the store's files as files, it is not part of a nightly set, and the prune below
 is given an explicit exemption for it — a nightly retention of fourteen days is a retention for a
 nightly set, not for the last copy of anything.

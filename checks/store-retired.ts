@@ -20,18 +20,12 @@ assert.ok(!existsSync("services/zz-core/src/persist.ts"), "the store layer is re
 //
 // DELIBERATE: comments and block comments are stripped before the match. A comment that records
 // what the store was is the opposite of a file that reaches it: `services/zz-core/src/tools/
-// initiative-acts.ts` says the signed text "stays retrievable in `_versions/`", `store-migration.ts`
-// documents the layout it reads out of a RETIREMENT ARCHIVE, and `scripts/rehearse/expect.ts`
-// describes the carry. All of them are history, and deleting the history to make a grep quiet is
-// the one repair this project forbids. The predicate is the one `checks/no-store-namers.ts` already
-// uses for the same claim over the same file set; the two exist because this check is the one the
-// gate registers at this wave, and that one is I-44's own.
-//
-// `scripts/store-migration.ts` is the file that genuinely still touches a store, and it is not a
-// counterexample: it is the CARRY (Task I-38), it reads an archive handed to it by
-// `scripts/rehearse.ts` rather than any live volume, and it is what fills `doc_revision` from the
-// store the deployment no longer mounts. It names `_versions/` in prose only, which is why this
-// assertion passes over it.
+// initiative-acts.ts` says the signed text "stays retrievable in `_versions/`", and
+// `scripts/rehearse/expect.ts` records the store phase's fold and the carry that ran with it. All
+// of it is history, and deleting the history to make a grep quiet is the one repair this project
+// forbids. The predicate is the one `checks/no-store-namers.ts` already uses for the same claim
+// over the same file set; the two exist because this check is the one the gate registers at this
+// wave, and that one is I-44's own.
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 const namers = files.filter((f) => f.endsWith(".ts") && !f.includes("/dist/") &&
   /\bARTIFACTS_DIR\b|_versions\//.test(code(readFileSync(f, "utf8"))));
@@ -63,9 +57,10 @@ for (const c of ["team_slug", "initiative", "flow", "outcome", "closed_by", "app
   assert.ok(!doc.includes(c), `doc.${c} is dropped`);
 }
 
-// The retirement script is the act, and it takes its destination as an argument.
-assert.ok(existsSync("scripts/retire-file-store.ts"), "the retirement script exists");
-assert.ok(/--store|--dest/.test(readFileSync("scripts/retire-file-store.ts", "utf8")),
-  "and takes the store and the destination as arguments, so it never defaults to production");
+// The act itself is done and its tool is gone with the volume: `retire-file-store.ts` archived the
+// store whole, read the archive back and re-hashed every file before removing anything, and the
+// archive it wrote (`zz-store-archive-<stamp>.tar.gz`, which `deploy/backup.sh` still refuses to
+// prune) is the record. A check asserting the script's existence would be asserting that a tool
+// with nothing left to act on is still in the tree.
 
 console.log("ok store-retired");

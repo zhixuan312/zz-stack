@@ -220,35 +220,7 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             restore, migrations applied, inventory, and a before/after row-count and
             content-hash table, ending REHEARSAL OK; refuses outright if
             TEAM_DB_URL/PLATFORM_DB_URL is already set — rehearse/ holds the expectations,
-            the restore, the snapshot and join checks, and the artifacts unpack) and
-            store-migration.ts (the carry: reads every team's file store — its working tree, its
-            `<initiative>/_versions/` snapshots and the `.git` history every write was committed
-            to — and writes `doc_revision` rows for every revision those three records hold,
-            verifying each retained revision by content hash against the bytes it came from.
-            DELIBERATE: this has run, against production, and the stores it read are retired; it
-            stays in the tree because it is how those rows were produced, and how another
-            deployment still holding a store would produce its own.
-            Revisions the store genuinely never kept are `missing_legacy` and carry no content:
-            a write whose commit failed left a `git_failed` entry, and a revision predating the
-            repository left nothing. `store-migration/` holds the shape it reads, the rows it
-            writes, the links, the two legacy evaluation pins and the report; the rehearsal runs
-            it as this migration's `withArtifacts` step, and the release runs it against
-            production before the verification that depends on it) and
-            envelope-backfill.ts (the envelope's open payload, read off every team's file store
-            once and written to `doc_revision.fields` — `node scripts/envelope-backfill.ts
-            --store <dir> --database-url <url>`, idempotent because it fills only rows whose
-            `fields` is null; it reads each revision's bytes the way the carry does, verifies them
-            against the row's `content_hash`, reports by name any revision it cannot read, and
-            exits non-zero if a payload it wrote disagrees with the envelope it came from) and
-            retire-file-store.ts (the one irreversible act: archives a team's file store whole —
-            every document, the frozen copy filed beside each approval, the journal shelf, the
-            ledger, the activity log and the `.git` history — into
-            `zz-store-archive-<stamp>.tar.gz` under a destination the operator names, reads the
-            archive back and re-hashes every file in it against the manifest it carries BEFORE
-            removing anything, refuses a destination name `deploy/backup.sh`'s nightly prune would
-            delete and a second archive of the same store, and reports what is left rather than
-            reporting success when a removal only half happened —
-            `node scripts/retire-file-store.ts --store <dir> --dest <dir>`) and
+            the restore, the snapshot and join checks) and
             build-image.sh (the runtime image, from the lockfile).
             The
             day-2 ops tools are npm scripts over packages/tools/src/ops/:

@@ -21,9 +21,10 @@ name: mutation
 
 on:
   schedule:
-    # Saturday 18:17 UTC is Sunday ~02:17 in the operator's timezone: an off-minute, and a time the
-    # laptop and the host are idle.
-    - cron: "17 18 * * 6"
+    # Friday 16:00 UTC is Saturday 00:00 in Singapore — the operator asked for Friday midnight there.
+    # Nothing about the operator's machine matters: this runs on a runner, which is why the suite can
+    # be scheduled at all.
+    - cron: "0 16 * * 5"
   workflow_dispatch:
     inputs:
       workers:
@@ -102,9 +103,12 @@ jobs:
           path: pair/zz-stack/testing/mutation-report.json
           if-no-files-found: warn
 
-      # Only on the schedule, and only when there is a report to carry: a refresh nobody merges is
-      # still a refresh that exists, and a PR is where a person sees what changed.
-      - name: Open a PR with the refreshed report
+      # Only on the schedule, and only when the run produced a report. It commits rather than
+      # opening a PR, and that reverses what this file did an hour ago: a PR nobody merges does not
+      # keep the artifact current, which is the same trap as a suite nobody runs, one level up. The
+      # file is generated evidence rather than code, master accepts a push from this token, and the
+      # suite's own report is the only thing this touches.
+      - name: Refresh the committed report
         if: ${{ github.event_name == 'schedule' }}
         working-directory: pair/zz-stack
         env:
@@ -112,15 +116,11 @@ jobs:
         run: |
           test -f testing/mutation-report.json || { echo "no report was produced"; exit 0; }
           if git diff --quiet -- testing/mutation-report.json; then
-            echo "the report is unchanged — nothing to refresh"
+            echo "the report is unchanged"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          branch="mutation-report/$(date -u +%Y-%m-%d)"
-          git checkout -b "$branch"
           git add testing/mutation-report.json
           git commit -m "Refresh the mutation report ($(date -u +%Y-%m-%d))"
-          git push -u origin "$branch"
-          gh pr create --title "Refresh the mutation report" --head "$branch" \
-            --body "The weekly run of scripts/mutation-run.ts. Per row: which check went red when its defect was planted. Nothing in the gate reads this; it is evidence a person asked for."
+          git push origin HEAD:master

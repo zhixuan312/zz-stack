@@ -69,5 +69,11 @@ check("a check that works is a check the gate runs",
 check("every planted defect still lands in its subject, so no check is covered by a plant that never ran",
       runsCheck("mutation-specs-match-subjects.ts"));
 
+// The mutation suite is the only thing that tests the checks, it costs hours, and that is exactly
+// why it is not a release step and why it must keep running on its own — two decisions that were
+// neither stated nor guarded, and one of them was already broken in practice.
+check("the mutation suite runs on its own, and no release can pull it in",
+      runsCheck("mutation-is-not-a-release-step.ts"));
+
 check("a file that resolves renamed tools never matches a pre-rename name",
       runsCheck("pre-rename-literals.ts"));

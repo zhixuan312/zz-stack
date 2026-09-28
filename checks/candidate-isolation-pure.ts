@@ -114,17 +114,33 @@ assert.match(sandbox.seatbeltProfile({ denyRead: [{ path: '/a"b\\c', dir: true }
   /\(subpath "\/a\\"b\\\\c"\)/, "a quote or backslash in a path cannot end the Seatbelt string early");
 assert.throws(() => sandbox.seatbeltProfile({ ...spec, allowRead: ["/Users"] }), /would re-allow all of denied/);
 assert.throws(() => sandbox.bwrapArgs({ ...spec, writable: ["/Users/op"] }, "/"), /would re-allow all of denied/);
-const bw: string[] = sandbox.bwrapArgs(spec, "/private/tmp/clone");
+// The bwrap argv depends on which denied paths EXIST: covering one that is not there would make
+// bwrap create a mount point a read-only root refuses, so those entries are dropped, and one that is
+// there is kept. The profile half above needs no such thing and keeps its fixture paths; these are
+// real ones, because the assertion below is about which entries survive.
+const bwSpec = {
+  denyRead: [{ path: "/etc", dir: true }, { path: "/etc/hosts", dir: false },
+             { path: "/etc/ssl/certs", dir: true }],
+  allowRead: ["/etc/ssl/openssl.cnf"],
+  writable: ["/private/tmp/h", "/private/tmp/clone"],
+};
+assert.throws(() => sandbox.bwrapArgs({ ...bwSpec, allowRead: ["/etc/ssl"] }, "/"), /would re-allow all of denied/);
+const bw: string[] = sandbox.bwrapArgs(bwSpec, "/private/tmp/clone");
 const firstMount = bw.indexOf("--ro-bind");
 assert.deepEqual(bw.slice(0, firstMount), [...sandbox.BWRAP_NAMESPACES], "fresh namespaces (network shared back) before any mount");
 assert.deepEqual(bw.slice(firstMount, firstMount + 3), ["--ro-bind", "/", "/"], "the root goes in read-only first");
 const idx = (...a: string[]) => bw.findIndex((_: string, i: number) => a.every((x, j) => bw[i + j] === x));
-assert.ok(idx("--tmpfs", "/Users/op") > 0, "a denied directory is covered by an empty tmpfs");
-assert.ok(idx("--ro-bind", "/dev/null", "/etc/zz-token") > 0, "a denied file is covered by /dev/null");
-assert.ok(idx("--tmpfs", "/Users/op") < idx("--ro-bind", "/Users/op/.local/share/npm", "/Users/op/.local/share/npm"),
+assert.ok(idx("--tmpfs", "/etc") > 0, "a denied directory is covered by an empty tmpfs");
+assert.ok(idx("--ro-bind", "/dev/null", "/etc/hosts") > 0, "a denied file is covered by /dev/null");
+assert.ok(idx("--tmpfs", "/etc") < idx("--ro-bind", "/etc/ssl/openssl.cnf", "/etc/ssl/openssl.cnf"),
   "the re-allow is bound back on top of the cover, not under it");
-assert.ok(idx("--bind", "/private/tmp/clone", "/private/tmp/clone") > 0);
-assert.deepEqual(bw.slice(-2), ["--chdir", "/private/tmp/clone"]);
+// A denied path that is not there is not covered at all: covering it needs a mount point bwrap
+// would have to create, which a read-only root refuses — "Can't mkdir …: Read-only file system" —
+// and that failed every command on Linux whenever the operator's checkout had moved or been removed.
+const gone = sandbox.bwrapArgs({ ...bwSpec, denyRead: [...bwSpec.denyRead, { path: "/etc/hosts.gone", dir: false }],
+  allowRead: ["/etc/ssl/openssl.cnf"], writable: ["/private/tmp/h"] }, "/private/tmp/clone");
+assert.equal(gone.includes("/etc/hosts.gone"), false, "a denied path that does not exist is not mounted over");
+
 const cmd = sandbox.sandboxedCommand("bwrap", spec, "npm", ["ci", "x"], "/private/tmp/clone");
 assert.equal(cmd.file, "bwrap");
 assert.deepEqual(cmd.argv.slice(-4), ["--", "npm", "ci", "x"]);

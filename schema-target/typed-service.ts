@@ -299,7 +299,7 @@ export const TYPED_SERVICE: Record<string, TableTarget> = {
       resolved_model: "class=immutable_history; authority=this; question=which concrete model the supplier says answered, as distinct from the model that was asked for?",
       identity_assurance: "class=immutable_history; authority=this; question=how far the resolved model's identity is verified, from the contracts' assurance values?",
       reason: "class=immutable_history; authority=this; question=why there is no reading, set exactly when the reading is unavailable?",
-      about: "class=immutable_history; authority=this; question=what was assessed, an external address such as the store path of the source, which a family row carries and an evaluator row leaves to the consumer that cites it?",
+      about: "class=immutable_history; authority=this; question=what was assessed, as the caller stated it — a document path such as spec.md#CS-1, a source ref or a finding id?",
       asked_at: "class=immutable_history; authority=this; question=when this question was asked, never null?",
       evaluator_version_id: "class=relation; authority=this; question=which plugin-eval evaluator version asked this question, set instead of family so that exactly one of the two is non-null?",
       distribution: "class=immutable_history; authority=this; question=what the full answer distribution over the evaluator's declared options is on a choice or score question, while probability keeps carrying the noul probability?",

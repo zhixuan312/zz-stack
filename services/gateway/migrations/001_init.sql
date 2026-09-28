@@ -260,7 +260,7 @@ COMMENT ON COLUMN zz.assessment.reason IS 'class=immutable_history; authority=th
 -- Name: COLUMN assessment.about; Type: COMMENT; Schema: zz; Owner: -
 --
 
-COMMENT ON COLUMN zz.assessment.about IS 'class=immutable_history; authority=this; question=what was assessed, an external address such as the store path of the source, which a family row carries and an evaluator row leaves to the consumer that cites it?';
+COMMENT ON COLUMN zz.assessment.about IS 'class=immutable_history; authority=this; question=what was assessed, as the caller stated it — a document path such as spec.md#CS-1, a source ref or a finding id?';
 
 
 --

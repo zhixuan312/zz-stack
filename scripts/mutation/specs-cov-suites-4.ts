@@ -134,8 +134,8 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
     target: "a document read takes a list and a version, and history never vouches for the present",
     assertion: "a fetch of an old version is recorded against the bytes it returned",
     subject: "services/zz-core/src/versions.ts",
-    find: 'logActivity(root, readRel, { user, action: "shown", path: readRel, version: env.version ?? "" });',
-    replace: 'logActivity(root, readRel, { user, action: "shown", path: relPath, version: env.version ?? "" });',
+    find: "  const rev = history.find((r) => r.revision === want) ?? null;",
+    replace: "  const rev = history.find((r) => r.revision === want) ?? history[history.length - 1] ?? null;",
     planted: "opening an old approval is recorded as having opened the live document. " +
       "shownSinceLastChange matches on path and ignores version, so reading v1 now attests " +
       "the current draft nobody looked at, and an approval leans on exactly that answer",

@@ -104,9 +104,9 @@ function sourceRows(rows: Map<string, DocRow>): DocRow[] {
 /** The initiative's registered sources, and which of them landed after the document they
  *  support was approved. Reached from both returns of initiativeState.
  *
- * Compares file mtimes, not the dates people type: `approved_at` is day-granular and
- * hand-written, while the approval snapshot in _versions/ and the source file both carry a
- * mtime the platform wrote itself. */
+ * Compares the platform's own instants, not the dates people type: `approved_at` is
+ * day-granular and hand-written, while a source's `updated_at` is a timestamp the platform
+ * wrote when it filed the row. */
 function sourceReport(rows: Map<string, DocRow>): {
   sourceFiles: string[];
   needsRefinement: Array<{ document: string; source: string; title: string }>;
@@ -123,7 +123,7 @@ function sourceReport(rows: Map<string, DocRow>): {
     // An audit round lands on an approved document by design; the next move routes it.
     if (src.fields?.stage) continue;
     const sourceTime = at(src.updated_at);
-    const supports = (src.fields?.supports || "").split(",").map((x) => x.trim()).filter(Boolean);
+    const supports = src.supports;
     for (const d of supports) {
       const target = rows.get(d);
       if (!target || target.status !== "approved") continue;
@@ -516,7 +516,7 @@ const chainArgs = async (p: pg.Pool, team: string | null, name: string): Promise
 
 /** The anchor row for every named initiative, in one query — never one query per initiative.
  *  Null (no database, no team, or the row does not exist) reads as "no anchor", which is
- *  `initiativeState`'s cue to fall back to the file/envelope answer. */
+ *  `initiativeState`'s cue to answer from the documents' own envelopes. */
 async function anchorsFor(
   p: pg.Pool, team: string | null, names: readonly string[],
 ): Promise<Map<string, InitiativeAnchor>> {

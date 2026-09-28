@@ -17,7 +17,6 @@ import type { MutationSpec } from "./plant.ts";
 /** Every row in this file is registered by the same module. */
 // COUPLED: `check_sha256` is computed over the module that registers the target, so a row
 // drifts when that module changes.
-const SUITES = "scripts/gate/checks/suites.ts";
 const SUITES_DATA = "scripts/gate/checks/suites-data.ts";
 const SUITES_SURFACE = "scripts/gate/checks/suites-surface.ts";
 const SUITES_TOOLING = "scripts/gate/checks/suites-tooling.ts";
@@ -33,18 +32,6 @@ const MJS = ".m" + "js";
 const MERGED_AWAY = "block_" + "skills";
 
 export const COV_SUITES_1: readonly MutationSpec[] = [
-
-  {
-    check: SUITES,
-    target: "the pure document rules do what they say",
-    assertion: "a cell cannot break out of its table row",
-    subject: "services/zz-core/src/document-rules.ts",
-    find: "const tableCell = (v: string) => oneLine(v).replace(/\\|/g, \"/\");",
-    replace: "const tableCell = (v: string) => oneLine(v);",
-    planted: "a pipe inside a table cell is written through unescaped, so an initiative " +
-      "folder named `a|b` becomes two columns and the outcome ledger — the record the " +
-      "closing verdict rests on — reads as an initiative and an outcome that were never written",
-  },
   {
     check: SUITES_TOOLING,
     target: "an unsupported Node fails naming both versions and why, as a runtime problem " +

@@ -14,9 +14,8 @@ import { pathToFileURL } from "node:url";
 const mod = join(process.cwd(), "services/zz-core/dist/document-rules.js");
 const R = await import(pathToFileURL(mod).href);
 
-// Two modules, one subject: `indexable`, `isoDate` and `decisionRows` are the rules the
-// knowledge index derives a row by, and they live in `@zz/indexing` because two services
-// import them.
+// Two modules, one subject: the envelope renderer and `decisionRows` are the rules a document
+// is derived by, and the row rule lives in `@zz/indexing` because two services import it.
 const idx = join(process.cwd(), "packages/indexing/dist/index.js");
 const I = await import(pathToFileURL(idx).href);
 
@@ -58,12 +57,6 @@ const base = "---\nflow: sdlc-flow\ntype: spec\nstatus: draft\n---\n\n# Spec\n\n
 allows("an unchanged envelope is allowed",     R.envelopeEditRefusal(base, base));
 refuses("hand-writing status is refused",      R.envelopeEditRefusal(base, base.replace("status: draft", "status: approved")));
 
-/* tableRow — the escape that keeps a table one table */
-is("a pipe in a cell cannot break the row",
-   R.tableRow("a|b", "c"), "| a/b | c |\n");
-is("a newline in a cell cannot break the row",
-   R.tableRow("a\nb", "c"), "| a b | c |\n");
-
 /* renderEnvelope — one writer, and it never drops a field */
 // The declared order first, then everything else the caller set: `order` is not a filter, and
 // a field outside it is still written, at the end.
@@ -73,11 +66,6 @@ is("declared order first, then whatever else was set",
 is("a field in the order but unset is skipped, not written empty",
    R.renderEnvelope({ flow: "sdlc-flow" }, ["flow", "status"]),
    "---\nflow: sdlc-flow\n---\n");
-
-/* Indexable — what the index will hold */
-is("a markdown document is indexable",         I.indexable("2026-09-11-x/spec.md"), true);
-is("a frozen snapshot is indexable",           I.indexable("2026-09-11-x/_versions/spec.v1.md"), true);
-is("the activity log is not a document",       I.indexable("2026-09-11-x/activity.jsonl"), false);
 
 /* decisionRows — a fit ledger, read out of a body */
 // The vocabulary is native / achievable / workaround / not_possible — what a product can do,

@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-evaluate
-version: 1.0
+version: 1.1
 description: Stage 5 of zz-plugin-eval (EVALUATE). Bind an approved protocol version to a subject's own observation snapshot, route every measure the protocol names to the real evidence it judges, and reduce the result to one deterministic overall score with its status, coverage and guardrails. No recommendation — that is EXPLAIN.
 when_to_use: "The fifth stage of zz-plugin-eval, once a protocol version is affirmed (or was already reusable). Produces no document — its output is durable score data EXPLAIN reads. No shell required."
 ---
@@ -21,10 +21,10 @@ opens: those are the run-kind and event-kind `subject_refs`, whichever conversat
 `initiative` to `evaluation_score`: it records `eval_run_id` as this stage's record, which is how
 EXPLAIN finds the run.
 
-Three calls, in this order, once each per evaluation. `evaluation_start` atomically binds a
-protocol version and an observation snapshot into one immutable `zz.eval_evidence_snapshot`, and
-opens one `zz.eval_run` at `run_status: 'pending'` against it. RETURNS `{ eval_run_id,
-evidence_snapshot_id, run_status }`. REFUSES an observation snapshot belonging to a DIFFERENT
+Three calls, in this order, once each per evaluation. `evaluation_start` binds a protocol
+version and an observation snapshot into one `zz.eval_run` — the pair IS the run, and there is no
+separate evidence snapshot to hold: the observation snapshot is the evidence, and it is immutable
+already. REFUSES an observation snapshot belonging to a DIFFERENT
 subject than `subject_version_id` names — never silently scoring one plugin's evidence against
 another's identity — and a protocol version `protocol_affirm` has not bound to an approved
 `protocol.md` (named, with its version): go back to DEFINE/QUALIFY and finish the approval.
@@ -40,7 +40,7 @@ kind:
 
 | ref | kind |
 |---|---|
-| `<initiative>/<doc>.md`, read off your own team's artifact store | document |
+| `<initiative>/<doc>.md`, read off your own team's documents | document |
 | `_knowledge/nodes/<node>.md` | knowledge |
 | `bug:<id>`, from its bug report | bug |
 | a bare `run_id` — from `evaluation_start`'s `run_refs` (OBSERVE's `traces.run_refs`) | run |

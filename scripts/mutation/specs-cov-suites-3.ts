@@ -27,12 +27,12 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
     target: "the record knows whether a document was fetched before its gate",
     assertion: "a patch counts as a content change, so a fetch before it vouches for nothing",
     subject: "services/zz-core/src/attest.ts",
-    find: 'const CHANGED = new Set(["document_write", "document_patch", "document_revise"]);',
-    replace: 'const CHANGED = new Set(["document_write", "document_revise"]);',
-    planted: "filling a scaffold with document_patch stops counting as the document changing, " +
-      "so a document shown once at v1, patched eight times and then approved is recorded as " +
-      "having been put in front of the person who approved it — which is the one shape this " +
-      "function exists to catch, because a patch does not bump the version either",
+    find: "    return row.presented_at !== null && Date.parse(row.presented_at) > Date.parse(row.written_at);",
+    replace: "    return row.presented_at !== null && Date.parse(row.presented_at) >= Date.parse(row.written_at);",
+    planted: "a present at the same instant as the write it attests stops being refused, so the " +
+      "one comparison that makes a fetch vouch for the bytes the approver read admits a " +
+      "presentation and a write that are the same moment — and nothing else in the record " +
+      "tells them apart",
   },
   {
     check: SUITES,

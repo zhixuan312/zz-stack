@@ -1,8 +1,8 @@
 ---
 name: zz-platform
-version: 3.72
+version: 3.73
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
-when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store outside a flow."
+when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's documents or knowledge outside a flow."
 ---
 
 # zz-platform
@@ -289,8 +289,8 @@ the timing; getting this wrong costs a plan, not a refusal.
 - **An initiative closes ONCE. A CLOSED RECORD MAY BE CORRECTED; WHAT CLOSED IT MAY
   NOT.** A second `initiative_close` is refused, and the `outcome`, `closed_by` and the
   ledger row that went with it are fixed for good. The document itself is not:
-  `document_revise` works on a closed document, carries the outcome forward, freezes
-  the signed text in `_versions/` and records what caused the change — so a wrong
+  `document_revise` works on a closed document, carries the outcome forward, files the
+  signed text as the revision the approval stands on and records what caused the change — so a wrong
   number in a closed `review.md` is corrected where somebody reading the report will
   see it. What changed is what the report SAYS, not what it concluded. If the VERDICT
   was wrong, that is a different thing and not a revision: `knowledge_add` it against
@@ -483,7 +483,7 @@ document_revise(
 The platform then bumps `version` (v1 → v2), sets `status` back to `draft`
 so the gate returns to a human, clears the stale approval, writes their
 words into `sources/`, and links it from the document. The v1 that was
-approved stays in `_versions/`. Two things end up in the record: **the
+approved stays as the sealed revision `document_read(path, version: 1)` answers with. Two things end up in the record: **the
 source (what they said) and v2 (what it made us change)** — and anyone
 reading later can see one caused the other.
 

@@ -153,8 +153,8 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     target: "a knowledge node is written to the shelf its scope names",
     assertion: "the platform branch resolves the platform shelf and not the team's",
     subject: "services/zz-core/src/tools/knowledge.ts",
-    find: "      const root = scope === \"platform\" ? knowledgeRoot() : await userRoot();",
-    replace: "      const root = scope === \"platform\" ? await userRoot() : knowledgeRoot();",
+    find: "      const shelf = scope === \"platform\" ? KNOWLEDGE_TEAM : team as string;",
+    replace: "      const shelf = scope === \"platform\" ? team as string : KNOWLEDGE_TEAM;",
     planted: "the two shelves are swapped: every platform-scoped node is filed on the " +
       "writer's own team shelf and every team lesson on the shelf all teams read, with the " +
       "call reporting success either way",
@@ -206,37 +206,13 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     subject: "services/zz-core/src/tools/knowledge.ts",
     find: "      platformEvent({\n" +
       "        actor: who.email, kind: \"knowledge.supersede\", subject: old_id,\n" +
-      "        team: root === knowledgeRoot() ? KNOWLEDGE_TEAM : team,\n" +
-      "        detail: { supersededBy: new_id, file: oldFile },\n" +
+      "        team: oldNode.shelf,\n" +
+      "        detail: { supersededBy: new_id },\n" +
       "      });\n",
     replace: "",
     planted: "retiring a knowledge node leaves no record naming who retired it, so the one " +
       "act that takes a lesson out of circulation is the one act the journal cannot attribute",
-  },
-  {
-    check: "scripts/gate/checks/knowledge.ts",
-    target: "supersession stays on one shelf and knows which",
-    assertion: "a supersession spanning both shelves is refused",
-    // The check strips comments and looks for `ERROR:…shelf` in the code, so the refusal itself
-    // has to go. The guard is kept and its body emptied: `newNode` stays read, which is what
-    // `noUnusedLocals` needs, and the span holds no comment: a span across comment lines plants
-    // nothing once one is reworded, and `0 replacements` reads as "this experiment never
-    // happened", not as a failure.
-    subject: "services/zz-core/src/tools/knowledge.ts",
-    find: "      if (oldNode.root !== newNode.root) {\n" +
-      "        return text(\n" +
-      "          `ERROR: \\`${old_id}\\` is on the \\`${oldNode.shelf}\\` shelf and \\`${new_id}\\` is on ` +\n" +
-      "          `the \\`${newNode.shelf}\\` shelf. A node is superseded by one on the same shelf; ` +\n" +
-      "          \"promoting a lesson means writing a new platform node, not superseding across shelves.\"\n" +
-      "        );\n" +
-      "      }",
-    replace: "      if (oldNode.root !== newNode.root) { void newNode.shelf; }",
-    planted: "a supersession that spans both shelves is no longer refused, so a team can mark " +
-      "one of its own nodes superseded by an id that only means something on the platform's " +
-      "shelf — ids restart at 0001 on each shelf, so the relabelled node is somebody else's " +
-      "and nothing says it happened",
-  },
-  {
+  },  {
     check: "scripts/gate/checks/knowledge.ts",
     target: "every flow that gates a document also carries the handover",
     assertion: "the derivation tests for a gated document rather than appending to every flow",
@@ -347,18 +323,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     planted: "a principal gains a third state nothing in the platform can ever set, so any " +
       "guard written to read it looks like working access control over a branch no code path " +
       "can reach",
-  },
-  {
-    check: "scripts/gate/checks/documents-schema.ts",
-    target: "everything that reads a source reads the fields sourceDocument writes",
-    subject: "services/zz-core/src/tools/artifacts.ts",
-    find: "contributed_by: env.contributed_by || \"\", added_at: env.added_at || \"\" };",
-    replace: "contributed_by: env.added_by || \"\", added_at: env.added_at || \"\" };",
-    planted: "source_list reads a field nothing has ever written, so every source comes back " +
-      "with an empty contributor — a blank where a person's name belongs, and nothing " +
-      "anywhere saying why",
-  },
-  {
+  },  {
     check: "scripts/gate/checks/documents-schema.ts",
     target: "every subject kind the platform accepts is one a skill teaches",
     subject: "services/zz-core/src/tools/knowledge.ts",
@@ -404,13 +369,13 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   },
   {
     check: "scripts/gate/checks/documents-schema.ts",
-    target: "every envelope field the platform reads is one the schema publishes",
-    subject: "services/zz-core/src/tools/artifacts.ts",
-    find: "        return env.status === \"approved\";",
-    replace: "        return env.approval_status === \"approved\";",
-    planted: "source_add reads an envelope field the published schema does not declare, so " +
-      "the note warning that a document was approved BEFORE this material arrived never " +
-      "fires — and the name it reads is one a flow may claim for itself",
+    target: "every envelope field the platform writes is one the schema declares",
+    subject: "services/zz-core/src/tools/initiative-acts.ts",
+    find: "      if (closedOutcome) env.outcome = closedOutcome;",
+    replace: "      if (closedOutcome) env.closed_outcome = closedOutcome;",
+    planted: "document_revise writes an envelope field the published schema does not declare, " +
+      "so the close's outcome is carried under a name no reader looks for — and the name it " +
+      "uses is one a flow may claim for itself",
   },
   {
     check: "scripts/gate/checks/documents-schema.ts",

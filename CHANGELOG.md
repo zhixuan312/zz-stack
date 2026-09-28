@@ -33,6 +33,76 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.88.0] — 2026-09-28
+
+The follow-through on the schema first-principles review (initiative
+`2026-09-21-schema-first-principles-review`): what the retirement left behind, in the data, in
+the skills and in the checks that were supposed to catch it.
+
+### Fixed
+
+- **A team's own knowledge nodes can be read.** `knowledge_search` has indexed team-shelf nodes
+  since the store moved to rows, and `document_read` served neither shelf: the branch that reads
+  a node ran only for `scope: "platform"` and always looked on the platform shelf, so a node the
+  search returned with `shelf: "team"` fell through to the document read, which looks for a `doc`
+  row a node has never had. The refusal then advised the platform scope, which refused it too —
+  **877 nodes on this deployment** were indexed and unreachable, and both refusals sent the caller
+  in a circle. The shelf a node is on is its `team_id` and nothing else: `document_read` reads the
+  caller's own shelf, `scope: "platform"` picks the platform shelf, and a node that is not on the
+  shelf asked for is refused by naming which shelf was read and where the other one is.
+- **`document_list(prefix: "_knowledge")` lists a shelf's nodes.** It answered `[]` for the
+  addresses the search returns, so there was no way to see what a shelf held.
+- **`supports` is a relation, and every reader reads it there.** It was an envelope key of the
+  source's own revision, with a `doc_link` grain of the same name beside it that nothing wrote.
+  `source_add` files one `supports` row per document a source bears on, and `source_list`, the
+  console's document panel, `initiative_status`'s refinement flag, and the audit- and review-round
+  readers all read the links. The console's panel matched the envelope as one comma-joined string,
+  so a source bearing on two documents (`intent.md, spec.md`) matched neither and the panel was
+  empty for exactly the material that bears on the document being read.
+- **`doc.content_hash` is the projection the schema says it is.** Every live write keeps it equal
+  to its current revision's; the carry wrote the OLD store's value instead — the hash of a JSON
+  projection that no longer exists — so 1,225 rows disagreed with their own revision.
+- **The frozen copies the carry filed twice are gone, and the constraint is enforced.**
+  `_versions/<stem>.v<N>.md` was carried as a `doc` row whose bytes are also that document's
+  revision N: 336 rows holding the same text twice, each claiming `approved` with no approved
+  revision — the only rows in the deployment that `doc_current_revision_required` refuses, which
+  is why the constraint was declared `NOT VALID`. The repair deletes a copy ONLY when its bytes
+  are provably its parent's revision, then validates the constraint. `doc` loses 336 rows;
+  `doc_revision` loses none.
+- **Four shipped skills described the retired store**, and one described a tool contract that had
+  changed: `zz-handover` told the agent to read `_versions/` snapshots, `activity.jsonl` and "the
+  `_ledger.md` row"; `zz-platform` and `sdlc-plan` said an approved version "stays in
+  `_versions/`"; `zz-plugin-evaluate` promised `evaluation_start` returns
+  `{ eval_run_id, evidence_snapshot_id, run_status }` and binds an immutable
+  `zz.eval_evidence_snapshot` — a paragraph the one above it already contradicted, and all three
+  names are gone. `ARCHITECTURE.md` §3a described the deployed store as an artifact volume.
+- **24 of the 375 mutation plants no longer landed**, so 24 checks read as covered by a defect
+  that never ran (`plant.ts` never fails on a `find` it cannot find). Eighteen were re-aimed at
+  the code carrying the same behaviour, two specs went with the checks they belonged to, and four
+  assertions are recorded in `unexercisable.ts` with what would make them plantable again.
+
+### Added
+
+- **A gate check that every planted defect still lands** (`checks/mutation-specs-match-subjects.ts`):
+  a `find` that no longer occurs in its subject, a subject that no longer exists, or an assertion
+  both planted and declared unplantable fails the gate.
+- **Always-run invariants in the rehearsal** (`scripts/rehearse/invariants.ts`). The join
+  expectations were declared per migration and ran only while that migration was pending — so once
+  a phase's `002_` file was folded, the rehearsal checked nothing at all. The invariants hold of
+  any correct store and run on every rehearsal: the `doc` projection, both revision keys, the
+  approval/status agreement, and the shape of a `supports` link.
+
+### Upgrade notes
+
+- **A superadmin will see fewer documents in a listing.** The deletion removes the `_versions/`
+  copies, which appeared as documents of their own. Every one of their bytes is still readable as
+  the revision it froze: `document_read(<path>, version: N)`.
+- **`002_store_carry_repair.sql` runs on deploy.** It deletes only rows whose bytes are provably
+  present in their parent's current revision — checked in the same statement — and it validates
+  `doc_current_revision_required` once every row satisfies it.
+- No env key changed and no client re-pull is needed; the four skills are bumped in the locks this
+  release ships.
+
 ## [0.87.1] — 2026-09-28
 
 ### Fixed

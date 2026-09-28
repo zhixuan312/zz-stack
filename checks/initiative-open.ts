@@ -62,7 +62,11 @@ const wrote = (initiative: string, path: string, text: string): void => {
     updated_at: "2026-09-14T00:00:00.000Z", title: env.title ?? path,
     body: text.slice(block ? block[0].length : 0).trim(), tags: [],
     current_revision: Number(env.version) || 1, approved_revision: null,
-    fields: Object.fromEntries(Object.entries(env).filter(([k]) => !COLUMN_KEYS.has(k))) });
+    // `supports` is a relation and not an envelope key, so it is read off the frontmatter into
+    // the row's own list rather than left in the payload `docRows` would answer with.
+    supports: (env.supports ?? "").split(",").map((x) => x.trim()).filter(Boolean),
+    fields: Object.fromEntries(Object.entries(env)
+      .filter(([k]) => !COLUMN_KEYS.has(k) && k !== "supports")) });
 };
 
 pg.Pool.prototype.query = (async function query(text: string, values: unknown[] = []) {

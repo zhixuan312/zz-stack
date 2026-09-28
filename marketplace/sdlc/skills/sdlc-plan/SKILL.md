@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.17
+version: 1.18
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -459,7 +459,7 @@ document_revise(
 ```
 
 The platform bumps the version, returns the document to draft, clears the stale approval and
-keeps the approved copy in `_versions/`. Mark every task `unchanged`, `changed` or `new`, and
+keeps the approved copy as the sealed revision `document_read(<path>, version: N)` answers with. Mark every task `unchanged`, `changed` or `new`, and
 add the tasks that undo anything an earlier round built that no longer belongs. Do not write a
 second plan; execution needs one document.
 

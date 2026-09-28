@@ -32,19 +32,6 @@ check("every store mutation goes through the shared guard and persist", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-check("every tool that writes a file also indexes it", () => {
-  const bad: string[] = [];
-  for (const { name, body } of zzCoreTools()) {
-    // Writing a .md into the store means the derived index must be told.
-    const writesDoc = /writeFileSync\(|persistDocument\(/.test(body);
-    if (!writesDoc) continue;
-    if (!/indexDoc\(|persistDocument\(/.test(body)) {
-      bad.push(`${name}: writes a file without indexDoc — the index will disagree with it`);
-    }
-  }
-  return bad.length ? bad.join("; ") : null;
-});
-
 check("every document write runs the guards", () => {
   // documentGuards is everything that must be true before a document is written; `saveDocument`
   // is the one insert path the write itself goes through. The pairing is the check: a tool that

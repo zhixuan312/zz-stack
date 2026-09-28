@@ -98,7 +98,11 @@ export async function withThrowawayDb<T>(
   const container = `zz-schema-target-pg-${process.pid}`;
   const pwd = "throwaway";
   const pgsvc = postgresService(root);
-  run("docker", ["run", "-d", "--name", container, "-p", "127.0.0.1::5432",
+  // DELIBERATE: `--rm` and, below, `rm -v`. The postgres image declares its data directory as a
+  // VOLUME, so every container gets an anonymous volume of its own — and `docker rm -f` without
+  // `-v` leaves it behind. A year of throwaways had leaked 2,043 volumes and 128 GB on the machine
+  // this ran on, none of them reachable and all of them invisible to `docker ps`.
+  run("docker", ["run", "-d", "--rm", "--name", container, "-p", "127.0.0.1::5432",
     "-e", "POSTGRES_USER=zz", `-e`, `POSTGRES_PASSWORD=${pwd}`, "-e", "POSTGRES_DB=zz",
     pgsvc.image, ...pgsvc.command]);
   try {
@@ -130,6 +134,6 @@ export async function withThrowawayDb<T>(
       await client.end();
     }
   } finally {
-    try { run("docker", ["rm", "-f", container]); } catch { /* nothing left to remove */ }
+    try { run("docker", ["rm", "-f", "-v", container]); } catch { /* nothing left to remove */ }
   }
 }

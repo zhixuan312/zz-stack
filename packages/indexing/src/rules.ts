@@ -1,10 +1,9 @@
 /**
  * The rules a row is derived by, as pure functions of their input.
  *
- * Every one takes a string and returns a string, a boolean or a row — no database, no
- * filesystem, no clock. Being pure is what makes them the only part of the index that can be
- * exercised without a Postgres: `checks/document-rules.ts` calls every one of them with the
- * shape that would be wrong in the flattering direction.
+ * A rule takes text and returns rows — no database, no filesystem, no clock. Being pure is what
+ * makes it exercisable without a Postgres, which is what `checks/document-rules.ts` does with
+ * the shape that would be wrong in the flattering direction.
  */
 import { verdictFromProse } from "@zz/contracts";
 
@@ -22,35 +21,6 @@ export interface DecisionRow {
  * key shape every numbered identifier satisfies is generic too. What each key means stays the
  * flow's business and this does not ask. */
 const CLAIM_KEY = "([A-Z]{1,4}-\\d+(?:\\.\\d+)*)";
-
-/** Whether a file belongs in the searchable corpus.
- *
- * COUPLED: the write path and the rebuild, both in `packages/indexing/src/index.ts`, call
- * this and have to agree. The rebuild
- * decides which rows are stale by which files it saw, so a file the writer skips but the
- * walker counts as present keeps its row forever.
- *
- * _knowledge/index.md and _knowledge/log.md are derived from the nodes. Indexing them puts a
- * row in the corpus that matches almost any query while being the row least able to answer
- * one. */
-export function indexable(relPath: string): boolean {
-  const parts = relPath.replace(/^\/+/, "").split("/");
-  if (parts.length < 2 || !relPath.endsWith(".md")) return false;
-  return !(parts[0] === "_knowledge" && parts.length === 2);
-}
-
-/** A frontmatter date as an ISO date, whichever way the flow wrote it.
- *
- * DELIBERATE: DD-MM-YYYY is still accepted. No flow writes `approved_at` any more —
- * document_approve() stamps the field with isoToday() — but the store holds documents dated
- * DD-MM-YYYY from before the platform owned the field, and narrowing this to ISO would drop
- * their approval dates out of the searchable record. */
-export function isoDate(v: string | undefined): string | null {
-  const d = (v ?? "").trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;                        // already ISO
-  if (/^\d{2}-\d{2}-\d{4}$/.test(d)) return d.split("-").reverse().join("-");  // DD-MM-YYYY
-  return null;
-}
 
 /** The claims a stage document makes, as rows, from text the stage already wrote.
  *

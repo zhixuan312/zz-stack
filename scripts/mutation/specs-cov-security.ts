@@ -277,10 +277,9 @@ export const COV_SECURITY: readonly MutationSpec[] = [
     subject: "packages/tools/src/ops/watch-results.ts",
     // COUPLED: the selected columns. `outcome` came out of this statement when the lifecycle facts
     // moved onto `zz.initiative`, so the anchor follows the statement that is actually there.
-    find: '    "select team_slug, initiative, path, status, updated_at from zz.doc", {});',
-    replace: "    \"select coalesce(json_agg(row_to_json(t)), '[]') from (\" +\n" +
-      '    "  select team_slug, initiative, path, status, updated_at' +
-      ' from zz.doc) t", {});',
+    find: '    "select t.slug as team_slug, i.slug as initiative, d.path, d.status, d.updated_at" +',
+    replace: '    "docker compose exec -T postgres psql" + ' +
+      '"select t.slug as team_slug, i.slug as initiative, d.path, d.status, d.updated_at" +',
     planted: "a caller writes psqlRows' own json_agg envelope by hand, so the rows come back " +
       "wrapped twice and the tool reads nothing — composing that wrapper is the transport's " +
       "job, and a hand-written one is how the rule it carries, statement on stdin and never " +
@@ -425,13 +424,16 @@ export const COV_SECURITY: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/data-telemetry.ts",
     target: "a record that is counted is a record that is written once",
-    assertion: "the ledger appends one row per close, however many times it is called",
-    subject: "services/zz-core/src/persist.ts",
-    find: "    if (parseEnvelope(prev).outcome) return; // already closed once",
-    replace: "    if (!prev) return; // nothing on disk to compare against",
-    planted: "closing an initiative a second time appends a second ledger row while the " +
-      "document keeps one outcome, so what the ledger counts and what the closing documents " +
-      "say disagree — silently, and the disagreement is invisible from either side",
+    assertion: "the anchor row refuses a second close, however many times it is called",
+    subject: "services/zz-core/src/tools/initiative-close.ts",
+    // Both closing updates, so the plant is the property rather than one branch of it.
+    all: true,
+    find: "and i.slug = $2 and i.closed_at is null",
+    replace: "and i.slug = $2",
+    planted: "the update that closes an initiative is no longer guarded on `closed_at is null`, " +
+      "so a second close lands: the row is rewritten with a new outcome and time while the " +
+      "first close's record stands, and every count derived from the row disagrees with what " +
+      "the closing document says",
   },
   {
     check: "scripts/gate/checks/data-telemetry.ts",

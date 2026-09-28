@@ -24,26 +24,14 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
   /* The write guards */
   {
     check: "scripts/gate/checks/documents-guards.ts",
-    target: "every tool that writes a file also indexes it",
-    subject: "services/zz-core/src/tools/artifacts.ts",
-    find: "      void indexDoc(root, rel, doc);",
-    replace: "      void indexDoc;",
-    planted: "source_add writes the source file and never tells the index, so the material a " +
-      "revision rests on is on disk and invisible to every search that looks for it — the " +
-      "knowledge_supersede failure, on the other write path",
-  },
-  {
-    check: "scripts/gate/checks/documents-guards.ts",
     target: "every document write runs the guards",
     subject: "services/zz-core/src/tools/artifacts.ts",
-    find: "      const bad = documentGuards(chain, root, path, fixed.content, team);\n" +
-      "      if (bad) return text(bad);\n" +
-      "      persistDocument(chain, root, path, target, fixed.content, \"patch\");",
-    replace: "      void team;\n" +
-      "      persistDocument(chain, root, path, target, fixed.content, \"patch\");",
-    planted: "document_patch lands a document without asking whether it may — no ownership " +
-      "check, no gate, no section rule — so a patch can move an approved document and the " +
-      "store keeps the result",
+    find: "      const bad = await documentGuards(chain, path, fixed.content, team);\n" +
+      "      if (bad) return text(bad);",
+    replace: "      void documentGuards;",
+    planted: "document_patch writes through saveDocument without asking documentGuards first, " +
+      "so a patch that moves a platform-owned field lands — the guard that would refuse it is " +
+      "called and its answer thrown away, which is the same as never asking",
   },
   {
     check: "scripts/gate/checks/documents-guards.ts",
@@ -91,18 +79,22 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
     subject: "services/zz-core/src/tools/initiative-acts.ts",
     find: "        pendingSource = {\n" +
       "          rel,\n" +
-      "          doc: sourceDocument({ title, by: who.email, day, supports: parts[1],\n" +
+      "          doc: sourceDocument({ title, by: who.email, day,\n" +
       "                                content: source_content.trim() }),\n" +
       "        };",
-    replace: "        const srcDoc = sourceDocument({ title, by: who.email, day, supports: parts[1],\n" +
-      "                                content: source_content.trim() });\n" +
-      "        pendingSource = { rel, doc: srcDoc };\n" +
-      "        mkdirSync(resolve(join(root, rel), \"..\"), { recursive: true });\n" +
-      "        writeFileSync(join(root, rel), srcDoc);",
-    planted: "document_revise writes the source that explains the revision before the guards " +
-      "run, so a revision the platform then refuses leaves that source on disk while the " +
-      "caller is told the write failed — the store keeps material for a version that never " +
-      "happened",
+    replace: "        pendingSource = {\n" +
+      "          rel,\n" +
+      "          doc: sourceDocument({ title, by: who.email, day,\n" +
+      "                                content: source_content.trim() }),\n" +
+      "        };\n" +
+      "        await saveDocument({\n" +
+      "          team, relPath: rel, initiative: parts[0], text: pendingSource.doc,\n" +
+      "          by: who.email, flow: \"\", type: \"source\", mode: \"create\", act: \"source\",\n" +
+      "        });",
+    planted: "document_revise files the source that explains the revision before the guards " +
+      "run, so a revision the platform then refuses leaves that source filed, indexed and " +
+      "logged while the caller is told the write failed — the store keeps material for a " +
+      "version that never happened",
   },
   {
     check: "scripts/gate/checks/documents-guards.ts",
@@ -162,38 +154,21 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
     target: "a path is resolved before the document at it is judged",
     assertion: "a tool that judges a document and never resolves its path at all",
     subject: "services/zz-core/src/tools/artifacts.ts",
-    find: "      const target = await safePath(path);\n" +
-      "      if (!existsSync(target)) return text(`ERROR: ${path} does not exist`);",
-    replace: "      const target = join(root, path);\n" +
-      "      if (!existsSync(target)) return text(`ERROR: ${path} does not exist`);",
-    planted: "document_patch stops resolving the path through the store's own resolver, so a " +
-      "path the store would never accept is judged as a document instead — and the refusal " +
-      "that teaches the path form never reaches the caller who needs it",
+    find: "      await safePath(path);\n" +
+      "      // The body is the current revision's, read from the row that retained it — the same",
+    replace: "      // The body is the current revision's, read from the row that retained it — the same",
+    planted: "document_patch judges a document without resolving its path first, so a caller " +
+      "who wrote a path the store would never accept is answered about the document instead — " +
+      "and the refusal that teaches the path form never reaches the caller who needs it",
   },
 
-  /* The envelope */
-  {
-    check: "scripts/gate/checks/documents-envelope.ts",
-    target: "nothing reads an envelope field except parseEnvelope",
-    subject: "services/zz-core/src/tools/artifacts.ts",
-    find: "        const env = parseEnvelope(existsSync(join(root, initiative, d))\n" +
-      "          ? readFileSync(join(root, initiative, d), \"utf8\") : \"\");\n" +
-      "        return env.status === \"approved\";",
-    replace: "        const txt = existsSync(join(root, initiative, d))\n" +
-      "          ? readFileSync(join(root, initiative, d), \"utf8\") : \"\";\n" +
-      "        return /^status: approved/m.test(txt);",
-    planted: "source_add decides whether a document was already approved with its own regex, " +
-      "which reads the whole document rather than the frontmatter and takes the first match " +
-      "rather than the last — so a body line that begins `status: approved` makes a draft " +
-      "look signed",
-  },
-  {
+  /* The envelope */  {
     check: "scripts/gate/checks/documents-envelope.ts",
     target: "only an act may move the fields the platform owns",
     assertion: "an act that passes a `via` that is not its own name",
     subject: "services/zz-core/src/tools/initiative-acts.ts",
-    find: "      const bad = documentGuards(chain, root, relPath, fixed.content, team, \"document_revise\");",
-    replace: "      const bad = documentGuards(chain, root, relPath, fixed.content, team, \"document_approve\");",
+    find: "      const bad = await documentGuards(chain, relPath, fixed.content, team, \"document_revise\");",
+    replace: "      const bad = await documentGuards(chain, relPath, fixed.content, team, \"document_approve\");",
     planted: "document_revise tells the guard it is the approval act, so the bypass that lets " +
       "an act move status, approved_by and the rest is held by a caller claiming somebody " +
       "else's name — and whichever act is named is the one the record will show",
@@ -248,21 +223,7 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
     planted: "the next move the platform computes every turn tells the agent to write the " +
       "approval into the frontmatter, which every write path refuses — so an agent following " +
       "the instruction it is told to trust is refused by the platform that gave it",
-  },
-  {
-    check: "scripts/gate/checks/documents-envelope.ts",
-    target: "where a frontmatter block starts and ends is spelled once",
-    subject: "services/zz-core/src/persist.ts",
-    find: "export function setEnvelopeField(doc: string, field: string, value: string): string {\n" +
-      "  const m = doc.match(ENVELOPE_BLOCK);",
-    replace: "export function setEnvelopeField(doc: string, field: string, value: string): string {\n" +
-      "  const m = doc.match(/^---[ \\t]*\\n([\\s\\S]*?)\\n---\\n/);",
-    planted: "the writer spells the frontmatter block again and its copy insists on a newline " +
-      "after the closing fence, so a document that ends exactly at its fence has an envelope " +
-      "to every other reader and none to this one — and the field it was asked to set is " +
-      "silently not set",
-  },
-  {
+  },  {
     // COUPLED: the dispatcher's list files this id under documents-envelope.ts, which quotes
     // the name in a comment. `check` is the file that registers it, so that is what this
     // row names.

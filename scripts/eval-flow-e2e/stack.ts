@@ -235,7 +235,9 @@ export async function deployRelease(stack: Pick<Stack, "seed" | "prefix" | "url"
 }
 
 export function down(stack: Pick<Stack, "prefix" | "work">): void {
-  for (const c of ["gw", "core", "pg"]) quiet("docker", ["rm", "-f", `${stack.prefix}-${c}`]);
+  // `-v`: the postgres image declares its data directory as a VOLUME, so `rm -f` alone leaves an
+  // anonymous volume behind on every walk — 2,043 of them had accumulated on the machine this ran on.
+  for (const c of ["gw", "core", "pg"]) quiet("docker", ["rm", "-f", "-v", `${stack.prefix}-${c}`]);
   quiet("docker", ["network", "rm", `${stack.prefix}-net`]);
   // The mounted tree was written by root inside the containers; a container removes it.
   quiet("docker", ["run", "--rm", "-v", `${stack.work}:/w`, "node:24", "sh", "-c", "rm -rf /w/* /w/.[!.]*"]);

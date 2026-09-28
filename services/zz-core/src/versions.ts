@@ -122,6 +122,21 @@ interface DocumentWrite {
   seal?: { by: string; at: string } | null;
   /** The revisions this one cites: `doc_link` rows of kind `cites`. */
   cites?: { path: string; revision: number }[];
+  /**
+   * The documents this revision bears on: `doc_link` rows of kind `supports`, pinned to this
+   * revision at one end and to the target document's IDENTITY at the other — `to_revision` is null
+   * by the table's own CHECK.
+   *
+   * DELIBERATE, and the pair is two facts rather than one spelled twice: a citation names an exact
+   * revision this one read, and a support names a document the source was written for, which
+   * outlives every revision of it. A source recording a round for `spec.md` supports the document;
+   * it cites the revision it actually read, when it read one.
+   *
+   * The envelope carries the same list as `supports`, because that is what a writer has in hand.
+   * The LINK is the record, and a reader reads it: the envelope is the input, and a document whose
+   * links were written before this field existed was backfilled by the carry.
+   */
+  supports?: string[];
   /** Whether this write is a new revision of an existing document, or the current one being
    *  rewritten in place (a draft being filled in). */
   mode: "create" | "rewrite" | "append";
@@ -341,6 +356,25 @@ export async function citationsOf(
   return [...new Set(rows.map((r) => `${r.initiative}/${r.path}`))];
 }
 
+/** The documents one revision bears on, by the path each is addressed by — the `supports` links a
+ *  source's own `supports` list became.
+ *
+ *  The sibling of `citationsOf` and deliberately not the same query: `cites` names an exact
+ *  revision this one read, `supports` names a document it was written FOR, and the two lists differ
+ *  on every source that records a round without reading a revision. A reader that wants "what was
+ *  this written for" asks here; a reader that wants "what did it read" asks there. */
+export async function supportsOf(
+  p: Pick<pg.Pool, "query">, docId: string, revision: number,
+): Promise<string[]> {
+  const { rows } = await p.query<{ initiative: string; path: string }>(
+    `select i.slug as initiative, t.path from zz.doc_link l
+       join zz.doc t on t.id = l.to_doc_id
+       join zz.initiative i on i.id = t.initiative_id
+      where l.from_doc_id = $1::uuid and l.from_revision = $2 and l.kind = 'supports'
+      order by i.slug, t.path`, [docId, revision]);
+  return [...new Set(rows.map((r) => `${r.initiative}/${r.path}`))];
+}
+
 /** The initiative id a slug names inside a team, or null. Resolved THROUGH the team, never by
  *  the slug alone: two teams' initiatives may share a slug. */
 async function initiativeIdIn(
@@ -555,6 +589,21 @@ export async function saveDocument(
          values ($1::uuid, $2, $3::uuid, $4, 'cites')
          on conflict do nothing`,
         [id, revision, target.id, cite.revision]);
+    }
+    for (const rel of w.supports ?? []) {
+      const target = await documentAt(client, w.team, rel);
+      if (!target) continue;
+      // DELIBERATE: `to_revision` is null, which is what makes this the `supports` grain rather
+      // than the `cites` one — `doc_link_revision_shape` refuses a supports row that names a
+      // revision. A support is for the DOCUMENT and outlives every revision of it, which is what a
+      // reader asks for when it wants to know what a document was built from; a citation names the
+      // exact revision this one read. `on conflict do nothing` for the reason above: a list naming
+      // one document twice is one relation, not two.
+      await client.query(
+        `insert into zz.doc_link (from_doc_id, from_revision, to_doc_id, to_revision, kind)
+         values ($1::uuid, $2, $3::uuid, null, 'supports')
+         on conflict do nothing`,
+        [id, revision, target.id]);
     }
     await client.query("commit");
     recordAct(w.relPath,

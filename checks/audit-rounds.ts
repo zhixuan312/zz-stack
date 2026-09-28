@@ -130,7 +130,7 @@ const docRow = (initiative: string, path: string, o: Record<string, unknown> = {
   id: `d${++seq}`, path, initiative, flow: "", type: "", status: "",
   outcome: null, approved_by: null, approved_at: null, closed_by: null,
   updated_at: "2026-09-24T00:00:00.000Z", title: "", body: "", tags: [],
-  current_revision: 1, approved_revision: null, fields: null, ...o,
+  current_revision: 1, approved_revision: null, fields: null, supports: [], ...o,
 });
 
 interface Fixture { name: string; chain: Awaited<ReturnType<typeof chainFor>> }
@@ -154,15 +154,15 @@ function spec(name: string, version: number) {
 function round(name: string, i: number, read: number, extra: Record<string, string> = {}): string {
   const file = `2026-09-24-spec-audit-round-${i}.md`;
   world.get(name)!.docs.push(docRow(name, `sources/${file}`, { type: "sdlc-spec-audit",
-    title: `Spec audit round ${i}`, body: `Round ${i} findings.`,
-    fields: { supports: "spec.md", stage: "sdlc-spec-audit", audits_version: String(read),
+    title: `Spec audit round ${i}`, body: `Round ${i} findings.`, supports: ["spec.md"],
+    fields: { stage: "sdlc-spec-audit", audits_version: String(read),
               added_at: `2026-09-24T0${i}:00:00.000Z`, ...extra } }));
   return file;
 }
 function material(name: string, at: string) {
   world.get(name)!.docs.push(docRow(name, `sources/2026-09-24-decision-${at.replace(/\W/g, "")}.md`, {
-    title: "Stakeholder decision", body: "Keep it as agreed.",
-    fields: { supports: "spec.md", added_at: at } }));
+    title: "Stakeholder decision", body: "Keep it as agreed.", supports: ["spec.md"],
+    fields: { added_at: at } }));
 }
 /** An answer the assessor recorded, in the grain `assessFamily` persists it and `recordsFor`-style
  *  readers read it back. */

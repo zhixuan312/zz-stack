@@ -21,7 +21,7 @@ import { bodyTsvParams, bodyTsvSql, buildRowVector } from "./tenant-analysis.js"
 
 // The package's door: a consumer imports `@zz/indexing`, not a path inside it. That is why
 // the pure rules are re-exported here rather than reached by a deep import.
-export { decisionRows, indexable, isoDate, type DecisionRow } from "./rules.js";
+export { decisionRows, type DecisionRow } from "./rules.js";
 // `zz-lexical-v2`, the versioned analyzer. `buildRowVector` is also imported below, not only
 // re-exported, because the reindex pass calls it to rebuild a row's `body_tsv`.
 export {

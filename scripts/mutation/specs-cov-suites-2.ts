@@ -97,11 +97,17 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
     target: "a lock regenerated from the converted tree comes back unchanged, byte for byte",
     assertion: "the committed plugins.lock.json is what regenerating it produces",
     subject: "plugins.lock.json",
-    find: "\"digest\": \"adfb87f1\"",
-    replace: "\"digest\": \"adfb87f2\"",
-    planted: "zz-core's committed content digest no longer matches the content it is computed " +
-      "from, so the lock describes a plugin that does not exist and every consumer keyed on " +
-      "that digest is told it received something it did not",
+    // DELIBERATE: the version and not a digest. A digest is recomputed from the tree, so a
+    // spec naming one goes stale on the next release that touches the plugin — which is how
+    // this row came to plant nothing. The version is what `plugin-versions --write` stamps from
+    // the catalog, and it moves only when a release moves it: re-aim this row at the version
+    // that release ships, and `mutation-specs-match-subjects.ts` fails the gate the day it
+    // moves without being re-aimed.
+    find: "    \"version\": \"0.88.0\",",
+    replace: "    \"version\": \"0.88.1\",",
+    planted: "the committed lock names a version the tree does not ship, so the lock describes " +
+      "a plugin that does not exist and every consumer keyed on it is told it received " +
+      "something it did not",
   },
   {
     check: SUITES_TOOLING,

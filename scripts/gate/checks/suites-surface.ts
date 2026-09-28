@@ -29,6 +29,9 @@ check("a revision names its cause — one route or the other, never neither and 
 check("a document read takes a list and a version, and history never vouches for the present",
       runsCheck("document-reads.ts"));
 
+check("a knowledge node is read from the shelf it is on, and the listing reaches the same table",
+      runsCheck("knowledge-shelf-read.ts"));
+
 check("the core door serves exactly its tools, and a removed tool is gone from every caller",
       runsCheck("core-surface.ts"));
 

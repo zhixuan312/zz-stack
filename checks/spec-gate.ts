@@ -47,10 +47,12 @@ interface W { flow: string | null; docs: Record<string, unknown>[];
              answers: { about: string; family: string; reading: string; probability: number | null; asked_at: string }[] }
 const world = new Map<string, W>();
 let seq = 0;
-const row = (initiative: string, path: string, payload: Record<string, string> | null, text: string) => ({
+const row = (initiative: string, path: string, payload: Record<string, string> | null, text: string,
+             supports: string[] = []) => ({
   id: `d${++seq}`, path, initiative, flow: "", type: "", status: "", outcome: null,
   approved_by: null, approved_at: null, closed_by: null, updated_at: "2026-09-26T00:00:00.000Z",
-  title: "", body: text, tags: [], current_revision: 1, approved_revision: null, fields: payload });
+  title: "", body: text, tags: [], current_revision: 1, approved_revision: null, fields: payload,
+  supports });
 
 pg.Pool.prototype.query = (async function query(text: string, values: unknown[] = []) {
   const sql = String(text).replace(/\s+/g, " ").trim();
@@ -114,7 +116,7 @@ const refused = async (body: string, mentions: RegExp, why: string, name = fresh
 };
 const stakeholder = (name: string, text: string) =>
   world.get(name)!.docs.push(row(name, `sources/2026-09-26-decision-${text.length}.md`,
-    { supports: "spec.md", added_at: "2026-09-26T00:00:00.000Z" }, text));
+    { added_at: "2026-09-26T00:00:00.000Z" }, text, ["spec.md"]));
 
 //
   // 1. The deterministic refusals.

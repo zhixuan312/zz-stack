@@ -17,12 +17,14 @@
  * there was more. A body over the limit is a part whether or not anybody asked, and `present`
  * decides that here rather than at the tool, so a second caller cannot forget.
  *
- * DELIBERATE: a part is recorded against the CURRENT revision, by its version number, and only
- * its own spans count towards coverage. A part cut from other bytes is a part of another
- * document-as-it-was, so `partsCover` reads the spans recorded since that revision was written,
- * and its span bookkeeping is the one thing here that still lives in `zz.event` — a column cannot
- * hold a span set. Losing those rows makes a partly-presented document read as unpresented, which
- * refuses an approval: it fails CLOSED, and that is the direction this platform fails in.
+ * DELIBERATE: a present is recorded against the revision it SHOWED, and only when that revision is
+ * the one the document points at — `presented_at` is a column on that row, so presenting history is
+ * a read and not a present. Both forms below carry that rule; `presentPart` did not, and the defect
+ * it let through is why it does now. Within the current revision, only a part's own spans count
+ * towards coverage: `partsCover` reads the spans recorded since that revision was written, and its
+ * span bookkeeping is the one thing here that still lives in `zz.event` — a column cannot hold a
+ * span set. Losing those rows makes a partly-presented document read as unpresented, which refuses
+ * an approval: it fails CLOSED, and that is the direction this platform fails in.
  */
 import { documentBody, parseEnvelope } from "@zz/contracts";
 import type pg from "pg";

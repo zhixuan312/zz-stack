@@ -225,6 +225,9 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             `<initiative>/_versions/` snapshots and the `.git` history every write was committed
             to — and writes `doc_revision` rows for every revision those three records hold,
             verifying each retained revision by content hash against the bytes it came from.
+            DELIBERATE: this has run, against production, and the stores it read are retired; it
+            stays in the tree because it is how those rows were produced, and how another
+            deployment still holding a store would produce its own.
             Revisions the store genuinely never kept are `missing_legacy` and carry no content:
             a write whose commit failed left a `git_failed` entry, and a revision predating the
             repository left nothing. `store-migration/` holds the shape it reads, the rows it

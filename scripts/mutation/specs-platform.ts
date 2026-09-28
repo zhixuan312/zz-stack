@@ -44,8 +44,8 @@ export const PLATFORM_SPECS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/console.ts",
     target: "a console query cannot fall back to every team",
     subject: "services/gateway/src/console/knowledge.ts",
-    find: "        where team_slug = $1",
-    replace: "        where ($1::text is null or team_slug = $1)",
+    find: "        where t.slug = $1\n        order by k.node_ordinal`, [scope.slug]);",
+    replace: "        where ($1::text is null or t.slug = $1)\n        order by k.node_ordinal`, [scope.slug]);",
     planted: "a null team parameter makes the predicate true for every row, so a caller who " +
       "simply omits ?team= is served every team's knowledge",
   },
@@ -53,11 +53,11 @@ export const PLATFORM_SPECS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/data-telemetry.ts",
     target: "a tool that changes something records that it did",
     subject: "services/zz-core/src/tools/artifacts.ts",
-    // Both recorders. Removing `logActivity` alone leaves `commitStore` in the same body, which the
-    // check also accepts as a record — correctly, since a commit is one. The defect this check is
-    // about is a mutation with no record at all.
-    find: '      logActivity(root, rel, { user: who.email, action: "source_add", path: rel, supports: list.join(",") });\n      commitStore(root, who.email, "source", rel);',
-    replace: "      void [logActivity, commitStore, who];",
+    // One recorder, and removing it is the defect: the tool's write goes through `saveDocument`,
+    // so what makes the act attributable is the `recordAct` beside it. `void recordAct;` keeps the
+    // identifier and drops the call — the check matches a call, not a name.
+    find: '      recordAct(rel, { user: who.email, action: "source_add", path: rel, supports: list.join(",") });',
+    replace: "      void recordAct;",
     planted: "a tool that writes the store stops recording that it did, so the change can " +
       "only be recovered by reading the state it made",
   },

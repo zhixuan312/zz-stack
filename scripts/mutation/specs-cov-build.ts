@@ -285,13 +285,13 @@ export const COV_BUILD: readonly MutationSpec[] = [
   },
   {
     check: "scripts/gate/checks/image.ts",
-    target: "a store the team can walk away with has git in the image",
+    target: "the runtime image installs git, which a plugin's own readers shell out to",
     subject: "Dockerfile",
     find: "RUN apk add --no-cache git",
     replace: "RUN apk add --no-cache ca-certificates",
-    planted: "the runtime stage stops installing git, and commitStore never throws — so every " +
-      "document write succeeds, logs `git_failed`, and leaves a team's store with no history " +
-      "that nobody notices until they go looking for one",
+    planted: "the runtime stage stops installing git, so every `plugin_register` from a git URL or " +
+      "a package tarball refuses as an unreachable address — and an operator reads that as a bad " +
+      "URL rather than a missing binary",
   },
   {
     check: "scripts/gate/checks/image.ts",
@@ -300,8 +300,8 @@ export const COV_BUILD: readonly MutationSpec[] = [
     find: '["build", "--platform", PLATFORM, "-f", "Dockerfile", "-t"',
     replace: '["build", "--platform", PLATFORM, "-f", "deploy/ts.Dockerfile", "-t"',
     planted: "the release builds the application image from a second recipe while development " +
-      "builds it from the root one — the exact drift that once had development able to commit a " +
-      "store and production unable to, with the check for it reading the file production was " +
-      "not built from",
+      "builds it from the root one — the exact drift that would leave development able to " +
+      "register a plugin from git and production unable to, with the check for it reading the " +
+      "file production was not built from",
   },
 ];

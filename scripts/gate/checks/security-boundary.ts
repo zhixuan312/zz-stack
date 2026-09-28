@@ -192,15 +192,12 @@ check("a psql variable is bound, never interpolated", () => {
     : null;
 });
 
-check("nothing under a store root that begins with a dot is reachable", () => {
-  // walk() skips dot-entries, because the store is a git repository and a lister that did not
-  // would report `.git/COMMIT_EDITMSG` as a team's first document. safeName refuses a
-  // dot-prefixed name. Neither guards the `path` argument document_write, document_patch and
-  // document_read take: commitStore runs `git commit` after every write, so a `.git/hooks/` file
-  // the model chose becomes an executable the service runs.
-  //
-  // Held on the two surfaces that can reach a store root: the path rule, run rather than read,
-  // and every hand-rolled listing.
+check("a caller's document path cannot begin a segment with a dot or escape home", () => {
+  // Every tool that takes a document path puts it through safePath, and safePath through
+  // pathShapeRefusal. A dot segment is the platform's own bookkeeping, never a document's, and
+  // a document written under one is invisible to document_list and to search; a `.zz/` or
+  // home-relative prefix would store the document under a path other than the one the model
+  // named. Held by running the rule rather than reading it, and by asserting safePath calls it.
   const src = zzCoreSource();
   const bad = [];
 
@@ -233,26 +230,6 @@ check("nothing under a store root that begins with a dot is reachable", () => {
   const guard = functionBody(src, "safePath") ?? "";
   if (!/pathShapeRefusal\(path\)/.test(guard)) {
     bad.push("safePath does not call pathShapeRefusal, so the rule is enforced on no path");
-  }
-
-  // And every listing that walks a store root by hand, in any service or tool — the same gap was
-  // open in four places at once, and `.git` came back as an open initiative with a next move, as
-  // an audit row, and as a card on the gateway's landing view.
-  //
-  // What identifies a store listing without naming the call sites: it filters `startsWith("_")`,
-  // the store's own convention (`_versions`, `_knowledge`, `_ledger.md`, `_activity.jsonl`), and
-  // it keeps directories. A listing of files inside one initiative also knows about `_` and
-  // cannot contain a repository, so the directory test separates them.
-  for (const rel of sourceFiles(["packages", "services"], [".ts"])) {
-    const text = readFileSync(join(root, rel), "utf8");
-    for (const m of text.matchAll(/readdirSync\([^)]*\)([\s\S]{0,400}?);/g)) {
-      const tail = m[1];
-      if (!/startsWith\("_"\)/.test(tail)) continue;      // not a store listing
-      if (!/isDirectory\(\)/.test(tail)) continue;        // files inside one initiative
-      if (/startsWith\("\."\)/.test(tail)) continue;      // already excludes them
-      bad.push(`${rel}:${text.slice(0, m.index).split("\n").length} lists a store root ` +
-               "without excluding dot-entries, and every store root now holds a .git");
-    }
   }
   return bad.length ? bad.join("; ") : null;
 });

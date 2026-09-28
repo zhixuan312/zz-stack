@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Every planted defect still lands.
+ * Every planted defect still lands, and is counted against a check that exists.
  *
  * A mutation spec's `find` is a literal string searched in its `subject`, and `plant.ts` writes
  * the file back only when it replaced something — a spec whose subject text has moved applies
@@ -54,8 +54,32 @@ for (const spec of SPECS) {
   landed++;
 }
 
+// A plant that lands can still be counted wrong. The runner calls a plant caught when the gate's
+// failures include `spec.target` BY NAME (scripts/mutation-run.ts), so a target naming a check
+// that was renamed, or a check that lives in another file, reads as a surviving mutant however
+// loudly the real check fires. Two did: the git-in-the-image check kept the file store's old
+// name after it was renamed, and the reachability check was filed under suites-data.ts when it
+// lives in hygiene.ts. Every target has to be a name its own check file declares.
+const declaredNames = new Map<string, Set<string>>();
+for (const spec of SPECS) {
+  if (!existsSync(spec.check)) {
+    fail.push(`${spec.check} does not exist — the plant targeting "${spec.target}" has no check`);
+    continue;
+  }
+  let names = declaredNames.get(spec.check);
+  if (!names) {
+    const src = readFileSync(spec.check, "utf8");
+    names = new Set([...src.matchAll(/\bcheck\(\s*(["'`])((?:(?!\1)[\s\S])*)\1/g)].map((m) => m[2]));
+    declaredNames.set(spec.check, names);
+  }
+  if (!names.has(spec.target)) {
+    fail.push(`${spec.check} declares no check named "${spec.target}" — the runner would count ` +
+      "this plant as surviving whatever the real check does");
+  }
+}
+
 if (fail.length) {
-  console.error(`mutation-specs-match-subjects: ${fail.length} plant(s) would not land` +
+  console.error(`mutation-specs-match-subjects: ${fail.length} plant(s) would not land or would be miscounted` +
     ` (${landed} of ${SPECS.length} do)`);
   for (const f of fail) console.error(`  - ${f}`);
   process.exit(1);

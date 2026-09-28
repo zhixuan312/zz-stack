@@ -97,14 +97,13 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
     target: "a lock regenerated from the converted tree comes back unchanged, byte for byte",
     assertion: "the committed plugins.lock.json is what regenerating it produces",
     subject: "plugins.lock.json",
-    // DELIBERATE: the version and not a digest. A digest is recomputed from the tree, so a
-    // spec naming one goes stale on the next release that touches the plugin — which is how
-    // this row came to plant nothing. The version is what `plugin-versions --write` stamps from
-    // the catalog, and it moves only when a release moves it: re-aim this row at the version
-    // that release ships, and `mutation-specs-match-subjects.ts` fails the gate the day it
-    // moves without being re-aimed.
-    find: "    \"version\": \"0.88.0\",",
-    replace: "    \"version\": \"0.88.1\",",
+    // DELIBERATE: the key before the version, never a version or a digest. A digest is
+    // recomputed from the tree and a version moves with every release, so a spec naming either
+    // stops landing on the next bump — which is how this row came to plant nothing twice. The
+    // opening of sdlc's entry never moves, and a digit put in front of whatever version follows
+    // it is the same defect: a lock naming a version the tree does not ship.
+    find: "  \"sdlc\": {\n    \"version\": \"",
+    replace: "  \"sdlc\": {\n    \"version\": \"9",
     planted: "the committed lock names a version the tree does not ship, so the lock describes " +
       "a plugin that does not exist and every consumer keyed on it is told it received " +
       "something it did not",

@@ -33,6 +33,70 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.89.0] — 2026-09-29
+
+What the file store's retirement still left standing: a limit nothing enforced, text that described
+a store on a disk, one-shot tools whose work is done, and a release that needed Docker on the
+laptop. Console 0.22.2 ships with it.
+
+### Changed
+
+- **The 8 MiB input limit is enforced on every analyzed write.** It was declared and nothing
+  called it once the file store's import harness was deleted, so a body past it reached the
+  analyzer. It is checked where every analyzed byte passes — a document write, a knowledge node, a
+  team reindex and the rederivation pass — and a body past it is refused as that write's own
+  error. The largest document on this deployment is 201 KB and the largest node 17.5 KB, so no
+  existing row is affected.
+- **Nothing a model reads describes a store on a disk any more.** Three tool descriptions
+  (`team_create`, `document_patch`, `document_read`) and three skills (`sdlc-audit-criteria` 2.7,
+  `sdlc-plan` 1.19, `sdlc-execute` 1.14) still said "artifact store", "on disk" or "frozen copy";
+  `sdlc-audit-criteria` also gave a round the wrong reason a rename cannot be recovered. Three
+  column comments said the same (`zz.team.slug`, `zz.eval_run.team_id`, `zz.assessment.about`).
+
+### Fixed
+
+- **A candidate build runs in the Linux sandbox.** bwrap refused to start it — every writable
+  path it binds lives under a read-only `/tmp`, and bwrap has to create each mount point — so
+  IMPROVE failed on Linux before the build ran. The declared paths are created first rather than
+  widening the sandbox, and a sandbox that will not start is reported as the host's problem, not
+  the candidate's. A failing step's recorded tail now carries the runner's own line (the command
+  and its exit) beside whatever the step printed.
+
+### Added
+
+- **A release without Docker on the releasing machine.** The `images` workflow runs the whole
+  dry run on a GitHub runner — the gate, both image builds, every service started from them,
+  `sql-check`, the tool-chain walk and the deploy bundle — and publishes both images; then
+  `node scripts/release.ts <version> --gate-in-ci --images-from-ci` deploys them. Each flag refuses
+  unless its workflow passed on the exact commit being released.
+- **The mutation suite runs weekly** on a runner (Saturday 00:00 Singapore) and commits the
+  refreshed `testing/mutation-report.json`. It is not a release step. A plant whose target names a
+  check that does not exist in its file now fails the gate, because the runner counted such a
+  plant as surviving whatever the real check did.
+
+### Removed
+
+- **The one-shot tools whose work is done:** the store-migration family, the envelope backfill,
+  `retire-file-store`, `manifest-audit` (its npm script and `zz-tool` alias) and the rehearsal's
+  artifact-volume input. Each read or wrote the retired artifact volume, so none of them could run.
+
+### Upgrade notes
+
+- **`002_comment_wording.sql` runs on deploy.** It changes three column comments and nothing else;
+  every statement is idempotent.
+- **Breaking, operators only:** `scripts/rehearse.ts` no longer takes `--artifacts`; pass `--dump`.
+- No env key changed. Clients get the corrected skills on their next plugin update.
+
+### zz-stack-dashboard 0.22.2
+
+- **Two panels that explained the file store are removed.** The initiative page's "Earlier
+  versions — frozen at approval" panel listed `_versions/` copies, and nothing has written one
+  since 0.88.0; a document's earlier versions are its version chain. The chain's note on numbers
+  "used and never frozen" described a hole that `doc_revision` cannot have — production holds no
+  document whose highest revision exceeds its revision rows. Neither panel could render.
+- The collapsed-steps note says a revision is filed on every write rather than that the store
+  freezes a copy, and a failing asset check names the dependency it needs.
+
 ## [0.88.0] — 2026-09-28
 
 The follow-through on the schema first-principles review (initiative

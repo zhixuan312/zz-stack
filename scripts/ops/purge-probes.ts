@@ -20,9 +20,9 @@
  * The pattern is not an argument. It is `chain-check-`, fixed: a purge that takes a pattern from the
  * command line is one typo away from deleting a team's work.
  *
- * It used to have a second half that removed the probe's FILES from the artifact volume as well,
+ * It used to have a second half that removed the probe's FILES off the team-store volume as well,
  * because the files were the source of truth and `zz.doc` was an index projected from them. The
- * rows are the record now and the volume is retired, so that half could only walk a directory that
+ * rows are the record now and that volume is retired, so the half could only walk a directory that
  * no longer exists and report zero — dead weight in a script whose whole value is that an operator
  * can read it and know what it deletes.
  */

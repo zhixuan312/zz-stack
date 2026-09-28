@@ -307,8 +307,14 @@ check("every check in checks/ is registered here, or named here with a reason", 
 
   // The two exempt categories, read off the file rather than off its name. A break-test spawns
   // `scripts/gate.ts`, so registering one makes the gate invoke itself. A host-dependent check
-  // reaches a deployment, and the offline gate has none, so it belongs to the release's live
-  // step. The `gate-` prefix decides nothing: not every such file carries it.
+  // reaches a deployment, and the offline gate has none, so registering it would fail wherever
+  // there is no deployment to reach. The `gate-` prefix decides nothing: not every such file
+  // carries it.
+  //
+  // DELIBERATE: no check in `checks/` reaches a deployment today — the one that did,
+  // `returns-sees-a-backtrack.ts`, was run by nothing and named columns the schema had dropped.
+  // The rule stays because it is judged on the syntax rather than on a list: the next such check
+  // is exempt the moment it is written, without an edit here.
   //
   // Judged on the syntax, not the text. `isGateLaunchSource` resolves the callee through the
   // file's real imports and reads its statically-known arguments, so a comment, a string and a

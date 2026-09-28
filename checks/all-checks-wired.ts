@@ -96,8 +96,8 @@ const planted = (file: string, body: string) => {
 // registered, is still caught.
 //
 // It has to be registered as well as present, because an unregistered host-dependent check is
-// legitimate: `returns-sees-a-backtrack.ts` reaches the live database over ssh for the release
-// to run. The defect is the offline gate acquiring an online dependency.
+// legitimate: a check that reaches a deployment over ssh cannot run in the offline gate. The
+// defect is the offline gate acquiring an online dependency, not the check being unregistered.
 const registerIn = (file: string) => writeFileSync(SUITES,
   `${original}\ncheck("planted by all-checks-wired.ts", runsCheck("${file.slice("checks/".length)}"));\n`);
 

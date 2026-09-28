@@ -244,21 +244,4 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "frontmatter skill_read resolves by, so the rename is a directory that moved and a name " +
       "that did not — every caller asking for zz-platform gets a skill that says it is " +
       "something else",
-  },
-  {
-    /* The one row whose subject is a file under `checks/`, and not an exception to the rule
-     * that the defect goes in the data: what this check judges is the contents of that
-     * directory, so a check file is the data here. This plants in the property the classifier
-     * reads rather than in the classifier. */
-    check: SUITES,
-    target: "every check in checks/ is registered here, or named here with a reason",
-    assertion: "a check that reaches a deployment is still recognised as host-dependent",
-    subject: "checks/returns-sees-a-backtrack.ts",
-    find: 'const psql = (sql: string) => execFileSync("ssh", ["-o", "ConnectTimeout=30", "zz-stack",',
-    replace: 'const REMOTE = "ssh";\nconst psql = (sql: string) => execFileSync(REMOTE, ["-o", "ConnectTimeout=30", "zz-stack",',
-    planted: "the one check that reaches the live database hoists its spawner's name into a " +
-      "constant, so nothing classifies it as host-dependent any more — it reads as an " +
-      "ordinary offline check that nothing runs, which is the state every unwired check in " +
-      "this directory was in before the registry rule existed",
-  },
-];
+  },];

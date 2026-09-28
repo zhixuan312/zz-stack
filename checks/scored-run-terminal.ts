@@ -54,11 +54,19 @@
 // check can be pointed at a scratch tree that plants a violation. Run it from the repository root
 // and it reads the repository.
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+
+// The statement reader, once — `packages/tools/src/lib/sql-statements.ts`. This check carried its
+// own copy of six functions until it did not: five checks did, byte for byte, and a scanner fixed
+// in one of them was not fixed in the other four.
+const { sourceFiles, statementsOf } =
+  await import(pathToFileURL(join(process.cwd(), "packages/tools/dist/lib/sql-statements.js")).href);
+import { existsSync, readFileSync } from "node:fs";
 /** The trees that write to a database, the same four `checks/catalog-eval-columns.ts` scans. */
 const ROOTS = ["services", "packages", "scripts", "deploy"];
-const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
+// Which files this check reads — its own policy, which is why the reader takes it as a predicate.
+const KEEP = (p: string): boolean => /\.(ts|sh)$/.test(p) && !isMutationSpec(p) && !isAppliedMigration(p);
 
 /** Every column a published result is: what the run found, never which run it is. */
 const SCORE_COLUMNS = [
@@ -74,129 +82,6 @@ const isMutationSpec = (p: string): boolean => /(^|\/)scripts\/mutation\/specs[^
 /** An applied migration is history — see the module doc. */
 const isAppliedMigration = (p: string): boolean => p.includes("services/gateway/migrations/");
 
-interface Source { path: string; src: string }
-
-function sources(dir: string, out: Source[] = []): Source[] {
-  for (const name of readdirSync(dir)) {
-    if (SKIP_DIRS.has(name)) continue;
-    const p = join(dir, name);
-    if (statSync(p).isDirectory()) { sources(p, out); continue; }
-    if (!/\.(ts|sh)$/.test(name) || isMutationSpec(p) || isAppliedMigration(p)) continue;
-    out.push({ path: p, src: readFileSync(p, "utf8") });
-  }
-  return out;
-}
-
-/** The end of the string or template literal that opens at `i` — the index just past its closing
- *  delimiter, or the end of the file for one that never closes. */
-function literalEnd(src: string, i: number): number {
-  const q = src[i];
-  let j = i + 1;
-  while (j < src.length) {
-    if (src[j] === "\\") { j += 2; continue; }
-    if (src[j] === q) return j + 1;
-    j++;
-  }
-  return src.length;
-}
-
-/** The end of the regex literal that opens at `i`, or the end of its line for a `/` that turned
- *  out to be division after all. */
-function regexEnd(src: string, i: number): number {
-  let j = i + 1;
-  let inClass = false;
-  while (j < src.length) {
-    const c = src[j];
-    if (c === "\\") { j += 2; continue; }
-    if (c === "[") inClass = true;
-    else if (c === "]") inClass = false;
-    else if (c === "/" && !inClass) return j + 1;
-    else if (c === "\n") return j;
-    j++;
-  }
-  return src.length;
-}
-
-/** Whether a `/` opens a regex rather than dividing: a regex can only start where a value can —
- *  after an operator, a delimiter or a keyword, never after a name or a closing bracket. Without
- *  this, a check's own `/update zz.eval_run/` regex reads as code, the quotes inside it start a
- *  literal that never closes, and every statement after it is read from the wrong place. */
-function opensRegex(src: string, i: number): boolean {
-  let k = i - 1;
-  while (k >= 0 && /\s/.test(src[k])) k--;
-  if (k < 0) return true;
-  if ("(,=:[!&|?{};+-*%~^<>".includes(src[k])) return true;
-  const word = /([A-Za-z_$][\w$]*)$/.exec(src.slice(0, k + 1))?.[1];
-  return word !== undefined &&
-    /^(return|typeof|case|in|of|do|else|yield|await|delete|void|instanceof|new)$/.test(word);
-}
-
-interface Region { kind: "code" | "literal" | "comment"; start: number; end: number }
-
-/** The source split into code, literal and comment — one pass, so a quote inside a comment, a
- *  `//` inside a literal or a `'` inside a regex is read for what it is rather than guessed at. */
-function regions(src: string): Region[] {
-  const out: Region[] = [];
-  const push = (kind: Region["kind"], start: number, end: number): void => {
-    const last = out[out.length - 1];
-    if (last && last.kind === kind && last.end === start) last.end = end;
-    else out.push({ kind, start, end });
-  };
-  let i = 0;
-  while (i < src.length) {
-    const c = src[i];
-    if (c === "/" && src[i + 1] === "/") {
-      const nl = src.indexOf("\n", i);
-      const end = nl < 0 ? src.length : nl;
-      push("comment", i, end); i = end;
-    } else if (c === "/" && src[i + 1] === "*") {
-      const nl = src.indexOf("*/", i + 2);
-      const end = nl < 0 ? src.length : nl + 2;
-      push("comment", i, end); i = end;
-    } else if (c === "/" && opensRegex(src, i)) {
-      const end = regexEnd(src, i);
-      push("code", i, end); i = end;
-    } else if (c === '"' || c === "'" || c === "`") {
-      const end = literalEnd(src, i);
-      push("literal", i, end); i = end;
-    } else {
-      let end = i + 1;
-      while (end < src.length && !"\"'`/".includes(src[end])) end++;
-      push("code", i, end); i = end;
-    }
-  }
-  return out;
-}
-
-interface Statement { path: string; line: number; sql: string }
-
-/** One statement per string or template literal, adjacent literals a `+` joins read as one. */
-function statementsOf(path: string, src: string): Statement[] {
-  const lines = (at: number): number => src.slice(0, at).split("\n").length;
-  if (path.endsWith(".sh")) {
-    return src.split("\n").flatMap((text, i) => {
-      const sql = text.replace(/(^|\s)#.*$/, "");
-      return sql.trim().length > 0 ? [{ path, line: i + 1, sql }] : [];
-    });
-  }
-  const out: Statement[] = [];
-  const rs = regions(src);
-  let start = -1;
-  let text = "";
-  for (let i = 0; i < rs.length; i++) {
-    const r = rs[i];
-    if (r.kind === "literal") {
-      const next = rs[i + 1];
-      const plus = next?.kind === "code" && src.slice(next.start, next.end).trim() === "+";
-      if (start < 0) { start = r.start; text = ""; }
-      text += src.slice(r.start, r.end);
-      if (plus) continue;
-      out.push({ path, line: lines(start), sql: text });
-      start = -1;
-    }
-  }
-  return out;
-}
 
 /** A statement with the text after a `--` on each of its lines removed — an SQL comment inside a
  *  template literal is prose, and prose is not a statement. */
@@ -230,7 +115,7 @@ const fail: string[] = [];
 let scanned = 0;
 const files = new Set<string>();
 
-for (const { path, src } of ROOTS.flatMap((r) => (existsSync(r) ? sources(r) : []))) {
+for (const { path, src } of ROOTS.flatMap((r) => (existsSync(r) ? sourceFiles(r, KEEP) : []))) {
   for (const statement of statementsOf(path, src)) {
     const sql = withoutSqlComments(statement.sql);
     scanned++;

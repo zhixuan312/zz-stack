@@ -549,11 +549,13 @@ export function registerArtifactTools(server: McpServer): void {
       // which of the named documents were already approved when this landed? An audit round
       // lands on an approved document by design — the next move says what follows from it.
       const stale: string[] = [];
-      if (!round) {
-        for (const d of list) {
-          const at = await documentAt(p, team, `${initiative}/${d}`);
-          if (at?.status === "approved") stale.push(d);
-        }
+      // And which of them do not exist yet. A `supports` link needs a document to point at, so
+      // `saveDocument` files none for these — said here rather than dropped without a word.
+      const unwritten: string[] = [];
+      for (const d of list) {
+        const at = await documentAt(p, team, `${initiative}/${d}`);
+        if (!at) unwritten.push(d);
+        else if (!round && at.status === "approved") stale.push(d);
       }
       // An audit evidences itself with a source, which is why this call is here and not in a
       // tool named for auditing: `sdlc-spec-audit` and `sdlc-plan-audit` are declared as
@@ -583,6 +585,12 @@ export function registerArtifactTools(server: McpServer): void {
         (round ? `\nrecorded as a ${round.stage} round on ${round.document}` +
                  (auditsVersion ? ` v${auditsVersion}` : "") : "") +
         (assessed ? `\n${assessed}` : "") + stageNote +
+        (unwritten.length
+          ? `\n\nNOT LINKED: ${unwritten.join(", ")} ${unwritten.length > 1 ? "do" : "does"} not exist ` +
+            "yet, so no supports link was filed and this source will not be listed as material behind " +
+            `${unwritten.length > 1 ? "them" : "it"}.` +
+            (review ? " The review round itself is counted by its stage, not by the link." : "")
+          : "") +
         (stale.length
           ? `\n\nNote for whoever works on this next: ${stale.join(", ")} ` +
             `${stale.length > 1 ? "were" : "was"} already approved before this material arrived, so ` +

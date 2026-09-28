@@ -1,6 +1,6 @@
 ---
 name: sdlc-spec
-version: 1.12
+version: 1.13
 description: Open the option space with the person, close it to confirmed decisions, and write the agreement at <initiative>/spec.md — what ships, why it is worth building, and what "done" means. Brainstorm and spec are one skill because they are one conversation. Main agent only.
 when_to_use: "Explore has established what is true and the person is ready to decide what to build. Covers both halves: deciding with them, and writing what was decided. If nothing has been established yet, run sdlc-explore first. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -430,8 +430,11 @@ concrete error states or rejection conditions where applicable.]
 
 ### Stakeholders and work
 [Who needs what from this deliverable, and the work that implies — not necessarily agile
-story format. Numbered AC-N.N with checkboxes. EVERY functional requirement must map to at
-least one acceptance criterion. Group by workstream if multiple workstreams exist.]
+story format. Each acceptance criterion is a checkbox line opening with its id in bold —
+`- [ ] **AC-1.1** An intake email becomes a case. (FR-1)` — which is the one shape the approval
+reads as a declaration; an unbolded `AC-1.1` is read as a mention of a criterion declared
+elsewhere. EVERY functional requirement must map to at least one acceptance criterion. Group by
+workstream if multiple workstreams exist.]
 
 ## Phase outline
 [One line per phase to the final shape: `- **Phase N — name:** what exists when it is built.
@@ -490,7 +493,7 @@ Before finishing, verify:
 - The `### Deliverable contract` block declares `kind`, `audience`, `disposition`, at least one `artifacts` entry or a terminal `command` criterion, and every `acceptance` entry has an explicit `method`, a `why` rationale, and at least one `references` entry
 - Sections within components use `###`, sub-parts use `####` — no other heading levels for spec content
 - Every functional requirement is numbered (FR-N) and maps to an acceptance criterion
-- Every acceptance criterion is numbered (AC-N.N) and has a checkbox
+- Every acceptance criterion is numbered (AC-N.N), has a checkbox and opens with its id in bold: `- [ ] **AC-N.N** …`
 - No section contradicts another
 - No placeholder language exists anywhere
 - All referenced file paths/symbols were verified against the codebase

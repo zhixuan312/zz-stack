@@ -12,6 +12,15 @@
  *   node scripts/release.ts --verify-only     # probe the live deployment, deploy nothing
  *   node scripts/release.ts --rollback        # back to the previously released tag
  *
+ * With no Docker on this machine, the images come from the `images` workflow instead: dispatch it
+ * for this commit with push on, then
+ *
+ *   node scripts/release.ts 0.2.0 --gate-in-ci --images-from-ci
+ *
+ * `--gate-in-ci` takes the `gate` workflow's own conclusion on this commit in place of a local
+ * gate run; `--images-from-ci` takes the `images` workflow's, which built, smoked and published
+ * both images, and skips the local build. Each refuses unless that run passed on this exact commit.
+ *
  * One deployment, read from the host by every step.
  *
  * --dashboard=<v> releases the console alongside. Given none, its repo is asked whether it
@@ -41,7 +50,7 @@ import { execFileSync, execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
-import { buildAndSmoke, buildBundle } from "./release/build.ts";
+import { buildAndSmoke, buildBundle, setConsoleVersion } from "./release/build.ts";
 import { requireCiGreen } from "./release/ci-runs.ts";
 import { ATTEST, fitForPurpose } from "./release/fit-for-purpose.ts";
 import { DASH_IMAGE, DASH_REMOTE, DASH_SRC, HOST, IMAGE, REMOTE, asExecError, catalogOwnerTeam, die, envToken, log, probeToken, publicUrl, root, run, ssh, step, warn } from "./deployment.ts";
@@ -275,6 +284,7 @@ const ci = imagesFromCi
                    `the images for ${version} have to have been built and published for this commit`)
   : null;
 if (ci) log(`  images: not built here — CI built, smoked and published them (${ci.url})`);
+if (imagesFromCi) setConsoleVersion({ dash, dashVersion });
 const bundle = imagesFromCi ? buildBundle() : buildAndSmoke({ dash, dashVersion });
 
 if (dryRun) {

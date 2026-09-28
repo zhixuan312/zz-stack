@@ -365,6 +365,29 @@ const move = async (i: Fixture) =>
        `replay after round ${upTo}: expected ${action} naming ${names}, got ${JSON.stringify(m)}`);
     console.log(`  replay after round ${upTo}: ${m?.action}`);
   }
+  // A first round recorded before review.md exists files no `supports` link — there is no row to
+  // point at — so its source carries the stage and no link. It is still round 1: round 2 resolving
+  // its finding is accepted, and the next move is the fix, not "round 1 is owed" (bug c92d1bb1).
+  {
+    const u = await fresh();
+    world.get(u.name)!.docs.push(env(u.name, "sources/2026-09-29-review-round-1-unlinked.md",
+      { title: "Review round 1" }, content(ledger(1, [finding("R1-U", "S2")])),
+      { stage: "sdlc-review", added_at: "2026-09-29T01:00:00.000Z" }, []));
+    const counted = rr.reviewRounds(world.get(u.name)!.docs, "sdlc-review", "review.md");
+    is(counted.length === 1, `a round-1 source with its stage and no link counted as ${counted.length} round(s), not 1`);
+    const said = rr.ledgerRefusal(content(ledger(2, [], ["R1-U"])), counted.map((r: { ledger: Ledger }) => r.ledger), "review.md");
+    is(said === null, `round 2 resolving an unlinked round 1's finding was refused: ${said}`);
+    const mu = await move(u);
+    is(mu?.action === "fix" && /R1-U/.test(mu?.why ?? ""),
+       `with an unlinked round 1 on record the next move was not its fix: ${JSON.stringify(mu)}`);
+    // A link naming another document still rules a source out: the stage is not a blanket pass.
+    world.get(u.name)!.docs.push(env(u.name, "sources/2026-09-29-review-round-x-for-spec.md",
+      { title: "Review round for spec" }, content(ledger(2, [finding("R2-S", "S2")])),
+      { stage: "sdlc-review", added_at: "2026-09-29T02:00:00.000Z" }, ["spec.md"]));
+    is(rr.reviewRounds(world.get(u.name)!.docs, "sdlc-review", "review.md").length === 1,
+       "a sdlc-review source linked to spec.md was counted as a round of review.md");
+  }
+
 if (fail.length) {
   console.error(`review-rounds: ${fail.length} failure(s)\n  - ${fail.join("\n  - ")}`);
   process.exit(1);

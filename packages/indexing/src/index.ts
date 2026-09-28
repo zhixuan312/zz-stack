@@ -17,7 +17,7 @@ import { createHash } from "node:crypto";
 
 import type pg from "pg";
 
-import { bodyTsvParams, bodyTsvSql, buildRowVector } from "./tenant-analysis.js";
+import { bodyTsvParams, bodyTsvSql, buildRowVector, inputLimitRefusal } from "./tenant-analysis.js";
 
 // The package's door: a consumer imports `@zz/indexing`, not a path inside it. That is why
 // the pure rules are re-exported here rather than reached by a deep import.
@@ -26,7 +26,7 @@ export { decisionRows, type DecisionRow } from "./rules.js";
 // re-exported, because the reindex pass calls it to rebuild a row's `body_tsv`.
 export {
   ANALYZER_NAME, CURRENT_ANALYZER_VERSION, MAX_INPUT_BYTES, InputTooLargeError,
-  assertWithinInputLimit, PASSAGE_MAX_SCALARS, PASSAGE_OVERLAP_SCALARS,
+  assertWithinInputLimit, inputLimitRefusal, PASSAGE_MAX_SCALARS, PASSAGE_OVERLAP_SCALARS,
   passagesOf, identifierTokens, analyze, derivationFingerprint,
   buildRowVector,
   // The two text-search configuration names, and the `body_tsv` construction built from them.
@@ -131,11 +131,19 @@ export async function indexNode(node: {
   // names no successor is `adopted` — the lifecycle a node nothing has replaced carries.
   const lifecycle = successorId ? "superseded" : "adopted";
   const tags = [...node.tags];
-  const body = node.body.slice(0, 200_000);
+  // The whole body: a node past the limit is refused by `buildRowVector`, never stored shortened.
+  const body = node.body;
   const hash = createHash("sha256")
     .update(JSON.stringify([node.kind, lifecycle, successorOrdinal, node.title, body, tags, cited]))
     .digest("hex").slice(0, 32);
-  const vector = buildRowVector({ title: node.title, tags, body });
+  let vector: ReturnType<typeof buildRowVector>;
+  try {
+    vector = buildRowVector({ title: node.title, tags, body });
+  } catch (err) {
+    const refusal = inputLimitRefusal(`knowledge node "${node.title}"`, err);
+    if (refusal) return { refusal };
+    throw err;
+  }
   const id = (await p.query<{ id: string }>(
     `insert into zz.knowledge_node
        (team_id, node_ordinal, slug, kind, lifecycle, superseded_by_id,

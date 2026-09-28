@@ -138,21 +138,15 @@ jobs:
             ${{ inputs.dashboard != '' && format('--dashboard={0}', inputs.dashboard) || '' }} \
             --dry-run --fit-for-purpose-reviewed
 
-      # NOT HERE: `npm run eval-flow-e2e`, the walk of the whole zz-plugin-eval flow — candidate, its
-      # sandboxed build, the release, the rollback, the post-release judgement on real use. Run on a
-      # runner it gets as far as the candidate's build and stops there, because a candidate is gated
-      # by the SUBJECT's own gate and this platform's gate runs two Docker-backed checks whose
-      # containers cannot start inside bwrap's fresh namespaces. On an operator's machine, where that
-      # gate has the daemon it expects, the walk completes. Deliberate: the alternative is opening
-      # the sandbox further, and the sandbox is the only thing standing between a candidate's own
-      # code and the host. See `sandboxContext`'s note on what it leaves reachable.
-      #
-      # The chain is therefore unwalked by anything automatic. `npm run eval-flow-e2e` is how it gets
-      # walked, from a checkout on a machine with docker.
-      # Off by default, and deliberately not a release step: the walk needs a docker the sandboxed
-      # candidate build can reach, which a runner has and a laptop with docker stopped does not.
-      # Dispatching with walk: true is how the chain gets exercised end to end without putting hours
-      # in front of every release.
+      # NOT A RELEASE STEP: `npm run eval-flow-e2e`, the walk of the whole zz-plugin-eval flow —
+      # candidate, its sandboxed build, the release, the rollback, the post-release judgement on real
+      # use. Off by default; dispatch with walk: true to run it. On this runner it has not got past
+      # IMPROVE: the candidate's build runs the subject's own full gate inside bwrap, and that gate
+      # was killed there — the recorded tail ends `(bwrap failed: exited 137)`, a SIGKILL from
+      # outside the build rather than a failure of the patch. The sandbox is not opened further to
+      # make it pass, because it is the only thing between a candidate's own code and the host (see
+      # `sandboxContext`'s note on what it leaves reachable). So nothing automatic walks the chain;
+      # `npm run eval-flow-e2e` from a checkout on a machine with Docker is how it gets walked.
       - name: Walk the whole eval flow, improve through release and rollback
         if: ${{ inputs.walk }}
         run: npm run eval-flow-e2e

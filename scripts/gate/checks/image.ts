@@ -146,9 +146,9 @@ check("the runtime image installs git, which a plugin's own readers shell out to
 
 check("one image, one recipe", () => {
   // Two Dockerfiles building the same image drift: the root one installs git and says why, and the
-  // other may not — so development builds an image that can commit a store and production builds one
-  // that cannot, while the check for exactly that reads the root Dockerfile and passes, correctly,
-  // about a file production was not built from. Every guarantee this gate makes about the image is
+  // other may not — so development builds an image that can register a plugin from git and
+  // production builds one that cannot, while the check for exactly that reads the root Dockerfile
+  // and passes, correctly, about a file production was not built from. Every guarantee this gate makes about the image is
   // made about one file, so there has to be one.
   const named = new Map<string, string>();   // repo-relative path -> who names it
   // Repo-relative, or null for anything outside this checkout, which is not ours to make claims

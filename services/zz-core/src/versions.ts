@@ -36,7 +36,7 @@ import { createHash } from "node:crypto";
 import type pg from "pg";
 
 import { documentBody, parseEnvelope } from "@zz/contracts";
-import { bodyTsvParams, bodyTsvSql, buildRowVector } from "@zz/indexing";
+import { bodyTsvParams, bodyTsvSql, buildRowVector, inputLimitRefusal } from "@zz/indexing";
 
 import { chainFor } from "./chain.js";
 import { renderEnvelope } from "./document-rules.js";
@@ -472,7 +472,12 @@ export async function saveDocument(
   // a `title` and a `tags` beside it, so an envelope inside the body would give two of those
   // columns a second home. `zz.doc.body` projects the same value, which is what `body_tsv` is
   // derived from.
-  const body = documentBody(text).slice(0, 200_000);
+  //
+  // DELIBERATE: the whole body, never a prefix. This read `.slice(0, 200_000)` — a search-index cap
+  // carried over when documents moved into rows — so every body past 200,000 characters was stored
+  // cut while the write answered success and `content_hash` hashed bytes it had not stored. The one
+  // bound is `buildRowVector`'s, below, and it refuses rather than shortens.
+  const body = documentBody(text);
   const hash = hashBytes(text);
   const status = env.status ?? "";
   // THE RESIDUAL, computed here and nowhere else. This is the one write path every tool goes
@@ -483,7 +488,14 @@ export async function saveDocument(
   // The two derived columns, from the same `buildRowVector` the rederivation pass and
   // `knowledge_reindex` call — one mapping from title/tags/body to a weighted term list, never
   // two that could disagree.
-  const vector = buildRowVector({ title, tags, body });
+  let vector: ReturnType<typeof buildRowVector>;
+  try {
+    vector = buildRowVector({ title, tags, body });
+  } catch (err) {
+    const refusal = inputLimitRefusal(w.relPath, err);
+    if (refusal) return { refusal };
+    throw err;
+  }
   const tsv = bodyTsvParams(vector);
 
   const client = await p.connect();

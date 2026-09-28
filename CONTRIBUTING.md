@@ -181,3 +181,8 @@ against the live deployment, rolling back on a disagreement. It ends three ways,
 two: agreement tags, disagreement rolls back, and probes that could not run leave the
 version live and untagged — because rolling back on those undoes a release for a reason
 that was never about it, and tagging would stamp a version nothing verified.
+
+A machine without Docker releases the same way with the build moved to CI: dispatch the
+`images` workflow for the merged commit with `push` on, then run
+`node scripts/release.ts <version> --gate-in-ci --images-from-ci`. Each flag refuses unless its
+workflow passed on the exact commit being released.

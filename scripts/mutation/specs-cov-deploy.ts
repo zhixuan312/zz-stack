@@ -383,4 +383,13 @@ export const COV_DEPLOY: readonly MutationSpec[] = [
       "removed, so an operator reading the list cannot tell a live knob from a fossil — and " +
       "neither can the next person deciding whether it is safe to delete one",
   },
+  {
+    check: "scripts/gate/checks/deploy-release.ts",
+    target: "the console's version moves on both release paths",
+    subject: "scripts/release.ts",
+    find: "if (imagesFromCi) setConsoleVersion({ dash, dashVersion });",
+    replace: "if (imagesFromCi) void setConsoleVersion;",
+    planted: "a release whose images came from CI stops moving the console's version, so the " +
+      "console is deployed and tagged at a number its own repository does not carry",
+  },
 ];

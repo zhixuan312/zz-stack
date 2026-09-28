@@ -16,7 +16,9 @@
  *   6. a plan with a phase still to build answers `current_phase` for it and routes to
  *      `sdlc-execute`, never to a review round: the round would sweep a change that is a fraction
  *      written. This is the defect 0.83.2 fixes — an approved plan was read as a built plan, so a
- *      seven-phase plan answered with a review round from its third phase onward.
+ *      seven-phase plan answered with a review round from its third phase onward;
+ *   7. a built phase followed by a placeholder phase with no tasks answers `unplanned_phase` for
+ *      the placeholder and routes to `sdlc-plan`, never to a review round.
  *
  * Run: node checks/plan-waves-status.ts   (also run by scripts/gate.ts)
  */
@@ -171,5 +173,23 @@ async function stateOf(name: string, planText: string | null, status: string, au
      `the execute move did not name the phase: ${executing.next_move?.why}`);
   is(executing.next_move?.document !== "review.md",
      "a plan with a phase still to build was offered the review round");
+
+  // 7. A built phase and a placeholder after it: the placeholder is still to PLAN. `current_phase`
+  //    skips a phase with no tasks, so this plan used to read as built and was offered the review
+  //    round a third of the way in (bug 056c628f). It routes to the stage that writes the plan.
+  const placeholder = planBodyBuilt(task(1, "none", "`packages/a/**`"))
+    .replace("## Integration hotspots",
+             "## Phase 1 — Everything else\n\nPlanned after Phase 0 is built.\n\n## Integration hotspots");
+  const unplanned = await stateOf("2026-09-26-placeholder", placeholder, "approved", true);
+  is(unplanned.plan?.current_phase === null && unplanned.plan?.unplanned_phase === 1,
+     `a built phase 0 and a placeholder phase 1 answered current_phase ${unplanned.plan?.current_phase}, ` +
+     `unplanned_phase ${unplanned.plan?.unplanned_phase} — not null and 1`);
+  is(unplanned.next_move?.action === "run_stage" && unplanned.next_move?.stage === "sdlc-plan",
+     `a plan with phase 1 still to plan answered ${unplanned.next_move?.action}/${unplanned.next_move?.stage}, ` +
+     "not run_stage/sdlc-plan");
+  is(unplanned.next_move?.why.includes("phase 1 with no tasks"),
+     `the plan move did not name the phase: ${unplanned.next_move?.why}`);
+  is(unplanned.next_move?.document !== "review.md",
+     "a plan with a phase still to plan was offered the review round");
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }
 console.log("plan waves in initiative_status: ok");

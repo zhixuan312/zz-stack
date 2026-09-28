@@ -16,6 +16,7 @@ const SUITES_DATA = "scripts/gate/checks/suites-data.ts";
 const SUITES_SURFACE = "scripts/gate/checks/suites-surface.ts";
 const SUITES = "scripts/gate/checks/suites.ts";
 const SUITES_TOOLING = "scripts/gate/checks/suites-tooling.ts";
+const HYGIENE = "scripts/gate/checks/hygiene.ts";
 
 export const COV_SUITES_4: readonly MutationSpec[] = [
   {
@@ -190,7 +191,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "still renders, and the guarantee is simply no longer true",
   },
   {
-    check: SUITES_DATA,
+    check: HYGIENE,
     target: "every module in the services tree is reachable from something",
     assertion: "a module nothing imports is reported",
     subject: "services/zz-core/src/eval/subject-ref.ts",

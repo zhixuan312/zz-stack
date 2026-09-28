@@ -220,6 +220,24 @@ check("a dry run cannot write git history", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
+check("the console's version moves on both release paths", () => {
+  // The console's package.json and compose literal are set by setConsoleVersion. The local build
+  // calls it before it builds the console image; `--images-from-ci` skips that build, and until
+  // 0.89.0 it skipped the bump with it, so the console would have been deployed and tagged at a
+  // number its own repository did not carry. Both paths have to reach it.
+  const bad = [];
+  const build = functionBody(readFileSync(join(root, "scripts/release/build.ts"), "utf8"), "buildAndSmoke");
+  if (!build) return "scripts/release/build.ts no longer defines buildAndSmoke() — this check cannot run";
+  if (!/setConsoleVersion\(/.test(withoutComments(build))) {
+    bad.push("buildAndSmoke no longer sets the console's version before building its image");
+  }
+  const rel = withoutComments(readFileSync(join(root, "scripts/release.ts"), "utf8"));
+  if (!/imagesFromCi\)?\s*[^\n]*setConsoleVersion\(/.test(rel)) {
+    bad.push("release.ts does not set the console's version when the images come from CI");
+  }
+  return bad.length ? bad.join("; ") : null;
+});
+
 check("the deployed image can be rebuilt from this repo", () => {
   // A Dockerfile in the repository root, so the recipe is in the checkout and .dockerignore
   // is in scope. An image that copies the host's node_modules and dist/ is one built with

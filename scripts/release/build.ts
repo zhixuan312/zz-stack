@@ -22,12 +22,54 @@ import { postgresService } from "./postgres-service.ts";
 import type { DashboardResolution } from "./dashboard.ts";
 import { walkToolChain } from "./tool-chain.ts";
 
+/** Move the console's version to the one this release names, and commit it — or, on a dry run,
+ *  write it and put it back at exit. Both release paths call it: the local build does so before
+ *  it builds the console image, and `--images-from-ci`, whose image CI built from these same
+ *  edits, calls it before packing the bundle — without it the console would be deployed and
+ *  tagged at a number its own repo does not carry. */
+export function setConsoleVersion({ dash, dashVersion }: { dash: DashboardResolution; dashVersion: string | null }): void {
+  if (!dashVersion || dash.alreadyPublished) return;
+  // COUPLED: the console's version lives in package.json and in its own compose literal, and
+  // they move together — the compose file and the image it names are one release.
+  if (dash.current !== dashVersion) {
+    const edits: [string, RegExp, string][] = [
+      [join(DASH_SRC, "package.json"), /"version":\s*"[^"]*"/, `"version": "${dashVersion}"`],
+      [join(DASH_SRC, "docker-compose.yml"), /ZZ_DASHBOARD_VERSION:-[0-9][^}]*\}/, `ZZ_DASHBOARD_VERSION:-${dashVersion}}`],
+    ];
+    const before = new Map(edits.map(([f]) => [f, readFileSync(f, "utf8")]));
+    for (const [f, re, to] of edits) {
+      // Read directly above, from this same `edits` array — always present.
+      const was = before.get(f)!;
+      const now = was.replace(re, to);
+      // A replace that matched nothing returns the input, so each replace asserts it matched:
+      // otherwise the version moves in one file and not the other.
+      if (now === was) die(`could not set the version in ${f}: nothing matched ${re}`);
+      writeFileSync(f, now);
+    }
+    // Restored from what was read, never with `git checkout` — a checkout would take anything
+    // else uncommitted in that tree down with it.
+    if (dryRun) {
+      process.on("exit", () => {
+        for (const [f, txt] of before) { try { writeFileSync(f, txt); } catch { /* nothing to put back */ } }
+      });
+    }
+    // COUPLED: two statements, not an `else`. The gate reads this file as text and looks for
+    // `if (!dryRun)` within six lines above any git write, so an `else` branch reads to it as
+    // an unguarded commit.
+    if (!dryRun) {
+      run("git", ["add", "package.json", "docker-compose.yml"], { cwd: DASH_SRC });
+      run("git", ["commit", "-m", `zz-stack-dashboard ${dashVersion}`], { cwd: DASH_SRC });
+    }
+    log(`  console version ${dash.current} -> ${dashVersion}`
+        + (dryRun ? " (on disk only, restored at exit)" : ""));
+  }
+}
+
 export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution; dashVersion: string | null }): string {
   step(2, "build and smoke the images");
   // The root Dockerfile, the same one docker-compose.build.yml builds from. It installs git,
-  // without which commitStore never throws and every document write succeeds, logs
-  // `git_failed`, and leaves a team's store with no history. COUPLED: the gate check for that
-  // reads this same file.
+  // without which every `plugin_register` from a git URL or a package tarball refuses as an
+  // unreachable address. COUPLED: the gate check for that reads this same file.
   run("docker", ["build", "--platform", PLATFORM, "-f", "Dockerfile", "-t", `${IMAGE}:${version}`, "."], { cwd: root });
   log(`  built ${IMAGE}:${version}`);
   // An already-published component is pulled, not built — here and in the push step below.
@@ -41,40 +83,7 @@ export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution
   }
 
   if (dashVersion && !dash.alreadyPublished) {
-    // COUPLED: the console's version lives in package.json and in its own compose literal, and
-    // they move together — the compose file and the image it names are one release.
-    if (dash.current !== dashVersion) {
-      const edits: [string, RegExp, string][] = [
-        [join(DASH_SRC, "package.json"), /"version":\s*"[^"]*"/, `"version": "${dashVersion}"`],
-        [join(DASH_SRC, "docker-compose.yml"), /ZZ_DASHBOARD_VERSION:-[0-9][^}]*\}/, `ZZ_DASHBOARD_VERSION:-${dashVersion}}`],
-      ];
-      const before = new Map(edits.map(([f]) => [f, readFileSync(f, "utf8")]));
-      for (const [f, re, to] of edits) {
-        // Read directly above, from this same `edits` array — always present.
-        const was = before.get(f)!;
-        const now = was.replace(re, to);
-        // A replace that matched nothing returns the input, so each replace asserts it matched:
-        // otherwise the version moves in one file and not the other.
-        if (now === was) die(`could not set the version in ${f}: nothing matched ${re}`);
-        writeFileSync(f, now);
-      }
-      // Restored from what was read, never with `git checkout` — a checkout would take anything
-      // else uncommitted in that tree down with it.
-      if (dryRun) {
-        process.on("exit", () => {
-          for (const [f, txt] of before) { try { writeFileSync(f, txt); } catch { /* nothing to put back */ } }
-        });
-      }
-      // COUPLED: two statements, not an `else`. The gate reads this file as text and looks for
-      // `if (!dryRun)` within six lines above any git write, so an `else` branch reads to it as
-      // an unguarded commit.
-      if (!dryRun) {
-        run("git", ["add", "package.json", "docker-compose.yml"], { cwd: DASH_SRC });
-        run("git", ["commit", "-m", `zz-stack-dashboard ${dashVersion}`], { cwd: DASH_SRC });
-      }
-      log(`  console version ${dash.current} -> ${dashVersion}`
-          + (dryRun ? " (on disk only, restored at exit)" : ""));
-    }
+    setConsoleVersion({ dash, dashVersion });
     run("docker", ["build", "--platform", PLATFORM, "-t", `${DASH_IMAGE}:${dashVersion}`, "."], { cwd: DASH_SRC });
     log(`  built ${DASH_IMAGE}:${dashVersion}`);
   }

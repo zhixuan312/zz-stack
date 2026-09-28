@@ -194,7 +194,14 @@ interface ReviewRound { file: string; added_at: string; ledger: Ledger }
 export function reviewRounds(sources: readonly DocRow[], stage: string, document: string): ReviewRound[] {
   const out: ReviewRound[] = [];
   for (const d of sources) {
-    if (stageOf(d) !== stage || !supportsOf(d).includes(document)) continue;
+    // DELIBERATE: the STAGE identifies a round, and a `supports` link only corroborates it. A stage
+    // writes one verifying document, and `source_add` refuses a round that does not name it — but
+    // round 1 is recorded before that document exists, and a support for a document not yet
+    // written files no link (`doc_link` needs a row to point at). Keyed on the link, every first
+    // round counted as none, so round 2 was refused as round 1 and `next_move` asked for round 1
+    // forever (bug c92d1bb1). A link naming ANOTHER document still rules the source out.
+    const links = supportsOf(d);
+    if (stageOf(d) !== stage || (links.length > 0 && !links.includes(document))) continue;
     const ledger = parseLedger(d.body);
     if (typeof ledger !== "string") {
       out.push({ file: sourceName(d), added_at: addedAtOf(d), ledger });

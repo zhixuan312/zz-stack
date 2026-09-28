@@ -22,6 +22,8 @@ export interface PlanStructure {
   violations: Array<{ kind: string; task: string | null; line: number; message: string }>;
   /** The phase being built next, or null — no phases, or every written phase is built. */
   current_phase: number | null;
+  /** The first phase declared with no tasks and no `### As built` — still to plan — or null. */
+  unplanned_phase: number | null;
   /** Task ids grouped into waves that may run in parallel, in order: the current phase's when the
    *  plan has phases, the whole plan's when it has none. Empty when not ok or nothing is left. */
   waves: string[][];
@@ -43,6 +45,7 @@ export function planStructure(docs: readonly FlowDoc[], body: string | null): Pl
     ok: report.ok,
     violations: report.violations.map((v) => ({ kind: v.kind, task: v.taskId, line: v.line, message: v.detail })),
     current_phase: report.currentPhase,
+    unplanned_phase: report.unplannedPhase,
     waves: (report.phases.length
       ? report.phases.find((p) => p.phase === report.currentPhase)?.waves ?? []
       : report.waves).map((w) => [...w]),

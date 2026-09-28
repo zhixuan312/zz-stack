@@ -81,7 +81,11 @@ function outlineProblems(body: string, section: string | null): string[] {
   const uncovered = declared.filter((id) => !names(section, id));
   if (uncovered.length) bad.push(`no phase covers ${uncovered.join(", ")} — name each AC id in the phase that delivers it`);
   const stray = [...new Set(section.match(AC_ID) ?? [])].filter((id) => !declared.includes(id));
-  if (stray.length) bad.push(`the outline names ${stray.join(", ")}, which the spec does not declare`);
+  if (stray.length) {
+    bad.push(`the outline names ${stray.join(", ")}, which the spec does not declare — a criterion is ` +
+             "declared by a checkbox line opening with its id in bold, `- [ ] **AC-1.1** …`; an " +
+             "unbolded id is read as a mention, not a declaration");
+  }
   return bad;
 }
 

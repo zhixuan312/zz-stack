@@ -40,12 +40,12 @@ export const DOCUMENT_SPECS: readonly MutationSpec[] = [
   },
   {
     check: "scripts/gate/checks/security-boundary.ts",
-    target: "nothing under a store root that begins with a dot is reachable",
+    target: "a caller's document path cannot begin a segment with a dot or escape home",
     subject: "services/zz-core/src/paths.ts",
     find: '  if (/(^|\\/)\\.zz\\//.test(path) || path.includes("~/")) {',
     replace: '  if (/(^|\\/)\\.zzz\\//.test(path) || path.includes("~~/")) {',
-    planted: "the path-shape refusal stops recognising a store-relative escape, so a " +
-      "home-relative path is accepted and the write lands somewhere nobody named",
+    planted: "the path-shape refusal stops recognising a `.zz/` or home-relative prefix, so " +
+      "the document is stored under a path other than the one the model named",
   },
   {
     check: "scripts/gate/checks/skill-tools.ts",

@@ -85,6 +85,17 @@ jobs:
       - name: Build the workspace the gate reads
         run: npx tsc -b
 
+      # The release runs the console's own suite (`pnpm run typecheck`, `lint`, `test`, `gate`) out
+      # of its checkout, and installs nothing there itself. pnpm because zz-stack-dashboard declares
+      # `packageManager: pnpm@10.33.0` and carries a pnpm lockfile; the version is pinned to that
+      # field rather than to a floating latest.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+      - name: Install the console's dependencies
+        working-directory: pair/zz-stack-dashboard
+        run: pnpm install --frozen-lockfile
+
       # The whole release, minus the host: the gate, both images, the platform started from them,
       # sql-check, the tool-chain walk, the deploy bundle. A failure here is a failure the release
       # would have hit, found before anything is pushed.

@@ -368,8 +368,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       // claim to make.
       // A source added after the revision being replaced, whose `cites` links name this document,
       // is by its own record what this revision answers. Compared on the rows, which is where
-      // "added after" is a fact: a file's mtime was when the mirror wrote it, not when the source
-      // landed.
+      // "added after" is a fact: a revision's `written_at` is when the platform filed it.
       const owed: string[] = [];
       for (const rel of await documentPaths(team, `${parts[0]}/sources`)) {
         if (!rel.endsWith(".md")) continue;
@@ -401,8 +400,8 @@ export function registerInitiativeActTools(server: McpServer): void {
       // The input that caused the change is stored beside the document it changed, so v2 always says
       // what made it differ.
       //
-      // DELIBERATE: prepared here, written after the guards pass. Written earlier, a revision the
-      // platform then refused would leave the source on disk, indexed and logged, for a change that
+      // DELIBERATE: prepared here, filed after the guards pass. Filed earlier, a revision the
+      // platform then refused would leave the source filed, indexed and logged, for a change that
       // never happened. Only the name is needed up here, because the document links to it by name.
       let capturedSource: string | null = null;
       let pendingSource: { rel: string; doc: string } | null = null;

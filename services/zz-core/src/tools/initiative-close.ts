@@ -393,8 +393,9 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       // second close is refused by; `already` (read from the document before this point) is
       // what gives the refusal above its wording when the two calls are not concurrent.
       //
-      // Not transactional with the document write below: the anchor row and the file store are
-      // two stores, and a crash between the two would leave the row closed and the document
+      // Not transactional with the document write below: the anchor update and the document write
+      // are two statements rather than one transaction, and a crash between them would leave the
+      // row closed and the document
       // not yet carrying `outcome`. The row is treated as authoritative going forward
       // (initiative-status.ts reads it first), so that order — row, then document — is chosen
       // deliberately over the reverse.

@@ -138,9 +138,9 @@ export function registerInitiativeOpenTool(server: McpServer): void {
       // opened and nothing downstream refuses them, because "not enrolled" and "enrolled and
       // unsatisfied" are different answers a caller has to be able to tell apart.
       //
-      // DELIBERATE: a failure here reports rather than throws. The folder and its record are
-      // already on disk and are what `initiative_status` reads, so an unreachable database must
-      // not lose the initiative. `openRun` is idempotent on the initiative, so the run can
+      // DELIBERATE: a failure here reports rather than throws. The initiative's own row is
+      // already written and is what `initiative_status` reads, so a control run that could not be
+      // opened must not lose the initiative. `openRun` is idempotent on the initiative, so the run can
       // be opened later without a second one appearing.
       const governed = moduleForFlow(packagedModules, record.flow ?? null);
       let control: string | null = null;

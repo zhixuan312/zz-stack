@@ -9,9 +9,9 @@
 # The team file store is NOT backed up here any more. It was the `<p>_zz-artifacts` volume, and
 # its every fact is inside the `pg_dump` now (Task I-41): backing the volume up as well would back
 # up a second copy of what the dump already carries, and that copy is the one that goes stale the
-# moment a tool writes a document. The store itself is retired once, by
-# `scripts/retire-file-store.ts`, into an archive named `zz-store-archive-<stamp>.tar.gz` — see the
-# prune's exemption at the end of this script, which is what keeps that archive alive.
+# moment a tool writes a document. The store was retired once, on 2026-09-27, into an archive
+# named `zz-store-archive-<stamp>.tar.gz` by a one-shot script deleted in 0.89.0 with its work done
+# — see the prune's exemption at the end of this script, which is what keeps that archive alive.
 #
 #   ./deploy/backup.sh            # write one dated set into $BACKUP_DIR
 #   ./deploy/backup.sh --verify   # also prove the dump restores into a
@@ -41,8 +41,8 @@ PG_DB="${PG_DB:-$(env_get POSTGRES_DB)}"; PG_DB="${PG_DB:-zz}"
 CRED_VOLUME="${CRED_VOLUME:-${PROJECT}_cred-data}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 
-# The one name in $BACKUP_DIR the prune below must never take. `scripts/retire-file-store.ts` writes
-# the store's retirement archive under this prefix, and that archive is the only remaining copy of
+# The one name in $BACKUP_DIR the prune below must never take. The store's retirement archive was
+# written under this prefix, and that archive is the only remaining copy of
 # the store's text: it is not in FILES, so the prune — which walks FILES — leaves it alone, and the
 # exemption is stated here as well as being true by construction, because an exemption nothing
 # declares is an archive nobody is watching.

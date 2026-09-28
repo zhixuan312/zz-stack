@@ -11,8 +11,8 @@
 # DELIBERATE: three, not four. The set used to carry a fourth member, the `<p>_zz-artifacts`
 # volume, and a fifth component built from it — a portable `git bundle` of every team store's
 # history. Both are gone with the store (Task I-41): the store's every fact is inside the database
-# component now, and its repository went into the archive
-# `scripts/retire-file-store.ts` writes, which this manifest does not describe because that archive
+# component now, and its repository went into the retirement archive (`zz-store-archive-<stamp>`),
+# which this manifest does not describe because that archive
 # is not part of a nightly set and is never pruned with one. A required-member list left at four
 # would refuse every set written from here on, and a manifest still naming an artifacts archive
 # would describe a file that no longer exists.

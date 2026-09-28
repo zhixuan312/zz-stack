@@ -27,8 +27,9 @@
  * WHERE THE RETIRED COLUMNS WENT, since a reader of this file is the person who needs it: a
  * document's `initiative` and its `flow` are `zz.initiative.slug` and `zz.initiative.flow`; its
  * `outcome` and `closed_by` are keys of the current revision's `fields` payload, which is where
- * `initiative_close` writes them; `approved_by`/`approved_at` are `zz.doc_revision` columns; and
- * `evidence`/`supports` are the envelope's own keys, carried in the same payload.
+ * `initiative_close` writes them; `approved_by`/`approved_at` are `zz.doc_revision` columns; a
+ * document's `evidence` is a key of that payload; and a source's `supports` is a `doc_link` row of
+ * kind `supports`, which is the only home that relation has.
  */
 import { createHash } from "node:crypto";
 

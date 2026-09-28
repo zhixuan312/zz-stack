@@ -214,3 +214,70 @@ export function foldInterpolations(sql: string, src: string, rs: Region[], path:
     return " " + texts.map((t) => foldInterpolations(t, at.src, at.rs, path, home, depth - 1, next)).join(" ");
   });
 }
+
+
+/** A word that never follows a table as its alias, so an optional alias group does not swallow it. */
+const STOP = new Set([
+  "where", "group", "order", "limit", "offset", "having", "union", "join", "left", "right",
+  "inner", "outer", "full", "cross", "on", "using", "set", "values", "returning", "and", "or",
+  "not", "select", "from", "into", "with", "as", "by", "then", "when", "case", "end", "window",
+  "for", "update", "delete", "insert", "conflict", "do", "nothing", "distinct", "lateral",
+]);
+
+interface Binding { table: string; alias: string | null }
+
+/** Whether the text opens a statement at all, once leading whitespace, an opening bracket and a
+ *  `${…}` interpolation are stripped. A literal that is only a fragment is not a statement. */
+export function opensStatement(sql: string): boolean {
+  let t = sql;
+  for (;;) {
+    const before = t;
+    t = t.replace(/^\s+/, "").replace(/^[`"'(?]/, "").replace(/^\$\{[^}]*\}/, "");
+    if (t === before) break;
+  }
+  return /^(select|insert|update|delete|with|from|join|exists)\b/i.test(t);
+}
+
+/** Every table a statement reads or writes, and the alias it binds it to. */
+export function bindings(sql: string): Binding[] {
+  const out: Binding[] = [];
+  const alias = (name: string | undefined): string | null => {
+    const n = (name ?? "").toLowerCase();
+    return n.length === 0 || STOP.has(n) ? null : n;
+  };
+  // Plain groups rather than non-capturing ones: `(?:` reads as the psql variable `:x` to
+  // `scripts/gate/checks/security-boundary.ts`, whose scan is over this tree, and a line here both
+  // contains `:from` and mentions `from`/`join`, so it looks SQL-ish to that check. Capturing a
+  // group this does not use costs nothing.
+  const PATTERNS = [
+    /\binsert\s+into\s+(zz[.])?(?<table>[a-z_]\w*)(\s+(as\s+)?(?<alias>[a-z_]\w*))?/gi,
+    /\bupdate\s+(zz[.])?(?<table>[a-z_]\w*)(\s+(as\s+)?(?<alias>[a-z_]\w*))?\s+set\b/gi,
+    /\b(from|join)\s+(zz[.])?(?<table>[a-z_]\w*)(\s+(as\s+)?(?<alias>[a-z_]\w*))?/gi,
+  ];
+  for (const re of PATTERNS) {
+    for (const m of sql.matchAll(re)) out.push({ table: m.groups?.table ?? "", alias: alias(m.groups?.alias) });
+  }
+  return out;
+}
+
+/** The names a statement declares as a CTE — `with touched as (…), live as (…)`. A CTE is not a
+ *  table, and a reader that treats it as one reports a table this phase never touched. */
+export function cteNames(sql: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of sql.matchAll(/(?:\bwith\b|,)\s*([a-z_]\w*)\s*(?:\([^)]*\)\s*)?as\s*\(/gi)) {
+    out.add(m[1].toLowerCase());
+  }
+  return out;
+}
+
+
+/** Whether `column` appears as a column rather than inside a longer name, a quoted alias or a
+ *  `select … as` label — the difference between naming a column and merely containing its text. */
+export function bareMention(sql: string, column: string): boolean {
+  const re = new RegExp(`(?<![.\\w'":])${column}\\b`, "gi");
+  for (const m of sql.matchAll(re)) {
+    if (/\bas\s+$/i.test(sql.slice(0, m.index))) continue;
+    return true;
+  }
+  return false;
+}

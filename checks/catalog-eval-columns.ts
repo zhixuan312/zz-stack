@@ -57,15 +57,23 @@
  *   spells `eval_subject_version`, `skill_asset` and `subject_ref` to explain the rule it
  *   applies, and read as call sites every one of those is a finding that reads nothing.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { SCHEMA_TARGET } from "../schema-target.ts";
+
+// The statement reader, once — `packages/tools/src/lib/sql-statements.ts`. This check carried its
+// own copy of it, byte for byte with four others.
+const { sourceFiles, regions, statementsOf, opensStatement, bindings, cteNames, bareMention,
+        foldInterpolations } =
+  await import(pathToFileURL(join(process.cwd(), "packages/tools/dist/lib/sql-statements.js")).href);
 
 /** The trees that write to a database. `testing/` holds the mutation report — recorded runs of
  *  planted defects rather than call sites — and `checks/` reads files instead of writing rows. */
 const ROOTS = ["services", "packages", "scripts", "deploy"];
-const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
+/** Which files this check reads — its own policy, which is why the reader takes it as a predicate. */
+const KEEP = (p: string): boolean => /\.(ts|sh)$/.test(p) && !isMutationSpec(p) && !isAppliedMigration(p);
 
 /** A mutation spec quotes a statement in order to plant a defect in it. Its `find`/`replace` text
  *  is the subject of the check that owns the spec, and reading it as a call site would report the
@@ -105,183 +113,13 @@ const RETIRED: Record<string, string[]> = {
   eval_assessment: ["evaluator_version_id", "subject_ref", "evidence_ref", "answer", "policy_version", "resulting_action"],
 };
 
-interface Source { path: string; src: string }
-
-function sources(dir: string, out: Source[] = []): Source[] {
-  for (const name of readdirSync(dir)) {
-    if (SKIP_DIRS.has(name)) continue;
-    const p = join(dir, name);
-    if (statSync(p).isDirectory()) { sources(p, out); continue; }
-    if (!/\.(ts|sh)$/.test(name) || isMutationSpec(p) || isAppliedMigration(p)) continue;
-    out.push({ path: p, src: readFileSync(p, "utf8") });
-  }
-  return out;
-}
-
-/** The end of the string or template literal that opens at `i` — the index just past its closing
- *  delimiter, or the end of the file for one that never closes. */
-function literalEnd(src: string, i: number): number {
-  const q = src[i];
-  let j = i + 1;
-  while (j < src.length) {
-    if (src[j] === "\\") { j += 2; continue; }
-    if (src[j] === q) return j + 1;
-    j++;
-  }
-  return src.length;
-}
-
-/** The end of the regex literal that opens at `i`, or the end of its line for a `/` that turned
- *  out to be division after all. */
-function regexEnd(src: string, i: number): number {
-  let j = i + 1;
-  let inClass = false;
-  while (j < src.length) {
-    const c = src[j];
-    if (c === "\\") { j += 2; continue; }
-    if (c === "[") inClass = true;
-    else if (c === "]") inClass = false;
-    else if (c === "/" && !inClass) return j + 1;
-    else if (c === "\n") return j;
-    j++;
-  }
-  return src.length;
-}
-
-/** Whether a `/` opens a regex rather than dividing: a regex can only start where a value can —
- *  after an operator, a delimiter or a keyword, never after a name or a closing bracket. */
-function opensRegex(src: string, i: number): boolean {
-  let k = i - 1;
-  while (k >= 0 && /\s/.test(src[k])) k--;
-  if (k < 0) return true;
-  if ("(,=:[!&|?{};+-*%~^<>".includes(src[k])) return true;
-  const word = /([A-Za-z_$][\w$]*)$/.exec(src.slice(0, k + 1))?.[1];
-  return word !== undefined &&
-    /^(return|typeof|case|in|of|do|else|yield|await|delete|void|instanceof|new)$/.test(word);
-}
-
-interface Region { kind: "code" | "literal" | "comment"; start: number; end: number }
-
-/** The source split into code, literal and comment — one pass, so a quote inside a comment, a
- *  `//` inside a literal or a `'` inside a regex is read for what it is rather than guessed at. */
-function regions(src: string): Region[] {
-  const out: Region[] = [];
-  const push = (kind: Region["kind"], start: number, end: number): void => {
-    const last = out[out.length - 1];
-    if (last && last.kind === kind && last.end === start) last.end = end;
-    else out.push({ kind, start, end });
-  };
-  let i = 0;
-  while (i < src.length) {
-    const c = src[i];
-    if (c === "/" && src[i + 1] === "/") {
-      const nl = src.indexOf("\n", i);
-      const end = nl < 0 ? src.length : nl;
-      push("comment", i, end); i = end;
-    } else if (c === "/" && src[i + 1] === "*") {
-      const nl = src.indexOf("*/", i + 2);
-      const end = nl < 0 ? src.length : nl + 2;
-      push("comment", i, end); i = end;
-    } else if (c === "/" && opensRegex(src, i)) {
-      const end = regexEnd(src, i);
-      push("code", i, end); i = end;
-    } else if (c === '"' || c === "'" || c === "`") {
-      const end = literalEnd(src, i);
-      push("literal", i, end); i = end;
-    } else {
-      let end = i + 1;
-      while (end < src.length && !"\"'`/".includes(src[end])) end++;
-      push("code", i, end); i = end;
-    }
-  }
-  return out;
-}
-
-interface Statement { path: string; line: number; sql: string }
-
-/** One statement per string or template literal, adjacent literals a `+` joins read as one. */
-function statementsOf(path: string, src: string): Statement[] {
-  const lines = (at: number): number => src.slice(0, at).split("\n").length;
-  if (path.endsWith(".sh")) {
-    return src.split("\n").flatMap((text, i) => {
-      const sql = text.replace(/(^|\s)#.*$/, "");
-      return sql.trim().length > 0 ? [{ path, line: i + 1, sql }] : [];
-    });
-  }
-  const out: Statement[] = [];
-  const rs = regions(src);
-  let start = -1;
-  let text = "";
-  for (let i = 0; i < rs.length; i++) {
-    const r = rs[i];
-    if (r.kind === "literal") {
-      const next = rs[i + 1];
-      const plus = next?.kind === "code" && src.slice(next.start, next.end).trim() === "+";
-      if (start < 0) { start = r.start; text = ""; }
-      text += src.slice(r.start, r.end);
-      if (plus) continue;
-      out.push({ path, line: lines(start), sql: text });
-      start = -1;
-    }
-  }
-  return out;
-}
 
 /** A statement with the text after a `--` on each of its lines removed — an SQL comment inside a
  *  template literal is prose, and prose is not a statement. */
 const withoutSqlComments = (sql: string): string => sql.replace(/--[^\n]*/g, "");
 
-/**
- * Whether the literal reads as a statement rather than as prose about one. A statement opens with
- * the verb that makes it one, allowing the quote the literal opens with, the `(` a subquery is
- * wrapped in, the `?` a ternary puts before it and the `${…}` a template puts first; `from` and
- * `join` are verbs here too, because a fragment the code assembles into a statement elsewhere is
- * one this has to read.
- */
-function opensStatement(sql: string): boolean {
-  let t = sql;
-  for (;;) {
-    const before = t;
-    t = t.replace(/^\s+/, "").replace(/^[`"'(?]/, "").replace(/^\$\{[^}]*\}/, "");
-    if (t === before) break;
-  }
-  return /^(select|insert|update|delete|with|from|join|exists)\b/i.test(t);
-}
-
-interface Binding { table: string; alias: string | null }
-
-/** A word that never follows a table as its alias, so an optional alias group does not swallow
- *  the clause keyword that comes next. */
-const STOP = new Set([
-  "where", "group", "order", "limit", "offset", "having", "union", "join", "left", "right",
-  "inner", "outer", "full", "cross", "on", "using", "set", "values", "returning", "and", "or",
-  "as", "select", "from", "natural", "window", "fetch", "for", "lateral", "only", "with",
-  "distinct", "filter", "when",
-]);
-
 const canonical = (table: string): string => table.replace(/^zz\./i, "").toLowerCase();
 
-/** Every table the statement binds, with the alias it binds it under: `insert into`, `update …
- *  set`, and every `from` and `join`. */
-function bindings(sql: string): Binding[] {
-  const out: Binding[] = [];
-  const alias = (name: string | undefined): string | null => {
-    const n = (name ?? "").toLowerCase();
-    return n.length === 0 || STOP.has(n) ? null : n;
-  };
-  const patterns = [
-    /\binsert\s+into\s+((?:zz\.)?[a-z_]\w*)(?:\s+(?:as\s+)?([a-z_]\w*))?/gi,
-    /\bupdate\s+((?:zz\.)?[a-z_]\w*)(?:\s+(?:as\s+)?([a-z_]\w*))?\s+set\b/gi,
-    /\b(?:from|join)\s+((?:zz\.)?[a-z_]\w*)(?:\s+(?:as\s+)?([a-z_]\w*))?/gi,
-  ];
-  for (const re of patterns) {
-    for (const m of sql.matchAll(re)) out.push({ table: m[1], alias: alias(m[2]) });
-  }
-  return out;
-}
-
-/** Whether `table` still carries `column` after this phase — read from the target, which is the
- *  shape the migration leaves behind, so a name it does not carry is one the phase retired. */
 function carries(table: string, column: string): boolean {
   return (SCHEMA_TARGET.tables[table]?.columns ?? []).some((c) => c[0] === column);
 }
@@ -292,20 +130,6 @@ function carried(table: string, column: string): boolean {
   return carries(table, column) || (RETIRED[table] ?? []).includes(column);
 }
 
-/** The names a statement declares as a CTE — `with touched as (…), live as (…)`. A CTE is not a
- *  table, and a column it exposes is no table's, which is what makes a bare name inside a
- *  statement that declares one unreadable rather than wrong. */
-function cteNames(sql: string): Set<string> {
-  const out = new Set<string>();
-  for (const m of sql.matchAll(/(?:\bwith\b|,)\s*([a-z_]\w*)\s*(?:\([^)]*\)\s*)?as\s*\(/gi)) {
-    out.add(m[1].toLowerCase());
-  }
-  return out;
-}
-
-const FOLD_DEPTH = 3;
-
-/** For a file, the names it imports and where each came from. */
 function importsOf(src: string): Map<string, string> {
   const out = new Map<string, string>();
   for (const m of src.matchAll(/import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g)) {
@@ -317,85 +141,30 @@ function importsOf(src: string): Map<string, string> {
   return out;
 }
 
-/** Where a declaration of `name` ends: its balanced block, or the statement before the `;` for a
- *  declaration whose value is a single literal. */
-function declarationEnd(src: string, rs: Region[], from: number): number {
-  let depth = 0;
-  let paren = 0;
-  let opened = false;
-  for (const r of rs) {
-    if (r.end <= from || r.kind !== "code") continue;
-    for (let k = Math.max(r.start, from); k < r.end; k++) {
-      const c = src[k];
-      if (c === "(") paren++;
-      else if (c === ")") paren--;
-      else if (c === "{" && paren === 0) { depth++; opened = true; }
-      else if (c === "}") { depth--; if (opened && depth <= 0) return k + 1; }
-      else if (c === ";" && !opened && depth === 0) return k + 1;
-    }
-  }
-  return src.length;
-}
-
-/** Every string or template literal a file's declaration of `name` returns, unquoted. */
-function literalsOf(src: string, rs: Region[], name: string): string[] {
-  const decl = new RegExp(`\\b(?:function|const|let|var)\\s+${name}\\b`).exec(src);
-  if (!decl) return [];
-  const insideCode = rs.some((r) => r.kind === "code" && r.start <= decl.index && decl.index < r.end);
-  if (!insideCode) return [];
-  const end = declarationEnd(src, rs, decl.index + decl[0].length);
-  return rs.filter((r) => r.kind === "literal" && r.start > decl.index && r.start < end)
-           .map((r) => src.slice(r.start + 1, r.end - 1));
-}
-
-/** The statement with every `${callee(…)}` it interpolates replaced by what that callee returns. */
-function foldInterpolations(sql: string, src: string, rs: Region[], path: string,
-                            depth = FOLD_DEPTH, seen = new Set<string>()): string {
-  if (depth <= 0) return sql;
-  return sql.replace(/\$\{(\w+)\([^)]*\)\}/g, (whole, callee: string) => {
-    if (seen.has(callee)) return whole;
-    let texts = literalsOf(src, rs, callee);
-    let home = src;
-    let homeRs = rs;
-    if (!texts.length) {
-      const spec = importsOf(src).get(callee);
-      if (!spec || !spec.startsWith(".")) return whole;
-      const target = join(dirname(path), spec.replace(/\.js$/, ".ts"));
-      if (!existsSync(target)) return whole;
-      home = readFileSync(target, "utf8");
-      homeRs = regions(home);
-      texts = literalsOf(home, homeRs, callee);
-    }
-    if (!texts.length) return whole;
-    const next = new Set(seen).add(callee);
-    return " " + texts.map((t) => foldInterpolations(t, home, homeRs, path, depth - 1, next)).join(" ");
-  });
-}
-
-/** Whether the statement names `column` bare — not after a `.` that qualifies it, not inside a
- *  quoted literal, and not as the output alias of the expression before it. */
-function bareMention(sql: string, column: string): boolean {
-  const re = new RegExp(`(?<![.\\w'":])${column}\\b`, "gi");
-  for (const m of sql.matchAll(re)) {
-    if (/\bas\s+$/i.test(sql.slice(0, m.index))) continue;
-    return true;
-  }
-  return false;
-}
+/** Where an interpolated callee is declared: this file, or the module it was imported from. */
+type Region = { kind: "code" | "literal" | "comment"; start: number; end: number };
+const HOME = (callee: string, fromPath: string, fromSrc: string): { src: string; rs: Region[] } | null => {
+  const spec = importsOf(fromSrc).get(callee);
+  if (!spec || !spec.startsWith(".")) return null;
+  const target = join(dirname(fromPath), spec.replace(/\.js$/, ".ts"));
+  if (!existsSync(target)) return null;
+  const home = readFileSync(target, "utf8");
+  return { src: home, rs: regions(home) };
+};
 
 const fail: string[] = [];
 let scanned = 0;
 const files = new Set<string>();
 
-for (const { path, src } of ROOTS.flatMap((r) => sources(r))) {
+for (const { path, src } of ROOTS.flatMap((r) => (existsSync(r) ? sourceFiles(r, KEEP) : []))) {
   const rs = regions(src);
   for (const statement of statementsOf(path, src)) {
-    const sql = withoutSqlComments(foldInterpolations(statement.sql, src, rs, path));
+    const sql = withoutSqlComments(foldInterpolations(statement.sql, src, rs, path, HOME));
     scanned++;
     files.add(path);
     const found = new Set<string>();
-    const binds = bindings(sql);
-    const bound = [...new Set(binds.map((b) => canonical(b.table)))];
+    const binds: { table: string; alias: string | null }[] = bindings(sql);
+    const bound = [...new Set(binds.map((b: { table: string }) => canonical(b.table)))];
 
     for (const b of binds) {
       const t = canonical(b.table);
@@ -430,7 +199,7 @@ for (const { path, src } of ROOTS.flatMap((r) => sources(r))) {
       // the bound tables carries is not a column reference at all; one two of them carry is one
       // this check cannot read — reported, never passed.
       const post = [...new Set(bound)];
-      const ctes = cteNames(sql);
+      const ctes: Set<string> = cteNames(sql);
       for (const column of ctes.size ? [] : new Set(post.flatMap((t) => RETIRED[t] ?? []))) {
         if (!bareMention(sql, column)) continue;
         const before = post.filter((t) => carried(t, column));

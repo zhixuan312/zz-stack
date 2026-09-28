@@ -5,7 +5,7 @@
  * recorded the same way everybody else's are.
  *
  * The read side — whether a report, a count or a reader actually depends on what got
- * written here — is checks/data-telemetry-reports.ts.
+ * written here — is scripts/gate/checks/data-telemetry-reports.ts.
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";

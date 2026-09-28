@@ -47,11 +47,13 @@ export class InputTooLargeError extends Error {
   }
 }
 
-/** The kernel's size gate. `imported` is the one escape hatch: content already durable from
- *  before this limit existed is indexed as-is, never refused and never truncated. Everything
- *  else is measured in bytes, not characters.
+/** The size gate. `imported` is the one escape hatch: content already durable from before this
+ *  limit existed is indexed as-is, never refused and never truncated. Everything else is measured
+ *  in bytes, not characters.
  *
- *  Not yet called from a commit path; `services/zz-core/src/tenant-info/record.ts` would. */
+ *  Called from `buildRowVector` below, which is where every analyzed byte enters — a document
+ *  write, a journal node, a team reindex and the rederivation pass. It had no caller at all
+ *  between the file store's retirement and that call's wiring. */
 export function assertWithinInputLimit(bytes: number, opts: { readonly imported?: boolean } = {}): void {
   if (opts.imported) return;
   if (bytes > MAX_INPUT_BYTES) throw new InputTooLargeError(bytes, MAX_INPUT_BYTES);

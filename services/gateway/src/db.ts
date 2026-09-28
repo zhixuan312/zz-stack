@@ -127,9 +127,10 @@ export async function initPlatformDb(): Promise<void> {
 
 /** Seed: the superadmin, and the first team, from configuration.
  *
- * A deployment with a superadmin and no team is not usable: `teamFor()` returns null and every
- * document lands in a per-user store instead of the team's. So the first team is seeded from
- * BOOTSTRAP_TEAM and the superadmin is made its admin. Both steps are idempotent. */
+ * A deployment with a superadmin and no team is not usable: `teamFor()` returns null, and every
+ * document tool refuses for want of a team — there is no fallback store to land in. So the first
+ * team is seeded from BOOTSTRAP_TEAM and the superadmin is made its admin. Both steps are
+ * idempotent. */
 async function seed(): Promise<void> {
   const db = platformDb();
   const superadmin = (process.env.SUPERADMIN_EMAIL ?? "").trim().toLowerCase();

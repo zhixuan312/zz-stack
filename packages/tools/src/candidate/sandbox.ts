@@ -122,7 +122,17 @@ export const BWRAP_NAMESPACES = ["--unshare-all", "--share-net", "--die-with-par
 export function bwrapArgs(spec: SandboxSpec, cwd: string): string[] {
   assertNoWideningAllow(spec);
   const args = [...BWRAP_NAMESPACES, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"];
-  for (const d of spec.denyRead) args.push(...(d.dir ? ["--tmpfs", d.path] : ["--ro-bind", "/dev/null", d.path]));
+  // A denied path that is not there cannot be read, so there is nothing to cover — and asking
+  // bwrap to mount an empty tmpfs (or /dev/null) at a path that does not exist makes it create the
+  // mount point, which a read-only root refuses: "Can't mkdir /tmp/…: Read-only file system",
+  // before the command runs at all. macOS makes no mounts, so this only bites on Linux — and it
+  // bites for a reason that has nothing to do with the build: the context denies the operator's
+  // checkout, and that checkout moved or removed between the context being built and the build
+  // running failed every command.
+  for (const d of spec.denyRead) {
+    if (!existsSync(d.path)) continue;
+    args.push(...(d.dir ? ["--tmpfs", d.path] : ["--ro-bind", "/dev/null", d.path]));
+  }
   for (const p of spec.allowRead) args.push("--ro-bind", p, p);
   for (const p of spec.writable) args.push("--bind", p, p);
   for (const p of spec.readOnly ?? []) args.push("--ro-bind", p, p);

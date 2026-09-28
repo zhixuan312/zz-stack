@@ -7,7 +7,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { firstOf, functionBody, gateOwnSource, gatewaySource, root, sourceFiles, unbuilt, withoutComments, zzCoreSource } from "../read.ts";
 import { check, note } from "../run.ts";
@@ -137,6 +137,44 @@ check("nothing is exported that nobody imports", () => {
     }
   }
   return bad.length ? bad.join("; ") : null;
+});
+
+check("every module in the services tree is reachable from something", () => {
+  // The check above refuses an exported NAME nobody imports, and that is not the same question: a
+  // whole module can be unreachable while every name it exports is live somewhere else.
+  // `services/zz-core/src/eval/judge-score.ts` was exactly that — imported by nothing, while
+  // `effectiveness` and `headroom` were used by other modules that define their own. Its own
+  // comment claimed a check read it; none did.
+  //
+  // Scoped to services/, where the reachable set is small enough to state exactly: a module is
+  // reachable when another tracked file imports it, or a `package.json` script names it (the
+  // `check:identity`-style engines, which nothing imports), or it is a server entry point. The
+  // command trees are not judged here: `packages/tools`' ops and this gate itself dispatch by name
+  // from a table, so "nothing imports it" is true of most of them by design.
+  const modules = sourceFiles(["services"], [".ts"]).filter((f) => !f.endsWith(".d.ts"));
+  const specifiers = new Set<string>();
+  for (const f of [...sourceFiles(["services", "packages", "scripts", "checks", "testing"], [".ts"]),
+                   "schema-target.ts"]) {
+    for (const m of withoutComments(readFileSync(join(root, f), "utf8"))
+      .matchAll(/(?:from|import|require)\s*\(?\s*"([^"]+)"/g)) specifiers.add(m[1]);
+  }
+  const named = new Set<string>();
+  for (const pkg of ["package.json", "packages/tools/package.json"]) {
+    const json: unknown = JSON.parse(readFileSync(join(root, pkg), "utf8"));
+    const scripts = (json as { scripts?: Record<string, string> }).scripts ?? {};
+    for (const cmd of Object.values(scripts)) {
+      for (const m of cmd.matchAll(/[\w./-]+\.js/g)) named.add(basename(m[0], ".js"));
+    }
+  }
+  const unreachable = modules.filter((f) => {
+    const stem = basename(f, ".ts");
+    if (stem === "server") return false;                       // a server entry point, run not imported
+    if (named.has(stem)) return false;                         // named by a package.json script
+    return ![...specifiers].some((s) => s.endsWith(`/${stem}.js`) || s === `./${stem}.js`);
+  });
+  return unreachable.length === 0 ? null
+    : `nothing reaches ${unreachable.join(", ")} — an import, a package.json script that names it, ` +
+      "or a server entry point is what keeps a module alive";
 });
 
 check("the MCP protocol is written once", () => {

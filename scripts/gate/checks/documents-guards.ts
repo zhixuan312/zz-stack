@@ -16,18 +16,21 @@ import { envelopeFields } from "../facts.ts";
  * Guards that must be universal, rules that must exist once, documents that must match the
  * code they describe, and the packaging and deployment that carry both. */
 
-check("every store mutation goes through the shared guard and persist", () => {
-  // Only writeGuard is demanded of everything. persistDocument is right for a chain document
-  // and wrong for a source or a revision, which legitimately skip the approval snapshot and the
-  // ledger, so requiring it everywhere would push tools into doing something incorrect to
-  // satisfy this check.
+check("every document write goes through the shared guard", () => {
+  // Only writeGuard is demanded of everything. `saveDocument` is the one insert path a document
+  // goes through, and `writeGuard` decides which PATHS a tool may write at all — `_knowledge/`,
+  // the journal shelf, the platform's own bookkeeping — so a tool that writes a document asks it
+  // first. A source or a revision legitimately skips the approval snapshot, which is why nothing
+  // else is required here.
+  //
+  // COUPLED: the mutation is found by `saveDocument`/`safePath`, the two halves of a row write.
+  // `writeFileSync` and `persistDocument` were how it was found while the store was files; a
+  // check keyed to those matched no tool at all once the store became rows.
   const bad: string[] = [];
   for (const { name, body } of zzCoreTools()) {
-    // A tool that writes the artifact store calls safePath and then writes.
-    const mutates = /writeFileSync\(|persistDocument\(/.test(body) && /safePath\(/.test(body);
+    const mutates = /saveDocument\(/.test(body) && /safePath\(/.test(body);
     if (!mutates) continue;
-    // writeGuard is universal: it stops a tool added later from rewriting a frozen approval.
-    if (!body.includes("writeGuard(")) bad.push(`${name}: writes the store without writeGuard`);
+    if (!body.includes("writeGuard(")) bad.push(`${name}: writes a document without writeGuard`);
   }
   return bad.length ? bad.join("; ") : null;
 });

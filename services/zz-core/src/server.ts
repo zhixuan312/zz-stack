@@ -1,6 +1,6 @@
 /**
  * zz-core — process-layer MCP server: the shared zz skills library and the team/per-user
- * artifact store. Skills are read from /skills (the platform's own skills), from every package
+ * store. Skills are read from /skills (the platform's own skills), from every package
  * in /catalog, and from the team's own store, so a package synced today serves without a
  * restart. See allSkillRoots for the order, which decides which of two skills of one name
  * answers.

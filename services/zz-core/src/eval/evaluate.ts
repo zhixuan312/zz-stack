@@ -350,7 +350,7 @@ export function registerEvaluationTools(server: McpServer): void {
     {
       description:
         "WHEN eval_run_id is open and unscored: resolves every subject_ref to its real content — " +
-        "an <initiative>/<doc>.md ref is read off the caller's own team's artifact store (one under " +
+        "an <initiative>/<doc>.md ref is read off the caller's own team's documents (one under " +
         "_knowledge/ is a knowledge node), bug:<id> from its bug report, a bare run_id (plugin_profile's " +
         "traces.run_refs) from its own zz.event rows, event:<id> (traces.refusal_refs) as that one door call " +
         "— then routes each measure: deterministic/outcome " +

@@ -368,7 +368,7 @@ export function registerProtocolTools(server: McpServer): void {
       description:
         "WHEN protocol.md has been approved and a person has agreed what this plugin's " +
         "protocol means — after that, never before. It reads <initiative>/protocol.md from " +
-        "YOUR team's artifact store — pass the initiative the define stage wrote it into, " +
+        "YOUR team's documents — pass the initiative the define stage wrote it into, " +
         "since a bare protocol_version_id names no path on its own — and RETURNS " +
         "{ approved_document_path, approved_by, qualify_owed } once bound — qualify_owed is every " +
         "model-backed measure key evaluator_qualify must now be called for, and is recorded on " +

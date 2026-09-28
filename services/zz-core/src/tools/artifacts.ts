@@ -68,7 +68,7 @@ export function registerArtifactTools(server: McpServer): void {
     "document_write",
     {
       description:
-        "Create or overwrite a file in your team's artifact store (specs, plans, " +
+        "Create or overwrite a document in your team's store (specs, plans, " +
         "logs, records). The store is shared with your whole team if you belong to " +
         "one. Paths are relative, e.g. '2026-08-20-sample-intake/spec.md'. " +
         "SEND THE BODY, starting at its first heading: the frontmatter is written by the " +
@@ -419,7 +419,7 @@ export function registerArtifactTools(server: McpServer): void {
     "document_list",
     {
       description:
-        "List files in your team's artifact store (shared with every member of it), " +
+        "List the documents in your team's store (shared with every member of it), " +
         "optionally under a folder prefix.",
       inputSchema: { prefix: z.string().optional() },
     },

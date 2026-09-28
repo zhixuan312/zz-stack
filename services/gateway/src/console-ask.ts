@@ -39,7 +39,7 @@ import { generate } from "./generate.js";
  * The ask prompt.
  *
  * "The knowledge base doesn't say" has to be an answer this route can give. An answer sourced from
- * the team's own store carries the store's authority whether or not the store said it, and a reader
+ * the team's own rows carry the store's authority whether or not the store said it, and a reader
  * who would double-check a chatbot's guess has far less reason to double-check a citation.
  *
  * Every claim carries a bracketed number because `[n]` is how the route, not the model, decides

@@ -12,7 +12,7 @@ import type { MutationSpec } from "./plant.ts";
 export const DOCUMENT_SPECS: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/documents-guards.ts",
-    target: "every store mutation goes through the shared guard and persist",
+    target: "every document write goes through the shared guard",
     subject: "services/zz-core/src/tools/initiative-acts.ts",
     find: "      const blocked = writeGuard(relPath);",
     replace: "      const blocked: string | null = null;\n      void writeGuard;",

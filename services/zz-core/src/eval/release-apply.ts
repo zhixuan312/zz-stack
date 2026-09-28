@@ -1,7 +1,7 @@
 /**
  * `release_apply`'s own DB logic (Task I-23, FR-49, AC-49.1): the compare-and-swap FR-49 asks
  * for, split from `release.ts`'s registration the same way `release-rules.ts` holds the pure
- * decision — this file is the part that touches the database and the artifact store.
+ * decision — this file is the part that touches the database.
  * `release_record`'s own half lives in `release-record.ts`.
  *
  * Design point, stated once, here: zz-core runs server-side in a container with no checkout of

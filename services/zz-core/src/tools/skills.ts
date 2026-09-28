@@ -65,7 +65,7 @@ export function registerSkillTools(server: McpServer): void {
         // skill tells you to read zz-platform first; an agent that connected this server
         // without a flow is told by nothing at all. The name is not guessable, so the one tool
         // every session already calls carries the pointer.
-        how_this_works: 'skill_read("zz-platform") — gates, the envelope and the artifact store. ' +
+        how_this_works: 'skill_read("zz-platform") — gates, the envelope and the document store. ' +
                         "Read it before your first write.",
         // The clock, because the alternative is a guess. The model has no clock and every
         // harness hides it, so it pattern-matches its way to one — from the newest stored row

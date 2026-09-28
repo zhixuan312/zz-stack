@@ -37,6 +37,11 @@ on:
         required: false
         type: boolean
         default: true
+      walk:
+        description: "also walk the whole zz-plugin-eval flow (candidate build, release, rollback). Off by default: it needs docker inside the sandbox and takes minutes"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -144,6 +149,14 @@ jobs:
       #
       # The chain is therefore unwalked by anything automatic. `npm run eval-flow-e2e` is how it gets
       # walked, from a checkout on a machine with docker.
+      # Off by default, and deliberately not a release step: the walk needs a docker the sandboxed
+      # candidate build can reach, which a runner has and a laptop with docker stopped does not.
+      # Dispatching with walk: true is how the chain gets exercised end to end without putting hours
+      # in front of every release.
+      - name: Walk the whole eval flow, improve through release and rollback
+        if: ${{ inputs.walk }}
+        run: npm run eval-flow-e2e
+
       - name: Log in to GHCR
         if: ${{ inputs.push }}
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u '${{ github.actor }}' --password-stdin

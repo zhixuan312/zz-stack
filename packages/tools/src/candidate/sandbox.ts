@@ -196,7 +196,15 @@ function locate(bin: string): string | null {
  *  tree live there, and so may the operator's token files. This build's own home and tree are
  *  bound back per process, as its writable paths. Re-allowed read-only: wherever `bin` and the
  *  node running this CLI are installed, when that is under a denied path — a user-level install
- *  (`~/.local`, `~/.nvm`) is ordinary. */
+ *  (`~/.local`, `~/.nvm`) is ordinary.
+ *
+ *  DELIBERATE, and it is the widest thing this sandbox leaves open: the Docker daemon is reachable
+ *  from inside. Nothing names it here because the root is bound read-only wholesale and a read-only
+ *  mount stops the socket being replaced, not `connect()`; and the default gate's own checks start
+ *  containers (`preflightCommands` runs `docker compose version` for exactly that reason), so a
+ *  build that could not reach it would fail the subject's gate for a reason the candidate had
+ *  nothing to do with. What that costs: a candidate's own code can talk to the daemon, which is
+ *  root-equivalent on the host. Narrowing it means changing how the gate is run, not this list. */
 export function sandboxContext(tool: SandboxTool, repoRoot: string, bin: string): SandboxContext {
   const denyRead: { path: string; dir: boolean }[] = [];
   const deny = (p: string | undefined): void => {

@@ -195,9 +195,9 @@ export const COV_DEPLOY: readonly MutationSpec[] = [
     check: "scripts/gate/checks/deploy-release.ts",
     target: "a dry run cannot write git history",
     subject: "scripts/release.ts",
-    find: "const bundle = buildAndSmoke({ dash, dashVersion });",
+    find: "const bundle = imagesFromCi ? buildBundle() : buildAndSmoke({ dash, dashVersion });",
     replace: 'run("git", ["commit", "-am", "zz-stack " + version], { cwd: root });\n' +
-      "const bundle = buildAndSmoke({ dash, dashVersion });",
+      "const bundle = imagesFromCi ? buildBundle() : buildAndSmoke({ dash, dashVersion });",
     planted: "a rehearsal commits, so --dry-run — documented as \"verify locally, touch " +
       "nothing\" — leaves history behind and the second run starts from different state than " +
       "the first",

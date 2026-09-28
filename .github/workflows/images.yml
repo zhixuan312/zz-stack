@@ -1,0 +1,95 @@
+# Build and publish this release's images, on a runner, so a machine without Docker can still
+# release.
+#
+# What this is for: `scripts/release.ts` builds both images locally before it deploys them, which
+# makes Docker a prerequisite for releasing anywhere. This workflow runs everything the release
+# would run WITHOUT touching the host — the gate, both image builds, the platform stood up from
+# them, `sql-check` over every query, the tool-chain walk and the deploy bundle — and then pushes
+# the two tags it produced. The release that follows runs on the machine that holds the deploy key,
+# with `--gate-in-ci --images-from-ci`, and needs no Docker at all.
+#
+# What it does NOT do: deploy, verify against the live host, or tag. Those need the deploy key, and
+# keeping it out of GitHub is the point of the split.
+#
+# Requirements, both one-time and both in the package settings (GitHub has no API for either on a
+# user-owned package):
+#   * each package is linked to its repository with Write access, which is what lets this workflow's
+#     own GITHUB_TOKEN push to it;
+#   * `vars.ZZ_PUBLIC_URL` is set, because the dry run resolves the deployment's public address and
+#     a runner has no host to read it from.
+name: images
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "the platform version to build, e.g. 0.88.1 (must match the tree's manifests)"
+        required: true
+        type: string
+      dashboard:
+        description: "the console version, when it moved (e.g. 0.22.2) — empty to leave it alone"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+# One image build per version, queued rather than cancelled: two builds of one version would race
+# for the same two tags.
+concurrency:
+  group: images-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    # Every step runs as if from a developer's checkout, one directory below the console's: the
+    # release resolves the console at `../zz-stack-dashboard`.
+    defaults:
+      run:
+        working-directory: pair/zz-stack
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: pair/zz-stack
+
+      - uses: actions/checkout@v4
+        with:
+          repository: zhixuan312/zz-stack-dashboard
+          path: pair/zz-stack-dashboard
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # The dry run migrates a throwaway PostgreSQL built from this image, so it has to exist
+      # before the run starts — the same reason gate.yml builds it.
+      - name: Build the pinned PostgreSQL the dry run migrates
+        run: docker build -f deploy/postgres/Dockerfile -t ghcr.io/zhixuan312/zz-postgres:17.11-pgts1.4.0 .
+
+      - run: npm ci
+
+      # The whole release, minus the host: the gate, both images, the platform started from them,
+      # sql-check, the tool-chain walk, the deploy bundle. A failure here is a failure the release
+      # would have hit, found before anything is pushed.
+      - name: Everything the release runs, without touching the host
+        env:
+          ZZ_PUBLIC_URL: ${{ vars.ZZ_PUBLIC_URL }}
+        run: |
+          node scripts/release.ts '${{ inputs.version }}' \
+            ${{ inputs.dashboard != '' && format('--dashboard={0}', inputs.dashboard) || '' }} \
+            --dry-run --fit-for-purpose-reviewed
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+
+      # Only the tags this run built, named one by one: a `--all-tags` push would publish whatever
+      # else happens to be in the runner's daemon.
+      - name: Publish this release's images
+        run: |
+          docker push ghcr.io/zhixuan312/zz-stack:${{ inputs.version }}
+          if [ -n '${{ inputs.dashboard }}' ]; then
+            docker push ghcr.io/zhixuan312/zz-stack-dashboard:${{ inputs.dashboard }}
+          fi

@@ -216,37 +216,49 @@ export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution
    * says they do. */
   walkToolChain(version);
 
-  /* The deploy bundle: everything a person needs to run this release and nothing else.
-   * The compose file already names this release's images as literals, so the bundle is
-   * self-describing — you can tell which version you were handed by reading it. */
-  const bundle = `dist/release/zz-stack-deploy-${version}.tgz`;
-
-  /* What ships is the compose file, the example environment, and the scripts an operator runs
-   * by hand.
-   *
-   * COUPLED: backup.sh and install-backup-cron.sh ship too, because deploy/README.md's Day-2
-   * section tells an operator to run both from the directory this bundle unpacks to — and
-   * backup-manifest.sh ships with them, because backup.sh's own closing NOTE tells the operator
-   * to run `./deploy/backup-manifest.sh` over the set it just wrote. A script that names a
-   * sibling the bundle does not carry is the same gap this comment records for the first two,
-   * found by reading the output of a backup taken on the host rather than by the gate: the gate
-   * derives its list from deploy/README.md's commands, and this one is named by a shipped
-   * script instead. */
-  run("bash", ["-c",
-    `mkdir -p dist/release && cd deploy && tar czf ../${bundle} docker-compose.yml .env.example issue-first-pat.sh issue-enrolment.sh zz-tool backup.sh backup-manifest.sh install-backup-cron.sh`],
-    { cwd: root });
-  // What the installer's first three commands need, checked in the artifact rather than assumed
-  // from the command that made it.
-  const packed = run("bash", ["-c", `tar tzf ${bundle}`], { cwd: root }).split("\n");
-  for (const need of ["docker-compose.yml", ".env.example",
-                      "issue-first-pat.sh", "zz-tool", "backup.sh", "backup-manifest.sh",
-                      "install-backup-cron.sh"]) {
-    if (!packed.some((f) => f === need || f === `./${need}`)) {
-      die(`the deploy bundle is missing ${need} — the install instructions would fail on it`);
-    }
-  }
-  const bundleSize = run("bash", ["-c", `du -h ${bundle} | cut -f1`], { cwd: root });
-  log(`  deploy bundle: ${bundle} (${bundleSize}) — compose + .env.example + every script deploy/README tells an operator to run`);
-
-  return bundle;
+  // The bundle the deploy step hands the host, whether or not this machine built the images.
+  return buildBundle();
 }
+
+/** The deploy bundle — everything a person needs to run this release and nothing else.
+ *
+ * DELIBERATE: its own export, because it is the ONE step of `buildAndSmoke` that needs no
+ * Docker: the compose file, the example environment and the scripts an operator runs by hand,
+ * packed. A release whose images were built on a runner (`.github/workflows/images.yml`) still
+ * has to hand the host a bundle, and this is what it calls. */
+export function buildBundle(): string {
+  /* The deploy bundle: everything a person needs to run this release and nothing else.
+ * The compose file already names this release's images as literals, so the bundle is
+ * self-describing — you can tell which version you were handed by reading it. */
+const bundle = `dist/release/zz-stack-deploy-${version}.tgz`;
+
+/* What ships is the compose file, the example environment, and the scripts an operator runs
+ * by hand.
+ *
+ * COUPLED: backup.sh and install-backup-cron.sh ship too, because deploy/README.md's Day-2
+ * section tells an operator to run both from the directory this bundle unpacks to — and
+ * backup-manifest.sh ships with them, because backup.sh's own closing NOTE tells the operator
+ * to run `./deploy/backup-manifest.sh` over the set it just wrote. A script that names a
+ * sibling the bundle does not carry is the same gap this comment records for the first two,
+ * found by reading the output of a backup taken on the host rather than by the gate: the gate
+ * derives its list from deploy/README.md's commands, and this one is named by a shipped
+ * script instead. */
+run("bash", ["-c",
+  `mkdir -p dist/release && cd deploy && tar czf ../${bundle} docker-compose.yml .env.example issue-first-pat.sh issue-enrolment.sh zz-tool backup.sh backup-manifest.sh install-backup-cron.sh`],
+  { cwd: root });
+// What the installer's first three commands need, checked in the artifact rather than assumed
+// from the command that made it.
+const packed = run("bash", ["-c", `tar tzf ${bundle}`], { cwd: root }).split("\n");
+for (const need of ["docker-compose.yml", ".env.example",
+                    "issue-first-pat.sh", "zz-tool", "backup.sh", "backup-manifest.sh",
+                    "install-backup-cron.sh"]) {
+  if (!packed.some((f) => f === need || f === `./${need}`)) {
+    die(`the deploy bundle is missing ${need} — the install instructions would fail on it`);
+  }
+}
+const bundleSize = run("bash", ["-c", `du -h ${bundle} | cut -f1`], { cwd: root });
+log(`  deploy bundle: ${bundle} (${bundleSize}) — compose + .env.example + every script deploy/README tells an operator to run`);
+
+return bundle;
+}
+

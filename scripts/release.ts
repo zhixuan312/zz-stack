@@ -41,7 +41,8 @@ import { execFileSync, execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
-import { buildAndSmoke } from "./release/build.ts";
+import { buildAndSmoke, buildBundle } from "./release/build.ts";
+import { requireCiGreen } from "./release/ci-runs.ts";
 import { ATTEST, fitForPurpose } from "./release/fit-for-purpose.ts";
 import { DASH_IMAGE, DASH_REMOTE, DASH_SRC, HOST, IMAGE, REMOTE, asExecError, catalogOwnerTeam, die, envToken, log, probeToken, publicUrl, root, run, ssh, step, warn } from "./deployment.ts";
 import { chainCheck } from "./release/chain-live.ts";
@@ -106,9 +107,18 @@ if (!new RegExp(`^## \\[${version.replace(/\./g, "\\.")}\\]`, "m").test(readFile
       `        Promote [Unreleased] to it in the same commit as the bump — the gate requires\n` +
       `        it of every shipped version, and after the tag is the wrong place to find out.`);
 }
-try {
-  execFileSync("node", [join(root, "scripts/gate.ts")], { cwd: root, stdio: "inherit" });
-} catch { die("gate did not pass"); }
+const headSha = run("git", ["rev-parse", "HEAD"], { cwd: root });
+// `--gate-in-ci`: the gate is 484 checks and two of them need Docker, which a machine that
+// emptied its Docker cannot run at all. CI runs the same gate on every push, so this asks GitHub
+// for that run's own conclusion on THIS commit instead of promising one.
+if (args.includes("--gate-in-ci")) {
+  const r = requireCiGreen("gate.yml", headSha, "the gate has to have run on the commit being released");
+  log(`  gate: not run here — CI's own run passed on this commit (${r.url})`);
+} else {
+  try {
+    execFileSync("node", [join(root, "scripts/gate.ts")], { cwd: root, stdio: "inherit" });
+  } catch { die("gate did not pass"); }
+}
 
 /* 1a · fit-for-purpose review */
 // The gate proves a plugin declares a purpose. Whether its tool surface delivers that purpose
@@ -255,7 +265,17 @@ if (dashVersion) {
 }
 
 /* 2 · build the images and prove they answer */
-const bundle = buildAndSmoke({ dash, dashVersion });
+// `--images-from-ci`: the images were built and published on a runner, and proven there — the
+// `images` workflow runs this same dry run, which builds both, starts every service from them and
+// walks the tool chain. So this skips the build and the smoke, asks GitHub for that run's
+// conclusion on this commit, and packs the deploy bundle, which needs no Docker.
+const imagesFromCi = args.includes("--images-from-ci");
+const ci = imagesFromCi
+  ? requireCiGreen("images.yml", headSha,
+                   `the images for ${version} have to have been built and published for this commit`)
+  : null;
+if (ci) log(`  images: not built here — CI built, smoked and published them (${ci.url})`);
+const bundle = imagesFromCi ? buildBundle() : buildAndSmoke({ dash, dashVersion });
 
 if (dryRun) {
   // The VERSION file is put back by the exit handler registered where it was written, so a
@@ -268,7 +288,10 @@ if (dryRun) {
 step(3, "push images");
 // Only what this release built. An already-published component was never rebuilt, so pushing
 // would only move a tag somebody has already pulled. Step 4's pull list names all of them.
-for (const ref of [`${IMAGE}:${version}`,
+if (imagesFromCi) {
+  log("  nothing to push — CI published these tags, and the host's pull is what proves they exist");
+}
+for (const ref of imagesFromCi ? [] : [`${IMAGE}:${version}`,
                    ...(dashVersion && !dash.alreadyPublished ? [`${DASH_IMAGE}:${dashVersion}`] : [])]) {
   try { run("docker", ["push", ref], { stdio: ["ignore", "pipe", "pipe"] }); }
   catch (err) {

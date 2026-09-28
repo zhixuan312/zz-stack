@@ -8,15 +8,14 @@
 # suite stops at the baseline and reports nothing. Here the whole gate passes — `images.yml` proves
 # that on this runner image — so the plants are judged against a real baseline.
 #
-# It writes `testing/mutation-report.json` and uploads it as an artifact. It commits nothing: a
-# workflow that writes to the repository on its own would be a second writer of a tracked file, and
-# the refresh is a decision somebody makes by committing what this produced.
+# It writes `testing/mutation-report.json` and uploads it as an artifact. A dispatched run stops
+# there; the scheduled run also commits the report, and that is the one file it writes.
 #
 # Weekly, and on demand. The gate does not read the report and this is not on every push: 368 plants
 # at roughly a minute each is hours, not minutes. But a suite nobody runs is a suite that claims
 # coverage nobody has — the committed report sat at 2026-09-23 with all 423 rows failed and its own
-# baseline red — so the scheduled run refreshes it and opens a PR with the result. A person merges;
-# nothing here writes to master on its own.
+# baseline red — so the scheduled run commits the refreshed report straight to master. Not a PR: a
+# PR nobody merges leaves the report as stale as a suite nobody runs.
 name: mutation
 
 on:
@@ -41,8 +40,7 @@ on:
         type: string
 
 permissions:
-  contents: write       # the scheduled refresh pushes a branch
-  pull-requests: write  # and opens the PR that carries it
+  contents: write  # the scheduled refresh commits the report to master
 
 jobs:
   mutation:

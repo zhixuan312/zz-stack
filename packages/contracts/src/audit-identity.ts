@@ -30,9 +30,10 @@ import { type CheckState } from "./check-state.js";
 
 /** The two dispositions a finding can stand at: it is open, or something ran and passed.
  *
- *  DELIBERATE: two, not four. `deferred` is the open state in zz.eval_finding and `disputed`
- *  is live in eval-case.ts's `LabelStatus`; either name here would be a second meaning for a
- *  word already in use, in a vocabulary nothing in this module writes. */
+ *  DELIBERATE: two, not four. `deferred` is the open state in zz.eval_finding, and the legacy
+ *  evaluation family's own `LabelStatus` carried `disputed` before that family was archived; either
+ *  name here would be a second meaning for a word already in use, in a vocabulary nothing in this
+ *  module writes. */
 export type FindingDisposition = "open" | "resolved";
 
 // The six identities

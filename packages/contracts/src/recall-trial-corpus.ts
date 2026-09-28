@@ -1,8 +1,8 @@
 /**
  * The corpus the trial searches, and the analysis it is searched with.
  *
- * A fixture, not the live handler: `@zz/contracts` sits underneath the services, so
- * `services/zz-core/src/tenant-info/search.ts` cannot be reached from here. What the corpus
+ * A fixture, not the live handler: `@zz/contracts` sits underneath the services, so the retrieval
+ * code that reads this corpus in production cannot be reached from here. What the corpus
  * establishes is that the traversal rules hold — a lead is not a conclusion, a pinned citation
  * does not follow the head, a translation is not an original, an answer is written in the
  * asker's language. It establishes nothing about the live index; `recall-trial.ts`'s header

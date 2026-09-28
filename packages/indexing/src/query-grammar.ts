@@ -8,9 +8,9 @@
  * punctuation. Only the surface form tells them apart, and that is gone once a normalizer has
  * lowercased and split. Normalization runs afterwards, on each clause's own `.text`.
  *
- * A parallel, narrower grammar to `services/zz-core/src/tenant-info/retrieval.ts`'s own
- * `parseQuery`, which folds a query into the boolean AST the search lanes rank against. Same
- * recognition rules (quote, leading `-`, bare `OR`); nothing here re-implements the other's
+ * Narrower than the tenant-information layer's own `parseQuery` was, which folded a query into the
+ * boolean AST the search lanes ranked against — that layer is gone, so this is the one that
+ * remains. Same recognition rules (quote, leading `-`, bare `OR`); nothing here re-implements its
  * ranking, wire shape or PostgreSQL mode handling, and neither imports the other.
  *
  * A phrase cannot cross a field boundary: this takes one field's raw text, so there is no

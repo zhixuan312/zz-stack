@@ -12,18 +12,20 @@
  *
  * An operator script, deliberately not a tool on any door. Deletion can destroy the record a gate
  * was recorded on, and an agent that can delete a gated document can erase the evidence it was
- * judged against. So this runs where the files and the database both are, by somebody who went
- * there on purpose.
+ * judged against. So this runs where the database is, by somebody who went there on purpose.
  *
  *   node scripts/ops/purge-probes.ts              # counts only, changes nothing
  *   node scripts/ops/purge-probes.ts --apply      # deletes
  *
  * The pattern is not an argument. It is `chain-check-`, fixed: a purge that takes a pattern from the
  * command line is one typo away from deleting a team's work.
+ *
+ * It used to have a second half that removed the probe's FILES from the artifact volume as well,
+ * because the files were the source of truth and `zz.doc` was an index projected from them. The
+ * rows are the record now and the volume is retired, so that half could only walk a directory that
+ * no longer exists and report zero — dead weight in a script whose whole value is that an operator
+ * can read it and know what it deletes.
  */
-import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-
 import pg from "pg";
 
 /** The one pattern this script will ever match. See the docblock: not an argument. */
@@ -40,12 +42,11 @@ const LIKE = `%${PROBE}%`;
 const PROBES = `select i.id from zz.initiative i where i.slug like '${LIKE}'`;
 
 const APPLY = process.argv.includes("--apply");
-const ARTIFACTS = process.env.ZZ_ARTIFACTS ?? "/artifacts";
 
 const db = new pg.Pool({ connectionString: process.env.TEAM_DB_URL });
 
 /** Counted before and after, and both are printed: a purge that reports only what it intended to do
- * is a purge nobody can check. */
+ *  is a purge nobody can check. */
 async function census() {
   const one = async (label: string, sql: string) =>
     [label, Number((await db.query(sql)).rows[0].n)] as const;
@@ -60,9 +61,8 @@ async function census() {
     one("initiative", `select count(*) n from zz.initiative where slug like '${LIKE}'`),
     one("event", `select count(*) n from zz.event where initiative_id in (${PROBES})`),
     one("run", `select count(*) n from zz.skill_run r where r.initiative_id in (${PROBES})`),
-    // From zz.knowledge_node, which is where a node lives. Counting zz.doc
-    // reads 0 whatever the store holds, so the DELETE below deletes nothing and a purge that removed
-    // the files leaves their index rows behind.
+    // From zz.knowledge_node, which is where a node lives. A node is its own table rather than a
+    // document, so a probe node is counted here and never among the documents above.
     one("node", `select count(*) n from zz.knowledge_node where slug ilike '${LIKE}'`),
     one("assessment", `select count(*) n from zz.assessment where initiative_id in (${PROBES})`),
     one("REAL initiative", `select count(*) n from zz.initiative where slug not like '${LIKE}'`),
@@ -76,73 +76,8 @@ async function census() {
   ]));
 }
 
-/** Probe initiative directories on disk, which are the source of truth — `zz.doc` is an index
- * projected from each file's frontmatter, so a row deleted without its file comes back on the next
- * reindex. Both halves or neither. */
-function probeDirs(): string[] {
-  const teams = join(ARTIFACTS, "teams");
-  if (!existsSync(teams)) return [];
-  return readdirSync(teams).flatMap((team) => {
-    const dir = join(teams, team);
-    return readdirSync(dir)
-      .filter((name) => name.includes(PROBE))
-      .map((name) => join(dir, name));
-  });
-}
-
-/** The probe's knowledge nodes, which do not live under an initiative and so are invisible to the
- * initiative purge: chain-check calls `knowledge_add`, and a node lands in `<team>/_knowledge/nodes/`
- * keyed by nothing that purge can see.
- *
- * Matched on the `slug`, never the title. A real node called "A check not wired into the gate is
- * not enforced — unless it cannot be" mentions the chain check in its title and is somebody's
- * actual finding. The slug is derived from the file's own name (`nodes/<ordinal>-<slug>.md`), so
- * matching it matches the file: the probes are `chain-check-subject-probe` and
- * `chain-check-subject-probe-superseding`. The `path` column this used to match was replaced by
- * `node_ordinal` and `slug` when `knowledge_node` was put onto ids. */
-function probeNodes(): string[] {
-  const teams = join(ARTIFACTS, "teams");
-  if (!existsSync(teams)) return [];
-  return readdirSync(teams).flatMap((team) => {
-    const dir = join(teams, team, "_knowledge", "nodes");
-    if (!existsSync(dir)) return [];
-    return readdirSync(dir)
-      .filter((name) => name.includes(PROBE))
-      .map((name) => join(dir, name));
-  });
-}
-
-/** Drop each deleted node's row from its shelf's `index.md`, keyed on the id in its file name.
- *
- *  Returns how many rows went, so a purge that found files and changed no index says so. */
-function dropIndexRows(files: string[]): number {
-  const byShelf = new Map<string, Set<string>>();
-  for (const f of files) {
-    const shelf = join(f, "..", "..", "index.md");
-    const id = /(^|\/)(\d+)-/.exec(f)?.[2];
-    if (!id) continue;
-    const got = byShelf.get(shelf);
-    if (got) got.add(id); else byShelf.set(shelf, new Set([id]));
-  }
-  let dropped = 0;
-  for (const [shelf, ids] of byShelf) {
-    if (!existsSync(shelf)) continue;
-    const kept = readFileSync(shelf, "utf8").split("\n").filter((line) => {
-      const id = /^\|\s*(\d+)\s*\|/.exec(line)?.[1];
-      if (id && ids.has(id)) { dropped += 1; return false; }
-      return true;
-    });
-    writeFileSync(shelf, kept.join("\n"));
-  }
-  return dropped;
-}
-
 const before = await census();
-const dirs = probeDirs();
-const nodes = probeNodes();
 console.log("before:", before);
-console.log(`probe initiative directories on disk: ${dirs.length}`);
-console.log(`probe knowledge nodes on disk:        ${nodes.length}`);
 
 if (!APPLY) {
   console.log("\nDRY RUN — nothing was deleted. Re-run with --apply.");
@@ -154,9 +89,7 @@ if (!APPLY) {
 // the initiative itself. `zz.doc.initiative_id`, `zz.event.initiative_id` and
 // `zz.assessment.initiative_id` are all ON DELETE SET NULL, so deleting the initiative first
 // would not be refused — it would take the reference away, leave the rows behind, and put them
-// out of reach of this script and of any second run of it. The documents are also the source of
-// truth for the store (`zz.doc` is an index projected from the files), so they go first for that
-// reason too.
+// out of reach of this script and of any second run of it.
 //
 // `zz.skill_run.initiative_id` is the one that is ON DELETE CASCADE, so probe runs go with their
 // initiatives whether or not this script mentions them — the schema's decision, named here so
@@ -165,17 +98,13 @@ if (!APPLY) {
 // The events go too, and they are not merely untidy: each one now carries `initiative_id`, so
 // leaving them would be rows referring to an initiative that no longer exists — poisoning the
 // measurements this purge exists to clean, while pointing at nothing a reader could open.
+//
+// DELIBERATE: nothing deletes `zz.doc_link` first any more. It used to, because `doc_link`'s key
+// to `zz.doc` did not cascade while `doc_revision`'s did, and a plain delete of a document died
+// on `doc_link_to_doc_id_fkey` with the probe rows half-removed; `009_doc_link_cascade.sql`
+// (folded into 001_init.sql) gave it the cascade its sibling always had, so the schema does it.
 await db.query("begin");
 try {
-  // The documents' children go first, explicitly, because `zz.doc_link`'s key to `zz.doc` does not
-  // cascade while `zz.doc_revision`'s does — so a plain delete of the document dies on
-  // `doc_link_to_doc_id_fkey` with the probe rows half-removed. That asymmetry is a defect in the
-  // schema rather than a rule (`doc_link` is a child of `doc` exactly as `doc_revision` is), and it
-  // is recorded as one; this sweep deletes what it deletes regardless of which way the next
-  // migration settles it.
-  const l = await db.query(
-    `delete from zz.doc_link k using zz.doc d, zz.initiative i
-      where k.to_doc_id = d.id and i.id = d.initiative_id and i.slug like '${LIKE}'`);
   const d = await db.query(
     `delete from zz.doc d using zz.initiative i
       where i.id = d.initiative_id and i.slug like '${LIKE}'`);
@@ -186,25 +115,12 @@ try {
   const i = await db.query(`delete from zz.initiative where slug like '${LIKE}'`);
   console.log(`  knowledge nodes: ${k.rowCount}`);
   console.log(`  assessments: ${a.rowCount}`);
-  console.log(`  doc links: ${l.rowCount}`);
   await db.query("commit");
   console.log(`deleted: ${d.rowCount} doc, ${e.rowCount} event, ${i.rowCount} initiative (+ runs, by cascade)`);
 } catch (err) {
   await db.query("rollback");
   throw err;
 }
-
-for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
-for (const f of nodes) rmSync(f, { force: true });
-// And the index a person reads. `_knowledge/index.md` is appended to on every mint and rebuilt by
-// nothing, so deleting a node's file and its row leaves the node listed in the one place
-// `zz-platform` tells every agent to look first.
-//
-// By id, never by title — the same rule probeNodes() keeps. A node's id is the leading number of its
-// file name, so the rows to drop are derived from the files just deleted rather than matched on
-// words a real finding might also carry.
-const droppedRows = dropIndexRows(nodes);
-console.log(`removed ${dirs.length} directories, ${nodes.length} knowledge nodes and ${droppedRows} index row(s)`);
 
 const after = await census();
 console.log("after:", after);

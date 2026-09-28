@@ -16,9 +16,10 @@ import { HOST, REMOTE, root, run, ssh, warn } from "../deployment.ts";
  * production store and every ratio anybody computes is taken over them. `--dry-run` writes them
  * too, while printing that nothing was pushed, deployed, tagged or committed.
  *
- * Both halves or neither: the files are the source of truth and `zz.doc` is projected from each
- * file's frontmatter, so a row deleted without its file returns on the next reindex. That is
- * why this runs in the container rather than against the database over the network.
+ * It runs in the container rather than against the database over the network because that is
+ * where the deployment's own `TEAM_DB_URL` and its `pg` are, and because a purge is an operator
+ * act that should not need a checkout. The rows are the whole record now — the files this once
+ * had to delete beside them are retired with the volume they lived on.
  *
  * Addressed as a compose service, never as a container name: the project prefix in
  * `deploy-zz-core-1` comes from deploy/.env, so a name built here is right on at most one

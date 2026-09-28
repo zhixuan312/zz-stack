@@ -184,7 +184,7 @@ export const EVAL_RUN: Record<string, TableTarget> = {
       overall_score: "class=state_machine; authority=this; question=what score between 0 and 10 did this run publish?",
       guardrail_status: "class=state_machine; authority=this; question=did this run's critical guardrails pass or fail, or come back not_established?",
       created_at: "class=state_machine; authority=this; question=when was this run started?",
-      team_id: "class=relation; authority=this; question=which team ran this evaluation, whose artifact store its document subjects were resolved against and which the named initiative must belong to?",
+      team_id: "class=relation; authority=this; question=which team ran this evaluation, whose documents its document subjects were resolved against and which the named initiative must belong to?",
       initiative_id: "class=relation; authority=this; question=which initiative ran this evaluation, when it was started from one?",
       observation_snapshot_id: "class=relation; authority=this; question=which observation snapshot of real production use was this run scored against?",
       score_lower: "class=state_machine; authority=this; question=what is the lower bound of this run's published uncertainty interval?",

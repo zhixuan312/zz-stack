@@ -170,7 +170,7 @@ export const IDENTITY: Record<string, TableTarget> = {
     comment: "class=current_state; authority=this; question=what tenant exists under which slug, is it live or archived, and who created it?",
     columnComments: {
       id: "class=current_state; authority=this; question=what is this tenant's stable identity?",
-      slug: "class=current_state; authority=this; question=what is this team's external address and artifact-store directory name?",
+      slug: "class=current_state; authority=this; question=what is this team's external address, the slug that names it in a URL and in every document path?",
       name: "class=current_state; authority=this; question=what display name is this team shown under?",
       status: "class=current_state; authority=this; question=is this team live or archived?",
       created_by: "class=current_state; authority=this; question=which principal created this tenant?",

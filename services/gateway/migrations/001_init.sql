@@ -2589,7 +2589,7 @@ COMMENT ON COLUMN zz.eval_run.created_at IS 'class=state_machine; authority=this
 -- Name: COLUMN eval_run.team_id; Type: COMMENT; Schema: zz; Owner: -
 --
 
-COMMENT ON COLUMN zz.eval_run.team_id IS 'class=relation; authority=this; question=which team ran this evaluation, whose artifact store its document subjects were resolved against and which the named initiative must belong to?';
+COMMENT ON COLUMN zz.eval_run.team_id IS 'class=relation; authority=this; question=which team ran this evaluation, whose documents its document subjects were resolved against and which the named initiative must belong to?';
 
 
 --
@@ -4687,7 +4687,7 @@ COMMENT ON COLUMN zz.team.id IS 'class=current_state; authority=this; question=w
 -- Name: COLUMN team.slug; Type: COMMENT; Schema: zz; Owner: -
 --
 
-COMMENT ON COLUMN zz.team.slug IS 'class=current_state; authority=this; question=what is this team''s external address and artifact-store directory name?';
+COMMENT ON COLUMN zz.team.slug IS 'class=current_state; authority=this; question=what is this team''s external address, the slug that names it in a URL and in every document path?';
 
 
 --

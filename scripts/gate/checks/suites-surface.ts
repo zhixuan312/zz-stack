@@ -212,5 +212,6 @@ check("a waiver covers only its own step's unmet rule of exactly its kind — ne
       runsCheck("store-waivers.ts"));
 check("document_approve refuses a document whose current content was never presented", runsCheck("approve-needs-present.ts"));
 check("a document too long for one result reads and presents in parts that round-trip, and counts as presented only when the parts cover it", runsCheck("document-parts.ts"));
+check("a document body is stored whole, or refused past the input limit — never stored shortened", runsCheck("document-body-whole.ts"));
 check("the live chain check walks with a superadmin probe token, and a missing token or a skipped superadmin probe is unknown", runsCheck("release-probe-token.ts"));
 check("the doctor's pre-deploy subset holds the status-gate probe, excludes migrations, and runs before step 4", runsCheck("doctor-predeploy.ts"));

@@ -286,6 +286,11 @@ export async function initiativeState(
   // that fact: the first phase with tasks and no `### As built`, null once every written phase is
   // built (`plan-structure.ts`).
   const executingPhase = plan?.current_phase ?? null;
+  // And a plan that still declares a phase with nothing planned under it — the "Planned after
+  // Phase N is built" placeholder a phase-by-phase plan carries — is not finished either, though
+  // every phase that IS written may be built. `current_phase` skips a phase with no tasks, so
+  // without this such a plan read as built and the review round was offered a third of the way in.
+  const unplannedPhase = plan?.unplanned_phase ?? null;
   if (outcome) {
     // The platform appends the handover to every flow, whatever the flow declares, so what
     // gets captured does not depend on the flow author. It is not verified mid-flow: execute
@@ -391,7 +396,7 @@ export async function initiativeState(
     // not asked while a phase is still to build: a round offered there reviews an unfinished change.
     const verifying = flowDocs.find((d) => docs.find((x) => x.name === d.name)?.verifies?.length &&
       d.status !== "approved" && (!d.requires || requirementMet(d.requires)));
-    const owedReview = verifying && executingPhase === null
+    const owedReview = verifying && executingPhase === null && unplannedPhase === null
       ? reviewMove(name, docs.find((x) => x.name === verifying.name)?.stage ?? "", verifying.name,
                    sources, answers)
       : null;
@@ -432,6 +437,18 @@ export async function initiativeState(
              `for it${waves ? ` (its waves: ${waves})` : ""}, and the phase is built when it carries ` +
              `its \`### As built\`; ${verifying?.name ?? "the verifying document"} owes its review ` +
              "round once every phase is built",
+      };
+    } else if (unplannedPhase !== null) {
+      // NOT A TOOL: `run_stage` is `next_move.action`'s own vocabulary. The stage is the one the
+      // flow declares as writing the plan, read off the manifest rather than named here.
+      const planStage = planDoc?.stage ?? "";
+      next = {
+        action: "run_stage", stage: planStage, waiting_on: "agent",
+        why: `${plan?.document} declares phase ${unplannedPhase} with no tasks under it — plan it` +
+             `${planStage ? ` with ${planStage}` : ""} (document_revise ${plan?.document}), then build it; ` +
+             "a phase that needs no tasks is done when it carries its `### As built`; " +
+             `${verifying?.name ?? "the verifying document"} owes its review round once every ` +
+             "declared phase is planned and built",
       };
     } else if (owedReview) {
       // NOT A TOOL: `fix` and `run_experiment` join `add_source` and `decide` in the same

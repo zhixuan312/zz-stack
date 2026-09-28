@@ -59,6 +59,16 @@ export function assertWithinInputLimit(bytes: number, opts: { readonly imported?
   if (bytes > MAX_INPUT_BYTES) throw new InputTooLargeError(bytes, MAX_INPUT_BYTES);
 }
 
+/** The refusal a write returns when `buildRowVector` threw `InputTooLargeError`, or null for any
+ *  other error, which the caller rethrows. One sentence for every write path, so a document and a
+ *  knowledge node over the limit are refused in the same words, naming the size and the limit. */
+export function inputLimitRefusal(what: string, err: unknown): string | null {
+  if (!(err instanceof InputTooLargeError)) return null;
+  const mib = (n: number) => (n / 1024 / 1024).toFixed(1);
+  return `ERROR: ${what} is ${mib(err.actualBytes)} MiB, over the ${mib(err.allowedBytes)} MiB a ` +
+    "stored body may be — nothing was written. Split it into documents that cite each other.";
+}
+
 // Passages
 
 export interface Passage {
@@ -335,8 +345,10 @@ function fieldTerms(text: string, weight: RowVectorWeight): RowVectorTerm[] {
  *  was retired, so the bound stayed on the books with nothing enforcing it: every analyzed byte in
  *  the platform goes through this function — a document write (`versions.ts`'s `saveDocument`), a
  *  journal node (`indexNode`), a team reindex and the rederivation pass — so one call is the whole
- *  write path. Measured against production before wiring it: the largest document body is 201 KB
- *  and the largest node 17.5 KB, so no existing row is refused by it. */
+ *  write path. It is the ONLY bound on a stored body: both writers used to cut the body at
+ *  200,000 characters without saying so — a search-index cap from the file store that became the
+ *  stored bytes when documents moved into rows — so the largest body production holds, 201 KB, is
+ *  that cut and not a measurement. A body past this limit is refused, never shortened. */
 export function buildRowVector(input: {
   readonly title: string;
   readonly tags: readonly string[];

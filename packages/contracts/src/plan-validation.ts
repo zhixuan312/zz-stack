@@ -177,6 +177,12 @@ export interface PlanStructuralReport {
   /** The first phase with tasks and no `### As built`: the one to audit and build next. Null when
    *  every written phase is built, or the plan has no phases. */
   readonly currentPhase: number | null;
+  /** The first phase with no tasks and no `### As built`: declared and still to plan — the
+   *  "Planned after Phase N is built" placeholder a phase-by-phase plan carries. Null when every
+   *  declared phase has tasks or is built. A phase that needs no tasks leaves this state the way
+   *  every phase does: by carrying its `### As built`. A plan with one is not finished, whatever
+   *  `currentPhase` says about the phases that are written. */
+  readonly unplannedPhase: number | null;
 }
 
 // Reading the document
@@ -579,6 +585,7 @@ export function validatePlan(text: string, target?: string): PlanStructuralRepor
     waves: ok && order ? executableWaves(parsed.tasks, graph.edges, order) : [],
     phases,
     currentPhase: phases.find((p) => p.taskIds.length > 0 && !p.built)?.phase ?? null,
+    unplannedPhase: phases.find((p) => p.taskIds.length === 0 && !p.built)?.phase ?? null,
   };
 }
 

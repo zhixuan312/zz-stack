@@ -1,3 +1,13 @@
+/**
+ * What every console route shares: the read guard, the response wrappers, the period and grain a
+ * trend is drawn over, and the row shapes a page renders.
+ *
+ * The console is read-only by design and this module is where that is enforced — `mayReadConsole`
+ * answers whether a caller may read at all, `ok` refuses a handler that has no database to answer
+ * from, and `handler`/`teamless` wrap every route so a refusal is a 403 with a sentence rather
+ * than a stack trace. A route that skipped them would be a second, quieter answer to "may this
+ * caller see this".
+ */
 import { catalogManifest, isFlow, skillText, withHandover } from "@zz/catalog";
 import { documentApplies } from "@zz/contracts";
 import type { Request, Response } from "express";

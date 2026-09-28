@@ -176,4 +176,28 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "day it is typed and silently wrong the next time anybody registers or moves one — the " +
       "same defect this file already shipped four times, each found by a person, late",
   },
+  {
+    check: SUITES_DATA,
+    target: "a proposal is written up without its patch ever being applied",
+    assertion: "the proposal module imports nothing that can run anything",
+    subject: "services/zz-core/src/eval/proposal-doc.ts",
+    find: 'import { parseCaller, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";',
+    replace: 'import { parseCaller, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";\n' +
+      'import { execFileSync } from "node:child_process";   // to check the patch applies, supposedly',
+    planted: "a non-owned subject's write-up reaches for child_process — the one thing the task's own " +
+      "words forbid ('a non-owned subject never causes a repository write, ever — make that an " +
+      "explicit guard'). Nothing else in the tree would notice: the import compiles, the document " +
+      "still renders, and the guarantee is simply no longer true",
+  },
+  {
+    check: SUITES_DATA,
+    target: "every module in the services tree is reachable from something",
+    assertion: "a module nothing imports is reported",
+    subject: "services/zz-core/src/eval/subject-ref.ts",
+    find: 'import { traceOf } from "./judge-trace.js";',
+    replace: 'import { traceOf } from "./judge-trace2.js";',
+    planted: "the only import of judge-trace is re-pointed at a path that does not exist, so that " +
+      "module becomes one nothing reaches while every name it exports stays in use elsewhere — the " +
+      "shape this check exists for, and the shape hygiene's own export scan cannot see",
+  },
 ];

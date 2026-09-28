@@ -22,10 +22,9 @@
  * something else. Only reciprocity fails there, and `catalog-stages.ts`'s "a document's
  * declared stage is a stage its flow has" stays quiet, because the stage it names is real.
  */
-import { execFileSync } from "node:child_process";
 import { cpSync, readFileSync, statSync, writeFileSync } from "node:fs";
 
-import { execOutput } from "../scripts/gate/read.ts";
+import { run } from "../testing/gate-plant.ts";
 
 interface Stage { name: string; produces?: string; [key: string]: unknown }
 interface Doc { name: string; stage?: string; [key: string]: unknown }
@@ -65,25 +64,6 @@ const mutate = (path: string, fn: (m: Manifest) => void) => {
 };
 
 /** One gate run, as two maps: every check that ran, and the sentence each failing one gave. */
-function run() {
-  let out: string;
-  try {
-    out = execFileSync("node", ["scripts/gate.ts"], { encoding: "utf8", stdio: "pipe" });
-  } catch (err) {
-    out = execOutput(err);
-  }
-  const lines = out.split("\n");
-  const ran = new Set<string>();
-  const failed = new Map<string, string>();
-  for (const [i, line] of lines.entries()) {
-    const ok = /^\s*✓ (.+)$/.exec(line);
-    if (ok) { ran.add(ok[1]); continue; }
-    const no = /^\s*✗ (.+)$/.exec(line);
-    if (no) { ran.add(no[1]); failed.set(no[1], (lines[i + 1] ?? "").trim()); }
-  }
-  return { ran, failed };
-}
-
 const fail: string[] = [];
 
 /** Assert, for one mutation: the named checks ran, the ones that should fire did, the ones that

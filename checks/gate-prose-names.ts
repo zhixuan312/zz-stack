@@ -11,11 +11,10 @@
  * The question asked here is "did this check fail, by name", which is falsifiable in both
  * directions and independent of whatever else the tree is in the middle of.
  */
-import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { execOutput } from "../scripts/gate/read.ts";
+import { failing } from "../testing/gate-plant.ts";
 
 const TOOLS = "no shipped prose names a tool no door registers";
 const SKILLS = "no shipped prose names a skill no plugin ships";
@@ -34,22 +33,6 @@ const modOriginal = read(MOD);
 const restore = () => { writeFileSync(SK, skOriginal); writeFileSync(MOD, modOriginal); };
 
 /** The gate's failing checks, by name, with the sentence each gave. */
-function failing() {
-  let out: string;
-  try {
-    out = execFileSync("node", ["scripts/gate.ts", "--quiet"], { encoding: "utf8", stdio: "pipe" });
-  } catch (err) {
-    out = execOutput(err);
-  }
-  const lines = out.split("\n");
-  const found = new Map<string, string>();
-  for (const [i, line] of lines.entries()) {
-    const m = /^\s*✗ (.+)$/.exec(line);
-    if (m) found.set(m[1], (lines[i + 1] ?? "").trim());
-  }
-  return found;
-}
-
 const fail: string[] = [];
 
 // Both checks must be green to start with, or nothing below separates the defect being planted

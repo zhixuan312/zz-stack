@@ -10,9 +10,8 @@
  * of whatever else the tree is in the middle of.
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
 
-import { execOutput } from "../scripts/gate/read.ts";
+import { failing } from "../testing/gate-plant.ts";
 
 const SK = "catalog/zz/zz-plugin-eval/skills/zz-plugin-identify/SKILL.md";
 const EXISTS = "a skill never names a platform tool that does not exist";
@@ -20,22 +19,6 @@ const REACHES = "a skill never instructs a tool its package cannot reach";
 
 const original = readFileSync(SK, "utf8");
 if (!original.trim()) { console.error(`${SK} is empty — refusing to plant into it`); process.exit(1); }
-
-function failing() {
-  let out: string;
-  try {
-    out = execFileSync("node", ["scripts/gate.ts", "--quiet"], { encoding: "utf8", stdio: "pipe" });
-  } catch (err) {
-    out = execOutput(err);
-  }
-  const lines = out.split("\n");
-  const found = new Map<string, string>();
-  for (const [i, line] of lines.entries()) {
-    const m = /^\s*✗ (.+)$/.exec(line);
-    if (m) found.set(m[1], (lines[i + 1] ?? "").trim());
-  }
-  return found;
-}
 
 const fail = [];
 const restore = () => writeFileSync(SK, original);

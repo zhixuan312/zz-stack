@@ -138,6 +138,13 @@ function literalsNameTheGate(literals: readonly string[]): boolean {
  * guard that refuses a nested gate before it writes anything.
  */
 export function isGateLaunchSource(sourceText: string): boolean {
+  // The break-tests no longer spawn the gate themselves: `testing/gate-plant.ts` does it for
+  // them, and they import `run`/`failing` from it. Following only the file's OWN child_process
+  // import would stop recognising them as launchers — which is exactly what happened when they
+  // were converted, and what `working-checks-registered` then reported as four checks that
+  // pass and are registered nowhere. Importing the harness is the same claim as spawning.
+  if (/from\s+"[^"]*gate-plant\.(ts|js)"/.test(sourceText)) return true;
+
   const source = ts.createSourceFile("gate-launch-probe.ts", sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 
   // Pass one: what the file's own imports call the launchers, and which `const` names hold

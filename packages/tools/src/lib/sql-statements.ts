@@ -151,3 +151,66 @@ export function statementsOf(path: string, src: string): Statement[] {
   }
   return out;
 }
+
+/** Where a declaration of `name` ends: its balanced block, or the statement before the `;` for a
+ *  declaration whose value is a single literal. Braces are counted in code only, and only once the
+ *  parameter list has closed, so a destructured parameter does not end the body early. */
+export function declarationEnd(src: string, rs: Region[], from: number): number {
+  let depth = 0;
+  let paren = 0;
+  let opened = false;
+  for (const r of rs) {
+    if (r.end <= from || r.kind !== "code") continue;
+    for (let k = Math.max(r.start, from); k < r.end; k++) {
+      const c = src[k];
+      if (c === "(") paren++;
+      else if (c === ")") paren--;
+      else if (c === "{" && paren === 0) { depth++; opened = true; }
+      else if (c === "}") { depth--; if (opened && depth <= 0) return k + 1; }
+      else if (c === ";" && !opened && depth === 0) return k + 1;
+    }
+  }
+  return src.length;
+}
+
+/** Every string or template literal a file's declaration of `name` returns, unquoted. */
+export function literalsOf(src: string, rs: Region[], name: string): string[] {
+  const decl = new RegExp(`\\b(?:function|const|let|var)\\s+${name}\\b`).exec(src);
+  if (!decl) return [];
+  const insideCode = rs.some((r) => r.kind === "code" && r.start <= decl.index && decl.index < r.end);
+  if (!insideCode) return [];
+  const end = declarationEnd(src, rs, decl.index + decl[0].length);
+  return rs.filter((r) => r.kind === "literal" && r.start > decl.index && r.start < end)
+           .map((r) => src.slice(r.start + 1, r.end - 1));
+}
+
+export const FOLD_DEPTH = 3;
+
+/** A callee's home, resolved by the caller: a check that folds an interpolated `select…()` has its
+ *  own idea of where that function is declared (this file, then the module it was imported from),
+ *  and a reader that guessed it would guess wrongly for the next check that shares this.
+ *
+ *  Not exported: callers pass a function of this shape and TypeScript matches it structurally, so
+ *  nothing needs to name it — and an export nothing imports is dead surface the gate refuses. */
+type CalleeHome =
+  (callee: string, fromPath: string, fromSrc: string) => { src: string; rs: Region[] } | null;
+
+/** The statement with every `${callee(…)}` it interpolates replaced by what that callee returns. */
+export function foldInterpolations(sql: string, src: string, rs: Region[], path: string,
+                                   home: CalleeHome, depth = FOLD_DEPTH, seen = new Set<string>()): string {
+  if (depth <= 0) return sql;
+  return sql.replace(/\$\{(\w+)\([^)]*\)\}/g, (whole, callee: string) => {
+    if (seen.has(callee)) return whole;
+    let texts = literalsOf(src, rs, callee);
+    let at = { src, rs };
+    if (!texts.length) {
+      const found = home(callee, path, src);
+      if (!found) return whole;
+      at = found;
+      texts = literalsOf(at.src, at.rs, callee);
+    }
+    if (!texts.length) return whole;
+    const next = new Set(seen).add(callee);
+    return " " + texts.map((t) => foldInterpolations(t, at.src, at.rs, path, home, depth - 1, next)).join(" ");
+  });
+}

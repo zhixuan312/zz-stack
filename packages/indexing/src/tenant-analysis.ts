@@ -32,9 +32,9 @@ import { createHash } from "node:crypto";
 export const ANALYZER_NAME = "zz-lexical-v3";
 export const CURRENT_ANALYZER_VERSION = 3;
 
-/** 8 MiB. New artifact text above this is refused by the kernel before commit. Legacy content
- *  already larger, committed before the limit existed, is preserved and indexed under the
- *  migration exception (`imported: true` below), never truncated. */
+/** 8 MiB. Text above this is refused where it is analyzed (`buildRowVector`, which every write
+ *  path goes through) and never truncated to fit. `imported: true` is the named exception, for
+ *  content that predates the limit. */
 export const MAX_INPUT_BYTES = 8 * 1024 * 1024;
 
 /** Thrown by `assertWithinInputLimit`. Carries the actual and allowed sizes as fields, not only
@@ -430,58 +430,3 @@ export function derivationFingerprint(v: DerivationVersions): string {
   })).digest("hex");
 }
 
-// Analyzer opacity: the fixed case list a live PostgreSQL proves this analyzer's terms
-// Survive text analysis unaltered
-
-/** Four raw seed strings, one per shape: Han, Latin, mixed (interleaved, so a bigram never pairs
- *  across a Latin run) and identifier.
- *
- *  DELIBERATE: the Han/Latin/mixed seeds are lowercase, so a case-folding dictionary cannot
- *  report a mangled term for a reason unrelated to opacity. The identifier seed keeps mixed case
- *  and a `_`/`-`/`.` mix, because `emittedTermsFor` below never submits it verbatim. */
-const OPACITY_SEED_TEXT = {
-  han: "这是一段测试用的中文文本",
-  latin: "schema migration reader",
-  mixed: "这次 migration 会 rebuild 索引 schema",
-  identifier: "httpServer2_config-reader.v2",
-} as const;
-
-/** The seeds above in one fixed, ordered list. Exported so `analyzer-opacity-run.ts` and
- *  anything auditing this fixture can see what was fed to the analyzer, separately from the
- *  terms analysis produced. */
-export const OPACITY_SEEDS: readonly string[] = Object.values(OPACITY_SEED_TEXT);
-
-/** Every term one seed contributes to `OPACITY_CASES`. The Han/Latin/mixed seeds run through
- *  `analyze` alone.
- *
- *  DELIBERATE: the identifier seed runs through `identifierTokens` and only its derived lowercase
- *  parts are kept, never the verbatim compound spelling `tokens.add(raw)` also emits. That
- *  spelling is looked up through an exact-string path
- *  (`zz.artifact_identifier.identifier_text`/`normalized_text`), never `to_tsvector`, and a
- *  compound still carrying `_`/`-` would test PostgreSQL's delimiter handling instead. */
-function emittedTermsFor(seed: string): string[] {
-  if (seed === OPACITY_SEED_TEXT.identifier) {
-    return identifierTokens(seed).filter((token) => token !== seed);
-  }
-  const { base, ranking } = analyze(seed);
-  return [...base.map((t) => t.term), ...ranking];
-}
-
-/** Every term the current analyzer emits for `OPACITY_SEEDS`, flattened and de-duplicated in
- *  first-seen order. `analyzer-opacity-run.ts` submits each to a live pinned PostgreSQL through
- *  `to_tsvector('simple', …)` and requires it back byte-identical. That is a claim about the Han
- *  half only: a `"latin"` term is stored through `TEXT_SEARCH_CONFIG.latin`, which stems, so
- *  byte-identity there would be a defect. The Latin and identifier seeds are controls on the
- *  tokenizer's splitting behaviour.
- *
- *  COUPLED: `scripts/gate/checks/analyzer-opacity-fixture.ts` re-derives this list, so any change
- *  to what the analyzer emits changes `analyzerDigestFor`'s result. */
-export const OPACITY_CASES: readonly string[] = [...new Set(OPACITY_SEEDS.flatMap(emittedTermsFor))];
-
-/** A stable SHA-256 over the exact ordered term list `cases`, as JSON. Order- and
- *  content-sensitive: recomputing it against the current `OPACITY_CASES` and comparing to a
- *  fixture's recorded `provenance.analyzer_digest` is how the gate tells a stale fixture from a
- *  current one. */
-export function analyzerDigestFor(cases: readonly string[]): string {
-  return createHash("sha256").update(JSON.stringify(cases)).digest("hex");
-}

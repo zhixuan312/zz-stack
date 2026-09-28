@@ -28,7 +28,6 @@ export {
   ANALYZER_NAME, CURRENT_ANALYZER_VERSION, MAX_INPUT_BYTES, InputTooLargeError,
   assertWithinInputLimit, PASSAGE_MAX_SCALARS, PASSAGE_OVERLAP_SCALARS,
   passagesOf, identifierTokens, analyze, derivationFingerprint,
-  OPACITY_SEEDS, OPACITY_CASES, analyzerDigestFor,
   buildRowVector,
   // The two text-search configuration names, and the `body_tsv` construction built from them.
   // COUPLED: the read path, `services/zz-core/src/tools/knowledge-search.ts`, must parse its

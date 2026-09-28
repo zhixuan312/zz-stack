@@ -6,9 +6,9 @@
  * `scope: "platform"` and a node on the team's without it, so a result that does not say which
  * sends a reader to `document_read` with the wrong argument.
  *
- * This handler reads `zz.doc`/`zz.knowledge_node`, not the `zz.search_*` projections.
- * COUPLED: `services/zz-core/src/tenant-info/search.ts` holds the retrieval stack the cutover
- * switches to; this file then keeps one query path, not two behind a flag.
+ * This handler reads `zz.doc`/`zz.knowledge_node` directly. The `zz.search_*` projections and the
+ * tenant-info retrieval stack that was to replace them are both gone: there is one query path, and
+ * this is it.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller, recallResultFrom, type RecallResult } from "@zz/contracts";

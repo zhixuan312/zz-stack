@@ -1,6 +1,6 @@
 ---
 name: sdlc-audit-criteria
-version: 2.6
+version: 2.7
 description: The eleven prose failure modes every sdlc audit applies, the evidence shapes a finding must take, and the JSON a round returns. Loaded by sdlc-spec-audit and sdlc-plan-audit; never run on its own.
 when_to_use: "You were dispatched as sdlc-spec-audit or sdlc-plan-audit. Load this first, then that skill — it carries what is different about the document you were given."
 ---
@@ -49,11 +49,11 @@ write path — first write, patch, revision and approval alike. Here that reache
 Three consequences, and every one of them lands on this round:
 
 - **The rename is reported once, to whoever made the call, and then it is gone.** Nothing keeps
-  it: the document on disk, the frozen copy filed at approval, and the activity log all hold the
-  renamed wording with no trace of what was there before. If the caller passed you that report,
+  it: the revision the write filed, the one before it, and the event log all hold the normalized
+  wording, and no row carries what the caller actually sent. If the caller passed you that report,
   quote it as the rename receipt. If they did not, record the normalization history as
-  `unavailable` and audit the text in front of you. The earlier wording is not recoverable from
-  the store, so it is also not something to reconstruct from context.
+  `unavailable` and audit the text in front of you. The caller's wording was normalized on its way
+  in and never stored, so it is not something to reconstruct from context either.
 - **A declared heading is not evidence that its author chose it.** Never read section wording as
   authorial intent, never attribute a section to somebody on the strength of its label, and never
   raise a finding whose entire content is that a heading matches the manifest.

@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.18
+version: 1.19
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -427,8 +427,8 @@ dependency order, the full-suite gate. Write the plan expecting that.
 ## Coming back from the audit, or from execution
 
 `sdlc-plan-audit` returns findings, and `sdlc-execute` sends a plan back when a task's contract
-turns out to be wrong against the real code. Either way the document on disk is the one the
-person approved, and **`document_write` and `document_patch` are refused on it outright** — `plan.md`
+turns out to be wrong against the real code. Either way the revision the person approved is the
+one standing, and **`document_write` and `document_patch` are refused on it outright** — `plan.md`
 carries `gate: true`, and writing over an approved document would leave the approver's name
 standing on bytes they never read.
 

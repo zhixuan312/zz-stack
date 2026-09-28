@@ -25,21 +25,11 @@
 import { execFileSync } from "node:child_process";
 import { cpSync, readFileSync, statSync, writeFileSync } from "node:fs";
 
+import { execOutput } from "../scripts/gate/read.ts";
+
 interface Stage { name: string; produces?: string; [key: string]: unknown }
 interface Doc { name: string; stage?: string; [key: string]: unknown }
 interface Manifest { stages?: Stage[]; documents?: Doc[]; [key: string]: unknown }
-
-/** node:child_process throws an object carrying stdout/stderr, never an Error. Narrow at the
- *  boundary rather than assume the shape. */
-function execOutput(err: unknown): string {
-  if (err && typeof err === "object") {
-    const rec = err as Record<string, unknown>;
-    const stdout = typeof rec.stdout === "string" ? rec.stdout : "";
-    const stderr = typeof rec.stderr === "string" ? rec.stderr : "";
-    return `${stdout}${stderr}`;
-  }
-  return String(err);
-}
 
 const EVAL = "catalog/zz/zz-plugin-eval/flow.json";
 const SDLC = "catalog/sdlc/sdlc-flow/flow.json";

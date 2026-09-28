@@ -15,17 +15,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-/** node:child_process throws an object carrying stdout/stderr, never an Error. Narrow at the
- *  boundary rather than assume the shape. */
-function execOutput(err: unknown): string {
-  if (err && typeof err === "object") {
-    const rec = err as Record<string, unknown>;
-    const stdout = typeof rec.stdout === "string" ? rec.stdout : "";
-    const stderr = typeof rec.stderr === "string" ? rec.stderr : "";
-    return `${stdout}${stderr}`;
-  }
-  return String(err);
-}
+import { execOutput } from "../scripts/gate/read.ts";
 
 const TOOLS = "no shipped prose names a tool no door registers";
 const SKILLS = "no shipped prose names a skill no plugin ships";

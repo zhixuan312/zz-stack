@@ -12,23 +12,14 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
+import { execOutput } from "../scripts/gate/read.ts";
+
 const SK = "catalog/zz/zz-plugin-eval/skills/zz-plugin-identify/SKILL.md";
 const EXISTS = "a skill never names a platform tool that does not exist";
 const REACHES = "a skill never instructs a tool its package cannot reach";
 
 const original = readFileSync(SK, "utf8");
 if (!original.trim()) { console.error(`${SK} is empty — refusing to plant into it`); process.exit(1); }
-
-/** The gate's failing checks, by name, with the sentence each gave. */
-function execOutput(err: unknown): string {
-  if (err && typeof err === "object") {
-    const rec = err as Record<string, unknown>;
-    const stdout = typeof rec.stdout === "string" ? rec.stdout : "";
-    const stderr = typeof rec.stderr === "string" ? rec.stderr : "";
-    return `${stdout}${stderr}`;
-  }
-  return String(err);
-}
 
 function failing() {
   let out: string;

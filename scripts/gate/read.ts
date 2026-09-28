@@ -443,3 +443,15 @@ export function errMessage(err: unknown): string {
   }
   return String(err);
 }
+
+/** The child's output from a thrown execFileSync, stdout then stderr, or the message when the
+ *  value carries neither. Four gate-plant checks read a spawned gate's failure this way. */
+export function execOutput(err: unknown): string {
+  if (err && typeof err === "object") {
+    const rec = err as Record<string, unknown>;
+    const stdout = typeof rec.stdout === "string" ? rec.stdout : "";
+    const stderr = typeof rec.stderr === "string" ? rec.stderr : "";
+    return `${stdout}${stderr}`;
+  }
+  return String(err);
+}

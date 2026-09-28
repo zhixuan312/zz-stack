@@ -16,17 +16,7 @@
 import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 
-/** node:child_process throws an object carrying stdout/stderr, never an Error. Narrow at the
- *  boundary rather than assume the shape. */
-function execOutput(err: unknown): string {
-  if (err && typeof err === "object") {
-    const rec = err as Record<string, unknown>;
-    const stdout = typeof rec.stdout === "string" ? rec.stdout : "";
-    const stderr = typeof rec.stderr === "string" ? rec.stderr : "";
-    return `${stdout}${stderr}`;
-  }
-  return String(err);
-}
+import { execOutput } from "../scripts/gate/read.ts";
 
 const MF = "catalog/zz/zz-plugin-eval/flow.json";
 const KEEP = "/tmp/zz-plugin-eval-flow.json.keep";

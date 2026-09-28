@@ -9,7 +9,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 
-const { answerMeasure, evaluateGuardrails, parseCriticalGuardrails } =
+const { answerMeasure, evaluateGuardrails } =
   await import(pathToFileURL(join(process.cwd(), "services/zz-core/dist/eval/evaluate-measures.js")).href);
 const { factPathRefusal, criticalGuardrailRefusal } =
   await import(pathToFileURL(join(process.cwd(), "services/zz-core/dist/eval/protocol-record.js")).href);
@@ -118,7 +118,12 @@ assert.match(criticalGuardrailRefusal(body("dup", ["dup", "dup"])) ?? "", /which
 console.log("ok eval-fact-path: protocol_record refuses an unknown factPath and an unresolved criticalGuardrails key");
 
 // -- evaluateGuardrails: pass / fail / not_established, never a bare "not pass" == "fail" -----
-const critical = parseCriticalGuardrails([{ key: "usable_run_coverage", threshold: 0.5 }, { key: "document_gate_readiness", threshold: 0.5 }]);
+// The fixture is written here rather than parsed from a payload: the payload no longer reaches
+// this shape at all — `protocol_record` writes each entry's threshold into
+// `eval_measure.guardrail_threshold` and drops the list from the policy, so
+// `guardrailsOfMeasures` reads it off the run's own measures.
+const critical = [{ key: "usable_run_coverage", threshold: 0.5 },
+                  { key: "document_gate_readiness", threshold: 0.5 }];
 const values = new Map<string, number | null>([["usable_run_coverage", 0.9], ["document_gate_readiness", 0.3]]);
 const results = evaluateGuardrails(critical, values);
 assert.equal(results.find((r: { key: string }) => r.key === "usable_run_coverage").status, "pass");

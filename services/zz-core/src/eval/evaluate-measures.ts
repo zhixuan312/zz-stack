@@ -558,8 +558,6 @@ interface GuardrailResult extends CriticalGuardrail {
   readonly status: "pass" | "fail" | "not_established";
 }
 
-const DEFAULT_GUARDRAIL_THRESHOLD = 0.5;
-
 /** The run's own measures that carry a bar. A measure is a guardrail exactly when its own
  *  `guardrail_threshold` column is set, so the list is read off the run's measures rather than
  *  parsed out of a policy object — the fact moved to where it is measured against. */
@@ -567,24 +565,6 @@ export function guardrailsOfMeasures(measures: readonly MeasureRow[]): CriticalG
   return measures
     .filter((m) => typeof m.guardrail_threshold === "number")
     .map((m) => ({ key: m.key, threshold: m.guardrail_threshold as number }));
-}
-
-/** A `{key, threshold}` list read off whatever shape it arrives in — a bare string names a key
- *  with no threshold, and a missing threshold defaults rather than dropping the guardrail. Kept
- *  because the list still arrives as parsed data from more than one place (a protocol body's own
- *  payload, a check's own literal), and this is the one place that decides what a malformed entry
- *  means. */
-export function parseCriticalGuardrails(raw: unknown): CriticalGuardrail[] {
-  if (!Array.isArray(raw)) return [];
-  const out: CriticalGuardrail[] = [];
-  for (const g of raw) {
-    if (g && typeof g === "object" && typeof (g as Record<string, unknown>).key === "string") {
-      const r = g as Record<string, unknown>;
-      const threshold = typeof r.threshold === "number" ? r.threshold : DEFAULT_GUARDRAIL_THRESHOLD;
-      out.push({ key: r.key as string, threshold });
-    }
-  }
-  return out;
 }
 
 /** A run's own critical guardrails, evaluated against whatever this run already reduced each

@@ -207,12 +207,14 @@ async function buildCandidate(read: CandidateRead, opts: BuildOpts): Promise<Bui
         if (/ETIMEDOUT/.test(e.message ?? "")) {
           return { ok: false, stage: "timeout", log_tail: `${argv.join(" ")} did not finish in ${timeout / 60_000} minutes`, commands };
         }
-        // When a step produces no output at all the recorded tail is otherwise npm's own header and
-        // nothing else — a candidate build that failed would say `> node scripts/gate.ts --quiet`
-        // and stop there, which is a diagnosis nobody can act on. Say what is actually known: the
-        // command, its exit, and that the streams were empty.
+        // The tail carries what the step printed AND the line the sandbox runner wrote about it.
+        // A step can exit non-zero with output that says nothing about why — npm's own header, and
+        // nothing after it, is what a failing `npm run gate --quiet` recorded when the walk first
+        // ran on a runner — and the runner's line names the command and its exit, which is the one
+        // thing the step's own output may omit entirely.
         const streams = `${e.stdout ?? ""}${e.stderr ?? ""}`.trim();
-        const output = streams || `${argv.join(" ")} produced no output — ${e.message ?? "it failed"}`;
+        const said = e.message ?? "it failed";
+        const output = streams ? `${streams}\n(${said})` : `${argv.join(" ")} produced no output — ${said}`;
         const host = hostFailure(output);
         if (host) return { ok: false, stage: "host", log_tail: tail(`host problem (${host}) during ${stage}:\n${output}`), commands };
         return { ok: false, stage, log_tail: tail(output), commands };

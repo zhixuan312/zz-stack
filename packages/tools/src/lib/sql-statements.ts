@@ -22,7 +22,9 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-export interface ScanSource { path: string; src: string }
+/** The shape `sourceFiles` accumulates. Not exported: it is this module's own parameter type, and
+ *  an export nothing imports is dead surface — the gate refuses one. */
+interface ScanSource { path: string; src: string }
 
 export const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
 

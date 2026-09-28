@@ -96,6 +96,13 @@ jobs:
         working-directory: pair/zz-stack-dashboard
         run: pnpm install --frozen-lockfile
 
+      # Two of the console's gate checks rebuild its icon and brand assets and hash the decoded
+      # pixels, which is how they assert the build is reproducible, so the runner needs the
+      # generators' own dependency. Without it the gate fails on Linux naming the assets rather
+      # than the missing package — the checks now say which one, and this is what gives it to them.
+      - name: Install Pillow, which the console's asset checks run
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq python3-pil
+
       # The whole release, minus the host: the gate, both images, the platform started from them,
       # sql-check, the tool-chain walk, the deploy bundle. A failure here is a failure the release
       # would have hit, found before anything is pushed.

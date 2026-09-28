@@ -107,13 +107,12 @@ jobs:
       - name: Install Pillow, which the console's asset checks run
         run: sudo apt-get update -qq && sudo apt-get install -y -qq python3-pil
 
-      # The walk records a candidate and then builds it, and a candidate's build is its own code:
-      # `npm run candidate-build` exits 2 rather than run it unsandboxed. bubblewrap is that sandbox
-      # on Linux. Proved here, by the code's own detector, rather than discovered inside the gate:
-      # a host where bwrap exists but cannot start takes the sandbox checks' "available" path and
-      # fails them, where a host with no bwrap at all passes them (they say so and skip the live
-      # half), and a half-configured host is the only one that fails.
-      - name: Install and prove the sandbox the walk builds in
+      # bubblewrap, and proved by the code's own detector rather than discovered inside the gate.
+      # The gate's own candidate checks run a sandboxed process when one is available and say so
+      # when none is, so a host where bwrap exists but cannot start is the one state that fails
+      # them — the checks take their "available" path and the sandbox refuses. Half-configured is
+      # worse than absent, and this step is what keeps the runner on one side of that line.
+      - name: Install and prove the sandbox the gate's candidate checks use
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap
           node -e "import('./packages/tools/dist/candidate/sandbox.js').then((m) => {
@@ -134,14 +133,17 @@ jobs:
             ${{ inputs.dashboard != '' && format('--dashboard={0}', inputs.dashboard) || '' }} \
             --dry-run --fit-for-purpose-reviewed
 
-      # The whole zz-plugin-eval flow, from IDENTIFY to a closed initiative, through the real doors
-      # of a scratch stack this step stands up and tears down: candidate, its sandboxed build, the
-      # release, the rollback, and the post-release judgement on real use. Nothing else runs it —
-      # it needs docker and minutes, so it is not a gate check — and the improve/release half is
-      # the one part of the platform no production run has exercised yet.
-      - name: Walk the whole eval flow, improve through release and rollback
-        run: npm run eval-flow-e2e
-
+      # NOT HERE: `npm run eval-flow-e2e`, the walk of the whole zz-plugin-eval flow — candidate, its
+      # sandboxed build, the release, the rollback, the post-release judgement on real use. Run on a
+      # runner it gets as far as the candidate's build and stops there, because a candidate is gated
+      # by the SUBJECT's own gate and this platform's gate runs two Docker-backed checks whose
+      # containers cannot start inside bwrap's fresh namespaces. On an operator's machine, where that
+      # gate has the daemon it expects, the walk completes. Deliberate: the alternative is opening
+      # the sandbox further, and the sandbox is the only thing standing between a candidate's own
+      # code and the host. See `sandboxContext`'s note on what it leaves reachable.
+      #
+      # The chain is therefore unwalked by anything automatic. `npm run eval-flow-e2e` is how it gets
+      # walked, from a checkout on a machine with docker.
       - name: Log in to GHCR
         if: ${{ inputs.push }}
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u '${{ github.actor }}' --password-stdin

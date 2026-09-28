@@ -5,25 +5,17 @@
  * flow, `envelopeFor` builds the frontmatter, `normalizeSections` renames a near-miss heading,
  * `documentGuards` decides whether the write may land, `saveDocument` lands it. Nothing here
  * invents a second write path: `artifacts.ts`'s `document_write` is the only place this platform
- * writes a governed document, and this file calls the same internals it does rather than
- * `writeFileSync`ing around them the way `source_add`'s immutable, ungated material does — a
- * source names nothing else in the store and answers to no gate; findings.md names its initiative
- * and, once `catalog/zz/zz-plugin-eval/flow.json` is updated (Task I-28, this task's own
- * dependent) to declare `findings.md` with `gate: false`, is finished by being written, exactly
- * as `write-guards.ts`'s own `sectionCheck` already treats an ungated document.
+ * writes a governed document, and this file calls the same internals it does.
  *
- * `catalog/zz/zz-plugin-eval/flow.json` at the time this task lands still carries the OLD
- * five-section, `gate: true`, `requiredForClose: true` declaration for `findings.md` — the
- * legacy round-based report Task I-28 replaces. `documentGuards` reads whatever manifest is
- * live, so on an initiative governed by that stale manifest this write still asks for
- * `protocol.md` to be approved first and still stamps `status: draft` (a gated document's own
- * stamp) rather than being un-stamped outright. That is exactly and only what "findings.md is
- * ungated" is waiting on Task I-28 for: this file's own writing path already imposes no gate of
- * its own — the source is the one place the intended headings and the "written by being
- * written" behaviour are decided; `flow.json` merely has to catch up to it. On a freeform
- * initiative (no flow declared) `chainFor` returns `EMPTY_CHAIN`, `chain.documents` is empty, and
- * every guard above no-ops — which is the shape the live end-to-end check for this task actually
- * exercises.
+ * `catalog/zz/zz-plugin-eval/flow.json` declares `findings.md` with `gate: false`, `requires:
+ * protocol.md` and its eight sections, so a write that satisfies those guards is finished by being
+ * written — exactly as `write-guards.ts`'s own `sectionCheck` treats an ungated document. The
+ * manifest carried `gate: true` while this file was being built and Task I-28 changed it;
+ * `documentGuards` reads whatever manifest is live, so nothing here depends on that history.
+ *
+ * On a freeform initiative (no flow declared) `chainFor` returns `EMPTY_CHAIN`,
+ * `chain.documents` is empty, and every guard above no-ops — which is the shape the live
+ * end-to-end check for this task exercises.
  */
 
 import { parseCaller, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";

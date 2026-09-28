@@ -48,7 +48,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         "nobody signed off — an honest close is never the expensive one, but it is never free " +
         "either.",
       inputSchema: {
-        initiative: z.string().describe("The initiative folder, e.g. '2026-08-23-sample-queue'"),
+        initiative: z.string().describe("The initiative's slug, e.g. '2026-08-23-sample-queue'"),
         // The stop word is the outcome's, so what the caller says and what the ledger records are
         // the same word and a rename cannot leave one behind. `finished` is this tool's own — the
         // platform derives `delivered` or `accepted` from it and whether anybody signed off.

@@ -116,7 +116,7 @@ export function registerKnowledgeTools(server: McpServer): void {
     {
       description:
         "Mint a knowledge-journal node in the team's journal: numbered, typed, evidence-linked. " +
-        "type: decision|design|behavior|process|knowledge|style. evidence: initiative folder(s) the " +
+        "type: decision|design|behavior|process|knowledge|style. evidence: initiative slug(s) the " +
         "lesson comes from — a node without evidence is an opinion and is refused. " +
         "WHEN THE LESSON IS ABOUT SOMETHING THE PLATFORM PLUGS IN rather than about your own " +
         "work, tag it with what it is about: `plugin:<name>`, `flow:sdlc-flow`, " +
@@ -200,7 +200,7 @@ export function registerKnowledgeTools(server: McpServer): void {
       const names = evidence.map((e) => e.trim());
       for (const e of names) {
         if (!PLAIN_TOKEN.test(e)) {
-          return text(`ERROR: evidence entry "${e}" must be an initiative folder name — ` +
+          return text(`ERROR: evidence entry "${e}" must be an initiative slug — ` +
                       "letters, digits, dot, dash or underscore, nothing else");
         }
       }

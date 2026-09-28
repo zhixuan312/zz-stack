@@ -75,8 +75,14 @@ export const EVAL_ALIAS: Record<string, string> = Object.freeze({
   plugin_scores: "round_scores",
   plugin_finding_record: "finding_record",
 });
-/** The two skill renames. Consumed wherever a `zz.event.step` value is resolved against a
- * skill name, because that column holds the name as a string rather than a version id. */
+/** The two skill renames.
+ *
+ * DELIBERATE, and its production reader is gone: `zz.event` held a `step` NAME, which this
+ * resolved to the skill's current name so a report could group a window spanning the rename. The
+ * column is a `skill_version_id` now, resolved through `zz.skill_version` to the skill's own name,
+ * so nothing in the services resolves a step name any more. What still reads this map is the pair
+ * of checks that pin the renames — `checks/skill-renames.ts` and `checks/alias-applied.ts` — which
+ * is why it is kept rather than deleted with the column it was written for. */
 export const SKILL_ALIAS: Record<string, string> = Object.freeze({
   "zz-backbone": "zz-platform",
   "zz-knowledge": "zz-handover",
@@ -112,8 +118,9 @@ export function resolveToolKey(subject: string): string {
   return `${subject.slice(0, i)}:${resolveTool(subject.slice(0, i), subject.slice(i + 1))}`;
 }
 
-/** A stored `zz.event.step` value, resolved to the skill's current name. Separate from the
- *  tool resolvers because the column holds a bare skill name with no door to qualify it. */
+/** A skill NAME, resolved to the skill's current name — what the `step` column of `zz.event`
+ *  held before the schema gave that column a version id, and what the two rename checks still
+ *  resolve through. Separate from the tool resolvers because a step name carries no door. */
 export function resolveStep(step: string): string {
   return SKILL_ALIAS[step] ?? step;
 }

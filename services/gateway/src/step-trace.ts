@@ -28,8 +28,9 @@ const RUN_IDLE_MS = FOLLOWS_FOR_MS;
 
 interface Trace {
   /** Absent, never `""`, when this caller has named an initiative without reading a skill.
-   * `??` does not coalesce an empty string, so one reaches `zz.event.step` verbatim and is
-   * unjoinable to `zz.skill` while the index holds nulls. */
+   * `??` does not coalesce an empty string, so one would reach the writer as a step name that
+   * resolves to no skill version — which is why `tool-telemetry.ts` resolves the name to the
+   * version row it names at write time and leaves the column null when nothing does. */
   step?: string;
   /** The initiative this caller is working on, carried forward from the last call that named
    * one — most calls do not take it, and without this a refusal cannot be joined to the

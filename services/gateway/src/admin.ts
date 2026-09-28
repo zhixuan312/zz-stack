@@ -146,8 +146,8 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     description:
       "WHEN a new tenant needs somewhere for its work to live, or an archived team is being " +
       "brought back — the same slug restores it with its installs and grants. RETURNS the " +
-      "team, its slug being the stable identity used everywhere, in the database and in the " +
-      "artifact store. REFUSES anyone but a superadmin, a slug the platform's own rule " +
+      "team, its slug being the stable identity used everywhere this platform names a team. " +
+      "REFUSES anyone but a superadmin, a slug the platform's own rule " +
       "rejects, and the platform's reserved slug, which no tenant may claim.",
     inputSchema: { slug: z.string().regex(TEAM_SLUG), name: z.string().min(1) },
   }, async ({ slug, name }) => {

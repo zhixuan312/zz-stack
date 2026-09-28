@@ -162,7 +162,7 @@ export function registerArtifactTools(server: McpServer): void {
     "document_read",
     {
       description:
-        "Read a file from your team's store. Paths are relative to it — " +
+        "Read a document from your team's store. Paths are relative to it — " +
         "`<initiative>/spec.md`. Pass an ARRAY of paths to read several in one call; they " +
         "come back in the order you asked, and a path that cannot be read names its own " +
         "failure without costing you the others. `version: N` reads the copy filed when " +
@@ -355,7 +355,7 @@ export function registerArtifactTools(server: McpServer): void {
     "document_patch",
     {
       description:
-        "Replace an exact text fragment (must occur exactly once) in an artifact file. " +
+        "Replace an exact text fragment (must occur exactly once) in a document. " +
         "This is how a DRAFT is filled in section by section. It is refused on a gated " +
         "document once that document is approved — an approved document changes through " +
         "document_revise, which versions it and returns it to draft, because a signature " +

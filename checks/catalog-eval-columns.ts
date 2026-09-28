@@ -31,7 +31,7 @@
  *
  * DELIBERATE: the removed table names are matched in every literal, prose included. A diagnosis
  * naming `zz.eval` mid-sentence, or a failure message naming a table this phase drops, stops
- * being true when the migration lands, and a check that skipped prose would pass a tree still
+ * being true once the migration landed, and a check that skipped prose would pass a tree still
  * telling its user about a table that is gone.
  *
  * DELIBERATE: the list of names is the phase's own technical acceptance criterion, not every name
@@ -92,7 +92,7 @@ const DROPPED_TABLES = [
 ];
 
 /**
- * The columns this phase retires, keyed by the table's name after the migration, because that is
+ * The columns the phase retired, keyed by the table's name after the migration, because that is
  * the table whose columns these were. Every one is a name whose reader has to move to a relation,
  * a derived value or a reshaped column; a column whose name survives (`plugin.owner_team` →
  * `owner_team_id`) is not here, and neither is a column a later phase retires.

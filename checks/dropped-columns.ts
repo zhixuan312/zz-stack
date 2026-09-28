@@ -2,12 +2,12 @@
  * checks/dropped-columns.ts — no statement in the write trees names a table or a column
  * the migrations retire.
  *
- * The migration renames `zz.run` to `zz.skill_run`, drops `decision` and `discussion_message`
- * whole, and leaves six columns of `event`, four of `model_call`, two of `assessment`, three of
- * `initiative_fact` and two of `bug` behind. Phase 3's migration retires a further forty-odd
- * columns of the eval tables, listed below with where each list came from. Every one of those names reads correctly today and
- * stops reading the moment the migration is applied — and nothing compiles a SQL statement, so
- * the break surfaces as a runtime error on the first path somebody happens to exercise. This is
+ * The migrations renamed `zz.run` to `zz.skill_run`, dropped `decision` and `discussion_message`
+ * whole, and left six columns of `event`, four of `model_call`, two of `assessment`, three of
+ * `initiative_fact` and two of `bug` behind. Phase 3 retired a further forty-odd columns of the
+ * eval tables, listed below with where each list came from. Every one of those names is gone from
+ * the schema — and nothing compiles a SQL statement, so a statement that still names one fails as
+ * a runtime error on the first path somebody happens to exercise. This is
  * the static half of that: read every statement under the trees that write to a database, and
  * report the ones naming a retired name.
  *
@@ -37,7 +37,7 @@
  *
  *   The removed table names are matched in every literal, prose included. A diagnosis naming
  *   `zz.run` mid-sentence, or a failure message naming a table this phase drops, stops being true
- *   when the migration lands, and a check that skipped prose would pass a tree still telling its
+ *   once the migration landed, and a check that skipped prose would pass a tree still telling its
  *   user about a table that is gone. Nothing under the scan roots names one in prose today — the
  *   messages that motivated this rule were updated with the migration — so the rule stands as the
  *   guard rather than as a finding anything currently earns.
@@ -74,7 +74,7 @@ const isMutationSpec = (p: string): boolean => /(^|\/)scripts\/mutation\/specs[^
 const isAppliedMigration = (p: string): boolean => p.includes("services/gateway/migrations/");
 
 /**
- * The columns this phase retires, and the one table it renames. Keyed by the table's name after
+ * The columns the phases retired, and the one table renamed. Keyed by the table's name after
  * the migration, because that is the table whose columns these were.
  *
  * `caller_session` is `session` after it and `note` is `error`; both are here under the name that

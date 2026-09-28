@@ -27,7 +27,7 @@ for (const f of files) {
     }
   }
 }
-assert.deepEqual(hits, [], "no statement names a column this phase retires");
+assert.deepEqual(hits, [], "no statement names a column the reshape retired");
 
 // Each replacement has a writer, or the reshape is a rename that wrote nothing. The writer is
 // `packages/indexing/src/index.ts` — `indexNode`/`supersedeNode`, the one pair that writes a

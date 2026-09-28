@@ -31,7 +31,7 @@
  * a column list by a statement that names none.
  *
  * EXEMPT: `services/gateway/migrations/` — an applied migration is history. `001_init.sql`
- * creates `skill_asset` and defines every column this phase retires; the file that retires them is
+ * created `skill_asset` and defined every column the phase retired; the file that retired them is
  * exactly the file that must still spell them. `checks/dropped-columns.ts:47-51` carries this
  * exemption for the same reason.
  */

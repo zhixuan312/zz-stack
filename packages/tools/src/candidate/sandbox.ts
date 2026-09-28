@@ -250,13 +250,14 @@ export function execSandboxed(
   opts: { cwd: string; env: Record<string, string>; timeout: number; maxBuffer?: number },
 ): string {
   // bwrap creates the mount point of every `--bind` it is given, and the root it is given is
-  // read-only — so a declared writable path that does not exist yet refuses the whole command with
-  // "Can't mkdir /tmp/…: Read-only file system" before the build runs. Seatbelt makes no mounts, so
-  // macOS never sees this. Making them here is not a widening: every path in `writable` was already
-  // declared writable by this caller, and this only makes the mount the declaration asks for
-  // possible. (`--tmpfs /tmp` would have made the whole of /tmp writable, including where a build
-  // has no business writing — `checks/candidate-isolation-pure.ts` asserts that it does not.)
-  for (const p of paths.writable) mkdirSync(p, { recursive: true });
+  // read-only — so a path it is asked to bind that does not exist yet refuses the whole command
+  // with "Can't mkdir /tmp/…: Read-only file system" before the build runs. Seatbelt makes no
+  // mounts, so macOS never sees this. Making them here is not a widening: every path in `writable`
+  // was already declared writable and every path in `readable` only readable, and this only makes
+  // the mount each declaration asks for possible. (`--tmpfs /tmp` would have made the whole of /tmp
+  // writable, including where a build has no business writing — `checks/candidate-isolation-pure.ts`
+  // asserts that it does not.)
+  for (const p of [...paths.writable, ...(paths.readable ?? [])]) mkdirSync(p, { recursive: true });
   const readOnly = paths.writable.map((p) => join(p, ".git")).filter((p) => existsSync(p));
   const cmd = sandboxedCommand(sandbox.tool, {
     denyRead: sandbox.denyRead, allowRead: [...sandbox.allowRead, ...(paths.readable ?? [])],

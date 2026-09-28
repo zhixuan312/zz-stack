@@ -103,6 +103,17 @@ jobs:
       - name: Install Pillow, which the console's asset checks run
         run: sudo apt-get update -qq && sudo apt-get install -y -qq python3-pil
 
+      # The walk records a candidate and then builds it, and a candidate's build is its own code:
+      # `npm run candidate-build` exits 2 rather than run it unsandboxed. bubblewrap is that sandbox
+      # on Linux, and Ubuntu 24.04 restricts unprivileged user namespaces with an AppArmor rule
+      # bwrap needs, so the restriction is lifted for this job. Without both lines the walk gets
+      # seven stages in — through IMPROVE's `improvement_start` and `candidate_record` — and stops
+      # at `candidate_validate`.
+      - name: Give the walk a sandbox it can build in
+        run: |
+          sudo apt-get install -y -qq bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       # The whole release, minus the host: the gate, both images, the platform started from them,
       # sql-check, the tool-chain walk, the deploy bundle. A failure here is a failure the release
       # would have hit, found before anything is pushed.

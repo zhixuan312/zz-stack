@@ -129,6 +129,13 @@ check("the document store is declared: two new tables, and doc's new identity ke
 check("the document tools read and write the database, not the file store",
       runsCheck("no-file-store.ts"));
 
+// IMPROVE's own strongest claim: a non-owned subject is written up without its patch ever being
+// applied. `proposal-doc.ts` says how — it imports nothing that can run anything and renders the
+// diff fenced — and nothing pinned it, so a future edit reaching for `child_process` would keep
+// every other check green and turn the guarantee false. Matched on code, with comments stripped.
+check("a proposal is written up without its patch ever being applied",
+      runsCheck("proposal-never-executes.ts"));
+
 // Phase 6's fourth: every remaining store reader and writer is off it. It asserts a negative
 // about the whole tree — that no tracked file under `services/` or `packages/` outside the store
 // layer itself CALLS `commitStore`, `indexDoc`, `persistDocument` or `logActivity` — with its two

@@ -1,0 +1,95 @@
+# Refuse a plant nobody notices, on a runner — because the baseline needs a host where the whole
+# gate can pass.
+#
+# What this is for: `scripts/mutation-run.ts` plants a defect in what each gate check examines and
+# records whether the check went red. Its baseline is one unmodified gate run over a copy, and it
+# REFUSES to judge anything against a tree that is already red. On a laptop with Docker stopped,
+# the two Docker-backed checks and the candidate-build check fail for that reason alone, so the
+# suite stops at the baseline and reports nothing. Here the whole gate passes — `images.yml` proves
+# that on this runner image — so the plants are judged against a real baseline.
+#
+# It writes `testing/mutation-report.json` and uploads it as an artifact. It commits nothing: a
+# workflow that writes to the repository on its own would be a second writer of a tracked file, and
+# the refresh is a decision somebody makes by committing what this produced.
+#
+# Run on demand. The gate does not read the report, and this is not on every push: 368 plants at
+# roughly a minute each is hours, not minutes.
+name: mutation
+
+on:
+  workflow_dispatch:
+    inputs:
+      workers:
+        description: "how many shards to run at once (each is a full gate run in its own copy)"
+        required: false
+        type: string
+        # Two, not four, on a four-vCPU runner: a gate run is a process tree of its own (703
+        # processes and 4,903 threads measured with eight on a ten-core laptop, user CPU 91%), so
+        # the workers contend long before they scale. Wall clock is hours either way.
+        default: "2"
+      only:
+        description: "one check file to plant into, e.g. scripts/gate/checks/hygiene.ts (empty = all)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    # 22.04 for the reason `images.yml` gives: the candidate-build check runs bwrap, which needs
+    # unprivileged user namespaces that Ubuntu 24.04 restricts with an AppArmor rule.
+    runs-on: ubuntu-22.04
+    # Every worker is a serial gate run in a copy of its own, so this multiplies. 368 rows is four
+    # to six hours; the ceiling is GitHub's.
+    timeout-minutes: 350
+    defaults:
+      run:
+        working-directory: pair/zz-stack
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: pair/zz-stack
+
+      # The gate's inventory and evaluation-reader checks migrate a throwaway PostgreSQL built from
+      # this image, so it has to exist before the baseline runs — the same reason gate.yml and
+      # images.yml build it.
+      - name: Build the pinned PostgreSQL the gate's Docker checks migrate
+        run: docker build -f deploy/postgres/Dockerfile -t ghcr.io/zhixuan312/zz-postgres:17.11-pgts1.4.0 .
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - run: npm ci
+
+      - name: Build the workspace the gate reads
+        run: npx tsc -b
+
+      # bubblewrap, proved by the code's own detector: the gate's candidate checks run a sandboxed
+      # process when one is available and say so when none is, so a half-configured bwrap is the one
+      # state that fails them.
+      - name: Install and prove the sandbox the candidate checks use
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap
+          node -e "import('./packages/tools/dist/candidate/sandbox.js').then((m) => {
+            const t = m.detectSandbox();
+            if (t !== 'bwrap') { console.error('no working sandbox on this host: ' + t); process.exit(1); }
+            console.log('sandbox: ' + t);
+          })"
+
+      # Sharded by row count, each worker a serial runner in its own `cp -a` copy with a lock named
+      # after its pid (`mutation/parallel.ts`), so no two gate runs share a tree.
+      - name: Plant every defect and see which checks notice
+        run: |
+          node scripts/mutation-run.ts \
+            --workers '${{ inputs.workers }}' \
+            ${{ inputs.only != '' && format('--only {0}', inputs.only) || '' }}
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: pair/zz-stack/testing/mutation-report.json
+          if-no-files-found: warn

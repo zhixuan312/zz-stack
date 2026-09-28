@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * `withInitiativeFactsLock` (initiative-record.ts) — the lock a `_facts.json` read-check-write
- * holds — on the no-database path, the one a checkout runs:
+ * `withInitiativeFactsLock` (initiative-record.ts) — the lock an initiative's branch-fact
+ * read-check-write holds (a `_facts.json` file until the store became rows) — on the no-database
+ * path, the one a checkout runs:
  *
  *   1. two holders of the same initiative never overlap, and the second sees the first's write;
  *   2. two different initiatives do not wait on each other;

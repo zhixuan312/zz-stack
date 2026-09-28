@@ -47,6 +47,8 @@
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+
+import { withoutComments } from "../scripts/gate/read.ts";
 import { pathToFileURL } from "node:url";
 
 /** The trees that write to a database, the same four `checks/catalog-eval-columns.ts` scans. */
@@ -72,33 +74,6 @@ function sources(dir: string, out: Source[] = []): Source[] {
     out.push({ path: p, src: readFileSync(p, "utf8") });
   }
   return out;
-}
-
-/** The source with its `//` and block comments removed, string and template literals left whole —
- *  a `//` inside a literal is not a comment, and a statement that names a retired name is read
- *  wherever it appears. */
-function withoutComments(src: string): string {
-  const out: string[] = [];
-  let i = 0;
-  while (i < src.length) {
-    const c = src[i];
-    if (c === "/" && src[i + 1] === "/") {
-      const nl = src.indexOf("\n", i);
-      i = nl < 0 ? src.length : nl;
-    } else if (c === "/" && src[i + 1] === "*") {
-      const end = src.indexOf("*/", i + 2);
-      i = end < 0 ? src.length : end + 2;
-    } else if (c === '"' || c === "'" || c === "`") {
-      let j = i + 1;
-      while (j < src.length && src[j] !== c) j += src[j] === "\\" ? 2 : 1;
-      out.push(src.slice(i, Math.min(j + 1, src.length)));
-      i = j + 1;
-    } else {
-      out.push(c);
-      i++;
-    }
-  }
-  return out.join("");
 }
 
 interface Insert { table: string; cols: string[]; line: number }

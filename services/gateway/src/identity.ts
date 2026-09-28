@@ -192,6 +192,12 @@ async function resolvePat(token: string): Promise<Identity | null> {
  * non-active principal, and touch a last-used column without blocking the
  * request. COUPLED: a change to either belongs in both.
  *
+ * The one difference between the two queries: this one joins the team with `t.status = 'active'`
+ * and a PAT's does not, so a bound token naming a team that has since gone inactive still resolves
+ * that slug. It refuses either way — `principalByEmail` reads memberships through the same filter,
+ * so `boundMemberships` finds nothing live to bind to. Stated because "the same shape" is what the
+ * paragraph above claims, and a reader comparing the two should not have to wonder.
+ *
  * No team binding, unlike a PAT: a session carries the person's whole
  * membership, exactly as an unbound token does. It carries a team of its own
  * instead — the console's switch moves that column, and only that browser

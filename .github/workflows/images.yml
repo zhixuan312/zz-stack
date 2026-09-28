@@ -143,8 +143,9 @@ jobs:
       # use. Off by default; dispatch with walk: true to run it. On this runner it has not got past
       # IMPROVE: the candidate's build runs the subject's own full gate inside bwrap, and that gate
       # was killed there — the recorded tail ends `(bwrap failed: exited 137)`, a SIGKILL from
-      # outside the build rather than a failure of the patch. The sandbox is not opened further to
-      # make it pass, because it is the only thing between a candidate's own code and the host (see
+      # outside the build rather than a failure of the patch. What sent it is not recorded; a full
+      # gate inside the sandbox on a 7 GB runner is the likely limit, and the sandbox is not widened
+      # to find out, because it is the only thing between a candidate's own code and the host (see
       # `sandboxContext`'s note on what it leaves reachable). So nothing automatic walks the chain;
       # `npm run eval-flow-e2e` from a checkout on a machine with Docker is how it gets walked.
       - name: Walk the whole eval flow, improve through release and rollback

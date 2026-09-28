@@ -260,7 +260,7 @@ check("nothing can clear the field that says an initiative already closed", () =
     // The invariant is narrower: whatever a revision does to the prose, the field that says the
     // initiative closed comes out the other side unchanged. initiative_close() still refuses a
     // second close and ledgerOnClose still returns before appending, and the text can still be
-    // fixed with the signed copy frozen in _versions/.
+    // corrected as a revision against the sealed one the approval stands on.
     bad.push("document_revise does not carry `outcome` forward from the previous envelope — " +
              "read it into `closedOutcome` before the rebuild and write it back onto `env`. " +
              "Leaving the field merely untouched is not the same guarantee: it is the field " +

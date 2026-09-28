@@ -55,9 +55,9 @@ export function auditRoundOf(chain: Chain, stage: string | undefined,
 
 interface Round { file: string; version: number; added_at: string }
 
-/** The sources an audit reads, as the `DocRow`s an initiative holds under `sources/`. */
-const supportsOf = (d: DocRow): string[] =>
-  (d.fields?.supports || "").split(",").map((x) => x.trim()).filter(Boolean);
+/** The documents a source bears on — the `doc_link` rows of kind `supports` its revision
+ *  filed, which `docRows` reads onto the row. */
+const supportsOf = (d: DocRow): string[] => d.supports;
 
 /** The rounds of one audit stage on one document, oldest first. */
 function roundsOf(sources: readonly DocRow[], stage: string, document: string): Round[] {

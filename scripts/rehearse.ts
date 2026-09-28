@@ -26,7 +26,7 @@ import { SCHEMA_TARGET } from "../schema-target.ts";
 import { removeArtifacts, unpackArtifacts } from "./rehearse/artifacts.ts";
 import { diffSnapshots, formatTableReport } from "./rehearse/diff.ts";
 import { MIGRATION_EXPECTATIONS } from "./rehearse/expect.ts";
-import { checkJoins } from "./rehearse/joins.ts";
+import { ALWAYS_LABEL, checkJoins } from "./rehearse/joins.ts";
 import { restoreDump } from "./rehearse/restore.ts";
 import { captureSnapshot, type Snapshot } from "./rehearse/snapshot.ts";
 
@@ -132,9 +132,15 @@ async function main(): Promise<void> {
         console.log("key joins:");
         const { lines: joinLines, diffs: joinDiffs } = await checkJoins(client, pendingMigrations);
         if (joinLines.length === 0) {
-          console.log(`  none declared for ${pendingMigrations.length === 0 ? "this run — no pending migration" : pendingMigrations.join(", ")}`);
+          console.log("  none declared — which is itself a disagreement, since the always-run set is never empty");
         } else {
-          for (const j of joinLines) console.log(`  ${j.name} (from ${j.migration}): ${j.violating} violating row(s)`);
+          // The always-run invariants first: they hold of any correct store, and a reader looking
+          // for "is this deployment sound" should not have to find them among a migration's own.
+          const order = [...joinLines].sort((a, b) =>
+            (b.migration === ALWAYS_LABEL ? 1 : 0) - (a.migration === ALWAYS_LABEL ? 1 : 0));
+          for (const j of order) {
+            console.log(`  ${j.name} (${j.migration === ALWAYS_LABEL ? "every rehearsal" : `from ${j.migration}`}): ${j.violating} violating row(s)`);
+          }
         }
         allDiffs.push(...joinDiffs);
 

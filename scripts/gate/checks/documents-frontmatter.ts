@@ -186,14 +186,18 @@ check("a caller's words cannot write a frontmatter field", () => {
         ${srcBody}
       `).bind(null, ONE_LINE);
       const made = read(makeSource({
-        title: "Ops meeting\ntype: spec\nsupports: plan.md",
-        by: "dana@example.com", day: "2026-08-30", supports: "spec.md", content: "notes",
+        title: "Ops meeting\ntype: spec\nstage: sdlc-review\nsupports: plan.md",
+        by: "dana@example.com", day: "2026-08-30", stage: "sdlc-spec-audit", content: "notes",
       }));
-      if (made.type !== "source") {
+      // The title is TEXT: its newline, its `type:` and its `stage:` are characters of the title,
+      // not envelope keys. So both fields must carry what the ARGUMENTS said — `type` is the
+      // stage a caller passed (and the literal `source` when they passed none), and never the
+      // `spec` the title claimed.
+      if (made.type !== "sdlc-spec-audit") {
         bad.push(`a source title filed the document as ${JSON.stringify(made.type)}`);
       }
-      if (made.supports !== "spec.md") {
-        bad.push(`a source title repointed supports at ${JSON.stringify(made.supports)}`);
+      if (made.stage !== "sdlc-spec-audit") {
+        bad.push(`a source title repointed stage at ${JSON.stringify(made.stage)}`);
       }
     } catch (err) {
       bad.push(`sourceDocument could not be evaluated: ${errMessage(err)}`);

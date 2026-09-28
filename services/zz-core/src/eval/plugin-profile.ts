@@ -492,10 +492,6 @@ export async function pluginTraces(
   // set is bare tool names, so compare on the half after the colon.
   const called = new Set(use.map((u) => u.tool.split(":").pop() ?? u.tool));
 
-  // A revised document is one with a frozen copy beside it. `_versions/<name>.v<N>.md` is written
-  // on the draft -> approved flip, so its presence is the platform's own record of a version
-  // change — the population the evidence question is about. A document written once has no
-  // version change to justify.
   //
   // Only a door that writes documents has a document record to report. The figures below are the
   // store's — every document on the platform — which is zz-core's record and nobody else's, so

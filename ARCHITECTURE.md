@@ -294,29 +294,32 @@ documents and two gates.
 
 ## 3a. The deployed store
 
-The repository is not the only thing with a shape. Every deployment carries an artifact
-volume, and it has exactly two entries:
+A deployment's store is the `zz` schema in its own PostgreSQL. There is no artifact volume:
+documents, knowledge and every piece of state the platform keeps are rows in the database the
+services are given, and the volume that used to hold them per team — `_versions/` snapshots, the
+per-initiative JSON files, `activity.jsonl`, `_ledger.md` and the git repository every write was
+committed to — is retired. The gateway's only durable file is `/data/events-unwritten.jsonl`,
+which holds events it could not write, and is drained back into `zz.event`.
 
-```
-/artifacts/teams/<slug>/     the live store, and the only thing the platform indexes.
-/artifacts/archive/          retired material. Present, readable, indexed by nothing.
-```
+What that leaves, in the four shapes a reader has to know:
 
-`reindexAllTeams` walks `teams/` and treats every directory under it as a team, so anything
-parked there becomes a team and answers searches as though the work were live. Retired material
-goes to `archive/`, which nothing reads.
+- a document is `zz.doc` for its identity and status, and `zz.doc_revision` for every version of
+  it — one row per revision, immutable once written, and the only permitted update is the
+  one-time approval seal that bound that revision;
+- what a revision cites is `zz.doc_link`, of kind `cites` (both ends pinned to exact revisions)
+  or `supports` (a source revision pinned to the TARGET DOCUMENT's identity);
+- a knowledge node is `zz.knowledge_node`, on a shelf named by its `team_id`, addressed as
+  `_knowledge/nodes/<node_ordinal>-<slug>.md`, and what it cites is `zz.knowledge_node_evidence`;
+- what the platform did is `zz.event`, one row per call, written by the door that served it.
 
-The store and the index must agree in both directions, and that is a property rather than a
-one-off cleanup:
+The deployment backs up three tarballs and not four (`deploy/backup.sh`): the database dump, the
+credentials proxy's data, and the compose configuration. The store's own tarball is gone with the
+volume, because the store is in the dump.
 
-- a file under `teams/<slug>/` passing `indexable()` has a `zz.doc` row
-- a `zz.doc` row has a file — including when the whole team's directory is gone
-- a document's claims are computed from its body on read, so there is no derived row to keep in step
-
-Audit it by diffing the three sets per team.
-
-`_knowledge` is a reserved directory inside a team's store, not an initiative. Anything
-walking initiatives excludes it by name.
+Every deployment's schema is proved equal to this repository's hand-declared target:
+`node checks/schema-inventory.ts` migrates a throwaway PostgreSQL with the real migrations and
+compares the two catalogs, and `scripts/rehearse.ts` does the same against a restored production
+backup as well as the data checks below.
 
 ## 3b. The plugin standard
 

@@ -37,9 +37,8 @@ export const KNOWLEDGE_TEAM = "zz-platform";
  * own scope.
  *
  * A segment cannot contain a separator, cannot be a traversal, cannot be empty, and cannot
- * begin with a dot: the store's own listings skip dot-entries, so a name like `.hidden` would
- * be written and then invisible to document_list and to search, and `.git` was the history a
- * team kept when they left. */
+ * begin with a dot: a dot-prefixed name is the platform's own bookkeeping rather than a
+ * document's, and one would be written and then invisible to document_list and to search. */
 export function safeName(value: string, what: string): string | null {
   const v = value.trim();
   if (!v) return `ERROR: ${what} is required`;
@@ -47,9 +46,9 @@ export function safeName(value: string, what: string): string | null {
     return `ERROR: ${what} must be a single name, not a path`;
   }
   if (v.startsWith(".")) {
-    return `ERROR: ${what} cannot begin with a dot — the platform skips dot-entries, so it would ` +
-           "be written and then invisible to document_list and to search, and `.git` is the " +
-           "store's own history.";
+    return `ERROR: ${what} cannot begin with a dot — a dot-prefixed name is the platform's own ` +
+           "bookkeeping, never a document's, and one would be written and then invisible to " +
+           "document_list and to search.";
   }
   return null;
 }
@@ -134,10 +133,9 @@ export function pathShapeRefusal(path: string): string | null {
   // dot segment is not the shape of a document on this platform either, and a name that is
   // refused in one shape is refused in every shape.
   if (/(^|\/)\.[^/]/.test(path.replace(/^\/+/, ""))) {
-    return "no part of a path may begin with a dot. The platform skips dot-entries, so a file " +
-      "written there is invisible to document_list and to search — and `.git` is the store's " +
-      "own history, which is the copy a team kept when they left. Write " +
-      "`<initiative>/<document>.md`.";
+    return "no part of a path may begin with a dot. Dot-prefixed names are the platform's own " +
+      "bookkeeping, never a document's, and a document written there is invisible to " +
+      "document_list and to search. Write `<initiative>/<document>.md`.";
   }
   return null;
 }

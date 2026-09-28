@@ -211,31 +211,6 @@ check("every doc comment is attached to something", () => {
     : null;
 });
 
-check("a markdown table row is built, never assembled", () => {
-  // Every cell of a markdown row has to be escaped, or an initiative folder named `a|b` —
-  // which safePath permits — produces a row a parser reads as two cells. tableRow escapes
-  // every cell; this refuses a table that assembles its own.
-  //
-  // COUPLED: tableRow lives in zz-core's document-rules.ts. The match is against the whole
-  // service's source rather than one file, and accepts it with or without `export`.
-  const f = "zz-core";
-  const src = withoutComments(zzCoreSource());
-  if (!/(export )?const tableRow = /.test(src)) return `${f}: tableRow is gone — the one row builder with it`;
-  const bad: string[] = [];
-  const lines = src.split("\n");
-  lines.forEach((ln, i) => {
-    if (/^\s*(\/\/|\*|\/\*)/.test(ln)) return;
-    // DELIBERATE: tableRow may assemble one — that is what it is for. Exempted by what it
-    // is rather than by line number.
-    if (/const tableRow = /.test(lines[i - 1] ?? "") || /const tableRow = /.test(ln)) return;
-    // A template literal that opens a markdown row and interpolates something.
-    if (/`\|\s+\$\{/.test(ln)) bad.push(`${f}:${i + 1} assembles a table row instead of calling tableRow`);
-  });
-  return bad.length
-    ? `${firstOf(bad)} — every cell has to be escaped, and one place escaping them is how that stays true`
-    : null;
-});
-
 check("a plugin is named the same way wherever it is named", () => {
   // A flow named `sdlc-flow` ships as the plugin `sdlc`: pluginName drops the trailing -flow,
   // and the marketplace, the install line, the update line and the command namespace all take

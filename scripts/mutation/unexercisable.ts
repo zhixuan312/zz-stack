@@ -107,4 +107,53 @@ export const UNEXERCISABLE: readonly Unexercisable[] = [
       "it exercises the real condition rather than a stand-in for it.",
     observed_check_sha256: "e45f3536ccf9e899d0e54f7c3b8970f97dc2c9f198bc668e8c5e14514f28f804",
   },
+  {
+    check: "scripts/gate/checks/documents-envelope.ts",
+    assertion: "nothing reads an envelope field except parseEnvelope",
+    why: "the check fires on a REGEX LITERAL over an envelope field name, and after the store " +
+      "retirement no file reads an envelope that way: every reader goes through `parseEnvelope` " +
+      "and names its fields as properties (`env.status`), which is what the sibling check " +
+      "covers. A mutation would have to introduce a private regex into a reader that has no " +
+      "reason to hold one, which plants a shape the code never had rather than a defect it " +
+      "could have.",
+    plantable_when: "a reader needs a field from a document it has not parsed — the shape the " +
+      "retired store's per-file readers had, and the one this check was written against.",
+    observed_check_sha256: "2341c71b65a4d5340a7a453a207ad3bca90ef315fdc6ddc79c9351877e441dc2",
+  },
+  {
+    check: "scripts/gate/checks/documents-envelope.ts",
+    assertion: "where a frontmatter block starts and ends is spelled once",
+    why: "the check scans for an anchored `---` fence in a multi-line pattern, and the only " +
+      "such spelling outside `@zz/contracts` (where the pattern is defined) lived in the " +
+      "retired store layer, `services/zz-core/src/persist.ts`. That file is gone, so there is " +
+      "no second site to plant a second spelling in.",
+    plantable_when: "a second module spells the fence again — a parser for skills' frontmatter " +
+      "outside @zz/contracts would do it, and this check would fire the day it lands.",
+    observed_check_sha256: "2341c71b65a4d5340a7a453a207ad3bca90ef315fdc6ddc79c9351877e441dc2",
+  },
+  {
+    check: "scripts/gate/checks/documents-schema.ts",
+    assertion: "everything that reads a source reads the fields sourceDocument writes",
+    why: "the check fires on a line reading `env.<source-metadata field>`, and no reader names " +
+      "one any more: `source_list` reads the revision's own columns (`rev?.written_by`) and the " +
+      "`supports` relation, and the stage comes off `doc.type`. The defect the row planted — a " +
+      "reader naming a field nothing writes — cannot be expressed without inventing an `env` " +
+      "in a function that never held one.",
+    plantable_when: "a reader of a source's envelope comes back, which is what the check is " +
+      "for and what would make it fire.",
+    observed_check_sha256: "206c1288520706a1e1c6ef94e60d1f0e023c1cdef10758ad827c34f9828a52c6",
+  },
+  {
+    check: "scripts/gate/checks/knowledge.ts",
+    assertion: "supersession stays on one shelf and knows which",
+    why: "the check reads the tool's whole body for the shelf vocabulary, and that vocabulary " +
+      "is spread across a resolver helper, a shelf-selection branch and a refusal MESSAGE that " +
+      "names both shelves. Removing the shelf distinction in one span leaves the refusal " +
+      "naming shelves (so the check still passes) or leaves `bothShelves` unused (which fails " +
+      "the build rather than the check). The defect is real but no single-span mutation " +
+      "expresses it while the file still compiles.",
+    plantable_when: "the resolver and its refusal are one function again, or the check reads " +
+      "the resolver rather than the tool body.",
+    observed_check_sha256: "aac14059a7d48c998a5e8982ef6a7832a889f98e27e21544e5a7ce43d533cd34",
+  },
 ];

@@ -28,8 +28,8 @@
     "sha": "965b82d7a92c"
   },
   "sdlc-plan": {
-    "version": "1.17",
-    "sha": "adf202160c3f"
+    "version": "1.18",
+    "sha": "8ffbd3ce3031"
   },
   "sdlc-recall": {
     "version": "1.11",
@@ -84,8 +84,8 @@
     "sha": "ff799fe40724"
   },
   "zz-plugin-evaluate": {
-    "version": "1.0",
-    "sha": "4fbf0f92f5fd"
+    "version": "1.1",
+    "sha": "59993acb91c0"
   },
   "zz-plugin-explain": {
     "version": "0.5",
@@ -120,12 +120,12 @@
     "sha": "ad14925b6473"
   },
   "zz-handover": {
-    "version": "2.12",
-    "sha": "d07ca4b6f509"
+    "version": "2.13",
+    "sha": "ec75948cd5d1"
   },
   "zz-platform": {
-    "version": "3.72",
-    "sha": "762e6d1351c5"
+    "version": "3.73",
+    "sha": "a7b4b9f1fcb8"
   },
   "zz-tldr": {
     "version": "1.2",

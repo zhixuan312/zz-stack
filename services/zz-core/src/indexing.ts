@@ -143,10 +143,14 @@ export interface DocRow {
   closed_by: string | null; updated_at: string; title: string; body: string; tags: string[];
   current_revision: number | null; approved_revision: number | null;
   /** The current revision's ENVELOPE PAYLOAD — the keys no column of `doc` or `doc_revision`
-   *  carries. `stage` and `supports` are what `initiative_status` reads a source's own
+   *  carries. `stage` is what `audit-rounds.ts` and `review-rounds.ts` read a source's own
    *  declaration out of; `stakeholder` and a flow's own fields are the rest of why it exists.
    *  Null when the revision carries nothing outside the columns, which is the common case. */
   fields: Record<string, string> | null;
+  /** The documents the current revision BEARS ON, by the path each is addressed by — the
+   *  `doc_link` rows of kind `supports` its writer filed. Not an envelope key: the relation is
+   *  its only home, so a reader of "what is this source for" asks the link. */
+  supports: string[];
 }
 /** One document by the path the store addresses it by: the initiative and the name inside it.
  *
@@ -164,7 +168,15 @@ export async function docRow(
            r.fields->>'closed_by' as closed_by,
            d.updated_at::text as updated_at, d.title, coalesce(r.body, d.body) as body,
            coalesce(d.tags, '{}'::text[]) as tags,
-           d.current_revision, d.approved_revision, r.fields
+           d.current_revision, d.approved_revision, r.fields,
+           -- What this revision bears on. to_revision is null by doc_link's own CHECK for this
+           -- kind, so the target is a document and not a revision of one, and the path is what
+           -- every caller of supports compares against.
+           coalesce((select array_agg(td.path order by td.path)
+                       from zz.doc_link l
+                       join zz.doc td on td.id = l.to_doc_id
+                      where l.from_doc_id = d.id and l.from_revision = d.current_revision
+                        and l.kind = 'supports'), '{}'::text[]) as supports
       from zz.doc d
       join zz.initiative i on i.id = d.initiative_id
       join zz.team t on t.id = i.team_id
@@ -186,7 +198,15 @@ export async function docRows(p: pg.Pool, team: string | null, initiative: strin
            r.fields->>'closed_by' as closed_by,
            d.updated_at::text as updated_at, d.title, coalesce(r.body, d.body) as body,
            coalesce(d.tags, '{}'::text[]) as tags,
-           d.current_revision, d.approved_revision, r.fields
+           d.current_revision, d.approved_revision, r.fields,
+           -- What this revision bears on. to_revision is null by doc_link's own CHECK for this
+           -- kind, so the target is a document and not a revision of one, and the path is what
+           -- every caller of supports compares against.
+           coalesce((select array_agg(td.path order by td.path)
+                       from zz.doc_link l
+                       join zz.doc td on td.id = l.to_doc_id
+                      where l.from_doc_id = d.id and l.from_revision = d.current_revision
+                        and l.kind = 'supports'), '{}'::text[]) as supports
       from zz.doc d
       join zz.initiative i on i.id = d.initiative_id
       join zz.team t on t.id = i.team_id
@@ -211,32 +231,33 @@ export function sealOf(stamped: string): { by: string; at: string } | null {
  * same fields, same readers, so one builder rather than two hand-built envelopes.
  *
  * Through renderEnvelope, so every value is folded to one line whatever a caller sends. A
- * title carrying a newline otherwise adds fields to the envelope: `supports` decides which
- * approved documents initiative_status flags, and `type` is what knowledge_search filters on.
- *
- * COUPLED: `supports` stays comma-joined because that is how its readers split it. */
+ * title carrying a newline otherwise adds fields to the envelope: `type` is what
+ * knowledge_search filters on and what `source_list` reads a source's stage from. */
 export function sourceDocument(
-  opts: { title: string; by: string; day: string; supports: string; content: string;
+  opts: { title: string; by: string; day: string; content: string;
           /** The flow stage this source is the output of — an audit round names its audit stage. */
           stage?: string;
           /** For an audit round: the version of the supported document the round read. */
           audits_version?: string },
 ): string {
+  // DELIBERATE: the stage is written TWICE, because two readers ask a different question of it and
+  // each reads the place the other does not. `audit-rounds.ts` and `review-rounds.ts` read the
+  // payload key — `d.fields?.stage` — which is what `doc_revision.fields` was built for.
+  // `source_list` reads the document's TYPE, which is the one fact about a source the `doc` row
+  // states beside its title. Writing the literal `"source"` here made the second one false:
+  // `saveDocument` resolves `env.type ?? w.type`, so this value took the caller's stage and
+  // `source_list` returned an empty stage for every source there has ever been.
+  //
+  // DELIBERATE: `supports` is NOT written here. It is a relation, and its home is `doc_link` —
+  // `saveDocument` writes one `supports` row per document the source bears on, which is what
+  // `source_list` and the console read. A copy in the envelope would put one fact in two places,
+  // and a reader of either could not tell which was current.
   const env: Record<string, string> = {
-    // DELIBERATE: the stage is written TWICE, because two readers ask a different question of it
-    // and each reads the place the other does not. `audit-rounds.ts` and `review-rounds.ts` read
-    // the payload key — `d.fields?.stage` — which is what `doc_revision.fields` was built for.
-    // `source_list` reads the document's TYPE, which is the one fact about a source the `doc` row
-    // states beside its title.
-    //
-    // Writing the literal `"source"` here made the second one false: `saveDocument` resolves
-    // `env.type ?? w.type`, so this value took the caller's stage and `source_list` returned an
-    // empty stage for every source there has ever been.
     type: opts.stage || "source", title: opts.title, contributed_by: opts.by, date: opts.day,
-    added_at: new Date().toISOString(), supports: opts.supports };
+    added_at: new Date().toISOString() };
   if (opts.stage) env.stage = opts.stage;
   if (opts.audits_version) env.audits_version = opts.audits_version;
   return renderEnvelope(
-    env, ["type", "title", "contributed_by", "date", "added_at", "supports", "stage", "audits_version"],
+    env, ["type", "title", "contributed_by", "date", "added_at", "stage", "audits_version"],
   ) + `\n${opts.content}\n`;
 }

@@ -60,6 +60,24 @@ export async function walkShelf({ call, check, record, eitherOr, INIT }: ShelfDe
   const added = await call("knowledge_add", { ...node, tags: ["plugin:zz-core"] });
   check("a known kind is accepted", added, false);
 
+  // The ordinal the tool just replied with is the node's address on its own shelf, so the read
+  // below is about the node THIS run wrote and not about whichever one a search returns first.
+  const ordinal = /journal node (\d+) created/.exec(added)?.[1];
+  if (ordinal) {
+    // What the store reports must be what it serves. Nothing asked this before 0.88.0, and the
+    // answer was 877 nodes on the live deployment that `knowledge_search` indexed and no read
+    // served: the node branch of `document_read` ran only for `scope: "platform"` and always
+    // looked on the platform shelf, so a team-shelf node fell through to the document read — which
+    // looks for a `doc` row a node has never had — and the refusal advised the platform scope,
+    // which refused it too. A round trip through this walk is what would have caught it.
+    const rel = `_knowledge/nodes/${ordinal}-chain-check-subject-probe.md`;
+    const opened = await call("document_read", { path: rel });
+    eitherOr("a node the store reports is readable from its own shelf", opened,
+      /no platform database|no platform db|not in a team/);
+    record(/chain-check subject probe/.test(opened),
+      "and what comes back is the node this run wrote", opened);
+  }
+
   // knowledge_supersede needs two nodes that exist, on the same shelf. The id is read back out
   // of the tool's own reply, because a fixture id increments differently on every store.
   const oldId = /journal node (\d+) created/.exec(added)?.[1];

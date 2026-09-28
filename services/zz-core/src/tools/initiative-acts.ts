@@ -415,7 +415,7 @@ export function registerInitiativeActTools(server: McpServer): void {
         while (await documentAt(p, team, rel)) rel = `${parts[0]}/sources/${day}-${slug}-${n++}.md`;
         pendingSource = {
           rel,
-          doc: sourceDocument({ title, by: who.email, day, supports: parts[1],
+          doc: sourceDocument({ title, by: who.email, day,
                                 content: source_content.trim() }),
         };
         capturedSource = rel.slice(parts[0].length + 1);
@@ -442,8 +442,8 @@ export function registerInitiativeActTools(server: McpServer): void {
       env.version = String(nextVersion);
       // A revision returns the gate to a person — unless the initiative already closed. closeCheck
       // holds that a closing document carrying an outcome must be approved, because the ledger row
-      // was written at that close. The signed text stays retrievable in `_versions/`, with the
-      // correction beside it.
+      // was written at that close. The signed text stays retrievable as the `doc_revision` row
+      // that revision was sealed at, with the correction filed as the revision after it.
       //
       // COUPLED: a status exists only where the flow gates the document. stampEnvelope writes one only
       // there, and document_approve refuses a document that carries none.

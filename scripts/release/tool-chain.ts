@@ -40,8 +40,10 @@ export function walkToolChain(version: string | undefined): void {
   if (!version) die("no version to walk the tool chain against");
   const net = tag("net"), pg = tag("pg"), core = tag("core"), gw = tag("gw");
   const drop = (): void => {
+    // `-v`: the postgres image declares its data directory as a VOLUME, and `rm -f` alone leaves
+    // an anonymous volume behind on every walk — none of them reachable from `docker ps`.
     for (const c of [gw, core, pg]) {
-      try { run("docker", ["rm", "-f", c], { stdio: ["ignore", "ignore", "ignore"] }); } catch { /* already gone */ }
+      try { run("docker", ["rm", "-f", "-v", c], { stdio: ["ignore", "ignore", "ignore"] }); } catch { /* already gone */ }
     }
     try { run("docker", ["network", "rm", net], { stdio: ["ignore", "ignore", "ignore"] }); } catch { /* already gone */ }
   };

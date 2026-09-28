@@ -171,17 +171,6 @@ export const COV_BUILD: readonly MutationSpec[] = [
   },
   {
     check: "scripts/gate/checks/hygiene.ts",
-    target: "a markdown table row is built, never assembled",
-    subject: "services/zz-core/src/persist.ts",
-    find: "    appendFileSync(ledger, tableRow(isoToday(), parts[0], outcome, hours, writes, patches));",
-    replace: "    void tableRow;\n" +
-      "    appendFileSync(ledger, `| ${isoToday()} | ${parts[0]} | ${outcome} | ${hours} | ${writes} | ${patches} |\\n`);",
-    planted: "the outcome ledger assembles its own row again instead of calling the one builder " +
-      "that escapes every cell, so an initiative folder named `a|b` produces a row every reader " +
-      "parses as two different fields",
-  },
-  {
-    check: "scripts/gate/checks/hygiene.ts",
     target: "a plugin is named the same way wherever it is named",
     subject: "services/gateway/src/client-package.ts",
     find: "        description: cardDescription(f.flow, `${f.agentName || f.flow} — ${f.whenToUse}`.slice(0, 180)),",

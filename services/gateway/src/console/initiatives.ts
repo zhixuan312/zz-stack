@@ -161,7 +161,11 @@ export function mountInitiatives(app: Express): void {
     const { rows } = scope.kind !== "platform"
       ? await db.query<ListRow>(
       `select t.slug as team_slug, i.slug as initiative, d.path, d.type, d.status,
-              a.email as approved_by, r.fields->>'supports' as supports,
+              a.email as approved_by, (select string_agg(regexp_replace(td.path, '^.*/', ''), ', ' order by td.path)
+                              from zz.doc_link l
+                              join zz.doc td on td.id = l.to_doc_id
+                             where l.from_doc_id = d.id and l.from_revision = r.revision
+                               and l.kind = 'supports') as supports,
               (select count(*) from zz.doc_revision r2
                 where r2.doc_id = d.id and r2.approved_by is not null)::text as approvals,
               to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
@@ -175,7 +179,11 @@ export function mountInitiatives(app: Express): void {
       : want !== null
       ? await db.query<ListRow>(
       `select t.slug as team_slug, i.slug as initiative, d.path, d.type, d.status,
-              a.email as approved_by, r.fields->>'supports' as supports,
+              a.email as approved_by, (select string_agg(regexp_replace(td.path, '^.*/', ''), ', ' order by td.path)
+                              from zz.doc_link l
+                              join zz.doc td on td.id = l.to_doc_id
+                             where l.from_doc_id = d.id and l.from_revision = r.revision
+                               and l.kind = 'supports') as supports,
               (select count(*) from zz.doc_revision r2
                 where r2.doc_id = d.id and r2.approved_by is not null)::text as approvals,
               to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
@@ -188,7 +196,11 @@ export function mountInitiatives(app: Express): void {
         order by t.slug, i.slug, d.path`, [want])
       : await db.query<ListRow>(
       `select t.slug as team_slug, i.slug as initiative, d.path, d.type, d.status,
-              a.email as approved_by, r.fields->>'supports' as supports,
+              a.email as approved_by, (select string_agg(regexp_replace(td.path, '^.*/', ''), ', ' order by td.path)
+                              from zz.doc_link l
+                              join zz.doc td on td.id = l.to_doc_id
+                             where l.from_doc_id = d.id and l.from_revision = r.revision
+                               and l.kind = 'supports') as supports,
               (select count(*) from zz.doc_revision r2
                 where r2.doc_id = d.id and r2.approved_by is not null)::text as approvals,
               to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
@@ -269,7 +281,11 @@ export function mountInitiatives(app: Express): void {
       db.query<DocRow & { flow: string | null }>(
         `select d.path, d.type, d.status, r.fields->>'outcome' as outcome,
                 a.email as approved_by, d.title, coalesce(i.flow,'') as flow,
-                r.fields->>'supports' as supports,
+                (select string_agg(regexp_replace(td.path, '^.*/', ''), ', ' order by td.path)
+                              from zz.doc_link l
+                              join zz.doc td on td.id = l.to_doc_id
+                             where l.from_doc_id = d.id and l.from_revision = r.revision
+                               and l.kind = 'supports') as supports,
                 to_char(d.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
                 length(coalesce(r.body,'')) as bytes
            from zz.doc d
@@ -396,26 +412,40 @@ export function mountInitiatives(app: Express): void {
            left join zz.principal a on a.id = r.approved_by
           where t.slug = $1 and i.slug = $2 and d.path = $3
           order by r.revision`, [team, initiative, path]),
-      // Why it changed. A source declares the document it was attached to — the chain from
-      // "what we learned" to "what we changed" — and that declaration is the `supports` key of
-      // the revision the source wrote.
+      // Why it changed. A source declares the documents it bears on — the chain from "what we
+      // learned" to "what we changed" — and that declaration is a `doc_link` row of kind
+      // `supports`, pinned to the revision that wrote it at one end and to the target document's
+      // identity at the other.
+      //
+      // DELIBERATE: read from `doc_link` and not from the envelope. `supports` used to be a
+      // comma-joined key of the source's own revision, and that is no longer written —
+      // `sourceDocument` leaves it to the relation, which is its only home. A reader left on the
+      // key would empty this panel for every source added after that change, and the two would
+      // be two answers to one question for every source added before it.
       db.query(
         `select s.path, s.title, coalesce(sr.body, s.body) as body,
-                sr.fields->>'supports' as supports,
+                (select string_agg(regexp_replace(td.path, '^.*/', ''), ', ' order by td.path)
+                              from zz.doc_link l
+                              join zz.doc td on td.id = l.to_doc_id
+                             where l.from_doc_id = s.id and l.from_revision = sr.revision
+                               and l.kind = 'supports') as supports,
                 to_char(s.updated_at,'YYYY-MM-DD') as added,
                 length(coalesce(sr.body,'')) as bytes
            from zz.doc s
            join zz.initiative i on i.id = s.initiative_id
            join zz.team t on t.id = i.team_id
            left join zz.doc_revision sr on sr.doc_id = s.id and sr.revision = s.current_revision
-          -- DELIBERATE: matched as one entry of the comma-joined list, not against the whole
-          -- field. source_add writes supports as list.join(", "), and sourceDocument's own comment
-          -- says the field stays comma-joined because that is how its readers split it. Comparing
-          -- the whole field to one path found only a source supporting exactly this document, so a
-          -- round attached to two ('intent.md, spec.md') matched neither, and the panel was empty
-          -- for exactly the material that bears on the document being read.
+          -- DELIBERATE: the match is against the LINK, one row per document supported, so a round
+          -- attached to two documents is found from either. The envelope key this replaced held
+          -- them comma-joined and was compared as a whole string, which found a source only when
+          -- it supported exactly the document being read: a round attached to both intent.md and
+          -- spec.md matched neither, and the panel was empty for exactly the material that bears
+          -- on the document in front of the reader.
           where t.slug = $1 and i.slug = $2
-            and $3 = any(string_to_array(coalesce(sr.fields->>'supports',''), ', '))
+            and exists (select 1 from zz.doc_link l
+                          join zz.doc td on td.id = l.to_doc_id
+                         where l.from_doc_id = s.id and l.from_revision = sr.revision
+                           and l.kind = 'supports' and td.path = $3)
           order by s.updated_at, s.path`, [team, initiative, base]),
     ]);
     if (!doc.rows.length) {

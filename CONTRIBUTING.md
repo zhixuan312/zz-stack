@@ -48,6 +48,21 @@ npm run doctor                                   # where a deployment stops matc
 node scripts/doctor.ts --layer repo,image       # offline; no host needed
 ```
 
+**Docker is only needed by the two checks that migrate a real PostgreSQL** — the schema inventory
+and the rehearsal. Everything else in the gate, and the whole of `tsc`, runs without it, and
+`.github/workflows/gate.yml` runs the entire gate on every push to master, building the pinned
+PostgreSQL image on the runner. So a machine that never runs those two commands never needs Docker.
+
+Both start a container from the postgres image and remove it — with `-v` and `--rm`, because that
+image declares its data directory as a VOLUME and an anonymous volume left behind is invisible to
+`docker ps` and never reclaimed. If a machine that has run them for a while is short of disk:
+
+```bash
+docker volume prune -f      # the leaked ones: 128 GB across 2,043 of them on one machine
+docker builder prune -af    # build cache
+docker image prune -a -f    # images no container uses
+```
+
 For a local stack from this checkout rather than published images:
 
 ```bash

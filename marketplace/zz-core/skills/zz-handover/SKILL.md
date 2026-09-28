@@ -1,8 +1,8 @@
 ---
 name: zz-handover
-version: 2.12
+version: 2.13
 description: The handover every flow ends with. Read one closed initiative — its documents, its telemetry, its refusals — decide what generalises beyond the team that hit it and what matters only to this team, mint the first kind immediately, and propose the second in one gated handover document.
-when_to_use: "An initiative has closed — its closing document carries an `outcome` and the platform has appended its row to `_ledger.md`. Runs at the end of EVERY flow, whatever the flow was. Not a delivery stage: the stakeholder never sees this run."
+when_to_use: "An initiative has closed — its closing document carries an `outcome` and the platform has recorded the close on the initiative.  Runs at the end of EVERY flow, whatever the flow was. Not a delivery stage: the stakeholder never sees this run."
 ---
 
 # zz-handover
@@ -25,16 +25,20 @@ anything, as the signal this cycle is actually done.
 
 ## Inputs — read all of them before writing anything
 
-- Every document the flow declared, in order, and their `_versions/` snapshots: what
-  changed between an approval and the next one is where the disagreements are.
-- `activity.jsonl` — every call, timestamped, with its arguments.
+- Every document the flow declared, in order, and every revision of each: what changed between
+  one approval and the next is where the disagreements are. `document_read(<path>)` gives the
+  current one; `document_read(<path>, version: N)` gives the revision filed at approval N, and
+  it lists the versions it holds. The frozen copies used to be files beside the document and are
+  rows now, which is why a version is asked for rather than found.
+- `initiative_status(<initiative>)` — the close: its outcome, who closed it, its date, and the
+  next move the platform computes from the record. Written by the platform and not by the agent,
+  which is why it is the one to measure against. The row this reads replaced a `_ledger.md` line
+  the platform appended at each close.
 - `knowledge_reconcile(<initiative>)` — **the claims this initiative's stages RECORDED, and
   only those.** The right-hand side is gone and the tool says so in as many words: nothing
   joins a claim to telemetry until something records which plugin a claim is about. Read it
   for what was predicted; do not report an actual-versus-predicted comparison, and do not
-  reconstruct one from the activity log.
-- The `_ledger.md` row: the close, its outcome, and its date — written by the platform, not
-  by the agent, which is why it is the one to measure against.
+  reconstruct one from the call log.
 - `knowledge_search` for what is ALREADY known, on both shelves — and OPEN the ones that
   matter, on the shelf each says it is on — the path is the result's `initiative` and `path`
   joined, and a journal node's `initiative` is the literal `_knowledge`, so

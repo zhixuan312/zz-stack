@@ -41,8 +41,9 @@ export function slugRefusal(slug: string): string | null {
     return `ERROR: a slug is a single name, not a path — "${v}" contains a separator.`;
   }
   if (v.startsWith(".")) {
-    return "ERROR: a slug cannot begin with a dot — the store skips dot-entries, so the " +
-           "initiative would be created and then invisible to every listing and to search.";
+    return "ERROR: a slug cannot begin with a dot — a dot-prefixed name is the platform's own " +
+           "bookkeeping, never an initiative's, and one would be created and then invisible to " +
+           "every listing and to search.";
   }
   // The helpful caller's mistake: somebody who knows initiatives are named
   // `<YYYY-MM-DD>-<slug>` types the whole thing, the platform prepends today's date, and the
@@ -170,16 +171,6 @@ export const oneLine = (v: string, max?: number) => {
   const space = cut.lastIndexOf(" ");
   return `${(space > room * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
 };
-
-/** A markdown table cell: `|` ends a column the way a newline ends a row. */
-const tableCell = (v: string) => oneLine(v).replace(/\|/g, "/");
-
-/** One markdown table row, every cell escaped.
- *
- * An initiative folder named `a|b`, which safePath permits, otherwise produces a row every
- * parser reads as two cells. A caller passes cells, not a row. */
-export const tableRow = (...cells: (string | number)[]): string =>
-  `| ${cells.map((c) => tableCell(String(c))).join(" | ")} |\n`;
 
 /** The one place an envelope is rendered, and the reason every value goes through it.
  *

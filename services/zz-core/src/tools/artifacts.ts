@@ -7,14 +7,12 @@
  * carries its identity and its status, `doc_revision` the bytes it has had, and a path that
  * does not exist is refused rather than answered from a file.
  *
- * `document_present` is the one reader left on the store on disk, and deliberately: what it
- * adds over a plain read is the `shown` entry `attest.ts` counts, and `attest.ts` reads the
- * activity journal. It is stated from the mirrored bytes while the platform's other readers
- * still open the store; Task I-41 moves it with them.
- *
- * `document_present` returns the document rather than a rendering of it, and appends a
- * `shown` entry naming the path and version for each document it fetched. That is what makes
- * "was this fetched before its gate was approved" answerable per document.
+ * `document_present` returns the document rather than a rendering of it, and stamps
+ * `doc_revision.presented_at` on the revision it showed. That stamp is what makes "was this
+ * fetched before its gate was approved" answerable per document: `attest.ts` reads it against
+ * the revision's own `written_at`, and `document_approve` refuses a revision that was not shown
+ * after it was written. A column and not a log entry, because a log can be swept and a gate
+ * backed by one fails open.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -34,12 +32,13 @@ import { assessReviewRound, ledgerRefusal, reviewRoundOf, reviewRounds } from ".
 import { noteDocument, noteSource } from "../host/observe.js";
 import { sourceDocument } from "../indexing.js";
 import { unopenedRefusal } from "../initiative-record.js";
-import { KNOWLEDGE_TEAM, PLAIN_TOKEN, safeName, safePath, tagRefusal, titleSlug, writeGuard } from "../paths.js";
+import { PLAIN_TOKEN, safeName, safePath, tagRefusal, titleSlug, writeGuard } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
-import { citationsOf, dayOf, documentAt, documentPaths, loadDocument, recordAct, revisionsOf,
-         saveDocument } from "../versions.js";
+import { dayOf, documentAt, documentPaths, loadDocument, recordAct, revisionsOf,
+         saveDocument, supportsOf } from "../versions.js";
 import { present } from "../document-present.js";
 import { asksPart, PART_LIMIT, partHeader, slicePart } from "../document-parts.js";
+import { journalOrdinal, listJournalNodes, readJournalNode } from "./journal.js";
 
 import { envelopeFor, isoToday, normalizeSections } from "../write-guards.js";
 import { nextMoveLine } from "./initiative-status.js";
@@ -208,24 +207,11 @@ export function registerArtifactTools(server: McpServer): void {
       for (const rel of (single ? [path as string] : path as string[])) {
         try {
           let readRel = rel;
-          // The shared journal is the one shelf a `doc` row does not address: a node lives in
-          // `zz.knowledge_node`, under the platform team, and the document tools are not its
-          // readers. It is read where it is written — the row, by the ordinal and the slug the
-          // path carries.
-          if (scope === "platform") {
-            const named = /^_knowledge\/nodes\/(\d+)-(.+)\.md$/.exec(readRel.replace(/^\/+/, ""));
-            const node = named && p
-              ? (await p.query<{ title: string | null; body: string | null }>(
-                  `select k.title, k.body from zz.knowledge_node k
-                     join zz.team t on t.id = k.team_id
-                    where t.slug = $1 and k.node_ordinal = $2`,
-                  [KNOWLEDGE_TEAM, named[1]])).rows[0]
-              : undefined;
-            if (!node) {
-              rows.push({ rel, body: `ERROR: ${rel} does not exist on the platform shelf` });
-              continue;
-            }
-            rows.push({ rel: readRel, body: `${node.title ?? ""}\n\n${node.body ?? ""}` });
+          // A knowledge node is not a `doc` row, so it is answered from the journal — the one
+          // shelf this store does not address. `journal.ts` owns how that address resolves.
+          const ordinal = journalOrdinal(rel);
+          if (ordinal && p) {
+            rows.push({ rel: readRel, body: await readJournalNode(p, { rel, ordinal, team, scope }) });
             continue;
           }
           if (!team) { rows.push({ rel, body: NO_TEAM }); continue; }
@@ -236,16 +222,17 @@ export function registerArtifactTools(server: McpServer): void {
           if (!loaded.ok) {
             if (loaded.why === "no_database") { rows.push({ rel, body: loaded.refusal }); continue; }
             if (loaded.why !== "missing") { rows.push({ rel, body: loaded.refusal }); continue; }
-            // Names the other shelf, once, when the path looks like a journal node — a caller
-            // has no other way to learn a second shelf exists.
-            // And says what to call next: a refusal that only names the missing file left one
-            // caller presenting another initiative's document instead (eval 2026-09-26, run fc6b98bd).
+            // Says what to call next: a refusal that only names the missing file left one caller
+            // presenting another initiative's document instead (eval 2026-09-26, run fc6b98bd).
+            //
+            // DELIBERATE: no arm here for a journal path. Every `_knowledge/nodes/<ordinal>-…md`
+            // is answered by the branch above, on the caller's own shelf or on the platform's, and
+            // the arm that used to send the caller to `scope: "platform"` was what turned a
+            // team-shelf node into a loop between two refusals.
             const initiative = rel.split("/")[0];
-            const hint = rel.startsWith("_knowledge/")
-              ? " — if knowledge_search returned it with `shelf: \"platform\"`, read it with scope: \"platform\""
-              : !initiative || initiative === rel
-                ? ""
-                : ` — document_list(prefix: "${initiative}") lists what that initiative holds`;
+            const hint = !initiative || initiative === rel
+              ? ""
+              : ` — document_list(prefix: "${initiative}") lists what that initiative holds`;
             const known = !initiative || initiative === rel
               ? true
               : (await documentPaths(team, initiative)).length > 0;
@@ -440,7 +427,17 @@ export function registerArtifactTools(server: McpServer): void {
       const team = await teamFor(parseCaller(requestHeaders()).email);
       if (!team) return text(JSON.stringify([]));
       const base = prefix?.replace(/\/+$/, "");
-      return text(JSON.stringify(await documentPaths(team, base || undefined)));
+      const docs = await documentPaths(team, base || undefined);
+      // The journal is not a `doc` row, so `documentPaths` cannot see it: a node lives in
+      // `zz.knowledge_node` and its address is derived from the ordinal and the slug the row
+      // carries. Listed only when the prefix asks for the journal or for nothing: a prefix
+      // naming an initiative is a question about that initiative's documents.
+      const wantsJournal = !base || base === "_knowledge" || base.startsWith("_knowledge/");
+      if (!wantsJournal) return text(JSON.stringify(docs));
+      const p = db();
+      if (!p) return text(JSON.stringify(docs));
+      const journal = await listJournalNodes(p, team, base ?? "");
+      return text(JSON.stringify([...docs, ...journal].sort()));
     },
   );
 
@@ -531,7 +528,7 @@ export function registerArtifactTools(server: McpServer): void {
       const auditsVersion = round && !review && cited?.current_revision != null
         ? String(cited.current_revision) : undefined;
       const doc = sourceDocument(
-        { title, by: who.email, day: date, supports: list.join(", "), content,
+        { title, by: who.email, day: date, content,
           stage: round ? round.stage : undefined, audits_version: auditsVersion });
       const wrote = await saveDocument({
         team, relPath: rel, initiative, text: doc, by: who.email, flow: "",
@@ -540,6 +537,11 @@ export function registerArtifactTools(server: McpServer): void {
         // that is not a round of any stage is typed `source`.
         type: round ? round.stage : "source",
         cites: await citedRevisions(p, team, initiative, list),
+        // The same list, as the relation it is. `list` is what the caller said this source bears
+        // on — `supports: ["review.md"]` — and it is a relation to the DOCUMENT, not to a revision
+        // of it, so it lands as `doc_link` rows of kind `supports` rather than as a citation. The
+        // two are different facts: `cites` is what the source read, `supports` is what it is for.
+        supports: list.map((d) => `${initiative}/${d}`),
         mode: "create", act: "source",
       });
       if ("refusal" in wrote) return text(wrote.refusal);
@@ -620,7 +622,11 @@ export function registerArtifactTools(server: McpServer): void {
         rows.push({
           path: rel,
           title: rev?.title || rel.split("/").pop() || rel,
-          supports: (await citationsOf(p, doc.id, rev?.revision ?? 0))
+          // DELIBERATE: the SUPPORTS links, not `citationsOf`. The two are different relations —
+          // `cites` is what the source read, `supports` is the document it bears on — and reading
+          // the first while labelling it the second showed a caller the wrong list under the right
+          // name.
+          supports: (await supportsOf(p, doc.id, rev?.revision ?? 0))
             .map((x) => x.split("/").pop() ?? x).join(", "),
           stage: doc.type === "source" ? "" : doc.type,
           contributed_by: rev?.written_by ?? "",

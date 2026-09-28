@@ -233,7 +233,10 @@ async function up(): Promise<Deployment> {
 
 function down(deployment: Deployment): void {
   if (!deployment.prefix) return;   // handed in: not this walk's to remove
-  for (const c of ["gw", "core", "pg"]) quiet("docker", ["rm", "-f", `${deployment.prefix}-${c}`]);
+  // `-v` for the same reason `scripts/schema/throwaway.ts` needs it: the postgres image declares
+  // its data directory as a VOLUME, so `rm -f` alone leaves an anonymous volume behind on every
+  // walk. The gateway and core containers have none, and `-v` on them removes nothing.
+  for (const c of ["gw", "core", "pg"]) quiet("docker", ["rm", "-f", "-v", `${deployment.prefix}-${c}`]);
   quiet("docker", ["network", "rm", `${deployment.prefix}-net`]);
 }
 

@@ -84,8 +84,25 @@ function diffCatalogs(
  *
  * Shared by `checks/schema-inventory.ts` (a throwaway database the real runner built) and
  * `scripts/rehearse.ts` (a restored production copy in its own container).
+ *
+ * DELIBERATE: the search path is pinned for the read. `format_type`, `pg_get_indexdef`,
+ * `pg_get_expr` and `pg_get_constraintdef` all render a schema-qualified name ONLY for an object
+ * the current search path does not reach, so the same schema reads as `zz.citext` on a connection
+ * that does not search `zz` and as `citext` on one that does — and the target is spelled the first
+ * way. Comparing a deployment that reaches `zz` against the target as written would report five
+ * differences that are one connection setting, which is the kind of noise that teaches a reader to
+ * ignore the check. The throwaway picks an empty path for the same reason (`scripts/schema/
+ * throwaway.ts`); pinning it here is what makes the two comparable, and it is restored afterwards
+ * because the client belongs to the caller.
  */
 export async function compareWithTarget(client: pg.Client): Promise<string[]> {
-  const catalog = await readCatalog(client);
-  return diffCatalogs(SCHEMA_TARGET.tables, catalog);
+  const { rows } = await client.query<{ path: string }>("show search_path");
+  const before = rows[0]?.path ?? null;
+  await client.query("select set_config('search_path', '', false)");
+  try {
+    const catalog = await readCatalog(client);
+    return diffCatalogs(SCHEMA_TARGET.tables, catalog);
+  } finally {
+    if (before !== null) await client.query("select set_config('search_path', $1, false)", [before]);
+  }
 }

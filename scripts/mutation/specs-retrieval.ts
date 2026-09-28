@@ -52,8 +52,8 @@ export const RETRIEVAL_SPECS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/text-search-config-agreement.ts",
     target: "no file names a text-search configuration except the one constant that defines them",
     subject: "packages/indexing/src/index.ts",
-    find: "${bodyTsvSql(19)})",
-    replace: "to_tsvector('simple', $19))",
+    find: "             ${bodyTsvSql(12)})",
+    replace: "             to_tsvector('simple', $12))",
     planted: "a write path spells its own text-search configuration inline instead of taking " +
       "it from the one constant, which is how the read and write halves drifted apart before",
   },

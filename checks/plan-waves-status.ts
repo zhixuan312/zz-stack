@@ -97,7 +97,8 @@ let seq = 0;
 const row = (initiative: string, path: string, o: Record<string, unknown>) => ({
   id: `d${++seq}`, path, initiative, flow: "", type: "", status: "", outcome: null,
   approved_by: null, approved_at: null, closed_by: null, updated_at: "2026-09-26T00:00:00.000Z",
-  title: "", body: "", tags: [], current_revision: 1, approved_revision: null, fields: null, ...o });
+  title: "", body: "", tags: [], current_revision: 1, approved_revision: null, fields: null,
+  supports: [], ...o });
 
 /** A recorded audit round: a source naming its stage and supporting the document it audited, which
  *  is all `auditMove` needs to stop owing that stage. */
@@ -112,7 +113,7 @@ async function stateOf(name: string, planText: string | null, status: string, au
     for (const [stage, supports] of [["sdlc-spec-audit", "spec.md"], ["sdlc-plan-audit", "plan.md"]]) {
       w.docs.push(row(name, `sources/2026-09-26-audit-${supports.replace(".md", "")}.md`, {
         body: "# Round 1\n\n```json\n{\"round\":1,\"findings\":[],\"resolved\":[]}\n```\n",
-        fields: { supports, stage, audits_version: "1" } }));
+        supports: [supports], fields: { stage, audits_version: "1" } }));
     }
   }
   const chain = await chainFor(db()!, TEAM, `${name}/x.md`);

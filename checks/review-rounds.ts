@@ -139,15 +139,16 @@ const PLAN = "# Plan\n\n## Phase 1 — cases\n\n### Task I-1: Intake (← AC-1.1
 
 let n = 0;
 let seq = 0;
-/** One document row, as `docRows` answers with it. `cols` are the row's own columns and `payload`
- *  is the envelope's open half — `supports`, `stage`, `added_at` for a source. */
+/** One document row, as `docRows` answers with it. `cols` are the row's own columns, `payload`
+ *  is the envelope's open half — `stage` and `added_at` for a source — and `supports` is the
+ *  relation, which is a list of document paths and never an envelope key. */
 const env = (initiative: string, path: string, cols: Record<string, string>, body: string,
-             payload: Record<string, string> | null = null) => ({
+             payload: Record<string, string> | null = null, supports: string[] = []) => ({
   id: `d${++seq}`, path, initiative, flow: "", type: "",
   status: cols.status ?? "", outcome: cols.outcome ?? null, approved_by: cols.approved_by ?? null,
   approved_at: cols.approved_at ?? null, closed_by: null, updated_at: "2026-09-26T00:00:00.000Z",
   title: cols.title ?? "", body, tags: [], current_revision: Number(cols.version) || 1,
-  approved_revision: null, fields: payload,
+  approved_revision: null, fields: payload, supports,
 });
 
 /** A fresh sdlc-flow initiative whose spec, plan and both audits are settled. */
@@ -160,7 +161,7 @@ async function fresh(): Promise<Fixture> {
   w.docs.push(env(name, "plan.md", { title: "Plan", ...approved, version: "1" }, PLAN));
   for (const [stage, supports] of [["sdlc-spec-audit", "spec.md"], ["sdlc-plan-audit", "plan.md"]]) {
     w.docs.push(env(name, `sources/2026-09-24-${stage}.md`, { title: stage }, "no blocking findings",
-      { supports, stage, audits_version: "1", added_at: "2026-09-24T00:00:00.000Z" }));
+      { stage, audits_version: "1", added_at: "2026-09-24T00:00:00.000Z" }, [supports]));
   }
   return { name, chain: await chainFor(db()!, TEAM, `${name}/x.md`) };
 }
@@ -172,12 +173,12 @@ const ledger = (round: number, findings: Finding[], resolved: string[] = []): Le
 const content = (l: unknown) => `Round notes.\n\n\`\`\`json\n${JSON.stringify(l)}\n\`\`\`\n`;
 function round(i: Fixture, l: Ledger, at: string, file = `2026-09-26-review-round-${l.round}.md`) {
   world.get(i.name)!.docs.push(env(i.name, `sources/${file}`, { title: `Review round ${l.round}` },
-    content(l), { supports: "review.md", stage: "sdlc-review", added_at: at }));
+    content(l), { stage: "sdlc-review", added_at: at }, ["review.md"]));
   return file;
 }
 function stakeholder(i: Fixture, at: string, body: string) {
   world.get(i.name)!.docs.push(env(i.name, `sources/2026-09-26-decision-${at.replace(/\W/g, "")}.md`,
-    { title: "Stakeholder decision" }, body, { supports: "review.md", added_at: at }));
+    { title: "Stakeholder decision" }, body, { added_at: at }, ["review.md"]));
 }
 /** An answer the assessor recorded, in the grain `assessFamily` persists it. */
 function recorded(name: string, about: string, family: string, reading: string, probability: number, at: string) {

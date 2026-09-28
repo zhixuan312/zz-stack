@@ -66,5 +66,8 @@ check("a plugin's content identity moves with its content and not with its addre
 check("a check that works is a check the gate runs",
       runsCheck("working-checks-registered.ts"));
 
+check("every planted defect still lands in its subject, so no check is covered by a plant that never ran",
+      runsCheck("mutation-specs-match-subjects.ts"));
+
 check("a file that resolves renamed tools never matches a pre-rename name",
       runsCheck("pre-rename-literals.ts"));

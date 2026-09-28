@@ -165,7 +165,12 @@ export const DOCUMENTS: Record<string, TableTarget> = {
       },
     ],
     checks: [
-      "CHECK ((((approved_revision IS NULL) OR (approved_revision <= current_revision)) AND ((status = 'approved'::text) = ((approved_revision IS NOT NULL) AND (approved_revision = current_revision))))) NOT VALID",
+      // Validated, not `NOT VALID`: the carry left 336 rows that claimed `approved` with no
+      // approved revision — the frozen copies it filed twice — and `002_store_carry_repair.sql`
+      // deletes exactly those (guarded on the duplication still holding) and then validates this
+      // constraint. A deployment that has run it enforces the rule on every row; a fresh install
+      // enforces it from the start, because 001_init.sql creates the table empty.
+      "CHECK ((((approved_revision IS NULL) OR (approved_revision <= current_revision)) AND ((status = 'approved'::text) = ((approved_revision IS NOT NULL) AND (approved_revision = current_revision)))))",
       "CHECK ((status = ANY (ARRAY[''::text, 'draft'::text, 'approved'::text, 'adopted'::text, 'superseded'::text])))",
     ],
     indexes: [

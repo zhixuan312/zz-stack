@@ -106,14 +106,13 @@ export interface Ledger {
 
 const str = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
 
-/** The source rows a review reads. `stage` and `supports` are the revision's own envelope
- *  payload, `added_at` the day `source_add` stamped, and `body` the revision's bytes — a source's
- *  file used to be read and stripped of its envelope, and the row's body IS the stripped body. */
+/** The source rows a review reads. `stage` is the revision's own envelope payload, `added_at`
+ *  the day `source_add` stamped, `supports` the `doc_link` rows the revision filed, and `body`
+ *  the revision's bytes. */
 const stageOf = (d: DocRow): string => (d.fields?.stage ?? "").trim();
 const addedAtOf = (d: DocRow): string => d.fields?.added_at ?? d.updated_at;
 const sourceName = (d: DocRow): string => d.path.slice("sources/".length);
-const supportsOf = (d: DocRow): string[] =>
-  (d.fields?.supports || "").split(",").map((x) => x.trim()).filter(Boolean);
+const supportsOf = (d: DocRow): string[] => d.supports;
 
 /** The verifying document this source is a review round of, or null: a stage that writes a
  *  document declaring `verifies`, and a source supporting that document. */

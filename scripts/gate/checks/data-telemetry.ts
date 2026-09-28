@@ -19,7 +19,11 @@ check("a tool that changes something records that it did", () => {
   // A mutation nobody recorded is a fact about the platform recoverable only by reading the
   // state it changed.
   const MUTATES = /\b(writeFileSync|appendFileSync|insert into|update zz\.|delete from)/i;
-  const RECORDS = /\b(logActivity\(|auditAdmin\(|logEvent\(|platformEvent\(|commitStore\()/;
+  // The recorders that exist: `recordAct` is the one a document tool calls (it writes the
+  // `zz.event` row `platformEvent` also writes), and `logActivity`/`commitStore` went with the
+  // file store — keeping them here would let a tool that records nothing pass on a word that
+  // no longer runs.
+  const RECORDS = /\b(recordAct\(|auditAdmin\(|logEvent\(|platformEvent\()/;
   const bad: string[] = [];
   // Every file that registers a tool, found by asking which ones do rather than by listing
   // today's doors — the subject of this check is a tool nobody thought to look at.

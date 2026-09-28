@@ -186,8 +186,8 @@ export const COV_DEPLOY: readonly MutationSpec[] = [
     check: "scripts/gate/checks/deploy-release.ts",
     target: "the deploy bundle carries everything the install steps use",
     subject: "scripts/release/build.ts",
-    find: "zz-tool backup.sh install-backup-cron.sh",
-    replace: "zz-tool install-backup-cron.sh",
+    find: "zz-tool backup.sh backup-manifest.sh install-backup-cron.sh`],",
+    replace: "zz-tool backup-manifest.sh install-backup-cron.sh`],",
     planted: "the bundle stops carrying the backup script deploy/README tells an operator to " +
       "run, so a recipient has no way to back the platform up and nothing saying so",
   },
@@ -260,8 +260,8 @@ export const COV_DEPLOY: readonly MutationSpec[] = [
     check: "scripts/gate/checks/deploy-ops.ts",
     target: "every archived volume is verified against a range, not one snapshot",
     subject: "deploy/backup.sh",
-    find: 'check_archive "$ARTIFACT_VOLUME" "$art_file" "$art_before"',
-    replace: 'check_archive "$ARTIFACT_VOLUME" "$art_file"',
+    find: 'check_archive "$CRED_VOLUME" "$cred_file" "$cred_before"',
+    replace: 'check_archive "$CRED_VOLUME" "$cred_file"',
     planted: "the artifacts archive is verified against one snapshot of a volume the platform " +
       "is still writing to, so any document written mid-archive fails the whole backup on an " +
       "archive that is perfectly correct",
@@ -280,8 +280,8 @@ export const COV_DEPLOY: readonly MutationSpec[] = [
     check: "scripts/gate/checks/deploy-ops.ts",
     target: "a backup run that fails leaves nothing that reads as a backup",
     subject: "deploy/backup.sh",
-    find: 'FILES=("$db_file" "$art_file" "$cred_file" "$conf_file")',
-    replace: 'FILES=("$db_file" "$art_file" "$cred_file")',
+    find: 'FILES=("$db_file" "$cred_file" "$conf_file")',
+    replace: 'FILES=("$db_file" "$cred_file")',
     planted: "the configuration archive — the one carrying deploy/.env, without which the " +
       "database dump cannot be opened — falls out of the list the cleanup and the prune both " +
       "walk, so a failed run leaves it sitting in the directory as the newest backup and a " +

@@ -119,10 +119,11 @@ export async function noteDocument(
 /**
  * Record that a document was revised, which withdraws whatever approval it carried.
  *
- * A revision is a fact and so is the approval it replaces. `document_revise` files the signed
- * text in `_versions/`, bumps the version and returns a gated document to draft — the approval
- * really was given, so nothing deletes it, and it no longer stands, so nothing may count it. The
- * new entry says which earlier entry it withdraws and the log goes on only growing.
+ * A revision is a fact and so is the approval it replaces. `document_revise` files a new
+ * `doc_revision` row, moves `doc.approved_revision` off the sealed one and returns a gated
+ * document to draft — the approval really was given, so nothing deletes it, and it no longer
+ * stands, so nothing may count it. The new entry says which earlier entry it withdraws and the
+ * log goes on only growing.
  *
  * Without this, a run whose spec had been revised back to draft goes on reporting that step met,
  * and the loop grants `close:initiative` where `documentGuards` refuses it.

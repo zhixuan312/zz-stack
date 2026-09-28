@@ -257,8 +257,8 @@ async function main(): Promise<number> {
 
   // A gated draft is rewritten by document_write, and the platform's own fields survive it: the
   // rewrite's envelope carries no `status`, which ownershipCheck must not read as a hand removal,
-  // and `version` must not reset to 1 — a reset makes the next revise write a `_versions/`
-  // snapshot over one that already exists.
+  // and `version` must not reset to 1 — a reset makes the next revise file a revision number the
+  // document already has.
   check(`a gated draft is rewritten by document_write`,
     await writeDoc(`${INIT}/${FIRST_GATED}`, `${FIRST_GATED} rewritten`), false);
   const rewritten = parseEnvelope(await call("document_read", { path: `${INIT}/${FIRST_GATED}` }));

@@ -127,9 +127,9 @@ check("the gate reads the files it says it reads", () => {
 });
 
 check("what someone says about a document has one home", () => {
-  // Somebody's words about a document are a source: it bumps the document to the next
-  // version, is named in the envelope, and is frozen into _versions/ with the approval it
-  // changed. This refuses a second, cheaper record — a comment tool, a comment table, or a
+  // Somebody's words about a document are a source: it is a document of its own, filed under the
+  // initiative's `sources/`, linked to what it bears on by a `supports` row, and read back by
+  // `source_list`. This refuses a second, cheaper record — a comment tool, a comment table, or a
   // comment endpoint.
   const bad: string[] = [];
   // Every source in the repository, plus the skills, since the concept can come back as a

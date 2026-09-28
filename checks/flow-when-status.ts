@@ -17,7 +17,7 @@
  *      too (`proposal_only`) and is discharged from `closeRequires`, so the initiative can close.
  *   2. create: protocol.md `applies` — required, and its own write succeeds.
  *   3. promotable: improvement.md `applies` and is required before close.
- *   4. no `_facts.json` at all: protocol.md is `undetermined` — `next_move` names
+ *   4. no branch fact set at all: protocol.md is `undetermined` — `next_move` names
  *      `resolve_branch`, and its own write is refused as not writable yet.
  *   5. `protocol_action` known and `release_mode` missing: improvement.md is `undetermined`,
  *      which refuses a FINISHED close naming `branch_undetermined`, and does not refuse an

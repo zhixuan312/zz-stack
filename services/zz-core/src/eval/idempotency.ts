@@ -38,10 +38,10 @@ import { Refusal } from "../refusal.js";
 
 /** Hand-built, not `JSON.stringify` over a key-sorted object: a caller-controlled args object can
  *  carry an integer-looking string key, and V8's own object key iteration would silently reorder
- *  it ahead of this function's sort. Mirrors tenant-info/policies.ts's `canonicalJson` — kept as
- *  its own copy rather than a shared import, because the two are canonicalizing different shapes
- *  (an arbitrary tool-argument object here, a fixed semantic payload there) and a shared helper
- *  would have to serve both without either owning it.
+ *  it ahead of this function's sort. The tenant-information layer had a second one beside its own
+ *  semantic payload, and this was kept as its own copy rather than a shared import because the two
+ *  canonicalized different shapes. That layer is gone, so this is the tree's only `canonicalJson`:
+ *  a caller's arbitrary tool-argument object, and nothing else canonicalizes.
  *
  *  Exported for observe.ts (Task I-7): `evidence_digest` is sha256 over this same canonical form
  *  of the computed facts, so two callers who agree on the facts agree on the digest whatever

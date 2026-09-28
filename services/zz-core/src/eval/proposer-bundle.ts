@@ -76,8 +76,10 @@ export interface ProposerBundle {
   readonly non_trivial: boolean;
 }
 
-// The same pass/fail line evaluation.ts's own guardrail reduction uses (`m.value >= 0.5`) — one
-// threshold for "did this measure come back bad," not a second one invented here.
+// The pass/fail line a guardrail uses is `evaluate-measures.ts`'s `evaluateGuardrails`, and it
+// compares against each MEASURE's own `guardrail_threshold` — the fact moved to where it is
+// measured against, so there is no single line to mirror. The constant below answers a different
+// question (is this proposal trivial), and keeping one number for it is this file's own choice.
 const FAILING_THRESHOLD = 0.5;
 const REFUSAL_WORDS = /refus|reject|declin|cannot|won'?t|will not/i;
 

@@ -1,9 +1,9 @@
 /**
  * Resolving a `subject_ref` (Task I-20, the defect found ahead of this task: `evaluation_assess`
  * asked a model-backed measure about the templated sentence `Measure "<key>" against subject_ref
- * "<id>"` — a sentence with no content in it at all, the exact defect `replay-score.ts`'s own
- * `producedSubjectText` already closed for a replay run. `resolveSubjectRef` closes the other
- * path, `evaluation_assess`'s own `eval_run`, the same way: what a model-backed measure is
+ * "<id>"` — a sentence with no content in it at all. The replay machinery closed it once with a
+ * `producedSubjectText` of its own, and that machinery is gone; `resolveSubjectRef` closes the
+ * path that remains, `evaluation_assess`'s own `eval_run`, the same way: what a model-backed measure is
  * actually asked to judge, resolved from the ref alone, never a sentence naming it.
  *
  * Three shapes an `eval_run`'s own `subject_ref` can take:

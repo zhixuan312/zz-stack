@@ -230,7 +230,13 @@ export function runGrouped(
   } catch { /* ESRCH: nothing of the group is left */ }
   if (res.error || res.status !== 0) {
     const why = res.error?.message ?? (res.signal ? `killed by ${res.signal}` : `exited ${String(res.status)}`);
-    throw Object.assign(new Error(`${file} failed: ${why}`), { stdout: res.stdout ?? "", stderr: res.stderr ?? "" });
+    // The child's own reason, on the message rather than only in the `stderr` field: a sandbox that
+    // refuses to start says WHY there (a bind of a path that is not there, a namespace the host
+    // forbids, a mount it cannot make), and without it this reads "bwrap failed: exited 1" — which
+    // points a reader at the sandbox's call sites instead of at its cause.
+    const reason = (res.stderr ?? "").trim().split("\n").filter(Boolean).slice(-4).join("; ");
+    throw Object.assign(new Error(`${file} failed: ${why}${reason ? ` — ${reason}` : ""}`),
+      { stdout: res.stdout ?? "", stderr: res.stderr ?? "" });
   }
   return res.stdout;
 }

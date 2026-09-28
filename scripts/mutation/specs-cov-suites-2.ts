@@ -136,6 +136,24 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
   },
   {
     check: SUITES_DATA,
+    target: "one live token per purpose, on every writer of a platform access token",
+    assertion: "a writer that inserts a labelled token revokes the live one of the same label first",
+    subject: "packages/contracts/src/pat.ts",
+    // The one mint path every caller goes through. Removing its revoke is the defect the check
+    // exists for; `{ rowCount: 0 }` keeps the `replaced` count the return reads, so the file
+    // still compiles and the plant is about the missing statement rather than a type error.
+    find: "    const revoked = await client.query(\n" +
+      "      \"update zz.pat set revoked_at = now() \" +\n" +
+      "      \"where principal_id = $1 and label = $2 and label <> '' and revoked_at is null\",\n" +
+      "      [args.principalId, label]);",
+    replace: "    const revoked = { rowCount: 0 };",
+    planted: "the one mint path inserts a labelled token without revoking the live one of the " +
+      "same label, so the partial unique index refuses the insert — inside a catch, on a write " +
+      "path — and a person reconnecting is told the platform failed rather than that their " +
+      "reconnect could not be recorded",
+  },
+  {
+    check: SUITES_DATA,
     target: "every tool call says which plugin it was made for",
     assertion: "an unresolved plugin stays null rather than defaulting to a name",
     subject: "services/gateway/src/tool-telemetry.ts",

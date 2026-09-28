@@ -6,6 +6,11 @@
  *
  *   node scripts/rehearse.ts --dump <zz-db-*.sql.gz> [--artifacts <zz-artifacts-*.tar.gz>]
  *
+ * `--artifacts` is for a dump taken BEFORE the store was retired (0.87.0): it unpacks that
+ * set's `zz-artifacts-*.tar.gz` so a migration that reads a team's file store can be rehearsed
+ * against the store it read. No migration needs one today, and a current backup set has no
+ * such member — `deploy/backup.sh` writes three tarballs and the store's is not among them.
+ *
  * Report, in order: the restore, the migrations the real runner applied (`initPlatformDb` prints
  * these itself as it runs), the inventory result (`compareWithTarget` against `SCHEMA_TARGET`),
  * and a before/after table of row counts, content hashes and key joins — ending `REHEARSAL OK`

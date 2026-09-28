@@ -57,7 +57,7 @@ for (const c of ["team_slug", "initiative", "flow", "outcome", "closed_by", "app
   assert.ok(!doc.includes(c), `doc.${c} is dropped`);
 }
 
-// The act itself is done and its tool is gone with the volume: `retire-file-store.ts` archived the
+// The act itself is done and its tool is gone with the volume: the retirement script archived the
 // store whole, read the archive back and re-hashed every file before removing anything, and the
 // archive it wrote (`zz-store-archive-<stamp>.tar.gz`, which `deploy/backup.sh` still refuses to
 // prune) is the record. A check asserting the script's existence would be asserting that a tool

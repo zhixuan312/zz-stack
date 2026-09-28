@@ -30,6 +30,11 @@ on:
         description: "the console version, when it moved (e.g. 0.22.2) — empty to leave it alone"
         required: false
         type: string
+      push:
+        description: "publish the images. Turn this OFF to verify a tree without touching the tags a deployment runs"
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -82,12 +87,22 @@ jobs:
             ${{ inputs.dashboard != '' && format('--dashboard={0}', inputs.dashboard) || '' }} \
             --dry-run --fit-for-purpose-reviewed
 
+      # The whole zz-plugin-eval flow, from IDENTIFY to a closed initiative, through the real doors
+      # of a scratch stack this step stands up and tears down: candidate, its sandboxed build, the
+      # release, the rollback, and the post-release judgement on real use. Nothing else runs it —
+      # it needs docker and minutes, so it is not a gate check — and the improve/release half is
+      # the one part of the platform no production run has exercised yet.
+      - name: Walk the whole eval flow, improve through release and rollback
+        run: npm run eval-flow-e2e
+
       - name: Log in to GHCR
+        if: ${{ inputs.push }}
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
 
       # Only the tags this run built, named one by one: a `--all-tags` push would publish whatever
       # else happens to be in the runner's daemon.
       - name: Publish this release's images
+        if: ${{ inputs.push }}
         run: |
           docker push ghcr.io/zhixuan312/zz-stack:${{ inputs.version }}
           if [ -n '${{ inputs.dashboard }}' ]; then

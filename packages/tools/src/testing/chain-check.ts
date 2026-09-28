@@ -507,7 +507,7 @@ async function main(): Promise<number> {
   record(/"reading":\s*"(yes|no|unclear|unavailable)"/.test(assessed),
     "assess answers a registered family with a reading", assessed.slice(0, 200));
 
-  // The rest of the artifact-store door: reading, sourcing, listing, the skill shelf. None of
+  // The rest of the core door: reading, sourcing, listing, the skill shelf. None of
   // these tools gate on the initiative's own lifecycle — the closing document is still readable,
   // still listed, and still a valid `supports` target after close.
 

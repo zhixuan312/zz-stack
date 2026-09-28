@@ -241,8 +241,8 @@ export const Envelope = z.object({
    *  revision's payload and rides in no column, so a flow claiming this name lands there. */
   evidence: z.string().optional(),
   /** The journal node that replaced this one, written by knowledge_supersede.
-   *  DELIBERATE: camelCase where every other field is snake_case. It is the name already on
-   *  every journal node on disk; renaming it makes those nodes unreadable. The search result
+   *  DELIBERATE: camelCase where every other field is snake_case. It is the name every existing
+   *  node's payload already carries; renaming it makes those nodes unreadable. The search result
    *  carries the column's spelling (`superseded_by`) beside it. */
   supersededBy: z.string().optional(),
 

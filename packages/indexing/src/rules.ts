@@ -24,7 +24,8 @@ const CLAIM_KEY = "([A-Z]{1,4}-\\d+(?:\\.\\d+)*)";
 
 /** The claims a stage document makes, as rows, from text the stage already wrote.
  *
- * Two shapes, because two stages state a commitment two ways and both are already on disk:
+ * Two shapes, because two stages state a commitment two ways and both are already in the text the
+ * stage wrote:
  *
  *   selection.md   | AC-1.2 web-form channel ready | **Achievable - blocked on credential** | ... |
  *   spec.md        **AC-1.1** `[you]` - An email to the pilot's inbox appears as a case.

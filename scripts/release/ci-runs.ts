@@ -17,7 +17,7 @@ import { run } from "../deployment.ts";
 
 interface RunRow { conclusion: string | null; status: string; url: string; headSha: string }
 
-export interface CiRun { conclusion: string; url: string; sha: string; workflow: string }
+interface CiRun { conclusion: string; url: string; sha: string; workflow: string }
 
 /** The rows `gh run list --json …` printed, narrowed field by field.
  *
@@ -41,7 +41,7 @@ function rowsFrom(json: string): RunRow[] {
 }
 
 /** The newest run of `workflow` for `sha`, or null when GitHub lists none for it. */
-export function latestCiRun(workflow: string, sha: string): CiRun | null {
+function latestCiRun(workflow: string, sha: string): CiRun | null {
   let out: string;
   try {
     out = run("gh", ["run", "list", "--workflow", workflow, "--commit", sha, "--limit", "1",

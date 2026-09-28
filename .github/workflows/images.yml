@@ -11,12 +11,14 @@
 # What it does NOT do: deploy, verify against the live host, or tag. Those need the deploy key, and
 # keeping it out of GitHub is the point of the split.
 #
-# Requirements, both one-time and both in the package settings (GitHub has no API for either on a
-# user-owned package):
+# Requirements, all one-time:
 #   * each package is linked to its repository with Write access, which is what lets this workflow's
-#     own GITHUB_TOKEN push to it;
+#     own GITHUB_TOKEN push to it — a package setting GitHub has no API for on a user-owned package;
 #   * `vars.ZZ_PUBLIC_URL` is set, because the dry run resolves the deployment's public address and
-#     a runner has no host to read it from.
+#     a runner has no host to read it from;
+#   * `vars.ZZ_CATALOG_OWNER_TEAM` is set, because `register-plugins` writes it as every catalog
+#     plugin's owner and release_owners and refuses to run without it. The deploy host carries both
+#     variables in `deploy/.env`, which is gitignored, so a runner has to be given them.
 name: images
 
 on:
@@ -89,6 +91,7 @@ jobs:
       - name: Everything the release runs, without touching the host
         env:
           ZZ_PUBLIC_URL: ${{ vars.ZZ_PUBLIC_URL }}
+          ZZ_CATALOG_OWNER_TEAM: ${{ vars.ZZ_CATALOG_OWNER_TEAM }}
         run: |
           node scripts/release.ts '${{ inputs.version }}' \
             ${{ inputs.dashboard != '' && format('--dashboard={0}', inputs.dashboard) || '' }} \

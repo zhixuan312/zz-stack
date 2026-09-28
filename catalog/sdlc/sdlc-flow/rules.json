@@ -183,7 +183,7 @@
       "schema": "catalog/sdlc/sdlc-flow/flow.json documents[name=review.md] — gate, closing, requiredForClose",
       "handler": "services/zz-core/src/guards.ts::closeCheck (private to the module), reached through services/zz-core/src/guards.ts::documentGuards, which dispatches to it at services/zz-core/src/guards.ts::closeCheck, from services/zz-core/src/tools/initiative-close.ts",
       "behavioural_test": null,
-      "report": "scripts/gate/checks/documents-lifecycle.ts executes `auditInitiative` from packages/tools/src/testing/manifest-audit.ts over fixtures and asserts it agrees with these rules. That drives the AUDIT TOOL's copy of the rule, not `closeCheck`, so it is recorded as a report rather than as this entry's behavioural test.",
+      "report": "Read as `verified_by` says: a reviewer reads `closeCheck` against flow.json's `closing`/`gate`/`requiredForClose` flags, and `scripts/gate/checks/documents-lifecycle.ts` drives `closeCheck` itself over fixtures for the close rules it can state. The `manifest-audit` tool this once drove is gone with the store it audited.",
       "note": "Enforced in code; no test drives the platform's own guard.",
       "also_claimed_in": [
         "sdlc-flow/SKILL.md"

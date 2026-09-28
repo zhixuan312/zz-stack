@@ -126,16 +126,22 @@ check("the image installs from the manifests, then copies the source", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-check("a store the team can walk away with has git in the image", () => {
-  // Every act that changes a team's store is a commit authored by whoever made it, so the repository
-  // carries the attribution even after this platform is gone. node:alpine ships no git, and
-  // commitStore never throws — so without it every write succeeds, logs `git_failed`, and leaves a
-  // store with no history that nobody notices until they go looking for one.
+check("the runtime image installs git, which a plugin's own readers shell out to", () => {
+  // `plugin_register` takes a third-party subject from a git URL or a package tarball, and both
+  // readers run a real `git` on PATH (`eval/subject-source.ts`). node:alpine ships no git, and
+  // `tryExec` reports a missing binary the same way it reports an unreachable URL — so without it
+  // every `source_kind: "git"` registration refuses, and an operator reads that refusal as a bad
+  // address.
+  //
+  // DELIBERATE: the reason this check first existed is retired and the check is not. It installed
+  // git so `commitStore` could commit each write to a team's store and carry the attribution
+  // after the platform was gone; the store is rows now, and this is what still needs the tool.
   const df = readFileSync(join(root, "Dockerfile"), "utf8");
   const runtime = df.slice(df.lastIndexOf("\nFROM "));
   return /apk add[^\n]*\bgit\b/.test(runtime)
     ? null
-    : "the runtime stage installs no git — commitStore would fail silently on every write";
+    : "the runtime stage installs no git — plugin_register's git and package sources would " +
+      "fail as unreachable URLs";
 });
 
 check("one image, one recipe", () => {

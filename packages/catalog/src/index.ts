@@ -38,8 +38,8 @@ interface CatalogEntry {
  * One flow.json, read and validated, or a sentence saying why not.
  *
  * Returns rather than throws: this package walks the whole catalog and must skip a broken flow
- * rather than take the build down, while manifest-audit and chain-check are given one file and
- * must stop with a sentence rather than a ZodError dump.
+ * rather than take the build down, while a caller given ONE file — chain-check, or a probe reading
+ * a declaration — must stop with a sentence rather than a ZodError dump.
  *
  * Validation is not optional. An unchecked `as CatalogManifest` lets `gate: "true"` or a
  * misspelled `documents` key produce a chain that is wrong rather than absent, and a wrong chain

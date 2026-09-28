@@ -29,7 +29,6 @@ declare -A TOOLS=(
   [register-plugins]=ops/register-plugins
   # plugin-surface reads back the surface zz-core records at boot.
   [plugin-surface]=ops/plugin-surface
-  [audit]=testing/manifest-audit
   [chain-check]=testing/chain-check
   [tool-report]=testing/tool-report
   # PROMOTE/VERIFY's own two commands (Task I-28): apply an approved candidate's patch and run

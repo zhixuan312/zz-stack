@@ -134,7 +134,7 @@ testing/    the shell around the engines: eval-step.sh (every requirement in
             engines themselves
             are TypeScript, in
             packages/tools/src/testing/:
-            manifest-audit (mechanical record audit), chain-check (the document
+            chain-check (the document
             chain over MCP, no model in the loop — it answers whether the
             platform works when a provider outage means the harness cannot get a
             turn; its walks of the tracker, the /eval door, closes without a

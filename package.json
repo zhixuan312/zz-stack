@@ -21,7 +21,6 @@
     "rollback": "node scripts/release.ts --rollback",
     "check:mcp-client": "node packages/tools/dist/testing/mcp-client-check.js",
     "chain-check": "node packages/tools/dist/testing/chain-check.js",
-    "audit": "node packages/tools/dist/testing/manifest-audit.js",
     "tool-report": "node packages/tools/dist/testing/tool-report.js",
     "watch-results": "node packages/tools/dist/ops/watch-results.js",
     "call": "node packages/tools/dist/ops/call.js",

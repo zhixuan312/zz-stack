@@ -6,7 +6,7 @@
  * with MCP calls is another, and stays in chain-check.ts. The probe reads a declaration; this is
  * the reading.
  *
- * Read from the checkout, the way manifest-audit reads it, and through @zz/catalog's reader rather
+ * Read from the checkout, through @zz/catalog's reader rather
  * than a cast — a cast would accept a manifest the platform itself refuses, and the probe would
  * then walk a chain the deployment does not enforce and report the difference as a platform fault.
  */

@@ -172,19 +172,7 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
     planted: "document_revise tells the guard it is the approval act, so the bypass that lets " +
       "an act move status, approved_by and the rest is held by a caller claiming somebody " +
       "else's name — and whichever act is named is the one the record will show",
-  },
-  {
-    check: "scripts/gate/checks/documents-envelope.ts",
-    target: "the envelope vocabulary is defined once",
-    assertion: "no second literal copy of the vocabulary outside @zz/contracts",
-    subject: "packages/tools/src/testing/manifest-audit.ts",
-    find: "    if (status && !(STATUSES as readonly string[]).includes(status)) {",
-    replace: "    if (status && ![\"draft\", \"approved\"].includes(status)) {",
-    planted: "the store audit carries its own copy of the status vocabulary, so a status the " +
-      "contract gains is enforced by the platform and refused by the audit — an audit whose " +
-      "whole value is that it agrees with the thing it audits",
-  },
-  {
+  },  {
     check: "scripts/gate/checks/documents-envelope.ts",
     target: "the model writes the body and the platform writes the envelope",
     assertion: "document_revise refuses content that opens with frontmatter",
@@ -274,19 +262,7 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
     planted: "a team sees a member added to it and never sees them removed, because only half " +
       "the pair records the team the activity feed is scoped by — the gap falling on the half " +
       "somebody goes looking for after an incident",
-  },
-  {
-    check: "scripts/gate/checks/documents-lifecycle.ts",
-    target: "the store audit applies the platform's close rules, not stricter ones",
-    assertion: "the closing document's own gate is required even on a stop",
-    subject: "packages/tools/src/testing/manifest-audit.ts",
-    find: "    if (d.gate && closed && (!stopped || d.closing) && status !== \"approved\") {",
-    replace: "    if (d.gate && closed && !stopped && status !== \"approved\") {",
-    planted: "the stop exemption swallows the closing document's own gate, so an initiative " +
-      "abandoned on a document nobody approved passes the audit — the platform applies that " +
-      "one gate before the exemption, and the audit that exists to be believed now disagrees",
-  },
-  {
+  },  {
     check: "scripts/gate/checks/documents-lifecycle.ts",
     target: "nothing can clear the field that says an initiative already closed",
     assertion: "no write path removes `outcome`",

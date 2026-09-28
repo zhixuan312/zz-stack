@@ -6,18 +6,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, contractsSource, functionBody, gatewaySource, root, sourceFiles, zzCoreSource, withoutComments } from "../read.ts";
+import { between, gatewaySource, root, sourceFiles, zzCoreSource, withoutComments } from "../read.ts";
 import { check } from "../run.ts";
-
-/** A caught value is never typed as an Error — narrow the shape actually being read rather
- *  than assume it. `unknown?.message` narrows to `{}`, which has no properties at all. */
-function errMessage(err: unknown): string {
-  if (err && typeof err === "object" && "message" in err) {
-    const m = (err as Record<string, unknown>).message;
-    if (m !== undefined && m !== null) return String(m);
-  }
-  return String(err);
-}
 
 check("document_revise records the material behind every version", () => {
   // Anchored on the logActivity payload, not on a word: searching forward from
@@ -120,108 +110,6 @@ check("an act and the act that undoes it are recorded the same way", () => {
     }
   }
   return bad.length ? [...new Set(bad)].join("; ") : null;
-});
-
-check("the store audit applies the platform's close rules, not stricter ones", () => {
-  // COUPLED: manifest-audit must not carry a second copy of a rule the platform enforces, or it
-  // reports defects nobody has and misses the ones they do.
-  //
-  // closeCheck exempts every gate but the closing document's own when the outcome is a stop: an
-  // initiative that was dropped is precisely one whose gates were never passed. It also
-  // separates existence from approval — a gated document that was never written is
-  // requiredForClose's business, not the gate's.
-  //
-  // Run, because this is about what the function concludes. The filesystem is injected, so the
-  // fixture is a set of documents rather than a directory.
-  const src = readFileSync(join(root, "packages/tools/src/testing/manifest-audit.ts"), "utf8");
-  // `as readonly string[]` is this body's own TypeScript, stripped here rather than in
-  // functionBody: the shared lifter drops the annotations every lifted body has.
-  const body = functionBody(src, "auditInitiative")?.replace(/\s+as\s+readonly\s+string\[\]/g, "");
-  if (!body) return "manifest-audit no longer defines auditInitiative — this check cannot run";
-
-  const contracts = contractsSource();
-  const stopped = /OUTCOME_STOPPED[^=]*=\s*"([a-z]+)"/.exec(contracts)?.[1];
-  if (!stopped) return "OUTCOME_STOPPED cannot be read from @zz/contracts";
-
-  // ops-flow's own shape: spec.md is the closing document AND carries a gate, intent.md and
-  // plan.md are gates that are not, guide.md is required for close.
-  const DOCS = [
-    { name: "intent.md", gate: true },
-    { name: "spec.md", gate: true, closing: true },
-    { name: "selection.md" },
-    { name: "plan.md", gate: true },
-    { name: "guide.md", requiredForClose: true },
-  ];
-  const run = (files: Record<string, unknown>): { problems: string[] } => {
-    const present = new Map(Object.entries(files));
-    let audit;
-    try {
-      audit = new Function(
-        "join", "existsSync", "readFileSync", "frontmatter", "OUTCOMES", "OUTCOME_STOPPED",
-        "STATUSES", "folder", "docs", "closing", "team", body,
-      );
-    } catch (err) {
-      throw new Error(`auditInitiative could not be evaluated: ${errMessage(err)}`);
-    }
-    return audit(
-      (...parts: string[]) => parts.join("/"),
-      (f: string) => present.has(f),
-      () => "one line",                       // activity.jsonl, non-empty
-      (f: string) => present.get(f) ?? {},
-      ["delivered", "accepted", stopped],
-      stopped,
-      ["draft", "approved"],
-      "", DOCS, "spec.md", "",
-    );
-  };
-
-  const bad: string[] = [];
-  const closingEnv = (o: string, more: Record<string, unknown> = {}) =>
-    ({ status: "approved", approved_by: "Dana", approved_at: "2026-08-30",
-       outcome: o, closed_by: "dana@example.com", ...more });
-
-  // A correctly abandoned initiative: the closing gate approved, guide.md written, intent.md
-  // left in draft and plan.md never written — both of which the platform permits.
-  const dropped = run({
-    "/activity.jsonl": {},
-    "/intent.md": { status: "draft" },
-    "/spec.md": closingEnv(stopped),
-    "/guide.md": { status: "draft" },
-  });
-  for (const p of dropped.problems) {
-    bad.push(`an initiative closed as ${stopped} the platform permits was reported: ${p}`);
-  }
-
-  // And the exemption must not become a hole. The same store closed as accepted has a real
-  // defect the platform refuses, and the closing document's own gate holds either way.
-  const accepted = run({
-    "/activity.jsonl": {},
-    "/intent.md": { status: "draft" },
-    "/spec.md": closingEnv("accepted", { accepted_by: "Dana Reyes" }),
-    "/guide.md": { status: "draft" },
-  });
-  if (!accepted.problems.some((p) => p.includes("intent.md"))) {
-    bad.push("an unapproved gate on an ACCEPTED initiative was not reported — the stop " +
-             "exemption has become a hole");
-  }
-  const stopWithOpenClosingGate = run({
-    "/activity.jsonl": {},
-    "/spec.md": { status: "draft", outcome: stopped, closed_by: "dana@example.com" },
-    "/guide.md": { status: "draft" },
-  });
-  if (!stopWithOpenClosingGate.problems.some((p) => p.includes("spec.md"))) {
-    bad.push("the closing document's own gate was not required on a stop, and the platform " +
-             "applies that one before the exemption");
-  }
-  const stopMissingRequired = run({
-    "/activity.jsonl": {},
-    "/spec.md": closingEnv(stopped),
-  });
-  if (!stopMissingRequired.problems.some((p) => p.includes("guide.md"))) {
-    bad.push("a missing requiredForClose document was not reported on a stop — closeCheck " +
-             "requires those whatever the outcome");
-  }
-  return bad.length ? bad.join("; ") : null;
 });
 
 check("nothing can clear the field that says an initiative already closed", () => {

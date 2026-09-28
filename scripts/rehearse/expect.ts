@@ -184,19 +184,6 @@ export function declaredTableNames(pendingMigrations: readonly string[]): string
  * already covers, and a created table is the one shape only a declaration can satisfy.
  */
 export const MIGRATION_EXPECTATIONS: Record<string, MigrationExpectation> = {
-  "002_store_carry_repair.sql": {
-    tables: {
-      // `doc` moves in both directions here: rows are deleted (the frozen copies the carry
-      // carried twice) and every remaining row's `content_hash` is rewritten. A count would pin
-      // how many duplicates one particular backup holds, which is a property of the data and not
-      // of the file; the join below is the claim worth making, and the always-run invariants in
-      // `invariants.ts` are what check the columns this file changes.
-      doc: { count: "any", contentHash: "skip" },
-      // `doc_revision` is READ by this migration and never written: the rows it deletes were
-      // duplicates OF these, so their bytes have to survive exactly as they were.
-      doc_revision: { contentHash: "skip" },
-    },
-  },
   "002_database_store.sql": {
     tables: {
       // Both are created here and hold no row when this file is done: the carry that fills them from

@@ -9,11 +9,9 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { firstOf, root, sourceFiles, unbuilt } from "../read.ts";
+import { firstOf, root, sourceFiles, unbuilt, errMessage } from "../read.ts";
 import { check } from "../run.ts";
 import { catalogRoot, flows } from "../facts.ts";
-import { errMessage } from "../read.ts";
-
 
 check("a flow's skills state its gate count as the manifest declares it", () => {
   // The manifest is the only thing that decides: a document with `gate: true` is a gate.

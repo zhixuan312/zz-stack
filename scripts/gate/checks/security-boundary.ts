@@ -8,10 +8,8 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, firstOf, functionBody, gateOwnSource, gatewaySource, root, sourceFiles, unbuilt, withoutComments, zzCoreSource } from "../read.ts";
+import { between, firstOf, functionBody, gateOwnSource, gatewaySource, root, sourceFiles, unbuilt, withoutComments, zzCoreSource, errMessage } from "../read.ts";
 import { check } from "../run.ts";
-import { errMessage } from "../read.ts";
-
 
 /** Same idea, for an `execFileSync` failure, which carries `stdout`/`stderr` rather than a
  *  plain `message`. */

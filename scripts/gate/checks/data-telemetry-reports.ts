@@ -11,11 +11,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, firstOf, functionBody, root, sourceFiles, withoutComments } from "../read.ts";
+import { between, firstOf, functionBody, root, sourceFiles, withoutComments, errMessage } from "../read.ts";
 import { check } from "../run.ts";
 
 import { flows, schemaColumns } from "../facts.ts";
-import { errMessage } from "../read.ts";
 
 check("the evolution loop is closed, and separate from what it measures", () => {
   // Evidence -> which step is not working -> change one thing -> re-verify -> next round. The

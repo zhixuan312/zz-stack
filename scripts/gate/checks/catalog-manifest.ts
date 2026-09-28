@@ -7,11 +7,9 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { consoleSource, firstOf, root, sourceFiles, unbuilt, withoutComments, zzCoreSource } from "../read.ts";
+import { consoleSource, firstOf, root, sourceFiles, unbuilt, withoutComments, zzCoreSource, errMessage } from "../read.ts";
 import { check } from "../run.ts";
 import { BASELINE, NAMING, catalogPackages, flows, skillsDirOf } from "../facts.ts";
-import { errMessage } from "../read.ts";
-
 
 check("every flow.json parses, and its entry names a skill it ships", () => {
   const bad: string[] = [];

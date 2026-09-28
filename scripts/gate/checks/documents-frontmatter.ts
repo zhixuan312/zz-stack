@@ -6,10 +6,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { ONE_LINE, contractsSource, functionBody, root, sourceFiles, zzCoreSource, zzCoreTools } from "../read.ts";
+import { ONE_LINE, contractsSource, functionBody, root, sourceFiles, zzCoreSource, zzCoreTools, errMessage } from "../read.ts";
 import { check } from "../run.ts";
-import { errMessage } from "../read.ts";
-
 
 // A value somebody typed, inside hand-written YAML quotes.
 //

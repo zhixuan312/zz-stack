@@ -9,11 +9,9 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, contractsSource, firstOf, functionBody, root, sourceFiles, trackedFiles, unbuilt, zzCoreSource, zzCoreTools, withoutComments} from "../read.ts";
+import { between, contractsSource, firstOf, functionBody, root, sourceFiles, trackedFiles, unbuilt, zzCoreSource, zzCoreTools, withoutComments, errMessage } from "../read.ts";
 import { check } from "../run.ts";
 import { flows } from "../facts.ts";
-import { errMessage } from "../read.ts";
-
 
 check("every state the schema allows can actually be reached", () => {
   // A state with no writer reads as working access control: the guards reading it protect a

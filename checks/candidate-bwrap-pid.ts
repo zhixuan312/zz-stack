@@ -7,8 +7,7 @@
 // readable unsandboxed and refused inside, its environment unreadable inside, and the command's
 // own children still visible).
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { spawn, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";

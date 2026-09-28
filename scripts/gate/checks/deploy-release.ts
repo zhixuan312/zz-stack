@@ -8,11 +8,9 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, doctorSource, firstOf, functionBody, releaseSource, root, withoutComments } from "../read.ts";
+import { between, doctorSource, firstOf, functionBody, releaseSource, root, withoutComments, errMessage } from "../read.ts";
 import { check } from "../run.ts";
 import { ourDocs } from "../facts.ts";
-import { errMessage } from "../read.ts";
-
 
 /* The doctor and the release read one list of probes: verify.ts selects layers and defines no
  * probe of its own. A probe defined only in the release path runs during a release and at no
@@ -381,5 +379,4 @@ check("a release groups each kind of change once", () => {
   }
   return bad.join("\n");
 });
-
 

@@ -30,12 +30,11 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { transcript } from "./eval-flow-e2e/doors.ts";
+import { transcript, Conversation } from "./eval-flow-e2e/doors.ts";
 import { improve, promoteVerify } from "./eval-flow-e2e/improve.ts";
 import { seedUsage } from "./eval-flow-e2e/seed.ts";
 import { down, restartGateway, up, type Stack } from "./eval-flow-e2e/stack.ts";
 import { asked, startStub } from "./eval-flow-e2e/stub-model.ts";
-import { Conversation } from "./eval-flow-e2e/doors.ts";
 import { defineQualify, discover, evaluate, explain, identify, observe, type Walk } from "./eval-flow-e2e/walk.ts";
 
 const LOOPBACK = /^(https?:\/\/)?(127\.0\.0\.1|localhost|\[::1\])(:\d+)?([/?]|$)/;

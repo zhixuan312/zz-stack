@@ -9,11 +9,9 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
-import { firstOf, functionBody, gateOwnSource, gatewaySource, root, sourceFiles, unbuilt, withoutComments, zzCoreSource } from "../read.ts";
+import { firstOf, functionBody, gateOwnSource, gatewaySource, root, sourceFiles, unbuilt, withoutComments, zzCoreSource, errMessage } from "../read.ts";
 import { check, note } from "../run.ts";
 import { catalogRoot } from "../facts.ts";
-import { errMessage } from "../read.ts";
-
 
 check("an async guard in a ?? chain is awaited", () => {
   // A promise is never null, so `a() ?? b()` where b is async ends the chain at b and

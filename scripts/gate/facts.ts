@@ -14,11 +14,9 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { manifestPaths } from "../manifests.ts";
-import { contractsSource, gatewaySource, root, sourceFiles, trackedFiles, zzCoreTools } from "./read.ts";
-import { errMessage } from "./read.ts";
+import { contractsSource, gatewaySource, root, sourceFiles, trackedFiles, zzCoreTools, errMessage } from "./read.ts";
 
 export const MANIFESTS = manifestPaths(root);
-
 
 /**
  * The fields the platform stamps, from the contract that names them.
@@ -211,7 +209,6 @@ export function everyShippedSkill(): Set<string> {
   }
   return _shipped;
 }
-
 
 /** What `platformSurface()` derives from the registration literals — the platform's own
  *  vocabulary, read rather than hand-kept. */

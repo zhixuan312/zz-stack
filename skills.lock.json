@@ -28,8 +28,8 @@
     "sha": "965b82d7a92c"
   },
   "sdlc-plan": {
-    "version": "1.19",
-    "sha": "b26c7284d093"
+    "version": "1.20",
+    "sha": "926d6d46d88c"
   },
   "sdlc-recall": {
     "version": "1.11",
@@ -124,8 +124,8 @@
     "sha": "ec75948cd5d1"
   },
   "zz-platform": {
-    "version": "3.73",
-    "sha": "a7b4b9f1fcb8"
+    "version": "3.74",
+    "sha": "335f9af32e84"
   },
   "zz-tldr": {
     "version": "1.2",

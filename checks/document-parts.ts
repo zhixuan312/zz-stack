@@ -9,6 +9,10 @@
  *   3. presenting that document in parts records `shown_part` rows, counts as presented
  *      (shownSinceLastChange) only once the parts cover the body, appends exactly one `shown`,
  *      and a rewrite after that makes it unpresented again;
+ *   5. `replaceSection` — what `document_revise` with `section` writes — replaces one heading's
+ *      section and keeps every other character of the body byte for byte, refuses an absent or
+ *      ambiguous heading and a replacement that does not start with a heading, and a heading inside
+ *      a code fence is not one; the real `document_revise` schema takes `section`;
  *   4. the real `document_read` and `document_present` schemas accept `section`, `offset` and
  *      `limit`.
  *
@@ -20,6 +24,7 @@
  *
  * Run: node checks/document-parts.ts
  */
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -106,7 +111,7 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
 }) as unknown as typeof pg.Pool.prototype.query;
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
-const { PART_LIMIT, slicePart } = await load("services/zz-core/dist/document-parts.js");
+const { PART_LIMIT, replaceSection, sectionRange, slicePart } = await load("services/zz-core/dist/document-parts.js");
 const { present } = await load("services/zz-core/dist/document-present.js");
 const { shownSinceLastChange } = await load("services/zz-core/dist/attest.js");
 const { db } = await load("services/zz-core/dist/platform-db.js");
@@ -221,6 +226,47 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
     is(shape.offset?.safeParse(60000).success && !shape.offset?.safeParse(-1).success, `${name}'s \`offset\` is missing or takes a negative`);
     is(shape.limit?.safeParse(1000).success && !shape.limit?.safeParse(0).success, `${name}'s \`limit\` is missing or takes zero`);
   }
+}
+
+// 5. Revising one section of a long body
+{
+  const range = sectionRange(body, "Section 2");
+  is(typeof range !== "string", `Section 2 was not found to replace: ${range}`);
+  if (typeof range !== "string") {
+    const next = "## Section 2\n\nOne sentence now, where a whole section was.\n";
+    const got = replaceSection(body, "Section 2", next);
+    is("body" in got, `replacing Section 2 was refused: ${JSON.stringify(got)}`);
+    if ("body" in got) {
+      is(got.body.slice(0, range.lo) === body.slice(0, range.lo), "the text before the section moved");
+      is(got.body.endsWith(body.slice(range.hi)), "the text after the section moved");
+      is(got.body.includes("One sentence now, where a whole section was.\n\n## Section 3"),
+         "the replacement was not placed where the section was, one blank line before the next heading");
+      const back = slicePart(got.body, { section: "Section 2" });
+      is(typeof back !== "string" && back.text.trim() === next.trim(),
+         "reading the replaced section back does not give what was sent");
+    }
+  }
+  is("refusal" in replaceSection(body, "No such", "## No such\n\nx"), "an absent heading was replaced");
+  is("refusal" in replaceSection("## A\n\nx\n\n## A\n\ny\n", "A", "## A\n\nz"), "an ambiguous heading was replaced");
+  is("refusal" in replaceSection(body, "Section 2", "no heading line here"),
+     "a replacement not starting with a heading was accepted");
+  // The section's own code fence holds a `# not a heading` line: it must not end the section.
+  const fenced = replaceSection("## Keep\n\nk\n\n## Swap\n\n```sh\n# not a heading\n```\nold\n\n## After\n\na\n",
+                                "Swap", "## Swap\n\nnew");
+  is("body" in fenced && fenced.body === "## Keep\n\nk\n\n## Swap\n\nnew\n\n## After\n\na\n",
+     `a heading inside a code fence ended the section: ${JSON.stringify(fenced)}`);
+
+  interface ZodLike { safeParse: (v: unknown) => { success: boolean } }
+  const tools = new Map<string, { inputSchema?: Record<string, ZodLike> }>();
+  const { registerInitiativeActTools } = await load("services/zz-core/dist/tools/initiative-acts.js");
+  registerInitiativeActTools({ registerTool: (name: string, def: { inputSchema?: Record<string, ZodLike> }) => tools.set(name, def) });
+  is(tools.get("document_revise")?.inputSchema?.section?.safeParse("Phase 5").success,
+     "document_revise takes no `section`, so a large document still has to be sent whole");
+  // And it splices rather than overwrites: a `section` accepted and then ignored would write one
+  // section's text over the whole document, which is the worst thing this argument could do.
+  const revise = readFileSync(join(process.cwd(), "services/zz-core/dist/tools/initiative-acts.js"), "utf8");
+  is(/replaceSection\(documentBody\(loaded\.text\), section, content\)/.test(revise),
+     "document_revise does not splice `content` into the current body when `section` is given");
 }
 
 if (fail.length) {

@@ -24,6 +24,7 @@ import { z } from "zod";
 import { shownSinceLastChange } from "../attest.js";
 import { chainFor } from "../chain.js";
 import { fieldRefusal, frontmatterRefusal, oneLine, putEnvelopeField, renderEnvelope } from "../document-rules.js";
+import { replaceSection } from "../document-parts.js";
 import { documentGuards } from "../guards.js";
 import { noteDocument, noteRevision } from "../host/observe.js";
 import { docRows, sourceDocument } from "../indexing.js";
@@ -231,10 +232,17 @@ export function registerInitiativeActTools(server: McpServer): void {
         "`sources` — an audit round, a decision written down — or pass the words themselves as " +
         "`source_content` and the platform stores them as a source and links them. A revision " +
         "naming neither is refused, whatever the edit was: content does not change without " +
-        "material behind it. Never overwrite an approved document with document_write.",
+        "material behind it. Never overwrite an approved document with document_write. " +
+        "A LARGE DOCUMENT is revised one section at a time: pass `section` (a heading, as " +
+        "document_read's `section` takes it) and `content` replaces that heading and everything " +
+        "under it, down to the next heading of the same or a higher level — the rest of the " +
+        "document is kept exactly as it was.",
       inputSchema: {
         path: z.string().describe("e.g. '2026-08-23-sample-queue/intent.md'"),
-        content: z.string().describe("The full revised document, body and all."),
+        content: z.string().describe(
+          "The full revised body — or, with `section`, that section's replacement, starting with its heading line."),
+        section: z.string().optional().describe(
+          "Replace only this heading's section, e.g. 'Phase 5 — Delivery'. Everything else is kept as it is."),
         source_content: z.string().optional()
           .describe("The input that caused this change, verbatim (the person's own words). Stored as a source and linked."),
         source_title: z.string().optional()
@@ -251,7 +259,7 @@ export function registerInitiativeActTools(server: McpServer): void {
           "cause: a version still names the material behind it."),
       },
     },
-    async ({ path: relPath, content, source_content, source_title, sources, note,
+    async ({ path: relPath, content, section, source_content, source_title, sources, note,
              stakeholder, tags, title, fields }) => {
       const refusedFm = frontmatterRefusal(content, "document_revise") ?? fieldRefusal(fields)
         ?? tagRefusal(tags);
@@ -346,8 +354,15 @@ export function registerInitiativeActTools(server: McpServer): void {
       // revision the seal is on, and nothing overwrites one.
       const priorApproval = loaded.history.find((r) => r.approved_by) ?? null;
       // The body, and only the body. `stakeholder`, `tags` and `title` are named arguments, so the
-      // model never composes envelope YAML.
-      const body = content;
+      // model never composes envelope YAML. With `section`, the body is the current one with that
+      // section replaced: a plan grown past what one tool call can carry is revised by the part that
+      // changed, and nothing outside it moves.
+      let body = content;
+      if (section !== undefined) {
+        const spliced = replaceSection(documentBody(loaded.text), section, content);
+        if ("refusal" in spliced) return text(spliced.refusal);
+        body = spliced.body;
+      }
       const linked = new Set<string>(
         (await citationsOf(p, loaded.doc.id, prevVersion))
           .map((x) => x.startsWith(`${parts[0]}/`) ? x.slice(parts[0].length + 1) : x));

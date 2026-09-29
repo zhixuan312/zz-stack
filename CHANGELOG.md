@@ -35,6 +35,14 @@ than how much code moved.
 
 ## [Unreleased]
 
+### Added
+
+- **`document_revise` takes `section`.** A large approved document was revised by sending all of
+  it inline — the only way to change one — and a plan grown a phase at a time outgrows what one
+  tool call can carry. With `section`, `content` replaces that heading and everything under it and
+  the rest is kept byte for byte; `document_read` with the same `section` returns exactly what it
+  replaces. `zz-platform` 3.74 and `sdlc-plan` 1.20 teach it. (Bug 87fce795.)
+
 ### Fixed
 
 - **A passing check is evidence for the criterion it was written for.** `evidence_relation` asked

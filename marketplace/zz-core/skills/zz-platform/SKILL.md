@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.73
+version: 3.74
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's documents or knowledge outside a flow."
 ---
@@ -488,6 +488,10 @@ source (what they said) and v2 (what it made us change)** — and anyone
 reading later can see one caused the other.
 
 - Never overwrite an approved document with `document_write`.
+- **A large document is revised one section at a time:** `document_revise(..., section: "Phase 5",
+  content: "## Phase 5\n\n…")` replaces that heading and everything under it and keeps the rest byte
+  for byte. `document_read(path, section: "Phase 5")` returns exactly what it replaces. Send the
+  whole body only when the change is not one section's.
 - Quote them, do not paraphrase: the source is their words, the document is
   your writing. **[convention]** The platform stores whatever you send as
   `source_content` and never saw what the person actually said, so it cannot

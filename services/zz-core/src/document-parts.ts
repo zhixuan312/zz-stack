@@ -47,6 +47,42 @@ const listed = (hs: Heading[]): string =>
   hs.slice(0, 40).map((h) => `${"#".repeat(h.level)} ${h.title} (offset ${h.at})`).join("; ") +
   (hs.length > 40 ? `; … ${hs.length - 40} more` : "");
 
+/** Where one heading's section is: from the heading line to the next heading of the same or a
+ *  higher level, or the end. The one reading of "a section" — `slicePart` reads by it and
+ *  `replaceSection` writes by it, so what a caller read is exactly what a revise replaces. */
+export function sectionRange(text: string, section: string): { lo: number; hi: number } | string {
+  const want = section.replace(/^#+\s*/, "").trim().toLowerCase();
+  const all = headings(text);
+  const hits = all.filter((h) => h.title.toLowerCase() === want);
+  if (!hits.length) {
+    return `ERROR: no heading "${section}" in this document. Its headings: ` +
+           (all.length ? listed(all) : "none") + ".";
+  }
+  if (hits.length > 1) {
+    return `ERROR: ${hits.length} headings read "${section}": ${listed(hits)}. Ask for one ` +
+           "by `offset` instead.";
+  }
+  const h = hits[0];
+  return { lo: h.at, hi: all.find((n) => n.at > h.at && n.level <= h.level)?.at ?? text.length };
+}
+
+/** `body` with one section replaced by `content`, which carries the section's heading line — or a
+ *  refusal. Everything outside the section is kept byte for byte, which is the point: a large
+ *  approved document is revised by sending the part that changed, not the whole of it (bug
+ *  87fce795). The replacement is followed by one blank line when anything comes after it. */
+export function replaceSection(body: string, section: string, content: string):
+    { body: string } | { refusal: string } {
+  const range = sectionRange(body, section);
+  if (typeof range === "string") return { refusal: range };
+  if (!/^#{1,6}\s/.test(content.trimStart())) {
+    return { refusal: "ERROR: with `section`, `content` replaces the heading and everything under " +
+             "it — start it with that heading line, as `document_read` with the same `section` returns it." };
+  }
+  const tail = body.slice(range.hi);
+  return { body: body.slice(0, range.lo) + content.trimStart().replace(/\s*$/, "") +
+                 (tail ? "\n\n" : "\n") + tail };
+}
+
 /** The part of `text` a caller asked for, or a refusal saying why there is none.
  *
  * `section` narrows to one heading and everything under it, up to the next heading of the same
@@ -57,20 +93,9 @@ export function slicePart(text: string, ask: PartAsk): Part | string {
   const total = text.length;
   let lo = 0, hi = total;
   if (ask.section !== undefined) {
-    const want = ask.section.replace(/^#+\s*/, "").trim().toLowerCase();
-    const all = headings(text);
-    const hits = all.filter((h) => h.title.toLowerCase() === want);
-    if (!hits.length) {
-      return `ERROR: no heading "${ask.section}" in this document. Its headings: ` +
-             (all.length ? listed(all) : "none") + ".";
-    }
-    if (hits.length > 1) {
-      return `ERROR: ${hits.length} headings read "${ask.section}": ${listed(hits)}. Ask for one ` +
-             "by `offset` instead.";
-    }
-    const h = hits[0];
-    lo = h.at;
-    hi = all.find((n) => n.at > h.at && n.level <= h.level)?.at ?? total;
+    const range = sectionRange(text, ask.section);
+    if (typeof range === "string") return range;
+    ({ lo, hi } = range);
   }
   const limit = ask.limit ?? PART_LIMIT;
   if (limit <= 0) return "ERROR: `limit` must be a positive number of characters.";

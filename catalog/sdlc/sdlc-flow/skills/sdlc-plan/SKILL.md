@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.19
+version: 1.20
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -57,7 +57,9 @@ is a record of what happened, not a forecast.
   statement from the spec, stop: this is not a planning problem, it goes back to `sdlc-spec`, and
   the person agrees the changed destination before any further phase is planned. Otherwise
   `document_revise` the plan, citing the execution report as its source, and fill in the next
-  phase's tasks. Task ids continue straight through: Phase 2's first task follows Phase 1's last.
+  phase's tasks — with `section` naming that phase's heading, so only the phase is sent: a plan
+  that grows a phase at a time outgrows one tool call long before it is finished. Task ids
+  continue straight through: Phase 2's first task follows Phase 1's last.
 - **Only written phases are validated.** `validatePlan` checks every task written and lists a
   phase with no tasks as not yet planned; `initiative_status`'s `plan` reports the current phase
   (the first with tasks and no `### As built`) and that phase's waves.

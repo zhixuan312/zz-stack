@@ -8,11 +8,18 @@
 # suite stops at the baseline and reports nothing. Here the whole gate passes — `images.yml` proves
 # that on this runner image — so the plants are judged against a real baseline.
 #
-# It writes `testing/mutation-report.json` and uploads it as an artifact. A dispatched run stops
-# there; the scheduled run also commits the report, and that is the one file it writes.
+# Twenty jobs at once, one shard each, then one job that merges them. The whole suite on one runner
+# is ~370 rows at about two minutes per row per worker, and GitHub cancels any job at six hours —
+# the first scheduled-size run was cancelled there with 345 rows done. Split by `planShards`, the
+# same planner a local `--workers N` uses, the largest shard is 25 rows (one check file cannot be
+# split) and every job ends in well under an hour. Twenty because that is how many jobs a free
+# account runs at once; more would only queue.
 #
-# Weekly, and on demand. The gate does not read the report and this is not on every push: 368 plants
-# at roughly a minute each is hours, not minutes. But a suite nobody runs is a suite that claims
+# The merge job writes `testing/mutation-report.json` and uploads it as an artifact. A dispatched run
+# stops there; the scheduled run also commits the report, and that is the one file it writes.
+#
+# Weekly, and on demand. The gate does not read the report and this is not on every push: even
+# twenty-wide it is most of an hour. But a suite nobody runs is a suite that claims
 # coverage nobody has — the committed report sat at 2026-09-23 with all 423 rows failed and its own
 # baseline red — so the scheduled run commits the refreshed report straight to master. Not a PR: a
 # PR nobody merges leaves the report as stale as a suite nobody runs.
@@ -25,31 +32,24 @@ on:
     # be scheduled at all.
     - cron: "0 16 * * 5"
   workflow_dispatch:
-    inputs:
-      workers:
-        description: "how many shards to run at once (each is a full gate run in its own copy)"
-        required: false
-        type: string
-        # Two, not four, on a four-vCPU runner: a gate run is a process tree of its own (703
-        # processes and 4,903 threads measured with eight on a ten-core laptop, user CPU 91%), so
-        # the workers contend long before they scale. Wall clock is hours either way.
-        default: "2"
-      only:
-        description: "one check file to plant into, e.g. scripts/gate/checks/hygiene.ts (empty = all)"
-        required: false
-        type: string
 
 permissions:
   contents: write  # the scheduled refresh commits the report to master
 
 jobs:
-  mutation:
+  shard:
     # 22.04 for the reason `images.yml` gives: the candidate-build check runs bwrap, which needs
     # unprivileged user namespaces that Ubuntu 24.04 restricts with an AppArmor rule.
     runs-on: ubuntu-22.04
-    # Every worker is a serial gate run in a copy of its own, so this multiplies. 368 rows is four
-    # to six hours; the ceiling is GitHub's.
-    timeout-minutes: 350
+    timeout-minutes: 120
+    strategy:
+      # One shard failing must not cancel the other nineteen: the merge refuses anyway, and the
+      # shards that finished are the evidence of which check files still measure.
+      fail-fast: false
+      # The shard count is this list's length and nothing else — each job reads it back as
+      # `strategy.job-total`, and the merge counts the reports it was handed.
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
     defaults:
       run:
         working-directory: pair/zz-stack
@@ -85,34 +85,65 @@ jobs:
             console.log('sandbox: ' + t);
           })"
 
-      # Sharded by row count, each worker a serial runner in its own `cp -a` copy with a lock named
-      # after its pid (`mutation/parallel.ts`), so no two gate runs share a tree.
-      - name: Plant every defect and see which checks notice
+      # Two workers inside the job, each a serial runner in its own `cp -a` copy with a lock named
+      # after its pid (`mutation/parallel.ts`), so no two gate runs share a tree. Two, not four, on a
+      # four-vCPU runner: a gate run is a process tree of its own, and workers contend long before
+      # they scale.
+      - name: Plant this shard's defects and see which checks notice
+        run: node scripts/mutation-run.ts --shard '${{ matrix.shard }}/${{ strategy.job-total }}' --workers 2
+
+      - name: Upload this shard's report
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-shard-${{ matrix.shard }}
+          path: pair/zz-stack/testing/mutation-report.json
+          if-no-files-found: error
+
+  merge:
+    needs: shard
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: pair/zz-stack
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: pair/zz-stack
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mutation-shard-*
+          path: shards
+
+      # In shard order, which is what `--merge` recomputes the ownership from. The merge refuses a
+      # missing shard, a shard from another commit and two shards that disagree on the baseline.
+      - name: Merge the shards into one report
         run: |
-          node scripts/mutation-run.ts \
-            --workers '${{ inputs.workers }}' \
-            ${{ inputs.only != '' && format('--only {0}', inputs.only) || '' }}
+          n=$(ls -d ../../shards/mutation-shard-* | wc -l)
+          node scripts/mutation-run.ts --merge $(for k in $(seq 0 $((n - 1))); do
+            printf '%s ' "../../shards/mutation-shard-$k/mutation-report.json"; done)
 
       - name: Upload the report
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mutation-report
           path: pair/zz-stack/testing/mutation-report.json
-          if-no-files-found: warn
+          if-no-files-found: error
 
-      # Only on the schedule, and only when the run produced a report. It commits rather than
-      # opening a PR, and that reverses what this file did an hour ago: a PR nobody merges does not
-      # keep the artifact current, which is the same trap as a suite nobody runs, one level up. The
-      # file is generated evidence rather than code, master accepts a push from this token, and the
-      # suite's own report is the only thing this touches.
+      # Only on the schedule. It commits rather than opening a PR: a PR nobody merges does not keep
+      # the artifact current, which is the same trap as a suite nobody runs, one level up. The file is
+      # generated evidence rather than code, master accepts a push from this token, and the suite's
+      # own report is the only thing this touches.
       - name: Refresh the committed report
         if: ${{ github.event_name == 'schedule' }}
-        working-directory: pair/zz-stack
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          test -f testing/mutation-report.json || { echo "no report was produced"; exit 0; }
           if git diff --quiet -- testing/mutation-report.json; then
             echo "the report is unchanged"
             exit 0

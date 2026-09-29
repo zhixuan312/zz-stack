@@ -28,7 +28,7 @@ import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "n
 import { treeDigest } from "./workspace.ts";
 
 interface Row { readonly check: string }
-interface Report {
+export interface Report {
   readonly results: Row[];
   readonly source_commit?: string;
   readonly source_dirty_paths?: number;
@@ -38,9 +38,13 @@ interface Report {
   [k: string]: unknown;
 }
 
-/** Longest-first into the emptiest worker. Returns `workers` lists of check files. */
-function shard(wanted: readonly string[], rowsFor: (f: string) => number,
-                      workers: number): string[][] {
+/** Longest-first into the emptiest worker. Returns up to `workers` lists of check files.
+ *
+ *  Deterministic for one tree: the same declared set and the same spec counts give the same
+ *  groups, which is what lets CI's matrix jobs each take group K and a later merge recompute which
+ *  job owned which file without any of them telling it. */
+export function planShards(wanted: readonly string[], rowsFor: (f: string) => number,
+                           workers: number): string[][] {
   const bins: { files: string[]; rows: number }[] =
     Array.from({ length: workers }, () => ({ files: [], rows: 0 }));
   for (const f of [...wanted].sort((a, b) => rowsFor(b) - rowsFor(a))) {
@@ -92,7 +96,7 @@ export async function runSharded(opts: {
   // Before anything is copied. What every worker is about to duplicate, digested once, so the
   // same measurement at the end says whether it stayed still.
   const sourceBefore = treeDigest(source);
-  const groups = shard(wanted, rowsFor, workers);
+  const groups = planShards(wanted, rowsFor, workers);
   console.log(`  ${wanted.length} check file(s), ${wanted.reduce((n, f) => n + Math.max(1, rowsFor(f)), 0)} row(s), ${groups.length} worker(s):`);
   groups.forEach((g, k) => console.log(`      w${k}: ${g.reduce((n, f) => n + Math.max(1, rowsFor(f)), 0)} row(s) in ${g.length} file(s)`));
 
@@ -127,8 +131,26 @@ export async function runSharded(opts: {
       "exists, and two of them may have been measured against different ones.");
     process.exit(6);
   }
-  // And they must have copied the same commit. Weaker than the digest above and free: it catches
-  // a worker launched against a different checkout entirely, which the digest cannot see.
+  const doc = mergeShardReports({ seed, groups, reports, wanted });
+  writeFileSync(out, reportText(doc as unknown as Record<string, unknown>));
+  console.log(`\n  ${doc.results.length} row(s) written to ${out} by ${groups.length} worker(s)`);
+  for (const s of shards) { rmSync(s.out, { force: true }); rmSync(s.work, { recursive: true, force: true }); rmSync(`${s.work}.lock`, { force: true }); }
+}
+
+/**
+ * Merge the reports N shards wrote into one, or refuse. Used by `runSharded` for workers on one
+ * machine and by `mutation-run.ts --merge` for CI's matrix jobs, each of which ran one group.
+ *
+ * The merge is by ownership, not by union — see `runSharded`. `groups[k]` must be the files
+ * `reports[k]` measured, and `seed` the report every shard started from.
+ */
+export function mergeShardReports(opts: {
+  seed: Report; groups: readonly string[][]; reports: readonly Report[]; wanted: readonly string[];
+}): Report {
+  const { seed, groups, reports, wanted } = opts;
+  // They must have copied the same commit. On one machine this is weaker than `runSharded`'s source
+  // digest and catches a worker launched against a different checkout entirely; across CI's matrix
+  // jobs, which share no disk, it is the check that they all measured one commit.
   const provenance = new Set(reports.map((r) => `${r.source_commit ?? "?"}@${r.source_dirty_paths ?? "?"}`));
   if (provenance.size !== 1) {
     console.error(`  REFUSED — the workers report different provenance (${[...provenance].join(", ")})`);
@@ -176,9 +198,6 @@ export async function runSharded(opts: {
   // duplicated-constant shape this repository refuses. `produced_at` is the latest of them, so the
   // artifact is dated when the pass ended rather than when its first worker finished.
   const envelope = reports[0];
-  const doc: Report = { ...envelope, results: merged,
-                        produced_at: reports.map((r) => r.produced_at ?? "").sort().pop() ?? envelope.produced_at };
-  writeFileSync(out, reportText(doc as unknown as Record<string, unknown>));
-  console.log(`\n  ${merged.length} row(s) written to ${out} by ${groups.length} worker(s)`);
-  for (const s of shards) { rmSync(s.out, { force: true }); rmSync(s.work, { recursive: true, force: true }); rmSync(`${s.work}.lock`, { force: true }); }
+  return { ...envelope, results: merged,
+           produced_at: reports.map((r) => r.produced_at ?? "").sort().pop() ?? envelope.produced_at };
 }

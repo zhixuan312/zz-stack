@@ -7,6 +7,8 @@
  *   node scripts/mutation-run.ts                       # every declared check, one worker
  *   node scripts/mutation-run.ts --only scripts/gate/checks/hygiene.ts
  *   node scripts/mutation-run.ts --work /tmp/zz-mut --keep
+ *   node scripts/mutation-run.ts --shard 3/20 --workers 2   # CI matrix job 3 of 20
+ *   node scripts/mutation-run.ts --merge s0.json s1.json …  # put the N shard reports together
  *
  * `--workers N` is the fast path and the default is ONE, so the plain form is ~368 gate runs one
  * after another. Each worker is this same runner in a checkout of its own (`mutation/parallel.ts`),
@@ -37,7 +39,8 @@ import type { MutationSpec } from "./mutation/plant.ts";
 import { guardsBlock, probeGuards } from "./mutation/guards.ts";
 import { SPECS } from "./mutation/specs.ts";
 import { UNEXERCISABLE } from "./mutation/unexercisable.ts";
-import { runSharded } from "./mutation/parallel.ts";
+import { mergeShardReports, planShards, runSharded } from "./mutation/parallel.ts";
+import type { Report } from "./mutation/parallel.ts";
 import { DECLARED_BY, declaredChecks, makeWorkspace, provenanceOf, restore } from "./mutation/workspace.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -76,7 +79,35 @@ function valueOrDie(name: string, raw: string | undefined): string {
   return raw;
 }
 
-const only = process.argv.filter((_, i) => process.argv[i - 1] === "--only");
+/** Rows per check file: what `planShards` balances on, here and in `mutation/parallel.ts`. */
+const rowCounts = new Map<string, number>();
+for (const sp of SPECS) rowCounts.set(sp.check, (rowCounts.get(sp.check) ?? 0) + 1);
+const rowsFor = (f: string): number => rowCounts.get(f) ?? 1;
+
+// `--shard K/N` is CI's matrix: job K of N measures group K of `planShards` over the declared set,
+// as a `--only` top-up of the committed report, and `--merge` puts the N reports back together.
+// The planner is the one a local `--workers N` uses, so the two ways of splitting the suite cannot
+// disagree about which job owned which file — and GitHub's six-hour ceiling on one job, which the
+// whole suite on one runner does not fit under, stops mattering.
+const shardArg = flag("shard");
+const shardFiles = ((): string[] | null => {
+  if (!shardArg) return null;
+  const m = /^(\d+)\/(\d+)$/.exec(shardArg);
+  if (!m || Number(m[1]) >= Number(m[2])) die(`--shard takes K/N with K below N, like 3/20; got "${shardArg}"`);
+  const groups = planShards(declaredChecks(root), rowsFor, Number(m[2]));
+  const mine = groups[Number(m[1])];
+  if (!mine) die(`--shard ${shardArg}: the declared set splits into only ${groups.length} group(s)`);
+  return mine;
+})();
+const only = shardFiles ?? process.argv.filter((_, i) => process.argv[i - 1] === "--only");
+// `--merge` takes every argument after it up to the next flag: one report per shard, in K order.
+const mergeFrom = ((): string[] => {
+  const at = process.argv.indexOf("--merge");
+  if (at < 0) return [];
+  const rest = process.argv.slice(at + 1);
+  const end = rest.findIndex((a) => a.startsWith("--"));
+  return end < 0 ? rest : rest.slice(0, end);
+})();
 const keep = process.argv.includes("--keep");
 // `--dry` plants and restores without running a gate. It answers one question: did the
 // substitution land. A spec whose text has moved reports zero replacements.
@@ -218,6 +249,25 @@ function reportText(doc: Record<string, unknown>): string {
   return `{\n${parts.join(",\n")}\n}\n`;
 }
 
+/** `--merge`: the N reports CI's matrix jobs wrote, one per shard in K order, into `out`. Each job
+ *  topped up the committed report with its own group, so the merge is `mergeShardReports`' — by
+ *  ownership, with the groups recomputed from this tree exactly as each job computed them. */
+function merge(): void {
+  if (!existsSync(out)) die(`--merge seeds from ${out}, which does not exist`);
+  const seed = JSON.parse(readFileSync(out, "utf8")) as Report;
+  const wanted = declaredChecks(root);
+  const groups = planShards(wanted, rowsFor, mergeFrom.length);
+  if (groups.length !== mergeFrom.length) {
+    die(`${mergeFrom.length} report(s) given, and the declared set splits into ${groups.length} group(s)`);
+  }
+  const missing = mergeFrom.filter((f) => !existsSync(f));
+  if (missing.length) die(`no report at ${missing.join(", ")} — a shard that did not finish leaves its files unmeasured`);
+  const reports = mergeFrom.map((f) => JSON.parse(readFileSync(f, "utf8")) as Report);
+  const doc = mergeShardReports({ seed, groups, reports, wanted });
+  writeFileSync(out, reportText(doc as unknown as Record<string, unknown>));
+  console.log(`  ${doc.results.length} row(s) from ${mergeFrom.length} shard(s) written to ${out}`);
+}
+
 function main(): void {
   const provenance = provenanceOf(root);
   console.log(`  building a disposable copy under ${workAt}`);
@@ -234,11 +284,9 @@ function main(): void {
   // children and becomes a merger. `--dry` and `--guards` are excluded: one plants without running
   // a gate and finishes in seconds, the other is two probes.
   if (workers > 1 && !dry && !guardsOnly) {
-    const counts = new Map<string, number>();
-    for (const sp of SPECS) counts.set(sp.check, (counts.get(sp.check) ?? 0) + 1);
     void runSharded({
       runner: join(root, "scripts/mutation-run.ts"), source: root, workAt, out, wanted: selected,
-      rowsFor: (f) => counts.get(f) ?? 1, workers, extras: keep ? ["--keep"] : [],
+      rowsFor, workers, extras: keep ? ["--keep"] : [],
       reportText,
     }).then(() => process.exit(0));
     return;
@@ -499,4 +547,4 @@ function main(): void {
   if (!keep) execFileSync("rm", ["-rf", workAt]);
 }
 
-main();
+if (mergeFrom.length) merge(); else main();

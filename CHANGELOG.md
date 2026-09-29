@@ -37,6 +37,14 @@ than how much code moved.
 
 ### Fixed
 
+- **A passing check is evidence for the criterion it was written for.** `evidence_relation` asked
+  whether the evidence text "supports the claim", and a row whose evidence is a passing check —
+  `check:checks/no-store-namers.ts — ok no-store-namers` — read `no`, because one line of output
+  cannot restate the criterion; the only way past was to mark an established criterion
+  `not_established`. It now asks whether the evidence reports a result in the claim's favour: a
+  check or test named for it that passed does, a failure, a skip or a result about something else
+  does not. Readings taken under the old question are not reused. `sdlc-review` 1.11 says so.
+  (Bug 20d5fd6e.)
 - **A support named before its document exists is no longer lost.** A `supports` link needs the
   document it points at, so `source_add` naming a document not yet written filed nothing and kept
   nothing — the material was never listed behind that document once it was written. The declared

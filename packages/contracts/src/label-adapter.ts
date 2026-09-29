@@ -48,10 +48,10 @@ const FAMILIES: readonly LabelFamily[] = Object.freeze([
     answer_spec: {
       kind: "category",
       options: [
-        option("supports", "the passage demonstrates the claim"),
-        option("contradicts", "the passage tells against the claim"),
-        option("unclear", "the passage bears on the claim and does not settle it"),
-        option("unrelated", "the passage bears no relation to the claim"),
+        option("supports", "the evidence reports a result in the claim's favour"),
+        option("contradicts", "the evidence reports a result against the claim"),
+        option("unclear", "the evidence reports a result that bears on the claim and does not settle it"),
+        option("unrelated", "the evidence reports nothing about the claim"),
       ],
     },
   },

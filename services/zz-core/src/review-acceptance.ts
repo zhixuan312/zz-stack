@@ -39,7 +39,7 @@ import type { DocRow } from "./indexing.js";
 import { names, reviewMove, reviewRounds, stakeholderSources, unbackloggedFindings,
          type RoundAssessments } from "./review-rounds.js";
 import { loadDocument } from "./versions.js";
-import { assessFamily, type Assessment } from "./semantic.js";
+import { assessFamily, questionDigest, type Assessment } from "./semantic.js";
 import type { Chain } from "./write-guards.js";
 
 const AC_STATUSES = ["established", "not_established", "blocked", "deferred"] as const;
@@ -134,7 +134,12 @@ type Cache = Record<string, CachedReading[]>;
  *  other two are already in `about` for every other family, so the key is composed there rather
  *  than a column added for one family's benefit. Without it the memo cannot tell "already asked
  *  about these bytes" from "asked about the bytes this table carried before the revision", and a
- *  stale reading is how an approval passes on evidence nobody checked. */
+ *  stale reading is how an approval passes on evidence nobody checked.
+ *
+ *  And only readings taken under the question asked NOW: `question_digest` pins the instruction's
+ *  exact bytes. When the question changes, a reading of the same evidence under the old question
+ *  is an answer to something nobody is asking any more, and reusing it kept a `no` that the
+ *  corrected question exists to fix. */
 export async function readAcceptanceCache(
   p: pg.Pool, team: string, initiative: string, doc: string,
 ): Promise<Cache> {
@@ -144,8 +149,8 @@ export async function readAcceptanceCache(
        from zz.assessment a
        join zz.initiative i on i.id = a.initiative_id
        join zz.team t on t.id = i.team_id
-      where t.slug = $1 and i.slug = $2 and a.about like $3
-      order by a.asked_at, a.id`, [team, initiative, `${doc}#%`]);
+      where t.slug = $1 and i.slug = $2 and a.about like $3 and a.question_digest = $4
+      order by a.asked_at, a.id`, [team, initiative, `${doc}#%`, questionDigest("evidence_relation")]);
   const out: Cache = {};
   for (const r of rows) {
     const parts = r.about.split("#");

@@ -1,6 +1,6 @@
 ---
 name: sdlc-review
-version: 1.10
+version: 1.11
 description: Verify what was built before it ships — first the evidence that every accepted criterion holds, established by running, then a bounded defect sweep in rounds the platform routes to a stop. The sweep is dispatched, one round at a time, because a reviewer who did not write the code is the point; the evidence table and the verdict are the main agent's.
 when_to_use: "sdlc-execute has finished and the change is about to be shipped, merged or handed over. This is the pre-release gate. The main agent compiles the acceptance evidence and dispatches each sweep round."
 ---
@@ -203,7 +203,7 @@ bounded questions itself and routes on the answers; you ask none, and impact sta
 
 | Where | Question ID | Asked about |
 |---|---|---|
-| Each established acceptance row, when `review.md` is written | `evidence_relation` | whether the quoted output supports the criterion — read at approval: `no` refuses, `unclear` asks for sharper evidence, twice goes to the stakeholder |
+| Each established acceptance row, when `review.md` is written | `evidence_relation` | whether the result your evidence reports is in the criterion's favour — a check or test named for it that passed counts, it need not restate the criterion — read at approval: `no` refuses, `unclear` asks for sharper evidence, twice goes to the stakeholder |
 | Each new S1/S2 finding, when its round is recorded | `repeats_finding` | whether it repeats an earlier round's finding — `yes` means it does not block, and it does not count as a new blocker when the budget checks whether the review is converging |
 
 **Action and exit paths:** part A — run, quote, write the table, present, ask. Part B — sweep the

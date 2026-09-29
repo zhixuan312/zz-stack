@@ -37,7 +37,8 @@ const TEAM = "t1";
 interface W {
   flow: string | null;
   docs: Record<string, unknown>[];
-  answers: { about: string; family: string; reading: string; probability: number | null; asked_at: string }[];
+  answers: { about: string; family: string; reading: string; probability: number | null; asked_at: string;
+             question_digest?: string }[];
 }
 let world = new Map<string, W>();
 const blank = (flow: string | null): W => ({ flow, docs: [], answers: [] });
@@ -89,7 +90,11 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
   // The acceptance memo: the answers already taken, keyed by the `about` they were asked under.
   if (/select a\.about, a\.reading/.test(sql)) {
     const prefix = String(values[2]).replace(/%$/, "");
-    return one((bySlug?.answers ?? []).filter((a) => a.about.startsWith(prefix))
+    // Filtered by the question only when the statement asks for it — the stub answers what the SQL
+    // says, so a statement that stopped filtering is caught rather than covered for here.
+    const byQuestion = /a\.question_digest = \$4/.test(sql);
+    return one((bySlug?.answers ?? []).filter((a) => a.about.startsWith(prefix) &&
+                                                     (!byQuestion || (a.question_digest ?? CURRENT) === values[3]))
       .map((a) => ({ about: a.about, reading: a.reading,
                      probability: a.probability === null ? null : String(a.probability),
                      reason: null, asked_at: a.asked_at })));
@@ -108,6 +113,7 @@ const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { initiativeState } = await load("services/zz-core/dist/tools/initiative-status.js");
 const rr = await load("services/zz-core/dist/review-rounds.js");
 const acc = await load("services/zz-core/dist/review-acceptance.js");
+const CURRENT: string = (await load("services/zz-core/dist/semantic.js")).questionDigest("evidence_relation");
 const { ROUND_BUDGET } = await load("services/zz-core/dist/audit-rounds.js");
 const { assessmentsFor } = await load("services/zz-core/dist/review-rounds.js");
 const { chainFor } = await load("services/zz-core/dist/chain.js");
@@ -180,9 +186,11 @@ function stakeholder(i: Fixture, at: string, body: string) {
   world.get(i.name)!.docs.push(env(i.name, `sources/2026-09-26-decision-${at.replace(/\W/g, "")}.md`,
     { title: "Stakeholder decision" }, body, { added_at: at }, ["review.md"]));
 }
-/** An answer the assessor recorded, in the grain `assessFamily` persists it. */
-function recorded(name: string, about: string, family: string, reading: string, probability: number, at: string) {
-  world.get(name)!.answers.push({ about, family, reading, probability, asked_at: at });
+/** An answer the assessor recorded, in the grain `assessFamily` persists it — under the question
+ *  asked now unless `digest` names another. */
+function recorded(name: string, about: string, family: string, reading: string, probability: number, at: string,
+                  digest = CURRENT) {
+  world.get(name)!.answers.push({ about, family, reading, probability, asked_at: at, question_digest: digest });
 }
 const sourcesOf = (i: Fixture) => world.get(i.name)!.docs;
 const answersOf = (i: Fixture) => assessmentsFor(db()!, TEAM, i.name);
@@ -326,6 +334,19 @@ const move = async (i: Fixture) =>
   const reading = (id: string, row: string, value: string, at: string) =>
     recorded(r.name, `review.md#${id}#${acc.rowDigest(texts.get(id), evidenceOf(row))}`,
              "evidence_relation", value, value === "no" ? 0.1 : 0.5, at);
+  // A `no` taken under an earlier wording of the question is not a reading of this one: the
+  // question was changed because it gave that answer to a passing check (bug 20d5fd6e), and reusing
+  // it would keep the refusal the change exists to lift. Its own initiative, so the reading the
+  // platform takes when it finds none cannot land in `r`'s memo.
+  {
+    const q = await fresh();
+    round(q, ledger(1, []), "2026-09-26T00:30:00.000Z");
+    recorded(q.name, `review.md#AC-1.1#${acc.rowDigest(texts.get("AC-1.1"), evidenceOf(ok1))}`,
+             "evidence_relation", "no", 0.1, "2026-09-26T00:45:00.000Z", "an-older-question");
+    const stale = await approval(q, table([ok1, ok2, okT]));
+    is(!/AC-1\.1: evidence_relation/.test(stale.refusal ?? ""),
+       `a reading taken under another question was reused: ${stale.refusal}`);
+  }
   reading("AC-1.1", ok1, "no", "2026-09-26T01:00:00.000Z");
   got = await approval(r, table([ok1, ok2, okT]));
   is(/AC-1\.1: evidence_relation reads its evidence as not supporting/.test(got.refusal ?? ""), `a no refuses: ${got.refusal}`);

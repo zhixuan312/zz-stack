@@ -56,9 +56,18 @@ import { Refusal } from "./refusal.js";
 /** What the typed service is asked for each family. The state it answers over always carries a
  *  SUBJECT and usually a CONTEXT; the instruction says what "yes" means about the subject. */
 export const FAMILY_INSTRUCTIONS: Readonly<Record<string, string>> = Object.freeze({
+  // DELIBERATE: asked about the RESULT the evidence reports, not about whether its text restates
+  // the claim. Evidence is a locator and what it gave — `check:checks/no-store-namers.ts — ok
+  // no-store-namers` — and asked "does this passage support the claim?" a model answered no to a
+  // passing check written for that exact criterion, because the one line cannot restate it (bug
+  // 20d5fd6e). A model returns a conclusion and nothing else, so a conclusion that is not the one
+  // wanted means the question was the wrong one.
   evidence_relation:
-    "Does the CONTEXT passage support the claim made in the SUBJECT? Yes only if the passage " +
-    "actually supports it; contradicting, unclear or unrelated is no.",
+    "The SUBJECT is a claim and the CONTEXT is the evidence recorded for it: a named check, test or " +
+    "command with the result it gave, or output quoted from a run. Does the CONTEXT report a result " +
+    "in the claim's favour — a check, test or command named for what the claim says that passed, " +
+    "or output that shows what the claim says? A failure, a skip, a result about something else, " +
+    "or no result at all is no. Judge what the CONTEXT reports; it need not restate the claim.",
   requirement_coverage:
     "Does the SUBJECT fully cover the requirement stated in the CONTEXT? Partial coverage, " +
     "omission or an unclear answer is no.",
@@ -92,7 +101,7 @@ for (const f of QUESTION_FAMILIES) {
 }
 
 /** Bumped whenever an instruction's wording changes; the digest pins the exact bytes too. */
-const INSTRUCTION_VERSION = 1;
+const INSTRUCTION_VERSION = 2;
 
 export function questionDigest(family: string): string {
   return createHash("sha256").update(`${family}\n${FAMILY_INSTRUCTIONS[family] ?? ""}`)

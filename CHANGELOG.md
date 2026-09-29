@@ -33,6 +33,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [Unreleased]
+
+### Fixed
+
+- **A support named before its document exists is no longer lost.** A `supports` link needs the
+  document it points at, so `source_add` naming a document not yet written filed nothing and kept
+  nothing — the material was never listed behind that document once it was written. The declared
+  list is kept on the source again, and creating a document files the links that were waiting for
+  it. `source_add` says which named documents do not exist yet, instead of dropping them silently.
+
+### Changed
+
+- **The mutation suite runs as twenty parallel jobs and one merge.** On one runner it did not fit
+  GitHub's six-hour job limit, and the scheduled run never started at all (a schedule has no
+  inputs, and the runner refused the empty `--workers` it was handed). `mutation-run.ts --shard K/N`
+  and `--merge` split and rejoin it with the same planner and merge a local `--workers N` uses.
+
 ## [0.89.0] — 2026-09-29
 
 What the file store's retirement still left standing: a search-index cap that became the stored

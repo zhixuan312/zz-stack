@@ -238,7 +238,9 @@ export function sourceDocument(
           /** The flow stage this source is the output of — an audit round names its audit stage. */
           stage?: string;
           /** For an audit round: the version of the supported document the round read. */
-          audits_version?: string },
+          audits_version?: string;
+          /** The documents the caller said this bears on, by name. */
+          supports?: string[] },
 ): string {
   // DELIBERATE: the stage is written TWICE, because two readers ask a different question of it and
   // each reads the place the other does not. `audit-rounds.ts` and `review-rounds.ts` read the
@@ -248,16 +250,18 @@ export function sourceDocument(
   // `saveDocument` resolves `env.type ?? w.type`, so this value took the caller's stage and
   // `source_list` returned an empty stage for every source there has ever been.
   //
-  // DELIBERATE: `supports` is NOT written here. It is a relation, and its home is `doc_link` —
-  // `saveDocument` writes one `supports` row per document the source bears on, which is what
-  // `source_list` and the console read. A copy in the envelope would put one fact in two places,
-  // and a reader of either could not tell which was current.
+  // `supports` is written as what the caller DECLARED, and the relation stays `doc_link`: every
+  // reader reads the links, never this key. The declaration is kept because a link needs its target
+  // row, and a source may name a document that is not written yet — round 1 of a review always
+  // does. `saveDocument` files the links it can at once and the rest when each named document is
+  // first written, from this key; without it those supports were lost outright.
   const env: Record<string, string> = {
     type: opts.stage || "source", title: opts.title, contributed_by: opts.by, date: opts.day,
     added_at: new Date().toISOString() };
   if (opts.stage) env.stage = opts.stage;
   if (opts.audits_version) env.audits_version = opts.audits_version;
+  if (opts.supports?.length) env.supports = opts.supports.join(", ");
   return renderEnvelope(
-    env, ["type", "title", "contributed_by", "date", "added_at", "stage", "audits_version"],
+    env, ["type", "title", "contributed_by", "date", "added_at", "stage", "audits_version", "supports"],
   ) + `\n${opts.content}\n`;
 }

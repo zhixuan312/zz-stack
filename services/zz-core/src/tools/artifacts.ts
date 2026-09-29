@@ -528,7 +528,7 @@ export function registerArtifactTools(server: McpServer): void {
       const auditsVersion = round && !review && cited?.current_revision != null
         ? String(cited.current_revision) : undefined;
       const doc = sourceDocument(
-        { title, by: who.email, day: date, content,
+        { title, by: who.email, day: date, content, supports: list,
           stage: round ? round.stage : undefined, audits_version: auditsVersion });
       const wrote = await saveDocument({
         team, relPath: rel, initiative, text: doc, by: who.email, flow: "",
@@ -586,8 +586,9 @@ export function registerArtifactTools(server: McpServer): void {
                  (auditsVersion ? ` v${auditsVersion}` : "") : "") +
         (assessed ? `\n${assessed}` : "") + stageNote +
         (unwritten.length
-          ? `\n\nNOT LINKED: ${unwritten.join(", ")} ${unwritten.length > 1 ? "do" : "does"} not exist ` +
-            "yet, so no supports link was filed and this source will not be listed as material behind " +
+          ? `\n\nNOT LINKED YET: ${unwritten.join(", ")} ${unwritten.length > 1 ? "do" : "does"} not ` +
+            "exist yet. The link is filed when " + (unwritten.length > 1 ? "each is" : "it is") +
+            " first written, and until then this source is not listed as material behind " +
             `${unwritten.length > 1 ? "them" : "it"}.` +
             (review ? " The review round itself is counted by its stage, not by the link." : "")
           : "") +

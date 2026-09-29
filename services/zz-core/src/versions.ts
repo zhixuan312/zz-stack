@@ -534,6 +534,20 @@ export async function saveDocument(
       id = ins.rows[0]?.id ?? "";
       if (!id) return await bail(`ERROR: ${w.relPath} could not be written — no row came back`);
       await insertRevision(client, id, 1, w, title, body, tags, hash, fields, writer, seal?.by ?? null, seal?.at ?? null);
+      // The supports that were waiting for this document. A source that named it before it
+      // existed filed no link — `doc_link` needs a row to point at — and kept the name in its
+      // envelope's `supports`; the link lands now, the moment there is a row. Without this, round
+      // 1 of a review (recorded before review.md is written, by design) and any material filed
+      // ahead of the document it bears on were never listed behind it.
+      await client.query(
+        `insert into zz.doc_link (from_doc_id, from_revision, to_doc_id, to_revision, kind)
+         select s.id, s.current_revision, $1::uuid, null, 'supports'
+           from zz.doc s
+           join zz.doc_revision r on r.doc_id = s.id and r.revision = s.current_revision
+          where s.initiative_id = $2::uuid and s.id <> $1::uuid and s.path like 'sources/%'
+            and $3 = any(string_to_array(replace(coalesce(r.fields->>'supports', ''), ' ', ''), ','))
+         on conflict do nothing`,
+        [id, initiativeId, splitStorePath(w.relPath).name]);
     } else if (w.mode === "append") {
       revision = (existing.current_revision ?? 0) + 1;
       // A document revised after an approval is draft again while its last approved revision

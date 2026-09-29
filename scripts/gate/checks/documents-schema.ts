@@ -127,7 +127,10 @@ check("everything that reads a source reads the fields sourceDocument writes", (
   // Read from sourceDocument, which is the one writer.
   const core = zzCoreSource();
   const builder = functionBody(core, "sourceDocument") ?? "";
-  const written = new Set([...builder.matchAll(/(?:\{|,)\s*([a-z_]+):/g)].map((m) => m[1]));
+  // Both ways it writes a key: in the literal it starts from, and assigned after it for the keys
+  // only some sources carry (`stage`, `audits_version`, `supports`).
+  const written = new Set([...builder.matchAll(/(?:\{|,)\s*([a-z_]+):/g), ...builder.matchAll(/\benv\.([a-z_]+)\s*=[^=]/g)]
+    .map((m) => m[1]));
   if (written.size < 5) {
     return "the source envelope is no longer built where this can read it (found " +
            `${[...written].join(", ") || "nothing"}) — sourceDocument is the one writer`;

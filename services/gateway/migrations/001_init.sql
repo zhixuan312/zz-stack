@@ -113,6 +113,7 @@
 -- absorbs: 002_improve_control.sql
 -- absorbs: 002_remove_artifact_layer.sql
 -- absorbs: 002_store_carry_repair.sql
+-- absorbs: 002_comment_wording.sql
 --
 -- requires-extension: citext
 -- requires-extension: pg_trgm

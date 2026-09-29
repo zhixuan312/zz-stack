@@ -58,6 +58,15 @@ jobs:
         with:
           path: pair/zz-stack
 
+      # The console beside it, where `images.yml` puts it: "every route this gateway serves has a
+      # caller" reads its source at `../zz-stack-dashboard`, and `makeWorkspace` links every sibling
+      # of the checkout beside each copy. Without it that check is red before anything is planted,
+      # in every shard, and none of its rows is measured.
+      - uses: actions/checkout@v4
+        with:
+          repository: zhixuan312/zz-stack-dashboard
+          path: pair/zz-stack-dashboard
+
       # The gate's inventory and evaluation-reader checks migrate a throwaway PostgreSQL built from
       # this image, so it has to exist before the baseline runs — the same reason gate.yml and
       # images.yml build it.
@@ -85,12 +94,12 @@ jobs:
             console.log('sandbox: ' + t);
           })"
 
-      # Two workers inside the job, each a serial runner in its own `cp -a` copy with a lock named
-      # after its pid (`mutation/parallel.ts`), so no two gate runs share a tree. Two, not four, on a
-      # four-vCPU runner: a gate run is a process tree of its own, and workers contend long before
-      # they scale.
+      # One gate at a time per job; the parallelism is the twenty jobs. Two workers in one job ran two
+      # sandboxed candidate builds at once, and the candidate-build check went red in one worker's
+      # baseline and green in the other's — the same tree answering two ways, which the merge
+      # rightly refuses. A shard is 18 to 25 rows, well under an hour serially.
       - name: Plant this shard's defects and see which checks notice
-        run: node scripts/mutation-run.ts --shard '${{ matrix.shard }}/${{ strategy.job-total }}' --workers 2
+        run: node scripts/mutation-run.ts --shard '${{ matrix.shard }}/${{ strategy.job-total }}'
 
       - name: Upload this shard's report
         uses: actions/upload-artifact@v4

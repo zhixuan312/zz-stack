@@ -21,7 +21,9 @@
  * path would be approving what nobody read — a fail-OPEN path on the one gate agents are delegated.
  * The ticket is an HMAC over the team, the path, the revision and the person, so a model holding
  * none of `_meta` cannot mint one, and one ticket vouches for exactly one revision to one person.
- * The key is drawn per process: a restart only asks the person to open the panel again.
+ * Every record the panel writes rests on it. The key is drawn per process, so a restart ends every
+ * ticket — which costs nothing for a document already on record, answered before the ticket is
+ * read, and asks the person to open anything else again.
  */
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -170,10 +172,6 @@ export function registerDocumentPanel(server: McpServer): void {
       const team = await teamFor(user);
       const p = db();
       if (!p || !team) return text("ERROR: no team to record this for");
-      if (!ticketValid(ticket, team, path, version, user)) {
-        return text("ERROR: this panel's ticket is not valid for you and this revision — open the " +
-                    "document again with document_present");
-      }
       const loaded = await loadDocument(team, path);
       if (!loaded.ok) return text(loaded.refusal);
       // The same rule every present keeps: only the revision the document points at can be
@@ -185,8 +183,18 @@ export function registerDocumentPanel(server: McpServer): void {
       // Once is the fact. A host re-mounts a panel whenever the person scrolls back to it or opens
       // it full screen — ChatGPT re-mounted seven at once in the first live session — and a second
       // record of the same present would count one reading as seven.
+      //
+      // DELIBERATE: asked BEFORE the ticket. It writes nothing, so it vouches for nothing, and a
+      // panel that outlived its ticket — the key is drawn per process, so every deploy did that to
+      // every panel open in a conversation — would otherwise show a person a refusal about a
+      // document already on record as shown to them.
       if (await shownSinceLastChange(p, team, path)) {
         return text(`Already recorded: ${path} v${version} was shown in full. It counts as presented.`);
+      }
+      // Every record the panel writes rests on the ticket.
+      if (!ticketValid(ticket, team, path, version, user)) {
+        return text("ERROR: this panel's ticket is not valid for you and this revision — open the " +
+                    "document again with document_present");
       }
       await recordPresented(p, team, path);
       recordAct(path, { user, action: "shown", path, version: String(version), via: "panel" });

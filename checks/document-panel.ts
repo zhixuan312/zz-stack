@@ -214,6 +214,11 @@ try {
   is(!/^ERROR/.test(said(again)) && doc.presented === before + 1
      && events.filter((e) => e.kind === "document.shown" && e.detail.via === "panel").length === 1,
      "a re-mounted panel records the same present a second time");
+  // A panel that outlived its ticket — a deploy redraws the key — on a document already shown:
+  // answered, never refused, and nothing written.
+  const outlived = await me.callTool({ name: "document_shown", arguments: { path: REL, version: 2, ticket: "0.from-before-the-restart" } }) as Result;
+  is(/^Already recorded/.test(said(outlived)) && doc.presented === before + 1,
+     `a panel open across a restart is refused for a document already on record: ${said(outlived)}`);
   doc.current = 3;
   const stale = await me.callTool({ name: "document_shown", arguments: { path: REL, version: 2, ticket } }) as Result;
   is(/^ERROR/.test(said(stale)) && doc.presented === before + 1, "a ticket for a revision the document has moved past records a present");

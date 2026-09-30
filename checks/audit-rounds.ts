@@ -261,6 +261,45 @@ m = await move(d);
 is(m?.action === "add_source" && /Round 3 checks the revision/.test(m?.why ?? "") && !/repeat/.test(m?.why ?? ""),
    `a stray repeats_finding reading changed the audit's move: ${JSON.stringify(m)}`);
 
+// 10. The plan is audited, then approved; the spec is agreed, then audited. A draft plan phase owes
+//     its sdlc-plan-audit round before await_approval is offered — its approval is usually
+//     delegated, so the audit is what it rests on — and every revision owes the next round.
+{
+  const p = await fresh(1);
+  round(p.name, 1, 1);                       // the spec's audit is settled, so only the plan's is asked
+  const plan = (version: number) => {
+    const w = world.get(p.name)!;
+    w.docs = w.docs.filter((x) => x.path !== "plan.md");
+    w.docs.push(docRow(p.name, "plan.md", { title: "Plan", flow: "sdlc-flow", status: "draft",
+      current_revision: version, body: "# Plan\n\n## Phase 1 — skeleton\n" }));
+  };
+  plan(1);
+  let pm = await move(p);
+  // NOT A TOOL: `add_source` is next_move's own action vocabulary; the call it asks for is source_add.
+  is(pm?.action === "add_source" && pm?.document === "plan.md" && /sdlc-plan-audit/.test(pm?.why ?? ""),
+     `a draft plan with no audit round was not sent to its audit first: ${JSON.stringify(pm)}`);
+  world.get(p.name)!.docs.push(docRow(p.name, "sources/2026-09-24-plan-audit-round-1.md", {
+    type: "sdlc-plan-audit", title: "Plan audit round 1", body: "No blocking findings.", supports: ["plan.md"],
+    fields: { stage: "sdlc-plan-audit", audits_version: "1", added_at: "2026-09-24T05:00:00.000Z" } }));
+  pm = await move(p);
+  is(pm?.action === "await_approval" && pm?.document === "plan.md",
+     `a draft plan whose audit read its current version was not offered for approval: ${JSON.stringify(pm)}`);
+  plan(2);
+  pm = await move(p);
+  // NOT A TOOL: `add_source` is next_move's own action vocabulary; the call it asks for is source_add.
+  is(pm?.action === "add_source" && pm?.document === "plan.md" && /Round 2 checks the revision/.test(pm?.why ?? ""),
+     `a revised draft plan did not owe the next audit round: ${JSON.stringify(pm)}`);
+
+  // The spec keeps its order: a draft spec is approved first, and audited once it is.
+  const q = await fresh(1);
+  const w = world.get(q.name)!;
+  const sp = w.docs.find((x) => x.path === "spec.md")!;
+  Object.assign(sp, { status: "draft", approved_by: null, approved_at: null });
+  const qm = await move(q);
+  is(qm?.action === "await_approval" && qm?.document === "spec.md",
+     `a draft spec was sent to its audit before its approval: ${JSON.stringify(qm)}`);
+}
+
 if (fail.length) {
   console.error(`audit-rounds: ${fail.length} failure(s)\n  - ${fail.join("\n  - ")}`);
   process.exit(1);

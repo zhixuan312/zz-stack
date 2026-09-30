@@ -300,25 +300,38 @@ export async function initiativeState(
     // legitimate outcome, so the completion signal is handover.md's own approval, read
     // through the same `states` machinery as every other gated document.
     //
-    // A closed initiative owes nothing: the close is the terminal act whatever it closed on.
-    // The handover stays writeable afterwards — the guard in guards.ts lets a closed initiative
-    // satisfy a prerequisite its close skipped.
+    // A FINISHED close owes the handover — it is where the platform collects what the cycle
+    // taught — so until handover.md is approved the next move is the handover, not `closed`. An
+    // abandoned close owes nothing. The handover stays writeable after the close: the guard in
+    // guards.ts lets a closed initiative satisfy a prerequisite its close skipped.
     //
-    // The note states what is true of this initiative's handover, and a flow that declares
-    // no handover at all is closed rather than stuck.
+    // COUPLED: a close that still owes the handover is not `closed`, so the no-argument listing
+    // shows it among the initiatives with work left and `nextMoveLine` names the handover after
+    // every call. That is the point: it has work left. A flow that declares no handover at all
+    // is closed rather than stuck.
     const handover = states.find(isHandover);
-    const handoverNote = handover?.status === "approved"
-      ? `The handover is recorded: ${handover.name} was approved by ${handover.approved_by ?? "somebody"}` +
-        `${handover.approved_at ? ` on ${handover.approved_at}` : ""}.`
-      : handover?.exists
-        ? `${handover.name} is written and waiting on a verdict — \`document_approve\` records it.`
+    const owed = outcome !== OUTCOME_STOPPED && handover !== undefined && handover.status !== "approved";
+    if (owed && handover.exists) {
+      next = { action: "await_approval", document: handover.name, waiting_on: "stakeholder",
+               why: `closed with outcome: ${outcome}, and a finished close owes the handover: ` +
+                    `${handover.name} is written and waiting on a verdict — ` +
+                    `document_approve("${name}/${handover.name}") records it.` };
+    } else if (owed) {
+      next = { action: "write_document", document: handover.name, waiting_on: "agent",
+               why: `closed with outcome: ${outcome}. A finished close owes the handover — it is ` +
+                    "where the platform collects what this cycle taught: skill_read(\"zz-handover\") " +
+                    `and run it; it writes ${handover.name} and mints what generalises.` };
+    } else {
+      const note = handover?.status === "approved"
+        ? ` The handover is recorded: ${handover.name} was approved by ${handover.approved_by ?? "somebody"}` +
+          `${handover.approved_at ? ` on ${handover.approved_at}` : ""}.`
         : outcome === OUTCOME_STOPPED
-          ? "An abandoned close does not owe the handover; if the cycle taught something worth " +
+          ? " An abandoned close does not owe the handover; if the cycle taught something worth " +
             "keeping, `skill_read(\"zz-handover\")` mints it and writes handover.md."
-          : "A finished close owes the handover: `skill_read(\"zz-handover\")` and run it — it " +
-            "writes handover.md and mints what generalises.";
-    next = { action: "closed", waiting_on: "nobody",
-             why: `closed with outcome: ${outcome}. The ledger row is the record. ${handoverNote}` };
+          : "";
+      next = { action: "closed", waiting_on: "nobody",
+               why: `closed with outcome: ${outcome}. The ledger row is the record.${note}` };
+    }
   } else {
     // A requirement is met by the only thing its target can offer. Nothing ever approves a
     // non-gated document — `gate: false` means no approval is required, so its status stays
@@ -368,10 +381,17 @@ export async function initiativeState(
     // depends on what `changes_commitment`/`repeats_finding` said, and those are `zz.assessment`
     // rows — the same memo every other reader of them uses, and not a second copy.
     const answers = team ? await assessmentsFor(p, team, name) : new Map();
+    //
+    // The PLAN's audit is owed on the draft, before its approval: a phase is planned, audited, then
+    // approved — its approval is usually delegated, so the audit is what it rests on — and every
+    // later phase revises the plan, which the version check in `auditMove` turns into the next
+    // round. Every other audited document keeps its order: agreed, then audited.
+    const auditedWhile = (doc: string): boolean =>
+      doc === planDoc?.name ? states.some((x) => x.name === doc && x.exists) : requirementMet(doc);
     const owedAudit = (chain.stages ?? [])
       .filter((st): st is Extract<typeof st, { produces: "source" }> => st.produces === "source")
       .filter((st) => Boolean(st.supports) && appliesOf(st.supports as string) !== "not_applicable"
-                     && requirementMet(st.supports as string))
+                     && auditedWhile(st.supports as string))
       .map((st) => auditMove(name, st.name ?? "", st.supports as string,
                              rows.get(st.supports as string)?.current_revision ?? 1, sources, answers))
       .find((m): m is NonNullable<typeof m> => m !== null);
@@ -406,7 +426,8 @@ export async function initiativeState(
       why: `${d.name} is ${d.status ?? "unwritten"}; call document_approve("${name}/${d.name}") ` +
            "once the stakeholder agrees — nothing downstream may be written until that gate is recorded",
     });
-    if (awaiting && awaiting.name !== owedReview?.document) {
+    // A draft plan whose audit is owed goes to the audit, not to its approval (see `auditedWhile`).
+    if (awaiting && awaiting.name !== owedReview?.document && awaiting.name !== owedAudit?.document) {
       next = awaitApproval(awaiting);
     } else if (unrecorded && unrecorded.produces !== "record") {
       next = {
@@ -485,7 +506,9 @@ export async function initiativeState(
             why: `${missing[0]} is required before this initiative can close` }
         // NOT A TOOL: `next_move.action` is its own vocabulary — declare_flow,
         // write_document, await_approval, add_source, decide, fix, run_experiment,
-        // resolve_branch, handover, closed, close — not tool names. The `why` beside it names the tool to call.
+        // resolve_branch, run_stage, closed, close — not tool names. The `why` beside it names the
+        // tool to call. The handover owed after a finished close is a write_document and then an
+        // await_approval of handover.md, not an action of its own.
         //
         // FR-58 (Task I-28): `chain.closingDoc` is a static, per-flow answer, and a
         // `when`-conditional closing document (`improvement.md`, promotable only) is

@@ -104,8 +104,9 @@ interface AuditMove { action: string; document: string; waiting_on: string; why:
 
 /**
  * The next move an audited document owes, or null when its audit is settled.
- * `version` is the document as it stands; the caller has already routed a document awaiting
- * approval, so this is asked only of an approved one.
+ * `version` is the document as it stands. Asked of an approved document, and of the plan while it
+ * is a draft: a plan phase is audited before its approval, so the round is owed before that gate
+ * (`initiative_status`'s `auditedWhile`).
  */
 export function auditMove(initiative: string, stage: string, document: string,
                           version: number, sources: readonly DocRow[],

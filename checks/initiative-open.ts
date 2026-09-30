@@ -359,17 +359,20 @@ const CLO = "2026-09-14-closed-with-a-handover";
 const signedSpec = doc({ title: "Spec", status: "approved", approved_by: "ada@zz.test",
   approved_at: "2026-09-14", outcome: "accepted", closed_by: "ada@zz.test" }, "# Spec");
 
-// (a) no handover at all — the invitation is the right answer.
+// (a) no handover at all — a finished close OWES it, so the next move is writing it, not `closed`:
+// the handover is where the platform collects what the cycle taught.
 wrote(CLO, "spec.md", signedSpec);
 let clo = await initiativeState(db()!, TEAM, CLO, CLOSING, CLOSING.documents);
-is(/skill_read/.test(clo.next_move?.why ?? ""),
-   `a closed initiative with no handover was told ${JSON.stringify(clo.next_move?.why)} — it ` +
-   "should be invited to write one, which is the only case the old static sentence fitted");
+is(clo.next_move?.action === "write_document" && clo.next_move?.document === "handover.md"
+   && clo.next_move?.waiting_on === "agent" && /skill_read/.test(clo.next_move?.why ?? ""),
+   `a finished close with no handover answered ${JSON.stringify(clo.next_move)} — it owes the ` +
+   "handover, so the next move is writing it");
 
-// (b) written and unapproved — waiting on a verdict, and owed by nobody.
+// (b) written and unapproved — the handover's own gate is what is left.
 wrote(CLO, "handover.md", doc({ title: "Handover", status: "draft" }, "# H"));
 clo = await initiativeState(db()!, TEAM, CLO, CLOSING, CLOSING.documents);
-is(!/skill_read/.test(clo.next_move?.why ?? "") && /verdict/.test(clo.next_move?.why ?? ""),
+is(clo.next_move?.action === "await_approval" && clo.next_move?.document === "handover.md" &&
+   !/skill_read/.test(clo.next_move?.why ?? "") && /verdict/.test(clo.next_move?.why ?? ""),
    `a closed initiative whose handover is written and unapproved was told ` +
    `${JSON.stringify(clo.next_move?.why)} — it is not being asked to write one again`);
 
@@ -377,10 +380,19 @@ is(!/skill_read/.test(clo.next_move?.why ?? "") && /verdict/.test(clo.next_move?
 wrote(CLO, "handover.md",
   doc({ title: "Handover", status: "approved", approved_by: "ada@zz.test", approved_at: "2026-09-14" }, "# H"));
 clo = await initiativeState(db()!, TEAM, CLO, CLOSING, CLOSING.documents);
-is(/recorded/.test(clo.next_move?.why ?? "") && /ada@zz\.test/.test(clo.next_move?.why ?? "")
+is(clo.next_move?.action === "closed" &&
+   /recorded/.test(clo.next_move?.why ?? "") && /ada@zz\.test/.test(clo.next_move?.why ?? "")
    && !/skill_read/.test(clo.next_move?.why ?? ""),
    `a closed initiative with an APPROVED handover was told ${JSON.stringify(clo.next_move?.why)} ` +
    "— it was being told to write a document it had already signed");
+
+// (d) abandoned — owes nothing: `closed`, with the handover offered rather than asked for.
+wrote(CLO, "handover.md", doc({ title: "Handover", status: "draft" }, "# H"));
+wrote(CLO, "spec.md", doc({ title: "Spec", status: "approved", approved_by: "ada@zz.test",
+  approved_at: "2026-09-14", outcome: "abandoned", closed_by: "ada@zz.test" }, "# Spec"));
+clo = await initiativeState(db()!, TEAM, CLO, CLOSING, CLOSING.documents);
+is(clo.next_move?.action === "closed",
+   `an abandoned close answered ${JSON.stringify(clo.next_move)} — an abandoned close owes no handover`);
 
 // 4. The open record: written, invisible as a document, and read by chainFor
 const GOVERNED_NAME = `${isoToday()}-with-a-flow`;

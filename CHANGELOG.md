@@ -33,6 +33,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.92.4] — 2026-10-01
+
+### Fixed
+- **On a phone, the bar for a selection stays until you use it.** In ChatGPT on a phone, the bar
+  with **Explain this** and **Note a change** vanished within a second of selecting: a tap clears
+  the selection before it lands, and every notice ChatGPT sends when its own chrome moves redrew
+  the panel, which cleared the selection — and the phone's own Copy menu — with it. The panel now
+  holds the selected passage until you act on it, close it with ✕ or select another, and a host
+  notice redraws the panel only when full screen changes; a size change sets the reading pane's
+  height in place.
+- On a narrow panel the reading bar gives the section's name its own line, instead of cutting it
+  to "2. The …" beside the controls.
+
 ## [0.92.3] — 2026-09-30
 
 The document panel as a place to review with the agent, not only to read in.

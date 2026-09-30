@@ -121,7 +121,14 @@ export function partHeader(rel: string, part: Part, of: string, text: string): s
   const whole = part.start === 0 && part.end === part.total;
   const lines = [`Part of ${rel}: characters ${part.start}–${part.end} of ${part.total} ` +
                  `(${of}; offsets count UTF-16 characters)${whole ? " — the whole of it" : ""}.`];
-  if (part.end < part.total) lines.push(`Next: offset ${part.end}.`);
+  /* A hosted client keeps the tool list it read when the connector was added: ChatGPT's copy from
+   * before 0.79.3 had no `offset`, and a model holding it re-asked for part one until it filed a
+   * bug. The fix is on the person's side, so the line says what it is. */
+  if (part.end < part.total) {
+    lines.push(`Next: offset ${part.end}. If this tool shows you no \`offset\` argument, your ` +
+               "client holds an old copy of the tool list — ask the person to refresh or reconnect " +
+               "this connector, then continue.");
+  }
   if (!whole) {
     const hs = headings(text);
     if (hs.length) lines.push(`Sections: ${listed(hs)}.`);

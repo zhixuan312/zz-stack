@@ -165,6 +165,9 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
   const first = await present(db()!, TEAM, REL, undefined, "u@zz.test", {});
   is(first.includes("does NOT yet count as presented") && first.includes("Next: offset"),
      "a first part does not say it is incomplete and where to continue");
+  // A client whose cached tool list predates `offset` cannot follow that line; it is told why.
+  is(/no `offset` argument.*refresh or reconnect/.test(first),
+     "a first part does not tell a client without `offset` that its tool list is stale");
   is(await shownSinceLastChange(db()!, TEAM, REL) === false, "one part of three counts as presented");
 
   let next = Number(/Next: offset (\d+)/.exec(first)?.[1]);

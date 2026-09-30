@@ -33,6 +33,49 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.91.0] — 2026-09-30
+
+What the skills teach, made true. A prompt audit read every skill, door instruction and tool
+description against the code, in loops until a full pass found nothing new; what it found is
+corrected, and the routing now follows the owner's decisions it surfaced.
+
+### Changed
+
+- **A plan phase is audited, then approved.** `initiative_status` owes the plan's audit round on
+  the draft, before `await_approval` — a phase's approval is usually delegated, so the audit is
+  what it rests on — and every revision for the next phase owes the next round. The spec keeps its
+  order: agreed, then audited.
+- **A finished close owes the handover.** After an `accepted` or `delivered` close the next move is
+  writing `handover.md` (run `zz-handover`), then its approval; only then is the initiative
+  `closed`. An abandoned close owes nothing. Until the handover is approved, a finished initiative
+  is listed with the ones that have work left.
+- **zz-router names the command of a flow a person opens.** A manifest's new `routed: false` marks
+  such a flow — `zz-plugin-eval`, opened by `/zz-plugin-eval:eval` — and the router tells the
+  person what to type instead of loading it. A flow that is unrouted and has no command is refused.
+- **28 skills and the tool descriptions say what the platform does.** The largest corrections:
+  `zz-platform` told every agent that `document_approve` never refuses a document nobody was shown,
+  when it does; the SDLC skills disagreed with each other on the plan order; several skills
+  promised a `handover` action and described search as ASCII-only; `knowledge_reindex`,
+  `team_create` and `finding_decide` described a store and a contract that no longer exist.
+  Version-dated stories are now present-tense reasons, and whole sentences in capitals are bold.
+  Issuing your own automation token is allowed, and `zz-access` says so.
+
+### Removed
+
+- **`round_scores`**, from `/eval/mcp`. It refused every id: the rounds it read were archived and
+  their tables dropped in phase 3. The protocol lifecycle (`evaluation_start`, `_assess`,
+  `_score`) is how a plugin is scored.
+
+### Upgrade notes
+
+- **Clients re-pull** to get the 28 skills and the regenerated `zz-router`.
+- **Breaking:** `/eval/mcp` no longer registers `round_scores`, and the `plugin_scores` alias is gone.
+- **An initiative closed `accepted` or `delivered` without an approved handover.md reappears among
+  the open ones**, with the handover as its next move — 11 on this deployment when 0.91.0 shipped
+  (2 in `quan`, 9 in `xuan`), all closed before the rule. Writing and approving their handover is
+  what clears them.
+- No migration runs, and no env key changed.
+
 ## [0.90.0] — 2026-09-30
 
 Three reported problems with how the platform reads what an agent records: a large approved

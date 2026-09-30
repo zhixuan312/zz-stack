@@ -4,9 +4,8 @@
  * evaluation reads.
  *
  * `round_score`, which computed a legacy round's two axes onto `zz.eval`, is gone with the
- * round writer it closed; `evaluation_score` (`evaluate.ts`) is what scores a run now, and
- * `round_scores` (`plugin-judge.ts`) reads no historic row: the phase-3 migration archived the
- * legacy family, so it refuses every id by name and says where that history went.
+ * round writer it closed; `evaluation_score` (`evaluate.ts`) is what scores a run now. The legacy
+ * rounds are in the phase-3 migration's archive, and no tool reads them.
  *
  * Task I-10 removed `ruler_record`, which used to live here — writing `zz.rubric*` for the
  * define stage, ahead of `ruler_affirm`. `protocol_record` (`protocol.ts`) is what writes a

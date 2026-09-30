@@ -28,12 +28,9 @@
  *   reported; one that fails for any other reason is counted as unreadable rather than passed or
  *   reported, because a fragment assembled elsewhere is not evidence about the schema.
  *
- * The readers the phase's criterion names are asserted one by one: `round_scores`,
- * `plugin_profile`, `plugin_conform`, `finding_record` and `improvement_start` each live in a file
- * this check reads, and each is either planned against the database (so it demonstrably reads the
- * reshaped family) or — `round_scores` alone — is a reader with no statement at all, which is the
- * contract it answers to: a round row was archived and dropped, so it refuses by name rather than
- * answering from a column that outlived the row.
+ * The readers the phase's criterion names are asserted one by one: `plugin_profile`,
+ * `plugin_conform`, `finding_record` and `improvement_start` each live in a file this check reads,
+ * and each is planned against the database, so it demonstrably reads the reshaped family.
  *
  * Read, not run, for the static half. A statement is the text of a string or template literal —
  * adjacent literals that a `+` joins read as one, so a select list spread across four of them is
@@ -45,7 +42,7 @@
  * statement is read, so the `from` a caller cannot see is one this reads. Every literal under the
  * reader tree is also read for a `zz.<dropped table>` mention, prose included: a tool description
  * or a failure message that tells its reader about a table this phase drops is wrong in the message
- * too, and that is the only way `round_scores` — which issues no statement — can be reached.
+ * too.
  *
  * DELIBERATE: the roots are relative to `process.cwd()`, not to this file's own location, so the
  * check can be pointed at a scratch tree that plants a violation. The retired names are declared
@@ -317,8 +314,7 @@ async function main(): Promise<void> {
     if (found.length) fail.push(`FAIL: ${s.path}:${s.line} — ${found.join("; ")}`);
   }
   // The reader tree, every literal, prose included. A tool description or a failure message that
-  // tells its reader about a table this phase drops is wrong in the message too — and for
-  // `round_scores`, which issues no statement at all, this is the only way it can be reached.
+  // tells its reader about a table this phase drops is wrong in the message too.
   for (const { path, src } of sourceFiles(READERS, KEEP)) {
     for (const r of regions(src)) {
       if (r.kind !== "literal") continue;
@@ -336,7 +332,6 @@ async function main(): Promise<void> {
   // statements of the module that owns its reads — `plugin_profile` is registered in `observe.ts`
   // and reads through `plugin-profile.ts`, which is why the two are named apart.
   const READERS_BY_TOOL: Record<string, { registeredIn: string; readsThrough: string[] }> = {
-    round_scores: { registeredIn: `${READERS}/plugin-judge.ts`, readsThrough: [] },
     plugin_profile: {
       registeredIn: `${READERS}/observe.ts`,
       readsThrough: [`${READERS}/plugin-profile.ts`, `${READERS}/observe.ts`, `${READERS}/observe-facts.ts`],
@@ -395,13 +390,9 @@ async function main(): Promise<void> {
   }
 
   // Each named reader must ANSWER from the reshaped family — planned against the migrated
-  // database — except `round_scores`, which is the one reader with no statement at all: the round
-  // it reads was archived and dropped, so it refuses by name rather than reading a stale column.
-  // The prose rule above is what holds its text to that, which is why it is exempt here and only
-  // here.
+  // database.
   for (const [tool, where] of Object.entries(READERS_BY_TOOL)) {
     if (planned.some((p) => where.readsThrough.includes(p.path))) continue;
-    if (tool === "round_scores") continue;
     fail.push(`FAIL: ${where.registeredIn} registers \`${tool}\` and answers through no statement ` +
       `this database can plan (${where.readsThrough.join(", ")}) — a reader with nothing to read ` +
       "is not the reader the criterion names");

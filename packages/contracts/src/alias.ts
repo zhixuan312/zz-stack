@@ -68,11 +68,10 @@ export const MANAGE_ALIAS: Record<string, string> = Object.freeze({
  * exactly this (MANAGE_ALIAS's deleted `issue_my_access_token` and friends) is "deleted rather
  * than renamed, so they take no entry: aliasing them would merge two series."
  *
- * `plugin_judge` and `round_recommend` went the same way in 0.76.0: the tools they resolved to,
- * `round_judge` and `round_score`, were deleted rather than renamed, and the protocol lifecycle
- * (`evaluation_*`) is a different measurement, not the old one under a new name. */
+ * `plugin_judge`, `round_recommend` and `plugin_scores` went the same way: the tools they resolved
+ * to — `round_judge`, `round_score` and `round_scores` — were deleted rather than renamed, and the
+ * protocol lifecycle (`evaluation_*`) is a different measurement, not the old one under a new name. */
 export const EVAL_ALIAS: Record<string, string> = Object.freeze({
-  plugin_scores: "round_scores",
   plugin_finding_record: "finding_record",
 });
 /** The two skill renames.

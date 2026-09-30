@@ -41,7 +41,7 @@ const THE_DOOR = "eval-door.ts";
 
 /** The support modules on the eval side, and the registration modules they serve. */
 const SUPPORT = ["judge.ts", "plugin-profile.ts"];
-const REGISTRATIONS = ["plugin-eval.ts", "plugin-judge.ts", "plugin-record.ts"];
+const REGISTRATIONS = ["plugin-eval.ts", "plugin-record.ts"];
 const MOVED = [...SUPPORT, ...REGISTRATIONS];
 
 /** Read a path, or record that this scan went blind on it. A check that throws has no failure

@@ -24,7 +24,6 @@ import { registerEvaluationTools } from "./eval/evaluate.js";
 import { registerFailureDiscoverTools } from "./eval/discover.js";
 import { registerObserveTools } from "./eval/observe.js";
 import { registerPluginEvalTools } from "./eval/plugin-eval.js";
-import { registerPluginJudgeTools } from "./eval/plugin-judge.js";
 import { registerPluginRecordTools } from "./eval/plugin-record.js";
 import { registerProtocolTools } from "./eval/protocol.js";
 import { registerEvaluatorQualifyTools } from "./eval/qualify.js";
@@ -56,7 +55,6 @@ const EVAL_INSTRUCTIONS =
   "read it against the conformance standard\n" +
   "  protocol_*  read whether this plugin's protocol is still compatible, record a new " +
   "version, bind approval\n" +
-  "  round_*    the retired round reader; refuses every id, the history is archived\n" +
   "  finding_*  record what an EVALUATE run concluded, close it when applied or rejected\n" +
   "  failure_*  mine an observation snapshot for failure modes, before any protocol exists\n" +
   "  evaluator_*  qualify one evaluator version against a protocol's policy, before its " +
@@ -92,7 +90,6 @@ export function buildEvalServer(): McpServer {
   registerSubjectTools(server);
   registerObserveTools(server);
   registerPluginEvalTools(server);
-  registerPluginJudgeTools(server);
   registerPluginRecordTools(server);
   registerProtocolTools(server);
   registerFailureDiscoverTools(server);

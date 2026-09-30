@@ -89,17 +89,3 @@ export function headroomState(points: number | null, named: number): string {
   if (named > 0) return HEADROOM.IDENTIFIED;
   return points <= 1 ? HEADROOM.NONE : HEADROOM.UNEXPLAINED;
 }
-
-/**
- * The platform's mark scale, declared once.
- *
- * Every historic round's marks were given on this scale. Rescaling their mean against it was the
- * round-scoring half's job, and that half is gone with the round; the scale stays because
- * `round_scores` still states what it was, and a rescale with a literal bound would normalise
- * those marks against a range they were never given on, silently, with every number downstream
- * still looking ordinary.
- *
- * COUPLED: the legacy ruler's own columns are called `five_means` and `one_means` in the table
- * itself, so moving the scale still means migrating those names.
- */
-export const MARK_SCALE = { min: 1, max: 5 } as const;

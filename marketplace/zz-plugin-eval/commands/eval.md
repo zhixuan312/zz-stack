@@ -144,13 +144,6 @@ candidate-build`), and released or rolled back through the repository's own proc
 Code (or an equivalent shell-capable runtime) and refuse to start anywhere else. Load the stage skill for the one you are on; each says exactly which
 tools to call, in what order, and what each refusal means.
 
-## The retired round reader
-
-`round_scores` refuses every id: the rounds marked before this flow's protocol lifecycle were
-archived, and no stage of this flow calls it. A plugin is scored through
-`evaluation_start`/`evaluation_assess`/`evaluation_score`, against a protocol agreed through
-`protocol_read`/`protocol_record`/`protocol_affirm`.
-
 ## Facts come from tools; meaning comes from you
 
 Every number these tools return is a count, a set, an ordering or a difference. Not one of them

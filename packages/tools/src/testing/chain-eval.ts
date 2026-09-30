@@ -56,9 +56,6 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
     await callEval("protocol_affirm", {
       protocol_version_id: randomUUID(), initiative: "chain-check-probe", idempotency_key: randomUUID(),
     }), /no platform database|unknown protocol_version_id/);
-  eitherOr("round_scores refuses an eval_id nothing minted",
-    await callEval("round_scores", { eval_id: randomUUID() }),
-    /no platform database|is not an evaluation/);
   eitherOr("protocol_record refuses a body EvaluationProtocol does not validate",
     await callEval("protocol_record", {
       subject_version_id: randomUUID(), protocol_body: {}, idempotency_key: randomUUID(),

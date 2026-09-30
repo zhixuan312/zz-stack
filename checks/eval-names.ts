@@ -35,15 +35,14 @@ const fail = [];
 // to the same file once more: the non-owned-subject path release_prepare's own no_release_owners
 // refusal points callers toward, writing `proposal.md` (proposal-doc.ts) through the same ledger,
 // anchored on `zz.improvement_run`'s own already-existing row rather than a new one.
-const REGISTRATION_MODULES = ["subject", "observe", "discover", "protocol", "qualify", "evaluate", "plugin-eval", "plugin-judge", "plugin-record", "candidates", "candidate-build", "release"];
+const REGISTRATION_MODULES = ["subject", "observe", "discover", "protocol", "qualify", "evaluate", "plugin-eval", "plugin-record", "candidates", "candidate-build", "release"];
 
 const registered = new Set<string>();
 for (const f of REGISTRATION_MODULES) {
   const src = readFileSync(`services/zz-core/src/eval/${f}.ts`, "utf8");
   for (const m of src.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)) registered.add(m[1]);
 }
-for (const want of ["protocol_read", "protocol_record", "protocol_affirm",
-                    "round_scores", "finding_record"]) {
+for (const want of ["protocol_read", "protocol_record", "protocol_affirm", "finding_record"]) {
   if (!registered.has(want)) fail.push(`${want} is not registered`);
 }
 // Control: the three correct names must be unchanged. A sweep that renamed everything fails here.
@@ -58,9 +57,10 @@ for (const old of Object.keys(EVAL_ALIAS)) {
 for (const gone of ["ruler_read", "ruler_record", "ruler_affirm"]) {
   if (registered.has(gone)) fail.push(`${gone} is still registered — Task I-10 removed it`);
 }
-// 0.76.0: the two legacy round WRITERS are gone; `round_scores`, the reader, stays for history.
-for (const gone of ["round_judge", "round_score"]) {
-  if (registered.has(gone)) fail.push(`${gone} is still registered — 0.76.0 removed it`);
+// The legacy round tools are gone, the reader with the writers: `round_scores` refused every id
+// once the rounds were archived and dropped, and a tool that can only refuse is no tool.
+for (const gone of ["round_judge", "round_score", "round_scores"]) {
+  if (registered.has(gone)) fail.push(`${gone} is still registered — the legacy round tools are removed`);
 }
 
 // The set, not the size. A count fails identically whether a tool was lost or one was added, and
@@ -69,7 +69,6 @@ for (const gone of ["round_judge", "round_score"]) {
 const EXPECTED = new Set([
   "plugin_locate", "plugin_profile", "plugin_conform", "plugin_register",
   "protocol_read", "protocol_record", "protocol_affirm",
-  "round_scores",
   "finding_record", "finding_decide",
   "failure_discover",
   "evaluator_qualify",

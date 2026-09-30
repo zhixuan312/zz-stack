@@ -3,8 +3,7 @@
  * `protocol_affirm` — the durable `EvaluationProtocol` a plugin version is scored against,
  * replacing the `ruler_*` tools this task removes from the door entirely. The `zz.rubric*` rows
  * those tools wrote are gone with the legacy evaluation family, which the phase-3 migration
- * archived before dropping the tables: `round_scores` states what a round was and reads none of
- * it. Nothing here writes or reads that table.
+ * archived before dropping the tables. Nothing here writes or reads that table.
  *
  * `protocol_read` takes only a `subject_version_id` and decides `protocol_action` — `create` (no
  * protocol exists yet), `reuse` (the newest version is still compatible) or `revise` (a trigger

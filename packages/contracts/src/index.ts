@@ -29,7 +29,7 @@ export { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS, SKILL_ALIAS,
          resolveToolKey, resolveStep } from "./alias.js";
 
 export { BANDS, NOT_MEASURABLE, band,
-         HEADROOM, HEADROOM_STATES, headroomState, MARK_SCALE, type HeadroomState } from "./bands.js";
+         HEADROOM, HEADROOM_STATES, headroomState, type HeadroomState } from "./bands.js";
 
 // The Evaluation Protocol contract (FR-6, spec v8): the durable measurement object a plugin
 // version is scored against. PROTOCOL_ENUMS and EVAL_STATE_ENUMS are the one source every

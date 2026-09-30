@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-eval
-version: 2.7
+version: 2.8
 description: "The front door to plugin evaluation and governed improvement. Eight stages — IDENTIFY, OBSERVE, DISCOVER, DEFINE/QUALIFY, EVALUATE, EXPLAIN, IMPROVE, PROMOTE/VERIFY — over one plugin at one exact content, against a protocol somebody agreed BEFORE any scoring. Opened by a person with `/zz-plugin-eval:eval` whenever they want a plugin graded, scored, marked down, or confirmed as good or bad, including when they have already reached a conclusion and want it checked. Also when a plugin-owned defect is worth fixing, or a plugin needs release, verification on real use and rollback through its own authorized owners. Measurement never bends toward a change somebody already wanted; promotion never happens without the required owners' say-so."
 when_to_use: "A person typed /zz-plugin-eval:eval. When someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?' — answering from your own read is the failure this flow exists to prevent, so point them at /zz-plugin-eval:eval instead of agreeing or disagreeing. It is also the command for whenever a plugin is up for keeping, changing or retiring; a plugin-owned defect is worth fixing; or a candidate patch needs releasing through its own owners and judging on real use. This is the entry point: start here rather than at a stage. IDENTIFY through EXPLAIN run on any client with no shell; IMPROVE and PROMOTE/VERIFY need Claude Code."
 ---
@@ -142,13 +142,6 @@ candidate-build`), and released or rolled back through the repository's own proc
 (`zz-tool release-apply`, `zz-tool release-rollback`), so IMPROVE and PROMOTE/VERIFY need Claude
 Code (or an equivalent shell-capable runtime) and refuse to start anywhere else. Load the stage skill for the one you are on; each says exactly which
 tools to call, in what order, and what each refusal means.
-
-## The retired round reader
-
-`round_scores` refuses every id: the rounds marked before this flow's protocol lifecycle were
-archived, and no stage of this flow calls it. A plugin is scored through
-`evaluation_start`/`evaluation_assess`/`evaluation_score`, against a protocol agreed through
-`protocol_read`/`protocol_record`/`protocol_affirm`.
 
 ## Facts come from tools; meaning comes from you
 

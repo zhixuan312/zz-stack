@@ -33,6 +33,58 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.92.0] — 2026-09-30
+
+Other clients than Claude Code. A document is shown to the person as a panel in any client that
+renders MCP Apps, Codex installs and signs in to the same marketplace, and a skill a person opens
+by name is one in every client that reads skills.
+
+### Added
+- **The document panel.** `document_present` now names an MCP Apps page, `ui://zz-core/document-panel.html`,
+  and a client that renders MCP Apps — ChatGPT, Claude, VS Code — shows the person the whole
+  document in it, at any length, built for reading an hour-long document: a sticky bar naming the
+  section and subsection with the share read and the minutes left, a jump list with each section's
+  own length, a rail that follows the reading on a wide panel, each document's place kept, and a
+  layout that follows the panel's own width from a phone to full screen. Its title, status and
+  version head it, and,
+  where the document gates and this is its current revision, **Approve** and **Ask for changes**.
+  Approve goes through the same `document_approve` a model calls; an approval or a request for
+  changes arrives in the conversation as the person's own message. It is the console's look —
+  cream ground, hairlines, one accent — and a check holds its tokens and its two brand images equal
+  to the console's.
+- **`document_shown`**, the panel's own record that it showed the whole of the current revision.
+  App-only, and it takes a ticket that travels only in the result's `_meta`, which no client shows a
+  model — measured in Claude Code and Codex — so a model cannot record a present nobody saw.
+
+### Changed
+- **A skill a person opens by name ships as a skill, never as a `commands/` file.** Codex reads
+  `skills/` and ignores `commands/`, so `/zz-core:deck`, `/zz-core:tldr`, `/zz-core:breakout`,
+  `/sdlc:flow`, `/zz-plugin-eval:eval` and the five `/zz-access:` commands did not exist there. Each
+  now ships in its own skill directory, named by its command, marked for both clients as one only a
+  person opens: `disable-model-invocation: true` for Claude Code and `agents/openai.yaml` with
+  `allow_implicit_invocation: false` for Codex. Claude Code keeps the same `/plugin:command` names;
+  Codex opens them as `$plugin:command`. The router and the setup page name both.
+- A long document presented in parts tells a model that a client showing the panel records the
+  present itself, so it stops paging the rest into the conversation.
+
+### Fixed
+- **Codex could not sign in.** The authorize page is on the console's origin and the issuer is the
+  gateway's; Codex refuses that split unless the authorization response names its issuer (RFC 9207).
+  Every authorization redirect now carries `iss`, and the metadata says
+  `authorization_response_iss_parameter_supported`.
+- The CI images run checked the console out without tags, so it read "never released" and ran the
+  console's whole suite on every release (0.91.0 failed on it).
+
+### Upgrade notes
+- **Refresh the ChatGPT connector** (or remove and add it again) to pick up the panel, `document_shown`
+  and the panel's permission on `document_approve`; ChatGPT keeps the tool list and the page it read
+  when the connector was added.
+- **Update the plugins** (`/zz-access:update` in Claude Code). The command files are gone and the same
+  names now come from skills; an install that skips the update keeps the old files until it does.
+- In Codex: `codex plugin marketplace add zhixuan312/zz-stack`, `codex plugin add zz-core@zz-stack`
+  (and the others), then `codex mcp login zz-core`. The `headersHelper` token path and the
+  skill-load hook are Claude Code's and do nothing in Codex; Codex signs in with OAuth instead.
+
 ## [0.91.1] — 2026-09-30
 
 ### Fixed

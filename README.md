@@ -198,8 +198,8 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             through the real CLIs; the model endpoints are stubs. Needs docker, so not a gate
             check; eval-flow-e2e/ holds the stack, the stub, the stages and the release
             commands), manifests.ts (where the packages are, read by
-            both), mutation-run.ts (weekly on a runner and on demand, never by
-            the gate or a release: plants a
+            both), mutation-run.ts (weekly on a runner as twenty `--shard` jobs and
+            one `--merge`, and on demand; never by the gate or a release: plants a
             defect in what each gate check examines, in a disposable copy of this
             checkout, and records whether the check noticed — mutation/ holds the
             workspace, the planting and

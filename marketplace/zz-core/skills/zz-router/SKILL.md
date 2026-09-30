@@ -32,10 +32,8 @@ exactly — they are the method; this file is only the door.
 
 **When:** A person typed /zz-plugin-eval:eval. When someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?' — answering from your o...
 
-**Then:** call the `zz-core` tool **skill_read**, passing `zz-platform` as its
-`name` argument; then call it again passing `zz-plugin-eval`. Both are MCP tools
-on the zz-core server, not this client's own skills. Follow those skills
-exactly — they are the method; this file is only the door.
+**Then:** do not load it. A person opens this flow themselves: tell them to type
+`/zz-plugin-eval:eval` to start it.
 
 ## What holds regardless
 

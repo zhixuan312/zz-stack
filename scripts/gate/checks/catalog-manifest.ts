@@ -49,6 +49,12 @@ check("every flow.json parses, and its entry names a skill it ships", () => {
         }
       }
     }
+    // A flow zz-router does not load is one a person opens by its command, so it needs one: with
+    // neither, nothing reaches it. `shelfFlows` refuses the same at build time; this says so at
+    // the manifest, where the author is.
+    if (m.routed === false && !Object.values(m.commands ?? {}).includes(m.entry ?? f.flow)) {
+      bad.push(`${f.flow}: declares routed: false and no command for its entry — nothing can open it`);
+    }
     if (m.entry && !entrySkills.includes(m.entry)) {
       bad.push(`${f.flow}: entry is "${m.entry}" and no such skill is shipped` +
                (entrySkills.length ? ` (has: ${entrySkills.join(", ")})` : " (it ships none)"));

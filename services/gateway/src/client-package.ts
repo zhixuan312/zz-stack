@@ -65,6 +65,10 @@ export interface ShelfFlow {
   /** Platform surfaces this flow's method needs, beyond the baseline. A flow whose skills
    * instruct an admin tool has to be able to reach one. */
   servers: { name: string; path: string }[];
+  /** Whether zz-router loads this flow; `false` when a person opens it by its command. */
+  routed: boolean;
+  /** What a person types to open the entry, `/<plugin>:<command>`, or null when it has none. */
+  command: string | null;
 }
 
 /** The platform's own skills, such as zz-platform. A tree of their own, beside the catalog

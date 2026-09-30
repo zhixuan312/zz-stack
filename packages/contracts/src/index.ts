@@ -347,6 +347,12 @@ export const CatalogManifest = z.object({
    *  A skill named here is promoted — it ships as the command and not also as a skill. Codex
    *  has no commands and keeps the skill. */
   commands: z.record(z.string().min(1)).optional(),
+  /** Whether zz-router loads this flow for the person. Absent or `true`: the router matches the
+   *  request against the entry's `when_to_use` and `skill_read`s the entry. `false`: a person
+   *  opens this flow themselves, so the router names the entry's command instead of loading it —
+   *  zz-plugin-eval, which is `/zz-plugin-eval:eval`. A flow that says `false` must declare a
+   *  command for its entry, or nothing can reach it. */
+  routed: z.boolean().optional(),
   /** Skills that are neither a stage nor a command: the shared text another skill loads.
    *  Naming them is what makes "every shipped skill is declared somewhere" checkable. */
   libraries: z.array(z.string().min(1)).optional(),

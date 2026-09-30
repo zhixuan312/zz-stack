@@ -22,9 +22,16 @@ export function shelfFlows(): ShelfFlow[] {
       const m = catalogManifest(flow);
       if (!m) throw new Error(`catalog lists '${flow}' but has no manifest for it`);
       const entry = m.entry || flow;
+      const typed = entryCommand(flow, entry);
+      const command = typed ? `/${pluginName(flow)}:${typed}` : null;
+      const routed = m.routed !== false;
+      // A flow the router must not load, and that nobody can type, is unreachable.
+      if (!routed && !command) {
+        throw new Error(`'${flow}' declares routed: false and no command for its entry '${entry}'`);
+      }
       return {
         flow, version: PLATFORM_VERSION, entry, agentName: m.agentName ?? null,
-        whenToUse: whenToUse(flow, entry), servers: m.servers ?? [],
+        whenToUse: whenToUse(flow, entry), servers: m.servers ?? [], routed, command,
       };
     })
     .sort((a, b) => a.flow.localeCompare(b.flow));
@@ -173,13 +180,18 @@ export function routerSkill(flows: ShelfFlow[]): string {
         "",
         `**When:** ${f.whenToUse}`,
         "",
+        ...(f.routed
           // The argument is named and the server said out loud, because a client with a Skill
           // mechanism of its own otherwise routes `skill_read(...)` to that instead and drops
           // the argument.
-          "**Then:** call the `zz-core` tool **skill_read**, passing `zz-platform` as its",
-          `\`name\` argument; then call it again passing \`${f.entry}\`. Both are MCP tools`,
-          "on the zz-core server, not this client's own skills. Follow those skills",
-          "exactly — they are the method; this file is only the door.",
+          ? ["**Then:** call the `zz-core` tool **skill_read**, passing `zz-platform` as its",
+             `\`name\` argument; then call it again passing \`${f.entry}\`. Both are MCP tools`,
+             "on the zz-core server, not this client's own skills. Follow those skills",
+             "exactly — they are the method; this file is only the door."]
+          // A person opens this flow; the router does not load it for them. It says so, and
+          // names what to type.
+          : [`**Then:** do not load it. A person opens this flow themselves: tell them to type`,
+             `\`${f.command}\` to start it.`]),
         "",
       );
     }

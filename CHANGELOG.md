@@ -33,6 +33,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.92.1] — 2026-09-30
+
+### Fixed
+- **One panel per document, not one per page the model reads.** In ChatGPT the model goes on
+  paging a long document after the panel has shown it, and every paging call drew the whole
+  document again in a new panel under the last. A `document_present` that asks for a part — by
+  `section`, `offset` or `limit` — is the model reading for itself: it now hands the panel nothing,
+  and the panel collapses to one line saying the whole document is in the panel above.
+
 ## [0.92.0] — 2026-09-30
 
 Other clients than Claude Code. A document is shown to the person as a panel in any client that

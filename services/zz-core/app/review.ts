@@ -13,16 +13,18 @@
  * re-mounted panel still has them; a sandbox that refuses storage only loses them on reload.
  */
 import { clip, schedule, selected } from "./context.ts";
-import { app, current, esc, root, type Note, type Slot } from "./state.ts";
+import { app, current, esc, root, state, type Note, type Slot } from "./state.ts";
 
 const QUOTE_MAX = 600;
-let pick: { text: string; section: string | null } | null = null;
+const quoteLine = (p: { text: string; section: string | null }): string =>
+  `${p.section ? `${p.section} · ` : ""}“${clip(p.text, 160)}”`;
 
-/** The reading pane's foot while something is selected. Built once; shown and filled in place,
- *  because redrawing the page would clear the very selection it acts on. */
+/** The reading pane's foot while a passage is held. Drawn from the held passage, so a redraw keeps
+ *  it; filled in place when the reader selects, because redrawing would clear their selection. */
 export const selbar = (): string =>
-  `<div class="selbar" hidden>
-    <p class="sel-quote"></p>
+  `<div class="selbar" ${state.pick ? "" : "hidden"}>
+    <div class="sel-head"><p class="sel-quote">${state.pick ? esc(quoteLine(state.pick)) : ""}</p>
+      <button class="sel-close" data-act="close-pick" aria-label="Put the selection down">✕</button></div>
     <div class="row">
       <button class="btn btn-quiet" data-act="note-sel">Note a change</button>
       <button class="btn btn-primary" data-act="explain">Explain this</button>
@@ -30,17 +32,27 @@ export const selbar = (): string =>
     <p class="sel-hint">Or ask anything in the chat — the assistant sees what you selected.</p>
   </div>`;
 
-/** Follow the selection: show the bar with the passage while there is one, hide it when not. */
+/** Hold what the reader selects. A selection that goes away — a tap, a host redraw — leaves the
+ *  passage held; only another selection replaces it, and only acting on it or ✕ lets it go. */
 export function syncSelection(): void {
   const s = current();
   const read = root.querySelector<HTMLElement>(".read");
   const bar = root.querySelector<HTMLElement>(".selbar");
   if (!s || !read || !bar) return;
-  pick = selected(s, read);
-  bar.hidden = !pick;
+  const now = selected(s, read);
+  if (!now) return;
+  state.pick = now;
+  bar.hidden = false;
   const q = bar.querySelector(".sel-quote");
-  if (q && pick) q.textContent = `${pick.section ? `${pick.section} · ` : ""}“${clip(pick.text, 160)}”`;
+  if (q) q.textContent = quoteLine(now);
   schedule(400);
+}
+/** Let the held passage go. */
+export function dropPick(): void {
+  state.pick = null;
+  const bar = root.querySelector<HTMLElement>(".selbar");
+  if (bar) bar.hidden = true;
+  schedule(200);
 }
 
 const key = (s: Slot): string => `zz-panel-notes:${s.doc.path}:v${s.doc.version}`;
@@ -53,17 +65,21 @@ export function loadNotes(s: Slot): void {
 
 /** Ask the agent about the selected passage, quoted, in the person's own voice. */
 export async function explain(s: Slot): Promise<void> {
+  const pick = state.pick;
   if (!pick) return;
   const where = pick.section ? `, in “${pick.section}”` : "";
+  dropPick();
+  document.getSelection()?.removeAllRanges();
   await app.sendMessage({ role: "user", content: [{ type: "text",
     text: `Explain this passage from ${s.doc.path} (v${s.doc.version})${where}:\n\n> ${clip(pick.text, QUOTE_MAX).replace(/\n/g, "\n> ")}` }] });
-  document.getSelection()?.removeAllRanges();
 }
 
 /** Open the note box, on the selected passage or on the document as a whole. */
 export function startNote(s: Slot, fromSelection: boolean): void {
-  s.noting = fromSelection && pick ? { quote: clip(pick.text, QUOTE_MAX), section: pick.section } : { quote: null, section: null };
+  const pick = fromSelection ? state.pick : null;
+  s.noting = pick ? { quote: clip(pick.text, QUOTE_MAX), section: pick.section } : { quote: null, section: null };
   s.sent = null;
+  if (pick) state.pick = null;
 }
 export function addNote(s: Slot, text: string): void {
   if (!s.noting || !text.trim()) return;

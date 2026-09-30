@@ -16,7 +16,7 @@
  */
 import { minutesOf, compareSections, renderMarkdown } from "./render.ts";
 import { schedule, tellModel } from "./context.ts";
-import { addNote, dropNote, explain, loadNotes, notesBlock, selbar, sendNotes, startNote, syncSelection } from "./review.ts";
+import { addNote, dropNote, dropPick, explain, loadNotes, notesBlock, selbar, sendNotes, startNote, syncSelection } from "./review.ts";
 import { answer, app, current, esc, root, state, type Approval, type PanelDocument, type Shown, type Slot } from "./state.ts";
 import approvedArt from "./brand/state-approved.png";
 import wordmark from "./brand/wordmark.png";
@@ -266,6 +266,7 @@ async function recordShown(s: Slot): Promise<void> {
 }
 const show = (i: number): void => {
   state.active = i;
+  state.pick = null;
   jumpOpen = false;
   draw();
   requestAnimationFrame(() => void recordShown(state.slots[state.active]!));
@@ -320,6 +321,7 @@ root.addEventListener("click", (e) => {
     case "top": root.querySelector<HTMLElement>(".read")?.scrollTo({ top: 0, behavior: "smooth" }); break;
     case "only-changes": s.onlyChanges = !s.onlyChanges; s.scroll = 0; draw(); break;
     case "explain": void explain(s); break;
+    case "close-pick": dropPick(); break;
     case "note-sel": startNote(s, true); draw(); root.querySelector<HTMLTextAreaElement>("#note")?.focus(); break;
     case "note-doc": startNote(s, false); draw(); root.querySelector<HTMLTextAreaElement>("#note")?.focus(); break;
     case "cancel-note": s.noting = null; draw(); break;
@@ -342,15 +344,21 @@ root.addEventListener("submit", (e) => {
 });
 document.addEventListener("selectionchange", syncSelection);
 
-/** Take what the host says about the space and the modes it offers. */
-function hostSays(ctx: ReturnType<typeof app.getHostContext>): void {
-  if (!ctx) return;
+/** Take what the host says about the space and the modes it offers, and say what that changes:
+ *  the page's shape (a redraw), only the pane's height (set in place), or nothing. A host sends this
+ *  often — ChatGPT on a phone, whenever its own chrome moves — and a redraw for each clears the
+ *  reader's selection and their phone's own Copy menu with it. */
+function hostSays(ctx: ReturnType<typeof app.getHostContext>): "redraw" | "resize" | "none" {
+  if (!ctx) return "none";
+  const before = { can: state.canFullscreen, full: state.fullscreen, pane: state.paneHeight };
   if (ctx.availableDisplayModes) state.canFullscreen = ctx.availableDisplayModes.includes("fullscreen");
   if (ctx.displayMode) state.fullscreen = ctx.displayMode === "fullscreen";
   const dims = ctx.containerDimensions as { maxHeight?: number; height?: number } | undefined;
   const room = dims?.maxHeight ?? dims?.height;
   // The head and the foot take about 230px; the pane gets the rest, within reason either way.
   if (typeof room === "number" && room > 0) state.paneHeight = Math.max(320, Math.min(720, room - 230));
+  if (before.can !== state.canFullscreen || before.full !== state.fullscreen) return "redraw";
+  return before.pane !== state.paneHeight ? "resize" : "none";
 }
 
 app.ontoolresult = (result) => {
@@ -369,7 +377,11 @@ app.ontoolresult = (result) => {
   show(0);
   schedule(1200);
 };
-app.onhostcontextchanged = (ctx) => { hostSays(ctx); draw(); };
+app.onhostcontextchanged = (ctx) => {
+  const change = hostSays(ctx);
+  if (change === "redraw") draw();
+  else if (change === "resize") root.querySelector<HTMLElement>(".panel")?.style.setProperty("--pane-h", `${state.paneHeight}px`);
+};
 
 draw();
 await app.connect();

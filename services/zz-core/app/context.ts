@@ -9,7 +9,7 @@
  * since the version before, and the notes they have not sent yet. Composed when the reader
  * settles, never per scroll event.
  */
-import { app, current, root, type Slot } from "./state.ts";
+import { app, current, root, state, type Slot } from "./state.ts";
 import type { Rendered } from "./render.ts";
 
 type Heading = Rendered["outline"][number];
@@ -70,7 +70,7 @@ function compose(): void {
   if (!s || !read) return;
   const { here, top2, share } = position;
   const passage = onScreen(read);
-  const pick = selected(s, read);
+  const pick = state.pick;
   const key = `${s.doc.path}|${here?.id ?? ""}|${passage.slice(0, 160)}|${pick?.text ?? ""}|${s.notes.length}`;
   if (key === told) return;
   told = key;
@@ -92,7 +92,7 @@ function compose(): void {
   }
   if (s.notes.length) lines.push(`They have ${s.notes.length} review note(s) drafted in the panel, not sent yet.`);
   if (pick) {
-    lines.push("", `They have SELECTED this passage${pick.section ? ` (in "${pick.section}")` : ""}. When they ask about "this" ` +
+    lines.push("", `They have selected this passage${pick.section ? ` (in "${pick.section}")` : ""}. When they ask about "this" ` +
                `or "here", they mean it:`, pick.text);
   }
   if (passage) {

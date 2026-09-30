@@ -50,6 +50,11 @@ export const state = {
   canFullscreen: false,
   /** The inline reading pane's height: what the host says it can give, less the head and the foot. */
   paneHeight: 600,
+  /** The passage the reader last selected, held until they act on it, close it or select another.
+   *  Held rather than read live: on a touchscreen, tapping a button clears the selection before the
+   *  tap lands, and a host redraw clears it too — a bar that followed the live selection vanished
+   *  under the reader's finger (0.92.3, on a phone). */
+  pick: null as { text: string; section: string | null } | null,
 };
 export const current = (): Slot | undefined => state.slots[state.active];
 

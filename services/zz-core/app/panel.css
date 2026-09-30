@@ -196,6 +196,8 @@ button.bar-section:hover { background: var(--surface-2); }
   .is-full .prose { font-size: 16px; line-height: 1.75; }
   /* The measure is for prose. A table or a diagram in a code block gets the whole width. */
   .is-full .prose > :not(pre):not(table) { max-width: 68ch; }
+  /* The toolbar sits under the text column it acts on, not centred in the space beside it. */
+  .is-full .selbar { margin-left: 0; max-width: calc(68ch * 16 / 14); }
   .is-full .prose h2 { font-size: 22px; }
   .is-full .prose h3 { font-size: 16px; }
 }
@@ -288,7 +290,7 @@ button.bar-section:hover { background: var(--surface-2); }
   .row .btn { flex: 1; }
   .title-row { flex-direction: column; gap: 8px; }
 }
-@media (prefers-reduced-motion: reduce) { .sk { animation: none; } .btn { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .sk, .selbar { animation: none; } .btn, .sel-btn { transition: none; } }
 
 /* What changed since the revision before: the kit blue, which is identity and never status — a
    changed section is neither good nor bad, only the part a re-review has to read. */
@@ -312,21 +314,41 @@ button.bar-section:hover { background: var(--surface-2); }
 }
 .bar-toggle[aria-pressed="true"] { background: var(--zz-blue-deep); color: var(--c-0); }
 
-/* A selection's acts: at the foot of the reading pane, clear of a phone's own selection menu. */
+/* The selection toolbar: a floating card over the text, not a slab across it. It floats, so it takes
+   the one elevation the system gives floating things (--shadow-pop): a hard offset and a hairline. */
 .selbar {
-  position: sticky; bottom: -32px; z-index: 2; margin: 16px -24px 0; padding: 10px 24px 44px;
-  background: var(--c-0); border-top: 1px solid var(--line-strong); display: flex; flex-direction: column; gap: 8px;
+  position: sticky; bottom: 12px; z-index: 3;
+  display: flex; align-items: center; gap: 16px;
+  max-width: 720px; margin: 20px auto 0; padding: 8px 8px 8px 14px;
+  background: var(--c-0); border-radius: var(--r-lg);
+  box-shadow: 4px 4px 0 rgba(33, 28, 22, 0.1), 0 0 0 1px var(--line-strong);
+  animation: sel-in 140ms cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 .selbar[hidden] { display: none; }
-.sel-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.sel-quote { flex: 1; min-width: 0; margin: 0; font-size: 12px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sel-close {
-  flex: none; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: var(--r-sm);
-  background: var(--surface); color: var(--ink-faint); font: 500 13px/1 var(--sans); cursor: pointer;
+@keyframes sel-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.sel-text { flex: 1; min-width: 0; padding-left: 10px; border-left: 2px solid var(--accent); cursor: default; }
+.sel-eyebrow {
+  margin: 0; font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.sel-close:hover { color: var(--ink); border-color: var(--line-strong); }
-.sel-hint { margin: 0; font-size: 11px; color: var(--ink-faint); }
-.selbar .row { margin-left: 0; }
+.sel-where { text-transform: none; letter-spacing: 0; }
+.sel-quote { margin: 2px 0 0; font-size: 12px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sel-acts { flex: none; display: flex; align-items: center; gap: 4px; }
+.sel-btn {
+  height: 32px; padding: 0 12px; border: 0; border-radius: var(--r); cursor: pointer;
+  font: 500 14px/1 var(--sans); transition: background-color 120ms, color 120ms;
+}
+.sel-note { background: transparent; color: var(--ink-soft); }
+.sel-note:hover { background: var(--surface-2); color: var(--ink); }
+.sel-explain { background: var(--accent); color: var(--on-accent); }
+.sel-explain:hover { background: var(--accent-deep); }
+.sel-rule { width: 1px; height: 20px; margin: 0 4px; background: var(--line); }
+.sel-close {
+  display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: var(--r-sm);
+  background: transparent; color: var(--ink-faint); cursor: pointer;
+}
+.sel-close:hover { background: var(--surface-2); color: var(--ink); }
+.sel-btn:focus-visible, .sel-close:focus-visible { outline: none; box-shadow: var(--ring); }
 
 /* The notes waiting to go to the agent. */
 .notes { flex-basis: 100%; min-width: 0; max-width: 100%; margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
@@ -337,6 +359,8 @@ button.bar-section:hover { background: var(--surface-2); }
 .note-drop { position: absolute; top: 8px; right: 8px; border: 0; background: none; font: 500 12px/1 var(--sans); color: var(--ink-faint); cursor: pointer; }
 .note-drop:hover { color: var(--red-text); }
 @container panel (max-width: 520px) {
-  .selbar { bottom: -24px; margin: 16px -16px 0; padding: 10px 16px 36px; }
+  .selbar { flex-wrap: wrap; row-gap: 8px; bottom: 8px; }
+  .sel-text { flex-basis: 100%; }
+  .sel-acts { margin-left: auto; }
   .prose .sec[data-mark] { margin-left: -10px; padding-left: 8px; }
 }

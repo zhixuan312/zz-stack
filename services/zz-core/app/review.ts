@@ -16,21 +16,27 @@ import { clip, schedule, selected } from "./context.ts";
 import { app, current, esc, root, state, type Note, type Slot } from "./state.ts";
 
 const QUOTE_MAX = 600;
-const quoteLine = (p: { text: string; section: string | null }): string =>
-  `${p.section ? `${p.section} · ` : ""}“${clip(p.text, 160)}”`;
+const SEEN = "The assistant sees this passage — you can also just ask about it in the chat.";
+const X = `<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
 
-/** The reading pane's foot while a passage is held. Drawn from the held passage, so a redraw keeps
+/** The selection toolbar: floating over the reading pane while a passage is held — which section,
+ *  one line of the passage, and the two acts on it. Drawn from the held passage, so a redraw keeps
  *  it; filled in place when the reader selects, because redrawing would clear their selection. */
-export const selbar = (): string =>
-  `<div class="selbar" ${state.pick ? "" : "hidden"}>
-    <div class="sel-head"><p class="sel-quote">${state.pick ? esc(quoteLine(state.pick)) : ""}</p>
-      <button class="sel-close" data-act="close-pick" aria-label="Put the selection down">✕</button></div>
-    <div class="row">
-      <button class="btn btn-quiet" data-act="note-sel">Note a change</button>
-      <button class="btn btn-primary" data-act="explain">Explain this</button>
+export const selbar = (): string => {
+  const p = state.pick;
+  return `<div class="selbar" role="toolbar" aria-label="Selected passage" ${p ? "" : "hidden"}>
+    <div class="sel-text" title="${SEEN}">
+      <p class="sel-eyebrow">Selected<span class="sel-where">${p?.section ? ` · ${esc(p.section)}` : ""}</span></p>
+      <p class="sel-quote">${p ? `“${esc(clip(p.text, 200))}”` : ""}</p>
     </div>
-    <p class="sel-hint">Or ask anything in the chat — the assistant sees what you selected.</p>
+    <div class="sel-acts">
+      <button class="sel-btn sel-note" data-act="note-sel">Note a change</button>
+      <button class="sel-btn sel-explain" data-act="explain">Explain</button>
+      <span class="sel-rule" aria-hidden="true"></span>
+      <button class="sel-close" data-act="close-pick" aria-label="Put the selection down">${X}</button>
+    </div>
   </div>`;
+};
 
 /** Hold what the reader selects. A selection that goes away — a tap, a host redraw — leaves the
  *  passage held; only another selection replaces it, and only acting on it or ✕ lets it go. */
@@ -43,8 +49,10 @@ export function syncSelection(): void {
   if (!now) return;
   state.pick = now;
   bar.hidden = false;
+  const where = bar.querySelector(".sel-where");
+  if (where) where.textContent = now.section ? ` · ${now.section}` : "";
   const q = bar.querySelector(".sel-quote");
-  if (q) q.textContent = quoteLine(now);
+  if (q) q.textContent = `“${clip(now.text, 200)}”`;
   schedule(400);
 }
 /** Let the held passage go. */

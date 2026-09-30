@@ -33,6 +33,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.92.2] — 2026-09-30
+
+### Fixed
+- **A deploy no longer shows a person a refusal in every panel already open.** The panel's ticket
+  key is drawn per process, so a restart ended every ticket, and ChatGPT, re-mounting the panels in
+  a conversation, drew "this panel's ticket is not valid" under documents already recorded as
+  shown. `document_shown` now answers a present already on record before it reads the ticket; that
+  answer writes nothing, and every record the panel writes still rests on a valid ticket.
+
 ## [0.92.1] — 2026-09-30
 
 ### Fixed

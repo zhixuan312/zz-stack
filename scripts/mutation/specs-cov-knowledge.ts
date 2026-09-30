@@ -40,19 +40,15 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     check: "scripts/gate/checks/knowledge.ts",
     target: "every flow ends with the platform's handover",
     assertion: "zz-core can tell a handover document apart from an ordinary one",
-    subject: "services/zz-core/src/tools/initiative-status.ts",
-    // Global, because the recogniser is declared once and called once: renaming only the
-    // declaration leaves the call site dangling, `tsc -b` fails, and the run reports survived
-    // because the gate went red somewhere other than the target.
-    all: true,
-    find: "isHandover",
-    replace: "looksLikeTheLastOne",
-    planted: "the recogniser is renamed, so nothing in zz-core identifies a handover document " +
-      "and a derived handover reads as an ordinary pending one — which is how an agent came " +
-      "to be told to write a handover before the close. This clause used to look for " +
-      "`action: \"handover\"`, a phrase that exists in zz-core only inside two comments both " +
-      "saying the state was REMOVED, so it passed on prose describing the absence of the " +
-      "thing it asserted",
+    // The recogniser's behaviour, where it is defined. This renamed it in initiative-status.ts
+    // until the first full run: the definition had moved to stage-records.ts, so the rename broke
+    // the build instead of the behaviour and the check — then a search for the name — stayed green.
+    subject: "services/zz-core/src/stage-records.ts",
+    find: '  return d.role === "handover" || d.name === "handover.md";',
+    replace: '  return d.role === "handover";',
+    planted: "a flow that declares its own handover.md stops being recognised, so its handover " +
+      "reads as an ordinary pending document — which is how an agent came to be told to write a " +
+      "handover before the close",
   },
   {
     check: "scripts/gate/checks/knowledge.ts",

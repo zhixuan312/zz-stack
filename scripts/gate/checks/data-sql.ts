@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { codeOnly, firstOf, root, sourceFiles, withoutComments } from "../read.ts";
 import { check } from "../run.ts";
 import { schemaColumns } from "../facts.ts";
+import { SCHEMA_TARGET } from "../../../schema-target.ts";
 
 /** The indexer, which lives in packages/indexing rather than services/zz-core.
  *
@@ -195,21 +196,25 @@ check("nothing queries a table the migrations dropped", () => {
 
 check("a column the platform enforces is a column something can write", () => {
   // A column named in a WHERE that decides access must also appear in an INSERT or UPDATE
-  // somewhere, or the access check it feeds can never fire.
+  // of ITS OWN TABLE, or the access check it feeds can never fire.
   //
-  // Taken from the schema rather than a named list, and replayed rather than read flat — a
-  // column of a table a later migration drops is history, not the platform.
-  const columns = new Set(schemaColumns()
-    .filter((c) => /_at$/.test(c.split(".")[1]))
-    .map((c) => c.split(".")[1]));
+  // Per table, not per name: `used_at` is on two tables, and a writer of `mcp_oauth_authz.used_at`
+  // kept this green when the mutation suite's first full run stopped `passkey_enrolment.used_at`
+  // being set — a one-time enrolment link that never counts as used. A column with a default is
+  // set by the database on insert and needs no writer here. Taken from SCHEMA_TARGET rather than
+  // a named list, so a column added tomorrow is covered the day it is added.
   const src = sourceFiles(["services", "packages"], [".ts"])
     .map((f) => readFileSync(join(root, f), "utf8")).join("\n");
   const bad = [];
-  for (const col of [...columns].sort()) {
-    const guarded = new RegExp(`\\b${col}\\b[^;]{0,120}(is null|>|<)`, "i").test(src);
-    const written = new RegExp(`(insert into[^;]{0,400}\\b${col}\\b|set[^;]{0,80}\\b${col}\\s*=)`, "is").test(src);
-    if (guarded && !written) {
-      bad.push(`${col} is queried as though it decides something and nothing ever sets it`);
+  for (const [table, t] of Object.entries(SCHEMA_TARGET.tables).sort(([a], [b]) => a.localeCompare(b))) {
+    for (const [col, , , defaultExpr] of t.columns) {
+      if (!/_at$/.test(col) || defaultExpr) continue;
+      const guarded = new RegExp(`\\b${col}\\b[^;]{0,120}(is null|>|<)`, "i").test(src);
+      if (!guarded) continue;
+      const on = `(?:zz\\.)?${table}\\b`;
+      const written = new RegExp(`(insert into\\s+${on}[^;]{0,600}\\b${col}\\b|` +
+        `update\\s+${on}[^;]{0,300}\\bset\\b[^;]{0,300}\\b${col}\\s*=)`, "is").test(src);
+      if (!written) bad.push(`${table}.${col} is queried as though it decides something and nothing ever sets it`);
     }
   }
   return bad.length ? bad.join("; ") : null;

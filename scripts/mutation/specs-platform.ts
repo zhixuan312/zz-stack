@@ -52,14 +52,16 @@ export const PLATFORM_SPECS: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/data-telemetry.ts",
     target: "a tool that changes something records that it did",
-    subject: "services/zz-core/src/tools/artifacts.ts",
-    // One recorder, and removing it is the defect: the tool's write goes through `saveDocument`,
-    // so what makes the act attributable is the `recordAct` beside it. `void recordAct;` keeps the
-    // identifier and drops the call — the check matches a call, not a name.
-    find: '      recordAct(rel, { user: who.email, action: "source_add", path: rel, supports: list.join(",") });',
-    replace: "      void recordAct;",
-    planted: "a tool that writes the store stops recording that it did, so the change can " +
-      "only be recovered by reading the state it made",
+    subject: "services/zz-core/src/versions.ts",
+    // The recorder every document write goes through. Removing a tool's own `recordAct` was the
+    // plant until the first full run: it survived, correctly, because `saveDocument` had recorded
+    // the write anyway. `void recordAct;` keeps the identifier and drops the call — the check
+    // matches a call, not a name.
+    find: "    recordAct(w.relPath,\n" +
+      '      { user: w.by, action: w.act ?? (w.mode === "append" ? "revise" : "write"), path: w.relPath });',
+    replace: "    void recordAct;",
+    planted: "the write every document tool goes through stops recording that it did, so no " +
+      "document change can be recovered except by reading the state it made",
   },
   {
     check: "scripts/gate/checks/deploy-compose.ts",

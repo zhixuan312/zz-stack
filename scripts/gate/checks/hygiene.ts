@@ -141,9 +141,17 @@ check("every module in the services tree is reachable from something", () => {
   // `check:identity`-style engines, which nothing imports), or it is a server entry point. The
   // command trees are not judged here: `packages/tools`' ops and this gate itself dispatch by name
   // from a table, so "nothing imports it" is true of most of them by design.
+  //
+  // Reached by PRODUCTION code: a module only a check or a test imports is exactly the dormant code
+  // this exists to find, so `checks/` and `testing/` do not count. Nor do `scripts/gate/` and
+  // `scripts/mutation/`, which import nothing from services and quote imports as text — a plant's
+  // `find` string is an import statement, and reading it as one kept a module "reached" by the
+  // spec that cut its only real import, which is how the mutation suite's first full run found
+  // this green.
   const modules = sourceFiles(["services"], [".ts"]).filter((f) => !f.endsWith(".d.ts"));
   const specifiers = new Set<string>();
-  for (const f of [...sourceFiles(["services", "packages", "scripts", "checks", "testing"], [".ts"]),
+  for (const f of [...sourceFiles(["services", "packages", "scripts"], [".ts"])
+                     .filter((x) => !x.startsWith("scripts/gate/") && !x.startsWith("scripts/mutation/")),
                    "schema-target.ts"]) {
     for (const m of withoutComments(readFileSync(join(root, f), "utf8"))
       .matchAll(/(?:from|import|require)\s*\(?\s*"([^"]+)"/g)) specifiers.add(m[1]);

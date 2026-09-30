@@ -3,10 +3,11 @@
  * one team's own. Checks here hold the scope, the registry tag a platform node owes,
  * supersession staying on one shelf, and the handover chain every flow ends with.
  */
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { catalogSource, gatewaySource, root, withoutComments, zzCoreSource } from "../read.ts";
+import { catalogSource, gatewaySource, root, unbuilt, withoutComments, zzCoreSource } from "../read.ts";
 import { check } from "../run.ts";
 import { catalogRoot, flows } from "../facts.ts";
 
@@ -78,9 +79,21 @@ check("every flow ends with the platform's handover", () => {
   // DELIBERATE: this does not assert the derivation. `withHandover` lives in @zz/catalog so
   // zz-core and the console read one answer, and that zz-core calls it is asserted by "every
   // flow that gates a document also carries the handover", further down this file.
-  if (!/isHandover/.test(src) || !/handover\.md/.test(src)) {
-    bad.push("zz-core cannot tell a handover document apart, so a derived handover reads as an " +
-             "ordinary pending document and an agent is told to write one before the close");
+  //
+  // Asked of the recogniser itself, run: a search for the NAME `isHandover` stayed green when the
+  // mutation suite's first full run renamed its callers, because the definition kept the name.
+  // By role for the step the platform appends, by name for a flow that declares its own, and
+  // never for an ordinary document.
+  const built = unbuilt();
+  if (built) return built;
+  const told = JSON.parse(execFileSync("node", ["--input-type=module", "-e",
+    `import { isHandover } from ${JSON.stringify(join(root, "services/zz-core/dist/stage-records.js"))};` +
+    "process.stdout.write(JSON.stringify([isHandover({ name: 'wrap.md', role: 'handover' })," +
+    " isHandover({ name: 'handover.md' }), isHandover({ name: 'spec.md' })]));"], { encoding: "utf8" })) as boolean[];
+  if (told[0] !== true || told[1] !== true || told[2] !== false) {
+    bad.push(`zz-core cannot tell a handover document apart (by role ${told[0]}, by name ${told[1]}, ` +
+             `an ordinary document ${told[2]}), so a derived handover reads as an ordinary pending ` +
+             "document and an agent is told to write one before the close");
   }
   if (!/zz-handover/.test(src)) bad.push("nothing in zz-core names the handover skill");
   // The flow that closes has to know the step exists, or the agent closes, reports finished,

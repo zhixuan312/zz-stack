@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, codeOnly, contractsSource, firstOf, gatewaySource, root, sourceFiles, toolsIn, unbuilt, withoutComments, zzCoreSource } from "../read.ts";
+import { between, codeOnly, contractsSource, firstOf, functionBody, gatewaySource, root, sourceFiles, toolsIn, unbuilt, withoutComments, zzCoreSource } from "../read.ts";
 import { check } from "../run.ts";
 
 /** A caught value is never typed as an Error — narrow the shape actually being read rather
@@ -408,4 +408,21 @@ check("deactivating a person ends every way back in, in the same transaction as 
   if (!/update console_session set revoked_at = now\(\) where revoked_at is null/.test(inside)) bad.push("live console sessions are not revoked in it");
   if (!/update passkey_enrolment set used_at = now\(\) where used_at is null/.test(inside)) bad.push("unused enrolment links are not spent in it");
   return bad.length ? `deactivatePerson: ${bad.join("; ")} — re-adding the person would bring it back` : null;
+});
+
+check("an enrolment link is spent by the statement that redeems it, and only once", () => {
+  // A link is a one-time credential: the redemption marks it used and admits only a link not yet
+  // used, in ONE statement, so two redemptions racing cannot both win and a replay finds nothing.
+  // Held on the statement itself — a table-level "something writes used_at" is true of
+  // passkey_enrolment for a second reason (deactivation spends a person's open links), and stayed
+  // true when the mutation suite's first full run took the redemption's own write away.
+  const body = functionBody(readFileSync(join(root, "services/gateway/src/passkey.ts"), "utf8"), "spendEnrolment");
+  if (!body) return "services/gateway/src/passkey.ts no longer defines spendEnrolment — this cannot check it";
+  const stmt = /update zz\.passkey_enrolment\b[\s\S]*?returning/.exec(body)?.[0] ?? "";
+  const bad: string[] = [];
+  if (!stmt) bad.push("spendEnrolment does not redeem the link with an UPDATE … RETURNING");
+  if (!/\bset\s+used_at\s*=\s*now\(\)/.test(stmt)) bad.push("the redemption does not mark the link used");
+  if (!/\bused_at\s+is\s+null\b/.test(stmt)) bad.push("the redemption admits a link that was already used");
+  if (!/\bexpires_at\s*>\s*now\(\)/.test(stmt)) bad.push("the redemption admits an expired link");
+  return bad.length ? bad.join("; ") : null;
 });

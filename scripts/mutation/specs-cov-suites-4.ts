@@ -201,4 +201,27 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "module becomes one nothing reaches while every name it exports stays in use elsewhere — the " +
       "shape this check exists for, and the shape hygiene's own export scan cannot see",
   },
+  {
+    check: "scripts/gate/checks/checkpoints-consumed.ts",
+    target: "every question family a skill names is read by code that routes on it",
+    subject: "services/zz-core/src/review-acceptance.ts",
+    // The one branch that makes a `no` from evidence_relation refuse a review row. This file had
+    // no plant at all until the first full run recorded it as never measured.
+    find: '    if (now.reading === "no") {',
+    replace: '    if (now.reading === "never") {',
+    planted: "sdlc-review still tells the agent the platform asks evidence_relation of every row, " +
+      "and a `no` no longer refuses anything — the question is asked and paid for and its answer " +
+      "is read by nobody",
+  },
+  {
+    check: "scripts/gate/checks/skill-calls.ts",
+    target: "every tool call a skill writes names only the tool's arguments, and every one it requires",
+    subject: "skills/zz-platform/SKILL.md",
+    // The worked document_revise call every agent reads first. This file had no plant at all
+    // until the first full run recorded it as never measured.
+    find: '  source_title: "Second brain dump — <what it was about>")',
+    replace: '  source_heading: "Second brain dump — <what it was about>")',
+    planted: "the platform skill's worked example calls document_revise with an argument the tool " +
+      "does not take, so an agent copying it is refused by the schema on its first revision",
+  },
 ];

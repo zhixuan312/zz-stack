@@ -45,6 +45,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: pair/zz-stack
+          # The tags too: "the version that shipped has a changelog section of its own" asks git
+          # whether this version is tagged, and a checkout without tags answered "not yet released"
+          # every time, so the check never ran here.
+          fetch-tags: true
 
       # Both repositories are public, so the default token reads the console without a secret.
       - uses: actions/checkout@v4

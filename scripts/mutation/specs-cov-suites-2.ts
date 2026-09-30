@@ -84,11 +84,14 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
     check: SUITES_TOOLING,
     target: "the rest of scripts/ and testing/ carry zero strict errors, and none of them was reached by widening to any",
     assertion: "no error in scripts/ or testing/ was silenced by widening a type to any",
-    subject: "scripts/gate/read.ts",
-    find: "export function errMessage(err: unknown): string {",
+    // Outside scripts/gate/, which `plant()` refuses to edit because the gate is what a run
+    // measures. This pointed at the gate's own `errMessage` once that moved into read.ts, and the
+    // first full run recorded it as a plant that never landed.
+    subject: "scripts/deployment.ts",
+    find: "export function asExecError(err: unknown): ExecError {",
     // SEAMED: a widening to any, which the strict sweep reads out of any tracked line.
-    replace: "export function errMessage(err: " + "any" + "): string {",
-    planted: "the gate's own caught-value helper is widened from `unknown` to `any`, so every " +
+    replace: "export function asExecError(err: " + "any" + "): ExecError {",
+    planted: "the release's caught-value helper is widened from `unknown` to `any`, so every " +
       "property read on it type-checks and the narrowing that made this function safe is gone " +
       "— strictness bought by an escape hatch rather than by the code being right",
   },

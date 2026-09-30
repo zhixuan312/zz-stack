@@ -20,10 +20,15 @@ check("every state the schema allows can actually be reached", () => {
   const sql = sourceFiles(["services/gateway/migrations"], [".sql"])
     .map((f) => readFileSync(join(root, f), "utf8")).join("\n");
   // Both service trees, the packages and `scripts/`, recursively: a state can be set from anywhere
-  // that talks to the database, and `scripts/` is one of those places — the store carry writes
-  // `doc_revision.content_state` and `doc_link.kind` there, and a scan that stopped at `services`
-  // reported both states unreachable while the file that writes them sat in plain sight.
+  // that talks to the database, and `scripts/` is one of those places.
+  //
+  // Not `scripts/gate/` or `scripts/mutation/`, which write no row and name states only to talk
+  // about them: a plant's `replace` text names the very value it adds to the schema, and a gate
+  // check's own comment can quote one. Reading either as source made a planted state "reachable" —
+  // the mutation suite's first full run added a third principal status and this stayed green on
+  // the spec that planted it.
   const src = sourceFiles(["services", "packages", "scripts"], [".ts"])
+    .filter((f) => !f.startsWith("scripts/mutation/") && !f.startsWith("scripts/gate/"))
     .map((f) => readFileSync(join(root, f), "utf8")).join("\n");
   const unreachable = [];
   // Replayed, not read flat. An inline `check (kind in (...))` gets the name

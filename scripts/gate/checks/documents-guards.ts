@@ -146,18 +146,22 @@ check("a guard's answer is never discarded", () => {
 
 check("nothing is written before the guards that would refuse it", () => {
   // A refused call must leave the store as it found it: anything written before documentGuards
-  // stays on disk, indexed and logged, while the caller is told the write failed.
+  // stays in the rows, indexed and logged, while the caller is told the write failed.
   //
   // Only for handlers that do validate — knowledge_add writes things that are not chain
   // documents and has no documentGuards to run. Where a guard exists, nothing may
   // precede it; computing a name is free, and that is all a document needs to link forward.
+  //
+  // `saveDocument` is the write: the one entry point every tool's document write goes through
+  // (versions.ts). This matched `writeFileSync`/`appendFileSync` until the mutation suite's first
+  // full run found it green over a planted `saveDocument` ahead of the guard — the store stopped
+  // being files, and the check went on looking for the files.
   const src = zzCoreSource();
   const bad: string[] = [];
   for (const { name, from, body } of zzCoreTools()) {
     const guard = body.search(/\bdocumentGuards\(/);
     if (guard < 0) continue;
-    // persistDocument's own write is downstream of the guard by construction.
-    for (const w of body.matchAll(/\b(writeFileSync|appendFileSync)\(/g)) {
+    for (const w of body.matchAll(/\bsaveDocument\(/g)) {
       if (w.index < guard) {
         const line = src.slice(0, from + w.index).split("\n").length;
         bad.push(`${name} writes at line ${line}, before its documentGuards`);

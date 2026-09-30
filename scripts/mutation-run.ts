@@ -402,9 +402,13 @@ function main(): void {
     if (!existsSync(out)) die(`--only tops up an existing report and ${out} does not exist`);
     const prior = JSON.parse(readFileSync(out, "utf8")) as
       { results: { check: string }[]; guards?: unknown };
-    carried = prior.results.filter((r) => !wanted.includes(r.check));
+    // A row for a check file that no longer exists is dropped, not carried: a deleted check has
+    // nothing to report, and carrying its rows kept 35 of them — every one `stale` — in the report
+    // for checks deleted releases ago. Dropping those is the one shrinking a top-up does.
+    carried = prior.results.filter((r) => !wanted.includes(r.check) && existsSync(join(root, r.check)));
     const produced = new Set([...carried, ...results].map((r) => r.check));
-    const lost = prior.results.map((r) => r.check).filter((c) => !produced.has(c));
+    const lost = prior.results.map((r) => r.check)
+      .filter((c) => existsSync(join(root, c)) && !produced.has(c));
     if (lost.length) die(`this top-up would drop ${lost.length} row(s) it did not re-run: ${lost.slice(0, 5).join(", ")}`);
   }
 

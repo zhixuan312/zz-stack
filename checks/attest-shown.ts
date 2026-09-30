@@ -59,6 +59,11 @@ const cases: [string, boolean | null, Map<string, Rev>][] = [
    new Map([["d.md", { written_at: at(3), presented_at: at(2) }]])],
   ["shown AFTER the last write            -> fetched", true,
    new Map([["d.md", { written_at: at(2), presented_at: at(3) }]])],
+  // Strictly after: a present at the very instant of the write it would attest is not after it,
+  // and nothing in the record says which came first. The mutation suite's first full run changed
+  // `>` to `>=` and every case above still passed.
+  ["shown at the SAME instant as the write -> NOT fetched", false,
+   new Map([["d.md", { written_at: at(2), presented_at: at(2) }]])],
   // Another document's fetch must not vouch for this one — the column is per revision.
   ["another document was the one shown    -> NOT fetched", false,
    new Map([["d.md", { written_at: at(2), presented_at: null }],

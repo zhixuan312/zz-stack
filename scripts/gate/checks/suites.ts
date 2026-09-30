@@ -108,8 +108,16 @@ check("the version that shipped has a changelog section of its own", () => {
   // invented entries would be satisfied by invented entries. What this catches is a version shipped, deployed and tagged
   // with its entry still under `## [Unreleased]`.
   const version = String(asRecord(readJson("package.json"), "package.json").version);
-  const tagged = trackedFiles() && execFileSync("git", ["tag", "--list", `v${version}`],
-    { cwd: root, encoding: "utf8" }).trim();
+  if (!trackedFiles()) return null;       // not a checkout; there are no tags to ask
+  // A checkout with no tags at all cannot say whether anything shipped, and reading that as "not
+  // yet released" made this check pass without looking in every CI run until the mutation
+  // suite's first full run showed it green over a changelog with no version headings at all.
+  const anyTag = execFileSync("git", ["tag", "--list", "v*"], { cwd: root, encoding: "utf8" }).trim();
+  if (!anyTag) {
+    return "this checkout carries no release tags, so whether the current version shipped cannot " +
+      "be answered — a CI checkout needs `fetch-tags: true`";
+  }
+  const tagged = execFileSync("git", ["tag", "--list", `v${version}`], { cwd: root, encoding: "utf8" }).trim();
   if (!tagged) return null;               // bumped in a reviewed commit, not yet released
   const log = readFileSync(join(root, "CHANGELOG.md"), "utf8");
   return new RegExp(`^## \\[${version.replace(/\./g, "\\.")}\\]`, "m").test(log)

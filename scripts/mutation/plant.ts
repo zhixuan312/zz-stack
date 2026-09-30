@@ -51,6 +51,13 @@ export interface MutationSpec {
  *  they run in are the things under test; a run that edited them would be measuring itself. */
 const FROZEN = ["scripts/gate/checks/", "scripts/gate.ts", "scripts/gate/"];
 
+/** Whether `plant` would refuse this subject — the gate's own files, which are what a run measures.
+ *  Exported so `checks/mutation-specs-match-subjects.ts` refuses such a spec before any run spends a
+ *  gate on it: one sat in the suite, never landing, until the first full run reported it. */
+export function isFrozenSubject(subject: string): boolean {
+  return FROZEN.some((frozen) => subject.startsWith(frozen));
+}
+
 interface Planted {
   readonly replacements: number;
   readonly before: string;
@@ -58,11 +65,9 @@ interface Planted {
 
 /** Apply one spec to the workspace and say how many substitutions actually happened. */
 export function plant(repo: string, spec: MutationSpec): Planted {
-  for (const frozen of FROZEN) {
-    if (spec.subject.startsWith(frozen)) {
-      throw new Error(`${spec.check}: refusing to mutate ${spec.subject} — the checks and the ` +
-        "order they run in are what this run measures, not what it may edit");
-    }
+  if (isFrozenSubject(spec.subject)) {
+    throw new Error(`${spec.check}: refusing to mutate ${spec.subject} — the checks and the ` +
+      "order they run in are what this run measures, not what it may edit");
   }
   const path = join(repo, spec.subject);
   const before = readFileSync(path, "utf8");

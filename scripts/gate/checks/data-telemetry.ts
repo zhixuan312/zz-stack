@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, root, sourceFiles, toolsIn, zzCoreSource, zzCoreTools, withoutComments} from "../read.ts";
+import { between, functionBody, root, sourceFiles, toolsIn, zzCoreSource, zzCoreTools, withoutComments} from "../read.ts";
 import { check } from "../run.ts";
 import { schemaColumns } from "../facts.ts";
 
@@ -34,6 +34,17 @@ check("a tool that changes something records that it did", () => {
         bad.push(`${name} changes state and records nothing`);
       }
     }
+  }
+  // And the write every document tool goes through records itself. A tool body that calls
+  // `saveDocument` mutates through it rather than through a statement the pattern above can see,
+  // so what makes those acts attributable is the `recordAct` inside it, after the commit. The
+  // mutation suite's first full run planted the removal of a tool's own `recordAct` and this
+  // stayed green — correctly, because `saveDocument` had recorded the write anyway. This is the
+  // recorder that removal can take away.
+  const save = functionBody(readFileSync(join(root, "services/zz-core/src/versions.ts"), "utf8"), "saveDocument");
+  if (!save) bad.push("services/zz-core/src/versions.ts no longer defines saveDocument — this cannot check its record");
+  else if (!/\brecordAct\(/.test(withoutComments(save))) {
+    bad.push("saveDocument, the write every document tool goes through, records nothing");
   }
   return bad.length ? bad.join("; ") : null;
 });

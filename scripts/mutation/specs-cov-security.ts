@@ -301,13 +301,25 @@ export const COV_SECURITY: readonly MutationSpec[] = [
     check: "scripts/gate/checks/data-sql.ts",
     target: "a column the platform enforces is a column something can write",
     assertion: "a timestamp column that gates access is one something sets",
+    // The OAuth code's spend, whose table has one writer of `used_at`. This plant sat on the
+    // passkey enrolment spend until the first full run: that table's `used_at` has a second,
+    // legitimate writer (deactivation spends a person's open links), so a table-level check
+    // cannot see one writer go. That property is held by security-identity's own check instead.
+    subject: "services/gateway/src/mcp-oauth.ts",
+    find: "update zz.mcp_oauth_authz a set used_at = now()",
+    replace: "update zz.mcp_oauth_authz a set expires_at = expires_at",
+    planted: "an authorization code is never marked as used, so the one-time code can be " +
+      "exchanged again for as long as it has not expired while the guard in the same statement " +
+      "goes on testing a column nothing writes — enforcement without issuance",
+  },
+  {
+    check: "scripts/gate/checks/security-identity.ts",
+    target: "an enrolment link is spent by the statement that redeems it, and only once",
     subject: "services/gateway/src/passkey.ts",
-    find: "set used_at = now()",
-    replace: "set consumed_at = now()",
-    planted: "an enrolment link is never marked as used, so the one-time token stays usable " +
-      "for as long as it has not expired while the guard on the very next line goes on " +
-      "testing a column nothing writes — enforcement without issuance, which reads to anybody " +
-      "looking at the schema like a platform that consumes its invitations",
+    find: "where e.token_hash = $1 and e.used_at is null and e.expires_at > now()",
+    replace: "where e.token_hash = $1 and e.expires_at > now()",
+    planted: "redeeming an enrolment link no longer requires it to be unused, so one link " +
+      "registers a passkey as often as anybody holding it replays it until it expires",
   },
   {
     check: "scripts/gate/checks/data-sql.ts",

@@ -184,7 +184,8 @@ export function mergeShardReports(opts: {
 
   // Nothing may be lost, and a missing row is silent: a merge that dropped one turns a measured
   // check into an unmeasured one.
-  const lost = seed.results.map((r) => r.check).filter((c) => !seen.has(c));
+  // A check file that no longer exists is dropped by every shard, so its rows are not "lost".
+  const lost = seed.results.map((r) => r.check).filter((c) => existsSync(c) && !seen.has(c));
   const unmeasured = wanted.filter((f) => !seen.has(f));
   if (lost.length || unmeasured.length) {
     console.error(`  REFUSED — the merge would ${lost.length ? `drop ${lost.length} prior row(s) (${lost.slice(0, 4).join(", ")})` : ""}` +

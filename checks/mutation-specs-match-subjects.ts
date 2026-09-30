@@ -19,8 +19,10 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 
+import { isFrozenSubject } from "../scripts/mutation/plant.ts";
 import { SPECS } from "../scripts/mutation/specs.ts";
 import { UNEXERCISABLE } from "../scripts/mutation/unexercisable.ts";
+import { declaredChecks } from "../scripts/mutation/workspace.ts";
 
 const fail: string[] = [];
 let landed = 0;
@@ -40,6 +42,13 @@ for (const spec of SPECS) {
 
 for (const spec of SPECS) {
   const { subject, find } = spec;
+  // A subject `plant()` refuses is a plant that can never land, however exactly its `find`
+  // matches: the gate's own files are what a run measures.
+  if (isFrozenSubject(subject)) {
+    fail.push(`${subject} is one of the gate's own files, which plant() refuses to edit — the plant ` +
+      `for "${spec.check}" can never land; aim it at the code the check reads`);
+    continue;
+  }
   if (!existsSync(subject)) {
     fail.push(`${subject} does not exist — the plant for "${spec.check}" has no subject`);
     continue;
@@ -75,6 +84,17 @@ for (const spec of SPECS) {
   if (!names.has(spec.target)) {
     fail.push(`${spec.check} declares no check named "${spec.target}" — the runner would count ` +
       "this plant as surviving whatever the real check does");
+  }
+}
+
+// And every check file the suite runs over has something planted in it, or says why nothing
+// can be. `checkpoints-consumed.ts` and `skill-calls.ts` had neither and went into the report as
+// rows that measured nothing, until the first full run showed them.
+const covered = new Set([...SPECS.map((s) => s.check), ...UNEXERCISABLE.map((u) => u.check)]);
+for (const file of declaredChecks(process.cwd())) {
+  if (!covered.has(file)) {
+    fail.push(`${file} has no mutation plant and no entry in unexercisable.ts — nothing measures ` +
+      "whether its checks can fail");
   }
 }
 

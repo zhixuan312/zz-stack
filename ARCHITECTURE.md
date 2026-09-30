@@ -307,7 +307,9 @@ What that leaves, in the four shapes a reader has to know:
   it — one row per revision, immutable once written, and the only permitted update is the
   one-time approval seal that bound that revision;
 - what a revision cites is `zz.doc_link`, of kind `cites` (both ends pinned to exact revisions)
-  or `supports` (a source revision pinned to the TARGET DOCUMENT's identity);
+  or `supports` (a source revision pinned to the TARGET DOCUMENT's identity) — a link needs its
+  target's row, so a source naming a document not yet written keeps the name in its declared
+  `supports` and the link is filed when that document is first written;
 - a knowledge node is `zz.knowledge_node`, on a shelf named by its `team_id`, addressed as
   `_knowledge/nodes/<node_ordinal>-<slug>.md`, and what it cites is `zz.knowledge_node_evidence`;
 - what the platform did is `zz.event`, one row per call, written by the door that served it.

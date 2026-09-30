@@ -33,7 +33,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
-## [Unreleased]
+## [0.90.0] — 2026-09-30
+
+Three reported problems with how the platform reads what an agent records: a large approved
+document could only be revised whole, a passing check did not count as evidence for the criterion
+it was written for, and material filed ahead of the document it bears on was never linked to it.
+The mutation suite runs to completion for the first time.
 
 ### Added
 
@@ -65,6 +70,15 @@ than how much code moved.
   GitHub's six-hour job limit, and the scheduled run never started at all (a schedule has no
   inputs, and the runner refused the empty `--workers` it was handed). `mutation-run.ts --shard K/N`
   and `--merge` split and rejoin it with the same planner and merge a local `--workers N` uses.
+
+### Upgrade notes
+
+- **Clients re-pull to get three skills:** `zz-platform` 3.74 and `sdlc-plan` 1.20 teach
+  `document_revise`'s `section`, and `sdlc-review` 1.11 describes the corrected `evidence_relation`.
+- **Review rows refused on a passing check are asked again.** Readings taken under the old
+  `evidence_relation` question are no longer reused, so the next write or approval of a
+  `review.md` or a `spec.md` asks the corrected question of every row it covers.
+- No migration runs, and no env key changed.
 
 ## [0.89.0] — 2026-09-29
 

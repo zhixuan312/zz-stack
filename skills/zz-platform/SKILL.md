@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.78
+version: 3.79
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's documents or knowledge outside a flow."
 ---
@@ -173,7 +173,9 @@ the timing; getting this wrong costs a plan, not a refusal.
   panel records the present itself through `document_shown`, a call that is
   the panel's and never yours: it takes a ticket only the panel is handed. If
   the person can see the panel, do not page the rest into your reply; an
-  approval they make there arrives as their message.
+  approval they make there arrives as their message. The panel also tells you
+  where they are reading — the section, how far through, what they have
+  scrolled past — beside their next message; answer "where am I" from that.
 
   **A standing delegation waives their review, not the fetch.** "Approve
   without checking with me" is the person declining to read it — theirs to

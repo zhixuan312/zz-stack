@@ -319,6 +319,7 @@ export function registerArtifactTools(server: McpServer): void {
       const out: string[] = [];
       // What the document panel draws — every document whole, whatever part the text carries.
       const panel: PanelDocument[] = [];
+      const reading = asksPart({ section, offset, limit });
       // COUPLED: the `shown` record and the `presented_at` column are both written by
       // `present` (document-present.ts), once per document, and nothing in this registration
       // touches the record. `shownSinceLastChange` answers per document, so one record for a
@@ -350,11 +351,14 @@ export function registerArtifactTools(server: McpServer): void {
         // `shown_part` and counts as presented only once the parts cover the body. `present`
         // makes that choice, so a second caller cannot forget it.
         out.push(await present(p, team, rel, version, user, { section, offset, limit }));
-        const drawn = await panelDocument(p, team, rel, version, user);
+        // A part asked for is the model reading, not a person being shown: in ChatGPT every paging
+        // call drew the whole document again, in a new panel, under the last one (0.92.0).
+        const drawn = reading ? null : await panelDocument(p, team, rel, version, user);
         if (drawn) panel.push(drawn);
       }
       // `_meta`, never `structuredContent`: see document-panel.ts for what each client shows a model.
-      return { ...text(out.join("\n\n────────\n\n")), _meta: { "zz-core/documents": panel } };
+      return { ...text(out.join("\n\n────────\n\n")),
+               _meta: { "zz-core/documents": panel, ...(reading ? { "zz-core/reading": true } : {}) } };
     },
   );
 

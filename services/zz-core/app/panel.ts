@@ -52,6 +52,8 @@ let canFullscreen = false;
 /** The inline reading pane's height: what the host says it can give, less the head and the foot. */
 let paneHeight = 600;
 let jumpOpen = false;
+/** Whether this result is a part the assistant read for itself — nothing to draw for a person. */
+let reading = false;
 
 /** The platform version this page was built at, put in by the build. */
 declare const PANEL_VERSION: string;
@@ -190,7 +192,10 @@ function draw(): void {
     return;
   }
   if (!s) {
-    root.innerHTML = `<div class="panel"><p class="empty">document_present returned no document to show.</p></div>`;
+    // A part the assistant read for itself draws no panel: one line says where the document is.
+    root.innerHTML = reading
+      ? `<p class="reading-note">The assistant read part of this document. The whole of it is in the panel above.</p>`
+      : `<div class="panel"><p class="empty">document_present returned no document to show.</p></div>`;
     return;
   }
   const rail = s.view.outline.length > 1
@@ -361,6 +366,7 @@ function hostSays(ctx: ReturnType<typeof app.getHostContext>): void {
 
 app.ontoolresult = (result) => {
   const docs = (result._meta?.[DOCS_KEY] ?? []) as PanelDocument[];
+  reading = result._meta?.["zz-core/reading"] === true;
   received = true;
   slots = docs.map((doc) => ({ doc, view: renderMarkdown(doc.body), shown: "pending" as Shown,
                                approval: "idle" as Approval, asking: false, scroll: 0 }));

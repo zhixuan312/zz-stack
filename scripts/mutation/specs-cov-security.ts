@@ -341,6 +341,15 @@ export const COV_SECURITY: readonly MutationSpec[] = [
       "was cut for — so history now carries a way to vouch for a present it never showed",
   },
   {
+    check: "scripts/gate/checks/suites-surface.ts",
+    target: "the document panel is the page the release ships, reads as the console, and records a present only for the person and revision it was handed",
+    subject: "services/zz-core/src/tools/artifacts.ts",
+    find: "      const reading = asksPart({ section, offset, limit });",
+    replace: "      const reading = false;",
+    planted: "every part the model pages through draws the whole document again in a new panel, " +
+      "so in ChatGPT the person sees the same document stacked once per page the model read",
+  },
+  {
     check: "scripts/gate/checks/security-identity.ts",
     target: "an enrolment link is spent by the statement that redeems it, and only once",
     subject: "services/gateway/src/passkey.ts",

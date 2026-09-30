@@ -260,6 +260,7 @@ button.bar-section:hover { background: var(--surface-2); }
 .mascot { width: 44px; height: auto; flex: none; }
 .done-title { margin: 0 0 2px; font-size: 14px; font-weight: 600; color: var(--green-text); }
 .empty { margin: 0; padding: 24px; color: var(--ink-faint); }
+.reading-note { margin: 0; padding: 6px 2px; font-size: 12px; color: var(--ink-faint); }
 
 /* Busy: the skeleton, never a spinner for a whole pane. */
 .sk { background: var(--surface-2); border-radius: var(--r-sm); animation: sk 1.2s ease-in-out infinite alternate; }

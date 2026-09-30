@@ -16,7 +16,7 @@
  *   7. driven through the real door, as a person, against a stubbed store:
  *      - `document_present` names the panel, and its result carries the WHOLE body in `_meta`
  *        with a ticket even when the text half is a part, and no `structuredContent`;
- *      - history carries no ticket;
+ *      - history carries no ticket, and a part the model asks for draws no panel at all;
  *      - `document_shown` is app-only, records the present with a valid ticket, and records
  *        nothing with a forged one, another person's, or once the document has changed.
  *
@@ -187,6 +187,9 @@ try {
   is(res.structuredContent === undefined, "document_present returns structuredContent, which Claude Code shows instead of the text");
   is(drawn.length === 1 && drawn[0]!.body === body.trim() && drawn[0]!.version === 2 && !!drawn[0]!.ticket,
      "the panel is not handed the whole current body with a ticket");
+  const paged = await me.callTool({ name: "document_present", arguments: { path: REL, offset: 60000 } }) as Result;
+  is(((paged._meta?.["zz-core/documents"] ?? []) as unknown[]).length === 0 && paged._meta?.["zz-core/reading"] === true,
+     "a part the model asked for draws the whole document again, in another panel under the last");
   const old = await me.callTool({ name: "document_present", arguments: { path: REL, version: 1 } }) as Result;
   is(((old._meta?.["zz-core/documents"] ?? []) as { ticket: string | null }[])[0]?.ticket === null,
      "history is handed a ticket, so opening it could vouch for the present");

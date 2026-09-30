@@ -153,7 +153,10 @@ check("every check this gate registers is a file git will carry", () => {
   // same way.
   const sources = ["scripts/gate.ts", ...execFileSync("git", ["ls-files", "scripts/gate/"],
     { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean)];
-  const trackedGate = new Set(execFileSync("git", ["ls-files", "scripts/"],
+  // Every tracked file, not only scripts/: a gate module may import from the repository root —
+  // data-sql.ts reads SCHEMA_TARGET from schema-target.ts — and a set drawn from scripts/ alone
+  // reported that tracked file as one git does not carry.
+  const trackedGate = new Set(execFileSync("git", ["ls-files"],
     { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean));
   const unresolvable = [];
   for (const src of sources) {

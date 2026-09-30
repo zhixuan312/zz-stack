@@ -41,6 +41,11 @@ than how much code moved.
   document again in a new panel under the last. A `document_present` that asks for a part — by
   `section`, `offset` or `limit` — is the model reading for itself: it now hands the panel nothing,
   and the panel collapses to one line saying the whole document is in the panel above.
+- **A present is recorded once, however often a host re-mounts the panel.** ChatGPT re-mounts
+  every panel in a conversation when the person scrolls back or opens one full screen — seven at
+  once in the first live session — and each recorded the same present again, so one reading
+  counted as seven. `document_shown` now answers a present already on record without writing it
+  again.
 
 ## [0.92.0] — 2026-09-30
 

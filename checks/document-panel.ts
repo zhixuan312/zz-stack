@@ -129,6 +129,10 @@ pg.Pool.prototype.query = (async function query(sql0: string, values: unknown[] 
     return one([rev(1), rev(2)]);
   }
   if (/update zz\.doc_revision r set presented_at = now\(\)/.test(sql)) { doc.presented += 1; return { rows: [], rowCount: 1 }; }
+  // `shownSinceLastChange`: presented after the revision was written, once anything recorded it.
+  if (/select r\.presented_at::text as presented_at/.test(sql)) {
+    return one([{ presented_at: doc.presented ? "2026-09-30T00:00:01.000Z" : null, written_at: doc.written_at }]);
+  }
   if (/from zz\.doc d\b/.test(sql) && /d\.path = \$3/.test(sql)) {
     if (values[1] !== INIT || values[2] !== "spec.md") return one([]);
     return one([{ id: "d1", initiative: INIT, path: "spec.md", flow: "", type: "", status: "draft", outcome: null,
@@ -204,6 +208,12 @@ try {
   is(!/^ERROR/.test(said(ok)) && doc.presented === before + 1, `a valid ticket did not record the present: ${said(ok)}`);
   await new Promise((r) => setTimeout(r, 50));
   is(events.some((e) => e.kind === "document.shown" && e.detail.via === "panel"), "the panel's present is not in the record");
+  // A host re-mounting the panel asks again: answered, not recorded twice.
+  const again = await me.callTool({ name: "document_shown", arguments: { path: REL, version: 2, ticket } }) as Result;
+  await new Promise((r) => setTimeout(r, 50));
+  is(!/^ERROR/.test(said(again)) && doc.presented === before + 1
+     && events.filter((e) => e.kind === "document.shown" && e.detail.via === "panel").length === 1,
+     "a re-mounted panel records the same present a second time");
   doc.current = 3;
   const stale = await me.callTool({ name: "document_shown", arguments: { path: REL, version: 2, ticket } }) as Result;
   is(/^ERROR/.test(said(stale)) && doc.presented === before + 1, "a ticket for a revision the document has moved past records a present");

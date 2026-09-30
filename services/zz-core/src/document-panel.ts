@@ -32,7 +32,7 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
-import { recordPresented, splitDocPath } from "./attest.js";
+import { recordPresented, shownSinceLastChange, splitDocPath } from "./attest.js";
 import { chainFor, gateRefusal } from "./chain.js";
 import { db, teamFor } from "./platform-db.js";
 import { loadDocument, recordAct } from "./versions.js";
@@ -181,6 +181,12 @@ export function registerDocumentPanel(server: McpServer): void {
       if (loaded.doc.current_revision !== version) {
         return text(`ERROR: ${path} changed since the panel opened it (now v${loaded.doc.current_revision}) ` +
                     "— open it again with document_present");
+      }
+      // Once is the fact. A host re-mounts a panel whenever the person scrolls back to it or opens
+      // it full screen — ChatGPT re-mounted seven at once in the first live session — and a second
+      // record of the same present would count one reading as seven.
+      if (await shownSinceLastChange(p, team, path)) {
+        return text(`Already recorded: ${path} v${version} was shown in full. It counts as presented.`);
       }
       await recordPresented(p, team, path);
       recordAct(path, { user, action: "shown", path, version: String(version), via: "panel" });

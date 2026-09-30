@@ -252,38 +252,93 @@ function follow(): void {
       a.classList.toggle("is-passed", passed.has(a.dataset.section ?? ""));
     }
     root.querySelector(".rail .is-here")?.scrollIntoView({ block: "nearest" });
-    tellModel(s, here, top2, share);
+    tellModel(here, top2, share);
   });
 }
 
-/** Where the reader is, told to the model through the host (`ui/update-model-context`), so "where
- *  have I read to" and "explain the section I'm on" have an answer. The host keeps the latest and
- *  attaches it to the person's next message; each update replaces the last, so this sends only
- *  when the section changes or another tenth is read, a second after the reader settles. */
+/** What the model is told about the reader, through the host (`ui/update-model-context`). The host
+ *  keeps the latest and attaches it to the person's next message, and each update replaces the
+ *  last — so this describes the moment: where they are, how far through, the passage on their
+ *  screen, and what they have selected. A person who does not follow a paragraph asks about "this";
+ *  the model has to know what "this" is. Composed when the reader settles, never per scroll event. */
+type Heading = Rendered["outline"][number];
+let position: { here?: Heading; top2?: Heading; share: number } = { share: 0 };
 let told = "";
 let telling: ReturnType<typeof setTimeout> | undefined;
-function tellModel(s: Slot, here: Rendered["outline"][number] | undefined,
-                   top2: Rendered["outline"][number] | undefined, share: number): void {
-  if (!app.getHostCapabilities()?.updateModelContext) return;
-  const key = `${s.doc.path}|${here?.id ?? ""}|${Math.floor(share * 10)}`;
-  if (key === told) return;
-  clearTimeout(telling);
-  telling = setTimeout(() => {
-    told = key;
-    const at = here ? s.view.outline.indexOf(here) : -1;
-    const passed = s.view.outline.slice(0, Math.max(0, at)).filter((o) => o.level === 2).map((o) => o.text);
-    const where = top2 ? `"${top2.text}"${here && here !== top2 ? ` › "${here.text}"` : ""}` : "the opening, before the first section";
-    const text = [
-      `The person is reading ${s.doc.path} (v${s.doc.version}) in the document panel, which shows them all of it.`,
-      `They are at ${where} — ${Math.round(share * 100)}% through, about ${Math.max(1, Math.round((1 - share) * s.view.words / 220))} min left.`,
-      !passed.length ? "They have not yet passed a section."
-        : passed.length <= 12 ? `Sections they have scrolled past: ${passed.join("; ")}.`
-        : `They have scrolled past ${passed.length} sections, most recently: ${passed.slice(-8).join("; ")}.`,
-      "Scrolled past is not the same as read carefully. Do not page the document into the conversation for them; it is in front of them.",
-    ].join("\n");
-    void app.updateModelContext({ content: [{ type: "text", text }] }).catch(() => { told = ""; });
-  }, 1000);
+const PASSAGE_MAX = 2500;
+const SELECTION_MAX = 1500;
+const clip = (t: string, max: number): string => (t.length > max ? `${t.slice(0, max)}…` : t);
+
+function tellModel(here: Heading | undefined, top2: Heading | undefined, share: number): void {
+  position = { here, top2, share };
+  schedule(1000);
 }
+function schedule(wait: number): void {
+  if (!app.getHostCapabilities()?.updateModelContext) return;
+  clearTimeout(telling);
+  telling = setTimeout(compose, wait);
+}
+
+/** The blocks of the document the reader can see right now, between the bar and the pane's foot. */
+function onScreen(read: HTMLElement): string {
+  const barBottom = read.querySelector(".bar")?.getBoundingClientRect().bottom ?? read.getBoundingClientRect().top;
+  const foot = read.getBoundingClientRect().bottom;
+  const seen: string[] = [];
+  for (const el of read.querySelectorAll<HTMLElement>("article > *")) {
+    const r = el.getBoundingClientRect();
+    if (r.bottom <= barBottom) continue;
+    if (r.top >= foot) break;
+    seen.push(el.innerText.trim());
+  }
+  return clip(seen.filter(Boolean).join("\n\n"), PASSAGE_MAX);
+}
+
+/** What the reader has selected inside the document, and the section it sits in. */
+function selected(s: Slot, read: HTMLElement): { text: string; section?: string } | null {
+  const sel = document.getSelection();
+  if (!sel || sel.isCollapsed || !sel.anchorNode || !read.contains(sel.anchorNode)) return null;
+  const text = sel.toString().trim();
+  if (!text) return null;
+  let section: string | undefined;
+  for (const o of s.view.outline) {
+    const h = read.querySelector(`[id="${CSS.escape(o.id)}"]`);
+    if (h && h.compareDocumentPosition(sel.anchorNode) & Node.DOCUMENT_POSITION_FOLLOWING) section = o.text; else if (h) break;
+  }
+  return { text: clip(text, SELECTION_MAX), section };
+}
+
+function compose(): void {
+  const s = slots[active];
+  const read = root.querySelector<HTMLElement>(".read");
+  if (!s || !read) return;
+  const { here, top2, share } = position;
+  const passage = onScreen(read);
+  const pick = selected(s, read);
+  const key = `${s.doc.path}|${here?.id ?? ""}|${passage.slice(0, 160)}|${pick?.text ?? ""}`;
+  if (key === told) return;
+  told = key;
+  const at = here ? s.view.outline.indexOf(here) : -1;
+  const passed = s.view.outline.slice(0, Math.max(0, at)).filter((o) => o.level === 2).map((o) => o.text);
+  const where = top2 ? `"${top2.text}"${here && here !== top2 ? ` › "${here.text}"` : ""}` : "the opening, before the first section";
+  const lines = [
+    `The person is reading ${s.doc.path} (v${s.doc.version}) in the document panel, which shows them all of it.`,
+    `They are at ${where} — ${Math.round(share * 100)}% through, about ${Math.max(1, Math.round((1 - share) * s.view.words / 220))} min left.`,
+    !passed.length ? "They have not yet passed a section."
+      : passed.length <= 12 ? `Sections they have scrolled past: ${passed.join("; ")}.`
+      : `They have scrolled past ${passed.length} sections, most recently: ${passed.slice(-8).join("; ")}.`,
+    "Scrolled past is not the same as read carefully.",
+  ];
+  if (pick) {
+    lines.push("", `They have SELECTED this passage${pick.section ? ` (in "${pick.section}")` : ""}. When they ask about "this" ` +
+               `or "here", they mean it:`, pick.text);
+  }
+  if (passage) {
+    lines.push("", `On their screen right now${pick ? "" : ` — when they ask about "this" without saying what, it is here`}:`, passage);
+  }
+  lines.push("", "Do not page the document into the conversation for them; it is in front of them.");
+  void app.updateModelContext({ content: [{ type: "text", text: lines.join("\n") }] }).catch(() => { told = ""; });
+}
+document.addEventListener("selectionchange", () => schedule(400));
 
 /** Scroll the reading pane to a heading, below the sticky bar rather than under it. */
 function goTo(id: string): void {

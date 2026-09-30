@@ -173,9 +173,10 @@ the timing; getting this wrong costs a plan, not a refusal.
   panel records the present itself through `document_shown`, a call that is
   the panel's and never yours: it takes a ticket only the panel is handed. If
   the person can see the panel, do not page the rest into your reply; an
-  approval they make there arrives as their message. The panel also tells you
-  where they are reading — the section, how far through, what they have
-  scrolled past — beside their next message; answer "where am I" from that.
+  approval they make there arrives as their message. The panel also tells you,
+  beside their next message, where they are reading — the section, how far
+  through, the passage on their screen and anything they selected. "This" in
+  their question means the selection, or else that passage: answer from it.
 
   **A standing delegation waives their review, not the fetch.** "Approve
   without checking with me" is the person declining to read it — theirs to

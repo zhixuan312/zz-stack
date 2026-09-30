@@ -36,13 +36,14 @@ than how much code moved.
 ## [0.92.3] — 2026-09-30
 
 ### Added
-- **The model knows where the person is reading.** Asked in ChatGPT which part they had read to,
-  the model answered that it could not know — the panel drew the section, the share read and the
-  minutes left, and told nobody. The panel now sends that, with the sections scrolled past, through
-  the MCP Apps `ui/update-model-context`, whenever the reader enters another section or another
-  tenth of the document; the host attaches the latest to the person's next message. "Where am I",
-  "explain the section I'm on" and "summarise what I've read" now have an answer, and the model is
-  told the document is already in front of the person, so it stops paging it into the chat.
+- **The model knows where the person is reading, and what "this" means.** Asked in ChatGPT which
+  part they had read to, the model answered that it could not know — the panel drew the section,
+  the share read and the minutes left, and told nobody. The panel now tells the model, through the
+  MCP Apps `ui/update-model-context`, the section they are in, how far through, the sections
+  scrolled past, the passage on their screen, and any text they select — a long-press on a phone —
+  marked as what "this" means. The host keeps the latest and attaches it to the person's next
+  message, so "what does this mean", "explain the section I'm on" and "where am I" have an answer,
+  and the model is told the document is already in front of the person, so it stops paging it.
 
 ## [0.92.2] — 2026-09-30
 

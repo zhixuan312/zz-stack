@@ -81,6 +81,11 @@ jobs:
         with:
           repository: zhixuan312/zz-stack-dashboard
           path: pair/zz-stack-dashboard
+          # Tags here as well: the release decides whether the console ships by its last tag, and a
+          # tagless clone read "never released" on every run, so each one ran the console's whole
+          # suite for a console the host release would skip — and failed 0.91.0 on it.
+          fetch-depth: 0
+          fetch-tags: true
 
       - uses: actions/setup-node@v4
         with:

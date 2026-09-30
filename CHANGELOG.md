@@ -35,15 +35,25 @@ than how much code moved.
 
 ## [0.92.3] — 2026-09-30
 
+The document panel as a place to review with the agent, not only to read in.
+
 ### Added
-- **The model knows where the person is reading, and what "this" means.** Asked in ChatGPT which
-  part they had read to, the model answered that it could not know — the panel drew the section,
-  the share read and the minutes left, and told nobody. The panel now tells the model, through the
-  MCP Apps `ui/update-model-context`, the section they are in, how far through, the sections
-  scrolled past, the passage on their screen, and any text they select — a long-press on a phone —
-  marked as what "this" means. The host keeps the latest and attaches it to the person's next
-  message, so "what does this mean", "explain the section I'm on" and "where am I" have an answer,
-  and the model is told the document is already in front of the person, so it stops paging it.
+- **The agent knows what the person is looking at.** Asked in ChatGPT which part they had read to,
+  the model answered that it could not know. The panel now tells it, through the MCP Apps
+  `ui/update-model-context`: the section they are in, how far through, the sections scrolled past,
+  the passage on their screen, any text they select — marked as what "this" means — what changed
+  since the revision before, and notes not yet sent. The host attaches the latest to the person's
+  next message, so "what does this mean" and "explain the section I'm on" have an answer.
+- **A selection becomes a question or a note.** Selecting text (a long-press on a phone) turns the
+  foot of the reading pane into **Explain this**, which asks the agent about exactly that passage,
+  and **Note a change**, which files it in a basket of notes anchored to passage and section.
+  **Send notes** hands the agent every note as one request, with the instruction to revise with
+  `document_revise` and present again. "Ask for changes" is gone; **Add a note** covers the
+  document as a whole.
+- **What changed since the revision before is marked.** `document_present` hands the panel the
+  previous revision too; sections that changed or are new carry a blue mark in the text, the rail
+  and the jump list, the header counts them, and **Changes only** hides everything else — so a
+  re-review after the agent revises reads only what moved.
 
 ## [0.92.2] — 2026-09-30
 

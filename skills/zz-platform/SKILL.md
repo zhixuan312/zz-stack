@@ -177,6 +177,9 @@ the timing; getting this wrong costs a plan, not a refusal.
   beside their next message, where they are reading — the section, how far
   through, the passage on their screen and anything they selected. "This" in
   their question means the selection, or else that passage: answer from it.
+  Review notes they send from the panel name each passage and what should
+  change: revise with `document_revise`, then present again — the panel marks
+  the sections that changed, so they re-read only those.
 
   **A standing delegation waives their review, not the fetch.** "Approve
   without checking with me" is the person declining to read it — theirs to

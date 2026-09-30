@@ -85,7 +85,16 @@ if (!existsSync(join(CONSOLE, "app/globals.css"))) {
 }
 
 // 5. Rendering
-const { renderMarkdown } = await load("services/zz-core/app/render.ts");
+const { renderMarkdown, compareSections } = await load("services/zz-core/app/render.ts");
+{
+  // A re-review reads what moved: a section edited is changed, one added is new, one gone is removed.
+  const before = renderMarkdown("# T\n\n## Kept\n\nsame\n\n## Edited\n\nold words\n\n## Gone\n\nbye\n");
+  const now = renderMarkdown("# T\n\n## Kept\n\nsame\n\n## Edited\n\nnew words\n\n## Added\n\nhello\n");
+  const cmp = compareSections(now, before);
+  is(JSON.stringify([...cmp.marks]) === '[["edited","changed"],["added","new"]]' && JSON.stringify(cmp.removed) === '["Gone"]',
+     `sections compare as ${JSON.stringify([...cmp.marks])}, removed ${JSON.stringify(cmp.removed)}`);
+  is(/<section class="sec" data-sec="kept">/.test(now.html), "a second-level section is not wrapped, so it cannot be marked or hidden");
+}
 const r = renderMarkdown([
   "# The title", "", "<script>alert(1)</script>", "", "[run](javascript:alert(1)) and [site](https://example.org)",
   "", "![tracker](https://evil.example/p.png)", "", "| a | b |", "|---|--:|", "| 1 | 2 |", "",
@@ -186,11 +195,13 @@ try {
      "the panel resource is not the built page, as the MCP Apps type");
 
   const res = await me.callTool({ name: "document_present", arguments: { path: REL } }) as Result;
-  const drawn = (res._meta?.["zz-core/documents"] ?? []) as { body: string; ticket: string | null; version: number }[];
+  const drawn = (res._meta?.["zz-core/documents"] ?? []) as { body: string; ticket: string | null; version: number; previous?: unknown }[];
   is(said(res).includes("Presented in part"), "the fixture body did not come back in parts — it tests nothing");
   is(res.structuredContent === undefined, "document_present returns structuredContent, which Claude Code shows instead of the text");
   is(drawn.length === 1 && drawn[0]!.body === body.trim() && drawn[0]!.version === 2 && !!drawn[0]!.ticket,
      "the panel is not handed the whole current body with a ticket");
+  const prev = (drawn[0] as { previous?: { version: number; body: string } | null } | undefined)?.previous;
+  is(prev?.version === 1 && prev.body === body.trim(), "the panel is not handed the revision before, to mark what changed");
   const paged = await me.callTool({ name: "document_present", arguments: { path: REL, offset: 60000 } }) as Result;
   is(((paged._meta?.["zz-core/documents"] ?? []) as unknown[]).length === 0 && paged._meta?.["zz-core/reading"] === true,
      "a part the model asked for draws the whole document again, in another panel under the last");

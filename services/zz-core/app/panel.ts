@@ -1,75 +1,30 @@
 /**
- * The document panel, in the page a client renders beside `document_present`'s result.
+ * The document panel: a document from the team's store, in the page a client renders beside
+ * `document_present`'s result — inside a conversation with an agent, not on its own.
  *
- * What it does, in order: take the documents `document_present` put in its result's `_meta`,
- * draw the active one whole, tell the platform it did (`document_shown`, with the ticket that came
- * with it), and — where the document gates and this is its current revision — offer the approval,
- * through the same `document_approve` a model would call. After an approval, or a request for
- * changes, the conversation is told in the person's own voice, because the flow continues there.
- *
- * Built for the documents this platform actually holds, which run to an hour of reading. A reader
- * keeps going when they always know three things: where they are, how much is left, and how to get
- * to the part that matters. So the reading pane carries a sticky bar naming the section they are in,
- * with the share read and the minutes left; the section name opens a jump list with each section's
- * own length; a wide panel keeps that list open as a rail that follows the reading; and each
- * document keeps its place across a tab or a mode switch. Layout follows the panel's own width
- * (container queries), not the window's, because the same page is framed in a chat column, full
- * screen and on a phone.
+ * That is the premise of every choice here. The person reviews with the agent, so the panel's job
+ * is to make that collaboration exact: show the whole document however long, keep them oriented
+ * (a sticky bar with the section, the share read and the minutes left; a jump list with each
+ * section's length; a rail on a wide panel; each document's place kept), tell the agent what they
+ * see (context.ts), turn a selection into a question or a note (review.ts), mark what changed since
+ * the revision before so a re-review reads only what moved, and take the approval through the same
+ * `document_approve` a model would call. Layout follows the panel's own width, not the window's.
  *
  * One theme and one register, the console's: cream ground, hairlines not shadows, one accent for
- * the one primary action, green/amber/red for approved/waiting/refused and nothing else. The
- * `state-approved` mascot appears for its one job, an approval that just succeeded.
+ * the one primary action, green/amber/red for approved/waiting/refused and nothing else, the kit
+ * blue for what changed. The `state-approved` mascot appears for its one job.
  */
-import { App } from "@modelcontextprotocol/ext-apps";
-
-import { minutesOf, renderMarkdown, type Rendered } from "./render.ts";
+import { minutesOf, compareSections, renderMarkdown } from "./render.ts";
+import { schedule, tellModel } from "./context.ts";
+import { addNote, dropNote, explain, loadNotes, notesBlock, selbar, sendNotes, startNote, syncSelection } from "./review.ts";
+import { answer, app, current, esc, root, state, type Approval, type PanelDocument, type Shown, type Slot } from "./state.ts";
 import approvedArt from "./brand/state-approved.png";
 import wordmark from "./brand/wordmark.png";
-
-/** What `document_present` hands over. COUPLED: `PanelDocument` in src/document-panel.ts. */
-interface PanelDocument {
-  path: string; initiative: string; name: string;
-  version: number; current: number | null;
-  status: string | null; approvedBy: string | null; approvedAt: string | null;
-  gate: string | null;
-  history: { version: number; approvedBy: string | null; approvedAt: string | null }[];
-  body: string; ticket: string | null;
-}
-type Shown = "pending" | "recorded" | { failed: string };
-type Approval = "idle" | "busy" | "done" | { failed: string };
-interface Slot { doc: PanelDocument; view: Rendered; shown: Shown; approval: Approval; asking: boolean; scroll: number }
 
 const DOCS_KEY = "zz-core/documents";
 /** Past this many words a document is one a person should be offered the whole screen for. */
 const LONG_WORDS = 2000;
-const root = document.getElementById("panel") as HTMLElement;
-let slots: Slot[] = [];
-/** Whether the result has arrived. Before it does, the page is a skeleton, not "nothing". */
-let received = false;
-let active = 0;
-let fullscreen = false;
-let canFullscreen = false;
-/** The inline reading pane's height: what the host says it can give, less the head and the foot. */
-let paneHeight = 600;
 let jumpOpen = false;
-/** Whether this result is a part the assistant read for itself — nothing to draw for a person. */
-let reading = false;
-
-/** The platform version this page was built at, put in by the build. */
-declare const PANEL_VERSION: string;
-const app = new App({ name: "zz-document-panel", version: PANEL_VERSION }, {}, { autoResize: true });
-
-/** Escape text for an HTML context. Everything a person or a document supplies goes through here,
- *  except the body, which `renderMarkdown` has already made safe. */
-const esc = (s: string): string =>
-  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[c] ?? c);
-
-/** A tool result's text, and whether the platform refused. Every refusal on this platform starts
- *  with `ERROR`; anything else is an answer. */
-function answer(result: { content?: { type: string; text?: string }[]; isError?: boolean }): { ok: boolean; said: string } {
-  const said = (result.content ?? []).map((c) => c.text ?? "").join("\n").trim();
-  return { ok: !result.isError && !/^ERROR\b/.test(said), said: said.replace(/^ERROR:\s*/, "") };
-}
 
 const humanName = (name: string): string => {
   const base = name.replace(/\.md$/, "").replace(/[-_]+/g, " ");
@@ -90,23 +45,34 @@ function standing(s: Slot): { label: string; tone: "green" | "amber" | "neutral"
   return { label: "Awaiting approval", tone: "amber" };
 }
 
+/** What moved since the revision before, in one line of the header's facts. */
+function changeFact(s: Slot): string | null {
+  if (!s.doc.previous) return null;
+  const changed = [...s.marks.values()].filter((m) => m === "changed").length;
+  const added = [...s.marks.values()].filter((m) => m === "new").length;
+  const parts = [changed && `${changed} changed`, added && `${added} new`, s.removed.length && `${s.removed.length} removed`].filter(Boolean);
+  return `<span class="fact-change">${parts.length ? parts.join(", ") : "no section changed"} since v${s.doc.previous.version}</span>`;
+}
+
 function header(s: Slot): string {
   const d = s.doc;
   const pill = standing(s);
   const title = s.view.title ?? humanName(d.name);
   const sections = s.view.outline.filter((o) => o.level === 2).length;
   // The file's name, unless the tabs below already say it.
-  const facts = [...(slots.length > 1 ? [] : [`<span class="mono chip">${esc(d.name)}</span>`]),
+  const facts = [...(state.slots.length > 1 ? [] : [`<span class="mono chip">${esc(d.name)}</span>`]),
                  `v${d.version}`, `${minutesOf(s.view.words)} min read`];
   if (sections) facts.push(`${sections} section${sections === 1 ? "" : "s"}`);
-  const tabs = slots.length > 1
-    ? `<nav class="tabs" aria-label="Documents">${slots.map((t, i) =>
-        `<button class="tab" data-tab="${i}" aria-current="${i === active}">${esc(t.doc.name)}</button>`).join("")}</nav>`
+  const change = changeFact(s);
+  if (change) facts.push(change);
+  const tabs = state.slots.length > 1
+    ? `<nav class="tabs" aria-label="Documents">${state.slots.map((t, i) =>
+        `<button class="tab" data-tab="${i}" aria-current="${i === state.active}">${esc(t.doc.name)}</button>`).join("")}</nav>`
     : "";
   // One control for the screen: a long document is offered the whole of it in words; leaving it
   // is always offered.
-  const mode = !canFullscreen ? ""
-    : fullscreen ? `<button class="btn-link" data-act="mode">Exit full screen</button>`
+  const mode = !state.canFullscreen ? ""
+    : state.fullscreen ? `<button class="btn-link" data-act="mode">Exit full screen</button>`
     : s.view.words > LONG_WORDS ? `<button class="btn-link" data-act="mode">Read full screen</button>`
     : `<button class="icon-btn" data-act="mode" aria-label="Read full screen" title="Read full screen">↗</button>`;
   return `<header class="head">
@@ -117,21 +83,27 @@ function header(s: Slot): string {
   </header>`;
 }
 
-/** The sections, each with its own length: the rail on a wide panel, the jump list on any. */
+/** The sections, each with its own length and what changed: the rail on a wide panel, the jump list on any. */
 function sectionList(s: Slot, cls: string): string {
-  return s.view.outline.map((o) =>
-    `<a class="${cls}-${o.level}" href="#${o.id}" data-section="${o.id}"><span>${esc(o.text)}</span>` +
-    (o.level === 2 ? `<span class="mins">${minutesOf(o.words)} min</span>` : "") + `</a>`).join("");
+  return s.view.outline.map((o) => {
+    const mark = s.marks.get(o.id);
+    return `<a class="${cls}-${o.level}" href="#${o.id}" data-section="${o.id}"><span>${esc(o.text)}</span>` +
+      (mark ? `<span class="mark">${mark}</span>` : "") +
+      (o.level === 2 ? `<span class="mins">${minutesOf(o.words)} min</span>` : "") + `</a>`;
+  }).join("");
 }
 
 /** The reading pane's own head: which section this is, how far through, and the way to the others. */
 function bar(s: Slot): string {
   const listed = s.view.outline.length > 1;
+  const toggle = s.marks.size
+    ? `<button class="bar-toggle" data-act="only-changes" aria-pressed="${s.onlyChanges}">${s.onlyChanges ? "Show all" : "Changes only"}</button>` : "";
   return `<div class="bar">
     ${listed ? `<button class="bar-section" data-act="jump" aria-expanded="${jumpOpen}" aria-controls="jump">
       <span class="bar-label">Beginning</span><span class="caret" aria-hidden="true">▾</span></button>`
       : `<span class="bar-section"><span class="bar-label">${esc(s.view.title ?? humanName(s.doc.name))}</span></span>`}
     <span class="bar-meta" aria-live="off"></span>
+    ${toggle}
     <button class="bar-top" data-act="top" hidden>↑ Top</button>
     <div class="progress" aria-hidden="true"><i></i></div>
     ${listed ? `<nav id="jump" class="jump" aria-label="Sections" ${jumpOpen ? "" : "hidden"}>${sectionList(s, "jp")}</nav>` : ""}
@@ -154,38 +126,35 @@ function footer(s: Slot): string {
       <div><p class="done-title">Approved</p><p class="note">v${d.version} carries your signature. The conversation has been told.</p></div>
     </footer>`;
   }
-  if (d.status === "approved") {
-    return `<footer class="foot"><p class="note"><span class="dot dot-green"></span>Approved${who}${d.approvedAt ? ` on ${esc(day(d.approvedAt))}` : ""}.</p></footer>`;
-  }
   const shown = s.shown === "recorded"
     ? `<span class="dot dot-green"></span>Shown to you in full`
     : s.shown === "pending" ? `<span class="dot"></span>Recording that you have it in front of you…`
     : `<span class="dot dot-red"></span>${esc(s.shown.failed)}`;
-  if (d.gate) return `<footer class="foot"><p class="note" role="status">${shown}</p><p class="note">No approval: this document carries no gate.</p></footer>`;
+  const status = d.status === "approved"
+    ? `<span class="dot dot-green"></span>Approved${who}${d.approvedAt ? ` on ${esc(day(d.approvedAt))}` : ""}.`
+    : s.sent ?? shown;
   const failed = typeof s.approval === "object" ? `<p class="error" role="alert">${esc(s.approval.failed)}</p>` : "";
   const busy = s.approval === "busy";
-  const ask = s.asking
-    ? `<form class="ask" data-act="send-changes">
-         <label class="sr-only" for="changes">What should change</label>
-         <textarea id="changes" rows="3" placeholder="What should change before you approve it?" required></textarea>
-         <div class="row"><button type="button" class="btn btn-quiet" data-act="cancel-changes">Cancel</button>
-         <button type="submit" class="btn btn-primary">Send to the conversation</button></div>
-       </form>`
-    : "";
+  const n = s.notes.length;
+  // One primary act at a time: with notes waiting, sending them is what comes next.
+  const canApprove = !d.gate && d.status !== "approved";
+  const acts = s.noting ? "" : `<div class="row">
+      <button class="btn btn-quiet" data-act="note-doc" ${busy ? "disabled" : ""}>Add a note</button>
+      ${n ? `<button class="btn btn-primary" data-act="send-notes">Send ${n} note${n === 1 ? "" : "s"}</button>` : ""}
+      ${canApprove ? `<button class="btn ${n ? "btn-quiet" : "btn-primary"}" data-act="sign" ${busy || s.shown !== "recorded" ? "disabled" : ""}>
+        ${busy ? "Approving…" : `Approve v${d.version}`}</button>` : ""}</div>`;
   return `<footer class="foot">
-    <p class="note" role="status">${shown}</p>
+    <p class="note" role="status">${status}</p>
+    ${d.gate && d.status !== "approved" ? `<p class="note">No approval: this document carries no gate.</p>` : ""}
     ${failed}
-    ${ask}
-    ${s.asking ? "" : `<div class="row">
-      <button class="btn btn-quiet" data-act="ask-changes" ${busy ? "disabled" : ""}>Ask for changes</button>
-      <button class="btn btn-primary" data-act="sign" ${busy || s.shown !== "recorded" ? "disabled" : ""}>
-        ${busy ? "Approving…" : `Approve v${d.version}`}</button></div>`}
+    ${notesBlock(s)}
+    ${acts}
   </footer>`;
 }
 
 function draw(): void {
-  const s = slots[active];
-  if (!received) {
+  const s = current();
+  if (!state.received) {
     root.innerHTML = `<div class="panel" aria-busy="true"><div class="head"><div class="sk sk-line"></div>
       <div class="sk sk-title"></div></div><div class="body"><div class="read">
       <div class="sk sk-line"></div><div class="sk sk-line"></div><div class="sk sk-short"></div></div></div></div>`;
@@ -193,19 +162,26 @@ function draw(): void {
   }
   if (!s) {
     // A part the assistant read for itself draws no panel: one line says where the document is.
-    root.innerHTML = reading
+    root.innerHTML = state.reading
       ? `<p class="reading-note">The assistant read part of this document. The whole of it is in the panel above.</p>`
       : `<div class="panel"><p class="empty">document_present returned no document to show.</p></div>`;
     return;
   }
   const rail = s.view.outline.length > 1
     ? `<nav class="rail" aria-label="Sections"><p class="eyebrow-text">In this document</p>${sectionList(s, "rl")}</nav>` : "";
-  root.innerHTML = `<div class="panel ${fullscreen ? "is-full" : ""}" style="--pane-h:${paneHeight}px">
+  const removed = s.onlyChanges && s.removed.length
+    ? `<p class="removed">Removed since v${s.doc.previous?.version}: ${s.removed.map(esc).join("; ")}</p>` : "";
+  root.innerHTML = `<div class="panel ${state.fullscreen ? "is-full" : ""}" style="--pane-h:${state.paneHeight}px">
     ${header(s)}
-    <div class="body">${rail}<div class="read" tabindex="0">${bar(s)}
-      <article class="prose">${withoutTitle(s)}</article></div></div>
+    <div class="body">${rail}<div class="read" tabindex="0">${bar(s)}${removed}
+      <article class="prose ${s.onlyChanges ? "only-changes" : ""}">${withoutTitle(s)}</article>${selbar()}</div></div>
     ${footer(s)}
   </div>`;
+  const since = s.doc.previous?.version;
+  for (const [id, mark] of s.marks) {
+    const sec = root.querySelector<HTMLElement>(`section[data-sec="${CSS.escape(id)}"]`);
+    if (sec) { sec.dataset.mark = mark; sec.dataset.since = String(since ?? ""); }
+  }
   const read = root.querySelector<HTMLElement>(".read");
   if (read) {
     read.scrollTop = s.scroll;
@@ -221,7 +197,7 @@ function follow(): void {
   queued = true;
   requestAnimationFrame(() => {
     queued = false;
-    const s = slots[active];
+    const s = current();
     const read = root.querySelector<HTMLElement>(".read");
     if (!s || !read) return;
     const barH = read.querySelector<HTMLElement>(".bar")?.offsetHeight ?? 0;
@@ -230,7 +206,8 @@ function follow(): void {
     let here: (typeof s.view.outline)[number] | undefined;
     for (const o of s.view.outline) {
       const el = read.querySelector<HTMLElement>(`[id="${CSS.escape(o.id)}"]`);
-      if (el && el.offsetTop <= read.scrollTop + barH + 12) here = o; else if (el) break;
+      if (!el || el.offsetParent === null) continue;   // hidden by "Changes only"
+      if (top(el, read) <= read.scrollTop + barH + 12) here = o; else break;
     }
     const top2 = here?.level === 3
       ? s.view.outline.slice(0, s.view.outline.indexOf(here) + 1).reverse().find((o) => o.level === 2) : here;
@@ -256,89 +233,10 @@ function follow(): void {
   });
 }
 
-/** What the model is told about the reader, through the host (`ui/update-model-context`). The host
- *  keeps the latest and attaches it to the person's next message, and each update replaces the
- *  last — so this describes the moment: where they are, how far through, the passage on their
- *  screen, and what they have selected. A person who does not follow a paragraph asks about "this";
- *  the model has to know what "this" is. Composed when the reader settles, never per scroll event. */
-type Heading = Rendered["outline"][number];
-let position: { here?: Heading; top2?: Heading; share: number } = { share: 0 };
-let told = "";
-let telling: ReturnType<typeof setTimeout> | undefined;
-const PASSAGE_MAX = 2500;
-const SELECTION_MAX = 1500;
-const clip = (t: string, max: number): string => (t.length > max ? `${t.slice(0, max)}…` : t);
-
-function tellModel(here: Heading | undefined, top2: Heading | undefined, share: number): void {
-  position = { here, top2, share };
-  schedule(1000);
+/** An element's offset from the top of the reading pane's content, through any wrapping section. */
+function top(el: HTMLElement, read: HTMLElement): number {
+  return el.getBoundingClientRect().top - read.getBoundingClientRect().top + read.scrollTop;
 }
-function schedule(wait: number): void {
-  if (!app.getHostCapabilities()?.updateModelContext) return;
-  clearTimeout(telling);
-  telling = setTimeout(compose, wait);
-}
-
-/** The blocks of the document the reader can see right now, between the bar and the pane's foot. */
-function onScreen(read: HTMLElement): string {
-  const barBottom = read.querySelector(".bar")?.getBoundingClientRect().bottom ?? read.getBoundingClientRect().top;
-  const foot = read.getBoundingClientRect().bottom;
-  const seen: string[] = [];
-  for (const el of read.querySelectorAll<HTMLElement>("article > *")) {
-    const r = el.getBoundingClientRect();
-    if (r.bottom <= barBottom) continue;
-    if (r.top >= foot) break;
-    seen.push(el.innerText.trim());
-  }
-  return clip(seen.filter(Boolean).join("\n\n"), PASSAGE_MAX);
-}
-
-/** What the reader has selected inside the document, and the section it sits in. */
-function selected(s: Slot, read: HTMLElement): { text: string; section?: string } | null {
-  const sel = document.getSelection();
-  if (!sel || sel.isCollapsed || !sel.anchorNode || !read.contains(sel.anchorNode)) return null;
-  const text = sel.toString().trim();
-  if (!text) return null;
-  let section: string | undefined;
-  for (const o of s.view.outline) {
-    const h = read.querySelector(`[id="${CSS.escape(o.id)}"]`);
-    if (h && h.compareDocumentPosition(sel.anchorNode) & Node.DOCUMENT_POSITION_FOLLOWING) section = o.text; else if (h) break;
-  }
-  return { text: clip(text, SELECTION_MAX), section };
-}
-
-function compose(): void {
-  const s = slots[active];
-  const read = root.querySelector<HTMLElement>(".read");
-  if (!s || !read) return;
-  const { here, top2, share } = position;
-  const passage = onScreen(read);
-  const pick = selected(s, read);
-  const key = `${s.doc.path}|${here?.id ?? ""}|${passage.slice(0, 160)}|${pick?.text ?? ""}`;
-  if (key === told) return;
-  told = key;
-  const at = here ? s.view.outline.indexOf(here) : -1;
-  const passed = s.view.outline.slice(0, Math.max(0, at)).filter((o) => o.level === 2).map((o) => o.text);
-  const where = top2 ? `"${top2.text}"${here && here !== top2 ? ` › "${here.text}"` : ""}` : "the opening, before the first section";
-  const lines = [
-    `The person is reading ${s.doc.path} (v${s.doc.version}) in the document panel, which shows them all of it.`,
-    `They are at ${where} — ${Math.round(share * 100)}% through, about ${Math.max(1, Math.round((1 - share) * s.view.words / 220))} min left.`,
-    !passed.length ? "They have not yet passed a section."
-      : passed.length <= 12 ? `Sections they have scrolled past: ${passed.join("; ")}.`
-      : `They have scrolled past ${passed.length} sections, most recently: ${passed.slice(-8).join("; ")}.`,
-    "Scrolled past is not the same as read carefully.",
-  ];
-  if (pick) {
-    lines.push("", `They have SELECTED this passage${pick.section ? ` (in "${pick.section}")` : ""}. When they ask about "this" ` +
-               `or "here", they mean it:`, pick.text);
-  }
-  if (passage) {
-    lines.push("", `On their screen right now${pick ? "" : ` — when they ask about "this" without saying what, it is here`}:`, passage);
-  }
-  lines.push("", "Do not page the document into the conversation for them; it is in front of them.");
-  void app.updateModelContext({ content: [{ type: "text", text: lines.join("\n") }] }).catch(() => { told = ""; });
-}
-document.addEventListener("selectionchange", () => schedule(400));
 
 /** Scroll the reading pane to a heading, below the sticky bar rather than under it. */
 function goTo(id: string): void {
@@ -346,10 +244,10 @@ function goTo(id: string): void {
   const el = read?.querySelector<HTMLElement>(`[id="${CSS.escape(id)}"]`);
   if (!read || !el) return;
   const barH = read.querySelector<HTMLElement>(".bar")?.offsetHeight ?? 0;
-  const top = el.offsetTop - barH - 8;
+  const to = top(el, read) - barH - 8;
   // A short hop glides, so the reader sees where they went; a long one lands at once — twenty
   // screens of text streaming past is disorienting, and slow.
-  read.scrollTo({ top, behavior: Math.abs(top - read.scrollTop) > 2 * read.clientHeight ? "instant" : "smooth" });
+  read.scrollTo({ top: to, behavior: Math.abs(to - read.scrollTop) > 2 * read.clientHeight ? "instant" : "smooth" });
 }
 
 /** Record the active document as shown, once it is on screen. Nothing records for history, for a
@@ -367,10 +265,10 @@ async function recordShown(s: Slot): Promise<void> {
   draw();
 }
 const show = (i: number): void => {
-  active = i;
+  state.active = i;
   jumpOpen = false;
   draw();
-  requestAnimationFrame(() => void recordShown(slots[active]!));
+  requestAnimationFrame(() => void recordShown(state.slots[state.active]!));
 };
 
 async function sign(s: Slot): Promise<void> {
@@ -401,10 +299,12 @@ function setJump(open: boolean): void {
   here?.focus({ preventScroll: true });
 }
 
+// A button acting on the selection must not take the selection away by being pressed.
+root.addEventListener("mousedown", (e) => { if ((e.target as HTMLElement).closest(".selbar button")) e.preventDefault(); });
 root.addEventListener("click", (e) => {
   const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act], [data-tab], a[href]");
   if (!el) { if (jumpOpen) setJump(false); return; }
-  const s = slots[active];
+  const s = current();
   if (el.dataset.tab !== undefined) { show(Number(el.dataset.tab)); return; }
   if (el instanceof HTMLAnchorElement) {
     e.preventDefault();
@@ -418,44 +318,56 @@ root.addEventListener("click", (e) => {
     case "sign": void sign(s); break;
     case "jump": setJump(!jumpOpen); break;
     case "top": root.querySelector<HTMLElement>(".read")?.scrollTo({ top: 0, behavior: "smooth" }); break;
-    case "ask-changes": s.asking = true; draw(); root.querySelector("textarea")?.focus(); break;
-    case "cancel-changes": s.asking = false; draw(); break;
+    case "only-changes": s.onlyChanges = !s.onlyChanges; s.scroll = 0; draw(); break;
+    case "explain": void explain(s); break;
+    case "note-sel": startNote(s, true); draw(); root.querySelector<HTMLTextAreaElement>("#note")?.focus(); break;
+    case "note-doc": startNote(s, false); draw(); root.querySelector<HTMLTextAreaElement>("#note")?.focus(); break;
+    case "cancel-note": s.noting = null; draw(); break;
+    case "drop-note": dropNote(s, Number(el.dataset.i)); draw(); break;
+    case "send-notes": void sendNotes(s).then(draw); break;
     case "mode":
-      void app.requestDisplayMode({ mode: fullscreen ? "inline" : "fullscreen" })
-        .then((r) => { fullscreen = r.mode === "fullscreen"; draw(); });
+      void app.requestDisplayMode({ mode: state.fullscreen ? "inline" : "fullscreen" })
+        .then((r) => { state.fullscreen = r.mode === "fullscreen"; draw(); });
       break;
   }
 });
 root.addEventListener("keydown", (e) => { if (e.key === "Escape" && jumpOpen) setJump(false); });
 root.addEventListener("submit", (e) => {
   e.preventDefault();
-  const s = slots[active];
-  const note = root.querySelector("textarea")?.value.trim();
-  if (!s || !note) return;
-  s.asking = false;
+  const s = current();
+  const text = root.querySelector<HTMLTextAreaElement>("#note")?.value ?? "";
+  if (!s) return;
+  addNote(s, text);
   draw();
-  void app.sendMessage({ role: "user", content: [{ type: "text",
-    text: `Changes requested on ${s.doc.path} (v${s.doc.version}), from the document panel:\n\n${note}` }] });
 });
+document.addEventListener("selectionchange", syncSelection);
 
 /** Take what the host says about the space and the modes it offers. */
 function hostSays(ctx: ReturnType<typeof app.getHostContext>): void {
   if (!ctx) return;
-  if (ctx.availableDisplayModes) canFullscreen = ctx.availableDisplayModes.includes("fullscreen");
-  if (ctx.displayMode) fullscreen = ctx.displayMode === "fullscreen";
+  if (ctx.availableDisplayModes) state.canFullscreen = ctx.availableDisplayModes.includes("fullscreen");
+  if (ctx.displayMode) state.fullscreen = ctx.displayMode === "fullscreen";
   const dims = ctx.containerDimensions as { maxHeight?: number; height?: number } | undefined;
   const room = dims?.maxHeight ?? dims?.height;
   // The head and the foot take about 230px; the pane gets the rest, within reason either way.
-  if (typeof room === "number" && room > 0) paneHeight = Math.max(320, Math.min(720, room - 230));
+  if (typeof room === "number" && room > 0) state.paneHeight = Math.max(320, Math.min(720, room - 230));
 }
 
 app.ontoolresult = (result) => {
   const docs = (result._meta?.[DOCS_KEY] ?? []) as PanelDocument[];
-  reading = result._meta?.["zz-core/reading"] === true;
-  received = true;
-  slots = docs.map((doc) => ({ doc, view: renderMarkdown(doc.body), shown: "pending" as Shown,
-                               approval: "idle" as Approval, asking: false, scroll: 0 }));
+  state.reading = result._meta?.["zz-core/reading"] === true;
+  state.received = true;
+  state.slots = docs.map((doc) => {
+    const view = renderMarkdown(doc.body);
+    const cmp = doc.previous ? compareSections(view, renderMarkdown(doc.previous.body)) : null;
+    const slot: Slot = { doc, view, shown: "pending" as Shown, approval: "idle" as Approval, scroll: 0,
+      marks: cmp?.marks ?? new Map(), removed: cmp?.removed ?? [], onlyChanges: false,
+      notes: [], sent: null, noting: null };
+    loadNotes(slot);
+    return slot;
+  });
   show(0);
+  schedule(1200);
 };
 app.onhostcontextchanged = (ctx) => { hostSays(ctx); draw(); };
 

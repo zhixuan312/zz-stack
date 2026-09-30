@@ -1,0 +1,72 @@
+/**
+ * What every part of the document panel shares: the documents it was handed, which one is open,
+ * the host connection, and the two helpers everything that writes HTML or reads a tool result uses.
+ */
+import { App } from "@modelcontextprotocol/ext-apps";
+
+import type { Rendered } from "./render.ts";
+
+/** What `document_present` hands over. COUPLED: `PanelDocument` in src/document-panel.ts. */
+export interface PanelDocument {
+  path: string; initiative: string; name: string;
+  version: number; current: number | null;
+  status: string | null; approvedBy: string | null; approvedAt: string | null;
+  gate: string | null;
+  history: { version: number; approvedBy: string | null; approvedAt: string | null }[];
+  body: string;
+  previous: { version: number; body: string } | null;
+  ticket: string | null;
+}
+/** A change the reader wants, anchored to what they selected when there was a selection. */
+export interface Note { quote: string | null; section: string | null; text: string }
+export type Shown = "pending" | "recorded" | { failed: string };
+export type Approval = "idle" | "busy" | "done" | { failed: string };
+export interface Slot {
+  doc: PanelDocument;
+  view: Rendered;
+  shown: Shown;
+  approval: Approval;
+  /** Where the reader was, so a redraw or a tab switch keeps their place. */
+  scroll: number;
+  /** Sections that differ from the revision before, by section id; `removed` by heading. */
+  marks: Map<string, "changed" | "new">;
+  removed: string[];
+  onlyChanges: boolean;
+  notes: Note[];
+  /** What the footer says about the notes just sent, until the next act. */
+  sent: string | null;
+  /** The footer's note box: closed, or open for a note with or without a passage. */
+  noting: { quote: string | null; section: string | null } | null;
+}
+
+export const state = {
+  slots: [] as Slot[],
+  active: 0,
+  /** Whether the result has arrived. Before it does, the page is a skeleton, not "nothing". */
+  received: false,
+  /** Whether this result is a part the assistant read for itself — nothing to draw for a person. */
+  reading: false,
+  fullscreen: false,
+  canFullscreen: false,
+  /** The inline reading pane's height: what the host says it can give, less the head and the foot. */
+  paneHeight: 600,
+};
+export const current = (): Slot | undefined => state.slots[state.active];
+
+export const root = document.getElementById("panel") as HTMLElement;
+
+/** The platform version this page was built at, put in by the build. */
+declare const PANEL_VERSION: string;
+export const app = new App({ name: "zz-document-panel", version: PANEL_VERSION }, {}, { autoResize: true });
+
+/** Escape text for an HTML context. Everything a person or a document supplies goes through here,
+ *  except the body, which `renderMarkdown` has already made safe. */
+export const esc = (s: string): string =>
+  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[c] ?? c);
+
+/** A tool result's text, and whether the platform refused. Every refusal on this platform starts
+ *  with `ERROR`; anything else is an answer. */
+export function answer(result: { content?: { type: string; text?: string }[]; isError?: boolean }): { ok: boolean; said: string } {
+  const said = (result.content ?? []).map((c) => c.text ?? "").join("\n").trim();
+  return { ok: !result.isError && !/^ERROR\b/.test(said), said: said.replace(/^ERROR:\s*/, "") };
+}

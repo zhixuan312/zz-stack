@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "types": []
   },
-  "include": ["panel.ts", "render.ts", "assets.d.ts"]
+  "include": ["panel.ts", "render.ts", "state.ts", "context.ts", "review.ts", "assets.d.ts"]
 }

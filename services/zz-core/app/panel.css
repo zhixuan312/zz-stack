@@ -17,6 +17,8 @@
   --zz-purple: #7548d8;
   --zz-purple-deep: #5e2bcc;
   --zz-purple-tint: #f1ebff;
+  --zz-blue-tint: #e6f4fd;
+  --zz-blue-deep: #0d6190;
   --green: #22a05a;
   --green-text: #1c7c44;
   --green-tint: #e4f2e9;
@@ -249,7 +251,7 @@ button.bar-section:hover { background: var(--surface-2); }
 .btn-primary:not(:disabled):hover { background: var(--accent-deep); }
 .btn-quiet { background: var(--surface); color: var(--ink); border-color: var(--line-strong); }
 .btn-quiet:not(:disabled):hover { background: var(--surface-2); }
-.ask { flex-basis: 100%; display: flex; flex-direction: column; gap: 8px; }
+.ask { flex-basis: 100%; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .ask textarea {
   width: 100%; resize: vertical; min-height: 72px; padding: 10px 12px; font: 14px/1.5 var(--sans); color: var(--ink);
   background: var(--c-0); border: 1px solid var(--line-strong); border-radius: var(--r);
@@ -284,3 +286,48 @@ button.bar-section:hover { background: var(--surface-2); }
   .title-row { flex-direction: column; gap: 8px; }
 }
 @media (prefers-reduced-motion: reduce) { .sk { animation: none; } .btn { transition: none; } }
+
+/* What changed since the revision before: the kit blue, which is identity and never status — a
+   changed section is neither good nor bad, only the part a re-review has to read. */
+.fact-change { color: var(--zz-blue-deep); font-weight: 500; }
+.mark {
+  flex: none; font-size: 10px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--zz-blue-deep); background: var(--zz-blue-tint); padding: 1px 6px; border-radius: var(--r-pill);
+}
+.prose .sec[data-mark] { position: relative; margin-left: -14px; padding-left: 12px; border-left: 2px solid var(--zz-blue-deep); }
+.prose .sec[data-mark]::before {
+  display: inline-block; margin: 0 0 6px; padding: 1px 8px; border-radius: var(--r-pill);
+  font-size: 11px; font-weight: 500; color: var(--zz-blue-deep); background: var(--zz-blue-tint);
+}
+.prose .sec[data-mark="changed"]::before { content: "Changed since v" attr(data-since); }
+.prose .sec[data-mark="new"]::before { content: "New since v" attr(data-since); }
+.only-changes > :not(section), .only-changes > section:not([data-mark]) { display: none; }
+.removed { margin: 0 0 16px; font-size: 12px; color: var(--ink-faint); }
+.bar-toggle {
+  flex: none; border: 1px solid color-mix(in oklab, var(--zz-blue-deep) 35%, transparent); background: var(--zz-blue-tint);
+  color: var(--zz-blue-deep); font: 500 12px/1 var(--sans); padding: 5px 8px; border-radius: var(--r-sm); cursor: pointer;
+}
+.bar-toggle[aria-pressed="true"] { background: var(--zz-blue-deep); color: var(--c-0); }
+
+/* A selection's acts: at the foot of the reading pane, clear of a phone's own selection menu. */
+.selbar {
+  position: sticky; bottom: -32px; z-index: 2; margin: 16px -24px 0; padding: 10px 24px 44px;
+  background: var(--c-0); border-top: 1px solid var(--line-strong); display: flex; flex-direction: column; gap: 8px;
+}
+.selbar[hidden] { display: none; }
+.sel-quote { margin: 0; font-size: 12px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sel-hint { margin: 0; font-size: 11px; color: var(--ink-faint); }
+.selbar .row { margin-left: 0; }
+
+/* The notes waiting to go to the agent. */
+.notes { flex-basis: 100%; min-width: 0; max-width: 100%; margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.notes li { position: relative; min-width: 0; padding: 8px 64px 8px 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--c-0); }
+.note-where { margin: 0; font-size: 11px; font-weight: 500; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.04em; }
+.note-quote { margin: 2px 0 0; font-size: 12px; color: var(--ink-faint); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.note-text { margin: 4px 0 0; font-size: 14px; color: var(--ink); }
+.note-drop { position: absolute; top: 8px; right: 8px; border: 0; background: none; font: 500 12px/1 var(--sans); color: var(--ink-faint); cursor: pointer; }
+.note-drop:hover { color: var(--red-text); }
+@container panel (max-width: 520px) {
+  .selbar { bottom: -24px; margin: 16px -16px 0; padding: 10px 16px 36px; }
+  .prose .sec[data-mark] { margin-left: -10px; padding-left: 8px; }
+}

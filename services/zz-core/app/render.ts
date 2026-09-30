@@ -25,6 +25,8 @@ export interface Rendered {
   outline: OutlineEntry[];
   /** Words in the whole body — the reading time is `minutesOf(words)`. */
   words: number;
+  /** Each second-level section's heading and plain text, in order: what two versions are compared by. */
+  sections: { id: string; title: string; text: string }[];
 }
 
 /** Reading time at 220 words a minute, never under one. */
@@ -69,5 +71,27 @@ export function renderMarkdown(body: string): Rendered {
     const entry = outline.find((o) => o.id === m[1]);
     if (entry) entry.words = count(html.slice(m.index, cuts[i + 1]?.index ?? html.length));
   });
-  return { html, title, outline, words: count(html) };
+  // Every second-level section wrapped in its own element, so one can be marked as changed, or
+  // hidden when the reader asks for the changes alone. What comes before the first stays as it is.
+  const tops = [...html.matchAll(/<h2 id="([^"]+)">([\s\S]*?)<\/h2>/g)];
+  const sections = tops.map((m, i) => ({ id: m[1]!, title: plain(m[2]!),
+    text: plain(html.slice(m.index, tops[i + 1]?.index ?? html.length)) }));
+  const wrapped = !tops.length ? html : html.slice(0, tops[0]!.index) + tops.map((m, i) =>
+    `<section class="sec" data-sec="${m[1]}">${html.slice(m.index, tops[i + 1]?.index ?? html.length)}</section>`).join("");
+  return { html: wrapped, title, outline, words: count(html), sections };
+}
+
+/** How each section of `now` stands against `before`, by heading: changed, new, or — absent from
+ *  the map — the same. Headings `before` had and `now` does not are listed as removed. */
+export function compareSections(now: Rendered, before: Rendered):
+    { marks: Map<string, "changed" | "new">; removed: string[] } {
+  const was = new Map(before.sections.map((x) => [x.title, x.text]));
+  const marks = new Map<string, "changed" | "new">();
+  for (const x of now.sections) {
+    const old = was.get(x.title);
+    if (old === undefined) marks.set(x.id, "new");
+    else if (old.replace(/\s+/g, " ") !== x.text.replace(/\s+/g, " ")) marks.set(x.id, "changed");
+  }
+  const titles = new Set(now.sections.map((x) => x.title));
+  return { marks, removed: before.sections.map((x) => x.title).filter((t) => !titles.has(t)) };
 }

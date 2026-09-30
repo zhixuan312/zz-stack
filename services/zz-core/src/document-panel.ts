@@ -76,6 +76,9 @@ export interface PanelDocument {
   gate: string | null;
   history: { version: number; approvedBy: string | null; approvedAt: string | null }[];
   body: string;
+  /** The revision before this one, when there is one and this is the current revision: what the
+   *  panel marks changed and new sections against, so a reviewer checks what moved, not everything. */
+  previous: { version: number; body: string } | null;
   ticket: string | null;
 }
 
@@ -117,6 +120,7 @@ export async function panelDocument(
   const env = parseEnvelope(loaded.text);
   const shown = loaded.rev.revision;
   const current = loaded.doc.current_revision;
+  const before = shown === current && shown > 1 ? await loadDocument(team, relPath, shown - 1) : null;
   return {
     path: relPath, initiative: at.initiative, name: at.path,
     version: shown, current,
@@ -127,6 +131,7 @@ export async function panelDocument(
     history: loaded.history.map((r) => ({ version: r.revision, approvedBy: r.approved_by ?? null,
                                           approvedAt: r.approved_at ?? null })),
     body: documentBody(loaded.text).trim(),
+    previous: before?.ok ? { version: shown - 1, body: documentBody(before.text).trim() } : null,
     ticket: shown === current ? ticketFor(team, relPath, shown, user) : null,
   };
 }

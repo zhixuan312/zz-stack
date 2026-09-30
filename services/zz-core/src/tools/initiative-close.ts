@@ -436,12 +436,15 @@ export function registerInitiativeCloseTool(server: McpServer): void {
             ? "Nobody accepted it, because it stopped before it was done.\n"
             : `Nobody signed off — recorded reason: ${oneLine(reason)}.\n`) +
         "A ledger row was appended. The ledger is read by counting these, so the word matters.\n" +
-        // Closed is complete: the close is terminal whatever it closed on, and status answers
-        // `closed` from this moment. The handover is offered here rather than demanded.
-        "Nothing further is owed. If this cycle taught something worth keeping, " +
-        "`skill_read(\"zz-handover\")` mints it and writes handover.md — the close satisfies " +
-        "that document's prerequisite, so it can be written even when the work stopped before " +
-        "the document it would normally follow.",
+        // The close is terminal whatever it closed on. A finished close owes the handover — it is
+        // where the platform collects what the cycle taught; an abandoned one does not.
+        (disposition === OUTCOME_STOPPED
+          ? "Nothing further is owed. If this cycle taught something worth keeping anyway, " +
+            "`skill_read(\"zz-handover\")` mints it and writes handover.md — the close satisfies " +
+            "that document's prerequisite, so it can be written even when the work stopped before " +
+            "the document it would normally follow."
+          : "Next: the handover. `skill_read(\"zz-handover\")` and run it — it writes handover.md " +
+            "and mints what generalises, and a finished close owes it."),
       );
     },
   );

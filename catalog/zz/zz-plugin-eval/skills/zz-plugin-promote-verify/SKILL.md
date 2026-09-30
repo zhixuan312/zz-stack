@@ -1,13 +1,13 @@
 ---
 name: zz-plugin-promote-verify
-version: 1.0
+version: 1.1
 description: Stage 8 of zz-plugin-eval (PROMOTE/VERIFY), the promotion boundary. Once IMPROVE has a built and gated candidate of an owned subject, prepare and gate the exact patch, apply it only after every required owner approves, record what happened, then judge the release on real use — and roll it back if it measures worse.
 when_to_use: "The eighth and last stage of zz-plugin-eval, reached only when release_mode is promotable — a candidate IMPROVE built and gated (valid) against an owned subject. REQUIRES a shell-capable runtime that can run zz-tool commands against a real repository checkout. Never reached on a proposal_only or not_applicable branch."
 ---
 
 # zz-plugin-promote-verify
 
-Nothing before this stage touches the real repository (FR-46). Everything from here on does,
+Nothing before this stage touches the real repository. Everything from here on does,
 and every step past `release_prepare` needs a person's approval first.
 
 ## Preparing the release — the one gate that authorizes it
@@ -22,7 +22,7 @@ itself — the one valid candidate of the initiative's improvement runs (on the 
 `findings.md` records); pass `candidate_id` when more than one is valid. Resolves required
 owners LIVE from the base subject's own `release_owners` (ownership is re-checked, not cached),
 records the promotion package as a `zz.release_attempt` row (`prepared`), and writes
-`<initiative>/improvement.md` — the authority-bearing gate FR-48 names, naming the exact
+`<initiative>/improvement.md` — the authority-bearing gate, naming the exact
 candidate/patch digest, how it was built, the base's own score and guardrails, the affected
 owners, and how the release will be judged and rolled back:
 
@@ -44,7 +44,7 @@ attempt, never a fresh one, which would record a second attempt. REFUSES an init
 a caller who is not a member of one of the
 base subject's owner teams (`not_owner`); a base subject with NO recorded
 `release_owners` — `no_release_owners`, naming `proposal_prepare` instead, back in IMPROVE; and
-(FR-58, hard refusal) this initiative's release_mode already set to something other than
+(a hard refusal) this initiative's release_mode already set to something other than
 `promotable`. Records `release_mode: promotable` on success.
 
 ## The approval — a person, before anything real happens
@@ -149,7 +149,7 @@ release_verify(release_attempt_id, idempotency_key)
 ```
 
 **WHEN an attempt `release_record` already moved to `released` is ready for its automatic
-post-release check (FR-50).** No replay: the release is judged by what it does in real use, with
+post-release check.** No replay: the release is judged by what it does in real use, with
 the evaluation machinery EVALUATE already uses. The protocol's own `improvement.release` says how
 much use is enough (`minPostReleaseRuns`) and how far below the base a score may land before it
 counts as a regression (`regressionBand`). RETURNS `{ verdict: established | rolled_back |
@@ -218,9 +218,7 @@ closes the initiative on it. Waiting for real use can take days: the initiative 
 `improvement.md`'s own `release_attempt_id`. A `stale_baseline`
 or `approval_required` refusal is not a close-worthy failure — it says what to do next (rebase,
 or wait on approval); the initiative stays open until one of the two real outcomes is reached.
-Nothing further is owed once it closes: `initiative_status` answers `action: handover` from that
-moment, and `zz-handover` writes it cold, afterwards — the close ends this cycle, the handover
-ends the initiative.
+Once it closes, the `finished` close is followed by `zz-handover`, cold and afterwards.
 
 ## Pitfalls
 
@@ -236,7 +234,7 @@ plan; the CLI and `release_record` are what actually restore the prior subject.
 ❌ **Running `zz-tool release-apply`/`release-rollback` against the primary checkout.** Both take
 `--repo` for exactly this reason — a throwaway clone, never the primary one.
 
-❌ **Skipping `release_verify` after a real release.** FR-50's post-release check is what a
+❌ **Skipping `release_verify` after a real release.** The post-release check is what a
 regression would be caught by; a released candidate nobody verifies is a promise, not a proof.
 
 ❌ **Passing `initiative` to the post-release evaluation calls.** It overwrites this initiative's

@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan-audit
-version: 2.7
+version: 2.8
 description: Audit plan.md — the eleven prose failure modes plus the plan's own contract: AC traceability, task contracts, checks that compile, the format the executor depends on, dependency order and ownership, the walking skeleton, the full-suite gate. Read-only. Dispatched, one round at a time; how many is routed by evidence.
 when_to_use: "plan.md is written and someone is about to execute it. Runs after sdlc-plan and before sdlc-execute. Dispatched by the main agent, one round at a time."
 ---
@@ -21,8 +21,8 @@ failure modes, the evidence shapes a finding must take, and the JSON a round ret
 everything an audit does whatever document it was given. This file carries the one thing
 that is different: what a plan owes, below.
 
-Do not restate those criteria here. They were written twice once already, and two
-auditors applying different standards is worse than either standard.
+Do not restate those criteria here: two auditors applying different standards is worse than
+either standard.
 
 **You present nothing to the person.** A dispatched round hands its JSON envelope back to
 the main agent, and that agent decides what anybody is shown — so do not paste a document,

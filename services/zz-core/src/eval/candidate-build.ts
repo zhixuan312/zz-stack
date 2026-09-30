@@ -101,7 +101,7 @@ export function registerCandidateBuildTools(server: McpServer): void {
         "asked for the build; a candidate not awaiting_build; a build lease (60 minutes from " +
         "that candidate_validate) already expired; a patch_digest that is not the candidate's; a " +
         "build already recorded under another idempotency_key; and a deployment with no platform " +
-        "database. A mutator: writes through the FR-59 idempotency ledger.",
+        "database. A mutator: writes through the idempotency ledger.",
       inputSchema: {
         candidate_id: z.string(),
         patch_digest: z.string().min(1),

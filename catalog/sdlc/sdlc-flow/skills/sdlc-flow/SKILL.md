@@ -1,6 +1,6 @@
 ---
 name: sdlc-flow
-version: 2.12
+version: 2.13
 description: Start and run software delivery — explore the ground, agree a spec, audit it, plan it, audit that, build it, review the code, then close it and hand it to zz-handover. The entry point for the SDLC flow.
 when_to_use: "Someone brings software delivery work — a brain dump to ground, an agreement to write, a plan to build from, a change to make — or you need to know which stage an initiative is at. This is the entry point: start here rather than at a stage. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -27,9 +27,9 @@ If there is no initiative yet, create it. That is the first act of the flow, not
 
 ```
 explore → spec → audit → plan → audit → execute → review → close (an act, not a stage)
-          └ agreed       └ approved               └ approved, and it
+          └ agreed       └ audited                └ approved, and it
             before its     before its               closes the flow
-            audit          audit
+            audit          approval
 ```
 
 Not a ratchet. An audit that finds the spec rests on an unsettled decision sends you back into
@@ -119,17 +119,17 @@ decision is recorded as material supporting the document — `source_add` with n
 that is what lets the flow move on. If the audits keep finding the same thing, take the document
 back to its stage and say what they kept finding.
 
-### 4 · Plan is yours, and then it is approved
+### 4 · Plan is yours, audited, and then approved
 
 Order, risk and scope are the person's judgement. Dispatch it and you get a plausible ordering
 nobody chose.
 
-**Ask for approval on `plan.md` before the plan audit runs**, the same way the spec is agreed
-before its audit — an audit's findings are the input to the plan's next version, and a version the person has
-not agreed to yet is not a thing to audit. Nothing in the platform refuses it — `source_add`
-is ungated and immutable and may be called at any time, from any harness, including while
-the work is in flight — so this ordering is yours to keep, not a guardrail that keeps it
-for you. How they answer is entirely theirs —
+**Run the plan audit on each phase before you ask for approval on `plan.md`.** A phase's
+approval is usually delegated, so the audit round and the structural report are what it rests
+on — a reader who did not write the phase checks it before anybody signs it. The spec is the
+other way round: it is the one document the person reads themselves before anything
+downstream runs, so they agree it first and the audit follows. How they answer is entirely
+theirs —
 a yes, a yes with a change, or a standing "you do not need to ask me about these". Delegating
 it to you is an ordinary answer, not a loophole.
 
@@ -171,15 +171,14 @@ recorded, so an initiative cannot close on an agreement written before any code 
 for the approval the way stage 4 asks for the
 plan's, and write it down in the same turn.
 
-**The close is the end.** `initiative_status` reads `closed` from the moment the outcome is
-recorded, whatever that outcome is, and nothing further is owed — closing part-way through is a
-normal way for work to end, not a lesser one.
+**The close is terminal**, whatever the outcome — closing part-way through is a normal way for
+work to end, not a lesser one.
 
-One step MAY follow, and it belongs to the platform rather than to this flow: `zz-handover`
-writes `handover.md`, cold and afterwards, minting whatever generalises. Worth doing when the
-cycle taught something; not owed, and not a condition of being closed. The close satisfies that
-document's prerequisite, so it can be written even by an initiative that stopped before
-`review.md`.
+**A `finished` close is followed by the handover.** It belongs to the platform rather than to
+this flow: `zz-handover` writes `handover.md`, cold and afterwards, minting whatever generalises,
+and it is where the platform collects what the cycle taught. An `abandoned` close does not owe
+it; the close satisfies that document's prerequisite, so it can still be written by an
+initiative that stopped before `review.md`.
 
 ## The journal is the platform's, not a file
 
@@ -236,15 +235,14 @@ everything returns a survey of nothing.
 **Dispatching spec or plan.** Those are where a person decides. Audit, review, execute and
 explore's fan-out are the four that leave you.
 
-**Treating the close as a stage to dispatch, or skipping it because no stage names it
-anymore.** It is an act you perform directly once review is done — you were the only party
+**Treating the close as a stage to dispatch, or skipping it because no stage names it.** It is an act you perform directly once review is done — you were the only party
 who saw the whole thing, and an initiative nobody closes never reaches the ledger.
 
 **Reaching for a generic audit skill.** There is no such thing here: pick `sdlc-spec-audit` or
 `sdlc-plan-audit` by which document is on the table.
 
-**Auditing before the person agreed, or executing before they approved.** Both audit your own
-guess rather than theirs.
+**Auditing a spec before the person agreed it, or executing a plan before they approved it.**
+The first audits your own guess rather than theirs; the second builds it.
 
 **Running audit rounds in parallel.** They re-find the same things. Each round reads what the
 last one produced.
@@ -283,8 +281,8 @@ itself and routes on the answer; you ask none, and it never picks the stage.
 **Action and exit paths:** the action is entering the next stage, or re-entering an earlier one
 when an audit sends a document back — the sequence is not a ratchet, and a return is the method
 working. Two exits: `initiative_close` with `finished` or `abandoned` once `review.md` exists and
-is approved, and a report naming where the work stopped and why when it cannot close. `zz-handover`
-may follow the close; it belongs to the platform, not to this flow.
+is approved, and a report naming where the work stopped and why when it cannot close. A
+`finished` close is followed by `zz-handover`; it belongs to the platform, not to this flow.
 
 **Degraded behaviour:** a stage that is not installed is named plainly and its work is done in the
 conversation — never improvised into the initiative store as though a stage produced it, because

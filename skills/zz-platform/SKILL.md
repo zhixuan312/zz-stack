@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.74
+version: 3.75
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's documents or knowledge outside a flow."
 ---
@@ -137,9 +137,9 @@ the timing; getting this wrong costs a plan, not a refusal.
 - The store is on the PLATFORM, not on any machine you can reach. The
   artifact tools are the only way in: `document_list`, `document_read`,
   `document_write`, `document_patch`. Paths are relative to your team's store, e.g.
-  `2026-08-19-sample-intake/spec.md`. This skill is loaded in Claude Code, which is the one client this platform
-  packages — where you do have a shell, it reaches
-  your own disk and never the team's store, so the rule is the same one.
+  `2026-08-19-sample-intake/spec.md`. Where your client also gives you a shell (Claude Code,
+  the one client this platform packages), it reaches your own disk and never the team's
+  store, so the rule is the same one.
 - The store is shared with your whole team — you will see teammates'
   initiatives. **The platform scopes you to the team and no further.** It
   records no creator and no conversation: nothing in the store says who
@@ -164,25 +164,16 @@ the timing; getting this wrong costs a plan, not a refusal.
   and at which version, before its gate was approved" is answerable from the
   initiative's own activity log. Whether your reply then carried the content
   is not something the platform can see — a tool result is your input, not a
-  display — and no approval is refused on a document nobody fetched. The
-  record makes the gap visible; it does not close it.
+  display. **`document_approve` refuses a document whose current content was
+  never presented:** call `document_present` after the last write, patch or
+  revise, in its own call, then approve.
 
-  **A STANDING DELEGATION WAIVES THEIR REVIEW, NOT THE FETCH.** "Approve
+  **A standing delegation waives their review, not the fetch.** "Approve
   without checking with me" is the person declining to read it — theirs to
   say, and it keeps standing. It is not a statement about the record, and the
   fetch is the record: it is what lets anyone afterwards ask which bytes the
   verdict was given on. Delegation is in fact the case where the fetch matters
   MOST, because nobody else is looking. So fetch it, then approve.
-
-  This is where it went wrong before it was written down. One initiative
-  closed with four of its six approvals carrying no `document_present` since the
-  content had last moved — an eleven-task plan among them, approved twice,
-  fetched never, one of those approvals four seconds after the revision that
-  produced it. Nothing disagreed, because nothing was looking. `document_approve` now
-  says so in its own result when it happens, so the gap reaches the caller in
-  the same turn instead of surviving to the retrospective. **It still does not
-  refuse, and it must not start to** — a refusal there would land on the one
-  call whose job is to record a decision a person already made.
 
 ## Gates and the envelope
 
@@ -235,17 +226,14 @@ the timing; getting this wrong costs a plan, not a refusal.
   `initiative_status`. A model guessing something a command would have answered
   is the most common way this platform gets a wrong fact written into a
   document that outlives the conversation.
-- **WORK STARTS WITH `initiative_open(slug)`.**
+- **Work starts with `initiative_open(slug)`.**
   Writing a document into a name nobody opened is refused, and so is attaching a
   source to one. Send the SLUG alone — a few words in the stakeholder's own
   language, hyphenated — and use the name the tool hands back: **the platform
   prepends today's date from its own clock, and you never type a date into a
-  folder name.** An agent that reasoned "latest stored activity is 27-08 and the
-  tag says 2808, so today is 28-08" called that "the date from the system"; the
-  same reasoning wrote 26-08 on the 28th and named a folder nothing can rename
-  afterwards. That whole class of mistake is now unreachable.
-- **Pass `flow` to `initiative_open` when a flow governs the work — and LEAVING IT
-  OUT IS A CHOICE, not an omission.** A freeform initiative takes every document,
+  folder name.** A folder name cannot be renamed afterwards.
+- **Pass `flow` to `initiative_open` when a flow governs the work — and leaving it
+  out is a choice, not an omission.** A freeform initiative takes every document,
   approval and close a governed one does; what it gives up is the platform saying
   what comes next, so `initiative_status` answers `next_move: null` and says why.
   Do not go looking for a way to adopt a flow later — there is none, deliberately,
@@ -256,7 +244,7 @@ the timing; getting this wrong costs a plan, not a refusal.
   on the last document somebody wrote. You have no clock, so read it before you
   write a date anywhere. The platform overwrites `updated_at` for you.
 - Every document carries the envelope: `flow`, `type`, `version`, `updated_at` — plus
-  `status` and the approvals WHERE THE FLOW GATES IT, and on close `outcome` with
+  `status` and the approvals where the flow gates it, and on close `outcome` with
   `accepted_by` naming who accepted.
   The platform's telemetry, index and audits read only these.
 - **A close is an ACT: zz-core's `initiative_close(initiative, disposition)`** — never a
@@ -286,8 +274,8 @@ the timing; getting this wrong costs a plan, not a refusal.
   name, use it: never tell a person you are unable to write their decision for
   them, because writing down what they decided IS writing it on their authority,
   which is the only kind there is.
-- **An initiative closes ONCE. A CLOSED RECORD MAY BE CORRECTED; WHAT CLOSED IT MAY
-  NOT.** A second `initiative_close` is refused, and the `outcome`, `closed_by` and the
+- **An initiative closes once. A closed record may be corrected; what closed it may
+  not.** A second `initiative_close` is refused, and the `outcome`, `closed_by` and the
   ledger row that went with it are fixed for good. The document itself is not:
   `document_revise` works on a closed document, carries the outcome forward, files the
   signed text as the revision the approval stands on and records what caused the change — so a wrong
@@ -296,18 +284,15 @@ the timing; getting this wrong costs a plan, not a refusal.
   was wrong, that is a different thing and not a revision: `knowledge_add` it against
   the initiative, `scope: "team"` unless the mistake is itself a fact about a registry
   entry, in which case `scope: "platform"`.
-- **THE CLOSE IS THE END. The handover is worth doing and is not owed.**
+- **A finished close owes the handover; an abandoned one does not.**
   `initiative_close` is terminal, and it may be called at ANY point: an
   initiative that ran to its last stage and one that stopped halfway are both
-  closed, not one finished and one short of something. `initiative_status`
-  answers `action: "closed"` from that moment, whatever the outcome, and the
-  ledger row is the record. Nothing on this platform asks for more.
-  What remains is an OPPORTUNITY. Once the outcome is recorded, load
-  `zz-handover` with `skill_read` and run it if the cycle taught something —
-  it writes `handover.md` and mints what generalises. The close satisfies
-  that document's prerequisite, so an initiative abandoned before its closing
-  document can still be handed over; one on this platform produced the most
-  durable node in the store. A node says which shelf it is for: `scope: "team"` for a
+  closed, and the ledger row is the record. After a `finished` close, load
+  `zz-handover` with `skill_read` and run it — the platform collects what the
+  cycle taught there, and it writes `handover.md` and mints what generalises.
+  After an `abandoned` close it is not owed; the close satisfies that document's
+  prerequisite, so an abandoned initiative can still be handed over when it
+  taught something. A node says which shelf it is for: `scope: "team"` for a
   lesson about how this team works, `scope: "platform"` for a fact about a
   registry entry — a
   plugin, a provider, an interface — that holds for everybody.
@@ -332,9 +317,8 @@ the timing; getting this wrong costs a plan, not a refusal.
   way to adopt a flow after an initiative exists.
 - **Every date this platform writes is `YYYY-MM-DD`** — in frontmatter and in the
   initiative's folder name, which are the same date and must not disagree. The
-  index normalises either form, which is exactly why both drifted into the store
-  until one initiative had `2026-08-29` inside a folder called `29-08-2026-…`.
-  ISO also sorts chronologically, so a directory listing is a timeline.
+  index normalises either form, so nothing catches a drift between them — and ISO
+  also sorts chronologically, so a directory listing is a timeline.
 
 ## Which team you are acting for, and how it changes
 
@@ -352,13 +336,10 @@ you can see from inside the chat.
 not carrying the access tools; the person asks from a client that carries the zz-access
 plugin. One sentence, and they are done.
 
-**Do not explain the absence by inventing a mechanism. [convention]** An agent asked to
-switch team, holding no such tool, answered that the team is fixed by which agent you
-open and cannot be changed from inside a chat. That is false in every part, and it was
-delivered with reasons and a numbered list, which is what made it costly: the person
-believed it. Nothing refuses a confident wrong answer here — the platform cannot tell
-that you lack a tool you never called — so this is yours to get right. A missing tool is
-a fact about you, never a fact about the platform.
+**Do not explain the absence by inventing a mechanism. [convention]** A confident,
+well-reasoned explanation of a mechanism that does not exist is believed. Nothing refuses
+it — the platform cannot tell that you lack a tool you never called — so this is yours to
+get right. A missing tool is a fact about you, never a fact about the platform.
 
 **The switch is a real move, not a view.** After it, their documents and knowledge land
 in the new team, and work left behind stays where it is for that team's members to pick
@@ -368,9 +349,8 @@ it took.
 ## The initiative is the unit of work, not the chat
 
 Work does not belong to a conversation. The same initiative is picked up in
-a different chat, by a different person, on a different harness — Claude Code,
-and it must continue from exactly where it
-stopped, not from what anyone remembers.
+a different chat, by a different person, in a different client, and it must
+continue from exactly where it stopped, not from what anyone remembers.
 
 **Identify it once per conversation, then hold on to it.** Work out which
 initiative you are in when the conversation starts — from what they asked, and
@@ -453,7 +433,7 @@ document is approved, `document_write` and `document_patch` are refused on it ou
 and `document_revise` is the only way through, so on an approved document the
 version bump cannot be skipped.
 
-**A REVISION WITHOUT A CAUSE IS REFUSED.** `document_revise` takes `sources` (files
+**A revision without a cause is refused.** `document_revise` takes `sources` (files
 already registered) or `source_content` (the material itself, captured in the same
 call), and a revision supplying neither is refused by name: *nothing says what caused
 this version*. A document changes because of evidence or it does not change — that is
@@ -543,30 +523,30 @@ reading later can see one caused the other.
   | checkpoints | `/core/mcp` | `assess` — one semantic-assessment family asked about one subject, recorded with its provenance |
   | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_register` `plugin_profile` `plugin_conform` `protocol_read` `protocol_record` `protocol_affirm` `evaluator_qualify` `round_scores` `finding_record` `finding_decide` `failure_discover` `evaluation_start` `evaluation_assess` `evaluation_score` `improvement_start` `improvement_stop` `candidate_record` `candidate_validate` `candidate_read` `candidate_build_record` `release_prepare` `release_apply` `release_record` `release_verify` `proposal_prepare` |
   | your own access | `/manage/mcp` | `whoami` `team_mine` `team_switch` `client_setup` `pat_issue` `pat_list` `pat_revoke` `catalog_list` `team_list` |
-  | administration | `/manage/mcp` | `person_add` `person_list` `person_deactivate` `enrolment_issue` `team_create` `team_archive` `member_add` `member_remove` — only if your role carries them |
+  | administration | `/manage/mcp` | `person_add` `person_list` `person_deactivate` `enrolment_issue` `team_create` `team_archive` `member_add` `member_remove` `client_list` `client_revoke` — only if your role carries them |
 
-**THE DOOR IS DECIDED BY THE SUBJECT, AND YOUR ROLE DECIDES WHAT YOU SEE ON IT.** Those are
+**The door is decided by the subject, and your role decides what you see on it.** Those are
 two different cuts. A bug is one subject and it lives where it is filed; `bug_list`, `bug_resolve`, `bug_delete` and
 `knowledge_reindex` are registered on `/core` for a superadmin and are simply not in your list
 otherwise — which is a fact about your role, not about the platform.
 
-**A DOOR IS A PLUGIN'S DECLARED SERVER**, and the number of doors is not a design choice — it
+**A door is a plugin's declared server**, and the number of doors is not a design choice — it
 is the count of plugins that declare one. `zz-core` declares `/core/mcp`, `zz-plugin-eval`
 declares `/eval/mcp`, `zz-access` declares `/manage/mcp`. `sdlc` declares none, because it has
 no MCP tools of its own, and that is the normal case rather than a deficiency.
 
-**SOME OF THESE ARE PROBABLY NOT ON YOUR LIST, FOR TWO DIFFERENT REASONS.** `/eval/mcp` arrives
+**Some of these are probably not on your list, for two different reasons.** `/eval/mcp` arrives
 only with `zz-plugin-eval`, which declares it — so if that plugin is not installed, those tools
 are not on your surface at all, and calling one answers "tool not found" rather than refusing
 you. `bug_list`, `bug_resolve`, `bug_delete` and `knowledge_reindex` are on a door everyone has
 but are registered to superadmins only, so unless you are one they answer the same "tool not
 found". In every case they are still the platform's tools; what varies is who can reach them.
 
-**`knowledge_reindex` rebuilds a team's search index from the files**, which are the source of
-truth — the answer to "a search returned a document whose file is gone", or to a store restored
-from a backup. It is an operator's act and not a stage of anybody's flow; `zz-admin` is the
-skill that teaches it. You will not need it in the middle of delivery work: every tool that
-writes a file indexes it in the same call.
+**`knowledge_reindex` re-derives a team's search index from the database rows**, which are the
+source of truth — the answer to a release that changed what an index row means, or to a store
+restored from a backup. It is an operator's act and not a stage of anybody's flow; `zz-admin` is
+the skill that teaches it. You will not need it in the middle of delivery work: every tool that
+writes a document indexes it in the same call.
 
 The evaluation tools belong to the evaluation plugin. They exist because an agent here has MCP
 tools and no shell: a stage that says "run this program" is a stage the agent cannot perform.
@@ -587,8 +567,8 @@ assessed into one deterministic score (`scoreRun`, pure — no model call) with 
 guardrails and a bootstrap interval. Only `evaluation_assess`'s own `bounded_semantic`/
 `generative_critic` measures call a model; everything else is arithmetic over what the platform
 already recorded. Running them again to "check" appends to a stored series rather than
-re-reading one. `round_scores` only reads back a historic round from before the protocol
-lifecycle — its `zz.rubric*` marks and blind control; nothing mints a new one.
+re-reading one. `round_scores` is the retired reader of rounds from before the protocol
+lifecycle: that history was archived, and it refuses every id.
 `improvement_start` and `candidate_record` write
 IMPROVE's own ledger: `improvement_start` opens a durable improvement run against an
 `eval_run`'s plugin-owned findings, and `candidate_record` persists one proposed patch — its
@@ -596,7 +576,7 @@ baseline, hypothesis, patch digest, complexity and touched owners — before any
 executes. `candidate_validate` has the local `npm run candidate-build` build and gate it in a
 sandbox (recorded via `candidate_build_record`; zz-core never builds), and a passed build makes
 the candidate `valid` — releasable, with no replay and no proof. `improvement_stop` ends IMPROVE
-on an owned subject with nothing worth releasing. `release_prepare` is the promotion boundary itself: called on a `valid` candidate, it resolves required owners live from the base subject's own `release_owners`, records a `zz.release_attempt` (`prepared`), and writes `improvement.md` — the authority-bearing gate `release_apply` reads back. It applies no patch and touches no real repository; a third-party or not-yet-owned subject refuses `no_release_owners` and stays proposal-only. `release_apply` is the exactly-once compare-and-swap FR-49 asks for: it takes an advisory lock on the plugin, evaluates the prepared attempt against the plugin's CURRENTLY released subject, and on `apply` moves it to `applying` — guarded twice, by a compare-and-swap on that row and by migration 001's own partial unique index across every attempt the plugin's `release_prepare` calls ever wrote, so two concurrent calls produce at most one `applying`/`released` attempt. zz-core has no checkout of the plugin's repository, so applying the patch, running the gate and running the repository's release procedure happen in `zz-tool release-apply` (`packages/tools/src/release/apply.ts`), a CLI run by whoever has a shell, which reports back through `release_record` — `released` with the new subject version and release ref, or `failed` with the failing command's own output tail, leaving the repository at its pre-apply commit either way. `release_verify` is the automatic, no-gate check that follows a `released` attempt, on REAL use: once the released version has the protocol's `improvement.release.minPostReleaseRuns` real runs and an evaluation of them under the base's own protocol version, it compares that score with the base's — `rolled_back` on a failed critical guardrail or an overall more than `regressionBand` below the base, `established` otherwise, `not_established` when the base has no score to compare against. A `rolled_back` verdict applies nothing itself; it hands back a `rollback_plan` for `zz-tool release-rollback` (`packages/tools/src/release/rollback.ts`) to run the repository's own rollback procedure against, reporting back through `release_record` (`status: rolled_back`) — the same server-decides/CLI-executes split, one more time — so the prior subject is current again and the candidate is marked `rolled_back`. `proposal_prepare` is the path a non-owned or not-yet-owned subject takes instead of `release_prepare` — the tool `release_prepare`'s own `no_release_owners` refusal points callers toward: it refuses outright when the base subject DOES record `release_owners` ("use `release_prepare`, not `proposal_prepare`"), and otherwise writes `proposal.md`, ungated, always regenerated fresh from the improvement_run's current findings and candidates — built patches with their build result where a source existed to check out and build one against, findings-only behavioural proposals where it did not. It applies no patch and touches no real repository, on any subject, ever.
+on an owned subject with nothing worth releasing. `release_prepare` is the promotion boundary itself: called on a `valid` candidate, it resolves required owners live from the base subject's own `release_owners`, records a `zz.release_attempt` (`prepared`), and writes `improvement.md` — the authority-bearing gate `release_apply` reads back. It applies no patch and touches no real repository; a third-party or not-yet-owned subject refuses `no_release_owners` and stays proposal-only. `release_apply` is the exactly-once compare-and-swap: it takes an advisory lock on the plugin, evaluates the prepared attempt against the plugin's CURRENTLY released subject, and on `apply` moves it to `applying` — guarded twice, by a compare-and-swap on that row and by migration 001's own partial unique index across every attempt the plugin's `release_prepare` calls ever wrote, so two concurrent calls produce at most one `applying`/`released` attempt. zz-core has no checkout of the plugin's repository, so applying the patch, running the gate and running the repository's release procedure happen in `zz-tool release-apply` (`packages/tools/src/release/apply.ts`), a CLI run by whoever has a shell, which reports back through `release_record` — `released` with the new subject version and release ref, or `failed` with the failing command's own output tail, leaving the repository at its pre-apply commit either way. `release_verify` is the automatic, no-gate check that follows a `released` attempt, on REAL use: once the released version has the protocol's `improvement.release.minPostReleaseRuns` real runs and an evaluation of them under the base's own protocol version, it compares that score with the base's — `rolled_back` on a failed critical guardrail or an overall more than `regressionBand` below the base, `established` otherwise, `not_established` when the base has no score to compare against. A `rolled_back` verdict applies nothing itself; it hands back a `rollback_plan` for `zz-tool release-rollback` (`packages/tools/src/release/rollback.ts`) to run the repository's own rollback procedure against, reporting back through `release_record` (`status: rolled_back`) — the same server-decides/CLI-executes split, one more time — so the prior subject is current again and the candidate is marked `rolled_back`. `proposal_prepare` is the path a non-owned or not-yet-owned subject takes instead of `release_prepare` — the tool `release_prepare`'s own `no_release_owners` refusal points callers toward: it refuses outright when the base subject DOES record `release_owners` ("use `release_prepare`, not `proposal_prepare`"), and otherwise writes `proposal.md`, ungated, always regenerated fresh from the improvement_run's current findings and candidates — built patches with their build result where a source existed to check out and build one against, findings-only behavioural proposals where it did not. It applies no patch and touches no real repository, on any subject, ever.
 
 **The judge is not the agent.** `evaluation_assess` takes an `eval_run_id` and `subject_ref`s and
 nothing else: never a measure, an artifact's text or a model. The measures come from the bound
@@ -657,19 +637,11 @@ the document moving.
 
 ## A team cannot change what a skill says
 
-A team used to be able to add to any skill of the flow it ran, without forking it, in two
-ways: an overlay at `overlays/<skill-name>/SKILL.md` in the team's own store, appended
-whenever anyone on the team loaded that skill, and a skills root of its own at
-`<team root>/skills/<name>/SKILL.md`, which could answer a name the platform's roots also
-carried. Both were files in a store this platform kept for the team, and **both are gone with
-that store — a team's own changes to a platform skill are no longer a mechanism this platform
-has.** `skill_read` returns the shelf's text, and only the shelf's text.
+**A team cannot overlay, fork or shadow a platform skill.** `skill_read` returns the shelf's
+text, and only the shelf's text, so there is one text and no rule ordering a team's text
+against the platform's:
 
-That removes a question rather than an answer. There is no rule ordering a team's text against
-the platform's any more, because there is only one text:
-
-- **Nothing can shadow a platform rule.** An overlay could only ever append, so `zz-platform`
-  and the stages could never be taken over; and there is no team text left that could.
+- **Nothing can shadow a platform rule.** No team text exists that could.
 - **A skill of one name resolves in a fixed order**: the platform's own skills first, then the
   catalog's packages, platform-owned ones ahead of every other. The first match answers, and
   the order is the same in every container.
@@ -683,6 +655,7 @@ the platform's any more, because there is only one text:
 
 ## Tagging what the platform learns
 
+Some of what a handover learns is about the platform rather than the team: a plugin that
 keeps stalling, an interface that drops something, one of the platform's own rules
 that turned out to be written so people cannot satisfy it.
 

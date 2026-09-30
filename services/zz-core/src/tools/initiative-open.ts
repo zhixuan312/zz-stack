@@ -43,7 +43,7 @@ export function registerInitiativeOpenTool(server: McpServer): void {
     {
       description:
         "START new work. An initiative is the unit of work on this platform and this is the " +
-        "only thing that creates one — writing a document into a name nobody opened is now " +
+        "only thing that creates one — writing a document into a name nobody opened is " +
         "refused. Send the SLUG alone, in the stakeholder's own words: the platform prepends " +
         "today's date, because the date is what every listing sorts on and an agent's idea of " +
         "today has filed a folder in the wrong place for good. " +

@@ -1,6 +1,6 @@
 ---
 name: zz-access
-version: 2.6
+version: 2.7
 description: "Your platform access token and your client setup — issuing one, replacing one, and revoking one fast when it is exposed. Reach for this whenever a credential has leaked, been shown on a screen share or in a recording, been committed, or is suspected compromised and needs killing before anything else; also when a tool will not authenticate, a call returns 401, or somebody asks what access they have. Everything here is about the person in front of you; administering other people is the zz-admin skill, on the same door."
 when_to_use: "A credential is exposed, leaked, committed or visible in a recording and has to be revoked. A tool will not connect or answers 401. Someone wants a token, lost one, or asks what access they have. Load it on the INCIDENT, not only when somebody names the platform — a person whose key just leaked describes what happened to them, not which tool they need."
 ---
@@ -37,12 +37,11 @@ because people learn them the hard way otherwise:
 Leave `expires_in_days` off for a person: their everyday
 token is open-ended and revoked when they no longer want it, which they can do themselves.
 
-**A token for automation is a different question.** Those can be issued to expire on their
-own, which matters because nobody is watching for the day a service account's token should
-have been revoked. That is `pat_issue`, an administrator's act — see `zz-admin`. If it is not
-in your list, say plainly that it needs an administrator rather than offering a personal
-token as a substitute: an open-ended token in a script is the thing that rule exists to
-prevent.
+**A token for automation is a different question.** Issue it with `expires_in_days` so it
+stops on its own — nobody is watching for the day a script's token should have been revoked —
+and with `team` when the automation must never touch another team. Issuing your own is always
+allowed; issuing one for somebody else is an administrator's act — see `zz-admin`. An
+open-ended token in a script is the thing `expires_in_days` exists to prevent.
 
 Ask for a label that will still mean something in six months ("laptop —
 Claude Code" beats "test"). `pat_list()` lists theirs, masked, with
@@ -90,12 +89,12 @@ prints the setup for that person instead of for you.
 Pair it with `pat_issue`: the token is exported once as
 `ZZ_TOKEN` and the install writes it to `~/.zz/token`, mode 600. On Claude
 Code the plugin reads it at connect time, so **the token never enters a file
-they might commit**. Say that plainly — it is the reason we stopped handing
-out a config with the token typed into it.
+they might commit**. Say that plainly — a config with the token typed into it is a
+credential waiting to be committed.
 
 Three things to be clear about when they ask:
 
-- **A FIX NEVER REACHES THEM BY ITSELF.** Every flow travels as FILES, so a fix
+- **A fix never reaches them by itself.** Every flow travels as files, so a fix
   reaches them when they update the plugin and not before, and nothing warns them,
   because the old files go on working. `client_setup` prints the update command. Say
   that plainly rather than promising anything live.

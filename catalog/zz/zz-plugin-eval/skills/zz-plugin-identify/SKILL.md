@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-identify
-version: 0.5
+version: 0.6
 description: Stage 1 of zz-plugin-eval (IDENTIFY). Settle which plugin is being evaluated, at which exact content — catalog release or third-party capture — before any other tool on the door will resolve anything against it. Writes an immutable subject_version.
 when_to_use: "The first stage of zz-plugin-eval, once an initiative exists. Never on its own — every later stage takes the subject_version_id this settles. No shell required."
 ---
@@ -14,7 +14,7 @@ plugin_locate(plugin, version?, idempotency_key, initiative)
 ```
 
 is IDENTIFY for a catalog plugin — `sdlc`, `zz-core`, `zz-access`, `zz-plugin-eval` itself.
-It RETURNS FR-1's immutable `subject_version`: `subject_version_id`, declared version,
+It RETURNS the immutable `subject_version`: `subject_version_id`, declared version,
 whole-plugin content digest, per-component manifest (skill/server/flow/config digests — a skill's
 of its content, a server's of its address and versioned when the door is the plugin's own, a
 flow's of the release itself — never the environment), ownership and its release mode, and `latest_protocol_version_id` — the plugin's
@@ -22,7 +22,7 @@ newest protocol version if one exists, affirmed or not and with no compatibility
 still applies is DEFINE/QUALIFY's `protocol_read`, never this. It is a mutator only in the
 ledger's sense: the release identity is immutable and this writes nothing to it, so two calls for
 one release content answer the same `subject_version_id` by construction — what it does write is
-the FR-59 idempotency ledger, so a retried call with the same `idempotency_key` replays rather
+the idempotency ledger, so a retried call with the same `idempotency_key` replays rather
 than minting a second record. Omit `version` for the newest released one. REFUSES a plugin this
 platform has never released. Pass `initiative`: it records `subject_version_id` as this stage's
 record, which `initiative_status` hands every later stage under `records["zz-plugin-identify"]`
@@ -45,7 +45,7 @@ plugin exactly as it would for a catalog one.
 
 **`plugin_register` cannot make a plugin ours.** `origin`, `owner_team`, `evolvable` and
 `release_owners` are never accepted as input — the platform derives them, and a payload naming
-any of the four is refused outright (FR-3). Every `plugin_register` subject lands `origin:
+any of the four is refused outright. Every `plugin_register` subject lands `origin:
 third_party`, `evolvable: false`, `release_owners: []` — evaluation- and proposal-only, forever,
 until a real release moves it into the catalog. REFUSES a name the catalog already owns: that
 plugin is registered by release, never by this tool.

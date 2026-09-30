@@ -175,7 +175,7 @@ export function registerPluginRecordTools(server: McpServer): void {
         "`supersedes: <its id>` — the old one is closed as superseded in the same write and " +
         "findings.md renders only the current one, noting the correction; REFUSES superseding a " +
         "finding of another eval_run, a strength, or one already decided or superseded. A " +
-        "mutator: writes through the FR-59 idempotency ledger.",
+        "mutator: writes through the idempotency ledger.",
       inputSchema: {
         eval_run_id: z.string(),
         finding: z.object({
@@ -319,14 +319,14 @@ export function registerPluginRecordTools(server: McpServer): void {
         "WHEN somebody who owns the finding has applied the change it named, or has decided not " +
         "to. It closes those findings of an `eval_run` — a strength is never one of them — and " +
         "RETURNS each as it now stands, with who decided and when. This is the act " +
-        "finding_record's own description promises and nothing performed: a defect or unknown " +
+        "finding_record's own description promises: a defect or unknown " +
         "lands `deferred` and stays there until this is called. REFUSES an id nothing minted, a " +
         "finding already decided, a strength (terminal at insert, with no decision to record), " +
         "and `deferred` as a decision — deferring is where a finding starts, so choosing it here " +
         "would be a decision that changes nothing while looking like one that did. A note is " +
         "required for both real decisions, because `applied` with no change named and `rejected` " +
         "with no reason are the two ways this ledger stops being readable. A mutator: writes " +
-        "through the FR-59 idempotency ledger.",
+        "through the idempotency ledger.",
       inputSchema: {
         decisions: z.array(z.object({
           finding_id: z.string().describe("from finding_record"),

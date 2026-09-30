@@ -1,6 +1,6 @@
 ---
 name: sdlc-research
-version: 1.6
+version: 1.7
 description: Answer one question about the world outside this system — prior art, a standard, how others solved the same shape of problem — with cited external sources and honest confidence. Read-only. Dispatched by sdlc-explore, one question per worker.
 when_to_use: "One external question needs answering: what the prior art is, what a standard says, what practitioners actually do, how an adjacent domain solves this. Dispatched by sdlc-explore as part of its fan-out. Not for questions about this system — that is sdlc-investigate."
 ---
@@ -31,7 +31,7 @@ have reached by searching the same sources themselves.
 ## How you get sources
 
 Use whatever search and fetch tools your runtime gives you. Which they are, and what they are
-called, is the runtime's answer and not this skill's; the adapter documentation names them.
+called, is the runtime's answer and not this skill's.
 
 **If you have no way to reach the outside world, that is a real state and not an error.** Do not
 return an empty report. Say plainly in your first line that no sources could be fetched and the
@@ -53,9 +53,7 @@ sourced and unsourced findings is the worst of the three.
 
 ## The five perspectives
 
-Work through **all five** yourself, one at a time. There are no parallel workers under you and
-no per-worker assignment: you run this route alone, and naming only one would cover a fifth of
-the taxonomy while reporting the rest as covered.
+Work through **all five** yourself; `criteriaCovered` lists the ones you actually worked.
 
 1. **PRIMARY-SOURCES** — authoritative or original: papers, official docs, RFCs,
    maintainer-authored posts. Cite source plus section.

@@ -145,7 +145,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   if (sup) server.registerTool("team_create", {
     description:
       "WHEN a new tenant needs somewhere for its work to live, or an archived team is being " +
-      "brought back — the same slug restores it with its installs and grants. RETURNS the " +
+      "brought back — the same slug restores it with its memberships. RETURNS the " +
       "team, its slug being the stable identity used everywhere this platform names a team. " +
       "REFUSES anyone but a superadmin, a slug the platform's own rule " +
       "rejects, and the platform's reserved slug, which no tenant may claim.",

@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-evaluate
-version: 1.1
+version: 1.2
 description: Stage 5 of zz-plugin-eval (EVALUATE). Bind an approved protocol version to a subject's own observation snapshot, route every measure the protocol names to the real evidence it judges, and reduce the result to one deterministic overall score with its status, coverage and guardrails. No recommendation — that is EXPLAIN.
 when_to_use: "The fifth stage of zz-plugin-eval, once a protocol version is affirmed (or was already reusable). Produces no document — its output is durable score data EXPLAIN reads. No shell required."
 ---
@@ -46,7 +46,7 @@ kind:
 | a bare `run_id` — from `evaluation_start`'s `run_refs` (OBSERVE's `traces.run_refs`) | run |
 | `event:<id>` — a door's refused call, from `evaluation_start`'s `refusal_refs` | event |
 
-**REFUSES BY NAME any ref that resolves to nothing** — a model is never silently handed a
+**It refuses, by name, any ref that resolves to nothing** — a model is never silently handed a
 templated sentence naming the ref instead of the thing it names. A ref is never a tool name: the
 protocol's own `observableSurfaces` names the tools whose output matters, so pick the documents,
 runs and reports those tools produced — the ones worth judging, not an arbitrary sample. **Give
@@ -95,7 +95,7 @@ not_established`:
 - `qualification_met` comes from every REQUIRED model-backed measure's evaluator qualification
   against `QualificationPolicy.boundedSemanticMinimum` — **a bootstrap protocol
   (`scoring.establishment.bootstrap: true`) forces `qualification_met: false` regardless of what
-  any individual qualification row says.** FR-57's own reference protocol for `zz-core` is
+  any individual qualification row says.** The reference protocol for `zz-core` is
   bootstrap: it must not publish an `established` score before the first real post-close OBSERVE/
   DISCOVER run.
 - Both must be true, and every required measure scored, for `score_status: established`.

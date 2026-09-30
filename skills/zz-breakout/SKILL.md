@@ -1,14 +1,14 @@
 ---
 name: zz-breakout
-version: 1.6
+version: 1.7
 description: Spin up one named expert teammate for a bounded deep dialogue, keep that conversation out of the main thread, and close by writing the confirmed insights to the ZZ knowledge base. Widens a thin option space before a decision is made.
 when_to_use: "A decision needs a perspective the main thread cannot hold — a domain expert, an adversary, a specialist lens — and the exchange will be long enough to pollute the main context. The sdlc-flow spec stage leans on this when the options are thin, and so may any other flow. Typed on purpose as /zz-core:breakout in Claude Code, or matched as a skill. Standalone — no initiative, no gate, no place in the sequence."
 ---
 
 <!-- Design note: the close-out writes to the ZZ knowledge base with knowledge_add, so an
      insight from a breakout is findable by the same search every other stage uses. The
-     runtime requirements are stated plainly below because one of the two supported
-     runtimes cannot do the addressable-teammate part. -->
+     runtime requirements are stated plainly below because a runtime without addressable
+     teammates cannot do that part. -->
 
 # zz-breakout
 
@@ -91,10 +91,8 @@ When the person says it is done:
    store and refuses one that is not there, so a breakout run outside any initiative has
    nothing to cite: name the initiative it was called to inform, or keep the insights in the
    conversation until there is one. Do not put a sentence of prose in that field to satisfy
-   it — the field exists to be followed, and of the eleven nodes that existed when the check
-   was added, eight could not be (a count from that day, not a tally of today: the journal
-   only grows). An insight that duplicates a node already there is a merge — say so and write
-   nothing.
+   it — the field exists to be followed. An insight that duplicates a node already there is a
+   merge — say so and write nothing.
 5. Dismiss the teammate.
 
 **Never record without confirmation.** The person heard the exchange; you did not.

@@ -25,8 +25,8 @@ export const COV_SKILLS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/skill-prose.ts",
     target: "a skill_read a skill spells out names a skill that exists",
     subject: PLATFORM,
-    find: "  `zz-handover` with `skill_read` and run it if the cycle taught something —",
-    replace: "  it with `skill_read(\"zz-journal\")` and run it if the cycle taught something —",
+    find: "  `zz-handover` with `skill_read` and run it — the platform collects what the",
+    replace: "  it with `skill_read(\"zz-journal\")` and run it — the platform collects what the",
     planted: "the skill every agent on this platform loads first instructs an agent to load " +
       "`zz-journal`, a skill that was merged away — so the handover step ends in a refusal " +
       "instead of the record the next initiative reads",

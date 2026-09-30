@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.18
+version: 1.19
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -134,15 +134,17 @@ ledger, and the rules are fixed:
 
 ## Three gates, and they are recorded either way
 
-The person agrees to **`spec.md`** before its audit runs, approves **`plan.md`** before its
-audit runs, and approves **`review.md`** before the initiative closes. Auditing a document
+The person agrees to **`spec.md`** before its audit runs, approves each phase of **`plan.md`**
+after its audit round, and approves **`review.md`** before the initiative closes. Auditing a spec
 nobody agreed to audits your own guess; building from an unapproved plan builds your own
 guess; and closing on an unapproved review says the work shipped on nobody's word.
 
-**Both audits come after their document's gate.** Each registers a SOURCE against the document
-it read — `spec.md` for the spec audit, `plan.md` for the plan audit — and both targets are
-gated, so the round is a reader's check on something somebody already stood behind. Ask for the approval first; the audit is the reader's check on a
-document somebody already stood behind, not a way to decide whether to stand behind it.
+**The two audits sit on opposite sides of their gate.** Each registers a SOURCE against the
+document it read — `spec.md` for the spec audit, `plan.md` for the plan audit. The spec audit
+comes after the person's agreement: it is a reader's check on something somebody already stood
+behind. The plan audit comes before the approval: a phase's approval is usually delegated, so
+the round is the evidence it rests on, and the person — or their delegation — approves a phase
+a reader has already checked.
 
 The third is `review.md`, not `spec.md`: it carries `closing`, so the close waits for a review
 that exists and is signed rather than being offered as soon as the plan is approved, before any
@@ -188,10 +190,8 @@ decide whether you forgot.
 **How a loaded stage reaches the record.** The platform attributes a step from the last skill
 loaded, and it must see the load to do that. In Claude Code the baseline `zz-core` plugin
 carries a hook that reports every skill a session loads from this shelf — through its own Skill
-tool, in the main session and in every subagent — so the record no longer depends on the agent
-remembering to call `skill_read`. Measured before the hook existed: ten of fourteen execute and
-review stages across every sdlc initiative left no trace, and on 2026-09-13 not one audit round
-had ever been attributed. A runtime without that hook reaches the same record by calling
+tool, in the main session and in every subagent — so the record does not depend on the agent
+remembering to call `skill_read`. A runtime without that hook reaches the same record by calling
 `skill_read`.
 
 What that buys is not bookkeeping. A return — the audit that sends a spec back, which this
@@ -251,7 +251,7 @@ initiative_open(slug: "<a few words>", flow: "sdlc-flow")
 document_write(path: "<initiative>/explore.md", content: "<the body>")
 ```
 
-**THE FLOW IS DECLARED WHEN THE INITIATIVE IS OPENED, and `document_write` does not take one.**
+**The flow is declared when the initiative is opened, and `document_write` does not take one.**
 Passing one on a later document would retrofit a manifest onto work already written — the gates
 that manifest declares would then land on documents nobody had approved. `initiative_open` is the one moment the choice is meaningful, and there is no tool
 for changing it afterwards.

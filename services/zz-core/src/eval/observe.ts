@@ -339,7 +339,7 @@ export function registerObserveTools(server: McpServer): void {
         "tokens/cost where recorded, dependency failures — every count and rate carrying " +
         "numerator, denominator and coverage, a missing input `null` with a named reason and " +
         "never 0. RETURNS an immutable observation_snapshot_id with no protocol required. A " +
-        "mutator: it writes exactly one zz.eval_observation_snapshot row through the FR-59 " +
+        "mutator: it writes exactly one zz.eval_observation_snapshot row through the " +
         "idempotency ledger, so a retried call with the same idempotency_key replays rather " +
         "than minting a second row (the same subject observed under a different window DOES " +
         "mint a second snapshot — that is a different observation, not a retry). REFUSES a " +

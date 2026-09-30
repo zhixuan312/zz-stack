@@ -1,6 +1,6 @@
 ---
 name: zz-authoring
-version: 1.1
+version: 1.2
 description: What every core command that turns a source into a written artifact shares — how the source is chosen from what the reader typed, and the writing rules the result is held to. Loaded by zz-tldr and zz-deck; never run on its own.
 when_to_use: "You were invoked as zz-tldr or zz-deck. Load this first, then that skill — it carries what is different about the artifact you are producing. Standalone — no initiative, no gate, no place in the sequence."
 ---
@@ -9,8 +9,7 @@ when_to_use: "You were invoked as zz-tldr or zz-deck. Load this first, then that
 
 Two commands turn a source the reader is looking at into something written: `/zz-core:tldr`
 produces prose, `/zz-core:deck` produces slides. What the artifact IS differs completely. How
-the source is chosen, and what the writing is held to, does not — and it was copied into
-both, where it had already begun to drift.
+the source is chosen, and what the writing is held to, does not, so both load it from here.
 
 ## Select the source
 

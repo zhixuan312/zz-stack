@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define-qualify
-version: 0.11
+version: 0.12
 description: Stage 4 of zz-plugin-eval (DEFINE/QUALIFY), and the one gate that matters most. Derive what good means for THIS plugin from its own profile and DISCOVER's candidates, write it into protocol.md, get a person to agree it, then qualify every model-backed evaluator it names before anything is scored.
 when_to_use: "The fourth stage of zz-plugin-eval, after DISCOVER. Conditional: protocol_read decides create/revise/reuse, and this stage only writes when it says create or revise. Produces protocol.md, gated — protocol_affirm refuses to bind it until somebody approves it. No shell required."
 ---
@@ -21,7 +21,7 @@ plugin whose identity no protocol version has folded in, with its `id`, `stable_
 `reuse` means the newest version is affirmed and still compatible and there is nothing to write;
 `revise` names which trigger fired (`purpose_changed, new_recurring_failure, evaluator_drift,
 new_evidence_surface`) and expects a new version, never an edit to the old one. Pass
-`initiative` to record protocol_action as this initiative's durable branch fact (FR-58) — this
+`initiative` to record protocol_action as this initiative's durable branch fact — this
 is what tells `initiative_status`, and every later close, whether `protocol.md` applies on this
 branch. **On `reuse`, stop here** — protocol.md is `not_applicable` for this run and DEFINE has
 nothing to write; go straight to EVALUATE.
@@ -122,7 +122,7 @@ must meet or exceed. `evaluation_score` reads this same list — nothing on a me
 released subject's own evaluation fails one. An unmeasured guardrail reads `not_established`,
 which is missing evidence, never a failure.
 
-## THE JUDGE IS HANDED THE ARTIFACT'S TEXT, AND NOTHING ELSE
+## The judge is handed the artifact's text, and nothing else
 
 Before you write a `bounded_semantic`/`generative_critic` measure, name the artifact it will
 read — a document's markdown, a run's evidence — and ask: **is
@@ -131,7 +131,7 @@ is `deterministic`/`outcome`**, not semantic — a semantic measure asked a ques
 cannot answer measures something other than its own name, and its noise spreads into every other
 measure in the same dimension.
 
-## STATE THE ARITHMETIC, DO NOT MAKE THE JUDGE DO IT
+## State the arithmetic; do not make the judge do it
 
 Whatever asks a typed judgement service a bounded question — a `bounded_semantic` measure's
 `evaluator.question`, or a `scoring`/`qualification` policy that does — give it a comparison it
@@ -145,7 +145,7 @@ Name the two fields the comparison is between, and let the tool that computes th
 both numbers — never write either one into the measure itself, or the protocol is wrong the
 moment the next release changes it.
 
-## IF THE PROPERTY IS ONLY TRUE AFTER THE ROUND, ENFORCE IT — DO NOT MEASURE IT
+## If the property is only true after the round, enforce it — do not measure it
 
 Some lines cannot be measures no matter what figure you add, and the tell is the timing.
 Before writing a measure, ask whether the thing you want is a measurement or a rule. If a round

@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-discover
-version: 0.6
+version: 0.7
 description: Stage 3 of zz-plugin-eval (DISCOVER). Mine one OBSERVE snapshot's own real refusals and stage returns for candidate failure modes, before any protocol exists — so DEFINE/QUALIFY freezes questions worth asking, not questions invented from nothing.
 when_to_use: "The third stage of zz-plugin-eval, after OBSERVE has written an observation_snapshot_id. Always run before DEFINE/QUALIFY on a subject whose protocol is being created or revised — reuse skips it. No shell required."
 ---
@@ -51,7 +51,7 @@ sighting per discovery of it, so a mode found again is re-sighted on its existin
 rather than minted as a second mode. `id` is the sighting's own id, and that is what a
 `failureTaxonomy` entry's `candidateId` names. Folding a mode into a protocol is
 `protocol_record`'s own `eval_protocol_failure_mode` write, never DISCOVER's. A mutator: writes
-through the FR-59 idempotency ledger, so a retried call with the same `idempotency_key` replays
+through the idempotency ledger, so a retried call with the same `idempotency_key` replays
 the exact same candidate set rather than re-asking any model.
 
 **Never drops a sighting for a model outage.** A group the classifier cannot reach is stored

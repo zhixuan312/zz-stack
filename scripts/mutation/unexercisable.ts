@@ -156,4 +156,14 @@ export const UNEXERCISABLE: readonly Unexercisable[] = [
       "the resolver rather than the tool body.",
     observed_check_sha256: "aac14059a7d48c998a5e8982ef6a7832a889f98e27e21544e5a7ce43d533cd34",
   },
+  {
+    check: "scripts/gate/checks/data-telemetry-reports.ts",
+    assertion: "a live count in shipped prose carries the date it was taken",
+    why: "no shipped skill or doc states a count of this deployment any more: the one sentence " +
+      "the plant aimed at, sdlc-recall's measurement of Chinese search, was removed when the " +
+      "search it measured changed, so there is no dated count left to strip the date from.",
+    plantable_when: "a shipped .md under catalog/, skills/ or docs/ states a dated count of " +
+      "this deployment again; aim the plant at that sentence's date.",
+    observed_check_sha256: "5662593a8a454ae8580c1c564ec0cf139e5edda9b8f67b90a81df54cb4b327b2",
+  },
 ];

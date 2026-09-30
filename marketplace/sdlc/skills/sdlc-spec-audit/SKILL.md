@@ -1,6 +1,6 @@
 ---
 name: sdlc-spec-audit
-version: 2.6
+version: 2.7
 description: Audit spec.md — the eleven prose failure modes plus the spec's own contract: eight components, FR-to-AC traceability, the deliverable contract, frozen values inlined, scope exhaustive. Read-only. Dispatched, one round at a time; how many is routed by evidence.
 when_to_use: "spec.md is written and agreed by the person, and someone is about to plan from it. Runs after sdlc-spec and before sdlc-plan. Dispatched by the main agent, one round at a time."
 ---
@@ -21,8 +21,8 @@ failure modes, the evidence shapes a finding must take, and the JSON a round ret
 everything an audit does whatever document it was given. This file carries the one thing
 that is different: what a spec owes, below.
 
-Do not restate those criteria here. They were written twice once already, and two
-auditors applying different standards is worse than either standard.
+Do not restate those criteria here: two auditors applying different standards is worse than
+either standard.
 
 **You present nothing to the person.** A dispatched round hands its JSON envelope back to
 the main agent, and that agent decides what anybody is shown — so do not paste a document,

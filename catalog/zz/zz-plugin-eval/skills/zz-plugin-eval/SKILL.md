@@ -1,8 +1,8 @@
 ---
 name: zz-plugin-eval
-version: 2.6
-description: "The front door to plugin evaluation and governed improvement. Eight stages — IDENTIFY, OBSERVE, DISCOVER, DEFINE/QUALIFY, EVALUATE, EXPLAIN, IMPROVE, PROMOTE/VERIFY — over one plugin at one exact content, against a protocol somebody agreed BEFORE any scoring. Load it whenever somebody wants a plugin graded, scored, marked down, or confirmed as good or bad, including when they have already reached a conclusion and want it checked. Also when a plugin-owned defect is worth fixing, or a plugin needs release, verification on real use and rollback through its own authorized owners. Measurement never bends toward a change somebody already wanted; promotion never happens without the required owners' say-so."
-when_to_use: "Someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?'. Answering either from your own read is the failure this flow exists to prevent, so load it before agreeing or disagreeing. Also whenever a plugin is up for keeping, changing or retiring; a plugin-owned defect is worth fixing; or a candidate patch needs releasing through its own owners and judging on real use. This is the entry point: start here rather than at a stage. IDENTIFY through EXPLAIN run on any client with no shell; IMPROVE and PROMOTE/VERIFY need Claude Code."
+version: 2.7
+description: "The front door to plugin evaluation and governed improvement. Eight stages — IDENTIFY, OBSERVE, DISCOVER, DEFINE/QUALIFY, EVALUATE, EXPLAIN, IMPROVE, PROMOTE/VERIFY — over one plugin at one exact content, against a protocol somebody agreed BEFORE any scoring. Opened by a person with `/zz-plugin-eval:eval` whenever they want a plugin graded, scored, marked down, or confirmed as good or bad, including when they have already reached a conclusion and want it checked. Also when a plugin-owned defect is worth fixing, or a plugin needs release, verification on real use and rollback through its own authorized owners. Measurement never bends toward a change somebody already wanted; promotion never happens without the required owners' say-so."
+when_to_use: "A person typed /zz-plugin-eval:eval. When someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?' — answering from your own read is the failure this flow exists to prevent, so point them at /zz-plugin-eval:eval instead of agreeing or disagreeing. It is also the command for whenever a plugin is up for keeping, changing or retiring; a plugin-owned defect is worth fixing; or a candidate patch needs releasing through its own owners and judging on real use. This is the entry point: start here rather than at a stage. IDENTIFY through EXPLAIN run on any client with no shell; IMPROVE and PROMOTE/VERIFY need Claude Code."
 ---
 
 # zz-plugin-eval
@@ -32,9 +32,9 @@ rolled back if it measures worse than the version it replaced.
 shipping something does not stop and evaluate the plugin it is shipping with — that is a
 separate piece of work with its own initiative.
 
-**A PERSON OPENS THIS FLOW. NOTHING OPENS IT FOR THEM.** This skill is a flow's `entry`, so the
+**A person opens this flow. Nothing opens it for them.** This skill is a flow's `entry`, so the
 shelf renders it as the command `/zz-plugin-eval:eval` carrying `disable-model-invocation: true`
-— a model cannot invoke it at all, whatever its `when_to_use` says. Each of the eight stage
+— the client never invokes it on a model's own initiative, whatever its `when_to_use` says. Each of the eight stage
 skills beside it says "never on its own", which is right: a stage that fires out of order is
 worse than one that does not fire.
 
@@ -71,7 +71,7 @@ PROMOTE/VERIFY -> improvement.md [GATE, conditional, closing] -> release -> veri
 ```
 
 Three durable, deterministic branch facts drive which conditional stage runs and which document
-applies (FR-52, FR-58) — never a model's confidence:
+applies — never a model's confidence:
 
 | fact | values | set by |
 |---|---|---|
@@ -122,9 +122,8 @@ next and it resolves.
 | 7 | `zz-plugin-improve` | a built and gated candidate, an owner-facing proposal, or nothing plugin-owned to improve |
 | 8 | `zz-plugin-promote-verify` | `improvement.md` — gated and closing on the promotable branch; release, verify on real use, roll back if warranted |
 
-After a close, the close is an act rather than a stage — one `initiative_close()` call — and the
-platform then reports `action: handover`, which `zz-handover` writes cold, afterwards. The close
-ends the cycle this run went through; the handover ends the initiative.
+The close is an act rather than a stage — one `initiative_close()` call. A `finished` close is
+followed by `zz-handover`, cold and afterwards; an `abandoned` close does not owe it.
 
 ## The one hard rule
 
@@ -134,7 +133,7 @@ deterministically — no model supplies `overall_score` directly. A `bounded_sem
 its provenance; it is never your own reading substituted in. Your own reading of an artifact
 belongs in `findings.md` as an observation, never in the score.
 
-## MCP-first, then a shell (FR-54)
+## MCP-first, then a shell
 
 IDENTIFY through EXPLAIN are runnable by any client with no shell — every durable state change
 in those five stages goes through this door's own MCP tools alone. IMPROVE is where that
@@ -144,12 +143,10 @@ candidate-build`), and released or rolled back through the repository's own proc
 Code (or an equivalent shell-capable runtime) and refuse to start anywhere else. Load the stage skill for the one you are on; each says exactly which
 tools to call, in what order, and what each refusal means.
 
-## Legacy reader, still live
+## The retired round reader
 
-`round_scores` reads back a round a plugin version was marked in under the OLD five-stage
-ruler, before this flow's own protocol lifecycle existed — its `zz.rubric*` dimensions, its
-marks and its blind control, exactly as they were stored. It is history and nothing more:
-nothing mints a new round, and no stage of this flow calls it. A plugin is scored through
+`round_scores` refuses every id: the rounds marked before this flow's protocol lifecycle were
+archived, and no stage of this flow calls it. A plugin is scored through
 `evaluation_start`/`evaluation_assess`/`evaluation_score`, against a protocol agreed through
 `protocol_read`/`protocol_record`/`protocol_affirm`.
 
@@ -202,15 +199,15 @@ skipped.
 
 **Work roles:** a person opens this flow and approves `protocol.md`/`improvement.md` at their
 gates — nothing substitutes for them there, and nothing opens the flow on their behalf
-(`disable-model-invocation: true` is the platform's own enforcement of that). Choosing the stage
+(the command is how it is opened). Choosing the stage
 and calling its tools in order is this agent's own. Scoring, qualification and the release verdict are
 code and typed evaluators, never the routing agent's own reading, per "the one hard rule" above.
 
 **Action and exit paths:** the action is load the stage skill `initiative_status` names next,
 follow it exactly, and return here to route once it finishes. The exits are the two closes:
 `findings.md`/`proposal.md` alone (no plugin-owned finding, a non-owned subject, or nothing worth
-releasing), or `improvement.md` (an owned, approved, released and verified candidate) — followed, either
-way, by `zz-handover` once the cycle is closed.
+releasing), or `improvement.md` (an owned, approved, released and verified candidate). Either
+way, a `finished` close is followed by `zz-handover`.
 
 **Degraded behaviour:** a plugin nobody has used, a protocol that cannot qualify its own
 evaluators yet, a candidate that never passes its gate, a release real use rolls back — each is a real, complete outcome this flow

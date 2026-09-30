@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.20
+version: 1.21
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -17,8 +17,8 @@ never dispatched. Order, risk and scope are the person's judgement, and a dispat
 plausible ordering nobody chose.
 
 **Write it with the platform's `document_write` into the initiative, as `plan.md`.** Never a local
-path. `document_write` writes the FIRST version only — once the plan is approved the platform refuses
-it on this document, and the plan changes through `document_revise`. See *Coming back from the
+path. While the plan is a draft, `document_write` and `document_patch` work on it; once it is
+approved the platform refuses both, and the plan changes through `document_revise`. See *Coming back from the
 audit, or from execution* at the end of this skill.
 
 ## Role
@@ -373,7 +373,7 @@ Work in this order (guidance for producing a good document, not a rigid ritual):
    File Structure — followed by `## Phase 0` and the other phase headings each with their "what
    works at the end" line, every task heading with its `**Output:**` / `**Dependencies:**` /
    `**Owns:**` lines and `← AC` refs, leaving each task's body as a single
-   `<!-- enrich: I-N -->` slot carrying THAT TASK'S OWN id. Do not reference another
+   `<!-- enrich: I-N -->` slot carrying that task's own id. Do not reference another
    methodology's skills; this flow executes its own plans.
 
    **The id in the marker is not decoration — it is what makes the next step possible.**
@@ -399,8 +399,8 @@ Work in this order (guidance for producing a good document, not a rigid ritual):
 
 ## When you are done
 
-You wrote this yourself, so there is no report to check and no worker to send back. Two things
-happen instead.
+You wrote this yourself, so there is no report to check and no worker to send back. Three things
+happen instead, in this order.
 
 **Check your own work against the completion test.** Could a competent engineer, reading only
 this plan, execute every phase in order and arrive at the working solution without you present?
@@ -408,10 +408,17 @@ Walk the traceability table: every spec AC maps to at least one task, every task
 AC, a contract, and either a declared check or a plain statement of how the claim is established
 instead. Zero `<!-- enrich` markers remain.
 
+**Then dispatch `sdlc-plan-audit` on this phase**, one round at a time, as many as the record
+says are owed. It reads what you wrote with the eleven prose failure modes AND the plan's own
+contract in hand: every spec AC traced to a task, the five contract bullets, check paths and argv-safe run commands,
+dependency order, the full-suite gate. Write the plan expecting that. Answer each round as
+*Coming back from the audit* describes.
+
 **Then hand it to the person for approval.** Fetch it with
 `document_present("<initiative>/plan.md")` and present what it returns before you ask — they are
-approving this document, not your account of it. Say what the plan builds, in what order, and what
-is true at the end of each phase. `plan.md` is a gate: `sdlc-execute` does not start until it is
+approving this document, not your account of it. Say what the plan builds, in what order, what
+is true at the end of each phase, and what the audit rounds found and how each was answered.
+`plan.md` is a gate: `sdlc-execute` does not start until it is
 approved, and the approval is recorded on the document. They may delegate the decision, and
 that delegation stands until they change it — it is an ordinary answer, not an exception you
 re-check. The recording is yours to do either way.
@@ -421,18 +428,16 @@ skill's** — judge it rather than matching phrases, record it under their name 
 turn, and never send a decision back to somebody who already made it. It is written once,
 there, because it holds for every flow.
 
-The next thing that runs is `sdlc-plan-audit` on this document, dispatched, one round at a time, as many as the record says are owed.
-It reads what you wrote with the eleven prose failure modes AND the plan's own contract in hand:
-every spec AC traced to a task, the five contract bullets, check paths and argv-safe run commands,
-dependency order, the full-suite gate. Write the plan expecting that.
+The next thing that runs, once the approval is recorded, is `sdlc-execute` on the phase.
 
 ## Coming back from the audit, or from execution
 
-`sdlc-plan-audit` returns findings, and `sdlc-execute` sends a plan back when a task's contract
-turns out to be wrong against the real code. Either way the revision the person approved is the
-one standing, and **`document_write` and `document_patch` are refused on it outright** — `plan.md`
-carries `gate: true`, and writing over an approved document would leave the approver's name
-standing on bytes they never read.
+`sdlc-plan-audit` returns findings on a phase that is still a draft, and `sdlc-execute` sends an
+approved plan back when a task's contract turns out to be wrong against the real code. Answer
+both with `document_revise`: it records the round or the report as the cause. On an approved plan
+it is the only route — **`document_write` and `document_patch` are refused on it outright** —
+because `plan.md` carries `gate: true`, and writing over an approved document would leave the
+approver's name standing on bytes they never read.
 
 **Revise it with `document_revise`.** One call does all of it:
 
@@ -443,7 +448,7 @@ document_revise(
   sources: ["sources/<the audit round you are answering>.md"])
 ```
 
-**THE AUDIT ROUND IS ALREADY A SOURCE.** `sdlc-plan-audit` registered it with `source_add`,
+**The audit round is already a source.** `sdlc-plan-audit` registered it with `source_add`,
 supporting `plan.md` — so cite that file rather than pasting its findings back, which would put
 one round on the record twice. The platform refuses this revision until you do: a source that
 supports `plan.md` and is newer than the version you are replacing is, by its own declaration,
@@ -460,7 +465,7 @@ document_revise(
   source_title: "<what sent it back>")
 ```
 
-The platform bumps the version, returns the document to draft, clears the stale approval and
+The platform bumps the version, returns the document to draft, clears any stale approval and
 keeps the approved copy as the sealed revision `document_read(<path>, version: N)` answers with. Mark every task `unchanged`, `changed` or `new`, and
 add the tasks that undo anything an earlier round built that no longer belongs. Do not write a
 second plan; execution needs one document.
@@ -500,8 +505,8 @@ on, so none is asked.
 
 **Action and exit paths:** the action is ground truth, state the production method in prose,
 scaffold in one write with a uniquely-id'd marker per task, fill one task at a time until no
-marker remains, close with the gate and the traceability table, present, ask. The forward exit is
-`sdlc-plan-audit`, once the approval is recorded. After `sdlc-execute` appends a phase's
+marker remains, close with the gate and the traceability table, dispatch the plan audit, answer
+its rounds, present, ask. The forward exit is `sdlc-execute`, once the approval is recorded. After `sdlc-execute` appends a phase's
 `### As built`, this stage runs again for the next phase; a phase that disproved a core statement
 exits back to `sdlc-spec` instead. The return exit is `document_revise` citing the
 source that sent it back — `document_write` and `document_patch` are refused on an approved plan,

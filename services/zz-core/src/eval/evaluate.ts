@@ -322,7 +322,7 @@ export function registerEvaluationTools(server: McpServer): void {
         "one plugin's evidence against another's identity; a caller resolving to no team or no " +
         "principal, because a run with no team and no starter is one nobody can read back; and an " +
         "initiative that names nothing in the caller's own team. A mutator: writes through the " +
-        "FR-59 idempotency ledger, so a retried call with the same idempotency_key replays the " +
+        "idempotency ledger, so a retried call with the same idempotency_key replays the " +
         "same run rather than opening a second one.",
       inputSchema: {
         subject_version_id: z.string(), protocol_version_id: z.string(),
@@ -367,7 +367,7 @@ export function registerEvaluationTools(server: McpServer): void {
         "BY NAME any subject_ref that resolves to neither a real document nor a real run, and any " +
         "ref whose subject resolves to no row the typed column could name: a " +
         "model asked to judge nothing is never silently handed a templated sentence naming the " +
-        "ref instead. A mutator: writes through the FR-59 idempotency ledger.",
+        "ref instead. A mutator: writes through the idempotency ledger.",
       inputSchema: {
         eval_run_id: z.string(),
         subject_refs: z.array(z.string()).describe(
@@ -410,7 +410,7 @@ export function registerEvaluationTools(server: McpServer): void {
         "per subject_ref, with its assessment_id, which is what a finding cites. REFUSES an " +
         "eval_run_id nothing minted, a run with no assessment recorded " +
         "against it, and a run already scored — its score is published, so a re-score is a new " +
-        "eval_run. A mutator: writes through the FR-59 idempotency ledger; a retry with the key that " +
+        "eval_run. A mutator: writes through the idempotency ledger; a retry with the key that " +
         "scored the run replays rather than refusing.",
       inputSchema: {
         eval_run_id: z.string(), idempotency_key: z.string().min(1),

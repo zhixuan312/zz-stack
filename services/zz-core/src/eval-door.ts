@@ -56,7 +56,7 @@ const EVAL_INSTRUCTIONS =
   "read it against the conformance standard\n" +
   "  protocol_*  read whether this plugin's protocol is still compatible, record a new " +
   "version, bind approval\n" +
-  "  round_*    read a historic ordinal round back; no new round is scored\n" +
+  "  round_*    the retired round reader; refuses every id, the history is archived\n" +
   "  finding_*  record what an EVALUATE run concluded, close it when applied or rejected\n" +
   "  failure_*  mine an observation snapshot for failure modes, before any protocol exists\n" +
   "  evaluator_*  qualify one evaluator version against a protocol's policy, before its " +

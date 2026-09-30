@@ -578,7 +578,7 @@ export function registerFailureDiscoverTools(server: McpServer): void {
         "discovery of it, so a second run that finds the same group re-sights that identity " +
         "rather than minting a second failure mode. Folding an identity into a protocol is " +
         "protocol_record's write of a zz.eval_protocol_failure_mode row, never this tool's. A " +
-        "mutator: writes through the FR-59 idempotency ledger, so a retried call with the same " +
+        "mutator: writes through the idempotency ledger, so a retried call with the same " +
         "idempotency_key replays the exact same sighting set rather than re-asking any model. " +
         "REFUSES an observation_snapshot_id nothing minted; never drops a failure mode for a " +
         "model outage — that group is stored with owner_kind='unknown' and the reason in its own " +

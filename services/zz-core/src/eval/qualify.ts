@@ -265,7 +265,7 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
         "have (naming the keys it does have); a key two dimensions share; and a " +
         "deterministic/outcome/human measure, which is not qualified. NEVER refuses on thin " +
         "evidence — a measure with no declared anchors answers state=unqualified, " +
-        "reason=no_anchors instead. A mutator: writes through the FR-59 " +
+        "reason=no_anchors instead. A mutator: writes through the " +
         "idempotency ledger, so a retried call with the same idempotency_key replays the same " +
         "row rather than re-asking any model. Pass `initiative` to record the state on the initiative.",
       inputSchema: {

@@ -202,7 +202,7 @@ export function registerProtocolTools(server: McpServer): void {
         "candidateId/mergedCandidateIds fold in. Computed entirely from live state — no document, " +
         "no protocol_body — from the plugin plugin_locate/plugin_register already IDENTIFY'd. " +
         "Pass `initiative` to record protocol_action as that initiative's durable branch fact " +
-        "(FR-58) — omit it and nothing is recorded, which the response says. A fact already set " +
+        "— omit it and nothing is recorded, which the response says. A fact already set " +
         "to a DIFFERENT action is left standing (facts_recorded: false, facts_refused naming " +
         "why) rather than refusing the whole call: a resumed read may legitimately recompute " +
         "reuse once protocol_record has since run, and that is informational, not an error. " +
@@ -299,7 +299,7 @@ export function registerProtocolTools(server: McpServer): void {
         "WHEN a protocol needs to be created or revised, after protocol_read said so: validates " +
         "protocol_body against EvaluationProtocol and writes it as a new, immutable " +
         "zz.eval_protocol_version (with its dimensions and measures), under the plugin and the " +
-        "protocol_key the body names — the header table that used to carry them is gone — and " +
+        "protocol_key the body names — and " +
         "folds DISCOVER lineage in: every failureTaxonomy entry naming a candidateId/" +
         "mergedCandidateIds writes one eval_protocol_failure_mode row, and a bare string entry " +
         "folds in the failure mode with that stable_key. " +
@@ -311,7 +311,7 @@ export function registerProtocolTools(server: McpServer): void {
         "protocol-wide); a bounded_semantic/generative_critic measure with no usable " +
         "evaluator; and a failureTaxonomy entry naming no failure mode or sighting from this " +
         "plugin's " +
-        "own evidence. A mutator: writes through the FR-59 idempotency ledger.",
+        "own evidence. A mutator: writes through the idempotency ledger.",
       inputSchema: {
         subject_version_id: z.string(),
         protocol_body: z.record(z.string(), z.unknown()),
@@ -380,7 +380,7 @@ export function registerProtocolTools(server: McpServer): void {
         "status: approved, or does not quote this version's content_digest anywhere in its " +
         "body: a document approved for a DIFFERENT version of this protocol is not approved " +
         "for this one. Until it binds, evaluator_qualify and " +
-        "evaluation_start refuse this version by name. A mutator: writes through the FR-59 idempotency ledger.",
+        "evaluation_start refuse this version by name. A mutator: writes through the idempotency ledger.",
       inputSchema: {
         protocol_version_id: z.string(),
         initiative: z.string().describe("The initiative protocol.md was written into."),

@@ -1,6 +1,6 @@
 ---
 name: sdlc-spec
-version: 1.13
+version: 1.14
 description: Open the option space with the person, close it to confirmed decisions, and write the agreement at <initiative>/spec.md — what ships, why it is worth building, and what "done" means. Brainstorm and spec are one skill because they are one conversation. Main agent only.
 when_to_use: "Explore has established what is true and the person is ready to decide what to build. Covers both halves: deciding with them, and writing what was decided. If nothing has been established yet, run sdlc-explore first. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -159,7 +159,7 @@ You are a specification writer. The spec you produce is a **human-alignment cont
 
 ## Task
 
-Expand confirmed design decisions into the formal spec. The decisions were already made in an interactive design session — do not redesign, add requirements, or second-guess them; give them full prose, explicit contracts, and testable acceptance criteria. The humans stay captain: make the value, the scope, and every judgement call legible so a person can approve or adjust them — the agent never decides scope here. This includes the deliverable contract itself (see "Propose the deliverable contract" below): you propose it from what the caller told you, the caller confirms or corrects it.
+Expand confirmed design decisions into the formal spec. The decisions were already made in an interactive design session — do not redesign, add requirements, or second-guess them; give them full prose, explicit contracts, and testable acceptance criteria. The humans stay captain: make the value, the scope, and every judgement call legible so a person can approve or adjust them — the agent never decides scope here. This includes the deliverable contract itself (see "Propose the deliverable contract" below): you propose it from what the person told you, and the person confirms or corrects it.
 
 **Completion test:** a business or product reader understands the problem, the value, and what ships; a builder — engineer, analyst, or specialist appropriate to the declared `kind` — can build from the Approach, Method & Structure component; and a plan-writer, reading only this spec, produces a correct plan without asking clarifying questions.
 
@@ -228,7 +228,7 @@ assumed to be software:**
 
 ## Propose the deliverable contract
 
-The caller is never required to arrive with a preformed contract — a business user, a product manager, or a student may not know how to author formal acceptance criteria. You PROPOSE the whole contract from the caller's own answers in the design decisions, in plain language, for a human to confirm afterward. You may propose this contract. You cannot approve it — approval is the human's decision, recorded separately after this spec is written.
+The person is never required to arrive with a preformed contract — a business user, a product manager, or a student may not know how to author formal acceptance criteria. You PROPOSE the whole contract from the person's own answers in the design decisions, in plain language, for a human to confirm afterward. You may propose this contract. You cannot approve it — approval is the human's decision, recorded separately after this spec is written.
 
 Write the proposal as a fenced `yaml` block under `### Deliverable contract` in `## Context`
 (see the skeleton below) with these fields. It goes in the BODY, not the frontmatter: the
@@ -248,7 +248,7 @@ enforces. A second field saying the same thing is a second answer to "has this b
 - `agent-review` — the claim needs analytical judgement that can be delegated but cannot be reduced to a deterministic check.
 - `human` — the claim needs authority, accountability, or a normative decision (for example, a professional sign-off). A claim requiring professional authority is always `human`, never `agent-review` — do not soften this for convenience.
 
-Derive every field from what the caller actually told you in the design decisions; never invent a criterion the decisions do not support, and never leave `acceptance` empty. Where the decisions leave a fact genuinely unstated, propose your best plain-language reading and flag it in the spec's own prose (not silently) so the human notices it while confirming.
+Derive every field from what the person actually told you in the design decisions; never invent a criterion the decisions do not support, and never leave `acceptance` empty. Where the decisions leave a fact genuinely unstated, propose your best plain-language reading and flag it in the spec's own prose (not silently) so the human notices it while confirming.
 
 ## Constraints
 
@@ -259,7 +259,7 @@ Derive every field from what the caller actually told you in the design decision
 5. **Explicit scope.** In-scope and out-of-scope exhaustively enumerated.
 6. **Blocking prerequisites.** Any dependency on an external artifact flagged with artifact path and unblocking condition.
 7. **Workstream decomposition.** When multiple independent workstreams exist, enumerate them explicitly.
-8. **Propose, never demand, the contract.** The deliverable contract's `artifacts`, `acceptance`, and `disposition` are proposed by you from the caller's answers — the caller is never required to arrive with them already formalized.
+8. **Propose, never demand, the contract.** The deliverable contract's `artifacts`, `acceptance`, and `disposition` are proposed by you from the person's answers — the person is never required to arrive with them already formalized.
 
 ## Execution
 
@@ -288,7 +288,7 @@ or whatever is true. That is a sentence a reader can disagree with, which an abs
 not, and it keeps the labels the next two stages lift from. Never add a component outside the
 eight; `## Phase outline` and `## Core statements` follow them, and are not components.
 
-Do NOT try to write the whole spec in one pass — long single-pass documents come out slow and uneven and often truncate or fail before the last section. Instead, first create the spec file as a **complete skeleton**: the title and ALL EIGHT `##` component headings, each `###` section within them, each `####` sub-part, with a single one-line **brief** immediately under each `###` section stating what that section will contain (drawn from the confirmed decisions). Write this skeleton in ONE `document_write` call into the initiative — `document_write(path: "<initiative>/spec.md", content: "<the body>")`. Send the body only; the platform writes the envelope. It is small and fast.
+Write the spec in two passes, because a long single-pass document comes out uneven and can truncate before the last section. First create the spec file as a **complete skeleton**: the title and ALL EIGHT `##` component headings, each `###` section within them, each `####` sub-part, with a single one-line **brief** immediately under each `###` section stating what that section will contain (drawn from the confirmed decisions). Write this skeleton in ONE `document_write` call into the initiative — `document_write(path: "<initiative>/spec.md", content: "<the body>")`. Send the body only; the platform writes the envelope. It is small and fast.
 
 **`document_write` and `document_patch`, not your runtime's local-file tools.** A spec written to a local path is a file on your disk: no envelope, no version snapshot at approval, no telemetry, and nothing the person can approve or the auditor can read. It also looks exactly like success.
 
@@ -296,7 +296,7 @@ Each brief is one HTML-comment line placed directly under its `###` heading:
 
 `<!-- brief: one line — what this section will cover, from the decisions -->`
 
-The skeleton **must** follow this exact heading hierarchy — the eight component headings at `##` level, in the canonical order below, sections within each at `###`, sub-parts at `####`. These two sentences used to say "the requested components" and "all eight only when all eight were requested", left behind when the rule above was corrected — and Phase B is the instruction an agent actually follows, so a spec written from it emitted a subset, wrote cleanly as a draft, and was refused at the approval. This is the unified specification standard for this flow (the bracketed guidance under each heading below is what that section must eventually contain — in the skeleton it becomes the one-line brief; you write the full content in Phase C):
+The skeleton **must** follow this exact heading hierarchy — the eight component headings at `##` level, in the canonical order below, sections within each at `###`, sub-parts at `####`. This is the unified specification standard for this flow (the bracketed guidance under each heading below is what that section must eventually contain — in the skeleton it becomes the one-line brief; you write the full content in Phase C):
 
 ````markdown
 # <Feature Title>
@@ -465,31 +465,19 @@ Component catalog).
 
 These labels are the specification standard for this flow, and they are read by people and by the next two stages: `sdlc-spec-audit` checks that the eight components are present under these exact headings, and `sdlc-plan` lifts `Alternatives` and the acceptance criteria straight out of them. Different heading levels or different labels break both.
 
-### Phase C — Enrich each section (one Edit per section)
+### Phase C — Enrich each section (one `document_patch` per section)
 
-Now fill the skeleton in, **one `###` section at a time, in document order**, using `document_patch("<initiative>/spec.md", find: "<!-- brief: … -->", replace: "<the section's complete final content>")` — the brief line is the `find`, and it is unique per section, which is what makes this exact. Never rewrite the whole file — edit one section, move to the next. Small, focused edits produce higher-quality prose than one long pass, and if you run out of budget they leave a well-structured partial document, and the caller can send the unreached sections back to you. Continue until **zero `<!-- brief:` markers remain.**
+Now fill the skeleton in, **one `###` section at a time, in document order**, using `document_patch("<initiative>/spec.md", find: "<!-- brief: … -->", replace: "<the section's complete final content>")` — the brief line is the `find`, and it is unique per section, which is what makes this exact. Never rewrite the whole file — edit one section, move to the next. Small, focused edits produce higher-quality prose than one long pass, and if you run out of budget they leave a well-structured partial document whose unreached sections you can name. Continue until **zero `<!-- brief:` markers remain.**
 
-Each section you enrich must satisfy these Section Rules:
-
-### Section Rules
-
-1. **No placeholders.** Every section must be complete. No TBD, TODO, "to be determined", or "similar to above."
-2. **Frozen contracts.** Any values, schemas, enums, field lists, or sort orders referenced must be explicitly inlined verbatim in the spec. Never write "see codebase", "as defined in X", or "the fields in columnMap.ts". Inline the actual list. If a frozen value comes from a specific git commit, record the commit hash.
-3. **Testable requirements.** Every functional requirement must use must/should/may language, be numbered (FR-N), and map to at least one acceptance criterion.
-4. **Decision rationale.** Every design choice in Approach, Method & Structure must have a rationale — why this approach, not just what.
-5. **Explicit scope.** In-scope and out-of-scope must be exhaustively enumerated. If something might be ambiguous, put it explicitly in one or the other.
-6. **Blocking prerequisites.** Any section or requirement that depends on an external artifact (a spike, a sign-off, a governance review, a schema freeze) must be explicitly flagged as a blocking prerequisite with the artifact path and the condition that unblocks it.
-7. **Workstream decomposition.** When the spec covers multiple independent kinds of work (prerequisite gates, the buildable runtime implementation, release-governance sign-offs), enumerate them explicitly in Delivery order. The downstream plan must separate them into distinct sections. A spec that folds prerequisite or governance items into the implementation workstream fails the decomposition check.
+Each section you enrich must satisfy the Constraints above.
 
 ### Phase D — Self-Validation
 
 Before finishing, verify:
 - All eight top-level `##` components are present, followed by `## Phase outline` and `## Core statements`, nothing else is added, and zero `<!-- brief:` markers remain. A component that does not apply says so under its own heading rather than being left out — the platform refuses the approval of a spec missing one.
-- **Zero `<!-- brief:` markers remain** — every section has been enriched with final content
 - Every component heading is present, using its label from the Component catalog. Check them against the numbered list at the end of Phase B rather than against a comma-separated run of them — `Approach, Method & Structure` is ONE label containing a comma, and read out of a comma list it turns into two components that do not exist. A component outside the eight is a defect, not a bonus: remove it before you finish.
 - Nothing in the file is a heading the manifest does not declare at `##` level. A `##` heading of your own invention is not refused, but it is also nobody's requirement, and the next two stages read the spec by these labels and will not see it.
 - If a write, revision or approval came back saying a heading was renamed to the one this flow declares, that line is kept and handed to `sdlc-spec-audit` with the spec. It is reported once and stored nowhere, so the copy in your hands is the only one there is.
-- Every `##` heading uses the exact label from the Component catalog (case-insensitive match is tolerated but exact casing is preferred)
 - The `### Deliverable contract` block declares `kind`, `audience`, `disposition`, at least one `artifacts` entry or a terminal `command` criterion, and every `acceptance` entry has an explicit `method`, a `why` rationale, and at least one `references` entry
 - Sections within components use `###`, sub-parts use `####` — no other heading levels for spec content
 - Every functional requirement is numbered (FR-N) and maps to an acceptance criterion

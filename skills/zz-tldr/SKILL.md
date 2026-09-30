@@ -1,6 +1,6 @@
 ---
 name: zz-tldr
-version: 1.2
+version: 1.3
 description: Compress a long document, thread, or transcript down to what the reader actually needs to act on — the decisions, the open questions, and what changed, not a proportional summary of everything.
 when_to_use: "Something is too long for the person who has to act on it. Typed on purpose as /zz-core:tldr in Claude Code, or matched as a skill. Standalone — no initiative, no gate, no place in the sequence."
 ---
@@ -25,8 +25,7 @@ reader never states which. Work out the cause yourself.
 ## 1. Select the source
 
 **Load `zz-authoring` first, then come back here.** It carries how the source is chosen
-from what the reader typed, and the writing rules this result is held to. Both were copied
-into this file and into zz-deck, and had already drifted apart.
+from what the reader typed, and the writing rules this result is held to.
 
 Say what you read in the Coverage line.
 
@@ -45,17 +44,15 @@ Name the selected mode in the Coverage line, using these exact mode names.
 | Part | Limit |
 |---|---|
 | TLDR | 80 English words maximum |
-| Whole result | 350 to 450 English words for a source that needs it, 500 maximum |
+| Whole result | 500 English words maximum |
 
 **The whole-result limit includes the TLDR and every other visible section.** All visible words
 count, including words inside tables. Use a table only when a table makes a comparison easier.
 
-Every number above is a ceiling. None of them is a target — the table named one and this line
-denied it, which is an invitation to pad up to 350. A short source gives a short result.
+Both numbers are ceilings, not targets. A short source gives a short result.
 
 **Scaling.** The default time budget is three minutes. When the reader gives another budget,
-compute `factor = requested minutes / 3`, then multiply the whole-result target and maximum by that
-factor. **Hold the TLDR at 80 words.** Raise the TLDR to 100 words only when the requested budget is
+compute `factor = requested minutes / 3`, then multiply the whole-result maximum by that factor. **Hold the TLDR at 80 words.** Raise the TLDR to 100 words only when the requested budget is
 ten minutes or more. A TLDR that grows with the body stops being readable at a glance.
 
 An English word count does not measure Chinese or other non-English length. For non-English output,

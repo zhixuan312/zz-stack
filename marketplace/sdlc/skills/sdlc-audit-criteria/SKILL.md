@@ -1,6 +1,6 @@
 ---
 name: sdlc-audit-criteria
-version: 2.7
+version: 2.8
 description: The eleven prose failure modes every sdlc audit applies, the evidence shapes a finding must take, and the JSON a round returns. Loaded by sdlc-spec-audit and sdlc-plan-audit; never run on its own.
 when_to_use: "You were dispatched as sdlc-spec-audit or sdlc-plan-audit. Load this first, then that skill — it carries what is different about the document you were given."
 ---
@@ -10,12 +10,6 @@ when_to_use: "You were dispatched as sdlc-spec-audit or sdlc-plan-audit. Load th
 What every audit on this flow does, whatever document it was given. The auditor skills carry
 what is DIFFERENT — which document, and the contract that document owes; this carries what is
 the same.
-
-Split out because it was written twice. The eleven failure modes, the evidence shapes and the
-output format sat verbatim in both auditors — 165 identical lines — with nothing holding them
-together, so an edit to one would have left two auditors applying different standards and
-nobody able to say which was current. Same reason a flow loads `zz-platform` rather than
-restating it.
 
 **You were dispatched for one round on one document.** The caller runs rounds sequentially,
 each reading what the last one produced; how many is the platform's answer from the record, with
@@ -107,7 +101,7 @@ You are a document auditor examining a prose artifact (spec, design doc, plan, r
 
 ## Task
 
-Evaluate the document against 11 failure modes sequentially. For each, find anywhere a literal-following worker would get stuck, pick wrong, or produce a broken outcome.
+Evaluate the document against 11 failure modes. For each, find anywhere a literal-following worker would get stuck, pick wrong, or produce a broken outcome.
 
 **Completion test:** when your audit's fixes have been applied, would a worker that reads only this artifact, follows it literally, and asks no clarifying questions produce the right outcome? If yes, the audit succeeded.
 
@@ -117,7 +111,7 @@ Findings are human-read. Each one says, in plain language: **what** is wrong, **
 
 ## Context
 
-The artifact you are auditing will subsequently be EXECUTED BY A LOW-JUDGMENT WORKER — a sub-agent that follows instructions literally, has limited ability to disambiguate, and cannot recover from contradictions.
+The artifact you are auditing will subsequently be executed by a low-judgment worker — a sub-agent that follows instructions literally, has limited ability to disambiguate, and cannot recover from contradictions.
 
 Your job is to find anywhere a literal-following worker would:
 - get stuck on ambiguity (e.g. "implement the function" with no signature, location, or contract)
@@ -131,35 +125,26 @@ Your job is to find anywhere a literal-following worker would:
 - need context that is referenced but not provided (a helper, a flag, a file the spec assumes the worker knows)
 - produce data of an unspecified shape (return value, file format, error envelope)
 
-A finding that points at any of these failure-mode triggers is high-value EVEN IF the prose reads cleanly. Conversely, a stylistic nit that does not block execution is low-priority no matter how clean the wording.
+A finding that points at any of these failure-mode triggers is high-value even if the prose reads cleanly. Conversely, a stylistic nit that does not block execution is low-priority no matter how clean the wording.
 
 ## Constraints
 
-- You MUST work through the 11 failure modes **one at a time, sequentially**. Do NOT evaluate all in one pass.
+- Cover all 11 failure modes, and list each one you walked in `criteriaCovered`.
 - Every finding must use one of the four evidence shapes (see Evidence Grounding below).
-- Every evidence string MUST start with its source in square brackets — the nearest heading for a document, or the file path for source code (see Section prefix below).
-- Scope is the document itself plus any artifact it directly references. Do NOT enumerate the repo or glob across source files.
+- Every evidence string opens with its source in square brackets (see Section prefix below).
+- Scope is the document plus what it directly references (see Scope below).
 - Findings that fail the Self-Validation rubric should be downgraded or dropped.
 
 ## Execution
 
-For each of the 11 failure modes:
-
-1. Read the document through the lens of ONLY that failure mode
-2. Record findings in working memory
-3. If no findings for that failure mode, note "Criterion N: No findings."
-4. Move to the next failure mode
-
-After all 11 failure modes are complete, consolidate into the final JSON output. **Do NOT try to evaluate all failure modes in one pass.** The sequential approach ensures thorough coverage — each failure mode gets your full attention before moving on.
+The eleven criteria below are the lenses. Apply each one to the document; a criterion with no
+findings is still listed in `criteriaCovered`. Then consolidate into the final JSON output.
 
 ### Execution Steps
 
-### Step 1: Keep your notes in working memory
-Keep your per-criterion notes in working memory. **Audit is read-only by discipline, not by enforcement.** Nothing here denies you a write tool
-or a mutating command — you are an ordinary subagent — so keeping the constraint is yours, and
-the only thing that keeps it. Read the document, read what it references, write nothing, and above all do not "helpfully"
-fix what you find. Your findings are the output; an audit that edits the document destroys the
-caller's ability to decide which findings to accept.
+### Step 1: Stay read-only
+**Audit is read-only by discipline, not by enforcement.** Nothing here denies you a write tool
+or a mutating command — you are an ordinary subagent — so keeping the constraint is yours.
 
 ### Step 2: Criterion 1 — RECOMMENDATION-COHERENCE
 Read the document. Does the proposed fix actually solve the stated problem given the doc's own stated constraints? A fix requiring X when the doc forbids X is logically incomplete. Always check fixes against any explicit principles, constraints, invariants, or "what we won't do" sections. Example: a doc listing "no persistence" as a principle cannot have a fix that disambiguates "id existed before" from "id never existed" without persistence. Record findings.
@@ -195,7 +180,7 @@ Read the document. Do similar items in a list/table follow the same shape? If on
 Read the document. For living/revised documents: is there a "last updated" / "as of" / version stamp? When findings claim "still unfixed in version X", is there a date timeline that supports the claim? Record findings.
 
 ### Step 13: Consolidate
-Collect all findings from your working-memory notes across all failure modes, assign severities. Your FINAL response must be the JSON block below as plain text — the JSON itself is never written to a file, and neither is a document. Your findings go to a SOURCE, with `source_add`, as set out above — an audit is not one of this flow's four documents, and writing `spec-audit.md` into the initiative is a name `document_approve` would refuse as undeclared.
+Collect all findings across all failure modes, assign severities. Your FINAL response must be the JSON block below as plain text — the JSON itself is never written to a file, and neither is a document. Your findings go to a SOURCE, with `source_add`, as set out above — an audit is not one of this flow's four documents, and writing `spec-audit.md` into the initiative is a name `document_approve` would refuse as undeclared.
 
 ### Evidence Grounding (REQUIRED for every finding)
 
@@ -207,7 +192,7 @@ Every finding must use one of these four evidence shapes:
 
 A finding without one of these four forms is speculation. Note "investigation needed" in your summary instead.
 
-**Section prefix (REQUIRED).** Every evidence string MUST start with its source in square brackets, so the caller knows exactly where to look. For a **document** target, use the nearest heading above the issue — prefer `###` over `##` over `#`. For a **source-code** target (no markdown headings), use the file path, with a line number when you have one: `[src/math.ts:3]` or `[src/math.ts]`.
+**Section prefix.** Every evidence string starts with its source in square brackets, so the caller knows exactly where to look. For a **document** target, use the nearest heading above the issue — prefer `###` over `##` over `#`. For a **source-code** target (no markdown headings), use the file path, with a line number when you have one: `[src/math.ts:3]` or `[src/math.ts]`.
 
 Format: `[### Heading Title] "quoted evidence text"` (docs) · `[src/math.ts:3] "quoted code"` (code)
 Multi-section: `[### Task 3] [### Task 5] "Both reference the same config"`
@@ -222,8 +207,8 @@ Examples:
 ### Scope
 
 - The document itself plus any artifact the document directly references (cited code, linked spec, embedded config).
-- Cross-section reasoning within the document IS in scope and is often the highest-value kind of finding.
-- Do NOT enumerate the repository or glob across all source files. If verifying a referenced file or symbol, read or grep for that specific name only.
+- Cross-section reasoning within the document is in scope and is often the highest-value kind of finding.
+- Do not enumerate the repository or glob across all source files. If verifying a referenced file or symbol, read or grep for that specific name only.
 - Out of scope: speculation about content the document does not reference; coding-style nits on inline code examples (those belong in a code review, not an audit).
 
 ### Severity Calibration
@@ -241,7 +226,7 @@ Before finishing, verify against this rubric:
 - Is the severity calibrated to actual downstream-execution impact (does following the recommendation as written produce a wrong outcome)?
 - Is the finding within the document's scope, or is it speculation about untouched material?
 
-Findings that fail any check should be downgraded or dropped. However, logical-coherence and argument-soundness findings backed by section references are FULLY VALID — do NOT downgrade them as "speculation."
+Findings that fail any check should be downgraded or dropped. Logical-coherence and argument-soundness findings backed by section references are valid evidence, not speculation — keep them at their severity.
 
 ## Output
 
@@ -275,16 +260,14 @@ job. Whether the recommendation is the right one for the business, as opposed to
 document's own stated constraints. And what any `##` heading said before the platform normalized
 it: no reading of the store answers that, so it is recorded as an unknown rather than inferred.
 
-**Work roles:** the eleven passes and the consolidation belong to the auditing agent, run one mode
-at a time rather than as a single sweep, because each mode gets full attention before the next.
-The document's owner decides what is fixed. Running the self-validation rubric is not delegated
-away: it was a second model's job before and it is yours now.
+**Work roles:** the eleven criteria and the consolidation belong to the auditing agent. The
+document's owner decides what is fixed. Running the self-validation rubric is yours; nothing
+re-runs it after you.
 
 **Checkpoints:** none. No bounded question at this stage has an answer the platform routes
 on, so none is asked.
 
-**Action and exit paths:** the action is eleven modes sequentially, notes kept in working memory,
-then consolidation. Two exits, both taken every round: `source_add` carrying the prose findings
+**Action and exit paths:** the action is the eleven criteria, then consolidation. Two exits, both taken every round: `source_add` carrying the prose findings
 and naming the document they bear on, and the JSON block as your final text. Neither is a document
 of the flow, and neither is ever written to a file. The exit that does not exist is editing the
 document you were given.

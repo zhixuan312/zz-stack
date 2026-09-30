@@ -198,12 +198,12 @@ export function registerReleaseTools(server: McpServer): void {
     {
       description:
         "WHEN a candidate is valid (built and gated by candidate_validate) and ready to cross the " +
-        "promotion boundary (FR-46, nothing before this touches the real repository): resolves " +
+        "promotion boundary (nothing before this touches the real repository): resolves " +
         "the candidate from the initiative — the one valid candidate of its improvement runs (the " +
         "eval_run its findings.md records), or the one candidate_id names — then resolves " +
         "required owners LIVE from the base subject's own release_owners, records the promotion " +
         "package as a zz.release_attempt row (prepared), and writes <initiative>/improvement.md — " +
-        "the authority-bearing gate FR-48 names, naming the exact candidate/patch digest, its " +
+        "the authority-bearing gate, naming the exact candidate/patch digest, its " +
         "build, the base's own score and guardrails, the affected owners and the planned release " +
         "and rollback (judged on real use after release, by the protocol's improvement.release). " +
         "RETURNS { candidate_id, release_attempt_id, patch_digest, required_owners, document } — " +
@@ -222,10 +222,10 @@ export function registerReleaseTools(server: McpServer): void {
         "no usable improvement.release; a caller who is not a member of one of the base subject's " +
         "owner teams (not_owner); a base subject with no recorded release_owners — a " +
         "third-party or not-yet-owned subject, which stays proposal-only (no_release_owners); " +
-        "a deployment with no platform database; and (FR-58, hard " +
+        "a deployment with no platform database; and (a hard " +
         "refusal, before any write) this initiative's release_mode already set to something " +
         "other than promotable. RETURNS `facts`, this initiative's release_mode now recorded " +
-        "as promotable. A mutator: writes through the FR-59 idempotency ledger.",
+        "as promotable. A mutator: writes through the idempotency ledger.",
       inputSchema: {
         initiative: z.string().describe(
           "The initiative improvement.md is written into; its valid candidate is the one prepared."),
@@ -371,7 +371,7 @@ export function registerReleaseTools(server: McpServer): void {
     {
       description:
         "WHEN improvement.md has been approved for a candidate release_prepare already recorded " +
-        "a promotion package for (FR-49, the compare-and-swap): takes an advisory lock on the " +
+        "a promotion package for (the compare-and-swap): takes an advisory lock on the " +
         "candidate's own plugin, evaluates releaseDecision against the plugin's CURRENTLY " +
         "released version — the newest, by semver, registered in zz.plugin_version, leaving out " +
         "any version a rollback retracted — and, only on apply, moves the prepared " +
@@ -386,7 +386,7 @@ export function registerReleaseTools(server: McpServer): void {
         BASE_SUBJECT_VERSION + ", branch, base_ref} | null } — base_ref is the commit the base " +
         "subject was released from, or null when nothing recorded one; patch/plan are null on a " +
         "refusal. Nothing here applies a patch, runs a gate or creates a release: zz-core has no " +
-        "checkout of the plugin's repository, so packages/tools/src/release/apply.ts — a CLI the " +
+        "checkout of the plugin's repository, so `zz-tool release-apply` — a CLI the " +
         "IMPROVE agent runs next, with patch.diff, plan.branch and plan.base_ref — does that, and " +
         "reports back through release_record. REFUSES not_owner (the caller is in no owner " +
         "team), release_in_progress (another attempt of this plugin is applying; a stale one is " +
@@ -402,7 +402,7 @@ export function registerReleaseTools(server: McpServer): void {
         "candidate with no prepared release_attempt, an improvement.md citing an attempt that is " +
         "not this candidate's prepared one, a plugin with no registered version, and a " +
         "deployment with no " +
-        "platform database. A mutator: writes through the FR-59 idempotency ledger.",
+        "platform database. A mutator: writes through the idempotency ledger.",
       inputSchema: {
         candidate_id: z.string(),
         approved_patch_digest: z.string(),
@@ -436,9 +436,9 @@ export function registerReleaseTools(server: McpServer): void {
     "release_record",
     {
       description:
-        "WHEN packages/tools/src/release/apply.ts has finished applying a candidate's patch — " +
+        "WHEN `zz-tool release-apply` has finished applying a candidate's patch — " +
         "successfully, through the gate and the repository's own release procedure, or not — or " +
-        "packages/tools/src/release/rollback.ts has finished running the repository's own " +
+        "`zz-tool release-rollback` has finished running the repository's own " +
         "rollback procedure over a release_verify verdict of " + ROLLBACK_STATE + ": records the outcome " +
         "the earlier call was left waiting for. Only the principal whose release_apply moved the " +
         "attempt to applying, or a member of one of its owner teams, may record it. On status: " +
@@ -452,7 +452,7 @@ export function registerReleaseTools(server: McpServer): void {
         "(why release_verify decided to roll back) and a recorded release_verify verdict of " +
         ROLLBACK_STATE + ", and moves an ALREADY-released attempt to " + ROLLBACK_STATE + ", " +
         "retracting its version from what plugin_locate and release_apply read as " +
-        "current, so the prior subject is current again (FR-50) — and candidate_record refuses " +
+        "current, so the prior subject is current again — and candidate_record refuses " +
         "its hypothesis from then on. " +
         "RETURNS { status, release_attempt_id, " + RELEASED_SUBJECT_VERSION + ", release_ref, " +
         "findings_decided, findings_left_alone }. " +
@@ -472,7 +472,7 @@ export function registerReleaseTools(server: McpServer): void {
         RELEASED_SUBJECT_VERSION + " of another plugin, a released call missing release_ref or " +
         RELEASED_SUBJECT_VERSION + ", a failed call missing failure_tail, a rollback " +
         "missing reason, and a deployment with no platform database. A mutator: writes through " +
-        "the FR-59 idempotency ledger.",
+        "the idempotency ledger.",
       inputSchema: {
         release_attempt_id: z.string(),
         status: z.enum(["released", "failed", ROLLBACK_STATE]),
@@ -520,7 +520,7 @@ export function registerReleaseTools(server: McpServer): void {
     {
       description:
         "WHEN an attempt release_record already moved to released is ready for its automatic, " +
-        "no-gate post-release check (FR-50, AC-50.1): judges the release on REAL use, never on " +
+        "no-gate post-release check: judges the release on REAL use, never on " +
         "replays. Counts the released subject's real runs; short of the protocol's " +
         "improvement.release.minPostReleaseRuns it RETURNS verdict: null, reason: " +
         "awaiting_post_release_runs and runs_needed — call again once real use has produced them. " +
@@ -543,15 +543,15 @@ export function registerReleaseTools(server: McpServer): void {
         "verdict column and the evidence it rests on — and read back on every later call, with " +
         "the rollback plan rebuilt from the candidate's own base release each time. On " +
         ROLLBACK_STATE + ", this call records the verdict and " +
-        "but applies NOTHING itself and does not move release_attempt.status — " +
-        "packages/tools/src/release/rollback.ts (zz-tool release-rollback) runs the repository's " +
+        "applies NOTHING itself and does not move release_attempt.status — " +
+        "`zz-tool release-rollback` runs the repository's " +
         "own rollback command against rollback_plan and reports back through release_record " +
         "(status: " + ROLLBACK_STATE + "), which is what actually restores the prior subject. " +
         "REFUSES not_owner — a caller who neither applied this attempt nor is a member " +
         "of one of its owner teams; not_released — an unknown release_attempt_id, or one " +
         "release_record never moved to released; an attempt with no " + RELEASED_SUBJECT_VERSION + " " +
         "recorded; a protocol version with no usable improvement.release; and a deployment with " +
-        "no platform database. A mutator once it decides: writes through the FR-59 idempotency " +
+        "no platform database. A mutator once it decides: writes through the idempotency " +
         "ledger; a pending answer makes no ledger write.",
       inputSchema: {
         release_attempt_id: z.string(),
@@ -578,12 +578,11 @@ export function registerReleaseTools(server: McpServer): void {
     "proposal_prepare",
     {
       description:
-        "WHEN an improvement_run's own base subject records no release_owners (FR-51, " +
-        "AC-51.1) and its findings/candidates are ready to be written up for whoever actually " +
+        "WHEN an improvement_run's own base subject records no release_owners and its " +
+        "findings/candidates are ready to be written up for whoever actually " +
         "owns that plugin: resolves the improvement_run from the initiative alone — the newest run " +
         "of the eval_run its findings.md records (a fresh improvement_start supersedes an earlier " +
-        "one) — and writes <initiative>/proposal.md (proposal-doc.ts), ungated (FR-53's " +
-        "own \"a proposal_only branch writes ungated proposal.md\"), always regenerated FRESH " +
+        "one) — and writes <initiative>/proposal.md, ungated, always regenerated FRESH " +
         "from the improvement_run's CURRENT findings and candidates on every call — never a " +
         "cached body from an earlier call, the same contract findings.md's own write already " +
         "keeps. It includes every valid (built and checked) candidate (hypothesis, patch " +
@@ -599,15 +598,15 @@ export function registerReleaseTools(server: McpServer): void {
         "on a document_refused answer, and either [] or the included candidate ids otherwise. " +
         "Applies NO patch and touches NO real repository, on this or any subject — its only two " +
         "side effects are a database read and a document write into this platform's own " +
-        "governed store (see proposal-doc.ts's own module note, \"EXPLICIT GUARD\"). REFUSES " +
+        "governed store. REFUSES " +
         "promotable — a base subject that DOES record release_owners: \"use release_prepare, " +
         "not proposal_prepare, for an owned subject\" — an initiative with no findings.md eval_run " +
         "(no_eval_run) or no improvement run on it (no_improvement_run), " +
-        "one whose own eval_run names a subject this call cannot read back, and (FR-58, hard " +
+        "one whose own eval_run names a subject this call cannot read back, and (a hard " +
         "refusal, before any write) this initiative's release_mode already set to something " +
         "other than proposal_only. RETURNS `facts`, this initiative's release_mode now recorded " +
         "as proposal_only. A mutator: " +
-        "writes through the FR-59 idempotency ledger — the ledger's own anchor is the " +
+        "writes through the idempotency ledger — the ledger's own anchor is the " +
         "improvement_run's ALREADY-existing row (a plain re-select, never an insert), because " +
         "this tool records no new database row of its own.",
       inputSchema: {

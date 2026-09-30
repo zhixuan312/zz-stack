@@ -15,7 +15,7 @@
 import type pg from "pg";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { documentApplies, parseCaller, type Applicability, type FlowDoc } from "@zz/contracts";
+import { documentApplies, OUTCOME_STOPPED, parseCaller, type Applicability, type FlowDoc } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
@@ -311,13 +311,14 @@ export async function initiativeState(
       ? `The handover is recorded: ${handover.name} was approved by ${handover.approved_by ?? "somebody"}` +
         `${handover.approved_at ? ` on ${handover.approved_at}` : ""}.`
       : handover?.exists
-        ? `${handover.name} is written and waiting on a verdict — \`document_approve\` records it, ` +
-          "and nothing is owed either way."
-        : "If the cycle taught something worth keeping, `skill_read(\"zz-handover\")` mints it and " +
-          "writes handover.md; the close satisfies that document's prerequisite.";
+        ? `${handover.name} is written and waiting on a verdict — \`document_approve\` records it.`
+        : outcome === OUTCOME_STOPPED
+          ? "An abandoned close does not owe the handover; if the cycle taught something worth " +
+            "keeping, `skill_read(\"zz-handover\")` mints it and writes handover.md."
+          : "A finished close owes the handover: `skill_read(\"zz-handover\")` and run it — it " +
+            "writes handover.md and mints what generalises.";
     next = { action: "closed", waiting_on: "nobody",
-             why: `closed with outcome: ${outcome}. Nothing further is owed — the row is ` +
-                  `the record. ${handoverNote}` };
+             why: `closed with outcome: ${outcome}. The ledger row is the record. ${handoverNote}` };
   } else {
     // A requirement is met by the only thing its target can offer. Nothing ever approves a
     // non-gated document — `gate: false` means no approval is required, so its status stays

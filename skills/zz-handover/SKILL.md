@@ -1,6 +1,6 @@
 ---
 name: zz-handover
-version: 2.13
+version: 2.14
 description: The handover every flow ends with. Read one closed initiative — its documents, its telemetry, its refusals — decide what generalises beyond the team that hit it and what matters only to this team, mint the first kind immediately, and propose the second in one gated handover document.
 when_to_use: "An initiative has closed — its closing document carries an `outcome` and the platform has recorded the close on the initiative.  Runs at the end of EVERY flow, whatever the flow was. Not a delivery stage: the stakeholder never sees this run."
 ---
@@ -8,15 +8,13 @@ when_to_use: "An initiative has closed — its closing document carries an `outc
 # zz-handover
 
 Delivery produces documents and telemetry. This turns one finished cycle into knowledge the
-next team can query — and it is the last step of every flow on this platform, the way
-`zz-platform` is the first.
+next team can query, and it is where the platform collects what each cycle taught. It runs
+after every `finished` close; after an `abandoned` close it is not owed, and runs only when that
+cycle taught something.
 
 **It writes one document, `handover.md`, and it is the whole handover — not a first draft
-of one.** The earlier design wrote `<initiative>/learnings.md` and left a second skill to
-promote the general findings into the knowledge base. The promotion step never ran once, in
-any initiative, ever — a file nothing reads is not a handover. This design does not repeat
-that shape with a different filename: `handover.md` is not a record of nodes minted
-elsewhere, it is where the nodes come from. A fact about the platform is minted the moment
+of one.** `handover.md` is not a record of nodes minted elsewhere, it is where the nodes come
+from. A fact about the platform is minted the moment
 this skill decides it — no document stands between the judgement and the node. A fact about
 this team is not minted at all until this document says so and a person agrees, because the
 team's own shelf should not be written to before the team has seen what is going onto it. One
@@ -28,15 +26,12 @@ anything, as the signal this cycle is actually done.
 - Every document the flow declared, in order, and every revision of each: what changed between
   one approval and the next is where the disagreements are. `document_read(<path>)` gives the
   current one; `document_read(<path>, version: N)` gives the revision filed at approval N, and
-  it lists the versions it holds. The frozen copies used to be files beside the document and are
-  rows now, which is why a version is asked for rather than found.
+  it lists the versions it holds.
 - `initiative_status(<initiative>)` — the close: its outcome, who closed it, its date, and the
   next move the platform computes from the record. Written by the platform and not by the agent,
-  which is why it is the one to measure against. The row this reads replaced a `_ledger.md` line
-  the platform appended at each close.
+  which is why it is the one to measure against.
 - `knowledge_reconcile(<initiative>)` — **the claims this initiative's stages RECORDED, and
-  only those.** The right-hand side is gone and the tool says so in as many words: nothing
-  joins a claim to telemetry until something records which plugin a claim is about. Read it
+  only those.** Nothing joins a claim to telemetry, and the tool says so in as many words. Read it
   for what was predicted; do not report an actual-versus-predicted comparison, and do not
   reconstruct one from the call log.
 - `knowledge_search` for what is ALREADY known, on both shelves — and OPEN the ones that
@@ -55,8 +50,10 @@ anything, as the signal this cycle is actually done.
 
 ## Compute before you interpret
 
-From the telemetry, mechanically. These are statistics, not judgements, and they are what
-the evaluation track later reads as this initiative's profile.
+From what the platform's tools return — `initiative_status`, each document's versions and
+their dates, `source_list` — mechanically. These are statistics, not judgements. Report the
+figures those returns carry; a figure below that no tool returns to you is named as not
+available, never estimated.
 
 - **End-to-end time** — first activity to close, split into agent-working time and
   waiting-on-stakeholder time. The second is where most wall-clock lives; report both.
@@ -166,16 +163,11 @@ judgement can nearly always be re-described as a fact that moved. If you cannot 
 readings as two checkable statements, it was a judgement. Mint the approved line and raise the
 disagreement in your report.
 
-Observed the first time this pass ran for real, on 2026-09-21: a proposed node said
-`review.md` did not state a discrepancy, the initiative's owner read the draft handover and
-revised `review.md` to state it, and minting the approved sentence unchanged would have
-shelved a falsehood produced by the document doing its job.
-
 **Anything else — `handover.md` exists but is still `draft` or awaiting the stakeholder.**
 There is nothing for this skill to do. It is a human gate; do not re-run the judgement to
-"check", and do not mint team nodes early because the wait is long. `initiative_status` reports
-the initiative as `closed` throughout — the close is terminal and this document is not owed, so
-an unapproved handover holds nothing open.
+"check", and do not mint team nodes early because the wait is long. The initiative stays closed
+throughout — the close is terminal, so an unapproved handover keeps the handover open, not the
+initiative.
 
 ## Writing the nodes
 

@@ -518,18 +518,6 @@ export const COV_SECURITY: readonly MutationSpec[] = [
   },
   {
     check: "scripts/gate/checks/data-telemetry-reports.ts",
-    target: "a count of what is on this deployment says when it was counted",
-    assertion: "a live count in shipped prose carries the date it was taken",
-    subject: "catalog/sdlc/sdlc-flow/skills/sdlc-recall/SKILL.md",
-    find: "Measured on this deployment on 2026-09-21: across eight common",
-    replace: "On this deployment, across eight common",
-    planted: "a shipped skill states a live measurement of this deployment's own corpus in the " +
-      "present tense with no date, so a count that was true of one week is read as current " +
-      "for ever by every tenant who loads the skill — the reasoning stays sound and the tense " +
-      "is what rots",
-  },
-  {
-    check: "scripts/gate/checks/data-telemetry-reports.ts",
     target: "whether a refusal taught anything is one judgement",
     assertion: "the judgement is not a length floor",
     subject: "packages/tools/src/lib/refusal.ts",

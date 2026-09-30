@@ -74,7 +74,7 @@ export function registerArtifactTools(server: McpServer): void {
         "SEND THE BODY, starting at its first heading: the frontmatter is written by the " +
         "platform from what it already knows, and anything else the document needs — " +
         "`stakeholder`, `tags`, `title` — is an argument here. The initiative must already " +
-        "exist: `initiative_open` creates one, and this no longer does. The FLOW is declared " +
+        "exist: `initiative_open` creates one, and this does not. The FLOW is declared " +
         "there too, never here.",
       inputSchema: {
         path: z.string(),
@@ -419,8 +419,14 @@ export function registerArtifactTools(server: McpServer): void {
     "document_list",
     {
       description:
-        "List the documents in your team's store (shared with every member of it), " +
-        "optionally under a folder prefix.",
+        "List the paths in your team's store (shared with every member of it), sorted: each " +
+        "initiative's documents and its `sources/` files, plus the team's journal nodes under " +
+        "`_knowledge/nodes/` when `prefix` is omitted or names `_knowledge`. `prefix` narrows " +
+        "to one initiative or a folder inside one, e.g. '2026-08-20-sample-intake/sources'. " +
+        "RETURNS a JSON array of paths and nothing else — no status, version or content: " +
+        "`initiative_status` says where work stands and `document_read` returns a document. " +
+        "Returns [] when the caller acts for no team. Platform-shelf nodes are not listed; " +
+        "`knowledge_search` finds them.",
       inputSchema: { prefix: z.string().optional() },
     },
     async ({ prefix }) => {

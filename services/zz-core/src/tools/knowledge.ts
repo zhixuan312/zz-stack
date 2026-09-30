@@ -255,7 +255,14 @@ export function registerKnowledgeTools(server: McpServer): void {
   server.registerTool(
     "knowledge_supersede",
     {
-      description: "Mark a journal node superseded by a newer one — knowledge evolves, nothing is deleted.",
+      description:
+        "Mark a journal node superseded by a newer one — knowledge evolves, nothing is deleted. " +
+        "WHEN a node is now wrong and a newer node states what is true: mint the newer one with " +
+        "`knowledge_add` first, then call this with both four-digit ids as `knowledge_search` " +
+        "reports them. The old node stays readable and searchable, labelled superseded and " +
+        "pointing at its successor. Both nodes must be on one shelf; pass `shelf` only when an " +
+        "id names a node on each. REFUSES an id no node carries, and a pair that spans the two " +
+        "shelves.",
       // `{4,}`, not `{4}`: ids are padded to four digits and grow past it, and the allocator
       // counts without a ceiling.
       inputSchema: {

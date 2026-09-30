@@ -268,7 +268,7 @@ export function registerSubjectTools(server: McpServer): void {
     {
       description:
         "WHEN an evaluation begins, before any other tool on this door: IDENTIFY the plugin it is " +
-        "about. It RETURNS FR-1's immutable subject_version — the declared version, its release " +
+        "about. It RETURNS the immutable subject_version — the declared version, its release " +
         "digest (the whole plugin's identity, written once when the version was registered and " +
         "never rewritten), the per-component manifest (the capture's own for a third-party " +
         "subject, derived from what a catalog release ships — a digest per component — for one " +
@@ -280,7 +280,7 @@ export function registerSubjectTools(server: McpServer): void {
         "subject_version_id this returns, so an evaluation cannot drift onto a different version " +
         "of its own subject halfway through. It writes nothing: a subject version IS a " +
         "zz.plugin_version row, and that row is immutable history. A caller that retries with the " +
-        "same idempotency_key replays the same answer through the FR-59 ledger. REFUSES a plugin " +
+        "same idempotency_key replays the same answer through the idempotency ledger. REFUSES a plugin " +
         "this platform has never released, and a version it has no row for.",
       inputSchema: {
         plugin: z.string(),
@@ -337,7 +337,7 @@ export function registerSubjectTools(server: McpServer): void {
         "The captured row IS that subject's whole identity: unlike plugin_locate, a later call " +
         "for the same plugin/version reads this capture back rather than recomputing it, " +
         "because a third party has no release moment to recompute against. A mutator, through " +
-        "the same FR-59 idempotency ledger plugin_locate uses. REFUSES a name the catalog " +
+        "the same idempotency ledger plugin_locate uses. REFUSES a name the catalog " +
         "already owns — that plugin is registered by release, never by this tool — REFUSES a " +
         "payload naming origin, owner_team, evolvable or release_owners, since the platform " +
         "derives every authority field itself and never takes one as input, REFUSES a " +

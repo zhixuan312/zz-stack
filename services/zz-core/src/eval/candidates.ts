@@ -94,29 +94,29 @@ export function registerCandidateTools(server: McpServer): void {
         "WHEN an eval_run's findings name work worth improving: opens one durable " +
         "zz.improvement_run against eval_run_id and its finding_ids. RETURNS { improvement_run_id, " +
         `${BASE_SUBJECT_VERSION}, status, proposer_bundle } — the base subject every ` +
-        "candidate_record names; proposer_bundle (AC-37.1) is this run's own actionable " +
+        "candidate_record names; proposer_bundle is this run's own actionable " +
         "evidence: failing traces, evaluator critiques, refusal text, corrections, dependency/ " +
         "tool errors, cost/latency and prior rejected hypotheses for this eval_run's plugin, so " +
         "a candidate is proposed against what already failed rather than guessed blind. REFUSES an eval_run_id nothing minted, an empty finding_ids list " +
         "(unless skip: true), a finding_ids entry naming no finding, a finding recorded against " +
         "a DIFFERENT eval_run, and any finding whose owner_kind is not 'plugin' — " +
         "\"ERROR: finding <id> is owned by <kind>; it is reported to its owner, not optimised\" " +
-        "(FR-34: a dependency/platform/environment/user_input/unknown finding stays an " +
+        "(a dependency/platform/environment/user_input/unknown finding stays an " +
         "owner-facing finding and starts no improvement). Pass `initiative` to record " +
-        "improvement_mode as that initiative's durable branch fact (FR-58) — release when the " +
+        "improvement_mode as that initiative's durable branch fact — release when the " +
         "base subject records release_owners, proposal when it does not; omit `initiative` and " +
         "nothing is recorded. `skip: true` is the explicit route for no plugin-owned actionable " +
         "finding at all: opens no improvement_run, and — with `initiative` — records " +
         "improvement_mode: skip and release_mode: not_applicable in one call. Checked and " +
         "REFUSED, before the idempotency ledger and before ANY row is written, when this " +
-        "initiative's improvement_mode is already set to something else (FR-58, a hard refusal " +
+        "initiative's improvement_mode is already set to something else (a hard refusal " +
         "— unlike protocol_read's own informational one — because opening or replaying into a " +
         "zz.improvement_run regardless would leave a release or proposal running that the " +
         "initiative's own facts do not admit to). REFUSES skip alongside a non-empty " +
         "finding_ids, and skip when a plugin-owned defect/unknown for this eval_run is still " +
         "`deferred` (name it and call improvement_start with it instead) — a plugin-owned " +
         "STRENGTH never blocks skip, since it carries no expected_effect and could never seed a " +
-        "candidate. A mutator: writes through the FR-59 idempotency ledger.",
+        "candidate. A mutator: writes through the idempotency ledger.",
       inputSchema: {
         eval_run_id: z.string(),
         finding_ids: z.array(z.string()).default([]),
@@ -300,22 +300,22 @@ export function registerCandidateTools(server: McpServer): void {
     {
       description:
         "WHEN a candidate patch has been proposed and MUST be persisted before anything about " +
-        "it executes (FR-36): records improvement_run_id, " + BASE_SUBJECT_VERSION + ", hypothesis, " +
+        "it executes: records improvement_run_id, " + BASE_SUBJECT_VERSION + ", hypothesis, " +
         "expected_effect and " + PATCHSET + ".diff, computing patch_digest (sha256 of the diff), complexity_delta " +
         "(complexityDelta over the diff's own added/removed lines and added/removed files), " +
         "touched_components (the patch's files mapped onto " + BASE_SUBJECT_VERSION + "'s own " +
         "component manifest — the capture's for a third-party subject, derived from what the " +
         "release ships for a catalog one) and " + TOUCHED_OWNERS + " (the base subject's plugin's own " +
-        "release_owners, FR-47 — every touched component inherits plugin-level ownership in " +
+        "release_owners — every touched component inherits plugin-level ownership in " +
         "this initiative). RETURNS { candidate_id, patch_digest, complexity_delta, " +
         "touched_components, " + TOUCHED_OWNERS + ", status: 'recorded' }. REFUSES an " +
         "improvement_run_id nothing minted; a " + BASE_SUBJECT_VERSION + " nothing minted, or one of a " +
         "different plugin than the run's eval_run; a caller whose address names no principal; " +
         "and a hypothesis whose normalised-text digest " +
         "matches a candidate of the same plugin already " + REJECTED_CANDIDATE_STATUSES.join("/") +
-        " — \"ERROR: hypothesis already rejected as candidate <id>\" (FR-38: an idea that failed " +
+        " — \"ERROR: hypothesis already rejected as candidate <id>\" (an idea that failed " +
         "its gate, or that measured worse on real use and was rolled back, is not proposed again). " +
-        "A mutator: writes through the FR-59 idempotency ledger.",
+        "A mutator: writes through the idempotency ledger.",
       inputSchema: {
         improvement_run_id: z.string(),
         [BASE_SUBJECT_VERSION]: z.string(),
@@ -523,7 +523,7 @@ export function registerCandidateTools(server: McpServer): void {
         "judged on real use afterwards (release_verify). An awaiting_build lease (60 minutes) " +
         "that expired unrecorded returns the candidate to recorded first. REFUSES a candidate_id " +
         "nothing minted and a status outside (recorded, awaiting_build, valid). A mutator when it " +
-        "consumes a build: writes through the FR-59 idempotency ledger — build_required is not.",
+        "consumes a build: writes through the idempotency ledger — build_required is not.",
       inputSchema: { candidate_id: z.string(), idempotency_key: z.string().min(1) },
     },
     async ({ candidate_id, idempotency_key }) => {
@@ -549,14 +549,14 @@ export function registerCandidateTools(server: McpServer): void {
       description:
         "WHEN IMPROVE ends on an OWNED subject with no candidate worth releasing — every candidate " +
         "failed its build or gate, or none could be proposed: records release_mode: " +
-        "not_applicable as the initiative's durable branch fact (FR-58), so it closes on " +
+        "not_applicable as the initiative's durable branch fact, so it closes on " +
         "findings.md alone. Resolves the improvement run from the initiative (the newest on the " +
         "eval_run its findings.md records). RETURNS { improvement_run_id, facts }. REFUSES an " +
         "initiative with no findings.md eval_run (no_eval_run) or no improvement run on it " +
         "(no_improvement_run); an initiative with a valid (built and gated) candidate — " +
         "release_prepare it instead; a subject with no release_owners — proposal_prepare writes " +
-        "its proposal.md instead; and (FR-58, hard refusal) a release_mode already set to " +
-        "something else. A mutator: writes through the FR-59 idempotency ledger, anchored on the " +
+        "its proposal.md instead; and (a hard refusal) a release_mode already set to " +
+        "something else. A mutator: writes through the idempotency ledger, anchored on the " +
         "improvement run's own row.",
       inputSchema: { initiative: z.string(), idempotency_key: z.string().min(1) },
     },

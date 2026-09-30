@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-explain
-version: 0.5
+version: 0.6
 description: Stage 6 of zz-plugin-eval (EXPLAIN). Record what EVALUATE's own score and assessments actually found — strengths, defects, unknowns, each with an owner — and let findings.md regenerate itself from the current record. Ungated measurement output, never an approval gate.
 when_to_use: "The sixth stage of zz-plugin-eval, once evaluation_score has completed. Produces findings.md — ungated, and every branch of this flow reaches it before anything else happens. No shell required."
 ---
@@ -61,7 +61,7 @@ repository edit, proposed as a patch, built and gated, released by whoever owns 
 on real use afterwards. `expected_effect` is the hypothesis IMPROVE's proposer reads; write it as
 precisely as you would want a candidate's own `hypothesis` field to read.
 
-## A FINDING STAYS OPEN UNTIL SOMEBODY CLOSES IT
+## A finding stays open until somebody closes it
 
 A `deferred` finding stays open — it is what IMPROVE reads as `finding_ids` when it opens an
 improvement run, and what a reader later needs to know is still unresolved. Once somebody has acted (or
@@ -120,7 +120,7 @@ about what was found that is not backed by a recorded row. `finding_decide`'s re
 finding closed in this pass, with its note.
 
 **Allowed unknowns:** whether a `plugin`-owned finding will actually start an improvement — that is
-IMPROVE's call, against `improvement_start`'s own eligibility rule (FR-34), not this stage's.
+IMPROVE's call, against `improvement_start`'s own eligibility rule, not this stage's.
 
 **Action and exit paths:** the action is record every finding the score supports, with ownership
 and (for `plugin`-owned ones) one named `expected_effect`, regenerating `findings.md` as you go.

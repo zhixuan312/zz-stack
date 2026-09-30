@@ -1,6 +1,6 @@
 ---
 name: sdlc-review
-version: 1.11
+version: 1.12
 description: Verify what was built before it ships — first the evidence that every accepted criterion holds, established by running, then a bounded defect sweep in rounds the platform routes to a stop. The sweep is dispatched, one round at a time, because a reviewer who did not write the code is the point; the evidence table and the verdict are the main agent's.
 when_to_use: "sdlc-execute has finished and the change is about to be shipped, merged or handed over. This is the pre-release gate. The main agent compiles the acceptance evidence and dispatches each sweep round."
 ---
@@ -181,7 +181,7 @@ one line ("The review sweep is waived: <why>") — and the approval then names t
 `plan.md` declare, a `## Backlog` naming every open out-of-scope finding, and a verdict, approved;
 and the sweep's rounds recorded as sources until `initiative_status` stops routing them. `review.md`
 is this flow's closing document; nothing here closes the initiative. Once it closes,
-`initiative_status` reports `action: handover` until `handover.md` exists and is approved — say so
+a `finished` close owes `zz-handover`, and `initiative_status` names what is still owed — say so
 when you hand back.
 
 **Required evidence:** per acceptance row, a kind-prefixed locator and the quoted decisive

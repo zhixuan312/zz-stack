@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-observe
-version: 0.6
+version: 0.7
 description: Stage 2 of zz-plugin-eval (OBSERVE). Compute the pre-protocol observation snapshot — production facts from this subject's real runs, in one resolved window — with its sufficiency verdict and the coverage it was derived from. No model touches any of it.
 when_to_use: "The second stage of zz-plugin-eval, after IDENTIFY has settled subject_version_id. Also the stage that decides whether there is enough evidence for DISCOVER and EVALUATE to work from. No shell required."
 ---
@@ -24,7 +24,7 @@ row and returns `observation_snapshot_id`. `evidence_window` is `{ from, to }` o
 `{ last_runs: n }`; `{ last_runs: n }` resolves to the caller's most recent `n` runs at call
 time and that RESOLVED range is what gets recorded, so a retry (same `idempotency_key`) replays
 against the same window rather than sliding forward as new runs land. No protocol is required
-to call this — OBSERVE runs before DEFINE/QUALIFY ever needs to (FR-8).
+to call this — OBSERVE runs before DEFINE/QUALIFY ever needs to.
 
 ## One window, one sufficiency line
 

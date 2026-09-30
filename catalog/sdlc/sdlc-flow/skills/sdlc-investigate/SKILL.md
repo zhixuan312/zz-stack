@@ -1,6 +1,6 @@
 ---
 name: sdlc-investigate
-version: 1.4
+version: 1.5
 description: Answer one specific question about material inside this system — code, config, specs, data, documents — with grounded file:line citations and calibrated confidence. Read-only. Dispatched by sdlc-explore, one question per worker.
 when_to_use: "One convergent question about this system needs a grounded answer: how something works, where something lives, what something depends on. Dispatched by sdlc-explore as part of its fan-out, or reached directly when a single fact is blocking. Not for surveying a subject — that is the whole fan-out, not one worker."
 ---
@@ -67,7 +67,7 @@ freely; write nothing.
 say what you claimed, so a citation that does not match the file on disk reaches the caller
 unchallenged and becomes a decision built on a quote that does not exist.
 
-Do NOT attempt to edit, write, create, or delete any file. Do NOT propose fixes, improvements, or suggestions — this is read-only Q&A. If the question implies a fix, answer the factual question behind it and stop.
+Propose no fixes, improvements or suggestions — this is read-only Q&A. If the question implies a fix, answer the factual question behind it and stop.
 
 ## Execution
 
@@ -132,9 +132,9 @@ Before finishing, verify against this rubric:
 - Is the answer to the asked question, not a shifted version of it?
 - For synthesis claims with one weak link, is confidence downgraded accordingly?
 
-Findings that fail any check should be downgraded. However, negative findings ("searched, not found") and inference-with-citations ("I infer X from Y:42, Z:18") are FULLY VALID — do NOT suppress them.
+Findings that fail any check should be downgraded. Negative findings ("searched, not found") and inference-with-citations ("I infer X from Y:42, Z:18") are valid answers — report them.
 
-**Run this rubric yourself and mean it.** It was a second model's job before; it is yours now.
+**Run this rubric yourself and mean it.** Nothing re-runs it after you.
 
 ## Output
 

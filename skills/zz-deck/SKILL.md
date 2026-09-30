@@ -1,6 +1,6 @@
 ---
 name: zz-deck
-version: 2.3
+version: 2.4
 description: Turn something already written — a spec, a report, a changelog, a thread — into a slide deck that makes an argument, built on the house visual system. Not an outline of the source: a conclusion, the claims that carry it, and one composition per claim.
 when_to_use: "Someone needs to present something that already exists in prose. Typed on purpose as /zz-core:deck in Claude Code, or matched as a skill. Standalone — no initiative, no gate, no place in the sequence."
 ---
@@ -30,8 +30,7 @@ to honour that discipline, not to reformat a document.
 ## 1. Select the source
 
 **Load `zz-authoring` first, then come back here.** It carries how the source is chosen
-from what the reader typed, and the writing rules this deck is held to. Both were copied into
-this file and into zz-tldr, and had already drifted apart.
+from what the reader typed, and the writing rules this deck is held to.
 
 Read the source completely before designing anything.
 
@@ -156,8 +155,8 @@ reading from is not:
 
 On Claude Code this file is installed as a command, because a deck is something a person asks
 for on purpose. Only the skill's text moves into `commands/`; its assets stay where they were.
-So resolve the chassis asset from the plugin root, never from your own location — the two are
-the same directory on one client and not on the other.
+So resolve the chassis asset from the plugin root, never from your own location — they are not
+the same directory.
 
 If it is not there, **stop and say so.** Never fabricate the styling: a deck built on invented
 CSS looks plausible and is not on the house system, which is the entire point of the command.
@@ -187,7 +186,7 @@ Read the chassis asset in full, then write the complete deck file in **one write
     "name": "<deck title>",
     "version": "1.2.3",
     "updated": "<YYYY-MM-DD>",
-    "canvas": { "width": 1280, "height": 720, "ratio": "16:9" },
+    "canvas": { "width": 1440, "height": 810, "ratio": "16:9" },
     "summary": "<the deck's conclusion sentence, one line>",
     "slides": [
       {
@@ -234,10 +233,7 @@ Read the chassis asset in full, then write the complete deck file in **one write
   `data-limits` or `data-tags`.** Those four are the guidebook's teaching metadata — they answer
   "when would I pick this composition", which is a question about the reference deck, not about
   your slide. A content slide has nothing to say for them, and Phase 5 tells you the QA row that
-  demands them is expected to fail on a real deck. An earlier version of this example carried all
-  four, copied from a guidebook slide's shape, which put it in direct contradiction with that
-  instruction — the first person to follow this skill end to end hit exactly that and had to
-  guess which one won.
+  demands them is expected to fail on a real deck.
 
   A **cover** slide's attributes differ — `class="slide active slide--cover"`, with `active` on
   the first slide only — but it scaffolds the same way: final attributes now, one placeholder

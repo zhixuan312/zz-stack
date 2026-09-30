@@ -32,8 +32,8 @@ exactly — they are the method; this file is only the door.
 
 **When:** A person typed /zz-plugin-eval:eval. When someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?' — answering from your o...
 
-**Then:** do not load it. A person opens this flow themselves: tell them to type
-`/zz-plugin-eval:eval` to start it.
+**Then:** do not load it. A person opens this flow themselves: tell them to open
+`/zz-plugin-eval:eval` in Claude Code, `$zz-plugin-eval:eval` in Codex.
 
 ## What holds regardless
 

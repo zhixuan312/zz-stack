@@ -25,28 +25,43 @@ for (const f of paths) {
 const dupes = paths.filter((f, i) => paths.indexOf(f) !== i);
 if (dupes.length) bad.push(`the package emits the same path twice: ${[...new Set(dupes)].join(", ")}`);
 
-if (!paths.some((f) => /(^|\/)commands\//.test(f))) bad.push("the package carries no commands");
+// Nothing is a command file any more: Codex never reads `commands/`, so a skill a person opens by
+// name stays a skill and carries both clients' marker for it instead.
+if (paths.some((f) => /(^|\/)commands\//.test(f))) bad.push("the package still carries a commands/ file");
 
-// A promoted skill's assets still travel — only its SKILL.md moves into commands/. zz-deck
-// resolves its chassis relative to the plugin root, and a deck built without the chassis is
-// the one failure that skill says to stop on.
+// A promoted skill stays in its own directory with its assets. zz-deck resolves its chassis
+// relative to the plugin root, and a deck built without the chassis is the one failure that
+// skill says to stop on.
 //
 // Every path is plugin-qualified, because the baseline and the catalog are built from
 // different branches of client-package.ts and an unqualified path is satisfied by either.
 const deckPromotions: [RegExp, string][] = [
   [/^zz-core\/skills\/zz-deck\/deck-chassis\.html$/, "the deck chassis did not travel with the promoted skill"],
   [/^zz-core\/skills\/zz-deck\/deck-guidebook\.html$/, "the deck guidebook did not travel with the promoted skill"],
-  [/^zz-core\/commands\/deck\.md$/, "zz-deck was not promoted to zz-core/commands/deck.md"],
-  [/^zz-core\/commands\/tldr\.md$/, "zz-tldr was not promoted to zz-core/commands/tldr.md"],
-  [/^zz-core\/commands\/breakout\.md$/, "zz-breakout was not promoted to zz-core/commands/breakout.md"],
 ];
 for (const [re, why] of deckPromotions) {
   if (!paths.some((f) => re.test(f))) bad.push(why);
 }
+/** Whether `plugin/skills/<skill>/` ships as a skill a person opens by `cmd`, in both clients. */
+const openedByName = (plugin: string, skill: string, cmd: string): string | null => {
+  const md = pkg.files.find((f) => f.path === `${plugin}/skills/${skill}/SKILL.md`);
+  const policy = pkg.files.find((f) => f.path === `${plugin}/skills/${skill}/agents/openai.yaml`);
+  if (!md) return `${skill} did not ship in ${plugin}`;
+  if (!new RegExp(`^name: "${cmd}"$`, "m").test(md.content)) return `${plugin}/${skill} is not named '${cmd}'`;
+  if (!/^disable-model-invocation: true$/m.test(md.content)) return `${plugin}/${skill} can be matched by Claude Code on its own`;
+  if (!policy || !/allow_implicit_invocation: false/.test(policy.content)) {
+    return `${plugin}/${skill} can be matched by Codex on its own — no agents/openai.yaml policy`;
+  }
+  return null;
+};
+for (const [skill, cmd] of [["zz-deck", "deck"], ["zz-tldr", "tldr"], ["zz-breakout", "breakout"]]) {
+  const why = openedByName("zz-core", skill, cmd);
+  if (why) bad.push(why);
+}
 // zz-authoring is a library: loaded by the other two, never typed. The manifest is the only
 // thing deciding skill or command, so a stray entry in the commands map publishes one.
-if (paths.some((f) => /^zz-core\/commands\/authoring\.md$/.test(f))) {
-  bad.push("zz-authoring is a library and shipped as a command");
+if (pkg.files.some((f) => f.path === "zz-core/skills/zz-authoring/agents/openai.yaml")) {
+  bad.push("zz-authoring is a library and shipped as a skill only a person opens");
 }
 if (!paths.some((f) => /^zz-core\/skills\/zz-authoring\/SKILL\.md$/.test(f))) {
   bad.push("zz-authoring did not ship as a skill");
@@ -55,11 +70,10 @@ if (!paths.some((f) => /^zz-core\/skills\/zz-authoring\/SKILL\.md$/.test(f))) {
 // there, absent from zz-core — because a move that left a copy behind ships two of everything
 // and the shelf renders both without complaint.
 for (const cmd of ["doctor", "update", "migrate"]) {
-  if (!paths.some((f) => f === `zz-access/commands/${cmd}.md`)) {
-    bad.push(`zz-${cmd} was not promoted to zz-access/commands/${cmd}.md`);
-  }
-  if (paths.some((f) => f === `zz-core/commands/${cmd}.md`)) {
-    bad.push(`zz-core still ships commands/${cmd}.md — the skill moved to zz-access`);
+  const why = openedByName("zz-access", `zz-${cmd}`, cmd);
+  if (why) bad.push(why);
+  if (paths.some((f) => f.startsWith(`zz-core/skills/zz-${cmd}/`))) {
+    bad.push(`zz-core still ships zz-${cmd} — the skill moved to zz-access`);
   }
 }
 // And their scripts, which are the whole of what those three skills do. Source names, not
@@ -71,10 +85,10 @@ for (const asset of ["zz-doctor/doctor.ts", "zz-update/update.ts", "zz-migrate/m
     bad.push(`zz-access/skills/${asset} did not travel with the promoted skill`);
   }
 }
-// And the command must resolve the chassis from where it actually sits.
-const deck = pkg.files.find((f) => /^zz-core\/commands\/deck\.md$/.test(f.path));
-if (deck && !deck.content.includes("../skills/zz-deck/deck-chassis.html")) {
-  bad.push("commands/deck.md no longer points at the chassis's real location");
+// And the skill must resolve the chassis from where it actually sits.
+const deck = pkg.files.find((f) => f.path === "zz-core/skills/zz-deck/SKILL.md");
+if (deck && !deck.content.includes("skills/zz-deck/deck-chassis.html")) {
+  bad.push("zz-deck no longer points at the chassis's real location");
 }
 
 // The execute bit: `zz-mcp-headers.sh` is run by the client to fetch the token at connect

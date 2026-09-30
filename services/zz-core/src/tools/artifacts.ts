@@ -37,6 +37,7 @@ import { db, teamFor } from "../platform-db.js";
 import { dayOf, documentAt, documentPaths, loadDocument, recordAct, revisionsOf,
          saveDocument, supportsOf } from "../versions.js";
 import { present } from "../document-present.js";
+import { type PanelDocument, panelDocument, PRESENT_META } from "../document-panel.js";
 import { asksPart, PART_LIMIT, partHeader, slicePart } from "../document-parts.js";
 import { journalOrdinal, listJournalNodes, readJournalNode } from "./journal.js";
 
@@ -307,6 +308,7 @@ export function registerArtifactTools(server: McpServer): void {
           .describe("Show the copy filed at approval N instead of the current document."),
         ...PART_INPUT,
       },
+      _meta: PRESENT_META,
     },
     async ({ path, version, section, offset, limit }) => {
       const user = parseCaller(requestHeaders()).email;
@@ -315,6 +317,8 @@ export function registerArtifactTools(server: McpServer): void {
       if (!p || !team) return text(NO_TEAM);
       const single = !Array.isArray(path);
       const out: string[] = [];
+      // What the document panel draws — every document whole, whatever part the text carries.
+      const panel: PanelDocument[] = [];
       // COUPLED: the `shown` record and the `presented_at` column are both written by
       // `present` (document-present.ts), once per document, and nothing in this registration
       // touches the record. `shownSinceLastChange` answers per document, so one record for a
@@ -346,8 +350,11 @@ export function registerArtifactTools(server: McpServer): void {
         // `shown_part` and counts as presented only once the parts cover the body. `present`
         // makes that choice, so a second caller cannot forget it.
         out.push(await present(p, team, rel, version, user, { section, offset, limit }));
+        const drawn = await panelDocument(p, team, rel, version, user);
+        if (drawn) panel.push(drawn);
       }
-      return text(out.join("\n\n────────\n\n"));
+      // `_meta`, never `structuredContent`: see document-panel.ts for what each client shows a model.
+      return { ...text(out.join("\n\n────────\n\n")), _meta: { "zz-core/documents": panel } };
     },
   );
 

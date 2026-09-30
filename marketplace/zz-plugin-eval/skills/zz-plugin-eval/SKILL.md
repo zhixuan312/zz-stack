@@ -1,7 +1,7 @@
 ---
 name: "eval"
 description: "Run the ZZ Plugin Evaluation flow for your team."
-when_to_use: "The person typed /zz-plugin-eval:eval. This is a command, not an auto-matched skill."
+when_to_use: "Only when a person opens it by name: `/zz-plugin-eval:eval` in Claude Code, `$zz-plugin-eval:eval` in Codex."
 version: "0.91.1"
 disable-model-invocation: true
 ---

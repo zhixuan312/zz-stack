@@ -618,8 +618,11 @@ is(bare === 0,
    `initiative-acts.ts has ${bare} membership test written as a bare \`!chain.docs.has(...)\` ` +
    "— a freeform initiative resolves to EMPTY_CHAIN, whose docs Set is empty, so every " +
    "approval or revision on one is refused with an error naming a flow that does not exist");
-is(/chain\.documents\.length && !chain\.docs\.has\(/.test(acts),
-   "no membership test in initiative-acts.ts is narrowed by the flow's own declaration — the " +
+// document_approve's membership test is `gateRefusal`'s, in chain.ts, shared with the document
+// panel — so the narrowed test is looked for there, and the approval must still go through it.
+const gate = stripped("services/zz-core/src/chain.ts");
+is(/chain\.documents\.length && !chain\.docs\.has\(/.test(gate) && /gateRefusal\(chain, parts\[1\]\)/.test(acts),
+   "no membership test on the approval is narrowed by the flow's own declaration — the " +
    "guard has been deleted rather than corrected, and a flow that DID name its documents no " +
    "longer refuses one it never declared");
 // initiative_close must not refuse a freeform close outright, and must ask which document

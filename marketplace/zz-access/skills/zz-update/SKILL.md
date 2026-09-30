@@ -1,7 +1,7 @@
 ---
 name: "update"
 description: "Bring every ZZ plugin on this machine up to date in one command — refresh the marketplace, update each plugin that is actually installed, and print the version on both sides so 'nothing changed' is a result rather than a silent tick."
-when_to_use: "The person typed /zz-access:update."
+when_to_use: "Only when a person opens it by name: `/zz-access:update` in Claude Code, `$zz-access:update` in Codex."
 disable-model-invocation: true
 ---
 

@@ -278,7 +278,18 @@ async function main(): Promise<number> {
   check("document_approve() refuses a document not presented since its last change",
     await call("document_approve", { path: `${INIT}/${FIRST_GATED}`, on_behalf_of: signer }),
     true, /present it first/);
-  await call("document_present", { path: `${INIT}/${FIRST_GATED}` });
+  // Presented the way the document panel presents: the ticket arrives in the result's `_meta`,
+  // which no model is shown, and `document_shown` — the panel's own call — records it. The approval
+  // below then rests on the panel's present, which is the path a person in ChatGPT takes.
+  const gated = `${INIT}/${FIRST_GATED}`;
+  const presented = await core.rpc("tools/call", { name: "document_present", arguments: { path: gated } });
+  const drawn = (presented.result?._meta?.["zz-core/documents"] as { version: number; ticket: string | null; body: string }[] | undefined)?.[0];
+  check("document_present hands the document panel the whole document and a ticket",
+    drawn && drawn.ticket && drawn.body.length > 0 ? "ok" : `ERROR: the panel was handed ${JSON.stringify(drawn)?.slice(0, 200)}`, false);
+  check("document_shown() refuses a ticket this deployment did not issue",
+    await call("document_shown", { path: gated, version: drawn?.version ?? 1, ticket: "0.forged" }), true, /not valid/);
+  check("document_shown() records the present the panel made",
+    await call("document_shown", { path: gated, version: drawn?.version ?? 1, ticket: drawn?.ticket ?? "" }), false);
   check("document_approve() records a verdict on a document that exists",
     await call("document_approve", { path: `${INIT}/${FIRST_GATED}`, on_behalf_of: signer }), false);
   check("document_approve() refuses a document that does not",

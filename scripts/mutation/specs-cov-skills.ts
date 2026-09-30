@@ -57,16 +57,6 @@ export const COV_SKILLS: readonly MutationSpec[] = [
   },
   {
     check: "scripts/gate/checks/skill-prose.ts",
-    target: "a skill that ships an asset does not say the asset is beside it",
-    subject: `${ACCESS}/zz-doctor/SKILL.md`,
-    find: "node \"${CLAUDE_PLUGIN_ROOT}/skills/zz-doctor/doctor.js\"",
-    replace: "node ./doctor.js   # the script is next to this file — that is the only place to look",
-    planted: "the doctor skill says its script sits beside it, which is false on Claude Code: " +
-      "the skill is promoted into commands/ and the script stays in skills/, so the one " +
-      "command a blocked person is told to run cannot find what it runs",
-  },
-  {
-    check: "scripts/gate/checks/skill-prose.ts",
     target: "every stage that writes a document names document_present, or says why not",
     assertion: "a declared stage names neither document_present nor a departure from it",
     subject: `${EVAL}/zz-plugin-define-qualify/SKILL.md`,
@@ -128,15 +118,15 @@ export const COV_SKILLS: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/skill-prose.ts",
     target: "no skill names a package file the packager does not emit",
-    assertion: "a skill names the file by the skill's name where the packager writes the command's",
+    assertion: "a skill names a commands/ file for a skill the packager ships under skills/",
     subject: `${ACCESS}/zz-update/SKILL.md`,
     find: "node \"${CLAUDE_PLUGIN_ROOT}/skills/zz-update/update.js\"\n```",
     replace: "node \"${CLAUDE_PLUGIN_ROOT}/skills/zz-update/update.js\"\n```\n\nOn Claude Code " +
       "this skill is installed as `commands/zz-update.md`, and the path above resolves\nrelative " +
       "to the plugin root from there.",
     planted: "the update skill tells the reader it is installed as commands/zz-update.md while " +
-      "the packager writes commands/update.md — the file is named by the command, not by the " +
-      "skill — so anyone resolving a path from it resolves it from a directory that is not there",
+      "the packager writes no commands/ at all — the skill stays at skills/zz-update/SKILL.md — " +
+      "so anyone resolving a path from it resolves it from a directory that is not there",
   },
   {
     check: "scripts/gate/checks/skill-prose.ts",

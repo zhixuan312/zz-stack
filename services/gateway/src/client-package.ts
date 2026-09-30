@@ -67,7 +67,8 @@ export interface ShelfFlow {
   servers: { name: string; path: string }[];
   /** Whether zz-router loads this flow; `false` when a person opens it by its command. */
   routed: boolean;
-  /** What a person types to open the entry, `/<plugin>:<command>`, or null when it has none. */
+  /** The name a person opens the entry by — `openedAs` spells it per client — or null when the
+   *  manifest declares none. */
   command: string | null;
 }
 
@@ -97,8 +98,8 @@ function platformOwnSkills(prefix: string): PackageFile[] {
 }
 
 
-/** What the baseline plugin carries: the router, the platform's own skills, and a command for
- * each skill its manifest declares one for. Its manifest is `catalog/zz/zz-core/flow.json`.
+/** What the baseline plugin carries: the router, the platform's own skills, and each skill its
+ * manifest declares a command for, opened by that name. Its manifest is `catalog/zz/zz-core/flow.json`.
  *
  * DELIBERATE: its skills are the tree beside the catalog rather than that entry's `skills/`,
  * plus the router, which is generated from the shelf's flows when the package is built. */
@@ -107,10 +108,7 @@ function baselineFiles(flows: ShelfFlow[]): PackageFile[] {
     { path: "skills/zz-router/SKILL.md", content: routerSkill(flows) },
     ...platformOwnSkills("skills"),
   ];
-  const { commands, promoted } = promoteCommands(BASELINE, skills);
-  // Assets beside a promoted skill still travel: only its SKILL.md moves. That is what
-  // carries each command's script, which lives in the skill's own directory.
-  return [...commands, ...skills.filter((sk) => !promoted.has(sk))];
+  return promoteCommands(BASELINE, skills);
 }
 
 /** The baseline's marketplace card, addressed to whoever this package was built for.
@@ -221,50 +219,34 @@ export function buildClientPackage({ target, base }: PackageInput): ClientPackag
     },
     ...platformPlugins().map((pp): Plugin => {
       const skills = residentFiles(pp.dir, "skills");
-      const { commands, promoted } = promoteCommands(pp.dir, skills);
       return {
         name: pp.name,
         description: pp.description,
         servers: pp.servers.map((sv) => ({ name: sv.name, url: `${base}${sv.path}` })),
         required: true,
-        // Assets beside a promoted skill still travel: only its SKILL.md moves.
-        files: [...commands, ...skills.filter((sk) => !promoted.has(sk))],
+        files: promoteCommands(pp.dir, skills),
       };
     }),
     ...flows.map((f): Plugin => {
       const skills = residentFiles(f.flow, "skills");
       const entry = skills.find((s) => s.path === `skills/${f.entry}/SKILL.md`);
       // A skill a person invokes on purpose — the front door, and every other skill the
-      // manifest names in `commands` — becomes a command; it ships exactly once either way.
-      // Stage skills are never promoted: they are reached through the flow, not typed.
+      // manifest names in `commands` — is opened by that name; it ships exactly once either way.
+      // Stage skills are never promoted: they are reached through the flow, not by name.
       //
-      // Both halves have to hold for the entry. `entryCmd` is undefined for a package that
-      // declares no command for its entry, and there is no default. `entry` is whether that
-      // skill actually shipped; when it did not, the command is still emitted, as a pointer
-      // that fetches the method at run time.
+      // `entryCmd` is undefined for a package that declares no command for its entry, and there
+      // is no default. `entry` is whether that skill actually shipped; when it did not, the front
+      // door is still emitted, as a pointer that fetches the method at run time.
       const entryCmd = entryCommand(f.flow, f.entry || f.flow);
-      const asCommand = entryCmd !== undefined && entry !== undefined;
-      const { commands: declaredCommands, promoted: declaredPromoted } =
-        promoteCommands(f.flow, skills, [f.entry || f.flow]);
-      const promoted = new Set<PackageFile>([
-        ...(asCommand && entry ? [entry] : []),
-        ...declaredPromoted,
-      ]);
       return {
         name: pluginName(f.flow),
         description: cardDescription(f.flow, `${f.agentName || f.flow} — ${f.whenToUse}`.slice(0, 180)),
         // A flow's servers arrive with the flow, or not at all: this is what my skills call.
         servers: f.servers.map((sv) => ({ name: sv.name, url: `${base}${sv.path}` })),
-        files: [
-          ...(entryCmd ? [{
-            path: `commands/${entryCmd}.md`,
-            content: commandFile(f, entryCmd,
-                                 asCommand && entry ? withoutFrontmatter(entry.content) : undefined),
-          }] : []),
-          ...declaredCommands,
-          // Assets beside a promoted skill still travel: only its SKILL.md moves.
-          ...skills.filter((sk) => !promoted.has(sk)),
-        ],
+        files: promoteCommands(f.flow, skills, entryCmd === undefined ? undefined : {
+          cmd: entryCmd, skill: f.entry || f.flow,
+          file: commandFile(f, entryCmd, entry ? withoutFrontmatter(entry.content) : undefined),
+        }),
       };
     }),
   ];

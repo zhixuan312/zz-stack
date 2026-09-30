@@ -1,7 +1,7 @@
 ---
 name: "breakout"
 description: "Spin up one named expert teammate for a bounded deep dialogue, keep that conversation out of the main thread, and close by writing the confirmed insights to the ZZ knowledge base. Widens a thin option space before a decision is made."
-when_to_use: "The person typed /zz-core:breakout."
+when_to_use: "Only when a person opens it by name: `/zz-core:breakout` in Claude Code, `$zz-core:breakout` in Codex."
 disable-model-invocation: true
 ---
 

@@ -96,8 +96,11 @@ const ts = (dirs: string[]): string[] => sourceFiles(dirs, [".ts"]).filter((f) =
               "document the flow declares WITHOUT a gate would be stamped a draft, and a " +
               "status records a verdict nobody was asked for");
   }
+  // `gateRefusal` (chain.ts) is the one answer to "can this be approved", and document_approve
+  // refuses through it.
   const acts = src("services/zz-core/src/tools/initiative-acts.ts");
-  if (!/entry\.gate !== true/.test(acts)) {
+  const gate = src("services/zz-core/src/chain.ts");
+  if (!/entry\.gate !== true/.test(gate) || !/gateRefusal\(chain, parts\[1\]\)/.test(acts)) {
     fail.push("R5: document_approve does not refuse a document its flow declares without a " +
               "gate. Declaring a document is not gating it — approving an ungated one writes " +
               "the exact rows the rule forbids, whatever stampEnvelope does");

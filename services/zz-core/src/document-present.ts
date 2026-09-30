@@ -104,7 +104,9 @@ async function presentPart(
     : covered !== "partial"
       ? "Every character of the current body has now been presented, in parts — it counts as presented."
       : "Presented in part. It does NOT yet count as presented: present the remaining characters " +
-        "(every part since the last change counts) before the document is approved.";
+        "(every part since the last change counts) before the document is approved. A client " +
+        "that shows the document panel puts all of it in front of the person and records that " +
+        "itself — if the person can see the panel, leave the rest to it.";
   return `${facts.join(", ")}.${signed}\n${partHeader(relPath, part, "the body, frontmatter excluded", body)}\n` +
          `${standing}\n\n${part.text}\n`;
 }

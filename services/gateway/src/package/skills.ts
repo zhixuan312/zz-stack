@@ -22,10 +22,9 @@ export function shelfFlows(): ShelfFlow[] {
       const m = catalogManifest(flow);
       if (!m) throw new Error(`catalog lists '${flow}' but has no manifest for it`);
       const entry = m.entry || flow;
-      const typed = entryCommand(flow, entry);
-      const command = typed ? `/${pluginName(flow)}:${typed}` : null;
+      const command = entryCommand(flow, entry) ?? null;
       const routed = m.routed !== false;
-      // A flow the router must not load, and that nobody can type, is unreachable.
+      // A flow the router must not load, and that nobody can open by name, is unreachable.
       if (!routed && !command) {
         throw new Error(`'${flow}' declares routed: false and no command for its entry '${entry}'`);
       }
@@ -189,9 +188,9 @@ export function routerSkill(flows: ShelfFlow[]): string {
              "on the zz-core server, not this client's own skills. Follow those skills",
              "exactly — they are the method; this file is only the door."]
           // A person opens this flow; the router does not load it for them. It says so, and
-          // names what to type.
-          : [`**Then:** do not load it. A person opens this flow themselves: tell them to type`,
-             `\`${f.command}\` to start it.`]),
+          // names what to type in each client.
+          : [`**Then:** do not load it. A person opens this flow themselves: tell them to open`,
+             `${openedAs(pluginName(f.flow), f.command ?? f.entry)}.`]),
         "",
       );
     }
@@ -215,42 +214,34 @@ export function routerSkill(flows: ShelfFlow[]): string {
 
   return fm.join("\n") + body.join("\n");
 }
-/** The flow's front door.
+/** How a person opens, by name, a skill they invoke on purpose — in each client that carries these
+ *  plugins. Claude Code types `/<plugin>:<name>`; Codex mentions `$<plugin>:<name>`. One spelling of it,
+ *  so the router, the setup page and the skill's own frontmatter cannot disagree. */
+export function openedAs(plugin: string, cmd: string): string {
+  return `\`/${plugin}:${cmd}\` in Claude Code, \`$${plugin}:${cmd}\` in Codex`;
+}
+/** The flow's front door, as a skill only a person opens.
  *
- * DELIBERATE: a pointer command is about five lines. If it grows, method has leaked into the
+ * DELIBERATE: a pointer entry is about five lines. If it grows, method has leaked into the
  * package.
  *
  * Two forms, because a flow reaches its user differently depending on where its
  * method lives:
  *
- *   pointer flow — the method is on the platform, so the command fetches it.
- *   local flow   — the method shipped as files, so the command is the method.
+ *   pointer flow — the method is on the platform, so the entry fetches it.
+ *   local flow   — the method shipped as files, so the entry is the method.
  *
- * `entryBody` is the entry skill's markdown with its own frontmatter removed. When
- * it is present the command carries it verbatim, and the caller ships no separate
- * skill for the entry: on Claude Code a flow's front door is a command, and having
- * both means the same router arrives twice under two names. */
+ * `entryBody` is the entry skill's markdown with its own frontmatter removed. When it is present
+ * the entry carries it verbatim under the command's name, and the entry skill does not also ship
+ * under its own: the same front door twice, under two names, is two routers. */
 export function commandFile(f: ShelfFlow, cmd: string, entryBody?: string): string {
   const plugin = pluginName(f.flow);
-  const head = [
-    "---",
-    // Quoted, like the two fields under it: `cmd` is a key a flow author typed into flow.json,
-    // and the schema requires only a non-empty string. A value with a quote in it would close
-    // a hand-quoted YAML string early and the command would silently not exist.
-    `name: ${JSON.stringify(cmd)}`,
-    // Quoted for the same reason: `agentName` is free text from a manifest.
-    `description: ${JSON.stringify(`Run the ${f.agentName || f.flow} flow for your team.`)}`,
-    // The plugin is named for the flow, so the command is /<flow>:<flow>.
-    `when_to_use: ${JSON.stringify(`The person typed /${plugin}:${cmd}. This is a command, not an auto-matched skill.`)}`,
+  const head = commandFrontmatter(plugin, cmd, `Run the ${f.agentName || f.flow} flow for your team.`,
     // Omitted when the install recorded no version, rather than filled in with "1.0.0": an
     // invented number tells a client a release that never happened and never moves after.
-    ...(f.version ? [`version: ${JSON.stringify(f.version)}`] : []),
-    "disable-model-invocation: true",
-    "---",
-    "",
-  ];
-  if (entryBody) return head.concat(entryBody.trimEnd(), "").join("\n");
-  return head.concat([
+    f.version);
+  if (entryBody) return [head, entryBody.trimEnd(), ""].join("\n");
+  return [head,
     "Call the `zz-core` tool **skill_read**, passing `zz-platform` as its `name` argument;",
     `then call it again passing \`${f.entry}\`, and follow it exactly. Both are MCP tools on`,
     "the zz-core server, not this client's own skills.",
@@ -258,55 +249,64 @@ export function commandFile(f: ShelfFlow, cmd: string, entryBody?: string): stri
     "If the person named work that already exists, call `initiative_status(<initiative>)`",
     "first and say what you found before acting on it.",
     "",
-  ]).join("\n");
+  ].join("\n");
 }
-/** Promote the skills a manifest declares as commands, and say which files moved.
+/** The frontmatter of a skill a person opens by name.
  *
- * A command is one a person types on purpose, which is a property of the skill rather than of
- * the kind of plugin carrying it, so both branches promote through here.
- *
- * `except` is the entry skill on the flow branch, promoted there because it needs the
- * ShelfFlow to build a pointer command when the skill did not ship. Excluded by skill name
- * rather than by command name, because the entry's command is whatever the manifest called
- * it. */
-export function promoteCommands(flow: string, skills: PackageFile[], except: string[] = []):
-    { commands: PackageFile[]; promoted: Set<PackageFile> } {
-  const picked = Object.entries(declaredCommands(flow))
-    .filter(([, skill]) => !except.includes(skill))
-    .map(([cmd, skill]) => ({
-      cmd, name: skill, file: skills.find((sk) => sk.path === `skills/${skill}/SKILL.md`),
-    }))
-    .filter((x): x is { cmd: string; name: string; file: PackageFile } => x.file !== undefined);
-  return {
-    commands: picked.map((x) => ({
-      path: `commands/${x.cmd}.md`,
-      content: standaloneCommandFile(flow, x.cmd, x.name, x.file.content),
-    })),
-    promoted: new Set(picked.map((x) => x.file)),
-  };
-}
-/** A standalone skill, as a Claude Code command.
- *
- * Same rule as the flow's front door: a skill a person invokes on purpose becomes a command
- * such as `/sdlc:deck`. The body is the skill's own text, so there is one method however it is
- * reached. */
-function standaloneCommandFile(flow: string, cmd: string, name: string, md: string): string {
-  const plugin = pluginName(flow);
-  const body = withoutFrontmatter(md);
-  // The skill's own description: it is what a person reads in the command list to decide
-  // whether this is the thing they want.
-  const says = fmField(md, "description") || `Run the ${name} skill.`;
+ * Every value is quoted: `cmd` is a key a flow author typed into flow.json and the description is
+ * free text, and either can hold a character that closes a hand-quoted YAML string early — the
+ * skill then silently does not exist. `disable-model-invocation` is Claude Code's half of "only
+ * a person opens this"; `openaiPolicy` below is Codex's. */
+function commandFrontmatter(plugin: string, cmd: string, says: string, version?: string | null): string {
   return [
     "---",
     `name: ${JSON.stringify(cmd)}`,
     `description: ${JSON.stringify(says.length > 300 ? says.slice(0, 297) + "..." : says)}`,
-    `when_to_use: ${JSON.stringify(`The person typed /${plugin}:${cmd}.`)}`,
+    `when_to_use: ${JSON.stringify(`Only when a person opens it by name: ${openedAs(plugin, cmd)}.`)}`,
+    ...(version ? [`version: ${JSON.stringify(version)}`] : []),
     "disable-model-invocation: true",
     "---",
     "",
-    body.trimEnd(),
-    "",
   ].join("\n");
+}
+/** Codex's half of "only a person opens this": the skill stays out of the model's context and is
+ *  reached only when somebody mentions it. Codex reads this file and not the frontmatter flag. */
+const OPENAI_POLICY = "policy:\n  allow_implicit_invocation: false\n";
+
+/** Turn the skills a manifest declares as commands into skills a person opens by name, and return
+ * the plugin's whole file list.
+ *
+ * A command is a skill a person invokes on purpose — a property of the skill, not of the client.
+ * Claude Code and Codex both read `skills/`, and only Claude Code reads `commands/`, so a promoted
+ * skill stays a skill, in its own directory with everything beside it: only its SKILL.md is
+ * rewritten, to take the command as its `name` and to carry both clients' marker for "never
+ * matched on its own". Both clients name a plugin skill by its `name` and not by its directory —
+ * measured against each, 0.92.0 — which is what lets the directory, and every path into it, stay.
+ *
+ * `entry` is a flow's front door: its SKILL.md is built from the ShelfFlow by the caller, and
+ * lands in the entry skill's directory whether or not that skill shipped. */
+export function promoteCommands(flow: string, skills: PackageFile[],
+                                entry?: { cmd: string; skill: string; file: string }): PackageFile[] {
+  const plugin = pluginName(flow);
+  const promoted = new Map<string, string>();
+  for (const [cmd, skill] of Object.entries(declaredCommands(flow))) {
+    if (skill === entry?.skill) continue;
+    const file = skills.find((sk) => sk.path === `skills/${skill}/SKILL.md`);
+    // A declared command whose skill did not ship has nothing to promote; the gate's catalog
+    // checks are what refuse a manifest naming a skill it lacks.
+    if (!file) continue;
+    const says = fmField(file.content, "description") || `Run the ${skill} skill.`;
+    promoted.set(file.path, commandFrontmatter(plugin, cmd, says) + "\n" +
+                            withoutFrontmatter(file.content).trimEnd() + "\n");
+  }
+  if (entry) promoted.set(`skills/${entry.skill}/SKILL.md`, entry.file);
+  return [
+    ...skills.filter((sk) => !promoted.has(sk.path)),
+    ...[...promoted].flatMap(([path, content]) => [
+      { path, content },
+      { path: path.replace(/SKILL\.md$/, "agents/openai.yaml"), content: OPENAI_POLICY },
+    ]),
+  ];
 }
 /** Markdown of a skill file with its YAML frontmatter stripped. */
 export function withoutFrontmatter(md: string): string {

@@ -37,6 +37,9 @@ COPY packages packages
 COPY services services
 
 RUN npx tsc -b
+# The document panel zz-core serves as an MCP Apps resource: one self-contained page, bundled here
+# while the build dependencies are still installed, into dist/ where the runtime stage finds it.
+RUN node services/zz-core/app/build.ts
 
 # DELIBERATE: pruned in the build stage, so the sources never enter the runtime image. A later
 # RUN would only hide them: layers are additive and `docker save` gets them back.

@@ -9,7 +9,7 @@
     "services/*"
   ],
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && node services/zz-core/app/build.ts",
     "typecheck:tooling": "tsc --noEmit -p tsconfig.tooling.json",
     "build:marketplace": "node scripts/build-marketplace.ts",
     "clean": "tsc -b --clean",

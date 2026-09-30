@@ -1,7 +1,7 @@
 ---
 name: "migrate"
 description: "Bring one mma repository's history onto this platform: its journal becomes knowledge nodes, and its specs, plans, explorations, audits and the rest become the sources of one archive initiative that every migrated node cites as evidence. Resumable, and safe to run twice."
-when_to_use: "The person typed /zz-access:migrate."
+when_to_use: "Only when a person opens it by name: `/zz-access:migrate` in Claude Code, `$zz-access:migrate` in Codex."
 disable-model-invocation: true
 ---
 

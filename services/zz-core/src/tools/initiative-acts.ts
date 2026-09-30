@@ -22,7 +22,8 @@ import type pg from "pg";
 import { z } from "zod";
 
 import { shownSinceLastChange } from "../attest.js";
-import { chainFor } from "../chain.js";
+import { chainFor, gateRefusal } from "../chain.js";
+import { PANEL_CALLABLE } from "../document-panel.js";
 import { fieldRefusal, frontmatterRefusal, oneLine, putEnvelopeField, renderEnvelope } from "../document-rules.js";
 import { replaceSection } from "../document-parts.js";
 import { documentGuards } from "../guards.js";
@@ -81,6 +82,8 @@ export function registerInitiativeActTools(server: McpServer): void {
           "The person whose decision this is, when that is not the caller. Omit for the " +
           "normal case: you acting with someone's authority IS their decision, under their name."),
       },
+      // The document panel's Approve button calls this, through the client.
+      _meta: PANEL_CALLABLE,
     },
     async ({ path: relPath, on_behalf_of }) => {
       const who = parseCaller(requestHeaders());
@@ -102,28 +105,8 @@ export function registerInitiativeActTools(server: McpServer): void {
           : loaded.refusal);
       }
       const chain = await chainFor(p, team, relPath, loaded.text);
-      // DELIBERATE: only a flow can say a document is not its business. A freeform initiative
-      // resolves to EMPTY_CHAIN, so whatever is in its folder is approvable; a flow that declared its
-      // documents refuses one it never named.
-      if (chain.documents.length && !chain.docs.has(parts[1])) {
-        return text(`ERROR: ${parts[1]} is not a document this flow declares`);
-      }
-      // Declaring a document is not gating it. An ungated document is finished by being written, and
-      // `approved` on one is a verdict the platform has nowhere to put.
-      //
-      // COUPLED: `stampEnvelope` never writes a status where no gate exists, and this refuses a caller
-      // writing one. Without both, the next approval of an audit report undoes the other.
-      //
-      // The refusal names the alternative, because the caller is not doing anything wrong.
-      const entry = chain.documents.find((d) => d.name === parts[1]);
-      if (entry && entry.gate !== true) {
-        return text(
-          `ERROR: ${parts[1]} carries no gate in ${chain.name ?? "this flow"}, so there is ` +
-          "nothing to approve. A status records that a person was asked and answered; this " +
-          "document was never put to anyone. It is complete because it was written — say so " +
-          "and carry on. Which documents gate is the flow manifest's answer, and it can differ " +
-          "between flows: the same name may be gated in one and not in another.");
-      }
+      const ungated = gateRefusal(chain, parts[1]);
+      if (ungated) return text(ungated);
       // The one step an approval holds for: the bytes it signs were put in front of somebody.
       // Approval is delegated to agents, so nothing else stands between an unread revision and a
       // verdict on it. `false` only — `null` is a record that cannot answer (no activity log, or

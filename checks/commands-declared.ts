@@ -15,14 +15,13 @@ for (const p of [...walk("services"), ...walk("packages"), ...walk("scripts")]) 
 }
 
 // DELIBERATE: code, not prose. Everything below asks what client-package.ts does, so it reads
-// the file with its comments stripped. The word `commands` also appears in a docstring and in
-// the path string `commands/<cmd>.md`, so a grep of the raw file stays green on a branch that
-// has stopped reading the manifest.
+// the file with its comments stripped. The word `commands` also appears in docstrings, so a
+// grep of the raw file stays green on a branch that has stopped reading the manifest.
 const pkg = readFileSync("services/gateway/src/client-package.ts", "utf8")
   .split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
 
 // The two readers of the declaration, each answering a different question: which skills this
-// package promotes to commands, and what its entry skill is typed as. Named as calls, because
+// package ships to be opened by name, and what its entry skill is opened as. Named as calls, because
 // importing a function and never calling it is what "bypassed, not deleted" looks like.
 for (const [fn, what] of [["promoteCommands", "promote the skills the manifest declares as commands"],
                           ["entryCommand", "find what the entry skill is typed as"]]) {

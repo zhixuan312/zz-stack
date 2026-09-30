@@ -112,6 +112,34 @@ export async function chainFor(
   // adopting a flow after the fact is what the whole declaration exists to refuse.
   return EMPTY_CHAIN;
 }
+/** Why `name` cannot be approved under `chain`, or null when it can.
+ *
+ * DELIBERATE: only a flow can say a document is not its business. A freeform initiative
+ * resolves to EMPTY_CHAIN, so whatever is in its folder is approvable; a flow that declared its
+ * documents refuses one it never named.
+ *
+ * Declaring a document is not gating it. An ungated document is finished by being written, and
+ * `approved` on one is a verdict the platform has nowhere to put. COUPLED: `stampEnvelope` never
+ * writes a status where no gate exists, and `document_approve` refuses through this. Without both,
+ * the next approval of an audit report undoes the other. The refusal names the alternative,
+ * because the caller is not doing anything wrong.
+ *
+ * One answer for two askers: `document_approve`, which refuses with it, and the document panel,
+ * which offers an Approve button only where this is null. */
+export function gateRefusal(chain: Chain, name: string): string | null {
+  if (chain.documents.length && !chain.docs.has(name)) {
+    return `ERROR: ${name} is not a document this flow declares`;
+  }
+  const entry = chain.documents.find((d) => d.name === name);
+  if (entry && entry.gate !== true) {
+    return `ERROR: ${name} carries no gate in ${chain.name ?? "this flow"}, so there is ` +
+      "nothing to approve. A status records that a person was asked and answered; this " +
+      "document was never put to anyone. It is complete because it was written — say so " +
+      "and carry on. Which documents gate is the flow manifest's answer, and it can differ " +
+      "between flows: the same name may be gated in one and not in another.";
+  }
+  return null;
+}
 /** The status a document's own revision carries, or null when the team holds no such document.
  *
  * COUPLED: `zz.doc.status` is the document's own — a revision sealed at an approval reads

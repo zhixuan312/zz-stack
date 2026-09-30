@@ -98,6 +98,9 @@ check("one live token per purpose, on every writer of a platform access token",
 check("an authorization code is stored as its hash and spent exactly once",
       runsCheck("oauth-code-consumed.ts"));
 
+check("every authorization response names its issuer, as the metadata promises",
+      runsCheck("oauth-issuer-bound.ts"));
+
 check("the definition this platform is built on holds in its source",
       runsCheck("definition-rules.ts"));
 

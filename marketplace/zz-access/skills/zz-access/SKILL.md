@@ -1,7 +1,7 @@
 ---
 name: "connect"
 description: "Your platform access token and your client setup — issuing one, replacing one, and revoking one fast when it is exposed. Reach for this whenever a credential has leaked, been shown on a screen share or in a recording, been committed, or is suspected compromised and needs killing before anything e..."
-when_to_use: "The person typed /zz-access:connect."
+when_to_use: "Only when a person opens it by name: `/zz-access:connect` in Claude Code, `$zz-access:connect` in Codex."
 disable-model-invocation: true
 ---
 

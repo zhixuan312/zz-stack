@@ -12,7 +12,7 @@ import { pluginName } from "@zz/catalog";
 
 import { MARKETPLACE, type ClientPackage } from "../client-package.js";
 import type { Plugin } from "../client-package.js";
-import { entryCommand } from "./skills.js";
+import { entryCommand, openedAs } from "./skills.js";
 
 /** A short, stable digest of everything on this person's shelf — the plugin names and the
  * bytes of every file. Two people with the same shelf get the same digest; one changed
@@ -89,8 +89,8 @@ export function describePackage(pkg: ClientPackage, target: string): string {
   // knowledge, gates; zz-access owns your access to it, which is what a client's setup and its
   // currency are. `checks/skill-homes.ts` holds the same line for the skills themselves.
   lines.push(
-    `\`/zz-access:doctor\` checks this machine can reach the platform, and names the fix when it cannot.`,
-    `\`/zz-access:update\` brings every ZZ plugin you have up to date, in one command.`,
+    `${openedAs("zz-access", "doctor")} — checks this machine can reach the platform, and names the fix when it cannot.`,
+    `${openedAs("zz-access", "update")} — brings every ZZ plugin you have up to date, in one command.`,
     ``,
   );
 
@@ -104,11 +104,11 @@ export function describePackage(pkg: ClientPackage, target: string): string {
     // name: it has no front door to type, and the router sentence below is how it is reached.
     const typed = pkg.flows.flatMap((f) => {
       const cmd = entryCommand(f.flow, f.entry || f.flow);
-      return cmd ? [`\`/${pluginName(f.flow)}:${cmd}\``] : [];
+      return cmd ? [openedAs(pluginName(f.flow), cmd)] : [];
     });
     lines.push(
       `Install the flows you want from the shelf — none is required.`,
-      ...(typed.length ? [`Once installed, type ${typed.join(" or ")} when you know what you want,`] : []),
+      ...(typed.length ? [`Once installed, open ${typed.join("; or ")} when you know what you want,`] : []),
       `${typed.length ? "or just describe" : "Describe"} the work and the \`zz-router\` skill will pick the flow.`,
     );
   }

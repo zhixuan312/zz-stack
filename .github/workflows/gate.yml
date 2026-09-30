@@ -75,6 +75,11 @@ jobs:
       - name: Typecheck the workspace
         run: npx tsc -b
 
+      # The document panel zz-core serves: bundled after the typecheck, as `npm run build` does,
+      # so the checks that read dist/apps/document-panel.html read the page the image ships.
+      - name: Build the document panel
+        run: node services/zz-core/app/build.ts
+
       - name: Typecheck the tooling project
         run: npx tsc -p tsconfig.tooling.json --noEmit
 

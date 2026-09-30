@@ -116,16 +116,16 @@
     "sha": "593964bc3415"
   },
   "zz-deck": {
-    "version": "2.4",
-    "sha": "18bf0d079fe2"
+    "version": "2.5",
+    "sha": "e59a9f79d685"
   },
   "zz-handover": {
     "version": "2.14",
     "sha": "bc91603351a9"
   },
   "zz-platform": {
-    "version": "3.77",
-    "sha": "92ee16f0f8df"
+    "version": "3.78",
+    "sha": "e2a17e281dd3"
   },
   "zz-tldr": {
     "version": "1.3",

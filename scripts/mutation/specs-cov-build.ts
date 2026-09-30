@@ -96,8 +96,18 @@ export const COV_BUILD: readonly MutationSpec[] = [
     subject: "catalog/zz/zz-core/flow.json",
     find: '    "deck": "zz-deck",\n',
     replace: "",
-    planted: "the baseline plugin stops promoting zz-deck to a command, so the skill still ships " +
-      "but nobody can type it — the front door a person is told to use is simply not there",
+    planted: "the baseline plugin stops promoting zz-deck, so the skill still ships but under its " +
+      "own name and open to being matched — the name a person is told to open is simply not there",
+  },
+  {
+    check: "scripts/gate/checks/build.ts",
+    target: "a built package holds together",
+    subject: "services/gateway/src/package/skills.ts",
+    find: 'const OPENAI_POLICY = "policy:\\n  allow_implicit_invocation: false\\n";',
+    replace: 'const OPENAI_POLICY = "policy:\\n  allow_implicit_invocation: true\\n";',
+    planted: "a skill a person opens by name tells Codex it may be matched on its own, so Codex " +
+      "injects /zz-core:deck and every flow's front door into the model's context and a flow the " +
+      "router is told never to load starts itself",
   },
   {
     check: "scripts/gate/checks/build.ts",

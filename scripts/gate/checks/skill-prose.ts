@@ -102,28 +102,6 @@ check("no skill writes a document with a local-file tool", () => {
   return firstOf(bad);
 });
 
-check("a skill that ships an asset does not say the asset is beside it", () => {
-  // A skill the manifest declares as a command is promoted: its SKILL.md becomes
-  // commands/<command>.md and only the text moves — assets stay in skills/<name>/. So "next to
-  // this file" is false for a promoted skill.
-  const bad: string[] = [];
-  for (const f of flows) {
-    const m = JSON.parse(readFileSync(join(f.dir, "flow.json"), "utf8"));
-    for (const name of Object.values(m.commands ?? {}) as string[]) {
-      const dir = join(f.dir, "skills", name);
-      if (!existsSync(dir)) continue;
-      const assets = readdirSync(dir).filter((e) => e !== "SKILL.md");
-      if (assets.length === 0) continue;
-      const txt = readFileSync(join(dir, "SKILL.md"), "utf8");
-      if (/next to this file|beside this file|same directory as this file/i.test(txt)) {
-        bad.push(`${name} ships ${assets.join(", ")} and calls it "next to this file", ` +
-                 "but the skill is promoted to commands/ on Claude Code and the asset is not");
-      }
-    }
-  }
-  return bad.length ? bad.join("; ") : null;
-});
-
 check("every stage that writes a document names document_present, or says why not", () => {
   // A stage that writes a document either names document_present or states a departure from
   // it in one of the phrasings the regex below accepts.
@@ -324,9 +302,9 @@ check("a skill names the command a person would actually type", () => {
 
 check("no skill names a package file the packager does not emit", () => {
   // The check above reads `/plugin:command` strings; a skill can also name the file. The
-  // packager emits `commands/<the manifest's key>.md`, so the file is named by the command
-  // and not by the skill. A skill resolves its assets relative to where it is installed, so
-  // naming the wrong file makes it look in the wrong place.
+  // packager writes no `commands/` at all — Codex never reads it — so a skill a person opens by
+  // name stays at `skills/<skill>/SKILL.md`. A skill resolves its assets relative to where it is
+  // installed, so naming a file the package lacks makes it look in the wrong place.
   const bad: string[] = [];
   for (const pkg of catalogPackages) {
     const skillsDir = join(pkg.dir, "skills");
@@ -340,14 +318,8 @@ check("no skill names a package file the packager does not emit", () => {
         // else's business, and an unrelated path is not a claim at all.
         const target = own.find((k) => k === m[1] || cmds.get(k) === m[1]);
         if (!target) continue;
-        const cmd = cmds.get(target);
-        if (!cmd) {
-          bad.push(`${pkg.owner}/${pkg.flow}/${sk} names commands/${m[1]}.md; ${pkg.flow} ` +
-                   `declares no command for '${target}', so the packager writes no such file`);
-        } else if (m[1] !== cmd) {
-          bad.push(`${pkg.owner}/${pkg.flow}/${sk} names commands/${m[1]}.md; the packager ` +
-                   `writes commands/${cmd}.md`);
-        }
+        bad.push(`${pkg.owner}/${pkg.flow}/${sk} names commands/${m[1]}.md; the packager writes no ` +
+                 `commands/ — '${target}' ships at skills/${target}/SKILL.md`);
       }
       for (const m of text.matchAll(/skills\/([a-z0-9-]+)\/SKILL\.md/g)) {
         // Skills keep their full name in the package; only the command form is the map's key.

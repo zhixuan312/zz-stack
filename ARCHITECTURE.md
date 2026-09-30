@@ -73,9 +73,16 @@ tests/                          fixtures for this package — requirements, step
 ### `skills/` — carried by everyone
 
 `zz-platform` and `zz-handover`, which a flow loads; `zz-deck`, `zz-tldr` and
-`zz-breakout`, which a person types; and `zz-authoring`, the library the first two of those
-load. The typed three are named in the baseline's own manifest at
+`zz-breakout`, which a person opens by name; and `zz-authoring`, the library the first two of
+those load. The three are named in the baseline's own manifest at
 `catalog/zz/zz-core/flow.json`, in the same `commands` map every other package uses.
+
+A skill in a `commands` map ships as a skill, in its own directory, never as a `commands/` file:
+Claude Code and Codex both read `skills/`, and only Claude Code reads `commands/`. The packager
+names it by its command and marks it for both clients as one a person opens — never matched on
+its own: `disable-model-invocation: true` in its frontmatter for Claude Code, and
+`agents/openai.yaml` with `policy.allow_implicit_invocation: false` for Codex, which reads only
+that. A person opens it as `/zz-core:deck` in Claude Code and `$zz-core:deck` in Codex.
 
 These are here and not under the baseline's catalog entry for one reason: `zz-router` is
 generated from the shelf's flows when a package is built, so the baseline's files are
@@ -138,6 +145,12 @@ rule is what the directory means:
   `me.ts`, `team.ts` and `platform.ts`, because who may call a route is the property that has
   to be obvious when reading it, and a file per scope makes a route in the wrong file look
   wrong.
+- **`services/zz-core/app/` — code that runs in a person's browser, not on the server.** The
+  document panel: `panel.ts` (the page), `render.ts` (markdown to safe HTML, pure, so a check runs
+  it in Node), `panel.css` and `brand/`, bundled by `build.ts` into one self-contained page,
+  `dist/apps/document-panel.html`, which `src/document-panel.ts` serves as the MCP Apps resource
+  `document_present` names. Its tokens and brand images are the console's, copied, and
+  `checks/document-panel.ts` fails when the copy drifts.
 - **`packages/contracts/src/identity.ts`** is behind the package's door: `index.ts` is still
   the single definition point every importer sees, and the split is internal to it.
 - **`scripts/release/<step>.ts` — one release step per file**, plus `config.ts` for the
@@ -361,8 +374,8 @@ declaration"`, and `check "a flow is a plugin that declares documents, and zz-ac
 |---|---|---|---|
 | `purpose` | yes | the sentence that decides whether a capability belongs in this plugin or the next one. `description` is what a reader sees in a listing; `purpose` is what you argue against when the plugin starts accreting whatever was convenient | `check "a plugin manifest says what the plugin is for"` |
 | `entry` | yes, if it has stages | the skill the agent opens first. Orthogonal to shape: an `entry` says nothing about whether the package is a Flow | `check "every flow.json parses, and its entry names a skill it ships"` |
-| `commands` | yes, for every skill a person types | a command is declared, never derived from a skill's name: a derived name cannot be wrong in a way anybody can see | `check "a command is what a manifest declares, not what a function derives from a skill name"` |
-| `routed` | only to say `false` | whether `zz-router` loads the flow for the person. `false` marks a flow a person opens by its command — the router names the command instead of loading it — so it must declare a command for its entry | `check "zz-router loads a routed flow and names the command of one a person opens"` |
+| `commands` | yes, for every skill a person opens by name | a command is declared, never derived from a skill's name: a derived name cannot be wrong in a way anybody can see | `check "a command is what a manifest declares, not what a function derives from a skill name"` |
+| `routed` | only to say `false` | whether `zz-router` loads the flow for the person. `false` marks a flow a person opens by name — the router names how to open it in each client instead of loading it — so it must declare a command for its entry | `check "zz-router loads a routed flow and names how a person opens one they open"` |
 | `libraries` | yes, for every skill another skill loads | a library is a skill nobody types and no stage names, so without this field it is shipped and declared nowhere | `check "a plugin declares every skill it ships, and ships every skill it declares"` |
 | `stages[].name` | yes, per stage | the stage's own skill | same check |
 | `stages[].produces` | yes, per stage | what the stage leaves, and the vocabulary is closed: **a document name** the stage writes, **`"source"`** with a `supports` target, **`"record"`** where the result is stored by the platform rather than as a file, or **`"nothing"`**. The last two are answers, not omissions — that is the whole reason the field is required, because an absent field cannot tell "the author forgot" from "this stage genuinely produces nothing". A document it names must name the stage back | `check "every stage says what it leaves behind, and the document it names names it back"` |

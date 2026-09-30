@@ -28,6 +28,7 @@ import { packagedModules } from "./reviewed-modules.js";
 import { coreServer } from "./orientation.js";
 import { db } from "./platform-db.js";
 import { registerArtifactTools } from "./tools/artifacts.js";
+import { registerDocumentPanel } from "./document-panel.js";
 import { registerAssessTool } from "./tools/assess.js";
 import { registerBugAdminTools, registerBugTools } from "./tools/bugs.js";
 import { registerInitiativeActTools } from "./tools/initiative-acts.js";
@@ -137,6 +138,7 @@ function buildServer(everything = false): McpServer {
   registerBugTools(server, serviceVersion(import.meta.url));
   registerBugAdminTools(server, sup);
   registerArtifactTools(server);
+  registerDocumentPanel(server);
   registerKnowledgeTools(server);
   registerKnowledgeIndexTools(server, sup);
   registerInitiativeStatusTools(server);

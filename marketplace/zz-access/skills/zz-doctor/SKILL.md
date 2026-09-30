@@ -1,7 +1,7 @@
 ---
 name: "doctor"
 description: "Check that this machine can reach the ZZ platform: the token it will send, the doors that token opens, and whether the installed plugins are whole and on one version. Needs no repository and no setup — it reads the machine it runs on."
-when_to_use: "The person typed /zz-access:doctor."
+when_to_use: "Only when a person opens it by name: `/zz-access:doctor` in Claude Code, `$zz-access:doctor` in Codex."
 disable-model-invocation: true
 ---
 

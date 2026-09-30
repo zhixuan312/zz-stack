@@ -313,6 +313,34 @@ export const COV_SECURITY: readonly MutationSpec[] = [
       "goes on testing a column nothing writes — enforcement without issuance",
   },
   {
+    check: "scripts/gate/checks/suites-data.ts",
+    target: "every authorization response names its issuer, as the metadata promises",
+    subject: "services/gateway/src/mcp-oauth.ts",
+    find: '  back.searchParams.set("iss", PUBLIC);',
+    replace: "",
+    planted: "the authorization response drops `iss` while the metadata still promises it, so a " +
+      "client that trusts the promise — Codex does — rejects every sign-in as a possible mix-up",
+  },
+  {
+    check: "scripts/gate/checks/suites-surface.ts",
+    target: "the document panel is the page the release ships, reads as the console, and records a present only for the person and revision it was handed",
+    subject: "services/zz-core/src/document-panel.ts",
+    find: "      if (!ticketValid(ticket, team, path, version, user)) {",
+    replace: "      if (!ticket) {",
+    planted: "document_shown records a present for any ticket at all, so a client that lists the " +
+      "app-only tool to its model lets the model mark a document presented that nobody saw, and " +
+      "document_approve then signs it — the approval gate fails open",
+  },
+  {
+    check: "scripts/gate/checks/suites-surface.ts",
+    target: "the document panel is the page the release ships, reads as the console, and records a present only for the person and revision it was handed",
+    subject: "services/zz-core/src/document-panel.ts",
+    find: "    ticket: shown === current ? ticketFor(team, relPath, shown, user) : null,",
+    replace: "    ticket: ticketFor(team, relPath, shown, user),",
+    planted: "opening an old version hands the panel a ticket, and a ticket names the revision it " +
+      "was cut for — so history now carries a way to vouch for a present it never showed",
+  },
+  {
     check: "scripts/gate/checks/security-identity.ts",
     target: "an enrolment link is spent by the statement that redeems it, and only once",
     subject: "services/gateway/src/passkey.ts",

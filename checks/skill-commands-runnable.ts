@@ -24,11 +24,12 @@ if (/catalog\/[A-Za-z0-9._\/-]+\.js["'`]/.test(homes)) {
   fail.push("checks/skill-homes.ts asserts a .js path under catalog/ — catalog holds SOURCE (.ts); " +
             "the .js exists only in the built marketplace tree");
 }
-// The file a consumer actually reads. marketplace/zz-access/skills/<skill>/ carries no
-// SKILL.md; the command lives under commands/, generated from the catalog SKILL.md's text,
-// so checking only the catalog source passes while the shipped command is wrong.
-for (const c of readdirSync("marketplace/zz-access/commands").filter((f) => f.endsWith(".md"))) {
-  const p = join("marketplace/zz-access/commands", c);
+// The file a consumer actually reads: the SKILL.md the packager wrote, under its command's name,
+// from the catalog SKILL.md's text — so checking only the catalog source passes while the
+// shipped skill is wrong.
+for (const c of readdirSync("marketplace/zz-access/skills")) {
+  const p = join("marketplace/zz-access/skills", c, "SKILL.md");
+  if (!existsSync(p)) continue;
   const src = readFileSync(p, "utf8");
   for (const m of src.matchAll(/CLAUDE_PLUGIN_ROOT\}\/(skills\/[A-Za-z0-9._\/-]+\.(?:mjs|js|ts))/g)) {
     const rel = m[1];

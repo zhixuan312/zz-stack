@@ -1,6 +1,6 @@
 ---
 name: zz-deck
-version: 2.4
+version: 2.5
 description: Turn something already written — a spec, a report, a changelog, a thread — into a slide deck that makes an argument, built on the house visual system. Not an outline of the source: a conclusion, the claims that carry it, and one composition per claim.
 when_to_use: "Someone needs to present something that already exists in prose. Typed on purpose as /zz-core:deck in Claude Code, or matched as a skill. Standalone — no initiative, no gate, no place in the sequence."
 ---
@@ -144,19 +144,10 @@ slide at a time.
 ### Resolve the chassis
 
 The chassis asset ships inside this plugin at **`skills/zz-deck/deck-chassis.html`**, relative
-to the plugin's root. It carries the shared style layer, the behaviour scripts, the dock and the
-self-QA — and nothing else. It holds no slides at all, which is what makes it small enough to
-read in full before you write anything. That path is the same on every client; where YOU are
-reading from is not:
-
-| Client | You are reading | The chassis asset is |
-|---|---|---|
-| Claude Code | `commands/deck.md` | `../skills/zz-deck/deck-chassis.html` |
-
-On Claude Code this file is installed as a command, because a deck is something a person asks
-for on purpose. Only the skill's text moves into `commands/`; its assets stay where they were.
-So resolve the chassis asset from the plugin root, never from your own location — they are not
-the same directory.
+to the plugin's root — in the same directory as this file, on every client that installs it. It
+carries the shared style layer, the behaviour scripts, the dock and the self-QA — and nothing
+else. It holds no slides at all, which is what makes it small enough to read in full before you
+write anything.
 
 If it is not there, **stop and say so.** Never fabricate the styling: a deck built on invented
 CSS looks plausible and is not on the house system, which is the entire point of the command.

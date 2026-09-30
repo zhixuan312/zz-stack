@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.77
+version: 3.78
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's documents or knowledge outside a flow."
 ---
@@ -167,6 +167,13 @@ the timing; getting this wrong costs a plan, not a refusal.
   display. **`document_approve` refuses a document whose current content was
   never presented:** call `document_present` after the last write, patch or
   revise, in its own call, then approve.
+
+  **A client that renders MCP Apps shows the result as a document panel** —
+  the whole document, whatever length, with its status and the approval. The
+  panel records the present itself through `document_shown`, a call that is
+  the panel's and never yours: it takes a ticket only the panel is handed. If
+  the person can see the panel, do not page the rest into your reply; an
+  approval they make there arrives as their message.
 
   **A standing delegation waives their review, not the fetch.** "Approve
   without checking with me" is the person declining to read it — theirs to
@@ -512,7 +519,7 @@ reading later can see one caused the other.
 
   | | door | |
   |---|---|---|
-  | documents | `/core/mcp` | `document_write` `document_read` `document_present` `document_patch` `document_list` `document_revise` |
+  | documents | `/core/mcp` | `document_write` `document_read` `document_present` `document_patch` `document_list` `document_revise` `document_shown` |
   | initiatives | `/core/mcp` | `initiative_open` `initiative_close` |
   | gates | `/core/mcp` | `document_approve` |
   | sources | `/core/mcp` | `source_add` `source_list` |

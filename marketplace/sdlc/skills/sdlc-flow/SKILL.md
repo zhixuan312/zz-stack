@@ -1,7 +1,7 @@
 ---
 name: "flow"
 description: "Run the SDLC Agent flow for your team."
-when_to_use: "The person typed /sdlc:flow. This is a command, not an auto-matched skill."
+when_to_use: "Only when a person opens it by name: `/sdlc:flow` in Claude Code, `$sdlc:flow` in Codex."
 version: "0.91.1"
 disable-model-invocation: true
 ---

@@ -86,7 +86,7 @@ jobs:
       - run: npm ci
 
       - name: Build the workspace the gate reads
-        run: npx tsc -b
+        run: npm run build
 
       # bubblewrap, proved by the code's own detector: the gate's candidate checks run a sandboxed
       # process when one is available and say so when none is, so a half-configured bwrap is the one

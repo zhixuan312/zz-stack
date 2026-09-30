@@ -1,7 +1,7 @@
 ---
 name: "admin"
 description: "Running the platform itself: who exists, which teams they are in, and the tokens and enrolment links that let anyone in at all. Everything here acts on OTHER people — which is what makes it the one package that is not about the person in front of you."
-when_to_use: "The person typed /zz-access:admin."
+when_to_use: "Only when a person opens it by name: `/zz-access:admin` in Claude Code, `$zz-access:admin` in Codex."
 disable-model-invocation: true
 ---
 

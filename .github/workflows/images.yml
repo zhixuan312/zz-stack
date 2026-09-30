@@ -103,7 +103,7 @@ jobs:
       # not have. The same `tsc -b` gate.yml runs before its own gate, and it was the one step this
       # workflow was missing: the first verify run died at "1 · gate" with ERR_MODULE_NOT_FOUND.
       - name: Build the workspace the gate reads
-        run: npx tsc -b
+        run: npm run build
 
       # The release runs the console's own suite (`pnpm run typecheck`, `lint`, `test`, `gate`) out
       # of its checkout, and installs nothing there itself. pnpm because zz-stack-dashboard declares

@@ -97,9 +97,9 @@ if ((manifest("sdlc-flow").libraries || []).includes("sdlc-authoring")) {
 
 /* The supporting files travelled */
 
-// A skill promoted to a command ships as `commands/<cmd>.md` and leaves its assets in
-// `skills/<name>/`. Those assets are the whole of what some of these commands do, so a move
-// that took only SKILL.md is a command that runs nothing.
+// A skill a person opens by name ships in `skills/<name>/` with its assets beside it. Those
+// assets are the whole of what some of these skills do, so a move that took only SKILL.md is a
+// skill that runs nothing.
 for (const [rel, why] of [
   ["skills/zz-deck/deck-chassis.html", "the deck's chassis"],
   ["skills/zz-deck/deck-guidebook.html", "the deck's guidebook"],

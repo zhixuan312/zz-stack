@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
- * zz-router loads a flow the router is meant to load, and names the command of one a person opens.
+ * zz-router loads a flow the router is meant to load, and names how a person opens one they open.
  *
  * The router is generated per person from the shelf (`routerSkill(shelfFlows())`). It told the
- * model to `skill_read` every installed flow's entry, zz-plugin-eval included — a flow whose entry
- * is the command `/zz-plugin-eval:eval` and that a person opens themselves. A manifest now says so
- * with `routed: false`, and the router names the command instead of loading the skill.
+ * model to `skill_read` every installed flow's entry, zz-plugin-eval included — a flow a person
+ * opens themselves, by name. A manifest now says so with `routed: false`, and the router names
+ * how to open it in each client instead of loading the skill.
  *
  * Driven over the real catalog:
  *   1. sdlc-flow, routed, is loaded: `skill_read` passing its entry;
- *   2. zz-plugin-eval, `routed: false`, is not: its section names `/zz-plugin-eval:eval` and asks
- *      for no `skill_read` of its entry.
+ *   2. zz-plugin-eval, `routed: false`, is not: its section names `/zz-plugin-eval:eval` for
+ *      Claude Code and `$zz-plugin-eval:eval` for Codex, and asks for no `skill_read` of its entry.
  *
  * Run: node checks/router-routes.ts   (also run by scripts/gate.ts)
  */
@@ -43,10 +43,11 @@ is(/skill_read/.test(sdlc) && /passing `sdlc-flow`/.test(sdlc),
 
 const evalFlow = flows.find((f) => f.flow === "zz-plugin-eval");
 const ev = section("zz-plugin-eval");
-is(evalFlow?.routed === false && evalFlow?.command === "/zz-plugin-eval:eval",
-   `zz-plugin-eval is ${JSON.stringify(evalFlow)} — it is opened by its command, not routed`);
-is(ev.includes("`/zz-plugin-eval:eval`") && !/passing `zz-plugin-eval`/.test(ev),
-   `the router loads zz-plugin-eval instead of naming its command: ${JSON.stringify(ev.slice(0, 400))}`);
+is(evalFlow?.routed === false && evalFlow?.command === "eval",
+   `zz-plugin-eval is ${JSON.stringify(evalFlow)} — it is opened by name, not routed`);
+is(ev.includes("`/zz-plugin-eval:eval` in Claude Code") && ev.includes("`$zz-plugin-eval:eval` in Codex")
+   && !/passing `zz-plugin-eval`/.test(ev),
+   `the router loads zz-plugin-eval instead of naming how to open it: ${JSON.stringify(ev.slice(0, 400))}`);
 
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }
 console.log("ok router-routes");

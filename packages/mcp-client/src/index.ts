@@ -42,7 +42,9 @@ export class McpError extends Error {
 /** A JSON-RPC envelope, as loosely as this client needs to know it. */
 interface RpcEnvelope {
   error?: { code?: number; message?: string };
-  result?: { content?: { text?: string }[]; serverInfo?: { name?: string; version?: string }; tools?: ToolInfo[] };
+  result?: { content?: { text?: string }[]; serverInfo?: { name?: string; version?: string }; tools?: ToolInfo[];
+            /** What a tool hands its client and not its model — the document panel's payload. */
+            _meta?: Record<string, unknown> };
 }
 
 interface ToolInfo {

@@ -138,7 +138,10 @@ check("every module in the services tree is reachable from something", () => {
   //
   // Scoped to services/, where the reachable set is small enough to state exactly: a module is
   // reachable when another tracked file imports it, or a `package.json` script names it (the
-  // `check:identity`-style engines, which nothing imports), or it is a server entry point. The
+  // `check:identity`-style engines, which nothing imports), or it is a server entry point, or a
+  // bundle's entry — the document panel's page is `panel.ts`, which the browser runs and nothing
+  // on the server imports; its build names it in `entryPoints`. A `.ts` name counts as a `.js` one:
+  // the panel imports its siblings by their source name, and its build is a `.ts` script. The
   // command trees are not judged here: `packages/tools`' ops and this gate itself dispatch by name
   // from a table, so "nothing imports it" is true of most of them by design.
   //
@@ -154,14 +157,19 @@ check("every module in the services tree is reachable from something", () => {
                      .filter((x) => !x.startsWith("scripts/gate/") && !x.startsWith("scripts/mutation/")),
                    "schema-target.ts"]) {
     for (const m of withoutComments(readFileSync(join(root, f), "utf8"))
-      .matchAll(/(?:from|import|require)\s*\(?\s*"([^"]+)"/g)) specifiers.add(m[1]);
+      .matchAll(/(?:from|import|require)\s*\(?\s*"([^"]+)"/g)) specifiers.add(m[1].replace(/\.ts$/, ".js"));
+  }
+  for (const f of sourceFiles(["services"], [".ts"])) {
+    for (const entry of readFileSync(join(root, f), "utf8").matchAll(/entryPoints:\s*\[([^\]]*)\]/g)) {
+      for (const m of entry[1]!.matchAll(/"([\w./-]+)\.ts"/g)) specifiers.add(`./${basename(m[1]!)}.js`);
+    }
   }
   const named = new Set<string>();
   for (const pkg of ["package.json", "packages/tools/package.json"]) {
     const json: unknown = JSON.parse(readFileSync(join(root, pkg), "utf8"));
     const scripts = (json as { scripts?: Record<string, string> }).scripts ?? {};
     for (const cmd of Object.values(scripts)) {
-      for (const m of cmd.matchAll(/[\w./-]+\.js/g)) named.add(basename(m[0], ".js"));
+      for (const m of cmd.matchAll(/[\w./-]+\.(?:js|ts)\b/g)) named.add(basename(m[0]).replace(/\.(js|ts)$/, ""));
     }
   }
   const unreachable = modules.filter((f) => {

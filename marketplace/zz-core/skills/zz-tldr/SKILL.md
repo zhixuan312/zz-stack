@@ -1,7 +1,7 @@
 ---
 name: "tldr"
 description: "Compress a long document, thread, or transcript down to what the reader actually needs to act on — the decisions, the open questions, and what changed, not a proportional summary of everything."
-when_to_use: "The person typed /zz-core:tldr."
+when_to_use: "Only when a person opens it by name: `/zz-core:tldr` in Claude Code, `$zz-core:tldr` in Codex."
 disable-model-invocation: true
 ---
 

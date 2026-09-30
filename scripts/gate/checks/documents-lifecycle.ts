@@ -204,7 +204,9 @@ check("a document the flow does not declare can still record why it changed", ()
          + "records WHY a document changed is unavailable on exactly the documents no flow is "
          + "watching — while document_write creates and rewrites them freely";
   }
-  if (!/is not a document this flow declares/.test(approve)) {
+  // The refusal itself is `gateRefusal`'s (chain.ts), which the document panel asks too.
+  const gate = withoutComments(readFileSync(join(root, "services/zz-core/src/chain.ts"), "utf8"));
+  if (!/gateRefusal\(chain, parts\[1\]\)/.test(approve) || !/is not a document this flow declares/.test(gate)) {
     return "document_approve no longer refuses an undeclared document — there is no gate on one, "
          + "so an approval recorded against it is a verdict on a gate that does not exist";
   }

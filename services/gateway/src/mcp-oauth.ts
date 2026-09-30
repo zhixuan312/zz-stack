@@ -94,6 +94,20 @@ const TOKEN_TTL_DAYS = 90;
 
 const b64 = (b: Buffer): string => b.toString("base64url");
 
+/** The redirect that answers an authorization request, carrying this server's `iss` (RFC 9207).
+ *
+ *  The authorize page is served on the console's origin and the issuer is the gateway's, so a
+ *  client cannot tell from origins alone which server answered. Codex refuses that split outright
+ *  ("authorization endpoint origin does not match the authorization server origin without
+ *  issuer-bound callbacks") unless the response names its issuer and the metadata says it will.
+ *  Every answer goes through here — a code and a refusal alike — so neither can leave without it. */
+export function authorizationResponse(redirectUri: string, params: Record<string, string>): string {
+  const back = new URL(redirectUri);
+  for (const [k, v] of Object.entries(params)) back.searchParams.set(k, v);
+  back.searchParams.set("iss", PUBLIC);
+  return back.toString();
+}
+
 /** The door a `resource` names, as a path — or null if it names none of ours. The client sends
  *  back exactly the URL it connected to, which may be an internal address, so this reads the
  *  path and ignores the origin: the origin is a routing detail of whichever network the client
@@ -183,6 +197,9 @@ export function mountMcpOauth(app: Express): void {
         code_challenge_methods_supported: ["S256"],
         // Public clients. See the header.
         token_endpoint_auth_methods_supported: ["none"],
+        // COUPLED: `authorizationResponse` puts `iss` on every redirect; this is the promise a
+        // client reads before trusting an authorize page on another origin.
+        authorization_response_iss_parameter_supported: true,
       });
     });
 
@@ -303,10 +320,8 @@ export function mountMcpOauth(app: Express): void {
           return;
         }
         if (decision === "deny") {
-          const back = new URL(redirectUri);
-          back.searchParams.set("error", "access_denied");
-          if (state) back.searchParams.set("state", state);
-          res.redirect(303, back.toString());
+          res.redirect(303, authorizationResponse(redirectUri,
+            { error: "access_denied", ...(state ? { state } : {}) }));
           return;
         }
       }
@@ -329,10 +344,7 @@ export function mountMcpOauth(app: Express): void {
       // A loopback client gets its code without a screen: the code can only reach a program on
       // the person's own machine, and a screen that only ever has one honest answer teaches
       // people to click through screens. A hosted client got here through Allow above.
-      const back = new URL(redirectUri);
-      back.searchParams.set("code", code);
-      if (state) back.searchParams.set("state", state);
-      res.redirect(303, back.toString());
+      res.redirect(303, authorizationResponse(redirectUri, { code, ...(state ? { state } : {}) }));
     })().catch((err: unknown) => {
       console.error("oauth authorize failed:", err);
       if (!res.headersSent) say(res, 500, "Something went wrong", "The sign-in could not be completed. Nothing has been shared.");

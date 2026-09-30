@@ -84,8 +84,8 @@ catalog/    the flows and platform capabilities, one directory per owner. A
                                 is their role. It also carries the three skills
                                 about the machine and the credential rather than
                                 the record — zz-doctor, zz-update, zz-migrate —
-                                each shipping as a typed command with its own
-                                script beside it
+                                each opened by name, with its own script
+                                beside it
             zz/zz-core          the baseline every account carries: the manifest
                                 only. It declares what the platform's own plugin is
                                 and what a person types — deck, tldr, breakout —
@@ -110,8 +110,8 @@ skills/     the baseline plugin's skills, served whatever flow a team runs. They
             knowledge base enforces, and which door serves which tool)
             and zz-handover (the handover, run last — one closed initiative's
             documents and telemetry turned into what the next team should know).
-            Three more are typed rather than loaded, and ship as the baseline's
-            commands: zz-deck (turn something already written into a slide deck
+            Three more are opened by name rather than loaded, and ship as
+            the baseline's commands: zz-deck (turn something already written into a slide deck
             that makes an argument), zz-tldr (compress a long source to what the
             reader must act on) and zz-breakout (one bounded expert dialogue,
             closing into the knowledge base). None is about software delivery;

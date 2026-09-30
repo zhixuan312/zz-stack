@@ -33,6 +33,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.92.5] — 2026-10-01
+
+### Changed
+- **The selection toolbar is a compact floating card.** Selecting text used to put a full-width
+  white slab across the reading pane, with footer-sized buttons, a line of hint text and a close
+  button off on its own. It is now one card floating over the text, in the elevation the system
+  gives floating things: an eyebrow naming the section over one line of the passage, marked by the
+  accent rule, then a quiet **Note a change**, a filled **Explain** and a close. Full screen it
+  sits under the text column it acts on; on a phone it wraps to two lines.
+
 ## [0.92.4] — 2026-10-01
 
 ### Fixed

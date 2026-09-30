@@ -33,6 +33,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.91.1] — 2026-09-30
+
+### Fixed
+- **A long document read through a stale connector no longer stalls without a reason.** ChatGPT
+  keeps the tool list it read when its connector was added, and a copy from before 0.79.3 has no
+  `offset`, so a model there asked for part one of a long `review.md` again and again and
+  `document_approve` never saw it presented whole. The part line that names the next offset now
+  also says what a client without that argument has to do: have the person refresh or reconnect
+  the connector.
+
+### Upgrade notes
+- A ChatGPT connector added before 0.79.3 should be refreshed (or removed and added again) to
+  pick up `section`, `offset` and `limit` on `document_read` and `document_present`.
+
 ## [0.91.0] — 2026-09-30
 
 What the skills teach, made true. A prompt audit read every skill, door instruction and tool

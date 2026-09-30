@@ -72,7 +72,9 @@ jobs:
           path: pair/zz-stack
           # The tags too: "the version that shipped has a changelog section of its own" asks git
           # whether this version is tagged, and a checkout without tags answered "not yet released"
-          # every time, so the check never ran here.
+          # every time, so the check never ran here. Full depth, because `fetch-tags` on the default
+          # one-commit clone fetches none — the first run with it alone reported no release tags.
+          fetch-depth: 0
           fetch-tags: true
 
       - uses: actions/checkout@v4

@@ -71,6 +71,14 @@ export function loadNotes(s: Slot): void {
   try { s.notes = JSON.parse(localStorage.getItem(key(s)) ?? "[]") as Note[]; } catch { s.notes = []; }
 }
 
+/** Where an answer about a passage begins, in the conversation: ChatGPT shows a message the panel
+ *  sends to the agent without showing it as the person's, so the answer appeared with no question
+ *  above it and one explanation ran into the next. The reply opens on this line, and a rule. */
+const heading = (text: string): string => {
+  const words = text.replace(/\s+/g, " ").trim().split(" ");
+  return `### Explaining: “${words.slice(0, 10).join(" ")}${words.length > 10 ? "…" : ""}”`;
+};
+
 /** Ask the agent about the selected passage, quoted, in the person's own voice. */
 export async function explain(s: Slot): Promise<void> {
   const pick = state.pick;
@@ -78,8 +86,12 @@ export async function explain(s: Slot): Promise<void> {
   const where = pick.section ? `, in “${pick.section}”` : "";
   dropPick();
   document.getSelection()?.removeAllRanges();
-  await app.sendMessage({ role: "user", content: [{ type: "text",
-    text: `Explain this passage from ${s.doc.path} (v${s.doc.version})${where}:\n\n> ${clip(pick.text, QUOTE_MAX).replace(/\n/g, "\n> ")}` }] });
+  await app.sendMessage({ role: "user", content: [{ type: "text", text: [
+    `Explain this passage from ${s.doc.path} (v${s.doc.version})${where}:`, "",
+    `> ${clip(pick.text, QUOTE_MAX).replace(/\n/g, "\n> ")}`, "",
+    "Begin your reply with exactly this line, then a horizontal rule (---), then the explanation:",
+    heading(pick.text),
+  ].join("\n") }] });
 }
 
 /** Open the note box, on the selected passage or on the document as a whole. */

@@ -36,12 +36,11 @@ than how much code moved.
 ## [0.92.6] — 2026-10-01
 
 ### Changed
-- **Explain asks a question you see before it is sent.** Tapping **Explain** sent a request the
-  moment it was tapped, and the agent started answering a question nobody had seen asked. It now
-  turns the selection toolbar into a question box, prefilled with "Explain this passage in plain
-  words." and selected, so you keep it or type your own; **Enter** (or **Ask**) sends it, **Esc**
-  or the close goes back. The message reads as your question first, then the passage and where it
-  is from.
+- **An explanation starts where you can see it.** ChatGPT does not show the message the panel
+  sends for **Explain** as yours, so the answer appeared with no question above it, and one
+  explanation ran into the next. The panel now asks the agent to open its reply with a heading —
+  "Explaining: “the passage's first words…”" — and a rule, so each answer is marked where it
+  begins. Explain still sends with one tap.
 
 ## [0.92.5] — 2026-10-01
 

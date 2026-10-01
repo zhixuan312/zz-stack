@@ -35,8 +35,18 @@ export const selbar = (): string => {
       <span class="sel-rule" aria-hidden="true"></span>
       <button class="sel-close" data-act="close-pick" aria-label="Put the selection down">${X}</button>
     </div>
+    <form class="sel-ask" data-act="ask-sel" hidden>
+      <label class="sr-only" for="sel-question">Your question about this passage</label>
+      <input id="sel-question" class="sel-input" autocomplete="off" enterkeyhint="send" />
+      <button type="submit" class="sel-btn sel-explain" aria-label="Ask in the chat">Ask</button>
+      <span class="sel-rule" aria-hidden="true"></span>
+      <button type="button" class="sel-close" data-act="cancel-ask" aria-label="Back">${X}</button>
+    </form>
   </div>`;
 };
+
+/** The question a reader starts from when they ask about a passage: theirs to keep or type over. */
+const FIRST_QUESTION = "Explain this passage in plain words.";
 
 /** Hold what the reader selects. A selection that goes away — a tap, a host redraw — leaves the
  *  passage held; only another selection replaces it, and only acting on it or ✕ lets it go. */
@@ -71,15 +81,40 @@ export function loadNotes(s: Slot): void {
   try { s.notes = JSON.parse(localStorage.getItem(key(s)) ?? "[]") as Note[]; } catch { s.notes = []; }
 }
 
-/** Ask the agent about the selected passage, quoted, in the person's own voice. */
-export async function explain(s: Slot): Promise<void> {
+/** Turn the toolbar into a question box about the held passage. Nothing is sent yet: the reader
+ *  sees the question, keeps it or writes their own, and sends it — a tap on Explain that sent at
+ *  once made the agent start answering a question nobody had seen asked. In place, not a redraw. */
+export function startAsk(): void {
+  const bar = root.querySelector<HTMLElement>(".selbar");
+  const input = bar?.querySelector<HTMLInputElement>(".sel-input");
+  if (!bar || !input || !state.pick) return;
+  bar.classList.add("is-asking");
+  bar.querySelector<HTMLElement>(".sel-acts")!.hidden = true;
+  bar.querySelector<HTMLElement>(".sel-ask")!.hidden = false;
+  input.value = FIRST_QUESTION;
+  input.focus();
+  input.select();
+}
+export function cancelAsk(): void {
+  const bar = root.querySelector<HTMLElement>(".selbar");
+  if (!bar) return;
+  bar.classList.remove("is-asking");
+  bar.querySelector<HTMLElement>(".sel-acts")!.hidden = false;
+  bar.querySelector<HTMLElement>(".sel-ask")!.hidden = true;
+}
+
+/** Send the reader's question, then the passage it is about: in the chat it reads as what it is —
+ *  their question — and the agent answers it. */
+export async function ask(s: Slot): Promise<void> {
   const pick = state.pick;
+  const question = root.querySelector<HTMLInputElement>(".sel-input")?.value.trim() || FIRST_QUESTION;
   if (!pick) return;
-  const where = pick.section ? `, in “${pick.section}”` : "";
+  const where = `${pick.section ? `“${pick.section}”, ` : ""}${s.doc.path} v${s.doc.version}`;
+  cancelAsk();
   dropPick();
   document.getSelection()?.removeAllRanges();
   await app.sendMessage({ role: "user", content: [{ type: "text",
-    text: `Explain this passage from ${s.doc.path} (v${s.doc.version})${where}:\n\n> ${clip(pick.text, QUOTE_MAX).replace(/\n/g, "\n> ")}` }] });
+    text: `${question}\n\n> ${clip(pick.text, QUOTE_MAX).replace(/\n/g, "\n> ")}\n\n(${where})` }] });
 }
 
 /** Open the note box, on the selected passage or on the document as a whole. */

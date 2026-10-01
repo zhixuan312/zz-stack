@@ -16,7 +16,7 @@
  */
 import { minutesOf, compareSections, renderMarkdown } from "./render.ts";
 import { schedule, tellModel } from "./context.ts";
-import { addNote, dropNote, dropPick, explain, loadNotes, notesBlock, selbar, sendNotes, startNote, syncSelection } from "./review.ts";
+import { addNote, ask, cancelAsk, dropNote, dropPick, loadNotes, notesBlock, selbar, sendNotes, startAsk, startNote, syncSelection } from "./review.ts";
 import { answer, app, current, esc, root, state, type Approval, type PanelDocument, type Shown, type Slot } from "./state.ts";
 import approvedArt from "./brand/state-approved.png";
 import wordmark from "./brand/wordmark.png";
@@ -320,7 +320,8 @@ root.addEventListener("click", (e) => {
     case "jump": setJump(!jumpOpen); break;
     case "top": root.querySelector<HTMLElement>(".read")?.scrollTo({ top: 0, behavior: "smooth" }); break;
     case "only-changes": s.onlyChanges = !s.onlyChanges; s.scroll = 0; draw(); break;
-    case "explain": void explain(s); break;
+    case "explain": startAsk(); break;
+    case "cancel-ask": cancelAsk(); break;
     case "close-pick": dropPick(); break;
     case "note-sel": startNote(s, true); draw(); root.querySelector<HTMLTextAreaElement>("#note")?.focus(); break;
     case "note-doc": startNote(s, false); draw(); root.querySelector<HTMLTextAreaElement>("#note")?.focus(); break;
@@ -333,13 +334,17 @@ root.addEventListener("click", (e) => {
       break;
   }
 });
-root.addEventListener("keydown", (e) => { if (e.key === "Escape" && jumpOpen) setJump(false); });
+root.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (jumpOpen) setJump(false);
+  if ((e.target as HTMLElement).closest(".sel-ask")) cancelAsk();
+});
 root.addEventListener("submit", (e) => {
   e.preventDefault();
   const s = current();
-  const text = root.querySelector<HTMLTextAreaElement>("#note")?.value ?? "";
   if (!s) return;
-  addNote(s, text);
+  if ((e.target as HTMLElement).dataset.act === "ask-sel") { void ask(s); return; }
+  addNote(s, root.querySelector<HTMLTextAreaElement>("#note")?.value ?? "");
   draw();
 });
 document.addEventListener("selectionchange", syncSelection);

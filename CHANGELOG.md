@@ -33,6 +33,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.92.6] — 2026-10-01
+
+### Changed
+- **Explain asks a question you see before it is sent.** Tapping **Explain** sent a request the
+  moment it was tapped, and the agent started answering a question nobody had seen asked. It now
+  turns the selection toolbar into a question box, prefilled with "Explain this passage in plain
+  words." and selected, so you keep it or type your own; **Enter** (or **Ask**) sends it, **Esc**
+  or the close goes back. The message reads as your question first, then the passage and where it
+  is from.
+
 ## [0.92.5] — 2026-10-01
 
 ### Changed

@@ -2,7 +2,7 @@
 name: "eval"
 description: "Run the ZZ Plugin Evaluation flow for your team."
 when_to_use: "Only when a person opens it by name: `/zz-plugin-eval:eval` in Claude Code, `$zz-plugin-eval:eval` in Codex."
-version: "0.92.5"
+version: "0.92.6"
 disable-model-invocation: true
 ---
 

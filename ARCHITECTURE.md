@@ -151,6 +151,10 @@ rule is what the directory means:
   `dist/apps/document-panel.html`, which `src/document-panel.ts` serves as the MCP Apps resource
   `document_present` names. Its tokens and brand images are the console's, copied, and
   `checks/document-panel.ts` fails when the copy drifts.
+- **`services/gateway/assets/` — files the gateway reads at runtime, never code.** Today one: the
+  console's wordmark, which `src/oauth-page.ts` inlines into the consent and refusal pages so they
+  load nothing. The image copies `services/` whole and prunes only TypeScript, so it is beside
+  `dist/` on the host; `checks/consent-page.ts` holds it byte-identical to the panel's copy.
 - **`packages/contracts/src/identity.ts`** is behind the package's door: `index.ts` is still
   the single definition point every importer sees, and the split is internal to it.
 - **`scripts/release/<step>.ts` — one release step per file**, plus `config.ts` for the

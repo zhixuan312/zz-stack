@@ -152,6 +152,10 @@ function footer(s: Slot): string {
   </footer>`;
 }
 
+/** The document last drawn. A redraw of the same one — a click, an approval in flight — must not
+ *  replay its arrival; a new document, or another tab, arrives. */
+let lastDrawn: Slot | null = null;
+
 function draw(): void {
   const s = current();
   if (!state.received) {
@@ -171,7 +175,9 @@ function draw(): void {
     ? `<nav class="rail" aria-label="Sections"><p class="eyebrow-text">In this document</p>${sectionList(s, "rl")}</nav>` : "";
   const removed = s.onlyChanges && s.removed.length
     ? `<p class="removed">Removed since v${s.doc.previous?.version}: ${s.removed.map(esc).join("; ")}</p>` : "";
-  root.innerHTML = `<div class="panel ${state.fullscreen ? "is-full" : ""}" style="--pane-h:${state.paneHeight}px">
+  const arrive = s !== lastDrawn;
+  lastDrawn = s;
+  root.innerHTML = `<div class="panel ${state.fullscreen ? "is-full" : ""} ${arrive ? "arrive" : ""}" style="--pane-h:${state.paneHeight}px">
     ${header(s)}
     <div class="body">${rail}<div class="read" tabindex="0">${bar(s)}${removed}
       <article class="prose ${s.onlyChanges ? "only-changes" : ""}">${withoutTitle(s)}</article>${selbar()}</div></div>

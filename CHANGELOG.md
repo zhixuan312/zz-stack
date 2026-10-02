@@ -33,6 +33,61 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.92.7] — 2026-10-02
+
+### Fixed
+- **The OAuth refusal page could run a stranger's script.** When a connecting client named a
+  `resource` that is not one of this platform's MCP doors, the refusal page printed that value
+  into its HTML unescaped — so an authorize link carrying `resource=<img src=x onerror=…>` ran
+  script on the gateway's origin for whoever opened it. Every page a connecting person sees now
+  goes through one renderer that escapes each value it is given, and the refusals now refuse to
+  be framed, as the consent page already did. `checks/consent-page.ts` drives both pages with
+  hostile values in every field.
+
+### Changed
+- **The connection pages look like the platform.** The consent page — "Connect ChatGPT to ZZ?" —
+  was bare system-font HTML, indistinguishable on the one screen where a person decides whether
+  to trust a connection from a page anyone could fake. It now carries the console's cream,
+  purple and wordmark, sets apart the one line a client cannot forge (where the connection is
+  handed), and still loads nothing from anywhere: the stylesheet and the mark are inside the
+  page.
+- **The document panel's title is set in the console's display face**, and in full screen the
+  reading column is centred beside the section rail instead of leaving a third of a wide screen
+  empty on one side. A changed section's blue rule hangs in the margin so its text stays on the
+  column's edge, and a document rises in once when it arrives.
+
+### Upgrade notes
+- Nothing to do: no migration, no env key, no client re-pull.
+
+### zz-stack-dashboard 0.23.0
+
+The console was rebuilt against its own design rules by rendering every page against real
+data at five window sizes; what that found is fixed below, and the screens it walked past are
+redesigned.
+
+- **Runs printed every column under the wrong heading.** Its skill table had a Team header with
+  no cell behind it, so each figure from the second column on sat one column left of its label
+  and Refused was always empty. The bars now show each skill's share of the total rather than of
+  the largest row.
+- **An initiative's progress stepper is no longer cut off.** A flow with ten stages and three
+  gates ran past its card at laptop width and hid the last gate. Stages now share the row, and
+  gates are drawn as diamonds — the points where a person has to sign — with their name beneath.
+- **Nothing is clipped or wider than its card any more**, at any of the five window sizes the
+  layout audit checks: page titles had their descenders cut, and tables in Plugins, Activity and
+  Settings ran past their cards on a laptop or a phone.
+- **A row of three metric tiles no longer leaves a hole**, and a plugin with no evaluation yet
+  shows one compact panel instead of five that each said "nothing yet".
+- **Sign-in, signed out, enrolment and the 404 are new screens**: one sentence at poster size,
+  the mascot on a tinted ground — on sign-in, standing on the card you sign in with.
+- **Pages arrive rather than appear**: rows rise in order, numbers count up to their value, bars
+  grow from their baseline, and loading placeholders take the shape of the page that is coming.
+  With reduced motion set in the operating system, everything is simply there.
+- Page titles are larger; the links down a table's first column are ink and draw an underline on
+  hover instead of all being purple; the sidebar ends in a card for whoever is signed in;
+  a team whose name is its slug no longer prints it twice, and team and initiative pages carry
+  breadcrumbs back up.
+- Every text colour now clears its contrast floor — the sidebar's failure count did not.
+
 ## [0.92.6] — 2026-10-01
 
 ### Changed

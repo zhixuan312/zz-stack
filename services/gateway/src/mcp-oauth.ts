@@ -25,14 +25,7 @@ import type { Express, Request, Response } from "express";
 import { platformDb, platformDbReady } from "./db.js";
 import { logEvent } from "./events.js";
 import { browserSession, requestBase, sha256 } from "./identity.js";
-
-/** HTML-escape, for anything a caller supplied that lands in the consent page.
- *
- * The quotes matter as much as the angle brackets: a value inside a double-quoted attribute
- * without `"` escaped closes the attribute and opens another. */
-const escapeHtml = (s: string): string =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-   .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+import { consentHtml, refusalPage } from "./oauth-page.js";
 
 const PUBLIC = (process.env.GATEWAY_PUBLIC_URL ?? "").replace(/\/+$/, "");
 
@@ -121,13 +114,12 @@ function doorOf(resource: string): string | null {
   return null;
 }
 
-/** A one-line HTML page for the handful of things a browser can be told here. These are the
- *  only errors a person sees from this file; everything else answers a program in JSON. */
+/** A page for the handful of things a browser can be told here. These are the only errors a
+ *  person sees from this file; everything else answers a program in JSON. The detail can carry
+ *  what the request said — a `resource` it named — so it is escaped like every other value. */
 function say(res: Response, status: number, title: string, detail: string): void {
-  res.status(status).type("text/html").send(
-    `<!doctype html><meta charset="utf-8"><title>${title}</title>` +
-    `<body style="font:16px/1.6 system-ui;margin:3rem auto;max-width:34rem;padding:0 1rem">` +
-    `<h1 style="font-size:1.3rem">${title}</h1><p>${detail}</p></body>`);
+  res.set({ "X-Frame-Options": "DENY", "Content-Security-Policy": "frame-ancestors 'none'" });
+  res.status(status).type("text/html").send(refusalPage(status, title, detail));
 }
 
 /** The fields an authorization arrives with — carried through the consent form unchanged. */
@@ -135,31 +127,16 @@ const AUTHZ_FIELDS = ["client_id", "redirect_uri", "response_type", "code_challe
                       "code_challenge_method", "resource", "state"] as const;
 
 /** The question a hosted client's authorization stops on. The client names itself, so its name
- *  proves nothing — what it cannot forge is where the code goes, so that is the line in bold.
+ *  proves nothing — what it cannot forge is where the code goes, so that is the line set apart.
  *  The page refuses to be framed. */
 function consentPage(res: Response, f: Record<string, string>, who: { email: string; admin: boolean },
                      clientName: string, door: string): void {
   const dest = new URL(f.redirect_uri).origin;
-  const hidden = AUTHZ_FIELDS.map((k) =>
-    `<input type="hidden" name="${k}" value="${escapeHtml(f[k] ?? "")}">`).join("");
-  const reach = who.admin
-    ? "everything you can reach, <b>including platform administration</b> — you are a superadmin"
-    : "your teams' documents and knowledge, with the same access you have in the console";
-  const btn = "font:inherit;padding:.5rem 1.2rem;margin-right:.6rem;border-radius:6px;cursor:pointer";
+  const hidden = Object.fromEntries(AUTHZ_FIELDS.map((k) => [k, f[k] ?? ""]));
   res.set({ "X-Frame-Options": "DENY", "Content-Security-Policy": "frame-ancestors 'none'",
             "Cache-Control": "no-store" });
   res.status(200).type("text/html").send(
-    `<!doctype html><meta charset="utf-8"><title>Connect to ZZ?</title>` +
-    `<body style="font:16px/1.6 system-ui;margin:3rem auto;max-width:34rem;padding:0 1rem">` +
-    `<h1 style="font-size:1.3rem">Connect ${escapeHtml(clientName || dest)} to ZZ?</h1>` +
-    `<p>It is asking to use <code>${escapeHtml(door)}</code> as <b>${escapeHtml(who.email)}</b>, ` +
-    `and will be able to read and change ${reach}.</p>` +
-    `<p>The connection is handed to <b>${escapeHtml(dest)}</b>. If you did not just press ` +
-    `Connect there yourself, choose Deny.</p>` +
-    `<form method="post" action="/oauth/authorize">${hidden}` +
-    `<button name="decision" value="allow" style="${btn};background:#111;color:#fff;border:0">Allow</button>` +
-    `<button name="decision" value="deny" style="${btn};background:none;border:1px solid #999">Deny</button>` +
-    `</form></body>`);
+    consentHtml({ client: clientName || dest, door, email: who.email, admin: who.admin, dest, hidden }));
 }
 
 export function mountMcpOauth(app: Express): void {

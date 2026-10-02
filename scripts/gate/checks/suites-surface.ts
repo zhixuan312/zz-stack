@@ -217,5 +217,7 @@ check("a support named before its document exists is linked when that document i
 check("zz-router loads a routed flow and names how a person opens one they open", runsCheck("router-routes.ts"));
 check("the document panel is the page the release ships, reads as the console, and records a present only for the person and revision it was handed",
       runsCheck("document-panel.ts"));
+check("the pages a connecting person sees escape every value they are given, load nothing, and carry the console's mark",
+      runsCheck("consent-page.ts"));
 check("the live chain check walks with a superadmin probe token, and a missing token or a skipped superadmin probe is unknown", runsCheck("release-probe-token.ts"));
 check("the doctor's pre-deploy subset holds the status-gate probe, excludes migrations, and runs before step 4", runsCheck("doctor-predeploy.ts"));

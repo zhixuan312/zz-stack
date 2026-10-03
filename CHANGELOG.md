@@ -33,6 +33,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.92.10] — 2026-10-03
+
+### Fixed
+- **Connecting one application no longer signs another one out.** Each person had one live
+  OAuth token per door, whichever application held it — so signing in to Codex revoked
+  ChatGPT's token for `/core/mcp`, and reconnecting ChatGPT revoked Codex's. In ChatGPT's Work
+  mode this became a loop: a Work task keeps the token it started with, so after its token was
+  revoked it asked to reconnect again and again, while every token the reconnects minted went
+  unused. A token is now one per person, application and door: ChatGPT and Codex hold their own
+  side by side, and an application's reconnect still replaces its own previous token.
+  `checks/oauth-token-label.ts` holds both halves.
+
+### Upgrade notes
+- Nothing to do on the host: no migration, no env key.
+- A client that was signed out by this — a ChatGPT Work task stuck asking to reconnect, a Codex
+  that lost its connection — connects once more; a stuck Work task is started again.
+- Tokens minted before this release keep their old label, so in the token list they read
+  "mcp oauth — /core/mcp — …" until they are replaced or expire.
+
 ## [0.92.9] — 2026-10-03
 
 ### Fixed

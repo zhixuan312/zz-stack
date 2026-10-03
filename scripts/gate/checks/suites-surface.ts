@@ -221,5 +221,7 @@ check("the pages a connecting person sees escape every value they are given, loa
       runsCheck("consent-page.ts"));
 check("every tool declares whether it reads, writes or destroys, and a client reads that off the live door",
       runsCheck("tool-annotations.ts"));
+check("OAuth authorises exactly the doors the gateway mounts, every one of them",
+      runsCheck("oauth-doors.ts"));
 check("the live chain check walks with a superadmin probe token, and a missing token or a skipped superadmin probe is unknown", runsCheck("release-probe-token.ts"));
 check("the doctor's pre-deploy subset holds the status-gate probe, excludes migrations, and runs before step 4", runsCheck("doctor-predeploy.ts"));

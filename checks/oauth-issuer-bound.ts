@@ -34,7 +34,7 @@ const { default: express } = await import(
   .catch(() => import("express"));
 
 const app = express();
-mountMcpOauth(app);
+mountMcpOauth(app, ["/core/mcp"]);
 const server = app.listen(0);
 const port = (server.address() as { port: number }).port;
 try {

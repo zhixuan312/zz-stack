@@ -190,7 +190,7 @@ app.get("/", (req, res) => {
   ].join("\n"));
 });
 
-mountMcpOauth(app);
+mountMcpOauth(app, Object.keys(DOORS));
 
 /* The envelope and the manifest, as JSON Schema, unauthenticated so a team writing their own
  * flow can check a manifest before the platform refuses their write.

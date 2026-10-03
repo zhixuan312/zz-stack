@@ -101,17 +101,19 @@ export function authorizationResponse(redirectUri: string, params: Record<string
   return back.toString();
 }
 
-/** The door a `resource` names, as a path — or null if it names none of ours. The client sends
- *  back exactly the URL it connected to, which may be an internal address, so this reads the
- *  path and ignores the origin: the origin is a routing detail of whichever network the client
- *  sits on, and the door is what is being authorised. */
-function doorOf(resource: string): string | null {
+/** The door a `resource` names, as a path — or null if it names none of the doors this gateway
+ *  mounts. The client sends back exactly the URL it connected to, which may be an internal
+ *  address, so this reads the path and ignores the origin: the origin is a routing detail of
+ *  whichever network the client sits on, and the door is what is being authorised.
+ *
+ *  DELIBERATE: `doors` is the mounted set, handed in by server.ts, never a pattern written here. A
+ *  pattern of its own once named /core and /manage and not /eval, so every client connecting to
+ *  the evaluation door by OAuth was told the door did not exist. */
+export function doorOf(resource: string, doors: readonly string[]): string | null {
   let path: string;
   try { path = new URL(resource).pathname; } catch { return null; }
   path = path.replace(/\/+$/, "");
-  if (/^\/(core|manage)\/mcp$/.test(path)) return path;
-  if (/^\/p\/[a-z0-9-]+\/mcp$/.test(path)) return path;
-  return null;
+  return doors.includes(path) ? path : null;
 }
 
 /** A page for the handful of things a browser can be told here. These are the only errors a
@@ -139,7 +141,9 @@ function consentPage(res: Response, f: Record<string, string>, who: { email: str
     consentHtml({ client: clientName || dest, door, email: who.email, admin: who.admin, dest, hidden }));
 }
 
-export function mountMcpOauth(app: Express): void {
+/** `doors` is every MCP path the gateway mounts — server.ts's `DOORS`, the same set `/` announces
+ *  and its startup guard holds equal to the router's. */
+export function mountMcpOauth(app: Express, doors: readonly string[]): void {
   // Discovery
   //
   // RFC 9728 puts this at `/.well-known/oauth-protected-resource` plus the resource's own path,
@@ -262,7 +266,7 @@ export function mountMcpOauth(app: Express): void {
             "It did not present a PKCE S256 challenge, which this platform requires of every client.");
         return;
       }
-      const door = doorOf(resource);
+      const door = doorOf(resource, doors);
       if (!door) {
         say(res, 400, "Unknown resource",
             `'${resource || "(none)"}' is not one of this platform's MCP doors, so there is nothing here to authorise.`);

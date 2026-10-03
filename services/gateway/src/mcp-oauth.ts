@@ -101,6 +101,14 @@ export function authorizationResponse(redirectUri: string, params: Record<string
   return back.toString();
 }
 
+/** The label an OAuth-minted token is filed under, and so what a reconnect replaces: one live token
+ *  per person, application and door. See the token endpoint for why the application is in it.
+ *  COUPLED: checks/oauth-token-label.ts. */
+export function oauthTokenLabel(clientName: string | null, resource: string, email: string): string {
+  const application = (clientName || "unnamed client").replace(/\s+/g, " ").trim().slice(0, 60) || "unnamed client";
+  return `mcp oauth — ${application} — ${resource} — ${email}`;
+}
+
 /** The door a `resource` names, as a path — or null if it names none of the doors this gateway
  *  mounts. The client sends back exactly the URL it connected to, which may be an internal
  *  address, so this reads the path and ignores the origin: the origin is a routing detail of
@@ -368,11 +376,12 @@ export function mountMcpOauth(app: Express, doors: readonly string[]): void {
       const { rows } = await platformDb().query<{
         client_id: string; principal_id: string; redirect_uri: string; code_challenge: string;
         resource: string; used_at: Date | null; expired: boolean; email: string; revoked_at: Date | null;
+        client_name: string;
       }>(
         `select a.client_id, a.principal_id::text as principal_id, a.redirect_uri,
                 a.code_challenge, a.resource, a.used_at, a.expires_at <= now() as expired,
                 (select email from principal where id = a.principal_id) as email,
-                c.revoked_at
+                c.revoked_at, c.name as client_name
            from zz.mcp_oauth_authz a
            join zz.mcp_oauth_client c on c.client_id = a.client_id
           where a.code_hash = $1`, [codeHash]);
@@ -426,11 +435,17 @@ export function mountMcpOauth(app: Express, doors: readonly string[]): void {
       // The token carries the person's own authority and states nothing about what its holder
       // may do: every authority check reads the principal on the call it is deciding.
       //
-      // The label is named for the protocol, not for one client — any client speaking the MCP
-      // OAuth exchange lands here — and it is what a person reads in their token list when
-      // deciding what to revoke. Production's three clients are all the same client
-      // re-registering, so one token per door is what a reconnect should leave.
-      const label = `mcp oauth — ${won.resource} — ${authz.email}`;
+      // The label is what a person reads in their token list when deciding what to revoke, and —
+      // through the one-live-token-per-label rule below — what a reconnect replaces. So it names
+      // the application as well as the door: one live token per (person, application, door).
+      //
+      // DELIBERATE: the application, not just the door. Keyed on the door alone, connecting Codex
+      // revoked ChatGPT's token for the same door and reconnecting ChatGPT revoked Codex's — and a
+      // ChatGPT Work task, which keeps the token it started with, asked to reconnect forever while
+      // every token the reconnects minted went unused. The application's own name, not its
+      // client_id: a client re-registers under a new id, and its reconnect must still replace its
+      // previous token rather than pile up beside it.
+      const label = oauthTokenLabel(authz.client_name, won.resource, authz.email);
       const expiry = new Date(Date.now() + TOKEN_TTL_DAYS * 86_400_000).toISOString();
       // issuePat is the one mint-and-store path: it revokes the live token of the same
       // (principal, label) and writes the new row in one transaction, which is the rule the

@@ -33,6 +33,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.92.9] — 2026-10-03
+
+### Fixed
+- **Signing in to the evaluation door works.** A client connecting to `/eval/mcp` by OAuth —
+  the zz-plugin-eval plugin in Codex or Claude Code — was stopped at sign-in with "Unknown
+  resource", although the door was mounted, listed on `/` and reachable with a token. The sign-in
+  checked a pattern of its own that named `/core/mcp` and `/manage/mcp` and never `/eval/mcp`. It
+  now authorises exactly the doors the gateway mounts, and `checks/oauth-doors.ts` fails if the
+  two ever disagree again.
+
+### Upgrade notes
+- Nothing to do: no migration, no env key. A client that hit the refusal connects again.
+
 ## [0.92.8] — 2026-10-03
 
 ### Fixed

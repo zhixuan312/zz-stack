@@ -26,7 +26,7 @@ import { createHash } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { pluginForDoor } from "@zz/catalog";
 import { parseCaller } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
@@ -331,6 +331,7 @@ export function registerObserveTools(server: McpServer): void {
   server.registerTool(
     "plugin_profile",
     {
+      annotations: WRITES,
       description:
         "WHEN a subject (from plugin_locate/plugin_register) needs its pre-protocol evidence " +
         "computed: OBSERVE. Builds deterministic production facts — outcomes, stage paths and " +

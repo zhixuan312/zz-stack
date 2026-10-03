@@ -19,7 +19,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { EVAL_STATE_ENUMS, EstablishmentPolicy, QualificationPolicy, parseCaller } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
@@ -308,6 +308,7 @@ export function registerEvaluationTools(server: McpServer): void {
   server.registerTool(
     "evaluation_start",
     {
+      annotations: WRITES,
       description:
         "WHEN a protocol version and an observation snapshot are ready to be scored together: " +
         "opens exactly one zz.eval_run bound to that snapshot, carrying the team it is opened in, " +
@@ -348,6 +349,7 @@ export function registerEvaluationTools(server: McpServer): void {
   server.registerTool(
     "evaluation_assess",
     {
+      annotations: WRITES,
       description:
         "WHEN eval_run_id is open and unscored: resolves every subject_ref to its real content — " +
         "an <initiative>/<doc>.md ref is read off the caller's own team's documents (one under " +
@@ -391,6 +393,7 @@ export function registerEvaluationTools(server: McpServer): void {
   server.registerTool(
     "evaluation_score",
     {
+      annotations: WRITES,
       description:
         "WHEN evaluation_assess has run against every subject_ref this evaluation needs: reduces " +
         "the stored zz.eval_assessment rows measure by measure and calls the pure scoreRun once " +

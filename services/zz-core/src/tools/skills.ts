@@ -20,7 +20,7 @@ import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { catalogEntries, catalogPackages } from "@zz/catalog";
 import { parseCaller, parseEnvelope } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { READS, requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { safeName, safeRelPath } from "../paths.js";
@@ -33,6 +33,7 @@ export function registerSkillTools(server: McpServer): void {
   server.registerTool(
     "session_whoami",
     {
+      annotations: READS,
       // Three tools answer some form of "who am I" and they are deliberately not merged — see
       // the same note over `whoami` in the gateway's admin.ts. Each names the other two,
       // because a model choosing between three overlapping identity tools picks by description
@@ -107,6 +108,7 @@ export function registerSkillTools(server: McpServer): void {
   server.registerTool(
     "skill_list",
     {
+      annotations: READS,
       description:
         "Call this BEFORE guessing a skill name, and before deciding what to build on: it is " +
         "the whole shelf you can reach. Returns every skill grouped by the plugin that owns " +
@@ -250,6 +252,7 @@ export function registerSkillTools(server: McpServer): void {
   server.registerTool(
     "skill_read",
     {
+      annotations: READS,
       description:
         "Read a skill's full instructions (e.g. 'sdlc-spec'). Load a skill before " +
         "following it. Scoped to your team: a flow your team has not installed is " +

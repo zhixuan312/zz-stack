@@ -14,7 +14,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
 import { decisionRows, type DecisionRow } from "@zz/indexing";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { READS, requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { safeName } from "../paths.js";
@@ -24,6 +24,7 @@ export function registerKnowledgeReconcileTool(server: McpServer): void {
   server.registerTool(
     "knowledge_reconcile",
     {
+      annotations: READS,
       description:
         "What a stage committed to, for one initiative: the fit ledger keyed by acceptance " +
         "criterion, the criteria themselves and who verifies each, as the stage recorded them. " +

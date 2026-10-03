@@ -12,7 +12,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { issuePat, revokePat } from "@zz/contracts";
-import { text } from "@zz/mcp-http";
+import { DESTROYS, READS, WRITES, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { principalId, superOnly, teamAuthority, teamId } from "./admin/authority.js";
@@ -37,6 +37,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   const lead = sup || (!!id && id.teams.some((t) => isTeamAdmin(id, t.slug)));
 
   server.registerTool("whoami", {
+    annotations: READS,
     // What only this tool says, against session_whoami on /core and team_mine beside it: how
     // the caller authenticated and what their token is scoped to. That is the answer to "why
     // was I refused" and to "why is that tool not in my list", since this door registers only
@@ -56,6 +57,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   });
 
   if (sup) server.registerTool("person_list", {
+    annotations: READS,
     description:
       "WHEN an access review asks who has access to what. RETURNS all principals with " +
       "platform role and status, each with the teams they are in, their role there, and who " +
@@ -70,6 +72,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   });
 
   if (sup) server.registerTool("person_add", {
+    annotations: WRITES,
     description:
       "WHEN somebody new needs to exist on this platform at all — the first step of " +
       "onboarding, before any team, token or key. RETURNS confirmation that the principal " +
@@ -83,6 +86,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   });
 
   if (sup) server.registerTool("enrolment_issue", {
+    annotations: WRITES,
     description:
       "WHEN an existing principal needs to sign in to the console for the first time. " +
       "RETURNS a one-time link letting them register a passkey — returned ONCE and never " +
@@ -97,6 +101,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   });
 
   if (sup) server.registerTool("person_deactivate", {
+    annotations: DESTROYS,
     description:
       "WHEN somebody leaves, or their access must stop. RETURNS confirmation that they can " +
       "no longer authenticate, with their live tokens and console sessions revoked and their " +
@@ -110,6 +115,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   });
 
   if (sup) server.registerTool("client_list", {
+    annotations: READS,
     description:
       "WHEN an access review asks which applications can reach this platform — every OAuth " +
       "client that registered itself, which is what a connector is — or when one has to be cut " +
@@ -126,6 +132,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   });
 
   if (sup) server.registerTool("client_revoke", {
+    annotations: DESTROYS,
     description:
       "WHEN an application should no longer reach this platform — the call after somebody " +
       "reports a connector they do not recognise, which is the one that matters since a " +
@@ -143,6 +150,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   });
 
   if (sup) server.registerTool("team_create", {
+    annotations: WRITES,
     description:
       "WHEN a new tenant needs somewhere for its work to live, or an archived team is being " +
       "brought back — the same slug restores it with its memberships. RETURNS the " +
@@ -157,6 +165,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   });
 
   if (sup) server.registerTool("team_archive", {
+    annotations: DESTROYS,
     description:
       "WHEN a team is finished and should stop granting anyone anything. RETURNS " +
       "confirmation: its members lose it from their access, while its memberships and its " +
@@ -170,6 +179,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   });
 
   if (lead) server.registerTool("member_add", {
+    annotations: WRITES,
     description:
       "WHEN somebody needs access to a team's work — the step between person_add and their " +
       "first token. RETURNS the membership and the role it carries: member by default, or " +
@@ -184,6 +194,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   });
 
   if (lead) server.registerTool("member_remove", {
+    annotations: DESTROYS,
     description:
       "WHEN somebody should no longer reach a team's documents, knowledge store or agents. " +
       "RETURNS confirmation, and says plainly when there was nothing to remove rather than " +
@@ -198,6 +209,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   });
 
   server.registerTool("pat_issue", {
+    annotations: WRITES,
     description:
       "WHEN somebody needs to connect an MCP client to this platform, or an automation needs " +
       "its own credential. RETURNS the token plaintext EXACTLY ONCE: it cannot be read back, so " +
@@ -280,6 +292,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   });
 
   server.registerTool("pat_revoke", {
+    annotations: DESTROYS,
     description:
       "WHEN a token has leaked, or its holder no longer needs it — the first call after " +
       "somebody says a credential is exposed. RETURNS confirmation; it takes effect " +
@@ -312,6 +325,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   });
 
   server.registerTool("pat_list", {
+    annotations: READS,
     description:
       "WHEN you need a token's id in order to revoke it, or need to know what is outstanding " +
       "for somebody. RETURNS the token rows masked — label, scope, bound team, issued, last " +
@@ -334,6 +348,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   });
 
   server.registerTool("team_list", {
+    annotations: READS,
     description:
       "WHEN you need the teams themselves — how big each is and who set it up — rather than " +
       "which one you are acting for, which is team_mine. RETURNS each team with its member " +

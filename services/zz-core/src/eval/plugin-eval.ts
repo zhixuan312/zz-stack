@@ -17,7 +17,7 @@ import { join } from "node:path";
 
 import { catalogEntries, pluginName } from "@zz/catalog";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { text } from "@zz/mcp-http";
+import { READS, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { db } from "../platform-db.js";
@@ -142,6 +142,7 @@ export function registerPluginEvalTools(server: McpServer): void {
   server.registerTool(
     "plugin_conform",
     {
+      annotations: READS,
       description:
         "This plugin against the building-block contract's R1-R14, THREE-VALUED: true, false, " +
         "or not_measured. Most clauses come back not_measured for most plugins, and that is " +

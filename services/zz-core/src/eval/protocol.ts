@@ -49,7 +49,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { EvaluationProtocol, parseCaller } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { READS, WRITES, requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
@@ -186,6 +186,7 @@ export function registerProtocolTools(server: McpServer): void {
   server.registerTool(
     "protocol_read",
     {
+      annotations: READS,
       description:
         "WHEN starting or resuming the define stage: reads whether this subject's plugin " +
         "already has a compatible EvaluationProtocol. RETURNS protocol_version_id (null if " +
@@ -294,6 +295,7 @@ export function registerProtocolTools(server: McpServer): void {
   server.registerTool(
     "protocol_record",
     {
+      annotations: WRITES,
       description:
         "WHEN a protocol needs to be created or revised, after protocol_read said so: validates " +
         "protocol_body against EvaluationProtocol and writes it as a new, immutable " +
@@ -365,6 +367,7 @@ export function registerProtocolTools(server: McpServer): void {
   server.registerTool(
     "protocol_affirm",
     {
+      annotations: WRITES,
       description:
         "WHEN protocol.md has been approved and a person has agreed what this plugin's " +
         "protocol means — after that, never before. It reads <initiative>/protocol.md from " +

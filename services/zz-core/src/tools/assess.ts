@@ -9,7 +9,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller, QUESTION_FAMILIES } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { safeName } from "../paths.js";
@@ -20,6 +20,7 @@ export function registerAssessTool(server: McpServer): void {
   server.registerTool(
     "assess",
     {
+      annotations: WRITES,
       description:
         "Ask one bounded semantic question about one subject and get the platform's reading: " +
         "yes, no, unclear or unavailable, with the probability behind it. `family` is one of the " +

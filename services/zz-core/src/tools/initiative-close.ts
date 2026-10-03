@@ -9,7 +9,7 @@ import { join } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { documentApplies, OUTCOME_STOPPED, closeInitiative, parseCaller, parseEnvelope } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { closingDocRuledOut, factsFor } from "../initiative-record.js";
@@ -36,6 +36,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
   server.registerTool(
     "initiative_close",
     {
+      annotations: WRITES,
       description:
         "Close an initiative, in one call. You say what you KNOW — the work `finished` or was " +
         "`abandoned`, and who accepted it if anyone did — and THE PLATFORM derives the outcome: " +

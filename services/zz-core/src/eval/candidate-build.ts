@@ -7,7 +7,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { READS, WRITES, requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { BUILD_LEASE_MS, BUILD_STAGES, buildRecordRefusal } from "./candidate-build-rules.js";
@@ -32,6 +32,7 @@ export function registerCandidateBuildTools(server: McpServer): void {
   server.registerTool(
     "candidate_read",
     {
+      annotations: READS,
       description:
         "WHEN npm run candidate-build starts (or anyone needs one candidate's recorded patch): " +
         "RETURNS { candidate_id, status, patch_digest, candidate_patchset: { diff, files }, " +
@@ -90,6 +91,7 @@ export function registerCandidateBuildTools(server: McpServer): void {
   server.registerTool(
     "candidate_build_record",
     {
+      annotations: WRITES,
       description:
         "WHEN npm run candidate-build has built (or failed to build) an awaiting_build candidate: " +
         "records { ok, stage, log_tail, commands } against it, with the digest of the patch the " +

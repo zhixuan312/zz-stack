@@ -17,7 +17,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { READS, WRITES, requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
@@ -68,6 +68,7 @@ export function registerArtifactTools(server: McpServer): void {
   server.registerTool(
     "document_write",
     {
+      annotations: WRITES,
       description:
         "Create or overwrite a document in your team's store (specs, plans, " +
         "logs, records). The store is shared with your whole team if you belong to " +
@@ -162,6 +163,7 @@ export function registerArtifactTools(server: McpServer): void {
   server.registerTool(
     "document_read",
     {
+      annotations: READS,
       description:
         "Read a document from your team's store. Paths are relative to it — " +
         "`<initiative>/spec.md`. Pass an ARRAY of paths to read several in one call; they " +
@@ -285,6 +287,7 @@ export function registerArtifactTools(server: McpServer): void {
   server.registerTool(
     "document_present",
     {
+      annotations: READS,
       description:
         "Fetch a document from your team's store to put in front of the person. " +
         "Returns the document's body as markdown, with its path, version, status, approval " +
@@ -365,6 +368,7 @@ export function registerArtifactTools(server: McpServer): void {
   server.registerTool(
     "document_patch",
     {
+      annotations: WRITES,
       description:
         "Replace an exact text fragment (must occur exactly once) in a document. " +
         "This is how a DRAFT is filled in section by section. It is refused on a gated " +
@@ -429,6 +433,7 @@ export function registerArtifactTools(server: McpServer): void {
   server.registerTool(
     "document_list",
     {
+      annotations: READS,
       description:
         "List the paths in your team's store (shared with every member of it), sorted: each " +
         "initiative's documents and its `sources/` files, plus the team's journal nodes under " +
@@ -463,6 +468,7 @@ export function registerArtifactTools(server: McpServer): void {
   server.registerTool(
     "source_add",
     {
+      annotations: WRITES,
       description:
         "Attach supporting material (meeting minutes, an email excerpt, call notes, a decision " +
         "taken elsewhere) to an initiative. Ungated and immutable — anyone on the team may add " +
@@ -624,6 +630,7 @@ export function registerArtifactTools(server: McpServer): void {
   server.registerTool(
     "source_list",
     {
+      annotations: READS,
       description:
         "The immutable inputs attached to an initiative (minutes, emails, call notes) with their " +
         "titles and what each supports. Read these before judging a document: they are the " +

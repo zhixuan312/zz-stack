@@ -30,7 +30,7 @@ import { existsSync, readFileSync } from "node:fs";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { documentBody, parseCaller, parseEnvelope } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
@@ -161,6 +161,7 @@ export function registerDocumentPanel(server: McpServer): void {
   server.registerTool(
     "document_shown",
     {
+      annotations: WRITES,
       description:
         "The document panel's own record that it showed a person the whole of a document. Only " +
         "the panel calls this, with the ticket document_present handed it; a model has nothing to " +

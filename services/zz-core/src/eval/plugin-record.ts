@@ -45,7 +45,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { EVAL_STATE_ENUMS, parseCaller } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
@@ -154,6 +154,7 @@ export function registerPluginRecordTools(server: McpServer): void {
   server.registerTool(
     "finding_record",
     {
+      annotations: WRITES,
       description:
         "WHEN evaluation_score (or a round's report stage, for a strength/defect/unknown found " +
         "against an eval_run) has decided what the pattern is. It records ONE finding against " +
@@ -314,6 +315,7 @@ export function registerPluginRecordTools(server: McpServer): void {
   server.registerTool(
     "finding_decide",
     {
+      annotations: WRITES,
       description:
         "WHEN somebody who owns the finding has applied the change it named, or has decided not " +
         "to. It closes those findings of an `eval_run` — a strength is never one of them — and " +

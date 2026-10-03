@@ -33,7 +33,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type PluginComponent, pluginContentDigest, sha256 } from "@zz/catalog";
 import { parseCaller } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
@@ -266,6 +266,7 @@ export function registerSubjectTools(server: McpServer): void {
   server.registerTool(
     "plugin_locate",
     {
+      annotations: WRITES,
       description:
         "WHEN an evaluation begins, before any other tool on this door: IDENTIFY the plugin it is " +
         "about. It RETURNS the immutable subject_version — the declared version, its release " +
@@ -324,6 +325,7 @@ export function registerSubjectTools(server: McpServer): void {
   server.registerTool(
     "plugin_register",
     {
+      annotations: { ...WRITES, openWorldHint: true },
       description:
         "WHEN a plugin needs to be evaluated and the catalog has never released it: IDENTIFY " +
         "it from its own source instead. It reads source_locator — for source_kind local_dir, " +

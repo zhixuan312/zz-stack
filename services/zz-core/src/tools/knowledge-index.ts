@@ -14,7 +14,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { reindexAllTeams, reindexTeam, type TeamReindex } from "@zz/indexing";
-import { text } from "@zz/mcp-http";
+import { WRITES, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { db } from "../platform-db.js";
@@ -27,6 +27,7 @@ export function registerKnowledgeIndexTools(server: McpServer, sup: boolean): vo
   if (sup) server.registerTool(
     "knowledge_reindex",
     {
+      annotations: WRITES,
       description:
         "Re-derive a team's knowledge index from the database, which is the source of truth. " +
         "WHEN a release changes what an index row means, or a search returns a document whose " +

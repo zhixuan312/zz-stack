@@ -26,7 +26,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type PluginComponent } from "@zz/catalog";
 import { parseCaller } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
@@ -90,6 +90,7 @@ export function registerCandidateTools(server: McpServer): void {
   server.registerTool(
     "improvement_start",
     {
+      annotations: WRITES,
       description:
         "WHEN an eval_run's findings name work worth improving: opens one durable " +
         "zz.improvement_run against eval_run_id and its finding_ids. RETURNS { improvement_run_id, " +
@@ -298,6 +299,7 @@ export function registerCandidateTools(server: McpServer): void {
   server.registerTool(
     "candidate_record",
     {
+      annotations: WRITES,
       description:
         "WHEN a candidate patch has been proposed and MUST be persisted before anything about " +
         "it executes: records improvement_run_id, " + BASE_SUBJECT_VERSION + ", hypothesis, " +
@@ -509,6 +511,7 @@ export function registerCandidateTools(server: McpServer): void {
   server.registerTool(
     "candidate_validate",
     {
+      annotations: WRITES,
       description:
         "WHEN a recorded candidate is ready to be built and gated: on a first call (status: " +
         "recorded) moves it to awaiting_build and RETURNS { candidate_id, status: " +
@@ -546,6 +549,7 @@ export function registerCandidateTools(server: McpServer): void {
   server.registerTool(
     "improvement_stop",
     {
+      annotations: WRITES,
       description:
         "WHEN IMPROVE ends on an OWNED subject with no candidate worth releasing — every candidate " +
         "failed its build or gate, or none could be proposed: records release_mode: " +

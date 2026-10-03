@@ -41,6 +41,28 @@ export function serviceVersion(moduleUrl: string): string {
 export const text = (s: string) => ({ content: [{ type: "text" as const, text: s }] });
 
 /**
+ * What a tool does to the world, in the MCP annotations a client decides confirmation from. Every
+ * `registerTool` passes exactly one of these as `annotations`.
+ *
+ * ChatGPT treats a tool with no `readOnlyHint` as a write and asks the person to confirm every
+ * call — and its "always allow" lasts one conversation — so a read tool without the hint is a
+ * confirmation dialog on every look at an initiative. The MCP defaults are the other trap: an
+ * unannotated write is assumed destructive and open-world, which none of ours are by default.
+ *
+ * `READS` — changes nothing. A record that the call happened (telemetry, the presentation record
+ *           `document_present` writes) is not a change: it says a read took place.
+ * `WRITES` — creates or changes a record, and loses nothing: a revision is filed, an old
+ *           version stays readable, a state moves forward.
+ * `DESTROYS` — deletes, revokes or deactivates something a person may have depended on.
+ *
+ * None of them reaches the open internet; a tool that does spreads one and sets
+ * `openWorldHint: true` itself. COUPLED: `checks/tool-annotations.ts` holds every registration
+ * to one of these. */
+export const READS = { readOnlyHint: true, openWorldHint: false } as const;
+export const WRITES = { readOnlyHint: false, destructiveHint: false, openWorldHint: false } as const;
+export const DESTROYS = { readOnlyHint: false, destructiveHint: true, openWorldHint: false } as const;
+
+/**
  * Mount an MCP endpoint on an express app. `buildServer` is called once per request.
  *
  * DELIBERATE: there is no session. `sessionIdGenerator: undefined` makes the SDK's

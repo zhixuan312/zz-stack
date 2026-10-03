@@ -18,7 +18,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { DESTROYS, READS, WRITES, requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
@@ -73,6 +73,7 @@ export function registerBugTools(server: McpServer, platformVersion: string): vo
   server.registerTool(
     "bug_report",
     {
+      annotations: WRITES,
       description:
         "WHEN somebody using this platform hits something broken, surprising, or wrong — a tool " +
         "that refused what should have worked, an answer that disagrees with itself, a step no " +
@@ -158,6 +159,7 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
   if (sup) server.registerTool(
     "bug_list",
     {
+      annotations: READS,
       description:
         "Every bug reported on this deployment, newest first. WHEN somebody asks what is known " +
         "to be broken, whether a thing they hit is already filed, or what is still open before " +
@@ -224,6 +226,7 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
   if (sup) server.registerTool(
     "bug_resolve",
     {
+      annotations: WRITES,
       description:
         "Close a report with what was decided. `fixed` when it is; `not_a_bug` when the " +
         "behaviour is intended; `duplicate` when it is already filed — pass the id of the report " +
@@ -336,6 +339,7 @@ export function registerBugAdminTools(server: McpServer, sup: boolean): void {
   if (sup) server.registerTool(
     "bug_delete",
     {
+      annotations: DESTROYS,
       description:
         "Remove a row permanently, for rows that were never a report. WHEN it was filed by a " +
         "test against a live deployment — a `chain-check probe` — and the tracker is the worse " +

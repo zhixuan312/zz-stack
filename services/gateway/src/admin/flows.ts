@@ -8,7 +8,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { catalogManifest, installableFlows } from "@zz/catalog";
-import { text } from "@zz/mcp-http";
+import { READS, text } from "@zz/mcp-http";
 
 import { buildClientPackage, PLATFORM_VERSION, type ClientPackage } from "../client-package.js";
 import { callerIdentity as caller } from "../identity.js";
@@ -42,6 +42,7 @@ export async function renderClientSetup(target: string): Promise<string> {
 /** The shelf, on the door everyone has — seeing what could be installed is nobody's privilege. */
 export function registerShelf(server: McpServer): void {
   server.registerTool("catalog_list", {
+    annotations: READS,
     description:
       "WHEN the question is 'what could I use?'. RETURNS the shelf: every optional plugin " +
       "this platform offers, with what it is for. Installing one is your own choice, made in " +

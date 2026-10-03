@@ -16,7 +16,7 @@ import type pg from "pg";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { documentApplies, OUTCOME_STOPPED, parseCaller, type Applicability, type FlowDoc } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { READS, requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { auditMove } from "../audit-rounds.js";
@@ -631,6 +631,7 @@ export function registerInitiativeStatusTools(server: McpServer): void {
   server.registerTool(
     "initiative_status",
     {
+      annotations: READS,
       description:
         "Where an initiative stands and WHAT THE NEXT MOVE IS, computed from the flow's manifest " +
         "and the documents' frontmatter — not from memory or from this conversation. Call it " +

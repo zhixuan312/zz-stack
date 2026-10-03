@@ -17,7 +17,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { documentBody, parseCaller, parseEnvelope } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
@@ -65,6 +65,7 @@ export function registerInitiativeActTools(server: McpServer): void {
   server.registerTool(
     "document_approve",
     {
+      annotations: WRITES,
       description:
         "Record an approval on a document, in one call. THE PLATFORM writes `status: approved`, " +
         "`approved_by` from the identity of this session and `approved_at` from the system " +
@@ -205,6 +206,7 @@ export function registerInitiativeActTools(server: McpServer): void {
   server.registerTool(
     "document_revise",
     {
+      annotations: WRITES,
       description:
         "Revise a document and record WHY it changed, in one call. Send the BODY — the " +
         "platform writes the frontmatter. The platform bumps the " +

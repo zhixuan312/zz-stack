@@ -12,7 +12,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller, recallResultFrom, type RecallResult } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { READS, requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { type KbRow, platformEvent } from "../indexing.js";
@@ -99,6 +99,7 @@ export function registerKnowledgeSearch(server: McpServer): void {
   server.registerTool(
     "knowledge_search",
     {
+      annotations: READS,
       description:
         "Search your team's knowledge base and get ANSWERS, not just a list of paths. Ranks by " +
         "relevance — fusing full-text match, tag overlap, and the initiatives a node cites as " +

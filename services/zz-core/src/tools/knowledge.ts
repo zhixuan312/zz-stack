@@ -18,7 +18,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { catalogEntries } from "@zz/catalog";
 import { parseCaller } from "@zz/contracts";
 import { indexNode, supersedeNode } from "@zz/indexing";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
@@ -114,6 +114,7 @@ export function registerKnowledgeTools(server: McpServer): void {
   server.registerTool(
     "knowledge_add",
     {
+      annotations: WRITES,
       description:
         "Mint a knowledge-journal node in the team's journal: numbered, typed, evidence-linked. " +
         "type: decision|design|behavior|process|knowledge|style. evidence: initiative slug(s) the " +
@@ -255,6 +256,7 @@ export function registerKnowledgeTools(server: McpServer): void {
   server.registerTool(
     "knowledge_supersede",
     {
+      annotations: WRITES,
       description:
         "Mark a journal node superseded by a newer one — knowledge evolves, nothing is deleted. " +
         "WHEN a node is now wrong and a newer node states what is true: mint the newer one with " +

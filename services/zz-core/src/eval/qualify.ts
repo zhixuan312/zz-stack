@@ -22,7 +22,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { MeasureQualification, QualificationPolicy, parseCaller, type MeasureAnchor } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
@@ -241,6 +241,7 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
   server.registerTool(
     "evaluator_qualify",
     {
+      annotations: WRITES,
       description:
         "WHEN a model-backed measure's evaluator needs its qualification state established " +
         "(or re-established) against one protocol version, before its answers may back a score. " +

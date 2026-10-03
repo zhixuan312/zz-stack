@@ -54,7 +54,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { EVAL_STATE_ENUMS, parseCaller } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
@@ -196,6 +196,7 @@ export function registerReleaseTools(server: McpServer): void {
   server.registerTool(
     "release_prepare",
     {
+      annotations: WRITES,
       description:
         "WHEN a candidate is valid (built and gated by candidate_validate) and ready to cross the " +
         "promotion boundary (nothing before this touches the real repository): resolves " +
@@ -369,6 +370,7 @@ export function registerReleaseTools(server: McpServer): void {
   server.registerTool(
     "release_apply",
     {
+      annotations: WRITES,
       description:
         "WHEN improvement.md has been approved for a candidate release_prepare already recorded " +
         "a promotion package for (the compare-and-swap): takes an advisory lock on the " +
@@ -435,6 +437,7 @@ export function registerReleaseTools(server: McpServer): void {
   server.registerTool(
     "release_record",
     {
+      annotations: WRITES,
       description:
         "WHEN `zz-tool release-apply` has finished applying a candidate's patch — " +
         "successfully, through the gate and the repository's own release procedure, or not — or " +
@@ -518,6 +521,7 @@ export function registerReleaseTools(server: McpServer): void {
   server.registerTool(
     "release_verify",
     {
+      annotations: WRITES,
       description:
         "WHEN an attempt release_record already moved to released is ready for its automatic, " +
         "no-gate post-release check: judges the release on REAL use, never on " +
@@ -577,6 +581,7 @@ export function registerReleaseTools(server: McpServer): void {
   server.registerTool(
     "proposal_prepare",
     {
+      annotations: WRITES,
       description:
         "WHEN an improvement_run's own base subject records no release_owners and its " +
         "findings/candidates are ready to be written up for whoever actually " +

@@ -66,7 +66,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { EVAL_STATE_ENUMS, parseCaller } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
@@ -562,6 +562,7 @@ export function registerFailureDiscoverTools(server: McpServer): void {
   server.registerTool(
     "failure_discover",
     {
+      annotations: WRITES,
       description:
         "WHEN an observation_snapshot_id (from plugin_profile) needs its real evidence mined " +
         "for candidate failure modes: DISCOVER. Groups refusals (by failing tool and " +

@@ -22,7 +22,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { governingFlows } from "@zz/catalog";
 import { parseCaller } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { WRITES, requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { chainFor } from "../chain.js";
@@ -41,6 +41,7 @@ export function registerInitiativeOpenTool(server: McpServer): void {
   server.registerTool(
     "initiative_open",
     {
+      annotations: WRITES,
       description:
         "START new work. An initiative is the unit of work on this platform and this is the " +
         "only thing that creates one — writing a document into a name nobody opened is " +

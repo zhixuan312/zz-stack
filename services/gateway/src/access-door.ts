@@ -7,7 +7,7 @@
  * never needs to change anybody's credentials should not be carrying tools that can.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { serviceVersion, text } from "@zz/mcp-http";
+import { READS, WRITES, serviceVersion, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { registerAdminTools } from "./admin.js";
@@ -107,6 +107,7 @@ export async function buildAccessServer(
   server.registerTool(
     "team_mine",
     {
+      annotations: READS,
       // What only this tool says. Three tools answer some form of "who am I" and they are
       // deliberately not merged — see the note over `whoami` in admin.ts. Described as "the
       // teams you belong to, and which one you are acting for", it would read as a copy of
@@ -148,6 +149,7 @@ export async function buildAccessServer(
   server.registerTool(
     "team_switch",
     {
+      annotations: WRITES,
       description:
         "WHEN the work belongs to a different team than the one you are acting for. RETURNS " +
         "confirmation that the agents acting as you now act for that team: your documents and " +
@@ -210,6 +212,7 @@ export async function buildAccessServer(
   server.registerTool(
     "client_setup",
     {
+      annotations: READS,
       // `email` exists for onboarding: onboarding somebody means rendering their setup, which
       // needs superadmin.
       description:

@@ -55,6 +55,12 @@ A package may not import a service. A service may import any package.
 `gateway` (HTTP, MCP mounts, console, admin) and `zz-core` (the platform's own MCP tools).
 There are two, and adding a third needs a reason written down before the directory is made.
 
+**Every tool says what it does to the world.** Each `registerTool` passes one of `READS`, `WRITES`
+or `DESTROYS` from `@zz/mcp-http` as its annotations. A client decides confirmation from them —
+ChatGPT confirms every call to a tool that does not declare `readOnlyHint` — and the MCP defaults
+read an unannotated write as destructive and open-world. A record that a call happened is not a
+write. Check: `check "every tool declares whether it reads, writes or destroys, and a client reads that off the live door"`.
+
 ### `catalog/<owner>/<package>/` — what a team installs
 
 The unit is a package. `<owner>` is the team that owns the content — `sdlc` and `zz` here.

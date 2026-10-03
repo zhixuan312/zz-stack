@@ -33,6 +33,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.92.8] — 2026-10-03
+
+### Fixed
+- **ChatGPT stops asking to confirm every read.** No tool declared whether it only reads, and
+  ChatGPT treats a tool without that hint as a write: it asked the person to confirm every
+  `initiative_status`, `document_read` or `knowledge_search`, and "always allow" lasted only one
+  conversation. Every tool now says what it does. The 22 that only read — status, reading and
+  listing documents, sources, knowledge search, skills, `whoami`, the `/manage` lists — carry
+  `readOnlyHint` and run without a dialog. Writes still ask, as they should: approving,
+  writing, closing, issuing a token. The six that delete, revoke or deactivate are marked
+  destructive, and no other write is (an unannotated write is assumed destructive).
+  `checks/tool-annotations.ts` holds every new tool to one of the three kinds.
+
+### Upgrade notes
+- **ChatGPT keeps the tool list it read when the connector was added.** Each person using
+  zz-stack in ChatGPT refreshes the connector once (Settings → Apps & Connectors → zz-stack →
+  refresh), or the old, unannotated list stays in force.
+- No migration, no env key. Claude Code and Codex need nothing.
+
 ## [0.92.7] — 2026-10-02
 
 ### Fixed

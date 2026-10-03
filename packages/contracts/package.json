@@ -1,7 +1,7 @@
 {
   "name": "@zz/contracts",
   "private": true,
-  "version": "0.92.9",
+  "version": "0.92.10",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

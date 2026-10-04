@@ -9,7 +9,7 @@ import type { Express } from "express";
 import { decisionRows } from "@zz/indexing";
 
 import { platformDb } from "../db.js";
-import { flowShape, handler, stageOf, type DocRow, type StageDoc } from "./shared.js";
+import { flowShape, handler, stageOf, ZZ_TZ, type DocRow, type StageDoc } from "./shared.js";
 
 /** The three document types that state claims. The type is the document's own, and it is what
  *  the role on every claim is stamped from — the reader that already knows the type does not
@@ -496,7 +496,7 @@ export function mountInitiatives(app: Express): void {
                               join zz.doc td on td.id = l.to_doc_id
                              where l.from_doc_id = s.id and l.from_revision = sr.revision
                                and l.kind = 'supports') as supports,
-                to_char(s.updated_at,'YYYY-MM-DD') as added,
+                to_char(s.updated_at at time zone $4,'YYYY-MM-DD') as added,
                 length(coalesce(sr.body,'')) as bytes
            from zz.doc s
            join zz.initiative i on i.id = s.initiative_id
@@ -513,7 +513,7 @@ export function mountInitiatives(app: Express): void {
                           join zz.doc td on td.id = l.to_doc_id
                          where l.from_doc_id = s.id and l.from_revision = sr.revision
                            and l.kind = 'supports' and td.path = $3)
-          order by s.updated_at, s.path`, [team, initiative, base]),
+          order by s.updated_at, s.path`, [team, initiative, base, ZZ_TZ]),
     ]);
     if (!doc.rows.length) {
       res.status(404).json({ error: `no document ${team}/${initiative}/${path}` });

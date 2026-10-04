@@ -451,3 +451,38 @@ check("the run reconcile rewrites only the runs that changed", () => {
   }
   return null;
 });
+
+check("a date the platform states is cut in the deployment's zone, not the database's", () => {
+  // A `timestamptz` read by `to_char` alone answers in the DATABASE's zone. These images run
+  // PostgreSQL at UTC, and every date this platform writes belongs to the deployment: an
+  // initiative's name comes from `isoToday()`, a document's `date` from the same clock. So a bare
+  // `to_char(opened_at, 'YYYY-MM-DD')` reported an initiative opened at 00:30 in Asia/Singapore —
+  // the default zone — as `2026-10-04` beside its own name `2026-10-05-…`: one row answering one
+  // question twice, disagreeing for the eight hours a day the two calendars do.
+  //
+  // `… at time zone <zone>` is how every INSTANT is sent, deliberately — the console's own idiom —
+  // so this refuses the bare form only, whatever name the expression ends in.
+  const stamps = new Set<string>();
+  for (const t of Object.values(SCHEMA_TARGET.tables)) {
+    for (const c of t.columns ?? []) if (c[1] === "timestamp with time zone") stamps.add(c[0]);
+  }
+  if (!stamps.size) return "no timestamptz column is declared in the schema target — this check is reading nothing";
+  const bad: string[] = [];
+  let seen = 0;
+  for (const f of sourceFiles(["services", "packages"], [".ts"])) {
+    const src = withoutComments(readFileSync(join(root, f), "utf8"));
+    for (const m of src.matchAll(/to_char\(\s*([^,()]*?)\s*,/g)) {
+      seen++;
+      const expr = m[1].trim();
+      if (/at time zone/i.test(expr)) continue;
+      const col = [...stamps].find((c) => new RegExp(`(?:^|[.\\s])${c}$`, "i").test(expr));
+      if (col) {
+        bad.push(`${f}: to_char(${expr}, …) renders ${col} in the database's zone — it answers in ` +
+                 "UTC here, and every date this platform states is the deployment's. Say `at time " +
+                 "zone` with `ZZ_TZ`.");
+      }
+    }
+  }
+  if (!seen) return "no to_char call is read in services/ or packages/ — this check is reading nothing";
+  return bad.length ? bad.join("\n") : null;
+});

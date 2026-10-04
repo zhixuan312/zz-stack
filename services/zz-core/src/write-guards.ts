@@ -11,9 +11,12 @@ import { ENVELOPE_BLOCK, type FlowDoc, type FlowStage, OUTCOMES, parseEnvelope, 
 
 import { renderEnvelope } from "./document-rules.js";
 
-/** Timezone every date the platform stamps is resolved in, so nothing that stamps a date can
- * disagree with anything else. */
-const ZZ_TZ = (process.env.ZZ_TZ ?? "").trim() || "Asia/Singapore";
+/** The deployment's zone: every date the platform stamps is resolved in it, so nothing that stamps
+ *  a date can disagree with anything else. Exported because the SQL that renders one has to be told
+ *  it as well — a `timestamptz` read by `to_char` alone answers in the DATABASE's zone, which is
+ *  UTC in these images and is not the calendar any date here belongs to. See the note on the insert
+ *  in initiative-record.ts. */
+export const ZZ_TZ = (process.env.ZZ_TZ ?? "").trim() || "Asia/Singapore";
 
 export interface Chain {
   name: string | null;      // which flow's manifest this chain came from, null if none

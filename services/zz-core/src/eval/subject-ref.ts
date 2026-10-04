@@ -23,6 +23,8 @@
  */
 import type pg from "pg";
 
+import { ZZ_TZ } from "../write-guards.js";
+
 import { KNOWLEDGE_TEAM } from "../paths.js";
 import { loadDocument } from "../versions.js";
 
@@ -71,12 +73,12 @@ export async function resolveSubjectRef(
   const event = /^event:(\d+)$/.exec(subjectRef);
   if (event) {
     const row = (await p.query<{ at: string; tool: string; target: string; ok: boolean | null; refusal: string | null; shapes: string | null }>(`
-      select to_char(e.ts, 'YYYY-MM-DD HH24:MI:SS') as at, coalesce(e.tool_key, e.subject) as tool,
+      select to_char(e.ts at time zone $2, 'YYYY-MM-DD HH24:MI:SS') as at, coalesce(e.tool_key, e.subject) as tool,
              coalesce((select string_agg(v.key || '=' || left(v.value, 120), ' ' order by v.key)
                          from jsonb_each_text(case when jsonb_typeof(e.detail->'ids') = 'object'
                                                    then e.detail->'ids' else '{}'::jsonb end) v), '') as target,
              e.ok, e.refusal, (e.detail->'shapes')::text as shapes
-        from zz.event e where e.id = $1::bigint and e.kind = 'tool_call'`, [event[1]])).rows[0];
+        from zz.event e where e.id = $1::bigint and e.kind = 'tool_call'`, [event[1], ZZ_TZ])).rows[0];
     if (!row) return { error: `ERROR: subject_ref "${subjectRef}" names no tool call — nothing to judge` };
     return {
       text: `CALL ${event[1]} at ${row.at}:\n${row.tool}${row.target ? `  ${row.target}` : ""}  ` +

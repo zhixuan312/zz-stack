@@ -7,7 +7,7 @@
 import type { Express } from "express";
 
 import { platformDb } from "../db.js";
-import { handler } from "./shared.js";
+import { handler, ZZ_TZ } from "./shared.js";
 
 export function mountTeams(app: Express): void {
   /** Every team: who is in it and what it holds. */
@@ -22,7 +22,7 @@ export function mountTeams(app: Express): void {
     // `scope.kind` at request time is invisible to it.
     const teams = scope.kind === "platform"
       ? await db.query(
-      `select t.slug, t.name, t.status, to_char(t.created_at,'YYYY-MM-DD') as created,
+      `select t.slug, t.name, t.status, to_char(t.created_at at time zone $1,'YYYY-MM-DD') as created,
               (select count(*) from zz.membership m where m.team_id = t.id)          as members,
               (select count(distinct i.slug) from zz.doc d
                  join zz.initiative i on i.id = d.initiative_id
@@ -33,9 +33,9 @@ export function mountTeams(app: Express): void {
               (select count(*) from zz.doc d
                  join zz.initiative i on i.id = d.initiative_id
                 where i.team_id = t.id and d.type = 'source')                        as sources
-         from zz.team t order by t.status, t.slug`)
+         from zz.team t order by t.status, t.slug`, [ZZ_TZ])
       : await db.query(
-      `select t.slug, t.name, t.status, to_char(t.created_at,'YYYY-MM-DD') as created,
+      `select t.slug, t.name, t.status, to_char(t.created_at at time zone $1,'YYYY-MM-DD') as created,
               (select count(*) from zz.membership m where m.team_id = t.id)          as members,
               (select count(distinct i.slug) from zz.doc d
                  join zz.initiative i on i.id = d.initiative_id
@@ -46,7 +46,7 @@ export function mountTeams(app: Express): void {
               (select count(*) from zz.doc d
                  join zz.initiative i on i.id = d.initiative_id
                 where i.team_id = t.id and d.type = 'source')                        as sources
-         from zz.team t where t.slug = $1 order by t.status, t.slug`, [scope.slug]);
+         from zz.team t where t.slug = $2 order by t.status, t.slug`, [ZZ_TZ, scope.slug]);
     // The shelf count is its own statement rather than a sixth subquery: a node's shelf is a
     // relation to `zz.team` now, so this one joins on `team_id`, and asking it apart keeps each
     // statement naming only the columns the table it reads actually carries. Two complete
@@ -89,14 +89,14 @@ export function mountTeams(app: Express): void {
       return;
     }
     const team = await db.query(
-      `select id, slug, name, status, to_char(created_at,'YYYY-MM-DD') as created
-         from zz.team where slug = $1`, [slug]);
+      `select id, slug, name, status, to_char(created_at at time zone $2,'YYYY-MM-DD') as created
+         from zz.team where slug = $1`, [slug, ZZ_TZ]);
     if (!team.rows.length) { res.status(404).json({ error: `no team ${slug}` }); return; }
     const members = await db.query(
       `select p.email, p.display_name as name, m.role,
-              to_char(m.created_at,'YYYY-MM-DD') as joined
+              to_char(m.created_at at time zone $2,'YYYY-MM-DD') as joined
          from zz.membership m join zz.principal p on p.id = m.principal_id
-        where m.team_id = $1 order by m.role, p.email`, [team.rows[0].id as string]);
+        where m.team_id = $1 order by m.role, p.email`, [team.rows[0].id as string, ZZ_TZ]);
     res.json({
       team: { slug: team.rows[0].slug, name: team.rows[0].name,
               status: team.rows[0].status, created: team.rows[0].created },

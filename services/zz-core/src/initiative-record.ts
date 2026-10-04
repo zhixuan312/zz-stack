@@ -25,7 +25,7 @@ import { documentApplies, OUTCOME_STOPPED } from "@zz/contracts";
 import type pg from "pg";
 
 import { Refusal } from "./refusal.js";
-import { isoToday } from "./write-guards.js";
+import { ZZ_TZ, isoToday } from "./write-guards.js";
 
 /** The query surface everything here takes: the pool, or a client already inside a transaction.
  *  ONE parameter rather than a resolved pool, so a caller inside a transaction reads the row it
@@ -78,13 +78,19 @@ export async function recordOpen(
   }
   const declared = flow?.trim() || null;
   const { rows } = await client.query<{ flow: string | null; opened_at: string; opened_by: string | null }>(
+    // DELIBERATE: the row's `opened_at` is rendered in the DEPLOYMENT's zone, not the database's.
+    // A `timestamptz` read by `to_char` alone comes back as the server's own date — UTC in these
+    // images — so an initiative opened at 00:30 in Asia/Singapore was named `2026-10-05-…` and
+    // reported `opened_at: 2026-10-04`, the same answer contradicting itself for the eight hours a
+    // day the two calendars disagree. `initiativeNameFor` above promises these two cannot disagree;
+    // `$5` is the zone it stamps the name with, bound rather than written down here.
     `insert into zz.initiative (team_id, slug, flow, opened_at, opened_by)
      values ($1::uuid, $2, $3, now(),
              (select p.id from zz.principal p where lower(p.email) = lower($4) and p.status = 'active'))
      on conflict (team_id, slug) do update set slug = excluded.slug
-     returning flow, to_char(opened_at, 'YYYY-MM-DD') as opened_at,
+     returning flow, to_char(opened_at at time zone $5, 'YYYY-MM-DD') as opened_at,
                (select p.email from zz.principal p where p.id = opened_by) as opened_by`,
-    [teamId, name, declared, who]);
+    [teamId, name, declared, who, ZZ_TZ]);
   const row = rows[0];
   return { initiative: name, flow: row?.flow ?? declared, opened_by: row?.opened_by ?? who,
            opened_at: row?.opened_at ?? isoToday() };
@@ -95,10 +101,11 @@ export async function openRecord(
   client: RecordClient, team: string, name: string,
 ): Promise<OpenRecord | null> {
   const { rows } = await client.query<{ flow: string | null; opened_at: string; opened_by: string | null }>(
-    `select i.flow, to_char(i.opened_at, 'YYYY-MM-DD') as opened_at,
+    // The same zone the name was stamped in — see the note on the insert above.
+    `select i.flow, to_char(i.opened_at at time zone $3, 'YYYY-MM-DD') as opened_at,
             (select p.email from zz.principal p where p.id = i.opened_by) as opened_by
        from zz.initiative i join zz.team t on t.id = i.team_id
-      where t.slug = $1 and i.slug = $2`, [team, name]);
+      where t.slug = $1 and i.slug = $2`, [team, name, ZZ_TZ]);
   const row = rows[0];
   return row ? { initiative: name, flow: row.flow, opened_by: row.opened_by ?? "",
                  opened_at: row.opened_at } : null;

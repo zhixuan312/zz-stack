@@ -4,6 +4,8 @@
  */
 import type pg from "pg";
 
+import { ZZ_TZ } from "../write-guards.js";
+
 /** Events shown to the judge, per subject. A run reaches hundreds of events, so the cap bites;
  *  it is announced in the text and recorded in the stored note. */
 const TRACE_CAP = 400;
@@ -21,7 +23,7 @@ export async function traceOf(p: pg.Pool, runId: string): Promise<{ text: string
     -- And what each call was about: the identifying arguments the door recorded (a path, a skill
     -- name). Without them six document_read calls are indistinguishable, and "did this run read
     -- the same thing more often than it needed" cannot be answered from the text.
-    select to_char(e.ts,'HH24:MI:SS') as at,
+    select to_char(e.ts at time zone $2,'HH24:MI:SS') as at,
            coalesce(e.tool_key, e.subject) as subject,
            coalesce((select string_agg(left(v.value, 120), ' ' order by v.key)
                        from jsonb_each_text(case when jsonb_typeof(e.detail->'ids') = 'object'
@@ -29,7 +31,7 @@ export async function traceOf(p: pg.Pool, runId: string): Promise<{ text: string
            e.ok,
            coalesce(left(e.refusal, 160), '') as refusal
       from zz.event e where e.run_id = $1::uuid
-     order by e.ts limit ${TRACE_CAP}`, [runId]);
+     order by e.ts limit ${TRACE_CAP}`, [runId, ZZ_TZ]);
   const body = rows.map((e) => `${e.at}  ${e.subject}${e.target ? `  ${e.target}` : ""}  ${e.ok === false ? "REFUSED" : "ok"}` +
                                `${e.refusal ? `  ${e.refusal}` : ""}`).join("\n");
   const cut = total - rows.length;

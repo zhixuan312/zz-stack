@@ -383,7 +383,7 @@ export function mountOverview(app: Express): void {
     const { rows } = scope.kind === "platform"
       ? await db.query(
       `select p.email, p.display_name as name, p.role, p.status,
-              to_char(p.created_at,'YYYY-MM-DD') as created,
+              to_char(p.created_at at time zone $1,'YYYY-MM-DD') as created,
               coalesce(t.slug,'') as active_team,
               (select coalesce(array_agg(tm.slug || ' (' || m.role || ')' order by tm.slug), '{}')
                  from zz.membership m join zz.team tm on tm.id = m.team_id
@@ -394,10 +394,10 @@ export function mountOverview(app: Express): void {
                 where pt.principal_id = p.id)                                  as last_used
          from zz.principal p
          left join zz.team t on t.id = p.active_team_id
-        order by p.role, p.created_at`)
+        order by p.role, p.created_at`, [ZZ_TZ])
       : await db.query(
       `select p.email, p.display_name as name, p.role, p.status,
-              to_char(p.created_at,'YYYY-MM-DD') as created,
+              to_char(p.created_at at time zone $2,'YYYY-MM-DD') as created,
               coalesce(t.slug,'') as active_team,
               (select coalesce(array_agg(tm.slug || ' (' || m.role || ')' order by tm.slug), '{}')
                  from zz.membership m join zz.team tm on tm.id = m.team_id
@@ -410,7 +410,7 @@ export function mountOverview(app: Express): void {
          left join zz.team t on t.id = p.active_team_id
         where exists (select 1 from zz.membership m2 join zz.team tm2 on tm2.id = m2.team_id
                        where m2.principal_id = p.id and tm2.slug = $1)
-        order by p.role, p.created_at`, [scope.slug]);
+        order by p.role, p.created_at`, [scope.slug, ZZ_TZ]);
     res.json({ people: rows.map((r) => ({
       ...r, tokens: +r.tokens, activeTeam: r.active_team || null,
     })) });

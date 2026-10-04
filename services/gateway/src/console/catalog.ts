@@ -131,25 +131,32 @@ export function mountCatalog(app: Express): void {
       // `zz.skill_version`. An event naming no skill version is a step no reader can name, so it
       // is counted under no skill rather than folded onto one; `logged` on /skills reports the
       // same population.
+      //
+      // DELIBERATE: the event side is aggregated once and joined, never four correlated
+      // subqueries per skill. Each of those subqueries re-read the whole event log, so the cost
+      // grew with the number of skills AND the length of the log: at 55 skills and 23k tool
+      // calls this statement took 3.3 s and dominated the Plugins page. One grouped scan gives
+      // the same four figures — `calls` still counts every tool call whatever its `ok`.
       db.query(`select s.name,
-                       (select count(*) from zz.skill_version v where v.skill_id = s.id) as versions,
-                       (select count(*) from zz.event e
-                         where e.kind = 'tool_call'
-                           and e.skill_version_id in (select v.id from zz.skill_version v
-                                                       where v.skill_id = s.id))                  as calls,
-                       (select count(*) from zz.event e
-                         where e.kind = 'tool_call' and e.ok = false
-                           and e.skill_version_id in (select v.id from zz.skill_version v
-                                                       where v.skill_id = s.id))                  as failed,
+                       coalesce(v.versions, 0) as versions,
+                       coalesce(c.calls, 0) as calls,
+                       coalesce(c.failed, 0) as failed,
                        -- When it last ran. The list sorts on it, so a plugin nobody has touched in a month
                        -- sinks below one in use rather than sitting wherever the catalog walk put it. No eval
                        -- count: an evaluation's subject is a plugin version, and the plugin's own count is on
                        -- the release row below.
-                       (select to_char(max(e.ts) at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') from zz.event e
-                         where e.kind = 'tool_call'
-                           and e.skill_version_id in (select v.id from zz.skill_version v
-                                                       where v.skill_id = s.id))                  as last_run
-                  from zz.skill s`),
+                       to_char(c.last_run at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_run
+                  from zz.skill s
+                  left join (select skill_id, count(*) as versions
+                               from zz.skill_version group by skill_id) v on v.skill_id = s.id
+                  left join (select sv.skill_id,
+                                    count(*)                    as calls,
+                                    count(*) filter (where e.ok = false) as failed,
+                                    max(e.ts)                   as last_run
+                               from zz.event e
+                               join zz.skill_version sv on sv.id = e.skill_version_id
+                              where e.kind = 'tool_call'
+                              group by sv.skill_id) c on c.skill_id = s.id`),
       // What was released, and how many scored evaluation runs measured each released version.
       // An evaluation's release is its observation snapshot's `plugin_version_id` (FR-29), and a
       // scored run is one with `scored_at` set.

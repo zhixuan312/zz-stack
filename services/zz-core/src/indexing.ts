@@ -118,7 +118,9 @@ export interface KbRow {
   initiative: string; path: string; flow: string; type: string; status: string;
   outcome: string | null; approved_by: string | null; approved_at: string | null;
   updated_at: string; title: string; tags: string[] | null; evidence: string[] | null;
-  superseded_by: string | null; rank: number; snippet: string;
+  // `rank` is what a lane orders by. No `snippet`: no lane reads a body at all — the excerpt of
+  // a returned row is read once, from the rows that survive the fusion, in knowledge-search.ts.
+  superseded_by: string | null; rank: number;
   /** Which shelf the row is on. A knowledge search deliberately spans the caller's team AND
    * the platform's journal, and dropping this made the two indistinguishable in the answer —
    * so a path that came back could not be read back. */

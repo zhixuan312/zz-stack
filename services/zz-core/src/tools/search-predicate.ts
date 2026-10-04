@@ -93,6 +93,11 @@ export interface SearchPredicate {
   /** A ready `to_tsquery`/`websearch_to_tsquery` call for `ts_rank_cd`/`ts_headline` to rank and
    *  excerpt the ASCII portion by, or `null` when the query had no ASCII clause. */
   readonly rankExpr: string | null;
+  /** The text `rankExpr` was built from — the ASCII clauses as one document, quotes restored and
+   *  exclusions dropped. Carried beside it because a caller that excerpts rows in a statement of
+   *  its own needs to name the query again, and `rankExpr`'s text is a bound parameter that a
+   *  second statement's numbering cannot reuse. `null` exactly when `rankExpr` is. */
+  readonly asciiText: string | null;
   /** Every Han unigram the positive — never an excluded — Han-bearing clause analysed into, in
    *  first-seen order and de-duplicated. The caller ranks a Han clause's matches by these,
    *  through `SIMPLE_QUERY_CONFIG`: they are the lexemes the write path stored, and PostgreSQL's
@@ -140,6 +145,7 @@ export function buildSearchPredicate(a: SearchPredicateArgs): SearchPredicate {
   const eligible: string[] = [];
   let asciiRaw = "";
   let rankExpr: string | null = null;
+  let asciiText: string | null = null;
   let unsafe: string | undefined;
 
   // `zz-lexical-v2` base terms only — Han unigrams and whole Latin words, unstemmed. The ranking
@@ -221,9 +227,11 @@ export function buildSearchPredicate(a: SearchPredicateArgs): SearchPredicate {
   }
 
   if (asciiRaw.trim()) {
-    const q = put(asciiRaw.trim());
+    const text = asciiRaw.trim();
+    const q = put(text);
     mandatory.push(`body_tsv @@ websearch_to_tsquery(${QUERY_CONFIG}, ${q})`);
     rankExpr = `websearch_to_tsquery(${QUERY_CONFIG}, ${q})`;
+    asciiText = text;
   }
 
   // The group is always pushed; the flag is not. Every eligible clause has to reach the
@@ -234,5 +242,5 @@ export function buildSearchPredicate(a: SearchPredicateArgs): SearchPredicate {
 
   cond.push(...mandatory);
 
-  return { sql: cond.join(" and "), args, rankExpr, hanTerms, terms, excluded, broadened, unsafe };
+  return { sql: cond.join(" and "), args, rankExpr, asciiText, hanTerms, terms, excluded, broadened, unsafe };
 }

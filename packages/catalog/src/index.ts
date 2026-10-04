@@ -44,15 +44,20 @@ interface CatalogEntry {
  * Validation is not optional. An unchecked `as CatalogManifest` lets `gate: "true"` or a
  * misspelled `documents` key produce a chain that is wrong rather than absent, and a wrong chain
  * refuses writes at the stage that depends on them, far from the typo.
+ *
+ * MEMOISED on the file's own `mtime` and size (see `readJsonCached`). This is the one read every
+ * walk of the catalog makes, and the console walks the catalog once per initiative to draw a
+ * page — four hundred-odd parses of the same four manifests. The key is the file, not a clock, so
+ * a manifest edited on a mounted working tree is read as it now is.
  */
 export function manifestAt(file: string): { manifest: CatalogManifest; why: null }
   | { manifest: null; why: string } {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(readFileSync(file, "utf8"));
-  } catch (err) {
-    return { manifest: null, why: `could not be read as JSON — ${(err as Error).message}` };
-  }
+  return readJsonCached(file, parseManifest, (err) =>
+    ({ manifest: null, why: `could not be read as JSON — ${err.message}` }));
+}
+
+function parseManifest(raw: unknown): { manifest: CatalogManifest; why: null }
+  | { manifest: null; why: string } {
   const parsed = CatalogManifestSchema.safeParse(raw);
   if (parsed.success) {
     // The one law the schema cannot state, checked here because this is the only reader that
@@ -80,6 +85,51 @@ export function manifestAt(file: string): { manifest: CatalogManifest; why: null
     why: `is not a valid manifest — ${whyNot(parsed.error)}`,
   };
 }
+
+/**
+ * A file read and turned into something, kept until the file itself changes.
+ *
+ * The key is the file's `mtime` and byte count, never a timeout or a request. Reading the same
+ * declaration a few hundred times to draw one console page costs the whole parse every time —
+ * `manifestAt` is ~3 ms, almost all of it Zod — and the catalog is a handful of files that do not
+ * change while a page is drawn. Keyed on the file, an edit on a mounted working tree (the build
+ * override, or an agent editing a skill) is a miss the moment it lands, which a timeout could not
+ * promise: a timeout serves the old bytes for as long as it holds.
+ *
+ * The values returned are shared. Callers treat a manifest and a skill's text as the immutable
+ * declarations they are, and `withHandover` — the one place a document list is touched — copies
+ * before it appends.
+ *
+ * DELIBERATE: a missing file is not cached, so the map holds only real files and a name that was
+ * never there costs one `stat` rather than a growing table of misses.
+ */
+function readJsonCached<T>(file: string, parse: (raw: unknown) => T, onError: (err: Error) => T): T {
+  const key = keyOf(file);
+  if (key !== null) {
+    const hit = jsonCache.get(file);
+    if (hit && hit.key === key) return hit.value as T;
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(file, "utf8"));
+  } catch (err) {
+    // Not cached: an unreadable file is not a value, and a name that was never there must not
+    // become an entry in a table of misses.
+    return onError(err as Error);
+  }
+  const value = parse(raw);
+  if (key !== null) jsonCache.set(file, { key, value });
+  return value;
+}
+
+/** The cache key for a file: its modification time and size, or null when it cannot be stat-ed. */
+function keyOf(file: string): string | null {
+  try { const s = statSync(file); return `${s.mtimeMs}:${s.size}`; } catch { return null; }
+}
+
+const jsonCache = new Map<string, { key: string; value: unknown }>();
+const textCache = new Map<string, { key: string; value: string | null }>();
+
 
 /** A package on the shelf: `<owner>/<name>`, whether or not it ships a manifest. Not exported —
  * every caller destructures it. */
@@ -248,12 +298,26 @@ export function governingFlows(): string[] {
 }
 
 
-/** A skill's raw markdown, or null when the flow does not ship that skill. */
+/** A skill's raw markdown, or null when the flow does not ship that skill.
+ *
+ * MEMOISED on the file, like `manifestAt`: a console page resolves the same stage's text once per
+ * initiative, and a mounted working tree's edit is a miss the moment it lands. */
 export function skillText(flow: string, skill: string): string | null {
   const e = catalogEntry(flow, true);
   if (!e) return null;
-  const p = join(e.dir, "skills", skill, "SKILL.md");
-  return existsSync(p) ? readFileSync(p, "utf8") : null;
+  return readTextCached(join(e.dir, "skills", skill, "SKILL.md"));
+}
+
+/** One file's text, or null when it cannot be read. Cached on the file's `mtime` and size. */
+function readTextCached(file: string): string | null {
+  const key = keyOf(file);
+  if (key === null) return null;
+  const hit = textCache.get(file);
+  if (hit && hit.key === key) return hit.value;
+  let value: string | null;
+  try { value = readFileSync(file, "utf8"); } catch { value = null; }
+  textCache.set(file, { key, value });
+  return value;
 }
 
 /** What a flow is called as a plugin: the trailing `-flow` is dropped.

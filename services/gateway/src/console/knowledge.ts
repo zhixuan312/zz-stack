@@ -54,7 +54,12 @@ export function mountKnowledge(app: Express): void {
               -- An instant, like every other time this API sends.
               to_char(k.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated,
               length(coalesce(k.body,'')) as bytes,
-              left(regexp_replace(coalesce(k.body,''), '\\s+', ' ', 'g'), 220) as excerpt
+              -- DELIBERATE: the whitespace collapse runs over a bounded prefix, not the whole
+              -- body. Collapsing can only ever shorten, and every node on this shelf is under
+              -- 18 kB, so 1000 characters carry the 220 the excerpt asks for unless one
+              -- whitespace run is longer than 780. Run over the body it detoasted all 23 MB of
+              -- the shelf — 400 ms to produce 965 × 220 characters.
+              left(regexp_replace(left(coalesce(k.body,''), 1000), '\\s+', ' ', 'g'), 220) as excerpt
          from zz.knowledge_node k
          join zz.team t on t.id = k.team_id
         order by t.slug, k.node_ordinal`)
@@ -70,7 +75,12 @@ export function mountKnowledge(app: Express): void {
                  from zz.knowledge_node s where s.id = k.superseded_by_id) as successor,
               to_char(k.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated,
               length(coalesce(k.body,'')) as bytes,
-              left(regexp_replace(coalesce(k.body,''), '\\s+', ' ', 'g'), 220) as excerpt
+              -- DELIBERATE: the whitespace collapse runs over a bounded prefix, not the whole
+              -- body. Collapsing can only ever shorten, and every node on this shelf is under
+              -- 18 kB, so 1000 characters carry the 220 the excerpt asks for unless one
+              -- whitespace run is longer than 780. Run over the body it detoasted all 23 MB of
+              -- the shelf — 400 ms to produce 965 × 220 characters.
+              left(regexp_replace(left(coalesce(k.body,''), 1000), '\\s+', ' ', 'g'), 220) as excerpt
          from zz.knowledge_node k
          join zz.team t on t.id = k.team_id
         where t.slug = $1

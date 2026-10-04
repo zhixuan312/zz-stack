@@ -377,9 +377,39 @@ export function mountInitiatives(app: Express): void {
     // row, not a second `zz.doc` row filed under a snapshot name, so the path asked for IS the
     // document's own.
     const base = path;
+    /* One revision's text, on request: `?revision=<n>`.
+     *
+     * DELIBERATE: the history is listed by its metadata and its bodies are read one at a time.
+     * `zz.doc_revision` holds the whole text of every write — 184 MB of it on this deployment,
+     * and one plan.md alone carries 109 revisions totalling 94 MB. Returning those bodies with
+     * the document made opening it a 94 MB download which the browser then diffed pairwise,
+     * and reading them at all detoasts every revision. A reader looking at one change needs the
+     * two texts the diff is drawn between, not every text the document has ever had.
+     *
+     * The version is validated as digits before it reaches the statement, so an empty or
+     * malformed parameter is not silently read as revision 0. */
+    const wantRevision = typeof req.query.revision === "string" && /^\d+$/.test(req.query.revision)
+      ? Number(req.query.revision) : null;
+    if (wantRevision !== null) {
+      const { rows } = await db.query<{ version: number; body: string | null }>(
+        `select r.revision as version, r.body
+           from zz.doc d
+           join zz.initiative i on i.id = d.initiative_id
+           join zz.team t on t.id = i.team_id
+           join zz.doc_revision r on r.doc_id = d.id
+          where t.slug = $1 and i.slug = $2 and d.path = $3 and r.revision = $4`,
+        [team, initiative, path, wantRevision]);
+      if (!rows.length) {
+        res.status(404).json({ error: `no revision ${wantRevision} of ${team}/${initiative}/${path}` });
+        return;
+      }
+      res.json({ version: +rows[0].version, body: rows[0].body ?? null });
+      return;
+    }
     const [doc, versions, sources] = await Promise.all([
       db.query(
-        `select t.slug as team, i.slug as initiative, d.path, coalesce(i.flow,'') as flow,
+        `select t.slug as team, i.slug as initiative, d.path, d.current_revision,
+                coalesce(i.flow,'') as flow,
                 d.type, d.status, r.fields->>'outcome' as outcome,
                 a.email as approved_by, r.approved_at, r.fields->>'closed_by' as closed_by,
                 d.title, d.tags, r.fields->>'evidence' as evidence,
@@ -396,15 +426,28 @@ export function mountInitiatives(app: Express): void {
         [team, initiative, path]),
       // Every version of this document, oldest first — the revision rows themselves, which ARE
       // the history now that a version is a row rather than a frozen copy beside the document.
+      //
+      // DELIBERATE: no body and no `length(body)`. Both detoast every revision the document has
+      // ever had, and the browser needs neither to draw the history — it asks for the two texts
+      // of the change it is showing, through `?revision=`. See the note where that is served.
+      // `bytes` went with them: nothing rendered it, and measuring it was the whole
+      // decompression bill.
+      //
+      // `hash` stays, because the history merges a revision that carries the same content as
+      // the one above it — an approval that edited nothing files one — and telling that apart
+      // needs a fingerprint of the body. md5 is the one that costs: it detoasts, so it is
+      // proportional to a document's whole revision history (620 ms on the largest here, 94 MB
+      // of it, and under a millisecond on the other 2,050 documents). Paid, because the
+      // alternative is sending that 94 MB to the browser to compare it there.
       db.query(
-        `select d.path, coalesce(r.body, d.body) as body, r.revision as version,
+        `select d.path, r.revision as version,
+                md5(coalesce(r.body, '')) as hash,
                 case when r.approved_by is not null then 'approved'
                      when r.revision = d.current_revision then d.status
                      else 'draft' end as status,
                 a.email as approved_by,
                 to_char(coalesce(r.written_at, d.updated_at) at time zone 'UTC',
-                        'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
-                length(coalesce(r.body,'')) as bytes
+                        'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
            from zz.doc d
            join zz.initiative i on i.id = d.initiative_id
            join zz.team t on t.id = i.team_id

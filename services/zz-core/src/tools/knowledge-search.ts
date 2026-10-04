@@ -41,19 +41,38 @@ import { HAN_SCALAR_RE, HAN_SQL_CLASS, LATIN_SQL_CLASS, QUERY_CONFIG, SIMPLE_QUE
          type SearchPredicate } from "./search-predicate.js";
 
 
-/** Matched terms are marked in markdown rather than ts_headline's default <b>: the rest of this
- *  corpus is markdown, and a model reading HTML tags in a snippet treats them as content.
+/** How much of a body `ts_headline` is given to look in, in characters.
+ *
+ *  DELIBERATE: a bound, and it is the difference between a working search and an unusable one.
+ *  `ts_headline` re-parses the text and hunts fragments in it, and its cost is superlinear in
+ *  the document — measured on this deployment's own bodies, one 1.1 MB plan took **33 s** to
+ *  excerpt, while the same document truncated to 20 000 characters took 7.6 ms. The pool is up
+ *  to 200 matching rows and the corpus holds 123 revisions over 300 kB, so the excerpt alone
+ *  was the whole of a search's latency, and its tail: prod p90 1.1 s, max 11.5 s.
+ *
+ *  What this costs is marking deeper than the bound. Below it — every knowledge node on the
+ *  shelf (largest 17 kB) and 1,710 of the 2,678 revisions — nothing changes at all. Above it
+ *  the excerpt is drawn from the head of the document, which for markdown is the title and the
+ *  summary, and matches inside that window are still marked exactly as they were. */
+const HEADLINE_BYTES = 20_000;
+
+/** Marks a document's matched terms in markdown rather than ts_headline's default <b>: the rest
+ *  of this corpus is markdown, and a model reading HTML tags in a snippet treats them as content.
  *
  *  COUPLED: `QUERY_CONFIG`, so the document is parsed the way the row's Latin half was stored.
- *  The Han lane does not come through here — see `scoringOf` for why it cannot. */
-function headlineOf(rankExpr: string): string {
-  return `ts_headline(${QUERY_CONFIG}, body, ${rankExpr},
+ *  A Han clause cannot come through here — see `scoringOf` — so the excerpt of a row found only
+ *  by one is the head of its text, which is what `left(body, 400)` gives.
+ *
+ *  The query is passed as an expression, not as `rankExpr`: this runs in a statement of its own,
+ *  where the predicate's parameter numbering does not exist. */
+function headlineOf(column: string, queryExpr: string): string {
+  return `ts_headline(${QUERY_CONFIG}, left(${column}, ${HEADLINE_BYTES}), ${queryExpr},
                  'MaxFragments=2, MaxWords=28, MinWords=12, FragmentDelimiter=" … ",
                   StartSel=**, StopSel=**')`;
 }
 
-/** The `rank` and `snippet` columns one attempt selects by, and the parameters they must bind —
- *  the attempt's own, plus one for a Han lane's lexemes when that is the lane that scores it.
+/** The `rank` column one attempt selects by, and the parameters it must bind — the attempt's
+ *  own, plus one for a Han lane's lexemes when that is the lane that scores it.
  *
  *  `rankExpr` is the ASCII lane's `websearch_to_tsquery` call, and an attempt that has one is
  *  scored exactly as it was before this lane existed.
@@ -71,26 +90,26 @@ function headlineOf(rankExpr: string): string {
  *  rank it has always had, and a Han clause beside it adds nothing to it — this lane reaches
  *  exactly the queries that had no rank to lose.
  *
- *  DELIBERATE: no `ts_headline` for the Han lane. It parses the document with the configuration's
- *  own parser, which reads an unspaced Han run as one opaque token, so it can mark nothing a
- *  unigram query asks for and would hand back the whole run as its one "fragment". The first 400
- *  characters are a worse excerpt than a marked one and a better one than that.
+ *  DELIBERATE: no excerpt here, in any lane. `ts_headline` is the most expensive thing this
+ *  handler does and the ranking pool is two hundred rows deep, while `want` — fifteen by
+ *  default — is what comes back; the excerpt of each returned row is read once, below, from the
+ *  rows that survive the fusion. Ranking reads no body at all: `ts_rank_cd` works on `body_tsv`.
  *
  *  Exported, and pure, so a gate check can run it without a database: a rank column is not a
  *  WHERE clause, so `buildSearchPredicate` cannot show this half of the config agreement. */
 export function scoringOf(attempt: SearchPredicate): { sql: string; args: unknown[] } {
   const args: unknown[] = [...attempt.args];
   if (attempt.rankExpr) {
-    return { args, sql: `ts_rank_cd(body_tsv, ${attempt.rankExpr}) as rank, ${headlineOf(attempt.rankExpr)} as snippet` };
+    return { args, sql: `ts_rank_cd(body_tsv, ${attempt.rankExpr}) as rank` };
   }
   if (attempt.hanTerms.length) {
     // The lexeme string is bound, numbered past the attempt's own parameters, so the statement's
     // numbering is still 1..n with none skipped — PostgreSQL refuses to parse one that skips.
     args.push(attempt.hanTerms.join(" & "));
     const query = `to_tsquery(${SIMPLE_QUERY_CONFIG}, $${args.length})`;
-    return { args, sql: `ts_rank_cd(body_tsv, ${query}) as rank, left(body, 400) as snippet` };
+    return { args, sql: `ts_rank_cd(body_tsv, ${query}) as rank` };
   }
-  return { args, sql: "0::float4 as rank, left(body, 400) as snippet" };
+  return { args, sql: "0::float4 as rank" };
 }
 
 
@@ -253,12 +272,15 @@ export function registerKnowledgeSearch(server: McpServer): void {
       const tokens = (query ?? "").toLowerCase().split(/[^a-z0-9\p{Script=Han}]+/u).filter(Boolean);
 
       const CANDIDATE_CAP = 200;
-      const exact = scoringOf(primary);
-      const sql = `select ${COLS}, ${exact.sql}
+      // The attempt that produced the lexical list, and its scoring columns: the excerpt of a
+      // lexical hit is marked with this one's query text, so both have to travel together.
+      let active: SearchPredicate = primary;
+      let scoring = scoringOf(active);
+      const sql = `select ${COLS}, ${scoring.sql}
                    from ${SOURCE} where ${primary.sql}
                    order by ${query ? "rank desc, updated_at desc" : "updated_at desc"}
                    limit ${CANDIDATE_CAP}`;
-      let lexical = (await p.query(sql, exact.args)).rows as SearchRow[];
+      let lexical = (await p.query(sql, scoring.args)).rows as SearchRow[];
 
       /* Nothing came back, so ask the same question with OR before answering "nothing is known".
        * `websearch_to_tsquery` joins unquoted terms with AND, so a long question requires one
@@ -280,12 +302,13 @@ export function registerKnowledgeSearch(server: McpServer): void {
           includeSuperseded: withHistory ? undefined : false, broadened: true,
         });
         if (wide.broadened) {
-          const broad = scoringOf(wide);
+          active = wide;
+          scoring = scoringOf(active);
           lexical = (await p.query(
-            `select ${COLS}, ${broad.sql}
+            `select ${COLS}, ${scoring.sql}
                from ${SOURCE} where ${wide.sql}
               order by rank desc, updated_at desc
-              limit ${CANDIDATE_CAP}`, broad.args)).rows as SearchRow[];
+              limit ${CANDIDATE_CAP}`, scoring.args)).rows as SearchRow[];
           broadened = lexical.length > 0;
         }
       }
@@ -309,7 +332,7 @@ export function registerKnowledgeSearch(server: McpServer): void {
         const tCond = ["team_slug = any($1::text[])", "tags && $2::text[]"];
         applyFilters((c) => tCond.push(c), tPut);
         tagged = (await p.query(
-          `select ${COLS}, 0::float4 as rank, left(body, 400) as snippet
+          `select ${COLS}, 0::float4 as rank
            from ${SOURCE} where ${tCond.join(" and ")}
            order by cardinality(array(select unnest(tags) intersect select unnest($2::text[]))) desc,
                     updated_at desc
@@ -343,7 +366,7 @@ export function registerKnowledgeSearch(server: McpServer): void {
           " or (subject = 'document' and (initiative = any($3::text[]) or evidence && $3::text[])))"];
         applyFilters((c) => nCond.push(c), nPut);
         neighbours = ((await p.query(
-          `select ${COLS}, 0::float4 as rank, left(body, 400) as snippet
+          `select ${COLS}, 0::float4 as rank
            from ${SOURCE} where ${nCond.join(" and ")} order by updated_at desc limit 50`, nArgs,
         )).rows as SearchRow[]).filter((r) => !seen.has(`${r.initiative}/${r.path}`));
       }
@@ -366,6 +389,52 @@ export function registerKnowledgeSearch(server: McpServer): void {
 
       const ranked = [...fused.values()].sort((a, b) => b.score - a.score);
 
+      /* The excerpts, read for the rows that come back rather than for the pool that was ranked.
+       *
+       * `ts_headline` is the most expensive thing this handler does — it re-parses a document
+       * and hunts fragments in it — and it was being run over the whole two-hundred-row pool to
+       * return fifteen rows. Measured against this deployment's own corpus, the excerpt was the
+       * entire latency of a search and its tail (prod p90 1.1 s, max 11.5 s).
+       *
+       * DELIBERATE: the lane a row came from still decides how its text is cut. A row the
+       * lexical pass found is marked with that pass's own query; the broadened pass has a query
+       * of its own and is the only one that runs when it runs. A row found ONLY by its tags or
+       * by the citation graph need not contain the query at all, so marking it would mark
+       * nothing — it gets the head of its text, which is what it has always had.
+       *
+       * The rows read are `ranked.slice(0, want + 1)`: the fill loop below pushes on each
+       * iteration or breaks, so it cannot reach past the row after its last.
+       *
+       * One statement for all of them, addressed by the (initiative, path) every row is returned
+       * under — one read of a body however many lanes found it. `body` is not selected by any
+       * lane, so this is also the only place a ranked row's text is materialised at all. */
+      const snippets = new Map<string, string>();
+      const shortlist = ranked.slice(0, want + 1);
+      if (shortlist.length) {
+        const xArgs: unknown[] = [];
+        const xPut = (v: unknown): string => { xArgs.push(v); return `$${xArgs.length}`; };
+        // Its own numbering, starting at 1: the predicate is not run in this statement, so
+        // reusing `scoring.args` would name parameters nothing here references.
+        const xQuery = active.asciiText === null
+          ? null
+          : xPut(active.asciiText);
+        const marks = xPut(shortlist.map(({ via }) =>
+          xQuery !== null && (via.has("lexical") || via.has("lexical-broad"))));
+        const inits = xPut(shortlist.map(({ row }) => row.initiative));
+        const paths = xPut(shortlist.map(({ row }) => row.path));
+        const column = (c: string) => (xQuery === null
+          ? `left(${c}, 400)`
+          : `case when w.mark then ${headlineOf(c, `websearch_to_tsquery(${QUERY_CONFIG}, ${xQuery})`)}
+                   else left(${c}, 400) end`);
+        const { rows: excerpted } = await p.query<{ initiative: string; path: string; snippet: string | null }>(
+          `select k.initiative, k.path, ${column("k.body")} as snippet
+             from ${SOURCE} k
+             join unnest(${inits}::text[], ${paths}::text[], ${marks}::bool[])
+               as w(initiative, path, mark)
+               on w.initiative = k.initiative and w.path = k.path`, xArgs);
+        for (const r of excerpted) snippets.set(`${r.initiative}/${r.path}`, r.snippet ?? "");
+      }
+
       /* Fill a byte budget best-first rather than truncating at `limit` blindly: reporting what
        * was withheld is what stops a trimmed set being read as the complete match. */
       const BUDGET = 24_000;
@@ -373,7 +442,7 @@ export function registerKnowledgeSearch(server: McpServer): void {
       let spent = 0;
       for (const { row, score, via } of ranked) {
         if (results.length >= want) break;
-        const snippet = (row.snippet ?? "").replace(/\s+/g, " ").trim().slice(0, 600);
+        const snippet = (snippets.get(key(row)) ?? "").replace(/\s+/g, " ").trim().slice(0, 600);
         const size = snippet.length + row.path.length + (row.title?.length ?? 0) + 120;
         if (spent + size > BUDGET && results.length > 0) break;
         spent += size;

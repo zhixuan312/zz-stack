@@ -240,6 +240,30 @@ export function mountInitiatives(app: Express): void {
                    factsByInit.get(key) ?? {}),
       };
     }).sort((a, b) => b.updated.localeCompare(a.updated));
+    /* What the console's alert bell and its "Waiting on you" panel ask: the gate documents a person
+     * can sign today — written, not yet approved, on an open initiative.
+     *
+     * DELIBERATE: its own projection rather than the whole list. The bell sits in the frame every
+     * console page renders, so this read happens on every page, and the full list carries a stepper
+     * and a gate list per initiative for every initiative the caller may read — kilobytes, to draw
+     * a badge that is usually empty. This answers it in a row per open gate.
+     *
+     * `written`, because a gate nobody has drafted is waiting on the agent and not on a person, and
+     * `!passed`, which is the approval itself. */
+    if (req.query.waiting === "1") {
+      const waiting = initiatives
+        .filter((i) => !i.closed)
+        .flatMap((i) => i.gates
+          .filter((g) => g.written && !g.passed)
+          .map((g) => ({ id: `${i.team}/${i.slug}/${g.name}`,
+                         // The verb is the platform's ("approve spec"); the reader is shown the noun.
+                         gate: g.name.replace(/^approve /, ""),
+                         team: i.team, slug: i.slug, updated: i.updated,
+                         stage: i.stage, at: i.at, of: i.of })))
+        .sort((a, b) => b.updated.localeCompare(a.updated));
+      res.json({ waiting });
+      return;
+    }
     res.json({ initiatives });
   }));
 

@@ -237,8 +237,14 @@ export function stageOf(
      *  document and has not written one. The console draws them differently. */
     state: "done" | "partial" | "empty" | "untracked" | "skipped" | "waiting"; current: boolean;
   }[];
-  /** Placed by index into `steps`, bookends included, so the console places nothing itself. */
-  gates: { name: string; passed: boolean; after: number }[]; accepted: boolean;
+  /** Placed by index into `steps`, bookends included, so the console places nothing itself.
+   *
+   *  `written` and `role` are the manifest branch's — whether the gated document exists yet, which
+   *  `passed: false` alone cannot say (nobody has drafted it, or it is drafted and nobody has
+   *  signed), and which role owns it. The no-manifest fallback below declares neither, so both are
+   *  optional here rather than promised to every reader. */
+  gates: { name: string; passed: boolean; written?: boolean; role?: string; after: number }[];
+  accepted: boolean;
   /** Everything the flow asks for was there at the close: every gate approved, every document
    *  it requires to close present. False on a close that stopped short. */
   complete: boolean;

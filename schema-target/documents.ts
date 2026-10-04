@@ -176,6 +176,7 @@ export const DOCUMENTS: Record<string, TableTarget> = {
     indexes: [
       "CREATE INDEX doc_body_trgm ON zz.doc USING gin (body zz.gin_trgm_ops)",
       "CREATE UNIQUE INDEX doc_id_unique ON zz.doc USING btree (id)",
+      "CREATE INDEX doc_initiative_id ON zz.doc USING btree (initiative_id)",
       "CREATE INDEX doc_tags ON zz.doc USING gin (tags)",
       "CREATE INDEX doc_tsv ON zz.doc USING gin (body_tsv)",
     ],

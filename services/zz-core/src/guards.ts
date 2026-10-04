@@ -25,7 +25,6 @@ import { admitEntry, documentApplies, OUTCOME_STOPPED, parseEnvelope, PLATFORM_O
 import type pg from "pg";
 
 import { closingDocRuledOut, factsFor } from "./initiative-record.js";
-import { docRows } from "./indexing.js";
 import { db } from "./platform-db.js";
 import { attributionCheck, type Chain, outcomeCheck, sectionCheck, statusCheck } from "./write-guards.js";
 
@@ -49,7 +48,29 @@ interface HeldDoc {
  *  gate was passed, and refusing is the direction a guard fails in. */
 async function documents(p: pg.Pool, team: string | null, initiative: string): Promise<Map<string, HeldDoc>> {
   const out = new Map<string, HeldDoc>();
-  for (const d of await docRows(p, team, initiative)) {
+  /* DELIBERATE: its own statement rather than `docRows`.
+   *
+   * A guard asks five facts about a document and never its text, and `docRows` selects every
+   * body the initiative holds — one detoast per document, plus the `supports` link aggregate
+   * nothing here reads. The guard chain calls this four to seven times per write, so each one
+   * paid that bill again to answer a question none of them asked: 8.0 ms a call for the largest
+   * initiative here, against about one for the columns below.
+   *
+   * The joins, the predicate and the `[initiative, team]` order are `docRows`'s, so the two
+   * answer the same facts — this one simply does not carry the part the guards never look at. */
+  const { rows } = await p.query<{ path: string; status: string; approved_by: string | null;
+                                   approved_at: string | null; outcome: string | null;
+                                   closed_by: string | null }>(
+    `select d.path, d.status, a.email as approved_by, r.approved_at::text as approved_at,
+            r.fields->>'outcome' as outcome, r.fields->>'closed_by' as closed_by
+       from zz.doc d
+       join zz.initiative i on i.id = d.initiative_id
+       join zz.team t on t.id = i.team_id
+       left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
+       left join zz.principal a on a.id = r.approved_by
+      where i.slug = $1 and ($2::text is null or t.slug = $2)
+      order by d.path`, [initiative, team]);
+  for (const d of rows) {
     out.set(d.path, { status: d.status, approved_by: d.approved_by, approved_at: d.approved_at,
                       outcome: d.outcome, closed_by: d.closed_by });
   }

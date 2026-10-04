@@ -33,6 +33,55 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.92.11] — 2026-10-04 · console 0.24.0
+
+The console moves onto ZZ Meridian, and the two pages the platform draws in its look move with
+it.
+
+### Changed
+- **The document panel looks like the console again.** The panel that `document_present` opens
+  in Claude and ChatGPT carried a copy of the console's cream theme, Baloo 2 and Rubik. It now
+  carries the console's light Meridian theme: a white card on a cool ground, Geist, the same
+  purple for actions, and a categorical blue for what changed since the last revision.
+  `checks/document-panel.ts` reads the console's Meridian tokens to hold the copy to them.
+- **The connection pages take the same palette.** The consent page ("Connect ChatGPT to ZZ?")
+  and the refusals a browser can be shown use the console's light ground, ink and purple. They
+  still load nothing from anywhere.
+
+### zz-stack-dashboard 0.24.0
+
+The console is rebuilt on ZZ Meridian, a dashboard design system, with ZZ's own brand on top.
+Every page reads the same data from the same `/api/console/*` routes; what changed is how it
+looks, how it behaves at every size, and what the home page leads with.
+
+- **Dark first, light available.** The single cream theme is retired. Theme, accent and density
+  are a person's choice, in the sidebar's appearance menu or the command palette (⌘K), and are
+  remembered in their browser.
+- **One name and three marks.** The console is called ZZ Stack, the platform's own name. The
+  browser tab carries the flat Z, the home screen the mascot squircle, and the sidebar the Zz
+  wordmark. The brand purple marks actions and the current place, never a status.
+- **The Overview asks what needs you.** Tool calls over the period are drawn as one stack —
+  inside a run, outside one, refused — so its top edge is the total the tile states. Beside it:
+  initiatives progressing, knowledge from work, context per run. Under it, the gates waiting on
+  a person's approval, linked to their initiatives, and open work by stage. A platform no client
+  has called yet says so and points to Settings, rather than reading as a quiet week.
+- **The bell lists the gates waiting on a person**, the same list the Overview leads with.
+- **Periods are 24 hours, 7, 30 and 90 days, and all time, which is the default.** The chosen
+  period is in the address, so a view is linkable and survives a refresh.
+- **A superadmin switches scope from the workspace menu**: the whole platform or their own team.
+  The sidebar drops the platform-only pages in team mode.
+- **Empty, filtered and failed states are designed**, with the mascot where there is no data to
+  lead with; a page with figures never carries it.
+- **Faster on a phone.** Pages paint before the session check answers and their reads start
+  while the page is still parsing. On a mid-range phone profile every page's largest paint is
+  under 2.5 s, every tap answers in under 200 ms, and nothing shifts.
+- **Every page works from the keyboard**: a skip link first, a visible focus ring on every stop,
+  nothing hidden under the sticky bar, and every control reachable.
+
+### Upgrade notes
+- **Nothing to do.** No migration, no env key, no client re-pull, no API change. The panel's
+  new look reaches a client the next time it opens a document.
+
 ## [0.92.10] — 2026-10-03
 
 ### Fixed

@@ -33,6 +33,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.92.12] — 2026-10-04 · console 0.24.1
+
+The console only. The platform is unchanged and takes a patch because a release needs a
+number, not because anything in the gateway moved.
+
+### zz-stack-dashboard 0.24.1
+
+- **Settings is as wide as every other page.** It sat in an 832px column meant for reading,
+  so its token, people and member tables wrapped and squeezed beside pages that fill the
+  screen. It uses the page's full width now.
+- **Settings is laid out in sections**: each one's title and purpose on the left and its cards
+  on the right. The sections run from the person's own (console scope, teams, access tokens,
+  client setup) to their team's and then the platform's (people, platform teams). Issuing a
+  token, adding a person and adding a member happen on the last line of the table they add
+  to, rather than in a card of their own. Copy sits on the setup it copies.
+- A scrolling strip fades at the edge that has more behind it, a disabled switch looks
+  disabled, and on a very wide screen a settings card stops widening at 64rem.
+
+### Upgrade notes
+- **Nothing to do.** No migration, no env key, no client re-pull, no API change. Only the
+  console image moves.
+
 ## [0.92.11] — 2026-10-04 · console 0.24.0
 
 The console moves onto ZZ Meridian, and the two pages the platform draws in its look move with

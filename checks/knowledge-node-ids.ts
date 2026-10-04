@@ -13,9 +13,39 @@ const retired = ["team_slug", "path", "superseded_by", "evidence"];
 const files = execFileSync("git", ["ls-files", "services", "packages"], { encoding: "utf8" })
   .split("\n").filter((f) => f.endsWith(".ts") && !f.includes("/dist/"));
 
+/** Every string a lexer would call one, whatever quote opens it and with escapes honoured.
+ *
+ *  DELIBERATE: a walk, not a regex that pairs quotes. The regex this replaced could pair a quote
+ *  inside one statement with one inside the NEXT: a template whose SQL carries a quote before its
+ *  `from` — `to_char(ts at time zone 'UTC')` is one — cannot close on its own backtick, because the
+ *  match refuses to cross a quote, so the engine pairs it with a later statement's backtick and
+ *  reads every line between them as one statement. Anything in between that spells a retired
+ *  column's name — a response field, a comment — is then reported as named by that SQL. This check
+ *  said exactly that about console/knowledge.ts on a change that named no such column, which is
+ *  what a check that reports the wrong thing costs.
+ *
+ *  A `${…}` inside a template is not walked into: `check:sql` refuses a statement built at runtime
+ *  anywhere in this repository, so a SQL template here holds no hole to step through. */
+function literals(src: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < src.length; i++) {
+    const q = src[i];
+    if (q !== '"' && q !== "'" && q !== "`") continue;
+    let j = i + 1;
+    for (; j < src.length; j++) {
+      if (src[j] === "\\") { j++; continue; }
+      if (src[j] === q) break;
+      if (q !== "`" && src[j] === "\n") break;   // an unterminated single-line string ends the run
+    }
+    out.push(src.slice(i + 1, Math.min(j, src.length)));
+    i = j;
+  }
+  return out;
+}
+
+/** The literals that are SQL, by the same heads the gate's own scanners look for. */
 const sqlLiterals = (src: string): string[] =>
-  [...src.matchAll(/(["'`])([^"'`]*\b(?:select\s[\s\S]*?\bfrom\b|insert\s+into\b|update\s+[a-z_.]+\s+set\b|delete\s+from\b)[^"'`]*)\1/gi)]
-    .map((m) => m[2]);
+  literals(src).filter((s) => /\b(?:select\s[\s\S]*?\bfrom\b|insert\s+into\b|update\s+[a-z_.]+\s+set\b|delete\s+from\b)/i.test(s));
 
 const hits: string[] = [];
 for (const f of files) {

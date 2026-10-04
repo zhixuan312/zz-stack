@@ -174,11 +174,17 @@ export function mountKnowledge(app: Express): void {
      * and a shelf is hundreds of nodes with a title, tags, an excerpt and a byte count each: the
      * page downloaded all of them to show at most a handful of neighbours.
      *
-     * The neighbours are read against the SCOPE, not against the node's own team, so a
+     * The neighbours are read against the SCOPE, not against the team the node belongs to, so a
      * platform-scoped reader sees the neighbours the list showed them and a team-scoped one does
-     * not see another team's nodes. `$1`/`$2` name this node, so it is excluded from its own
-     * neighbours and its tags are read in the same statement — no second round trip to learn them.
-     * COUPLED: `listNode` below, so a neighbour is the same shape as a row of the list. */
+     * not see nodes belonging to another team. The parameters name this node, so it is excluded
+     * from its own neighbours and its tags are read in the same statement — no second round trip
+     * to learn them.
+     * COUPLED: listNode below, so a neighbour is the same shape as a row of the list.
+     *
+     * DELIBERATE: no backtick anywhere in this comment. This file is read as TEXT by the scanners
+     * that check its SQL, and a backtick in prose opens a template literal they then read as code.
+     * initiatives.ts carries the same note about the console's own scanner, where exactly this
+     * broke the check the comment was describing. */
     const [node, neighbours, shelves] = await Promise.all([
     db.query(
       `select t.slug as shelf,

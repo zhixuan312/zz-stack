@@ -62,6 +62,14 @@ fi
 # DELIBERATE: `-tA` without `-q`, because the UPDATE's own command tag is how the notice below
 # learns whether anything was revoked. `ON_ERROR_STOP` aborts before the COMMIT.
 #
+# DELIBERATE: the `awk` reads psql's answer to the end before it prints anything. An `awk` that
+# `exit`s on its first match closes the pipe while psql is still writing its command tags, and
+# psql then dies of SIGPIPE — which `set -o pipefail` turns into a failed command substitution
+# and, under `set -e`, into the script stopping HERE. The transaction has already committed by
+# then, so the deployment is left with a fresh token and any earlier bootstrap token revoked, and
+# the operator sees neither the token nor a reason. Reproduced locally: the same pipeline
+# returned psql=255 on one run in five. `END` is what reads to EOF.
+#
 # No `scope`: authority is a fact about the person, read from their principal, never the token.
 REVOKED="$(printf '%s\n' \
   "begin;
@@ -75,7 +83,7 @@ REVOKED="$(printf '%s\n' \
    commit;" \
   | docker compose exec -T postgres psql -U "${POSTGRES_USER:-zz}" -d "${POSTGRES_DB:-zz}" \
       -tA -v ON_ERROR_STOP=1 -v email="$EMAIL" -v hash="$HASH" \
-  | awk '/^UPDATE [0-9]+$/ { print $2; exit }')"
+  | awk '/^UPDATE [0-9]+$/ { n = $2 } END { print n + 0 }')"
 
 if [ "${REVOKED:-0}" -gt 0 ]; then
   REPLACED_NOTE="

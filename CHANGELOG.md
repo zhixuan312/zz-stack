@@ -33,6 +33,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.92.14] — 2026-10-04 · console 0.24.3
+
+The same shape as 0.92.13, found by reading the product the way a browser sees it: work done
+on every page load and thrown away.
+
+### zz-stack 0.92.14
+
+- **`zz.doc.initiative_id` is indexed.** It is NOT NULL, it is a foreign key, and every reader of
+  a document starts from the initiative it belongs to — the console's Overview read the whole of
+  `zz.doc` once per initiative, and the initiative list and the document lookups did the same at
+  their own scale.
+- **The console's alert bell asks its own question.** It sits in the frame every page renders, and
+  it asked for every initiative the caller may read — each with a stepper and a gate list — to
+  count the gates waiting on a signature. `?waiting=1` answers it in a row per open gate, and the
+  Overview's Waiting panel reads the same projection.
+
+### zz-stack-dashboard 0.24.3
+
+- **Every page reads its data once, not twice.** The console could not know whether the caller is
+  a superadmin until `/me` answered, so its first read of every page went out scoped `platform`;
+  when the answer was "member" the scope changed, the cache key changed with it, and the same rows
+  were fetched a second time — for everybody who is not a superadmin, on every page. The key is now
+  the path alone, which is sound because the gateway decides a scope from the caller and not from
+  the parameter. Switching scope by hand — the one act that makes the cached rows the wrong ones —
+  now drops them.
+- **The version chain's diff is computed once per pair**, not on every re-render, and a document's
+  markdown is parsed once per body rather than on every render of the page showing it.
+- **Dates are formatted by one formatter** rather than one built per call — about 24 ms a render on
+  a 200-row table, all of it thrown away.
+
+### Upgrade notes
+
+- **A migration applies on the gateway's next start**: `003_doc_initiative_index.sql`, one index on
+  `zz.doc`. It is additive — no table is reshaped, no row changes, and it does not affect a rollback
+  to the previous release.
+- Nothing else to do: no env key, no client re-pull, no tool renamed or changed.
+
 ## [0.92.13] — 2026-10-04 · console 0.24.2
 
 Both repositories moved, for one reason: the readers that draw a page were doing work

@@ -426,9 +426,11 @@ export function registerKnowledgeSearch(server: McpServer): void {
           ? `left(${c}, 400)`
           : `case when w.mark then ${headlineOf(c, `websearch_to_tsquery(${QUERY_CONFIG}, ${xQuery})`)}
                    else left(${c}, 400) end`);
+        // `SOURCE` carries its own `k` alias — every lane reads `from ${SOURCE} where …` and calls
+        // its columns `k.…` — so this names it without adding another.
         const { rows: excerpted } = await p.query<{ initiative: string; path: string; snippet: string | null }>(
           `select k.initiative, k.path, ${column("k.body")} as snippet
-             from ${SOURCE} k
+             from ${SOURCE}
              join unnest(${inits}::text[], ${paths}::text[], ${marks}::bool[])
                as w(initiative, path, mark)
                on w.initiative = k.initiative and w.path = k.path`, xArgs);

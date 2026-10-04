@@ -25,6 +25,21 @@ interface NodeRow {
   evidence_in?: unknown;
 }
 
+/** One row as the list and a node's neighbours both return it. One mapper, because a reader must
+ *  not be able to tell a node found by the list from the same node found as a neighbour. */
+function listNode(r: NodeRow) {
+  return {
+    team: r.shelf, path: r.address, type: r.type, status: r.status, title: r.title,
+    tags: r.tags, evidence: r.citations, superseded_by: r.successor,
+    updated: r.updated, bytes: Number(r.bytes), excerpt: r.excerpt,
+    // The number is per team — every team numbers its own nodes from 0001, so two teams both
+    // have a node 1. Shown as a number and keyed by team+path, because a list mixing teams
+    // under a bare "1, 1, 2, 2" looks duplicated.
+    num: String(Number(r.ordinal)),
+    key: `${r.shelf}/${r.address}`,
+  };
+}
+
 export function mountKnowledge(app: Express): void {
   /** The knowledge base: the list, with enough of each body to recognise it. A title alone does
    *  not tell a reader whether the node is the one they wanted. Full bodies come from the
@@ -87,16 +102,7 @@ export function mountKnowledge(app: Express): void {
          join zz.team t on t.id = k.team_id
         where t.slug = $1
         order by k.node_ordinal`, [scope.slug]);
-    res.json({ nodes: (rows as NodeRow[]).map((r) => ({
-      team: r.shelf, path: r.address, type: r.type, status: r.status, title: r.title,
-      tags: r.tags, evidence: r.citations, superseded_by: r.successor,
-      updated: r.updated, bytes: Number(r.bytes), excerpt: r.excerpt,
-      // The number is per team — every team numbers its own nodes from 0001, so two teams both
-      // have a node 1. Shown as a number and keyed by team+path, because a list mixing teams
-      // under a bare "1, 1, 2, 2" looks duplicated.
-      num: String(Number(r.ordinal)),
-      key: `${r.shelf}/${r.address}`,
-    })) });
+    res.json({ nodes: (rows as NodeRow[]).map(listNode) });
   }));
 
   /** The knowledge base's own log — what was recorded, what replaced what, and by whom.
@@ -160,9 +166,24 @@ export function mountKnowledge(app: Express): void {
       res.status(404).json({ error: `no node ${address}` });
       return;
     }
-    const { rows } = await db.query(
+    /* The node, and the two facts the page beside it draws from the shelf rather than from this
+     * node: which other nodes share one of its tags — the only link the store records between two
+     * nodes — and whether the shelf it is on spans more than one team.
+     *
+     * DELIBERATE: answered here rather than by the reading pane fetching the whole list. It did,
+     * and a shelf is hundreds of nodes with a title, tags, an excerpt and a byte count each: the
+     * page downloaded all of them to show at most a handful of neighbours.
+     *
+     * The neighbours are read against the SCOPE, not against the node's own team, so a
+     * platform-scoped reader sees the neighbours the list showed them and a team-scoped one does
+     * not see another team's nodes. `$1`/`$2` name this node, so it is excluded from its own
+     * neighbours and its tags are read in the same statement — no second round trip to learn them.
+     * COUPLED: `listNode` below, so a neighbour is the same shape as a row of the list. */
+    const [node, neighbours, shelves] = await Promise.all([
+    db.query(
       `select t.slug as shelf,
               'nodes/' || k.node_ordinal || '-' || k.slug || '.md' as address,
+              k.node_ordinal as ordinal,
               k.kind as type, k.lifecycle as status, k.title, k.tags, k.body,
               (select coalesce(array_agg(i.slug order by i.slug), '{}')
                  from zz.knowledge_node_evidence ne
@@ -185,13 +206,76 @@ export function mountKnowledge(app: Express): void {
          from zz.knowledge_node k
          join zz.team t on t.id = k.team_id
         where t.slug = $1 and ('nodes/' || k.node_ordinal || '-' || k.slug || '.md') = $2`,
-      [req.params.team, address]);
+      [req.params.team, address]),
+    // Two complete statements, not one assembled from `scope` — `check:sql` can only PREPARE a
+    // literal it can read whole. The team branch keeps the neighbours on the caller's own shelf.
+    scope.kind === "platform"
+      ? db.query(
+      `select t.slug as shelf,
+              'nodes/' || k.node_ordinal || '-' || k.slug || '.md' as address,
+              k.node_ordinal as ordinal, k.kind as type, k.lifecycle as status, k.title, k.tags,
+              (select coalesce(array_agg(i.slug order by i.slug), '{}')
+                 from zz.knowledge_node_evidence ne
+                 join zz.initiative i on i.id = ne.initiative_id
+                where ne.node_id = k.id) as citations,
+              (select s.node_ordinal
+                 from zz.knowledge_node s where s.id = k.superseded_by_id) as successor,
+              to_char(k.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated,
+              length(coalesce(k.body,'')) as bytes,
+              left(regexp_replace(left(coalesce(k.body,''), 400), '\\s+', ' ', 'g'), 220) as excerpt
+         from zz.knowledge_node k
+         join zz.team t on t.id = k.team_id
+        where k.tags && (select n2.tags from zz.knowledge_node n2
+                           join zz.team t2 on t2.id = n2.team_id
+                          where t2.slug = $1
+                            and ('nodes/' || n2.node_ordinal || '-' || n2.slug || '.md') = $2)
+          and not (t.slug = $1
+                   and ('nodes/' || k.node_ordinal || '-' || k.slug || '.md') = $2)
+        order by t.slug, k.node_ordinal`, [req.params.team, address])
+      : db.query(
+      `select t.slug as shelf,
+              'nodes/' || k.node_ordinal || '-' || k.slug || '.md' as address,
+              k.node_ordinal as ordinal, k.kind as type, k.lifecycle as status, k.title, k.tags,
+              (select coalesce(array_agg(i.slug order by i.slug), '{}')
+                 from zz.knowledge_node_evidence ne
+                 join zz.initiative i on i.id = ne.initiative_id
+                where ne.node_id = k.id) as citations,
+              (select s.node_ordinal
+                 from zz.knowledge_node s where s.id = k.superseded_by_id) as successor,
+              to_char(k.updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated,
+              length(coalesce(k.body,'')) as bytes,
+              left(regexp_replace(left(coalesce(k.body,''), 400), '\\s+', ' ', 'g'), 220) as excerpt
+         from zz.knowledge_node k
+         join zz.team t on t.id = k.team_id
+        where t.slug = $3
+          and k.tags && (select n2.tags from zz.knowledge_node n2
+                           join zz.team t2 on t2.id = n2.team_id
+                          where t2.slug = $1
+                            and ('nodes/' || n2.node_ordinal || '-' || n2.slug || '.md') = $2)
+          and not (t.slug = $1
+                   and ('nodes/' || k.node_ordinal || '-' || k.slug || '.md') = $2)
+        order by k.node_ordinal`, [req.params.team, address, scope.slug]),
+    scope.kind === "platform"
+      ? db.query<{ multi_team: boolean }>(
+      `select count(distinct t.slug) > 1 as multi_team
+         from zz.knowledge_node k join zz.team t on t.id = k.team_id`)
+      : db.query<{ multi_team: boolean }>(
+      `select count(distinct t.slug) > 1 as multi_team
+         from zz.knowledge_node k join zz.team t on t.id = k.team_id
+        where t.slug = $1`, [scope.slug]),
+    ]);
+    const rows = node.rows;
     if (!rows.length) { res.status(404).json({ error: `no node ${address}` }); return; }
     const r = rows[0] as NodeRow;
     res.json({
       team: r.shelf, path: r.address, type: r.type, status: r.status, title: r.title,
       tags: r.tags, body: r.body, evidence: r.citations, superseded_by: r.successor,
       evidence_in: r.evidence_in, updated: r.updated,
+      // The number as the list shows it — per team, without its leading zeros — so the crumb above
+      // the reader names the node the way the list they came from did.
+      num: String(Number(r.ordinal)),
+      related: (neighbours.rows as NodeRow[]).map(listNode),
+      multi_team: shelves.rows[0]?.multi_team ?? false,
     });
   }));
 }

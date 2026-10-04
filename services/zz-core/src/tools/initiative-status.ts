@@ -583,30 +583,45 @@ async function anchorsFor(
  *
  *  DELIBERATE: a `Refusal` from one initiative is reported against that initiative, with its
  *  text, and the listing goes on — one initiative must not take down the listing of every other.
- *  Anything else still throws: an error nobody named is not a fact about one initiative. */
+ *  Anything else still throws: an error nobody named is not a fact about one initiative.
+ *
+ *  Overlapped, a few initiatives at a time. This is one round of reads per initiative — its
+ *  documents, its facts, its records, its assessments and its chain — and it ran them strictly one
+ *  after another, so a team paid the whole sequence once per initiative: 1.4–2.3 s and a 100 kB
+ *  answer on the busiest team here, against 51–68 ms for a team with one. The width is the pool's
+ *  own, so the reads overlap without pretending to more connections than the service holds, and
+ *  `Promise.all` with the chunks taken in order keeps the answer in the order it was asked for. */
 async function initiativeListing(
   p: pg.Pool, team: string | null, names: readonly string[], anchors?: Map<string, InitiativeAnchor>,
 ) {
-  const open = [];
-  let closedCount = 0;
-  for (const name of names) {
-    if (!(anchors?.has(name) ?? false)) {
-      open.push({ initiative: name, error: "no such initiative" });
-      continue;
-    }
-    let state;
+  type State = Awaited<ReturnType<typeof initiativeState>>;
+  // One initiative's answer, or the sentence that stands in for it. Tagged, so a refusal is told
+  // from a state by what happened rather than by reaching into a wide object for a field.
+  const read = async (name: string): Promise<["state", State] | ["refused", string]> => {
+    if (!(anchors?.has(name) ?? false)) return ["refused", "no such initiative"];
     try {
-      state = await initiativeState(p, team, name, ...await chainArgs(p, team, name), anchors?.get(name) ?? null);
+      return ["state", await initiativeState(p, team, name, ...await chainArgs(p, team, name),
+                                            anchors?.get(name) ?? null)];
     } catch (err) {
       if (!(err instanceof Refusal)) throw err;
-      open.push({ initiative: name, error: err.message });
-      continue;
+      return ["refused", err.message];
     }
-    // DELIBERATE: optional-chained — `next_move` is null for a freeform initiative, and one
-    // such folder would otherwise take down the listing of every initiative beside it.
-    if (state.next_move?.action === "closed") { closedCount++; continue; }
-    open.push(state);
+  };
+
+  const answers: (["state", State] | ["refused", string])[] = [];
+  const width = Number(process.env.ZZ_DB_POOL_MAX || 4) || 4;
+  for (let i = 0; i < names.length; i += width) {
+    answers.push(...await Promise.all(names.slice(i, i + width).map(read)));
   }
+  const open: (State | { initiative: string; error: string })[] = [];
+  let closedCount = 0;
+  answers.forEach(([kind, value], i) => {
+    if (kind === "refused") { open.push({ initiative: names[i], error: value }); return; }
+    // optional-chained: `next_move` is null for a freeform initiative, and one such folder would
+    // otherwise take down the listing of every initiative beside it.
+    if (value.next_move?.action === "closed") { closedCount++; return; }
+    open.push(value);
+  });
   return { open, closed_not_listed: closedCount };
 }
 

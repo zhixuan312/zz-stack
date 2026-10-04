@@ -22,8 +22,8 @@ import { build } from "esbuild";
 const here = dirname(fileURLToPath(import.meta.url));
 export const PANEL_OUT = join(here, "..", "dist", "apps", "document-panel.html");
 
-/** The console's three families, at the weights the console uses. */
-const FONTS = "https://fonts.googleapis.com/css2?family=Baloo+2:wght@600&family=Rubik:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap";
+/** The console's two families, at the weights the console uses. */
+const FONTS = "https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap";
 
 export async function buildPanel(): Promise<string> {
   const out = await build({

@@ -1,58 +1,79 @@
 /* The document panel's look: the console's, carried into a page another product frames.
 
-   COUPLED: every value in the first :root block is the console's own (zz-stack-dashboard,
-   app/globals.css), copied because this page is built here and served from zz-core. The copy is
-   held, not trusted: checks/document-panel.ts reads both and fails on any value that differs.
-   Change it there, then here. */
+   COUPLED: every value in the first :root block is the console's own, copied from its Meridian
+   tokens (zz-stack-dashboard, src/styles/tokens.css): the light theme's roles, and the base
+   block's accent, faces and radii. It is copied because this page is built here and served from
+   zz-core. checks/document-panel.ts fails when the two disagree. The panel is light only: it
+   sits in another product's chat column, which says nothing about the console's theme. */
 :root {
-  --c-0: #ffffff;
-  --c-25: #fffbf9;
-  --c-50: #f8efea;
-  --c-100: #f4e9e3;
-  --c-200: #e9ddd6;
-  --c-300: #d8c8be;
-  --c-500: #6e6574;
-  --c-700: #5a5160;
-  --c-900: #221b26;
-  --zz-purple: #7548d8;
-  --zz-purple-deep: #5e2bcc;
-  --zz-purple-tint: #f1ebff;
-  --zz-blue-tint: #e6f4fd;
-  --zz-blue-deep: #0d6190;
-  --green: #22a05a;
-  --green-text: #1c7c44;
-  --green-tint: #e4f2e9;
-  --amber: #c98a1c;
-  --amber-text: #996010;
-  --amber-tint: #f8eeda;
-  --red: #d94a3d;
-  --red-text: #c0392f;
-  --red-tint: #f9e7e3;
-  --r-sm: 8px;
-  --r: 10px;
-  --r-md: 12px;
-  --r-lg: 16px;
-  --r-pill: 999px;
-  --on-accent: #ffffff;
+  --ground: #EDF0F8;
+  --surface-sunk: #F2F5FD;
+  --surface-raised: #FFFFFF;
+  --line: rgba(16,18,28,0.08);
+  --line-strong: rgba(16,18,28,0.14);
+  --line-control: rgba(16,18,28,0.46);
+  --ink: #121319;
+  --ink-2: #565860;
+  --ink-3: #696B74;
+  --accent-h: 292;
+  --accent-c: 0.18;
+  --accent-l: 0.52;
+  --accent-l-hover: 0.46;
+  --accent-l-ink: 0.48;
+  --accent-k-ink: 1;
+  --accent-a-tint: 0.1;
+  --accent: oklch(var(--accent-l) var(--accent-c) var(--accent-h));
+  --accent-hover: oklch(var(--accent-l-hover) var(--accent-c) var(--accent-h));
+  --accent-ink: oklch(var(--accent-l-ink) calc(var(--accent-c) * var(--accent-k-ink)) var(--accent-h));
+  --accent-tint: oklch(var(--accent-l) var(--accent-c) var(--accent-h) / var(--accent-a-tint));
+  --on-accent: #FFFFFF;
+  --positive: #008C53;
+  --positive-ink: #007142;
+  --positive-tint: oklch(0.56 0.14 158 / 0.1);
+  --warning: #C67700;
+  --warning-ink: #8E5308;
+  --warning-tint: oklch(0.72 0.15 72 / 0.14);
+  --critical: #D33944;
+  --critical-ink: #B02A2F;
+  --critical-tint: oklch(0.58 0.19 22 / 0.09);
+  --series-6: #007DB0;
+  --shadow-overlay: 0 1px 2px rgba(16,18,28,0.06), 0 16px 40px -8px rgba(16,18,28,0.14), 0 0 0 1px rgba(16,18,28,0.08);
+  --shadow-accent: inset 0 1px 0 rgba(255,255,255,0.18), 0 1px 2px rgba(16,18,28,0.16);
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --font-sans: var(--font-face-sans, "Geist"), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-face-mono, "Geist Mono"), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
-/* The semantic layer, as the console names it. */
+/* The names the rules below use, on the console's roles. */
 :root {
-  --bg: var(--c-50);
-  --surface: var(--c-25);
-  --surface-2: var(--c-100);
-  --ink: var(--c-900);
-  --ink-soft: var(--c-700);
-  --ink-faint: var(--c-500);
-  --line: var(--c-200);
-  --line-strong: var(--c-300);
-  --accent: var(--zz-purple);
-  --accent-deep: var(--zz-purple-deep);
-  --accent-tint: var(--zz-purple-tint);
+  --bg: var(--ground);
+  --surface: var(--surface-raised);
+  --surface-2: var(--surface-sunk);
+  --ink-soft: var(--ink-2);
+  --ink-faint: var(--ink-3);
+  --accent-deep: var(--accent-ink);
+  --green: var(--positive);
+  --green-text: var(--positive-ink);
+  --green-tint: var(--positive-tint);
+  --amber: var(--warning);
+  --amber-text: var(--warning-ink);
+  --amber-tint: var(--warning-tint);
+  --red: var(--critical);
+  --red-text: var(--critical-ink);
+  --red-tint: var(--critical-tint);
+  /* What changed since the last revision: a categorical blue, never a status. */
+  --change: var(--series-6);
+  --change-tint: color-mix(in oklab, var(--series-6) 10%, transparent);
+  --r-sm: var(--radius-sm);
+  --r: var(--radius-md);
+  --r-md: var(--radius-md);
+  --r-lg: var(--radius-lg);
+  --r-pill: 999px;
   --ring: 0 0 0 3px color-mix(in oklab, var(--accent) 30%, transparent);
-  --sans: "Rubik", system-ui, sans-serif;
-  /* The console's display face, for the one title — as the console sets its page titles. */
-  --display: "Baloo 2", "Rubik", system-ui, sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: var(--font-sans);
+  --display: var(--font-sans);
+  --mono: var(--font-mono);
   color-scheme: light;
 }
 
@@ -162,8 +183,8 @@ button.bar-section:hover { background: var(--surface-2); }
 /* The jump list: every section with its own length, the one being read marked. */
 .jump {
   position: absolute; top: calc(100% + 4px); left: 16px; right: 16px; max-height: min(420px, calc(var(--pane-h, 600px) - 80px));
-  overflow: auto; padding: 6px; background: var(--c-0); border: 1px solid var(--line-strong); border-radius: var(--r-md);
-  box-shadow: 4px 4px 0 rgba(33, 28, 22, 0.1); display: flex; flex-direction: column;
+  overflow: auto; padding: 6px; background: var(--surface-raised); border: 1px solid var(--line-strong); border-radius: var(--r-md);
+  box-shadow: var(--shadow-overlay); display: flex; flex-direction: column;
 }
 .jump[hidden] { display: none; }
 
@@ -266,15 +287,15 @@ button.bar-section:hover { background: var(--surface-2); }
 .btn:not(:disabled):active { transform: translateY(1px); }
 .btn:focus-visible, .tab:focus-visible, .icon-btn:focus-visible, .read:focus-visible { outline: none; box-shadow: var(--ring); }
 .btn:disabled { cursor: default; opacity: 0.55; }
-.btn-primary { background: var(--accent); color: var(--on-accent); box-shadow: 0 2px 0 var(--accent-deep); }
+.btn-primary { background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow-accent); }
 .btn-primary:not(:disabled):active { box-shadow: none; }
-.btn-primary:not(:disabled):hover { background: var(--accent-deep); }
+.btn-primary:not(:disabled):hover { background: var(--accent-hover); }
 .btn-quiet { background: var(--surface); color: var(--ink); border-color: var(--line-strong); }
 .btn-quiet:not(:disabled):hover { background: var(--surface-2); }
 .ask { flex-basis: 100%; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .ask textarea {
   width: 100%; resize: vertical; min-height: 72px; padding: 10px 12px; font: 14px/1.5 var(--sans); color: var(--ink);
-  background: var(--c-0); border: 1px solid var(--line-strong); border-radius: var(--r);
+  background: var(--surface-raised); border: 1px solid var(--line-strong); border-radius: var(--r);
 }
 .ask textarea:focus { outline: none; box-shadow: var(--ring); border-color: var(--accent); }
 .foot-done { justify-content: flex-start; gap: 14px; background: var(--green-tint); border-top-color: color-mix(in oklab, var(--green) 30%, transparent); }
@@ -310,36 +331,36 @@ button.bar-section:hover { background: var(--surface-2); }
 }
 @media (prefers-reduced-motion: reduce) { .sk, .selbar, .head, .read { animation: none; } .btn, .sel-btn { transition: none; } }
 
-/* What changed since the revision before: the kit blue, which is identity and never status — a
+/* What changed since the revision before: a categorical blue, never a status — a
    changed section is neither good nor bad, only the part a re-review has to read. */
-.fact-change { color: var(--zz-blue-deep); font-weight: 500; }
+.fact-change { color: var(--change); font-weight: 500; }
 .mark {
   flex: none; font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase;
-  color: var(--zz-blue-deep); background: var(--zz-blue-tint); padding: 1px 6px; border-radius: var(--r-pill);
+  color: var(--change); background: var(--change-tint); padding: 1px 6px; border-radius: var(--r-pill);
 }
-.prose .sec[data-mark] { position: relative; margin-left: -14px; padding-left: 12px; border-left: 2px solid var(--zz-blue-deep); }
+.prose .sec[data-mark] { position: relative; margin-left: -14px; padding-left: 12px; border-left: 2px solid var(--change); }
 .prose .sec[data-mark]::before {
   display: inline-block; margin: 0 0 6px; padding: 1px 8px; border-radius: var(--r-pill);
-  font-size: 11px; font-weight: 500; color: var(--zz-blue-deep); background: var(--zz-blue-tint);
+  font-size: 11px; font-weight: 500; color: var(--change); background: var(--change-tint);
 }
 .prose .sec[data-mark="changed"]::before { content: "Changed since v" attr(data-since); }
 .prose .sec[data-mark="new"]::before { content: "New since v" attr(data-since); }
 .only-changes > :not(section), .only-changes > section:not([data-mark]) { display: none; }
 .removed { margin: 0 0 16px; font-size: 12px; color: var(--ink-faint); }
 .bar-toggle {
-  flex: none; border: 1px solid color-mix(in oklab, var(--zz-blue-deep) 35%, transparent); background: var(--zz-blue-tint);
-  color: var(--zz-blue-deep); font: 500 12px/1 var(--sans); padding: 5px 8px; border-radius: var(--r-sm); cursor: pointer;
+  flex: none; border: 1px solid color-mix(in oklab, var(--change) 35%, transparent); background: var(--change-tint);
+  color: var(--change); font: 500 12px/1 var(--sans); padding: 5px 8px; border-radius: var(--r-sm); cursor: pointer;
 }
-.bar-toggle[aria-pressed="true"] { background: var(--zz-blue-deep); color: var(--c-0); }
+.bar-toggle[aria-pressed="true"] { background: var(--change); color: var(--surface-raised); }
 
 /* The selection toolbar: a floating card over the text, not a slab across it. It floats, so it takes
-   the one elevation the system gives floating things (--shadow-pop): a hard offset and a hairline. */
+   the one elevation the system gives floating things (--shadow-overlay). */
 .selbar {
   position: sticky; bottom: 12px; z-index: 3;
   display: flex; align-items: center; gap: 16px;
   max-width: 720px; margin: 20px auto 0; padding: 8px 8px 8px 14px;
-  background: var(--c-0); border-radius: var(--r-lg);
-  box-shadow: 4px 4px 0 rgba(33, 28, 22, 0.1), 0 0 0 1px var(--line-strong);
+  background: var(--surface-raised); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-overlay);
   animation: sel-in 140ms cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 .selbar[hidden] { display: none; }
@@ -359,7 +380,7 @@ button.bar-section:hover { background: var(--surface-2); }
 .sel-note { background: transparent; color: var(--ink-soft); }
 .sel-note:hover { background: var(--surface-2); color: var(--ink); }
 .sel-explain { background: var(--accent); color: var(--on-accent); }
-.sel-explain:hover { background: var(--accent-deep); }
+.sel-explain:hover { background: var(--accent-hover); }
 .sel-rule { width: 1px; height: 20px; margin: 0 4px; background: var(--line); }
 .sel-close {
   display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: var(--r-sm);
@@ -370,7 +391,7 @@ button.bar-section:hover { background: var(--surface-2); }
 
 /* The notes waiting to go to the agent. */
 .notes { flex-basis: 100%; min-width: 0; max-width: 100%; margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
-.notes li { position: relative; min-width: 0; padding: 8px 64px 8px 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--c-0); }
+.notes li { position: relative; min-width: 0; padding: 8px 64px 8px 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-raised); }
 .note-where { margin: 0; font-size: 11px; font-weight: 500; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.04em; }
 .note-quote { margin: 2px 0 0; font-size: 12px; color: var(--ink-faint); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .note-text { margin: 4px 0 0; font-size: 14px; color: var(--ink); }

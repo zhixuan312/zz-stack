@@ -3,21 +3,21 @@
  * and the handful of refusals a browser can be told. Everything else in the OAuth flow answers a
  * program in JSON.
  *
- * They wear the console's look — the cream ground, the one purple, the wordmark — because the
+ * They wear the console's look — its light ground, the one purple, the wordmark — because the
  * consent page is the moment a person decides whether to trust a connection, and a bare
  * system-font page is indistinguishable from a phishing kit's.
  *
  * DELIBERATE: no webfont and no request of any kind. The stylesheet and the mark are inside the
  * document, so the page loads nothing from anywhere — a font host would learn who is connecting
- * what, on the one page whose subject is what gets shared. The headline asks for the system's
- * rounded face (SF Rounded on Apple platforms), which is the nearest thing to the console's
- * Baloo 2 that every reader already has.
+ * what, on the one page whose subject is what gets shared. The system face stands in for the
+ * console's Geist, which every reader would otherwise have to fetch.
  *
  * Every value a caller supplies goes through `html`, which escapes whatever it interpolates.
  * There is no way to put an unescaped string into these pages short of building an `Html` by
  * hand, and that constructor is not exported.
  *
- * COUPLED: the palette is the console's (zz-stack-dashboard, app/globals.css), and the mark is
+ * COUPLED: the palette is the console's light theme (zz-stack-dashboard, src/styles/tokens.css:
+ * ground, surfaces, lines, ink, the `zz` accent at the light theme's lightness), and the mark is
  * its wordmark — `checks/consent-page.ts` holds the PNG byte-identical to the console's.
  */
 import { readFileSync } from "node:fs";
@@ -49,12 +49,12 @@ const MARK = `data:image/png;base64,${readFileSync(new URL("../assets/wordmark.p
 
 const STYLE = `
 :root{color-scheme:light;
-  --bg:#f8efea;--surface:#fffbf9;--sunk:#f4e9e3;--line:#e9ddd6;--line-strong:#d8c8be;
-  --ink:#221b26;--ink-soft:#5a5160;--ink-faint:#6e6574;
-  --accent:#7548d8;--accent-deep:#5e2bcc;--accent-tint:#f1ebff;
-  --red-text:#c0392f;--red-tint:#f9e7e3;
+  --bg:#EDF0F8;--surface:#FFFFFF;--sunk:#F2F5FD;--line:rgba(16,18,28,0.08);--line-strong:rgba(16,18,28,0.14);
+  --ink:#121319;--ink-soft:#565860;--ink-faint:#696B74;
+  --accent:oklch(0.52 0.18 292);--accent-hover:oklch(0.46 0.18 292);--accent-deep:oklch(0.48 0.18 292);
+  --accent-tint:oklch(0.52 0.18 292 / 0.1);
+  --red-text:#B02A2F;--red-tint:oklch(0.58 0.19 22 / 0.09);
   --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  --round:ui-rounded,"SF Pro Rounded","Nunito","Segoe UI Variable Display",system-ui,sans-serif;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   --ease:cubic-bezier(.22,.61,.36,1)}
 *{box-sizing:border-box}
@@ -67,10 +67,10 @@ body{background:var(--bg);color:var(--ink);font:15px/1.6 var(--sans);-webkit-fon
 main{display:grid;place-items:center;padding:16px clamp(20px,5vw,48px) 48px}
 .sheet{width:100%;max-width:34rem;animation:rise .42s var(--ease) both}
 .eyebrow{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);margin:0 0 12px}
-h1{font-family:var(--round);font-weight:700;font-size:clamp(30px,5.2vw,44px);line-height:1.05;letter-spacing:-.025em;margin:0 0 16px;text-wrap:balance}
+h1{font-family:var(--sans);font-weight:600;font-size:clamp(30px,5.2vw,44px);line-height:1.05;letter-spacing:-.025em;margin:0 0 16px;text-wrap:balance}
 h1 .dot{color:var(--accent)}
 .lede{color:var(--ink-soft);margin:0 0 24px;font-size:16px}
-.card{background:var(--surface);border:1px solid var(--line-strong);border-radius:16px;box-shadow:3px 3px 0 rgba(33,28,22,.07);overflow:hidden}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 2px rgba(16,18,28,0.05),0 18px 40px -20px rgba(16,18,28,0.12);overflow:hidden}
 .card dl{margin:0}
 .row{display:grid;grid-template-columns:7.5rem 1fr;gap:12px;padding:12px 18px;border-top:1px solid var(--line)}
 .row:first-child{border-top:0}
@@ -86,8 +86,8 @@ button{font:600 14px/1 var(--sans);height:44px;padding:0 22px;border-radius:10px
   transition:transform .12s var(--ease),background-color .12s var(--ease),box-shadow .12s var(--ease),border-color .12s var(--ease)}
 button:active{transform:translateY(1px)}
 button:focus-visible{outline:none;box-shadow:0 0 0 2px var(--bg),0 0 0 5px color-mix(in oklab,var(--accent) 35%,transparent)}
-.allow{flex:1 1 12rem;background:var(--accent);color:#fff;border:0;box-shadow:0 2px 0 var(--accent-deep)}
-.allow:hover{background:var(--accent-deep)}
+.allow{flex:1 1 12rem;background:var(--accent);color:#fff;border:0;box-shadow:inset 0 1px 0 rgba(255,255,255,0.18),0 1px 2px rgba(16,18,28,0.16)}
+.allow:hover{background:var(--accent-hover)}
 .allow:active{box-shadow:none}
 .deny{flex:0 1 auto;background:var(--surface);color:var(--ink);border:1px solid var(--line-strong)}
 .deny:hover{background:var(--sunk);border-color:var(--ink-faint)}

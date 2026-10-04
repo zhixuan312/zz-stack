@@ -68,7 +68,10 @@ check("nothing is exported that nobody imports", () => {
   //   · components/ui/index.ts is a barrel of `export * from './x'`, which names no symbol —
   //     so a file it re-exports is reachable through it, and the barrel's own re-exports are
   //     not exports to judge.
-  //   · tests/ are consumers.
+  //   · tests/ and scripts/ are consumers, judged for nothing they export: scripts/ is the
+  //     console's build and check tooling, most of it Meridian's, copied verbatim so a re-sync
+  //     is a copy. It never ships in the image — the same reason this repo's scripts/ is kept
+  //     out of `sources` above.
   const dash = join(root, "..", "zz-stack-dashboard");
   const dashFiles: string[] = [];
   if (existsSync(dash)) {
@@ -106,11 +109,13 @@ check("nothing is exported that nobody imports", () => {
   // exported from the same file is still caught.
   const NEXT_ENTRY: Record<string, RegExp> = {
     "middleware.ts": /^(middleware|config)$/,
+    // Next 16's name for middleware.ts.
+    "proxy.ts": /^(proxy|config)$/,
     "instrumentation.ts": /^(register|onRequestError)$/,
   };
   for (const [file, src] of dashText) {
     const rel = file.slice(dash.length + 1);
-    if (rel.startsWith("tests/") || /(^|\/)index\.tsx?$/.test(rel)) continue;
+    if (rel.startsWith("tests/") || rel.startsWith("scripts/") || /(^|\/)index\.tsx?$/.test(rel)) continue;
     const isRoute = rel.startsWith("app/");
     // Reachable through the ui barrel: the barrel names the module, never the symbols.
     const viaBarrel = [...dashText].some(([b, bs]) =>

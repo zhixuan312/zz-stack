@@ -66,16 +66,29 @@ is(PANEL_MIME === RESOURCE_MIME_TYPE, `PANEL_MIME is ${PANEL_MIME}, ext-apps say
 
 // 4. The console's tokens and marks
 const CONSOLE = join(cwd, "..", "zz-stack-dashboard");
-if (!existsSync(join(CONSOLE, "app/globals.css"))) {
+if (!existsSync(join(CONSOLE, "src/styles/tokens.css"))) {
   fail.push(`the console is not checked out at ${CONSOLE}, so the panel's tokens cannot be compared ` +
             "with it — that is not evidence that they match");
 } else {
-  const consoleCss = readFileSync(join(CONSOLE, "app/globals.css"), "utf8");
+  // The console's Meridian tokens: the light theme's roles, then the base block for what no theme
+  // changes (the accent's hue and chroma, the faces, the radii). Each block is its own `{…}`.
+  const consoleCss = readFileSync(join(CONSOLE, "src/styles/tokens.css"), "utf8");
+  const block = (selector: string): string => {
+    const at = consoleCss.indexOf(`${selector}{`);
+    return at < 0 ? "" : consoleCss.slice(at, consoleCss.indexOf("\n}", at));
+  };
+  const light = block('[data-theme="light"]');
+  const base = block(":root");
+  is(light !== "" && base !== "", "the console's tokens.css has no light theme block or no base :root block");
+  const same = (v: string): string => v.replace(/\s*,\s*/g, ",").replace(/\s+/g, " ").trim();
+  const valueIn = (css: string, name: string): string | undefined =>
+    new RegExp(`\\n\\s*${name}:\\s*([^;]+);`).exec(css)?.[1];
   const panelCss = readFileSync(join(cwd, "services/zz-core/app/panel.css"), "utf8");
   const copied = panelCss.slice(panelCss.indexOf(":root {"), panelCss.indexOf("}", panelCss.indexOf(":root {")));
   for (const [, name, value] of copied.matchAll(/(--[\w-]+):\s*([^;]+);/g)) {
-    const theirs = new RegExp(`\\n\\s*${name}:\\s*([^;]+);`).exec(consoleCss)?.[1]?.trim();
-    is(theirs === value!.trim(), `${name} is ${value!.trim()} in the panel and ${theirs ?? "absent"} in the console`);
+    const theirs = valueIn(light, name!) ?? valueIn(base, name!);
+    is(theirs !== undefined && same(theirs) === same(value!),
+       `${name} is ${value!.trim()} in the panel and ${theirs?.trim() ?? "absent"} in the console`);
   }
   for (const f of ["wordmark.png", "state-approved.png"]) {
     const mine = readFileSync(join(cwd, "services/zz-core/app/brand", f));

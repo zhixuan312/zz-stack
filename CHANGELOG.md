@@ -33,6 +33,53 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.92.13] — 2026-10-04 · console 0.24.2
+
+Both repositories moved, for one reason: the readers that draw a page were doing work
+proportional to the data they were NOT showing.
+
+### zz-stack 0.92.13
+
+- **Opening a document no longer downloads its whole revision history.** The document route
+  returned every revision's full text with the document, and a history has no bound — the
+  largest document here carries a hundred-odd revisions and a hundred megabytes of them. The
+  console then diffed those pairwise in the browser, with a table whose size is the product of
+  the two line counts. The history is metadata now, and one revision's text is read on its own
+  when the console draws the change between two of them.
+- **`knowledge_search` no longer excerpts the whole pool.** It ran `ts_headline` — which
+  re-parses a document and hunts fragments in it, at a cost that is superlinear in the
+  document — over every one of the two hundred rows it ranked, in order to return fifteen. No
+  lane reads a body any more (`ts_rank_cd` works on the stored vector), and the excerpt is read
+  once, for the rows the fusion actually returns, over a 20 000-character window. A search
+  that took seconds takes milliseconds.
+- **Every tool call stopped scanning the event log.** `STAMP_RUN` recomputes a run's counters
+  from the events that share its identity — deliberately recomputing rather than incrementing,
+  so that writing the same event twice leaves the same run — and nothing indexed that tuple, so
+  every call read every row of the log.
+- **The console's own reads are cheaper.** The knowledge list builds its excerpt from a bounded
+  prefix rather than the whole body; the Plugins page counts a skill's versions, calls,
+  failures and last run in one grouped scan instead of four correlated subqueries that each
+  re-read the whole log; the Activity page has an index for "newest first"; and the write guards
+  read the five columns they judge instead of every body an initiative holds, four to seven
+  times per write.
+
+### zz-stack-dashboard 0.24.2
+
+- **The version chain reads the two revisions it is diffing, not all of them**, and says so
+  while it does. Which revisions merge into one step is unchanged: an approval that edited
+  nothing is still not a new version of the content.
+- **The line diff trims the common head and tail before building its table.** An edit to a long
+  document made that table the product of the two line counts — out of memory rather than slow
+  — when the lines that actually differ are a few hundred. A change larger than the panel draws
+  now says how many lines it left out rather than stopping silently.
+
+### Upgrade notes
+
+- **A migration applies on the gateway's next start**: `002_event_indexes.sql`, two indexes on
+  `zz.event`. It is additive — no table is reshaped, no row changes, and it does not affect a
+  rollback to the previous release.
+- Nothing else to do: no env key, no client re-pull, no tool renamed or changed.
+
 ## [0.92.12] — 2026-10-04 · console 0.24.1
 
 The console only. The platform is unchanged and takes a patch because a release needs a

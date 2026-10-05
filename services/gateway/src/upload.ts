@@ -70,7 +70,12 @@ export function mountUpload(app: Express): void {
       // `application/x-www-form-urlencoded` when told nothing else — so a caller who forgot the
       // content type has had their file parsed as a form and thrown away before reaching here.
       // Said plainly, because the alternative is a source that silently holds form fields.
-      if (req.body !== undefined) {
+      //
+      // Read from the header rather than from `req.body`: Express leaves that defined either way,
+      // so "a parser consumed this" is not a question its value answers.
+      const type = String(req.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
+      if (type === "application/json" || type === "application/x-www-form-urlencoded" ||
+          type === "multipart/form-data") {
         res.status(415).json({ error:
           "send the file itself: this route takes the bytes, so the request must not be " +
           "application/json or a form encoding. `curl --data-binary @<file> -H \"Content-Type: " +

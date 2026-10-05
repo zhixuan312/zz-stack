@@ -107,7 +107,9 @@ export function zipEntry(zip: Buffer, want: string): Buffer | null {
 export function extract(name: string, bytes: Buffer): { text: string } | { refusal: string } {
   const ext = (name.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? "").trim();
   const unsupported = (why: string) =>
-    ({ refusal: `${why} Upload a file this platform can read — Markdown, plain text, CSV, JSON, HTML, a .docx or an .odt — or export yours to one of those and upload that.` });
+    ({ refusal: `${why} Upload a file this platform reads — Markdown, plain text, CSV, JSON, YAML, ` +
+                "XML, SQL or HTML, or a .docx or an .odt — or export yours to one of those and " +
+                "upload that." });
 
   if (!ext) return unsupported(`"${name}" has no extension, so there is no telling what it holds.`);
   const office = OFFICE[ext];
@@ -125,8 +127,9 @@ export function extract(name: string, bytes: Buffer): { text: string } | { refus
   }
   if (TEXT.has(ext)) {
     const text = bytes.toString("utf8").replace(/\u0000/g, "").trim();
+    if (!text) return unsupported(`"${name}" is empty — there is nothing in it to file as a source.`);
     // A file that decoded to replacement characters was not text, whatever its name said.
-    if (!text || /�{3}/.test(text)) {
+    if (/�{3}/.test(text)) {
       return unsupported(`"${name}" is not text — it decodes to bytes this platform cannot read.`);
     }
     return { text };

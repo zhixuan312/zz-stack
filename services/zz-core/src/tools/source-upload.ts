@@ -14,13 +14,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { READS, text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { PLAIN_TOKEN, safeName, titleSlug } from "../paths.js";
+import { PLAIN_TOKEN, safeName } from "../paths.js";
 
 export function registerSourceUploadTool(server: McpServer): void {
   /* Read-only, because it changes nothing: it answers a question about how, and the only work it
-   * does is check the three names against the rules `source_add` applies — an initiative that is a
-   * path segment, a title that slugs, `supports` entries that are document names — so a bad one
-   * costs a call rather than an upload.
+   * does is check the names `source_add` refuses on — an initiative that is a path segment, and
+   * `supports` entries that are document names — so a bad one costs a call rather than an upload.
+   * The title is not among them: it slugs, and every title slugs.
    *
    * Everything past that is decided where the bytes land, which is the only place that has them:
    * membership, whether the initiative is open, and whether the file is a format the platform
@@ -53,8 +53,6 @@ export function registerSourceUploadTool(server: McpServer): void {
     async ({ initiative, title, filename, supports, stage }) => {
       const badInitiative = safeName(initiative, "initiative");
       if (badInitiative) return text(badInitiative);
-      const badTitle = titleSlug(title, "source");
-      if (badTitle) return text(badTitle);
       // The same split source_add applies, and the same rule per entry: these are written into
       // YAML and read back by a comma-splitter.
       const list = (Array.isArray(supports) ? supports : supports ? supports.split(",") : [])

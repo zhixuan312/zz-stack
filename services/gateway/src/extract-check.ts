@@ -79,6 +79,7 @@ const CASES: { what: string; run: () => { text?: string; refusal?: string }; wan
   { what: "a pdf is refused by name", run: () => extract("signed.pdf", Buffer.from("%PDF-1.7 \xff\xfe")), want: /\.pdf file, which this platform does not read/ },
   { what: "a name with no extension is refused", run: () => extract("README", Buffer.from("hi")), want: /has no extension/ },
   { what: "a .txt that is not text is refused", run: () => extract("bytes.txt", Buffer.from([0xff, 0xfe, 0x00, 0xff, 0xfe, 0x00])), want: /is not text/ },
+  { what: "an empty file is refused as empty, not as unreadable", run: () => extract("blank.md", Buffer.from("  \n\t\n")), want: /is empty/ },
   { what: "a zip that is not the Office document it claims is refused", run: () => extract("x.docx", zip([{ name: "other.xml", body: Buffer.from("<a/>") }])), want: /is not a readable \.docx/ },
   { what: "an empty Office document is refused", run: () => extract("x.docx", zip([{ name: "word/document.xml", body: Buffer.from("<w:body/>") }])), want: /carries no text/ },
   // 70 MB of zeros deflates to a few hundred bytes: the cap is what stops the reader allocating it.

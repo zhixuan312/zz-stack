@@ -3109,28 +3109,28 @@ CREATE TABLE zz.initiative_fact (
 -- Name: TABLE initiative_fact; Type: COMMENT; Schema: zz; Owner: -
 --
 
-COMMENT ON TABLE zz.initiative_fact IS 'class=current_state; authority=this; question=which branch facts has this initiative decided, each written once by the stage that decided it and never revised, now that the `_facts.json` copy is retired and the row is the authority?';
+COMMENT ON TABLE zz.initiative_fact IS 'class=immutable_history; authority=this; question=which branch facts has this initiative decided, each written once by the stage that decided it and never revised, now that the `_facts.json` copy is retired and the row is the authority?';
 
 
 --
 -- Name: COLUMN initiative_fact.fact; Type: COMMENT; Schema: zz; Owner: -
 --
 
-COMMENT ON COLUMN zz.initiative_fact.fact IS 'class=current_state; authority=this; question=which named branch fact of this initiative''s flow does this row record?';
+COMMENT ON COLUMN zz.initiative_fact.fact IS 'class=immutable_history; authority=this; question=which named branch fact of this initiative''s flow does this row record?';
 
 
 --
 -- Name: COLUMN initiative_fact.value; Type: COMMENT; Schema: zz; Owner: -
 --
 
-COMMENT ON COLUMN zz.initiative_fact.value IS 'class=current_state; authority=this; question=what did the deciding stage record this branch fact to be?';
+COMMENT ON COLUMN zz.initiative_fact.value IS 'class=immutable_history; authority=this; question=what did the deciding stage record this branch fact to be?';
 
 
 --
 -- Name: COLUMN initiative_fact.set_at; Type: COMMENT; Schema: zz; Owner: -
 --
 
-COMMENT ON COLUMN zz.initiative_fact.set_at IS 'class=current_state; authority=this; question=when was this branch fact decided?';
+COMMENT ON COLUMN zz.initiative_fact.set_at IS 'class=immutable_history; authority=this; question=when was this branch fact decided?';
 
 
 --

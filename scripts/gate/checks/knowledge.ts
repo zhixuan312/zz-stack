@@ -503,6 +503,15 @@ check("the spine states the handover sequence and nothing it superseded", () => 
   if (!/handover\.md/.test(src)) {
     bad.push("the spine never names the handover document every gated flow now owes");
   }
+  // The sentence saying what the close WRITES, not merely that the name appears somewhere in the
+  // spine. This check is named for the sequence, and it was the one row of the mutation suite that
+  // let its plant through: renaming the document back to the abolished `learnings.md` here left
+  // `handover.md` in an earlier paragraph, so a spine that had stopped saying what the close
+  // writes passed. A check whose name claims a sentence has to read the sentence.
+  if (!/writes `handover\.md` and mints what generalises/.test(src)) {
+    bad.push("the spine no longer says what the close writes when it mints — naming the handover " +
+             "document elsewhere in the spine is not the sequence this check is named for");
+  }
   return bad.length ? bad.join("; ") : null;
 });
 

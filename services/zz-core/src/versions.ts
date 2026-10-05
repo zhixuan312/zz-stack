@@ -157,17 +157,22 @@ function pool(): pg.Pool | null {
 const NO_DB = "ERROR: no platform database — the store is the database now, so there is " +
   "nowhere to write this document.";
 
-/** Every revision of a document, oldest first, each with the addresses its id columns name. */
-export async function revisionsOf(p: Pick<pg.Pool, "query">, docId: string): Promise<RevisionRecord[]> {
+/** Every revision of a document, oldest first, each with the addresses its id columns name. `bodyOf`
+ * is the one revision whose TEXT the caller will read: `body` is stored out of line and Postgres
+ * detoasts a tuple to return it, so a whole history was detoasted to answer about one. */
+export async function revisionsOf(
+  p: Pick<pg.Pool, "query">, docId: string, bodyOf?: number | null,
+): Promise<RevisionRecord[]> {
   const { rows } = await p.query<RevisionRecord>(
-    `select r.revision, r.content_state, r.title, r.body, r.tags, r.content_hash, r.fields,
+    `select r.revision, r.content_state, r.title, r.tags, r.content_hash, r.fields,
+            case when r.revision = $2::int then r.body end as body,
             r.revision_note, w.email as written_by, r.written_at::text as written_at,
             a.email as approved_by, r.approved_at::text as approved_at
        from zz.doc_revision r
        left join zz.principal w on w.id = r.written_by
        left join zz.principal a on a.id = r.approved_by
       where r.doc_id = $1::uuid
-      order by r.revision`, [docId]);
+      order by r.revision`, [docId, bodyOf ?? null]);
   return rows;
 }
 
@@ -294,8 +299,8 @@ export async function loadDocument(
     return { ok: false, why: "missing",
              refusal: `ERROR: ${relPath} does not exist` };
   }
-  const history = await revisionsOf(p, doc.id);
   const want = revision ?? doc.current_revision;
+  const history = await revisionsOf(p, doc.id, want);
   const rev = history.find((r) => r.revision === want) ?? null;
   if (!rev) {
     const filed = history.map((r) => `v${r.revision}`);

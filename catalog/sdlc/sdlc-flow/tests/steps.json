@@ -4,12 +4,18 @@
     "room. flow.json names documents by role and stages by name, and nothing in it joins the",
     "two.",
     "",
-    "sdlc-flow has seven stages but only three documents. sdlc-spec-audit, sdlc-plan-audit,",
-    "sdlc-execute and sdlc-review own no document of their own — an audit reports findings",
-    "against someone else's document, execute changes the repository, review reads a diff.",
-    "None of that is a file this corpus can hold a brief up against, so none of those four",
-    "are keys here. Giving them an entry would be inventing an artefact so the grader has",
-    "something to read.",
+    "sdlc-flow has seven stages but only three documents. sdlc-spec-audit, sdlc-plan-audit",
+    "and sdlc-execute own no document of their own — an audit reports findings against someone",
+    "else's document, execute changes the repository. None of that is a file this corpus can",
+    "hold a brief up against, so those three are not keys here. Giving them an entry would be",
+    "inventing an artefact so the grader has something to read.",
+    "",
+    "DELIBERATE, and it was wrong: sdlc-review was in that list and does not belong in it.",
+    "flow.json declares review.md with \"stage\": \"sdlc-review\", a gate and requiredForClose —",
+    "the flow's closing document — and eval-step.sh exits 2 on a step with no entry here, so",
+    "--step sdlc-review could not run at all. It owes verification, and it interviews: its own",
+    "skill sends a deferred finding, and an unclear one that survives a second round, to the",
+    "stakeholder for their word.",
     "",
     "`interviews` is the harder fact. sdlc-explore's own skill has",
     "the person describe the idea once and then dispatches a fan-out — the shape of the",
@@ -35,6 +41,10 @@
     },
     "sdlc-plan": {
       "role": "plan",
+      "interviews": true
+    },
+    "sdlc-review": {
+      "role": "verification",
       "interviews": true
     }
   }

@@ -6,7 +6,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, firstOf, functionBody, gatewaySource, root, sourceFiles, zzCoreSource } from "../read.ts";
+import { between, firstOf, functionBody, gatewaySource, root, sourceFiles, withoutComments, zzCoreSource } from "../read.ts";
 import { check, note } from "../run.ts";
 import { catalogRoot, claimsOurs, flows, platformSkills, platformSurface, skillsOf } from "../facts.ts";
 
@@ -237,17 +237,39 @@ check("every MCP tool description is well-formed", () => {
   const bad: string[] = [];
   for (const rel of sourceFiles(["services"], [".ts"])) {
     const src = readFileSync(join(root, rel), "utf8");
-    // `description:` through to the line that ends the string concatenation.
-    for (const m of src.matchAll(/registerTool\(\s*\n?\s*"([^"]+)",[\s\S]{0,80}?description:\s*([\s\S]*?),\n\s*inputSchema/g)) {
-      const literal = [...m[2].matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((s) => s[1]).join("");
+    // Comments stripped, so a mention of `registerTool(` in prose is not read as a registration —
+    // door.ts has one explaining that it wraps this very call.
+    const code = withoutComments(src);
+    // Split on the registrations themselves — `server.registerTool(` is the boundary the file
+    // already has — and match within one block at a time.
+    //
+    // COUPLED: never a character window. It was `[\s\S]{0,80}?`, then 600, and both are the wrong
+    // instrument: the gap between a tool's name and its `description:` is prose — an annotation, a
+    // comment explaining why the tool exists — so any bound is a guess, and a registration past it
+    // is exempt from this claim while the check reports green. Three were.
+    for (const block of code.split(/(?=server\.registerTool\()/)) {
+      // The text before the first registration is not a block; everything after it is, and every
+      // one of them is either read or reported. That is the control — a count compared against a
+      // second count of the same file could disagree for reasons that were not about the tools.
+      if (!block.includes("server.registerTool(")) continue;
+      const name = /^\s*server\.registerTool\(\s*\n?\s*"([^"]+)"/.exec(block)?.[1];
+      if (!name) { bad.push(`${rel}: a registration whose name this check could not read`); continue; }
+      // A comment may sit between the two — several registrations explain their schema there.
+      const m = /description:\s*([\s\S]*?),\n(?:\s*\/\/[^\n]*\n|\s*\n)*\s*inputSchema:/.exec(block);
+      if (!m) {
+        bad.push(`${rel}: ${name}'s registration declares no description before its inputSchema`);
+        continue;
+      }
+      const literal = [...m[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((s) => s[1]).join("");
       let depth = 0;
       for (const ch of literal) {
         if (ch === "(") depth++;
         else if (ch === ")") depth--;
         if (depth < 0) break;
       }
-      if (depth !== 0) bad.push(`${rel}: ${m[1]}'s description has unbalanced brackets`);
+      if (depth !== 0) bad.push(`${rel}: ${name}'s description has unbalanced brackets`);
     }
+
   }
   return bad.length ? `${bad.join("; ")} — an edit left a fragment behind` : null;
 });

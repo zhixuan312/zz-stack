@@ -23,9 +23,16 @@
  * independently computed baselines that disagree means the source moved mid-pass.
  */
 import { spawn } from "node:child_process";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 import { treeDigest } from "./workspace.ts";
+
+/** This repository's root. A report's check paths are repository-relative and `existsSync`
+ *  resolves against the CWD, so a `--merge` run from anywhere else found every file missing: the
+ *  "nothing may be lost" guard below was emptied, and a good merge was refused spuriously. */
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 interface Row { readonly check: string }
 export interface Report {
@@ -185,7 +192,7 @@ export function mergeShardReports(opts: {
   // Nothing may be lost, and a missing row is silent: a merge that dropped one turns a measured
   // check into an unmeasured one.
   // A check file that no longer exists is dropped by every shard, so its rows are not "lost".
-  const lost = seed.results.map((r) => r.check).filter((c) => existsSync(c) && !seen.has(c));
+  const lost = seed.results.map((r) => r.check).filter((c) => existsSync(join(root, c)) && !seen.has(c));
   const unmeasured = wanted.filter((f) => !seen.has(f));
   if (lost.length || unmeasured.length) {
     console.error(`  REFUSED — the merge would ${lost.length ? `drop ${lost.length} prior row(s) (${lost.slice(0, 4).join(", ")})` : ""}` +

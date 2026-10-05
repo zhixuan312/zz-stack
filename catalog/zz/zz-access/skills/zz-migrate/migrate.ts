@@ -179,10 +179,16 @@ async function main() {
   if (!ledger.__initiative) {
     console.log(`Creating ${initiative}/explore.md`);
     if (!DRY) {
+      // Opened first, and this is the whole of why the import used to fail: zz-core refuses a
+      // write into an initiative nobody opened — `unopenedRefusal`, the same guard `source_add`
+      // carries — so every document_write here answered ERROR, the run exited 1, and `--dry-run`
+      // is the only path that ever looked complete.
+      await core.call("initiative_open", { slug: initiative, flow: FLOW });
+      // DELIBERATE: no `flow` on the write. `document_write` takes path, content, stakeholder,
+      // tags, title and fields; the flow is the initiative's, recorded by the open above.
       await core.call("document_write", {
         path: `${initiative}/explore.md`,
         content: exploreDoc(s),
-        flow: FLOW,
         title: `The mma archive of ${s.repo}`,
         tags: ["mma-import", `mma-${slug(s.repo)}`],
       });

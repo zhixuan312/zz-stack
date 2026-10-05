@@ -243,7 +243,13 @@ export function mountOverview(app: Express): void {
            left join zz.team t on t.slug = $1
            left join zz.event e
              on date_trunc($3::text, e.ts at time zone $4::text) = slot.b
-            and e.kind='tool_call' and e.team_id = t.id
+            -- COUPLED: the platform branch above carries this and says why — the series starts at
+            -- date_trunc(grain, since), earlier than since, so without it the first bucket counts
+            -- this team's calls from BEFORE the window opens, and the trend stops summing to the
+            -- refusal figure the tile beside it reports. Measured against a deployment: the totals
+            -- agree exactly when no window is set, which is why this went unnoticed; a period is
+            -- what shows it, and every reader of this panel has one.
+            and ($2::timestamptz is null or e.ts >= $2)
           group by 1 order by 1`,
         [scope.slug, since, grain, ZZ_TZ]),
       db.query<{ kind: string; n: string }>(

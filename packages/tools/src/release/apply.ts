@@ -69,7 +69,7 @@ import { dirname, join } from "node:path";
 
 import { Mcp } from "@zz/mcp-client";
 
-import { cloneConsoleSibling } from "../candidate/tree.js";
+import { cloneConsoleSibling, consoleSiblingUsable } from "../candidate/tree.js";
 import { commitOf, fetchTags, git, gitQuiet, releaseRefFor, resolveBase, tagsContaining } from "./git.js";
 import { die, optional, parseArgs, platformToken, required } from "../lib/cli.js";
 import { splitCommand } from "../lib/shell.js";
@@ -241,10 +241,29 @@ async function applyMain(mcp: Mcp, args: ReturnType<typeof parseArgs>): Promise<
     // Shared by every attempt's worktree; anything there that is not a checkout (a link whose
     // target is gone, a clone interrupted half-way) is replaced rather than trusted.
     const sibling = join(dirname(path), "zz-stack-dashboard");
-    if (!existsSync(join(sibling, ".git"))) {
+    if (!consoleSiblingUsable(sibling)) {
       rmSync(sibling, { recursive: true, force: true });
-      // None beside --repo is not refused here: the gate fails on it and names the repository.
-      if (!cloneConsoleSibling(repoRoot, path)) console.error(`no zz-stack-dashboard checkout beside ${repoRoot} to clone for the gate`);
+      /* Refused here, BY NAME, rather than left for the gate to complain about.
+       *
+       * A clone of the console is what two of the gate's checks read: every `/api/console` route
+       * this gateway serves must have a caller, and the document panel's tokens are compared with
+       * the console's own. Without it they fail saying "the console is not checked out at
+       * <path>" — which names the symptom, in a list of a hundred and ninety-seven lines, and
+       * leaves whoever reads it to work out that the walk never cloned it. It is also what a walk
+       * of the whole eval flow died on, at the one stage CI has never reached.
+       *
+       * COUPLED: cloneConsoleSibling returns the clone's path so a sandbox can re-allow it —
+       * `candidate/build.ts` reads it for exactly that. Nothing here runs a sandbox, so this only
+       * needs to know whether it happened. */
+      if (!cloneConsoleSibling(repoRoot, path)) {
+        await recordFailed(
+          `no zz-stack-dashboard checkout beside ${repoRoot} to clone for the gate. The gate reads ` +
+          "the console twice — every /api/console route must have a caller, and the document panel's " +
+          "tokens are compared with it — so a release from a repository that has none would be " +
+          "gated on two checks that could not run. Put the console beside that checkout, or release " +
+          "from one that has it.");
+        return 1;
+      }
     }
     for (const [what, argv] of [["install", INSTALL_CMD], ["build", BUILD_CMD]] as const) {
       const prepared = runCommand(path, argv, GATE_TIMEOUT_MS);

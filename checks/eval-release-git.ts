@@ -7,7 +7,7 @@
 // that commit.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -15,6 +15,7 @@ import { pathToFileURL } from "node:url";
 const load = async (rel: string) => import(pathToFileURL(join(process.cwd(), "packages/tools/dist", rel)).href);
 const { resolveBase, releaseRefFor, tagsContaining, commitOf } = await load("release/git.js");
 const { reconcileMain } = await load("release/apply.js");
+const { consoleSiblingUsable } = await load("candidate/tree.js");
 const { parseArgs } = await load("lib/cli.js");
 
 const root = mkdtempSync(join(tmpdir(), "zz-release-git-"));
@@ -136,6 +137,23 @@ try {
   // --commit stands in for a deleted branch.
   assert.equal(await quiet(() => settle(true, clone, "v1.2.0", ["--commit", candidate])), 0);
   assert.equal(recorded()[0]?.release_ref, bump);
+
+  /* Whether the console beside a worktree is one the gate can read.
+   *
+   * `release-apply` clones the console beside its worktree, and its worktree directory is FIXED
+   * (`<tmpdir>/zz-release-apply`), not per attempt — so a half-clone left there is inherited by
+   * every later release on that machine. A guard that asked only for `.git` said "already
+   * checked out" to exactly that wreck, skipped the clone, and the gate then failed two checks
+   * with "the console is not checked out at <path>" — a broken checkout reported as a missing
+   * one. This is the reproduction: a tree with `.git` and nothing else is not usable. */
+  const wreck = join(root, "wreck");
+  mkdirSync(join(wreck, ".git"), { recursive: true });
+  assert.equal(consoleSiblingUsable(wreck), false, "a .git with no files in it is not a console");
+  writeFileSync(join(wreck, "package.json"), "{}");
+  assert.equal(consoleSiblingUsable(wreck), false, "nor is one with only half of what the gate reads");
+  mkdirSync(join(wreck, "src", "styles"), { recursive: true });
+  writeFileSync(join(wreck, "src", "styles", "tokens.css"), "");
+  assert.equal(consoleSiblingUsable(wreck), true, "the two files the gate opens, and a .git, are");
 } finally {
   rmSync(root, { recursive: true, force: true });
 }

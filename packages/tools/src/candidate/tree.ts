@@ -34,6 +34,24 @@ export function linkDockerPlugins(homeRoot: string): string[] {
   return underHome;
 }
 
+/** Is the console checkout beside `dir` one the gate can read?
+ *
+ *  `.git` alone is not the test, and was the bug: a clone interrupted half-way keeps its `.git`
+ *  and misses the files, so a guard that asks only for a repository says yes and skips the clone.
+ *  `release-apply`'s worktree directory is FIXED (`<tmpdir>/zz-release-apply`), not per attempt, so
+ *  one such wreck is left there for every later release on that machine — and each of them fails
+ *  the same two checks with "the console is not checked out at <path>", which reads as a missing
+ *  checkout rather than a broken one.
+ *
+ *  DELIBERATE: the two files the gate opens by name — `package.json`, which the compose-version
+ *  check compares, and `src/styles/tokens.css`, which the document panel's tokens are compared
+ *  with. A checkout missing either cannot answer what it was cloned for. */
+export function consoleSiblingUsable(dir: string): boolean {
+  return existsSync(join(dir, ".git"))
+    && existsSync(join(dir, "package.json"))
+    && existsSync(join(dir, "src/styles/tokens.css"));
+}
+
 /** A clone of `--repo`'s sibling console checkout beside the tree, where the gate looks for it
  *  (`../zz-stack-dashboard`, scripts/gate/checks/console.ts), and fails without it. A clone, never
  *  a link to the operator's own checkout: the build may read it, and nothing it does reaches the

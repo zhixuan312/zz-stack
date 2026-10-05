@@ -167,6 +167,16 @@ export async function promoteVerify(w: Walk, stack: Stack, tag: string): Promise
   const status = await decided.c.call("core", "initiative_status", { initiative: w.initiative },
     { note: (r) => `next_move ${JSON.stringify(r.next_move)}` });
   const next = status.next_move as Reply | undefined;
-  if (next?.action !== "closed") throw new Error(`after the close initiative_status says ${JSON.stringify(next)}: ${JSON.stringify(closed).slice(0, 300)}`);
+  /* The close takes, and the platform says what a closed initiative still owes.
+   *
+   * DELIBERATE: the handover, not `closed`. Every flow ends with one — `zz-handover` turns a closed
+   * initiative into what the next team should know — so a close that recorded an outcome is
+   * followed by `write_document handover.md`. This assertion was written when a close was the last
+   * move and has been wrong since the handover became universal; nothing said so, because the walk
+   * never reached this line: it died one stage earlier, at the console clone beside
+   * `release-apply`'s worktree. */
+  if (next?.action !== "write_document" || next.document !== "handover.md") {
+    throw new Error(`after the close initiative_status says ${JSON.stringify(next)}: ${JSON.stringify(closed).slice(0, 300)}`);
+  }
   return { released: cmds.version, verdict, reason: String(decided.v.reason), runs: Number(evidence.post_release_runs ?? 0) };
 }

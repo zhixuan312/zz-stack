@@ -31,7 +31,7 @@
   },
   "zz-core": {
     "version": "0.92.14",
-    "digest": "d3b1ca66",
+    "digest": "445cb866",
     "skills": {
       "zz-authoring": "a2c3a1684d0c",
       "zz-breakout": "593964bc3415",

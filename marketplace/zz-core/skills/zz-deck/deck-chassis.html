@@ -657,8 +657,16 @@ function runChecks(slide){
   add(comps<=1?'pass':'warn','One dominant composition',comps<=1?'The stage has one primary composition.':`${comps} top-level objects are present. Confirm that only one carries the argument.`,comps>1?zone:null);
   const body=[...slide.querySelectorAll('.zone-stage p,.zone-stage li,.zone-stage td')].filter(x=>!x.closest('.guide__rail,.mock-app,.zone-foot,.dock,.manual')&&!x.matches('.source,.kicker,.badge,.card__label,.stat__label,.rail-label,.mono,.specimen__meta,.wire__tag,.wire__note,.swatch-caption,.timeline__date,.band__label,.nest__label,.quadrant-axis,.legend li'));
   const small=body.filter(x=>textPx(x)<13.4).length;add(small===0?'pass':'warn','Reading floor',small===0?'Audience-facing body text stays at or above the reference floor.':`${small} audience-facing body text nodes are below the reference floor.`,small?body.find(x=>textPx(x)<13.4):null);
-  const svgs=[...slide.querySelectorAll('svg')];const badA11y=svgs.filter(svg=>!svg.getAttribute('role')||!svg.querySelector('title')||!svg.querySelector('desc'));
-  add(badA11y.length===0?'pass':'fail','Figure accessibility',badA11y.length===0?'Every SVG has role, title, and description.':`${badA11y.length} SVG figure(s) lack role, title, or description.`,badA11y[0]);
+  const svgs=[...slide.querySelectorAll('svg')];
+  // `aria-labelledby` too, which the skill's rules require and this did not test: the accessibility
+  // line reported "Every SVG has role, title, and description" on figures that named nothing. And
+  // it must name something IN the figure — a dangling id reads as labelled to a linter and as
+  // unlabelled to a screen reader, which is worse than no attribute.
+  const labelled=svg=>{const v=svg.getAttribute('aria-labelledby');if(!v)return false;
+    const ids=[...svg.querySelectorAll('[id]')].map(e=>e.id);
+    return v.trim().split(/\s+/).every(id=>ids.includes(id));};
+  const badA11y=svgs.filter(svg=>!svg.getAttribute('role')||!svg.querySelector('title')||!svg.querySelector('desc')||!labelled(svg));
+  add(badA11y.length===0?'pass':'fail','Figure accessibility',badA11y.length===0?'Every SVG has role, title, description, and an aria-labelledby that names something in it.':`${badA11y.length} SVG figure(s) lack role, title, description, or a usable aria-labelledby.`,badA11y[0]);
   const title=slide.querySelector('.zone-head h2,h1');const titleText=title?.textContent.trim()||'';
   add(titleText.length<=88?'pass':'warn','Title length',titleText.length<=88?`${titleText.length} characters.`:`${titleText.length} characters. Shorten for one-glance reading.`,titleText.length>88?title:null);
   const missing=['job','use','choose','limits','tags'].filter(k=>!slide.dataset[k]);

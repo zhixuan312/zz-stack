@@ -27,6 +27,14 @@ export const DEFAULT_PSQL = "docker compose exec -T postgres psql -U zz -d zz";
  * answer this schema can produce for a single window. */
 const MAX_OUTPUT = 256 * 1024 * 1024;
 
+/** Every statement a REGISTRAR writes, with psql's `ON_ERROR_STOP`, as `psqlText`'s `vars`.
+ *
+ * Without it psql prints a refused statement to stderr and still exits 0, so a registration whose
+ * every write was refused reports itself finished with a count of zero — which is how 0.76.2
+ * shipped a release with no release owners. A registration either writes the rows or says why.
+ * COUPLED: both registrars pass it; a write that does not is a write nobody hears fail. */
+export const STOP_ON_ERROR: Record<string, string> = { ON_ERROR_STOP: "1" };
+
 /** One query, as raw `-tA` text. `vars` become psql `-v name=value` bindings. */
 export function psqlText(psql: string, sql: string, vars: Record<string, string> = {}): string {
   const [cmd, ...rest] = splitCommand(psql);

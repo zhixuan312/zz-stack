@@ -27,7 +27,7 @@ import { manifestAt } from "@zz/catalog";
 import { documentBody } from "@zz/contracts";
 
 import { optional, parseArgs } from "../lib/cli.js";
-import { DEFAULT_PSQL, psqlRows, psqlText } from "../lib/psql.js";
+import { DEFAULT_PSQL, psqlRows, psqlText, STOP_ON_ERROR } from "../lib/psql.js";
 
 const SKILL_KINDS = ["flow_step", "plugin_skill"] as const;
 type SkillKind = (typeof SKILL_KINDS)[number];
@@ -177,7 +177,7 @@ function main(argv: string[]): number {
     psqlText(psql, `
       insert into zz.skill (name, flow)
       values (${lit(s.name)}, ${s.flow ? lit(s.flow) : "null"})
-      on conflict (name) do update set flow = excluded.flow, retired = false`);
+      on conflict (name) do update set flow = excluded.flow, retired = false`, STOP_ON_ERROR);
     // `released_at` named, not left to its default. The column decides which version wrote a
     // document older than the run link — the console reads it as a window — so it records the
     // first time this row is written and never again. A registered version is never rewritten:
@@ -186,7 +186,7 @@ function main(argv: string[]): number {
       insert into zz.skill_version (skill_id, version, content_hash, body_hash, released_at)
       select id, ${lit(s.version)}, ${lit(s.hash)}, ${lit(s.bodyHash)}, now()
         from zz.skill where name = ${lit(s.name)}
-      on conflict (skill_id, version) do nothing`);
+      on conflict (skill_id, version) do nothing`, STOP_ON_ERROR);
   }
 
   const by = (k: SkillKind): number => found.filter((f) => f.kind === k).length;
@@ -208,7 +208,7 @@ function main(argv: string[]): number {
   // Recorded, so no other reader has to diff the catalog to know. One writer sets the fact;
   // everything else reads it.
   if (!args.flags.has("dry-run")) {
-    psqlText(psql, `update zz.skill set retired = true where name not in (${names}) and not retired`);
+    psqlText(psql, `update zz.skill set retired = true where name not in (${names}) and not retired`, STOP_ON_ERROR);
   }
   // Ordered by name: `ordinal` was the order this list used and the migration dropped it, so the
   // one ordering left is the one the name carries.

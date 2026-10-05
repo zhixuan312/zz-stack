@@ -275,7 +275,12 @@ export function execSandboxed(
   // the mount each declaration asks for possible. (`--tmpfs /tmp` would have made the whole of /tmp
   // writable, including where a build has no business writing — `checks/candidate-isolation-pure.ts`
   // asserts that it does not.)
-  for (const p of [...paths.writable, ...(paths.readable ?? [])]) mkdirSync(p, { recursive: true });
+  // Skipped where the path already exists, and that is what a FILE needs: the docker cli-plugins
+  // are files, `mkdirSync` on one throws EEXIST, and the preflight died there — before the clone —
+  // on every host that had them. An existing file is already the mount point bwrap needs.
+  for (const p of [...paths.writable, ...(paths.readable ?? [])]) {
+    if (!existsSync(p)) mkdirSync(p, { recursive: true });
+  }
   const readOnly = paths.writable.map((p) => join(p, ".git")).filter((p) => existsSync(p));
   const cmd = sandboxedCommand(sandbox.tool, {
     denyRead: sandbox.denyRead, allowRead: [...sandbox.allowRead, ...(paths.readable ?? [])],

@@ -39,7 +39,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { envRequired, optional, parseArgs } from "../lib/cli.js";
-import { DEFAULT_PSQL, psqlText } from "../lib/psql.js";
+import { DEFAULT_PSQL, psqlText, STOP_ON_ERROR } from "../lib/psql.js";
 
 interface LockEntry {
   version: string;
@@ -54,12 +54,6 @@ const lit = (s: string): string => `'${String(s).replace(/'/g, "''")}'`;
  *  repository's own catalog is ours by definition; a third-party plugin is registered when somebody
  *  installs one, not here. */
 const ORIGIN = "platform";
-
-/** Every statement below, with psql's `ON_ERROR_STOP`. Without it psql prints a refused statement
- *  to stderr and still exits 0, so a registration whose every write was refused reports itself
- *  finished with a count of zero — which is how 0.76.2 shipped a release with no release owners.
- *  A registration either writes the rows or says why it could not. */
-const STOP_ON_ERROR = { ON_ERROR_STOP: "1" };
 
 function main(argv: string[]): number {
   const args = parseArgs(argv, ["dry-run"]);

@@ -39,8 +39,11 @@ import { registerSubjectTools } from "./eval/subject.js";
  *
  * COUPLED: checks/orientation.ts derives the noun set from the live `tools/list` and compares it
  * with this text in both directions, so the paragraph below has to change in the same commit as
- * a registration under a new prefix. This door serves eleven nouns — plugin, protocol, round,
- * finding, failure, evaluator, evaluation, improvement, candidate, release and proposal.
+ * a registration under a new prefix. This door serves TEN nouns — plugin, protocol, finding,
+ * failure, evaluator, evaluation, improvement, candidate, release and proposal. `round` was the
+ * eleventh and no `round_*` tool exists anywhere: the door's prefixes are the ten above, which is
+ * what `checks/orientation.ts` reads off the live `tools/list` and holds the paragraph below to.
+ * This comment is not that text and nothing holds it, which is how it kept a noun that is gone.
  *
  * It names the other door on purpose: everyone holding this one also holds `/core/mcp`. */
 const EVAL_INSTRUCTIONS =

@@ -124,7 +124,14 @@ const RETIRED: Record<string, string[]> = {
   eval_observation_snapshot: ["coverage", "environment_digest", "production_window",
                               "runtime_identity", "subject_version_id"],
   eval_protocol_version: ["approved_document_path", "failure_taxonomy", "protocol_id",
-                          "subject_compatibility", "suites"],
+                          "subject_compatibility", "suites",
+                          // COUPLED: the comment above explains this one and stopped one name
+                          // short of it — dropped, re-added under `_text` and renamed back, so the
+                          // net effect is that this name is GONE and the target carries
+                          // `observable_surfaces`. Leaving it out made a bare mention of it the one
+                          // retired name this check did not report, which is the gap
+                          // `checks/eval-family-readers.ts` had for the same column.
+                          "observable_surfaces_text"],
   plugin: ["evolvable", "owner_team", "release_owners"],
   plugin_version: ["rubric_id"],
   skill: ["kind", "ordinal"],

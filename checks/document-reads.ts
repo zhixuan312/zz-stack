@@ -227,7 +227,10 @@ is(traversalRefused, "safePath no longer refuses a path that walks out of the st
 const src = readFileSync("services/zz-core/src/tools/artifacts.ts", "utf8");
 const slice = (tool: string) => {
   const at = src.indexOf(`registerTool(\n    "${tool}"`);
-  return at < 0 ? null : src.slice(at, src.indexOf("\n  );", at));
+  // Both ends. `at < 0 ? null` was guarded and the terminator was not, so a `-1` there made
+  // `slice(at, -1)` the whole tail of the file and every assertion below read the wrong code.
+  const end = at < 0 ? -1 : src.indexOf("\n  );", at);
+  return at < 0 || end < 0 ? null : src.slice(at, end);
 };
 
 // document_present must record nothing of its own. The per-document helper owns the record and

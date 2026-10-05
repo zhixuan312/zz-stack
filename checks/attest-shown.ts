@@ -102,13 +102,23 @@ for (const [name, arg, want] of [
 // still an import.
 const HANDLER = "services/zz-core/src/tools/initiative-acts.ts";
 const src = readFileSync(HANDLER, "utf8");
-const approve = src.slice(src.indexOf('"document_approve"'));
-const body = approve.slice(0, approve.indexOf("\n  );"));
-if (!body.includes("shownSinceLastChange(")) {
-  console.error(`\nattest-shown: ${HANDLER}'s document_approve handler never calls ` +
-    "shownSinceLastChange — so an approval is recorded without asking whether the document was " +
-    "ever shown to the person approving it, which is the one thing this file exists to attest.");
+// Both ends guarded. A `-1` for the terminator made `slice(0, -1)` the whole TAIL of the file, so
+// the search became "does any later handler in this file name it" — and a `document_approve` that
+// had stopped asking passed on the strength of some other tool's code.
+const opens = src.indexOf('"document_approve"');
+const closes = opens < 0 ? -1 : src.indexOf("\n  );", opens);
+if (opens < 0 || closes < 0) {
+  console.error(`\nattest-shown: ${HANDLER} has no document_approve handler this check can find — ` +
+    "nothing here was read, so nothing was attested.");
   failed++;
+} else {
+  const body = src.slice(opens, closes);
+  if (!body.includes("shownSinceLastChange(")) {
+    console.error(`\nattest-shown: ${HANDLER}'s document_approve handler never calls ` +
+      "shownSinceLastChange — so an approval is recorded without asking whether the document was " +
+      "ever shown to the person approving it, which is the one thing this file exists to attest.");
+    failed++;
+  }
 }
 
 if (failed) {

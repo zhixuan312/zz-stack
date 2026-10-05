@@ -5,9 +5,10 @@
  *
  * This drives the real `extract`, never a copy of its branches, over the shapes an upload actually
  * arrives as: the formats that are already text, HTML with its markup taken off, a `.docx` and an
- * `.odt` read out of their ZIP, and the four ways it must refuse — an extension it does not read,
- * no extension at all, a file whose name says text and whose bytes are not, and a ZIP that is not
- * the Office document it claims to be.
+ * `.odt` read out of their ZIP, a `.pdf` read out of its content streams, and the ways it must
+ * refuse — an extension it does not read, no extension at all, a file whose name says text and
+ * whose bytes are not, a ZIP that is not the Office document it claims to be, and a PDF with no
+ * text layer at all.
  *
  * The ZIP here is built to APPNOTE rather than by the reader under test: local header, central
  * directory, end record, with the entries deflated by Node's own zlib. A fixture written by the
@@ -17,7 +18,7 @@
  * deflated bytes expand past the cap is refused, not allocated. A `.docx` is attacker-controlled
  * input to this process, and the process holds the platform's database credential.
  */
-import { deflateRawSync } from "node:zlib";
+import { deflateRawSync, deflateSync } from "node:zlib";
 
 import { extract, zipEntry } from "./extract.js";
 
@@ -76,7 +77,11 @@ const CASES: { what: string; run: () => { text?: string; refusal?: string }; wan
   { what: "html loses its markup and keeps its words", run: () => extract("page.html", Buffer.from("<h1>Hi</h1><p>a &amp; b</p><script>var x=1</script>")), want: "Hi\n\na & b" },
   { what: "a .docx is read out of its zip", run: () => extract("handover.docx", DOCX), want: "Handover\nTwo & three" },
   { what: "an .odt is read out of its zip", run: () => extract("minutes.odt", ODT), want: "Minutes\nPresent: two" },
-  { what: "a pdf is refused by name", run: () => extract("signed.pdf", Buffer.from("%PDF-1.7 \xff\xfe")), want: /\.pdf file, which this platform does not read/ },
+  // A PDF is read now, so the refusal for one is about the FILE rather than the format: bytes that
+  // claim to be a PDF and carry no page text are refused for carrying none.
+  { what: "a pdf whose bytes carry no page text is refused for that, not for its name",
+    run: () => extract("signed.pdf", Buffer.from("%PDF-1.7 \xff\xfe")),
+    want: /carries no text this platform can read/ },
   { what: "a name with no extension is refused", run: () => extract("README", Buffer.from("hi")), want: /has no extension/ },
   { what: "a .txt that is not text is refused", run: () => extract("bytes.txt", Buffer.from([0xff, 0xfe, 0x00, 0xff, 0xfe, 0x00])), want: /is not text/ },
   { what: "an empty file is refused as empty, not as unreadable", run: () => extract("blank.md", Buffer.from("  \n\t\n")), want: /is empty/ },
@@ -84,7 +89,42 @@ const CASES: { what: string; run: () => { text?: string; refusal?: string }; wan
   { what: "an empty Office document is refused", run: () => extract("x.docx", zip([{ name: "word/document.xml", body: Buffer.from("<w:body/>") }])), want: /carries no text/ },
   // 70 MB of zeros deflates to a few hundred bytes: the cap is what stops the reader allocating it.
   { what: "an entry that expands past the cap is refused, not allocated", run: () => extract("bomb.docx", zip([{ name: "word/document.xml", body: Buffer.alloc(70 * 1024 * 1024) }])), want: /is not a readable \.docx/ },
+
 ];
+
+/** A one-page PDF whose only content stream is `content`, deflated or not. Built here rather than
+ *  committed as bytes: a fixture nobody can read is a fixture nobody can repair. */
+function pdf(content: string, compress = false): Buffer {
+  const body = Buffer.from(content, "latin1");
+  const data = compress ? deflateSync(body) : body;
+  return Buffer.concat([
+    Buffer.from(`%PDF-1.4\n1 0 obj\n<< /Length ${data.length}${compress ? " /Filter /FlateDecode" : ""} >>\nstream\n`, "latin1"),
+    data,
+    Buffer.from("\nendstream\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n", "latin1"),
+  ]);
+}
+
+CASES.push(
+  { what: "a PDF's text comes out of a deflated content stream",
+    run: () => extract("notes.pdf", pdf("BT /F1 12 Tf 72 720 Td (Interview notes:) Tj T* (the team said yes) Tj ET", true)),
+    want: "Interview notes:\nthe team said yes" },
+  { what: "and out of one that was never compressed",
+    run: () => extract("notes.pdf", pdf("BT /F1 12 Tf 72 720 Td (Interview notes:) Tj T* (the team said yes) Tj ET")),
+    want: "Interview notes:\nthe team said yes" },
+  // A `TJ` array is how a PDF usually shows a line of text: the pieces are strings, and the numbers
+  // between them are kerning. A wide negative one is a word break, and must not swallow the space.
+  { what: "a kerning array shows its strings with its word breaks",
+    run: () => extract("notes.pdf", pdf("BT [(Two words) -250 (run together)] TJ ET", true)),
+    want: "Two words run together" },
+  { what: "a PDF string's escapes are unescaped",
+    run: () => extract("notes.pdf", pdf("BT (Say \\(yes\\) or \\101\\102) Tj ET")),
+    want: "Say (yes) or AB" },
+  // A scan of a page holds an image and no text at all, and a refusal is the answer: a source
+  // holding nothing looks like a document somebody attached and is not one.
+  { what: "a PDF with no text layer is refused rather than filed empty",
+    run: () => extract("scan.pdf", pdf("0 0 1 RG 10 10 m 100 100 l S", true)),
+    want: /carries no text this platform can read/ },
+);
 
 function main(): number {
   const failures: string[] = [];

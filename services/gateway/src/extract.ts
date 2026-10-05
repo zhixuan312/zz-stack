@@ -12,13 +12,18 @@
  * and a PDF's bytes cannot be produced that way at any price. The shell reads the file and this
  * turns it into the text `source_add` takes, so the model's whole part is one command.
  *
- * DELIBERATE: no PDF, and no dependency that reads one. A PDF is a program, not a document; the
- * parsers that read it are large, and the container this runs in holds the platform's database
- * credential — so a malformed PDF would be attacker-controlled input to a parser with the run of
- * that process. Say the format is not supported and let the uploader export it to text, which is
- * one command on their own machine and no risk to this one.
+ * PDF: read, and still with no PDF engine. This file refused the format, on the grounds that a
+ * PDF is a program rather than a document and that the parsers which render one are large and take
+ * attacker-shaped input inside the process holding this deployment's database credential. That
+ * protection was not free: it put the work on every uploader, and this platform's uploaders are
+ * authenticated members of a controlled deployment, so the bytes are as trusted as the person who
+ * sent them. What runs on them now is `fromPdf` below — the same shape as the ZIP reader, on the
+ * same `node:zlib`: inflate the content streams, take the strings out of the text operators, and
+ * give up. No font program is executed, no embedded file is opened, nothing recurses, and a
+ * stream that cannot be read is a refusal rather than a partial source. A file this cannot read is
+ * one the platform says it cannot read, which is the same sentence an uploader got before.
  */
-import { inflateRawSync } from "node:zlib";
+import { inflateRawSync, inflateSync } from "node:zlib";
 
 /** Formats that are already text, by extension. `.json` and `.xml` are read as written: they are
  *  legible, and stripping them would lose the structure a reader came for. */
@@ -99,6 +104,60 @@ export function zipEntry(zip: Buffer, want: string): Buffer | null {
   return null;
 }
 
+/** One PDF string literal, unescaped: `\n`, a bracketed character, and `\ooo` by the spec. */
+function pdfString(raw: string): string {
+  const NAMED: Record<string, string> = { n: "\n", r: "\n", t: "\t", b: "", f: "", "(": "(", ")": ")", "\\": "\\" };
+  return raw.replace(/\\([nrtbf()\\]|[0-7]{1,3})/g,
+    (whole, esc: string) => (/^[0-7]/.test(esc) ? String.fromCharCode(parseInt(esc, 8)) : (NAMED[esc] ?? whole)));
+}
+
+/** What one content stream SHOWS, in reading order: `Tj` shows a string, a `TJ` array shows its
+ *  strings with a kerning offset wide enough to be a space between them, and the operators that
+ *  move the pen start a line. Everything else in the stream is drawing, and is ignored. */
+function pdfContent(stream: string): string {
+  const out: string[] = [];
+  for (const m of stream.matchAll(/\[((?:\\.|[^\]\\])*)\]\s*TJ|\(((?:\\.|[^\\()])*)\)\s*Tj|\bT[dD]\b|\bT\*|'/g)) {
+    if (m[1] !== undefined) {
+      for (const piece of m[1].matchAll(/\((?:\\.|[^\\()])*\)|-?\d+(?:\.\d+)?/g)) {
+        // A negative kern of about a tenth of the font size is how a word break is written in a
+        // `TJ` array; less than that is letter spacing.
+        out.push(piece[0].startsWith("(") ? pdfString(piece[0].slice(1, -1)) : (Number(piece[0]) <= -100 ? " " : ""));
+      }
+    } else if (m[2] !== undefined) out.push(pdfString(m[2]));
+    else out.push("\n");
+  }
+  return out.join("");
+}
+
+/** The text a PDF's streams carry, or null where none of them yields any.
+ *
+ *  DELIBERATE: `latin1`, so every byte survives as one character and the offsets `matchAll`
+ *  reports are the bytes `inflateSync` needs. A stream that does not inflate is read as it stands,
+ *  because an uncompressed content stream is legal: a font or image that reaches this contributes
+ *  nothing, since the operator scan finds none of its own in it. */
+function fromPdf(bytes: Buffer): string | null {
+  const raw = bytes.toString("latin1");
+  const parts: string[] = [];
+  for (const m of raw.matchAll(/stream\r?\n([\s\S]*?)endstream/g)) {
+    let stream: string;
+    try {
+      // Capped, like the ZIP above: a PDF says how large its stream becomes, and a lie there is
+      // a bomb rather than a document. Past the cap `inflateSync` throws, and the stream is then
+      // read as it stands — the compressed bytes, which cost nothing.
+      stream = inflateSync(Buffer.from(m[1], "latin1"), { maxOutputLength: MAX_INFLATED }).toString("latin1");
+    } catch {
+      stream = m[1];
+    }
+    const text = pdfContent(stream);
+    if (text.trim()) parts.push(text);
+  }
+  const text = parts.join("\n").replace(/[ \t]+/g, " ").split("\n").map((l) => l.trim()).join("\n")
+    .replace(/\n{3,}/g, "\n\n").trim();
+  // Letters or figures, or this is not a document anybody can read: an empty extraction is a
+  // refusal, never a source holding nothing.
+  return /[A-Za-z]{3}|\d{3}/.test(text) ? text : null;
+}
+
 /** A file's bytes as the text a source holds, or the sentence that says why they are not.
  *
  *  `name` is only ever used for its extension: the uploader's own filename is not trusted to
@@ -108,7 +167,8 @@ export function extract(name: string, bytes: Buffer): { text: string } | { refus
   const ext = (name.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? "").trim();
   const unsupported = (why: string) =>
     ({ refusal: `${why} Upload a file this platform reads — Markdown, plain text, CSV, JSON, YAML, ` +
-                "XML, SQL or HTML, or a .docx or an .odt — or export yours to one of those and " +
+                "XML, SQL or HTML, or a .docx, an .odt or a .pdf — or export yours to one of " +
+                "those and " +
                 "upload that." });
 
   if (!ext) return unsupported(`"${name}" has no extension, so there is no telling what it holds.`);
@@ -118,6 +178,13 @@ export function extract(name: string, bytes: Buffer): { text: string } | { refus
     if (!xml) return unsupported(`"${name}" is not a readable .${ext} — it is not a ZIP carrying ${office}.`);
     const text = fromMarkup(xml.toString("utf8"), /<\/[a-z0-9]+:(p|h|tr|table)>/gi);
     if (!text) return unsupported(`"${name}" carries no text this platform can read.`);
+    return { text };
+  }
+  if (ext === "pdf") {
+    const text = fromPdf(bytes);
+    if (!text) return unsupported(`"${name}" carries no text this platform can read — it is a PDF ` +
+      "whose pages hold no text layer, or one this reader cannot open. A scan of a page has no text " +
+      "in it at all; running it through OCR first is what makes a document out of it.");
     return { text };
   }
   if (ext === "html" || ext === "htm") {

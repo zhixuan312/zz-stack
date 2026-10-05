@@ -8,7 +8,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { root, sourceFiles, withoutComments, zzCoreSource } from "../read.ts";
+import { constBody, functionBody, root, sourceFiles, withoutComments, zzCoreSource } from "../read.ts";
 import { check } from "../run.ts";
 import { flows } from "../facts.ts";
 
@@ -22,7 +22,7 @@ check("a document's requirement is met by the only thing its target can offer", 
   // no flow in the catalog may depend on it not doing so.
   const src = zzCoreSource();
   const bad: string[] = [];
-  const fn = /const requirementMet = [\s\S]*?\n      \};/.exec(src)?.[0] ?? "";
+  const fn = constBody(src, "requirementMet") ?? "";
   if (!fn) {
     bad.push("initiative_status no longer resolves a requirement through requirementMet — " +
              "this check reads nothing");
@@ -32,7 +32,7 @@ check("a document's requirement is met by the only thing its target can offer", 
   }
   // COUPLED: initiative_status decides what to do next and gateCheck decides what may be
   // written. Fixing one alone tells the agent to write a document and then refuses the write.
-  const gc = /function gateCheck\([\s\S]*?\n\}/.exec(src)?.[0] ?? "";
+  const gc = functionBody(src, "gateCheck") ?? "";
   if (!gc) {
     bad.push("gateCheck is gone — this check reads half of what it is for");
   } else if (!/\.gate === true/.test(gc)) {

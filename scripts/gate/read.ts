@@ -314,19 +314,9 @@ export function toolsIn(src: string): ToolMatch[] {
  * than written into the generated source, where a regex is escaped once too often. */
 export const ONE_LINE = (v: unknown): string => String(v).replace(/[\r\n]+/g, " ").trim();
 
-/**
- * A TypeScript function's body, lifted from source and stripped of its annotations, ready for
- * `new Function`. Null when the function is gone, which every caller reports. Source rather than
- * dist, because the gate runs before `tsc -b` has necessarily produced anything.
- *
- * The first `{` after the name is not the body when the signature carries an inline object, so this
- * keeps advancing while the gap between one block and the next contains only what a signature can
- * contain. A gap holding `(`, `=` or a comment is a real statement, and the block before it was the
- * body.
- */
-export function functionBody(src: string, name: string): string | null {
-  const at = src.indexOf(`function ${name}(`);
-  if (at < 0) return null;
+/** The brace-matched body of a declaration starting at `at`. Shared by the two lookups below, so
+ *  there is one brace matcher rather than two that can disagree about where a body ends. */
+function declBody(src: string, at: number): string | null {
   const close = (from: number): number => {
     let depth = 0;
     for (let i = from; i < src.length; i++) {
@@ -353,6 +343,31 @@ export function functionBody(src: string, name: string): string | null {
     .replace(/:\s*string \| null/g, "")
     .replace(/:\s*string/g, "");
 }
+
+/**
+ * A TypeScript function's body, lifted from source and stripped of its annotations, ready for
+ * `new Function`. Null when the function is gone, which every caller reports. Source rather than
+ * dist, because the gate runs before `tsc -b` has necessarily produced anything.
+ *
+ * The first `{` after the name is not the body when the signature carries an inline object, so this
+ * keeps advancing while the gap between one block and the next contains only what a signature can
+ * contain. A gap holding `(`, `=` or a comment is a real statement, and the block before it was the
+ * body.
+ */
+export function functionBody(src: string, name: string): string | null {
+  const at = src.indexOf(`function ${name}(`);
+  return at < 0 ? null : declBody(src, at);
+}
+
+/** A `const name = (…) => { … }` body. `functionBody` cannot see one — a nested arrow is not a
+ *  function declaration — and a regex reaching for its closing brace overshoots into whatever
+ *  follows at the same indentation, which is how a `t.gate ?` test ended up reading 6,503
+ *  characters of another function. */
+export function constBody(src: string, name: string): string | null {
+  const at = src.indexOf(`const ${name} = `);
+  return at < 0 ? null : declBody(src, at);
+}
+
 
 /**
  * Every tool zz-core registers, with its handler body, extracted file by file.

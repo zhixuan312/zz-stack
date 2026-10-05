@@ -144,37 +144,53 @@ export async function indexNode(node: {
     if (refusal) return { refusal };
     throw err;
   }
-  const id = (await p.query<{ id: string }>(
-    `insert into zz.knowledge_node
-       (team_id, node_ordinal, slug, kind, lifecycle, superseded_by_id,
-        title, body, tags, content_hash, updated_at, analyzer_version, body_tsv)
-     values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9::text[], $10, now(), $11,
-             ${bodyTsvSql(12)})
-     -- DELIBERATE: do nothing, never do update. The ordinal IS the node's identity, so a
-     -- conflict means somebody else minted this number between the caller's read and this
-     -- write — the caller recomputes and tries the next one. An upsert here would overwrite
-     -- their node with this one's, which is the one thing an id allocator must not do.
-     on conflict (team_id, node_ordinal) do nothing
-     returning id::text as id`,
-    [teamId, node.ordinal, node.slug, node.kind, lifecycle, successorId, node.title, body, tags,
-     hash, vector.analyzer, ...bodyTsvParams(vector)])).rows[0];
-  if (!id) return { taken: true };
-  // Rewritten wholesale rather than diffed — a node's evidence is a handful of rows and the
-  // caller states the whole set.
-  await p.query("delete from zz.knowledge_node_evidence where node_id=$1::uuid", [id.id]);
-  for (const citedSlug of cited) {
-    await p.query(
-      `insert into zz.knowledge_node_evidence (node_id, initiative_id)
-       select $1::uuid, i.id
-         from zz.initiative i
-         join zz.team t on t.id = i.team_id
-        where i.slug = $2
-        order by (t.id = $3::uuid) desc, i.id
-        limit 1
-       on conflict do nothing`,
-      [id.id, citedSlug, teamId]);
+  /* One transaction, because a node and its evidence are one fact. Written separately, a failure
+   * between them left a node whose evidence was half-rewritten, and the caller's retry — which is
+   * what `taken` exists for — minted a second node beside it. The allocator's rule is untouched:
+   * a taken ordinal still returns having written nothing. */
+  const client = await p.connect();
+  try {
+    await client.query("begin");
+    const id = (await client.query<{ id: string }>(
+      `insert into zz.knowledge_node
+         (team_id, node_ordinal, slug, kind, lifecycle, superseded_by_id,
+          title, body, tags, content_hash, updated_at, analyzer_version, body_tsv)
+       values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9::text[], $10, now(), $11,
+               ${bodyTsvSql(12)})
+       -- DELIBERATE: do nothing, never do update. The ordinal IS the node's identity, so a
+       -- conflict means somebody else minted this number between the caller's read and this
+       -- write — the caller recomputes and tries the next one. An upsert here would overwrite
+       -- their node with this one's, which is the one thing an id allocator must not do.
+       on conflict (team_id, node_ordinal) do nothing
+       returning id::text as id`,
+      [teamId, node.ordinal, node.slug, node.kind, lifecycle, successorId, node.title, body, tags,
+       hash, vector.analyzer, ...bodyTsvParams(vector)])).rows[0];
+    if (!id) { await client.query("rollback"); return { taken: true }; }
+    // Rewritten wholesale rather than diffed — a node's evidence is a handful of rows and the
+    // caller states the whole set.
+    await client.query("delete from zz.knowledge_node_evidence where node_id=$1::uuid", [id.id]);
+    for (const citedSlug of cited) {
+      await client.query(
+        `insert into zz.knowledge_node_evidence (node_id, initiative_id)
+         select $1::uuid, i.id
+           from zz.initiative i
+           join zz.team t on t.id = i.team_id
+          where i.slug = $2
+          order by (t.id = $3::uuid) desc, i.id
+          limit 1
+         on conflict do nothing`,
+        [id.id, citedSlug, teamId]);
+    }
+    await client.query("commit");
+    return id;
+  } catch (err) {
+    // Nothing half-written reaches the store: the caller either gets a node with its whole
+    // evidence or gets the error, which is the rule this function states and did not keep.
+    await client.query("rollback").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
   }
-  return id;
 }
 
 /** A node superseded by another on the same shelf: the successor's key on the old node, and the

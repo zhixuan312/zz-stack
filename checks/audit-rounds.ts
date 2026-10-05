@@ -75,11 +75,6 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
   }
   // docRows: every document the initiative holds.
   if (/from zz\.doc d\b/.test(sql) && /order by d\.path/.test(sql)) return one(byInit?.docs ?? []);
-  // docRow: one document, newest first.
-  if (/from zz\.doc d\b/.test(sql)) {
-    const hit = (byInit?.docs ?? []).filter((d) => d.path === values[2]);
-    return one(hit.length ? [hit[hit.length - 1]] : []);
-  }
   // factsFor: the branch facts.
   if (/from zz\.initiative_fact f\b/.test(sql)) {
     return one(Object.entries(byInit?.facts ?? {}).map(([fact, value]) => ({ fact, value })));

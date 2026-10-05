@@ -193,7 +193,7 @@ export function renderEnvelope(env: Record<string, string>, order: string[]): st
  * COUPLED: pure — no database, no store — which is why it lives here rather than beside the
  * write path it was born in. `initiative_close` passes the model's `accepted_by` through
  * `putEnvelopeField` below. */
-export function setEnvelopeField(doc: string, field: string, value: string): string {
+function setEnvelopeField(doc: string, field: string, value: string): string {
   const m = doc.match(ENVELOPE_BLOCK);
   if (!m) return doc;
   const line = new RegExp(`^${field}:.*$`, "m");

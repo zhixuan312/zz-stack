@@ -45,7 +45,7 @@ function onScreen(read: HTMLElement): string {
 }
 
 /** The section heading a node sits under, by the document's own outline. */
-export function sectionOf(s: Slot, read: HTMLElement, node: Node): string | null {
+function sectionOf(s: Slot, read: HTMLElement, node: Node): string | null {
   let section: string | null = null;
   for (const o of s.view.outline) {
     const h = read.querySelector(`[id="${CSS.escape(o.id)}"]`);

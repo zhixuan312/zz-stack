@@ -61,7 +61,7 @@ export interface DimensionScoreRow {
   measures_scored: number; measures_total: number; measures: MeasureScoreRow[];
 }
 
-export interface FindingRow {
+interface FindingRow {
   id: string; kind: "strength" | "defect" | "unknown"; pattern: string;
   owner_kind: string | null; owner_ref: string | null;
   evidence_refs: unknown[];

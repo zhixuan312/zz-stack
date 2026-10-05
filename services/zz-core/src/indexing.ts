@@ -13,7 +13,7 @@
  *
  * What is here is zz-core's alone: `platformEvent` writes `zz.event` and is the one call a
  * mutating tool makes to record that it did; `journalLog` is the knowledge tools' spelling of
- * the same act; `docRow`/`docRows` are the one seam `documentGuards` answers from; `sealOf` is
+ * the same act; `docRows` is the folder listing every document reader here shares; `sealOf` is
  * the approval a write carries forward into `saveDocument`; and `sourceDocument` is the envelope
  * shape the knowledge tools produce.
  */
@@ -157,41 +157,6 @@ export interface DocRow {
    *  `doc_link` rows of kind `supports` its writer filed. Not an envelope key: the relation is
    *  its only home, so a reader of "what is this source for" asks the link. */
   supports: string[];
-}
-/** One document by the path the store addresses it by: the initiative and the name inside it.
- *
- * COUPLED: the initiative is a slug on `zz.initiative` and the flow with it, the approval is a
- * column of the CURRENT revision, and the close's own `outcome`/`closed_by` are keys of that
- * revision's `fields` payload — the envelope's open half, where a key no column carries lands.
- * `zz.doc` itself carries neither: it is the document's identity and its status. */
-export async function docRow(
-  p: pg.Pool, team: string | null, initiative: string, docPath: string,
-): Promise<DocRow | null> {
-  const row = (await p.query<DocRow>(`
-    select d.id::text as id, d.path, i.slug as initiative, coalesce(i.flow, '') as flow,
-           d.type, d.status, r.fields->>'outcome' as outcome,
-           a.email as approved_by, r.approved_at::text as approved_at,
-           r.fields->>'closed_by' as closed_by,
-           d.updated_at::text as updated_at, d.title, coalesce(r.body, d.body) as body,
-           coalesce(d.tags, '{}'::text[]) as tags,
-           d.current_revision, d.approved_revision, r.fields,
-           -- What this revision bears on. to_revision is null by doc_link's own CHECK for this
-           -- kind, so the target is a document and not a revision of one, and the path is what
-           -- every caller of supports compares against.
-           coalesce((select array_agg(td.path order by td.path)
-                       from zz.doc_link l
-                       join zz.doc td on td.id = l.to_doc_id
-                      where l.from_doc_id = d.id and l.from_revision = d.current_revision
-                        and l.kind = 'supports'), '{}'::text[]) as supports
-      from zz.doc d
-      join zz.initiative i on i.id = d.initiative_id
-      join zz.team t on t.id = i.team_id
-      left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
-      left join zz.principal a on a.id = r.approved_by
-     where i.slug = $1 and d.path = $2
-       and ($3::text is null or t.slug = $3)
-     order by d.updated_at desc limit 1`, [initiative, docPath, team])).rows[0];
-  return row ?? null;
 }
 /** Every document of one initiative — the folder listing the store used to answer with
  *  `readdirSync`, read from the rows that replaced it. Keyed by the same `path` a caller looks

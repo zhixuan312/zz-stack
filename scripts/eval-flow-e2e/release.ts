@@ -21,7 +21,7 @@ import { join } from "node:path";
 import { live, sh, spawnAsync, TEAM, type Stack } from "./stack.ts";
 
 /** The version the stand-in release publishes: the base's patch number, plus one. */
-export const nextVersion = (v: string): string => v.replace(/(\d+)$/, (n) => String(Number(n) + 1));
+const nextVersion = (v: string): string => v.replace(/(\d+)$/, (n) => String(Number(n) + 1));
 
 /** The one skill the candidate edits, and the line it adds — the change a `plugin`-owned finding
  *  about refusals that do not say what to do next asks for. */

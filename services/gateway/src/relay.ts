@@ -65,7 +65,7 @@ export function relayBody(body: unknown, res: express.Response, what: string): v
 // DELIBERATE exceptions, both spec-mandated and both tolerated by the client: 405 on GET (no
 // server-to-client stream is offered) and 401 with a WWW-Authenticate challenge, which is a
 // transport-level fact the client is built to act on.
-export function mcpRefusal(req: express.Request, res: express.Response, message: string, code = -32000): void {
+function mcpRefusal(req: express.Request, res: express.Response, message: string, code = -32000): void {
   if (res.headersSent) { res.end(); return; }
   const body = req.body as unknown;
   const id = body && typeof body === "object" && !Array.isArray(body) && "id" in (body as object)

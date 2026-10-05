@@ -34,7 +34,7 @@ for (const line of (() => { try { return readFileSync(join(root, ".env"), "utf8"
   DOTENV.set(m[1], value);
 }
 /** A value from the real environment first, then from that file. Literal names only. */
-export const cfg = (fromProcess: string | undefined, fromFile: string | undefined): string =>
+const cfg = (fromProcess: string | undefined, fromFile: string | undefined): string =>
   (fromProcess || fromFile || "").trim();
 
 export const HOST = process.env.ZZ_HOST || "zz-stack";

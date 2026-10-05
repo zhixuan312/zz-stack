@@ -99,7 +99,7 @@ export interface Finding {
   reproducer: string | null; introduced_by_scope: boolean;
 }
 export interface Resolution { id: string; by: string; how: (typeof RESOLUTIONS)[number] }
-export interface Ledger {
+interface Ledger {
   round: number; scope: { base: string; head: string };
   findings: Finding[]; resolved: Resolution[];
 }

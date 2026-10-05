@@ -74,7 +74,7 @@ export function configureIndexing(accessor: () => pg.Pool | null): void {
  *  A knowledge node's shelf is a relation to `team`, so the slug the tool names has to be
  *  resolved once and the id carried from there — a node written against a slug would sit on a
  *  shelf no reader can reach it from. */
-export async function teamIdOf(p: pg.Pool, teamSlug: string): Promise<string | null> {
+async function teamIdOf(p: pg.Pool, teamSlug: string): Promise<string | null> {
   const row = (await p.query<{ id: string }>(
     "select id::text as id from zz.team where slug=$1", [teamSlug])).rows[0];
   return row?.id ?? null;

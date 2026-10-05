@@ -26,7 +26,7 @@ import { join } from "node:path";
  *  an export nothing imports is dead surface — the gate refuses one. */
 interface ScanSource { path: string; src: string }
 
-export const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
+const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
 
 /** Every file under `dir` that `keep` accepts, walked depth-first, skipping the trees no check
  *  reads. `keep` sees the path, not the name: a rule about `services/gateway/migrations/` needs the
@@ -43,7 +43,7 @@ export function sourceFiles(dir: string, keep: (path: string) => boolean, out: S
 
 /** The end of the string or template literal that opens at `i` — the index just past its closing
  *  delimiter, or the end of the file for one that never closes. */
-export function literalEnd(src: string, i: number): number {
+function literalEnd(src: string, i: number): number {
   const q = src[i];
   let j = i + 1;
   while (j < src.length) {
@@ -85,7 +85,7 @@ function opensRegex(src: string, i: number): boolean {
     /^(return|typeof|case|in|of|do|else|yield|await|delete|void|instanceof|new)$/.test(word);
 }
 
-export interface Region { kind: "code" | "literal" | "comment"; start: number; end: number }
+interface Region { kind: "code" | "literal" | "comment"; start: number; end: number }
 
 /** The source split into code, literal and comment — one pass, so a quote inside a comment, a
  *  `//` inside a literal or a `'` inside a regex is read for what it is rather than guessed at. */

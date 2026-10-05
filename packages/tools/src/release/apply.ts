@@ -157,12 +157,12 @@ function reconcileHint(attemptId: string, candidateId: string, plugin: string, v
 }
 
 async function applyMain(mcp: Mcp, args: ReturnType<typeof parseArgs>): Promise<number> {
-  const candidateId = required(args, "candidate", "the candidate_id release_apply is called for");
-  const repoRoot = required(args, "repo", "the repository checkout to release from — a throwaway clone while verifying, never the primary checkout");
-  const initiative = required(args, "initiative", "the initiative improvement.md was written into");
-  const digest = required(args, "digest", "the approved_patch_digest quoted in the approved improvement.md");
-  const releaseVersion = required(args, "release-version", "the exact version --release-cmd publishes");
-  const releaseTag = required(args, "release-tag", "the git tag --release-cmd creates and pushes for this release");
+  const candidateId = required(args, "candidate", "the candidate_id release_apply is called for", 2);
+  const repoRoot = required(args, "repo", "the repository checkout to release from — a throwaway clone while verifying, never the primary checkout", 2);
+  const initiative = required(args, "initiative", "the initiative improvement.md was written into", 2);
+  const digest = required(args, "digest", "the approved_patch_digest quoted in the approved improvement.md", 2);
+  const releaseVersion = required(args, "release-version", "the exact version --release-cmd publishes", 2);
+  const releaseTag = required(args, "release-tag", "the git tag --release-cmd creates and pushes for this release", 2);
   const operatorBase = optional(args, "base-ref", "the commit the base subject was released from, when the platform records none");
   const baseTag = optional(args, "base-tag", "the base version's release tag, which must contain --base-ref when the platform's recorded ref does not resolve here");
   const gateCmd = splitCommand(optional(args, "gate-cmd", "the command that gates the applied patch") ?? DEFAULT_GATE_CMD);
@@ -170,7 +170,7 @@ async function applyMain(mcp: Mcp, args: ReturnType<typeof parseArgs>): Promise<
     "the repository's own release procedure, run from the isolated worktree once the gate " +
     "passes — read scripts/release.ts and .claude/commands/release.md before choosing one for a " +
     "real release; pass a harmless stub while verifying, e.g. --release-cmd \"git tag " +
-    "v0.0.0-verify\""));
+    "v0.0.0-verify\"", 2));
   const idempotencyKey = optional(args, "idempotency-key", "a fixed key, to retry this exact call idempotently")
     ?? randomUUID();
 
@@ -333,11 +333,11 @@ async function recordReleased(
 export async function reconcileMain(
   mcp: Pick<Mcp, "call">, args: ReturnType<typeof parseArgs>, attemptId: string,
 ): Promise<number> {
-  const candidateId = required(args, "candidate", "the candidate the attempt applied");
-  const plugin = required(args, "plugin", "the plugin the attempt released");
-  const version = required(args, "release-version", "the exact version the attempt's release command publishes");
-  const releaseTag = required(args, "release-tag", "the git tag the attempt's release command creates and pushes");
-  const repoRoot = required(args, "repo", "the clone the attempt was applied in");
+  const candidateId = required(args, "candidate", "the candidate the attempt applied", 2);
+  const plugin = required(args, "plugin", "the plugin the attempt released", 2);
+  const version = required(args, "release-version", "the exact version the attempt's release command publishes", 2);
+  const releaseTag = required(args, "release-tag", "the git tag the attempt's release command creates and pushes", 2);
+  const repoRoot = required(args, "repo", "the clone the attempt was applied in", 2);
   const branch = `release/candidate-${candidateId}`;
   const hint = reconcileHint(attemptId, candidateId, plugin, version, releaseTag);
   // A bare flag: parseArgs stores `--flag` alone as "", so presence is the test, never truthiness.

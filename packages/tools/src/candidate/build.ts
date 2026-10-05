@@ -248,8 +248,8 @@ async function callRetrying(mcp: Mcp, tool: string, args: unknown): Promise<stri
 
 async function cliMain(argv: string[]): Promise<number> {
   const args = parseArgs(argv);
-  const candidateId = required(args, "candidate", "the candidate_id candidate_validate printed");
-  const repoRoot = required(args, "repo", "a checkout of the repository to clone the base release from");
+  const candidateId = required(args, "candidate", "the candidate_id candidate_validate printed", 2);
+  const repoRoot = required(args, "repo", "a checkout of the repository to clone the base release from", 2);
   const buildCmd = splitCommand(optional(args, "build-cmd", "the build command run in the clone") ?? DEFAULT_BUILD_CMD);
   const gateCmd = splitCommand(optional(args, "gate-cmd", "the gate command run in the clone") ?? DEFAULT_GATE_CMD);
   const gateway = (optional(args, "gateway", "the gateway base, e.g. http://localhost:18000") ?? process.env.ZZ_URL ?? "")

@@ -151,14 +151,14 @@ interface VerifyResponse {
 
 async function cliMain(argv: string[]): Promise<number> {
   const args = parseArgs(argv);
-  const releaseAttemptId = required(args, "release-attempt", "the release_attempt_id release_verify decided rolled_back for");
-  const repoRoot = required(args, "repo", "the repository checkout to run the rollback command into — a throwaway clone while verifying, never the primary checkout");
+  const releaseAttemptId = required(args, "release-attempt", "the release_attempt_id release_verify decided rolled_back for", 2);
+  const repoRoot = required(args, "repo", "the repository checkout to run the rollback command into — a throwaway clone while verifying, never the primary checkout", 2);
   const gatewayUrl = (optional(args, "gateway", "the gateway base, e.g. http://localhost:18000") ?? process.env.ZZ_URL ?? "").replace(/\/+$/, "");
   if (!gatewayUrl) die("no gateway: pass --gateway or set ZZ_URL");
   const rollbackTemplate = splitCommand(required(args, "rollback-cmd",
     "the repository's own rollback procedure, run from an isolated worktree, naming {version} " +
     "(and optionally {plugin}) where the version to restore goes; pass a harmless stub while " +
-    "verifying, e.g. --rollback-cmd \"git tag v{version}-rollback\""));
+    "verifying, e.g. --rollback-cmd \"git tag v{version}-rollback\"", 2));
   if (!rollbackTemplate.some((a) => a.includes("{version}"))) {
     die("--rollback-cmd names no {version}: the command must be told which version to restore", 2);
   }

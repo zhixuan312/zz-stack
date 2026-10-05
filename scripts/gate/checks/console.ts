@@ -45,17 +45,22 @@ check("a console query cannot fall back to every team", () => {
   // by team.
   const src = consoleSource();
   const bad: string[] = [];
-  const lines = src.split("\n");
 
   // (a) The wildcard shape itself. Comment lines are skipped: several here quote the pattern
   // verbatim, and quoting it in prose is not resurrecting it in SQL.
-  lines.forEach((line, i) => {
-    const trimmed = line.trim();
-    if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) return;
-    if (/is null or/.test(line) && /\b(?:team_slug|slug)\s*=\s*\$/.test(line)) {
-      bad.push(`line ${i + 1} lets a null parameter stand in for "every team": ${trimmed}`);
-    }
-  });
+  //
+  // Per FILE, because this message names a line. It read `consoleSource()` — every console file
+  // joined — and reported `line <n>` with no file at all: a number that lands nowhere in whatever
+  // file the reader goes to open.
+  for (const rel of sourceFiles(["services/gateway/src/console"], [".ts"])) {
+    readFileSync(join(root, rel), "utf8").split("\n").forEach((line, i) => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) return;
+      if (/is null or/.test(line) && /\b(?:team_slug|slug)\s*=\s*\$/.test(line)) {
+        bad.push(`${rel}:${i + 1} lets a null parameter stand in for "every team": ${trimmed}`);
+      }
+    });
+  }
 
   // (b) and (c) read one handler body at a time. `handler("name", async (req, res, scope) =>
   // { ... })` is matched from its opening brace and walked to the matching close by counting
@@ -125,20 +130,26 @@ check("a console query is a literal check:sql can PREPARE", () => {
   // COUPLED: the scanner is packages/tools/src/lib/sql-scan.ts, shared with check:sql.
   const nothingToRun = unbuilt();
   if (nothingToRun) return nothingToRun;
-  const src = consoleSource();
-  const out = execFileSync("node", ["--input-type=module", "-e",
+  const SCAN =
     `import { queriesIn } from ${JSON.stringify(join(root, "packages/tools/dist/lib/sql-scan.js"))};` +
     "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>" +
-    "process.stdout.write(JSON.stringify(queriesIn(s))));"],
-    { encoding: "utf8", input: src });
+    "process.stdout.write(JSON.stringify(queriesIn(s))));";
+  // Per FILE, never on the concatenation. The scanner answers line numbers within the text it is
+  // handed, and `consoleSource()` hands it every console file joined — so a violation in
+  // knowledge.ts was reported as `console.ts:<its line across all of them>`, naming the wrong file
+  // at a line nobody can find.
   const bad: string[] = [];
-  for (const q of JSON.parse(out)) {
-    if (q.why) {
-      bad.push(`console.ts:${q.line} passes .query() a variable, not a literal — check:sql ` +
-               `cannot PREPARE it, whatever it is built from`);
-    } else if (/\$\{/.test(q.sql)) {
-      bad.push(`console.ts:${q.line} builds its SQL text at runtime (\${...}) — pair the ` +
-               `branches into two complete literals instead of interpolating one`);
+  for (const rel of sourceFiles(["services/gateway/src/console"], [".ts"])) {
+    const out = execFileSync("node", ["--input-type=module", "-e", SCAN],
+      { encoding: "utf8", input: readFileSync(join(root, rel), "utf8") });
+    for (const q of JSON.parse(out)) {
+      if (q.why) {
+        bad.push(`${rel}:${q.line} passes .query() a variable, not a literal — check:sql ` +
+                 `cannot PREPARE it, whatever it is built from`);
+      } else if (/\$\{/.test(q.sql)) {
+        bad.push(`${rel}:${q.line} builds its SQL text at runtime (\${...}) — pair the ` +
+                 `branches into two complete literals instead of interpolating one`);
+      }
     }
   }
   return bad.length ? bad.join("; ") : null;

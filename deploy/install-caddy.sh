@@ -18,7 +18,12 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 
 # The host's own answers, read from the host rather than kept in a table here: a table is a
 # third copy of the deployment's addresses.
-PUBLIC=$(ssh "$HOST" "grep -oE '^GATEWAY_PUBLIC_URL=.*' /root/zz-parent/zz-stack/deploy/.env | cut -d= -f2-")
+#
+# COUPLED: provision-host.sh's `ZZ_DEPLOY_PATH`, which every other script that names a remote path
+# honours. This one hard-coded /root/zz-parent/zz-stack, so a host provisioned anywhere else read
+# no .env at all and was told it "has no GATEWAY_PUBLIC_URL in deploy/.env".
+REMOTE="${ZZ_DEPLOY_PATH:-/root/zz-parent/zz-stack}"
+PUBLIC=$(ssh "$HOST" "grep -oE '^GATEWAY_PUBLIC_URL=.*' '$REMOTE/deploy/.env' | cut -d= -f2-")
 [ -n "$PUBLIC" ] || { echo "$HOST has no GATEWAY_PUBLIC_URL in deploy/.env — refusing to guess" >&2; exit 1; }
 # api.<addr> -> <addr>
 ADDR=$(printf '%s' "$PUBLIC" | sed -E 's#^https?://api\.##; s#/+$##')

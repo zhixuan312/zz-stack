@@ -84,12 +84,21 @@ if (!existsSync(join(CONSOLE, "src/styles/tokens.css"))) {
   const valueIn = (css: string, name: string): string | undefined =>
     new RegExp(`\\n\\s*${name}:\\s*([^;]+);`).exec(css)?.[1];
   const panelCss = readFileSync(join(cwd, "services/zz-core/app/panel.css"), "utf8");
-  const copied = panelCss.slice(panelCss.indexOf(":root {"), panelCss.indexOf("}", panelCss.indexOf(":root {")));
+  // Guarded the way the console's own `block` above is, and counted, because this claim is only
+  // true of what it actually compared: `indexOf` answering -1 sliced the string to nothing, the
+  // loop below found no declarations, and "its tokens are the console's own" passed over a panel
+  // whose token block had been renamed or moved.
+  const panelAt = panelCss.indexOf(":root {");
+  is(panelAt >= 0, "services/zz-core/app/panel.css has no `:root {` block, so nothing here was compared");
+  const copied = panelAt < 0 ? "" : panelCss.slice(panelAt, panelCss.indexOf("}", panelAt));
+  let compared = 0;
   for (const [, name, value] of copied.matchAll(/(--[\w-]+):\s*([^;]+);/g)) {
+    compared++;
     const theirs = valueIn(light, name!) ?? valueIn(base, name!);
     is(theirs !== undefined && same(theirs) === same(value!),
        `${name} is ${value!.trim()} in the panel and ${theirs?.trim() ?? "absent"} in the console`);
   }
+  is(compared > 0, "the panel's `:root` block declares no tokens, so nothing was compared");
   for (const f of ["wordmark.png", "state-approved.png"]) {
     const mine = readFileSync(join(cwd, "services/zz-core/app/brand", f));
     const theirs = join(CONSOLE, "public/assets/brand", f);

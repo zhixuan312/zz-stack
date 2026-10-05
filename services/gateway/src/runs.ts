@@ -29,7 +29,6 @@
  * and `scripts/gate/checks/data-sql.ts` reads `CHANGED`, the one conflict target and the repair
  * below.
  */
-import { catalogEntries } from "@zz/catalog";
 import { platformDb, platformDbReady } from "./db.js";
 
 /** Whether a write would change the stored run: the stored columns against the values the write
@@ -93,10 +92,10 @@ export const versionAtEvent = (at: string, skill: string): string =>
  *  that arrives for a run whose counters were already written leaves that run counting one call less
  *  than the trace holds — which is the only thing this pass is for.
  *
- *  Returns the runs this pass rewrote, the events standing behind them, and the documents it
- *  attributed — the three numbers the boot line reports. */
-export async function reconcileRuns(): Promise<{ runs: number; linked: number; docs: number }> {
-  if (!platformDbReady()) return { runs: 0, linked: 0, docs: 0 };
+ *  Returns the runs this pass rewrote and the events standing behind them — the numbers the boot
+ *  line reports. */
+export async function reconcileRuns(): Promise<{ runs: number; linked: number }> {
+  if (!platformDbReady()) return { runs: 0, linked: 0 };
   const db = platformDb();
 
   // zz.initiative is no longer derived here (002_initiative_anchor.sql, Task I-6):
@@ -134,48 +133,13 @@ export async function reconcileRuns(): Promise<{ runs: number; linked: number; d
      where r.id = c.id and ${CHANGED("r", "c")}
     returning (select count(*) from zz.event x where x.run_id = r.id) as events`);
 
-  // And the document side: how many documents this window's runs wrote, read from the event
-  // log rather than repaired onto the document.
-  //
-  // DELIBERATE: nothing is written. `zz.doc.produced_by_run_id` was the column this repair
-  // filled and it was this platform's most productive source of wrong attribution: the join it
-  // fed resolved a document to whichever run happened to be recorded against it, it was null
-  // for every document indexed before the column existed, and it could not tell a rewrite from
-  // the original write. The run a document was written under is named by the event that
-  // recorded the write — `zz.event.run_id` on the row whose `subject` is the document's path —
-  // so this is a count of those rows and no column is involved.
-  //
-  // From the manifest, not from a table of flow names: hardcoding one flow's step-to-role
-  // pairs into the SQL attributes nothing for a second flow and attributes wrongly the day the
-  // first renames a document. `stage` on a declared document says which step writes it and
-  // `role` says what the document is, so the pairs are read off the catalog and passed as data.
-  const pairs: { skill: string; role: string }[] = [];
-  for (const e of catalogEntries()) {
-    for (const d of e.manifest.documents ?? []) {
-      if (d.stage && d.role) pairs.push({ skill: d.stage, role: d.role });
-    }
-  }
-  let docs = 0;
-  if (pairs.length) {
-    const a = await db.query<{ n: string }>(`
-      select count(distinct e.subject)::text as n
-        from zz.event e
-        join zz.skill_run run on run.id = e.run_id
-        join zz.skill_version sv on sv.id = run.skill_version_id
-        join zz.skill s on s.id = sv.skill_id
-        join zz.initiative i on i.id = e.initiative_id
-        join zz.doc d on d.initiative_id = i.id and d.path = split_part(e.subject, '/', 2),
-             unnest($1::text[], $2::text[]) as m(skill, role)
-       -- DELIBERATE: subject is the path the write named, so the document is matched inside
-       -- the initiative the event itself resolved to. run_id non-null is the whole of "a run
-       -- wrote this" — the door stamps it on the row it writes, and the repair never sets one.
-       where e.run_id is not null
-         and m.skill = s.name and m.role = d.type`,
-      [pairs.map((x) => x.skill), pairs.map((x) => x.role)]);
-    docs = Number(a.rows[0]?.n ?? "0");
-  }
-
+  // No document count, because no record can produce one. `zz.doc.produced_by_run_id` was the
+  // column that named a run on a document and it is gone: it resolved a document to whichever run
+  // happened to be recorded against it, which was this platform's most productive source of wrong
+  // attribution. The event log does not answer it either, and this is worth knowing before anyone
+  // rebuilds that join — the row that NAMES a document's path carries no `run_id`, and the row that
+  // carries one has `door:tool` for its subject. The count this replaced joined those two and so
+  // measured zero on every deployment it ever ran on.
   return { runs: repaired.rowCount ?? 0,
-           linked: repaired.rows.reduce((n, row) => n + Number(row.events), 0),
-           docs };
+           linked: repaired.rows.reduce((n, row) => n + Number(row.events), 0) };
 }

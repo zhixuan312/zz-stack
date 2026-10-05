@@ -139,13 +139,14 @@ function progressOf(
   if (declared.size === 0) return { completeness: null, stage: closed ? "closed" : "noflow", waiting: [] };
 
   const byPath = new Map(docs.map((d) => [d.path, d.status]));
-  let score = 0, present = 0, approved = 0, gates = 0, gatesCleared = 0;
+  let score = 0, present = 0, approved = 0, gates = 0, gatesCleared = 0, scored = 0;
   const waiting: string[] = [];
   for (const [name, shape] of declared) {
     // Not the handover: it is written after the close, so counting it makes every open initiative
     // one document short of a flow it has not finished. It is in `declared` because the platform
     // gates it.
     if (shape.role === "handover") continue;
+    scored++;
     const status = byPath.get(name);
     if (shape.gate) gates++;
     if (status === undefined) continue;
@@ -163,7 +164,11 @@ function progressOf(
       if (shape.gate) waiting.push(name);
     }
   }
-  const completeness = (score / declared.size) * 100;
+  // Divided by what was scored, never by everything declared. The handover above is skipped in the
+  // numerator, so leaving it in the denominator reported every open initiative as one document
+  // short of a flow it had in fact finished. A flow declaring nothing but a handover has no
+  // completeness to report, which is the same answer as a flow no manifest can be resolved for.
+  const completeness = scored === 0 ? null : (score / scored) * 100;
   /* Clearing every gate is not being done. An initiative can have every gate approved and still be
    * open — `closed` is the caller's own read of `zz.initiative.closed_at`, so `gated` is its own
    * rung on the ladder regardless of how many gates this flow declares. */

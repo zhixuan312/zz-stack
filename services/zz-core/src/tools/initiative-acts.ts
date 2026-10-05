@@ -35,7 +35,7 @@ import { improvementApprovalRefusal } from "../release-owners.js";
 import { acceptanceApprovalRefusal } from "../review-acceptance.js";
 import { specApprovalRefusal } from "../spec-gate.js";
 import { citationsOf, dayOf, documentAt, documentPaths, loadDocument, recordAct,
-         principalId, revisionsOf, saveDocument } from "../versions.js";
+         principalId, revisionsOf, saveDocument, supportsOf } from "../versions.js";
 import { isoToday, normalizeSections } from "../write-guards.js";
 
 import { registerInitiativeCloseTool } from "./initiative-close.js";
@@ -366,16 +366,20 @@ export function registerInitiativeActTools(server: McpServer): void {
       //
       // DELIBERATE: refused rather than linked silently. What changed a gated document is the caller's
       // claim to make.
-      // A source added after the revision being replaced, whose `cites` links name this document,
-      // is by its own record what this revision answers. Compared on the rows, which is where
-      // "added after" is a fact: a revision's `written_at` is when the platform filed it.
+      //
+      // COUPLED: the SUPPORTS relation, never `citationsOf`. They are different relations — `cites`
+      // is what the source read, `supports` is the document it bears on — and reading the first
+      // while the rule is the second let round 1 of a review, recorded before `review.md` exists,
+      // be ignored by the revision that answers it.
+      // Compared on the rows, which is where "added after" is a fact: a revision's `written_at` is
+      // when the platform filed it.
       const owed: string[] = [];
       for (const rel of await documentPaths(team, `${parts[0]}/sources`)) {
         if (!rel.endsWith(".md")) continue;
         const at = await documentAt(p, team, rel);
         if (!at) continue;
         const rev = (await revisionsOf(p, at.id)).find((r) => r.revision === at.current_revision);
-        const supports = (await citationsOf(p, at.id, rev?.revision ?? 0)).map((x) => x.split("/").pop());
+        const supports = (await supportsOf(p, at.id, rev?.revision ?? 0)).map((x) => x.split("/").pop());
         const ref = rel.slice(parts[0].length + 1);
         if (supports.includes(parts[1]) && (rev?.written_at ?? "") > (loaded.doc.updated_at ?? "")
             && !linked.has(ref)) {

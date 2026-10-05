@@ -309,9 +309,8 @@ initPlatformDb()
     // idempotent, so re-running it costs little.
     const runs = () => void reconcileRuns()
       .then((n) => {
-        if (n.runs || n.linked || n.docs) {
-          console.log(`runs: ${n.runs} recorded, ${n.linked} event(s) linked, ` +
-                      `${n.docs} document(s) attributed`);
+        if (n.runs || n.linked) {
+          console.log(`runs: ${n.runs} recorded, ${n.linked} event(s) linked`);
         }
       })
       .catch((err: unknown) => console.error("run reconcile failed:", err));

@@ -459,7 +459,21 @@ step(5, "verify");
  * for this run's own probes. */
 purgeProbes();
 
-execSync("sleep 12");
+// A readiness POLL, not a fixed wait. `sleep 12` was a guess about how long a container takes to
+// come up, and on a slower host the probes below ran against a gateway that was still starting —
+// so a working release rolled back, and the verification failure reported was about the clock.
+//
+// DELIBERATE: it gives up rather than dying. A gateway that never answered is a probe that could
+// not run, which is this release's THIRD outcome — live and untagged, with the probe named — and
+// dying here would leave the release half-done instead of saying which probes could not look.
+for (let i = 0; i < 60; i++) {
+  try {
+    execFileSync("curl", ["-fsS", "-m", "5", "-o", "/dev/null", `${publicUrl()}/health`], { stdio: "ignore" });
+    break;
+  } catch {
+    execFileSync("sleep", ["1"]);
+  }
+}
 const verdict = verifyLive();
 // A registry the release could not write is a failed verification (registries.ts).
 const problems = [...verdict.wrong, ...registryFailures, ...(dataStepProblem ? [dataStepProblem] : [])];

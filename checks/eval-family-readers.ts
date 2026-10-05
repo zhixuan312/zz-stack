@@ -176,6 +176,11 @@ const CARRIED_BEFORE = new Map<string, string[]>([
   ["kind", ["artifact_edge", "artifact_event", "control_evidence", "control_waiver", "eval_evaluator", "eval_finding", "event", "knowledge_node", "passkey_challenge", "rubric_dimension", "skill", "skill_asset"]],
   ["model_policy", ["eval_evaluator_version"]],
   ["name", ["eval_dimension", "mcp_oauth_client", "plugin", "plugin_tool", "rubric_dimension", "skill", "team"]],
+  // COUPLED: every name in the table above, and this one was missing. A retired column with no
+  // entry here is a bare mention this check stops reporting — it cannot say which bound table
+  // carried the name before the phase — so `observable_surfaces_text` was the one retired name a
+  // statement could bind `eval_protocol_version` and mention bare without anything noticing.
+  ["observable_surfaces_text", ["eval_protocol_version"]],
   ["ordinal", ["artifact_passage", "rubric_dimension", "skill"]],
   ["owner_team", ["plugin"]],
   ["polarity", ["eval_evaluator_version"]],
@@ -216,6 +221,15 @@ const fail: string[] = [];
 if (RETIRED_TABLES.size === 0 || RETIRED_COLUMNS.size === 0 || CARRIED_BEFORE.size === 0) {
   fail.push("FAIL: the retired-name record beside this check is empty — every statement would be " +
             "reported clean, which is what it looked like the last time this list was right");
+}
+// And the two are kept name for name — the paragraph over `CARRIED_BEFORE` tells a reader to do
+// that and nothing enforced it. `observable_surfaces_text` sat in `RETIRED_COLUMNS` with no entry
+// there for the whole phase, so the one name a statement could bind `eval_protocol_version` and
+// mention bare was the one name this check did not report.
+const unpaired = [...new Set([...RETIRED_COLUMNS.values()].flat())].filter((n) => !CARRIED_BEFORE.has(n));
+if (unpaired.length) {
+  fail.push(`FAIL: ${unpaired.join(", ")} — a retired column with no entry in CARRIED_BEFORE is a ` +
+            "bare mention this check stops reporting, because it cannot say which table carried it");
 }
 
 /** What a statement reads that the phase removes, or nothing. */

@@ -69,8 +69,17 @@ const wrote = (initiative: string, path: string, text: string): void => {
       .filter(([k]) => !COLUMN_KEYS.has(k) && k !== "supports")) });
 };
 
+/** Every write statement the open path issued, in order.
+ *
+ * The stub answers `one([])` to whatever it does not model — right for a read, and a lie for a
+ * write: an insert nobody handles looks exactly like one that succeeded. So writes are recorded,
+ * and the assertion below asks THIS rather than the fixture's own document list, which is filled
+ * only by this check's `wrote()` helper and so was empty whatever the open did. */
+const statements: string[] = [];
+
 pg.Pool.prototype.query = (async function query(text: string, values: unknown[] = []) {
   const sql = String(text).replace(/\s+/g, " ").trim();
+  if (/^(insert|update|delete)\b/i.test(sql)) statements.push(sql);
   const one = (rows: Record<string, unknown>[]) => ({ rows, rowCount: rows.length });
   const bySlug = world.get(String(values[1] ?? ""));
   // `recordOpen` resolves the team id before it writes the row.
@@ -420,10 +429,10 @@ is(await openRecord(db()!, TEAM, `${isoToday()}-never-opened`) === null,
 // chain. Asked of what recordOpen actually wrote, not of a constant: the store's `_open.json` was
 // a file in the folder, and the row is not a file at all.
 {
-  const heldAfterOpen = world.get(FREEFORM_NAME)!.docs.map((d) => d.path);
-  is(heldAfterOpen.length === 0,
-     `opening wrote ${JSON.stringify(heldAfterOpen)} as documents of the initiative — the record ` +
-     "is the initiative's own row, and something nothing wrote must not be listed as a document");
+  const docWrites = statements.filter((sql) => /\bzz\.doc\b/.test(sql));
+  is(docWrites.length === 0,
+     `opening wrote a document row — ${JSON.stringify(docWrites)} — and the record is the ` +
+     "initiative's own row: something nothing wrote must not be listed as a document");
 }
 wrote(FREEFORM_NAME, "notes.md", doc({ title: "N" }, "# N"));
 const openedFree = await initiativeState(db()!, TEAM, FREEFORM_NAME, EMPTY, EMPTY.documents);

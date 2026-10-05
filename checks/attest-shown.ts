@@ -48,14 +48,13 @@ const shown = (rev: Rev): Rev => ({ ...rev, presented_at: at(9) });
 const cases: [string, boolean | null, Map<string, Rev>][] = [
   ["written then shown then approved      -> fetched", true,
    new Map([["d.md", shown({ written_at: at(1), presented_at: null })]])],
-  ["revised after the present             -> NOT fetched", false,
-   // The revision was shown at v1 and then revised: a NEW revision, whose own `presented_at` is
-   // null because nobody has been shown it.
-   new Map([["d.md", { written_at: at(3), presented_at: at(2) }]])],
-  ["shown, then the bytes REWRITTEN in place -> NOT fetched", false,
-   // A patch rewrites the current revision, so its `written_at` moves past the present while
-   // `presented_at` stays where the present left it. This is the case a version comparison
-   // cannot see and the reason the comparison is on instants.
+  // ONE case, not two. This was written twice — once for "revised after the present" and once for
+  // "the bytes rewritten in place by a patch" — with the same fixture both times, so the second
+  // asserted nothing the first did not. It cannot be two: this function reads the current
+  // revision's `presented_at` and `written_at` and compares INSTANTS, and the fixture has no
+  // revision number for the two scenarios to differ by. That is the point of the comparison — a
+  // version comparison cannot see an in-place rewrite, which is why it is on instants at all.
+  ["shown at v1, then written again later   -> NOT fetched", false,
    new Map([["d.md", { written_at: at(3), presented_at: at(2) }]])],
   ["shown AFTER the last write            -> fetched", true,
    new Map([["d.md", { written_at: at(2), presented_at: at(3) }]])],

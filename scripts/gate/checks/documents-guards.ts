@@ -287,9 +287,23 @@ check("a refusal names a way out the tool it came from actually has", () => {
   if (demands.size === 0) return `no guard says "${SAYS_IT}" — the extraction is broken`;
 
   // Every tool that calls one of them must declare what it names.
-  for (const m of src.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)",\s*\{([\s\S]{0,2500}?)\n    \},\n    async \(\{([^}]*)\}/g)) {
-    const [, tool, , args] = m;
-    const declared = new Set(args.split(",").map((a) => a.trim().split(":")[0].trim()).filter(Boolean));
+  //
+  // COUPLED: the split, not a character window. It was `[\s\S]{0,2500}?`, which a long description
+  // walks past: 12 of zz-core's registrations were skipped, `document_revise` among them, and a
+  // tool this misses is exempt from the rule below while the check reports itself green. Every
+  // block is read or reported now.
+  const code = withoutComments(src);
+  const declaredTools = [...code.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)].length;
+  let readTools = 0;
+  for (const block of code.split(/(?=registerTool\(\s*\n?\s*")/)) {
+    const tool = /^registerTool\(\s*\n?\s*"([a-z0-9_]+)"/.exec(block)?.[1];
+    if (!tool) continue;
+    readTools++;
+    // A registration whose handler takes no argument object declares nothing, and there is nothing
+    // for the rule below to be about.
+    const sig = /\n    \},\n    async \(\{([^}]*)\}/.exec(block);
+    if (!sig) continue;
+    const declared = new Set(sig[1].split(",").map((a) => a.trim().split(":")[0].trim()).filter(Boolean));
     const body = zzCoreTools().find((t) => t.name === tool)?.body ?? "";
     for (const [guard, names] of demands) {
       if (!body.includes(`${guard}(`)) continue;
@@ -299,6 +313,9 @@ check("a refusal names a way out the tool it came from actually has", () => {
         }
       }
     }
+  }
+  if (readTools !== declaredTools) {
+    bad.push(`${declaredTools - readTools} of ${declaredTools} registrations were not read`);
   }
   return bad.length ? bad.join("; ") : null;
 });

@@ -15,6 +15,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, mkdirSync, writeFileSync } from "node:fs";
+import { userInfo } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 
 /** Everything outside the tree a mutation can reach: dependencies and git's own store. Both
@@ -132,7 +133,29 @@ export function overlaps(a: string, b: string): boolean {
  * a check file written and not yet added is in `trackedFiles()` and so is in the set this run
  * has to cover.
  */
+/** A work directory this may not delete, and why. Null when it is one it may.
+ *
+ *  Exported for the reason `overlaps` above is: the caller's next act is to delete the path
+ *  recursively, so a guard here cannot be tested by triggering it. Covers the two a typo lands on
+ *  — a filesystem root and the user's own home — beside the checkout overlap the caller asks about
+ *  separately, because `--work /` and `--work ~` are one keystroke from `--work /tmp/zz-mut`. */
+export function refusesAsWork(at: string): string | null {
+  const here = throughLinks(resolve(at));
+  if (dirname(here) === here) return "a filesystem root";
+  if (here === throughLinks(userInfo().homedir)) return "your home directory";
+  return null;
+}
+
 export function makeWorkspace(source: string, at: string, prepare?: (repo: string) => void): Workspace {
+  // The two directories a typo lands on, judged the same way as the checkout below and before the
+  // delete rather than after it.
+  const refuses = refusesAsWork(at);
+  if (refuses) {
+    console.error(`  REFUSED — the work directory ${resolve(at)} is ${refuses}. It is deleted and ` +
+      "rebuilt on every run, so name a directory made for it — `--work /tmp/zz-mut`, say.");
+    process.exit(2);
+  }
+
   // This function's first act is to delete `at`, so `at` is judged before that. A work
   // directory that overlaps the checkout takes the checkout with it, and every other session's
   // uncommitted work in it. Refused early and by exit code.

@@ -153,9 +153,17 @@ export async function specApprovalRefusal(
   const holds = rows.filter((r) => r.status === "holds").map((r) => ({ r, digest: rowDigest(r.statement, r.evidence) }));
   const due = holds.filter((x) => !(cache[x.r.id] ?? []).some((c) => c.digest === x.digest && c.reading !== "unavailable"));
   // No write back: `assessFamily` persists every one of these as it takes it.
-  await Promise.all(due.map((x) => assessFamily({
-    family: "evidence_relation", subject: `${x.r.id}: ${x.r.statement}`, context: x.r.evidence,
-    initiative, about: `${memoDoc}#${x.r.id}#${x.digest}`, askedBy: by })));
+  //
+  // COUPLED: eight at a time, as `review-acceptance.ts` does for the same call. Fired as one
+  // `Promise.all`, a spec with a dozen uncovered statements opened a dozen typed-service calls at
+  // once — each with its own 100-second budget and retries, each holding one of the pool's four
+  // connections, and the whole thing inside a `document_approve` the MCP request severs at about
+  // two minutes. Approving one document could lose the answers already paid for.
+  for (let i = 0; i < due.length; i += 8) {
+    await Promise.all(due.slice(i, i + 8).map((x) => assessFamily({
+      family: "evidence_relation", subject: `${x.r.id}: ${x.r.statement}`, context: x.r.evidence,
+      initiative, about: `${memoDoc}#${x.r.id}#${x.digest}`, askedBy: by })));
+  }
 
   const unavailable: string[] = [];
   for (const { r, digest } of holds) {

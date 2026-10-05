@@ -360,7 +360,11 @@ export function buildClientPackage({ target, base }: PackageInput): ClientPackag
     // baseline is what they were installed on top of.
     remove: [
       ...optional.map((n) => `claude plugin uninstall ${n}`),
-      `claude plugin uninstall zz`,
+      // COUPLED: the baseline's own name, which the install and update lines above both spell
+      // `zz-core`. This said `zz`, which is no plugin on this shelf — so the teardown failed on
+      // that line and left the baseline installed against a marketplace that had just been
+      // removed and a `~/.zz` that had just been deleted.
+      `claude plugin uninstall ${BASELINE}`,
       `claude plugin marketplace remove ${MARKETPLACE}`,
       `rm -rf ~/.zz`,
     ],

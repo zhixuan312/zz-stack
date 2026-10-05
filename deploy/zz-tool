@@ -2,10 +2,11 @@
 # Run one of the platform's own tools on a deployment host.
 #
 #   ./deploy/zz-tool call /core/mcp session_whoami
-#   ./deploy/zz-tool audit --manifest /catalog/sdlc/sdlc-flow/flow.json --store /artifacts/teams/<team>
 #   ./deploy/zz-tool register-skills
 #   ./deploy/zz-tool                       # list what there is
 #
+# A tool named here that the alias table does not carry exits 2, so this list is the table's —
+# `audit --manifest … --store …` sat here for months naming a tool that does not exist.
 # DELIBERATE: the tools run in the image already on the host. A deploy host runs containers and
 # has no toolchain; the image carries node and the compiled tools, so nothing new is installed
 # and a tool cannot be a different version from the services it talks to.

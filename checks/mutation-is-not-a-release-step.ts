@@ -15,6 +15,10 @@
 // when the calendar moves would fail on every old checkout too.
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { refusesAsWork } from "../scripts/mutation/workspace.ts";
 
 const WORKFLOW = ".github/workflows/mutation.yml";
 const wf = readFileSync(WORKFLOW, "utf8");
@@ -36,5 +40,14 @@ for (const f of releaseFiles) {
   assert.ok(!/mutation/i.test(src),
     `${f} names the mutation suite; it is on-demand evidence and not a release step`);
 }
+
+//   3. Its work directory is DELETED recursively on every run — `makeWorkspace`'s first act after
+//      judging it — and the judgement used to be only whether it overlaps the checkout. `--work
+//      /tmp` is one keystroke from `--work /tmp/zz-mut`, and `--work /` and `--work ~` are the
+//      filesystem and everything the person owns. Asked of the predicate, never by triggering it:
+//      the act it guards is a recursive delete.
+assert.equal(refusesAsWork("/"), "a filesystem root", "a filesystem root is not refused as a work directory");
+assert.equal(refusesAsWork(homedir()), "your home directory", "a home directory is not refused as a work directory");
+assert.equal(refusesAsWork(join(tmpdir(), "zz-mut")), null, "a scratch directory is refused as a work directory");
 
 console.log("ok mutation-is-not-a-release-step");

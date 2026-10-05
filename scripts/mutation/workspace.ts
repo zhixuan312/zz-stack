@@ -126,13 +126,6 @@ export function overlaps(a: string, b: string): boolean {
   return x === y || x.startsWith(y + sep) || y.startsWith(x + sep);
 }
 
-/**
- * Build the workspace: copy, link the siblings, commit, snapshot.
- *
- * `cp -a` rather than a clone, because the checkout's uncommitted work is what is under test —
- * a check file written and not yet added is in `trackedFiles()` and so is in the set this run
- * has to cover.
- */
 /** A work directory this may not delete, and why. Null when it is one it may.
  *
  *  Exported for the reason `overlaps` above is: the caller's next act is to delete the path
@@ -146,6 +139,13 @@ export function refusesAsWork(at: string): string | null {
   return null;
 }
 
+/**
+ * Build the workspace: copy, link the siblings, commit, snapshot.
+ *
+ * `cp -a` rather than a clone, because the checkout's uncommitted work is what is under test —
+ * a check file written and not yet added is in `trackedFiles()` and so is in the set this run
+ * has to cover.
+ */
 export function makeWorkspace(source: string, at: string, prepare?: (repo: string) => void): Workspace {
   // The two directories a typo lands on, judged the same way as the checkout below and before the
   // delete rather than after it.

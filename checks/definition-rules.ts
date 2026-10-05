@@ -2,8 +2,13 @@
 // `2026-09-16-plugin-is-the-only-concept/explore.md`. Each rule decidable from the source or
 // the schema is decided here, by its own clause, with its own message naming the rule.
 //
-// DELIBERATE: three are not here.
+// DELIBERATE: four are not here, and a fifth is missing from the extract this was written
+// against — named below rather than dropped, because a rule absent from an accounting of thirteen
+// reads exactly like one that was checked.
 //
+//   R9 is the one this file cannot account for: it is in neither the clauses decided here nor the
+//       extract's own text, and nothing in `checks/` or `scripts/gate/` names it. Saying nothing
+//       about it left the list reading as twelve of thirteen with the thirteenth covered.
 //   R5's data half (a status exists only where a gate does) and R13 (no initiative was created
 //       by a probe) are about data, and this gate is offline — they belong to the doctor.
 //   R2  (a door is a plugin's declared server) is checked where it is measured:
@@ -248,4 +253,6 @@ const TOOL_DOMAIN: Record<string, string> = {
 }
 
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }
-console.log("definition rules: ok — R1, R3, R4, R5 (write half), R7, R8, R11 and R12 hold in the source");
+console.log("definition rules: ok — R1, R3, R4, R5 (write half), R7, R8, R11 and R12 hold in " +
+  "the source; R2, R5's data half, R10 and R13 are decided elsewhere or not at all, and R9 is " +
+  "unaccounted for — see the note at the top of this file");

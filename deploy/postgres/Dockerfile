@@ -28,10 +28,15 @@ RUN apt-get update \
 WORKDIR /build
 # Fetch the pinned commit of github.com/timescale/pg_textsearch (tag v1.4.0) and verify its
 # source hash before building. An all-zero placeholder commit fails closed.
+#
+# Retried, because a runner's shared IP is rate-limited by GitHub and answers 403 rather than
+# 5xx — which curl does not retry on its own, and which stopped the whole gate at its first step
+# with no check having run. A retry does not weaken the pin: the hash below is what is trusted,
+# and a genuinely gone commit still fails, a few seconds later for no other reason.
 RUN set -eux; \
     test "${PG_TEXTSEARCH_COMMIT}" != "0000000000000000000000000000000000000000" \
       || { echo "PG_TEXTSEARCH_COMMIT is still the unresolved placeholder — resolve it first" >&2; exit 1; }; \
-    curl -fsSL -o pg_textsearch.tar.gz \
+    curl -fsSL --retry 6 --retry-delay 5 --retry-all-errors -o pg_textsearch.tar.gz \
       "https://github.com/timescale/pg_textsearch/archive/${PG_TEXTSEARCH_COMMIT}.tar.gz"; \
     echo "${PG_TEXTSEARCH_SOURCE_SHA256}  pg_textsearch.tar.gz" | sha256sum -c -; \
     mkdir pg_textsearch && tar xzf pg_textsearch.tar.gz -C pg_textsearch --strip-components=1; \

@@ -27,7 +27,15 @@ assert.ok(ranked || stopped,
   "the Han half of body_tsv is either read or no longer written — a write-only half is the defect");
 
 // The database half has a home, and it survived the layer's removal.
-assert.ok(readFileSync("scripts/gate/checks/text-search-config-agreement.ts", "utf8").length > 0,
-  "the config-agreement check is re-pointed, not deleted");
+//
+// Asserted on what the file IS, not on its size. `readFileSync(...).length > 0` is satisfied by a
+// stub: emptying its checks out and leaving a file with a comment in it kept this green while the
+// thing it names — a check that the query and the write path agree on a configuration — was gone.
+// These are its two halves, one per lane, by the names it registers them under.
+const agreement = readFileSync("scripts/gate/checks/text-search-config-agreement.ts", "utf8");
+assert.ok((agreement.match(/^check\(/gm) ?? []).length >= 4,
+  "the config-agreement check is re-pointed, not deleted — it registers fewer checks than the four it is for");
+assert.ok(/stored a latin term through/.test(agreement) && /Han clause through/.test(agreement),
+  "the config-agreement check no longer names either lane — one of the two configurations it exists to hold together is gone from it");
 
 console.log("ok han-retrieval");

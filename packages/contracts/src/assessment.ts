@@ -374,10 +374,16 @@ export function interpret(question: AskedQuestion, raw?: unknown, call?: Assessm
 
   // An exact identity is exact. A profile that pinned one and got another was served by a
   // model whose qualification nothing here establishes, so the reply is invalid however well
-  // formed.
-  if (call?.expected_identity && env.observed !== null && env.observed !== call.expected_identity) {
+  // formed. COUPLED: and one that pinned a digest and observed NOTHING is in the same place —
+  // unverifiable is not verified. The guard required `observed !== null`, so a reply naming no
+  // model at all fell through it and was answered, which is the case `label-adapter.ts` documents
+  // as "bound present, none observed → the same refusal".
+  if (call?.expected_identity && env.observed !== call.expected_identity) {
     return record(env, "invalid_response", null, NO_SIGNALS,
-      `the reply came from ${env.observed}, not the pinned ${call.expected_identity}`);
+      env.observed === null
+        ? `the profile pinned ${call.expected_identity} and the reply named no model, so nothing ` +
+          "establishes which one served it"
+        : `the reply came from ${env.observed}, not the pinned ${call.expected_identity}`);
   }
 
   if (rec.insufficient_evidence === true) {

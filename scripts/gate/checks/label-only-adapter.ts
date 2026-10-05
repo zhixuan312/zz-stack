@@ -18,4 +18,15 @@ check("a label-only adapter cannot manufacture a probability or drift to the clo
 
   const drifted = labelAdapter.parse({ model: "qwen:7b", label: "supports" }, { boundDigest: "sha256:aaa", observedDigest: "sha256:bbb" });
   if (drifted.status === "answered") return "the serving deployment changed mid-profile and the answer was still accepted";
+
+  // And a reply that names no model at all under a pinned profile: unverifiable is not verified,
+  // which `label-adapter.ts` states as "bound present, none observed → the same refusal". The
+  // guard in assessment.ts required an observed value, so this fell through it and was answered.
+  const silent = labelAdapter.parse({ label: "supports" }, { boundDigest: "sha256:aaa" });
+  if (silent.status === "answered") {
+    return "a reply naming no model was accepted under a profile that pinned the deployment";
+  }
+  if (silent.identity_assurance === "deployment_verified") {
+    return "a reply nothing observed was recorded as deployment_verified";
+  }
 });

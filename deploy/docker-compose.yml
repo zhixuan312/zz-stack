@@ -64,6 +64,16 @@ services:
       - TYPESAFE_API_KEY=${TYPESAFE_API_KEY:-}
       - TYPESAFE_MODEL=${TYPESAFE_MODEL:-jev-latest}
       - TYPESAFE_BASE_URL=${TYPESAFE_BASE_URL:-}
+      # The database pool and the typed service's budget. Documented in .env.example and, until
+      # now, reaching nothing: compose forwards its own `environment:` names and only those, so
+      # setting any of these in .env changed nothing at all. `|| ` on the reading side, so an
+      # empty value here is still the code's own default.
+      - ZZ_DB_POOL_MAX=${ZZ_DB_POOL_MAX:-}
+      - ZZ_DB_STATEMENT_TIMEOUT_MS=${ZZ_DB_STATEMENT_TIMEOUT_MS:-}
+      - ZZ_DB_CONNECT_TIMEOUT_MS=${ZZ_DB_CONNECT_TIMEOUT_MS:-}
+      - TYPESAFE_TIMEOUT_MS=${TYPESAFE_TIMEOUT_MS:-}
+      - TYPESAFE_BUDGET_MS=${TYPESAFE_BUDGET_MS:-}
+      - TYPESAFE_ATTEMPTS=${TYPESAFE_ATTEMPTS:-}
       # The team that owns every catalog plugin (FR-2, FR-47). Not read by this service at
       # request time — zz.plugin.owner_team, written once by register-plugins, is what
       # plugin_locate answers from — but register-plugins runs inside this same image, through
@@ -112,6 +122,11 @@ services:
       - LLM_BASE_URL=${LLM_BASE_URL:-}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - GATEWAY_PUBLIC_URL=${GATEWAY_PUBLIC_URL:-}
+      # The gateway's own pool (db.ts). Same reason as zz-core's above: documented, and previously
+      # reaching nothing.
+      - ZZ_DB_POOL_MAX=${ZZ_DB_POOL_MAX:-}
+      - ZZ_DB_STATEMENT_TIMEOUT_MS=${ZZ_DB_STATEMENT_TIMEOUT_MS:-}
+      - ZZ_DB_CONNECT_TIMEOUT_MS=${ZZ_DB_CONNECT_TIMEOUT_MS:-}
       # Origins other than loopback that an MCP client may register a redirect on,
       # comma-separated. Normally empty: native clients redirect to 127.0.0.1, which is
       # allowed by rule (RFC 8252). Set this only for a browser front end.

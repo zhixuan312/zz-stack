@@ -191,7 +191,19 @@ if [ "${1:-}" = "--verify" ]; then
   echo "[$(date -u +%FT%TZ)] restore drill into zz_restore_check"
   docker compose exec -T postgres psql -U "$PG_USER" -d postgres -c 'drop database if exists zz_restore_check' >/dev/null
   docker compose exec -T postgres psql -U "$PG_USER" -d postgres -c 'create database zz_restore_check' >/dev/null
-  zcat "$db_file" | docker compose exec -T postgres psql -U "$PG_USER" -d zz_restore_check >/dev/null 2>&1 || true
+  # The exit status IS the drill, and this used to discard it twice over: `|| true` threw psql's
+  # status away and `2>&1 >/dev/null` swallowed its stderr, while psql itself was run without
+  # ON_ERROR_STOP and so answered 0 after an error it had merely printed. A restore that died
+  # part-way through the revisions was counted by the next line, found principals, and reported
+  # "restore drill OK" — an operator told a set they could not restore from was good.
+  #
+  # COUPLED: `set -o pipefail` above, so the pipeline's status is psql's and not zcat's. The
+  # table check a few lines up is written around the same hazard in the other direction.
+  if ! zcat "$db_file" | docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "$PG_USER" -d zz_restore_check >/dev/null; then
+    docker compose exec -T postgres psql -U "$PG_USER" -d postgres -c 'drop database zz_restore_check' >/dev/null
+    echo "FAIL: the dump did not restore into zz_restore_check — this set is not restorable"
+    exit 1
+  fi
   people=$(docker compose exec -T postgres psql -U "$PG_USER" -d zz_restore_check -tAc \
     'select count(*) from zz.principal' 2>/dev/null || echo 0)
   docker compose exec -T postgres psql -U "$PG_USER" -d postgres -c 'drop database zz_restore_check' >/dev/null

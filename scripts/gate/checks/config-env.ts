@@ -330,3 +330,29 @@ check("every variable zz-tool forwards is read by a tool that exists", () => {
     ? `${dead.join(", ")} — forwarded by deploy/zz-tool and read by no tool in this repository`
     : null;
 });
+
+/* The other direction: a key `deploy/.env.example` tells an operator to set, that no container is
+ * ever given.
+ *
+ * TYPESAFE_TIMEOUT_MS, TYPESAFE_BUDGET_MS, TYPESAFE_ATTEMPTS and the three ZZ_DB_* keys were
+ * documented there with defaults and reached nothing: compose forwards its own `environment:`
+ * names and only those, so setting one in `.env` changed nothing and said nothing about it. A knob
+ * that cannot be turned is worse than no knob — the same rule the pass-through list above is
+ * written against, in the other file.
+ *
+ * Only keys the SERVICE code reads. The rest of `.env.example` is for the host's own scripts, which
+ * read `.env` directly through compose's substitution and need no forwarding. */
+check("every key .env.example documents for a service reaches that service", () => {
+  const example = readFileSync(join(root, "deploy/.env.example"), "utf8");
+  const keys = [...new Set([...example.matchAll(/^([A-Z][A-Z0-9_]*)=/gm)].map((m) => m[1]))];
+  if (keys.length < 10) return `only ${keys.length} keys parsed out of deploy/.env.example — the walk is pointed wrong`;
+  const serviceSrc = sourceFiles(["services", "packages"], [".ts"])
+    .filter((f) => f.includes("/src/"))
+    .map((f) => readFileSync(join(root, f), "utf8")).join("\n");
+  const compose = readFileSync(join(root, "deploy/docker-compose.yml"), "utf8");
+  const dead = keys.filter((k) => serviceSrc.includes(`process.env.${k}`) && !compose.includes(`\${${k}`));
+  return dead.length
+    ? `${dead.join(", ")} — read by a service, documented in deploy/.env.example, and forwarded by ` +
+      "no container, so setting one in .env changes nothing"
+    : null;
+});

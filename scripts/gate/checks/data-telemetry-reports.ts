@@ -77,7 +77,12 @@ check("provenance the platform records is provenance something reads", () => {
         if (!new RegExp(`\\b${col}\\b`).test(line)) continue;
         if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue;
         if (/insert into|\bset\b[^;]*=|putEnvelopeField|\$\{/.test(line)) written = true;
-        if (/\bselect\b|\bas \w+|\.[a-z_]+\b|\bwhere\b/.test(line)) read = true;
+        // Each alternative must name THIS column. It was `\bas \w+|\.[a-z_]+\b`, and any dotted
+        // name matches the second — beginning with the statement's own table, `zz.event`. So every
+        // statement that mentioned the column also marked it READ, and "written on every row and
+        // read by nothing" could not fire at all: the columns with no reader are the whole reason
+        // this check exists.
+        if (new RegExp(`\\bselect\\b|\\bas ${col}\\b|\\.${col}\\b|\\bwhere\\b`).test(line)) read = true;
       }
     }
     if (written && !read) {

@@ -55,12 +55,16 @@ export interface RunContext {
   readonly id: string; readonly protocol_version_id: string; readonly observation_snapshot_id: string;
   readonly plugin_version_id: string; readonly score_status: string | null; readonly scored_at: string | null;
   readonly protocol_version: number;
+  /** Which principal started this run. Read here rather than left to psql: a record nothing in the
+   *  platform can answer for is a record the platform does not keep. */
+  readonly started_by: string | null;
 }
 
 export async function loadRunContext(p: pg.Pool, evalRunId: string): Promise<RunContext | null> {
   if (!UUID_RE.test(evalRunId)) return null;
   const row = (await p.query<RunContext>(`
-    select er.id::text as id, er.protocol_version_id::text as protocol_version_id,
+    select er.id::text as id, er.started_by as started_by,
+           er.protocol_version_id::text as protocol_version_id,
            er.observation_snapshot_id::text as observation_snapshot_id,
            os.plugin_version_id::text as plugin_version_id,
            er.score_status, er.scored_at::text as scored_at,

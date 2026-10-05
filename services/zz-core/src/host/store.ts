@@ -41,6 +41,9 @@ interface StoredRun {
   /** The initiative's slug. The key is the id; this is what the kernel calls the run's subject. */
   readonly initiative: string;
   readonly module_digest: string;
+  /** Which principal enrolled this run, and null for the ones the adoption script wrote — see
+   *  `control_run.started_by`'s own comment. Read here for the same reason the eval run reads it. */
+  readonly started_by: string | null;
 }
 
 /** One requirement a person accepted the absence of, and the ground they gave. `ground` is
@@ -104,7 +107,7 @@ export async function runFor(team: string, initiative: string): Promise<StoredRu
   const db = db_();
   if (!db) return null;
   const { rows } = await db.query(
-    `select r.id, i.slug as initiative, r.module_digest
+    `select r.id, r.started_by, i.slug as initiative, r.module_digest
        from zz.control_run r
        join zz.initiative i on i.id = r.initiative_id
        join zz.team t on t.id = i.team_id

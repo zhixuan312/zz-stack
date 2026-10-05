@@ -304,7 +304,10 @@ export function mountOverview(app: Express): void {
   /** The event log, filterable, newest first. The console's audit view. */
   app.get("/api/console/activity", handler("activity", async (req, res, scope) => {
     const db = platformDb();
-    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    // Clamped at BOTH ends. `Math.min(Number(limit) || 100, 500)` let a negative through —
+    // `?limit=-5` is truthy, `min(-5, 500)` is -5, and `limit -5` is a Postgres error rather than
+    // the 400 the caller's own parameter earns.
+    const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
     const kind = typeof req.query.kind === "string" ? req.query.kind : null;
     // `failed=1` rather than a tri-state string: the only question asked of this log is
     // "show me what broke".

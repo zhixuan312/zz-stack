@@ -66,7 +66,15 @@ export function readCookie(req: Request, name: string): string | null {
     const eq = part.indexOf("=");
     if (eq < 0) continue;
     if (part.slice(0, eq).trim() !== name) continue;
-    return decodeURIComponent(part.slice(eq + 1).trim());
+    // A malformed escape — `%zz`, a trailing `%` — makes decodeURIComponent THROW, and a URIError
+    // out of a request handler is a 500 for a header the caller chose: an unauthenticated caller
+    // could make every route that reads a cookie answer 500 rather than 401. A cookie that cannot
+    // be decoded is not a session, so it is absent, which is the refusal the caller was owed.
+    try {
+      return decodeURIComponent(part.slice(eq + 1).trim());
+    } catch {
+      return null;
+    }
   }
   return null;
 }

@@ -198,10 +198,14 @@ mountMcpOauth(app, Object.keys(DOORS));
  *
  * Emitted from the same zod schemas the platform validates with, never a checked-in file. */
 app.get("/schemas/:name.json", (req, res) => {
-  const schemas: Record<string, z.ZodTypeAny> = { envelope: Envelope, manifest: CatalogManifest };
-  const schema = schemas[req.params.name];
+  // A Map, not an object literal: `schemas[req.params.name]` answers `"constructor"` with a
+  // function and `"__proto__"` with an object, both truthy — so the 404 below was skipped and the
+  // route tried to read a zod schema off something that is not one, which is a 500 for a name the
+  // caller chose.
+  const schemas = new Map<string, z.ZodTypeAny>([["envelope", Envelope], ["manifest", CatalogManifest]]);
+  const schema = schemas.get(req.params.name);
   if (!schema) {
-    res.status(404).json({ error: `no schema '${req.params.name}'`, available: Object.keys(schemas) });
+    res.status(404).json({ error: `no schema '${req.params.name}'`, available: [...schemas.keys()] });
     return;
   }
   // The same base the door index publishes, not req.protocol: behind Caddy that reports

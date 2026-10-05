@@ -609,32 +609,32 @@ export async function saveDocument(
           where id = $1::uuid`,
         [id, status, approved, type, body, title, tags, hash, vector.analyzer, ...tsv]);
     }
-    for (const cite of w.cites ?? []) {
-      const target = await documentAt(client, w.team, cite.path);
+    // One lookup for every path, then one insert each. It was a `documentAt` per entry — 2.1 ms a
+    // citation, sequential — and `distinct on` + `updated_at desc` is the newest-row-per-path
+    // `documentAt` answered with, for all of them at once.
+    const links = [
+      ...(w.cites ?? []).map((c) => ({ rel: c.path, toRevision: c.revision, kind: "cites" })),
+      ...(w.supports ?? []).map((rel) => ({ rel, toRevision: null, kind: "supports" })),
+    ];
+    const ids = new Map<string, string>(links.length ? (await client.query<{ rel: string; id: string }>(`
+      select distinct on (i.slug || '/' || d.path) i.slug || '/' || d.path as rel, d.id::text as id
+        from zz.doc d
+        join zz.initiative i on i.id = d.initiative_id
+        join zz.team t on t.id = i.team_id
+       where t.slug = $1 and (i.slug || '/' || d.path) = any($2::text[])
+       order by i.slug || '/' || d.path, d.updated_at desc`,
+      [w.team, links.map((l) => l.rel)])).rows.map((r) => [r.rel, r.id] as const) : []);
+    for (const l of links) {
+      const target = ids.get(l.rel);
       if (!target) continue;
-      // DELIBERATE: `on conflict do nothing`. `doc_link_unique` is NULLS NOT DISTINCT, so a
-      // citation recorded twice is one row; re-citing what a revision already cites is not a
-      // second fact.
+      // DELIBERATE: `on conflict do nothing` — `doc_link_unique` is NULLS NOT DISTINCT, so citing
+      // twice is one row. `to_revision` is a revision for a citation and null for a support: that is
+      // the two grains, and `doc_link_revision_shape` refuses a support that names one.
       await client.query(
         `insert into zz.doc_link (from_doc_id, from_revision, to_doc_id, to_revision, kind)
-         values ($1::uuid, $2, $3::uuid, $4, 'cites')
+         values ($1::uuid, $2, $3::uuid, $4, $5)
          on conflict do nothing`,
-        [id, revision, target.id, cite.revision]);
-    }
-    for (const rel of w.supports ?? []) {
-      const target = await documentAt(client, w.team, rel);
-      if (!target) continue;
-      // DELIBERATE: `to_revision` is null, which is what makes this the `supports` grain rather
-      // than the `cites` one — `doc_link_revision_shape` refuses a supports row that names a
-      // revision. A support is for the DOCUMENT and outlives every revision of it, which is what a
-      // reader asks for when it wants to know what a document was built from; a citation names the
-      // exact revision this one read. `on conflict do nothing` for the reason above: a list naming
-      // one document twice is one relation, not two.
-      await client.query(
-        `insert into zz.doc_link (from_doc_id, from_revision, to_doc_id, to_revision, kind)
-         values ($1::uuid, $2, $3::uuid, null, 'supports')
-         on conflict do nothing`,
-        [id, revision, target.id]);
+        [id, revision, target, l.toRevision, l.kind]);
     }
     await client.query("commit");
     recordAct(w.relPath,

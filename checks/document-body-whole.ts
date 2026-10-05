@@ -89,5 +89,29 @@ const handed = (re: RegExp, body: string) =>
   is(wrote.length === 0, `a refused body still wrote: ${wrote.map((s) => s.sql.slice(0, 60)).join(" | ")}`);
 }
 
+// 3. Citing more documents does not cost more lookups. One statement resolves every path a
+//    revision names, however many it names; it was a `documentAt` per citation, 2.1 ms each and
+//    sequential, so a write citing ten documents paid ~21 ms of round trips before its own commit.
+//    Asserted as a COMPARISON rather than a number, so it pins the shape and not one implementation:
+//    the write's own lookups are counted in both runs and only the difference would move.
+{
+  const withCites = async (n: number) => {
+    seen = [];
+    const got = await saveDocument({
+      team: "t1", relPath: `${INIT}/plan.md`, initiative: INIT, by: "ada@zz.test",
+      text: "---\ntitle: Plan\n---\n\na plan citing sources\n",
+      cites: Array.from({ length: n }, (_, i) => ({ path: `${INIT}/sources/s${i}.md`, revision: 1 })),
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    return { got, lookups: seen.filter((s) => /from zz\.doc d\b/.test(s.sql)).length };
+  };
+  const one = await withCites(1);
+  const four = await withCites(4);
+  is(!("refusal" in four.got), `a write citing four documents was refused: ${JSON.stringify(four.got)}`);
+  is(one.lookups === four.lookups,
+     `citing four documents cost ${four.lookups} lookups of zz.doc against ${one.lookups} for one — a ` +
+     "cited document is resolved once per write, not once per citation");
+}
+
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }
 console.log("ok document-body-whole");

@@ -93,8 +93,8 @@ Each refusal is a real finding about the backup. None of them is a problem with 
 ## 3. Stand up the isolated PostgreSQL 17 database
 
 ```bash
-cd <checkout>/zz-stack/deploy/postgres
-docker build -t zz-postgres-rehearsal:17 .
+cd <checkout>/zz-stack
+docker build -f deploy/postgres/Dockerfile -t zz-postgres-rehearsal:17 .
 
 docker network create zz-rehearsal
 docker run -d --name zz-rehearsal-db --network zz-rehearsal \

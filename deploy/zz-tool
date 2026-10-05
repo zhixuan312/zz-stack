@@ -12,42 +12,57 @@
 #
 # On the compose network, so service names resolve — and a tool's own defaults do not apply
 # here. A default of 127.0.0.1 means, inside a one-shot container, that container: pass the
-# service name instead.
+# service name instead, in the variable that tool reads.
 #
-#   --gateway http://cred-proxy:8000
+#   ZZ_URL=http://cred-proxy:8000 ./deploy/zz-tool call /core/mcp session_whoami
 #
 # DELIBERATE: no docker socket. Mounting it would give a one-shot command root on the host,
 # and no tool here needs it.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-declare -A TOOLS=(
-  [call]=ops/call
-  # A deploy host has no toolchain, so a tool absent from this map cannot be run where it
-  # matters.
-  [register-skills]=ops/register-skills
-  [register-plugins]=ops/register-plugins
-  # plugin-surface reads back the surface zz-core records at boot.
-  [plugin-surface]=ops/plugin-surface
-  [chain-check]=testing/chain-check
-  [tool-report]=testing/tool-report
-  # PROMOTE/VERIFY's own two commands (Task I-28): apply an approved candidate's patch and run
-  # the repository's release procedure against it, or run the repository's rollback procedure
-  # over a release_verify verdict of rolled_back. Both operate on a throwaway clone, never the
-  # primary checkout — see each tool's own --repo argument.
-  [release-apply]=release/apply
-  [release-rollback]=release/rollback
-  [watch-results]=ops/watch-results
-  [sql-check]=testing/sql-check
-  # Task I-8's one-shot backfill of zz.initiative's lifecycle columns from the file store.
-  # Deleted, and this entry with it, when Phase 0's migration folds into 001_init.sql.
-)
-
+# The alias table, one `[name]=module` per line, read below. A here-doc rather than an
+# associative array: `declare -A` is bash 4 and macOS ships bash 3.2, where the subscript is then
+# read as arithmetic and `set -u` aborts the script on the word `call` — on the bare `./zz-tool`
+# whose whole job is to list these names. A line starting `#` is a comment.
+#
+# COUPLED: this text is the tool surface. `check "every tool in packages/tools is reachable from
+# zz-tool"` reads the pairs out of it, in both directions.
 name="${1:-}"
-if [ -z "$name" ] || [ -z "${TOOLS[$name]:-}" ]; then
-  [ -n "$name" ] && echo "no tool called '$name'." >&2
+module=""
+available=""
+while IFS='=' read -r key value; do
+  case "$key" in '' | '#'*) continue ;; esac
+  key="${key#[}"
+  key="${key%]}"
+  available="$available $key"
+  if [ "$key" = "$name" ]; then module="$value"; fi
+done <<'ALIASES'
+[call]=ops/call
+# A deploy host has no toolchain, so a tool absent from this map cannot be run where it
+# matters.
+[register-skills]=ops/register-skills
+[register-plugins]=ops/register-plugins
+# plugin-surface reads back the surface zz-core records at boot.
+[plugin-surface]=ops/plugin-surface
+[chain-check]=testing/chain-check
+[tool-report]=testing/tool-report
+# PROMOTE/VERIFY's own two commands (Task I-28): apply an approved candidate's patch and run
+# the repository's release procedure against it, or run the repository's rollback procedure
+# over a release_verify verdict of rolled_back. Both operate on a throwaway clone, never the
+# primary checkout — see each tool's own --repo argument.
+[release-apply]=release/apply
+[release-rollback]=release/rollback
+[watch-results]=ops/watch-results
+[sql-check]=testing/sql-check
+# Task I-8's one-shot backfill of zz.initiative's lifecycle columns from the file store.
+# Deleted, and this entry with it, when Phase 0's migration folds into 001_init.sql.
+ALIASES
+
+if [ -z "$module" ]; then
+  if [ -n "$name" ]; then echo "no tool called '$name'." >&2; fi
   echo "usage: $0 <tool> [args…]" >&2
-  echo "tools: $(echo "${!TOOLS[@]}" | tr ' ' '\n' | sort | tr '\n' ' ')" >&2
+  echo "tools: $(printf '%s\n' $available | sort | tr '\n' ' ')" >&2
   exit 2
 fi
 shift
@@ -68,4 +83,4 @@ done
 # launched a long run never returns, so a launch cannot be told from a hang. It also keeps
 # output line-buffered, which is what a log wants.
 exec docker compose run --rm --no-deps -T "${pass[@]}" \
-  --entrypoint node zz-core "/repo/packages/tools/dist/${TOOLS[$name]}.js" "$@"
+  --entrypoint node zz-core "/repo/packages/tools/dist/${module}.js" "$@"

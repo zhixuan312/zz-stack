@@ -121,9 +121,9 @@ export const COV_DEPLOY: readonly MutationSpec[] = [
     check: "scripts/gate/checks/deploy-compose.ts",
     target: "a hostname with no dots is a service this compose file defines",
     subject: "deploy/zz-tool",
-    find: "#   --gateway http://cred-proxy:8000",
+    find: "#   ZZ_URL=http://cred-proxy:8000",
     // SEAMED: the dotless host here is the defect being planted, not one this file commits.
-    replace: "#   --gateway http://gate" + "way:8000",
+    replace: "#   ZZ_URL=http://gate" + "way:8000",
     // REDACTED, because the report is a tracked file this repository sweeps too. The payload
     // above is seamed so it never exists whole in this source, but `plant()` writes the
     // reconstructed string into testing/mutation-report.json. `redact` base64-encodes it there.

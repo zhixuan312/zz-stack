@@ -148,8 +148,8 @@ export const COV_BUILD: readonly MutationSpec[] = [
     check: "scripts/gate/checks/skill-tools.ts",
     target: "every tool in packages/tools is reachable from zz-tool",
     subject: "deploy/zz-tool",
-    find: "  [call]=ops/call\n",
-    replace: "  [call]=ops/calls\n",
+    find: "[call]=ops/call\n",
+    replace: "[call]=ops/calls\n",
     planted: "the wrapper's alias points at a tool that does not exist and the real one is left " +
       "with no alias at all, so an operator on a deploy host has no way to run it and finds " +
       "out at the moment they need it",

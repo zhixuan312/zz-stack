@@ -189,6 +189,9 @@ export function reapLeaked(prefix: string): void {
   if (names.length === 0) return;
   warn(`  reaping ${names.length} container(s) a previous release left behind: ${names.join(", ")}`);
   for (const n of names) {
-    try { run("docker", ["rm", "-f", n], { stdio: ["ignore", "ignore", "ignore"] }); } catch { /* already gone */ }
+    // `-v`, because what this reaps includes throwaway postgres containers: that image declares
+    // its data directory as a VOLUME, so `rm -f` alone leaves an anonymous volume behind — one per
+    // interrupted run, invisible to `docker ps` and never reclaimed.
+    try { run("docker", ["rm", "-f", "-v", n], { stdio: ["ignore", "ignore", "ignore"] }); } catch { /* already gone */ }
   }
 }

@@ -141,7 +141,10 @@ export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution
     const pg = `zz-sqlcheck-pg-${process.pid}`, gw = `zz-sqlcheck-gw-${process.pid}`;
     const drop = () => {
       for (const c of [gw, pg]) {
-        try { run("docker", ["rm", "-f", c], { stdio: ["ignore", "ignore", "ignore"] }); } catch { /* already gone */ }
+        // `-v`, as tool-chain.ts and the eval walk both say: the postgres image declares its data
+        // directory as a VOLUME, so `rm -f` alone leaves an anonymous volume behind on every dry
+        // run and every release — invisible to `docker ps` and never reclaimed.
+        try { run("docker", ["rm", "-f", "-v", c], { stdio: ["ignore", "ignore", "ignore"] }); } catch { /* already gone */ }
       }
     };
     // Registered before anything starts. A die() between here and the teardown below would

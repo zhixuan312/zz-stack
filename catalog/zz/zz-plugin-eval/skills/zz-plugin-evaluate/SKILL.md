@@ -95,9 +95,9 @@ not_established`:
 - `qualification_met` comes from every REQUIRED model-backed measure's evaluator qualification
   against `QualificationPolicy.boundedSemanticMinimum` — **a bootstrap protocol
   (`scoring.establishment.bootstrap: true`) forces `qualification_met: false` regardless of what
-  any individual qualification row says.** The reference protocol for `zz-core` is
-  bootstrap: it must not publish an `established` score before the first real post-close OBSERVE/
-  DISCOVER run.
+  any individual qualification row says.** The reference protocol for `zz-core` is NOT bootstrap:
+  `protocols/zz-core.json` carries `false`, and `checks/eval-zz-core-protocol.ts` asserts it. It is
+  what a protocol that has never been observed sets, and zz-core's has been.
 - Both must be true, and every required measure scored, for `score_status: established`.
 - Short of that, `provisional` needs `score_coverage` at or above `coverage_floor`; under it the
   number is still reported, as `not_established` — a reading of a much smaller protocol.

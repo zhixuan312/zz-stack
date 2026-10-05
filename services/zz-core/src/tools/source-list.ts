@@ -12,7 +12,7 @@ import { z } from "zod";
 
 import { safeName } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
-import { dayOf, documentAt, documentPaths, revisionsOf, supportsOf } from "../versions.js";
+import { dayOf } from "../versions.js";
 
 export function registerSourceListTool(server: McpServer): void {
   server.registerTool(
@@ -31,30 +31,39 @@ export function registerSourceListTool(server: McpServer): void {
       const p = db();
       const team = await teamFor(parseCaller(requestHeaders()).email);
       if (!p || !team) return text(JSON.stringify({ initiative, sources: [] }));
-      const rows = [];
-      for (const rel of await documentPaths(team, `${initiative}/sources`)) {
-        if (!rel.endsWith(".md")) continue;
-        const doc = await documentAt(p, team, rel);
-        if (!doc) continue;
-        const revs = await revisionsOf(p, doc.id);
-        const rev = revs.find((r) => r.revision === doc.current_revision) ?? revs[0];
-        // COUPLED: `contributed_by` is the address `written_by` holds, and `stage` the round
-        // the source was recorded as — kept on the row's `type`, a source having no flow role.
-        rows.push({
-          path: rel,
-          title: rev?.title || rel.split("/").pop() || rel,
-          // DELIBERATE: the SUPPORTS links, not `citationsOf`. The two are different relations —
-          // `cites` is what the source read, `supports` is the document it bears on — and reading
-          // the first while labelling it the second showed a caller the wrong list under the right
-          // name.
-          supports: (await supportsOf(p, doc.id, rev?.revision ?? 0))
-            .map((x) => x.split("/").pop() ?? x).join(", "),
-          stage: doc.type === "source" ? "" : doc.type,
-          contributed_by: rev?.written_by ?? "",
-          added_at: rev?.written_at ? dayOf(rev.written_at) : "",
-        });
-      }
-      return text(JSON.stringify({ initiative, sources: rows }, null, 2));
+      // ONE statement, not four per source. This was `documentPaths` then `documentAt`,
+      // `revisionsOf` and `supportsOf` for each one — roughly 120 sequential round trips on an
+      // initiative with forty sources, on the read a caller runs just before judging a document —
+      // and `revisionsOf` detoasts every revision's body to answer about one, so the cost grew with
+      // the history as well. COUPLED: the shape this prints, which callers already read.
+      const { rows } = await p.query<{
+        path: string; type: string | null; title: string | null;
+        written_at: string | null; written_by: string | null; supports: string | null;
+      }>(
+        `select d.path, d.type, r.title, r.written_at::text as written_at, w.email as written_by,
+                string_agg(distinct t.path, ', ') as supports
+           from zz.doc d
+           join zz.initiative i on i.id = d.initiative_id
+           join zz.team tm on tm.id = i.team_id
+           left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
+           left join zz.principal w on w.id = r.written_by
+           left join zz.doc_link l on l.from_doc_id = d.id and l.from_revision = d.current_revision
+                                 and l.kind = 'supports'
+           left join zz.doc t on t.id = l.to_doc_id
+          where tm.slug = $1 and i.slug = $2 and d.path like 'sources/%' and d.path like '%.md'
+          group by d.path, d.type, r.title, r.written_at, w.email
+          order by d.path`,
+        [team, initiative]);
+      const sources = rows.map((row) => ({
+        path: `${initiative}/${row.path}`,
+        title: row.title || row.path.split("/").pop() || row.path,
+        supports: row.supports ?? "",
+        // A source has no flow role, and the round it was recorded as is kept on the row's `type`.
+        stage: !row.type || row.type === "source" ? "" : row.type,
+        contributed_by: row.written_by ?? "",
+        added_at: row.written_at ? dayOf(row.written_at) : "",
+      }));
+      return text(JSON.stringify({ initiative, sources }, null, 2));
     },
   );
 }

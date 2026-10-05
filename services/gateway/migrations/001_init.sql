@@ -2233,7 +2233,7 @@ CREATE TABLE zz.eval_observation_snapshot (
 -- Name: TABLE eval_observation_snapshot; Type: COMMENT; Schema: zz; Owner: -
 --
 
-COMMENT ON TABLE zz.eval_observation_snapshot IS 'class=immutable_history; authority=this; question=what did one plugin release''s real runs look like in one resolved window, with the facts computed from them and the denominators those rates carry?';
+COMMENT ON TABLE zz.eval_observation_snapshot IS 'class=immutable_history; authority=this; question=what did one plugin release''s real runs look like in one resolved window, with the facts computed from them and the denominators those rates carry?; retention=unswept: one row per observation of one plugin version and nothing deletes one, so the table grows with every evaluation and is bounded only by the plugin versions anybody still looks at';
 
 
 --

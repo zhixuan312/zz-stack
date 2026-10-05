@@ -128,7 +128,7 @@ export const EVAL_OBSERVE: Record<string, TableTarget> = {
       "CHECK ((window_from <= window_to))",
     ],
     indexes: [],
-    comment: "class=immutable_history; authority=this; question=what did one plugin release's real runs look like in one resolved window, with the facts computed from them and the denominators those rates carry?",
+    comment: "class=immutable_history; authority=this; question=what did one plugin release's real runs look like in one resolved window, with the facts computed from them and the denominators those rates carry?; retention=unswept: one row per observation of one plugin version and nothing deletes one, so the table grows with every evaluation and is bounded only by the plugin versions anybody still looks at",
     columnComments: {
       id: "class=immutable_history; authority=this; question=which snapshot do evaluation runs, findings and failure-mode sightings name as their evidence?",
       usable_run_count: "class=immutable_history; authority=this; question=how many runs in the window count as usable evidence?",

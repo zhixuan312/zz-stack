@@ -94,6 +94,13 @@ function commentFaults(): string[] {
     if (tableClass === "ephemeral" && !field(t.comment ?? "", "retention")) {
       bad.push(`table ${name} is ephemeral and names no retention`);
     }
+    // And a table that calls ITSELF unbounded names its retention too — rule 9's other half, which
+    // was prose nothing read. Most `immutable_history` tables are bounded by their subject (one
+    // row per revision, per run), so the class cannot decide this; a comment that says "unbounded"
+    // can, and a table nobody can bound is exactly the one that has to say what happens to it.
+    if (/\bunbounded\b/.test(t.comment ?? "") && !field(t.comment ?? "", "retention")) {
+      bad.push(`table ${name} says it is unbounded and names no retention`);
+    }
     for (const [col] of t.columns) {
       const c = t.columnComments?.[col];
       const colClass = field(c ?? "", "class");

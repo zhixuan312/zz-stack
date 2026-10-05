@@ -383,8 +383,8 @@
           "changes_commitment",
           "repeats_finding"
         ],
-        "emitted_from": null,
-        "emitted_from_note": "Nothing emits these. A later task builds QUESTION_FAMILIES and must adopt these exact spellings."
+        "emitted_from": "packages/contracts/src/assessment.ts#QUESTION_FAMILIES",
+        "emitted_from_note": "QUESTION_FAMILIES, defined once in @zz/contracts — the later task this note used to wait for has run. scripts/gate/checks/checkpoints-consumed.ts reads that constant and refuses a family a skill names with no code reading its answer, so a checkpoint cited here and consumed nowhere fails the gate."
       },
       "test_drives": "services/zz-core/dist/semantic.js",
       "report": "node checks/audit-rounds.ts"

@@ -97,6 +97,8 @@ check("scope and authority refuse what they say they refuse", runsClean("scope-c
 
 check("an uploaded file becomes the text a source holds, or a refusal that says why", runsClean("extract-check"));
 
+check("the file route refuses what it says it refuses, and writes through source_add", runsClean("upload-check"));
+
 /* A released version whose changelog entry still says "Unreleased".
  *
  * Stamping the section is a judgement step done by hand on a release branch — nothing in

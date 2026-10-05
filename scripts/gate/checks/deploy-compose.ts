@@ -137,9 +137,19 @@ check("only the authenticated door may be published beyond loopback", () => {
     if (m) { svc = m[1]; continue; }
     if (!/^\s+ports:/.test(raw) && !/^\s+- "\$\{/.test(raw)) continue;
     const bind = /\$\{([A-Z_]+)(?::-|\})/.exec(raw)?.[1];
-    if (!bind) continue;
     const published = /:\$\{[A-Z_]+:-(\d+)\}:/.exec(raw)?.[1];
     if (published && fronted.has(published)) continue;
+    if (!bind) {
+      // A hard-coded bind has no variable to carry the loopback default, so the literal is the
+      // whole of it. This used to `continue` here, which meant the one shape that cannot be
+      // defaulted safely was the one shape never judged — `0.0.0.0:8763:8000` on zz-core passed,
+      // and zz-core has no authentication of its own. Only a loopback literal is a pass.
+      if (!/^\s*(-\s*)?"?127\.0\.0\.1:\d+:\d+"?,?\s*$/.test(raw)) {
+        bad.push(`${svc} publishes a port with no loopback literal and no variable to default it: ` +
+                 raw.trim());
+      }
+      continue;
+    }
     if (!/:-127\.0\.0\.1/.test(raw)) {
       bad.push(`${svc} publishes with ${bind} and no loopback default`);
     }

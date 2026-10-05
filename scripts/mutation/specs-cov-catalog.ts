@@ -234,8 +234,8 @@ export const COV_CATALOG: readonly MutationSpec[] = [
     check: "scripts/gate/checks/console.ts",
     target: "every console write route records the door it came through",
     subject: "services/gateway/src/console-write.ts",
-    find: `kind: "document.approve", subject, detail: { via: "web" }`,
-    replace: `kind: "document.approve", subject, detail: {}`,
+    find: `detail: { via: "web", asked_for: scope.slug }`,
+    replace: `detail: { asked_for: scope.slug }`,
     planted: "the approval a person presses in the browser leaves an audit row that does not " +
       "say a browser pressed it. The row exists and names the actor and the act, so nothing " +
       "looks missing — and the rule that every console act records the web door is " +

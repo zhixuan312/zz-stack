@@ -67,7 +67,15 @@ export function mountConsoleWrite(app: Express): void {
     // Written after the act succeeds, never before, and `via: "web"` is stated here rather
     // than assumed from `document_approve` itself, which has callers that are not this console
     // and must not inherit a door marker they did not come through.
-    logEvent({ actor, teamSlug: scope.slug, kind: "document.approve", subject, detail: { via: "web" } });
+    //
+    // COUPLED: no `teamSlug`. `scope.slug` is the team this REQUEST asked for (`?team=`), and
+    // zz-core resolves the team the document is actually in from the caller's own identity headers
+    // — they are two things, and a caller in two teams naming the other one used to have this row
+    // attributed to a team the document does not belong to. The console cannot learn the real team
+    // here: `document_approve` answers in prose, unlike `knowledge_search`, whose JSON reply is why
+    // console-ask can record the team the act happened in. So the request's own choice is recorded
+    // as what it is, in the detail, and the row is attributed to no team rather than the wrong one.
+    logEvent({ actor, kind: "document.approve", subject, detail: { via: "web", asked_for: scope.slug } });
     res.json({ ok: true, result: reply });
   }));
 }

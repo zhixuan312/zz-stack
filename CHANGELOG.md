@@ -33,6 +33,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.93.1] — 2026-10-06
+
+One migration, found by rehearsing the schema fold against a real backup rather than a fresh
+database.
+
+### zz-stack 0.93.1
+
+- **Five comments a live deployment never received.** `initiative_fact`'s table and its three
+  columns were corrected in the schema target to say what the row is — a branch fact is immutable
+  history, written once by the stage that decided it — and `eval_observation_snapshot`'s to carry
+  its `retention=unswept` clause. Nothing carried them to a deployment that had already run
+  `001_init.sql`: that file records that it has run, which is what gives a fresh database the whole
+  schema in one transaction and also what makes an edit to it invisible everywhere else. The gate
+  could not see it either, because it migrates a fresh database and so builds the corrected target.
+  `002_comment_drift.sql` applies them.
+
+### Upgrade notes
+
+- **A migration applies on the gateway's next start**: `002_comment_drift.sql`, five `COMMENT ON`
+  statements on two tables. It is additive — no row, no column and no constraint changes — and it
+  does not affect a rollback.
+- Nothing else to do: no env key, no client re-pull, and no skill changed.
+
 ## [0.93.0] — 2026-10-06 · console 0.24.4
 
 Material can reach the platform without a model transcribing it, and the page a person opens

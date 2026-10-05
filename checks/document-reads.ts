@@ -53,12 +53,19 @@ docs.set("plan.md", {
                 approved_at: null, written_at: "2026-01-01T00:00:00.000Z" }],
 });
 
+/* The statement the history was read with. The stub cannot show an ORDER BY by its answer: it
+ * returns the fixture's revisions in the order the fixture declared them, and the fixture is
+ * already sorted — so an ordered read and an unordered one produce the same list here. The
+ * statement is what this check can actually disprove. */
+let historySql = "";
+
 pg.Pool.prototype.query = (async function query(text: string, values: unknown[] = []) {
   const sql = String(text).replace(/\s+/g, " ").trim();
   const one = (rows: Record<string, unknown>[]) => ({ rows, rowCount: rows.length });
   const name = String(values[2] ?? "");
   const d = docs.get(name);
   if (/from zz\.doc_revision r\b/.test(sql) && /where r\.doc_id = \$1::uuid/.test(sql)) {
+    historySql = sql;
     const hit = [...docs.values()].find((x) => x.id === String(values[0]));
     return one((hit?.revisions ?? []).map((r: Rev) => ({
       revision: r.revision, content_state: "retained", title: name, body: r.body, tags: [],
@@ -144,8 +151,13 @@ else {
   const loaded = await loadDocument(TEAM, `${INIT}/spec.md`);
   const versions = loaded.ok ? (loaded.history as Array<{ revision: number }>).map((r) => r.revision) : [];
   is(versions.join(",") === "1,2,10",
-     `the version list is ${JSON.stringify(versions)}, expected [1,2,10] — a history ordered by ` +
-     "anything but the revision number reads as a history with gaps");
+     `the version list is ${JSON.stringify(versions)}, expected [1,2,10] — the reader reordered what ` +
+     "the database gave it");
+  // COUPLED: the statement, not the list. The stub answers in fixture order and the fixture is
+  // sorted, so the assertion above holds whether or not the query asks for that order.
+  is(/order by r\.revision\b/.test(historySql),
+     `the history is read with ${JSON.stringify(historySql)} — a history the database is free to ` +
+     "order as it likes reads as a history with gaps");
   // A shared prefix is not a shared document: spec-review.md is its own document and must not be
   // filed under spec.md's history.
   const review = await loadDocument(TEAM, `${INIT}/spec-review.md`);

@@ -80,7 +80,12 @@ probe("the skill registry is not behind the catalog", () => {
   const onDisk = Number(run("bash", ["-c",
     `find ${root}/catalog -name SKILL.md | wc -l`]).trim());
   if (!onDisk) return "this checkout's catalog holds no SKILL.md at all — the doctor is reading nothing";
-  const rows = Number((psql("select count(*) from zz.skill").trim() || "0"));
+  // LIVE rows, never every row. `zz.skill` keeps a row for every name ever registered and
+  // `register-skills` marks the ones the catalog no longer carries `retired` rather than deleting
+  // them — their versions are referenced by runs and plugin releases. So the total only ever
+  // grows, `rows >= onDisk` held permanently, and this probe could not fire for the case it names:
+  // a catalog that grew a skill with no release behind it.
+  const rows = Number((psql("select count(*) from zz.skill where not retired").trim() || "0"));
   if (!rows) throw new Error("could not count zz.skill on the host");
   return rows >= onDisk ? null
     : `the catalog ships ${onDisk} skills and the registry holds ${rows} row(s) — the deploy step's ` +

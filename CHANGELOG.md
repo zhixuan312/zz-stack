@@ -33,6 +33,93 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.93.0] — 2026-10-06 · console 0.24.4
+
+Material can reach the platform without a model transcribing it, and the page a person opens
+asks for what it shows rather than for everything behind it.
+
+### zz-stack 0.93.0
+
+- **A file's bytes reach the platform without a model carrying them.** An MCP call's arguments
+  are the model's own output, so attaching a report somebody already has cost its whole length
+  in output tokens — and a PDF's bytes cannot be produced that way at any price, so material
+  arrived by hand, one character at a time. `source_upload` now answers with a command the
+  caller's own shell runs, and `PUT /upload/source` takes the bytes, turns them into the text a
+  source holds, and files them through `source_add`. `source_list` reads back what an initiative
+  already has. Markdown, text, CSV, JSON, YAML, XML, SQL, HTML, `.docx`, `.odt` — and **PDF**,
+  read with no PDF engine: the content streams are inflated, the text operators taken out of
+  them, and anything it cannot read is a refusal rather than a source holding nothing.
+- **A corpus can be reset again.** `reset-store.sh` moved initiative folders out of a volume
+  the store left behind when it moved into rows, so it printed "already clean" on every run and
+  the next measurement resumed the previous version's answers. It renames the corpus's
+  initiative slugs now — freeing the name the next run looks for, keeping every row, its
+  revisions and the scores that name them.
+- **A reply nothing observed is refused under a pinned deployment.** `label-adapter.ts` states
+  the rule — unverifiable is not verified — and the guard missed the case it was written for: a
+  profile that pinned a digest and got a reply naming no model at all fell through and was
+  answered.
+- **`EVAL_MCP_URL` reaches the container.** `.env.example` documented it and the gateway's relay
+  read it, and compose never placed it in the environment — so an operator who set it kept the
+  default and had no way to know. `ZZ_DB_*`, `TYPESAFE_TIMEOUT_MS`, `TYPESAFE_BUDGET_MS`,
+  `TYPESAFE_ATTEMPTS` and `GATEWAY_PUBLIC_URL` were forwarded the same way.
+- **A cookie that cannot be decoded is a 401, not a 500.** `decodeURIComponent` throws on `%zz`
+  or a trailing `%`, so an unauthenticated caller could make every route that reads a cookie
+  answer 500 rather than refusing the request.
+- **`initiative_status` reads a team's initiatives together.** Each one was a round of reads of
+  its own, strictly in sequence: a team with one open initiative answered in 51–68 ms and the
+  busiest here waited 1.4–2.3 s. The reads overlap now, by the connections the service holds.
+- **The console's run window and a document write's citations stop reading what they do not
+  use.** `zz.skill_run.started_at` is indexed — the Overview asked for a window of runs and the
+  only index led on `skill_version_id`, so the planner read every run it had to sort — and a
+  write resolves every document it cites in one lookup rather than one per citation.
+- **Three things an operator runs are fixed.** The restore drill threw psql's status away and
+  reported "restore drill OK" over a restore that died part-way through; `install-caddy.sh`
+  hard-coded a deploy path that `provision-host.sh` lets you move; and the mutation runner's
+  judgement before `rmSync` now refuses a filesystem root, a home directory — `--work /tmp` is
+  one keystroke from `--work /tmp/zz-mut`.
+
+### zz-stack-dashboard 0.24.4
+
+- **Pages paint in about a quarter of the time.** Nine of them were not being prerendered at
+  all: reading Next's search params in a prerendered route client-renders everything up to the
+  nearest Suspense boundary, and a console page has none, so they shipped an empty shell and
+  painted their own masthead only once hydration finished. `/teams` 2212 ms → 632 ms,
+  `/people` 2340 → 640, `/initiatives` 2190 → 644, and the two pages still over a second —
+  `/settings` and the plugin family — 2624 → ~1450 by giving each a sentence rather than a
+  placeholder, which is what `ConsolePage` documents its description to be.
+- **The console-scope section is drawn for everyone**, and only the switch is a superadmin's.
+  It explained the choice to nobody who did not already have it, and hid the page's largest text
+  block from the HTML while doing so. Its row holds its height whichever way `/me` answers, so
+  nothing below it moves.
+- **Typing in a search box sends one write, not one per keystroke.** The address is the state,
+  so eight characters were eight `router.replace` calls and eight re-renders of every row.
+- **A read that failed says so.** The tiles drew `…` for ever, which reads as loading, so a page
+  whose read never arrived looked like one still arriving; they read `—` and the pages that had
+  no table to report a failed shelf now say it.
+- **A citation is a link only where there is a page to open**, and a node's neighbours arrive
+  with the node rather than costing the whole shelf.
+
+### Upgrade notes
+
+- **A migration applies on the gateway's next start**: `004_skill_run_started_at_index.sql`, one
+  index on `zz.skill_run`. It is additive — no table is reshaped, no row changes, and it does not
+  affect a rollback to the previous release.
+- **Every installed client must re-pull, and the order matters.** The shipped skills changed —
+  `skills/zz-platform/SKILL.md`, the spine every agent loads first, among them:
+
+  ```bash
+  claude plugin marketplace update zz-stack   # re-pull the shelf first
+  claude plugin update zz-core@zz-stack       # then each plugin installed
+  claude plugin update zz-access@zz-stack
+  claude plugin update sdlc@zz-stack
+  ```
+
+  One plugin per command: `claude plugin update` takes a single `<plugin>`. The first line is
+  the one that gets forgotten — the shelf is a clone of the repository, and `plugin update` reads
+  whatever that clone currently says, so on a stale clone it finds the version it already has and
+  reports success while changing nothing.
+- Nothing else to do: no env key, no required configuration, and no tool was renamed or lost.
+
 ## [0.92.14] — 2026-10-04 · console 0.24.3
 
 The same shape as 0.92.13, found by reading the product the way a browser sees it: work done

@@ -92,6 +92,6 @@ of any of this — only the comparison against `schema-target.ts` is.
 Declare the target first, then write the migration. Add the table or column to
 `schema-target.ts` — its columns, types, nullability, keys, constraints, indexes and its
 structured comment — before any migration file references it. Then write the release's
-`002_<name>.sql` migration that makes the live catalog match what `schema-target.ts` now
+`00N_<name>.sql` migration that makes the live catalog match what `schema-target.ts` now
 declares. `checks/schema-inventory.ts` is what proves the two agree; a migration written
 before the target is a migration nothing has checked.

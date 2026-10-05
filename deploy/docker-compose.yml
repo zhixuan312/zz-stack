@@ -122,6 +122,10 @@ services:
       - LLM_BASE_URL=${LLM_BASE_URL:-}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - GATEWAY_PUBLIC_URL=${GATEWAY_PUBLIC_URL:-}
+      # Where the gateway finds zz-core's eval door (`relay.ts`). Spelled here with the same
+      # default the code carries: a knob `.env.example` documents and compose never forwards is
+      # a switch that does nothing.
+      - EVAL_MCP_URL=${EVAL_MCP_URL:-http://zz-core:8000/eval-mcp}
       # The gateway's own pool (db.ts). Same reason as zz-core's above: documented, and previously
       # reaching nothing.
       - ZZ_DB_POOL_MAX=${ZZ_DB_POOL_MAX:-}

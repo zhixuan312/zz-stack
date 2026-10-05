@@ -139,8 +139,9 @@ skills/     the baseline plugin's skills, served whatever flow a team runs. They
             own tables, because a finding belongs to a moment and a version.
 testing/    the shell around the engines: eval-step.sh (every requirement in
             the corpus through one step, each in its own initiative, keeping
-            what it produced), reset-store.sh (archives a corpus's initiatives
-            so the next version answers instead of resuming the last one). The
+            what it produced), reset-store.sh (renames a corpus's initiatives
+            so the next version answers instead of resuming the last one, keeping
+            every row). The
             engines themselves
             are TypeScript, in
             packages/tools/src/testing/:

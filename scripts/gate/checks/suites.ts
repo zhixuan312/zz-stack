@@ -95,6 +95,8 @@ check("redaction lets no secret through, on the real predicate", runsClean("reda
 
 check("scope and authority refuse what they say they refuse", runsClean("scope-check"));
 
+check("an uploaded file becomes the text a source holds, or a refusal that says why", runsClean("extract-check"));
+
 /* A released version whose changelog entry still says "Unreleased".
  *
  * Stamping the section is a judgement step done by hand on a release branch — nothing in

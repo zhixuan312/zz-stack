@@ -25,6 +25,7 @@ import { mountPasskey, sweepSessions } from "./passkey.js";
 import { CORE_URL, EVAL_URL, passThrough } from "./relay.js";
 import { reconcileRuns } from "./runs.js";
 import { mountSettings } from "./settings.js";
+import { mountUpload } from "./upload.js";
 import { doorSurface, toolCallTelemetry } from "./tool-telemetry.js";
 
 const app = express();
@@ -242,6 +243,9 @@ mountPasskey(app);
 mountConsole(app);
 mountConsoleWrite(app);
 mountConsoleAsk(app);
+// A file's bytes, without a model carrying them. Beside the doors rather than under
+// /api/console, because a member's own token is who uploads — see upload.ts.
+mountUpload(app);
 // DELIBERATE: the `my_*` functions are handed over as a dependency object rather than
 // imported by settings.ts. They live in credentials.ts so /manage/mcp's tools and
 // settings.ts's browser routes call the same function, and a value import there would make

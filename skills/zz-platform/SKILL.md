@@ -420,6 +420,15 @@ The knowledge store is the team's, not one agent's session:
   name in `supports` every document it bears on (one or several). It is
   ungated and immutable; anyone on the team may add one at any time from
   any harness. A round names its `stage`; a malformed review ledger is refused by name.
+- **When the material is a file you already have, upload it — do not transcribe
+  it.** `source_upload` checks the names and answers with one command to run;
+  the shell sends the file from the machine it sits on, so its bytes never pass
+  through you. That is the whole point of it: text you produce as an argument
+  costs its own length in output tokens, twice over once you read it back to
+  check, and a PDF's bytes cannot be produced that way at all. The command PUTs
+  to `/upload/source` on the gateway, and the answer names the formats the
+  platform can read when yours is one it cannot. `source_add` stays the tool for
+  words you have; reach for `source_upload` for anything long, and for any file.
 - **The platform is a tenant too.** Its TEAM slug is also `zz-platform` —
   the same word as this skill's name and a different thing: a team shelf in
   the store, not a skill you can load. No tenant may claim it. That shelf has
@@ -528,7 +537,7 @@ reading later can see one caused the other.
   | documents | `/core/mcp` | `document_write` `document_read` `document_present` `document_patch` `document_list` `document_revise` `document_shown` |
   | initiatives | `/core/mcp` | `initiative_open` `initiative_close` |
   | gates | `/core/mcp` | `document_approve` |
-  | sources | `/core/mcp` | `source_add` `source_list` |
+  | sources | `/core/mcp` | `source_add` `source_upload` `source_list` |
   | knowledge | `/core/mcp` | `knowledge_search` `knowledge_add` `knowledge_supersede` `knowledge_reindex` |
   | skills | `/core/mcp` | `skill_list` `skill_read` |
   | bugs | `/core/mcp` | `bug_report` `bug_list` `bug_resolve` `bug_delete` |

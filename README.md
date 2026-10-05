@@ -58,18 +58,22 @@ services/zz-core/     process MCP: skills library, team-shared knowledge store,
                       document-chain guardrails, knowledge tools
 services/gateway/     the one door: identity (PATs, and a passkey for the console),
                       platform registry + admin MCP, the proxy to zz-core's doors,
-                      and the console's read API.
-                      Three offline checks live beside the code they are about:
+                      the console's read API, and the upload a file's bytes arrive
+                      through when a model must not carry them (see deploy/README.md)
+                      Four offline checks live beside the code they are about:
                       identity-check (the adapter walk, whose ordering is an
                       authentication property no reading of the loop shows),
                       scope-check (the real resolveScope over ten callers, so a
                       caller can never come back with "no scope" — only a team,
-                      the platform, or a refusal), and redact-check (every
+                      the platform, or a refusal), redact-check (every
                       settings response shape through the real redactor, so a
                       credential value or a stored token never survives — nested
                       or not — while the metadata beside it still does, and a
                       field nobody named yet is caught on its name alone rather
-                      than left to be remembered)
+                      than left to be remembered), and extract-check (every kind
+                      of file an upload arrives as, through the real reader, so
+                      a format it cannot read is a refusal that names what it
+                      can rather than a source holding nothing)
 catalog/    the flows and platform capabilities, one directory per owner. A
             flow.json says what each is; `shelved: true` marks a capability
             every person gets from the shelf rather than one a team installs:

@@ -202,6 +202,14 @@ role at the door, not by what their shelf lists.
 
 `client_setup` on `/manage/mcp` prints these steps with the person's own values.
 
+**Attaching a file.** Supporting material is text, and an agent attaching one normally has to
+produce every byte of it as its own output — which a PDF makes impossible, and which a long report
+makes expensive. `source_upload` on `/core/mcp` answers with one command instead: the shell reads
+the file and sends it to `PUT /upload/source` on this gateway, so nothing about the file passes
+through the model. Markdown, plain text, CSV, JSON, HTML, `.docx` and `.odt` are read; anything
+else is refused, naming the formats it does read. `GATEWAY_PUBLIC_URL` is what the command's
+address is built from.
+
 Claude Code is the only client.
 
 People authenticate with a PAT (`pat_issue`), and get the same identity, the same

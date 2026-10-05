@@ -143,7 +143,7 @@ const TOOL_DOMAIN: Record<string, string> = {
   document_approve: "work", document_list: "work", document_patch: "work",
   document_present: "work", document_read: "work", document_revise: "work",
   document_write: "work", initiative_close: "work", initiative_open: "work",
-  initiative_status: "work", source_add: "work", source_list: "work",
+  initiative_status: "work", source_add: "work", source_list: "work", source_upload: "work",
   skill_list: "work", skill_read: "work", session_whoami: "work",
   // A checkpoint a stage reaches while doing the work — one bounded question, answered as
   // evidence for the stage's own decision and never as the decision. Scoring a plugin is

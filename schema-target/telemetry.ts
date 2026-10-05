@@ -401,6 +401,7 @@ export const TELEMETRY: Record<string, TableTarget> = {
     indexes: [
       "CREATE INDEX run_skill_version ON zz.skill_run USING btree (skill_version_id, started_at DESC)",
       "CREATE UNIQUE INDEX skill_run_identity ON zz.skill_run USING btree (team_id, initiative_id, skill_version_id, session) NULLS NOT DISTINCT",
+      "CREATE INDEX skill_run_started_at ON zz.skill_run USING btree (started_at)",
     ],
     comment: "class=current_state; authority=this; question=what has one caller conversation done with one skill version inside one initiative — how many calls, how many refusals, how much response body, and from when to when?; retention=follows event: never pruned on its own, and once raw telemetry ages out the summary stays the durable answer for its window",
     columnComments: {

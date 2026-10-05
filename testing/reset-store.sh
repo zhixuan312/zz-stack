@@ -1,18 +1,14 @@
 #!/usr/bin/env bash
-# Clear the evaluation team's store of one corpus's initiatives, so the next version answers
-# each requirement instead of resuming the previous version's answer.
+# REFUSES. This cleared one corpus's initiatives so the next version answers each requirement
+# instead of resuming the previous version's answer — a step that finds an existing initiative
+# resumes it, so a second run against an unreset store is not a second measurement.
 #
-#   ./testing/reset-store.sh --team <slug> --prefix 2026-08-3
-#   ./testing/reset-store.sh --team <slug> --prefix 2026-08-3 --dry-run
+# It did that by moving initiative folders out of `/artifacts/teams/<team>`, and the store moved
+# into the database: an initiative is a `zz.initiative` row, its documents are `zz.doc` and
+# `zz.doc_revision`. Nothing here has anything to move, so it reported every corpus clean without
+# resetting one. It says so and exits 2 until the reset is written against the database.
 #
-# A step that finds an existing initiative folder resumes it rather than creating a duplicate,
-# so a second run of one corpus against an unreset store is not a second measurement.
-#
-# DELIBERATE: it archives and never deletes. The documents a run produced are the evidence for
-# its scores; they move to /artifacts/archive/<team>/<stamp>/ and stay there.
-#
-# Afterwards call knowledge_reindex: zz.doc and zz.decision are built from the filesystem, and
-# moving a folder leaves rows pointing at documents that no longer exist.
+# Not deleted: the job is still wanted. See the body for what doing it means.
 set -euo pipefail
 
 # DELIBERATE: the body is one brace group, so bash reads it whole before running. It otherwise
@@ -37,26 +33,25 @@ done
   echo "usage: $0 --team <slug> --prefix <initiative-prefix> [--dry-run]" >&2; exit 2; }
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-LIST="$(ssh -o BatchMode=yes -o ConnectTimeout=20 "$HOST" \
-  "$IN_CORE sh -c 'ls /artifacts/teams/$TEAM 2>/dev/null'" | grep "^$PREFIX" || true)"
-
-if [ -z "$LIST" ]; then
-  echo "  nothing in $TEAM matches $PREFIX — the store is already clean for this corpus"
-  exit 0
-fi
-N="$(printf '%s\n' "$LIST" | wc -l | tr -d ' ')"
-echo "  $N initiative(s) in $TEAM matching $PREFIX"
-printf '%s\n' "$LIST" | sed 's/^/    /' | head -6
-[ "$N" -gt 6 ] && echo "    … and $((N - 6)) more"
-
-if [ -n "$DRY" ]; then
-  echo "  --dry-run: nothing moved"
-  exit 0
-fi
-
-ssh -o BatchMode=yes -o ConnectTimeout=60 "$HOST" \
-  "$IN_CORE sh -c 'mkdir -p /artifacts/archive/$TEAM/$STAMP && cd /artifacts/teams/$TEAM && for d in $PREFIX*; do [ -e \"\$d\" ] && mv \"\$d\" /artifacts/archive/$TEAM/$STAMP/; done; ls /artifacts/archive/$TEAM/$STAMP | wc -l'"
-
-echo "  archived to /artifacts/archive/$TEAM/$STAMP — nothing was deleted"
-echo "  now call knowledge_reindex so zz.doc and zz.decision stop pointing at documents that moved"
+# REFUSED, not attempted. This read `/artifacts/teams/<team>` and moved the matching initiative
+# folders into `/artifacts/archive/`. The volume that held them is retired — a document, its
+# revisions and its citations are `zz.doc`, `zz.doc_revision` and `zz.doc_link` rows, and zz-core
+# is given no volume at all — so the `ls` found nothing, the script printed "the store is already
+# clean for this corpus", and exited 0 on every run. A corpus nobody reset is a second
+# measurement that resumed the first, which is the one thing this script exists to prevent, and
+# the archive it did write landed in the container's ephemeral layer.
+#
+# Left refusing rather than deleted: what it does is still wanted, and the way to do it is a
+# decision. Resetting a corpus now means making its initiative slugs available again — renaming
+# them keeps every row and frees the name, where deleting them would take the evidence the scores
+# rest on. Nothing writes it yet; a file-based archive has nowhere to live, by design.
+{
+echo "REFUSED — this script resets a store that no longer exists." >&2
+echo "  It archived initiative FOLDERS under /artifacts/teams/<team>, and the store moved into" >&2
+echo "  the database: an initiative is a zz.initiative row, its documents are zz.doc and" >&2
+echo "  zz.doc_revision. Nothing here has anything to move, so it would report the corpus clean" >&2
+echo "  without resetting it — and a corpus that is not reset measures the previous run's" >&2
+echo "  answers. Doing it properly means renaming the corpus's initiative slugs, which keeps" >&2
+echo "  every row and frees the names; that is not written yet." >&2
+exit 2
 }

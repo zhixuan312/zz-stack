@@ -82,7 +82,11 @@ export function platformEvent(e: {
     if (!p) return;
     void p.query(
       `insert into zz.event (actor_id, team_id, initiative_id, kind, subject, detail)
-       values ((select id from zz.principal where email = lower($1)),
+       -- FOLDED ON BOTH SIDES, as platform-db.ts, versions.ts and semantic.ts all do. This folded
+       -- only the parameter, so an address stored with any upper case resolved to no principal and
+       -- zz.event.actor_id was written null, silently — the insert is fire-and-forget and nothing
+       -- reads the column back to notice.
+       values ((select id from zz.principal where lower(email) = lower($1)),
                (select id from zz.team where slug = $2),
                (select i.id from zz.initiative i join zz.team t on t.id = i.team_id
                  where t.slug = $2 and i.slug = $3),

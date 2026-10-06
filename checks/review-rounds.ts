@@ -144,8 +144,8 @@ const SPEC = "# Spec\n\n## Stakeholders & Work\n\n- [ ] **AC-1.1** An intake ema
 // by checks/plan-waves-status.ts cases 5 and 6).
 const PLAN = "# Plan\n\n## Phase 1 — cases\n\n### Task I-1: Intake (← AC-1.1)\n\n**Technical acceptance " +
              "criteria** (← AC-1.1): the intake check passes on a sample email. It proves:\n" +
-             "- one email becomes one case\n\n**Checks:**\n- Check: `checks/intake.ts`\n" +
-             "- Run: `node checks/intake.ts`  Expected: PASS once implemented\n\n" +
+             "- one email becomes one case\n\n**Checks:**\n- Check: `verify/intake.ts`\n" +
+             "- Run: `node verify/intake.ts`  Expected: PASS once implemented\n\n" +
              "### As built\n\nPhase 1 is built.\n\n## Full-suite gate\n\nnpm run gate\n";
 
 let n = 0;
@@ -343,21 +343,21 @@ const move = async (i: Fixture) =>
     .map((x) => [x.id, x]));
   is(criteria.get("I-1")?.text === "the intake check passes on a sample email. It proves:\n- one email becomes one case",
      `a task's criterion is its whole technical AC, up to the next label: ${JSON.stringify(criteria.get("I-1")?.text)}`);
-  is(JSON.stringify(criteria.get("I-1")?.checks) === '["checks/intake.ts"]' &&
-     JSON.stringify(criteria.get("AC-1.1")?.checks) === '["checks/intake.ts"]' &&
+  is(JSON.stringify(criteria.get("I-1")?.checks) === '["verify/intake.ts"]' &&
+     JSON.stringify(criteria.get("AC-1.1")?.checks) === '["verify/intake.ts"]' &&
      JSON.stringify(criteria.get("AC-2.1")?.checks) === "[]",
      `a task's checks bind to it and to the criteria its heading cites, and to nothing else: ` +
      JSON.stringify([...criteria.values()].map((c) => [c.id, c.checks])));
   // A row naming the plan's declared check is asked only whether it passed (bug d5ab33bd); any
   // other row is asked the criterion itself.
-  const bound = acc.questionOf(criteria.get("AC-1.1"), "run:node checks/intake.ts — `intake: ok`");
-  is(bound.bound.length === 1 && /^AC-1\.1 is verified by the check the approved plan declares for it, `checks\/intake\.ts`: that check was run and passed\.$/.test(bound.subject),
+  const bound = acc.questionOf(criteria.get("AC-1.1"), "run:node verify/intake.ts — `intake: ok`");
+  is(bound.bound.length === 1 && /^AC-1\.1 is verified by the check the approved plan declares for it, `verify\/intake\.ts`: that check was run and passed\.$/.test(bound.subject),
      `a row naming the declared check: ${JSON.stringify(bound)}`);
   is(acc.questionOf(criteria.get("AC-1.1"), "run:other/dir/intake.ts — `intake: ok`").bound.length === 1,
      "the declared check run from another directory was not recognised by its file name");
-  const two = { id: "AC-9.1", text: "both halves hold", from: "spec.md", checks: ["checks/a.ts", "checks/b.ts"] };
-  is(acc.questionOf(two, "run:node checks/a.ts — `a: ok`").bound.length === 0 &&
-     acc.questionOf(two, "run:node checks/a.ts — `a: ok`; run:node checks/b.ts — `b: ok`").bound.length === 2,
+  const two = { id: "AC-9.1", text: "both halves hold", from: "spec.md", checks: ["verify/a.ts", "verify/b.ts"] };
+  is(acc.questionOf(two, "run:node verify/a.ts — `a: ok`").bound.length === 0 &&
+     acc.questionOf(two, "run:node verify/a.ts — `a: ok`; run:node verify/b.ts — `b: ok`").bound.length === 2,
      "a row naming one of a criterion's two declared checks was read as resting on the plan");
   const free = acc.questionOf(criteria.get("AC-1.1"), "check:intake — `intake: ok`");
   is(free.bound.length === 0 && free.subject.startsWith("AC-1.1: "), `a row naming no declared check: ${JSON.stringify(free)}`);

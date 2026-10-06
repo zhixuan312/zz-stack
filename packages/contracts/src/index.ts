@@ -57,9 +57,16 @@ export * from "./control-loop.js";
  */
 export const ENVELOPE_BLOCK = /^---[ \t]*\n([\s\S]*?)\n---[ \t]*\n?/;
 
-/** A document without its envelope. */
+/** A document without its envelope, and without the blank lines that separate the two.
+ *
+ * DELIBERATE: the separator belongs to neither half. Stamping and recomposing a stored revision
+ * each join envelope and body with a blank line, so a body that kept it grew by one on every
+ * read-and-write — every stored body carried one, and an edit's line numbers were off by them
+ * (checks/document-body-roundtrip.ts). A text with no envelope has no separator and is returned
+ * as it is. */
 export function documentBody(content: string): string {
-  return content.replace(ENVELOPE_BLOCK, "");
+  const m = content.match(ENVELOPE_BLOCK);
+  return m ? content.slice(m[0].length).replace(/^(?:[ \t]*\r?\n)+/, "") : content;
 }
 
 /** A document's frontmatter envelope, or {} when there is none. Later keys win, and a value's

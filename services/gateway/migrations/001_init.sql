@@ -117,6 +117,7 @@
 -- absorbs: 002_event_indexes.sql
 -- absorbs: 003_doc_initiative_index.sql
 -- absorbs: 004_skill_run_started_at_index.sql
+-- absorbs: 002_comment_drift.sql
 -- requires-extension: citext
 -- requires-extension: pg_trgm
 

@@ -232,6 +232,53 @@ async function citedByVersion(p: Pick<pg.Pool, "query">, docId: string, version:
   return new Set(rows.map((r) => r.path));
 }
 
+/** A `sources` entry that is no path inside the initiative: INVALID_MODE, on a create as on a
+ *  change. Asked before any entry is looked up, so a malformed one is never reported as missing. */
+function malformedSource(sources: string[] | undefined): string | null {
+  const bad = (sources ?? []).find((src) => !DOC_REF.test(src.trim()));
+  return bad === undefined ? null
+    : `ERROR: INVALID_MODE — source "${bad}" must be a path inside the initiative, ` +
+      "e.g. `sources/2026-10-06-call-notes.md` — letters, digits, dot, dash, underscore and / only.";
+}
+
+/** The caller's causes, the one definition a create and a change share: the sources it names and
+ *  the words it passes as `source_content`, filed as a new source — both the agent's. `already` is
+ *  what the target's current version cites: named again, it is no new cause. `label` titles a
+ *  captured source the caller gave no title. The platform's causes — owed sources — are added by
+ *  each caller after these, so a named one wins. */
+async function namedCauses(
+  p: pg.Pool, team: string, who: string, path: string,
+  a: { sources?: string[]; source_content?: string; source_title?: string },
+  o: { already: Set<string>; label: string },
+): Promise<{ reply: string } | { causes: Cause[]; captured?: { relPath: string; text: string } }> {
+  const [initiative, name] = [path.split("/")[0], path.split("/").slice(1).join("/")];
+  const causes: Cause[] = [];
+  for (const src of [...new Set((a.sources ?? []).map((s) => s.trim()))]) {
+    const rel = `${initiative}/${src}`;
+    const at = await documentAt(p, team, rel);
+    if (!at || at.current_revision === null) {
+      return { reply: `ERROR: ${rel} is not a document in this team's store, so it cannot be named as ` +
+        `a cause of ${path}. source_add files new material, or pass the words themselves as ` +
+        "`source_content`." };
+    }
+    if (!o.already.has(rel)) causes.push({ path: rel, revision: at.current_revision, linked_by: "agent" });
+  }
+  let captured: { relPath: string; text: string } | undefined;
+  if (a.source_content?.trim()) {
+    const title = (a.source_title || o.label).trim();
+    const day = isoToday();
+    // Named exactly as source_add names one, and suffixed rather than refused when the name is
+    // taken: the change it explains must not fail over its label.
+    const stem = `${initiative}/sources/${day}-${titleSlug(title, "source")}`;
+    let rel = `${stem}.md`;
+    for (let n = 2; await documentAt(p, team, rel); n++) rel = `${stem}-${n}.md`;
+    captured = { relPath: rel, text: sourceDocument({ title, by: who, day, content: a.source_content.trim(),
+                                                      supports: [name] }) };
+    causes.push({ path: rel, revision: 1, linked_by: "agent" });
+  }
+  return { causes, captured };
+}
+
 /** Which body mode a call sends, or the INVALID_MODE that says why it sends none or two. */
 function modeOf(a: EditArgs): "edits" | "section" | "content" | "metadata" | { refusal: string } {
   const invalid = (why: string) => ({ refusal: `ERROR: INVALID_MODE — ${why}` });
@@ -340,12 +387,8 @@ export async function planEdit(
   if (typeof mode !== "string") return { reply: mode.refusal };
   const fm = mode === "content" ? frontmatterRefusal(a.content ?? "", "document_edit") : null;
   if (fm) return { reply: fm };
-  for (const src of a.sources ?? []) {
-    if (!DOC_REF.test(src.trim())) {
-      return { reply: `ERROR: INVALID_MODE — source "${src}" must be a path inside the initiative, ` +
-        "e.g. `sources/2026-10-06-call-notes.md` — letters, digits, dot, dash, underscore and / only." };
-    }
-  }
+  const malformed = malformedSource(a.sources);
+  if (malformed) return { reply: malformed };
   // (6)
   if (mode === "edits" && (!Array.isArray(a.edits) || a.edits.length < 1 || a.edits.length > MAX_EDITS)) {
     return { reply: batchRefusal(path, { code: "EDIT_COUNT" }) };
@@ -396,31 +439,12 @@ export async function planEdit(
   }
   // The causes. Named sources and words captured as a new source are the caller's; owed sources
   // are the platform's, and a change that leaves the body alone owes none.
-  const already = await citedByVersion(p, loaded.doc.id, version);
-  const causes: Cause[] = [];
-  for (const src of [...new Set((a.sources ?? []).map((s) => s.trim()))]) {
-    const rel = `${initiative}/${src}`;
-    const at = await documentAt(p, team, rel);
-    if (!at || at.current_revision === null) {
-      return { reply: `ERROR: ${rel} is not a document in this team's store, so it cannot be named as ` +
-        `a cause of ${path}. source_add files new material, or pass the words themselves as ` +
-        "`source_content`." };
-    }
-    if (!already.has(rel)) causes.push({ path: rel, revision: at.current_revision, linked_by: "agent" });
-  }
-  let captured: { relPath: string; text: string } | undefined;
-  if (a.source_content?.trim()) {
-    const title = (a.source_title || `Input behind v${bodyChanged ? version + 1 : version}`).trim();
-    const day = isoToday();
-    // Named exactly as source_add names one, and suffixed rather than refused when the name is
-    // taken: the change it explains must not fail over its label.
-    const stem = `${initiative}/sources/${day}-${titleSlug(title, "source")}`;
-    let rel = `${stem}.md`;
-    for (let n = 2; await documentAt(p, team, rel); n++) rel = `${stem}-${n}.md`;
-    captured = { relPath: rel, text: sourceDocument({ title, by: who, day, content: a.source_content.trim(),
-                                                      supports: [name] }) };
-    causes.push({ path: rel, revision: 1, linked_by: "agent" });
-  }
+  const named = await namedCauses(p, team, who, path, a, {
+    already: await citedByVersion(p, loaded.doc.id, version),
+    label: `Input behind v${bodyChanged ? version + 1 : version}`,
+  });
+  if ("reply" in named) return named;
+  const { causes, captured } = named;
   if (bodyChanged) {
     for (const owed of await owedSources(p, team, initiative, name, loaded.doc.id)) {
       if (!causes.some((c) => c.path === owed.path)) causes.push(owed);
@@ -491,34 +515,16 @@ export async function planCreate(
 ): Promise<{ reply: string } | Omit<Planned, "noChange" | "replaced">> {
   const [initiative, name] = [path.split("/")[0], path.split("/").slice(1).join("/")];
   if (await documentAt(p, team, path)) return { reply: targetExists(path) };
+  const malformed = malformedSource(a.sources);
+  if (malformed) return { reply: malformed };
   // The chain from the caller's bytes and, failing that, the initiative's row — a first document
   // is written before any other carries a `flow:`.
   const chain = await chainFor(p, team, path, a.content);
   const { stakeholder, tags, title, fields } = a;
   const fixed = normalizeSections(chain, path, envelopeFor(chain, path, a.content, { stakeholder, tags, title, fields }));
-  const causes: Cause[] = [];
-  for (const src of [...new Set((a.sources ?? []).map((x) => x.trim()))]) {
-    const rel = `${initiative}/${src}`;
-    const at = DOC_REF.test(src) ? await documentAt(p, team, rel) : null;
-    if (!at || at.current_revision === null) {
-      return { reply: `ERROR: ${rel} is not a document in this team's store, so it cannot be named as ` +
-        `a cause of ${path}. source_add files new material, or pass the words themselves as ` +
-        "`source_content`." };
-    }
-    causes.push({ path: rel, revision: at.current_revision, linked_by: "agent" });
-  }
-  let captured: { relPath: string; text: string } | undefined;
-  if (a.source_content?.trim()) {
-    const sourceTitle = (a.source_title || "Input behind v1").trim();
-    const day = isoToday();
-    // Named exactly as source_add names one, suffixed when the name is taken.
-    const stem = `${initiative}/sources/${day}-${titleSlug(sourceTitle, "source")}`;
-    let rel = `${stem}.md`;
-    for (let n = 2; await documentAt(p, team, rel); n++) rel = `${stem}-${n}.md`;
-    captured = { relPath: rel, text: sourceDocument({ title: sourceTitle, by: who, day,
-                                                      content: a.source_content.trim(), supports: [name] }) };
-    causes.push({ path: rel, revision: 1, linked_by: "agent" });
-  }
+  const named = await namedCauses(p, team, who, path, a, { already: new Set(), label: "Input behind v1" });
+  if ("reply" in named) return named;
+  const { causes, captured } = named;
   for (const owed of await owedSources(p, team, initiative, name, null)) {
     if (!causes.some((c) => c.path === owed.path)) causes.push(owed);
   }

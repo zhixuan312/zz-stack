@@ -33,6 +33,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.93.3] — 2026-10-06
+
+One gate fix.
+
+### zz-stack 0.93.3
+
+- **A spec's core statements are judged on the readings its approval asks for.** `document_approve`
+  on a spec asked `evidence_relation` about every core statement nobody had asked about yet, then
+  judged from the memo it had read before asking. So every statement asked at that approval was
+  reported "unavailable" and rested on the deterministic rules alone: a spec's first approval never
+  saw its own readings, and one was approved over a `no` (p=0.12). The answers are now judged in
+  the approval that took them.
+
+### Upgrade notes
+
+- Nothing to do: no migration, no env key, no skill changed.
+
 ## [0.93.2] — 2026-10-06
 
 Four open bug reports, all from people approving a flow's documents and being refused for the

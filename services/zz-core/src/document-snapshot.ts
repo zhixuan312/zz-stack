@@ -1,7 +1,8 @@
 /**
  * Which snapshot a write lands on: the per-document lock, the current row with the pin rule's
  * answer, where a write goes on it, and the first free name of a path's stem. `saveDocument`
- * (`document-save.ts`) is the one caller, inside its transaction.
+ * (`document-save.ts`) calls them inside its transaction; a presentation (`commitPresentation`,
+ * review-context.ts) takes the same lock, reads the row it pins and stamps its generation.
  *
  * A snapshot somebody was shown or signed is immutable for every writer. A write that changes its
  * content identity files a new row in the same public version; a write that keeps the identity —
@@ -15,6 +16,37 @@ import { splitStorePath } from "./versions.js";
 /** The per-document lock, held to the end of the transaction. */
 export async function lockPath(c: Pick<pg.Pool, "query">, team: string, relPath: string): Promise<void> {
   await c.query("select pg_advisory_xact_lock(hashtext($1))", [`doc:${team}/${relPath}`]);
+}
+
+/** The document's current row and both generations: the document's, and the row's own — null on a
+ *  row written before generations were recorded per row. What a presentation confirms it showed. */
+export async function rowHeld(
+  c: Pick<pg.Pool, "query">, team: string, relPath: string,
+): Promise<{ id: string; current_revision: number; content_generation: string; own_generation: string | null } | null> {
+  const { initiative, name } = splitStorePath(relPath);
+  const { rows } = await c.query(
+    `select d.id::text as id, d.current_revision, d.content_generation::text as content_generation,
+            r.content_generation::text as own_generation
+       from zz.doc d
+       join zz.initiative i on i.id = d.initiative_id
+       join zz.team t on t.id = i.team_id
+       left join zz.doc_revision r on r.doc_id = d.id and r.revision = d.current_revision
+      where t.slug = $1 and i.slug = $2 and d.path = $3
+      order by d.updated_at desc
+      limit 1`, [team, initiative, name]);
+  return rows[0] ?? null;
+}
+
+/** Stamp a current row written before generations were recorded per row with the document's own,
+ *  at the first act that pins it: the value describes the same content, so the snapshot keeps its
+ *  identity once it is superseded. A row that has one keeps it. COUPLED: `saveDocument` stamps a row
+ *  it supersedes with the same rule, in its own statement. */
+export async function stampGeneration(c: Pick<pg.Pool, "query">, docId: string, revision: number): Promise<void> {
+  await c.query(
+    `update zz.doc_revision r set content_generation = d.content_generation
+       from zz.doc d
+      where d.id = r.doc_id and r.doc_id = $1::uuid and r.revision = $2 and r.content_generation is null`,
+    [docId, revision]);
 }
 
 /** The first free name of a path's stem — `<stem>.md`, `<stem>-2.md`, … — with its lock held.

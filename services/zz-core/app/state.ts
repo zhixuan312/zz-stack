@@ -6,6 +6,17 @@ import { App } from "@modelcontextprotocol/ext-apps";
 
 import type { Rendered } from "./render.ts";
 
+/** One record of the change set from the review context's baseline. COUPLED: `deltaOf`'s records in
+ *  src/document-delta.ts; positions count every heading of the body, from 1. */
+export type Change =
+  | { kind: "added" | "edited"; heading: string; at: number }
+  | { kind: "removed"; heading: string; from: number; lines: number; chars: number }
+  | { kind: "renamed"; from: string; to: string; at: number }
+  | { kind: "moved"; heading: string; from: number; to: number }
+  | { kind: "preamble"; was: unknown; now: unknown }
+  | { kind: "trailing"; was: string; now: string }
+  | { kind: "metadata"; field: string; was: string; now: string };
+
 /** What `document_present` hands over. COUPLED: `PanelDocument` in src/document-panel.ts. */
 export interface PanelDocument {
   path: string; initiative: string; name: string;
@@ -14,7 +25,10 @@ export interface PanelDocument {
   gate: string | null;
   history: { version: number; approvedBy: string | null; approvedAt: string | null }[];
   body: string;
-  previous: { version: number; body: string } | null;
+  content_revision: string | null;
+  review_context: string | null;
+  /** The review context's baseline and the change set from it; `changes` null when it is as long as the document. */
+  previous: { version: number; content_revision: string; changes: Change[] | null } | null;
   ticket: string | null;
 }
 /** A change the reader wants, anchored to what they selected when there was a selection. */
@@ -28,9 +42,11 @@ export interface Slot {
   approval: Approval;
   /** Where the reader was, so a redraw or a tab switch keeps their place. */
   scroll: number;
-  /** Sections that differ from the revision before, by section id; `removed` by heading. */
+  /** Sections that differ from the context's baseline, by heading id; `removed` by heading; `other`
+   *  names what changed outside the sections — the opening, the trailing text, a metadata field. */
   marks: Map<string, "changed" | "new">;
   removed: string[];
+  other: string[];
   onlyChanges: boolean;
   notes: Note[];
   /** What the footer says about the notes just sent, until the next act. */

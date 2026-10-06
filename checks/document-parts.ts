@@ -6,9 +6,13 @@
  *      exactly the body, every part under the limit, no surrogate pair split;
  *   2. `section` returns one heading's subtree, ignores a heading inside a code fence, and
  *      refuses an absent or ambiguous heading by name;
- *   3. presenting that document in parts records `shown_part` rows, counts as presented
- *      (shownSinceLastChange) only once the parts cover the body, appends exactly one `shown`,
- *      and a rewrite after that makes it unpresented again;
+ *   3. presenting that document in parts, in a review context: the first part names the context and
+ *      the next offset to pass it with; parts continued without a context join that context, and
+ *      the document counts as presented (shownSinceLastChange) only once they cover the body; pages
+ *      of another snapshot — even one of the same length — and pages in another context never
+ *      combine; a change set too long for one result is paged the same way, its continuation joins
+ *      the open delta, and covering every delta page counts; a `section` read covers nothing; and
+ *      history is a read that records nothing;
  *   5. `replaceSection` — what `document_edit` with `section` writes — replaces one heading's
  *      section and keeps every other character of the body byte for byte, refuses an absent or
  *      ambiguous heading and a replacement that does not start with a heading, and a heading inside
@@ -28,11 +32,11 @@
  *      text — while a cursor for another ref is INVALID_MODE and another path or an unknown ref is
  *      DETAILS_MISSING.
  *
- * COUPLED: the fact behind "counts as presented" is `doc_revision.presented_at`, and the part
- * spans are `zz.event` rows — a column cannot hold a span set — so the fixture is a stubbed
- * `pg.Pool` that records what the presenter writes and answers what the reader asks. The span
- * bookkeeping is the one thing that still lives in the event table, and losing it makes a
- * partly-presented document read as unpresented: it fails CLOSED.
+ * COUPLED: the fact behind "counts as presented" is `doc_revision.presented_at`, set when a review
+ * context's pages — `zz.event` rows carrying the context, the target snapshot and the span — cover
+ * the current snapshot; so the fixture is a stubbed `pg.Pool` (and its `connect`, for the
+ * presentation's transaction) that records what the presenter writes and answers what the reader
+ * asks. Losing those rows makes a partly-presented document read as unpresented: it fails CLOSED.
  *
  * Run: node checks/document-parts.ts
  */
@@ -60,28 +64,24 @@ lines.push("## Ends", "", "the last line");
 const body = lines.join("\n");
 const content = `---\ntitle: Review\nversion: 1\nstatus: draft\n---\n\n${body}\n`;
 
-/** The fixture: one document, and the rows the presenter and the reader write. `twoRevisions` gives
- *  it a second revision, which is what makes the history guard in step 3b reachable — with one
- *  revision `revision === current_revision` is true for every ask. */
-let twoRevisions = false;
-const doc = { written_at: "2026-09-26T00:00:00.000Z", presented_at: null as string | null };
+/** The fixture: one document, its stored rows, and the rows the presenter and the reader write. A
+ *  change files a new row when `pinned` — a presented row is never rewritten — and rewrites the
+ *  current one otherwise; either way the document's generation moves. */
+const DOC = "00000000-0000-0000-0000-0000000000d2";
+const rows: { revision: number; version: number; body: string; own: string }[] = [{ revision: 1, version: 1, body: content, own: "0" }];
+const doc = { current: 1, generation: 0, written_at: "2026-09-26T00:00:00.000Z", presented_at: null as string | null };
 const events: { kind: string; subject: string; detail: Record<string, unknown> }[] = [];
+const cur = () => rows.find((r) => r.revision === doc.current)!;
 
-pg.Pool.prototype.query = (async function query(text: string, values: unknown[] = []) {
+async function route(text: string, values: unknown[] = []) {
   const sql = String(text).replace(/\s+/g, " ").trim();
-  const one = (rows: Record<string, unknown>[]) => ({ rows, rowCount: rows.length });
-  // `revisionsOf` — the bytes. DELIBERATE: two revisions once `twoRevisions` is set, so that
-  // `loadDocument(team, rel, 1)` answers v1 while the document points at v2. A fixture with one
-  // revision makes `revision === current_revision` true for every ask, and the guard keeping
-  // presented history from vouching for the present is unreachable in it — which is why step 3b
-  // could not catch the defect it exists for until this arm carried a second row.
+  const one = (r: Record<string, unknown>[]) => ({ rows: r, rowCount: r.length });
+  // `revisionsOf` — the bytes, each row with its own public version and generation.
   if (/from zz\.doc_revision r\b/.test(sql) && /where r\.doc_id = \$1::uuid/.test(sql)) {
-    const first = { revision: 1, content_state: "retained", title: "Review", body: content, tags: [],
-                    content_hash: "h", revision_note: null, fields: null, written_by: "u@zz.test",
-                    written_at: doc.written_at, approved_by: null, approved_at: null };
-    return one(twoRevisions
-      ? [first, { ...first, revision: 2, body: `${content}\n\nrewritten`, content_hash: "h2" }]
-      : [first]);
+    return one(rows.map((r) => ({ revision: r.revision, version: r.version, content_state: "retained", title: "Review",
+                                  body: r.body, tags: [], content_hash: `h${r.revision}`, revision_note: null, fields: null,
+                                  written_by: "u@zz.test", written_at: doc.written_at, approved_by: null, approved_at: null,
+                                  content_generation: r.own })));
   }
   // `citationsOf`
   if (/from zz\.doc_link l\b/.test(sql)) return one([]);
@@ -90,29 +90,32 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
     if (values[0] !== TEAM || values[1] !== INIT || values[2] !== "review.md") return one([]);
     return one([{ presented_at: doc.presented_at, written_at: doc.written_at }]);
   }
-  // THE WRITE
+  // THE WRITE, on the row the presentation pinned
   if (/update zz\.doc_revision r set presented_at = now\(\)/.test(sql)) {
-    doc.presented_at = new Date(Date.parse(doc.written_at) + 1000).toISOString();
+    if (values[0] === DOC && values[1] === doc.current) doc.presented_at = new Date(Date.parse(doc.written_at) + 1000).toISOString();
     return { rows: [], rowCount: 1 };
   }
+  // The row a presentation confirms it showed, and the pages a review context holds
+  if (/as own_generation/.test(sql)) {
+    return one([{ id: DOC, current_revision: doc.current, content_generation: String(doc.generation), own_generation: cur().own }]);
+  }
+  if (/e\.detail->>'review_context' as context/.test(sql)) {
+    return one(events.filter((e) => e.subject === values[2] && e.detail.review_context
+        && e.detail.user === values[3] && (e.detail.credential ?? "") === values[4]
+        && (values[5] === null || e.detail.review_context === values[5]))
+      .map((e) => ({ context: e.detail.review_context, target: e.detail.target, baseline: e.detail.baseline,
+                     kind: e.detail.kind, start: e.detail.start, end: e.detail.end, total: e.detail.total })));
+  }
   // DELIBERATE: the routes that decide this check come FIRST. The generic `from zz.doc d` arm
-  // matches the presented_at select's own text too — it has `d.path = $3` — and answering that
-  // with a document row, which carries no `presented_at`, reads as "nobody was shown it"
-  // whatever the fixture says. A router answers by first match.
+  // matches the presented_at select's own text too — it has `d.path = $3` — and a router answers
+  // by first match.
   if (/from zz\.doc d\b/.test(sql) && /d\.path = \$3/.test(sql)) {
     if (values[0] !== TEAM || values[1] !== INIT || values[2] !== "review.md") return one([]);
-    return one([{ id: "d1", initiative: INIT, path: "review.md", flow: "", type: "", status: "draft",
-                  outcome: null, current_revision: twoRevisions ? 2 : 1, approved_revision: null,
-                  updated_at: doc.written_at }]);
+    return one([{ id: DOC, initiative: INIT, path: "review.md", flow: "", type: "", status: "draft",
+                  outcome: null, current_revision: doc.current, approved_revision: null, current_version: cur().version,
+                  content_generation: String(doc.generation), updated_at: doc.written_at }]);
   }
-  // The part spans, and the `shown` projection
-  if (/select e\.kind, \(e\.detail->>'start'\)::int as start/.test(sql)) {
-    return one(events.filter((e) => e.subject === String(values[3]) && e.kind !== "document.shown"
-                               || (e.subject === String(values[3]) && e.kind === "document.shown"))
-      .map((e) => ({ kind: e.kind, start: e.detail.start ?? null, end: e.detail.end ?? null,
-                     total: e.detail.total ?? null })));
-  }
-  // `recordAct` -> `platformEvent`'s insert: four params are enough to keep what this check reads.
+  // `insertEvent`: four params are enough to keep what this check reads.
   if (/insert into zz\.event\b/.test(sql)) {
     events.push({ kind: String(values[3] ?? ""), subject: String(values[4] ?? ""),
                   detail: JSON.parse(String(values[5] ?? "{}")) });
@@ -125,12 +128,15 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
   }
   if (/from zz\.team where slug = \$1|select slug from zz\.team/.test(sql)) return one([{ slug: TEAM }]);
   return one([]);
-}) as unknown as typeof pg.Pool.prototype.query;
+}
+pg.Pool.prototype.query = route as unknown as typeof pg.Pool.prototype.query;
+pg.Pool.prototype.connect = (async () => ({ query: route, release() {} })) as unknown as typeof pg.Pool.prototype.connect;
 
 const load = (p: string) => import(pathToFileURL(join(process.cwd(), p)).href);
 const { PART_LIMIT, locateSection, partHeader, replaceSection, sectionRange, slicePart } =
   await load("services/zz-core/dist/document-parts.js");
-const { present } = await load("services/zz-core/dist/document-present.js");
+const { present: presentIn } = await load("services/zz-core/dist/document-present.js");
+const { contentRevision } = await import("@zz/contracts");
 const { shownSinceLastChange } = await load("services/zz-core/dist/attest.js");
 const { db } = await load("services/zz-core/dist/platform-db.js");
 
@@ -169,70 +175,97 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
   is(typeof slicePart(body, { offset: body.length + 5 }) === "string", "an offset past the end was answered");
 }
 
-// 3. Presenting in parts, and what it counts as
+// 3. Presenting in parts, in a review context, and what it counts as
 {
-  /** Stand in for a write: the revision's bytes are new, so its `written_at` moves past the
-   *  present. An in-place patch does exactly this, which is why the comparison is `>`. */
-  const rewrite = () => {
+  const who = { team: TEAM, email: "u@zz.test", credential: "pat", client: null };
+  const present = async (ask: Record<string, unknown> = {}): Promise<string> =>
+    (await presentIn(db()!, who, REL, ask, false)).text;
+  const shown = () => shownSinceLastChange(db()!, TEAM, REL);
+  const cr = (g: number) => contentRevision(DOC, g);
+  /** A change: new bytes, a new generation, the row's write past any present. */
+  const change = (body: string, pinned: boolean, version = cur().version) => {
+    doc.generation += 1;
+    if (pinned) { rows.push({ revision: doc.current + 1, version, body, own: String(doc.generation) }); doc.current += 1; }
+    else Object.assign(cur(), { body, own: String(doc.generation) });
     const base = doc.presented_at ? Date.parse(doc.presented_at) : Date.parse(doc.written_at);
     doc.written_at = new Date(base + 1000).toISOString();
   };
-  const rows = () => events.filter((e) => e.kind === "document.shown" || e.kind === "document.shown_part");
+  /** Page from `first` to the end, each continuation with only the extra arguments given. */
+  const pageOn = async (first: string, extra: Record<string, unknown>): Promise<string> => {
+    let last = first;
+    let next = Number(/Next: offset (\d+)/.exec(first)?.[1]);
+    for (let i = 0; Number.isFinite(next) && i < 20; i++) {
+      last = await present({ ...extra, offset: next });
+      next = Number(/Next: offset (\d+)/.exec(last)?.[1]);
+    }
+    return last;
+  };
+  const pages = () => events.filter((e) => e.kind === "document.shown" || e.kind === "document.shown_part");
 
-  rewrite();
-  const first = await present(db()!, TEAM, REL, undefined, "u@zz.test", {});
-  is(first.includes("does NOT yet count as presented") && first.includes("Next: offset"),
-     "a first part does not say it is incomplete and where to continue");
+  change(cur().body, false);
+  const first = await present();
+  const rc = /^Review context: (rc_[a-z2-7]{26}) — full, target (\S+), baseline none, not yet covered\.$/m.exec(first);
+  is(rc && rc[2] === cr(1), `a first part does not name a new context, its target and that it is not yet covered: ${first.slice(0, 400)}`);
+  is(first.includes("does NOT yet count as presented") && new RegExp(`^Next: offset \\d+, with review_context "${rc?.[1]}"\\.`, "m").test(first),
+     "a first part does not say it is incomplete and name the context to continue with");
   // A client whose cached tool list predates `offset` cannot follow that line; it is told why.
   is(/no `offset` argument.*refresh or reconnect/.test(first),
      "a first part does not tell a client without `offset` that its tool list is stale");
-  is(await shownSinceLastChange(db()!, TEAM, REL) === false, "one part of three counts as presented");
+  is(await shown() === false, "one part of three counts as presented");
+  const last = await pageOn(first, {});
+  is(last.includes("counts as presented") && last.includes(`Review context: ${rc?.[1]} — full, target ${cr(1)}, baseline none, covered.`),
+     `the last part, continued without a context, does not say the document now counts as presented: ${last.slice(0, 400)}`);
+  is(await shown() === true, "every part presented, and the approval rule still reads it as unpresented");
+  is(pages().every((e) => e.detail.review_context === rc?.[1] && e.detail.target === cr(1) && e.detail.kind === "full"),
+     `continuations without a context did not join the open one: ${JSON.stringify(pages().map((e) => e.detail.review_context))}`);
 
-  let next = Number(/Next: offset (\d+)/.exec(first)?.[1]);
-  let last = first;
-  for (let i = 0; Number.isFinite(next) && i < 20; i++) {
-    last = await present(db()!, TEAM, REL, undefined, "u@zz.test", { offset: next });
-    next = Number(/Next: offset (\d+)/.exec(last)?.[1]);
+  // Pages of another snapshot never combine — not even one of the same length, which the old
+  // character-count matching merged — and pages of two contexts never do either.
+  change(cur().body.replace("Finding 1.0", "Finding 1.X"), true);
+  const second = await present();
+  const rc2 = /^Review context: (rc_[a-z2-7]{26})/m.exec(second)?.[1];
+  const offsets: number[] = [];
+  for (let at = Number(/Next: offset (\d+)/.exec(second)?.[1]); Number.isFinite(at);) {
+    offsets.push(at);
+    at = Number(/Next: offset (\d+)/.exec(await present({ review_context: rc?.[1], full: true, offset: at }))?.[1]);
   }
-  is(last.includes("it counts as presented"), "the last part does not say the document now counts as presented");
-  is(await shownSinceLastChange(db()!, TEAM, REL) === true,
-     "every part presented, and the approval rule still reads it as unpresented");
-  is(rows().filter((e) => e.kind === "document.shown").length === 1
-     && rows().some((e) => e.detail.via === "parts"),
-     "completing the parts did not append exactly one `shown` row marked as reached through parts");
+  is(rc2 && rc2 !== rc?.[1] && offsets.length >= 2, "the second snapshot was not presented in a new context, in parts");
+  is(await shown() === false,
+     "the first part in one context and the rest in another, beside a whole earlier snapshot of the same length, count as presented");
+  const done = await present({ review_context: rc?.[1], full: true, offset: 0 });
+  is(done.includes(`Review context: ${rc?.[1]} — full, target ${cr(2)}, baseline ${cr(1)}, covered.`) && await shown() === true,
+     `the missing part, in the context holding the rest, did not complete it: ${done.slice(0, 300)}`);
 
-  await present(db()!, TEAM, REL, undefined, "u@zz.test", { offset: 0 });
-  is(rows().filter((e) => e.kind === "document.shown").length === 1, "presenting a part again appended a second `shown`");
+  // A change set too long for one result is paged too, and its continuation joins the open delta.
+  const changed = cur().body.split("\n").map((l) => (/^Finding (\d+)\.\d+ /.exec(l) && Number(/^Finding (\d+)/.exec(l)![1]) % 2 ? `${l} (revised)` : l)).join("\n");
+  change(changed, true);
+  const d1 = await present({ review_context: rc?.[1] });
+  is(new RegExp(`^Review context: ${rc?.[1]} — delta \\(\\d+ records\\), target ${cr(3)}, baseline ${cr(2)}, not yet covered\\.$`, "m").test(d1)
+     && /Part of .*: characters 0–\d+ of \d+ \(the changes from /.test(d1),
+     `a long change set is not presented as the delta, in parts: ${d1.slice(0, 500)}`);
+  is(await shown() === false, "one part of a delta counts as presented");
+  const dLast = await pageOn(d1, {});
+  is(dLast.includes(`Review context: ${rc?.[1]} — delta`) && dLast.includes("covered.") && await shown() === true,
+     `continuing the delta without a context did not join it and complete it: ${dLast.slice(0, 300)}`);
+  is(pages().slice(-2).every((e) => e.detail.kind === "delta" && e.detail.baseline === cr(2) && e.detail.target === cr(3)),
+     "the delta's pages do not name their baseline and target");
 
-  rewrite();
-  is(await shownSinceLastChange(db()!, TEAM, REL) === false, "a rewrite after the parts left the document counted as presented");
-  await present(db()!, TEAM, REL, undefined, "u@zz.test", { section: "Section 1" });
-  is(await shownSinceLastChange(db()!, TEAM, REL) === false,
-     "one section after a rewrite counts as presenting the whole document");
+  // A section is a read beside the review: it covers nothing, and its row carries no context.
+  change(cur().body.replace("the last line", "the last line, changed"), true, 2);
+  const before = pages().length;
+  const section = await present({ section: "Section 1" });
+  is(await shown() === false && pages().length === before + 1 && !pages()[before]?.detail.review_context
+     && /counts nothing towards approval/.test(section),
+     "a section read after a change counts as presenting the whole document, or joins a review context");
 
-  // 3b. Presenting an OLDER revision does not vouch for the current one. `presented_at` is a
-  // column on the revision row the document points at — `recordPresented` writes it
-  // `where r.revision = d.current_revision` — so a part cut from v1 that covers v1's whole body
-  // must not mark v2 as shown, or `document_approve` stamps an approval on bytes nobody read.
-  // `presentDocument` guards this; `presentPart` did not, and the two take the same argument.
-  //
-  // DELIBERATE: `{ offset: 0, limit: <the whole body> }` and not `{}`. An empty ask on a short body
-  // routes to `presentDocument`, which already carries the guard, and `{ offset: 0 }` on this 130k
-  // body yields a PARTIAL. This ask reaches `presentPart` AND its slice covers the body — the pair
-  // the defect needed.
-  //
-  // DELIBERATE: asserted on the ROW, not on the rule beside it. `shownSinceLastChange` reads the
-  // `zz.event` rows and this branch writes none, so it answers the same either way — and the
-  // sentence cannot distinguish either, because `current` is computed whether or not the guard
-  // uses it. What the defect did was write `presented_at` on the CURRENT revision, and that is what
-  // this reads: `recordPresented` is the statement whose WHERE clause names `d.current_revision`.
-  twoRevisions = true;
+  // 3b. History is a read: it records nothing at all. `presented_at` is a column on the row the
+  // document points at, and a row for history would pin the CURRENT row, which nobody was shown.
   doc.presented_at = null;
-  const old = await present(db()!, TEAM, REL, 1, "u@zz.test", { offset: 0, limit: 999999 });
-  is(old.includes("version 1"), "presenting version 1 answered without saying which version it served");
-  is(doc.presented_at === null,
-     "presenting an older revision whole wrote `presented_at` on the CURRENT revision — an " +
-     "approval could then land on bytes nobody was shown");
+  const now = pages().length;
+  const old = await present({ version: 1, offset: 0, limit: 999999 });
+  is(old.includes("version 1") && /not the current one/.test(old), "presenting version 1 answered without saying which version it served");
+  is(doc.presented_at === null && pages().length === now,
+     "presenting an older revision recorded a presentation — an approval could then land on bytes nobody was shown");
 }
 
 // 4. The real schemas take the part arguments
@@ -403,5 +436,6 @@ if (fail.length) {
   for (const f of fail) console.error(`  - ${f}`);
   process.exit(1);
 }
-console.log("document-parts: a 130k document pages and sections round-trip; parts count as presented only when they cover the body; " +
+console.log("document-parts: a 130k document pages and sections round-trip; parts count as presented only when they cover the body " +
+            "in one review context, a change set pages the same way, and history records nothing; " +
             "lists are counted and detail pages read back whole");

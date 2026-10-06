@@ -6,7 +6,7 @@
  * the agent has to know what the person sees. The host keeps the latest update and attaches it to
  * the person's next message, and each update replaces the last — so this describes the moment:
  * where they are, how far through, the passage on their screen, what they selected, what changed
- * since the version before, and the notes they have not sent yet. Composed when the reader
+ * since the snapshot their review context last covered, and the notes they have not sent yet. Composed when the reader
  * settles, never per scroll event.
  */
 import { app, current, root, state, type Slot } from "./state.ts";
@@ -62,7 +62,7 @@ export function selected(s: Slot, read: HTMLElement): { text: string; section: s
   return text ? { text: clip(text, SELECTION_MAX), section: sectionOf(s, read, sel.anchorNode) } : null;
 }
 
-const titleOf = (s: Slot, id: string): string => s.view.sections.find((x) => x.id === id)?.title ?? id;
+const titleOf = (s: Slot, id: string): string => s.view.outline.find((x) => x.id === id)?.text ?? id;
 
 function compose(): void {
   const s = current();
@@ -85,10 +85,13 @@ function compose(): void {
       : `They have scrolled past ${passed.length} sections, most recently: ${passed.slice(-8).join("; ")}.`,
     "Scrolled past is not the same as read carefully.",
   ];
-  if (s.doc.previous && (s.marks.size || s.removed.length)) {
+  const prev = s.doc.previous;
+  if (prev && (s.marks.size || s.removed.length || s.other.length)) {
     const of = (kind: "changed" | "new") => [...s.marks].filter(([, m]) => m === kind).map(([id]) => titleOf(s, id));
-    lines.push(`Since v${s.doc.previous.version}: changed — ${of("changed").join("; ") || "none"}; new — ${of("new").join("; ") || "none"}` +
-               `${s.removed.length ? `; removed — ${s.removed.join("; ")}` : ""}. The panel marks these for them.`);
+    lines.push(`Since v${prev.version} (${prev.content_revision}, the snapshot review context ${s.doc.review_context} last covered): ` +
+               `changed — ${of("changed").join("; ") || "none"}; new — ${of("new").join("; ") || "none"}` +
+               `${s.removed.length ? `; removed — ${s.removed.join("; ")}` : ""}` +
+               `${s.other.length ? `; also — ${s.other.join("; ")}` : ""}. The panel marks these for them.`);
   }
   if (s.notes.length) lines.push(`They have ${s.notes.length} review note(s) drafted in the panel, not sent yet.`);
   if (pick) {

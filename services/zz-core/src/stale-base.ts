@@ -1,7 +1,7 @@
 /**
  * The stale-base reply: what `BASE_CONFLICT` says at both places a caller's `base` is found stale —
  * the change service's step (7) and the compare-and-swap in `saveDocument` — and the snapshot shape
- * a change set is computed over.
+ * a change set is computed over, which a presentation's delta (document-present.ts) reads too.
  *
  * DELIBERATE: its own module. Both the change service and the write path call it, and the write path
  * is what the change service calls; living in either would make the two import each other.
@@ -17,7 +17,7 @@ import { loadSnapshot } from "./versions.js";
 /** A snapshot's text as the change set reads it: the body, and the metadata its content identity
  *  is taken over (`identityOf`, document-save.ts) — title, tags, stakeholder and every field the
  *  platform does not write — so a change set has a record exactly where the identity moved. */
-function changeSnapshot(text: string): Snapshot {
+export function changeSnapshot(text: string): Snapshot {
   const env = parseEnvelope(text);
   return { body: documentBody(text), title: env.title ?? "", stakeholder: env.stakeholder ?? "",
            tags: (env.tags ?? "").split(",").map((t) => t.trim()).filter(Boolean),

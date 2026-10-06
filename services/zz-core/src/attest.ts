@@ -7,18 +7,15 @@
  * This module holds no policy: it answers questions, `server.ts` decides what to say about the
  * answers, and nothing here refuses anything.
  *
- * COUPLED: the record it reads is a COLUMN. `doc_revision.presented_at` is set by
- * `document_present`, and `presented_at > written_at` is the whole of the question below. It
- * used to be a line in `<initiative>/activity.jsonl` — permanent and per-initiative — and then a
- * `zz.event` row, and that second home was wrong for one reason: an event table is unbounded and
- * ephemeral, and the spec requires such a table to declare its retention. `zz.event` declares
- * none, so the day somebody writes one, a sweep would delete the evidence and `document_approve`
- * would stop refusing. **That gate fails OPEN**, and the person harmed is whoever's document goes
- * through unread. A revision is not swept, and presentation is about the current bytes.
+ * COUPLED: the record it reads is a COLUMN. `doc_revision.presented_at` is set when a presentation
+ * completes the current snapshot's coverage in its review context (`commitPresentation`,
+ * review-context.ts), and `presented_at > written_at` is the whole of the question below. It used to
+ * be a line in `<initiative>/activity.jsonl` — permanent and per-initiative — and an event table is
+ * unbounded and ephemeral unless it declares its retention; `zz.event` keeps `document.*` rows
+ * indefinitely now, and the coverage a review context computes is read from them.
  *
- * DELIBERATE: the `shown` row in `zz.event` stays, written by the same presenter, as a
- * projection. It answers "what has been fetched across this initiative", which a per-revision
- * column cannot; nothing reads it for the gate any more.
+ * DELIBERATE: until approval reads a review context's coverage of the exact snapshot it signs, this
+ * column stays what the old approval check reads, and the pin rule reads it after that.
  */
 import type pg from "pg";
 
@@ -76,27 +73,16 @@ export async function shownSinceLastChange(
   }
 }
 
-/** Record that a person was shown this document's CURRENT revision.
+/** Record that the current snapshot's coverage was completed — on the row a presentation pinned.
  *
- * Called by `document_present` alone, and it is the only writer of the column. The `shown`
- * projection row is written beside it by `recordAct`, and this is what the gate reads. */
+ * Called by `commitPresentation` (review-context.ts) alone, inside the presentation's transaction
+ * and on its client, so the column is written exactly when the row recording the completing page
+ * commits; a failure fails that transaction. Through Phase 3 the old approval check
+ * (`shownSinceLastChange`) and the pin rule both read it. */
 export async function recordPresented(
-  p: Pick<pg.Pool, "query">, team: string | null, relPath: string,
-): Promise<boolean> {
-  const at = splitDocPath(relPath);
-  if (!at || !team) return false;
-  try {
-    const done = await p.query(
-      `update zz.doc_revision r set presented_at = now()
-         from zz.doc d, zz.initiative i, zz.team t
-        where d.initiative_id = i.id and i.team_id = t.id
-          and r.doc_id = d.id and r.revision = d.current_revision
-          and t.slug = $1 and i.slug = $2 and d.path = $3`,
-      [team, at.initiative, at.path]);
-    return (done.rowCount ?? 0) > 0;
-  } catch {
-    // A present that could not be recorded costs the record and never the fetch: the caller is
-    // holding the document either way, and `document_approve` will refuse it until one lands.
-    return false;
-  }
+  c: Pick<pg.Pool, "query">, docId: string, revision: number,
+): Promise<void> {
+  await c.query(
+    "update zz.doc_revision r set presented_at = now() where r.doc_id = $1::uuid and r.revision = $2",
+    [docId, revision]);
 }

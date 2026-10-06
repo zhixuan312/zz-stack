@@ -10,6 +10,10 @@
  * its home moved, and the move is the whole point: a log can be swept, and the gate it backs
  * fails OPEN when it is.
  *
+ * And its writer: `recordPresented` sets the column on exactly the row a presentation pinned — the
+ * document and the revision it names — and nowhere else, and a failure is the caller's to see: it
+ * runs inside the presentation's transaction, which must not commit a record the column missed.
+ *
  * Run: node checks/attest-shown.ts   (also run by scripts/gate.ts)
  */
 import { readFileSync } from "node:fs";
@@ -39,7 +43,7 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
 }) as unknown as typeof pg.Pool.prototype.query;
 
 const load = (p: string) => import(new URL(`file://${process.cwd()}/${p}`).href);
-const { shownSinceLastChange } = await load("services/zz-core/dist/attest.js");
+const { recordPresented, shownSinceLastChange } = await load("services/zz-core/dist/attest.js");
 const { db } = await load("services/zz-core/dist/platform-db.js");
 
 /** A present is recorded against the current revision and is strictly after its write. */
@@ -92,6 +96,21 @@ for (const [name, arg, want] of [
   console.log(`  ${ok ? "ok  " : "FAIL"} ${name}  (got ${got})`);
 }
 
+// The writer: the named row, and a failure thrown to the transaction
+{
+  const seen: { sql: string; values: unknown[] }[] = [];
+  await recordPresented({ query: async (sql: string, values: unknown[]) => { seen.push({ sql, values }); return { rows: [], rowCount: 1 }; } },
+                        "d-1", 4);
+  const ok = seen.length === 1 && /set presented_at = now\(\) where r\.doc_id = \$1::uuid and r\.revision = \$2$/.test(seen[0]!.sql)
+    && JSON.stringify(seen[0]!.values) === '["d-1",4]';
+  if (!ok) failed += 1;
+  console.log(`  ${ok ? "ok  " : "FAIL"} recordPresented writes the named row only  (${JSON.stringify(seen)})`);
+  let thrown = false;
+  try { await recordPresented({ query: async () => { throw new Error("down"); } }, "d-1", 4); } catch { thrown = true; }
+  if (!thrown) failed += 1;
+  console.log(`  ${thrown ? "ok  " : "FAIL"} a failed write is thrown to the presentation's transaction`);
+}
+
 // And the approval path actually asks
 //
 // Everything above drives `shownSinceLastChange` against a fixture, which proves the function is
@@ -124,4 +143,4 @@ if (failed) {
   console.error(`\nattest-shown: ${failed} case(s) failed`);
   process.exit(1);
 }
-console.log(`\nattest-shown: ${cases.length + 2} cases passed`);
+console.log(`\nattest-shown: ${cases.length + 4} cases passed`);

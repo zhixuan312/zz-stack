@@ -16,7 +16,9 @@
  *     whether a path that walks out is still refused;
  *   - `shownSinceLastChange` as the oracle for the per-document record — the same function an
  *     approval leans on has to answer "fetched" for both documents of a batch and for neither
- *     of them when history was what got opened.
+ *     of them when history was what got opened;
+ *   - `document_present`'s handler refusing `review_context` with `version`, `section` or an array
+ *     `path`, and `full` with `version` or `section` (`INVALID_MODE`), before anything is read.
  *
  * Two assertions stay source-level and are named as such below, with what each catches.
  *
@@ -65,6 +67,7 @@ docs.set("plan.md", {
  * already sorted — so an ordered read and an unordered one produce the same list here. The
  * statement is what this check can actually disprove. */
 let historySql = "";
+const events: { kind: string; subject: string; detail: Record<string, unknown> }[] = [];
 
 pg.Pool.prototype.query = (async function query(text: string, values: unknown[] = []) {
   const sql = String(text).replace(/\s+/g, " ").trim();
@@ -93,13 +96,24 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
     return one([{ presented_at: d.presented_at, written_at: rev.written_at }]);
   }
   if (/update zz\.doc_revision r set presented_at = now\(\)/.test(sql)) {
-    // `now()` stands just past the CURRENT revision's own write, which is what a present made
-    // after a write is.
-    if (d) {
-      const cur = d.revisions.find((r) => r.revision === d.current)!;
-      d.presented_at = new Date(Date.parse(cur.written_at) + 1000).toISOString();
-    }
+    // On the row the presentation names, by document id and revision. `now()` stands just past the
+    // revision's own write, which is what a present made after a write is.
+    const hit = [...docs.values()].find((x) => x.id === values[0]);
+    const rev = hit?.revisions.find((r) => r.revision === values[1]);
+    if (hit && rev) hit.presented_at = new Date(Date.parse(rev.written_at) + 1000).toISOString();
     return { rows: [], rowCount: 1 };
+  }
+  // The row a presentation confirms it showed, and the pages a review context holds
+  if (/as own_generation/.test(sql)) {
+    if (!d) return one([]);
+    const rev = d.revisions.find((r) => r.revision === d.current)!;
+    return one([{ id: d.id, current_revision: d.current, content_generation: d.generation, own_generation: rev.content_generation }]);
+  }
+  if (/e\.detail->>'review_context' as context/.test(sql)) {
+    return one(events.filter((e) => e.subject === values[2] && e.detail.review_context && e.detail.user === values[3]
+        && (values[5] === null || e.detail.review_context === values[5]))
+      .map((e) => ({ context: e.detail.review_context, target: e.detail.target, baseline: e.detail.baseline,
+                     kind: e.detail.kind, start: e.detail.start, end: e.detail.end, total: e.detail.total })));
   }
   if (/from zz\.doc d\b/.test(sql) && /d\.path = \$3/.test(sql)) {
     if (values[0] !== TEAM || values[1] !== INIT || !d) return one([]);
@@ -108,13 +122,22 @@ pg.Pool.prototype.query = (async function query(text: string, values: unknown[] 
                   outcome: null, current_revision: d.current, approved_revision: null,
                   current_version: d.current, content_generation: d.generation, updated_at: rev.written_at }]);
   }
-  if (/insert into zz\.event\b/.test(sql)) return one([]);
+  if (/insert into zz\.event\b/.test(sql)) {
+    events.push({ kind: String(values[3]), subject: String(values[4]), detail: JSON.parse(String(values[5])) });
+    return one([]);
+  }
   if (/from zz\.team where slug = \$1|select slug from zz\.team/.test(sql)) return one([{ slug: TEAM }]);
   return one([]);
 }) as unknown as typeof pg.Pool.prototype.query;
+// The presentation's transaction runs on a client: the same router answers it.
+const route = pg.Pool.prototype.query as unknown as (t: string, v?: unknown[]) => Promise<unknown>;
+pg.Pool.prototype.connect = (async () => ({ query: route, release() {} })) as unknown as typeof pg.Pool.prototype.connect;
 
 const { loadDocument, loadSnapshot } = await load("services/zz-core/dist/versions.js");
-const { present } = await load("services/zz-core/dist/document-present.js");
+const { present: presentIn } = await load("services/zz-core/dist/document-present.js");
+const who = { team: TEAM, email: "u@zz.test", credential: "pat", client: null };
+const present = async (_p: unknown, _team: string, rel: string, version?: number): Promise<string> =>
+  (await presentIn(db()!, who, rel, version === undefined ? {} : { version }, false)).text;
 const { writeGuard, safePath } = await load("services/zz-core/dist/paths.js");
 const { shownSinceLastChange } = await load("services/zz-core/dist/attest.js");
 const { db } = await load("services/zz-core/dist/platform-db.js");
@@ -153,6 +176,11 @@ for (const name of ["document_read", "document_present"]) {
   is(version.safeParse(3).success, `${name}'s \`version\` refuses a version number`);
   is(version.safeParse(undefined).success, `${name}'s \`version\` is not optional`);
 }
+// A review context and `full` are document_present's.
+is(tools.get("document_present")?.inputSchema?.review_context?.safeParse("rc_x").success
+   && tools.get("document_present")?.inputSchema?.full?.safeParse(true).success
+   && tools.get("document_present")?.inputSchema?.review_context?.safeParse(undefined).success,
+   "document_present takes no optional `review_context` and `full`");
 // The shelf argument is document_read's alone. Asserted because an inputSchema rewritten
 // around `path` is exactly where it would be dropped.
 is(tools.get("document_read")?.inputSchema?.scope?.safeParse("platform").success,
@@ -252,10 +280,30 @@ is(tools.get("document_read")?.inputSchema?.content_revision?.safeParse("cr_x").
   }
 }
 
+// A review context is one review of one document's current snapshot: `version`, `section` and an
+// array `path` are refused with it, and `full` with `version` or `section` — before anything is read.
+{
+  const show = handlers.get("document_present")!;
+  const rc = `rc_${"a".repeat(26)}`;
+  const combos: [string, Record<string, unknown>, RegExp][] = [
+    ["review_context with version", { review_context: rc, version: 1 }, /^ERROR: INVALID_MODE — `review_context`/],
+    ["review_context with section", { review_context: rc, section: "Spec" }, /^ERROR: INVALID_MODE — `review_context`/],
+    ["review_context with an array path", { review_context: rc, path: [`${INIT}/spec.md`] }, /^ERROR: INVALID_MODE — `review_context`/],
+    ["full with version", { full: true, version: 1 }, /^ERROR: INVALID_MODE — `full`/],
+    ["full with section", { full: true, section: "Spec" }, /^ERROR: INVALID_MODE — `full`/],
+  ];
+  const before = events.length;
+  for (const [label, extra, want] of combos) {
+    const reply = (await show({ path: `${INIT}/spec.md`, ...extra })).content[0].text;
+    is(want.test(reply), `document_present with ${label} is not INVALID_MODE — got ${reply}`);
+  }
+  is(events.length === before, "a refused document_present recorded a presentation");
+}
+
 // 3. The record, per document, with shownSinceLastChange as the oracle
 const shown = async (rel: string) => shownSinceLastChange(db()!, TEAM, rel);
 is(await shown(`${INIT}/spec.md`) === false, "written and never presented, and the approval would pass");
-const presented = await present(db()!, TEAM, `${INIT}/spec.md`, undefined, "u@zz.test");
+const presented = await present(db()!, TEAM, `${INIT}/spec.md`);
 is(/# Spec/.test(presented) && /The current draft/.test(presented),
    "document_present does not return the document's body");
 is(!/^---/m.test(presented) && !/^status:/m.test(presented),
@@ -266,21 +314,25 @@ is(/v1 approved by ada@zz\.test on 2026-01-05/.test(presented)
    && /v2 approved by bo@zz\.test on 2026-02-09/.test(presented),
    "the response does not list the versions that exist with what each was approved as and when");
 is(await shown(`${INIT}/spec.md`) === true, "presenting the current revision did not record it");
+is(/^Review context: rc_[a-z2-7]{26} — full, target cr_\S+, baseline none, covered\.$/m.test(presented),
+   "a present without a context does not name the new one it presented in, in full");
 
 // Two documents, two records. One record for a batch would let an approval on the document nobody
 // opened read as attested, because shownSinceLastChange answers per document.
-await present(db()!, TEAM, `${INIT}/plan.md`, undefined, "u@zz.test");
+await present(db()!, TEAM, `${INIT}/plan.md`);
 is(await shown(`${INIT}/spec.md`) === true && await shown(`${INIT}/plan.md`) === true,
    "after presenting both documents the record still says one of them was never fetched");
 
 // Opening history must not vouch for the present. The record is per REVISION, so a present of v1
 // is a present of v1 and says nothing about the draft the document points at now.
 docs.get("spec.md")!.presented_at = null;
-const historical = await present(db()!, TEAM, `${INIT}/spec.md`, 1, "u@zz.test");
+const recorded = events.length;
+const historical = await present(db()!, TEAM, `${INIT}/spec.md`, 1);
 is(/The first approval/.test(historical) && !/The current draft/.test(historical),
    "`version: 1` did not return the copy filed at the first approval");
 is(await shown(`${INIT}/spec.md`) === false,
    "fetching an old version marks the current revision as presented");
+is(events.length === recorded, "fetching an old version recorded a presentation, which pins the current row nobody was shown");
 
 // 4. A mechanical record is still unwritable, and a path that walks out is still refused
 is(typeof writeGuard(`${INIT}/_ledger.md`) === "string",

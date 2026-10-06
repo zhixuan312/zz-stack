@@ -7,12 +7,10 @@
  * carries its identity and its status, `doc_revision` the bytes it has had, and a path that
  * does not exist is refused rather than answered from a file.
  *
- * `document_present` returns the document rather than a rendering of it, and stamps
- * `doc_revision.presented_at` on the revision it showed. That stamp is what makes "was this
- * fetched before its gate was approved" answerable per document: `attest.ts` reads it against
- * the revision's own `written_at`, and `document_approve` refuses a revision that was not shown
- * after it was written. A column and not a log entry, because a log can be swept and a gate
- * backed by one fails open.
+ * `document_present` returns the document rather than a rendering of it, in a review context
+ * (review-context.ts): the first present of a context shows the whole current snapshot, a later
+ * one what changed since the context last covered it, and every page is recorded with its target
+ * and span before the text is returned. What a context covers is what an approval rests on.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -42,7 +40,8 @@ import { documentAt, documentPaths, loadDocument, loadSnapshot, NO_DB, recordAct
 import { saveDocument } from "../document-save.js";
 import { acceptanceLine, envelopeOnlyRefusal, NO_TEAM, planCreate, replayFor } from "../document-change.js";
 import { present } from "../document-present.js";
-import { type PanelDocument, panelDocument, PRESENT_META } from "../document-panel.js";
+import { type PanelDocument, PRESENT_META } from "../document-panel.js";
+import { CONTEXT_INPUT, presentRefusal, viewerOf } from "../review-context.js";
 import { asksPart, PART_LIMIT, partHeader, slicePart } from "../document-parts.js";
 import { journalOrdinal, listJournalNodes, readJournalNode } from "./journal.js";
 
@@ -316,31 +315,36 @@ export function registerArtifactTools(server: McpServer): void {
     {
       annotations: READS,
       description:
-        "Fetch a document from your team's store to put in front of the person. " +
-        "Returns the document's body as markdown, with its path, version, status, approval " +
-        "and the list of versions filed for it stated separately — the document itself, " +
-        "never a summary or a judgement of it. Pass an ARRAY of paths to put several in " +
-        "front of them at once; each is fetched and recorded in its own right. `version: N` " +
-        "shows the copy filed when approval N landed. Call it after writing a document and " +
-        "before asking anyone to decide on it — " +
-        "in a SEPARATE call once the write has returned, never alongside the write in one " +
-        "batch: parallel calls have no order between them, and a fetch that runs first " +
-        "answers truthfully that the document is not there yet. " +
-        "Paths are relative to the store — `<initiative>/spec.md`. A body longer than " +
-        `${PART_LIMIT} characters comes back in parts, as does any \`section\`, \`offset\` or ` +
-        "`limit` you ask for: each part says which characters of how many it is. A document " +
-        "counts as presented — and document_approve accepts it — once the parts presented " +
-        "since its last change cover every character of it.",
+        "Put a document from your team's store in front of the person. Returns its body as " +
+        "markdown, with its path, version, status, approval and the versions filed for it stated " +
+        "separately — the document itself, never a summary. Every present is part of a REVIEW " +
+        "CONTEXT: the reply names one (`Review context: rc_…`) — pass it back as `review_context` on " +
+        "the next present of the same document and you are shown only what changed since that " +
+        "context last covered it (each change named, then every added or edited section in full); " +
+        "`full: true` shows it whole. Without `review_context` a new context starts, in full. An " +
+        "ARRAY of paths presents each in full, in its own context. Call it after writing or editing, " +
+        "in a SEPARATE call once the write has returned, never alongside the write in one batch: " +
+        "parallel calls have no order between them. Paths are relative to the store — " +
+        `\`<initiative>/spec.md\`. Text longer than ${PART_LIMIT} characters comes back in parts: each ` +
+        "part names the next `offset` and the review_context to pass with it. A document counts as " +
+        "presented — and document_approve accepts it — once its current content is covered in a " +
+        "context: every character of it, or of what changed since a covered baseline, delivered. " +
+        "`version: N` and `section` are reads beside the review: they count nothing towards approval.",
       inputSchema: {
         path: z.union([z.string(), z.array(z.string())])
           .describe("One path, or an array of paths presented in the order given."),
         version: z.number().int().positive().optional()
           .describe("Show the copy filed at approval N instead of the current document."),
         ...PART_INPUT,
+        ...CONTEXT_INPUT,
       },
       _meta: PRESENT_META,
     },
-    async ({ path, version, section, offset, limit }) => {
+    async ({ path, version, section, offset, limit, review_context, full }) => {
+      // The arguments first: a combination no present can serve is answered before anything is read.
+      const ask = { review_context, full, version, section, offset, limit };
+      const refused = presentRefusal(path, ask);
+      if (refused) return text(refused);
       const user = parseCaller(requestHeaders()).email;
       const team = await teamFor(user);
       const p = db();
@@ -350,11 +354,9 @@ export function registerArtifactTools(server: McpServer): void {
       // What the document panel draws — every document whole, whatever part the text carries.
       const panel: PanelDocument[] = [];
       const reading = asksPart({ section, offset, limit });
-      // COUPLED: the `shown` record and the `presented_at` column are both written by
-      // `present` (document-present.ts), once per document, and nothing in this registration
-      // touches the record. `shownSinceLastChange` answers per document, so one record for a
-      // batch would make an approval look attested when only a neighbouring document was
-      // opened. checks/document-reads.ts and checks/approve-needs-present.ts assert both halves.
+      // COUPLED: the record of what was shown is written by `present` (document-present.ts), once
+      // per document and in that document's own review context, and nothing in this registration
+      // touches it. checks/document-reads.ts asserts both halves.
       for (const rel of (single ? [path as string] : path as string[])) {
         await safePath(rel);
         // A path that names no document is answered with what the initiative DOES hold. The
@@ -377,14 +379,11 @@ export function registerArtifactTools(server: McpServer): void {
               "document_list to see what the store does hold, then ask again by full path.");
           continue;
         }
-        // Whole when it fits and no part was asked for; otherwise one part, which records a
-        // `shown_part` and counts as presented only once the parts cover the body. `present`
-        // makes that choice, so a second caller cannot forget it.
-        out.push(await present(p, team, rel, version, user, { section, offset, limit }));
         // A part asked for is the model reading, not a person being shown: in ChatGPT every paging
         // call drew the whole document again, in a new panel, under the last one (0.92.0).
-        const drawn = reading ? null : await panelDocument(p, team, rel, version, user);
-        if (drawn) panel.push(drawn);
+        const shown = await present(p, viewerOf(team), rel.replace(/^\/+/, ""), ask, !reading);
+        out.push(shown.text);
+        if (shown.panel) panel.push(shown.panel);
       }
       // `_meta`, never `structuredContent`: see document-panel.ts for what each client shows a model.
       return { ...text(out.join("\n\n────────\n\n")),

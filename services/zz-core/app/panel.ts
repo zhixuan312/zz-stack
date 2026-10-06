@@ -7,14 +7,15 @@
  * (a sticky bar with the section, the share read and the minutes left; a jump list with each
  * section's length; a rail on a wide panel; each document's place kept), tell the agent what they
  * see (context.ts), turn a selection into a question or a note (review.ts), mark what changed since
- * the version before so a re-review reads only what moved, and take the approval through the same
- * `document_approve` a model would call. Layout follows the panel's own width, not the window's.
+ * the snapshot its review context last covered — the records of the change set the present computed
+ * — so a re-review reads only what moved, and take the approval through the same `document_approve`
+ * a model would call. Layout follows the panel's own width, not the window's.
  *
  * One theme and one register, the console's: cream ground, hairlines not shadows, one accent for
  * the one primary action, green/amber/red for approved/waiting/refused and nothing else, the kit
  * blue for what changed. The `state-approved` mascot appears for its one job.
  */
-import { minutesOf, compareSections, renderMarkdown } from "./render.ts";
+import { marksOf, minutesOf, renderMarkdown } from "./render.ts";
 import { schedule, tellModel } from "./context.ts";
 import { addNote, dropNote, dropPick, explain, loadNotes, notesBlock, selbar, sendNotes, startNote, syncSelection } from "./review.ts";
 import { answer, app, current, esc, root, state, type Approval, type PanelDocument, type Shown, type Slot } from "./state.ts";
@@ -45,13 +46,16 @@ function standing(s: Slot): { label: string; tone: "green" | "amber" | "neutral"
   return { label: "Awaiting approval", tone: "amber" };
 }
 
-/** What moved since the version before, in one line of the header's facts. */
+/** What moved since the review context's baseline, in one line of the header's facts. */
 function changeFact(s: Slot): string | null {
-  if (!s.doc.previous) return null;
+  const prev = s.doc.previous;
+  if (!prev) return null;
+  if (!prev.changes) return `<span class="fact-change">changed throughout since v${prev.version}</span>`;
   const changed = [...s.marks.values()].filter((m) => m === "changed").length;
   const added = [...s.marks.values()].filter((m) => m === "new").length;
-  const parts = [changed && `${changed} changed`, added && `${added} new`, s.removed.length && `${s.removed.length} removed`].filter(Boolean);
-  return `<span class="fact-change">${parts.length ? parts.join(", ") : "no section changed"} since v${s.doc.previous.version}</span>`;
+  const parts = [changed && `${changed} changed`, added && `${added} new`, s.removed.length && `${s.removed.length} removed`,
+                 s.other.length && esc(s.other.join(", "))].filter(Boolean);
+  return `<span class="fact-change">${parts.length ? parts.join(", ") : "nothing changed"} since v${prev.version}</span>`;
 }
 
 function header(s: Slot): string {
@@ -258,14 +262,20 @@ function goTo(id: string): void {
   read.scrollTo({ top: to, behavior: Math.abs(to - read.scrollTop) > 2 * read.clientHeight ? "instant" : "smooth" });
 }
 
-/** Record the active document as shown, once it is on screen. Nothing records for history, for a
- *  document with no ticket, or twice. */
+/** Record the active document as shown, under its review context, once it is on screen. Nothing
+ *  records for history, for a document with no ticket, or twice; a current snapshot opened as a
+ *  `version` read has no context to record under, and says so. */
 async function recordShown(s: Slot): Promise<void> {
   if (s.shown !== "pending") return;
   if (!s.doc.ticket || !s.doc.latest) { s.shown = "recorded"; draw(); return; }
+  if (!s.doc.review_context) {
+    s.shown = { failed: "Opened as a version read, which records nothing — ask for it to be presented again to approve it" };
+    draw();
+    return;
+  }
   try {
     const r = answer(await app.callServerTool({ name: "document_shown",
-      arguments: { path: s.doc.path, version: s.doc.version, ticket: s.doc.ticket } }));
+      arguments: { path: s.doc.path, version: s.doc.version, ticket: s.doc.ticket, review_context: s.doc.review_context } }));
     s.shown = r.ok ? "recorded" : { failed: r.said };
   } catch (err) {
     s.shown = { failed: `This client would not record it: ${err instanceof Error ? err.message : String(err)}` };
@@ -375,9 +385,9 @@ app.ontoolresult = (result) => {
   state.received = true;
   state.slots = docs.map((doc) => {
     const view = renderMarkdown(doc.body);
-    const cmp = doc.previous ? compareSections(view, renderMarkdown(doc.previous.body)) : null;
+    const cmp = marksOf(view, doc.previous?.changes ?? []);
     const slot: Slot = { doc, view, shown: "pending" as Shown, approval: "idle" as Approval, scroll: 0,
-      marks: cmp?.marks ?? new Map(), removed: cmp?.removed ?? [], onlyChanges: false,
+      marks: cmp.marks, removed: cmp.removed, other: cmp.other, onlyChanges: false,
       notes: [], sent: null, noting: null };
     loadNotes(slot);
     return slot;

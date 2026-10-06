@@ -13,6 +13,8 @@
 import { micromark } from "micromark";
 import { gfm, gfmHtml } from "micromark-extension-gfm";
 
+import type { Change } from "./state.ts";
+
 /** A heading the outline lists. `words` is how much the section under it holds, up to the next
  *  heading of any level the outline lists — what a reader weighs before deciding to go there. */
 interface OutlineEntry { level: 2 | 3; text: string; id: string; words: number }
@@ -25,8 +27,10 @@ export interface Rendered {
   outline: OutlineEntry[];
   /** Words in the whole body — the reading time is `minutesOf(words)`. */
   words: number;
-  /** Each second-level section's heading and plain text, in order: what two versions are compared by. */
+  /** Each second-level section's heading and plain text, in order. */
   sections: { id: string; title: string; text: string }[];
+  /** Every heading, in order, with its level and id: what a change record's position names. */
+  heads: { level: number; id: string }[];
 }
 
 /** Reading time at 220 words a minute, never under one. */
@@ -52,11 +56,13 @@ export function renderMarkdown(body: string): Rendered {
   const raw = micromark(body.replace(/\r\n/g, "\n"), { extensions: [gfm()], htmlExtensions: [gfmHtml()] });
   const slug = slugger();
   const outline: OutlineEntry[] = [];
+  const heads: Rendered["heads"] = [];
   let title: string | null = null;
   const html = raw
-    .replace(/<h([1-4])>([\s\S]*?)<\/h\1>/g, (_m, level: string, inner: string) => {
+    .replace(/<h([1-6])>([\s\S]*?)<\/h\1>/g, (_m, level: string, inner: string) => {
       const text = plain(inner);
       const id = slug(text);
+      heads.push({ level: Number(level), id });
       if (level === "1" && title === null) title = text;
       if (level === "2" || level === "3") outline.push({ level: Number(level) as 2 | 3, text, id, words: 0 });
       return `<h${level} id="${id}">${inner}</h${level}>`;
@@ -78,20 +84,44 @@ export function renderMarkdown(body: string): Rendered {
     text: plain(html.slice(m.index, tops[i + 1]?.index ?? html.length)) }));
   const wrapped = !tops.length ? html : html.slice(0, tops[0]!.index) + tops.map((m, i) =>
     `<section class="sec" data-sec="${m[1]}">${html.slice(m.index, tops[i + 1]?.index ?? html.length)}</section>`).join("");
-  return { html: wrapped, title, outline, words: count(html), sections };
+  return { html: wrapped, title, outline, words: count(html), sections, heads };
 }
 
-/** How each section of `now` stands against `before`, by heading: changed, new, or — absent from
- *  the map — the same. Headings `before` had and `now` does not are listed as removed. */
-export function compareSections(now: Rendered, before: Rendered):
-    { marks: Map<string, "changed" | "new">; removed: string[] } {
-  const was = new Map(before.sections.map((x) => [x.title, x.text]));
+/** The sections the change set marks, by heading id: a record names a heading by its position among
+ *  every heading of the body — the change set's own count, fenced code excluded — and its level. A
+ *  second- or third-level heading is marked itself, and any deeper change marks the second-level
+ *  section it sits in, which is what "changes only" shows or hides. A record whose position does not
+ *  land on a heading of its own level is not marked rather than marked on the wrong one: a heading
+ *  markdown reads that the change set's scan does not (an underlined one) shifts the count.
+ *
+ *  `removed` lists the headings gone, and `other` what changed outside the sections. */
+export function marksOf(view: Rendered, changes: readonly Change[]):
+    { marks: Map<string, "changed" | "new">; removed: string[]; other: string[] } {
   const marks = new Map<string, "changed" | "new">();
-  for (const x of now.sections) {
-    const old = was.get(x.title);
-    if (old === undefined) marks.set(x.id, "new");
-    else if (old.replace(/\s+/g, " ") !== x.text.replace(/\s+/g, " ")) marks.set(x.id, "changed");
+  const removed: string[] = [];
+  const other: string[] = [];
+  const name = (heading: string) => heading.replace(/^#+\s*/, "").replace(/\s+#*\s*$/, "");
+  const mark = (heading: string, at: number, how: "changed" | "new") => {
+    const h = view.heads[at - 1];
+    if (!h || h.level !== (/^#+/.exec(heading)?.[0].length ?? 0)) return;
+    if (h.level === 1) { if (!other.includes("the opening")) other.push("the opening"); return; }
+    if (h.level === 2 || h.level === 3) { if (marks.get(h.id) !== "new") marks.set(h.id, how); }
+    if (h.level === 2) return;
+    // The second-level section it sits in: the last one before it.
+    const parent = view.heads.slice(0, at - 1).reverse().find((x) => x.level === 2);
+    if (parent && !marks.has(parent.id)) marks.set(parent.id, "changed");
+  };
+  for (const c of changes) {
+    switch (c.kind) {
+      case "added": mark(c.heading, c.at, "new"); break;
+      case "edited": mark(c.heading, c.at, "changed"); break;
+      case "renamed": mark(c.to, c.at, "changed"); break;
+      case "moved": mark(c.heading, c.to, "changed"); break;
+      case "removed": removed.push(name(c.heading)); break;
+      case "preamble": if (!other.includes("the opening")) other.push("the opening"); break;
+      case "trailing": other.push("the trailing text"); break;
+      case "metadata": other.push(c.field); break;
+    }
   }
-  const titles = new Set(now.sections.map((x) => x.title));
-  return { marks, removed: before.sections.map((x) => x.title).filter((t) => !titles.has(t)) };
+  return { marks, removed, other };
 }
